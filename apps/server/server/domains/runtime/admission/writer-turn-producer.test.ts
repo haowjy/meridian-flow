@@ -16,7 +16,7 @@ import {
   createInMemoryRunStarter,
   createInMemoryThreadLock,
 } from "../adapters/in-memory/loop-ports.js";
-import { createTestDelivery } from "../loop/__tests__/test-delivery.js";
+import { createRuntimeHarness } from "../loop/__tests__/runtime-harness.js";
 import type { AdmissionPersistencePort } from "./drizzle-admission-records.js";
 import { createWriterTurnProducer } from "./writer-turn-producer.js";
 
@@ -74,14 +74,16 @@ async function harness(recordsOverride?: AdmissionPersistencePort) {
     hub: journal,
     runner,
     turns: repos.turns,
-    delivery: createTestDelivery({
+    delivery: createRuntimeHarness({
+      repos,
+      eventWriter: journal,
       inbox,
       threadLock: createInMemoryThreadLock(),
       runStarter,
       schedulePostCommit: (task) => {
         void task();
       },
-    }),
+    }).delivery,
     records: recordsOverride ?? records.port,
     consumeUploads: async () => undefined,
     attachDocument: async () => undefined,

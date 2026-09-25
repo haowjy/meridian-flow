@@ -8,7 +8,7 @@ import {
 } from "../../gateway/adapters/mock/server.js";
 import { createGateway } from "../../gateway/create-gateway.js";
 import type { Gateway } from "../../gateway/index.js";
-import { RuntimeTestRig } from "./runtime-test-rig.js";
+import { runtimeScenario } from "./runtime-harness.js";
 
 function createMockGateway(mock: MockOpenAIServer): Gateway {
   return createGateway({
@@ -46,7 +46,7 @@ describe("cancel billing", () => {
   });
 
   it("debits partial usage when cancelled mid-stream through createGateway", async () => {
-    const rig = await RuntimeTestRig.create({ gateway: createMockGateway(mock) });
+    const rig = await runtimeScenario({ gateway: createMockGateway(mock) });
     const controller = new AbortController();
     const handle = await rig.orchestrator.prepare({
       threadId: rig.thread.id,
@@ -67,7 +67,7 @@ describe("cancel billing", () => {
   });
 
   it("does not cancel a running turn when a subscribed WebSocket disconnects", async () => {
-    const rig = await RuntimeTestRig.create({ gateway: createMockGateway(mock) });
+    const rig = await runtimeScenario({ gateway: createMockGateway(mock) });
     const app = rig.createAppServices();
 
     await rig.inbox.enqueue({
@@ -98,6 +98,8 @@ describe("cancel billing", () => {
     expect(await rig.runClaim.readRunningTurnId(rig.thread.id)).toBe(turnId);
 
     await app.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);
-    await rig.awaitCancelled(turnId as NonNullable<typeof turnId>);
+    expect(await rig.awaitCancelled(turnId as NonNullable<typeof turnId>)).toMatchObject({
+      status: "cancelled",
+    });
   });
 });

@@ -1,20 +1,15 @@
 /** Malformed write calls receive repair guidance, then write(read) dispatches in the same turn. */
 import { describe, expect, it } from "vitest";
-import { createInMemoryCreditLedger } from "../../../billing/index.js";
-import { createInMemoryProjectRepository } from "../../../projects/index.js";
-import {
-  createInMemoryEventJournalWriter,
-  createInMemoryRepositories,
-} from "../../../threads/index.js";
-import type { Gateway, GenerateRequest, GenerateResult, StreamEvent } from "../../gateway/index.js";
+import type { GenerateResult } from "../../gateway/index.js";
 import {
   type CoreToolHandlers,
   createCoreToolRegistrations,
   createToolExecutor,
   createToolRegistry,
 } from "../../tools/index.js";
-import { createOrchestrator } from "../orchestrator.js";
-import { createTestAgentBinding, createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
+import { createTestAgentBinding } from "./runtime-fixtures.js";
+import { runtimeScenario } from "./runtime-harness.js";
+import { scriptedGateway } from "./test-gateway.js";
 
 const usage = { inputTokens: 1, outputTokens: 1 };
 
@@ -42,18 +37,6 @@ function textResult(): GenerateResult {
 
 describe("document command recovery through the runtime loop", () => {
   it("reports malformed args and dispatches corrected write(read) without ending the turn", async () => {
-    const projects = createInMemoryProjectRepository();
-    const project = await projects.create({ userId: "user-1", title: "Read recovery" });
-    const repos = createInMemoryRepositories({ projects });
-    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
-    const creditLedger = createInMemoryCreditLedger();
-    await creditLedger.grant({
-      userId: "user-1",
-      source: "manual",
-      amountMillicredits: "1000000",
-      reason: "read recovery test",
-    });
-
     const dispatched: unknown[] = [];
     const handlers: CoreToolHandlers = {
       write: async (input: Parameters<CoreToolHandlers["write"]>[0]) => {
@@ -79,30 +62,14 @@ describe("document command recovery through the runtime loop", () => {
       }),
       textResult(),
     ];
-    let requestIndex = 0;
-    const requests: GenerateRequest[] = [];
-    const gateway: Gateway = {
-      getDefaultModel: () => "fixture-model",
-      async *stream(request): AsyncGenerator<StreamEvent> {
-        requests.push(request);
-        yield { type: "end", result: results[requestIndex++] };
-      },
-      async generate() {
-        throw new Error("Not used");
-      },
-    };
-    const eventWriter = createInMemoryEventJournalWriter();
-    const orchestrator = createOrchestrator(
-      createTestOrchestratorDeps({
-        boundThreads: () => [thread.id],
-        gateway,
-        repos,
-        creditLedger,
-        eventWriter,
-        toolRegistry,
-        toolExecutor: createToolExecutor(toolRegistry),
-      }),
-    );
+    const gateway = scriptedGateway({ results });
+    const { requests } = gateway;
+    const rig = await runtimeScenario({
+      gateway,
+      toolRegistry,
+      toolExecutor: createToolExecutor(toolRegistry),
+    });
+    const { orchestrator, repos, thread, journal: eventWriter } = rig;
 
     const handle = await orchestrator.prepare({ threadId: thread.id, userText: "Read chapter." });
     expect((await handle.execute()).status).toBe("complete");
@@ -157,18 +124,6 @@ describe("document command recovery through the runtime loop", () => {
   });
 
   it("persists policy denials for edits and retired read calls while allowing baseline write.read", async () => {
-    const projects = createInMemoryProjectRepository();
-    const project = await projects.create({ userId: "user-1", title: "Read-only policy" });
-    const repos = createInMemoryRepositories({ projects });
-    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
-    const creditLedger = createInMemoryCreditLedger();
-    await creditLedger.grant({
-      userId: "user-1",
-      source: "manual",
-      amountMillicredits: "1000000",
-      reason: "read-only policy test",
-    });
-
     const dispatched: unknown[] = [];
     const handlers: CoreToolHandlers = {
       write: async (input: Parameters<CoreToolHandlers["write"]>[0]) => {
@@ -226,19 +181,9 @@ describe("document command recovery through the runtime loop", () => {
       },
       textResult(),
     ];
-    let requestIndex = 0;
-    const requests: GenerateRequest[] = [];
-    const gateway: Gateway = {
-      getDefaultModel: () => "fixture-model",
-      async *stream(request): AsyncGenerator<StreamEvent> {
-        requests.push(request);
-        yield { type: "end", result: results[requestIndex++] };
-      },
-      async generate() {
-        throw new Error("Not used");
-      },
-    };
-    const baseBinding = createTestAgentBinding("fixture-model", "", () => [thread.id]);
+    const gateway = scriptedGateway({ results });
+    const { requests } = gateway;
+    const baseBinding = createTestAgentBinding("fixture-model", "", () => [rig.thread.id]);
     const agentRevisions = {
       ...baseBinding,
       async readThreadBinding(threadId: string) {
@@ -251,19 +196,13 @@ describe("document command recovery through the runtime loop", () => {
           : undefined;
       },
     };
-    const eventWriter = createInMemoryEventJournalWriter();
-    const orchestrator = createOrchestrator(
-      createTestOrchestratorDeps({
-        boundThreads: () => [thread.id],
-        gateway,
-        repos,
-        creditLedger,
-        eventWriter,
-        toolRegistry,
-        toolExecutor: createToolExecutor(toolRegistry),
-        agentRevisions,
-      }),
-    );
+    const rig = await runtimeScenario({
+      gateway,
+      toolRegistry,
+      toolExecutor: createToolExecutor(toolRegistry),
+      agentRevisions,
+    });
+    const { orchestrator, repos, thread, journal: eventWriter } = rig;
 
     const handle = await orchestrator.prepare({ threadId: thread.id, userText: "Read chapter." });
     expect((await handle.execute()).status).toBe("complete");

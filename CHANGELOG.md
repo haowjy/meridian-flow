@@ -13,6 +13,10 @@
 
 ### Changed
 
+- Verify stream deadlines and journal eviction with controlled time. Drain rollback notifications with committed barriers.
+
+- Share runtime and execution-report test scenarios. Exercise rich writer sends and hidden child notifications through real delivery.
+
 - Recover queued messages, child reports, Work updates, and change trails on independent non-overlapping schedules. Drain recovery work before shutdown.
 
 - Deliver Work changes once through the inbox, at idle or between responses, without replacing the frozen prompt. Preserve causal turn order across live Work switches and writer sends.

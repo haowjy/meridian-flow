@@ -4,11 +4,14 @@
  * stream that never ends, and the retry gate permits reasoning-only retries
  * while refusing retries after committed output.
  */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { streamWithRetry } from "./attempt-stream.js";
 import { DEFAULT_ATTEMPT_CEILING_MS, DEFAULT_ATTEMPT_STALL_MS } from "./deadline.js";
 import type { GenerateRequest, GenerateResult, ModelInfo, StreamEvent } from "./domain/index.js";
 import type { ProviderAdapter } from "./ports/provider-adapter.js";
+
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => vi.useRealTimers());
 
 const MODEL: ModelInfo = {
   id: "test-model",
@@ -120,9 +123,12 @@ describe("streamWithRetry timeouts", () => {
   it("never aborts a slow-but-streaming attempt", async () => {
     const { adapter } = scriptedAdapter([streamingForAWhile]);
 
-    const events = await collect(
+    const completion = collect(
       streamWithRetry(adapter, REQUEST, MODEL, RETRY, { stallMs: 150, ceilingMs: 0 }),
     );
+
+    await vi.advanceTimersByTimeAsync(180);
+    const events = await completion;
 
     expect(events.filter((event) => event.type === "error")).toHaveLength(0);
     expect(last(events)?.type).toBe("end");
@@ -131,7 +137,7 @@ describe("streamWithRetry timeouts", () => {
   it("bounds a stream that never ends with the ceiling backstop", async () => {
     const { adapter } = scriptedAdapter([streamingForever]);
 
-    const events = await collect(
+    const completion = collect(
       streamWithRetry(
         adapter,
         REQUEST,
@@ -144,6 +150,9 @@ describe("streamWithRetry timeouts", () => {
       ),
     );
 
+    await vi.advanceTimersByTimeAsync(120);
+    const events = await completion;
+
     const terminal = last(events);
     expect(terminal).toMatchObject({ type: "error", retryable: true });
     expect(terminal?.type === "error" ? terminal.message : "").toContain("ceiling");
@@ -154,9 +163,12 @@ describe("streamWithRetry retry gate", () => {
   it("retries when only reasoning had streamed and succeeds on the next attempt", async () => {
     const { adapter, calls } = scriptedAdapter([reasoningOnlyThenStall, textThenEnd]);
 
-    const events = await collect(
+    const completion = collect(
       streamWithRetry(adapter, REQUEST, MODEL, RETRY, { stallMs: 80, ceilingMs: 0 }),
     );
+
+    await vi.advanceTimersByTimeAsync(85);
+    const events = await completion;
 
     expect(calls()).toBe(2);
     expect(events.some((event) => event.type === "error")).toBe(false);
@@ -167,9 +179,12 @@ describe("streamWithRetry retry gate", () => {
   it("does not retry once committed output has streamed", async () => {
     const { adapter, calls } = scriptedAdapter([textThenStall, textThenEnd]);
 
-    const events = await collect(
+    const completion = collect(
       streamWithRetry(adapter, REQUEST, MODEL, RETRY, { stallMs: 80, ceilingMs: 0 }),
     );
+
+    await vi.advanceTimersByTimeAsync(80);
+    const events = await completion;
 
     expect(calls()).toBe(1);
     const terminal = last(events);

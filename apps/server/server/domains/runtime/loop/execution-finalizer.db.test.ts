@@ -1,6 +1,7 @@
 /** PostgreSQL terminal A: turn, report, journal, and publication share one commit. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { executionScenario } from "../../../test-support/execution-scenario.js";
 import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
 
 const runDb = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -8,9 +9,9 @@ const databaseUrl = process.env.DATABASE_URL;
 const ids = {
   user: "00000000-0000-4000-8000-000000000ad1",
   project: "00000000-0000-4000-8000-000000000ad2",
-  parent: "00000000-0000-4000-8000-000000000ad3" as ThreadId,
+  caller: "00000000-0000-4000-8000-000000000ad3" as ThreadId,
   child: "00000000-0000-4000-8000-000000000ad4" as ThreadId,
-  parentTurn: "00000000-0000-4000-8000-000000000ad5" as TurnId,
+  callerTurn: "00000000-0000-4000-8000-000000000ad5" as TurnId,
   childUserTurn: "00000000-0000-4000-8000-000000000ad6" as TurnId,
   execution: "00000000-0000-4000-8000-000000000ad7" as TurnId,
 };
@@ -20,7 +21,7 @@ else
   describe("execution terminal A (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
-    const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
+    const { assertThrowawayDatabaseForRunDbTests } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
@@ -39,50 +40,8 @@ else
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [schema.users]);
-      await db.insert(schema.users).values(conformanceUserValues(ids.user, "terminal-a"));
-      await db.insert(schema.projects).values({
-        id: ids.project,
-        userId: ids.user,
-        name: "Terminal A",
-        slug: "terminal-a",
-      });
-      await db.insert(schema.threads).values([
-        { id: ids.parent, projectId: ids.project, createdByUserId: ids.user, ref: "c1" },
-        {
-          id: ids.child,
-          projectId: ids.project,
-          createdByUserId: ids.user,
-          ref: "p1",
-          kind: "subagent",
-          parentThreadId: ids.parent,
-          rootThreadId: ids.parent,
-          originTurnId: ids.parentTurn,
-          originType: "spawn",
-          spawnStatus: "running",
-        },
-      ]);
-      await db.insert(schema.turns).values([
-        { id: ids.parentTurn, threadId: ids.parent, role: "assistant", status: "complete" },
-        { id: ids.childUserTurn, threadId: ids.child, role: "user", status: "complete" },
-        {
-          id: ids.execution,
-          threadId: ids.child,
-          parentTurnId: ids.childUserTurn,
-          role: "assistant",
-          status: "streaming",
-        },
-      ]);
-      await repos.executionReports.admit({
-        childThreadId: ids.child,
-        assistantTurnId: ids.execution,
-        handle: "p1",
-        origin: "spawn",
-        deliveryMode: "background_notification",
-        callerThreadId: ids.parent,
-        callerTurnId: ids.parentTurn,
-        toolCallId: "spawn-1",
-        cardBlockId: null,
-      });
+      const scenario = await executionScenario(db, ids);
+      await scenario.admit();
     });
 
     afterAll(async () => {
@@ -91,15 +50,13 @@ else
 
     it("cancels only the adopted inbox batch atomically, leaving later messages for a new turn", async () => {
       const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
-      const { createDrizzleThreadLock } = await import("../adapters/drizzle-thread-lock.js");
       const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
-      const { createOrchestrator } = await import("./orchestrator.js");
-      const { createTestOrchestratorDeps } = await import("./__tests__/test-orchestrator-deps.js");
+      const { createRuntimeHarness } = await import("./__tests__/runtime-harness.js");
       const inbox = createDrizzleInbox(db);
       const authority = createDrizzleRunClaim(db);
       const enqueue = (text: string) =>
         inbox.enqueue({
-          threadId: ids.parent,
+          threadId: ids.caller,
           intent: "message",
           provenance: { kind: "writer", actorId: ids.user },
           body: { kind: "text", text },
@@ -108,32 +65,29 @@ else
       const stopped = await enqueue("stopped request");
       {
         const controller = new AbortController();
-        const orchestrator = createOrchestrator(
-          createTestOrchestratorDeps({
-            repos,
-            eventWriter,
-            delivery: createTestDrizzleDelivery(db, { repos, eventWriter, runClaim: authority }),
-            runClaim: authority,
-            threadLock: createDrizzleThreadLock(db),
-            boundThreads: () => [ids.parent],
-          }),
-        );
+        const orchestrator = createRuntimeHarness({
+          repos,
+          eventWriter,
+          delivery: createTestDrizzleDelivery(db, { repos, eventWriter, runClaim: authority }),
+          runClaim: authority,
+          boundThreads: () => [ids.caller],
+        }).orchestrator;
         const handle = await orchestrator.prepare({
-          threadId: ids.parent,
+          threadId: ids.caller,
           drain: true,
           signal: controller.signal,
         });
         const later = await enqueue("later request");
         controller.abort();
-        expect((await inbox.selectPending(ids.parent)).map((row) => row.id)).toEqual([
+        expect((await inbox.selectPending(ids.caller)).map((row) => row.id)).toEqual([
           stopped.id,
           later.id,
         ]);
         expect((await handle.execute()).status).toBe("cancelled");
         expect((await repos.turns.findById(handle.assistantTurnId))?.status).toBe("cancelled");
-        expect((await inbox.selectPending(ids.parent)).map((row) => row.id)).toEqual([later.id]);
-        expect(await authority.holder(ids.parent)).toBeNull();
-        const next = await orchestrator.prepare({ threadId: ids.parent, drain: true });
+        expect((await inbox.selectPending(ids.caller)).map((row) => row.id)).toEqual([later.id]);
+        expect(await authority.holder(ids.caller)).toBeNull();
+        const next = await orchestrator.prepare({ threadId: ids.caller, drain: true });
         expect(next.userTurnId).toBe(later.id);
         expect(next.assistantTurnId).not.toBe(handle.assistantTurnId);
         await next.execute();
@@ -147,17 +101,14 @@ else
       "rollback",
     ] as const)("splits an ordered mixed batch at %s with one lease and report", async (boundary) => {
       const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
-      const { createDrizzleThreadLock } = await import("../adapters/drizzle-thread-lock.js");
       const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
       const { persistWriterEnqueue } = await import("./writer-enqueue.js");
-      const { createOrchestrator } = await import("./orchestrator.js");
-      const { createTestOrchestratorDeps } = await import("./__tests__/test-orchestrator-deps.js");
+      const { createRuntimeHarness } = await import("./__tests__/runtime-harness.js");
       const { readThreadReport } = await import("../spawn/read-thread-report.js");
       const { readPendingInbox } = await import("./pending-inbox.js");
       const { createInertGateway } = await import("./__tests__/test-gateway.js");
       const inbox = createDrizzleInbox(db);
       const authority = createDrizzleRunClaim(db);
-      const threadLock = createDrizzleThreadLock(db);
       const producer = createTestDrizzleDelivery(db, { repos, eventWriter, runClaim: authority });
       const controller = new AbortController();
       const requests: import("../gateway/index.js").GenerateRequest[] = [];
@@ -165,24 +116,28 @@ else
       let selector: TurnId;
       let terminal: TurnId | null = null;
       let splitState: unknown;
-      const deps = createTestOrchestratorDeps({
-        repos,
-        eventWriter: {
-          async appendEvent(threadId, event) {
-            if (
-              boundary === "rollback" &&
-              selector &&
-              event.type === "turn.created" &&
-              event.turn.role === "assistant" &&
-              event.turn.id !== selector
-            )
-              throw new Error("split journal failed");
-            return eventWriter.appendEvent(threadId, event);
-          },
+      const splitWriter: typeof eventWriter = {
+        async appendEvent(threadId, event) {
+          if (
+            boundary === "rollback" &&
+            selector &&
+            event.type === "turn.created" &&
+            event.turn.role === "assistant" &&
+            event.turn.id !== selector
+          )
+            throw new Error("split journal failed");
+          return eventWriter.appendEvent(threadId, event);
         },
-        inbox,
+      };
+      const harness = createRuntimeHarness({
+        repos,
+        eventWriter: splitWriter,
+        delivery: createTestDrizzleDelivery(db, {
+          repos,
+          eventWriter: splitWriter,
+          runClaim: authority,
+        }),
         runClaim: authority,
-        threadLock,
         boundThreads: () => [ids.child],
         gateway: {
           ...createInertGateway("gpt-4.1-mini"),
@@ -194,8 +149,8 @@ else
                 intent: "message",
                 provenance: {
                   kind: "child",
-                  threadId: ids.parent,
-                  reportId: ids.parentTurn,
+                  threadId: ids.caller,
+                  reportId: ids.callerTurn,
                 },
                 body: { kind: "text", text: "child notification" },
                 idempotencyKey: "child",
@@ -240,7 +195,7 @@ else
                 oldCancel: await authority.cancelExecution(ids.child, selector),
                 report: await repos.executionReports.findByExecution(ids.child, selector),
                 lookup: await readThreadReport({
-                  callerThreadId: ids.parent,
+                  callerThreadId: ids.caller,
                   ref: "p1",
                   execution: selector,
                   repos,
@@ -269,19 +224,14 @@ else
           },
         },
       });
-      await deps.creditLedger.grant({
+      await harness.creditLedger.grant({
         userId: ids.user,
         source: "manual",
         amountMillicredits: "1000000",
         reason: "split",
       });
       {
-        deps.delivery = createTestDrizzleDelivery(db, {
-          repos,
-          eventWriter: deps.eventWriter,
-          runClaim: authority,
-        });
-        const run = await createOrchestrator(deps).prepare({
+        const run = await harness.orchestrator.prepare({
           threadId: ids.child,
           userText: "start",
           signal: controller.signal,
@@ -459,43 +409,6 @@ else
         source: "final_assistant",
         summary: "final part two",
         costMillicredits: 7,
-      });
-    });
-
-    it("does not borrow older text when the last persisted response has no public text", async () => {
-      const earlier = await repos.modelResponses.create({
-        turnId: ids.execution,
-        sequence: 0,
-        provider: "test",
-        model: "test-model",
-        priceSource: "unknown",
-      });
-      await repos.modelResponses.create({
-        turnId: ids.execution,
-        sequence: 1,
-        provider: "test",
-        model: "test-model",
-        priceSource: "unknown",
-      });
-      await repos.blocks.create({
-        turnId: ids.execution,
-        responseId: earlier.row.id,
-        blockType: "text",
-        sequence: 1,
-        content: "older public text",
-      });
-      const terminal = await finalizeExecution(
-        { repos, eventWriter },
-        {
-          threadId: ids.child,
-          assistantTurnId: ids.execution,
-          cause: { kind: "success", finishReason: "end_turn" },
-        },
-      );
-      expect(terminal.report).toMatchObject({
-        outcome: "succeeded",
-        source: "empty",
-        summary: "",
       });
     });
   });

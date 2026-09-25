@@ -5,20 +5,9 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { createInMemoryCreditLedger } from "../../../billing/index.js";
-import { createInMemoryProjectRepository } from "../../../projects/index.js";
-import { createInMemoryRepositories } from "../../../threads/index.js";
-import {
-  createInMemoryInbox,
-  createInMemoryRunClaim,
-  createInMemoryThreadLock,
-} from "../../adapters/in-memory/loop-ports.js";
 import type { Gateway, GenerateResult, StreamEvent } from "../../gateway/index.js";
-import { createOrchestrator } from "../orchestrator.js";
+import { runtimeScenario } from "./runtime-harness.js";
 import { gatewayStubDefaults } from "./test-gateway.js";
-import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
-
-const USER_ID = "user-1";
 
 function toolUseResult(toolName: string, toolCallId: string): GenerateResult {
   return {
@@ -33,18 +22,6 @@ function toolUseResult(toolName: string, toolCallId: string): GenerateResult {
 
 describe("single cancel exit", () => {
   it("finalizes once when a tool batch cancels, without starting another stream", async () => {
-    const projects = createInMemoryProjectRepository();
-    const repos = createInMemoryRepositories({ projects });
-    const project = await projects.create({ userId: USER_ID, title: "Cancel" });
-    const thread = await repos.threads.create({ userId: USER_ID, projectId: project.id });
-    const creditLedger = createInMemoryCreditLedger();
-    await creditLedger.grant({
-      userId: USER_ID,
-      source: "manual",
-      amountMillicredits: "1000000",
-      reason: "cancel exit",
-    });
-
     const controller = new AbortController();
     let streams = 0;
     const gateway: Gateway = {
@@ -58,33 +35,25 @@ describe("single cancel exit", () => {
       },
     };
     const rollback = vi.fn(async () => {});
-    const orchestrator = createOrchestrator(
-      createTestOrchestratorDeps({
-        boundThreads: () => [thread.id],
-        gateway,
-        repos,
-        creditLedger,
-        inbox: createInMemoryInbox(),
-        threadLock: createInMemoryThreadLock(),
-        runClaim: createInMemoryRunClaim(),
-        toolExecutor: {
-          async executeTool(call) {
-            // The writer cancels while the tool is in flight; the loop must exit
-            // through the single cancel path instead of streaming again.
-            controller.abort();
-            return { toolCallId: call.id, output: { ok: true } };
-          },
+    const { orchestrator, repos, thread } = await runtimeScenario({
+      gateway,
+      toolExecutor: {
+        async executeTool(call) {
+          // The writer cancels while the tool is in flight; the loop must exit
+          // through the single cancel path instead of streaming again.
+          controller.abort();
+          return { toolCallId: call.id, output: { ok: true } };
         },
-        responseWrites: {
-          async commitResponse() {
-            return { status: "committed", receipts: [], concurrentEdits: [] };
-          },
-          async rollbackResponse() {
-            rollback();
-          },
+      },
+      responseWrites: {
+        async commitResponse() {
+          return { status: "committed", receipts: [], concurrentEdits: [] };
         },
-      }),
-    );
+        async rollbackResponse() {
+          rollback();
+        },
+      },
+    });
 
     const handle = await orchestrator.prepare({
       threadId: thread.id,
