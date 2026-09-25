@@ -2,6 +2,12 @@
  * Drizzle TurnRepository: SQL for the turns table (idempotent create/list,
  * status updates, and model-response-derived usage rollup recomputation). The
  * projector can replay journal facts safely because rollups are aggregates, not deltas.
+ *
+ * The stored chat-activity projection (threads.last_activity_at,
+ * threads.conversational_leaf_turn_id) is not maintained here: Postgres
+ * triggers own it (see migration 0106 and
+ * domains/threads/.context/CONTEXT.md), firing on the active-leaf update
+ * below and on turn status/completion changes.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";
@@ -18,7 +24,6 @@ import type {
 } from "../../ports/repositories.js";
 import { mapTurn } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
-import { recomputeThreadChatActivitySql } from "./visible-conversation-sql.js";
 
 export async function lockThreadForTurnTransition(db: DrizzleDb, threadId: ThreadId) {
   const [thread] = await currentDrizzleDb(db)
@@ -31,25 +36,6 @@ export async function lockThreadForTurnTransition(db: DrizzleDb, threadId: Threa
     .for("update");
   if (!thread) throw new Error(`Thread not found: ${threadId}`);
   return thread;
-}
-
-/**
- * Locks a turn's thread before a write that moves the chat's activity, in the
- * same thread-first order as turn creation. The recompute then reads a
- * snapshot taken after the lock, so it cannot write a stale head.
- */
-export async function lockThreadOfTurn(db: DrizzleDb, turnId: TurnId): Promise<ThreadId> {
-  const [turn] = await currentDrizzleDb(db)
-    .select({ threadId: schema.turns.threadId })
-    .from(schema.turns)
-    .where(eq(schema.turns.id, turnId));
-  if (!turn) throw new Error(`Turn not found: ${turnId}`);
-  await lockThreadForTurnTransition(db, turn.threadId);
-  return turn.threadId;
-}
-
-export async function recomputeThreadChatActivity(db: DrizzleDb, threadId: ThreadId) {
-  await currentDrizzleDb(db).execute(recomputeThreadChatActivitySql(sql`${threadId}::uuid`));
 }
 
 export async function writeTurnRollupRecompute(db: DrizzleDb, id: TurnId) {
@@ -166,7 +152,6 @@ export function createDrizzleTurnRepository(
             updatedAt: now,
           })
           .where(eq(schema.threads.id, row.threadId));
-        await recomputeThreadChatActivity(db, row.threadId);
         const [thread] = await activeDb
           .select({
             projectId: schema.threads.projectId,
@@ -234,14 +219,12 @@ export function createDrizzleTurnRepository(
         patch.completedAt = input.completedAt === null ? null : toDate(input.completedAt);
       }
       if (input.error !== undefined) patch.error = input.error;
-      const threadId = await lockThreadOfTurn(db, id);
       const [row] = await currentDrizzleDb(db)
         .update(schema.turns)
         .set(patch)
         .where(eq(schema.turns.id, id))
         .returning();
       if (!row) throw new Error(`Turn not found: ${id}`);
-      await recomputeThreadChatActivity(db, threadId);
       return mapTurn(row);
     },
     async recomputeRollups(id) {

@@ -743,6 +743,13 @@
       "when": 1790307287837,
       "tag": "0105_thread_chat_activity",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1790318917086,
+      "tag": "0106_thread_chat_activity_trigger",
+      "breakpoints": true
     }
   ]
 }
