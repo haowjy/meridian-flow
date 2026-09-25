@@ -39,7 +39,7 @@ edit server variables.S3_ACCESS_KEY.value '${{uploads.ACCESS_KEY_ID}}' # Verify 
 edit server variables.S3_SECRET_KEY.value '${{uploads.SECRET_ACCESS_KEY}}' # Verify the preset key spelling in Railway Credentials UI on first run.
 service app 3000 /login "$environment"
 edit app variables.MERIDIAN_API_ORIGIN.value http://server.railway.internal:3000
-service www 3002 / "$environment"
+service www 3000 / "$environment"
 service ingress 8080 /_ingress/health "$environment"
 edit ingress variables.APP_UPSTREAM.value app.railway.internal:3000
 edit ingress variables.SERVER_UPSTREAM.value server.railway.internal:3000
