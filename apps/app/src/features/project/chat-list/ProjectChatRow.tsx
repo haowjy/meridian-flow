@@ -125,7 +125,9 @@ export function ProjectChatRow({
               if (!favoriteSuppressed) onFavorite(item, favoriteValue);
             }}
             className={cn(
-              "pointer-events-auto [@media(hover:none)]:size-11 [@media(pointer:coarse)]:size-11",
+              // Touch gets a 44px target without widening the Agent lane: the
+              // hit area extends past the 32px button instead of growing it.
+              "pointer-events-auto relative [@media(hover:none)]:after:absolute [@media(hover:none)]:after:-inset-1.5 [@media(hover:none)]:after:content-[''] [@media(pointer:coarse)]:after:absolute [@media(pointer:coarse)]:after:-inset-1.5 [@media(pointer:coarse)]:after:content-['']",
               item.isFavorite
                 ? "text-primary hover:text-primary"
                 : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100",
