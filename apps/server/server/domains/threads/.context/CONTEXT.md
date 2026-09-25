@@ -132,6 +132,29 @@ instead of the N:1 `threads.workId` column.
   active threads for a document so drain-time notice fan-out and retention use
   the same definition.
 
+## Mutation lock order
+
+The shared `server/shared/thread-work-lock.ts` owns **thread row (`NO KEY
+UPDATE`) → participating Work rows (sorted by id)**. `lockThreadAndWorks`
+stabilizes the primary membership under the thread lock before acquiring the
+primary and any target/fallback Works together. Membership and restore use it;
+turn creation, thread-peer creation, publication, trash, runtime and admission
+take the same thread lock before any later Work write or FK check. These
+single-Work paths use the write's own lock rather than eagerly locking Work
+rows on read-only paths. No Work-first snapshot or deadlock retry is needed.
+Restore includes No Work in the initial lock set.
+Spawn, handoff and fork lock their existing source thread before creating the
+new thread and acquiring its Work membership, because their source journal is
+written in the same transaction. A new, uncommitted thread cannot contend with
+another transaction.
+
+Work-only mutations may enqueue immutable inbox markers while holding Work
+rows: their thread FK `KEY SHARE` does not conflict with `NO KEY UPDATE`.
+They must not acquire a thread mutation/advisory lock or append its journal in
+that transaction. Runtime delivery's advisory lock precedes its thread row
+lock; the long-lived run claim is separate and acquired outside these DB
+transactions. See the [runtime contract](../../runtime/.context/CONTEXT.md).
+
 ## Contracts (ports)
 
 | Port | Surface |
@@ -144,9 +167,9 @@ instead of the N:1 `threads.workId` column.
 | `BlockRepository` | `create / findById / listByTurn / listByThread / updatePruned` |
 | `ModelResponseRepository` | `create / findById / listByTurn / listByThread` |
 | `ThreadRepositories` | aggregate of the repositories + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
-| `ThreadWorksRepository` | Adds organizational memberships and reads the primary. Its Work-before-thread primary rebind revalidates thread lifecycle under the same row lock, then demotes the old membership and promotes/upserts the target WorkId, retaining association history while preserving exactly one primary. |
+| `ThreadWorksRepository` | Adds organizational memberships and reads the primary. Its thread-before-Work primary rebind revalidates thread lifecycle under the same row lock, then demotes the old membership and promotes/upserts the target WorkId, retaining association history while preserving exactly one primary. |
 | `rebindThreadWork` | Transaction-composable mutation above `rebindPrimary`; binding, receipt, typed lifecycle errors, and targeted durable inbox notice have one policy owner. Actor adapters own the business transaction. |
-| `restoreOwnedThreadFromTrash` | Authenticated restore boundary; revalidates historical primary Work then thread under Work-before-thread locks. It restores the exact available Work, or rebinds an unavailable historical primary to No Work. |
+| `restoreOwnedThreadFromTrash` | Authenticated restore boundary; revalidates the thread then historical primary Work under thread-before-Work locks. It restores the exact available Work, or rebinds an unavailable historical primary to No Work. |
 | `EventJournalWriter` | `appendEvent(threadId, event) -> bigint seq` |
 | `EventJournalReader` | `readAfter / headSeq / listByThread / listByType / listSince / listByTimeRange` |
 
@@ -281,11 +304,10 @@ contract shapes.
   client-minted thread `id`, not `ref`.
   Create-or-get matches ownership only. A same-user same-project retry of a
   deleted thread conflicts; persist must not resurrect the tombstone.
-- **Work membership mutation is serialized.** Primary additions and rebinds lock
-  the current and target Works in canonical id order before the thread row;
-  non-primary additions lock their target Work before the thread. A changed
-  primary snapshot retries the whole transaction. This prevents deletion races,
-  opposite lock orders, and concurrent moves validating stale primary state.
+- **Work membership mutation is serialized.** Additions and rebinds follow the
+  mutation lock order above: the primary is read under the
+  thread lock, then current and target Works lock together. This prevents
+  deletion races and concurrent moves validating stale primary state.
 - Public create accepts only `kind: "primary"` with `spawnDepth: 0`.
   `normalizeThreadCreate` rejects all spawn/fork lifecycle fields.
   Subagent rows are created only through `SubagentThreadFactory`.

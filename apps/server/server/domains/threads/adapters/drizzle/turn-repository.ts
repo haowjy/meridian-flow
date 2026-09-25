@@ -8,6 +8,7 @@ import type { Turn } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
+import { lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
 import type { WorkProjectionMutation } from "../../../projects/adapters/work-projection-mutation.js";
 import { toDate } from "../../domain/contract-serialization.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
@@ -20,15 +21,7 @@ import { mapTurn } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
 
 export async function lockThreadForTurnTransition(db: DrizzleDb, threadId: ThreadId) {
-  // Keep FK KEY SHARE compatible: Work mutations insert inbox markers while holding Work rows.
-  const [thread] = await currentDrizzleDb(db)
-    .select({
-      id: schema.threads.id,
-      activeLeafTurnId: schema.threads.activeLeafTurnId,
-    })
-    .from(schema.threads)
-    .where(eq(schema.threads.id, threadId))
-    .for("no key update");
+  const thread = await lockThreadForMutation(db, threadId);
   if (!thread) throw new Error(`Thread not found: ${threadId}`);
   return thread;
 }

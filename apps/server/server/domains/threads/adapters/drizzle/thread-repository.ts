@@ -15,6 +15,7 @@ import type {
 import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, getTableColumns, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
+import { lockThreadAndWorks, lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
@@ -288,14 +289,11 @@ export function createDrizzleThreadRepository(
         .limit(1);
       return row?.projectId ?? null;
     },
-    async lockByIdIncludingDeleted(id: ThreadId) {
+    async lockByIdIncludingDeleted(id: ThreadId, additionalWorkIds) {
       const activeDb = currentDrizzleDb(db);
-      const [locked] = await activeDb
-        .select({ id: schema.threads.id })
-        .from(schema.threads)
-        .where(eq(schema.threads.id, id))
-        .for("update")
-        .limit(1);
+      const locked = additionalWorkIds
+        ? await lockThreadAndWorks(db, id, additionalWorkIds)
+        : await lockThreadForMutation(db, id);
       if (!locked) return null;
       const [row] = await activeDb
         .select(threadColumns)

@@ -69,7 +69,10 @@ export interface ChildRunCoordinatorDeps {
   /** Run lifecycle: claim, registry, stream, capture, terminal persistence. */
   driver: ChildRunDriver;
   repos: {
-    threads: Pick<ThreadRepository, "updateSpawnLifecycle" | "findLiveByProjectRef" | "findById">;
+    threads: Pick<
+      ThreadRepository,
+      "updateSpawnLifecycle" | "findLiveByProjectRef" | "findById" | "lockByIdIncludingDeleted"
+    >;
     subagentThreads: SubagentThreadFactory;
     transaction: ThreadRepositories["transaction"];
   };
@@ -133,6 +136,8 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     const { revision, configuration, resolvedSlug, defaultTitle, invocationOverlay } = resolution;
 
     const child = await deps.repos.transaction(async () => {
+      // Parent journal writes must precede child membership's Work locks in lock order.
+      await deps.repos.threads.lockByIdIncludingDeleted(input.parentThread.id as ThreadId);
       const created = await createBoundConversation({
         transaction: deps.repos.transaction,
         agentRevisions: deps.agentRevisions,
