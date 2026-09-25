@@ -57,9 +57,7 @@ export function createDrizzleInbox(db: DrizzleDatabase): Inbox {
           ...(draft.id !== undefined ? { id: draft.id } : {}),
           threadId: draft.threadId,
           intent: draft.intent,
-          provenanceKind: draft.provenance.kind,
           provenance: draft.provenance,
-          bodyKind: draft.body.kind,
           body: draft.body,
           idempotencyKey: draft.idempotencyKey,
         })

@@ -202,9 +202,7 @@ export const threadInboxMessages = pgTable(
       .references(() => threads.id, { onDelete: "cascade" }),
     seq: bigserial("seq", { mode: "number" }).notNull(),
     intent: text("intent").notNull(),
-    provenanceKind: text("provenance_kind").notNull(),
     provenance: jsonb("provenance").$type<JsonValue>().notNull(),
-    bodyKind: text("body_kind").notNull(),
     body: jsonb("body").$type<JsonValue>().notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
     enqueuedAt: timestamp("enqueued_at", { withTimezone: true }).notNull().defaultNow(),
@@ -218,19 +216,11 @@ export const threadInboxMessages = pgTable(
     check("thread_inbox_messages_intent_valid", sql`${table.intent} IN ('message','notice')`),
     check(
       "thread_inbox_messages_provenance_valid",
-      sql`${table.provenanceKind} IN ('writer','agent','child','system')`,
-    ),
-    check(
-      "thread_inbox_messages_provenance_kind_matches",
-      sql`${table.provenance}->>'kind' = ${table.provenanceKind}`,
+      sql`(${table.provenance}->>'kind' IN ('writer','agent','child','system')) IS TRUE`,
     ),
     check(
       "thread_inbox_messages_body_valid",
-      sql`${table.bodyKind} IN ('text','report','context')`,
-    ),
-    check(
-      "thread_inbox_messages_body_kind_matches",
-      sql`${table.body}->>'kind' = ${table.bodyKind}`,
+      sql`(${table.body}->>'kind' IN ('text','report','context')) IS TRUE`,
     ),
   ],
 );
@@ -450,7 +440,7 @@ export const threadExecutionReports = pgTable(
       name: "thread_execution_reports_child_turn_fk",
     }).onDelete("cascade"),
     index("thread_execution_reports_pending")
-      .on(table.createdAt)
+      .on(table.assistantTurnId)
       .where(sql`${table.publication} = 'pending'`),
     check(
       "thread_execution_reports_origin_valid",

@@ -9,6 +9,8 @@
 
 ### Changed
 
+- Store inbox kind tags once and index pending report publication by its recovery cursor.
+
 - Remove the unused alternate response-accounting API; journal projection remains the accounting owner.
 
 - Share immutable child-report state rules across storage adapters; decode saved captures at storage ingress.

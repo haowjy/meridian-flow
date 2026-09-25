@@ -38,6 +38,12 @@ never a bare `Date` in a template. Canonical patterns:
   [`context-fs/drizzle-store.ts`](../../../apps/server/server/domains/context/adapters/context-fs/drizzle-store.ts)
   (`documentRevisionWhere` + the `updatedAt::text` selects).
 
+### Thread inbox kinds
+
+Inbox provenance and body kinds live only in their JSON values. CHECK constraints
+use `IS TRUE` so absent, JSON-null and invalid kinds are rejected rather than
+passing SQL CHECK's three-valued logic.
+
 ### Thread-domain execution reports
 
 `thread_execution_reports` stores one immutable terminal result per child

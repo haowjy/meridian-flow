@@ -91,6 +91,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
     }
 
+    it("constrains inbox JSON kinds without duplicate discriminator columns", async () => {
+      const valid = {
+        threadId: THREAD_A,
+        intent: "notice",
+        provenance: { kind: "system", source: "schema-probe" },
+        body: { kind: "text", text: "valid" },
+        idempotencyKey: "schema-valid",
+      };
+      await db.insert(schema.threadInboxMessages).values(valid);
+      for (const field of ["provenance", "body"] as const) {
+        for (const invalid of [{}, { kind: null }, { kind: "unknown" }, null, []]) {
+          await expect(
+            db.insert(schema.threadInboxMessages).values({
+              ...valid,
+              idempotencyKey: crypto.randomUUID(),
+              [field]: invalid,
+            }),
+          ).rejects.toThrow();
+        }
+      }
+    });
+
     it("claims pending messages in per-thread enqueue order", async () => {
       const inbox = createDrizzleInbox(db);
       await inbox.enqueue(message("a1", THREAD_A));
