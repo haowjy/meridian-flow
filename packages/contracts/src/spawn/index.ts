@@ -34,6 +34,7 @@ export type ExecutionReportCorrelation = {
 };
 
 export type SavedExecutionReport = {
+  terminalAssistantTurnId: TurnId | null;
   childThreadId: ThreadId;
   assistantTurnId: TurnId;
   handle: string;

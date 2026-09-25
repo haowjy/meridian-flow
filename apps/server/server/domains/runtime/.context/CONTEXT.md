@@ -31,17 +31,17 @@ Canonical gateway types live in `gateway/domain/types.ts`.
 
 ## loop — orchestrator + turn runner
 
-One turn = one user message through potentially many LLM-call + tool-execution
-iterations. The loop is intentionally decomposed; `orchestrator.ts` owns the
+One run = one lease through potentially many LLM-call + tool-execution
+iterations and assistant turns. The loop is intentionally decomposed; `orchestrator.ts` owns the
 skeleton and delegates the moving parts.
 
 | File | Role |
 |---|---|
-| `orchestrator.ts` | `createOrchestrator` / `runTurn` skeleton, user/assistant turn creation, iteration control, final yield of events. Before each model request it calls `drainInbox` and merges the batch into the request (`message`s as trailing user messages, `notice`s as request-only attachments); the batch is acked inside `persistModelResponse`'s transaction. Cancellation retires the assistant's durable adopted batch in the terminal transaction (including generator-failure fallback), never the final claim's unadopted follow-ups. Every terminal route — cancel, gateway error, no-result, error finish, budget, max-iteration, return_result, clean completion — funnels through one `exitRun` helper that runs its terminal write through `closeRun` under the lock, so the final claim is uniform (`exitRun` throws a private `RunExit` control-flow signal; the loop boundary is the one place that decides continue-vs-stop). `continueOnPending` is true only for normal completion and the `end_turn`/steer exits (a pending `message` continues the same run, so a mid-run steer stays on the same assistant turn) and false for cancel, hard error, budget, and max-iteration (terminal write, then release). Cancel's pending `message` therefore starts the **next turn** as a distinct drain run; the run loop observes the durable lease cancel flag at each iteration boundary (cross-process) in addition to the local abort. `RunTurnInput` is a union: a writer start mints `userText`'s user turn in setup (used by child prompts; the writer admission persists its own user turn at enqueue and wakes a drain-only start); a **drain-only start** (`drain: true`, a wake) instead claims the pending inbox in its setup transaction, persists each fresh `message` as the run's first user turn, then mints the assistant container after it (`leaf → message(user) → assistant(streaming)`), so the model sees exactly the drained batch. A writer turn already persisted at enqueue is in `priorTurns`, so the drain skips it and chains the assistant container from it; the drain reads that turn's persisted activated-skill metadata and inlines each skill body onto the writer message (request-only, never persisted). A drain start with no durable pending `message` throws `NoPendingWakeError` and mints no assistant turn; a preceding work-context `beforeTurn` write, if any, is durable history the next run reads (the invariant is no phantom assistant, not no write). |
-| `inbox-context.ts` | The drain seam. `renderInboxBatch` appends a text `message` as a user-role message at the request tail, renders a `child`-provenance text `message` as writer-hidden system history containing only an exact `thread_report` call, and converts a `notice` into a request-only `Notice`; `planMessageTurns` batches a claimed set into durable turns and `messageTurnFor` builds one `message`'s turn + block (inbox message id reused as turn/block id, `createdAt` from `enqueuedAt`): a user turn + text block for text, a system turn + text block for a child-provenance notification. Shared by `persistInboxMessages` (the loop's mid-run batch) and the orchestrator's drain-only start. `drainInbox` is the loop's only claim: claim, drop redelivered `message`s already in the known-turn set, render, persist, and combine durable notices with request-only inbox notices. A `message` whose turn id already exists in the repository (a writer send persisted at enqueue, claimed mid-run where the run's accumulator predates it) is skipped without a second append, its persisted blocks render into the current request (never the plain body, so images, reference reads, and writer-activated skill bodies survive), and its turn/blocks join the accumulator so later iterations keep seeing it. Adoption is also where a mid-run writer turn's missing text-reference reads are loaded and persisted (`prepareAdoptedTurn`), since iteration 1's read pass covered only the original run's user turn. A `message` is history, not transient context, so later iterations of the same run keep seeing it. Producers are not special-cased; intent and body decide the rendering. |
+| `orchestrator.ts` | One admitted run may span several assistant turns. At a safe boundary, adopting directed messages completes A, appends/adopts message turns, creates B, and rebinds the held lease in one thread-locked transaction. Requests use A → messages → B graph order. Notices alone never split. Response+ack clears the lease receipt; cancel retires adopted IDs only, leaving later messages for a new run. The locked final claim uses the same split transition, not a second continuation path. Report admission happens only at run setup, and terminal finalization only at run exit. |
+| `inbox-context.ts` | The drain seam. `renderInboxBatch` appends a text `message` as a user-role message at the request tail, renders a `child`-provenance text `message` as writer-hidden system history containing only an exact `thread_report` call, and converts a `notice` into a request-only `Notice`; `planMessageTurns` batches a claimed set into durable turns and `messageTurnFor` builds one `message`'s turn + block (inbox message id reused as turn/block id, `createdAt` from `enqueuedAt`): a user turn + text block for text, a system turn + text block for a child-provenance notification. Shared by `persistInboxMessages` (the loop's mid-run batch) and the orchestrator's drain-only start. `drainInbox` materializes the caller’s locked selection: drop redelivered `message`s already in the known-turn set, render, persist, and combine durable notices with request-only inbox notices. A `message` whose turn id already exists in the repository (a writer send persisted at enqueue, claimed mid-run where the run's accumulator predates it) is skipped without a second append, its persisted blocks render into the current request (never the plain body, so images, reference reads, and writer-activated skill bodies survive), and its turn/blocks join the accumulator so later iterations keep seeing it. Adoption is also where a mid-run writer turn's missing text-reference reads are loaded and persisted (`prepareAdoptedTurn`), since iteration 1's read pass covered only the original run's user turn. A `message` is history, not transient context, so later iterations of the same run keep seeing it. Producers are not special-cased; intent and body decide the rendering. |
 | `threaded-inbox.ts` | The producer-facing enqueue. `createThreadedInbox` holds `ThreadLock` across insertion and best-effort wake scheduling. Its scoped producer lets report publication B hold the parent lock once across the card/event/inbox/marker transaction without reacquiring it. The drain and `closeRun` keep the raw `Inbox`. |
 | `run-starter.ts` / `sweep-wakes.ts` | The wake actuation seam. `createRunStarter` maps `RunStarter.start` to the turn runner's `startDrain`, handling `TurnStartConflictError` quietly and reporting unexpected failures once through EventSink because a wake is best-effort. `sweepWakes` is the durable recovery: it keyset-pages pending threads in stable thread-ID order, batch-reads live leases, and starts eligible threads with bounded concurrency. Its caller retains the returned cursor across sweeps; an empty suffix wraps to the first page. One candidate’s failure is reported without stranding the rest. `app.ts` runs the sweep on startup and on `WAKE_SWEEP_INTERVAL_MS` (default 30s). The `enqueue` wake is the latency path; the sweep is the guarantee. |
-| `thread-lock.ts` / `close-run.ts` | The per-thread serialization lock (`ThreadLock`, `threadLockKey`) shared by the producer `ThreadedInbox` and the run's final claim, and `closeRun`: under that lock, claim the inbox once more; with `continueOnPending` a pending batch returns `continue` before any terminal work, otherwise the terminal completion runs **and then** the lease is released. The lease-row deletion joins the terminal transaction, while the physical session claim unlocks only after its outer commit. This keeps a `message` from starting a second run while the terminal turn is still persisting. `release` is idempotent and guarded, so the run owner's `finally` retry never frees a newer run's lock. Drizzle adapter `adapters/drizzle-thread-lock.ts` uses a `pg_advisory_xact_lock` on `threadLockKey`; the in-memory fake uses a promise-chain mutex. |
+| `thread-lock.ts` / `close-run.ts` | Producer enqueue and final claim share the per-thread transaction lock. A pending directed message splits and continues under the same lease; otherwise terminal persistence and lease deletion commit together before physical session unlock. Notices alone do not prolong a run. The owner’s final release is the guarded failure backstop. |
 | `block-helpers.ts` | Content block conversion and local accumulator helpers. |
 | `turn-accounting.ts` | Credit ledger checks/debits and cumulative usage events. |
 | `interrupt-session.ts` | Same-turn interrupt suspend/resume mechanics and component-block updates. |
@@ -57,7 +57,7 @@ skeleton and delegates the moving parts.
 
 | `system-instructions/` | Model-facing prompt assets independent of any agent body. `document-dialect.ts` owns Meridian document language and its codec-backed spelling contract; `runtime-uris.ts` owns context namespace guidance. Tool descriptions continue to own mechanics. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
-| `execution-finalizer.ts` | One terminal transaction projects the assistant turn event and immutable admitted child report. For any terminal cause without an accepted capture, it selects only ordered public text blocks linked to the final persisted model response of that assistant turn; if no response committed, it may retain same-turn durable public text without a response link. An empty final response stays empty, and per-execution cost uses persisted response accounting. An accepted capture's explicit `payload: null` is present JSON null; only an absent capture field stays absent. The child final-drain lock owns the outer transaction and lease deletion; generator failures use the same finalizer. See the [report adapter contract](../../threads/.context/CONTEXT.md). |
+| `execution-finalizer.ts` | Terminal transaction projects the current assistant event and finalizes the one admitted report found on its ancestor chain. The selector stays the first assistant; `terminalAssistantTurnId` records the final assistant. Fallback text is from that terminal turn’s final persisted response; cost sums every assistant response from selector to terminal. Run-scoped capture keeps the existing partial-outcome policy. Intermediate splits never publish a report. |
 | `persistence.ts` | Transactional persist/project-then-emit helper. **Ordering**: `projectReadModelEvent` runs before `eventWriter.appendEvent` so the `event_journal.turn_id` FK can reference the turn row created by the projector. Both happen in the same repo transaction. |
 | `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata the serving drain reads back, and appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status: a mid-run send yields the runner's live assistant turn id (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly), a fresh run yields null and the client learns the turn from `RUN_STARTED`. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission. `admission-turn-starter.ts` and `TurnRunner.startTurn` are gone. |
 | `reference-context.ts` | Before the first model call, loads admitted current-turn text references through the host-wired shared agent-edit read operation; a mid-run adopted writer turn's unread references load at adoption. Reads run outside admission/persistence transactions; results are persisted server-side at `reference.read.result` before gateway submission. Duplicate `(documentId, uri)` identities read once per turn; replay reuses the frozen result, while a later mention reads afresh. Images retain their separate projection, and client admission rejects `read` payloads. |
@@ -233,11 +233,11 @@ Step 2 exposes `thread_report({ ref, execution })` as an ordinary advertised
 tool. It resolves one saved assistant-turn report through the threads
 repository and applies live caller/project/lineage authorization in one
 root repeatable-read snapshot. The selector uses the canonical request-ID grammar;
-`not_ready` requires the requested assistant turn to be bound to the live run
-lease. An admitted but unbound or older nonterminal run is `unavailable`. `ChildDriveInput.reportCorrelation` carries only the
+`not_ready` requires the requested execution to own the assistant currently
+bound to the live run lease (resolved through graph ancestry). An admitted but unbound or older nonterminal run is `unavailable`. `ChildDriveInput.reportCorrelation` carries only the
 caller/turn/tool/card and origin/delivery metadata; the actual child
 `assistantTurnId` is assigned only after turn admission. The runtime admits
-each child assistant turn, finalizes its saved report with the terminal turn,
+each child run once, finalizes its saved report with the terminal assistant turn,
 and publishes a parent card/notification from that durable row. Generic
 `ThreadPendingInbox` projects every provenance; the writer-only tray selector
 must filter `provenance.kind === "writer"` on the client.
@@ -304,34 +304,17 @@ facet.
   exchange that caused them and retain that causal position on later
   iterations. This keeps the already-sent request prefix stable without
   changing the frozen system prompt or persisting notices into the turn graph.
-- **Inbox drain is batch-atomic and the exit is dead-check-atomic** — before every
-  request the loop claims the whole pending batch in one `claimPending` and,
-  only for a nonempty claim, records those exact ids as
-  `assistant.metadata.inboxConsumption` while the live
-  lease is bound to that assistant. The generic `ThreadPendingInbox` projection
-  joins unacknowledged inbox rows to the live lease and bound assistant metadata
-  in one statement: no/unbound lease is `awaiting_run`, an adopted id is
-  `consuming`, and an excluded id behind an initialized live assistant is
-  `waiting`. An empty drain does not replace existing assistant metadata, so
-  acknowledged ids may remain there harmlessly because the projection
-  intersects them with unacknowledged rows. Only writer `waiting` entries
-  appear in the composer tray; accepted `awaiting_run` writer turns show inline
-  “Waiting for response”. Adoption,
-  acknowledgement, and release publish the same classified full-replace view
-  under the per-thread inbox lock. The loop persists
-  each `message` as a user-role turn at the tail (its turn and block ids are the
-  durable inbox message ids, so redelivery after a crash between the `message` append
-  and the ack reuses the rows instead of duplicating), renders `message`s as trailing
-  user messages and `notice`s as request-only attachments, and carries the
-  batch ids into `persistModelResponse`, which acks them in the same transaction
-  that persists the model response (a crash redelivers; the idempotency key
-  collapses the duplicate). At the terminal no-tool-call branch, `closeRun` takes
-  the same per-thread lock `enqueue` uses, claims once more, and—only on an empty
-  batch—completes the terminal turn and then releases the lease, all inside the
-  lock, so no `message` can start a second run while the terminal turn is still
-  persisting; a pending batch continues the run into the next iteration. The run
-  owner's `finally` release remains the idempotent safety net and still flushes
-  the legacy transports.
+- **Inbox adoption is lease-owned and transactional.** The current batch's exact
+  IDs live in `thread_run_leases.adopted_message_ids`, never turn metadata.
+  Binding a new assistant and recording its receipt commit with the graph split.
+  Response persistence, inbox acknowledgement, and receipt clearing share one
+  transaction. Cancellation acknowledges the receipt, not a later pending claim.
+  The joined projection exposes `waiting` for an unadopted row behind a live
+  bound run and `awaiting_run` for adopted rows or no bound live run.
+- **Writer enqueue preserves immutable graph order.** Before persisting a writer
+  turn, materialize any older queued directed messages under the same inbox lock.
+  Adoption can then reuse those durable IDs without reparenting history. Rich
+  reference reads and activated skill bodies are resolved at adoption.
 - **Model response lifecycle** — `persistModelResponse` mints the response id
   used by tool handlers. After all tool results for that response are persisted,
   the orchestrator commits response-scoped agent-edit writes. Staged tool results

@@ -39,6 +39,7 @@ describe("writer enqueue through the drain", () => {
   it("drains the pre-persisted turn instead of re-persisting it", async () => {
     const rig = await RuntimeTestRig.create({ gateway: createInertGateway("stub-model") });
     const producer = createWriterTurnProducer({
+      inbox: rig.inbox,
       persistence: { repos: rig.repos, eventWriter: rig.hub },
       hub: rig.hub,
       runner: rig.runner,

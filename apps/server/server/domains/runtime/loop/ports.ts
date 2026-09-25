@@ -103,8 +103,9 @@ export interface RunAuthority {
    * and its report admission are projected.
    */
   bindTurn(lease: Lease, turnId: TurnId, messageIds: readonly string[]): Promise<void>;
-  /** Replace the exact adopted batch on the live lease's bound assistant. */
-  setInboxConsumption(lease: Lease, messageIds: readonly string[]): Promise<boolean>;
+  /** Replace the exact adopted batch on the live lease. */
+  setAdoptedMessageIds(lease: Lease, messageIds: readonly string[]): Promise<boolean>;
+  readAdoptedMessageIds(lease: Lease): Promise<string[]>;
   read(threadId: ThreadId): Promise<ThreadStatus>;
   /**
    * Batch liveness read for a page of threads, one lease query. Only threads

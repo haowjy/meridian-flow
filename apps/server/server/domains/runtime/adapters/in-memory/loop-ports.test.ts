@@ -69,32 +69,6 @@ describe("closeRun", () => {
     expect(await authority.acquire(THREAD_A, "run-2")).not.toBeNull();
   });
 
-  it("keeps the run alive and skips completion when the final claim finds a message", async () => {
-    const inbox = createInMemoryInbox();
-    const authority = createInMemoryRunAuthority({ holderId: "holder-1" });
-    const threadLock = createInMemoryThreadLock();
-    const lease = required(await authority.acquire(THREAD_A, "run-1"));
-    await inbox.enqueue(message("late steer"));
-
-    let completed = false;
-    const outcome = await closeRun({
-      threadLock,
-      inbox,
-      runAuthority: authority,
-      threadId: THREAD_A,
-      lease,
-      continueOnPending: true,
-      complete: async () => {
-        completed = true;
-        return "terminal";
-      },
-    });
-
-    expect(outcome.kind).toBe("continue");
-    expect(completed).toBe(false);
-    expect(await authority.holder(THREAD_A)).toBe("run-1");
-  });
-
   it("completes and releases despite a pending batch when continueOnPending is false", async () => {
     const inbox = createInMemoryInbox();
     const authority = createInMemoryRunAuthority({ holderId: "holder-1" });

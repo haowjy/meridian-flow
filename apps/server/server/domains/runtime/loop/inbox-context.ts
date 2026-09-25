@@ -9,8 +9,8 @@
  * block id. The inbox collapses `(threadId, idempotencyKey)` to one row, so a
  * redelivered message reuses the same id and the append is idempotent: turn
  * creation returns the existing row and the block projects through an id-keyed
- * upsert. `drainInbox` is the only consumer of the claim; the loop deals in
- * request messages, notices, and persisted events, not inbox rows.
+ * upsert. The loop selects the batch under its thread lock and owns the
+ * assistant split and lease receipt around this message materialization.
  *
  * A message whose turn is already durable (a writer send persisted at enqueue,
  * then claimed mid-run) is adopted, not re-persisted. Adoption renders the
@@ -28,7 +28,7 @@ import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import { attachSkillBodiesToLatestUserMessage, userTurnContentParts } from "./context-builder.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
-import type { Inbox, InboxMessage } from "./ports.js";
+import type { InboxMessage } from "./ports.js";
 
 /** A request-only skill body inlined onto the activating writer message. */
 export interface ActivatedSkillBody {
@@ -59,7 +59,7 @@ export interface InboxDrain {
 }
 
 /**
- * Claims the thread's pending inbox once and turns it into model-request
+ * Turns the caller's locked pending batch into model-request
  * context: `message` entries append as user messages and persist as user turns,
  * `notice` entries become request-only notices. A `message` already in
  * `knownTurnIds` was persisted by a crashed run and redelivered, so it is not
@@ -68,7 +68,7 @@ export interface InboxDrain {
  */
 export async function drainInbox(input: {
   persistence: PersistenceDeps;
-  inbox: Inbox;
+  batch: InboxMessage[];
   notices: NoticePort;
   threadId: ThreadId;
   messages: readonly Message[];
@@ -82,8 +82,6 @@ export async function drainInbox(input: {
    * iteration, so adoption is where its reads land.
    */
   prepareAdoptedTurn?: (turn: Turn, blocks: Block[]) => Promise<AdoptedTurnPreparation>;
-  /** Records this exact selection before any external reference/skill preparation. */
-  adoptInboxBatch?: (batch: readonly InboxMessage[]) => Promise<void>;
   /**
    * Resolves the request-only skill bodies a writer turn activated, read back
    * off its persisted metadata. Applied to the adopted message the turn renders,
@@ -91,8 +89,7 @@ export async function drainInbox(input: {
    */
   loadActivatedSkillBodies?: (turn: Turn) => Promise<readonly ActivatedSkillBody[]>;
 }): Promise<InboxDrain> {
-  const batch = await input.inbox.claimPending(input.threadId);
-  if (batch.length > 0) await input.adoptInboxBatch?.(batch);
+  const batch = input.batch;
   const renderable: InboxMessage[] = [];
   const fresh: InboxMessage[] = [];
   const adoptedTurns: Turn[] = [];

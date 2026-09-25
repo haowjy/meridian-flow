@@ -30,14 +30,33 @@ export function createOrphanReportRepair(deps: {
           childThreadId,
           assistantTurnId,
         );
-        const turn = await deps.repos.turns.findById(assistantTurnId);
-        if (!report || report.outcome !== null || !turn || isTerminalTurnStatus(turn.status))
+        const turns = await deps.repos.turns.listByThread(childThreadId);
+        let turn = turns.find((candidate) => candidate.id === assistantTurnId);
+        let leaf = turn;
+        while (leaf) {
+          const next = turns.find((candidate) => candidate.parentTurnId === leaf?.id);
+          if (!next) break;
+          if (
+            next.role === "assistant" &&
+            (await deps.repos.executionReports.findByExecution(childThreadId, next.id))
+          )
+            break;
+          leaf = next;
+          if (next.role === "assistant") turn = next;
+        }
+        if (
+          !report ||
+          report.outcome !== null ||
+          !turn ||
+          turn.role !== "assistant" ||
+          isTerminalTurnStatus(turn.status)
+        )
           return;
         await finalizeExecution(
           { repos: deps.repos, eventWriter: deps.eventWriter },
           {
             threadId: childThreadId,
-            assistantTurnId,
+            assistantTurnId: turn.id,
             cause: {
               kind: "failed",
               reason: "orphaned",

@@ -159,6 +159,227 @@ else
       }
     });
 
+    it.each([
+      "finish",
+      "tool",
+      "cancel",
+      "rollback",
+    ] as const)("splits an ordered mixed batch at %s with one lease and report", async (boundary) => {
+      const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
+      const { createDrizzleThreadLock } = await import("../adapters/drizzle-thread-lock.js");
+      const { createDrizzleRunAuthority } = await import(
+        "../adapters/drizzle-thread-run-ownership.js"
+      );
+      const { createThreadedInbox } = await import("./threaded-inbox.js");
+      const { persistWriterEnqueue } = await import("./writer-enqueue.js");
+      const { createOrchestrator } = await import("./orchestrator.js");
+      const { createTestOrchestratorDeps } = await import("./__tests__/test-orchestrator-deps.js");
+      const { readThreadReport } = await import("../spawn/read-thread-report.js");
+      const { readPendingInbox } = await import("./pending-inbox.js");
+      const { createInertGateway } = await import("./__tests__/test-gateway.js");
+      const inbox = createDrizzleInbox(db);
+      const authority = createDrizzleRunAuthority(db);
+      const threadLock = createDrizzleThreadLock(db);
+      const producer = createThreadedInbox({
+        inbox,
+        threadLock,
+        runStarter: { async start() {} },
+        schedulePostCommit() {},
+      });
+      const lease = await authority.acquire(ids.child, "split-run");
+      if (!lease) throw new Error("expected lease");
+      const controller = new AbortController();
+      const requests: import("../gateway/index.js").GenerateRequest[] = [];
+      const messageIds: string[] = [];
+      let selector: TurnId;
+      let terminal: TurnId | null = null;
+      let splitState: unknown;
+      const deps = createTestOrchestratorDeps({
+        repos,
+        eventWriter: {
+          async appendEvent(threadId, event) {
+            if (
+              boundary === "rollback" &&
+              selector &&
+              event.type === "turn.created" &&
+              event.turn.role === "assistant" &&
+              event.turn.id !== selector
+            )
+              throw new Error("split journal failed");
+            return eventWriter.appendEvent(threadId, event);
+          },
+        },
+        inbox,
+        runAuthority: authority,
+        threadLock,
+        boundThreads: () => [ids.child],
+        gateway: {
+          ...createInertGateway("gpt-4.1-mini"),
+          async *stream(request) {
+            requests.push(request);
+            if (requests.length === 1) {
+              const child = await producer.enqueue({
+                threadId: ids.child,
+                intent: "message",
+                provenance: {
+                  kind: "child",
+                  threadId: ids.parent,
+                  reportId: ids.parentTurn,
+                },
+                body: { kind: "text", text: "child notification" },
+                idempotencyKey: "child",
+              });
+              messageIds.push(child.id);
+              const writerId = crypto.randomUUID();
+              await persistWriterEnqueue({
+                persistence: { repos, eventWriter },
+                hub: {
+                  async headSeq() {
+                    return 0n;
+                  },
+                },
+                inbox,
+                threadedInbox: producer,
+                workContextDelivery: { async beforeTurn() {} },
+                threadId: ids.child,
+                userTurnId: writerId,
+                userBlocks: [{ type: "text", text: "writer steer" }],
+                draft: {
+                  id: writerId,
+                  threadId: ids.child,
+                  intent: "message",
+                  provenance: { kind: "writer", actorId: ids.user },
+                  body: { kind: "text", text: "writer steer" },
+                  idempotencyKey: "writer",
+                },
+                settle: async () => true,
+              });
+              messageIds.push(writerId);
+              // Replay cannot duplicate the queue row or its eventual turn.
+              await producer.enqueue({
+                threadId: ids.child,
+                intent: "message",
+                provenance: { kind: "writer", actorId: ids.user },
+                body: { kind: "text", text: "writer steer" },
+                idempotencyKey: "writer",
+              });
+            } else {
+              terminal = await authority.readRunningTurnId(ids.child);
+              splitState = {
+                run: await authority.holder(ids.child),
+                oldCancel: await authority.cancel(ids.child, selector),
+                report: await repos.executionReports.findByExecution(ids.child, selector),
+                lookup: await readThreadReport({
+                  callerThreadId: ids.parent,
+                  ref: "p1",
+                  execution: selector,
+                  repos,
+                  runningTurn: authority,
+                }),
+                pending: await readPendingInbox(inbox, ids.child),
+              };
+            }
+            yield {
+              type: "end",
+              result: {
+                content: [
+                  { type: "text", text: requests.length === 1 ? "before steer" : "after steer" },
+                ],
+                toolCalls:
+                  requests.length === 1 && boundary === "tool"
+                    ? [{ id: "tool-1", name: "unregistered", arguments: {} }]
+                    : [],
+                finishReason:
+                  requests.length === 1 && boundary === "tool" ? "tool_use" : "end_turn",
+                usage: { inputTokens: 1000000, outputTokens: 1000000 },
+                provider: "openai",
+                model: "gpt-4.1-mini",
+              },
+            };
+          },
+        },
+      });
+      await deps.creditLedger.grant({
+        userId: ids.user,
+        source: "manual",
+        amountMillicredits: "1000000",
+        reason: "split",
+      });
+      try {
+        const run = await createOrchestrator(deps).runTurn({
+          threadId: ids.child,
+          userText: "start",
+          lease,
+          signal: controller.signal,
+          onAssistantTurnChanged: (id) => {
+            terminal = id;
+            if (boundary === "cancel") controller.abort();
+          },
+        });
+        selector = run.assistantTurnId;
+        const events = [];
+        for await (const event of run.events) events.push(event);
+        const turns = await repos.turns.listByThread(ids.child);
+        if (boundary === "rollback") {
+          expect(terminal).toBeNull();
+          expect((await repos.turns.findById(selector))?.status).toBe("error");
+          expect(await repos.executionReports.findByExecution(ids.child, selector)).toMatchObject({
+            terminalAssistantTurnId: selector,
+            outcome: "failed",
+            summary: "before steer",
+          });
+          expect(events.filter((event) => event.type === "turn.completed")).toEqual([]);
+          expect((await inbox.listPending(ids.child)).map((message) => message.id)).toEqual(
+            messageIds,
+          );
+          expect(await authority.holder(ids.child)).toBeNull();
+          return;
+        }
+        const b = turns.find((turn) => turn.id === terminal);
+        if (!terminal) throw new Error("expected split terminal turn");
+        expect(b?.parentTurnId).toBe(messageIds[1]);
+        expect(turns.find((turn) => turn.id === messageIds[1])?.parentTurnId).toBe(messageIds[0]);
+        expect(turns.find((turn) => turn.id === messageIds[0])?.parentTurnId).toBe(selector);
+        expect(turns.filter((turn) => messageIds.includes(turn.id))).toHaveLength(2);
+        expect((await repos.turns.findById(selector))?.status).toBe("complete");
+        const report = await repos.executionReports.findByExecution(ids.child, selector);
+        expect(report).toMatchObject({
+          assistantTurnId: selector,
+          terminalAssistantTurnId: terminal,
+          outcome: boundary === "cancel" ? "cancelled" : "succeeded",
+          summary: boundary === "cancel" ? "" : "after steer",
+        });
+        expect(await repos.executionReports.findByExecution(ids.child, terminal)).toBeNull();
+        const costs = await Promise.all(
+          [selector, terminal].map((id) => repos.modelResponses.listByTurn(id)),
+        );
+        expect(report?.costMillicredits).toBe(
+          costs.flat().reduce((sum, response) => sum + Number(response.millicredits), 0),
+        );
+        expect(await inbox.listPending(ids.child)).toEqual([]);
+        expect(await authority.holder(ids.child)).toBeNull();
+        expect(events.filter((event) => event.type === "turn.completed").length).toBe(
+          boundary === "cancel" ? 1 : 2,
+        );
+        if (boundary !== "cancel") {
+          expect(splitState).toMatchObject({
+            run: "split-run",
+            oldCancel: false,
+            report: { outcome: null, terminalAssistantTurnId: null },
+            lookup: { status: "not_ready" },
+            pending: {
+              items: [{ deliveryState: "awaiting_run" }, { deliveryState: "awaiting_run" }],
+            },
+          });
+          const text = JSON.stringify(requests[1]?.messages);
+          expect(text.indexOf("before steer")).toBeLessThan(text.indexOf("child notification"));
+          expect(text.indexOf("child notification")).toBeLessThan(text.indexOf("writer steer"));
+        }
+      } finally {
+        await authority.release(lease);
+      }
+    });
+
     it("rolls terminal turn and report obligation back together, then retries idempotently", async () => {
       await repos.executionReports.captureOnce(ids.child, ids.execution, "return-1", {
         summary: "candidate",

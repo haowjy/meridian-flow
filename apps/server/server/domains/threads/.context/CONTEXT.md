@@ -18,7 +18,9 @@ instead of the N:1 `threads.workId` column.
   fields the recursive activity read needs: id, parent, root, depth, ref, title,
   agent name, spawn status, and origin turn.
 - **Execution reports** — `ExecutionReportRepository` owns one row per admitted
-  child assistant turn, keyed by that existing `assistantTurnId`; capture and
+  child run, keyed by its first `assistantTurnId`. Steering may split that run into
+  multiple assistant turns; `terminalAssistantTurnId` is set only at finalization.
+  `findByTurn` resolves the nearest admitted ancestor, never the latest report. Capture and
   terminal writes are idempotent compare-and-set operations. The domain report-state
   module owns identity, capture and terminal comparisons and the delivery-to-publication
   policy for both adapters. Storage decodes typed captures once; outcome discriminates

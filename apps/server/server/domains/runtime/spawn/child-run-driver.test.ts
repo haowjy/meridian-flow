@@ -22,6 +22,7 @@ function saved(
 ): SavedExecutionReport {
   return {
     childThreadId: "child-id",
+    terminalAssistantTurnId: null,
     assistantTurnId: "execution-id",
     handle: "p3",
     origin: "spawn",

@@ -139,6 +139,8 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
       signal: prepared.childController.signal,
       treeBudget: input.budget,
       lease: prepared.runLease,
+      onAssistantTurnChanged: (turnId) =>
+        deps.childRunRegistry.markChildTurn(prepared.child.id as ThreadId, turnId),
       executionReport: {
         correlation: input.reportCorrelation,
         agentSlug: prepared.resolvedSlug,

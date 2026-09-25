@@ -116,7 +116,7 @@ describe("projectPendingInbox", () => {
       projectPendingInbox(messages, { turnId: "assistant-1", messageIds: ["F"] }).items.map(
         ({ deliveryState }) => deliveryState,
       ),
-    ).toEqual(["consuming", "waiting"]);
+    ).toEqual(["awaiting_run", "waiting"]);
   });
 });
 

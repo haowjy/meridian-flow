@@ -59,7 +59,7 @@ export async function finalizeExecution(
       if (!turn || turn.threadId !== input.threadId || turn.role !== "assistant") {
         throw new Error("Terminal assistant turn is unavailable");
       }
-      const existingReport = await deps.repos.executionReports.findByExecution(
+      const existingReport = await deps.repos.executionReports.findByTurn(
         input.threadId,
         input.assistantTurnId,
       );
@@ -104,7 +104,7 @@ export async function finalizeExecution(
     },
     {
       async afterEvents(turn) {
-        const admitted = await deps.repos.executionReports.findByExecution(
+        const admitted = await deps.repos.executionReports.findByTurn(
           input.threadId,
           input.assistantTurnId,
         );
@@ -126,13 +126,27 @@ export async function finalizeExecution(
           ? ""
           : publicText(await deps.repos.blocks.listByTurn(turn.id), finalResponseId);
         const source = capture ? "return_result" : text ? "final_assistant" : "empty";
-        const cost = responses.reduce((sum, row) => sum + BigInt(row.millicredits ?? "0"), 0n);
+        let cost = responses.reduce((sum, row) => sum + BigInt(row.millicredits ?? "0"), 0n);
+        let ancestor = turn;
+        while (ancestor.id !== admitted.assistantTurnId) {
+          const parent = ancestor.parentTurnId
+            ? await deps.repos.turns.findById(ancestor.parentTurnId)
+            : null;
+          if (!parent || parent.threadId !== input.threadId)
+            throw new Error("Execution terminal is outside its admitted turn chain");
+          ancestor = parent;
+          if (ancestor.role === "assistant") {
+            const priorResponses = await deps.repos.modelResponses.listByTurn(ancestor.id);
+            cost += priorResponses.reduce((sum, row) => sum + BigInt(row.millicredits ?? "0"), 0n);
+          }
+        }
         if (cost > BigInt(Number.MAX_SAFE_INTEGER)) {
           throw new Error("Execution cost exceeds report numeric range");
         }
         report = await deps.repos.executionReports.finalizeOnce({
           childThreadId: input.threadId,
-          assistantTurnId: turn.id as TurnId,
+          assistantTurnId: admitted.assistantTurnId,
+          terminalAssistantTurnId: turn.id as TurnId,
           outcome,
           reason: input.cause.kind === "success" ? null : input.cause.reason,
           source,

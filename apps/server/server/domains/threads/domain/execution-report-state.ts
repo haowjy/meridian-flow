@@ -112,6 +112,7 @@ export function assertReportCapture(
 
 export function reportTerminalContent(input: FinalizeExecutionReportInput) {
   return {
+    terminalAssistantTurnId: input.terminalAssistantTurnId ?? input.assistantTurnId,
     outcome: input.outcome,
     reason: input.reason,
     source: input.source,

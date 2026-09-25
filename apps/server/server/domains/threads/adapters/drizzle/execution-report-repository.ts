@@ -37,6 +37,7 @@ function map(row: ExecutionReportRow): SavedExecutionReport {
   return {
     childThreadId: row.childThreadId,
     assistantTurnId: row.assistantTurnId,
+    terminalAssistantTurnId: row.terminalAssistantTurnId,
     handle: row.handle,
     origin: row.origin as SavedExecutionReport["origin"],
     deliveryMode: row.deliveryMode as SavedExecutionReport["deliveryMode"],
@@ -79,6 +80,25 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
     return row ?? null;
   };
   return {
+    async findByTurn(childThreadId, turnId) {
+      const rows = await currentDrizzleDb(db).execute(sql`
+        WITH RECURSIVE chain AS (
+          SELECT id, parent_turn_id, 0 AS depth FROM turns
+          WHERE id = ${turnId} AND thread_id = ${childThreadId}
+          UNION ALL
+          SELECT t.id, t.parent_turn_id, chain.depth + 1 FROM turns t
+          JOIN chain ON t.id = chain.parent_turn_id
+          WHERE t.thread_id = ${childThreadId}
+        )
+        SELECT r.assistant_turn_id FROM chain
+        JOIN thread_execution_reports r ON r.assistant_turn_id = chain.id
+        WHERE r.child_thread_id = ${childThreadId}
+        ORDER BY chain.depth LIMIT 1
+      `);
+      const id = rows[0]?.assistant_turn_id as string | undefined;
+      const row = id ? await find(childThreadId, id) : null;
+      return row ? map(row) : null;
+    },
     async admit(input: AdmitExecutionReportInput) {
       const database = currentDrizzleDb(db);
       const [child] = await database

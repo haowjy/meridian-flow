@@ -30,6 +30,15 @@ export function createInMemoryExecutionReportRepository(
     return row?.childThreadId === child ? row : null;
   };
   return {
+    async findByTurn(child, turnId) {
+      let turn = deps.turns.get(turnId);
+      while (turn?.threadId === child) {
+        const report = find(child, turn.id);
+        if (report) return report;
+        turn = turn.parentTurnId ? deps.turns.get(turn.parentTurnId) : undefined;
+      }
+      return null;
+    },
     async admit(input) {
       assertExecutionReportAdmission(input, {
         child: deps.threads.get(input.childThreadId) ?? null,
@@ -46,6 +55,7 @@ export function createInMemoryExecutionReportRepository(
       }
       const row: SavedExecutionReport = {
         ...identity,
+        terminalAssistantTurnId: null,
         capture: null,
         captureToolCallId: null,
         outcome: null,

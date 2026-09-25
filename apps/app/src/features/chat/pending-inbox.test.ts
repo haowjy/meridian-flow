@@ -119,10 +119,10 @@ describe("writerPendingInbox", () => {
       enqueuedAt: "2026-01-01T00:00:00.000Z",
     };
     const awaiting = { ...waiting, id: "awaiting-turn", deliveryState: "awaiting_run" as const };
-    const consuming = { ...waiting, id: "consuming-turn", deliveryState: "consuming" as const };
-    const inbox = { items: [awaiting, consuming, waiting] };
+    const adopted = { ...waiting, id: "adopted-turn", deliveryState: "awaiting_run" as const };
+    const inbox = { items: [awaiting, adopted, waiting] };
 
     expect(writerPendingInbox(inbox)).toEqual({ items: [waiting] });
-    expect(awaitingRunTurnIds(inbox)).toEqual(new Set(["awaiting-turn"]));
+    expect(awaitingRunTurnIds(inbox)).toEqual(new Set(["awaiting-turn", "adopted-turn"]));
   });
 });

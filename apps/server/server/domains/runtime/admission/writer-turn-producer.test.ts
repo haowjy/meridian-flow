@@ -69,6 +69,7 @@ async function harness(recordsOverride?: AdmissionPersistencePort) {
   const records = fakeRecords();
   const runner = runnerStub();
   const producer = createWriterTurnProducer({
+    inbox: inbox,
     persistence: { repos, eventWriter: journal },
     hub: journal,
     runner,

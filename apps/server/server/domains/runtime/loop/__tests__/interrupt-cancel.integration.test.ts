@@ -128,7 +128,7 @@ describe("interrupt cancel", () => {
     await rig.awaitEvent(EventType.RUN_FINISHED);
   });
 
-  it("finalizes cancellation and retries the unacked triggering message", async () => {
+  it("finalizes cancellation and retires the adopted triggering message", async () => {
     const control = gatedPartialGateway();
     const rig = await RuntimeTestRig.create({ gateway: control.gateway });
 
@@ -144,10 +144,9 @@ describe("interrupt cancel", () => {
       });
     await expect.poll(() => rig.runAuthority.read(rig.thread.id)).toEqual({ kind: "asleep" });
     const turns = await rig.repos.turns.listByThread(rig.thread.id);
-    expect(turns).toHaveLength(3);
+    expect(turns).toHaveLength(2);
     expect(turns.filter((turn) => turn.role === "assistant").map((turn) => turn.status)).toEqual([
       "cancelled",
-      "complete",
     ]);
     expect(await rig.inbox.claimPending(rig.thread.id)).toEqual([]);
   });
