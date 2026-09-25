@@ -79,6 +79,7 @@ const functionFiles = [
   "validate_turn_thread_integrity.sql",
   "consume_credit_lots_fifo.sql",
 ];
+const releaseAdvisoryLockKey = 87211140324721;
 
 export async function runRelease(input: {
   databaseUrl: string;
@@ -95,40 +96,42 @@ export async function runRelease(input: {
       }
     }
 
-    await client`CREATE SCHEMA IF NOT EXISTS drizzle`;
-    await client`
-      CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (
-        id SERIAL PRIMARY KEY,
-        hash text NOT NULL,
-        created_at bigint
-      )
-    `;
     for (const [index, migration] of migrations.entries()) {
       const entry = journal.entries[index];
       if (!entry || entry.when !== migration.folderMillis) {
         throw new Error(`Migration journal entry ${index} does not match its SQL file`);
       }
     }
-    const applied = await client<Array<{ hash: string; created_at: string | number | null }>>`
-      SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id ASC
-    `;
-    const schemaStatus = compareMigrationHistory(applied, migrations);
-    if (schemaStatus === "divergent") {
-      throw new Error(
-        "Divergent migration history at ordinal 0 or later: database ledger does not match the release journal",
-      );
-    }
-    const pending =
-      applied.length >= migrations.length
-        ? []
-        : migrations.slice(applied.length).map((migration, offset) => ({
-            migration,
-            entry: journal.entries[applied.length + offset],
-          }));
-
-    await input.beforeMigrate?.(pending.length);
-
+    let appliedMigrations = 0;
+    let skippedFunctions = false;
     await client.begin(async (tx) => {
+      await tx.unsafe(`SELECT pg_advisory_xact_lock(${releaseAdvisoryLockKey})`);
+      await tx`CREATE SCHEMA IF NOT EXISTS drizzle`;
+      await tx`
+        CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (
+          id SERIAL PRIMARY KEY,
+          hash text NOT NULL,
+          created_at bigint
+        )
+      `;
+      const applied = await tx<Array<{ hash: string; created_at: string | number | null }>>`
+        SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id ASC
+      `;
+      const schemaStatus = compareMigrationHistory(applied, migrations);
+      if (schemaStatus === "divergent") {
+        throw new Error(
+          "Divergent migration history at ordinal 0 or later: database ledger does not match the release journal",
+        );
+      }
+      const pending =
+        applied.length >= migrations.length
+          ? []
+          : migrations.slice(applied.length).map((migration, offset) => ({
+              migration,
+              entry: journal.entries[applied.length + offset],
+            }));
+      await input.beforeMigrate?.(pending.length);
+
       for (const { migration, entry } of pending) {
         const migrationPath = path.join(input.migrationsDirectory, `${entry.tag}.sql`);
         for (const statement of migration.sql) {
@@ -148,8 +151,10 @@ export async function runRelease(input: {
           await tx.unsafe(readFileSync(path.join(input.functionsDirectory, name), "utf8"));
         }
       }
+      appliedMigrations = pending.length;
+      skippedFunctions = schemaStatus === "ahead";
     });
-    return { appliedMigrations: pending.length, skippedFunctions: schemaStatus === "ahead" };
+    return { appliedMigrations, skippedFunctions };
   } finally {
     await client.end();
   }

@@ -137,6 +137,67 @@ if (!enabled || !databaseUrl) {
       }
     });
 
+    it("serializes concurrent release runs and writes one ledger row", async () => {
+      const fixtureDirectory = await mkdtemp(join(tmpdir(), "meridian-release-lock-"));
+      const migrationsDirectory = join(fixtureDirectory, "migrations");
+      const functionsDirectory = join(fixtureDirectory, "functions");
+      const databaseName = `release_lock_${process.pid}_${Date.now()}`;
+      const adminUrl = new URL(databaseUrl);
+      adminUrl.pathname = "/postgres";
+      const admin = postgres(adminUrl.toString(), { max: 1 });
+      const targetUrl = new URL(databaseUrl);
+      targetUrl.pathname = `/${databaseName}`;
+      const tableName = `release_serialized_probe_${process.pid}`;
+      try {
+        await admin.unsafe(`CREATE DATABASE "${databaseName}"`);
+        await mkdir(join(migrationsDirectory, "meta"), { recursive: true });
+        await mkdir(functionsDirectory, { recursive: true });
+        const tag = "0001_serialized_probe";
+        await writeFile(
+          join(migrationsDirectory, "meta/_journal.json"),
+          JSON.stringify({
+            version: "7",
+            dialect: "postgresql",
+            entries: [{ idx: 0, version: "7", when: 1_700_000_000_000, tag, breakpoints: false }],
+          }),
+        );
+        await writeFile(
+          join(migrationsDirectory, `${tag}.sql`),
+          `CREATE TABLE ${tableName} (id integer PRIMARY KEY);`,
+        );
+        for (const name of [
+          "update_updated_at.sql",
+          "validate_turn_thread_integrity.sql",
+          "consume_credit_lots_fifo.sql",
+        ]) {
+          await writeFile(join(functionsDirectory, name), "SELECT 1;");
+        }
+        const results = await Promise.all(
+          [0, 1].map(() =>
+            runRelease({
+              databaseUrl: targetUrl.toString(),
+              migrationsDirectory,
+              functionsDirectory,
+            }),
+          ),
+        );
+        expect(results.map((result) => result.appliedMigrations).sort()).toEqual([0, 1]);
+        const target = postgres(targetUrl.toString(), { max: 1 });
+        try {
+          const [ledger] = await target<Array<{ count: string }>>`
+            SELECT count(*)::text AS count FROM drizzle.__drizzle_migrations
+          `;
+          expect(ledger.count).toBe("1");
+        } finally {
+          await target.end();
+        }
+      } finally {
+        await admin.unsafe(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
+        await admin.end();
+        await rm(fixtureDirectory, { recursive: true, force: true });
+      }
+    });
+
     it("fails when the applied ledger diverges from the bundle prefix", async () => {
       const { fixtureDirectory, migrationsDirectory } = await prefixBundle(true);
       try {
