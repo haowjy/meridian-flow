@@ -1,4 +1,4 @@
-/** Runtime smoke checks for an already deployed Meridian release. */
+/** Runtime smoke checks for an already deployed Meridian release. Ingress must proxy /healthz and /readyz to server. */
 export {};
 
 type Result = { name: string; result: string };
