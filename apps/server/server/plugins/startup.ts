@@ -11,6 +11,7 @@ import {
 } from "../lib/app";
 import { validateAuthConfiguration } from "../lib/auth";
 import { createEventSinkFromEnv } from "../lib/event-sink-factory";
+import { stopHttpRequestAdmission, waitForHttpRequestDrain } from "../lib/http-drain";
 import {
   getOrBindProcessObservability,
   installObservabilityShutdownHooks,
@@ -18,6 +19,13 @@ import {
 } from "../lib/observability";
 import { installApiProcessCrashPolicy } from "../lib/process-crash-policy";
 import { assertApiStartupGuards } from "../lib/startup-guards";
+
+// srvx owns listener closure; leave enough time for our 25s application drain
+// to finish before its listener-level force-close fallback can run.
+const srvxShutdownTimeout = Number.parseInt(process.env.SERVER_SHUTDOWN_TIMEOUT ?? "", 10);
+if (!Number.isFinite(srvxShutdownTimeout) || srvxShutdownTimeout <= 25) {
+  process.env.SERVER_SHUTDOWN_TIMEOUT = "29";
+}
 
 const eventSink = getOrBindProcessObservability(createEventSinkFromEnv).sink;
 installApiProcessCrashPolicy({ eventSink });
@@ -32,6 +40,10 @@ registerProcessShutdownCallback("websocket-admission", async () => {
 registerProcessShutdownCallback("polling-loops", async () => {
   stopAppBackgroundWork();
   await drainAppBackgroundWork();
+});
+registerProcessShutdownCallback("http-drain", async () => {
+  stopHttpRequestAdmission();
+  await waitForHttpRequestDrain(10_000);
 });
 registerProcessShutdownCallback("websocket-drain", async () => {
   const [yjs, threads] = await Promise.all([
