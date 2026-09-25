@@ -307,10 +307,7 @@ export function createThreadEventHub(
 
       const lastCatchupEvent = catchupEvents.at(-1);
       const journalHead =
-        lastJournalSeqRead ??
-        (lastCatchupEvent
-          ? journalSeqForEventSeq(lastCatchupEvent.seq)
-          : await deps.journalReader.headSeq(threadId));
+        lastJournalSeqRead ?? (lastCatchupEvent ? journalSeqForEventSeq(lastCatchupEvent.seq) : 0n);
       if (journalHead > state.journalHeadSeq) state.journalHeadSeq = journalHead;
 
       state.listeners.delete(guardListener);

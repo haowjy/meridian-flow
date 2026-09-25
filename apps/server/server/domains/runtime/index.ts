@@ -19,6 +19,7 @@ export {
   type UserTurnAdmission,
 } from "./admission/user-turn-admission.js";
 export * from "./gateway/index.js";
+export { ServerRestartingError } from "./loop/abort-reasons.js";
 export {
   createNoopInterruptArtifactFlushPort,
   type InterruptArtifactFlushPort,
@@ -46,7 +47,6 @@ export {
 export {
   type ChildRunRegistry,
   createTurnRunner,
-  ServerRestartingError,
   type TurnRunner,
 } from "./loop/turn-runner.js";
 export {

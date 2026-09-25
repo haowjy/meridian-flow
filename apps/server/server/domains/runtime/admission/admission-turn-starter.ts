@@ -1,5 +1,6 @@
 /** Joins admission settlement to the existing runner's serialized turn-start transaction. */
 import { TurnStartConflictError } from "../../threads/index.js";
+import { ServerRestartingError } from "../loop/abort-reasons.js";
 import { StaleConnectionTokenError, type TurnRunner } from "../loop/turn-runner.js";
 import type { AdmissionPersistencePort } from "./drizzle-admission-records.js";
 import {
@@ -83,6 +84,14 @@ export function createAdmissionTurnStarter(deps: {
       } catch (error) {
         if (error instanceof AdmissionWinnerError) {
           return winnerResult(error.winner, input.fingerprint, input.admission.submissionId);
+        }
+        if (error instanceof ServerRestartingError) {
+          await deps.records.releasePending({
+            threadId: input.admission.threadId,
+            submissionId: input.admission.submissionId,
+            fingerprint: input.fingerprint,
+          });
+          throw error;
         }
         if (error instanceof StaleConnectionTokenError) {
           const settled = await deps.records.reject({

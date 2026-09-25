@@ -11,6 +11,8 @@ export type ShutdownStep = {
   timeoutMs?: number;
 };
 
+export const POLLING_LOOPS_SHUTDOWN_TIMEOUT_MS = 3_000;
+
 export type DeadlineResult<T> =
   | { status: "completed"; value: T }
   | { status: "failed"; error: unknown }

@@ -16,6 +16,7 @@ import { getOrBindProcessObservability } from "../lib/observability";
 import { installApiProcessCrashPolicy } from "../lib/process-crash-policy";
 import {
   installProcessShutdownHooks,
+  POLLING_LOOPS_SHUTDOWN_TIMEOUT_MS,
   registerProcessShutdownCallback,
 } from "../lib/process-shutdown";
 import { assertApiStartupGuards, exitOnStartupGuardFailure } from "../lib/startup-guards";
@@ -48,10 +49,14 @@ registerProcessShutdownCallback("websocket-admission", async () => {
   if (errors.length > 0)
     throw new AggregateError(errors, "Websocket admission could not stop cleanly.");
 });
-registerProcessShutdownCallback("polling-loops", async () => {
-  stopAppBackgroundWork();
-  await drainAppBackgroundWork();
-});
+registerProcessShutdownCallback(
+  "polling-loops",
+  async () => {
+    stopAppBackgroundWork();
+    await drainAppBackgroundWork();
+  },
+  { timeoutMs: POLLING_LOOPS_SHUTDOWN_TIMEOUT_MS },
+);
 registerProcessShutdownCallback(
   "turn-drain",
   async () => {
