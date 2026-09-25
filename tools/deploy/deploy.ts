@@ -12,6 +12,7 @@ const cliVersion = "5.62.1";
 const timeoutMs = Number(process.env.DEPLOY_TIMEOUT_MS ?? 12 * 60_000);
 const pollMs = Number(process.env.DEPLOY_POLL_MS ?? 3_000);
 const detectMs = Number(process.env.DEPLOY_DETECT_MS ?? 60_000);
+const redeployDetectMs = Number(process.env.DEPLOY_REDEPLOY_DETECT_MS ?? detectMs);
 const terminalFailures = new Set([
   "FAILED",
   "CRASHED",
@@ -72,11 +73,15 @@ async function waitForNewDeployment(
     if (latest && deploymentId(latest) && deploymentId(latest) !== previousId) return latest;
     await wait(pollMs);
   }
+  // The image-edit deployment can surface at the edge of the detection window.
+  // Establish a fresh baseline so the fallback waits for its own deployment.
+  const baselineDeployment = deploymentList(environment, service)[0];
+  const fallbackBaseline = baselineDeployment && deploymentId(baselineDeployment);
   command(["redeploy", "-s", service, "-e", environment, "--from-source", "-y", "--json"]);
-  const redeployEnd = Date.now() + detectMs;
+  const redeployEnd = Date.now() + redeployDetectMs;
   while (Date.now() < redeployEnd) {
     const latest = deploymentList(environment, service)[0];
-    if (latest && deploymentId(latest) && deploymentId(latest) !== previousId) return latest;
+    if (latest && deploymentId(latest) && deploymentId(latest) !== fallbackBaseline) return latest;
     await wait(pollMs);
   }
   fail(`${service}: no new deployment appeared after image edit and redeploy fallback`);
@@ -165,7 +170,8 @@ async function main() {
       );
   }
   // Complete the external backup before any Railway command can mutate or deploy a service.
-  const ttlDays = Number(process.env.NEON_SNAPSHOT_TTL_DAYS ?? 14);
+  const defaultTtlDays = environment === "staging" ? 3 : 14;
+  const ttlDays = Number(process.env.NEON_SNAPSHOT_TTL_DAYS ?? defaultTtlDays);
   const snapshot = await createConfirmedSnapshot({
     apiKey: requiredEnv("NEON_API_KEY"),
     projectId: requiredEnv("NEON_PROJECT_ID"),
