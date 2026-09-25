@@ -35,21 +35,6 @@ function publicText(blocks: Block[], responseId: string | null): string {
     .join("");
 }
 
-function savedCapture(report: SavedExecutionReport): {
-  summary: string;
-  payload?: SavedExecutionReport["payload"];
-  artifacts: SavedExecutionReport["artifacts"];
-} | null {
-  const value = report.capture;
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
-  if (typeof value.summary !== "string") throw new Error("Invalid admitted return_result capture");
-  return {
-    summary: value.summary,
-    ...("payload" in value ? { payload: value.payload as SavedExecutionReport["payload"] } : {}),
-    artifacts: "artifacts" in value ? (value.artifacts as SavedExecutionReport["artifacts"]) : null,
-  };
-}
-
 function turnEvent(turn: Turn, cause: TerminalCause): OrchestratorEvent {
   if (cause.kind === "success") return { type: "turn.completed", turn };
   if (cause.kind === "cancelled") return { type: "turn.cancelled", turn };
@@ -128,7 +113,7 @@ export async function finalizeExecution(
           report = admitted;
           return;
         }
-        const capture = savedCapture(admitted);
+        const capture = admitted.capture;
         const outcome =
           input.cause.kind === "success"
             ? "succeeded"

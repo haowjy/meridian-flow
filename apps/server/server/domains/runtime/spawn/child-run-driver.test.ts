@@ -17,7 +17,9 @@ import type { RunAuthority } from "../loop/ports.js";
 import { createChildRunDriver } from "./child-run-driver.js";
 import { savedReportToSpawnResult } from "./saved-report-outcome.js";
 
-function saved(overrides: Partial<SavedExecutionReport> = {}): SavedExecutionReport {
+function saved(
+  overrides: Partial<Extract<SavedExecutionReport, { outcome: string }>> = {},
+): SavedExecutionReport {
   return {
     childThreadId: "child-id",
     assistantTurnId: "execution-id",
@@ -89,7 +91,15 @@ describe("savedReportToSpawnResult", () => {
       outcome: "cancelled",
       error: { code: "spawn_cancelled" },
     });
-    expect(() => savedReportToSpawnResult(saved({ outcome: null }))).toThrow("not terminal");
+    expect(() =>
+      savedReportToSpawnResult({
+        ...saved(),
+        outcome: null,
+        source: null,
+        summary: null,
+        terminalAt: null,
+      }),
+    ).toThrow("not terminal");
   });
 });
 

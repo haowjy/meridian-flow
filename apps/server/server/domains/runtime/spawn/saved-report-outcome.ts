@@ -3,7 +3,7 @@ import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { AgentReport, SavedExecutionReport, SpawnResult } from "@meridian/contracts/spawn";
 
 export function savedReportToSpawnResult(report: SavedExecutionReport): SpawnResult {
-  if (!report.outcome || report.summary === null || !report.source) {
+  if (report.outcome === null) {
     throw new Error("Execution report is not terminal");
   }
   const content: AgentReport = {

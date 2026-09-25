@@ -4,16 +4,16 @@ import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import type { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import { assertExecutionReportAdmission } from "../../domain/execution-report-admission.js";
 import { ExecutionReportConflictError } from "../../domain/execution-report-conflict.js";
+import {
+  assertReportCapture,
+  assertReportIdentity,
+  assertReportTerminal,
+  reportCapture,
+  reportIdentity,
+  reportPublicationByDelivery,
+  reportTerminalContent,
+} from "../../domain/execution-report-state.js";
 import type { ExecutionReportRepository } from "../../ports/repositories.js";
-
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value && typeof value === "object") {
-    const fields = Object.entries(value).sort(([a], [b]) => a.localeCompare(b));
-    return `{${fields.map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(",")}}`;
-  }
-  return JSON.stringify(value) ?? "undefined";
-}
 
 export function createInMemoryExecutionReportRepository(
   owner: InMemoryTransactionOwner,
@@ -39,26 +39,9 @@ export function createInMemoryExecutionReportRepository(
         card: input.cardBlockId ? (deps.blocks.get(input.cardBlockId) ?? null) : null,
       });
       const existing = rows.get(input.assistantTurnId);
-      const identity = {
-        childThreadId: input.childThreadId,
-        assistantTurnId: input.assistantTurnId,
-        handle: input.handle,
-        origin: input.origin,
-        deliveryMode: input.deliveryMode,
-        callerThreadId: input.callerThreadId,
-        callerTurnId: input.callerTurnId,
-        toolCallId: input.toolCallId,
-        cardBlockId: input.cardBlockId,
-        agentSlug: input.agentSlug ?? null,
-        description: input.description ?? null,
-      };
+      const identity = reportIdentity(input);
       if (existing) {
-        if (
-          Object.entries(identity).some(
-            ([key, value]) => existing[key as keyof SavedExecutionReport] !== value,
-          )
-        )
-          throw new ExecutionReportConflictError("Conflicting execution report admission");
+        assertReportIdentity(existing, identity);
         return existing;
       }
       const row: SavedExecutionReport = {
@@ -81,14 +64,9 @@ export function createInMemoryExecutionReportRepository(
     async captureOnce(child, execution, toolCallId, capture) {
       const row = find(child, execution);
       if (!row) throw new Error("Execution report was not admitted");
-      const candidate = {
-        summary: capture.summary,
-        ...(capture.payload !== undefined ? { payload: capture.payload } : {}),
-        ...(capture.artifacts !== undefined ? { artifacts: capture.artifacts } : {}),
-      };
+      const candidate = reportCapture(capture);
       if (row.capture !== null) {
-        if (row.captureToolCallId !== toolCallId || canonical(row.capture) !== canonical(candidate))
-          throw new ExecutionReportConflictError("A different return_result was already accepted");
+        assertReportCapture(row, toolCallId, candidate);
         return row;
       }
       if (row.outcome !== null)
@@ -102,32 +80,16 @@ export function createInMemoryExecutionReportRepository(
     async finalizeOnce(input) {
       const row = find(input.childThreadId, input.assistantTurnId);
       if (!row) throw new Error("Execution report was not admitted");
-      const content = {
-        outcome: input.outcome,
-        reason: input.reason,
-        source: input.source,
-        summary: input.summary,
-        payload: input.payload,
-        artifacts: input.artifacts ?? null,
-        costMillicredits: input.costMillicredits ?? null,
-      };
+      const content = reportTerminalContent(input);
       if (row.outcome !== null) {
-        if (
-          Object.entries(content).some(
-            ([key, value]) =>
-              canonical(row[key as keyof SavedExecutionReport]) !== canonical(value),
-          )
-        )
-          throw new ExecutionReportConflictError(
-            "Execution report already has a conflicting terminal outcome",
-          );
+        assertReportTerminal(row, content);
         return row;
       }
       const next: SavedExecutionReport = {
         ...row,
         ...content,
         terminalAt: new Date().toISOString(),
-        publication: row.deliveryMode === "none" ? "none" : "pending",
+        publication: reportPublicationByDelivery[row.deliveryMode],
       };
       rows.set(input.assistantTurnId, next);
       return next;

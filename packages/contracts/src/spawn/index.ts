@@ -45,19 +45,18 @@ export type SavedExecutionReport = {
   cardBlockId: TurnBlockId | null;
   agentSlug: string | null;
   description: string | null;
-  capture: JsonValue | null;
+  capture: ReturnResultCapture | null;
   captureToolCallId: string | null;
-  outcome: SavedOutcome | null;
   reason: string | null;
-  source: ExecutionReportSource | null;
-  summary: string | null;
   payload?: JsonValue;
   artifacts: ArtifactRef[] | null;
   costMillicredits: number | null;
-  terminalAt: string | null;
   publication: "none" | "pending" | "published" | "skipped";
   publishedAt: string | null;
-};
+} & (
+  | { outcome: null; source: null; summary: null; terminalAt: null }
+  | { outcome: SavedOutcome; source: ExecutionReportSource; summary: string; terminalAt: string }
+);
 
 export type ThreadReportResult =
   | {

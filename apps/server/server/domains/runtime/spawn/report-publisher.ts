@@ -73,7 +73,7 @@ export function createReportPublisher(deps: {
         if (callerRow.deletedAt || !(await deps.repos.threads.findById(callerThreadId))) {
           return "parked";
         }
-        if (!report.outcome || !report.terminalAt) {
+        if (report.outcome === null) {
           throw new Error("Pending execution report has no terminal outcome");
         }
 

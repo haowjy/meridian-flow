@@ -9,6 +9,8 @@
 
 ### Changed
 
+- Share immutable child-report state rules across storage adapters; decode saved captures at storage ingress.
+
 - Replay cold thread subscriptions once; skip journal drains on unobserved replicas.
 
 - While an agent is working, Enter sends a typed follow-up and the composer swaps Stop for a ringed Send action. Escape still stops the run.

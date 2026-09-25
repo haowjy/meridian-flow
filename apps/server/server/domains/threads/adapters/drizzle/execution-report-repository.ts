@@ -5,7 +5,17 @@ import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import * as schema from "@meridian/database/schema";
 import { and, asc, eq, getTableColumns, gt, isNull, or, sql } from "drizzle-orm";
 import { assertExecutionReportAdmission } from "../../domain/execution-report-admission.js";
-import { ExecutionReportConflictError } from "../../domain/execution-report-conflict.js";
+import {
+  assertReportCapture,
+  assertReportIdentity,
+  assertReportTerminal,
+  decodeReportCapture,
+  reportCapture,
+  reportIdentity,
+  reportPublicationByDelivery,
+  reportTerminalContent,
+  reportTerminalSchema,
+} from "../../domain/execution-report-state.js";
 import type {
   AdmitExecutionReportInput,
   ExecutionReportRepository,
@@ -32,28 +42,16 @@ function map(row: ExecutionReportRow): SavedExecutionReport {
     cardBlockId: row.cardBlockId,
     agentSlug: row.agentSlug,
     description: row.description,
-    capture: row.capture,
+    capture: decodeReportCapture(row.capture),
     captureToolCallId: row.captureToolCallId,
-    outcome: row.outcome as SavedExecutionReport["outcome"],
+    ...reportTerminalSchema.parse({ ...row, terminalAt: row.terminalAt?.toISOString() ?? null }),
     reason: row.reason,
-    source: row.source as SavedExecutionReport["source"],
-    summary: row.summary,
     ...(row.payload !== null ? { payload: JSON.parse(row.payload) } : {}),
     artifacts: row.artifacts as ArtifactRef[] | null,
     costMillicredits: row.costMillicredits,
-    terminalAt: row.terminalAt?.toISOString() ?? null,
     publication: row.publication as SavedExecutionReport["publication"],
     publishedAt: row.publishedAt?.toISOString() ?? null,
   };
-}
-
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value && typeof value === "object") {
-    const fields = Object.entries(value).sort(([left], [right]) => left.localeCompare(right));
-    return `{${fields.map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
 }
 
 export function createDrizzleExecutionReportRepository(db: DrizzleDb): ExecutionReportRepository {
@@ -127,34 +125,16 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
         callerTurn: callerTurn ?? null,
         card: card ?? null,
       });
-      const values = {
-        assistantTurnId: input.assistantTurnId,
-        childThreadId: input.childThreadId,
-        handle: input.handle,
-        origin: input.origin,
-        deliveryMode: input.deliveryMode,
-        callerThreadId: input.callerThreadId,
-        callerTurnId: input.callerTurnId,
-        toolCallId: input.toolCallId,
-        cardBlockId: input.cardBlockId,
-        agentSlug: input.agentSlug ?? null,
-        description: input.description ?? null,
-      };
+      const values = reportIdentity(input);
       await currentDrizzleDb(db).insert(table).values(values).onConflictDoNothing();
       const row = await find(input.childThreadId, input.assistantTurnId);
       if (!row) throw new Error("Execution report admission did not persist");
-      for (const [key, value] of Object.entries(values)) {
-        if (row[key as keyof typeof row] !== value)
-          throw new ExecutionReportConflictError("Conflicting execution report admission");
-      }
-      return map(row);
+      const report = map(row);
+      assertReportIdentity(report, values);
+      return report;
     },
     async captureOnce(childThreadId, assistantTurnId, toolCallId, capture) {
-      const candidate = {
-        summary: capture.summary,
-        ...(capture.payload !== undefined ? { payload: capture.payload } : {}),
-        ...(capture.artifacts !== undefined ? { artifacts: capture.artifacts } : {}),
-      };
+      const candidate = reportCapture(capture);
       const [row] = await currentDrizzleDb(db)
         .update(table)
         .set({ capture: candidate, captureToolCallId: toolCallId })
@@ -169,34 +149,32 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
         .returning(reportSelection);
       const existing = row ?? (await find(childThreadId, assistantTurnId));
       if (!existing) throw new Error("Execution report was not admitted");
-      if (
-        existing.captureToolCallId !== toolCallId ||
-        canonical(existing.capture) !== canonical(candidate)
-      )
-        throw new ExecutionReportConflictError("A different return_result was already accepted");
-      return map(existing);
+      const report = map(existing);
+      assertReportCapture(report, toolCallId, candidate);
+      return report;
     },
     async finalizeOnce(input: FinalizeExecutionReportInput) {
+      const content = reportTerminalContent(input);
       const values = {
-        outcome: input.outcome,
-        reason: input.reason,
-        source: input.source,
-        summary: input.summary,
+        ...content,
         payload:
           input.payload === undefined
             ? null
             : input.payload === null
               ? sql`'null'::jsonb`
               : input.payload,
-        artifacts: input.artifacts ?? null,
-        costMillicredits: input.costMillicredits ?? null,
         terminalAt: new Date(),
       };
       const [row] = await currentDrizzleDb(db)
         .update(table)
         .set({
           ...values,
-          publication: sql`CASE WHEN ${table.deliveryMode} = 'none' THEN 'none' ELSE 'pending' END`,
+          publication: sql`CASE ${table.deliveryMode} ${sql.join(
+            Object.entries(reportPublicationByDelivery).map(
+              ([mode, publication]) => sql`WHEN ${mode} THEN ${publication}`,
+            ),
+            sql.raw(" "),
+          )} END`,
         })
         .where(
           and(
@@ -208,20 +186,9 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
         .returning(reportSelection);
       const existing = row ?? (await find(input.childThreadId, input.assistantTurnId));
       if (!existing) throw new Error("Execution report was not admitted");
-      const same =
-        existing.outcome === values.outcome &&
-        existing.reason === values.reason &&
-        existing.source === values.source &&
-        existing.summary === values.summary &&
-        canonical(existing.payload === null ? undefined : JSON.parse(existing.payload)) ===
-          canonical(input.payload) &&
-        canonical(existing.artifacts) === canonical(values.artifacts) &&
-        existing.costMillicredits === values.costMillicredits;
-      if (!same)
-        throw new ExecutionReportConflictError(
-          "Execution report already has a conflicting terminal outcome",
-        );
-      return map(existing);
+      const report = map(existing);
+      assertReportTerminal(report, content);
+      return report;
     },
     async findByExecution(childThreadId, assistantTurnId) {
       const row = await find(childThreadId, assistantTurnId);
