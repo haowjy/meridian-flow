@@ -3,13 +3,13 @@
  * as the primary pane. It coordinates desktop/mobile rail visibility without
  * owning thread routing itself.
  */
-import { Trans } from "@lingui/react/macro";
 import type { Thread, Work } from "@meridian/contracts/protocol";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { QueryErrorRow } from "@/components/app/QueryErrorRow";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import { ChatView } from "@/features/chat/ChatView";
+import { CreationComposer } from "@/features/chat/CreationComposer";
 import type { ContextRouteTarget } from "../routing/project-route";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
 import { SubagentBanner } from "./SubagentBanner";
@@ -35,24 +35,14 @@ export function ChatScreen({
   onSelectThread,
   onOpenContextTarget,
 }: ChatScreenProps) {
-  const { threads: projectThreads, isError, refetch } = useProjectThreads(projectId);
+  const { threads: projectThreads } = useProjectThreads(projectId);
 
   if (threadId === null) {
-    if (isError) {
-      return (
-        <div className="px-4 py-3">
-          <QueryErrorRow onRetry={refetch} />
-        </div>
-      );
-    }
-    if (projectThreads !== null && projectThreads.length === 0) {
-      return (
-        <div className="grid h-full place-items-center px-6 text-sm text-muted-foreground">
-          <Trans>This project has no chats yet.</Trans>
-        </div>
-      );
-    }
-    return null;
+    return (
+      <div className="flex min-h-0 flex-1 flex-col justify-end p-4">
+        <CreationComposer projectId={projectId} />
+      </div>
+    );
   }
 
   return (

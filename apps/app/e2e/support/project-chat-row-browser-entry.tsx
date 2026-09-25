@@ -1,7 +1,7 @@
-/** Browser entry that mounts shipped Home rows and loading rows with deterministic data. */
+/** Browser entry that mounts shipped project chat rows and loading rows with deterministic data. */
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { createRoot } from "react-dom/client";
-import { HomeFeed } from "../../src/features/project/chat-landing/HomeFeed";
+import { ProjectFeed } from "../../src/features/project/chat-landing/ProjectFeed";
 import { ProjectChatRow } from "../../src/features/project/chat-list/ProjectChatRow";
 import "../../src/styles/globals.css";
 
@@ -36,7 +36,7 @@ const pendingFeed = {
   isPending: true,
   isError: false,
   data: null,
-  grouped: { continueChat: null, favorites: [], recent: [] },
+  items: [],
   hasNextPage: false,
   isFetchingNextPage: false,
   isFetchNextPageError: false,
@@ -55,7 +55,7 @@ createRoot(root).render(
       ))}
     </section>
     <section id="loading-rows">
-      <HomeFeed projectId="project-1" feed={pendingFeed} rowProps={rowProps} />
+      <ProjectFeed projectId="project-1" feed={pendingFeed} rowProps={rowProps} />
     </section>
   </main>,
 );

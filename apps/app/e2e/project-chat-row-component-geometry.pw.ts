@@ -1,4 +1,4 @@
-/** Real Chromium component-fixture geometry contract for Home rows and their loading state. */
+/** Real Chromium component-fixture geometry contract for project chat rows and their loading state. */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
@@ -10,7 +10,7 @@ let compiledCss = "";
 let compiledJs = "";
 
 test.beforeAll(async () => {
-  const mocks = path.join(appRoot, "e2e/support/home-row-browser-mocks.tsx");
+  const mocks = path.join(appRoot, "e2e/support/project-chat-row-browser-mocks.tsx");
   const result = await build({
     configFile: false,
     root: appRoot,
@@ -22,7 +22,10 @@ test.beforeAll(async () => {
         replacement: mocks,
       })),
     },
-    build: { write: false, rollupOptions: { input: "e2e/support/home-row-browser-entry.tsx" } },
+    build: {
+      write: false,
+      rollupOptions: { input: "e2e/support/project-chat-row-browser-entry.tsx" },
+    },
   });
   const output = (Array.isArray(result) ? result : [result]).flatMap((item) =>
     "output" in item ? item.output : [],
@@ -33,7 +36,7 @@ test.beforeAll(async () => {
   const js = output.find(
     (item): item is Rollup.OutputChunk => item.type === "chunk" && item.isEntry,
   );
-  if (!css || !js) throw new Error("Vite did not emit the Home-row fixture");
+  if (!css || !js) throw new Error("Vite did not emit the project-chat-row fixture");
   compiledCss = String(css.source);
   compiledJs = js.code;
 });
@@ -56,20 +59,20 @@ test("right-aligns Work in its stable column and centers it across the full row"
       .evaluateAll((works) =>
         works.map((work) => {
           const row = work.closest("[data-project-chat-row]");
-          if (!row) throw new Error("Home Work lane lacks its full row");
+          if (!row) throw new Error("Project chat Work lane lacks its full row");
           const title = row.querySelector("span[data-project-chat-row-line]");
           const preview = row.querySelector("[data-project-chat-row-line] p");
           const inlineDate = row.querySelector("[data-project-chat-row-line] time");
           const trailingDate = row.querySelector("[data-project-chat-row-trailing] time");
           const action = row.querySelector("[data-project-chat-row-actions]");
           if (!title || !preview || !inlineDate || !trailingDate || !action) {
-            throw new Error("Incomplete Home row fixture");
+            throw new Error("Incomplete project chat row fixture");
           }
           const rowBox = row.getBoundingClientRect();
           const titleBox = title.getBoundingClientRect();
           const workBox = work.getBoundingClientRect();
           const trailingBox = trailingDate.parentElement?.getBoundingClientRect();
-          if (!trailingBox) throw new Error("Home row lacks its trailing lane");
+          if (!trailingBox) throw new Error("project chat row lacks its trailing lane");
           const previewBox = preview.getBoundingClientRect();
           const inlineDateBox = inlineDate.getBoundingClientRect();
           const trailingDateBox = trailingDate.getBoundingClientRect();
@@ -216,7 +219,7 @@ test("right-aligns Work in its stable column and centers it across the full row"
         row.querySelector("[data-project-chat-row-work]"),
         row.querySelector("[data-project-chat-row-line] p"),
       ];
-      if (nodes.some((node) => !node)) throw new Error("Incomplete long Home row fixture");
+      if (nodes.some((node) => !node)) throw new Error("Incomplete long project chat row fixture");
       return nodes.map((node) => {
         const element = node as HTMLElement;
         const style = getComputedStyle(element);

@@ -1,9 +1,9 @@
-/** Complete Home feed presentation: sections, lists, pagination, and screen states. */
+/** Flat project chat feed presentation, pagination, and loading/error states. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { useEffect, useRef } from "react";
-import type { HomeFeedNextPageIdentity } from "@/client/query/useHomeChatFeed";
+import type { ProjectFeedNextPageIdentity } from "@/client/query/useProjectChatFeed";
 import { useProjectChatUserState } from "@/client/query/useProjectChatUserState";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,19 +17,15 @@ type FeedQuery = {
   isPending: boolean;
   isError: boolean;
   data: unknown;
-  grouped: {
-    continueChat: ProjectChatItem | null;
-    favorites: ProjectChatItem[];
-    recent: ProjectChatItem[];
-  };
+  items: ProjectChatItem[];
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   isFetchNextPageError: boolean;
-  nextPageIdentity: HomeFeedNextPageIdentity | null;
+  nextPageIdentity: ProjectFeedNextPageIdentity | null;
   fetchNextPage: () => Promise<unknown>;
   refetch: () => Promise<unknown>;
 };
-export function HomeFeed({
+export function ProjectFeed({
   projectId,
   feed,
   rowProps,
@@ -39,7 +35,7 @@ export function HomeFeed({
   rowProps: Omit<ProjectChatRowProps, "item" | "favorite">;
 }) {
   const sentinel = useRef<HTMLDivElement>(null);
-  const requestedPage = useRef<HomeFeedNextPageIdentity | null>(null);
+  const requestedPage = useRef<ProjectFeedNextPageIdentity | null>(null);
   useEffect(() => {
     if (
       !sentinel.current ||
@@ -74,7 +70,7 @@ export function HomeFeed({
     feed.nextPageIdentity,
   ]);
 
-  if (feed.isPending) return <HomeLoading />;
+  if (feed.isPending) return <FeedLoading />;
   if (feed.isError && !feed.data)
     return (
       <div className="py-8 text-center" role="alert">
@@ -93,8 +89,8 @@ export function HomeFeed({
         </div>
       </div>
     );
-  const { continueChat, favorites, recent } = feed.grouped;
-  if (!continueChat && !favorites.length && !recent.length)
+  const items = feed.items;
+  if (!items.length && !feed.hasNextPage)
     return (
       <p className="py-8 text-center text-compact text-muted-foreground">
         <Trans>Your chats will appear here after you send a message.</Trans>
@@ -104,100 +100,44 @@ export function HomeFeed({
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-2">
-        <div className="flex items-center gap-4">
-          <h2 className="text-headline-section">
-            <Trans>Continue</Trans>
-          </h2>
-        </div>
-        {continueChat ? (
-          <ChatList projectId={projectId} items={[continueChat]} rowProps={rowProps} />
+        <ul
+          className="divide-y divide-border-subtle"
+          aria-busy={feed.isFetchingNextPage || undefined}
+        >
+          {items.map((item) => (
+            <li key={item.id}>
+              <FeedProjectChatRow projectId={projectId} item={item} rowProps={rowProps} />
+            </li>
+          ))}
+        </ul>
+        {feed.isFetchingNextPage ? (
+          <span role="status" className="sr-only">
+            <Trans>Loading more chats</Trans>
+          </span>
         ) : null}
-      </section>
-      {favorites.length ? (
-        <Section projectId={projectId} title={t`Favorite`} items={favorites} rowProps={rowProps} />
-      ) : null}
-      {recent.length || feed.hasNextPage ? (
-        <section className="flex flex-col gap-2">
-          <h2 className="text-headline-section">
-            <Trans>Recent chats</Trans>
-          </h2>
-          <ul
-            className="divide-y divide-border-subtle"
-            aria-busy={feed.isFetchingNextPage || undefined}
+        {feed.isFetchNextPageError ? (
+          <div
+            role="alert"
+            className="flex items-center justify-center gap-2 text-sm text-muted-foreground"
           >
-            {recent.map((item) => (
-              <li key={item.id}>
-                <HomeProjectChatRow projectId={projectId} item={item} rowProps={rowProps} />
-              </li>
-            ))}
-          </ul>
-          {feed.isFetchingNextPage ? (
-            <span role="status" className="sr-only">
-              <Trans>Loading more chats</Trans>
-            </span>
-          ) : null}
-          {feed.isFetchNextPageError ? (
-            <div
-              role="alert"
-              className="flex items-center justify-center gap-2 text-sm text-muted-foreground"
+            <Trans>More chats couldn’t load.</Trans>
+            <Button
+              variant="link"
+              className="[@media(pointer:coarse)]:min-h-11"
+              onClick={() => void feed.fetchNextPage()}
             >
-              <Trans>More chats couldn’t load.</Trans>
-              <Button
-                variant="link"
-                className="[@media(pointer:coarse)]:min-h-11"
-                onClick={() => void feed.fetchNextPage()}
-              >
-                <Trans>Retry</Trans>
-              </Button>
-            </div>
-          ) : (
-            <div ref={sentinel} data-home-feed-sentinel aria-hidden className="h-px" />
-          )}
-        </section>
-      ) : null}
+              <Trans>Retry</Trans>
+            </Button>
+          </div>
+        ) : (
+          <div ref={sentinel} data-chat-feed-sentinel aria-hidden className="h-px" />
+        )}
+      </section>
     </div>
   );
 }
 
-function Section({
-  projectId,
-  title,
-  items,
-  rowProps,
-}: {
-  projectId: string;
-  title: string;
-  items: ProjectChatItem[];
-  rowProps: Omit<ProjectChatRowProps, "item" | "favorite">;
-}) {
-  return (
-    <section className="flex flex-col gap-2">
-      <h2 className="text-headline-section">{title}</h2>
-      <ChatList projectId={projectId} items={items} rowProps={rowProps} />
-    </section>
-  );
-}
-function ChatList({
-  projectId,
-  items,
-  rowProps,
-}: {
-  projectId: string;
-  items: ProjectChatItem[];
-  rowProps: Omit<ProjectChatRowProps, "item" | "favorite">;
-}) {
-  return (
-    <ul className="divide-y divide-border-subtle">
-      {items.map((item) => (
-        <li key={item.id}>
-          <HomeProjectChatRow projectId={projectId} item={item} rowProps={rowProps} />
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function HomeProjectChatRow({
+function FeedProjectChatRow({
   projectId,
   item,
   rowProps,
@@ -209,7 +149,7 @@ function HomeProjectChatRow({
   const state = useProjectChatUserState(projectId, item);
   return <ProjectChatRow {...rowProps} {...state} />;
 }
-function HomeLoading() {
+function FeedLoading() {
   return (
     <div className="flex flex-col gap-6" role="status" aria-busy="true">
       <span className="sr-only">

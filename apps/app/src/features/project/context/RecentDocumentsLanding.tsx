@@ -317,7 +317,7 @@ function recentDocumentHref(item: AccountRecentItem, projectId: string | undefin
       path,
       workSlug: null,
     },
-    chat: { kind: "absent" },
+
     work: { kind: "absent" },
     results: false,
   });

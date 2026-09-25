@@ -2,7 +2,7 @@
  * ChatSurface — the single, persistent chat instance for the desktop project.
  *
  * Mounted ONCE above the destination switch (see `DesktopProject`) and never
- * unmounted when the user moves between Home / Chat / Context — so the
+ * unmounted when the user moves between Chat / Work / Editor — so the
  * conversation never reloads: the WS stream, scroll position, and composer
  * draft all survive a destination change. The project SlotGrid moves this
  * same instance between the centered Chat slot and the right dock slot by
@@ -13,12 +13,14 @@
  * shell is a passthrough in `center` placement so this subtree keeps the same
  * tree position across center↔dock moves — the chat is never reconciled away.
  */
-import { Trans } from "@lingui/react/macro";
+import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/protocol";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
+import { ThreadSwitcherPopover } from "@/features/chat/ThreadSwitcherPopover";
 import { cn } from "@/lib/utils";
+import { ChatLandingScreen } from "../chat-landing/ChatLandingScreen";
 import { DockShell } from "../dock/DockShell";
-import { PaneTitle } from "../PaneTitle";
+import { useProjectChatNavigation } from "../routing/ProjectNavigationContext";
 import type { ContextRouteTarget } from "../routing/project-route";
 import type { ScreenKey } from "../shell/screens";
 import { ChatScreen } from "./ChatScreen";
@@ -61,6 +63,8 @@ export function ChatSurface({
   onCloseDock,
   onOpenContextTarget,
 }: ChatSurfaceProps) {
+  const navigation = useProjectChatNavigation();
+  const showIndex = placement === "dock" && navigation?.dockChatView === "index";
   return (
     <div
       aria-hidden={!visible}
@@ -86,22 +90,30 @@ export function ChatSurface({
               onSelectThread={onSelectThread}
             />
           ) : (
-            <PaneTitle>
-              <Trans>Chat</Trans>
-            </PaneTitle>
+            <ThreadSwitcherPopover
+              projectId={projectId}
+              activeThreadId={null}
+              title={t`New chat`}
+              onSelectThread={onSelectThread}
+              onNewChat={navigation?.openNewChat}
+            />
           )
         }
       >
-        {() => (
-          <ChatScreen
-            projectId={projectId}
-            threadId={threadId}
-            activeWork={activeWork}
-            availableWorks={availableWorks}
-            onSelectThread={onSelectThread}
-            onOpenContextTarget={onOpenContextTarget}
-          />
-        )}
+        {() =>
+          showIndex ? (
+            <ChatLandingScreen projectId={projectId} onOpenThread={onSelectThread} />
+          ) : (
+            <ChatScreen
+              projectId={projectId}
+              threadId={threadId}
+              activeWork={activeWork}
+              availableWorks={availableWorks}
+              onSelectThread={onSelectThread}
+              onOpenContextTarget={onOpenContextTarget}
+            />
+          )
+        }
       </DockShell>
     </div>
   );

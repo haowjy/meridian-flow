@@ -13,14 +13,13 @@ export async function invalidateProjectThreadData(
   await Promise.all([
     client.invalidateQueries({ queryKey: projectQueryKeys.threads(projectId) }),
     client.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) }),
-    invalidateProjectHomeFeed(client, projectId),
+    invalidateProjectChatFeed(client, projectId),
   ]);
 }
 
-export function invalidateProjectHomeFeed(client: QueryClient, projectId: string): Promise<void> {
+export function invalidateProjectChatFeed(client: QueryClient, projectId: string): Promise<void> {
   return client.invalidateQueries({
-    queryKey: projectQueryKeys.homeFeed(projectId),
-    exact: true,
+    queryKey: projectQueryKeys.chatFeed(projectId),
   });
 }
 

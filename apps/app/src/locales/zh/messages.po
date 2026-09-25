@@ -107,6 +107,11 @@ msgstr ""
 msgid "{0} added to favorites"
 msgstr ""
 
+#. placeholder {0}: item.title
+#: src/features/project/chat-landing/ChatLandingScreen.tsx
+msgid "{0} added to Favorites"
+msgstr ""
+
 #. placeholder {0}: formatUsd(data.purchasedBalanceUsd)
 #: src/features/billing/UsageCard.tsx
 msgid "{0} additional balance"
@@ -144,17 +149,22 @@ msgstr ""
 
 #. placeholder {0}: item.title
 #: src/features/project/chat-landing/ChatLandingScreen.tsx
-msgid "{0} moved to Favorite chats"
-msgstr ""
+#~ msgid "{0} moved to Favorite chats"
+#~ msgstr ""
 
 #. placeholder {0}: item.title
 #: src/features/project/chat-landing/ChatLandingScreen.tsx
-msgid "{0} moved to Recent chats"
-msgstr ""
+#~ msgid "{0} moved to Recent chats"
+#~ msgstr ""
 
 #. placeholder {0}: chat.title
 #: src/features/project/work/WorkAssociatedChats.tsx
 msgid "{0} removed from favorites"
+msgstr ""
+
+#. placeholder {0}: item.title
+#: src/features/project/chat-landing/ChatLandingScreen.tsx
+msgid "{0} removed from Favorites"
 msgstr ""
 
 #. placeholder {0}: fieldLabel(target)
@@ -405,6 +415,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Alignment applies to paragraphs, headings, and tables."
+msgstr ""
+
+#: src/features/project/chat-landing/ChatLandingScreen.tsx
+msgid "All"
 msgstr ""
 
 #: src/features/home/ProjectLibrary.tsx
@@ -661,12 +675,15 @@ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/ChatView.tsx
-#: src/features/project/chat/ChatSurface.tsx
 #: src/features/project/ChatLandingController.tsx
-#: src/features/project/ChatPaneController.tsx
 #: src/features/project/dock/DockHeader.tsx
+#: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/screens.ts
 msgid "Chat"
+msgstr ""
+
+#: src/features/project/mobile/MobileProject.tsx
+msgid "Chat alongside your current screen"
 msgstr ""
 
 #: src/components/app/composer/placeholders.ts
@@ -681,11 +698,11 @@ msgstr ""
 #~ msgid "Chat creation is still being reconciled."
 #~ msgstr ""
 
-#: src/features/chat/ThreadSwitcherPopover.tsx
-#~ msgid "Chats"
-#~ msgstr ""
+#: src/features/project/chat-landing/ChatLandingScreen.tsx
+msgid "Chats"
+msgstr ""
 
-#: src/features/project/chat-landing/HomeFeed.tsx
+#: src/features/project/chat-landing/ProjectFeed.tsx
 msgid "Chats couldn’t load"
 msgstr ""
 
@@ -711,7 +728,7 @@ msgstr ""
 #~ msgid "Check this message before sending another. You can keep drafting below."
 #~ msgstr ""
 
-#: src/features/project/chat-landing/HomeFeed.tsx
+#: src/features/project/chat-landing/ProjectFeed.tsx
 msgid "Check your connection and try again."
 msgstr ""
 
@@ -752,8 +769,8 @@ msgid "Chime in"
 msgstr "我来说两句"
 
 #: src/features/project/ProjectView.tsx
-msgid "Choose a chat to continue."
-msgstr ""
+#~ msgid "Choose a chat to continue."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Choose a document or enter a web address or document path."
@@ -923,8 +940,8 @@ msgid "Context"
 msgstr ""
 
 #: src/features/project/chat-landing/HomeFeed.tsx
-msgid "Continue"
-msgstr ""
+#~ msgid "Continue"
+#~ msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Continue navigation"
@@ -1584,13 +1601,17 @@ msgid "Failed to load image"
 msgstr "图片加载失败"
 
 #: src/features/project/chat-landing/HomeFeed.tsx
-msgid "Favorite"
-msgstr ""
+#~ msgid "Favorite"
+#~ msgstr ""
 
 #: src/features/project/chat-landing/ChatLandingScreen.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Favorite wasn’t saved"
+msgstr ""
+
+#: src/features/project/chat-landing/ChatLandingScreen.tsx
+msgid "Favorites"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -1954,7 +1975,7 @@ msgstr ""
 msgid "Loading agents…"
 msgstr ""
 
-#: src/features/project/chat-landing/HomeFeed.tsx
+#: src/features/project/chat-landing/ProjectFeed.tsx
 msgid "Loading chats"
 msgstr ""
 
@@ -1967,7 +1988,7 @@ msgstr ""
 msgid "Loading image"
 msgstr "正在加载图片"
 
-#: src/features/project/chat-landing/HomeFeed.tsx
+#: src/features/project/chat-landing/ProjectFeed.tsx
 msgid "Loading more chats"
 msgstr ""
 
@@ -2102,7 +2123,7 @@ msgstr ""
 msgid "More"
 msgstr ""
 
-#: src/features/project/chat-landing/HomeFeed.tsx
+#: src/features/project/chat-landing/ProjectFeed.tsx
 msgid "More chats couldn’t load."
 msgstr ""
 
@@ -2191,7 +2212,10 @@ msgstr ""
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/IndependentChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
+#: src/features/project/chat-landing/ChatLandingScreen.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
+#: src/features/project/chat/ChatSurface.tsx
+#: src/features/project/ChatPaneController.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
 msgstr "新对话"
@@ -2424,6 +2448,10 @@ msgstr ""
 
 #: src/features/project/context/ContextTabBar.tsx
 msgid "Open a Work to create an Untitled document"
+msgstr ""
+
+#: src/features/project/mobile/MobileProject.tsx
+msgid "Open chat dock"
 msgstr ""
 
 #: src/features/project/context/ContextTabBar.tsx
@@ -2673,8 +2701,8 @@ msgid "Recent activity"
 msgstr ""
 
 #: src/features/project/chat-landing/HomeFeed.tsx
-msgid "Recent chats"
-msgstr ""
+#~ msgid "Recent chats"
+#~ msgstr ""
 
 #: src/features/home/RecentProjects.tsx
 #~ msgid "Recent projects"
@@ -2872,7 +2900,7 @@ msgstr ""
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/UserTurn.tsx
 #: src/features/editor/DraftReviewHeader.tsx
-#: src/features/project/chat-landing/HomeFeed.tsx
+#: src/features/project/chat-landing/ProjectFeed.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
@@ -3169,8 +3197,8 @@ msgid "Start over"
 msgstr ""
 
 #: src/features/project/chat-landing/ChatLandingScreen.tsx
-msgid "Start with a scene, a question, or a problem to solve."
-msgstr ""
+#~ msgid "Start with a scene, a question, or a problem to solve."
+#~ msgstr ""
 
 #: src/features/editor/EditorView.tsx
 msgid "Start writing…"
@@ -3664,8 +3692,8 @@ msgid "This project couldn’t load. It may be unavailable."
 msgstr ""
 
 #: src/features/project/chat/ChatScreen.tsx
-msgid "This project has no chats yet."
-msgstr ""
+#~ msgid "This project has no chats yet."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "This row is already at the edge."
@@ -3916,8 +3944,8 @@ msgid "What this figure shows"
 msgstr ""
 
 #: src/features/project/chat-landing/ChatLandingScreen.tsx
-msgid "What will you write next?"
-msgstr ""
+#~ msgid "What will you write next?"
+#~ msgstr ""
 
 #: src/components/app/composer/placeholders.ts
 msgid "What's next?"
@@ -4028,7 +4056,7 @@ msgstr ""
 msgid "Your answer may not have reached the agent."
 msgstr ""
 
-#: src/features/project/chat-landing/HomeFeed.tsx
+#: src/features/project/chat-landing/ProjectFeed.tsx
 msgid "Your chats will appear here after you send a message."
 msgstr ""
 

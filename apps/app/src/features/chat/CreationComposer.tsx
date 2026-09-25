@@ -1,4 +1,4 @@
-/** Shared new-chat composer for the project Chat landing. */
+/** Shared pinned new-chat composer for the center, dock, and phone. */
 import { t } from "@lingui/core/macro";
 import { useState } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
@@ -63,7 +63,7 @@ export function CreationComposer({
   return (
     <>
       <Composer
-        variant="hero"
+        variant="pinned"
         autoFocus={autoFocus}
         onSubmit={async (envelope) => ({
           kind:

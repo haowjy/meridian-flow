@@ -44,11 +44,11 @@ export function ThreadSwitcherPopover({
   variant = "quiet",
 }: {
   projectId: string;
-  activeThreadId: string;
+  activeThreadId: string | null;
   title: string;
   onSelectThread: (threadId: string) => void;
   onNewChat?: () => void;
-  onRename: () => void;
+  onRename?: () => void;
   /**
    * `quiet` — hover-pill trigger for chrome that stays chrome (the dock).
    * `tab` — the active-tab chip grammar: the chat pane's page material
@@ -92,7 +92,7 @@ export function ThreadSwitcherPopover({
   const startRename = () => {
     focusHandoff.current = true;
     changeOpen(false);
-    onRename();
+    onRename?.();
   };
 
   const handleNavigationKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -269,7 +269,7 @@ function ThreadSwitchItem({
   active: boolean;
   now: number;
   onSelect: (threadId: string) => void;
-  onRename: () => void;
+  onRename?: () => void;
 }) {
   const title = displayThreadTitle(thread.title);
   const rel = relativeTime(thread.updatedAt, now);

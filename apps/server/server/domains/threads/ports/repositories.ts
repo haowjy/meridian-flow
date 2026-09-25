@@ -187,18 +187,14 @@ export interface WorkChatFeedRepository {
   }): Promise<WorkChatFeedRow[]>;
 }
 
-export interface HomeChatFeedRepository {
+export interface ProjectChatFeedRepository {
   queryPage(input: {
     projectId: ProjectId;
     userId: UserId;
     after: ProjectChatCursorKey | null;
-    recentLimit: number;
-    includeFeatured: boolean;
-  }): Promise<{
-    continueChat: ProjectChatItem | null;
-    favorites: ProjectChatItem[];
-    recent: ProjectChatItem[];
-  }>;
+    limit: number;
+    favorite: boolean;
+  }): Promise<ProjectChatItem[]>;
 }
 
 export interface ThreadUserStateRepository {
@@ -382,7 +378,7 @@ export interface ChildReportDeliveryRepository {
 
 export type ThreadRepositories = {
   threads: ThreadRepository;
-  homeFeed: HomeChatFeedRepository;
+  chatFeed: ProjectChatFeedRepository;
   workChatFeed: WorkChatFeedRepository;
   threadUserState: ThreadUserStateRepository;
   threadWorks: ThreadWorksRepository;

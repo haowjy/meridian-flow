@@ -2,7 +2,11 @@
 import type { ProjectChatItem, UpdateThreadUserStateResponse } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 import { updateThreadUserState } from "@/client/api/threads-api";
-import { groupHomeFeed, type HomeFeedData, projectHomeThread } from "./home-chat-feed-cache";
+import {
+  flattenProjectFeed,
+  type ProjectFeedData,
+  projectFeedThread,
+} from "./project-chat-feed-cache";
 import { projectQueryKeys } from "./project-query-keys";
 
 export type ThreadUserStateOutcome =
@@ -58,13 +62,11 @@ const defaultRecord = (item?: ProjectChatItem): ThreadUserStateRecord => ({
 const stateKey = (projectId: string, threadId: string) =>
   projectQueryKeys.threadUserState(projectId, threadId);
 
-function homeItem(client: QueryClient, projectId: string, threadId: string) {
-  const grouped = groupHomeFeed(
-    client.getQueryData<HomeFeedData>(projectQueryKeys.homeFeed(projectId)),
-  );
-  return [grouped.continueChat, ...grouped.favorites, ...grouped.recent].find(
-    (item) => item?.id === threadId,
-  );
+function feedItem(client: QueryClient, projectId: string, threadId: string) {
+  return client
+    .getQueriesData<ProjectFeedData>({ queryKey: projectQueryKeys.chatFeed(projectId) })
+    .flatMap(([, data]) => flattenProjectFeed(data))
+    .find((item) => item.id === threadId);
 }
 
 function readRecord(
@@ -75,7 +77,7 @@ function readRecord(
 ): ThreadUserStateRecord {
   return (
     client.getQueryData<ThreadUserStateRecord>(stateKey(projectId, threadId)) ??
-    defaultRecord(fallback ?? homeItem(client, projectId, threadId) ?? undefined)
+    defaultRecord(fallback ?? feedItem(client, projectId, threadId) ?? undefined)
   );
 }
 
@@ -88,7 +90,7 @@ function writeRecord(
 ) {
   client.setQueryData<ThreadUserStateRecord>(stateKey(projectId, threadId), (current) =>
     update(
-      current ?? defaultRecord(fallback ?? homeItem(client, projectId, threadId) ?? undefined),
+      current ?? defaultRecord(fallback ?? feedItem(client, projectId, threadId) ?? undefined),
     ),
   );
 }
@@ -155,9 +157,9 @@ export function getFavoriteCommandView(record: ThreadUserStateRecord): ThreadUse
       };
 }
 
-function syncHome(client: QueryClient, projectId: string, threadId: string) {
+function syncProjectFeed(client: QueryClient, projectId: string, threadId: string) {
   const record = readRecord(client, projectId, threadId);
-  projectHomeThread(client, projectId, threadId, (item) => projectThreadUserState(item, record));
+  projectFeedThread(client, projectId, threadId, (item) => projectThreadUserState(item, record));
 }
 
 export function runFavoriteCommand(
@@ -205,7 +207,7 @@ function enqueue(
     },
     favoriteError: undefined,
   }));
-  syncHome(client, projectId, threadId);
+  syncProjectFeed(client, projectId, threadId);
   if (!queue.running) void advance(owner, id, client, projectId, threadId);
   return promise;
 }
@@ -225,7 +227,7 @@ async function advance(
     if (!current.favorite || current.favorite.projectedValue === entry.value) return current;
     return { ...current, favorite: { ...current.favorite, projectedValue: entry.value } };
   });
-  syncHome(client, projectId, threadId);
+  syncProjectFeed(client, projectId, threadId);
 
   let outcome: ThreadUserStateOutcome;
   try {
@@ -255,7 +257,8 @@ async function advance(
     outcome = { status: "error", error };
   }
 
-  syncHome(client, projectId, threadId);
+  syncProjectFeed(client, projectId, threadId);
+  void client.invalidateQueries({ queryKey: projectQueryKeys.chatFeed(projectId) });
   queue.entries.shift();
   queue.running = false;
   const next = queue.entries[0];

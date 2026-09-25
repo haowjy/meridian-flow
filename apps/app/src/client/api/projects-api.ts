@@ -9,9 +9,10 @@
  */
 
 import type { Project } from "@meridian/contracts/projects";
-import type { ContextOperationReceipt, HomeChatFeedPage } from "@meridian/contracts/protocol";
+import type { ContextOperationReceipt, ProjectChatFeedPage } from "@meridian/contracts/protocol";
 import {
   API_PROJECTS_PATH,
+  apiProjectChatFeedPath,
   apiProjectContextCatalogPath,
   apiProjectContextCreatePath,
   apiProjectContextCreateUntitledPath,
@@ -20,7 +21,6 @@ import {
   apiProjectContextOperationPath,
   apiProjectContextReadPath,
   apiProjectDocumentAddressPath,
-  apiProjectHomeFeedPath,
   apiProjectPath,
   apiProjectThreadsPath,
   apiProjectWorkingSetPath,
@@ -78,12 +78,15 @@ function urlFor(path: string, init?: RequestInitOptions): string {
   return init?.origin ? new URL(path, init.origin).toString() : path;
 }
 
-export function getProjectHomeFeed(
+export function getProjectChatFeed(
   projectId: string,
   cursor?: string | null,
   signal?: AbortSignal,
-): Promise<HomeChatFeedPage> {
-  return getJson<HomeChatFeedPage>(apiProjectHomeFeedPath(projectId, cursor), { signal });
+  favorite = false,
+): Promise<ProjectChatFeedPage> {
+  return getJson<ProjectChatFeedPage>(apiProjectChatFeedPath(projectId, cursor, favorite), {
+    signal,
+  });
 }
 
 export async function listProjects(init?: RequestInitOptions): Promise<Project[]> {

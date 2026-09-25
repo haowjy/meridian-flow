@@ -1,7 +1,7 @@
 /**
  * project-thread-cache — canonical read/write helpers for cached thread
  * projections, including optimistic project-list writes and live lifecycle
- * convergence across project lists, Home, and Work feeds.
+ * convergence across project lists, Project, and Work feeds.
  *
  * The cache stores `ThreadListItem[]` so consumers see the denormalized work +
  * lifecycle (`actionRequired`, `runningTurnId`) and draft-review count projection from the server.
@@ -18,7 +18,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 
-import { projectHomeThread } from "./home-chat-feed-cache";
+import { projectFeedThread } from "./project-chat-feed-cache";
 import { projectQueryKeys } from "./project-query-keys";
 
 export function readProjectThreadList(
@@ -90,7 +90,7 @@ export function projectThreadLifecycleInProjectCaches(
   threadId: string,
   lifecycle: ThreadListLifecycle,
 ): void {
-  const projectIdsWithHomeFeeds = new Set<string>();
+  const projectIdsWithProjectFeeds = new Set<string>();
 
   for (const query of client.getQueryCache().findAll({ queryKey: projectQueryKeys.all })) {
     const [, projectId, scope] = query.queryKey;
@@ -103,8 +103,8 @@ export function projectThreadLifecycleInProjectCaches(
       continue;
     }
 
-    if (scope === "home-feed") {
-      projectIdsWithHomeFeeds.add(projectId);
+    if (scope === "chat-feed") {
+      projectIdsWithProjectFeeds.add(projectId);
       continue;
     }
 
@@ -125,8 +125,8 @@ export function projectThreadLifecycleInProjectCaches(
     }
   }
 
-  for (const projectId of projectIdsWithHomeFeeds) {
-    projectHomeThread(client, projectId, threadId, (item) => ({
+  for (const projectId of projectIdsWithProjectFeeds) {
+    projectFeedThread(client, projectId, threadId, (item) => ({
       ...item,
       actionRequired: lifecycle.actionRequired,
     }));

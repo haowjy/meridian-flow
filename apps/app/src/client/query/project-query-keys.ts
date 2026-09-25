@@ -63,7 +63,7 @@ export const projectQueryKeys = {
       ? (["projects", projectId, "work-threads", workId] as const)
       : (["projects", projectId, "work-threads"] as const),
   works: (projectId: string) => ["projects", projectId, "works"] as const,
-  homeFeed: (projectId: string) => ["projects", projectId, "home-feed"] as const,
+  chatFeed: (projectId: string) => ["projects", projectId, "chat-feed"] as const,
   threadUserState: (projectId: string, threadId: string) =>
     ["projects", projectId, "thread-user-state", threadId] as const,
   threadRename: (projectId: string, threadId: string) =>

@@ -106,14 +106,14 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect((await threads.listByUser(USER))[0]?.agentName).toBe("Subagent");
       const updated = await threads.updateStatus(THREAD, "active");
       expect(updated?.agentName).toBe("Subagent");
-      const home = await repos.homeFeed.queryPage({
+      const home = await repos.chatFeed.queryPage({
         projectId: PROJECT,
         userId: USER,
         after: null,
-        recentLimit: 10,
-        includeFeatured: true,
+        limit: 10,
+        favorite: false,
       });
-      expect(home.continueChat?.agentName).toBe("Subagent");
+      expect(home[0]?.agentName).toBe("Subagent");
     });
 
     it("chooses one complete prompt-freeze winner across independent connections", async () => {

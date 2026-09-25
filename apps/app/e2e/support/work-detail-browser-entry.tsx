@@ -16,7 +16,6 @@ createRoot(root).render(
       routeCommands={{
         openHome: async () => undefined,
         openChat: async () => undefined,
-        openDockThread: async () => undefined,
         openWork: async () => undefined,
         workHref: () => "?screen=work",
         closeWork: async () => undefined,

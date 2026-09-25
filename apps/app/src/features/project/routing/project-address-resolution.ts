@@ -1,5 +1,5 @@
 /** Resolves readable selections against an authorized project catalog without inventing IDs. */
-import type { AddressSelection, ProjectAddress, ProjectDestination } from "./project-address";
+import type { AddressSelection, ProjectAddress } from "./project-address";
 
 export type AddressCatalog<T> =
   | { status: "loading" }
@@ -35,34 +35,15 @@ export function addressWorkSelection(address: ProjectAddress): AddressSelection 
   return address.work;
 }
 
-export function addressChatSelection(address: ProjectAddress): AddressSelection {
-  const d = address.destination;
-  if (d.kind === "chat") return { kind: "slug", slug: d.chatId };
-  if (d.kind === "chat-index") return { kind: "none" };
-  return address.chat;
-}
-
-/** Path `/chat/{id}` is identity, not a primary-catalog lookup. Query chat still is. */
-export function chatCatalogIssue(
-  destination: ProjectDestination,
-  resolution: AddressResolution<{ slug: string | null }>,
-): "loading" | "error" | "unavailable" | undefined {
-  if (destination.kind === "chat") return undefined;
-  if (resolution.status === "loading" || resolution.status === "error") return resolution.status;
-  if (resolution.status === "unavailable" || resolution.status === "malformed")
-    return "unavailable";
-}
-
 /** Repair optional query selectors only; path identities must never fall back. */
 export function guardProjectQuerySelections(
   address: ProjectAddress,
   catalogs: {
-    chat: AddressCatalog<{ slug: string | null }>;
     work: AddressCatalog<{ slug: string | null }>;
   },
 ): ProjectAddress {
   let next = address;
-  for (const key of ["chat", "work"] as const) {
+  for (const key of ["work"] as const) {
     const resolution = resolveAddressSelection(address[key], catalogs[key]);
     if (resolution.status === "malformed" || resolution.status === "unavailable") {
       next = { ...next, [key]: { kind: "none" } };

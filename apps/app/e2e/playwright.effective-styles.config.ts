@@ -5,7 +5,7 @@ export default defineConfig({
   testMatch: [
     "context-entry-actions.pw.ts",
     "effective-styles.pw.ts",
-    "home-row-component-geometry.pw.ts",
+    "project-chat-row-component-geometry.pw.ts",
     "work-detail-component-geometry.pw.ts",
   ],
   fullyParallel: false,

@@ -13,7 +13,6 @@ import {
   type ProjectWorkingSetRecord,
   type ReconcileContextRoutesInput,
   reconcileSnapshotContextRoutes,
-  setSnapshotThread,
   type WorkingSetStorage,
 } from "./store";
 
@@ -126,8 +125,12 @@ export class WorkingSetSyncDriver {
     return this.readRecentRoutes(projectId);
   }
 
-  setThread(projectId: string, threadId: string): void {
-    this.report(projectId, (snapshot) => setSnapshotThread(snapshot, threadId));
+  setCurrentChat(projectId: string, chat: CurrentChat): void {
+    this.report(projectId, (snapshot) => ({
+      ...snapshot,
+      lastThreadId: chat.kind === "thread" ? chat.threadId : null,
+      newChat: chat.kind === "new",
+    }));
   }
 
   markSuspectOnReconnect(): void {
@@ -250,7 +253,8 @@ function browserDriver(): WorkingSetSyncDriver | null {
   if (typeof window === "undefined") return null;
   driver ??= new WorkingSetSyncDriver(
     new DeviceWorkingSetStore(getWorkingSetStorage(window)),
-    (projectId, snapshot, keepalive) => updateProjectWorkingSet(projectId, snapshot, { keepalive }),
+    (projectId, { recentRoutes, lastThreadId }, keepalive) =>
+      updateProjectWorkingSet(projectId, { recentRoutes, lastThreadId }, { keepalive }),
   );
   if (!listenersInstalled) {
     listenersInstalled = true;
@@ -287,10 +291,6 @@ export function readRecentRoutes(projectId: string): WorkingSetRoute[] {
   return browserDriver()?.readRecentRoutes(projectId) ?? [];
 }
 
-export function readRememberedThread(projectId: string): string | null {
-  return browserDriver()?.readRecord(projectId)?.snapshot.lastThreadId ?? null;
-}
-
 export function reconcileContextRoutes(
   projectId: string,
   input: ReconcileContextRoutesInput,
@@ -307,6 +307,18 @@ export function replaceRecentRoutes(
   return browserDriver()?.replaceRecentRoutes(projectId, routes) ?? [];
 }
 
-export function setThread(projectId: string, threadId: string): void {
-  browserDriver()?.setThread(projectId, threadId);
+/** One browser-local chat identity, including the explicit empty-chat state. */
+export type CurrentChat = { kind: "thread"; threadId: string } | { kind: "new" } | { kind: "none" };
+
+export function readCurrentChat(projectId: string): CurrentChat {
+  const snapshot = browserDriver()?.readRecord(projectId)?.snapshot;
+  return snapshot?.newChat
+    ? { kind: "new" }
+    : snapshot?.lastThreadId
+      ? { kind: "thread", threadId: snapshot.lastThreadId }
+      : { kind: "none" };
+}
+
+export function setCurrentChat(projectId: string, chat: CurrentChat): void {
+  browserDriver()?.setCurrentChat(projectId, chat);
 }
