@@ -193,7 +193,10 @@ describe("RunSession", () => {
       vi.useRealTimers();
     }
   });
-  it("commits child admission before background execution and releases before publication B", async () => {
+  it.each([
+    false,
+    true,
+  ])("commits child admission and releases before publication B (card failure: %s)", async (failCard) => {
     const f = await fixture();
     const { createChildRunDriver } = await import("../spawn/child-run-driver.js");
     const { createDefaultTreeBudget } = await import("@meridian/contracts/spawn");
@@ -258,10 +261,14 @@ describe("RunSession", () => {
           await f.deps.repos.executionReports.findByExecution(child.id, execution),
         ).toMatchObject({ outcome: null });
         expect(await f.deps.repos.turns.findById(execution)).toMatchObject({ status: "streaming" });
+        if (failCard) throw new Error("card binding unavailable");
       },
     );
     expect(execution).toBeTruthy();
     await publication;
+    expect(
+      f.sink.events.filter((event) => event.name === "child.admission_callback_failed"),
+    ).toHaveLength(failCard ? 1 : 0);
   });
 
   it("normal parent completion cancels foreground children but leaves background children alive", async () => {

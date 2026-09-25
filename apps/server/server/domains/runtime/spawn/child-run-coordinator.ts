@@ -10,7 +10,7 @@ import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ExecutionReportCorrelation, SpawnResult } from "@meridian/contracts/spawn";
 import type { Block, Thread, ThreadActivity } from "@meridian/contracts/threads";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import type { EventSink } from "../../observability/index.js";
 import type { AgentRevisionStore, CompiledAgentDefinition } from "../../packages/index.js";
 import type {
   EventJournalWriter,
@@ -359,23 +359,13 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     let runCard: Block | null = null;
     const onAdmitted = async (execution: TurnId) => {
       admitted = execution;
-      try {
-        await bindAdmittedInvocationCard({
-          transcript: options.transcript,
-          threadedInbox: deps.threadedInbox,
-          card: runCard,
-          props: cardProps,
-          execution,
-        });
-      } catch (error) {
-        emitEvent(deps.eventSink, {
-          level: "warn",
-          source: "runtime.spawn",
-          name: "child.card_admission_binding_failed",
-          correlation: { threadId: prepared.child.id, turnId: execution },
-          payload: unknownToEventPayload(error),
-        });
-      }
+      await bindAdmittedInvocationCard({
+        transcript: options.transcript,
+        threadedInbox: deps.threadedInbox,
+        card: runCard,
+        props: cardProps,
+        execution,
+      });
     };
 
     if (background) {
