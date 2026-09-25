@@ -42,7 +42,7 @@ if (args[0] === 'deployment' && args[1] === 'list') {
   const deployment = state[service];
   if (!deployment) { console.log('[]'); process.exit(0); }
   deployment.reads++;
-  if (scenario === 'failure' && deployment.reads >= 2) deployment.status = 'FAILED';
+  if (['failure', 'removed', 'skipped'].includes(scenario) && deployment.reads >= 2) deployment.status = scenario === 'removed' ? 'REMOVED' : scenario === 'skipped' ? 'SKIPPED' : 'FAILED';
   else if (scenario !== 'timeout' && deployment.reads >= 2) deployment.status = 'SUCCESS';
   save(); console.log(JSON.stringify([deployment])); process.exit(0);
 }
@@ -126,6 +126,9 @@ describe("Railway deploy seam", () => {
     expect(await run("failure")).toContain(
       "railway logs -s server -e staging server-1 --deployment",
     );
+  });
+  it.each(["removed", "skipped"])("fails immediately when a deployment is %s", async (status) => {
+    expect(await run(status)).toContain(`server-1 ${status.toUpperCase()}`);
   });
   it("falls back to redeploy when changing source.image did not trigger a deployment", async () => {
     expect(await run("no-auto")).toMatch(/app\s+app-1/);

@@ -22,6 +22,7 @@ const terminalFailures = new Set([
   "TIMED_OUT",
   "ABORTED",
   "DEACTIVATED",
+  "THROTTLED",
 ]);
 
 function fail(message: string): never {
