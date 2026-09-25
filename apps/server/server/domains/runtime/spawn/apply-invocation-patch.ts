@@ -38,7 +38,7 @@ type PatchMerge<K extends keyof InvocationPatch> = (
  * One merge per patch key. The mapped type makes a knob added to
  * `invocationPatchSchema` without a merge a compile error.
  */
-export const PATCH_MERGES: { [K in keyof InvocationPatch]-?: PatchMerge<K> } = {
+const PATCH_MERGES: { [K in keyof InvocationPatch]-?: PatchMerge<K> } = {
   model: (value) => ({ model: value }),
   effort: (value) => ({ effort: value }),
   // tools and disallowed-tools are coupled: a map `allow` lifts the name from the

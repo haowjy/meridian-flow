@@ -12,7 +12,7 @@
  */
 
 import { t } from "@lingui/core/macro";
-import type { Project } from "@meridian/contracts/projects";
+import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import {
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
@@ -183,7 +183,7 @@ export function ProjectView(props: ProjectViewProps) {
       const list = queryClient.getQueryData<Project[] | null>(projectQueryKeys.list);
       const detail = queryClient.getQueryData<Project>(projectQueryKeys.detail(props.projectId));
       const previousRow = list?.find((project) => project.id === props.projectId);
-      const optimistic = (project: Project): Project => ({ ...project, title, name: title });
+      const optimistic = (project: Project): Project => ({ ...project, title });
       queryClient.setQueryData<Project[] | null>(projectQueryKeys.list, (current) =>
         (current ?? [props.project]).map((project) =>
           project.id === props.projectId ? optimistic(project) : project,

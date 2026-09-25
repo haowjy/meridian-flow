@@ -1,12 +1,8 @@
 import type { ContextError } from "../ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import type { ConvertedDocument, DocumentConverterPort } from "./ports/document-converter.js";
-import type { DriveImportSourcePort } from "./ports/drive-import-source.js";
 
-export type CorpusImportSource =
-  | { kind: "upload" }
-  | { kind: "google_drive_fixture" }
-  | { kind: "google_drive" };
+export type CorpusImportSource = { kind: "upload" } | { kind: "google_drive" };
 
 export type CorpusImportInputFile = {
   filename: string;
@@ -54,7 +50,6 @@ export type CorpusImportBatchResult = {
 export type CorpusImportServiceDeps = {
   contextPorts: Pick<UnifiedContextPortFactory, "forProject">;
   converter: DocumentConverterPort;
-  driveSource?: DriveImportSourcePort;
 };
 
 export type CorpusImportService = {
@@ -63,10 +58,6 @@ export type CorpusImportService = {
     projectId: string;
     files: CorpusImportInputFile[];
     source: CorpusImportSource;
-  }): Promise<CorpusImportBatchResult>;
-  importDriveFixture(input: {
-    userId: string;
-    projectId: string;
   }): Promise<CorpusImportBatchResult>;
 };
 
@@ -156,7 +147,6 @@ function contextErrorMessage(error: ContextError): string {
 export function createCorpusImportService({
   contextPorts,
   converter,
-  driveSource,
 }: CorpusImportServiceDeps): CorpusImportService {
   const importFiles = async (input: {
     userId: string;
@@ -244,24 +234,5 @@ export function createCorpusImportService({
     };
   };
 
-  return {
-    importFiles,
-    async importDriveFixture(input) {
-      if (!driveSource) {
-        throw new Error("Drive corpus import source is not configured");
-      }
-      const files = await driveSource.listFiles(input);
-      return importFiles({
-        ...input,
-        files: files.map((file) => ({
-          filename: file.filename,
-          mimeType: file.mimeType,
-          bytes: file.bytes,
-          relativePath: file.relativePath,
-          sourceId: file.id,
-        })),
-        source: { kind: "google_drive_fixture" },
-      });
-    },
-  };
+  return { importFiles };
 }

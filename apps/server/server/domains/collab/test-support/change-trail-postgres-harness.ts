@@ -325,6 +325,9 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     lifecycle: persistence.lifecycle,
     initialDocumentSeeds: persistence.lifecycle,
     metaForOrigin: () => ({ origin: "system", seq: 0 }),
+    identityPreservingWrite: async () => {
+      throw new Error("Identity-preserving writes are not part of this harness");
+    },
     resolveFiletype: async (documentId) => {
       const [row] = await db
         .select({ filetype: schema.documents.fileType })

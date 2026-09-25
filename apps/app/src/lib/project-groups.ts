@@ -3,7 +3,7 @@
  * week/older) for the sidebar and recent lists. Thin wrapper over the shared
  * `groupByDate` helper specialized to `Project.updatedAt`.
  */
-import type { Project } from "@meridian/contracts/projects";
+import type { ProjectDto as Project } from "@meridian/contracts/projects";
 
 import { type DateGroup, type GroupedByDate, groupByDate } from "./date-groups";
 

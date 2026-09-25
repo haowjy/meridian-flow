@@ -1,7 +1,7 @@
 /** Domain port for atomically recording normalized change trails. */
 
 import { isUuid } from "../../../../shared/uuid.js";
-import type { NoticeInput } from "../../../notices/index.js";
+import { type NoticeInput, parseNoticeInput } from "../../../notices/index.js";
 import type { TrailContributionReplacement } from "../branch-push-contracts.js";
 import type {
   NormalizedTrail,
@@ -42,33 +42,30 @@ export function parseDurableTrailSeedV1(value: unknown): DurableTrailRecord {
     !Array.isArray(threadIds) ||
     !threadIds.every((id) => typeof id === "string" && isUuid(id)) ||
     !Array.isArray(journalOwners) ||
-    !Array.isArray(changes) ||
-    (transactionalNotice !== undefined && !isRecord(transactionalNotice))
+    !Array.isArray(changes)
   ) {
     throw new Error("Invalid durable trail seed v1");
   }
   const owners = journalOwners.map(parseTrailOwner);
-  const rawMetadata = changes.map((change) => {
+  const decodedChanges = changes.map((change, ordinal) => {
     if (!isRecord(change)) throw new Error("Durable trail change must be an object");
+    const sequence =
+      Number.isSafeInteger(change.sequence) && (change.sequence as number) >= 0
+        ? (change.sequence as number)
+        : (() => {
+            throw new Error("Durable trail change sequence must be a non-negative integer");
+          })();
     return {
-      owner: parseTrailOwner(change.owner),
-      sequence:
-        Number.isSafeInteger(change.sequence) && (change.sequence as number) >= 0
-          ? (change.sequence as number)
-          : (() => {
-              throw new Error("Durable trail change sequence must be a non-negative integer");
-            })(),
+      change: { ...change, ordinal },
+      metadata: { owner: parseTrailOwner(change.owner), sequence },
     };
   });
-  const parsedChanges = parseTrailChangesV1(
-    changes.map((change, ordinal) => {
-      if (!isRecord(change)) throw new Error("Durable trail change must be an object");
-      return { ...change, ordinal };
+  const parsedChanges = parseTrailChangesV1(decodedChanges.map(({ change }) => change)).map(
+    ({ ordinal: _ordinal, ...change }, index) => ({
+      ...change,
+      ...(decodedChanges[index]?.metadata as { owner: TrailOwner | null; sequence: number }),
     }),
-  ).map(({ ordinal: _ordinal, ...change }, index) => ({
-    ...change,
-    ...(rawMetadata[index] as { owner: TrailOwner | null; sequence: number }),
-  }));
+  );
   return {
     documentId,
     documentTitle,
@@ -78,7 +75,7 @@ export function parseDurableTrailSeedV1(value: unknown): DurableTrailRecord {
     changes: parsedChanges,
     ...(transactionalNotice === undefined
       ? {}
-      : { transactionalNotice: transactionalNotice as unknown as NoticeInput }),
+      : { transactionalNotice: parseNoticeInput(transactionalNotice) }),
   };
 }
 

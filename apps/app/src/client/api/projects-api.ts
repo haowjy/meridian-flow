@@ -8,7 +8,7 @@
  * state (that's React Query).
  */
 
-import type { Project } from "@meridian/contracts/projects";
+import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ContextOperationReceipt, HomeChatFeedPage } from "@meridian/contracts/protocol";
 import {
   API_PROJECTS_PATH,

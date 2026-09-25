@@ -137,6 +137,9 @@ describe("branch-push durable projection", () => {
       lifecycle: persistence.lifecycle,
       initialDocumentSeeds: persistence.lifecycle,
       metaForOrigin: () => ({ origin: "system", seq: 0 }),
+      identityPreservingWrite: async () => {
+        throw new Error("Identity-preserving writes are not part of this projection scenario");
+      },
       resolveFiletype: async (resolvedDocumentId) => {
         const [row] = await db
           .select({ filetype: documents.fileType })
@@ -344,6 +347,9 @@ describe("branch-push durable projection", () => {
       lifecycle: persistence.lifecycle,
       initialDocumentSeeds: persistence.lifecycle,
       metaForOrigin: () => ({ origin: "system", seq: 0 }),
+      identityPreservingWrite: async () => {
+        throw new Error("Identity-preserving writes are not part of this projection scenario");
+      },
       resolveFiletype: async () => "markdown",
     });
     let failProjection = true;
@@ -540,6 +546,9 @@ describe("branch-push durable projection", () => {
       lifecycle: persistence.lifecycle,
       initialDocumentSeeds: persistence.lifecycle,
       metaForOrigin: () => ({ origin: "system", seq: 0 }),
+      identityPreservingWrite: async () => {
+        throw new Error("Identity-preserving writes are not part of this projection scenario");
+      },
       resolveFiletype: async () => "markdown",
     });
     const changeTrails = createDrizzleChangeTrailAggregateWriter(db);

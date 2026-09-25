@@ -2,6 +2,7 @@
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
+import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "./test-support/project-repository.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -18,8 +19,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createCollabDomain } = await import("../collab/composition.js");
     const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
-    const { createDrizzleProjectBootstrapRepository, createDrizzleProjectWorkAuthorityResolver } =
-      await import("./index.js");
+    const { createDrizzleProjectWorkAuthorityResolver } = await import("./index.js");
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
     const { eq } = await import("drizzle-orm");
     const { default: postgres } = await import("postgres");
