@@ -14,6 +14,7 @@
 ### Changed
 
 - Start fresh databases from one baseline. Existing dev databases require `pnpm db:reset`.
+- Enforce populated-row migration safety from the first migration after the baseline.
 
 - Verify stream deadlines and journal eviction with controlled time. Drain rollback notifications with committed barriers.
 

@@ -116,7 +116,7 @@ Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
 4. `pnpm db:migration-lint` — runs `tools/dev/migration-lint.ts --all`.
    Errors always block. Warnings block only under `--strict`, which CI uses for
    PRs targeting `main`/`staging`; feature-branch PRs lint only migrations changed
-   since the base ref. The squashed `0000_` baseline is exempt from warning rules
+   since the base ref. The squashed `0000_` baseline is exempt from all lint rules
    except `DELETE_WITHOUT_WHERE`.
 5. `pnpm db:migrate` — apply pending migrations.
 6. If PL/pgSQL functions/triggers changed: update
