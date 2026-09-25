@@ -57,7 +57,8 @@ export function PaneHeader({ title, left, right, actions, leading }: PaneHeaderP
         </div>
       ) : null}
 
-      <div className="flex min-w-0 flex-1 items-center">{title}</div>
+      {/* Band-tall, so a title chip can stretch into an inactive tab's full-height hover. */}
+      <div className="flex min-w-0 flex-1 items-center self-stretch">{title}</div>
 
       <div className="flex shrink-0 items-center gap-1">
         {actions}
