@@ -37,13 +37,13 @@ Production wiring is split by side-effect boundary:
    no-op observability. `hub` and `threadEventHub` are the same object so copied
    route/lib code sees the same alias shape as production.
 
-### Late-binding `RunTurnPort`
+### Shared run preparation
 
-The turn runner and child-run coordinator both need a `RunTurnPort` (the
-orchestrator) before it can be fully constructed (child-run coordinator calls
-back into the orchestrator for subagent turns). `createLateBindRunTurnPort()`
-creates a proxy that defers to an unbound `RunTurnPort`; `runTurnProxy.bind(orchestrator)`
-completes the cycle after the orchestrator is created.
+`createOrchestrator` composes the model loop with one run-session registry.
+The writer wake/cancel facade is that same object. Child invocation supplies a
+`prepare` callback that closes over the composed runtime; there is no bindable
+proxy or second event driver. Activity refresh callbacks cover both writer and
+child sessions at admission and after release.
 
 ### `AppServices` slots
 

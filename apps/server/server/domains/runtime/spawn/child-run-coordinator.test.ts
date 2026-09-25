@@ -19,6 +19,7 @@ import {
   createInMemoryRepositories,
   type EventJournalWriter,
   readThreadActivity,
+  TurnStartConflictError,
 } from "../../threads/index.js";
 import {
   createInMemoryInbox,
@@ -44,10 +45,13 @@ type RecordedTurn = {
 function stubOrchestrator(
   records: RecordedTurn[],
   repos: ReturnType<typeof createInMemoryRepositories>,
+  authority = createInMemoryRunAuthority(),
 ): RunTurnPort {
   let counter = 0;
   return {
-    async runTurn(input) {
+    async prepare(input) {
+      const lease = await authority.acquire(input.threadId, crypto.randomUUID());
+      if (!lease) throw new TurnStartConflictError(input.threadId, "already_running");
       counter += 1;
       const assistantTurnId = `assistant-turn-${counter}` as TurnId;
       records.push({
@@ -61,7 +65,7 @@ function stubOrchestrator(
         status: "complete",
         prevTurnId: (await repos.threads.findById(input.threadId))?.activeLeafTurnId ?? null,
       });
-      await repos.turns.create({
+      const assistant = await repos.turns.create({
         id: assistantTurnId,
         threadId: input.threadId,
         role: "assistant",
@@ -86,8 +90,10 @@ function stubOrchestrator(
       return {
         userTurnId: userTurn.id,
         assistantTurnId,
-        events: (async function* () {
-          yield* [] as OrchestratorEvent[];
+        runId: assistantTurnId,
+        resumeAfterSeq: "0",
+        snapshotFloorNextSeq: "1",
+        execute: async () => {
           await repos.executionReports.captureOnce(input.threadId, assistantTurnId, "return", {
             summary: `child report ${counter}`,
           });
@@ -103,10 +109,11 @@ function stubOrchestrator(
           if (input.executionReport?.correlation.origin === "spawn") {
             await repos.threads.updateSpawnLifecycle(input.threadId, { spawnStatus: "succeeded" });
           }
-        })(),
+          await authority.release(lease);
+          return { status: "complete", turn: assistant };
+        },
       };
     },
-    async finalizeGeneratorFailure() {},
   };
 }
 
@@ -218,22 +225,10 @@ async function fixture(
     orchestrator:
       typeof options.orchestrator === "function"
         ? options.orchestrator(repos)
-        : (options.orchestrator ?? stubOrchestrator(turns, repos)),
+        : (options.orchestrator ?? stubOrchestrator(turns, repos, runAuthority)),
     repos: { executionReports: repos.executionReports },
     eventWriter,
     readActivity,
-    childRunRegistry: {
-      registerChild() {},
-      registerBackgroundChild() {},
-      unregisterChild() {},
-      markChildTurn() {},
-      abortChild(childThreadId) {
-        abortedChildren.push(childThreadId as string);
-      },
-      abortChildrenOf() {},
-    },
-    workContextDelivery: { async flushOwned() {} },
-    runAuthority,
     publisher,
     eventSink,
   });
@@ -319,14 +314,24 @@ function transcriptFor(
   threadId: ThreadId,
   deps: { repos: ReturnType<typeof createInMemoryRepositories>; eventWriter: EventJournalWriter },
   turnId = "turn-1",
-): SpawnTranscript {
+): SpawnTranscript & { journal: OrchestratorEvent[] } {
+  const journal: OrchestratorEvent[] = [];
   return {
-    persistence: { repos: deps.repos, eventWriter: deps.eventWriter },
+    persistence: {
+      repos: deps.repos,
+      eventWriter: {
+        async appendEvent(id, event) {
+          const seq = await deps.eventWriter.appendEvent(id, event);
+          journal.push(event);
+          return seq;
+        },
+      },
+    },
     threadId,
     turnId,
     blockSeqRef: { value: 0 },
     allBlocks: [],
-    events: [],
+    journal,
   };
 }
 
@@ -817,9 +822,9 @@ describe("ChildRunCoordinator thread_message", () => {
     expect(first.report.threadId).toBe(childId);
     expect(second.report.threadId).toBe(childId);
     expect(first.report.summary).not.toBe(second.report.summary);
-    const firstCardId = firstTranscript.events.find((event) => event.type === "block.upserted")
+    const firstCardId = firstTranscript.journal.find((event) => event.type === "block.upserted")
       ?.block.id;
-    const secondCardId = secondTranscript.events.find((event) => event.type === "block.upserted")
+    const secondCardId = secondTranscript.journal.find((event) => event.type === "block.upserted")
       ?.block.id;
     expect(firstCardId).toBeTruthy();
     expect(secondCardId).toBeTruthy();
@@ -846,8 +851,8 @@ describe("ChildRunCoordinator thread_message", () => {
     });
   });
 
-  it("returns thread_message_target_busy without touching the child lifecycle or events", async () => {
-    const { coordinator, parent, repos, journal, runAuthority } = await fixture();
+  it("reports busy on the attempted card without creating a child execution", async () => {
+    const { coordinator, parent, repos, journal, runAuthority, eventWriter } = await fixture();
     const spawned = await coordinator.runChild(
       {
         kind: "spawn",
@@ -864,6 +869,7 @@ describe("ChildRunCoordinator thread_message", () => {
     const before = await repos.threads.findById(childId);
     const completions = journal.filter((event) => event.type === "agent.run_completed").length;
 
+    const transcript = transcriptFor(parent.id, { repos, eventWriter }, "turn-2");
     const heldLease = await runAuthority.acquire(childId, "blocking-run");
     expect(heldLease).not.toBeNull();
     try {
@@ -877,7 +883,7 @@ describe("ChildRunCoordinator thread_message", () => {
           toolCallId: "call-busy",
           budget,
         },
-        { mode: "foreground" },
+        { mode: "foreground", transcript },
       );
       expect(busy.status).toBe("error");
       if (busy.status === "error") {
@@ -890,6 +896,10 @@ describe("ChildRunCoordinator thread_message", () => {
       if (heldLease) await runAuthority.release(heldLease);
     }
 
+    expect(transcript.allBlocks).toHaveLength(1);
+    expect((await repos.blocks.findById(transcript.allBlocks[0].id))?.content).toMatchObject({
+      props: { status: "failed", execution: null },
+    });
     const after = await repos.threads.findById(childId);
     expect(after?.spawnStatus).toBe(before?.spawnStatus);
     expect(journal.filter((event) => event.type === "agent.run_completed").length).toBe(
@@ -943,7 +953,7 @@ describe("ChildRunCoordinator thread_message", () => {
     expect(spawned.status).toBe("completed");
     if (spawned.status !== "completed") return;
 
-    const customBlocks = transcript.events.flatMap((event) =>
+    const customBlocks = transcript.journal.flatMap((event) =>
       event.type === "block.upserted" && event.block.blockType === "custom" ? [event.block] : [],
     );
     expect(customBlocks.length).toBe(1);
@@ -958,7 +968,7 @@ describe("ChildRunCoordinator thread_message", () => {
         execution: null,
       },
     });
-    const admittedCard = transcript.events.find(
+    const admittedCard = transcript.journal.find(
       (event) => event.type === "block.updated" && event.block.id === customBlocks[0]?.id,
     );
     expect(admittedCard).toMatchObject({
@@ -1009,7 +1019,7 @@ describe("ChildRunCoordinator thread_message", () => {
     expect(spawned.status).toBe("background");
     if (spawned.status !== "background") return;
 
-    const customBlocks = transcript.events.flatMap((event) =>
+    const customBlocks = transcript.journal.flatMap((event) =>
       event.type === "block.upserted" && event.block.blockType === "custom" ? [event.block] : [],
     );
     expect(customBlocks).toHaveLength(1);
@@ -1057,15 +1067,15 @@ describe("ChildRunCoordinator thread_message", () => {
         const base = stubOrchestrator([], repositories);
         return {
           ...base,
-          async runTurn(input) {
+          async prepare(input) {
             await admissionGate;
-            const admitted = await base.runTurn(input);
+            const admitted = await base.prepare(input);
             return {
               ...admitted,
-              events: (async function* () {
+              execute: async () => {
                 await terminalGate;
-                yield* admitted.events;
-              })(),
+                return admitted.execute();
+              },
             };
           },
         };
@@ -1089,7 +1099,7 @@ describe("ChildRunCoordinator thread_message", () => {
         return result;
       });
     await vi.waitFor(() =>
-      expect(transcript.events.some((event) => event.type === "block.upserted")).toBe(true),
+      expect(transcript.journal.some((event) => event.type === "block.upserted")).toBe(true),
     );
     expect(returned).toBe(false);
     allowAdmission();
@@ -1102,7 +1112,7 @@ describe("ChildRunCoordinator thread_message", () => {
     expect(
       (await repos.executionReports.findByExecution(childThreadId, execution))?.outcome,
     ).toBeNull();
-    const cardId = transcript.events.find((event) => event.type === "block.upserted")?.block.id;
+    const cardId = transcript.journal.find((event) => event.type === "block.upserted")?.block.id;
     expect((await repos.blocks.findById(cardId ?? ""))?.content).toMatchObject({
       kind: "helper-result",
       props: {
@@ -1124,10 +1134,9 @@ describe("ChildRunCoordinator thread_message", () => {
   it("marks the original background card failed if assistant-turn admission never commits", async () => {
     const { coordinator, parent, repos, eventWriter, journal } = await fixture({
       orchestrator: {
-        async runTurn() {
+        async prepare() {
           throw new Error("setup rolled back");
         },
-        async finalizeGeneratorFailure() {},
       },
     });
     const transcript = transcriptFor(parent.id as ThreadId, { repos, eventWriter });
@@ -1144,7 +1153,7 @@ describe("ChildRunCoordinator thread_message", () => {
         { mode: "background", transcript },
       ),
     ).rejects.toThrow("setup rolled back");
-    const card = transcript.events.find(
+    const card = transcript.journal.find(
       (event) => event.type === "block.upserted" && event.block.blockType === "custom",
     );
     if (card?.type !== "block.upserted") throw new Error("missing original card");
@@ -1445,7 +1454,7 @@ describe("ChildRunCoordinator root activity journal", () => {
       { mode: "foreground" },
     );
     expect(messaged.status).toBe("completed");
-    // One on wake (lease held, node awake) and one on terminal.
-    expect(journal.filter((entry) => entry.type === "subagent.activity")).toHaveLength(4);
+    // Admission activity belongs to RunSession; this fixture stubs preparation.
+    expect(journal.filter((entry) => entry.type === "subagent.activity")).toHaveLength(3);
   });
 });

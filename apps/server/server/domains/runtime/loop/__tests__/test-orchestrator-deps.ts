@@ -127,6 +127,8 @@ export function createTestOrchestratorDeps(
     },
     repos,
     eventWriter: createInMemoryEventJournalWriter(),
+    headSeq: async (id) =>
+      BigInt((await (overrides.repos ?? repos).threads.findById(id))?.nextSeq ?? 0),
     agentRevisions: createTestAgentBinding(
       gateway.getDefaultModel?.() ?? "stub-model",
       "",
@@ -157,6 +159,8 @@ export function createTestOrchestratorDeps(
       },
     },
     workContextDelivery: overrides.workContextDelivery ?? {
+      async beforeTurn() {},
+      async flushOwned() {},
       async deliverNow() {
         throw new Error("No Work-context delivery expected");
       },

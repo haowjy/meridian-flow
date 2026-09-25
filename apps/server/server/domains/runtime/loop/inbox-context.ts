@@ -16,7 +16,7 @@
  * then claimed mid-run) is adopted, not re-persisted. Adoption renders the
  * turn's persisted blocks through the caller's `prepareAdoptedTurn` hook, which
  * resolves any rich content the enqueue transaction could not (text-reference
- * reads) and returns the events to emit, and through `loadActivatedSkillBodies`,
+ * reads), and through `loadActivatedSkillBodies`,
  * which inlines the request-only skill bodies the writer activated on it.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -37,10 +37,9 @@ export interface ActivatedSkillBody {
   body: string;
 }
 
-/** The rich blocks and persisted events an adopted turn's preparation resolved. */
+/** The rich blocks an adopted turn's preparation resolved. */
 export interface AdoptedTurnPreparation {
   blocks: Block[];
-  events: OrchestratorEvent[];
 }
 
 /** The loop's view of one drained batch: request and notices plus durable writes. */
@@ -49,8 +48,6 @@ export interface InboxDrain {
   rendered: Message[];
   /** Durable notices plus request-only inbox `notice` entries, in batch order. */
   notices: Notice[];
-  /** Message-turn persistence events, in batch order. */
-  persistedEvents: OrchestratorEvent[];
   /** Persisted message turns/blocks for the loop's in-memory accumulator. */
   turns: Turn[];
   blocks: Block[];
@@ -77,7 +74,7 @@ export async function drainInbox(input: {
   /**
    * Resolves an adopted turn's rich model-facing blocks before it renders (for
    * example, reads text-reference occurrences that lack a persisted result),
-   * returning the updated blocks plus the events to emit. A writer send
+   * returning the updated blocks. A writer send
    * persisted at enqueue has no run yet to read its references at first
    * iteration, so adoption is where its reads land.
    */
@@ -94,7 +91,6 @@ export async function drainInbox(input: {
   const fresh: InboxMessage[] = [];
   const adoptedTurns: Turn[] = [];
   const adoptedBlocks: Block[] = [];
-  const adoptedEvents: OrchestratorEvent[] = [];
   const adoptedBlocksByMessageId = new Map<string, Block[]>();
   const skillBodiesByMessageId = new Map<string, readonly ActivatedSkillBody[]>();
   for (const message of batch) {
@@ -116,7 +112,6 @@ export async function drainInbox(input: {
       if (input.prepareAdoptedTurn) {
         const prepared = await input.prepareAdoptedTurn(existing, blocks);
         blocks = prepared.blocks;
-        adoptedEvents.push(...prepared.events);
       }
       const skillBodies = await input.loadActivatedSkillBodies?.(existing);
       if (skillBodies?.length) skillBodiesByMessageId.set(message.id, skillBodies);
@@ -154,7 +149,6 @@ export async function drainInbox(input: {
   return {
     rendered: rendered.messages,
     notices,
-    persistedEvents: [...adoptedEvents, ...persisted.events],
     turns: [...adoptedTurns, ...persisted.turns],
     blocks: [...adoptedBlocks, ...persisted.blocks],
     ackIds: batch.map((message) => message.id),
@@ -236,7 +230,7 @@ export function planMessageTurns(input: {
 /**
  * Persists each directed `message` in a claimed batch as a user-role turn at the
  * thread tail. Returns the appended turns/blocks for the loop's in-memory
- * accumulator plus the durable events; `notice` entries are skipped
+ * accumulator; `notice` entries are skipped
  * (request-only).
  */
 export async function persistInboxMessages(input: {
@@ -245,9 +239,9 @@ export async function persistInboxMessages(input: {
   /** The turn the first `message` follows; each later one follows the previous. */
   expectedLeafTurnId: TurnId | null;
   batch: readonly InboxMessage[];
-}): Promise<{ turns: Turn[]; blocks: Block[]; events: OrchestratorEvent[] }> {
+}): Promise<{ turns: Turn[]; blocks: Block[] }> {
   if (!input.batch.some((message) => message.intent === "message")) {
-    return { turns: [], blocks: [], events: [] };
+    return { turns: [], blocks: [] };
   }
   // One transition for the whole batch: a mid-batch failure cannot leave a
   // half-persisted batch, and the chain links each message to the previous within
@@ -271,7 +265,6 @@ export async function persistInboxMessages(input: {
   return {
     turns: persisted.result.turns,
     blocks: persisted.result.blocks,
-    events: persisted.events,
   };
 }
 

@@ -86,16 +86,15 @@ describe("single cancel exit", () => {
       }),
     );
 
-    const events: Array<{ type: string }> = [];
-    const handle = await orchestrator.runTurn({
+    const handle = await orchestrator.prepare({
       threadId: thread.id,
       userText: "cancel mid-batch",
       signal: controller.signal,
     });
-    for await (const event of handle.events) events.push(event);
+    const outcome = await handle.execute();
 
     expect(streams).toBe(1);
-    expect(events.at(-1)?.type).toBe("turn.cancelled");
+    expect(outcome.status).toBe("cancelled");
     expect(rollback).toHaveBeenCalledTimes(1);
 
     const turns = await repos.turns.listByThread(thread.id);

@@ -44,10 +44,7 @@ export {
   createInterruptRegistry,
   EXPIRED_INTERRUPT_VALUE,
 } from "./loop/interrupts.js";
-export {
-  createHeartbeatRunAuthority,
-  type HeartbeatRunAuthorityOptions,
-} from "./loop/lease-heartbeat.js";
+
 export { createOrchestrator } from "./loop/orchestrator.js";
 export {
   createNotifyingThreadedInbox,
@@ -70,13 +67,17 @@ export type {
 } from "./loop/ports.js";
 export { DEFAULT_LEASE_TTL_MS } from "./loop/ports.js";
 export type { ReferenceReader } from "./loop/reference-context.js";
+export {
+  createRunSessions,
+  type TurnRunner,
+} from "./loop/run-session.js";
 export { createRunStarter } from "./loop/run-starter.js";
 export {
-  createLateBindRunTurnPort,
   type DrainRunTurnInput,
   isDrainRun,
   NoPendingWakeError,
-  type RunTurnHandle,
+  type PreparedRun,
+  type RunOutcome,
   type RunTurnInput,
   type RunTurnPort,
   type WriterRunTurnInput,
@@ -93,11 +94,6 @@ export {
   type ThreadRunOwnership,
 } from "./loop/thread-run-ownership.js";
 export { createThreadedInbox, type ThreadedInbox } from "./loop/threaded-inbox.js";
-export {
-  type ChildRunRegistry,
-  createTurnRunner,
-  type TurnRunner,
-} from "./loop/turn-runner.js";
 export {
   createWorkContextReader,
   renderWorkContext,

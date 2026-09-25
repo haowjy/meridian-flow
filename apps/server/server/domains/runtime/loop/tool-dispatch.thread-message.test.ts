@@ -87,7 +87,6 @@ function harness() {
         throw new Error("interrupt unused");
       },
       updateComponentBlock: async () => {},
-      drainEvents: () => [],
     },
     interruptAutoResume: defaultInterruptAutoResumePolicy(),
     treeBudget: createDefaultTreeBudget(),
@@ -169,11 +168,8 @@ describe("dispatchToolCall thread_message routing", () => {
     );
     if ("cancelled" in result) throw new Error("unexpected cancel");
 
-    const toolResult = result.events.find((event) => event.type === "tool.result");
-    expect(toolResult).toBeDefined();
-    const output = (toolResult as { output: JsonValue }).output as {
-      report: Record<string, JsonValue>;
-    };
+    const output = (result.block.content as { output: { report: Record<string, JsonValue> } })
+      .output;
     expect(output.report).not.toHaveProperty("costMillicredits");
     expect(output.report).not.toHaveProperty("threadId");
     expect(output.report.handle).toBe("p1");

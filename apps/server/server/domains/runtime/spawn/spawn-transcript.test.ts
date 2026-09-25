@@ -44,7 +44,6 @@ async function setup() {
     turnId: turn.id,
     blockSeqRef: { value: 0 },
     allBlocks: [],
-    events: [],
   };
   return { repos, child, turn, transcript };
 }

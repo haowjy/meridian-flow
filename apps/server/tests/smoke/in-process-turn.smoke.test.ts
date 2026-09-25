@@ -12,7 +12,6 @@ import type {
   Gateway,
   GenerateRequest,
   GenerateResult,
-  OrchestratorEvent,
   StreamEvent,
 } from "../../server/domains/runtime/index.js";
 import {
@@ -48,15 +47,6 @@ function createScriptedGateway(
       throw new Error("generate is not used in this smoke");
     },
   };
-}
-
-async function collectEvents(
-  handleOrGen: AsyncIterable<OrchestratorEvent> | { events: AsyncIterable<OrchestratorEvent> },
-): Promise<OrchestratorEvent[]> {
-  const gen = "events" in handleOrGen ? handleOrGen.events : handleOrGen;
-  const events: OrchestratorEvent[] = [];
-  for await (const event of gen) events.push(event);
-  return events;
 }
 
 describe("smoke: in-process turn", () => {
@@ -138,21 +128,25 @@ describe("smoke: in-process turn", () => {
       amountMillicredits: "1000000000",
       reason: "smoke",
     });
+    const journal = createInMemoryEventJournalWriter();
     const orchestrator = createOrchestrator(
       createTestOrchestratorDeps({
         boundThreads: () => [thread.id],
         gateway,
         repos,
-        eventWriter: createInMemoryEventJournalWriter(),
+        eventWriter: journal,
         toolRegistry,
         toolExecutor,
         creditLedger,
       }),
     );
 
-    const events = await collectEvents(
-      await orchestrator.runTurn({ threadId: thread.id, userText: "Read the notes file." }),
-    );
+    const run = await orchestrator.prepare({
+      threadId: thread.id,
+      userText: "Read the notes file.",
+    });
+    expect((await run.execute()).status).toBe("complete");
+    const events = journal.getEvents(thread.id).map((entry) => entry.event);
 
     expect(gateway.getStreamCallCount()).toBe(2);
     expect(events).toEqual(

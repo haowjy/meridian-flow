@@ -114,13 +114,11 @@ import {
   createDrizzleThreadLock,
   createDrizzleThreadRunOwnership,
   createGatewayFromEnv,
-  createHeartbeatRunAuthority,
   createInMemoryInbox,
   createInMemoryRunStarter,
   createInMemoryThreadLock,
   createInMemoryThreadRunOwnership,
   createInstrumentedGateway,
-  createLateBindRunTurnPort,
   createNotifyingThreadedInbox,
   createOrchestrator,
   createOrphanReportRepair,
@@ -131,12 +129,10 @@ import {
   createThreadedInbox,
   createToolExecutor,
   createToolRegistry,
-  createTurnRunner,
   createUserTurnAdmission,
   createWorkContextDelivery,
   createWorkContextReader,
   createWriterTurnProducer,
-  DEFAULT_LEASE_TTL_MS,
   emitRunActivityBestEffort,
   type Gateway,
   InvalidAdmissionError,
@@ -392,10 +388,9 @@ export async function createProductionAppPorts(input: {
     catalog: contextCatalog,
   });
   const runOwnership = createDrizzleThreadRunOwnership(db);
-  const runAuthority = createHeartbeatRunAuthority(
-    createDrizzleRunAuthority(db, { holderId: `${process.pid}-${crypto.randomUUID()}` }),
-    { eventSink, leaseTtlMs: DEFAULT_LEASE_TTL_MS },
-  );
+  const runAuthority = createDrizzleRunAuthority(db, {
+    holderId: `${process.pid}-${crypto.randomUUID()}`,
+  });
   const threadRepos = createDrizzleRepositories(db, workProjectionMutation, runAuthority);
   const activeDocuments = createActiveDocumentResolver(threadRepos);
   const journalReader = createDrizzleEventJournalReader(db);
@@ -647,7 +642,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     toolRegistry.register(registration);
   }
   const toolExecutor = createToolExecutor(toolRegistry);
-  const runTurnProxy = createLateBindRunTurnPort();
   const readActivity = (threadId: ThreadId) =>
     readThreadActivity(
       { threads: ports.threadRepos.threads, statusReader: ports.runAuthority },
@@ -667,25 +661,15 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     });
   };
   let refreshPendingProjection: (threadId: ThreadId) => Promise<void> = async () => {};
-  runner = createTurnRunner({
-    orchestrator: runTurnProxy,
-    hub: threadEventHub,
-    repos: { turns: ports.threadRepos.turns },
-    eventSink: ports.eventSink,
-    runAuthority: ports.runAuthority,
-    workContextDelivery,
-    onRunStarted: refreshSubagentActivity,
-    onRunSettled(threadId) {
-      refreshSubagentActivity(threadId);
-      void refreshPendingProjection(threadId);
-    },
-  });
   // One durable inbox and lock shared by the loop (consumer) and the producer
   // `ThreadedInbox`. The `RunStarter` wakes a thread from a pending message; the
   // sweep is the durable recovery for a missed wake.
   const inbox = createDrizzleInbox(ports.db);
   const threadLock = createDrizzleThreadLock(ports.db);
-  const runStarter = createRunStarter(runner, ports.eventSink);
+  const runStarter = createRunStarter(
+    { startDrain: (id) => runner.startDrain(id) },
+    ports.eventSink,
+  );
   const readPending = async (threadId: ThreadId) => readPendingInbox(inbox, threadId);
   refreshPendingProjection = async (threadId) => {
     try {
@@ -784,7 +768,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       savepoint: (operation) => runInDrizzleSavepoint(ports.db, operation),
     },
     hub: threadEventHub,
-    runner,
+    runner: { getRunningTurn: (id) => runner.getRunningTurn(id) },
     turns: ports.threadRepos.turns,
     threadedInbox,
     workContextDelivery,
@@ -818,16 +802,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     producer: admissionProducer,
   });
   const childRunDriver = createChildRunDriver({
-    orchestrator: runTurnProxy,
+    orchestrator: { prepare: (input) => runner.prepare(input) },
     repos: { executionReports: ports.threadRepos.executionReports },
     // The live hub, not the bare journal writer: background lifecycle must reach
     // subscribers at append time, in append order. A notifier-relayed write lands
     // after later in-process appends and is dropped as stale by the WS cursor.
     eventWriter: threadEventHub,
     readActivity,
-    childRunRegistry: runner.childRunRegistry,
-    workContextDelivery: workContextDelivery,
-    runAuthority: ports.runAuthority,
     publisher: reportPublisher,
     eventSink: ports.eventSink,
   });
@@ -859,6 +840,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
   });
   const orchestrator = createOrchestrator({
+    headSeq: (id) => threadEventHub.headSeq(id),
+    onRunStarted: refreshSubagentActivity,
+    onRunSettled(threadId) {
+      refreshSubagentActivity(threadId);
+      void refreshPendingProjection(threadId);
+    },
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
     toolExecutor,
@@ -895,7 +882,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     imageAssets,
     concurrentRenderBudgetBytes,
   });
-  runTurnProxy.bind(orchestrator);
+  runner = orchestrator;
 
   return {
     gateway: ports.gateway,
@@ -1329,19 +1316,13 @@ export function createInMemoryAppServices(): AppServices {
     workingSet,
     recentDocuments,
     orchestrator: {
-      async runTurn() {
+      async prepare() {
         throw new Error("in-memory orchestrator is not implemented");
       },
-      finalizeGeneratorFailure: async () => {},
     },
     runner: {
-      childRunRegistry: {
-        registerChild() {},
-        registerBackgroundChild() {},
-        unregisterChild() {},
-        markChildTurn() {},
-        abortChild() {},
-        abortChildrenOf() {},
+      async prepare() {
+        throw new Error("in-memory run preparation is not implemented");
       },
       getRunningTurn() {
         return null;

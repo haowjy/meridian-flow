@@ -1,13 +1,12 @@
 /**
  * The port through which consumers request a new turn on a thread.
- * Defined here (not in orchestrator.ts) to break the import cycle between
- * the orchestrator and child-run-coordinator/turn-runner.
+ * Preparation owns setup and returns a one-shot execution, not an event stream.
  */
 
 import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ExecutionReportCorrelation, TreeBudget } from "@meridian/contracts/spawn";
-import type { JsonValue, OrchestratorEvent } from "@meridian/contracts/threads";
+import type { JsonValue, Turn } from "@meridian/contracts/threads";
 import type { Tool } from "../gateway/index.js";
 import type { Lease } from "./ports.js";
 
@@ -22,8 +21,7 @@ interface RunTurnBase {
     agentSlug?: string | null;
     description?: string | null;
   };
-  /** The run's held lease; the loop releases it through closeRun when it exits. */
-  lease?: Lease;
+  child?: { parentThreadId: ThreadId; background: boolean };
   onAssistantTurnChanged?: (turnId: TurnId) => void;
 }
 
@@ -46,8 +44,11 @@ export interface DrainRunTurnInput extends RunTurnBase {
 }
 
 export type RunTurnInput = WriterRunTurnInput | DrainRunTurnInput;
+/** Session-owned state passed only to setup and the model loop. */
+export type RunLoopInput = RunTurnInput & { lease: Lease };
+export type DrainRunLoopInput = DrainRunTurnInput & { lease: Lease };
 
-export function isDrainRun(input: RunTurnInput): input is DrainRunTurnInput {
+export function isDrainRun(input: RunLoopInput): input is DrainRunLoopInput {
   return "drain" in input && input.drain === true;
 }
 
@@ -64,39 +65,26 @@ export class NoPendingWakeError extends Error {
   }
 }
 
-export interface RunTurnHandle {
+export interface PreparedLoop {
   userTurnId: TurnId;
   assistantTurnId: TurnId;
-  events: AsyncGenerator<OrchestratorEvent>;
+  execute(): Promise<Turn>;
 }
 
-export interface FinalizeGeneratorFailureInput {
-  threadId: ThreadId;
+export type RunOutcome =
+  | { status: "complete" | "cancelled" | "error"; turn: Turn }
+  | { status: "failed"; error: unknown };
+
+/** The recipient must execute every prepared run, even when already cancelled. */
+export interface PreparedRun {
+  runId: string;
+  userTurnId: TurnId;
   assistantTurnId: TurnId;
-  error: unknown;
-  signal?: AbortSignal;
-  lease?: Lease;
+  resumeAfterSeq: string;
+  snapshotFloorNextSeq: string;
+  execute(): Promise<RunOutcome>;
 }
 
 export interface RunTurnPort {
-  runTurn(input: RunTurnInput): Promise<RunTurnHandle>;
-  /** Persist + journal a terminal outcome when the event generator throws. */
-  finalizeGeneratorFailure(input: FinalizeGeneratorFailureInput): Promise<void>;
-}
-
-export function createLateBindRunTurnPort(): RunTurnPort & { bind(target: RunTurnPort): void } {
-  let target: RunTurnPort | null = null;
-  return {
-    runTurn(input) {
-      if (!target) throw new Error("RunTurnPort not yet bound");
-      return target.runTurn(input);
-    },
-    finalizeGeneratorFailure(input) {
-      if (!target) throw new Error("RunTurnPort not yet bound");
-      return target.finalizeGeneratorFailure(input);
-    },
-    bind(t: RunTurnPort) {
-      target = t;
-    },
-  };
+  prepare(input: RunTurnInput): Promise<PreparedRun>;
 }

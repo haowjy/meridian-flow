@@ -2,7 +2,7 @@
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { TurnStartConflictError } from "../../threads/index.js";
 import type { RunStarter } from "./ports.js";
-import type { TurnRunner } from "./turn-runner.js";
+import type { TurnRunner } from "./run-session.js";
 
 export function createRunStarter(
   runner: Pick<TurnRunner, "startDrain">,

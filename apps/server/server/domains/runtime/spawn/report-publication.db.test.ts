@@ -453,7 +453,6 @@ else
           turnId: ids.parentTurn,
           blockSeqRef: { value: 8 },
           allBlocks: [],
-          events: [],
         },
         threadedInbox,
         card: originalCard,

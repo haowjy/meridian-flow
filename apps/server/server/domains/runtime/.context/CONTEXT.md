@@ -29,7 +29,7 @@ streaming `Gateway` port.
 
 Canonical gateway types live in `gateway/domain/types.ts`.
 
-## loop — orchestrator + turn runner
+## loop — orchestrator + run sessions
 
 One run = one lease through potentially many LLM-call + tool-execution
 iterations and assistant turns. The loop is intentionally decomposed; `orchestrator.ts` owns the
@@ -46,14 +46,15 @@ skeleton and delegates the moving parts.
 | `turn-accounting.ts` | Credit ledger checks/debits and cumulative usage events. |
 | `interrupt-session.ts` | Same-turn interrupt suspend/resume mechanics and component-block updates. |
 | `tool-dispatch.ts` | Live output, spawn/thread_message/returnResult callback wiring, and durable tool_result persistence. Dispatch does not apply policy. return_result settlement is spawn-owned: dispatch honors the typed `ReturnResultOutcome` and does not parse arguments or reconstruct the envelope from JSON. |
-| `run-turn-port.ts` | `RunTurnPort` plus `createLateBindRunTurnPort()` to break the runner/orchestrator/child-run cycle. |
+| `run-turn-port.ts` | `prepare(input)` returns a `PreparedRun` with run/initial assistant identity, pre-setup replay cursor, post-setup snapshot floor, and one-shot `execute(): Promise<RunOutcome>`. Setup commits before returning; only execute enters the model loop. The journal/hub is the sole event consumer, not an orchestrator generator. |
+| `run-session.ts` | One owner for writer and child claims, AbortController, current-turn registry, heartbeat, cancel, terminal fallback, Work flush, and best-effort release. `execute` settles after cleanup; child report publication B follows it. A primary completion aborts foreground descendants only; a child invocation bounds its whole subtree and aborts background descendants too. Explicit cancellation includes background descendants. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. Child-provenance system text contains a compact exact `thread_report` call, never the report body; the parent model may fetch that report with the authorized tool. Assistant custom blocks stay UI-only to preserve tool_use→tool_result adjacency. |
 | `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt in a fixed layer order: immutable agent body (revision body or the host-owned empty default), the invocation overlay's additive `appendSystemPrompt`, frozen Work context, available skill slugs (name when it differs) and descriptions, named subagent slug/name/description from the bound roster, core document dialect, runtime URI instruction, and, for subagent threads only, the mandatory closing report instruction as the last layer. An empty or absent append adds nothing, and the guidance string is a module constant (`SUBAGENT_GUIDANCE`). Freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
 | `work-context.ts` / `work-context-delivery.ts` | Reads authoritative Work identity with rendered context and owns durable delivery/recovery behind the deep `WorkContextDelivery` port. Every Work-list change queues eligible live threads. Post-commit wakes drain idle threads, running threads flush at completion, and a startup/poll sweep recovers obligations across process recreation. |
 | `delivery-pump.ts` | Shared `createDeliveryPump` scaffold for a durable per-thread delivery: per-thread flush serialization, the live-run guard, and sweep fan-out. Each transport supplies what "deliver this thread" means and how its pending obligations are listed; obligation stores stay transport-specific. Used by `WorkContextDelivery`. |
 | `thread-run-ownership.ts` | `ThreadRunOwnership` cross-process run claim plus `withRunClaim`, which runs a task under the claim or returns false when another owner holds it. Used by the out-of-loop callers (Work-context delivery, writer admission, Work rebind); both run owners migrated to `RunAuthority`. |
-| `ports.ts` | Notification/steering vocabulary and ports: `Inbox` (durable per-thread queue with idempotency and at-least-once claim/ack; raw storage, not producer-facing), `RunAuthority` (session advisory lock as the mutex plus an expiring, queryable lease row), and the thin `RunStarter` seam. Producers go through `ThreadedInbox` (`threaded-inbox.ts`), which holds the per-thread lock so the global `seq` orders commits within a thread (sequence allocation alone orders allocation, not commit). Drizzle adapters: `adapters/drizzle-inbox.ts` and `adapters/drizzle-thread-run-ownership.ts` (`createDrizzleRunAuthority`); in-memory fakes under `adapters/in-memory/loop-ports.ts`. Backed by `thread_inbox_messages` and `thread_run_leases`. The two run owners (`turn-runner.ts`, `spawn/child-run-driver.ts`) acquire a lease here; `lease-heartbeat.ts` wraps the port with the `ttl / 3` renew heartbeat and stops it when `renew` reports the lease lost. `RunAuthority.cancel(threadId, turnId)` sets only the matching live lease's durable `cancel_requested` (idempotent, the only cross-process channel): `TurnRunner.cancel` calls it before aborting the local controller, then chains a best-effort post-release `startDrain` so a pending `message` becomes the next turn. `RunAuthority.bindTurn` writes the run's assistant turn onto the lease inside turn-start setup, after the turn events project; subagent report admission joins that same transaction. `readRunningTurnId` is the only source for the running turn (list and live state read it; the runner's in-memory id is not a second truth). Both the lease and the legacy claim share the session advisory lock, so they stay mutually exclusive. |
+| `ports.ts` | Notification/steering vocabulary and ports: `Inbox` (durable per-thread queue with idempotency and at-least-once claim/ack; raw storage, not producer-facing), `RunAuthority` (session advisory lock as the mutex plus an expiring, queryable lease row), and the thin `RunStarter` seam. Producers go through `ThreadedInbox` (`threaded-inbox.ts`), which holds the per-thread lock so the global `seq` orders commits within a thread (sequence allocation alone orders allocation, not commit). Drizzle adapters: `adapters/drizzle-inbox.ts` and `adapters/drizzle-thread-run-ownership.ts` (`createDrizzleRunAuthority`); in-memory fakes under `adapters/in-memory/loop-ports.ts`. Backed by `thread_inbox_messages` and `thread_run_leases`. `run-session.ts` acquires and heartbeats every model run. Lost renewal stops the timer and aborts the session. `RunAuthority.cancel(threadId, turnId)` sets only the matching live lease's durable `cancel_requested` (idempotent, the only cross-process channel): `TurnRunner.cancel` calls it before aborting the local controller, then chains a best-effort post-release `startDrain` so a pending `message` becomes the next turn. `RunAuthority.bindTurn` writes the run's assistant turn onto the lease inside turn-start setup, after the turn events project; subagent report admission joins that same transaction. Durable readers (list, live state, snapshot, report readiness) read `readRunningTurnId`; the session tracks the same current turn after each committed split and uses it for local cancel and terminal fallback. Both the lease and the legacy claim share the session advisory lock, so they stay mutually exclusive. |
 
 | `system-instructions/` | Model-facing prompt assets independent of any agent body. `document-dialect.ts` owns Meridian document language and its codec-backed spelling contract; `runtime-uris.ts` owns context namespace guidance. Tool descriptions continue to own mechanics. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
@@ -141,9 +142,10 @@ behavior; schema-only stubs are not advertised.
 discriminates spawn from message. It authorizes, resolves the invocation,
 creates and binds the child thread, and persists writer cards. `spawn/resolve-child-invocation.ts`
 is the pure resolution/validation half (no thread, turn, or repository
-dependency). `spawn/child-run-driver.ts` coordinates claim, admitted turn start,
-stream consumption, lease release, exact saved-result read, and best-effort
-publication; it owns no terminal report policy. `loop/execution-finalizer.ts`
+dependency). `spawn/child-run-driver.ts` supplies admission input to the shared
+run session, binds the parent card before execution, then reads the exact saved
+result and publishes after the session releases. It owns no lease or terminal
+report policy. `loop/execution-finalizer.ts`
 owns immutable terminal transaction A under `closeRun`'s child final-drain lock.
 `spawn/report-publisher.ts` owns parent-first transaction B: it replaces the
 original card in place with `block.updated`, appends body-free
@@ -152,8 +154,8 @@ background delivery only, and marks the report published.
 `spawn/orphan-report-repair.ts` scans bounded unfinalized metadata and requires
 the real session claim before failing a nonterminal admitted turn without a
 model call. The startup/poll sweep runs wake, repair, and publication
-independently. The coordinator consumes `RunTurnPort`, `ChildRunRegistry` from
-the turn runner, immutable Agent revisions, and the threads repository's
+independently. The coordinator consumes `RunTurnPort` through its driver,
+immutable Agent revisions, and the threads repository's
 `SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` parses the patch with the canonical `invocationPatchSchema` and translates a `ZodError` to `InvocationPatchError`, so an unknown key or wrong value reaches `spawn_invocation_patch_invalid` before any child row is created. It then merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, present list replaces, empty clears, tool map patches one entry, scalar `model`/`effort` replace) through the compile-time-exhaustive `PATCH_MERGES` table, one entry per patch key; `tools` and `disallowed-tools` are coupled and each returns the full `patchTools` result so a map `allow` lifts the baseline denial. Overrides fold tool-name aliases like authoring. Added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. The patch applies to named and generic children alike. The effective configuration plus the raw `invocation_overlay` persist on the thread binding and are reused on later turns; the saved Agent definition is never mutated. A spawn-time `append_system_prompt` is an additive overlay layer appended after the immutable Agent body; spawn never replaces the body. Route-facing
 thread creation still goes through public thread creation normalization; only the
 child-run coordinator can create subagent threads.
@@ -297,7 +299,7 @@ facet.
   persisted `tool_use` intent and synthesizes transient error results for calls
   missing results in the immediately following tool-role group. Repairs are
   never persisted and never rerun tools.
-- **Edit-intent notices** — before every provider stream, `runTurn` drains the
+- **Edit-intent notices** — before every provider stream, the model loop drains the
   single notice port for the thread and its active documents. Notices present
   before the first call attach to that writer message and remain there for every
   tool-loop iteration. Notices recorded mid-turn are inserted after the tool
