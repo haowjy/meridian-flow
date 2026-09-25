@@ -14,7 +14,6 @@ import { useRenameThread } from "@/client/query/useRenameThread";
 import { announce } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
-import { useChatNavigation } from "@/features/project/routing/chat-navigation";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { ThreadSwitcherPopover } from "./ThreadSwitcherPopover";
 
@@ -25,14 +24,13 @@ import { ThreadSwitcherPopover } from "./ThreadSwitcherPopover";
  * project's threads (grouped by work) or rename the current one inline.
  * Sits in `ChatSurface`'s `header` slot — above the scroll region, so it stays
  * fixed while messages scroll. Rename projects the title immediately and shows
- * pending/rejection on this control; switching delegates primary/dock
- * navigation to the project route.
+ * pending/rejection on this control; switching reads `useChatNavigation()`
+ * directly, so this header never threads a navigation callback as a prop.
  */
 export type ChatThreadHeaderProps = {
   projectId: string;
   threadId: string;
   activeThread: Thread | null;
-  onSelectThread: (threadId: string) => void;
 };
 
 export function ChatThreadHeader(props: ChatThreadHeaderProps) {
@@ -55,21 +53,17 @@ type ChatThreadTitleProps = {
   /** `null` — the empty New chat: the switcher reads "New chat" and has no rename. */
   threadId: string | null;
   activeThread?: Thread | null;
-  onSelectThread: (threadId: string) => void;
   /** Trigger presentation — see `ThreadSwitcherPopover`. */
   variant?: "quiet" | "tab";
 };
 
 export function ChatThreadTitle(props: ChatThreadTitleProps) {
-  const { openNewChat } = useChatNavigation();
   if (props.threadId === null)
     return (
       <ThreadSwitcherPopover
         projectId={props.projectId}
         activeThreadId={null}
         title={t`New chat`}
-        onSelectThread={props.onSelectThread}
-        onNewChat={openNewChat}
         variant={props.variant}
       />
     );
@@ -80,10 +74,8 @@ function ExistingThreadTitle({
   projectId,
   threadId,
   activeThread,
-  onSelectThread,
   variant,
 }: ChatThreadTitleProps & { threadId: string }) {
-  const { openNewChat } = useChatNavigation();
   const { threadById } = useProjectThreadGroups(projectId);
   const resolved = activeThread ?? threadById.get(threadId) ?? null;
   const title = displayThreadTitle(resolved?.title);
@@ -110,8 +102,6 @@ function ExistingThreadTitle({
           projectId={projectId}
           activeThreadId={threadId}
           title={title}
-          onSelectThread={onSelectThread}
-          onNewChat={openNewChat}
           onRename={() => setEditing(true)}
           variant={variant}
         />

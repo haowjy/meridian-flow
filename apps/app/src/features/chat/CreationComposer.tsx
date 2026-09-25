@@ -11,34 +11,39 @@ import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { NewThreadComposerToolbar } from "@/features/project/chat/NewThreadComposerToolbar";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
-import { useChatNavigation } from "@/features/project/routing/chat-navigation";
 import { useCreationComposer } from "./useCreationComposer";
 
 export function CreationComposer({
   projectId,
   variant = "pinned",
   autoFocus = false,
+  newChatFocusRequestId = null,
+  onNewChatFocusHandled,
 }: {
   projectId: string;
   /** `hero` — the chat index's centered composer; `pinned` — the empty chat's footer. */
   variant?: "pinned" | "hero";
   autoFocus?: boolean;
+  /**
+   * A one-shot New chat focus intent for the pinned composer, supplied by the
+   * host (project routing owns the request; this composer stays unaware of
+   * project routing beyond this prop).
+   */
+  newChatFocusRequestId?: number | null;
+  onNewChatFocusHandled?: (id: number) => void;
 }) {
   const creation = useCreationComposer(projectId);
   const composerRef = useRef<ComposerHandle>(null);
-  const { registerNewChatFocus } = useChatNavigation();
   // An explicit New chat focuses the empty composer showing it. The hero is
   // not New chat's target: it focuses at mount where a keyboard is likely.
-  // The frame lets a just-revealed dock drop `inert` first.
-  // The request is one-shot, so a frame already scheduled is never cancelled:
-  // an effect re-run (StrictMode) would otherwise drop it. An unmounted
-  // composer's ref is null by then.
+  // The frame lets a just-revealed dock drop `inert` first. A composer that
+  // mounts fresh already sees the request id in this same render, so mount
+  // timing never races the host publishing it.
   useEffect(() => {
-    if (variant === "hero") return;
-    return registerNewChatFocus(() => {
-      requestAnimationFrame(() => composerRef.current?.focus());
-    });
-  }, [registerNewChatFocus, variant]);
+    if (variant === "hero" || newChatFocusRequestId == null) return;
+    requestAnimationFrame(() => composerRef.current?.focus());
+    onNewChatFocusHandled?.(newChatFocusRequestId);
+  }, [newChatFocusRequestId, variant, onNewChatFocusHandled]);
   const works = useWorks(projectId);
   const agents = useAgentCatalog(true, projectId);
   const choices = creation.choices;

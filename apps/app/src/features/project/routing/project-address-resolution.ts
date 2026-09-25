@@ -42,12 +42,9 @@ export function guardProjectQuerySelections(
     work: AddressCatalog<{ slug: string | null }>;
   },
 ): ProjectAddress {
-  let next = address;
-  for (const key of ["work"] as const) {
-    const resolution = resolveAddressSelection(address[key], catalogs[key]);
-    if (resolution.status === "malformed" || resolution.status === "unavailable") {
-      next = { ...next, [key]: { kind: "none" } };
-    }
+  const resolution = resolveAddressSelection(address.work, catalogs.work);
+  if (resolution.status === "malformed" || resolution.status === "unavailable") {
+    return { ...address, work: { kind: "none" } };
   }
-  return next;
+  return address;
 }
