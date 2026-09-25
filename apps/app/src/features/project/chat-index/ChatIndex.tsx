@@ -1,15 +1,16 @@
 /**
  * ChatIndex — the project's chats page: the new-chat composer, then every
  * top-level chat, latest activity first, grouped Today / Yesterday / Earlier
- * behind an All | Favorites filter.
+ * behind a title search and an All | Favorites filter.
  *
  * Same family as the Editor's Recently opened (recency groups, quiet failure).
  * It renders only as the Chat screen's page: the center project root and the
- * phone. The page scrolls as one.
+ * phone. The page scrolls as one; the search and filter row sticks.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
+import { Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useDeleteChat } from "@/client/query/useDeleteChat";
 import {
@@ -19,6 +20,7 @@ import {
 import { useProjectChatUserState } from "@/client/query/useProjectChatUserState";
 import { useAnnouncement } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { Input } from "@/components/ui/input";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { CreationComposer } from "@/features/chat/CreationComposer";
 import { cn } from "@/lib/utils";
@@ -35,16 +37,15 @@ type Feed = ReturnType<typeof useProjectChatFeed>;
 export type ChatIndexProps = {
   projectId: string;
   onOpenThread: (threadId: string) => void;
-  /**
-   * The host's chrome already reads "Chats" (the phone trail): the heading
-   * stays for screen readers only and the filter takes its place in the row.
-   */
+  /** The host's chrome already reads "Chats" (the phone trail): less top space. */
   namedByChrome?: boolean;
 };
 
 export function ChatIndex({ projectId, onOpenThread, namedByChrome = false }: ChatIndexProps) {
   const [filter, setFilter] = useState<Filter>("all");
-  const feed = useProjectChatFeed(projectId, filter === "favorites");
+  const [searchText, setSearchText] = useState("");
+  const search = useSettledSearch(searchText);
+  const feed = useProjectChatFeed(projectId, filter === "favorites", search);
   const { announce, announceError } = useAnnouncement();
   const now = useMinuteClock();
   const finePointer = useFinePointer();
@@ -69,35 +70,46 @@ export function ChatIndex({ projectId, onOpenThread, namedByChrome = false }: Ch
   };
 
   return (
-    <div className="main-pane flex h-full min-h-0 flex-col">
-      {/* One scroll for the whole page. The scroll box is the column itself, so
-          its scrollbar sits at the rows' edge rather than the pane's. */}
-      <div className="chat-column @container/project-screen flex min-h-0 flex-1 flex-col">
-        <div
-          data-chat-index-scroll-owner
-          className={cn(
-            "app-scroll -mr-4 pr-4 pb-12",
-            namedByChrome ? "pt-4" : "pt-[clamp(1rem,9vh,5rem)]",
-          )}
-        >
-          <h1 className="mb-[clamp(0.75rem,3vh,1.25rem)] text-center text-xl font-normal tracking-tight text-balance text-foreground">
-            <Trans>What will you write next?</Trans>
-          </h1>
-          <CreationComposer projectId={projectId} variant="hero" autoFocus={finePointer} />
-          <div className="mt-[clamp(1.5rem,5vh,2.5rem)] flex items-center gap-4">
-            <h2 className={namedByChrome ? "sr-only" : "text-headline-section text-foreground"}>
-              <Trans>Chats</Trans>
-            </h2>
-            <ChatFilter value={filter} onChange={setFilter} />
-          </div>
-          <div className="mt-[clamp(0.75rem,3vh,1.75rem)]">
-            <ChatIndexBody
-              projectId={projectId}
-              feed={feed}
-              favorites={filter === "favorites"}
-              rowProps={rowProps}
+    // One scroll for the whole page; the list's tools stick once scrolled past.
+    <div data-chat-index-scroll-owner className="app-scroll main-pane">
+      <div
+        className={cn(
+          "chat-column @container/project-screen pb-12",
+          namedByChrome ? "pt-4" : "pt-[clamp(1rem,9vh,5rem)]",
+        )}
+      >
+        <h1 className="mb-[clamp(0.75rem,3vh,1.25rem)] text-center text-xl font-normal tracking-tight text-balance text-foreground">
+          <Trans>What will you write next?</Trans>
+        </h1>
+        <CreationComposer projectId={projectId} variant="hero" autoFocus={finePointer} />
+        <div className="sticky top-0 z-10 mt-[clamp(1rem,4vh,2rem)] flex items-center gap-3 bg-background py-2">
+          <h2 className="sr-only">
+            <Trans>Chats</Trans>
+          </h2>
+          <div className="relative min-w-0 flex-1">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              type="search"
+              value={searchText}
+              aria-label={t`Search chats`}
+              placeholder={t`Search chats`}
+              onChange={(event) => setSearchText(event.target.value)}
+              className="h-8 pl-8 [@media(pointer:coarse)]:h-11"
             />
           </div>
+          <ChatFilter value={filter} onChange={setFilter} />
+        </div>
+        <div className="mt-[clamp(0.5rem,2vh,1.25rem)]">
+          <ChatIndexBody
+            projectId={projectId}
+            feed={feed}
+            favorites={filter === "favorites"}
+            search={search}
+            rowProps={rowProps}
+          />
         </div>
       </div>
       <DeleteChatDialog
@@ -109,6 +121,17 @@ export function ChatIndex({ projectId, onOpenThread, namedByChrome = false }: Ch
       />
     </div>
   );
+}
+
+/** Search as typed, settled briefly so each keystroke is not its own request. */
+function useSettledSearch(text: string): string | null {
+  const [settled, setSettled] = useState<string | null>(null);
+  useEffect(() => {
+    const next = text.trim() || null;
+    const timer = window.setTimeout(() => setSettled(next), next ? 200 : 0);
+    return () => window.clearTimeout(timer);
+  }, [text]);
+  return settled;
 }
 
 function ChatFilter({
@@ -138,11 +161,13 @@ function ChatIndexBody({
   projectId,
   feed,
   favorites,
+  search,
   rowProps,
 }: {
   projectId: string;
   feed: Feed;
   favorites: boolean;
+  search: string | null;
   rowProps: RowProps;
 }) {
   if (feed.isPending) return <ChatIndexLoading />;
@@ -156,7 +181,13 @@ function ChatIndexBody({
   if (!feed.items.length && !feed.hasNextPage)
     return (
       <p className="text-sm text-muted-foreground">
-        {favorites ? <Trans>No favorite chats yet.</Trans> : <Trans>No chats yet.</Trans>}
+        {search ? (
+          <Trans>No chats match “{search}”.</Trans>
+        ) : favorites ? (
+          <Trans>No favorite chats yet.</Trans>
+        ) : (
+          <Trans>No chats yet.</Trans>
+        )}
       </p>
     );
   return (

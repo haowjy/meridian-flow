@@ -194,6 +194,8 @@ export interface ProjectChatFeedRepository {
     after: ProjectChatCursorKey | null;
     limit: number;
     favorite: boolean;
+    /** Case-insensitive title substring; null lists every chat. */
+    search: string | null;
   }): Promise<ProjectChatItem[]>;
 }
 

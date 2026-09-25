@@ -2329,6 +2329,10 @@ msgid "No chats are associated with this Work."
 msgstr "No chats are associated with this Work."
 
 #: src/features/project/chat-index/ChatIndex.tsx
+msgid "No chats match “{search}”."
+msgstr "No chats match “{search}”."
+
+#: src/features/project/chat-index/ChatIndex.tsx
 #~ msgid "No chats yet"
 #~ msgstr "No chats yet"
 
@@ -3115,6 +3119,7 @@ msgid "Scratch"
 msgstr "Scratch"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
+#: src/features/project/chat-index/ChatIndex.tsx
 msgid "Search chats"
 msgstr "Search chats"
 

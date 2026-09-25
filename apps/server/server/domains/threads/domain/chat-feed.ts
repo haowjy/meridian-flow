@@ -5,6 +5,7 @@ import type { ProjectChatFeedRepository } from "../ports/repositories.js";
 import { decodeProjectChatCursor, encodeProjectChatCursor } from "./project-chat-cursor.js";
 
 const PAGE_SIZE = 24;
+const MAX_SEARCH_LENGTH = 200;
 
 export class InvalidProjectFeedCursorError extends Error {
   constructor() {
@@ -19,7 +20,9 @@ export async function getProjectChatFeedPage(input: {
   userId: string;
   cursor?: string | null;
   favorite?: boolean;
+  search?: string | null;
 }): Promise<ProjectChatFeedPage> {
+  const search = input.search?.trim().slice(0, MAX_SEARCH_LENGTH) || null;
   let after = null;
   try {
     after = input.cursor == null ? null : decodeProjectChatCursor(input.cursor);
@@ -32,6 +35,7 @@ export async function getProjectChatFeedPage(input: {
     after,
     limit: PAGE_SIZE + 1,
     favorite: input.favorite ?? false,
+    search,
   });
   const recentItems = result.slice(0, PAGE_SIZE);
   const cursorItem: ProjectChatItem | undefined =

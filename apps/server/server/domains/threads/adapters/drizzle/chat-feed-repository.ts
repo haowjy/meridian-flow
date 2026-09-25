@@ -19,6 +19,10 @@ export function createDrizzleProjectChatFeedRepository(
     async queryPage(input) {
       const cursorActivity = input.after?.sortAt ?? null;
       const cursorThreadId = input.after?.threadId ?? null;
+      // LIKE metacharacters in the writer's text match literally.
+      const searchPattern = input.search
+        ? `%${input.search.replace(/[\\%_]/g, (char) => `\\${char}`)}%`
+        : null;
       const rows = await currentDrizzleDb(db).execute(sql`
         WITH RECURSIVE eligible AS (
           SELECT t.id AS thread_id, t.title,
@@ -42,6 +46,9 @@ export function createDrizzleProjectChatFeedRepository(
           WHERE t.project_id = ${input.projectId}::uuid
             AND t.kind = 'primary'
             AND t.deleted_at IS NULL AND t.status <> 'archived'
+            -- Filters run before the lineage walk so a narrow page walks few threads.
+            AND (NOT ${input.favorite} OR COALESCE(tus.is_favorite, false))
+            AND (${searchPattern}::text IS NULL OR t.title ILIKE ${searchPattern} ESCAPE '\\')
         ), lineage AS (
           SELECT e.thread_id, tr.id AS turn_id, tr.parent_turn_id, tr.role,
             tr.status AS turn_status, tr.metadata, tr.created_at, tr.completed_at,
@@ -73,8 +80,7 @@ export function createDrizzleProjectChatFeedRepository(
           FROM eligible e LEFT JOIN visible_heads vh ON vh.thread_id = e.thread_id
         ), selected AS (
           SELECT b.* FROM base b
-          WHERE (NOT ${input.favorite} OR b.is_favorite)
-            AND (${cursorActivity}::text IS NULL OR
+          WHERE (${cursorActivity}::text IS NULL OR
               (b.last_activity_at, b.thread_id) <
               (${cursorActivity}::timestamptz, ${cursorThreadId}::uuid))
           ORDER BY b.last_activity_at DESC, b.thread_id DESC

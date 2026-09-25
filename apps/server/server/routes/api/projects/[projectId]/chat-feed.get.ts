@@ -1,4 +1,4 @@
-/** GET project Project feed: owner-gated, cursor-paginated server projection. */
+/** GET project chat feed: owner-gated, cursor-paginated, optionally filtered by Favorites and title search. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { requireProjectOwner } from "../../../../domains/projects/index.js";
@@ -12,15 +12,18 @@ import { isUuid } from "../../../../shared/uuid.js";
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const projectId = getRouterParam(event, "projectId") ?? "";
-  const { cursor: cursorValue, favorite } = getQuery(event);
+  const { cursor: cursorValue, favorite, q } = getQuery(event);
   if (favorite !== undefined && favorite !== "true") {
     throw createError({ statusCode: 400, statusMessage: "Invalid Favorites filter" });
+  }
+  if (q !== undefined && typeof q !== "string") {
+    throw createError({ statusCode: 400, statusMessage: "Invalid chat search" });
   }
   if (!isUuid(projectId)) {
     throw createError({ statusCode: 400, statusMessage: "Invalid project ID" });
   }
   if (Array.isArray(cursorValue)) {
-    throw createError({ statusCode: 400, statusMessage: "Invalid Project feed cursor" });
+    throw createError({ statusCode: 400, statusMessage: "Invalid chat feed cursor" });
   }
   try {
     await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
@@ -31,6 +34,7 @@ export default defineEventHandler(async (event) => {
         userId: user.userId,
         cursor: cursorValue,
         favorite: favorite === "true",
+        search: q ?? null,
       }),
     );
   } catch (cause) {
