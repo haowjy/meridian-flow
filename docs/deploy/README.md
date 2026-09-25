@@ -38,7 +38,7 @@ The API's `DATABASE_URL` must be Neon **direct**, not `-pooler`, with
 client does not implement SCRAM-SHA-256-PLUS; including `channel_binding` is
 not an effective enforcement mechanism and is rejected by the supported-URL
 guard. The server opens a persistent `LISTEN` connection, so it needs the direct
-endpoint. One API replica is required: collaboration state is in-memory
+endpoint. The accepted [Postgres host decision][Postgres host decision] records the database trade-offs and beta-scale cost assumptions. One API replica is required: collaboration state is in-memory
 ([#590](https://github.com/haowjy/meridian-flow/issues/590)). The migration
 release command uses that same direct `DATABASE_URL`.
 
@@ -83,7 +83,7 @@ in Railway.
 | `EVENT_PROVIDER` | Optional; leave unset for live default (`local`) | Human Railway variable if explicitly selecting provider | Event sink override; live currently resolves to local sink. |
 | `DURABLE_EVENT_BACKEND` | Optional; currently defaults to `none` | Human Railway variable if explicitly used | Multi-instance event/log coordination; do not use to imply API scale-out is supported. |
 | `LOG_LEVEL` | Optional | Human Railway variable if needed | Runtime log level. |
-| `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | `30` | Human Railway variable | Gives shutdown time for request drain, AI turn completion, Yjs checkpoint, and socket close. |
+| Railway `deploy.drainingSeconds` | `30` seconds | `configure.sh` | Gives shutdown time for request drain, AI turn completion, Yjs checkpoint, and socket close. |
 
 Development-only values are not deployed: `WORKOS_DEV_AUTOLOGIN`,
 `WORKOS_DEV_LOGIN_EMAIL`, and `WORKOS_DEV_LOGIN_PASSWORD` are forbidden in
@@ -150,6 +150,15 @@ They identify the release visible to `/healthz` and app response headers.
 | `NEON_SNAPSHOT_TTL_DAYS` | Deploy workflow runner, optional | Operator override; defaults to `14` | Snapshot expiry. Must be a positive integer. |
 | `NEON_OPERATION_TIMEOUT_MS`, `NEON_POLL_MS`, `NEON_API_BASE_URL` | Deploy workflow runner, optional | Operator override | Neon operation timeout, poll interval, and API origin. |
 | `DEPLOY_TIMEOUT_MS`, `DEPLOY_POLL_MS`, `DEPLOY_DETECT_MS` | Deploy workflow runner, optional | Operator override | Railway terminal wait, poll interval, and new-deployment detection window. |
+
+Optional billing integrations use `STRIPE_SECRET_KEY` and
+`STRIPE_WEBHOOK_SECRET`; add `STRIPE_PRICE_PLAN_FREE`,
+`STRIPE_PRICE_PLAN_STANDARD`, and `STRIPE_PRICE_PLAN_PREMIUM` when configuring
+Stripe price IDs. None is required to boot. Optional model tuning includes
+`MODEL_CALL_TIMEOUT_MS`, `OPENROUTER_BASE_URL`, `OPENROUTER_HTTP_REFERER`,
+and `OPENROUTER_APP_NAME`. Local observability controls are `LOG_DIR`,
+`LOG_RETENTION_DAYS`, and `LOG_MAX_BYTES`; do not point these at ephemeral
+production storage unless log persistence is intentional.
 
 The [runbook](./runbook.md) shows exact GitHub and Railway provisioning,
 including secret entry without shell-history exposure. The local production-
