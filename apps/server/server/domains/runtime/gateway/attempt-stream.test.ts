@@ -4,7 +4,7 @@
  * stream that never ends, and the retry gate permits reasoning-only retries
  * while refusing retries after committed output.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { streamWithRetry } from "./attempt-stream.js";
 import { DEFAULT_ATTEMPT_CEILING_MS, DEFAULT_ATTEMPT_STALL_MS } from "./deadline.js";
 import type { GenerateRequest, GenerateResult, ModelInfo, StreamEvent } from "./domain/index.js";
@@ -182,5 +182,44 @@ describe("default timeouts", () => {
   it("exposes a 60s stall and a 15m ceiling", () => {
     expect(DEFAULT_ATTEMPT_STALL_MS).toBe(60_000);
     expect(DEFAULT_ATTEMPT_CEILING_MS).toBe(900_000);
+  });
+});
+
+describe("cancel drain", () => {
+  it("uses one deadline even with late chunks and an iterator that ignores return", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const { adapter } = scriptedAdapter([
+        async function* () {
+          yield { type: "text.delta", text: "first" };
+          await new Promise((resolve) => setTimeout(resolve, 4_000));
+          yield { type: "text.delta", text: "late" };
+          await new Promise(() => {});
+        },
+      ]);
+      const stream = streamWithRetry(
+        adapter,
+        { ...REQUEST, signal: controller.signal },
+        MODEL,
+        { ...RETRY, maxAttempts: 1 },
+        { stallMs: 60_000, ceilingMs: 60_000 },
+      );
+      await stream.next();
+      const late = stream.next();
+      controller.abort();
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect((await late).value).toEqual({ type: "text.delta", text: "late" });
+      let done = false;
+      const finish = stream.next().then((result) => {
+        done = result.done === true;
+      });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(done).toBe(true);
+      await finish;
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
