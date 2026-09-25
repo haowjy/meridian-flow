@@ -1,7 +1,7 @@
 # Deploy contract
 
-Every merged pull request to `main` is assigned a release version, built once
-as four immutable GHCR image digests, deployed to staging, and smoke-checked.
+Each release batch of merges to `main` is assigned one release version, built
+once as four immutable GHCR image digests, deployed to staging, and smoke-checked.
 Production is a manual, reviewer-gated promotion of those same digests after
 staging has recorded success. No environment branch or production rebuild is
 part of the contract. Start with the [first-deploy runbook](./runbook.md);
@@ -21,7 +21,10 @@ flowchart LR
 ## Topology and route ownership
 
 All Railway services run in Virginia (`us-east4-eqdc4a`). Caddy ingress owns the
-public app origin and routes to private Railway services. The app and API share
+public app origin and routes to private Railway services. It caps request bodies
+at 10 MB; current server routes use multipart uploads/imports without an
+application-level size cap, so the ingress is the effective limit. Raise it only
+with corresponding memory/abuse controls and product limits. The app and API share
 a browser origin; browser calls use relative `/api` and `/ws` routes.
 
 | Public path | Owner | Upstream |
@@ -92,10 +95,7 @@ in Railway.
 | `STRIPE_PRICE_PLAN_FREE` | Optional | Human Railway variable | Stripe price ID for free plan if Stripe is enabled. |
 | `STRIPE_PRICE_PLAN_STANDARD` | Optional | Human Railway variable | Stripe price ID for standard plan if Stripe is enabled. |
 | `STRIPE_PRICE_PLAN_PREMIUM` | Optional | Human Railway variable | Stripe price ID for premium plan if Stripe is enabled. |
-| `WORKOS_DEV_AUTOLOGIN` | Must not be enabled | Do not set in staging/production | Development-only login shortcut. |
-| `WORKOS_DEV_LOGIN_EMAIL` | Must not be set | Do not set in staging/production | Development-only login identity. |
-| `WORKOS_DEV_LOGIN_PASSWORD` | Must not be set | Do not set in staging/production | Development-only login credential. |
-| Railway `deploy.drainingSeconds` | `30` seconds | `configure.sh` | Gives shutdown time for request drain, AI turn completion, Yjs checkpoint, and socket close. |
+| Railway `deploy.drainingSeconds` | `30` seconds | `configure.sh` | Allows HTTP request draining; active turns are cancelled/interrupted on shutdown before Yjs checkpoint and socket close. |
 
 Local-only values are not used when live backends are selected:
 `LOCAL_OBJECT_STORE_DIR`, `LOCAL_OBJECT_STORE_SIGNED_URL_BASE_PATH`, and
@@ -117,9 +117,6 @@ Local-only values are not used when live backends are selected:
 | `WORKOS_DEV_AUTOLOGIN` | Must not be set to `1` | Do not set in production | Development-only login shortcut. |
 | `WORKOS_DEV_LOGIN_EMAIL`, `WORKOS_DEV_LOGIN_PASSWORD` | Must not be set | Do not set in production | Development-only login credentials. |
 | `LOG_LEVEL` | Optional | Human Railway variable if needed | Runtime log level. |
-| `WORKOS_DEV_AUTOLOGIN` | Must not be enabled | Do not set in staging/production | Development-only login shortcut. |
-| `WORKOS_DEV_LOGIN_EMAIL` | Must not be set | Do not set in staging/production | Development-only login identity. |
-| `WORKOS_DEV_LOGIN_PASSWORD` | Must not be set | Do not set in staging/production | Development-only login credential. |
 
 ### Release command in the server image
 
@@ -141,7 +138,7 @@ The local-only `--no-backup-check` switch is rejected unless `APP_ENV` is
 | `APP_ENV` | `staging` or `production` | `configure.sh` | Deployment identity. |
 | `HOST` | `::` | `configure.sh` | Listen on all interfaces. |
 | `PORT` | `3000` | `configure.sh` | Container port. |
-| `WEB_DATABASE_URL` | Required direct Postgres URL; if unset code falls back to `DATABASE_URL` | Human Railway secret | WWW's database adapter. Set explicitly if WWW uses a different DB identity. |
+| `WEB_DATABASE_URL` | Direct Neon URL inherited from server `DATABASE_URL` | `configure.sh` Railway reference | WWW database adapter uses the same Neon DB identity as the API. |
 | `DATABASE_URL` | Alternative source only when `WEB_DATABASE_URL` is absent | Human Railway secret | Fallback consumed by WWW env parsing. |
 
 ### Ingress service
