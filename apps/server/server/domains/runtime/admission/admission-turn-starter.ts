@@ -39,6 +39,9 @@ export function createAdmissionTurnStarter(deps: {
   };
 
   return {
+    assertAccepting() {
+      deps.runner.assertAccepting();
+    },
     async start(input) {
       try {
         const started = await deps.runner.startTurn({

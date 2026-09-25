@@ -26,28 +26,18 @@ function releaseMigrationsDirectory(): string {
   return directory;
 }
 
-async function checkSchemaStatus() {
+async function checkSchemaStatus(sql: ReturnType<typeof getDb>["$client"]) {
   if (cachedReadySchemaStatus) return cachedReadySchemaStatus;
   if (!pendingSchemaStatus) {
     pendingSchemaStatus = getSchemaStatus({
-      databaseUrl: process.env.DATABASE_URL ?? "",
+      sql,
       migrationsDirectory: releaseMigrationsDirectory(),
-      async readAppliedHistory() {
-        const client = getDb().$client;
-        const [table] = await client<Array<{ exists: boolean }>>`
-          SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS exists
-        `;
-        if (!table?.exists) return undefined;
-        return client<Array<{ hash: string; created_at: string | number | null }>>`
-          SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id ASC
-        `;
-      },
     });
   }
   const check = pendingSchemaStatus;
   try {
     const status = await check;
-    if (status === "current" || status === "ahead") cachedReadySchemaStatus = status;
+    if (status === "current") cachedReadySchemaStatus = status;
     return status;
   } finally {
     if (pendingSchemaStatus === check) pendingSchemaStatus = undefined;
@@ -56,7 +46,9 @@ async function checkSchemaStatus() {
 
 export default defineEventHandler(async (event) => {
   try {
-    const schemaStatus = await checkSchemaStatus();
+    const sql = getDb().$client;
+    await sql`SELECT 1`;
+    const schemaStatus = await checkSchemaStatus(sql);
     if (schemaStatus === "behind" || schemaStatus === "divergent") {
       setResponseStatus(event, 503);
       return {

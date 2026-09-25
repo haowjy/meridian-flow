@@ -39,6 +39,20 @@ delivery and a one-second startup/poll sweep for crash and cross-process
 recovery; delivery failure is logged and never changes the committed Work
 mutation result.
 
+## Process shutdown
+
+`server/lib/process-shutdown.ts` owns SIGTERM/SIGINT sequencing and the only
+application `process.exit`. The stage order is **websocket-admission** (close
+thread and Yjs peers with 1012), **polling-loops**, **turn-drain** (abort active
+turns, refuse new starts with retryable `503 server_restarting`, max 8 s),
+**http-drain** (stop admission and wait up to 10 s), **websocket-drain** (Yjs
+checkpoint and persistence queue while Postgres is open), **database-close**,
+then bounded observability flush. Stage timeout/failure emits an incomplete or
+failed event and proceeds to later stages; the shared 25 s deadline bounds
+process exit. srvx closes its listener independently and keeps its force-close
+fallback at 29 s, after the application deadline. Never close Postgres before
+the turn terminal events and Yjs checkpoints have had their drain stage.
+
 ## Project route surface
 
 upstream-parity routes under `server/routes/api/projects/` keep the upstream

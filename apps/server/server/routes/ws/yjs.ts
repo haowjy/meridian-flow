@@ -38,11 +38,25 @@ type YjsRoutePeer = {
 
 let gateway: YjsGateway | null = null;
 const peers = new Set<YjsRoutePeer>();
+const closingPeers = new WeakSet<YjsRoutePeer>();
 let draining = false;
 
 export function stopAcceptingYjsWebSockets(): void {
   draining = true;
   gateway?.stopAccepting();
+  const errors: unknown[] = [];
+  for (const peer of [...peers]) {
+    if (closingPeers.has(peer)) continue;
+    closingPeers.add(peer);
+    try {
+      peer.close(1012, "server-shutdown");
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length > 0) {
+    throw new AggregateError(errors, "Yjs websocket peers could not all be closed.");
+  }
 }
 
 export async function shutdownYjsWebSockets(): Promise<void> {

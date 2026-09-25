@@ -46,6 +46,7 @@ export {
 export {
   type ChildRunRegistry,
   createTurnRunner,
+  ServerRestartingError,
   type TurnRunner,
 } from "./loop/turn-runner.js";
 export {

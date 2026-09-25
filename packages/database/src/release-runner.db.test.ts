@@ -129,7 +129,12 @@ if (!enabled || !databaseUrl) {
           join(functionsDirectory, "consume_credit_lots_fifo.sql"),
           "CREATE FUNCTION broken (",
         );
-        expect(await getSchemaStatus({ databaseUrl, migrationsDirectory })).toBe("ahead");
+        const sql = postgres(databaseUrl, { max: 1, onnotice: () => {} });
+        try {
+          expect(await getSchemaStatus({ sql, migrationsDirectory })).toBe("ahead");
+        } finally {
+          await sql.end();
+        }
         const result = await runRelease({ databaseUrl, migrationsDirectory, functionsDirectory });
         expect(result).toEqual({ appliedMigrations: 0, skippedFunctions: true });
       } finally {
@@ -232,7 +237,12 @@ if (!enabled || !databaseUrl) {
         });
         await writeFile(journalPath, JSON.stringify(journal));
         await writeFile(join(migrationsDirectory, "9999_unapplied_probe.sql"), "SELECT 1;");
-        expect(await getSchemaStatus({ databaseUrl, migrationsDirectory })).toBe("behind");
+        const sql = postgres(databaseUrl, { max: 1, onnotice: () => {} });
+        try {
+          expect(await getSchemaStatus({ sql, migrationsDirectory })).toBe("behind");
+        } finally {
+          await sql.end();
+        }
       } finally {
         await rm(fixtureDirectory, { recursive: true, force: true });
       }

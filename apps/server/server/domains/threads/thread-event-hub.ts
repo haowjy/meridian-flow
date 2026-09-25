@@ -162,7 +162,11 @@ export function createThreadEventHub(
   async function replayFromJournal(
     threadId: ThreadId,
     afterEventSeq: bigint,
-  ): Promise<{ events: SequencedEventInternal[]; hitReplayLimit: boolean }> {
+  ): Promise<{
+    events: SequencedEventInternal[];
+    hitReplayLimit: boolean;
+    journalHeadSeq?: bigint;
+  }> {
     const projector = createOrchestratorEventProjector();
     const entries = await deps.journalReader.readAfter(threadId, 0n, JOURNAL_REPLAY_LIMIT);
     const replayed: SequencedEventInternal[] = [];
@@ -177,19 +181,25 @@ export function createThreadEventHub(
     return {
       events: replayed.filter((entry) => entry.seq > afterEventSeq),
       hitReplayLimit: entries.length === JOURNAL_REPLAY_LIMIT,
+      ...(entries.length > 0 && { journalHeadSeq: entries[entries.length - 1]?.seq }),
     };
   }
 
   async function readCatchup(
     threadId: ThreadId,
     afterSeq: bigint,
-  ): Promise<{ events: SequencedEventInternal[]; hitReplayLimit: boolean }> {
+  ): Promise<{
+    events: SequencedEventInternal[];
+    hitReplayLimit: boolean;
+    journalHeadSeq?: bigint;
+  }> {
     const state = threads.get(threadId);
     const hotEvents = state?.events ?? [];
     if (hotEvents.length > 0 && afterSeq >= hotEvents[0].seq - 1n) {
       return {
         events: hotEvents.filter((entry) => entry.seq > afterSeq),
         hitReplayLimit: false,
+        journalHeadSeq: state?.journalHeadSeq ?? 0n,
       };
     }
 
@@ -289,7 +299,19 @@ export function createThreadEventHub(
       };
       state.listeners.add(guardListener);
 
-      const { events: catchupEvents, hitReplayLimit } = await readCatchup(threadId, afterSeq);
+      const {
+        events: catchupEvents,
+        hitReplayLimit,
+        journalHeadSeq: lastJournalSeqRead,
+      } = await readCatchup(threadId, afterSeq);
+
+      const lastCatchupEvent = catchupEvents.at(-1);
+      const journalHead =
+        lastJournalSeqRead ??
+        (lastCatchupEvent
+          ? journalSeqForEventSeq(lastCatchupEvent.seq)
+          : await deps.journalReader.headSeq(threadId));
+      if (journalHead > state.journalHeadSeq) state.journalHeadSeq = journalHead;
 
       state.listeners.delete(guardListener);
       state.listeners.add(listener);

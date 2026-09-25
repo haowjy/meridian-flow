@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { type ApiStartupEnv, evaluateApiStartupGuards } from "./startup-guards.js";
+import {
+  type ApiStartupEnv,
+  evaluateApiStartupGuards,
+  exitOnStartupGuardFailure,
+} from "./startup-guards.js";
 
 const baseConfig: ApiStartupEnv = {
   NODE_ENV: "development",
@@ -20,6 +24,39 @@ const baseConfig: ApiStartupEnv = {
 };
 
 describe("staging and production startup guards", () => {
+  it("emits and flushes a failed guard before exiting non-zero", async () => {
+    const order: string[] = [];
+    const emitted: unknown[] = [];
+    const eventSink = {
+      emit(event: unknown) {
+        emitted.push(event);
+        order.push(`emit:${(event as { name: string }).name}`);
+      },
+      emitBatch() {},
+      async flush() {
+        order.push("flush");
+      },
+    };
+
+    await exitOnStartupGuardFailure(new Error("invalid config"), {
+      eventSink,
+      writeError(message) {
+        order.push(`stderr:${message}`);
+      },
+      exit(code) {
+        order.push(`exit:${code}`);
+      },
+    });
+
+    expect(order).toEqual([
+      "emit:startup_guard.failed",
+      "stderr:invalid config",
+      "flush",
+      "exit:1",
+    ]);
+    expect(emitted[0]).toMatchObject({ name: "startup_guard.failed" });
+  });
+
   it("rejects dev placeholders based on APP_ENV even when NODE_ENV is development", () => {
     const outcome = evaluateApiStartupGuards({
       ...baseConfig,

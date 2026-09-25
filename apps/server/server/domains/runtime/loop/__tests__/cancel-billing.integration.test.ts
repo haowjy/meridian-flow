@@ -98,7 +98,11 @@ describe("cancel billing", () => {
     expect(turnId).not.toBeNull();
     const finished = rig.awaitCancelled(turnId as NonNullable<typeof turnId>);
 
-    await rig.runner.shutdown();
+    const shuttingDown = rig.runner.shutdown();
+    await expect(
+      rig.runner.startTurn({ threadId: rig.thread.id, userText: "retry during restart" }),
+    ).rejects.toMatchObject({ code: "server_restarting" });
+    await shuttingDown;
     await finished;
 
     expect((await rig.turn(turnId as NonNullable<typeof turnId>))?.status).toBe("cancelled");
