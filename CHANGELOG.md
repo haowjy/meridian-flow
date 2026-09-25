@@ -11,7 +11,7 @@
 
 ### Changed
 
-- Share writer and child run cleanup. Commit admission before generation; release children before publishing reports. Keep admitted children running if parent-card binding fails.
+- Share writer and child run cleanup. Commit admission before generation; release children before publishing reports. Keep admitted children running if parent-card binding fails. Preserve child-subtree lifetime on parent completion.
 
 - Store inbox kind tags once and index pending report publication by its recovery cursor.
 

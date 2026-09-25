@@ -271,7 +271,10 @@ describe("RunSession", () => {
     ).toHaveLength(failCard ? 1 : 0);
   });
 
-  it("normal parent completion cancels foreground children but leaves background children alive", async () => {
+  it.each([
+    false,
+    true,
+  ])("preserves descendant lifetime at parent completion (child parent: %s)", async (childParent) => {
     const f = await fixture();
     const fg = await f.deps.repos.threads.create({
       userId: f.thread.userId,
@@ -283,7 +286,11 @@ describe("RunSession", () => {
     });
     const readBinding = f.deps.agentRevisions.readThreadBinding;
     f.deps.agentRevisions.readThreadBinding = () => readBinding(f.thread.id);
-    const parent = await f.prepare();
+    const parent = await f.runtime.prepare({
+      threadId: f.thread.id,
+      userText: "parent",
+      ...(childParent ? { child: { parentThreadId: "ancestor", background: false } } : {}),
+    });
     const foreground = await f.runtime.prepare({
       threadId: fg.id,
       userText: "fg",
@@ -296,7 +303,7 @@ describe("RunSession", () => {
     });
     expect((await parent.execute()).status).toBe("complete");
     expect((await foreground.execute()).status).toBe("cancelled");
-    expect((await background.execute()).status).toBe("complete");
+    expect((await background.execute()).status).toBe(childParent ? "cancelled" : "complete");
   });
   it("fallback terminalizes its own current turn, never another holder's turn", async () => {
     const f = await fixture();

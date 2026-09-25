@@ -85,7 +85,8 @@ export function createRunSessions(deps: {
       clearInterval(heartbeat);
       parentSignal?.removeEventListener("abort", abort);
       running.delete(threadId);
-      abortChildrenOf(threadId);
+      // A child invocation bounds its whole subtree; a primary may detach background children.
+      abortChildrenOf(threadId, !!input.child);
       try {
         if (lease && session.assistantTurnId) await deps.workContextDelivery.flushOwned(threadId);
       } catch (error) {
