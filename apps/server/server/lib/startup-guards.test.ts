@@ -26,6 +26,7 @@ describe("staging and production startup guards", () => {
       DATABASE_URL: "postgres://localhost/meridian",
       OBJECT_STORE_PROVIDER: "local",
       S3_BUCKET: undefined,
+      S3_PUBLIC_ENDPOINT: "http://minio.localhost:9000",
       WORKOS_API_KEY: "dev-workos-key",
       WORKOS_CLIENT_ID: "dev-workos-client",
       WORKOS_COOKIE_PASSWORD: "",
@@ -35,6 +36,7 @@ describe("staging and production startup guards", () => {
     expect(outcome.errors.join("\n")).toContain("MERIDIAN_BACKENDS");
     expect(outcome.errors.join("\n")).toContain("OBJECT_STORE_PROVIDER");
     expect(outcome.errors.join("\n")).toContain("DATABASE_URL");
+    expect(outcome.errors.join("\n")).toContain("S3_PUBLIC_ENDPOINT");
     expect(outcome.errors.join("\n")).toContain("WORKOS_API_KEY");
     expect(outcome.errors.join("\n")).toContain("WORKOS_CLIENT_ID");
     expect(outcome.errors.join("\n")).toContain("WORKOS_COOKIE_PASSWORD");

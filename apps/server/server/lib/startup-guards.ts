@@ -26,6 +26,7 @@ export type ApiStartupEnv = {
   OBJECT_STORE_PROVIDER: ObjectStoreProvider;
   S3_BUCKET?: string;
   S3_ENDPOINT?: string;
+  S3_PUBLIC_ENDPOINT?: string;
   S3_ACCESS_KEY?: string;
   S3_SECRET_KEY?: string;
   MODEL_PROVIDER?: string;
@@ -136,6 +137,9 @@ export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOut
     if (isLocalUrl(config.S3_ENDPOINT)) {
       errors.push("S3_ENDPOINT: localhost endpoints are not allowed in staging/production.");
     }
+    if (isLocalUrl(config.S3_PUBLIC_ENDPOINT)) {
+      errors.push("S3_PUBLIC_ENDPOINT: localhost endpoints are not allowed in staging/production.");
+    }
     if (isLocalUrl(config.DATABASE_URL)) {
       errors.push("DATABASE_URL: localhost URLs are not allowed in staging/production.");
     }
@@ -227,6 +231,7 @@ export async function assertApiStartupGuards(): Promise<StartupGuardOutcome> {
     OBJECT_STORE_PROVIDER: backends.objectStore,
     S3_BUCKET: process.env.S3_BUCKET,
     S3_ENDPOINT: process.env.S3_ENDPOINT,
+    S3_PUBLIC_ENDPOINT: process.env.S3_PUBLIC_ENDPOINT,
     S3_ACCESS_KEY: process.env.S3_ACCESS_KEY,
     S3_SECRET_KEY: process.env.S3_SECRET_KEY,
     MODEL_PROVIDER: process.env.MODEL_PROVIDER,
