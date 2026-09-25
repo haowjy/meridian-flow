@@ -909,6 +909,9 @@ export function createInMemoryAppServices(): AppServices {
     hasThreadState() {
       return false;
     },
+    activeThreadJournalHeads() {
+      return [];
+    },
   };
 
   const contextCatalog = new InMemoryContextCatalog();

@@ -6,22 +6,60 @@ import { emitEvent, unknownToEventPayload } from "../../../observability/index.j
 import type { EventJournalReader } from "../../ports/index.js";
 import type { ThreadEventHub } from "../../thread-event-hub.js";
 
+const RELISTEN_REPLAY_BATCH_SIZE = 500;
+
 export async function listenForThreadEvents(input: {
   db: Database;
   journalReader: EventJournalReader;
-  eventHub: Pick<ThreadEventHub, "publishPersistedEvent">;
+  eventHub: Pick<ThreadEventHub, "publishPersistedEvent" | "activeThreadJournalHeads">;
   eventSink: EventSink;
 }): Promise<{ unlisten: () => Promise<void> }> {
-  return input.db.listen("thread_events", (payload) => {
-    void relay(payload).catch((cause) => {
-      emitEvent(input.eventSink, {
-        level: "error",
-        source: "threads.event-relay",
-        name: "notification.failed",
-        payload: { notification: payload, ...unknownToEventPayload(cause) },
+  let hasConnectedOnce = false;
+  return input.db.listen(
+    "thread_events",
+    (payload) => {
+      void relay(payload).catch((cause) => {
+        emitEvent(input.eventSink, {
+          level: "error",
+          source: "threads.event-relay",
+          name: "notification.failed",
+          payload: { notification: payload, ...unknownToEventPayload(cause) },
+        });
       });
-    });
-  });
+    },
+    () => {
+      if (!hasConnectedOnce) {
+        hasConnectedOnce = true;
+        return;
+      }
+      void catchUpActiveSubscribers().catch((cause) => {
+        emitEvent(input.eventSink, {
+          level: "error",
+          source: "threads.event-relay",
+          name: "relisten_catchup.failed",
+          payload: unknownToEventPayload(cause),
+        });
+      });
+    },
+  );
+
+  async function catchUpActiveSubscribers(): Promise<void> {
+    for (const { threadId, afterSeq: initialSeq } of input.eventHub.activeThreadJournalHeads()) {
+      let afterSeq = initialSeq;
+      while (true) {
+        const entries = await input.journalReader.readAfter(
+          threadId,
+          afterSeq,
+          RELISTEN_REPLAY_BATCH_SIZE,
+        );
+        for (const entry of entries) {
+          input.eventHub.publishPersistedEvent(threadId, entry.seq, entry.payload);
+          afterSeq = entry.seq;
+        }
+        if (entries.length < RELISTEN_REPLAY_BATCH_SIZE) break;
+      }
+    }
+  }
 
   async function relay(payload: string): Promise<void> {
     const separator = payload.lastIndexOf(":");
