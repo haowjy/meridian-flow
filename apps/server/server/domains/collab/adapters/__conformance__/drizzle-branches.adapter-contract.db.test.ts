@@ -107,11 +107,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       },
       async recover() {},
     };
-    let store = createDrizzleBranchStore(db, {
-      journal: livePersistence.journal,
-      lifecycle: livePersistence.lifecycle,
-      coordinator: liveCoordinator,
-    });
+    function createBranchStore() {
+      return createDrizzleBranchStore(db, {
+        journal: livePersistence.journal,
+        lifecycle: livePersistence.lifecycle,
+        coordinator: liveCoordinator,
+      });
+    }
+
+    let store = createBranchStore();
 
     function branchRoomPersistence(branchStore = store) {
       return createHocuspocusPersistenceService({
@@ -173,11 +177,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     beforeEach(async () => {
       db = database.current;
       livePersistence = createDrizzleCollabPersistence(db);
-      store = createDrizzleBranchStore(db, {
-        journal: livePersistence.journal,
-        lifecycle: livePersistence.lifecycle,
-        coordinator: liveCoordinator,
-      });
+      store = createBranchStore();
       await db.insert(users).values(conformanceUserValues(USER_ID, "drizzle-branches"));
       await db.insert(projects).values({
         id: PROJECT_ID,
@@ -636,11 +636,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(before.members).toEqual([DOC_ID]);
       await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, DOC_ID));
 
-      const reloaded = createDrizzleBranchStore(db, {
-        journal: livePersistence.journal,
-        lifecycle: livePersistence.lifecycle,
-        coordinator: liveCoordinator,
-      });
+      const reloaded = createBranchStore();
       const after = await reloaded.resolveManifestMembership({ projectId: PROJECT_ID as never });
       expect(after.members).toEqual([DOC_ID]);
     });
