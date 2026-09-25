@@ -2,5 +2,10 @@
 import { defineEventHandler } from "nitro/h3";
 
 export default defineEventHandler(() => {
-  return { status: "ok", service: "api", release: process.env.MERIDIAN_RELEASE_SHA ?? "unknown" };
+  return {
+    status: "ok",
+    service: "api",
+    version: process.env.MERIDIAN_VERSION ?? "unknown",
+    release: process.env.MERIDIAN_RELEASE_SHA ?? "unknown",
+  };
 });
