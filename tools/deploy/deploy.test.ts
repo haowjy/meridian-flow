@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -33,6 +33,7 @@ const save = () => fs.writeFileSync(statePath, JSON.stringify(state));
 if (args[0] === '--version') { console.log('railway 5.62.1'); process.exit(0); }
 const service = args[args.indexOf('-s') + 1] || (args[0] === 'environment' ? args[args.indexOf('--service-config') + 1] : undefined);
 if (args[0] === 'environment' && args[1] === 'edit') {
+  fs.appendFileSync(process.env.FAKE_RAILWAY_LOG, args.join(' ') + '\\n');
   if (scenario !== 'no-auto') { state[service] = {id: service + '-1', status: 'DEPLOYING', reads: 0}; save(); }
   process.exit(0);
 }
@@ -71,6 +72,7 @@ async function run(scenario: string) {
   const dir = mkdtempSync(join(tmpdir(), "meridian-deploy-test-"));
   const bin = join(dir, "bin");
   const state = join(dir, "state.json");
+  const commandLog = join(dir, "railway.log");
   const manifestPath = join(dir, "manifest.json");
   const fake = join(bin, "railway");
   const oldPath = process.env.PATH ?? "";
@@ -92,6 +94,7 @@ async function run(scenario: string) {
           NEON_BRANCH_ID: "branch-1",
           NEON_API_BASE_URL: `http://127.0.0.1:${address.port}`,
           FAKE_RAILWAY_STATE: state,
+          FAKE_RAILWAY_LOG: commandLog,
           SCENARIO: scenario,
           DEPLOY_DETECT_MS: "24",
           DEPLOY_TIMEOUT_MS: "24",
@@ -100,10 +103,10 @@ async function run(scenario: string) {
         encoding: "utf8",
       },
     );
-    return output.stdout;
+    return `${output.stdout}\n${readFileSync(commandLog, "utf8")}`;
   } catch (error) {
     const e = error as { stdout?: string; stderr?: string };
-    return `${e.stderr ?? ""}${e.stdout ?? ""}`;
+    return `${e.stderr ?? ""}${e.stdout ?? ""}${readFileSync(commandLog, "utf8")}`;
   } finally {
     rmSync(dir, { recursive: true, force: true });
     await new Promise<void>((resolve) => neon.close(() => resolve()));
@@ -115,6 +118,9 @@ describe("Railway deploy seam", () => {
     const output = await run("success");
     expect(output).toMatch(/server\s+server-1/);
     expect(output).toMatch(/ingress\s+ingress-1/);
+    expect(output).toMatch(
+      /--service-config server source.image ghcr\.io\/haowjy\/meridian-flow-server@sha256:[a-f0-9]{64} --service-config server variables\.MERIDIAN_BACKUP_REF\.value neon-snapshot:snap-123:release=a{40}/,
+    );
   });
   it("fails with the exact inspection command for failed deployments", async () => {
     expect(await run("failure")).toContain(
