@@ -111,7 +111,7 @@ jobs:
           flags=(); [[ "$VERSION" == *-rc.* ]] && flags+=(--prerelease)
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file release-notes.md "${flags[@]}"
-            gh release upload "$TAG" release-manifest.json --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload "$TAG" release-manifest.json --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$TAG" release-manifest.json --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file release-notes.md "${flags[@]}"
           fi
