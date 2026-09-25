@@ -9,7 +9,6 @@ import {
   admitThreadUserStateItems,
   beginThreadUserStateFeedRequest,
 } from "./thread-user-state-commands";
-import { useProjectChatCommands } from "./useProjectChatCommands";
 
 declare const workChatsNextPageIdentity: unique symbol;
 export type WorkChatsNextPageIdentity = string & {
@@ -19,7 +18,6 @@ export type WorkChatsNextPageIdentity = string & {
 export function useWorkThreads(projectId: string, workId: string, options?: { enabled?: boolean }) {
   const isPendingCreation = useIsProjectPendingCreation(projectId);
   const enabled = (options?.enabled ?? true) && !isPendingCreation;
-  const commands = useProjectChatCommands(projectId);
   const client = useQueryClient();
   const query = useInfiniteQuery({
     queryKey: projectQueryKeys.workThreads(projectId, workId),
@@ -71,6 +69,5 @@ export function useWorkThreads(projectId: string, workId: string, options?: { en
     threads,
     nextPageIdentity,
     fetchNextPageFor,
-    ...commands,
   };
 }

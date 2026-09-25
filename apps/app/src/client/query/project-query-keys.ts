@@ -64,6 +64,9 @@ export const projectQueryKeys = {
       : (["projects", projectId, "work-threads"] as const),
   works: (projectId: string) => ["projects", projectId, "works"] as const,
   chatFeed: (projectId: string) => ["projects", projectId, "chat-feed"] as const,
+  /** One filtered chat feed; a partial filter (`{ favorite: true }`) matches every variant. */
+  chatFeedFilter: (projectId: string, filter: { favorite?: boolean; search?: string | null }) =>
+    [...projectQueryKeys.chatFeed(projectId), filter] as const,
   threadUserState: (projectId: string, threadId: string) =>
     ["projects", projectId, "thread-user-state", threadId] as const,
   threadRename: (projectId: string, threadId: string) =>
