@@ -1,5 +1,5 @@
 /** Verifies release migration and function SQL share one database transaction. */
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,11 +14,31 @@ if (!enabled || !databaseUrl) {
   describe.skip("atomic release database tests", () => {});
 } else {
   describe("atomic release database tests", () => {
+    const sourceMigrations = fileURLToPath(new URL("../src/migrations/", import.meta.url));
+    const sourceFunctions = fileURLToPath(new URL("./functions/", import.meta.url));
+
+    async function prefixBundle(changedSql = false) {
+      const fixtureDirectory = await mkdtemp(join(tmpdir(), "meridian-release-prefix-"));
+      const migrationsDirectory = join(fixtureDirectory, "migrations");
+      const journal = JSON.parse(
+        await readFile(join(sourceMigrations, "meta/_journal.json"), "utf8"),
+      ) as { entries: Array<{ tag: string; when: number; [key: string]: unknown }> };
+      const first = journal.entries[0];
+      let sql = await readFile(join(sourceMigrations, `${first.tag}.sql`), "utf8");
+      if (changedSql) sql += "\n-- deliberately divergent migration history\n";
+      await mkdir(join(migrationsDirectory, "meta"), { recursive: true });
+      await writeFile(
+        join(migrationsDirectory, "meta/_journal.json"),
+        JSON.stringify({ ...journal, entries: [first] }),
+      );
+      await writeFile(join(migrationsDirectory, `${first.tag}.sql`), sql);
+      return { fixtureDirectory, migrationsDirectory };
+    }
+
     it("rolls the migration batch back when a function fails", async () => {
       const fixtureDirectory = await mkdtemp(join(tmpdir(), "meridian-release-fixture-"));
       const functionsDir = join(fixtureDirectory, "functions");
       const migrationsDirectory = join(fixtureDirectory, "migrations");
-      const sourceFunctions = fileURLToPath(new URL("./functions/", import.meta.url));
       const tableName = `release_atomicity_probe_${process.pid}_${Date.now()}`;
       const target = postgres(databaseUrl, { max: 1, onnotice: () => {} });
       try {
@@ -71,6 +91,31 @@ if (!enabled || !databaseUrl) {
       } finally {
         await target.unsafe(`DROP TABLE IF EXISTS ${tableName}`);
         await target.end();
+        await rm(fixtureDirectory, { recursive: true, force: true });
+      }
+    });
+
+    it("treats a matching journal prefix as zero pending when the database is ahead", async () => {
+      const { fixtureDirectory, migrationsDirectory } = await prefixBundle();
+      try {
+        const result = await runRelease({
+          databaseUrl,
+          migrationsDirectory,
+          functionsDirectory: sourceFunctions,
+        });
+        expect(result.appliedMigrations).toBe(0);
+      } finally {
+        await rm(fixtureDirectory, { recursive: true, force: true });
+      }
+    });
+
+    it("fails when the applied ledger diverges from the bundle prefix", async () => {
+      const { fixtureDirectory, migrationsDirectory } = await prefixBundle(true);
+      try {
+        await expect(
+          runRelease({ databaseUrl, migrationsDirectory, functionsDirectory: sourceFunctions }),
+        ).rejects.toThrow(/Divergent migration history at ordinal 0/);
+      } finally {
         await rm(fixtureDirectory, { recursive: true, force: true });
       }
     });

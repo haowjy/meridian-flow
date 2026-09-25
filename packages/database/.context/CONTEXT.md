@@ -97,9 +97,15 @@ Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
 6. `pnpm db:apply-functions` transactionally synchronizes function SQL when
    iterating on functions independently.
 
-Deploy uses the database-owned release runner. Its pre-deploy bundle backs up
-to the configured S3-compatible bucket and applies pending migrations plus all
-canonical functions atomically; local development does not load deploy config.
+Deploy uses the database-owned release runner. The `tools/deploy/deploy.ts`
+seam creates the provider snapshot and atomically supplies
+`MERIDIAN_BACKUP_REF=<provider>:<backup id>:release=<sha>` with the new image.
+When migrations are pending, the runner requires that ref to match
+`MERIDIAN_RELEASE_SHA`, compares the bundle journal against the applied ledger,
+and applies pending migrations plus canonical functions atomically. A database
+whose applied history extends the bundle's exact prefix is a valid rollback
+target with zero pending migrations; divergent history fails. Local development
+does not load deploy config and can explicitly use `--no-backup-check`.
 
 A row-transform migration MUST ship with a populated upgrade fixture in
 `fresh-migrations.db.test.ts`. Apply the committed prefix, seed the pre-migration

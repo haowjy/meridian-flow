@@ -676,9 +676,6 @@ importers:
 
   packages/database:
     dependencies:
-      '@aws-sdk/client-s3':
-        specifier: ^3.1075.0
-        version: 3.1075.0
       '@meridian/contracts':
         specifier: workspace:*
         version: link:../contracts

@@ -28,6 +28,7 @@ export async function runRelease(input: {
   databaseUrl: string;
   migrationsDirectory: string;
   functionsDirectory: string;
+  beforeMigrate?: (pendingMigrations: number) => void | Promise<void>;
 }): Promise<{ appliedMigrations: number }> {
   const client = postgres(input.databaseUrl, { max: 1, onnotice: () => {} });
   try {
@@ -52,17 +53,34 @@ export async function runRelease(input: {
         created_at bigint
       )
     `;
-    const [last] = await client<Array<{ created_at: string | number | null }>>`
-      SELECT created_at FROM drizzle.__drizzle_migrations ORDER BY created_at DESC LIMIT 1
-    `;
-    const pending = migrations.flatMap((migration, index) => {
+    for (const [index, migration] of migrations.entries()) {
       const entry = journal.entries[index];
       if (!entry || entry.when !== migration.folderMillis) {
         throw new Error(`Migration journal entry ${index} does not match its SQL file`);
       }
-      if (last?.created_at != null && Number(last.created_at) >= migration.folderMillis) return [];
-      return [{ migration, entry }];
-    });
+    }
+    const applied = await client<Array<{ hash: string; created_at: string | number | null }>>`
+      SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id ASC
+    `;
+    const compared = Math.min(applied.length, migrations.length);
+    for (let index = 0; index < compared; index += 1) {
+      const row = applied[index];
+      const migration = migrations[index];
+      if (row.hash !== migration.hash || Number(row.created_at) !== migration.folderMillis) {
+        throw new Error(
+          `Divergent migration history at ordinal ${index}: database ledger does not match the release journal`,
+        );
+      }
+    }
+    const pending =
+      applied.length >= migrations.length
+        ? []
+        : migrations.slice(applied.length).map((migration, offset) => ({
+            migration,
+            entry: journal.entries[applied.length + offset],
+          }));
+
+    await input.beforeMigrate?.(pending.length);
 
     await client.begin(async (tx) => {
       for (const { migration, entry } of pending) {

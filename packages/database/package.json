@@ -21,7 +21,6 @@
     "build:release": "node scripts/build-release.mjs"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1075.0",
     "@meridian/contracts": "workspace:*",
     "@meridian/prosemirror-schema": "workspace:*",
     "drizzle-orm": "catalog:",

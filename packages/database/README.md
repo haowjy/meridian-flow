@@ -27,16 +27,19 @@ pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 
 Deploy images run `pnpm --filter @meridian/database build:release` at build
 time and invoke `node dist/release/release.mjs` as Railway's pre-deploy
-command. It verifies an S3-compatible custom-format backup before applying
-pending migrations and function SQL in the same transaction. The bundle needs
-Node and `pg_dump` at runtime, but no `node_modules`.
+command. If migrations are pending, it requires a deploy-seam confirmation in
+`MERIDIAN_BACKUP_REF` (`<provider>:<backup id>:release=<sha>`) whose release
+SHA matches `MERIDIAN_RELEASE_SHA`; then it applies migrations and function SQL
+in one transaction. Snapshot creation is owned by `tools/deploy/deploy.ts`, so
+the Neon credential never reaches the Railway runtime. With no pending
+migrations, no backup confirmation is required. The bundle needs Node at
+runtime, but no `node_modules`.
 
-The release command requires `DATABASE_URL`, `BACKUP_S3_BUCKET`,
-`BACKUP_S3_REGION`, `BACKUP_S3_ENDPOINT`, `BACKUP_S3_ACCESS_KEY`, and
-`BACKUP_S3_SECRET_KEY`. `BACKUP_S3_FORCE_PATH_STYLE` defaults to `true`,
-`BACKUP_S3_PREFIX` defaults to `backups/<APP_ENV or unknown>`, and
-`MERIDIAN_RELEASE_SHA` defaults to `unknown`. `backup` runs only the backup;
-`migrate` also backs up unless explicitly passed `--no-backup`.
+The release command requires `DATABASE_URL`; `MERIDIAN_RELEASE_SHA` defaults to
+`unknown`. Pending migrations are refused unless `MERIDIAN_BACKUP_REF` confirms
+a pre-migration backup for that exact release. Local development can explicitly
+use `--no-backup-check` with `APP_ENV=dev`, `development`, or `local`; the
+image's default command must not use that escape hatch.
 
 ## Auth boundary
 
