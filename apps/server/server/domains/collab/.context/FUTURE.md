@@ -17,3 +17,13 @@ command boundary rather than through incidental timing.
 `domain/work-draft-pending.ts` as the independent pending-review authority;
 lifecycle consolidation must not make active branch status a proxy for
 reviewable content.
+
+## Recovery at large history sizes
+
+- Measure idle recovery query cost with large settled history in
+  `adapters/drizzle-change-trail-aggregate.ts`; actionable predicates avoid
+  history-induced settlement delay but may still scan much of that history.
+  Consider a partial state index after measuring the plan.
+- Extend `adapters/drizzle-change-trail-aggregate.db.test.ts` history regression
+  with old `turn_trail_work` rows as well as settled shells, explicitly protecting
+  both candidate-page predicates from independent regressions.

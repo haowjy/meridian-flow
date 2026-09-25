@@ -18,7 +18,6 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
-import type { WorkContextDelivery } from "../../projects/index.js";
 import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
 import { activatedSkillMetadata } from "../loop/activated-skills.js";
 import type { PersistenceDeps } from "../loop/persistence.js";
@@ -60,7 +59,6 @@ export function createWriterTurnProducer(deps: {
   turns: Pick<TurnRepository, "findRunningAssistantId">;
   delivery: DeliveryProducer;
   inbox: Pick<InboxReader, "selectPending">;
-  workContextDelivery: Pick<WorkContextDelivery, "beforeTurn">;
   records: AdmissionPersistencePort;
   consumeUploads(documentIds: readonly string[]): Promise<void>;
   attachDocument(
@@ -99,7 +97,6 @@ export function createWriterTurnProducer(deps: {
         return await persistWriterEnqueue<Projection>({
           persistence: deps.persistence,
           hub: deps.hub,
-          workContextDelivery: deps.workContextDelivery,
           threadId,
           userTurnId,
           userBlocks: input.blocks,

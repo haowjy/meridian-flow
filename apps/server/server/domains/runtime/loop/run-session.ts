@@ -2,7 +2,6 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { WorkContextDelivery } from "../../projects/index.js";
 import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
 import { DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
 import { createRunStarter } from "./run-starter.js";
@@ -37,7 +36,6 @@ export function createRunSessions(deps: {
   delivery: Pick<RuntimeDelivery, "refreshPending">;
   repos: { turns: TurnRepository };
   headSeq(threadId: ThreadId): Promise<bigint>;
-  workContextDelivery: Pick<WorkContextDelivery, "beforeTurn" | "flushOwned">;
   eventSink: EventSink;
   onRunStarted?: (threadId: ThreadId) => void;
   onRunSettled?: (threadId: ThreadId) => void;
@@ -90,11 +88,6 @@ export function createRunSessions(deps: {
       // A child invocation bounds its whole subtree; a primary may detach background children.
       abortChildrenOf(threadId, !!input.child);
       try {
-        if (lease && session.assistantTurnId) await deps.workContextDelivery.flushOwned(threadId);
-      } catch (error) {
-        observe(threadId, "work_flush.failed", error);
-      }
-      try {
         if (lease) await authority.release(lease);
         if (lease) await deps.delivery.refreshPending(threadId);
       } catch (error) {
@@ -129,7 +122,6 @@ export function createRunSessions(deps: {
       );
       heartbeat.unref?.();
       const resumeAfterSeq = (await deps.headSeq(threadId)).toString();
-      await deps.workContextDelivery.beforeTurn(threadId);
       const loop = await deps.setup({
         ...input,
         signal: controller.signal,

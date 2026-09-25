@@ -7,7 +7,7 @@ import { createError } from "nitro/h3";
 import type { NoticePort } from "../domains/notices/index.js";
 import type {
   ProjectRepository,
-  WorkContextDelivery,
+  WorkContextNotices,
   WorkRepository,
 } from "../domains/projects/index.js";
 import type { RunClaim } from "../domains/runtime/index.js";
@@ -17,7 +17,6 @@ import {
   requireThreadOwner,
   type ThreadRepository,
   type ThreadWorksRepository,
-  type WorkContextDeliveryRepository,
 } from "../domains/threads/index.js";
 import { throwHttpInterrupt } from "./interrupt-boundary.js";
 import { requireRequestId } from "./request-id.js";
@@ -28,8 +27,7 @@ export interface ThreadWorkRebindRouteDeps {
   threadWorks: Pick<ThreadWorksRepository, "rebindPrimary">;
   projects: Pick<ProjectRepository, "findById">;
   works: Pick<WorkRepository, "findById" | "findNoWork">;
-  obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
-  workContextDelivery: Pick<WorkContextDelivery, "deliverAfterCommit">;
+  workContextNotices: Pick<WorkContextNotices, "threadChanged" | "materializeIdle">;
   notices: Pick<NoticePort, "record">;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   runClaim: Pick<RunClaim, "withExclusiveThread">;
@@ -118,6 +116,6 @@ export async function handleRebindThreadWorkRequest(
     throw cause;
   }
   if (!transition.changed) return { ...transition, contextUpdate: "not_required" };
-  const contextUpdate = await deps.workContextDelivery.deliverAfterCommit(transition.threadId);
+  const contextUpdate = await deps.workContextNotices.materializeIdle(transition.threadId);
   return { ...transition, contextUpdate };
 }

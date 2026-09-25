@@ -1,8 +1,8 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
-import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { NoticePort } from "../../notices/index.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
-import { drainInbox } from "../loop/inbox-context.js";
+import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
 import { createLocalTurn } from "../loop/local-turn.js";
 import { readPendingInbox } from "../loop/pending-inbox.js";
 import {
@@ -23,6 +23,9 @@ import type { ThreadLock } from "../loop/thread-lock.js";
 
 /** Adapter-private storage primitives; never injected into the model loop or producers. */
 export interface DeliveryStore extends InboxReader {
+  workNoticeTargets(projectId: ProjectId): Promise<ThreadId[]>;
+  canMaterializeWork(threadId: ThreadId): Promise<boolean>;
+  pendingWorkThreads(limit: number, afterThreadId?: ThreadId): Promise<ThreadId[]>;
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   ack(threadId: ThreadId, ids: string[]): Promise<void>;
 }
@@ -39,7 +42,8 @@ export function createDeliveryAdapter(
     repos: import("../../threads/index.js").ThreadRepositories;
     inbox: DeliveryStore;
     leaseStore: DeliveryLeaseStore;
-    runClaim: Pick<RunClaim, "release">;
+    runClaim: Pick<RunClaim, "release" | "withExclusiveThread">;
+    workContext: import("../loop/work-context.js").WorkContextReader;
     threadLock: ThreadLock;
     notices: NoticePort;
     runStarter: RunStarter;
@@ -61,12 +65,107 @@ export function createDeliveryAdapter(
       deps.schedulePostCommit(() => deps.runStarter.start(draft.threadId));
     return message;
   };
+  let workCursor: ThreadId | undefined;
+  async function workBatch(threadId: ThreadId, batch: InboxMessage[]) {
+    const ids = batch
+      .filter((message) => message.body.kind === "work_context_refresh")
+      .map(({ id }) => id);
+    const visible = ids.length > 0 && (await inbox.canMaterializeWork(threadId));
+    let first = true;
+    return {
+      ids: visible ? ids : [],
+      workContext: visible ? await deps.workContext.renderForThread(threadId) : undefined,
+      batch: batch.filter((message) => {
+        if (message.body.kind !== "work_context_refresh") return true;
+        if (!visible || !first) return false;
+        first = false;
+        return true;
+      }),
+    };
+  }
+  async function materializePrefix(threadId: ThreadId) {
+    const work = await workBatch(threadId, await inbox.selectPending(threadId));
+    const turns = await Promise.all(
+      work.batch.map((message) => deps.repos.turns.findById(message.id)),
+    );
+    const leaf = (await deps.repos.threads.findById(threadId))?.activeLeafTurnId ?? null;
+    const plan = planMessageTurns({
+      batch: work.batch,
+      workContext: work.workContext,
+      prevTurnId: leaf,
+      knownTurnIds: new Set(turns.flatMap((turn) => (turn ? [turn.id] : []))),
+    });
+    if (plan.events.length === 0) return;
+    await persistAndAppendTurnStartEvents(deps, threadId, leaf, async () => ({
+      result: undefined,
+      events: plan.events,
+    }));
+    await inbox.ack(threadId, work.ids);
+    await appendPending(threadId);
+  }
+  async function materializeIdle(threadId: ThreadId) {
+    await deps.runClaim.withExclusiveThread(threadId, () =>
+      threadLock.withThreadLock(threadId, async () => {
+        if (await inbox.canMaterializeWork(threadId)) await materializePrefix(threadId);
+      }),
+    );
+    return (await inbox.selectPending(threadId)).some(
+      (message) => message.body.kind === "work_context_refresh",
+    )
+      ? ("pending" as const)
+      : ("delivered" as const);
+  }
+  async function threadChanged(threadId: ThreadId, mutationId = crypto.randomUUID()) {
+    // Work mutations already hold Work rows. Taking the thread lock here would
+    // invert turn persistence's thread → Work activity order. Immutable markers
+    // need no overwrite lock; exact-ID ack leaves every concurrent insert pending.
+    await inbox.enqueue({
+      threadId,
+      intent: "notice",
+      provenance: { kind: "system", source: "work_context" },
+      body: { kind: "work_context_refresh" },
+      idempotencyKey: `work-context:${mutationId}`,
+    });
+  }
   async function adopt(input: DeliveryBoundary, batch: InboxMessage[]): Promise<AdoptedBatch> {
     const { lease, currentTurn } = input;
+    const work = await workBatch(lease.threadId, batch);
+    batch = work.batch;
     const threadId = lease.threadId;
-    const split = batch.some(
-      (message) => message.intent === "message" && !input.knownTurnIds.has(message.id),
-    );
+    // Writer enqueue can have persisted and acked an earlier Work prefix while
+    // this run's provider request was in flight. Adopt that committed history too.
+    const committed: InboxMessage[] = [];
+    const committedWorkIds: string[] = [];
+    let leaf = (await deps.repos.threads.findById(threadId))?.activeLeafTurnId;
+    while (leaf && !input.knownTurnIds.has(leaf)) {
+      const turn = await deps.repos.turns.findById(leaf);
+      if (!turn) throw new Error(`Missing causal turn: ${leaf}`);
+      const message = batch.find((entry) => entry.id === turn.id);
+      if (message) committed.unshift(message);
+      else if ((turn.metadata as { kind?: string } | null)?.kind === "system_update") {
+        committedWorkIds.push(turn.id);
+        // A writer's prefix transaction already acked this durable notice. Replay
+        // its saved blocks, not a fresh render of the current Work state.
+        committed.unshift({
+          id: turn.id,
+          threadId,
+          seq: 0,
+          intent: "notice",
+          provenance: { kind: "system", source: "work_context" },
+          body: { kind: "work_context_refresh" },
+          idempotencyKey: turn.id,
+          enqueuedAt: turn.createdAt,
+          deliveredAt: turn.createdAt,
+        });
+      }
+      leaf = turn.prevTurnId;
+    }
+    const committedIds = new Set(committed.map((message) => message.id));
+    batch = [...committed, ...batch.filter((message) => !committedIds.has(message.id))];
+    const split =
+      !!work.workContext ||
+      committedWorkIds.length > 0 ||
+      batch.some((message) => message.intent === "message" && !input.knownTurnIds.has(message.id));
     if (split) {
       const completed = {
         ...currentTurn,
@@ -86,8 +185,13 @@ export function createDeliveryAdapter(
       notices: deps.notices,
       threadId,
       batch,
+      workContext: work.workContext,
       messages: [],
     });
+    await inbox.ack(threadId, work.ids);
+    drain.ackIds = drain.ackIds.filter(
+      (id) => !work.ids.includes(id) && !committedWorkIds.includes(id),
+    );
     let next = currentTurn;
     if (split) {
       const leaf =
@@ -115,6 +219,23 @@ export function createDeliveryAdapter(
     return { drain, next, split };
   }
   return {
+    threadChanged,
+    async projectChanged(projectId) {
+      const mutationId = crypto.randomUUID();
+      for (const threadId of await inbox.workNoticeTargets(projectId))
+        await threadChanged(threadId, mutationId);
+    },
+    materializeIdle,
+    async sweepWorkNotices() {
+      let threads = await inbox.pendingWorkThreads(100, workCursor);
+      if (threads.length === 0 && workCursor) threads = await inbox.pendingWorkThreads(100);
+      workCursor = threads.at(-1);
+      // Finish the bounded page even when one target is poisoned.
+      const results = await Promise.allSettled(threads.map(materializeIdle));
+      const failed = results.find((result) => result.status === "rejected");
+      if (failed?.status === "rejected") throw failed.reason;
+      return threads.length;
+    },
     refreshPending: (threadId) =>
       threadLock.withThreadLock(threadId, () => appendPending(threadId)),
     selectPending: inbox.selectPending,
@@ -124,6 +245,7 @@ export function createDeliveryAdapter(
     withThreadLock: (threadId, operation) =>
       threadLock.withThreadLock(threadId, () =>
         operation({
+          materializePrefix: () => materializePrefix(threadId),
           enqueue(draft) {
             if (draft.threadId !== threadId)
               throw new Error("Scoped delivery cannot enqueue another thread");
@@ -133,8 +255,14 @@ export function createDeliveryAdapter(
       ),
     adoptBatch: (lease, prepare) =>
       threadLock.withThreadLock(lease.threadId, async () => {
-        const prepared = await prepare(await inbox.selectPending(lease.threadId));
-        await leaseStore.bindTurn(lease, prepared.turnId, prepared.messageIds);
+        const work = await workBatch(lease.threadId, await inbox.selectPending(lease.threadId));
+        const prepared = await prepare(work.batch, work.workContext);
+        await inbox.ack(lease.threadId, work.ids);
+        await leaseStore.bindTurn(
+          lease,
+          prepared.turnId,
+          prepared.messageIds.filter((id) => !work.ids.includes(id)),
+        );
         await appendPending(lease.threadId);
         return prepared.value;
       }),
@@ -163,7 +291,11 @@ export function createDeliveryAdapter(
           : input.cause;
         if (input.continueWith && cause.kind === "success") {
           const batch = await inbox.selectPending(threadId);
-          if (batch.some((message) => message.intent === "message"))
+          if (
+            batch.some((message) => message.intent === "message") ||
+            (batch.some((message) => message.body.kind === "work_context_refresh") &&
+              (await inbox.canMaterializeWork(threadId)))
+          )
             return { kind: "split", adopted: await adopt(input.continueWith, batch) };
         }
         const completion = await finalizeExecution(deps, {

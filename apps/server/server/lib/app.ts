@@ -4,13 +4,13 @@
  * and pure service wiring.
  */
 
-import { emitEvent, unknownToEventPayload } from "../domains/observability/index.js";
 import { listenForThreadEvents } from "../domains/threads/adapters/drizzle/event-relay.js";
 import { type AppServices, composeAppServices, createProductionAppPorts } from "./compose.js";
 import { getDb } from "./db.js";
 import { resolveWakeSweepIntervalMs } from "./env.js";
 import { createEventSinkFromEnv } from "./event-sink-factory.js";
-import { getOrBindProcessObservability } from "./observability.js";
+import { getOrBindProcessObservability, registerProcessShutdownCallback } from "./observability.js";
+import { startRecoveryScheduler } from "./recovery-scheduler.js";
 
 const APP_SINGLETON_KEY = Symbol.for("meridian.app.v1");
 
@@ -35,48 +35,30 @@ async function createAppServices(): Promise<AppServices> {
     environment: process.env,
   });
   const app = composeAppServices(ports);
-  const drain = () =>
-    void app.changeTrailDelivery.drain().catch((cause) => {
-      emitEvent(eventSink, {
-        level: "error",
-        source: "collab.change-trail-delivery",
-        name: "poll.failed",
-        payload: unknownToEventPayload(cause),
-      });
-    });
-  const sweepWorkContext = () =>
-    void app.workContextDelivery.sweep().catch((cause) => {
-      emitEvent(eventSink, {
-        level: "error",
-        source: "runtime.work-context-delivery",
-        name: "sweep.failed",
-        payload: unknownToEventPayload(cause),
-      });
-    });
-  const sweepWakes = () =>
-    void app.wakeSweep.sweep().catch((cause) => {
-      emitEvent(eventSink, {
-        level: "error",
-        source: "runtime.wake-sweep",
-        name: "sweep.failed",
-        payload: unknownToEventPayload(cause),
-      });
-    });
   await listenForThreadEvents({
     db,
     eventHub: app.threadEventHub,
     eventSink,
   });
-  drain();
-  sweepWorkContext();
-  // Startup recovery: a message committed before a crash has no in-memory wake, so
-  // the derived wake need is recovered here as well as on the interval.
-  sweepWakes();
-  // Polling is the recovery mechanism as well as the trigger: committed pushes need
-  // no in-process callback to survive a crash or a different server process.
-  setInterval(drain, CHANGE_TRAIL_POLL_MS).unref();
-  setInterval(sweepWorkContext, SYSTEM_UPDATE_SWEEP_MS).unref();
-  setInterval(sweepWakes, WAKE_SWEEP_INTERVAL_MS).unref();
+  const scheduler = startRecoveryScheduler(
+    [
+      { name: "wake-scan", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.scanWakes },
+      { name: "orphan-repair", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.repairOrphans },
+      {
+        name: "report-publication",
+        delayMs: WAKE_SWEEP_INTERVAL_MS,
+        run: app.recovery.publishReports,
+      },
+      {
+        name: "work-notices",
+        delayMs: SYSTEM_UPDATE_SWEEP_MS,
+        run: app.workContextNotices.sweepWorkNotices,
+      },
+      { name: "change-trail", delayMs: CHANGE_TRAIL_POLL_MS, run: app.changeTrailDelivery.drain },
+    ],
+    eventSink,
+  );
+  registerProcessShutdownCallback(() => scheduler.stop());
   return app;
 }
 

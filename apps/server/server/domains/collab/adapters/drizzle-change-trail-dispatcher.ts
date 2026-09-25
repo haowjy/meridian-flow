@@ -117,7 +117,7 @@ export function createDrizzleChangeTrailDispatcher(input: {
   return {
     async drain() {
       let count = 0;
-      while (await dispatchOne()) count += 1;
+      while (count < 100 && (await dispatchOne())) count += 1;
       return count;
     },
   };

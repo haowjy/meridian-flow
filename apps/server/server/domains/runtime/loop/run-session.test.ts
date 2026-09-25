@@ -94,22 +94,15 @@ describe("RunSession", () => {
     expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
   });
 
-  it("falls back after a pre-loop crash and still releases when Work flush fails", async () => {
-    const f = await fixture((deps) => {
-      deps.workContextDelivery.flushOwned = async () => {
-        throw new Error("flush offline");
-      };
-    });
+  it("falls back after a pre-loop crash and releases", async () => {
+    const f = await fixture();
     const run = await f.prepare();
     f.deps.repos.blocks.listByThread = async () => {
       throw new Error("history unavailable");
     };
     expect(await run.execute()).toMatchObject({ status: "error" });
     expect(f.journal.getEvents(f.thread.id).map(({ event }) => event.type)).toContain("turn.error");
-    expect(f.sink.events.map((event) => event.name)).toEqual([
-      "execution.failed",
-      "work_flush.failed",
-    ]);
+    expect(f.sink.events.map((event) => event.name)).toEqual(["execution.failed"]);
     expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
   });
 
@@ -160,17 +153,6 @@ describe("RunSession", () => {
     expect(releases).toBeGreaterThanOrEqual(2);
     expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
     expect(f.runtime.isThreadRunning(f.thread.id)).toBe(false);
-  });
-
-  it("does not flush someone else's Work when acquisition loses", async () => {
-    const flush = vi.fn(async () => {});
-    const f = await fixture((deps) => {
-      deps.workContextDelivery.flushOwned = flush;
-    });
-    const held = await f.deps.runClaim.startExecution(f.thread.id, "remote");
-    await expect(f.prepare()).rejects.toMatchObject({ reason: "already_running" });
-    expect(flush).not.toHaveBeenCalled();
-    if (held) await f.deps.runClaim.release(held);
   });
 
   it("heartbeats a lazy prepared run, observes renewal failure, and stops on release", async () => {

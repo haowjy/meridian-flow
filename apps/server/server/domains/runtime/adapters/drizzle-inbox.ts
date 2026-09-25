@@ -6,7 +6,7 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { MessageIntent, MessageProvenance } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
-import { and, asc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDatabase } from "../../../shared/drizzle-transaction.js";
 import type { InboxMessage, MessageBody } from "../loop/ports.js";
 import type { DeliveryStore } from "./runtime-delivery.js";
@@ -47,6 +47,52 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
   }
 
   return {
+    async workNoticeTargets(projectId) {
+      const rows = await db_()
+        .select({ id: schema.threads.id })
+        .from(schema.threads)
+        .where(eq(schema.threads.projectId, projectId))
+        .orderBy(asc(schema.threads.id));
+      return rows.map(({ id }) => id as ThreadId);
+    },
+    async canMaterializeWork(threadId) {
+      // Stronger thread/project locks invert Work mutation + marker FK insertion against turn writes.
+      const rows = await db_()
+        .select({ id: schema.threads.id })
+        .from(schema.threads)
+        .innerJoin(schema.projects, eq(schema.projects.id, schema.threads.projectId))
+        .where(
+          and(
+            eq(schema.threads.id, threadId),
+            isNull(schema.threads.deletedAt),
+            isNull(schema.projects.deletedAt),
+            ne(schema.threads.status, "archived"),
+          ),
+        )
+        .for("no key update", { of: schema.threads });
+      return rows.length > 0;
+    },
+    async pendingWorkThreads(limit, afterThreadId) {
+      const rows = await db_()
+        .select({ id: schema.threadInboxMessages.threadId })
+        .from(schema.threadInboxMessages)
+        .innerJoin(schema.threads, eq(schema.threads.id, schema.threadInboxMessages.threadId))
+        .innerJoin(schema.projects, eq(schema.projects.id, schema.threads.projectId))
+        .where(
+          and(
+            isNull(schema.threads.deletedAt),
+            isNull(schema.projects.deletedAt),
+            ne(schema.threads.status, "archived"),
+            sql`${schema.threadInboxMessages.body}->>'kind' = 'work_context_refresh'`,
+            isNull(schema.threadInboxMessages.deliveredAt),
+            afterThreadId ? gt(schema.threadInboxMessages.threadId, afterThreadId) : undefined,
+          ),
+        )
+        .groupBy(schema.threadInboxMessages.threadId)
+        .orderBy(asc(schema.threadInboxMessages.threadId))
+        .limit(limit);
+      return rows.map(({ id }) => id as ThreadId);
+    },
     async enqueue(draft) {
       const [inserted] = await db_()
         .insert(schema.threadInboxMessages)

@@ -13,14 +13,12 @@
 import type { ReturnResultCapture, TreeBudget } from "@meridian/contracts/spawn";
 import type {
   Block,
-  JsonObject,
   JsonValue,
   OrchestratorEvent,
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { WorkContextDelivery } from "../../projects/index.js";
 import type { ChildRunCoordinator, ChildRunRequest } from "../spawn/child-run-coordinator.js";
 import { readThreadReport } from "../spawn/read-thread-report.js";
 import { spawnOutputForTranscript } from "../spawn/spawn-output.js";
@@ -45,7 +43,6 @@ export interface ToolDispatchDeps {
   executionReports: import("../../threads/ports/repositories.js").ThreadRepositories["executionReports"];
   readSnapshot: import("../../threads/ports/repositories.js").ThreadRepositories["readSnapshot"];
   runningTurn: Pick<import("./ports.js").RunClaim, "readRunningTurnId">;
-  workContextDelivery: Pick<WorkContextDelivery, "deliverNow">;
 }
 
 export interface ToolDispatchContext {
@@ -71,17 +68,6 @@ export type ToolDispatchResult =
       endTurn?: true;
     }
   | { cancelled: true };
-
-function pendingWorkContextOutput(output: JsonValue, message: string): JsonObject {
-  const result =
-    output !== null && typeof output === "object" && !Array.isArray(output)
-      ? output
-      : { result: output };
-  return {
-    ...result,
-    contextUpdate: { status: "pending", message },
-  };
-}
 
 export async function dispatchToolCall(
   deps: ToolDispatchDeps,
@@ -317,61 +303,8 @@ export async function dispatchToolCall(
   );
   ctx.state.allBlocks.push(persistedToolResult.result);
 
-  let resultBlock = persistedToolResult.result;
-  let resultMetadata = execResult.metadata;
-  if (execResult.metadata?.workContextChanged === true) {
-    try {
-      const update = await deps.workContextDelivery.deliverNow(ctx.state.threadId);
-      ctx.allTurns.push(update.turn);
-      ctx.state.allBlocks.push(update.block);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Work context refresh will retry after this turn.";
-      const output = pendingWorkContextOutput(execResult.output, message);
-      const metadata: JsonObject = {
-        ...execResult.metadata,
-        workContextDelivery: "pending",
-        workContextWarning: message,
-      };
-      const patched = await persistAndAppendEvents(
-        deps.persistenceDeps,
-        ctx.state.threadId,
-        async () => {
-          const block = contentForBlockInput({
-            id: persistedToolResult.result.id,
-            turnId: ctx.state.currentTurn.id,
-            ...(stagedWrite ? { responseId: ctx.responseId } : {}),
-            blockType: "tool_result",
-            sequence: persistedToolResult.result.sequence,
-            content: {
-              toolCallId: execResult.toolCallId,
-              output,
-              ...(persistedIsError !== undefined ? { isError: persistedIsError } : {}),
-              metadata,
-            },
-            status: "complete",
-          });
-          return {
-            result: localBlockFromEvent(block),
-            events: [
-              { type: "block.upserted" as const, block },
-              {
-                type: "tool.result" as const,
-                toolCallId: execResult.toolCallId,
-                output,
-                isError: persistedIsError,
-                metadata,
-              },
-            ],
-          };
-        },
-      );
-      const blockIndex = ctx.state.allBlocks.findIndex((block) => block.id === patched.result.id);
-      if (blockIndex >= 0) ctx.state.allBlocks[blockIndex] = patched.result;
-      resultBlock = patched.result;
-      resultMetadata = metadata;
-    }
-  }
+  const resultBlock = persistedToolResult.result;
+  const resultMetadata = execResult.metadata;
   return {
     block: resultBlock,
     ...(resultMetadata

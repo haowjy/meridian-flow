@@ -35,7 +35,6 @@ export type {
   TurnRepository,
   UpdateTurnStatusInput,
   WorkChatFeedRepository,
-  WorkContextDeliveryRepository,
   WorkThreadSummary,
 } from "./repositories.js";
 export { ThreadWorkProjectMismatchError } from "./repositories.js";

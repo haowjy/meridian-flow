@@ -20,6 +20,7 @@ import { mapTurn } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
 
 export async function lockThreadForTurnTransition(db: DrizzleDb, threadId: ThreadId) {
+  // Keep FK KEY SHARE compatible: Work mutations insert inbox markers while holding Work rows.
   const [thread] = await currentDrizzleDb(db)
     .select({
       id: schema.threads.id,
@@ -27,7 +28,7 @@ export async function lockThreadForTurnTransition(db: DrizzleDb, threadId: Threa
     })
     .from(schema.threads)
     .where(eq(schema.threads.id, threadId))
-    .for("update");
+    .for("no key update");
   if (!thread) throw new Error(`Thread not found: ${threadId}`);
   return thread;
 }

@@ -54,8 +54,8 @@ export function isDrainRun(input: RunLoopInput): input is DrainRunLoopInput {
 
 /**
  * The drain start found no durable pending message to serve. The drain mints no
- * assistant turn; a preceding `WorkContextDelivery.beforeTurn` may already have
- * persisted a `system_update` turn, which the next run reads as history. The
+ * assistant turn; idle Work materialization may already have persisted a
+ * `system_update` turn, which the next run reads as history. The
  * invariant is "no phantom assistant turn", not "no write".
  */
 export class NoPendingWakeError extends Error {

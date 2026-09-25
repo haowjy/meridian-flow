@@ -10,6 +10,11 @@ export function createTestDrizzleDelivery(
   overrides: Partial<Parameters<typeof createDrizzleRuntimeDelivery>[1]> = {},
 ) {
   return createDrizzleRuntimeDelivery(db, {
+    workContext: {
+      async renderForThread() {
+        throw new Error("No Work context configured");
+      },
+    },
     repos: createDrizzleRepositoriesForTest(db),
     eventWriter: createDrizzleEventJournalWriter(db),
     notices: createTestNoticePort(),

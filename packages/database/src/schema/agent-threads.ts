@@ -175,15 +175,6 @@ export const threadWorks = pgTable(
   ],
 );
 
-/** Coalesced durable requests to refresh a frozen thread's model-visible Work context. */
-export const workContextDeliveryObligations = pgTable("work_context_delivery_obligations", {
-  threadId: uuid("thread_id")
-    .$type<ThreadId>()
-    .primaryKey()
-    .references(() => threads.id, { onDelete: "cascade" }),
-  requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow().notNull(),
-});
-
 /**
  * Durable per-thread message queue drained in a batch at the next delivery
  * boundary. Rows are marked delivered rather than deleted so the idempotency
@@ -220,7 +211,7 @@ export const threadInboxMessages = pgTable(
     ),
     check(
       "thread_inbox_messages_body_valid",
-      sql`(${table.body}->>'kind' IN ('text','report','context')) IS TRUE`,
+      sql`(${table.body}->>'kind' IN ('text','context','work_context_refresh')) IS TRUE`,
     ),
   ],
 );

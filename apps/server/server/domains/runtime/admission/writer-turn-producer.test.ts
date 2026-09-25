@@ -82,7 +82,6 @@ async function harness(recordsOverride?: AdmissionPersistencePort) {
         void task();
       },
     }),
-    workContextDelivery: { async beforeTurn() {} },
     records: recordsOverride ?? records.port,
     consumeUploads: async () => undefined,
     attachDocument: async () => undefined,

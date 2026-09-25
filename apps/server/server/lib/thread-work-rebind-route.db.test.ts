@@ -1,3 +1,4 @@
+import { createTestDrizzleDelivery } from "../domains/runtime/loop/__tests__/test-drizzle-delivery.js";
 /** PostgreSQL coverage for the writer Work-rebind HTTP boundary. */
 
 import { createApp, toWebHandler } from "nitro/h3";
@@ -76,8 +77,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               threadWorks: threads.threadWorks,
               projects,
               works,
-              obligations: threads.workContextDeliveries,
-              workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
+              workContextNotices: {
+                threadChanged: (id) => createTestDrizzleDelivery(db).threadChanged(id),
+                materializeIdle: async () => "delivered" as const,
+              },
               notices,
               transaction: threads.transaction,
               runClaim: writerInstance,
@@ -108,8 +111,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadWorks: threads.threadWorks,
           projects,
           works,
-          obligations: threads.workContextDeliveries,
-          workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
+          workContextNotices: {
+            threadChanged: (id) => createTestDrizzleDelivery(db).threadChanged(id),
+            materializeIdle: async () => "delivered" as const,
+          },
           notices,
           transaction: threads.transaction,
           runClaim: writerInstance,
@@ -150,8 +155,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadWorks: threads.threadWorks,
             projects,
             works: stalePreflightWorks,
-            obligations: threads.workContextDeliveries,
-            workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
+            workContextNotices: {
+              threadChanged: (id) => createTestDrizzleDelivery(db).threadChanged(id),
+              materializeIdle: async () => "delivered" as const,
+            },
             notices,
             transaction: threads.transaction,
             runClaim: {
@@ -218,8 +225,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               threadWorks: failingThreads.threadWorks,
               projects,
               works,
-              obligations: threads.workContextDeliveries,
-              workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
+              workContextNotices: {
+                threadChanged: (id) => createTestDrizzleDelivery(db).threadChanged(id),
+                materializeIdle: async () => "delivered" as const,
+              },
               notices,
               transaction: async (operation) => operation(),
               runClaim: {
@@ -257,8 +266,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadWorks: threads.threadWorks,
           projects,
           works,
-          obligations: threads.workContextDeliveries,
-          workContextDelivery: { deliverAfterCommit: async () => "pending" as const },
+          workContextNotices: {
+            threadChanged: (id) => createTestDrizzleDelivery(db).threadChanged(id),
+            materializeIdle: async () => "pending" as const,
+          },
           notices,
           transaction: threads.transaction,
           runClaim: {
@@ -275,7 +286,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
         workId: TARGET_WORK_ID,
       });
-      await expect(threads.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
+      await expect(
+        createTestDrizzleDelivery(db)
+          .selectPending(THREAD_ID)
+          .then((rows) => rows.length > 0),
+      ).resolves.toBe(true);
 
       const recreatedPort = createDrizzleNoticePort(db);
       await expect(recreatedPort.drainForModelContext(THREAD_ID)).resolves.toMatchObject([
@@ -305,8 +320,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadWorks: threads.threadWorks,
             projects,
             works,
-            obligations: threads.workContextDeliveries,
-            workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
+            workContextNotices: {
+              threadChanged: (id) => createTestDrizzleDelivery(db).threadChanged(id),
+              materializeIdle: async () => "delivered" as const,
+            },
             notices: {
               record: async () => {
                 throw new Error("injected Notice failure");
@@ -328,7 +345,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
         workId: WORK_ID,
       });
-      await expect(threads.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
+      await expect(
+        createTestDrizzleDelivery(db)
+          .selectPending(THREAD_ID)
+          .then((rows) => rows.length > 0),
+      ).resolves.toBe(false);
       await expect(notices.drainForModelContext(THREAD_ID)).resolves.toEqual([]);
     });
   });

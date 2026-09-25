@@ -109,7 +109,6 @@ if (!RUN) {
       documentId: string;
       uri: string;
       failAfterProvenance?: boolean;
-      beforeTurn?: () => Promise<void>;
       prepareLookup?: () => Promise<void>;
     }) {
       const eventReader = createDrizzleEventJournalReader(firstDb);
@@ -178,11 +177,6 @@ if (!RUN) {
           runner: { getRunningTurn: () => null },
           turns: repos.turns,
           delivery,
-          workContextDelivery: {
-            async beforeTurn() {
-              await input.beforeTurn?.();
-            },
-          },
           records,
           consumeUploads: (documentIds) => uploadIntake.consume(documentIds),
           async attachDocument(threadId, documentId, relationship) {
@@ -269,7 +263,6 @@ if (!RUN) {
         runner: { getRunningTurn: () => null },
         turns: repos.turns,
         delivery,
-        workContextDelivery: { async beforeTurn() {} },
         records: {
           ...records,
           async accept(input) {

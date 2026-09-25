@@ -68,7 +68,7 @@ instead of the N:1 `threads.workId` column.
 - **Thread Work rebind** — `rebindThreadWork` is the canonical mutation for
   explicitly changing an existing thread's primary Work. It owns lifecycle validation,
   the transaction-composable binding transition, the exact binding receipt, idempotent no-op behavior, and the
-      targeted durable context refresh obligation. Writer and model commands share
+      targeted durable context refresh inbox notice. Writer and model commands share
       that transition; switch receipts are factual and are not reversible through
       turn Undo/Redo. The authenticated writer adapter additionally holds
       cross-process thread-run ownership across its transaction. Preflight
@@ -145,7 +145,7 @@ instead of the N:1 `threads.workId` column.
 | `ModelResponseRepository` | `create / findById / listByTurn / listByThread` |
 | `ThreadRepositories` | aggregate of the repositories + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
 | `ThreadWorksRepository` | Adds organizational memberships and reads the primary. Its Work-before-thread primary rebind revalidates thread lifecycle under the same row lock, then demotes the old membership and promotes/upserts the target WorkId, retaining association history while preserving exactly one primary. |
-| `rebindThreadWork` | Transaction-composable mutation above `rebindPrimary`; binding, receipt, typed lifecycle errors, and targeted durable obligation have one policy owner. Actor adapters own transaction and post-commit delivery. |
+| `rebindThreadWork` | Transaction-composable mutation above `rebindPrimary`; binding, receipt, typed lifecycle errors, and targeted durable inbox notice have one policy owner. Actor adapters own the business transaction. |
 | `restoreOwnedThreadFromTrash` | Authenticated restore boundary; revalidates historical primary Work then thread under Work-before-thread locks. It restores the exact available Work, or rebinds an unavailable historical primary to No Work. |
 | `EventJournalWriter` | `appendEvent(threadId, event) -> bigint seq` |
 | `EventJournalReader` | `readAfter / headSeq / listByThread / listByType / listSince / listByTimeRange` |
@@ -267,7 +267,7 @@ contract shapes.
   threads have the same thread-scoped not-found result.
 - **The complete trash command set is serialized.** Delete and restore decide
   changed/no-op from the locked row. Only a real `deleted -> visible` transition
-  enqueues its targeted Work-context obligation; retries, concurrent no-ops, and
+  enqueues its targeted Work-context inbox notice; retries, concurrent no-ops, and
   deletion never wake delivery.
 - Trash preserves the last committed primary membership as history. A deleted
   thread has no active scope. Restore never substitutes a same-name Work: membership follows Work ID, and a missing/deleted historical

@@ -183,6 +183,32 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await inbox.pendingMessageThreads(1, THREAD_B)).toEqual([]);
     });
 
+    it("pages past a poisoned wake candidate and wraps to retry it", async () => {
+      const inbox = createDrizzleInbox(db);
+      const authority = createDrizzleRunClaim(db);
+      await inbox.enqueue(message("poison", THREAD_A));
+      await inbox.enqueue(message("later", THREAD_B));
+      const started: ThreadId[] = [];
+      let afterThreadId: ThreadId | undefined;
+      for (let pass = 0; pass < 3; pass++) {
+        ({ cursor: afterThreadId } = await sweepWakes({
+          delivery: { ...inbox, async refreshPending() {} },
+          authority,
+          eventSink: createInMemoryEventSink(),
+          limit: 1,
+          afterThreadId,
+          runStarter: {
+            async start(threadId) {
+              started.push(threadId);
+              if (threadId === THREAD_A) throw new Error("exhausted balance");
+            },
+          },
+        }));
+      }
+      expect(started).toEqual([THREAD_A, THREAD_B, THREAD_A]);
+      expect(await inbox.selectPending(THREAD_A)).toHaveLength(1);
+    });
+
     it("wakes a pending-message thread and skips one with a live lease", async () => {
       const inbox = createDrizzleInbox(db);
       const authority = createDrizzleRunClaim(db, { holderId: "holder-sweep" });

@@ -357,8 +357,4 @@ export {
   type WorkTransition,
 } from "./update-work.js";
 export { requireWorkOwner } from "./work-access.js";
-export type {
-  DeliveredWorkContextUpdate,
-  WorkContextDelivery,
-  WorkContextPostCommitResult,
-} from "./work-context-delivery.js";
+export type { WorkContextNotices } from "./work-context-notices.js";

@@ -5,7 +5,7 @@
  */
 
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
-import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Block, ModelResponse, Thread, Turn, TurnUsage } from "@meridian/contracts/threads";
 import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
@@ -180,18 +180,8 @@ export function createInMemoryRepositories(
     string,
     { threadId: ThreadId; workId: WorkId; isPrimary: boolean }
   >();
-  const workContextDeliveries = transactionOwner.set<string>();
   const userStateByThreadUser = transactionOwner.map<string, { isFavorite: boolean }>();
   const threadCounters = transactionOwner.map<string, number>();
-
-  async function receivesWorkContextUpdate(thread: Thread | undefined): Promise<boolean> {
-    return (
-      !!thread &&
-      !thread.deletedAt &&
-      thread.status !== "archived" &&
-      (await threadInActiveProject(thread))
-    );
-  }
 
   function nextRef(projectId: string, kind: Thread["kind"]): string {
     const n = (threadCounters.get(projectId) ?? 0) + 1;
@@ -882,44 +872,6 @@ export function createInMemoryRepositories(
     readSnapshot: (operation) => transactionOwner.run(operation),
     threadDocuments: threadDocumentRepo,
     documentTouches: documentTouchRepo,
-    workContextDeliveries: {
-      async enqueueThread(threadId) {
-        if (!(await receivesWorkContextUpdate(threads.get(threadId)))) return [];
-        workContextDeliveries.add(threadId);
-        return [threadId];
-      },
-      async enqueueProject(projectId: ProjectId) {
-        const selected: ThreadId[] = [];
-        for (const thread of threads.values()) {
-          if (thread.projectId === projectId && (await receivesWorkContextUpdate(thread))) {
-            workContextDeliveries.add(thread.id);
-            selected.push(thread.id as ThreadId);
-          }
-        }
-        return selected;
-      },
-      async listPendingThreadIds() {
-        const selected: ThreadId[] = [];
-        for (const threadId of workContextDeliveries) {
-          if (await receivesWorkContextUpdate(threads.get(threadId))) {
-            selected.push(threadId as ThreadId);
-          }
-        }
-        return selected;
-      },
-      async isPending(threadId) {
-        return workContextDeliveries.has(threadId);
-      },
-      async lockPending(threadId) {
-        return (
-          workContextDeliveries.has(threadId) &&
-          (await receivesWorkContextUpdate(threads.get(threadId)))
-        );
-      },
-      async acknowledge(threadId) {
-        workContextDeliveries.delete(threadId);
-      },
-    },
     transaction: (operation) => transactionOwner.run(operation),
     async runTurnStartTransition(threadId, expectedActiveLeafTurnId, operation) {
       return this.transaction(async () => {

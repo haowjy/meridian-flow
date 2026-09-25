@@ -13,23 +13,25 @@ export function projectPendingInbox(
   run: PendingInboxRun = null,
 ): ThreadPendingInbox {
   return {
-    items: messages.map((message): PendingInboxItem => {
-      const deliveryState =
-        run === null || run.turnId === null
-          ? "awaiting_run"
-          : run.messageIds.includes(message.id)
+    items: messages
+      .filter((message) => message.body.kind !== "work_context_refresh")
+      .map((message): PendingInboxItem => {
+        const deliveryState =
+          run === null || run.turnId === null
             ? "awaiting_run"
-            : "waiting";
-      return {
-        id: message.id,
-        seq: message.seq,
-        intent: message.intent,
-        provenance: message.provenance,
-        deliveryState,
-        summary: inboxMessageText(message),
-        enqueuedAt: message.enqueuedAt,
-      };
-    }),
+            : run.messageIds.includes(message.id)
+              ? "awaiting_run"
+              : "waiting";
+        return {
+          id: message.id,
+          seq: message.seq,
+          intent: message.intent,
+          provenance: message.provenance,
+          deliveryState,
+          summary: inboxMessageText(message),
+          enqueuedAt: message.enqueuedAt,
+        };
+      }),
   };
 }
 

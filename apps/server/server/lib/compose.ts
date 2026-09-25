@@ -61,7 +61,6 @@ import {
   type EventQuery,
   type EventSink,
   emitEvent,
-  unknownToEventPayload,
 } from "../domains/observability/index.js";
 import {
   type AccountSkillInstallStore,
@@ -128,7 +127,6 @@ import {
   createToolExecutor,
   createToolRegistry,
   createUserTurnAdmission,
-  createWorkContextDelivery,
   createWorkContextReader,
   createWriterTurnProducer,
   type DeliveryProducer,
@@ -144,7 +142,7 @@ import {
   type ToolRegistry,
   type TurnRunner,
   type UserTurnAdmission,
-  type WorkContextDelivery,
+  type WorkContextNotices,
   type WorkContextReader,
 } from "../domains/runtime/index.js";
 import {
@@ -228,7 +226,7 @@ export type AppServices = {
   workRepo: ProjectWorkRepository;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workContext: WorkContextReader;
-  workContextDelivery: WorkContextDelivery;
+  workContextNotices: WorkContextNotices;
   billing: BillingService;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
@@ -244,7 +242,11 @@ export type AppServices = {
   runStarter: RunStarter;
   delivery: DeliveryProducer;
   /** Startup/interval recovery for threads with a pending message and no live run. */
-  wakeSweep: { sweep(): Promise<void> };
+  recovery: {
+    scanWakes(): Promise<number>;
+    repairOrphans(): Promise<number>;
+    publishReports(): Promise<number>;
+  };
   userTurnAdmission: UserTurnAdmission;
   runClaim: Pick<RunClaim, "withExclusiveThread">;
   toolRegistry: ToolRegistry;
@@ -578,25 +580,19 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
   const toolRegistry = createToolRegistry();
   let runner: TurnRunner;
-  const workContextDelivery = createWorkContextDelivery({
+  const runStarter = createRunStarter(
+    { startDrain: (id) => runner.startDrain(id) },
+    ports.eventSink,
+  );
+  const delivery = createDrizzleRuntimeDelivery(ports.db, {
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
-    workContext,
-    isThreadRunning: (threadId) => runner.isThreadRunning(threadId),
     runClaim: ports.runClaim,
-    schedulePostCommit(task) {
-      runAfterDrizzleCommit(() => {
-        void task().catch((cause) => {
-          emitEvent(ports.eventSink, {
-            level: "error",
-            source: "runtime.work-context-delivery",
-            name: "wake.failed",
-            payload: unknownToEventPayload(cause),
-          });
-        });
-      });
-    },
+    notices: ports.notices,
+    runStarter,
+    workContext,
   });
+  const workContextNotices = delivery;
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
     threadWorks: ports.threadRepos.threadWorks,
@@ -611,8 +607,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     works: ports.workRepo,
     workAuthorityResolver: ports.workAuthorityResolver,
     drafts: ports.documentSync,
-    workContextDelivery,
-    obligations: ports.threadRepos.workContextDeliveries,
+    workContextNotices,
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
     transaction: ports.threadRepos.transaction,
@@ -656,17 +651,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     });
   };
   const threadLock = createDrizzleThreadLock(ports.db);
-  const runStarter = createRunStarter(
-    { startDrain: (id) => runner.startDrain(id) },
-    ports.eventSink,
-  );
-  const delivery = createDrizzleRuntimeDelivery(ports.db, {
-    repos: ports.threadRepos,
-    eventWriter: threadEventHub,
-    runClaim: ports.runClaim,
-    notices: ports.notices,
-    runStarter,
-  });
   const inbox = delivery;
   const readPending = (threadId: ThreadId) => readPendingInbox(delivery, threadId);
   const reportPublisher = createReportPublisher({
@@ -684,33 +668,21 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
   });
   let wakeCursor: ThreadId | undefined;
-  const wakeSweep = {
-    async sweep() {
-      const results = await Promise.allSettled([
-        sweepWakes({
-          delivery,
-          authority: ports.runClaim,
-          runStarter,
-          limit: WAKE_SWEEP_LIMIT,
-          afterThreadId: wakeCursor,
-          eventSink: ports.eventSink,
-        }).then((cursor) => {
-          wakeCursor = cursor;
-        }),
-        orphanRepair.sweep(WAKE_SWEEP_LIMIT),
-        reportPublisher.sweep(WAKE_SWEEP_LIMIT),
-      ]);
-      for (const result of results) {
-        if (result.status === "rejected") {
-          emitEvent(ports.eventSink, {
-            level: "warn",
-            source: "runtime.wake-sweep",
-            name: "sweep.failed",
-            payload: unknownToEventPayload(result.reason),
-          });
-        }
-      }
+  const recovery = {
+    async scanWakes() {
+      const page = await sweepWakes({
+        delivery,
+        authority: ports.runClaim,
+        runStarter,
+        limit: WAKE_SWEEP_LIMIT,
+        afterThreadId: wakeCursor,
+        eventSink: ports.eventSink,
+      });
+      wakeCursor = page.cursor;
+      return page.count;
     },
+    repairOrphans: () => orphanRepair.sweep(WAKE_SWEEP_LIMIT),
+    publishReports: () => reportPublisher.sweep(WAKE_SWEEP_LIMIT),
   };
   const admissionRecords = createDrizzleAdmissionRecords(ports.db);
   const imageAssets = createContextImageAssetPort({
@@ -730,7 +702,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     runner: { getRunningTurn: (id) => runner.getRunningTurn(id) },
     turns: ports.threadRepos.turns,
     delivery,
-    workContextDelivery,
     records: admissionRecords,
     consumeUploads: (documentIds) => ports.uploadIntake.consume(documentIds),
     attachDocument: (threadId, documentId, relationship) =>
@@ -822,7 +793,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     },
     workContext,
     childRunCoordinator,
-    workContextDelivery: workContextDelivery,
     interruptRegistry,
     billingUsage: ports.billingUsage,
     interruptArtifacts: createInterruptArtifactFlush({
@@ -870,7 +840,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workRepo: ports.workRepo,
     workAuthorityResolver: ports.workAuthorityResolver,
     workContext,
-    workContextDelivery,
+    workContextNotices,
     billing: ports.billing,
     agentRevisions: ports.agentRevisions,
     agentCatalog: createBoundAgentCatalog({
@@ -890,7 +860,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     runner,
     runStarter,
     delivery,
-    wakeSweep,
+    recovery,
     userTurnAdmission,
     runClaim: ports.runClaim,
     toolRegistry,
@@ -937,6 +907,11 @@ export function createInMemoryAppServices(): AppServices {
   const runClaim = createInMemoryRunClaim();
   const runStarter = createInMemoryRunStarter();
   const delivery = createInMemoryRuntimeDelivery({
+    workContext: {
+      async renderForThread() {
+        throw new Error("No Work context configured");
+      },
+    },
     repos: threadRepos,
     eventWriter: createInMemoryEventJournalWriter(),
     notices,
@@ -948,24 +923,21 @@ export function createInMemoryAppServices(): AppServices {
       void task();
     },
   });
-  const wakeSweep = { async sweep() {} };
+  const recovery = {
+    async scanWakes() {
+      return 0;
+    },
+    async repairOrphans() {
+      return 0;
+    },
+    async publishReports() {
+      return 0;
+    },
+  };
 
   const documentSync: CollabDomain = createInMemoryCollabDomain();
   const unavailableWorkContext: WorkContextReader = {
     async renderForThread() {
-      throw new Error("in-memory Work context is not configured");
-    },
-  };
-  const noopWorkContextDelivery: WorkContextDelivery = {
-    async projectChanged() {},
-    async threadChanged() {},
-    async deliverAfterCommit() {
-      return "pending";
-    },
-    async flushOwned() {},
-    async beforeTurn() {},
-    async sweep() {},
-    async deliverNow() {
       throw new Error("in-memory Work context is not configured");
     },
   };
@@ -1257,7 +1229,7 @@ export function createInMemoryAppServices(): AppServices {
     },
     workAuthorityResolver,
     workContext: unavailableWorkContext,
-    workContextDelivery: noopWorkContextDelivery,
+    workContextNotices: delivery,
     billing: billingDomain.service,
     agentRevisions,
     agentCatalog: createBoundAgentCatalog({
@@ -1303,7 +1275,7 @@ export function createInMemoryAppServices(): AppServices {
     },
     runStarter,
     delivery,
-    wakeSweep,
+    recovery,
     userTurnAdmission: {
       async admit(input) {
         return { kind: "rejected", submissionId: input.submissionId, code: "invalid_message" };

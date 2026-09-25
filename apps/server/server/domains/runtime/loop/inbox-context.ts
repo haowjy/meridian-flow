@@ -3,7 +3,7 @@
  * persists its `message` entries as durable history. A text `message` becomes a
  * user-role message at the request tail and a persisted user-role turn; a
  * child-provenance text message becomes writer-hidden system history with only
- * an exact thread_report reference. A `notice` becomes request-only context.
+ * an exact thread_report reference. A Work refresh notice becomes a durable system_update; other notices stay request-only.
  *
  * The persisted message turn reuses the durable inbox message id as its turn and
  * block id. The inbox collapses `(threadId, idempotencyKey)` to one row, so a
@@ -29,6 +29,7 @@ import { attachSkillBodiesToLatestUserMessage, userTurnContentParts } from "./co
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { InboxMessage } from "./ports.js";
+import type { RenderedWorkContext } from "./work-context.js";
 
 /** A request-only skill body inlined onto the activating writer message. */
 export interface ActivatedSkillBody {
@@ -58,7 +59,7 @@ export interface InboxDrain {
 /**
  * Turns the caller's locked pending batch into model-request
  * context: `message` entries append as user messages and persist as user turns,
- * `notice` entries become request-only notices. A `message` already in
+ * Work refresh notices become durable system_update turns; other notices stay request-only. A `message` already in
  * `knownTurnIds` was persisted by a crashed run and redelivered, so it is not
  * rendered or appended again. The whole `message` batch persists in one
  * turn-start transition.
@@ -66,6 +67,7 @@ export interface InboxDrain {
 export async function drainInbox(input: {
   persistence: PersistenceDeps;
   batch: InboxMessage[];
+  workContext?: RenderedWorkContext;
   notices: NoticePort;
   threadId: ThreadId;
   messages: readonly Message[];
@@ -94,7 +96,7 @@ export async function drainInbox(input: {
   const adoptedBlocksByMessageId = new Map<string, Block[]>();
   const skillBodiesByMessageId = new Map<string, readonly ActivatedSkillBody[]>();
   for (const message of batch) {
-    if (message.intent !== "message") {
+    if (message.intent !== "message" && message.body.kind !== "work_context_refresh") {
       renderable.push(message);
       fresh.push(message);
       continue;
@@ -129,10 +131,13 @@ export async function drainInbox(input: {
     renderable,
     adoptedBlocksByMessageId,
     skillBodiesByMessageId,
+    input.workContext,
   );
   // Chain fresh messages from the durable leaf so a pre-persisted writer turn
   // (adopted above) is not forked past.
-  const persistLeafTurnId = fresh.some((message) => message.intent === "message")
+  const persistLeafTurnId = fresh.some(
+    (message) => message.intent === "message" || message.body.kind === "work_context_refresh",
+  )
     ? ((await input.persistence.repos.threads.findById(input.threadId))?.activeLeafTurnId ??
       input.expectedLeafTurnId)
     : input.expectedLeafTurnId;
@@ -141,6 +146,7 @@ export async function drainInbox(input: {
     threadId: input.threadId,
     expectedLeafTurnId: persistLeafTurnId,
     batch: fresh,
+    workContext: input.workContext,
   });
   const notices = [
     ...(await input.notices.drainForModelContext(input.threadId)),
@@ -160,10 +166,18 @@ export function renderInboxBatch(
   batch: readonly InboxMessage[],
   adoptedBlocksByMessageId: ReadonlyMap<string, readonly Block[]> = new Map(),
   skillBodiesByMessageId: ReadonlyMap<string, readonly ActivatedSkillBody[]> = new Map(),
+  workContext?: RenderedWorkContext,
 ): { messages: Message[]; notices: Notice[] } {
   const rendered = [...messages];
   const notices: Notice[] = [];
   for (const message of batch) {
+    if (message.body.kind === "work_context_refresh") {
+      const adopted = adoptedBlocksByMessageId.get(message.id);
+      if (adopted) rendered.push({ role: "user", content: userTurnContentParts(adopted) });
+      else if (workContext)
+        rendered.push(user(`<system_update>\n${workContext.text}\n</system_update>`));
+      continue;
+    }
     if (message.intent !== "message") {
       notices.push(inboxMessageNotice(message));
       continue;
@@ -203,6 +217,7 @@ export function renderInboxBatch(
  */
 export function planMessageTurns(input: {
   batch: readonly InboxMessage[];
+  workContext?: RenderedWorkContext;
   prevTurnId: TurnId | null;
   knownTurnIds: ReadonlySet<TurnId>;
 }): {
@@ -216,12 +231,27 @@ export function planMessageTurns(input: {
   const events: OrchestratorEvent[] = [];
   let leafTurnId = input.prevTurnId;
   for (const message of input.batch) {
-    if (message.intent !== "message") continue;
+    if (
+      message.intent !== "message" &&
+      !(message.body.kind === "work_context_refresh" && input.workContext)
+    )
+      continue;
     if (input.knownTurnIds.has(message.id)) continue;
-    const { turn, block } = messageTurnFor(message, leafTurnId);
+    const { turn, block } = messageTurnFor(message, leafTurnId, input.workContext);
     turns.push(turn);
     blocks.push(block);
     events.push({ type: "turn.created", turn }, { type: "block.upserted", block });
+    if (message.body.kind === "work_context_refresh" && input.workContext) {
+      const { current } = input.workContext;
+      const { scope } = current.execution;
+      events.push({
+        type: "work_context.changed",
+        turnId: turn.id,
+        threadId: message.threadId,
+        projectId: current.projectId,
+        scope: { workId: scope.workId, workSlug: scope.workSlug },
+      });
+    }
     leafTurnId = turn.id;
   }
   return { turns, blocks, events, leafTurnId };
@@ -230,8 +260,7 @@ export function planMessageTurns(input: {
 /**
  * Persists each directed `message` in a claimed batch as a user-role turn at the
  * thread tail. Returns the appended turns/blocks for the loop's in-memory
- * accumulator; `notice` entries are skipped
- * (request-only).
+ * accumulator. Work refresh notices are durable too; other notices are request-only.
  */
 export async function persistInboxMessages(input: {
   deps: PersistenceDeps;
@@ -239,8 +268,13 @@ export async function persistInboxMessages(input: {
   /** The turn the first `message` follows; each later one follows the previous. */
   expectedLeafTurnId: TurnId | null;
   batch: readonly InboxMessage[];
+  workContext?: RenderedWorkContext;
 }): Promise<{ turns: Turn[]; blocks: Block[] }> {
-  if (!input.batch.some((message) => message.intent === "message")) {
+  if (
+    !input.batch.some(
+      (message) => message.intent === "message" || message.body.kind === "work_context_refresh",
+    )
+  ) {
     return { turns: [], blocks: [] };
   }
   // One transition for the whole batch: a mid-batch failure cannot leave a
@@ -253,6 +287,7 @@ export async function persistInboxMessages(input: {
     async () => {
       const plan = planMessageTurns({
         batch: input.batch,
+        workContext: input.workContext,
         prevTurnId: input.expectedLeafTurnId,
         knownTurnIds: new Set(),
       });
@@ -276,6 +311,7 @@ export async function persistInboxMessages(input: {
 export function messageTurnFor(
   message: InboxMessage,
   prevTurnId: TurnId | null,
+  workContext?: RenderedWorkContext,
 ): { turn: Turn; block: BlockUpsertedRow } {
   const isChildNotification = message.provenance.kind === "child";
   const turn = createLocalTurn({
@@ -284,10 +320,16 @@ export function messageTurnFor(
     prevTurnId,
     role: isChildNotification ? "system" : "user",
     status: "complete",
-    metadata: { kind: "message" },
+    metadata:
+      message.body.kind === "work_context_refresh"
+        ? { kind: "system_update", section: "work_context" }
+        : { kind: "message" },
     createdAt: message.enqueuedAt,
   });
-  const text = inboxMessageText(message);
+  const text =
+    message.body.kind === "work_context_refresh" && workContext
+      ? `<system_update>\n${workContext.text}\n</system_update>`
+      : inboxMessageText(message);
   const block = contentForBlockInput({
     id: message.id,
     turnId: turn.id,
@@ -301,6 +343,8 @@ export function messageTurnFor(
 
 export function inboxMessageText(message: InboxMessage): string {
   switch (message.body.kind) {
+    case "work_context_refresh":
+      return "";
     case "text":
       return message.body.text;
     case "context":
