@@ -216,7 +216,7 @@ test("right-aligns Work in its stable column and centers it across the full row"
     const longGeometry = await page.locator('[data-project-chat-row="long"]').evaluate((row) => {
       const nodes = [
         row.querySelector("span[data-project-chat-row-line]"),
-        row.querySelector("[data-project-chat-row-work]"),
+        row.querySelector("[data-project-chat-row-agent]"),
         row.querySelector("[data-project-chat-row-line] p"),
       ];
       if (nodes.some((node) => !node)) throw new Error("Incomplete long project chat row fixture");

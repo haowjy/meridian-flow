@@ -151,7 +151,6 @@ export function ReadableProjectRoute({
   const [currentChat, updateCurrentChat] = useState<CurrentChat>(() => readCurrentChat(projectId));
   const [dockChatReveal, setDockChatReveal] = useState(0);
   const revealDockChat = () => setDockChatReveal((revision) => revision + 1);
-  const [dockChatView, setDockChatView] = useState<"chat" | "index">("chat");
   // Only an explicit New chat focuses the empty composer; a page load does not.
   const [newChatFocusRequested, setNewChatFocusRequested] = useState(false);
   const consumeNewChatFocus = useCallback(() => setNewChatFocusRequested(false), []);
@@ -165,6 +164,10 @@ export function ReadableProjectRoute({
   const firstSendSubmission = resolvedThreadId
     ? readFirstSendSubmission(user.userId, resolvedThreadId)
     : null;
+  // Reload recovery is decided once, at mount: an unacknowledged first send
+  // from before the reload needs a visible host. A live first send also has a
+  // journal entry, so the render-time read above is not that signal.
+  const [recoveringFirstSend] = useState(() => firstSendSubmission !== null);
   const currentSnapshot = useQuery({
     ...threadSnapshotQueryOptions(resolvedThreadId ?? ""),
     enabled: false,
@@ -181,8 +184,9 @@ export function ReadableProjectRoute({
     )
       return;
     rememberChat({ kind: "none" });
-    if (activeScreen === "chat") void openChatIndex();
-    else setDockChatView("index");
+    // Replace, never push: Back must not land on the missing chat and re-run
+    // this fallback. The dock simply shows New chat once nothing is remembered.
+    if (urlChatId) void go(toDestination({ kind: "chat-index" }), { replace: true });
   }, [currentSnapshot.error, resolvedThreadId, pendingChat, firstSendSubmission, activeScreen]);
   const noChats = threads.threads?.length === 0 && !threads.isError;
   const newChat =
@@ -418,10 +422,9 @@ export function ReadableProjectRoute({
     return slug;
   }
   async function openChat(threadId: string, options: NavigationOptions = { replace: false }) {
-    setDockChatView("chat");
     if (activeScreen !== "chat") {
       revealDockChat();
-      rememberChat(threadId ? { kind: "thread", threadId } : { kind: "new" });
+      rememberChat({ kind: "thread", threadId });
       return;
     }
     return go(toDestination({ kind: "chat", chatId: threadId }), options);
@@ -429,7 +432,6 @@ export function ReadableProjectRoute({
   async function openNewChat() {
     rememberChat({ kind: "new" });
     setNewChatFocusRequested(true);
-    setDockChatView("chat");
     if (activeScreen !== "chat") revealDockChat();
     if (activeScreen === "chat" && navigation)
       await navigation.navigate(toDestination({ kind: "chat-index" }), {
@@ -437,26 +439,22 @@ export function ReadableProjectRoute({
         state: { meridianNewChat: true },
       });
   }
+  /** The index is the Chat screen's page; the dock has none. */
   async function openChatIndex() {
-    if (activeScreen === "chat")
-      await go(toDestination({ kind: "chat-index" }), { replace: false });
-    else {
-      setDockChatView("index");
-      revealDockChat();
-    }
+    await go(toDestination({ kind: "chat-index" }), { replace: false });
   }
-  /** Leave the index for the remembered chat in the pane that shows the index. */
+  /** Leave the center index for the remembered chat. */
   async function showCurrentChat() {
-    if (activeScreen !== "chat") {
-      setDockChatView("chat");
-      return;
-    }
     if (currentChat.kind === "thread") await openChat(currentChat.threadId);
     else if (currentChat.kind === "new") await openNewChat();
   }
+  /** A deleted chat stops being current; the pane that showed it falls back to New chat. */
+  function forgetChat(threadId: string) {
+    if (currentChat.kind === "thread" && currentChat.threadId === threadId)
+      rememberChat({ kind: "none" });
+  }
   function acceptCreatedChat(threadId: string) {
     rememberChat({ kind: "thread", threadId });
-    setDockChatView("chat");
     if (activeScreen === "chat")
       router.history.replace(projectAddressHref(toDestination({ kind: "chat", chatId: threadId })));
   }
@@ -693,10 +691,10 @@ export function ReadableProjectRoute({
       newChatFocusRequested={newChatFocusRequested}
       consumeNewChatFocus={consumeNewChatFocus}
       acceptCreatedChat={acceptCreatedChat}
-      dockChatView={dockChatView}
+      forgetChat={forgetChat}
       dockChatReveal={dockChatReveal}
       revealDockChat={revealDockChat}
-      recoveringFirstSend={!!firstSendSubmission}
+      recoveringFirstSend={recoveringFirstSend}
       captureNavigation={captureNavigation}
       registerLeaveGuard={navigation?.registerGuard}
     >
@@ -732,7 +730,7 @@ export function ReadableProjectRoute({
           routeWork={routeWork(work)}
           editorRouteWork={routeWork(editorWork)}
           routeLocationKey={location.state.__TSR_key ?? location.href}
-          routeIssues={{ main: mainIssue, chat: undefined, editor: editorIssue }}
+          routeIssues={{ main: mainIssue, editor: editorIssue }}
           onDisplayedSelection={reportSelection}
           routeCommands={routeCommands}
           contextRemovalRoute={{

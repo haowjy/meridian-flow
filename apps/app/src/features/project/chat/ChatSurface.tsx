@@ -13,16 +13,10 @@
  * shell is a passthrough in `center` placement so this subtree keeps the same
  * tree position across center↔dock moves — the chat is never reconciled away.
  */
-import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/protocol";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
-import { ThreadSwitcherPopover } from "@/features/chat/ThreadSwitcherPopover";
 import { cn } from "@/lib/utils";
-import { ChatIndex } from "../chat-index/ChatIndex";
-import { ChatIndexToggle } from "../chat-index/ChatIndexButton";
 import { DockShell } from "../dock/DockShell";
-import { ChatBreadcrumb } from "../mobile/ChatBreadcrumb";
-import { useProjectChatNavigation } from "../routing/ProjectNavigationContext";
 import type { ContextRouteTarget } from "../routing/project-route";
 import type { ScreenKey } from "../shell/screens";
 import { ChatScreen } from "./ChatScreen";
@@ -68,11 +62,6 @@ export function ChatSurface({
   onOpenContextTarget,
   chrome = "desktop",
 }: ChatSurfaceProps) {
-  const navigation = useProjectChatNavigation();
-  const showIndex = placement === "dock" && navigation?.dockChatView === "index";
-  const openChatIndex = navigation?.openChatIndex && (() => void navigation.openChatIndex?.());
-  const showCurrentChat =
-    navigation?.showCurrentChat && (() => void navigation.showCurrentChat?.());
   return (
     <div
       aria-hidden={!visible}
@@ -92,59 +81,23 @@ export function ChatSurface({
         onClose={onCloseDock}
         chrome={chrome}
         threadSelect={
-          chrome === "phone" ? (
-            <ChatBreadcrumb
-              projectId={projectId}
-              threadId={threadId}
-              index={showIndex}
-              onOpenIndex={openChatIndex}
-              onSelectThread={onSelectThread}
-              onNewChat={navigation?.openNewChat}
-            />
-          ) : (
-            <>
-              <ChatIndexToggle
-                pressed={showIndex}
-                onClick={showIndex ? showCurrentChat : openChatIndex}
-              />
-              {showIndex ? null : threadId ? (
-                <ChatThreadTitle
-                  projectId={projectId}
-                  threadId={threadId}
-                  onSelectThread={onSelectThread}
-                />
-              ) : (
-                <ThreadSwitcherPopover
-                  projectId={projectId}
-                  activeThreadId={null}
-                  title={t`New chat`}
-                  onSelectThread={onSelectThread}
-                  onNewChat={navigation?.openNewChat}
-                />
-              )}
-            </>
-          )
+          <ChatThreadTitle
+            projectId={projectId}
+            threadId={threadId}
+            onSelectThread={onSelectThread}
+          />
         }
       >
-        {() =>
-          showIndex ? (
-            <ChatIndex
-              projectId={projectId}
-              onOpenThread={onSelectThread}
-              placement="rail"
-              namedByChrome={chrome === "phone"}
-            />
-          ) : (
-            <ChatScreen
-              projectId={projectId}
-              threadId={threadId}
-              activeWork={activeWork}
-              availableWorks={availableWorks}
-              onSelectThread={onSelectThread}
-              onOpenContextTarget={onOpenContextTarget}
-            />
-          )
-        }
+        {() => (
+          <ChatScreen
+            projectId={projectId}
+            threadId={threadId}
+            activeWork={activeWork}
+            availableWorks={availableWorks}
+            onSelectThread={onSelectThread}
+            onOpenContextTarget={onOpenContextTarget}
+          />
+        )}
       </DockShell>
     </div>
   );

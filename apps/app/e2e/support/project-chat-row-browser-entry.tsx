@@ -1,7 +1,7 @@
 /** Browser entry that mounts shipped project chat rows and loading rows with deterministic data. */
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { createRoot } from "react-dom/client";
-import { ChatIndexLoading } from "../../src/features/project/chat-index/ChatIndex";
+import { ChatIndexLoading } from "../../src/features/project/chat-index/ChatIndexLoading";
 import { ProjectChatRow } from "../../src/features/project/chat-list/ProjectChatRow";
 import "../../src/styles/globals.css";
 

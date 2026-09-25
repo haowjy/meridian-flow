@@ -50,7 +50,7 @@ export function ChatIndexController({
         right={contextToggle}
       />
       <div className="page-sheet min-h-0">
-        <ChatIndex projectId={projectId} onOpenThread={onOpenThread} placement="page" />
+        <ChatIndex projectId={projectId} onOpenThread={onOpenThread} />
       </div>
     </main>
   );

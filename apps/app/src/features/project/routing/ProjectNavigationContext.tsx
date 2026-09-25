@@ -29,7 +29,7 @@ const ProjectNavigationContext = createContext<{
   newChatFocusRequested?: boolean;
   consumeNewChatFocus?: () => void;
   acceptCreatedChat?: (threadId: string) => void;
-  dockChatView?: "chat" | "index";
+  forgetChat?: (threadId: string) => void;
   dockChatReveal?: number;
   revealDockChat?: () => void;
   recoveringFirstSend?: boolean;
@@ -47,7 +47,7 @@ export function ProjectNavigationProvider({
   newChatFocusRequested,
   consumeNewChatFocus,
   acceptCreatedChat,
-  dockChatView,
+  forgetChat,
   dockChatReveal,
   revealDockChat,
   recoveringFirstSend,
@@ -65,7 +65,7 @@ export function ProjectNavigationProvider({
   newChatFocusRequested?: boolean;
   consumeNewChatFocus?: () => void;
   acceptCreatedChat?: (threadId: string) => void;
-  dockChatView?: "chat" | "index";
+  forgetChat?: (threadId: string) => void;
   dockChatReveal?: number;
   revealDockChat?: () => void;
   recoveringFirstSend?: boolean;
@@ -84,7 +84,7 @@ export function ProjectNavigationProvider({
         newChatFocusRequested,
         consumeNewChatFocus,
         acceptCreatedChat,
-        dockChatView,
+        forgetChat,
         dockChatReveal,
         revealDockChat,
         recoveringFirstSend,

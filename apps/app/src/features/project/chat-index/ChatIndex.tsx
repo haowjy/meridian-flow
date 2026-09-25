@@ -1,18 +1,17 @@
 /**
- * ChatIndex — the project's chats: every top-level chat, latest activity first,
- * grouped Today / Yesterday / Earlier behind an All | Favorites filter.
+ * ChatIndex — the project's chats page: the new-chat composer, then every
+ * top-level chat, latest activity first, grouped Today / Yesterday / Earlier
+ * behind an All | Favorites filter.
  *
- * Same family as the Editor's Recently opened (heading row with the create
- * action, recency groups, quiet failure). It renders in whichever pane asked
- * for it — the center project root, the dock body, the phone — and never hosts
- * a composer: New chat opens the empty chat in that same pane through the
- * route command.
+ * Same family as the Editor's Recently opened (recency groups, quiet failure).
+ * It renders only as the Chat screen's page: the center project root and the
+ * phone. The page scrolls as one.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
-import { MessageSquarePlus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useDeleteChat } from "@/client/query/useDeleteChat";
 import {
   type ProjectFeedNextPageIdentity,
   useProjectChatFeed,
@@ -20,17 +19,14 @@ import {
 import { useProjectChatUserState } from "@/client/query/useProjectChatUserState";
 import { useAnnouncement } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { Button } from "@/components/ui/button";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
-import { Skeleton } from "@/components/ui/skeleton";
+import { CreationComposer } from "@/features/chat/CreationComposer";
 import { cn } from "@/lib/utils";
-import {
-  ProjectChatRow,
-  type ProjectChatRowProps,
-  ProjectChatRowSkeleton,
-} from "../chat-list/ProjectChatRow";
+import { DeleteChatDialog } from "../chat-list/DeleteChatDialog";
+import { ProjectChatRow, type ProjectChatRowProps } from "../chat-list/ProjectChatRow";
 import { RecencyGroupedList, useMinuteClock } from "../RecencyGroupedList";
-import { useOpenNewChatRoute } from "../routing/ProjectNavigationContext";
+import { useProjectChatNavigation } from "../routing/ProjectNavigationContext";
+import { ChatIndexLoading } from "./ChatIndexLoading";
 
 type Filter = "all" | "favorites";
 type RowProps = Omit<ProjectChatRowProps, "item" | "favorite">;
@@ -39,8 +35,6 @@ type Feed = ReturnType<typeof useProjectChatFeed>;
 export type ChatIndexProps = {
   projectId: string;
   onOpenThread: (threadId: string) => void;
-  /** `page` — the pane's whole screen (center, phone). `rail` — the dock body. */
-  placement: "page" | "rail";
   /**
    * The host's chrome already reads "Chats" (the phone trail): the heading
    * stays for screen readers only and the filter takes its place in the row.
@@ -48,19 +42,20 @@ export type ChatIndexProps = {
   namedByChrome?: boolean;
 };
 
-export function ChatIndex({
-  projectId,
-  onOpenThread,
-  placement,
-  namedByChrome = false,
-}: ChatIndexProps) {
+export function ChatIndex({ projectId, onOpenThread, namedByChrome = false }: ChatIndexProps) {
   const [filter, setFilter] = useState<Filter>("all");
   const feed = useProjectChatFeed(projectId, filter === "favorites");
-  const openNewChat = useOpenNewChatRoute();
   const { announce, announceError } = useAnnouncement();
   const now = useMinuteClock();
+  const finePointer = useFinePointer();
+  const navigation = useProjectChatNavigation();
+  const deletion = useDeleteChat(projectId, (threadId) => {
+    navigation?.forgetChat?.(threadId);
+    announce(t`Chat deleted`);
+  });
   const rowProps: RowProps = {
     now,
+    onDelete: (item) => deletion.request({ id: item.id, title: item.title || t`New chat` }),
     onOpen: (item) => onOpenThread(item.id),
     onFavorite: (item, value) => {
       void feed.setFavorite(item.id, value).then((saved) => {
@@ -72,74 +67,46 @@ export function ChatIndex({
       });
     },
   };
-  const newChat = openNewChat ? () => void openNewChat() : undefined;
-  const Heading = placement === "page" ? "h1" : "h2";
-
-  // A project with no chats has nothing to filter: the first-run state stands
-  // alone rather than sitting under a heading that promises a list.
-  if (
-    filter === "all" &&
-    !feed.isPending &&
-    !feed.isError &&
-    !feed.items.length &&
-    !feed.hasNextPage
-  ) {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 text-center">
-        <p className="font-medium text-foreground">
-          <Trans>No chats yet</Trans>
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          <Trans>Chats you start in this project collect here.</Trans>
-        </p>
-        <NewChatButton onClick={newChat} className="mt-5" />
-      </div>
-    );
-  }
 
   return (
-    <div data-chat-index-scroll-owner className="app-scroll main-pane">
-      <div
-        className={cn(
-          "chat-column @container/project-screen",
-          namedByChrome ? "pt-4 pb-12" : placement === "page" ? "pt-16 pb-24" : "pt-5 pb-12",
-        )}
-      >
-        {namedByChrome ? (
-          <div className="flex items-center justify-between gap-4">
-            <Heading className="sr-only">
+    <div className="main-pane flex h-full min-h-0 flex-col">
+      {/* One scroll for the whole page. The scroll box is the column itself, so
+          its scrollbar sits at the rows' edge rather than the pane's. */}
+      <div className="chat-column @container/project-screen flex min-h-0 flex-1 flex-col">
+        <div
+          data-chat-index-scroll-owner
+          className={cn(
+            "app-scroll -mr-4 pr-4 pb-12",
+            namedByChrome ? "pt-4" : "pt-[clamp(1rem,9vh,5rem)]",
+          )}
+        >
+          <h1 className="mb-[clamp(0.75rem,3vh,1.25rem)] text-center text-xl font-normal tracking-tight text-balance text-foreground">
+            <Trans>What will you write next?</Trans>
+          </h1>
+          <CreationComposer projectId={projectId} variant="hero" autoFocus={finePointer} />
+          <div className="mt-[clamp(1.5rem,5vh,2.5rem)] flex items-center gap-4">
+            <h2 className={namedByChrome ? "sr-only" : "text-headline-section text-foreground"}>
               <Trans>Chats</Trans>
-            </Heading>
+            </h2>
             <ChatFilter value={filter} onChange={setFilter} />
-            <NewChatButton onClick={newChat} />
           </div>
-        ) : (
-          // One row when it fits; in a narrow dock the filter drops beneath the
-          // heading so New chat keeps its place at the row's end.
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 @[26rem]/project-screen:grid-cols-[auto_minmax(0,1fr)_auto]">
-            <Heading className="text-headline-section text-foreground">
-              <Trans>Chats</Trans>
-            </Heading>
-            <ChatFilter
-              value={filter}
-              onChange={setFilter}
-              className="col-span-2 row-start-2 justify-self-start @[26rem]/project-screen:col-span-1 @[26rem]/project-screen:col-start-2 @[26rem]/project-screen:row-start-1"
-            />
-            <NewChatButton
-              onClick={newChat}
-              className="col-start-2 row-start-1 @[26rem]/project-screen:col-start-3"
+          <div className="mt-[clamp(0.75rem,3vh,1.75rem)]">
+            <ChatIndexBody
+              projectId={projectId}
+              feed={feed}
+              favorites={filter === "favorites"}
+              rowProps={rowProps}
             />
           </div>
-        )}
-        <div className="mt-7">
-          <ChatIndexBody
-            projectId={projectId}
-            feed={feed}
-            favorites={filter === "favorites"}
-            rowProps={rowProps}
-          />
         </div>
       </div>
+      <DeleteChatDialog
+        target={deletion.target}
+        isPending={deletion.isPending}
+        error={deletion.error}
+        onCancel={deletion.cancel}
+        onConfirm={deletion.confirm}
+      />
     </div>
   );
 }
@@ -164,20 +131,6 @@ function ChatFilter({
       ]}
       className={className}
     />
-  );
-}
-
-function NewChatButton({ onClick, className }: { onClick?: () => void; className?: string }) {
-  return (
-    <Button
-      size="sm"
-      className={cn("[@media(pointer:coarse)]:min-h-11", className)}
-      onClick={onClick}
-      disabled={!onClick}
-    >
-      <MessageSquarePlus aria-hidden />
-      <Trans>New chat</Trans>
-    </Button>
   );
 }
 
@@ -308,21 +261,16 @@ function NextPage({ feed }: { feed: Feed }) {
   );
 }
 
-/** Loading anatomy matches a first group: its label, then rows at real rhythm. */
-export function ChatIndexLoading() {
-  return (
-    <div role="status" aria-busy="true">
-      <span className="sr-only">
-        <Trans>Loading chats</Trans>
-      </span>
-      <div aria-hidden>
-        <Skeleton className="h-3 w-14 motion-reduce:animate-none" />
-        <ul className="-mx-2 mt-2 divide-y divide-border-subtle">
-          {Array.from({ length: 5 }, (_, index) => (
-            <ProjectChatRowSkeleton key={index} />
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
+/** Autofocus the page composer only where a hardware keyboard is likely. */
+function useFinePointer(): boolean {
+  const [fine, setFine] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia?.("(hover: hover) and (pointer: fine)");
+    if (!media) return;
+    const sync = () => setFine(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+  return fine;
 }

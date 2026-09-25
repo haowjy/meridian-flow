@@ -2,11 +2,13 @@
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
+import { Star } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import type { ThreadUserStateCommandView } from "@/client/query/thread-user-state-commands";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -18,6 +20,8 @@ export type ProjectChatRowProps = {
   onOpen: (item: ProjectChatItem) => void;
   onFavorite: (item: ProjectChatItem, value: boolean) => void;
   favorite: ThreadUserStateCommandView;
+  /** Opens the list's delete confirmation; omitted where a list cannot delete. */
+  onDelete?: (item: ProjectChatItem) => void;
   onActiveChange?: (id: string, active: boolean) => void;
 };
 
@@ -43,6 +47,7 @@ export function ProjectChatRow({
   onOpen,
   onFavorite,
   favorite,
+  onDelete,
   onActiveChange,
 }: ProjectChatRowProps) {
   const { i18n } = useLingui();
@@ -70,7 +75,9 @@ export function ProjectChatRow({
   return (
     <div
       data-project-chat-row={item.id}
-      className="group relative min-w-0 px-2 py-1.5 transition-colors motion-reduce:transition-none hover:bg-muted/40"
+      // The shared inset list-row recipe: rounded hover paint inside the gutter,
+      // the same ground as the chat switcher's rows.
+      className="group relative min-w-0 rounded-md px-2 py-1.5 transition-colors motion-reduce:transition-none hover:bg-dropdown-hover"
       onFocusCapture={() => setFocusWithin(true)}
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setFocusWithin(false);
@@ -81,7 +88,7 @@ export function ProjectChatRow({
         aria-label={t`Open ${title}`}
         aria-describedby={actionRequiredId}
         onClick={() => onOpen(item)}
-        className="focus-ring absolute inset-0 z-0 text-left"
+        className="focus-ring absolute inset-0 z-0 rounded-md text-left"
       >
         <span className="sr-only">{title}</span>
       </button>
@@ -103,14 +110,38 @@ export function ProjectChatRow({
         >
           {title}
         </span>
-        <WorkIdentity
-          data-project-chat-row-work
-          className="px-1"
-          name={item.agentName}
-          unavailableLabel="General"
-          aria-label={agentLabel}
-          title={agentName}
-        />
+        {/* The flat list has no Favorites section, so a favorite keeps a standing
+            star beside its Agent; other rows offer the outline on hover, like the
+            actions menu. */}
+        <div data-project-chat-row-work className="text-xs font-medium text-foreground">
+          <IconButton
+            size="sm"
+            aria-pressed={item.isFavorite}
+            aria-label={
+              item.isFavorite ? t`Remove ${title} from favorites` : t`Add ${title} to favorites`
+            }
+            aria-disabled={favoriteSuppressed || undefined}
+            onClick={() => {
+              if (!favoriteSuppressed) onFavorite(item, favoriteValue);
+            }}
+            className={cn(
+              "pointer-events-auto [@media(hover:none)]:size-11 [@media(pointer:coarse)]:size-11",
+              item.isFavorite
+                ? "text-primary hover:text-primary"
+                : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100",
+            )}
+          >
+            <Star aria-hidden className={cn("size-4", item.isFavorite && "fill-current")} />
+          </IconButton>
+          <WorkIdentity
+            data-project-chat-row-agent
+            className="px-1"
+            name={item.agentName}
+            unavailableLabel="General"
+            aria-label={agentLabel}
+            title={agentName}
+          />
+        </div>
         <div
           data-project-chat-row-line
           className="col-start-1 row-start-2 flex min-w-0 items-center gap-2 text-compact text-muted-foreground"
@@ -166,6 +197,11 @@ export function ProjectChatRow({
               >
                 <span>{item.isFavorite ? t`Remove from favorites` : t`Add to favorites`}</span>
               </DropdownMenuItem>
+              {onDelete ? (
+                <DropdownMenuItem variant="destructive" onSelect={() => onDelete(item)}>
+                  <span>{t`Delete chat`}</span>
+                </DropdownMenuItem>
+              ) : null}
             </OverflowMenu>
           </div>
         </div>
