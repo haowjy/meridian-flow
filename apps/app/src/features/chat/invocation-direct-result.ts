@@ -1,6 +1,7 @@
 /** Turn-scoped protocol lookup for settled foreground invocation cards. */
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import { type Block, blockContentRecord, type JsonValue } from "@meridian/contracts/protocol";
+import { isArtifactRef } from "./ArtifactGrid";
 import { componentBlockContent } from "./component-block-content";
 
 type Invocation = {
@@ -127,12 +128,4 @@ function stringField(value: Record<string, JsonValue>, key: string): string | nu
 
 function isRecord(value: JsonValue | undefined): value is Record<string, JsonValue> {
   return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function isArtifactRef(value: JsonValue): value is ArtifactRef {
-  if (!isRecord(value)) return false;
-  return (
-    (value.type === "object" && typeof value.uri === "string") ||
-    ((value.type === "image" || value.type === "liveView") && typeof value.url === "string")
-  );
 }

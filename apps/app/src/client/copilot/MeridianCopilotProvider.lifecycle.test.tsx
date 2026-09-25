@@ -25,6 +25,7 @@ vi.mock("@/client/providers/TransportProvider", () => ({
 }));
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useAccountId: () => "account-1",
+  useAccountEpochSignal: () => harness.signal,
   useOptionalAccountEpochSignal: () => harness.signal,
 }));
 vi.mock("@/client/api/threads-api", async (importOriginal) => ({

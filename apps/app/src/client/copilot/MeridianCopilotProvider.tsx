@@ -12,8 +12,8 @@ import { createContext, type ReactNode, useContext, useLayoutEffect, useMemo } f
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { useThreadActions } from "@/client/stores";
 import {
+  useAccountEpochSignal,
   useAccountId,
-  useOptionalAccountEpochSignal,
 } from "@/features/project/context/account-feature-context";
 
 import { ThreadRunController } from "./ThreadRunController";
@@ -31,14 +31,14 @@ export function useMeridianAgent(): ThreadRunController {
 export function MeridianCopilotProvider({ children }: { children: ReactNode }) {
   const transport = useThreadTransport();
   const actions = useThreadActions();
-  const accountSignal = useOptionalAccountEpochSignal();
+  const accountSignal = useAccountEpochSignal();
   const accountId = useAccountId();
   const controller = useMemo(
     () =>
       new ThreadRunController({
         transport,
         actions,
-        accountSignal: accountSignal ?? undefined,
+        accountSignal,
         accountId,
       }),
     [actions, transport, accountSignal, accountId],

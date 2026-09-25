@@ -208,6 +208,8 @@ export class ThreadRunScenario {
     this.controller = new ThreadRunController({
       transport: this.transport,
       actions: this.store.getState(),
+      accountSignal: new AbortController().signal,
+      accountId: "account-1",
       appendUserMessageFn: async (request) => {
         this.appendRequests.push(request);
         return this.append(request);

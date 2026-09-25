@@ -112,8 +112,8 @@ export type ThreadRunControllerOptions = {
   lookupAdmissionFn?: LookupAdmissionFn;
   retireAdmissionFn?: RetireAdmissionFn;
   getThreadSnapshotFn?: GetThreadSnapshotFn;
-  accountSignal?: AbortSignal;
-  accountId?: string;
+  accountSignal: AbortSignal;
+  accountId: string;
 };
 
 type ActiveRun = {
@@ -162,8 +162,8 @@ export class ThreadRunController {
   private readonly lookupAdmissionFn: LookupAdmissionFn;
   private readonly retireAdmissionFn: RetireAdmissionFn;
   private readonly getThreadSnapshotFn: GetThreadSnapshotFn;
-  private readonly accountSignal?: AbortSignal;
-  private readonly accountId?: string;
+  private readonly accountSignal: AbortSignal;
+  private readonly accountId: string;
   private disposed = false;
   private activationGeneration = 0;
 
@@ -193,13 +193,13 @@ export class ThreadRunController {
 
   /** Pair provider effect setup with disposal; construction is render-pure. */
   activate(): void {
-    if (this.accountSignal?.aborted || this.unsubscribeInterruptResponseError) return;
+    if (this.accountSignal.aborted || this.unsubscribeInterruptResponseError) return;
     this.disposed = false;
     const ownerGeneration = ++this.activationGeneration;
     this.unsubscribeInterruptResponseError = this.transport.onInterruptResponseError(
       ({ threadId, error }) => {
         if (
-          !this.accountSignal?.aborted &&
+          !this.accountSignal.aborted &&
           !this.disposed &&
           this.activationGeneration === ownerGeneration
         )
@@ -209,7 +209,7 @@ export class ThreadRunController {
     try {
       this.unsubscribeSocketGenerationClosed = this.transport.onSocketGenerationClosed(
         (generation) =>
-          !this.accountSignal?.aborted &&
+          !this.accountSignal.aborted &&
           !this.disposed &&
           this.activationGeneration === ownerGeneration &&
           this.actions.markInterruptResponsesForGenerationAmbiguous(generation),
@@ -256,14 +256,14 @@ export class ThreadRunController {
 
   private admissionFence(admissionEpoch: number): SessionFence {
     return () =>
-      !this.disposed && !this.accountSignal?.aborted && this.admissionEpoch === admissionEpoch;
+      !this.disposed && !this.accountSignal.aborted && this.admissionEpoch === admissionEpoch;
   }
 
   private recoveryFence(session: object): SessionFence {
     const ownerGeneration = this.activationGeneration;
     return () =>
       !this.disposed &&
-      !this.accountSignal?.aborted &&
+      !this.accountSignal.aborted &&
       this.activationGeneration === ownerGeneration &&
       this.recoverySessions.has(session);
   }
@@ -498,7 +498,7 @@ export class ThreadRunController {
   }
 
   resume(threadId: string, options: SubscribeLiveOptions = {}): void {
-    if (this.disposed || this.accountSignal?.aborted) return;
+    if (this.disposed || this.accountSignal.aborted) return;
     const token = this.startRun(threadId);
     this.attachLiveSubscription(threadId, token, options);
   }
@@ -639,12 +639,12 @@ export class ThreadRunController {
     // One frame boundary for the whole run: append-only text/reasoning deltas
     // coalesce into a single store update; everything else flushes first.
     const coalescer = new StreamDeltaCoalescer((event) => {
-      if (disposed || this.accountSignal?.aborted || !this.isActiveToken(token)) return;
+      if (disposed || this.accountSignal.aborted || !this.isActiveToken(token)) return;
       applyAguiEventToStore(this.actions, threadId, event);
     });
     const markDisposed = () => {
       if (splitFinishTimer) clearTimeout(splitFinishTimer);
-      if (!this.accountSignal?.aborted) coalescer.flush();
+      if (!this.accountSignal.aborted) coalescer.flush();
       disposed = true;
     };
 
@@ -655,7 +655,7 @@ export class ThreadRunController {
       turnId: expectedTurnId,
       dispose: markDisposed,
       flush: () => {
-        if (!disposed && !this.accountSignal?.aborted) coalescer.flush();
+        if (!disposed && !this.accountSignal.aborted) coalescer.flush();
       },
     };
 
@@ -663,7 +663,7 @@ export class ThreadRunController {
       threadId,
       {
         onEvent: ({ event, error, sourceThreadId }) => {
-          if (disposed || this.accountSignal?.aborted || !this.isActiveToken(token)) return;
+          if (disposed || this.accountSignal.aborted || !this.isActiveToken(token)) return;
           if (sourceThreadId && sourceThreadId !== threadId) return;
           const effectiveEvent =
             event.type === EventType.RUN_ERROR && error
@@ -705,7 +705,7 @@ export class ThreadRunController {
               unsubscribe: this.activeRun?.unsubscribe,
               dispose: markDisposed,
               flush: () => {
-                if (!disposed && !this.accountSignal?.aborted) coalescer.flush();
+                if (!disposed && !this.accountSignal.aborted) coalescer.flush();
               },
             };
             if (this.abortRequested) {
@@ -730,13 +730,13 @@ export class ThreadRunController {
           }
         },
         onError: (error) => {
-          if (disposed || this.accountSignal?.aborted || !this.isActiveToken(token)) return;
+          if (disposed || this.accountSignal.aborted || !this.isActiveToken(token)) return;
           coalescer.flush();
           this.cleanupActiveRun();
           announceError(errorMessage(error, "Thread stream failed"));
         },
         onGap: ({ threadId: gapThreadId }) => {
-          if (disposed || this.accountSignal?.aborted || !this.isActiveToken(token)) return;
+          if (disposed || this.accountSignal.aborted || !this.isActiveToken(token)) return;
           coalescer.flush();
           void this.replaceFromSnapshot(gapThreadId, token).catch((error) => {
             if (!this.isActiveToken(token)) return;
@@ -761,7 +761,7 @@ export class ThreadRunController {
       unsubscribe,
       dispose: markDisposed,
       flush: () => {
-        if (!disposed && !this.accountSignal?.aborted) coalescer.flush();
+        if (!disposed && !this.accountSignal.aborted) coalescer.flush();
       },
     };
 
@@ -774,7 +774,7 @@ export class ThreadRunController {
   }
 
   flushPendingDeltas(threadId: string): void {
-    if (this.activeRun?.threadId === threadId && !this.accountSignal?.aborted) {
+    if (this.activeRun?.threadId === threadId && !this.accountSignal.aborted) {
       this.activeRun.flush?.();
     }
   }
@@ -794,9 +794,7 @@ export class ThreadRunController {
     }
 
     const abort = new AbortController();
-    const signal = this.accountSignal
-      ? AbortSignal.any([this.accountSignal, abort.signal])
-      : abort.signal;
+    const signal = AbortSignal.any([this.accountSignal, abort.signal]);
     const recovery = (async () => {
       while (
         this.isActiveToken(token) &&
@@ -813,10 +811,7 @@ export class ThreadRunController {
           this.activeRun.splitBoundaryPending
         )
           return;
-        if (
-          snapshot.thread.id !== threadId ||
-          (this.accountId && snapshot.thread.userId !== this.accountId)
-        ) {
+        if (snapshot.thread.id !== threadId || snapshot.thread.userId !== this.accountId) {
           await waitForSnapshotRetry(signal);
           continue;
         }
@@ -856,6 +851,6 @@ export class ThreadRunController {
   }
 
   private isActiveToken(token: number): boolean {
-    return !this.disposed && !this.accountSignal?.aborted && this.activeRun?.token === token;
+    return !this.disposed && !this.accountSignal.aborted && this.activeRun?.token === token;
   }
 }
