@@ -82,6 +82,26 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect(await activity()).toBe("2025-01-01T00:00:00.000000Z");
     });
 
+    it("does not advance for a hidden child-report continuation", async () => {
+      const first = await repos.turns.create({
+        threadId: THREAD,
+        role: "user",
+        createdAt: "2025-01-01T00:00:00.000Z",
+      });
+      const hidden = await repos.turns.create({
+        threadId: THREAD,
+        prevTurnId: first.id,
+        role: "user",
+        metadata: { kind: "system_update", section: "child_report" },
+        createdAt: "2025-01-01T00:05:00.000Z",
+      });
+      await repos.turns.updateStatus(hidden.id, {
+        status: "complete",
+        completedAt: "2025-01-01T00:06:00.000Z",
+      });
+      expect(await activity()).toBe("2025-01-01T00:00:00.000000Z");
+    });
+
     it("advances when a custom block makes a system turn visible, not for text", async () => {
       const first = await repos.turns.create({
         threadId: THREAD,
@@ -111,7 +131,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect(await activity()).toBe("2025-01-01T00:05:00.000000Z");
     });
 
-    it("changes activity when a branch switches the active leaf", async () => {
+    it("moves activity to the newest sibling turn set as the active leaf, not creation order", async () => {
       const root = await repos.turns.create({
         threadId: THREAD,
         role: "user",
@@ -123,7 +143,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         role: "assistant",
         createdAt: "2025-01-01T00:02:00.000Z",
       });
-      const branch = await repos.turns.create({
+      const secondSibling = await repos.turns.create({
         threadId: THREAD,
         prevTurnId: root.id,
         role: "assistant",
@@ -134,7 +154,41 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         .select({ leaf: schema.threads.conversationalLeafTurnId })
         .from(schema.threads)
         .where(eq(schema.threads.id, THREAD));
-      expect(stored?.leaf).toBe(branch.id);
+      expect(stored?.leaf).toBe(secondSibling.id);
+    });
+
+    it("recomputes when active_leaf_turn_id is updated directly to an existing sibling", async () => {
+      // Proves the trigger is the single owner: no repository method is
+      // called here, only a raw UPDATE of the thread row's active leaf, the
+      // same shape a future branch-switch writer would perform.
+      const root = await repos.turns.create({
+        threadId: THREAD,
+        role: "user",
+        createdAt: "2025-01-01T00:00:00.000Z",
+      });
+      const firstSibling = await repos.turns.create({
+        threadId: THREAD,
+        prevTurnId: root.id,
+        role: "assistant",
+        createdAt: "2025-01-01T00:01:00.000Z",
+      });
+      await repos.turns.create({
+        threadId: THREAD,
+        prevTurnId: root.id,
+        role: "assistant",
+        createdAt: "2025-01-01T00:02:00.000Z",
+      });
+      expect(await activity()).toBe("2025-01-01T00:02:00.000000Z");
+      await db
+        .update(schema.threads)
+        .set({ activeLeafTurnId: firstSibling.id })
+        .where(eq(schema.threads.id, THREAD));
+      expect(await activity()).toBe("2025-01-01T00:01:00.000000Z");
+      const [stored] = await db
+        .select({ leaf: schema.threads.conversationalLeafTurnId })
+        .from(schema.threads)
+        .where(eq(schema.threads.id, THREAD));
+      expect(stored?.leaf).toBe(firstSibling.id);
     });
 
     it("pages across equal activity timestamps using descending thread IDs", async () => {
