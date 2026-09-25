@@ -8,6 +8,7 @@ import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/ru
 import type { ThreadKind, ThreadStatus, TurnRole, TurnStatus } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { and, desc, eq, getTableColumns, isNotNull, isNull, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
@@ -23,7 +24,6 @@ import type {
 } from "../../ports/repositories.js";
 import { mapThread } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
-import { visibleConversationalHeadLateral } from "./visible-conversation-sql.js";
 import { workAssociationCandidatesSql } from "./work-association-candidates-sql.js";
 
 // RETURNING strips table qualifiers from Column chunks; preserve the outer reference
@@ -83,6 +83,8 @@ function mapThreadListRow(row: ThreadListRow) {
     runningTurnId: row.runningTurnId,
   });
 }
+
+const conversationalHead = alias(schema.turns, "conversational_head");
 
 function threadListSelect() {
   return {
@@ -337,9 +339,10 @@ export function createDrizzleThreadRepository(
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
         .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
         .leftJoin(schema.works, eq(schema.threadWorks.workId, schema.works.id))
+        // The stored head the chat feed reads, not a lineage walk per thread.
         .leftJoin(
-          visibleConversationalHeadLateral(sql`${schema.threads.activeLeafTurnId}`),
-          sql`true`,
+          conversationalHead,
+          eq(conversationalHead.id, schema.threads.conversationalLeafTurnId),
         )
         .where(
           and(
