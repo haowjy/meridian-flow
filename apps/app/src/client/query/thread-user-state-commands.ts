@@ -2,11 +2,7 @@
 import type { ProjectChatItem, UpdateThreadUserStateResponse } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 import { updateThreadUserState } from "@/client/api/threads-api";
-import {
-  type ChatFeedData,
-  flattenChatFeed,
-  projectChatFeedThread,
-} from "./project-chat-feed-cache";
+import { type ChatFeedData, flattenChatFeed, patchChatRow } from "./chat-projections";
 import { projectQueryKeys } from "./project-query-keys";
 
 export type ThreadUserStateOutcome =
@@ -63,8 +59,10 @@ const stateKey = (projectId: string, threadId: string) =>
   projectQueryKeys.threadUserState(projectId, threadId);
 
 function feedItem(client: QueryClient, projectId: string, threadId: string) {
-  return client
-    .getQueriesData<ChatFeedData>({ queryKey: projectQueryKeys.chatFeed(projectId) })
+  return [
+    ...client.getQueriesData<ChatFeedData>({ queryKey: projectQueryKeys.chatFeed(projectId) }),
+    ...client.getQueriesData<ChatFeedData>({ queryKey: projectQueryKeys.workThreads(projectId) }),
+  ]
     .flatMap(([, data]) => flattenChatFeed(data))
     .find((item) => item.id === threadId);
 }
@@ -159,9 +157,9 @@ export function getFavoriteCommandView(record: ThreadUserStateRecord): ThreadUse
 
 function syncChatFeeds(client: QueryClient, projectId: string, threadId: string) {
   const record = readRecord(client, projectId, threadId);
-  projectChatFeedThread(client, projectId, threadId, (item) =>
-    projectThreadUserState(item, record),
-  );
+  patchChatRow(client, projectId, threadId, {
+    projectChatItem: (item) => projectThreadUserState(item, record),
+  });
 }
 
 export function runFavoriteCommand(

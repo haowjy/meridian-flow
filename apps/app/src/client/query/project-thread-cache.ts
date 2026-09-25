@@ -10,15 +10,10 @@
  * server fetch reconciles them.
  */
 
-import type {
-  ProjectChatFeedPage,
-  ProjectChatItem,
-  Thread,
-  ThreadListItem,
-} from "@meridian/contracts/protocol";
-import type { InfiniteData, QueryClient } from "@tanstack/react-query";
+import type { Thread, ThreadListItem } from "@meridian/contracts/protocol";
+import type { QueryClient } from "@tanstack/react-query";
 
-import { projectChatFeedThread } from "./project-chat-feed-cache";
+import { patchChatRow } from "./chat-projections";
 import { projectQueryKeys } from "./project-query-keys";
 
 export function readProjectThreadList(
@@ -77,58 +72,21 @@ export function patchThreadInProjectCaches(
   }
 }
 
-type WorkFeedData = InfiniteData<ProjectChatFeedPage, string | null>;
-
 /**
  * Project one live lifecycle change into every cached representation of a
- * thread. Feed rows deliberately receive only `actionRequired`: Favorite
- * remains owned by the normalized user-state authority, while the project
- * thread list also carries the active turn identity.
+ * thread, across every mounted project (the thread store knows only the
+ * thread id, not which project owns it). Feed rows deliberately receive only
+ * `actionRequired`: Favorite remains owned by the normalized user-state
+ * authority, while the project thread list also carries the active turn
+ * identity.
  */
 export function projectThreadLifecycleInProjectCaches(
   client: QueryClient,
   threadId: string,
   lifecycle: ThreadListLifecycle,
 ): void {
-  const projectIdsWithChatFeeds = new Set<string>();
-
-  for (const query of client.getQueryCache().findAll({ queryKey: projectQueryKeys.all })) {
-    const [, projectId, scope] = query.queryKey;
-    if (typeof projectId !== "string") continue;
-
-    if (scope === "threads") {
-      client.setQueryData<ThreadListItem[] | null>(query.queryKey, (current) =>
-        current?.map((thread) => (thread.id === threadId ? { ...thread, ...lifecycle } : thread)),
-      );
-      continue;
-    }
-
-    if (scope === "chat-feed") {
-      projectIdsWithChatFeeds.add(projectId);
-      continue;
-    }
-
-    if (scope === "work-threads") {
-      client.setQueryData<WorkFeedData>(query.queryKey, (current) => {
-        if (!current) return current;
-        let changed = false;
-        const pages = current.pages.map((page) => ({
-          ...page,
-          items: page.items.map((item): ProjectChatItem => {
-            if (item.id !== threadId) return item;
-            changed = true;
-            return { ...item, actionRequired: lifecycle.actionRequired };
-          }),
-        }));
-        return changed ? { ...current, pages } : current;
-      });
-    }
-  }
-
-  for (const projectId of projectIdsWithChatFeeds) {
-    projectChatFeedThread(client, projectId, threadId, (item) => ({
-      ...item,
-      actionRequired: lifecycle.actionRequired,
-    }));
-  }
+  patchChatRow(client, undefined, threadId, {
+    threadListItem: (item) => ({ ...item, ...lifecycle }),
+    projectChatItem: (item) => ({ ...item, actionRequired: lifecycle.actionRequired }),
+  });
 }

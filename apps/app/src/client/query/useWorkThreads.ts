@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef } from "react";
 
 import { listWorkThreads } from "@/client/api/projects-api";
 import { useIsProjectPendingCreation } from "@/client/stores";
+import { flattenChatFeed } from "./chat-projections";
 import { projectQueryKeys } from "./project-query-keys";
 import {
   admitThreadUserStateItems,
@@ -33,17 +34,7 @@ export function useWorkThreads(projectId: string, workId: string, options?: { en
     retry: false,
     enabled,
   });
-  const threads = useMemo(() => {
-    if (!query.data) return null;
-    const seen = new Set<string>();
-    return query.data.pages.flatMap((page) =>
-      page.items.filter((item) => {
-        if (seen.has(item.id)) return false;
-        seen.add(item.id);
-        return true;
-      }),
-    );
-  }, [query.data]);
+  const threads = useMemo(() => (query.data ? flattenChatFeed(query.data) : null), [query.data]);
   const nextCursor = query.data?.pages.at(-1)?.nextCursor ?? null;
   const nextPageIdentity = useMemo(
     () =>

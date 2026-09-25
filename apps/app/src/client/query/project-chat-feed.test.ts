@@ -5,7 +5,7 @@
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { QueryClient } from "@tanstack/react-query";
 import { expect, it, vi } from "vitest";
-import { type ChatFeedData, flattenChatFeed } from "./project-chat-feed-cache";
+import { type ChatFeedData, flattenChatFeed } from "./chat-projections";
 import { projectQueryKeys } from "./project-query-keys";
 import { runFavoriteCommand } from "./thread-user-state-commands";
 
