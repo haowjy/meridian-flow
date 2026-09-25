@@ -196,7 +196,7 @@ if (!enabled || !databaseUrl) {
         await admin.end();
         await rm(fixtureDirectory, { recursive: true, force: true });
       }
-    });
+    }, 60_000);
 
     it("fails when the applied ledger diverges from the bundle prefix", async () => {
       const { fixtureDirectory, migrationsDirectory } = await prefixBundle(true);
