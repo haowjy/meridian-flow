@@ -2,16 +2,17 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { parseReleaseManifest } from "./manifest.ts";
 import { createConfirmedSnapshot } from "./neon.ts";
 
 type Image = { repository: string; digest: string; ref: string };
-type Manifest = { version: string; tag: string; sha: string; images: Record<string, Image> };
 type Deployment = { id?: string; status?: string; deploymentId?: string };
 const services = ["server", "app", "www", "ingress"] as const;
 const cliVersion = "5.62.1";
 const timeoutMs = Number(process.env.DEPLOY_TIMEOUT_MS ?? 12 * 60_000);
 const pollMs = Number(process.env.DEPLOY_POLL_MS ?? 3_000);
 const detectMs = Number(process.env.DEPLOY_DETECT_MS ?? 60_000);
+const redeployDetectMs = Number(process.env.DEPLOY_REDEPLOY_DETECT_MS ?? detectMs);
 const terminalFailures = new Set([
   "FAILED",
   "CRASHED",
@@ -72,11 +73,15 @@ async function waitForNewDeployment(
     if (latest && deploymentId(latest) && deploymentId(latest) !== previousId) return latest;
     await wait(pollMs);
   }
+  // The image-edit deployment can surface at the edge of the detection window.
+  // Establish a fresh baseline so the fallback waits for its own deployment.
+  const baselineDeployment = deploymentList(environment, service)[0];
+  const fallbackBaseline = baselineDeployment && deploymentId(baselineDeployment);
   command(["redeploy", "-s", service, "-e", environment, "--from-source", "-y", "--json"]);
-  const redeployEnd = Date.now() + detectMs;
+  const redeployEnd = Date.now() + redeployDetectMs;
   while (Date.now() < redeployEnd) {
     const latest = deploymentList(environment, service)[0];
-    if (latest && deploymentId(latest) && deploymentId(latest) !== previousId) return latest;
+    if (latest && deploymentId(latest) && deploymentId(latest) !== fallbackBaseline) return latest;
     await wait(pollMs);
   }
   fail(`${service}: no new deployment appeared after image edit and redeploy fallback`);
@@ -145,27 +150,10 @@ async function main() {
   if (missing.length) fail(`Missing required deploy inputs: ${missing.join(", ")}`);
   if (!["staging", "production"].includes(environment))
     fail(`Unsupported environment '${environment}' (expected staging or production)`);
-  const manifest = json<Manifest>(await readFile(manifestPath, "utf8"), "release manifest");
-  if (
-    !/^v\d+\.\d+\.\d+(-rc\.\d+)?$/.test(manifest.tag) ||
-    manifest.tag !== `v${manifest.version}` ||
-    !/^[0-9a-f]{40}$/.test(manifest.sha)
-  )
-    fail("Manifest must include a matching version/tag and full 40-character release sha");
-  for (const service of services) {
-    const image = manifest.images?.[service];
-    if (
-      !image ||
-      image.repository !== `ghcr.io/haowjy/meridian-flow-${service}` ||
-      !/^sha256:[0-9a-f]{64}$/.test(image.digest) ||
-      image.ref !== `${image.repository}@${image.digest}`
-    )
-      fail(
-        `Manifest image '${service}' must contain its expected repository, sha256 digest, and matching digest ref`,
-      );
-  }
+  const manifest = parseReleaseManifest(await readFile(manifestPath, "utf8"));
   // Complete the external backup before any Railway command can mutate or deploy a service.
-  const ttlDays = Number(process.env.NEON_SNAPSHOT_TTL_DAYS ?? 14);
+  const defaultTtlDays = environment === "staging" ? 3 : 14;
+  const ttlDays = Number(process.env.NEON_SNAPSHOT_TTL_DAYS || defaultTtlDays);
   const snapshot = await createConfirmedSnapshot({
     apiKey: requiredEnv("NEON_API_KEY"),
     projectId: requiredEnv("NEON_PROJECT_ID"),

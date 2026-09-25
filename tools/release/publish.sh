@@ -49,15 +49,6 @@ if prior="$(find_prior_release)"; then
   push_tag "$tag" "$commit"
   exit 0
 fi
-if [[ "$(jq -r '.release' <<<"$RELEASE_BATCH_JSON")" != true ]]; then
-  echo '::notice::All uncovered merges are skipped; no release created.'
-  exit 0
-fi
-require_release_token
-release_intent="$(jq -c '{kind,bump}' <<<"$RELEASE_BATCH_JSON")"
-trailers="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).covered.map((sha) => `Release-Trigger: ${sha}`).join("\n"))' "$RELEASE_BATCH_JSON")"
-intent_kind="$(jq -r '.kind' <<<"$RELEASE_BATCH_JSON")"
-
 for attempt in 1 2 3; do
   fetch_main
   if prior="$(find_prior_release)"; then
@@ -65,6 +56,18 @@ for attempt in 1 2 3; do
     push_tag "$tag" "$commit"
     exit 0
   fi
+  batch_output="$(mktemp)"
+  GITHUB_OUTPUT="$batch_output" tools/release/resolve-batch.sh
+  RELEASE_BATCH_JSON="$(sed -n 's/^batch=//p' "$batch_output")"
+  rm -f "$batch_output"
+  if [[ "$(jq -r '.release' <<<"$RELEASE_BATCH_JSON")" != true ]]; then
+    echo '::notice::Current main batch contains no release-worthy merges; no release created.'
+    exit 0
+  fi
+  require_release_token
+  release_intent="$(jq -c '{kind,bump}' <<<"$RELEASE_BATCH_JSON")"
+  trailers="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).covered.map((sha) => `Release-Trigger: ${sha}`).join("\n"))' "$RELEASE_BATCH_JSON")"
+  intent_kind="$(jq -r '.kind' <<<"$RELEASE_BATCH_JSON")"
   tags="$(git tag --list 'v*' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.stringify(s.split(/\n/).filter(Boolean))))')"
   version="$(node tools/release/release.mjs version "$tags" "$release_intent")"
   if git rev-parse -q --verify "refs/tags/${version}" >/dev/null; then

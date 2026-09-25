@@ -21,7 +21,7 @@ service() {
   edit "$name" deploy.drainingSeconds 30
   edit "$name" deploy.overlapSeconds 0
   edit "$name" deploy.numReplicas 1
-  [[ -z $predeploy ]] || edit "$name" deploy.preDeployCommand '["node","/app/release/release.mjs"]'
+  [[ -z $predeploy ]] || edit "$name" deploy.preDeployCommand 'node /app/release/release.mjs'
   edit "$name" variables.NODE_ENV.value production
   edit "$name" variables.APP_ENV.value "$app_env"
   edit "$name" variables.HOST.value ::
@@ -40,6 +40,7 @@ edit server variables.S3_SECRET_KEY.value '${{uploads.SECRET_ACCESS_KEY}}' # Ver
 service app 3000 /login "$environment"
 edit app variables.MERIDIAN_API_ORIGIN.value http://server.railway.internal:3000
 service www 3000 / "$environment"
+edit www variables.WEB_DATABASE_URL.value '${{server.DATABASE_URL}}' # Railway cross-service reference; verify resolves on first deploy.
 service ingress 8080 /_ingress/health "$environment"
 edit ingress variables.APP_UPSTREAM.value app.railway.internal:3000
 edit ingress variables.SERVER_UPSTREAM.value server.railway.internal:3000
@@ -55,7 +56,7 @@ Set these secret values manually in the Railway $environment environment (names 
   server: DATABASE_URL (Neon direct URL with sslmode=require; omit channel_binding and -pooler), WORKOS_API_KEY, WORKOS_CLIENT_ID, WORKOS_COOKIE_PASSWORD, S3_ACCESS_KEY, S3_SECRET_KEY
   model providers (at least one live key is required in staging/production): ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY
   app: WORKOS_API_KEY, WORKOS_CLIENT_ID, WORKOS_COOKIE_PASSWORD
-  app variable (not secret): WORKOS_REDIRECT_URI (use the public app URL plus /api/auth/callback)
+  server and app variable (not secret): WORKOS_REDIRECT_URI (use the public app URL plus /api/auth/callback)
 If the uploads preset does not expose the referenced keys in Railway Credentials UI, set server variables S3_BUCKET, S3_ENDPOINT, S3_PUBLIC_ENDPOINT, S3_REGION, S3_ACCESS_KEY, and S3_SECRET_KEY manually (the last two are secrets).
 Example, without exposing the value in shell history:
   read -rsp 'Secret value: ' VALUE; echo; printf %s "\$VALUE" | railway variable set -s server -e $environment --skip-deploys --stdin DATABASE_URL; unset VALUE

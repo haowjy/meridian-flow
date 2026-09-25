@@ -31,7 +31,9 @@ promotes a version that completed staging smoke and waits for a human approval.
    applying; do not leave it as an undocumented manual exception.
 3. **Create environments.** Go to **Settings → Environments → New
    environment** and create exactly `staging` and `production`. Add required
-   reviewers under production deployment protection rules. GitHub Free supports
+   reviewers under production deployment protection rules. For both environments,
+   set deployment branches to **Selected branches and tags → main**; do not allow
+   dispatches from feature branches to reach the protected deployment jobs. GitHub Free supports
    required reviewers for public repositories; on Free they are unavailable
    for private repositories ([GitHub environment documentation][gh-env]).
 4. **Set the release secret.** Add repository secret `RELEASE_TOKEN` at
@@ -60,6 +62,9 @@ promotes a version that completed staging smoke and waits for a human approval.
    gh variable set NEON_PROJECT_ID --env "$ENV" --body '<project-id>' --repo haowjy/meridian-flow
    gh variable set NEON_BRANCH_ID --env "$ENV" --body '<branch-id>' --repo haowjy/meridian-flow
    gh variable set PUBLIC_URL --env "$ENV" --body 'https://<ingress-domain>' --repo haowjy/meridian-flow
+   gh variable set NEON_SNAPSHOT_TTL_DAYS --env "$ENV" --body "$([[ $ENV == staging ]] && echo 3 || echo 14)" --repo haowjy/meridian-flow
+   # Optional public marketing-site origin for a www health check:
+   # gh variable set WWW_URL --env "$ENV" --body 'https://<www-domain>' --repo haowjy/meridian-flow
    ```
 
    `PUBLIC_URL` can be updated once the ingress Railway domain is known. It
@@ -111,10 +116,12 @@ deploy failure.
 **Verify:** connect using the direct URL with a PostgreSQL client; confirm the
 project ID, branch ID, region, Postgres version, autoscaling range, always-on
 setting, and history window. Rehearse snapshot creation and restore in staging.
-The deploy expects snapshot create to return an operation ID, polls to
-`finished` with `failures_count: 0`, then requires the named snapshot in the
-branch snapshot list. Confirm that response shape against a disposable branch
-before first production migration; HTTP 2xx alone is not enough.
+The deploy accepts only `scheduling`/`running` as pending operation statuses,
+then requires `finished` with `failures_count: 0`. It matches the exact
+`source_branch_id` and snapshot ID from creation in the branch snapshot list.
+Snapshot quotas are limited to 100 per project; use TTL 3 days in staging and
+14 in production, and verify quota/expiry before production use. Rehearse against
+a disposable branch; HTTP 2xx alone is not enough.
 
 ## 3. Create Railway project and services
 
@@ -209,13 +216,19 @@ before first production migration; HTTP 2xx alone is not enough.
    than rebuilding code. Confirm Railway scale-to-zero is disabled for the
    server, app, www, and ingress; service replicas stay at one. Check Railway's
    supported drain setting/value and ensure the server has the intended 30
-   seconds. These first-run verifications are required before launch.
+   seconds. Confirm DNS refresh/retry behavior, all app ports are 3000 and
+   ingress is 8080, and `www.WEB_DATABASE_URL` resolves from the server
+   reference. Verify 10 MB is sufficient for the largest intended multipart
+   upload/KB import; the server routes have no application-level size cap.
+   These first-run checks are required before launch.
 
 **Verify:** Railway shows the four services in both environments, every
 service is in Virginia, the app's `MERIDIAN_API_ORIGIN` points to the private
 server URL, ingress upstream variables point to private app/server URLs, and
 the bucket-derived S3 values resolve. Service state remains intentionally
-un-deployed until the first GHCR images exist.
+un-deployed until the first GHCR images exist. Set `NEON_SNAPSHOT_TTL_DAYS` to
+3 for staging and 14 for production; optionally set `WWW_URL` for the public
+marketing site's unauthenticated 200 check.
 
 ## 4. Configure WorkOS
 
@@ -232,13 +245,13 @@ redirect host matches the ingress domain.
 
 ## 5. Make GHCR images deployable
 
-GitHub Actions pushes the four image packages under `ghcr.io/haowjy/` on the
-first successful staging build. New GHCR packages start private. After the
-first build, open each package's **Package settings → Change visibility** and
-make it public, or configure Railway registry credentials for private image
-pulls in both environments. Then rerun staging with GitHub **Actions → Deploy
-Staging → Run workflow**, entering the built version without `v`; this deploys
-the existing manifest, not a rebuild.
+The first staging attempt may build and publish four packages successfully but
+fail when Railway cannot pull the private GHCR images. New packages start
+private. Open each package's **Package settings → Change visibility** and make
+it public, or configure Railway registry credentials in both environments.
+Then re-run **Actions → Deploy Staging → Run workflow** with the full tag
+(`vX.Y.Z` or `vX.Y.Z-rc.N`); it reuses the release manifest and does not
+rebuild.
 
 **Verify:** Railway can pull each `server`, `app`, `www`, and `ingress` digest.
 If logs report unauthorized/manifest access, image visibility or registry
@@ -246,10 +259,12 @@ credentials are not ready; do not treat an image edit as a successful deploy.
 
 ## 6. Create the first release and staging deploy
 
-Merge a PR to `main` with a release label. Strongest label wins when multiple
-stable bump labels exist. An unlabeled merge creates a patch RC; `release:skip`
-opts out. The release workflow writes root version, changelog, release commit,
-and version tag; CI then runs on the release commit. After CI passes, the
+Merges to `main` are covered as a batch by the next release run. Strongest
+label wins when multiple stable bump labels exist. An unlabeled batch creates a
+patch RC; `release:skip` opts out. Stable releases roll the changelog section;
+RCs use current Unreleased notes without rolling it. The release workflow
+writes root version, release commit, and version tag; CI then runs on that
+release commit. After CI passes, the
 staging workflow builds the four images and deploys them by digest.
 
 Watch **Actions → Release on merge**, **CI**, and **Deploy Staging** in order.
@@ -279,8 +294,8 @@ The workflow smoke table must show these passes:
 |---|---|
 | `/healthz` | HTTP 200, `status=ok`, `service=api`, expected version and release SHA |
 | `/readyz` | HTTP 200 and `ready=true` |
-| `/` | Redirect to `/login` |
-| `/login` | HTTP 200, Meridian page title, expected version and SHA headers |
+| `/` | 3xx to same-origin `/login…` or WorkOS authorize with `client_id` and exact callback `redirect_uri`; matching release headers |
+| `/login` | Direct request (no redirect following), HTTP 200, `<title>Meridian</title>`, expected version and SHA headers |
 | `/ws/yjs` | WebSocket upgrade opens, then closes with `4401 auth_failed` (unauthenticated expected behavior) |
 | Release status | GitHub commit status `deploy/staging` is success only after deploy and smoke pass |
 
@@ -292,13 +307,12 @@ release. If www has a separate domain, check that domain's root returns 200.
 
 Before promotion, verify staging has run the candidate version and all
 acceptance checks are green. In GitHub open **Actions → Deploy Production →
-Run workflow** and enter its complete tag, for example `v0.1.0` (not the
-version without `v`). The workflow refuses a missing tag, missing staging
+Run workflow** and enter its complete tag, for example `v0.1.0`. The workflow refuses a missing tag, missing staging
 success status, or manifest whose commit SHA does not match the tag. Approve
 the waiting production deployment in **Actions → workflow run → Review
 Deployments → Approve and deploy**. The job takes a fresh Neon snapshot, updates
 the production Railway server image/ref, deploys the same four manifest
-Digests, and runs the runtime smoke suite.
+digests, and runs the runtime smoke suite.
 
 **Verify:** the workflow passes; GitHub status `deploy/production` is green on
 the release commit; production `/healthz` reports the selected version and

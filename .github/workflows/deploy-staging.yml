@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Existing built version to redeploy, without leading v
+        description: Existing built release tag, e.g. v1.2.3
         required: true
         type: string
 
@@ -20,11 +20,8 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main' &&
       startsWith(github.event.workflow_run.head_commit.message, 'release: v')
-    # GitHub retains one pending group run; newest release wins and only staged commits are promotable.
-    concurrency:
-      group: deploy-staging
-      cancel-in-progress: false
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: write
       packages: write
@@ -51,9 +48,26 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Reuse existing release manifest when available
+        id: existing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[].name] | index("release-manifest.json") != null' | grep -qx true; then
+            mkdir -p "$RUNNER_TEMP/existing"
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern release-manifest.json --dir "$RUNNER_TEMP/existing"
+            node tools/deploy/manifest.ts validate "$RUNNER_TEMP/existing/release-manifest.json" "$TAG" "$RELEASE_SHA"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: docker/setup-buildx-action@v3
+        if: steps.existing.outputs.exists != 'true'
       - name: Log in to GHCR
         uses: docker/login-action@v3
+        if: steps.existing.outputs.exists != 'true'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -61,6 +75,7 @@ jobs:
       - name: Build server image
         id: server
         uses: docker/build-push-action@v6
+        if: steps.existing.outputs.exists != 'true'
         with:
           context: .
           file: apps/server/Dockerfile
@@ -76,6 +91,7 @@ jobs:
       - name: Build app image
         id: app
         uses: docker/build-push-action@v6
+        if: steps.existing.outputs.exists != 'true'
         with:
           context: .
           file: apps/app/Dockerfile
@@ -91,6 +107,7 @@ jobs:
       - name: Build www image
         id: www
         uses: docker/build-push-action@v6
+        if: steps.existing.outputs.exists != 'true'
         with:
           context: .
           file: apps/www/Dockerfile
@@ -106,6 +123,7 @@ jobs:
       - name: Build ingress image
         id: ingress
         uses: docker/build-push-action@v6
+        if: steps.existing.outputs.exists != 'true'
         with:
           context: .
           file: tools/deploy/ingress/Dockerfile
@@ -119,6 +137,7 @@ jobs:
           cache-from: type=gha,scope=meridian-ingress
           cache-to: type=gha,mode=max,scope=meridian-ingress
       - name: Create manifest and release
+        if: steps.existing.outputs.exists != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.release.outputs.tag }}
@@ -129,12 +148,8 @@ jobs:
           WWW_DIGEST: ${{ steps.www.outputs.digest }}
           INGRESS_DIGEST: ${{ steps.ingress.outputs.digest }}
         run: |
-          export repository=ghcr.io/haowjy/meridian-flow
-          node - <<'NODE' > release-manifest.json
-          const env = process.env;
-          const image = (service) => ({repository: `${env.repository}-${service}`, digest: env[`${service.toUpperCase()}_DIGEST`], ref: `${env.repository}-${service}@${env[`${service.toUpperCase()}_DIGEST`]}`});
-          console.log(JSON.stringify({version: env.VERSION, tag: env.TAG, sha: env.SHA, images: {server:image('server'),app:image('app'),www:image('www'),ingress:image('ingress')},builtAt:new Date().toISOString(),runUrl:`${env.GITHUB_SERVER_URL}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}`}, null, 2));
-          NODE
+          node tools/deploy/manifest.ts create release-manifest.json
+          node tools/deploy/manifest.ts validate release-manifest.json "$TAG" "$SHA"
           if [[ "$VERSION" == *-rc.* ]]; then heading='## [Unreleased]'; else heading="## [$VERSION]"; fi
           section=$(awk -v heading="$heading" 'index($0, heading)==1 {found=1; next} found && /^## / {exit} found {print}' CHANGELOG.md || true)
           printf '%s\n' "$section" > release-notes.md
@@ -145,13 +160,23 @@ jobs:
           else
             gh release create "$TAG" release-manifest.json --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file release-notes.md "${flags[@]}"
           fi
+      - name: Prepare existing manifest for deployment
+        if: steps.existing.outputs.exists == 'true'
+        run: cp "$RUNNER_TEMP/existing/release-manifest.json" "$RUNNER_TEMP/release-manifest.json"
+      - name: Prepare built manifest for deployment
+        if: steps.existing.outputs.exists != 'true'
+        run: cp release-manifest.json "$RUNNER_TEMP/release-manifest.json"
 
   deploy-built:
     needs: build
     if: always() && needs.build.result == 'success'
+    # One pending run per group means a burst can replace an older waiting deploy; staging converges to newest.
     concurrency:
       group: deploy-staging
       cancel-in-progress: false
+    permissions:
+      contents: read
+      statuses: write
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment: staging
@@ -159,11 +184,9 @@ jobs:
     secrets: inherit
 
   deploy-existing:
-    if: github.event_name == 'workflow_dispatch'
-    concurrency:
-      group: deploy-staging
-      cancel-in-progress: false
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     outputs:
@@ -175,14 +198,17 @@ jobs:
           VERSION_INPUT: ${{ inputs.version }}
         run: |
           version="$VERSION_INPUT"
-          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || { echo "::error::Enter an existing version without leading v, such as 1.2.3"; exit 1; }
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || { echo "::error::Enter an existing release tag such as v1.2.3"; exit 1; }
+          echo "version=${version#v}" >> "$GITHUB_OUTPUT"
   deploy-existing-call:
     needs: deploy-existing
-    if: github.event_name == 'workflow_dispatch' && needs.deploy-existing.result == 'success'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && needs.deploy-existing.result == 'success'
     concurrency:
       group: deploy-staging
       cancel-in-progress: false
+    permissions:
+      contents: read
+      statuses: write
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment: staging

@@ -9,8 +9,9 @@ schema changes.
 
 ## What a deploy runs
 
-1. A `main` merge is versioned by `release-on-merge.yml`; it writes a
-   `release: vX.Y.Z` commit and tag using `RELEASE_TOKEN`.
+1. The first-parent batch of `main` merges is versioned by
+   `release-on-merge.yml`; it writes one `release: vX.Y.Z` commit and tag using
+   `RELEASE_TOKEN`.
 2. CI runs on the release commit. Only a successful CI run for that release
    commit starts staging deployment.
 3. Staging validates its GitHub environment config and downloads the release
@@ -31,7 +32,7 @@ schema changes.
    and waits until each Railway deployment reaches success. It does not treat
    the CLI command returning as runtime evidence.
 7. Smoke probes the public ingress: server liveness and readiness, expected
-   version and SHA, app redirect/login HTML and response headers, and the
+   version and SHA, root redirect/login page and response headers, and the
    unauthenticated Yjs websocket upgrade (must open then close `4401
    auth_failed`). The workflow sets `deploy/staging` success only after both
    deploy and smoke succeed. Production promotion uses those exact manifest
@@ -51,7 +52,7 @@ schema changes.
 
 Staging can retry an existing built release without rebuilding:
 GitHub → Actions → **Deploy Staging** → **Run workflow**, input `version`
-without leading `v` (for example `1.2.3`). It takes a fresh snapshot and
+as a full tag (for example `v1.2.3`). It takes a fresh snapshot and
 reapplies the same manifest digests. Do not use this to bypass failed CI or
 smoke diagnostics.
 
@@ -69,7 +70,9 @@ image digests; it does not rebuild the image or reverse migrations.
    whose SHA matches the tag, deploys all four digests, and passes runtime
    smoke.
 4. Verify GitHub commit status `deploy/production` and check `/healthz` for
-   the expected version and SHA.
+   the expected version and SHA. A rollback deploy uses the currently checked-in
+   deployment tooling against the older image digests; it is not a replay of the
+   old workflow implementation.
 
 Migrations are forward-only. When a rollback bundle finds that the DB is ahead
 of its migration chain, the release runner treats it as zero pending
@@ -83,9 +86,12 @@ fix rather than assuming image rollback restores data/schema.
 
 ## Restore database data
 
-Restore is a deliberate cutover, not an automatic deploy rollback. Keep the
-current branch and its Railway `DATABASE_URL` unchanged until the restored
-branch has been verified. Snapshot restore creates a new branch first; only
+Restore is a deliberate cutover, not an automatic deploy rollback. If both the
+image and data must roll back, use this order: deploy/select the older image
+first, restore/verify the Neon branch second, and only then restart the services
+against the restored branch. Keep the current branch and Railway `DATABASE_URL`
+unchanged until the restored branch has been verified; pause/scale down app
+traffic during the cutover so the image rollback cannot write to the wrong data. Snapshot restore creates a new branch first; only
 finalize after checks pass. Confirm current Neon API response fields in a
 non-production rehearsal before operating on production.
 

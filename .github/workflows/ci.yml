@@ -9,7 +9,6 @@ on:
   # Push CI on the durable trunk verifies the post-merge result.
   push:
     branches: [main]
-  workflow_call:
 
 concurrency:
   # PR updates supersede one another. Every non-PR run gets its own group so a
@@ -21,7 +20,7 @@ concurrency:
 jobs:
   quality:
     name: quality
-    # Skip draft PRs; pushes and workflow_call always run.
+    # Skip draft PRs; push runs always execute.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
@@ -40,7 +39,7 @@ jobs:
 
   migration-checks:
     name: migration-checks
-    # Skip draft PRs; pushes and workflow_call always run.
+    # Skip draft PRs; push runs always execute.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     env:
@@ -117,7 +116,7 @@ jobs:
 
   app-dev-transform:
     name: app-dev-transform
-    # Skip draft PRs; pushes and workflow_call always run.
+    # Skip draft PRs; push runs always execute.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:

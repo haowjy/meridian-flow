@@ -13,11 +13,13 @@ for (let i = 0; i < args.length; i += 1) {
 const timeoutSeconds = Number(options.get("--timeout") ?? 120);
 const expectedVersion = options.get("--expect-version");
 const expectedRelease = options.get("--expect-release");
+const workosDomain = options.get("--workos-domain");
 if (!base || !Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0)
   throw new Error(
-    "Usage: node tools/deploy/smoke-check.ts <baseUrl> [--expect-version X] [--expect-release SHA] [--timeout S] [--www-url URL]",
+    "Usage: node tools/deploy/smoke-check.ts <baseUrl> [--expect-version X] [--expect-release SHA] [--timeout S] [--www-url URL] [--workos-domain HOST]",
   );
 const origin = new URL(base);
+const appOrigin = new URL(origin.origin);
 const deadline = Date.now() + timeoutSeconds * 1000;
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 async function request(url: string) {
@@ -29,6 +31,54 @@ async function checked(name: string, fn: () => Promise<string>): Promise<Result>
   } catch (error) {
     return { name, result: `FAIL (${error instanceof Error ? error.message : error})` };
   }
+}
+function releaseHeaders(response: Response): { valid: boolean; detail: string } {
+  const version = response.headers.get("x-meridian-version") ?? "";
+  const release = response.headers.get("x-meridian-release") ?? "";
+  const valid = Boolean(
+    version &&
+      release &&
+      (!expectedVersion || version === expectedVersion) &&
+      (!expectedRelease || release === expectedRelease),
+  );
+  return { valid, detail: `version=${version || "absent"}, release=${release || "absent"}` };
+}
+function loginRedirect(location: string): { valid: boolean; detail: string } {
+  if (!location) return { valid: false, detail: "location absent" };
+  let target: URL;
+  try {
+    target = new URL(location, appOrigin);
+  } catch {
+    return { valid: false, detail: `invalid location=${location}` };
+  }
+  const localLogin =
+    target.origin === appOrigin.origin &&
+    (target.pathname === "/login" || target.pathname.startsWith("/login/"));
+  const isWorkosHost =
+    target.hostname === "api.workos.com" ||
+    (workosDomain !== undefined &&
+      target.hostname ===
+        workosDomain
+          .replace(/^https?:\/\//, "")
+          .split("/")[0]
+          .toLowerCase());
+  const clientId = target.searchParams.get("client_id")?.trim() ?? "";
+  const redirectUri = target.searchParams.get("redirect_uri") ?? "";
+  const expectedRedirectUri = new URL("/api/auth/callback", appOrigin).toString();
+  const workosLogin =
+    target.protocol === "https:" &&
+    isWorkosHost &&
+    target.pathname === "/user_management/authorize" &&
+    Boolean(clientId) &&
+    redirectUri === expectedRedirectUri;
+  return {
+    valid: localLogin || workosLogin,
+    detail: localLogin
+      ? `same-origin ${target.pathname}`
+      : workosLogin
+        ? `WorkOS authorize; client_id present, redirect_uri matches ${expectedRedirectUri}`
+        : `unexpected redirect=${target.toString()}`,
+  };
 }
 async function runChecks(): Promise<Result[]> {
   const checks: Result[] = [];
@@ -61,29 +111,29 @@ async function runChecks(): Promise<Result[]> {
         : `FAIL (HTTP ${response.status})`;
     }),
   );
-  let loginLocation = "/login";
   checks.push(
     await checked("app / redirect", async () => {
-      const response = await request(origin.toString());
+      const response = await request(appOrigin.toString());
       const location = response.headers.get("location") ?? "";
-      loginLocation = location || loginLocation;
-      return response.status >= 300 && response.status < 400 && /\/login(?:\?|$)/.test(location)
-        ? `PASS (${response.status} ${location})`
-        : `FAIL (HTTP ${response.status}, location=${location || "absent"})`;
+      const redirect = loginRedirect(location);
+      const headers = releaseHeaders(response);
+      const good =
+        response.status >= 300 && response.status < 400 && redirect.valid && headers.valid;
+      return good
+        ? `PASS (HTTP ${response.status}; ${redirect.detail}; ${headers.detail})`
+        : `FAIL (HTTP ${response.status}; ${redirect.detail}; ${headers.detail})`;
     }),
   );
   checks.push(
     await checked("app /login", async () => {
-      const response = await request(new URL(loginLocation, origin).toString());
+      const response = await request(new URL("/login", appOrigin).toString());
       const body = await response.text();
       const hasTitle = /<title>\s*Meridian\s*<\/title>/i.test(body);
-      const matches =
-        (!expectedVersion || response.headers.get("x-meridian-version") === expectedVersion) &&
-        (!expectedRelease || response.headers.get("x-meridian-release") === expectedRelease);
-      const good = response.status === 200 && hasTitle && matches;
+      const headers = releaseHeaders(response);
+      const good = response.status === 200 && hasTitle && headers.valid;
       return good
-        ? "PASS"
-        : `FAIL (HTTP ${response.status}, Meridian title=${hasTitle}, version=${response.headers.get("x-meridian-version")}, release=${response.headers.get("x-meridian-release")})`;
+        ? `PASS (${headers.detail})`
+        : `FAIL (HTTP ${response.status}, Meridian title=${hasTitle}, ${headers.detail})`;
     }),
   );
   checks.push(

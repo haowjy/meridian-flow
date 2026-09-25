@@ -3,19 +3,30 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createConfirmedSnapshot } from "./neon.ts";
 
 const servers: Server[] = [];
-async function fakeNeon(scenario: "success" | "failed" | "missing" | "timeout") {
+async function fakeNeon(
+  scenario: "success" | "failed" | "missing" | "timeout" | "wrong-branch" | "id-mismatch",
+) {
   let operationReads = 0;
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     response.setHeader("content-type", "application/json");
     if (request.method === "POST" && url.pathname.endsWith("/snapshot")) {
-      response.end(JSON.stringify({ operations: [{ id: "op-1" }] }));
+      response.end(
+        JSON.stringify({
+          snapshot: { id: scenario === "id-mismatch" ? "snap-other" : "snap-123" },
+          operations: [{ id: "op-1" }],
+        }),
+      );
     } else if (url.pathname.endsWith("/operations/op-1")) {
       operationReads += 1;
       if (scenario === "timeout")
         response.end(JSON.stringify({ status: "running", failures_count: 0 }));
       else if (scenario === "failed")
         response.end(JSON.stringify({ status: "failed", failures_count: 1 }));
+      else if (operationReads === 1)
+        response.end(JSON.stringify({ status: "scheduling", failures_count: 0 }));
+      else if (operationReads === 2)
+        response.end(JSON.stringify({ status: "running", failures_count: 0 }));
       else response.end(JSON.stringify({ status: "finished", failures_count: 0 }));
     } else if (url.pathname.endsWith("/snapshots")) {
       const names = url.searchParams;
@@ -29,7 +40,7 @@ async function fakeNeon(scenario: "success" | "failed" | "missing" | "timeout") 
                   {
                     id: "snap-123",
                     name: "predeploy-v1.2.3-20260924T000000Z",
-                    branch_id: "branch-1",
+                    source_branch_id: scenario === "wrong-branch" ? "branch-other" : "branch-1",
                   },
                 ],
         }),
@@ -94,6 +105,18 @@ describe("Neon snapshot seam", () => {
     const api = await fakeNeon("timeout");
     await expect(createConfirmedSnapshot({ ...options(api.url), timeoutMs: 10 })).rejects.toThrow(
       "timed out",
+    );
+  });
+  it("rejects a snapshot from another source branch", async () => {
+    const api = await fakeNeon("wrong-branch");
+    await expect(createConfirmedSnapshot(options(api.url))).rejects.toThrow(
+      "not present in the snapshot list",
+    );
+  });
+  it("cross-checks the snapshot id returned by create", async () => {
+    const api = await fakeNeon("id-mismatch");
+    await expect(createConfirmedSnapshot(options(api.url))).rejects.toThrow(
+      "does not match create response id",
     );
   });
 });

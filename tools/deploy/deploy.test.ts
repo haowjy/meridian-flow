@@ -1,5 +1,13 @@
 import { execFile } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -37,11 +45,27 @@ if (args[0] === 'environment' && args[1] === 'edit') {
   if (scenario !== 'no-auto') { state[service] = {id: service + '-1', status: 'DEPLOYING', reads: 0}; save(); }
   process.exit(0);
 }
-if (args[0] === 'redeploy') { state[service] = {id: service + '-1', status: 'DEPLOYING', reads: 0}; save(); console.log('{}'); process.exit(0); }
+if (args[0] === 'redeploy') {
+  state[service] = scenario === 'fallback-race'
+    ? {id: service + '-late', status: 'REMOVED', reads: 0, pendingRedeploy: true}
+    : {id: service + '-1', status: 'DEPLOYING', reads: 0};
+  save(); console.log('{}'); process.exit(0);
+}
 if (args[0] === 'deployment' && args[1] === 'list') {
+  state.listCounts ??= {}; state.listCounts[service] = (state.listCounts[service] || 0) + 1;
   const deployment = state[service];
-  if (!deployment) { console.log('[]'); process.exit(0); }
+  if (!deployment) {
+    if (scenario === 'fallback-race' && state.listCounts[service] >= 2) {
+      state[service] = {id: service + '-late', status: 'REMOVED', reads: 0}; save();
+      console.log(JSON.stringify([state[service]])); process.exit(0);
+    }
+    save(); console.log('[]'); process.exit(0);
+  }
   deployment.reads++;
+  if (deployment.pendingRedeploy && deployment.reads >= 2) {
+    state[service] = {id: service + '-redeploy', status: 'SUCCESS', reads: 0};
+    save(); console.log(JSON.stringify([state[service]])); process.exit(0);
+  }
   if (['failure', 'removed', 'skipped', 'completed'].includes(scenario) && deployment.reads >= 2) deployment.status = scenario === 'removed' ? 'REMOVED' : scenario === 'skipped' ? 'SKIPPED' : scenario === 'completed' ? 'COMPLETED' : 'FAILED';
   else if (scenario !== 'timeout' && deployment.reads >= 2) deployment.status = 'SUCCESS';
   save(); console.log(JSON.stringify([deployment])); process.exit(0);
@@ -55,13 +79,13 @@ async function run(scenario: string) {
     response.setHeader("content-type", "application/json");
     if (request.method === "POST") {
       snapshotName = url.searchParams.get("name") ?? "";
-      response.end(JSON.stringify({ operation: { id: "op-1" } }));
+      response.end(JSON.stringify({ snapshot: { id: "snap-123" }, operation: { id: "op-1" } }));
     } else if (url.pathname.endsWith("/operations/op-1")) {
       response.end(JSON.stringify({ status: "finished", failures_count: 0 }));
     } else {
       response.end(
         JSON.stringify({
-          snapshots: [{ id: "snap-123", name: snapshotName, branch_id: "branch-1" }],
+          snapshots: [{ id: "snap-123", name: snapshotName, source_branch_id: "branch-1" }],
         }),
       );
     }
@@ -96,7 +120,8 @@ async function run(scenario: string) {
           FAKE_RAILWAY_STATE: state,
           FAKE_RAILWAY_LOG: commandLog,
           SCENARIO: scenario,
-          DEPLOY_DETECT_MS: "24",
+          DEPLOY_DETECT_MS: scenario === "fallback-race" ? "0" : "24",
+          DEPLOY_REDEPLOY_DETECT_MS: scenario === "fallback-race" ? "400" : "24",
           DEPLOY_TIMEOUT_MS: "24",
           DEPLOY_POLL_MS: "2",
         },
@@ -106,7 +131,8 @@ async function run(scenario: string) {
     return `${output.stdout}\n${readFileSync(commandLog, "utf8")}`;
   } catch (error) {
     const e = error as { stdout?: string; stderr?: string };
-    return `${e.stderr ?? ""}${e.stdout ?? ""}${readFileSync(commandLog, "utf8")}`;
+    const log = existsSync(commandLog) ? readFileSync(commandLog, "utf8") : "";
+    return `${e.stderr ?? ""}${e.stdout ?? ""}${log}`;
   } finally {
     rmSync(dir, { recursive: true, force: true });
     await new Promise<void>((resolve) => neon.close(() => resolve()));
@@ -136,6 +162,9 @@ describe("Railway deploy seam", () => {
   });
   it("falls back to redeploy when changing source.image did not trigger a deployment", async () => {
     expect(await run("no-auto")).toMatch(/app\s+app-1/);
+  });
+  it("waits for the fallback deployment instead of a late image-edit deployment", async () => {
+    expect(await run("fallback-race")).toMatch(/server\s+server-redeploy/);
   });
   it("fails boundedly when deployments never reach a terminal state", async () => {
     expect(await run("timeout")).toContain("server-1 timed out");

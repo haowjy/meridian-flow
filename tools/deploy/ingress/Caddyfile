@@ -11,8 +11,10 @@
 	@serverHealth path /healthz /readyz
 	handle @serverHealth {
 		reverse_proxy {
+			lb_try_duration 10s
+			lb_try_interval 250ms
 			dynamic a {$SERVER_UPSTREAM_HOST} {$SERVER_UPSTREAM_PORT} {
-				refresh 30s
+				refresh 5s
 			}
 			header_up X-Forwarded-Proto https
 			transport http {
@@ -29,8 +31,10 @@
 	@appOwned path /api/auth/callback /api/auth/dev-login
 	handle @appOwned {
 		reverse_proxy {
+			lb_try_duration 10s
+			lb_try_interval 250ms
 			dynamic a {$APP_UPSTREAM_HOST} {$APP_UPSTREAM_PORT} {
-				refresh 30s
+				refresh 5s
 			}
 			header_up X-Forwarded-Proto https
 			transport http {
@@ -43,8 +47,10 @@
 	@serverOwned path /api/* /ws/*
 	handle @serverOwned {
 		reverse_proxy {
+			lb_try_duration 10s
+			lb_try_interval 250ms
 			dynamic a {$SERVER_UPSTREAM_HOST} {$SERVER_UPSTREAM_PORT} {
-				refresh 30s
+				refresh 5s
 			}
 			header_up X-Forwarded-Proto https
 			transport http {
@@ -56,8 +62,10 @@
 
 	handle {
 		reverse_proxy {
+			lb_try_duration 10s
+			lb_try_interval 250ms
 			dynamic a {$APP_UPSTREAM_HOST} {$APP_UPSTREAM_PORT} {
-				refresh 30s
+				refresh 5s
 			}
 			header_up X-Forwarded-Proto https
 			transport http {

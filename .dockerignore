@@ -13,8 +13,6 @@ node_modules
 tools/deploy/local
 **/dist
 !packages/database/dist/
-!packages/database/dist/release/
-!packages/database/dist/release/**
 **/coverage
 **/.cache
 **/.turbo
