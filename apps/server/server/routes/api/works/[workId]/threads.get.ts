@@ -2,10 +2,8 @@
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { requireWorkOwner } from "../../../../domains/projects/index.js";
-import {
-  getWorkChatFeedPage,
-  InvalidWorkChatFeedCursorError,
-} from "../../../../domains/threads/domain/work-chat-feed.js";
+import { InvalidChatFeedCursorError } from "../../../../domains/threads/domain/chat-feed-page.js";
+import { getWorkChatFeedPage } from "../../../../domains/threads/domain/work-chat-feed.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../lib/request-id.js";
 
@@ -31,7 +29,7 @@ export default defineEventHandler(async (event) => {
       }),
     );
   } catch (cause) {
-    if (cause instanceof InvalidWorkChatFeedCursorError)
+    if (cause instanceof InvalidChatFeedCursorError)
       throw createError({ statusCode: 400, statusMessage: cause.message });
     throw cause;
   }
