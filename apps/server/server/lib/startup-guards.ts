@@ -281,7 +281,10 @@ export async function exitOnStartupGuardFailure(
     level: "error",
     source: "plugins.startup",
     name: "startup_guard.failed",
-    payload: unknownToEventPayload(error),
+    payload: {
+      message: error instanceof Error ? error.message : String(error),
+      ...unknownToEventPayload(error),
+    },
   });
   try {
     await options.eventSink.flush();

@@ -26,8 +26,10 @@ const baseConfig: ApiStartupEnv = {
 describe("staging and production startup guards", () => {
   it("emits and flushes a failed guard before exiting non-zero", async () => {
     const order: string[] = [];
+    const emitted: unknown[] = [];
     const eventSink = {
       emit(event: unknown) {
+        emitted.push(event);
         order.push(`emit:${(event as { name: string }).name}`);
       },
       emitBatch() {},
@@ -44,6 +46,10 @@ describe("staging and production startup guards", () => {
     });
 
     expect(order).toEqual(["emit:startup_guard.failed", "flush", "exit:1"]);
+    expect(emitted[0]).toMatchObject({
+      name: "startup_guard.failed",
+      payload: { message: "invalid config" },
+    });
   });
 
   it("rejects dev placeholders based on APP_ENV even when NODE_ENV is development", () => {
