@@ -14,7 +14,7 @@ export async function sweepWakes(input: {
   eventSink: EventSink;
   limit: number;
   afterThreadId?: ThreadId;
-}): Promise<ThreadId | undefined> {
+}): Promise<{ cursor: ThreadId | undefined; count: number }> {
   let threadIds = await input.delivery.pendingMessageThreads(input.limit, input.afterThreadId);
   if (threadIds.length === 0 && input.afterThreadId) {
     threadIds = await input.delivery.pendingMessageThreads(input.limit);
@@ -37,7 +37,7 @@ export async function sweepWakes(input: {
       }),
     );
   }
-  return threadIds.at(-1);
+  return { cursor: threadIds.at(-1), count: threadIds.length };
 
   function reportFailure(threadId: ThreadId, error: unknown) {
     emitEvent(input.eventSink, {

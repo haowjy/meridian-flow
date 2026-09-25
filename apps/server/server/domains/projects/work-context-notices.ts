@@ -5,5 +5,5 @@ export interface WorkContextNotices {
   projectChanged(projectId: ProjectId): Promise<void>;
   threadChanged(threadId: ThreadId): Promise<void>;
   materializeIdle(threadId: ThreadId): Promise<Exclude<WorkContextUpdateStatus, "not_required">>;
-  sweepWorkNotices(): Promise<void>;
+  sweepWorkNotices(): Promise<number>;
 }

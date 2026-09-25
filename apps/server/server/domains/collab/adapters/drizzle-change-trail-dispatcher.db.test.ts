@@ -89,6 +89,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.$client.end();
     });
 
+    it("bounds each drain and resumes the remaining durable outbox on the next pass", async () => {
+      await seedOutbox(
+        Array.from({ length: 101 }, (_, index) => ({
+          eventId: crypto.randomUUID(),
+          eventKind: "updated" as const,
+          version: index + 1,
+        })),
+      );
+      const dispatcher = createDrizzleChangeTrailDispatcher({
+        db,
+        journalWriter,
+        eventHub: { invalidateCommittedJournal() {} },
+      });
+      await expect(dispatcher.drain()).resolves.toBe(100);
+      await expect(dispatcher.drain()).resolves.toBe(1);
+      await expect(dispatcher.drain()).resolves.toBe(0);
+      expect(await db.select().from(schema.eventJournal)).toHaveLength(101);
+    });
+
     it("retries exactly once after a crash between claim and journal append", async () => {
       await seedOutbox([{ eventId: UPDATED_EVENT_ID, eventKind: "updated", version: 1 }]);
       const crashingWriter = {

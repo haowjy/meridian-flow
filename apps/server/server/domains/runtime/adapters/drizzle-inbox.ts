@@ -56,6 +56,7 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
       return rows.map(({ id }) => id as ThreadId);
     },
     async canMaterializeWork(threadId) {
+      // Stronger thread/project locks invert Work mutation + marker FK insertion against turn writes.
       const rows = await db_()
         .select({ id: schema.threads.id })
         .from(schema.threads)

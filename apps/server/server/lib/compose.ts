@@ -61,7 +61,6 @@ import {
   type EventQuery,
   type EventSink,
   emitEvent,
-  unknownToEventPayload,
 } from "../domains/observability/index.js";
 import {
   type AccountSkillInstallStore,
@@ -243,7 +242,11 @@ export type AppServices = {
   runStarter: RunStarter;
   delivery: DeliveryProducer;
   /** Startup/interval recovery for threads with a pending message and no live run. */
-  wakeSweep: { sweep(): Promise<void> };
+  recovery: {
+    scanWakes(): Promise<number>;
+    repairOrphans(): Promise<number>;
+    publishReports(): Promise<number>;
+  };
   userTurnAdmission: UserTurnAdmission;
   runClaim: Pick<RunClaim, "withExclusiveThread">;
   toolRegistry: ToolRegistry;
@@ -665,33 +668,21 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
   });
   let wakeCursor: ThreadId | undefined;
-  const wakeSweep = {
-    async sweep() {
-      const results = await Promise.allSettled([
-        sweepWakes({
-          delivery,
-          authority: ports.runClaim,
-          runStarter,
-          limit: WAKE_SWEEP_LIMIT,
-          afterThreadId: wakeCursor,
-          eventSink: ports.eventSink,
-        }).then((cursor) => {
-          wakeCursor = cursor;
-        }),
-        orphanRepair.sweep(WAKE_SWEEP_LIMIT),
-        reportPublisher.sweep(WAKE_SWEEP_LIMIT),
-      ]);
-      for (const result of results) {
-        if (result.status === "rejected") {
-          emitEvent(ports.eventSink, {
-            level: "warn",
-            source: "runtime.wake-sweep",
-            name: "sweep.failed",
-            payload: unknownToEventPayload(result.reason),
-          });
-        }
-      }
+  const recovery = {
+    async scanWakes() {
+      const page = await sweepWakes({
+        delivery,
+        authority: ports.runClaim,
+        runStarter,
+        limit: WAKE_SWEEP_LIMIT,
+        afterThreadId: wakeCursor,
+        eventSink: ports.eventSink,
+      });
+      wakeCursor = page.cursor;
+      return page.count;
     },
+    repairOrphans: () => orphanRepair.sweep(WAKE_SWEEP_LIMIT),
+    publishReports: () => reportPublisher.sweep(WAKE_SWEEP_LIMIT),
   };
   const admissionRecords = createDrizzleAdmissionRecords(ports.db);
   const imageAssets = createContextImageAssetPort({
@@ -869,7 +860,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     runner,
     runStarter,
     delivery,
-    wakeSweep,
+    recovery,
     userTurnAdmission,
     runClaim: ports.runClaim,
     toolRegistry,
@@ -932,7 +923,17 @@ export function createInMemoryAppServices(): AppServices {
       void task();
     },
   });
-  const wakeSweep = { async sweep() {} };
+  const recovery = {
+    async scanWakes() {
+      return 0;
+    },
+    async repairOrphans() {
+      return 0;
+    },
+    async publishReports() {
+      return 0;
+    },
+  };
 
   const documentSync: CollabDomain = createInMemoryCollabDomain();
   const unavailableWorkContext: WorkContextReader = {
@@ -1274,7 +1275,7 @@ export function createInMemoryAppServices(): AppServices {
     },
     runStarter,
     delivery,
-    wakeSweep,
+    recovery,
     userTurnAdmission: {
       async admit(input) {
         return { kind: "rejected", submissionId: input.submissionId, code: "invalid_message" };

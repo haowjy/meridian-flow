@@ -11,6 +11,8 @@
 
 ### Changed
 
+- Recover queued messages, child reports, Work updates, and change trails on independent non-overlapping schedules. Drain recovery work before shutdown.
+
 - Deliver Work changes once through the inbox, at idle or between responses, without replacing the frozen prompt. Preserve causal turn order across live Work switches and writer sends.
 
 - Commit inbox delivery and queue status together. Share one run claim. Keep remote Stop effective through the final response.

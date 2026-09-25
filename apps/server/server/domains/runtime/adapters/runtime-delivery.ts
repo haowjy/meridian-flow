@@ -234,6 +234,7 @@ export function createDeliveryAdapter(
       const results = await Promise.allSettled(threads.map(materializeIdle));
       const failed = results.find((result) => result.status === "rejected");
       if (failed?.status === "rejected") throw failed.reason;
+      return threads.length;
     },
     refreshPending: (threadId) =>
       threadLock.withThreadLock(threadId, () => appendPending(threadId)),

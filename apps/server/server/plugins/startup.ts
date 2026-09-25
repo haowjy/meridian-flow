@@ -19,9 +19,6 @@ const eventSink = getOrBindProcessObservability(createEventSinkFromEnv).sink;
 let yjsGateway: ReturnType<typeof getYjsGateway> | undefined;
 
 installApiProcessCrashPolicy({ eventSink });
-registerProcessShutdownCallback(async () => {
-  await yjsGateway?.drain();
-});
 installObservabilityShutdownHooks();
 
 export default async function startupPlugin() {
@@ -36,6 +33,10 @@ export default async function startupPlugin() {
   }
 
   yjsGateway = getYjsGateway(await getApp());
+  // Recovery stops before the document gateway it can use is drained.
+  registerProcessShutdownCallback(async () => {
+    await yjsGateway?.drain();
+  });
 
   // Fail fast in dev and prod — WorkOS credentials are required, not deferred to first request.
   await validateAuthConfiguration();

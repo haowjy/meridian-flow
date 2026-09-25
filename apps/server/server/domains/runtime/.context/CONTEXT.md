@@ -40,7 +40,7 @@ skeleton and delegates the moving parts.
 | `orchestrator.ts` | One admitted run may span several assistant turns. At a safe boundary, adopting directed messages completes A, appends/adopts message turns, creates B, and rebinds the held lease in one thread-locked transaction. Requests use A → messages → B graph order. Durable Work refresh notices also split; ordinary request-only notices do not. Response+ack clears the lease receipt; cancel retires adopted IDs only, leaving later messages for a new run. The locked final claim uses the same split transition, not a second continuation path. Report admission happens only at run setup, and terminal finalization only at run exit. |
 | `inbox-context.ts` | The drain seam. `renderInboxBatch` appends a text `message` as a user-role message at the request tail, renders a `child`-provenance text `message` as writer-hidden system history containing only an exact `thread_report` call, and converts a `notice` into a request-only `Notice`; `planMessageTurns` batches a claimed set into durable turns and `messageTurnFor` builds one `message`'s turn + block (inbox message id reused as turn/block id, `createdAt` from `enqueuedAt`): a user turn + text block for text, a system turn + text block for a child-provenance notification. Shared by `persistInboxMessages` (the loop's mid-run batch) and the orchestrator's drain-only start. `drainInbox` materializes the caller’s locked selection: drop redelivered `message`s already in the known-turn set, render, persist, and combine durable notices with request-only inbox notices. A `message` whose turn id already exists in the repository (a writer send persisted at enqueue, claimed mid-run where the run's accumulator predates it) is skipped without a second append, its persisted blocks render into the current request (never the plain body, so images, reference reads, and writer-activated skill bodies survive), and its turn/blocks join the accumulator so later iterations keep seeing it. Adoption is also where a mid-run writer turn's missing text-reference reads are loaded and persisted (`prepareAdoptedTurn`), since iteration 1's read pass covered only the original run's user turn. A `message` is history, not transient context, so later iterations of the same run keep seeing it. Producers are not special-cased; intent and body decide the rendering. |
 | `runtime-delivery.ts` / `adapters/runtime-delivery.ts` | One domain delivery boundary owns locked enqueue, initial batch adoption, response+ack, A → messages → B split and terminal close. The concrete Drizzle adapter joins all writes to one ambient transaction and appends the classified pending replacement before commit. Journal failure rolls the transition back; only the physical wake is best-effort after commit. Recovery and backstop release refresh through this same append path so expired queues reclassify live. Close locks the lease receipt before deciding whether to split or terminalize, honoring a remote cancellation accepted during the final model call. Publication B uses its scoped parent producer without reacquiring the parent lock. |
-| `run-starter.ts` / `sweep-wakes.ts` | The wake actuation seam. `createRunStarter` maps `RunStarter.start` to the turn runner's `startDrain`, handling `TurnStartConflictError` quietly and reporting unexpected failures once through EventSink because a wake is best-effort. `sweepWakes` is the durable recovery: it keyset-pages pending threads in stable thread-ID order, batch-reads live leases, and starts eligible threads with bounded concurrency. Its caller retains the returned cursor across sweeps; an empty suffix wraps to the first page. One candidate’s failure is reported without stranding the rest. `app.ts` runs the sweep on startup and on `WAKE_SWEEP_INTERVAL_MS` (default 30s). The `enqueue` wake is the latency path; the sweep is the guarantee. |
+| `run-starter.ts` / `sweep-wakes.ts` | The wake actuation seam. `createRunStarter` maps `RunStarter.start` to the turn runner's `startDrain`, handling `TurnStartConflictError` quietly and reporting unexpected failures once through EventSink because a wake is best-effort. `sweepWakes` is the durable recovery: it keyset-pages pending threads in stable thread-ID order, batch-reads live leases, and starts eligible threads with bounded concurrency. Its caller retains the returned cursor across sweeps; an empty suffix wraps to the first page. One candidate’s failure is reported without stranding the rest. `app.ts` registers the sweep with the process recovery scheduler at boot, then rearms it after completion with `WAKE_SWEEP_INTERVAL_MS` (default 30s). The `enqueue` wake is the latency path; the sweep is the guarantee. |
 | `thread-lock.ts` | Short per-thread transaction serialization, distinct from the session run claim. Delivery uses it for enqueue and all consumption/close transitions; no provider call runs under it. |
 | `block-helpers.ts` | Content block conversion and local accumulator helpers. |
 | `turn-accounting.ts` | Credit ledger checks/debits and cumulative usage events. |
@@ -149,7 +149,7 @@ original card in place with `block.updated`, appends body-free
 background delivery only, and marks the report published.
 `spawn/orphan-report-repair.ts` scans bounded unfinalized metadata and requires
 the real session claim before failing a nonterminal admitted turn without a
-model call. The startup/poll sweep runs wake, repair, and publication
+model call. The process scheduler runs wake, repair, and publication in separate lanes
 independently. The coordinator consumes `RunTurnPort` through its driver,
 immutable Agent revisions, and the threads repository's
 `SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` parses the patch with the canonical `invocationPatchSchema` and translates a `ZodError` to `InvocationPatchError`, so an unknown key or wrong value reaches `spawn_invocation_patch_invalid` before any child row is created. It then merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, present list replaces, empty clears, tool map patches one entry, scalar `model`/`effort` replace) through the compile-time-exhaustive `PATCH_MERGES` table, one entry per patch key; `tools` and `disallowed-tools` are coupled and each returns the full `patchTools` result so a map `allow` lifts the baseline denial. Overrides fold tool-name aliases like authoring. Added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. The patch applies to named and generic children alike. The effective configuration plus the raw `invocation_overlay` persist on the thread binding and are reused on later turns; the saved Agent definition is never mutated. A spawn-time `append_system_prompt` is an additive overlay layer appended after the immutable Agent body; spawn never replaces the body. Route-facing
@@ -352,7 +352,9 @@ facet.
   request boundaries and idle recovery render current authorized state into one
   durable `<system_update>` user-role turn and `work_context.changed` event,
   then ack the selected Work notice IDs in that same transaction. These IDs are
-  not response receipts. A running Work update closes A and starts B under the
+  not response receipts. Thread visibility and turn transitions use `NO KEY UPDATE`
+  so a Work mutation holding Work rows can insert its marker with FK `KEY SHARE`
+  without a lock inversion. A running Work update closes A and starts B under the
   same lease so replay remains causal; ordinary request-only notices do not split.
   Writer enqueue and idle delivery use one seq-ordered prefix materializer under
   the per-thread transaction lock. Several pending mutations coalesce, while a racing
@@ -377,3 +379,15 @@ facet.
   cancellation still calls `turnRunner.cancel`. Composition wires both owners.
 - **No direct dependency on `domains/context`** — context-using tools receive
   handlers via DI at composition time.
+
+## Process recovery
+
+`lib/recovery-scheduler.ts` owns only lane lifetimes. `app.ts` registers wake
+scan, orphan repair, report publication, idle Work materialization, and
+change-trail drain separately. Each starts at boot, rearms after completion,
+and never overlaps itself. Lane failures are observed through EventSink and
+cannot stall other lanes; completed passes report duration and the domain's
+candidate/delivery count. Domains retain their own claims, transactions and
+paging cursors. Shutdown stops timers and awaits passes for up to five seconds before draining
+the Yjs gateway and flushing observability. Still-running lanes emit
+`shutdown.abandoned`; their promises retain observed rejection handlers.

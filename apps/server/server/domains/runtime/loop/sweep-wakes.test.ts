@@ -112,7 +112,7 @@ describe("sweepWakes", () => {
     const started: ThreadId[] = [];
     let afterThreadId: ThreadId | undefined;
     for (let i = 0; i < 3; i++) {
-      afterThreadId = await sweepWakes({
+      ({ cursor: afterThreadId } = await sweepWakes({
         eventSink: createInMemoryEventSink(),
         delivery: { ...inbox, async refreshPending() {} },
         authority,
@@ -124,7 +124,7 @@ describe("sweepWakes", () => {
             if (id === THREAD_A) throw new Error("exhausted balance");
           },
         },
-      });
+      }));
     }
     expect(started).toEqual([THREAD_A, THREAD_B, THREAD_A]);
   });
