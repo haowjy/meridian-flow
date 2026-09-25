@@ -1,4 +1,5 @@
 /** Canonical PostgreSQL projection machinery for visible Project-chat rows. */
+import { GENERIC_SUBAGENT_NAME } from "@meridian/contracts/agents";
 import type { ProjectChatItem } from "@meridian/contracts/threads";
 import { type SQL, sql } from "drizzle-orm";
 
@@ -27,73 +28,16 @@ export function mapProjectChatRow(row: ProjectChatSqlRow): ProjectChatItem {
   };
 }
 
-type VisibleTurnColumns = {
-  role: SQL;
-  metadata: SQL;
-  turnId: SQL;
-};
-
 type ActionRequiredColumns = {
   headRole: SQL;
   headStatus: SQL;
 };
-
-/** Canonical SQL predicate for turns that can be the conversational head. */
-export function visibleConversationalTurnSql(columns: VisibleTurnColumns): SQL {
-  return sql`(
-    ${columns.role} = 'assistant'
-    OR (${columns.role} = 'user' AND NOT (
-      COALESCE(${columns.metadata}->>'kind', '') = 'system_update'
-      AND COALESCE(${columns.metadata}->>'section', '') = 'work_context'
-    ))
-    OR (${columns.role} = 'system' AND EXISTS (
-      SELECT 1 FROM turn_blocks visible_custom_block
-      WHERE visible_custom_block.turn_id = ${columns.turnId}
-        AND visible_custom_block.block_type = 'custom'
-    ))
-  )`;
-}
 
 /** Canonical SQL expression for a chat paused for the writer's answer. */
 export function threadActionRequiredSql(columns: ActionRequiredColumns): SQL<boolean> {
   return sql<boolean>`COALESCE(
     ${columns.headRole} = 'assistant' AND ${columns.headStatus} = 'waiting_interrupt', false
   )`;
-}
-
-/** One correlated row named `conversational_head`, or no row for an empty chat. */
-export function visibleConversationalHeadLateral(activeLeafTurnId: SQL): SQL {
-  return sql`LATERAL (
-    WITH RECURSIVE lineage AS (
-      SELECT tr.id, tr.parent_turn_id, tr.role, tr.status, tr.metadata,
-        tr.created_at, tr.completed_at, 0 AS depth, ARRAY[tr.id]::uuid[] AS path
-      FROM turns tr WHERE tr.id = ${activeLeafTurnId}
-      UNION ALL
-      SELECT parent.id, parent.parent_turn_id, parent.role, parent.status, parent.metadata,
-        parent.created_at, parent.completed_at, l.depth + 1, l.path || parent.id
-      FROM lineage l JOIN turns parent ON parent.id = l.parent_turn_id
-      WHERE NOT parent.id = ANY(l.path)
-    )
-    SELECT l.id AS turn_id, l.role, l.status,
-      COALESCE(l.completed_at, l.created_at) AS activity_at
-    FROM lineage l
-    WHERE ${visibleConversationalTurnSql({
-      role: sql`l.role`,
-      metadata: sql`l.metadata`,
-      turnId: sql`l.id`,
-    })}
-    ORDER BY l.depth LIMIT 1
-  ) AS conversational_head`;
-}
-
-/** Recompute the persisted conversational head using the canonical visibility predicate. */
-export function recomputeThreadChatActivitySql(threadId: SQL): SQL {
-  return sql`UPDATE threads t SET (conversational_leaf_turn_id, last_activity_at) = (
-    SELECT conversational_head.turn_id, COALESCE(conversational_head.activity_at, t.created_at)
-    FROM (SELECT 1) AS anchor
-    LEFT JOIN ${visibleConversationalHeadLateral(sql`t.active_leaf_turn_id`)} ON true
-  )
-  WHERE t.id = ${threadId}`;
 }
 
 /** One correlated, whitespace-normalized 240-character visible-head preview. */
@@ -112,4 +56,45 @@ export function projectChatPreviewLateral(headTurnId: SQL): SQL {
 export function exactUtcTimestampSql(value: SQL): SQL<string> {
   return sql<string>`to_char(${value} AT TIME ZONE 'UTC',
     'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+}
+
+/**
+ * Full chat-row projection for a candidate set of thread ids. Callers supply
+ * only the candidate scope and order (a `SELECT ... AS thread_id` body, most
+ * recent first); this owns the primary-Work join, the agent_name CASE, the
+ * favorite join, the head-turn lookup, the preview lateral, and timestamp
+ * formatting shared by the Project and Work chat feeds.
+ */
+export function chatFeedRowsSql(input: { candidates: SQL; userId: string }): SQL {
+  return sql`
+    WITH candidates AS (${input.candidates})
+    SELECT t.id AS thread_id, t.title,
+      primary_work.work_id, primary_work.work_title, agent.agent_name,
+      ${threadActionRequiredSql({
+        headRole: sql`head.role`,
+        headStatus: sql`head.status`,
+      })} AS action_required,
+      COALESCE(tus.is_favorite, false) AS is_favorite,
+      conversation_preview.last_message_preview,
+      ${exactUtcTimestampSql(sql`t.last_activity_at`)} AS last_activity_at_exact
+    FROM candidates
+    JOIN threads t ON t.id = candidates.thread_id
+    LEFT JOIN LATERAL (
+      SELECT tw.work_id, w.name AS work_title
+      FROM thread_works tw LEFT JOIN works w ON w.id = tw.work_id AND w.deleted_at IS NULL
+      WHERE tw.thread_id = t.id AND tw.is_primary = true
+    ) primary_work ON true
+    LEFT JOIN LATERAL (
+      SELECT CASE WHEN tab.thread_id IS NULL THEN NULL
+        WHEN tab.definition_revision_id IS NULL THEN ${GENERIC_SUBAGENT_NAME}
+        ELSE COALESCE(adr.definition->'metadata'->>'name', adr.slug) END AS agent_name
+      FROM thread_agent_bindings tab
+      LEFT JOIN agent_definition_revisions adr ON adr.id = tab.definition_revision_id
+      WHERE tab.thread_id = t.id
+    ) agent ON true
+    LEFT JOIN thread_user_state tus ON tus.thread_id = t.id AND tus.user_id = ${input.userId}::uuid
+    LEFT JOIN turns head ON head.id = t.conversational_leaf_turn_id
+    LEFT JOIN ${projectChatPreviewLateral(sql`t.conversational_leaf_turn_id`)} ON true
+    ORDER BY t.last_activity_at DESC, t.id DESC
+  `;
 }

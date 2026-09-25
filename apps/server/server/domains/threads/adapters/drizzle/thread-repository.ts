@@ -91,8 +91,8 @@ function threadListSelect() {
     ...threadColumns,
     workId: schema.threadWorks.workId,
     workTitle: schema.works.name,
-    lastTurnRole: sql<TurnRole | null>`conversational_head.role`,
-    lastTurnStatus: sql<TurnStatus | null>`conversational_head.status`,
+    lastTurnRole: conversationalHead.role,
+    lastTurnStatus: conversationalHead.status,
     runningTurnId,
   };
 }
@@ -362,15 +362,16 @@ export function createDrizzleThreadRepository(
         WITH candidates AS (${workAssociationCandidatesSql({
           projectId,
           workId,
+          sortColumn: sql`t.updated_at`,
           afterSortAt: null,
           afterThreadId: null,
           limit: boundedLimit,
         })})
         SELECT t.title, t.status,
-          to_char(candidates.updated_at AT TIME ZONE 'UTC',
+          to_char(t.updated_at AT TIME ZONE 'UTC',
             'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at_exact
         FROM candidates JOIN threads t ON t.id = candidates.thread_id
-        ORDER BY candidates.updated_at DESC, candidates.thread_id DESC
+        ORDER BY t.updated_at DESC, t.id DESC
       `);
       return Array.from(
         rows as unknown as Iterable<{
