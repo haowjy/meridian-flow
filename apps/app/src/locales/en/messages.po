@@ -870,7 +870,7 @@ msgstr "Close {0}"
 msgid "Close artifact preview"
 msgstr "Close artifact preview"
 
-#: src/features/project/dock/DockHeader.tsx
+#: src/features/project/mobile/MobileChatSheetHeader.tsx
 msgid "Close chat"
 msgstr "Close chat"
 

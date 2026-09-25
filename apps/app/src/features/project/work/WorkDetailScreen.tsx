@@ -29,6 +29,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { usePostApplyDraftGroupProjections } from "../draft-apply-recovery/DraftApplyRecoveryProvider";
+import { useChatNavigation } from "../routing/chat-navigation";
 import { useProjectLeaveGuard } from "../routing/ProjectNavigationContext";
 import type { ProjectRouteCommands } from "../routing/project-route";
 import { WorkAssociatedChats } from "./WorkAssociatedChats";
@@ -44,7 +45,6 @@ export type WorkDetailScreenProps = {
   projectId: string;
   work: Work;
   routeCommands: ProjectRouteCommands;
-  onOpenThread: (threadId: string) => void;
   catalogWorks?: Work[];
 };
 
@@ -52,9 +52,9 @@ export function WorkDetailScreen({
   projectId,
   work,
   routeCommands,
-  onOpenThread,
   catalogWorks = [work],
 }: WorkDetailScreenProps) {
+  const { openChat } = useChatNavigation();
   const mutations = useWorkMutations(projectId);
   const controller = useWorkMetadataController(work, (data) =>
     mutations.update.mutateAsync({ workId: work.id, data }),
@@ -143,7 +143,7 @@ export function WorkDetailScreen({
             projectId={projectId}
             work={controller.work}
             scrollOwner={scrollOwner}
-            requestOpen={(item) => onOpenThread(item.id)}
+            requestOpen={(item) => void openChat(item.id)}
           />
         </ResourceSection>
         {manage ? (

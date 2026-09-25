@@ -138,7 +138,6 @@ describe("project navigation", () => {
     expect(history.location.state).toMatchObject({
       meridianProjectEmptySelection: {
         href: "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-        work: true,
       },
     });
     navigation.dispose();
@@ -275,7 +274,6 @@ describe("project navigation", () => {
     expect(history.location.state).toMatchObject({
       meridianProjectEmptySelection: {
         href: "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-        work: true,
       },
     });
     expect(history.location.state).toMatchObject({
@@ -296,7 +294,7 @@ describe("optional query entry repair", () => {
     expect(changes).toEqual(["freeze:/p/550e8400-e29b-41d4-a716-446655440000/editor"]);
     expect(history.length).toBe(1);
     expect(history.location.state).toMatchObject({
-      meridianProjectEmptySelection: { work: true },
+      meridianProjectEmptySelection: { href: "/p/550e8400-e29b-41d4-a716-446655440000/editor" },
     });
     navigation.dispose();
   });

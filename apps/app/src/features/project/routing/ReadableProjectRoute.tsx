@@ -26,7 +26,12 @@ import { routeTargetForTab } from "../context/context-removal-planner";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
 import { ProjectView } from "../ProjectView";
 import type { ScreenKey } from "../shell/screens";
-import { ChatNavigationProvider, useProjectChatNavigation } from "./chat-navigation";
+import {
+  ChatNavigationProvider,
+  chatSurfaceThreadId,
+  useProjectChatNavigation,
+} from "./chat-navigation";
+import { editorDefaultWorkPending } from "./editor-default-work";
 import { reconcileDocumentAddress, resolveLocalDocumentAddress } from "./local-document-address";
 import { type AddressAdmission, ProjectAddressDocument } from "./ProjectAddressDocument";
 import { type OpenContextOptions, ProjectNavigationProvider } from "./ProjectNavigationContext";
@@ -146,7 +151,7 @@ export function ReadableProjectRoute({
     urlChatId: destination.kind === "chat" ? destination.chatId : null,
     go: (next, options) => go(toDestination(next), options),
   });
-  const chatThreadId = chat.chatThreadId;
+  const chatThreadId = chatSurfaceThreadId(chat.display);
   const displayedChat = threads.threads?.find((thread) => thread.id === chatThreadId) ?? null;
   const rememberedEditor = useRef<string | null | undefined>(undefined);
   const requestedWork = addressWorkSelection(address);
@@ -163,8 +168,13 @@ export function ReadableProjectRoute({
   const editorDefaultPending =
     rememberedEditor.current === undefined &&
     !(activeScreen === "context" && requestedWork.kind !== "absent") &&
-    (workCatalog.status !== "ready" ||
-      (!chatThreadId && (threads.isError || threads.threads === null)));
+    editorDefaultWorkPending({
+      workCatalogReady: workCatalog.status === "ready",
+      chatThreadId,
+      displayedChatFound: displayedChat !== null,
+      threadsFailed: threads.isError,
+      threadsUnloaded: threads.threads === null,
+    });
   const editorWork: AddressResolution<Work> = editorDefaultPending
     ? { status: works.status === "error" || threads.isError ? "error" : "loading", slug: "" }
     : resolveAddressSelection(editorSelection, workCatalog);
@@ -236,16 +246,7 @@ export function ReadableProjectRoute({
     navigation.repairQuerySelections(ticket, {
       work: works.isFetching ? { status: "loading" } : workCatalog,
     });
-  }, [
-    navigation,
-    location,
-    threads.threads,
-    threads.isError,
-    threads.isFetching,
-    works.works,
-    works.status,
-    works.isFetching,
-  ]);
+  }, [navigation, location, works.works, works.status, works.isFetching]);
 
   const latest = useRef({ address, location, navigation, works: works.works });
   latest.current = { address, location, navigation, works: works.works };
@@ -255,20 +256,12 @@ export function ReadableProjectRoute({
     return () => !!ticket && !!current?.isCurrent(ticket);
   }, []);
   const reportSelection = useCallback(
-    (value: { threadId: string | null; editorWorkId: string | null }) => {
+    (value: { editorWorkId: string | null }) => {
       const workSlug = works.works?.find((work) => work.id === value.editorWorkId)?.slug ?? null;
       shown.current = { workSlug, local: localPointer };
       if (activeScreen === "context" && !issue(editorWork)) rememberedEditor.current = workSlug;
     },
-    [
-      threads.threads,
-      works.works,
-      activeScreen,
-      editorWork.status,
-      localDocumentId,
-      user.userId,
-      projectId,
-    ],
+    [works.works, activeScreen, editorWork.status],
   );
 
   const resourceDestination =
@@ -528,7 +521,6 @@ export function ReadableProjectRoute({
   };
   const search: ProjectSearch = {
     screen: activeScreen,
-    thread: chatThreadId ?? undefined,
     work: workId ?? "none",
     scheme: localDocumentId
       ? "unfiled"
@@ -559,9 +551,7 @@ export function ReadableProjectRoute({
     }
     return go(
       {
-        ...toDestination({
-          kind: next === "work" ? "works" : next === "context" ? "editor" : "chat-index",
-        }),
+        ...toDestination({ kind: next === "work" ? "works" : "editor" }),
         work: selection(rememberedEditor.current ?? shown.current.workSlug),
       },
       { replace: false },
@@ -611,8 +601,7 @@ export function ReadableProjectRoute({
             workingSet={data.workingSet}
             workingSetSyncEnabled={user.workingSetSyncEnabled === true}
             activeScreen={activeScreen}
-            activeThreadId={chatThreadId}
-            chatIndex={destination.kind === "chat-index"}
+            chatDisplay={chat.display}
             entryHydration={entryHydration}
             addressOwnsDocumentAdmission
             routeWork={routeWork(work)}
@@ -648,7 +637,6 @@ export function ReadableProjectRoute({
             activeContextPath={search.path ?? null}
             resultsOpen={address.results}
             onSelectScreen={selectScreen}
-            onSelectThread={chat.openChat}
             onSelectContextScheme={(scheme) => browse(scheme)}
             onExitContextScheme={() => browse(null)}
             onSelectContextFolder={(path) => browse(search.scheme ?? null, path)}
