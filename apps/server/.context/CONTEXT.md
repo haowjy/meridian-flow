@@ -43,8 +43,9 @@ mutation result.
 
 `server/lib/process-shutdown.ts` owns SIGTERM/SIGINT sequencing and the only
 application `process.exit`. The stage order is **websocket-admission** (close
-thread and Yjs peers with 1012), **polling-loops**, **turn-drain** (abort active turns as retryable runtime errors, refuse new starts
-with retryable `503 server_restarting`, max 8 s),
+thread and Yjs peers with 1012), **polling-loops** (stop loops and drain for
+up to 3 s), **turn-drain** (abort active turns as retryable runtime errors;
+refuse new starts with retryable `503 server_restarting`, max 8 s),
 **http-drain** (stop admission and wait up to 10 s), **websocket-drain** (Yjs
 checkpoint and persistence queue while Postgres is open), **database-close**,
 then bounded observability flush. Stage timeout/failure emits an incomplete or
