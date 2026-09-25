@@ -1,0 +1,1 @@
+CREATE INDEX "turns_recoverable_created" ON "turns" USING btree ("created_at") WHERE "turns"."role" = 'assistant' AND "turns"."status" IN ('pending', 'streaming');

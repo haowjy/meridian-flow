@@ -19,6 +19,9 @@ type AppGlobal = typeof globalThis & {
 
 const CHANGE_TRAIL_POLL_MS = 1_000;
 const SYSTEM_UPDATE_SWEEP_MS = 1_000;
+// Covers deploy overlap: a sweep that skips the old process's live claim retries
+// shortly after the platform terminates that process.
+const ORPHANED_TURN_SWEEP_MS = 20_000;
 
 let initPromise: Promise<AppServices> | undefined;
 const intervalHandles: ReturnType<typeof setInterval>[] = [];
@@ -105,6 +108,19 @@ async function createAppServices(): Promise<AppServices> {
         });
       }
     });
+  const sweepOrphanedTurns = () =>
+    trackBackgroundTask(async () => {
+      try {
+        await app.orphanedTurnRecovery.sweep();
+      } catch (cause) {
+        emitEvent(eventSink, {
+          level: "error",
+          source: "runtime.orphaned-turn-recovery",
+          name: "sweep.failed",
+          payload: unknownToEventPayload(cause),
+        });
+      }
+    });
   const listener = await listenForThreadEvents({
     db,
     journalReader: app.journalReader,
@@ -115,12 +131,14 @@ async function createAppServices(): Promise<AppServices> {
   drain();
   sweepWorkContext();
   sweepChildReports();
+  sweepOrphanedTurns();
   // Polling is the recovery mechanism as well as the trigger: committed pushes need
   // no in-process callback to survive a crash or a different server process.
   intervalHandles.push(
     setInterval(drain, CHANGE_TRAIL_POLL_MS),
     setInterval(sweepWorkContext, SYSTEM_UPDATE_SWEEP_MS),
     setInterval(sweepChildReports, SYSTEM_UPDATE_SWEEP_MS),
+    setInterval(sweepOrphanedTurns, ORPHANED_TURN_SWEEP_MS),
   );
   for (const interval of intervalHandles) interval.unref();
   return app;

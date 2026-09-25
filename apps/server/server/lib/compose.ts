@@ -98,6 +98,7 @@ import {
   createInMemoryRecentDocumentsRepository,
   type RecentDocumentsRepository,
 } from "../domains/recent-documents/index.js";
+import { listOrphanTurnCandidates } from "../domains/runtime/adapters/drizzle-orphan-turn-candidates.js";
 import {
   agentExecutionUnavailableReasons,
   agentModelUnavailableReasons,
@@ -148,6 +149,7 @@ import {
   createInterruptRegistry,
   type InterruptRegistry,
 } from "../domains/runtime/loop/interrupts.js";
+import { createOrphanedTurnRecovery } from "../domains/runtime/loop/orphaned-turn-recovery.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import {
   createInMemoryModelRequestDebugStore,
@@ -218,6 +220,7 @@ export type AppServices = {
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workContext: WorkContextReader;
   workContextDelivery: WorkContextDelivery;
+  orphanedTurnRecovery: ReturnType<typeof createOrphanedTurnRecovery>;
   childReportDelivery: ChildReportDelivery;
   billing: BillingService;
   agentRevisions: AgentRevisionStore;
@@ -542,6 +545,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     journalWriter: ports.journalWriter,
     eventSink: ports.eventSink,
   });
+  const orphanedTurnRecovery = createOrphanedTurnRecovery({
+    listCandidates: (limit) => listOrphanTurnCandidates(ports.db, limit),
+    repos: ports.threadRepos,
+    eventWriter: ports.journalWriter,
+    runOwnership: ports.runOwnership,
+  });
   const changeTrails = createDrizzleChangeTrailReader(ports.db, ports.documentAccess);
   const changeTrailDelivery = createChangeTrailWorker({
     db: ports.db,
@@ -795,6 +804,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workAuthorityResolver: ports.workAuthorityResolver,
     workContext,
     workContextDelivery,
+    orphanedTurnRecovery,
     childReportDelivery: childReportDeliveryInstance,
     billing: ports.billing,
     agentRevisions: ports.agentRevisions,
@@ -981,6 +991,16 @@ export function createInMemoryAppServices(): AppServices {
         return 1n;
       },
     },
+    orphanedTurnRecovery: createOrphanedTurnRecovery({
+      listCandidates: async () => [],
+      repos: threadRepos,
+      eventWriter: {
+        async appendEvent() {
+          return 1n;
+        },
+      },
+      runOwnership,
+    }),
     threadEventHub: inMemoryThreadEventHub,
     hub: inMemoryThreadEventHub,
     threadRuntime: {
