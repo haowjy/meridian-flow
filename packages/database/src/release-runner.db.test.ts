@@ -58,7 +58,7 @@ if (!enabled || !databaseUrl) {
             migrationsDirectory,
             functionsDirectory: functionsDir,
           }),
-        ).rejects.toThrow();
+        ).rejects.toThrow(/syntax error/i);
         const [tables] = await target<Array<{ count: string }>>`
           SELECT count(*)::text AS count FROM information_schema.tables
           WHERE table_schema = 'public' AND table_name = ${tableName}
