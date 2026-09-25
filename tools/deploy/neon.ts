@@ -15,7 +15,7 @@ type NeonOptions = {
   baseUrl?: string;
 };
 
-const pendingStatuses = new Set(["pending", "queued", "running", "started", "processing"]);
+const pendingStatuses = new Set(["scheduling", "running"]);
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function error(message: string): never {
@@ -92,6 +92,11 @@ export async function createConfirmedSnapshot(options: NeonOptions): Promise<Neo
   const ids = operationIds(response);
   if (!ids.length)
     error("snapshot response contained no operation id; refusing to deploy without confirmation");
+  const responseObject = response as Record<string, unknown>;
+  const responseSnapshot = responseObject.snapshot as Record<string, unknown> | undefined;
+  const createdSnapshotId = responseSnapshot?.id ?? responseObject.snapshot_id ?? responseObject.id;
+  if (typeof createdSnapshotId !== "string" || !createdSnapshotId)
+    error("snapshot response contained no snapshot id; refusing to deploy without confirmation");
 
   const deadline = Date.now() + timeoutMs;
   for (const id of ids) {
@@ -116,12 +121,12 @@ export async function createConfirmedSnapshot(options: NeonOptions): Promise<Neo
   const listUrl = new URL(`${base}/snapshots`);
   const list = snapshots(await request(listUrl));
   const snapshot = list.find((item) => {
-    const branch =
-      item.branch_id ?? item.branchId ?? (item.branch as Record<string, unknown> | undefined)?.id;
-    return item.name === name && (branch === undefined || branch === options.branchId);
+    return item.name === name && item.source_branch_id === options.branchId;
   });
   const id = snapshot?.id;
   if (typeof id !== "string" || !id)
     error(`confirmed operation but snapshot '${name}' was not present in the snapshot list`);
+  if (id !== createdSnapshotId)
+    error(`snapshot list id '${id}' does not match create response id '${createdSnapshotId}'`);
   return { id, name };
 }
