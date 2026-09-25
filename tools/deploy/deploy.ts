@@ -134,12 +134,12 @@ async function main() {
     const image = manifest.images?.[service];
     if (
       !image ||
-      !/^ghcr\.io\/haowjy\/meridian-flow-[a-z]+$/.test(image.repository) ||
+      image.repository !== `ghcr.io/haowjy/meridian-flow-${service}` ||
       !/^sha256:[0-9a-f]{64}$/.test(image.digest) ||
       image.ref !== `${image.repository}@${image.digest}`
     )
       fail(
-        `Manifest image '${service}' must contain repository, sha256 digest, and matching digest ref`,
+        `Manifest image '${service}' must contain its expected repository, sha256 digest, and matching digest ref`,
       );
   }
   const results: Array<[string, string]> = [];
