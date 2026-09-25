@@ -3,6 +3,7 @@
 import { createApp, toWebHandler } from "nitro/h3";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createProjectRepositoryForTest } from "../domains/projects/test-support/project-repository.js";
 import {
   resetThreadWorkRaceFixture,
   THREAD_WORK_RACE,
@@ -27,9 +28,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { assertThrowawayDatabaseForRunDbTests } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { createDrizzleProjectRepository, createDrizzleProjectWorkRepository } = await import(
-      "../domains/projects/index.js"
-    );
+    const { createDrizzleProjectWorkRepository } = await import("../domains/projects/index.js");
+    const createDrizzleProjectRepository = createProjectRepositoryForTest;
     const { createDrizzleNoticePort } = await import("../domains/notices/index.js");
     const { handleRebindThreadWorkRequest } = await import("./thread-work-rebind-route.js");
     const { default: interruptErrorHandler } = await import("./interrupt-error-handler.js");

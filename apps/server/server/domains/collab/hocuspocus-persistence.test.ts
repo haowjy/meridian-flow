@@ -10,6 +10,7 @@ import { BranchStaleUpdateError } from "./domain/branch-coordinator.js";
 import { createBranchCriticalSections } from "./domain/branch-critical-sections.js";
 import { PROVENANCE_TARGETS_TYPE, ReservedNamespaceAdmissionError } from "./domain/provenance.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
+import { unimplementedBranchMutations } from "./test-support/unimplemented-branch-mutations.js";
 
 const BRANCH_ID = "branch-1";
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as never;
@@ -87,6 +88,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
       branchStore: {
+        ...unimplementedBranchMutations(),
         deferUntilCommit: (callback) => {
           callback();
           return true;
@@ -124,6 +126,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
       branchStore: {
+        ...unimplementedBranchMutations(),
         deferUntilCommit: (callback) => {
           callback();
           return true;
@@ -164,6 +167,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
       branchStore: {
+        ...unimplementedBranchMutations(),
         deferUntilCommit: (callback) => {
           callback();
           return true;
@@ -205,6 +209,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
       branchStore: {
+        ...unimplementedBranchMutations(),
         deferUntilCommit: (callback) => {
           callback();
           return true;
@@ -244,6 +249,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
       branchStore: {
+        ...unimplementedBranchMutations(),
         deferUntilCommit: (callback) => {
           callback();
           return true;
@@ -281,6 +287,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
       branchStore: {
+        ...unimplementedBranchMutations(),
         deferUntilCommit: (callback) => {
           callback();
           return true;

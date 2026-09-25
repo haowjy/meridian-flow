@@ -6,7 +6,7 @@
  * derivation. The single read path for the project list across the shell.
  */
 
-import type { Project } from "@meridian/contracts/projects";
+import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { listProjects } from "@/client/api/projects-api";

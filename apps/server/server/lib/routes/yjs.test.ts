@@ -88,6 +88,14 @@ describe("Yjs branch handshake route guard", () => {
           discardedStateVector: null,
           schemaVersion: COLLAB_SCHEMA_VERSION,
         }),
+        async commitBranchMutation(input) {
+          await pullBlocked;
+          storedState = input.state;
+          return true;
+        },
+        async resetBranchSnapshot() {
+          return true;
+        },
         async updateBranchSnapshot(input) {
           await pullBlocked;
           storedState = input.state;

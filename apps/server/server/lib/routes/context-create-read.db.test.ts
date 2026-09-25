@@ -3,6 +3,7 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createProjectRepositoryForTest } from "../../domains/projects/test-support/project-repository.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -25,8 +26,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../../domains/context/unified-context-port-factory.js"
     );
     const { createNoopEventSink } = await import("../../domains/observability/index.js");
-    const { createDrizzleProjectRepository, createDrizzleProjectWorkAuthorityResolver } =
-      await import("../../domains/projects/index.js");
+    const { createDrizzleProjectWorkAuthorityResolver } = await import(
+      "../../domains/projects/index.js"
+    );
+    const createDrizzleProjectRepository = createProjectRepositoryForTest;
     const { createInMemoryObjectStore } = await import("../../domains/storage/index.js");
     const { handleContextReadRequest } = await import("../context-read-route.js");
     const { createDrizzleDocumentAccess } = await import("../document-access.js");

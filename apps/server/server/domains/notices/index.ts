@@ -3,17 +3,27 @@ import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 
 export type NoticeScope = { kind: "thread"; threadId: string };
 
-export interface NoticeInput {
-  kind: string;
+type NoticeFields = {
   scope: NoticeScope;
   message: string;
   data: Record<string, unknown>;
-}
+};
 
-export interface Notice extends NoticeInput {
+export type NoticeInput =
+  | ({ kind: "undo" } & NoticeFields)
+  | ({ kind: "awareness_degraded" } & NoticeFields)
+  | {
+      kind: "work_switched";
+      scope: { kind: "thread"; threadId: ThreadId };
+      data: Record<string, unknown>;
+      message: string;
+    };
+
+export type Notice = NoticeFields & {
+  kind: string;
   id: number;
   createdAt: Date;
-}
+};
 
 export interface NoticePort {
   record(input: NoticeInput): Promise<void>;
@@ -28,11 +38,60 @@ export type WriterWorkSwitchedNoticeData = {
   actor: "writer";
 };
 
-export type WriterWorkSwitchedNotice = NoticeInput & {
-  kind: "work_switched";
-  scope: { kind: "thread"; threadId: ThreadId };
-  data: WriterWorkSwitchedNoticeData;
-};
+export type WriterWorkSwitchedNotice = Extract<NoticeInput, { kind: "work_switched" }>;
+
+export function parseNoticeInput(value: unknown): NoticeInput {
+  if (!isRecord(value) || !isRecord(value.scope) || value.scope.kind !== "thread") {
+    throw new Error("Invalid model notice");
+  }
+  const { kind, scope, message, data } = value;
+  if (typeof scope.threadId !== "string" || typeof message !== "string" || !isRecord(data)) {
+    throw new Error("Invalid model notice");
+  }
+  if (kind === "undo") {
+    return { kind, scope: { kind: "thread", threadId: scope.threadId }, message, data };
+  }
+  if (
+    kind === "awareness_degraded" &&
+    Array.isArray(data.documentIds) &&
+    data.documentIds.every((id) => typeof id === "string") &&
+    Array.isArray(data.documentNames) &&
+    data.documentNames.every((name) => typeof name === "string")
+  ) {
+    return {
+      kind,
+      scope: { kind: "thread", threadId: scope.threadId },
+      message,
+      data,
+    };
+  }
+  if (
+    kind === "work_switched" &&
+    typeof data.previousWorkId === "string" &&
+    typeof data.previousWorkName === "string" &&
+    typeof data.workId === "string" &&
+    typeof data.workName === "string" &&
+    data.actor === "writer"
+  ) {
+    return {
+      kind,
+      scope: { kind: "thread", threadId: scope.threadId as ThreadId },
+      message,
+      data: {
+        previousWorkId: data.previousWorkId as WorkId,
+        previousWorkName: data.previousWorkName,
+        workId: data.workId as WorkId,
+        workName: data.workName,
+        actor: "writer",
+      },
+    };
+  }
+  throw new Error("Invalid model notice");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 export function createWriterWorkSwitchedNotice(input: {
   threadId: ThreadId;

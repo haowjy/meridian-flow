@@ -2,6 +2,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
+import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "./test-support/project-repository.js";
 
 const RUN = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -20,8 +21,7 @@ else
       "../../test-support/rollback-test-database.js"
     );
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
-    const { createDrizzleProjectBootstrapRepository, createDrizzleProjectWorkAuthorityResolver } =
-      await import("./index.js");
+    const { createDrizzleProjectWorkAuthorityResolver } = await import("./index.js");
     const { createProjectContextDocumentStore } = await import(
       "../context/context-source-provisioning.js"
     );

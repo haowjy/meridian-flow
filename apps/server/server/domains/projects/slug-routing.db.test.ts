@@ -5,6 +5,7 @@
  */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createProjectRepositoryForTest as createDrizzleProjectRepository } from "./test-support/project-repository.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -16,9 +17,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { eq } = await import("drizzle-orm");
-    const { createDrizzleProjectRepository } = await import(
-      "./adapters/project-repository/drizzle.js"
-    );
     const { createDrizzleWorkRepository } = await import("./adapters/work-repository/drizzle.js");
     const { createWorkProjectionMutation } = await import("./adapters/work-projection-mutation.js");
     const { createDrizzleContextCatalog } = await import("../context/adapters/context-catalog.js");
@@ -143,7 +141,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
       const first = created.find((project) => project.slug === "silver-moon");
       if (!first) throw new Error("Missing base project handle");
-      await expect(repo.create({ id: first.id, userId, title: first.title })).rejects.toThrow();
+      await expect(repo.create({ id: first.id, userId, title: first.name })).rejects.toThrow();
       expect(await repo.findById(first.id)).toEqual(first);
       expect(await repo.findLiveByOwnerSlug(userId, first.slug)).toEqual(first);
       expect(await repo.findLiveByOwnerSlug(anotherUserId, first.slug)).toBeNull();

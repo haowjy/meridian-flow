@@ -12,7 +12,7 @@ import {
   type WorkScopedContextUriScheme,
 } from "../context-uri.js";
 import type { DocumentId, UserId, WorkId } from "../ids.js";
-import type { Project } from "../projects/index.js";
+import type { ProjectDto } from "../projects/index.js";
 import { parseRequestId } from "../request-id.js";
 import type {
   Block,
@@ -69,7 +69,7 @@ export type CreateProjectRequest = {
   description?: string | null;
 };
 
-export type CreateProjectResponse = Project;
+export type CreateProjectResponse = ProjectDto;
 
 export type UpdateProjectRequest = {
   title?: string;
@@ -77,7 +77,7 @@ export type UpdateProjectRequest = {
 };
 
 export type ListProjectsResponse = {
-  projects: Project[];
+  projects: ProjectDto[];
 };
 
 export type ListProjectThreadsResponse = {

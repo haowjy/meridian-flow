@@ -4,7 +4,7 @@
  * optimistic independent-creation path.
  */
 
-import type { Project } from "@meridian/contracts/projects";
+import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { QueryClient } from "@tanstack/react-query";
 
 import { projectQueryKeys } from "./project-query-keys";

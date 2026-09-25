@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { unresolvedAssetPathResolver } from "./asset-path-resolver.js";
+import { createMarkupCodec } from "./codec.js";
 import { components, m, paragraph, schema, t } from "./codec-test-support.js";
-import { createMarkupCodec } from "./index.js";
 import {
   markdownBlockCodecs,
   markdownMarkCodecs,
