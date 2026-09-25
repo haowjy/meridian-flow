@@ -99,7 +99,7 @@ services:
       MERIDIAN_BACKENDS: live
       OBJECT_STORE_PROVIDER: s3
       S3_ENDPOINT: http://object-store:9000
-      S3_PUBLIC_ENDPOINT: http://localhost:19001
+      S3_PUBLIC_ENDPOINT: http://uploads.localtest.me:19001
       S3_REGION: us-east-1
       S3_BUCKET: uploads
       S3_ACCESS_KEY: meridian-local
@@ -108,7 +108,8 @@ services:
       WORKOS_API_KEY: sk_prod_prod_boot_smoke_not_a_real_key
       WORKOS_CLIENT_ID: client_prod_boot_smoke_not_real
       WORKOS_COOKIE_PASSWORD: prod-boot-smoke-cookie-password-000000000000
-      WORKOS_REDIRECT_URI: http://localhost:18080/api/auth/callback
+      WORKOS_REDIRECT_URI: http://meridian.localtest.me:18080/api/auth/callback
+      OPENAI_API_KEY: sk-proj-local-compose-not-a-real-key
       API_REPLICA_COUNT: "1"
       PORT: "3000"
     depends_on:
@@ -140,7 +141,7 @@ services:
       WORKOS_API_KEY: sk_prod_prod_boot_smoke_not_a_real_key
       WORKOS_CLIENT_ID: client_prod_boot_smoke_not_real
       WORKOS_COOKIE_PASSWORD: prod-boot-smoke-cookie-password-000000000000
-      WORKOS_REDIRECT_URI: http://localhost:18080/api/auth/callback
+      WORKOS_REDIRECT_URI: http://meridian.localtest.me:18080/api/auth/callback
       PORT: "3000"
     depends_on:
       server:

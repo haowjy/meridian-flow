@@ -1,12 +1,15 @@
 # Local production-shaped stack
 
 This Compose stack builds the production Dockerfiles and sends public traffic
-through Caddy. Its WorkOS credentials are structurally valid fakes; never use
-them against a real account. Postgres is exposed on host port `55432`, and the
-uploads-only RustFS endpoint is exposed on `19001`.
+through Caddy. Its WorkOS credentials and model-provider key are structurally
+valid fakes accepted by the live-configuration guards; never use them against a
+real account or provider. The AuthKit callback and ingress use
+`http://meridian.localtest.me:18080`, which resolves to loopback without an
+`/etc/hosts` entry. Postgres is exposed on host port `55432`, and the
+uploads-only RustFS endpoint is exposed on `19001` (`uploads.localtest.me`).
 
 Set release identity from the checkout before building. The compose defaults
-remain usable for a quick local run, but the current commit SHA lets the backup
+  remain usable for a quick local run, but the current commit SHA lets the backup
 reference and image labels prove the exact release:
 
 ```sh
