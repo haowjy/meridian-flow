@@ -152,6 +152,9 @@ export function ReadableProjectRoute({
   const [dockChatReveal, setDockChatReveal] = useState(0);
   const revealDockChat = () => setDockChatReveal((revision) => revision + 1);
   const [dockChatView, setDockChatView] = useState<"chat" | "index">("chat");
+  // Only an explicit New chat focuses the empty composer; a page load does not.
+  const [newChatFocusRequested, setNewChatFocusRequested] = useState(false);
+  const consumeNewChatFocus = useCallback(() => setNewChatFocusRequested(false), []);
   const rememberChat = (chat: CurrentChat) => {
     setCurrentChat(projectId, chat);
     updateCurrentChat(chat);
@@ -425,6 +428,7 @@ export function ReadableProjectRoute({
   }
   async function openNewChat() {
     rememberChat({ kind: "new" });
+    setNewChatFocusRequested(true);
     setDockChatView("chat");
     if (activeScreen !== "chat") revealDockChat();
     if (activeScreen === "chat" && navigation)
@@ -440,6 +444,15 @@ export function ReadableProjectRoute({
       setDockChatView("index");
       revealDockChat();
     }
+  }
+  /** Leave the index for the remembered chat in the pane that shows the index. */
+  async function showCurrentChat() {
+    if (activeScreen !== "chat") {
+      setDockChatView("chat");
+      return;
+    }
+    if (currentChat.kind === "thread") await openChat(currentChat.threadId);
+    else if (currentChat.kind === "new") await openNewChat();
   }
   function acceptCreatedChat(threadId: string) {
     rememberChat({ kind: "thread", threadId });
@@ -675,6 +688,10 @@ export function ReadableProjectRoute({
       openContextRoute={openContext}
       openNewChat={openNewChat}
       openChatIndex={openChatIndex}
+      showCurrentChat={showCurrentChat}
+      currentChat={currentChat}
+      newChatFocusRequested={newChatFocusRequested}
+      consumeNewChatFocus={consumeNewChatFocus}
       acceptCreatedChat={acceptCreatedChat}
       dockChatView={dockChatView}
       dockChatReveal={dockChatReveal}

@@ -4,12 +4,12 @@
  * Owns only mobile navigation chrome. The drawer trigger (hamburger) is
  * unconditional — there is no back chevron anywhere; up-navigation happens
  * through breadcrumb ancestors, and OS/browser back pops levels because
- * drill-in is route-driven. Screens with a location trail (the context
- * screen) supply a breadcrumb, which sits left-aligned right after the
- * hamburger and takes the remaining row width. Screens without one (Chat landing,
- * chat, or the routed Results auxiliary surface) get a centered title — the
- * leading button slot and the trailing actions reserve are both exactly 44px,
- * so the title stays truly centered.
+ * drill-in is route-driven. Screens with a location trail (Files, and Chats ›
+ * chat on the Chat screen) supply a breadcrumb, which sits left-aligned right
+ * after the hamburger and takes the remaining row width. Screens without one
+ * (Work, or the routed Results auxiliary surface) get a centered title: the
+ * leading side reserves as many 44px slots as the trailing side, so the title
+ * stays truly centered even with the chat door beside the actions.
  * Desktop pane headers stay separate.
  */
 import { t } from "@lingui/core/macro";
@@ -17,36 +17,32 @@ import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
-import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
 import { cn } from "@/lib/utils";
 import type { ProjectViewProps } from "../ProjectView";
 import { screenLabel } from "../shell/screens";
 
 export type MobileTopBarProps = Pick<ProjectViewProps, "activeScreen"> & {
-  projectId: string;
   projectTitle: string;
-  activeThreadId: string | null;
-  onSelectThread: (threadId: string) => void;
   onOpenDrawer: () => void;
   /** Left-aligned location trail; replaces the centered title when set. */
   breadcrumb?: ReactNode;
   actions?: ReactNode;
+  /** Opens the chat sheet over Work or Editor. */
   chatAction?: ReactNode;
   title?: ReactNode;
 };
 
 export function MobileTopBar({
   activeScreen,
-  projectId,
   projectTitle,
-  activeThreadId,
-  onSelectThread,
   onOpenDrawer,
   breadcrumb,
   actions,
   chatAction,
   title,
 }: MobileTopBarProps) {
+  // Two trailing controls need a matching 44px reserve on the leading side.
+  const balance = !breadcrumb && Boolean(chatAction) && Boolean(actions);
   return (
     // Solid background on purpose: iOS Safari flashes `backdrop-filter` layers
     // gray when the content behind repaints wholesale, which happens on every
@@ -63,6 +59,7 @@ export function MobileTopBar({
         <PhoneIconButton onClick={onOpenDrawer} aria-label={t`Open navigation`}>
           <Menu className="size-5" aria-hidden />
         </PhoneIconButton>
+        {balance ? <div aria-hidden className="size-11 shrink-0" /> : null}
         <div className="flex min-w-0 flex-1 flex-col items-center justify-center px-1">
           <div
             className="max-w-full truncate text-xs leading-4 text-ink-muted"
@@ -76,22 +73,17 @@ export function MobileTopBar({
               breadcrumb ? "justify-start self-stretch" : "justify-center",
             )}
           >
-            {breadcrumb ??
-              (activeScreen === "chat" && activeThreadId && !title ? (
-                <ChatThreadTitle
-                  projectId={projectId}
-                  threadId={activeThreadId}
-                  onSelectThread={onSelectThread}
-                />
-              ) : (
-                <div className="truncate" title={typeof title === "string" ? title : undefined}>
-                  {title ?? screenLabel(activeScreen)}
-                </div>
-              ))}
+            {breadcrumb ?? (
+              <div className="truncate" title={typeof title === "string" ? title : undefined}>
+                {title ?? screenLabel(activeScreen)}
+              </div>
+            )}
           </div>
         </div>
-        {chatAction}
-        <div className="flex size-11 shrink-0 items-center justify-end">{actions}</div>
+        <div className="flex min-w-11 shrink-0 items-center justify-end">
+          {chatAction}
+          {actions}
+        </div>
       </div>
     </header>
   );

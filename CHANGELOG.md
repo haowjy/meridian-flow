@@ -11,6 +11,7 @@
 
 - Chat and dock share one remembered chat. New chat and first Send stay in their pane, including across reload.
 - Project chats use one activity-ordered feed with an All or Favorites filter.
+- The chat index reads like the Editor's Recently opened: grouped by Today, Yesterday, and Earlier, with New chat in its heading row. A chats door sits in the center and dock headers; the phone reaches it through a Chats breadcrumb. New chat is a quiet empty chat with the composer where a live chat keeps it.
 
 - Align sidebar hover and current-row geometry with inset rounded warm selection, and give list-like dropdowns a shared Meridian-colored panel and row treatment. Chat switching puts New chat before compact chat rows; menus, selects, pickers, and suggestion lists retain their own interaction semantics.
 - Remove unused and duplicate design roles (`--shadow-input`, live-status dot), and keep chat-specific width, padding, and scroll limits out of shared dropdown recipes.

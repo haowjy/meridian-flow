@@ -19,7 +19,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import { DraftReviewBoundary } from "@/features/chat/DraftReviewProvider";
 import { ChatSurface } from "../chat/ChatSurface";
-import { ChatLandingScreen } from "../chat-landing/ChatLandingScreen";
+import { ChatIndex } from "../chat-index/ChatIndex";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeLabel } from "../context/context-schemes";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
@@ -30,6 +30,7 @@ import type { ReviewScopedProjectProps } from "../ProjectView";
 import { useProjectChatNavigation } from "../routing/ProjectNavigationContext";
 import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
 import { WorkScreen } from "../work/WorkScreen";
+import { ChatBreadcrumb } from "./ChatBreadcrumb";
 import { folderAncestry, pathLeafName } from "./context-location";
 import { MobileBreadcrumb, type MobileBreadcrumbSegment } from "./MobileBreadcrumb";
 import { MobileChatHost } from "./MobileChatHost";
@@ -71,6 +72,10 @@ export function MobileProject(props: MobileProjectProps) {
   // Chat opens above the retained destination; the route still owns identity.
   useConversationRevealRouting(props.onSelectThread);
   const crumbs = contextBreadcrumbSegments(props);
+  const openChatIndex = chatNavigation?.openChatIndex
+    ? () => void chatNavigation.openChatIndex?.()
+    : undefined;
+  const openNewChat = chatNavigation?.openNewChat;
 
   return (
     <div
@@ -79,21 +84,27 @@ export function MobileProject(props: MobileProjectProps) {
     >
       <MobileTopBar
         activeScreen={props.activeScreen}
-        projectId={props.projectId}
         projectTitle={props.projectTitle}
-        activeThreadId={props.activeThreadId}
-        onSelectThread={props.onSelectThread}
         title={props.resultsOpen ? t`Results` : undefined}
         onOpenDrawer={() => setDrawerOpen(true)}
         breadcrumb={
-          !props.resultsOpen && crumbs.length > 0 ? (
+          props.resultsOpen ? undefined : props.activeScreen === "chat" ? (
+            <ChatBreadcrumb
+              projectId={props.projectId}
+              threadId={props.activeThreadId}
+              index={!!props.chatLanding}
+              onOpenIndex={openChatIndex}
+              onSelectThread={props.onSelectThread}
+              onNewChat={openNewChat}
+            />
+          ) : crumbs.length > 0 ? (
             <MobileBreadcrumb segments={crumbs} />
           ) : undefined
         }
         chatAction={
           props.activeScreen !== "chat" ? (
             <PhoneIconButton
-              aria-label={t`Open chat dock`}
+              aria-label={t`Open chat`}
               onClick={() => {
                 setDockView(props.activeScreen, "chat");
                 setChatOpen(true);
@@ -153,6 +164,7 @@ export function MobileProject(props: MobileProjectProps) {
                 activeScreen={props.activeScreen}
                 onSelectThread={props.onSelectThread}
                 placement="dock"
+                chrome="phone"
                 visible={chatOpen}
                 onCloseDock={() => setChatOpen(false)}
                 onOpenContextTarget={props.onOpenContextTarget}
@@ -242,7 +254,14 @@ function renderActiveView(
       );
     case "chat":
       if (props.chatLanding)
-        return <ChatLandingScreen projectId={props.projectId} onOpenThread={props.onOpenThread} />;
+        return (
+          <ChatIndex
+            projectId={props.projectId}
+            onOpenThread={props.onOpenThread}
+            placement="page"
+            namedByChrome
+          />
+        );
       return (
         <DraftReviewBoundary value={props.chatReview}>
           <MobileChatHost

@@ -54,8 +54,11 @@ finds an active draft.
    choice.
 
 5. **One label source.** `DockViewLabel` is the single place dock view labels
-   are spelled. The segmented switch is the only place the view identity
-   appears — the header has no separate section title.
+   are spelled. The segmented switch (`components/ui/segmented-tabs`, shared
+   with the chat index filter) is the only place the view identity appears —
+   the header has no separate section title. The left slot belongs to the
+   occupant: the chat puts its index toggle and switcher there, and the phone
+   Sheet swaps in the `Chats` trail with `chrome="phone"` sizing.
 
 6. **The switch stays inside the dock material.** Its recessed track provides
    a complete boundary. The active segment may use page paper only inside that

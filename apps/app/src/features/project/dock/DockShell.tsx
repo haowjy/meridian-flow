@@ -28,10 +28,19 @@ export type DockShellProps = {
   screen: ScreenKey;
   onClose?: () => void;
   threadSelect?: ReactNode;
+  /** Header sizing: the desktop dock band, or the phone chat sheet. */
+  chrome?: "desktop" | "phone";
   children: ReactNode | ((showPrimary: boolean) => ReactNode);
 };
 
-export function DockShell({ placement, screen, onClose, threadSelect, children }: DockShellProps) {
+export function DockShell({
+  placement,
+  screen,
+  onClose,
+  threadSelect,
+  chrome = "desktop",
+  children,
+}: DockShellProps) {
   const dockView = useDockView(screen);
   const { groups } = useDraftReview();
   const hasChanges = hasDockChanges(groups);
@@ -56,6 +65,7 @@ export function DockShell({ placement, screen, onClose, threadSelect, children }
           onSelectView={setView}
           onClose={onClose}
           threadSelect={threadSelect}
+          chrome={chrome}
         />
       ) : null}
       <div className="relative flex min-h-0 flex-1 flex-col">

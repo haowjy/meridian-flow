@@ -94,11 +94,11 @@ ProjectView
 MobileProject
   ├─ MobileTopBar
   │   ├─ hamburger on every screen
-  │   ├─ breadcrumb for context screens
-  │   ├─ Open chat dock action outside Chat
+  │   ├─ breadcrumb for context screens and `Chats › <chat switcher>` on Chat
+  │   ├─ Open chat action outside Chat
   │   └─ trailing slot: chat ⇄ results toggle, or `+` create menu in Files
   ├─ one active main view
-  │   ├─ ChatLandingScreen or WorkScreen → shared project-screen body and one screen scroll owner
+  │   ├─ ChatIndex or WorkScreen → one screen scroll owner
   │   ├─ MobileChatHost → ChatScreen + MobileKeyboardAware
   │   ├─ MobileContextBrowser or MobileDocumentHost
   │   └─ MobileResultsView → ResultsRailBody + MobileResultViewerOverlay
@@ -121,14 +121,18 @@ the document session registry.
 - Every destination shows a truncated project title above its screen identity.
   Context screens keep a left-aligned breadcrumb on the second line; the
   breadcrumb remains Files-rooted: `Files › scheme › folders › file`.
-- Chat index/Work/chat/results keep their current screen/thread title on the
-  second line. The leading hamburger and trailing action reserve are both
-  `44px`, so non-breadcrumb titles remain centered. The drawer edits the
+- Chat uses the same breadcrumb grammar (`ChatBreadcrumb`): `Chats` is a
+  never-truncating ancestor that opens the index, and the current segment is
+  the chat switcher. The index shows a lone `Chats`, so its body hides the
+  duplicate heading (`namedByChrome`). Work and Results keep a centered title;
+  the leading side reserves as many 44px slots as the trailing side. Crumb
+  targets stay 44px with negative margin so the trail fits the 56px band. The drawer edits the
   project title inline without closing, and offers an explicit View projects link.
-- Outside Chat, a separate Open chat dock action opens a local Sheet without
+- Outside Chat, a separate Open chat action opens a local Sheet without
   changing the destination. Route chat-reveal commands and pending first-send
-  reload recovery open the same Sheet and select its Chat tab. The Chats
-  ancestor breadcrumb remains phase-2 presentation work.
+  reload recovery open the same Sheet and select its Chat tab. The Sheet renders
+  `ChatSurface` with `chrome="phone"`: a 56px status-bar-aware `DockHeader`
+  carrying the same `Chats` trail and a 44px close.
 - The trailing slot is a per-screen dispatcher (`trailingAction()` in
   `MobileProject`): chat carries the Results entry, Results carries the way
   back to chat, and the Files browser inside a scheme (scheme root or folder,

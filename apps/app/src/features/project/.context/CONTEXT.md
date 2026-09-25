@@ -32,7 +32,7 @@ Slot topology (`layout/desktop-layout.ts`), one grid row across every screen:
 ```
 
 - **`rail-l`** — the left sidebar (destinations + project file tree).
-- **`center`** — the destination's main pane (Chat landing/Work route pane, or the
+- **`center`** — the destination's main pane (Chat index/Work route pane, or the
   Chat/Editor center surface).
 - **`dock`** — the shared right dock. The context-rail occupies it on Chat; Chat
   occupies it on Work/Editor. It reads as **one persistent
@@ -65,7 +65,7 @@ active draft. One-shot focus intents bridge detail close/delete to the collectio
 they are route continuity, not Work selection or persistent state.
 Detail composes identity and lifecycle, Goal, Description, pending drafts, Scratch,
 Uploads, and associated chats. Associated chats use bounded cursor pages and the
-same virtualized, borderless project chat row as the Chat landing without adding a nested
+same virtualized, borderless project chat row as the Chat index without adding a nested
 scroll owner. The external-scroll hook measures the list in that owner's
 coordinates and owns stable keys plus focused/menu row pinning. Their membership
 is historical while the displayed Work is the
@@ -79,7 +79,18 @@ The chat index is the project root (`/p/<project>`). It reads a flat,
 cursor-paginated primary-chat feed ordered by last activity. Favorites is a
 server-side filter, applied before pagination. The shared row also serves Work
 detail. The index has no composer; the explicit new-chat state owns the pinned
-`CreationComposer` with prospective Work and Agent choices.
+`CreationComposer` with prospective Work and Agent choices, in the same
+`features/chat/ChatSurface` frame a live chat uses so the first Send never moves
+the composer. Only an explicit New chat focuses it (route
+`newChatFocusRequested`, consumed by the composer), never a page load.
+
+The index door sits in each pane's 40px band after the sidebar toggle, on the
+same x as the Editor's Recently opened chip (`chat-index/ChatIndexButton.tsx`).
+Center wears the tab-chip grammar: on the index the door is the active chip and
+the remembered chat (or pending new chat) waits beside it as an inactive chip
+that calls `showCurrentChat`. The dock uses a quiet pressed toggle between the
+index and the current chat, and always renders its header. Phone reaches the
+index through the `Chats` breadcrumb ancestor instead of a door.
 
 `ReadableProjectRoute` resolves one browser-local current chat from the working
 set: a thread identity (primary or subagent), new chat, or none. An explicit

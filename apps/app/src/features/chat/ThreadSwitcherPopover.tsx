@@ -131,7 +131,7 @@ export function ThreadSwitcherPopover({
                 // chip's base (and its flares) sit on the band's bottom edge
                 // where the page begins.
                 "tab-chip-active relative h-9 px-3 [--tab-chip-surface:var(--color-background)]"
-              : "-ml-1.5 rounded-md px-1.5 py-1 transition-colors hover:bg-sidebar-accent",
+              : "-ml-1.5 rounded-md px-1.5 py-1 transition-colors hover:bg-sidebar-accent [@media(pointer:coarse)]:min-h-11",
           )}
         >
           <PaneTitle className="min-w-0 flex-1">{title}</PaneTitle>

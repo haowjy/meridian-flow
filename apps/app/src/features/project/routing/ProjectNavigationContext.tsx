@@ -1,6 +1,7 @@
 /** Route-owned command channel for project destination commands. */
 import { createContext, type ReactNode, useContext, useLayoutEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
+import type { CurrentChat } from "@/client/working-set";
 import type { ScreenKey } from "../shell/screens";
 import type { NavigationSettlement, ProjectLeaveGuard } from "./project-navigation";
 import type { ContextRouteTarget } from "./project-route";
@@ -23,6 +24,10 @@ const ProjectNavigationContext = createContext<{
   open: OpenContextRoute;
   openNewChat?: () => Promise<void>;
   openChatIndex?: () => Promise<void>;
+  showCurrentChat?: () => Promise<void>;
+  currentChat?: CurrentChat;
+  newChatFocusRequested?: boolean;
+  consumeNewChatFocus?: () => void;
   acceptCreatedChat?: (threadId: string) => void;
   dockChatView?: "chat" | "index";
   dockChatReveal?: number;
@@ -37,6 +42,10 @@ export function ProjectNavigationProvider({
   captureNavigation,
   openNewChat,
   openChatIndex,
+  showCurrentChat,
+  currentChat,
+  newChatFocusRequested,
+  consumeNewChatFocus,
   acceptCreatedChat,
   dockChatView,
   dockChatReveal,
@@ -51,6 +60,10 @@ export function ProjectNavigationProvider({
   captureNavigation?: () => () => boolean;
   openNewChat?: () => Promise<void>;
   openChatIndex?: () => Promise<void>;
+  showCurrentChat?: () => Promise<void>;
+  currentChat?: CurrentChat;
+  newChatFocusRequested?: boolean;
+  consumeNewChatFocus?: () => void;
   acceptCreatedChat?: (threadId: string) => void;
   dockChatView?: "chat" | "index";
   dockChatReveal?: number;
@@ -66,6 +79,10 @@ export function ProjectNavigationProvider({
         capture: captureNavigation,
         openNewChat,
         openChatIndex,
+        showCurrentChat,
+        currentChat,
+        newChatFocusRequested,
+        consumeNewChatFocus,
         acceptCreatedChat,
         dockChatView,
         dockChatReveal,

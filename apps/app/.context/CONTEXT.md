@@ -12,7 +12,7 @@ chunks, streaming memo/coalesce) live in [frontend-perf.md](frontend-perf.md).
 ## Project Chat index
 
 The Chat index feed/row contract and interaction ownership live with the feature in
-[`src/features/project/chat-landing/.context/CONTEXT.md`](../src/features/project/chat-landing/.context/CONTEXT.md).
+[`src/features/project/chat-index/.context/CONTEXT.md`](../src/features/project/chat-index/.context/CONTEXT.md).
 
 ## Server config and auth surface
 

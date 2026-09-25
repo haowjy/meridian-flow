@@ -1,7 +1,7 @@
 /** Browser entry that mounts shipped project chat rows and loading rows with deterministic data. */
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { createRoot } from "react-dom/client";
-import { ProjectFeed } from "../../src/features/project/chat-landing/ProjectFeed";
+import { ChatIndexLoading } from "../../src/features/project/chat-index/ChatIndex";
 import { ProjectChatRow } from "../../src/features/project/chat-list/ProjectChatRow";
 import "../../src/styles/globals.css";
 
@@ -32,30 +32,17 @@ const rowProps = {
   onOpen: () => undefined,
   onFavorite: () => undefined,
 };
-const pendingFeed = {
-  isPending: true,
-  isError: false,
-  data: null,
-  items: [],
-  hasNextPage: false,
-  isFetchingNextPage: false,
-  isFetchNextPageError: false,
-  nextPageIdentity: null,
-  fetchNextPage: async () => undefined,
-  refetch: async () => undefined,
-};
-
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing browser fixture root");
 createRoot(root).render(
   <main className="project-screen-column">
-    <section id="real-rows">
+    <section id="real-rows" className="-mx-2">
       {[...ordinary, long].map((item) => (
         <ProjectChatRow key={item.id} item={item} favorite={{ pending: false }} {...rowProps} />
       ))}
     </section>
     <section id="loading-rows">
-      <ProjectFeed projectId="project-1" feed={pendingFeed} rowProps={rowProps} />
+      <ChatIndexLoading />
     </section>
   </main>,
 );

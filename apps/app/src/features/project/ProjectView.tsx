@@ -53,7 +53,7 @@ import {
   useDraftReviewStateOwner,
 } from "@/features/chat/useDraftReviewController";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
-import { ChatLandingController } from "./ChatLandingController";
+import { ChatIndexController } from "./ChatIndexController";
 import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
@@ -799,10 +799,10 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
               </DraftReviewBoundary>
             </div>
             {props.chatLanding ? (
-              <ChatLandingController
+              <ChatIndexController
                 projectId={props.projectId}
                 sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
-                chatToggle={surfaceToggle("context-rail", t`Expand context`)}
+                contextToggle={surfaceToggle("context-rail", t`Expand context`)}
                 onOpenThread={props.onOpenThread}
               />
             ) : null}

@@ -12,6 +12,9 @@
  */
 import { t } from "@lingui/core/macro";
 import { ChevronRight } from "lucide-react";
+import type { ReactNode } from "react";
+
+import { cn } from "@/lib/utils";
 
 import { collapseBreadcrumbSegments } from "./context-location";
 
@@ -19,6 +22,10 @@ export type MobileBreadcrumbSegment = {
   label: string;
   /** Navigates to this ancestor. Omitted on the last (current) segment. */
   onSelect?: () => void;
+  /** Interactive control that stands for the current segment (the chat switcher). */
+  current?: ReactNode;
+  /** A short fixed label ("Chats") that must never truncate. */
+  keep?: boolean;
 };
 
 /**
@@ -51,7 +58,7 @@ export function MobileBreadcrumb({ segments }: { segments: MobileBreadcrumbSegme
   const lastIndex = items.length - 1;
 
   return (
-    <nav aria-label={t`Breadcrumb`} className="flex min-w-0 items-center">
+    <nav aria-label={t`Breadcrumb`} className="flex min-w-0 flex-1 items-center">
       {/* Separators live INSIDE each <li> — an <ol> only permits <li>
           children. Width priority is deliberately asymmetric: the last
           segment is what the user is looking at, so ancestors shrink first
@@ -59,7 +66,7 @@ export function MobileBreadcrumb({ segments }: { segments: MobileBreadcrumbSegme
           reluctantly (factor 1). Symmetric shrinking crushed the document
           name to a few characters on deep trails while ancestors kept their
           full 96px caps. */}
-      <ol className="flex min-w-0 items-center">
+      <ol className="flex min-w-0 flex-1 items-center">
         {items.map((item, index) => {
           const separator =
             index > 0 ? (
@@ -79,21 +86,41 @@ export function MobileBreadcrumb({ segments }: { segments: MobileBreadcrumbSegme
           }
           if (index === lastIndex) {
             return (
-              <li aria-current="page" key={item.key} className="flex min-w-0 items-center">
+              <li
+                aria-current="page"
+                key={item.key}
+                // Grows so an interactive current segment (the chat switcher)
+                // sizes against the row, not its own content.
+                className="flex min-w-0 flex-1 items-center"
+              >
                 {separator}
-                <span className="block truncate text-sm font-semibold text-foreground">
-                  {item.segment.label}
-                </span>
+                {item.segment.current ? (
+                  <div className="-my-3 flex min-w-0 flex-1 items-center">
+                    {item.segment.current}
+                  </div>
+                ) : (
+                  <span className="block truncate text-sm font-semibold text-foreground">
+                    {item.segment.label}
+                  </span>
+                )}
               </li>
             );
           }
           return (
-            <li key={item.key} className="flex min-w-9 shrink-[3] items-center">
+            <li
+              key={item.key}
+              className={cn(
+                "flex items-center",
+                item.segment.keep ? "shrink-0" : "min-w-9 shrink-[3]",
+              )}
+            >
               {separator}
+              {/* -my-3 keeps the 44px target without growing the 20px trail row
+                  past the top bar's two-line band. */}
               <button
                 type="button"
                 onClick={item.segment.onSelect}
-                className="focus-ring flex h-11 min-w-0 max-w-24 items-center rounded-md px-1 text-sm text-muted-foreground active:scale-[0.98]"
+                className="focus-ring -my-3 flex h-11 min-w-0 max-w-24 items-center rounded-md px-1 text-sm text-muted-foreground active:scale-[0.98]"
               >
                 <span className="truncate">{item.segment.label}</span>
               </button>
