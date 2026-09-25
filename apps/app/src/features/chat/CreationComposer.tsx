@@ -30,16 +30,14 @@ export function CreationComposer({
   // An explicit New chat focuses the empty composer showing it. The hero is
   // not New chat's target: it focuses at mount where a keyboard is likely.
   // The frame lets a just-revealed dock drop `inert` first.
+  // The request is one-shot, so a frame already scheduled is never cancelled:
+  // an effect re-run (StrictMode) would otherwise drop it. An unmounted
+  // composer's ref is null by then.
   useEffect(() => {
     if (variant === "hero") return;
-    let frame = 0;
-    const unregister = registerNewChatFocus(() => {
-      frame = requestAnimationFrame(() => composerRef.current?.focus());
+    return registerNewChatFocus(() => {
+      requestAnimationFrame(() => composerRef.current?.focus());
     });
-    return () => {
-      unregister();
-      cancelAnimationFrame(frame);
-    };
   }, [registerNewChatFocus, variant]);
   const works = useWorks(projectId);
   const agents = useAgentCatalog(true, projectId);
