@@ -11,14 +11,14 @@
  */
 
 import type {
+  ProjectChatFeedPage,
   ProjectChatItem,
   Thread,
   ThreadListItem,
-  WorkChatFeedPage,
 } from "@meridian/contracts/protocol";
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 
-import { projectFeedThread } from "./project-chat-feed-cache";
+import { projectChatFeedThread } from "./project-chat-feed-cache";
 import { projectQueryKeys } from "./project-query-keys";
 
 export function readProjectThreadList(
@@ -77,7 +77,7 @@ export function patchThreadInProjectCaches(
   }
 }
 
-type WorkFeedData = InfiniteData<WorkChatFeedPage, string | null>;
+type WorkFeedData = InfiniteData<ProjectChatFeedPage, string | null>;
 
 /**
  * Project one live lifecycle change into every cached representation of a
@@ -90,7 +90,7 @@ export function projectThreadLifecycleInProjectCaches(
   threadId: string,
   lifecycle: ThreadListLifecycle,
 ): void {
-  const projectIdsWithProjectFeeds = new Set<string>();
+  const projectIdsWithChatFeeds = new Set<string>();
 
   for (const query of client.getQueryCache().findAll({ queryKey: projectQueryKeys.all })) {
     const [, projectId, scope] = query.queryKey;
@@ -104,7 +104,7 @@ export function projectThreadLifecycleInProjectCaches(
     }
 
     if (scope === "chat-feed") {
-      projectIdsWithProjectFeeds.add(projectId);
+      projectIdsWithChatFeeds.add(projectId);
       continue;
     }
 
@@ -125,8 +125,8 @@ export function projectThreadLifecycleInProjectCaches(
     }
   }
 
-  for (const projectId of projectIdsWithProjectFeeds) {
-    projectFeedThread(client, projectId, threadId, (item) => ({
+  for (const projectId of projectIdsWithChatFeeds) {
+    projectChatFeedThread(client, projectId, threadId, (item) => ({
       ...item,
       actionRequired: lifecycle.actionRequired,
     }));

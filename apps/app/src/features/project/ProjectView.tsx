@@ -297,10 +297,9 @@ export function ProjectView(props: ProjectViewProps) {
   const [retriedHydration, setRetriedHydration] = useState<WorkingSetHydrationPlan | null>(null);
   const workingSetHydration = retriedHydration ?? props.entryHydration;
   const { threads: projectThreads } = useProjectThreads(props.projectId);
-  const resolvedThreadId = props.activeThreadId;
   const worksQuery = useWorks(props.projectId);
   const { works, noWork } = worksQuery;
-  const chatThread = projectThreads?.find((thread) => thread.id === resolvedThreadId);
+  const chatThread = projectThreads?.find((thread) => thread.id === props.activeThreadId);
   const chatWork = chatThread
     ? workFromSnapshot(noWork ? { works: works ?? [], noWork } : null, chatThread.workId ?? null)
     : null;
@@ -308,8 +307,8 @@ export function ProjectView(props: ProjectViewProps) {
   const editorScope = resolveEditorWorkScope(props.editorRouteWork ?? props.routeWork);
   const editorWorkId = editorScope.status === "ready" ? editorScope.workId : null;
   useLayoutEffect(() => {
-    props.onDisplayedSelection?.({ threadId: resolvedThreadId, editorWorkId });
-  }, [props.onDisplayedSelection, resolvedThreadId, editorWorkId]);
+    props.onDisplayedSelection?.({ threadId: props.activeThreadId, editorWorkId });
+  }, [props.onDisplayedSelection, props.activeThreadId, editorWorkId]);
   const workspaceHydrated = useContextTabsStore((s) => s._workspaceHydrated);
   const contextPhase = useContextProjectAuthority({
     projectId: props.projectId,
@@ -325,10 +324,6 @@ export function ProjectView(props: ProjectViewProps) {
     return () => window.removeEventListener("online", retry);
   }, [props.projectId, workingSetHydration.status]);
 
-  useEffect(() => {
-    if (props.activeScreen !== "chat" || props.activeThreadId || !resolvedThreadId) return;
-    props.onSelectThread(resolvedThreadId);
-  }, [props.activeScreen, props.activeThreadId, props.onSelectThread, resolvedThreadId]);
   // Gate the whole project on prefs-store hydration so DesktopProject mounts
   // exactly once against final persisted prefs. rehydrate() is synchronous
   // (localStorage), so this is at most one frame — no visible flash. Gating here
@@ -345,14 +340,12 @@ export function ProjectView(props: ProjectViewProps) {
   const resolvedProps = {
     ...props,
     onSelectContextPath: onSelectEditorContextPath,
-    activeThreadId: resolvedThreadId,
     chatWork,
     availableWorks: works ?? [],
     editorScope,
     editorWorkId,
     retryEditorWork: worksQuery.refetch,
     contextLive: contextPhase.status === "live" && editorScope.status === "ready",
-    onOpenThread: (threadId: string) => void props.onSelectThread(threadId),
   };
   return (
     <div className="flex h-full min-h-0 w-full bg-background text-foreground">
@@ -372,7 +365,7 @@ export function ProjectView(props: ProjectViewProps) {
           <HydratedReviewProject
             {...resolvedProps}
             chatWorkId={chatWorkId}
-            chatThreadId={resolvedThreadId}
+            chatThreadId={props.activeThreadId}
             projectTitle={projectTitle}
             titleEdit={{
               pending: renameProject.isPending,
@@ -398,7 +391,6 @@ export type ResolvedProjectViewProps = ProjectViewProps & {
   editorScope: EditorWorkScope;
   editorWorkId: string | null;
   retryEditorWork: () => void;
-  onOpenThread: (threadId: string) => void;
   contextLive: boolean;
 };
 
@@ -802,7 +794,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                 projectId={props.projectId}
                 sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
                 contextToggle={surfaceToggle("context-rail", t`Expand context`)}
-                onOpenThread={props.onOpenThread}
               />
             ) : null}
           </div>
@@ -846,7 +837,7 @@ function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: Surfa
           projectId={props.projectId}
           routeWork={props.routeWork}
           routeCommands={props.routeCommands}
-          onOpenThread={props.onOpenThread}
+          onOpenThread={props.onSelectThread}
           sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
           chatToggle={surfaceToggle("chat", t`Expand chat`)}
         />

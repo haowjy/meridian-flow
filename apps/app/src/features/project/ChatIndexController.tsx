@@ -16,14 +16,12 @@ export type ChatIndexControllerProps = {
   projectId: string;
   sidebarToggle: PaneHeaderRailToggle;
   contextToggle: PaneHeaderRailToggle;
-  onOpenThread: (threadId: string) => void;
 };
 
 export function ChatIndexController({
   projectId,
   sidebarToggle,
   contextToggle,
-  onOpenThread,
 }: ChatIndexControllerProps) {
   const { currentThreadId, openChat } = useChatNavigation();
   const { threadById } = useProjectThreadGroups(projectId);
@@ -43,7 +41,7 @@ export function ChatIndexController({
         right={contextToggle}
       />
       <div className="page-sheet min-h-0">
-        <ChatIndex projectId={projectId} onOpenThread={onOpenThread} />
+        <ChatIndex projectId={projectId} />
       </div>
     </main>
   );

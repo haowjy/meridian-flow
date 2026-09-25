@@ -3,9 +3,9 @@ import type { ProjectChatItem, UpdateThreadUserStateResponse } from "@meridian/c
 import type { QueryClient } from "@tanstack/react-query";
 import { updateThreadUserState } from "@/client/api/threads-api";
 import {
-  flattenProjectFeed,
-  type ProjectFeedData,
-  projectFeedThread,
+  type ChatFeedData,
+  flattenChatFeed,
+  projectChatFeedThread,
 } from "./project-chat-feed-cache";
 import { projectQueryKeys } from "./project-query-keys";
 
@@ -64,8 +64,8 @@ const stateKey = (projectId: string, threadId: string) =>
 
 function feedItem(client: QueryClient, projectId: string, threadId: string) {
   return client
-    .getQueriesData<ProjectFeedData>({ queryKey: projectQueryKeys.chatFeed(projectId) })
-    .flatMap(([, data]) => flattenProjectFeed(data))
+    .getQueriesData<ChatFeedData>({ queryKey: projectQueryKeys.chatFeed(projectId) })
+    .flatMap(([, data]) => flattenChatFeed(data))
     .find((item) => item.id === threadId);
 }
 
@@ -157,9 +157,11 @@ export function getFavoriteCommandView(record: ThreadUserStateRecord): ThreadUse
       };
 }
 
-function syncProjectFeed(client: QueryClient, projectId: string, threadId: string) {
+function syncChatFeeds(client: QueryClient, projectId: string, threadId: string) {
   const record = readRecord(client, projectId, threadId);
-  projectFeedThread(client, projectId, threadId, (item) => projectThreadUserState(item, record));
+  projectChatFeedThread(client, projectId, threadId, (item) =>
+    projectThreadUserState(item, record),
+  );
 }
 
 export function runFavoriteCommand(
@@ -207,7 +209,7 @@ function enqueue(
     },
     favoriteError: undefined,
   }));
-  syncProjectFeed(client, projectId, threadId);
+  syncChatFeeds(client, projectId, threadId);
   if (!queue.running) void advance(owner, id, client, projectId, threadId);
   return promise;
 }
@@ -227,7 +229,7 @@ async function advance(
     if (!current.favorite || current.favorite.projectedValue === entry.value) return current;
     return { ...current, favorite: { ...current.favorite, projectedValue: entry.value } };
   });
-  syncProjectFeed(client, projectId, threadId);
+  syncChatFeeds(client, projectId, threadId);
 
   let outcome: ThreadUserStateOutcome;
   try {
@@ -257,7 +259,7 @@ async function advance(
     outcome = { status: "error", error };
   }
 
-  syncProjectFeed(client, projectId, threadId);
+  syncChatFeeds(client, projectId, threadId);
   // Rows already show the settled value in place; only Favorites membership
   // can have changed, so only Favorites feeds refetch.
   void client.invalidateQueries({
