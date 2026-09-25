@@ -8,7 +8,7 @@ interface MigrationJournal {
   entries: Array<{ tag: string; when: number }>;
 }
 
-export type SchemaStatus = "current" | "behind" | "divergent";
+export type SchemaStatus = "current" | "ahead" | "behind" | "divergent";
 
 function readReleaseMigrations(migrationsDirectory: string) {
   const journal = JSON.parse(
@@ -39,7 +39,8 @@ function compareMigrationHistory(
       return "divergent";
     }
   }
-  return applied.length < migrations.length ? "behind" : "current";
+  if (applied.length < migrations.length) return "behind";
+  return applied.length > migrations.length ? "ahead" : "current";
 }
 
 /** Compare the database ledger with the exact release bundle journal. */
@@ -84,7 +85,7 @@ export async function runRelease(input: {
   migrationsDirectory: string;
   functionsDirectory: string;
   beforeMigrate?: (pendingMigrations: number) => void | Promise<void>;
-}): Promise<{ appliedMigrations: number }> {
+}): Promise<{ appliedMigrations: number; skippedFunctions: boolean }> {
   const client = postgres(input.databaseUrl, { max: 1, onnotice: () => {} });
   try {
     const { journal, migrations } = readReleaseMigrations(input.migrationsDirectory);
@@ -111,7 +112,8 @@ export async function runRelease(input: {
     const applied = await client<Array<{ hash: string; created_at: string | number | null }>>`
       SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id ASC
     `;
-    if (compareMigrationHistory(applied, migrations) === "divergent") {
+    const schemaStatus = compareMigrationHistory(applied, migrations);
+    if (schemaStatus === "divergent") {
       throw new Error(
         "Divergent migration history at ordinal 0 or later: database ledger does not match the release journal",
       );
@@ -141,11 +143,13 @@ export async function runRelease(input: {
           [migration.hash, migration.folderMillis],
         );
       }
-      for (const name of functionFiles) {
-        await tx.unsafe(readFileSync(path.join(input.functionsDirectory, name), "utf8"));
+      if (schemaStatus !== "ahead") {
+        for (const name of functionFiles) {
+          await tx.unsafe(readFileSync(path.join(input.functionsDirectory, name), "utf8"));
+        }
       }
     });
-    return { appliedMigrations: pending.length };
+    return { appliedMigrations: pending.length, skippedFunctions: schemaStatus === "ahead" };
   } finally {
     await client.end();
   }

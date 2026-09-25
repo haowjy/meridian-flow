@@ -120,6 +120,23 @@ if (!enabled || !databaseUrl) {
       }
     });
 
+    it("skips the rollback bundle's function SQL when database history is ahead", async () => {
+      const { fixtureDirectory, migrationsDirectory } = await prefixBundle();
+      const functionsDirectory = join(fixtureDirectory, "functions");
+      try {
+        await cp(sourceFunctions, functionsDirectory, { recursive: true });
+        await writeFile(
+          join(functionsDirectory, "consume_credit_lots_fifo.sql"),
+          "CREATE FUNCTION broken (",
+        );
+        expect(await getSchemaStatus({ databaseUrl, migrationsDirectory })).toBe("ahead");
+        const result = await runRelease({ databaseUrl, migrationsDirectory, functionsDirectory });
+        expect(result).toEqual({ appliedMigrations: 0, skippedFunctions: true });
+      } finally {
+        await rm(fixtureDirectory, { recursive: true, force: true });
+      }
+    });
+
     it("fails when the applied ledger diverges from the bundle prefix", async () => {
       const { fixtureDirectory, migrationsDirectory } = await prefixBundle(true);
       try {

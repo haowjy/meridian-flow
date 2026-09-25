@@ -49,6 +49,13 @@ than the image is `behind`, a mismatched history is `divergent`, and a database
 ahead of the image remains a valid rollback target. Server `/readyz` uses this
 check to keep a new image unhealthy until its schema is ready.
 
+When the DB ledger is ahead of a rollback bundle, the release runner skips
+that bundle's canonical function SQL and logs the reason. Function definitions
+follow expand/contract with stable signatures: introduce compatible behavior
+before callers depend on it, then remove obsolete behavior in a later release.
+Do not use rollback bundles to redeploy older function bodies over newer
+schema; in-place signature changes can also leave orphan overloads behind.
+
 `assertSupportedDatabaseUrl` is shared by server startup guards and the release
 CLI. Remove `channel_binding` from `DATABASE_URL` (retain `sslmode=require`);
 postgres.js does not support it. Staging and production also require a Neon

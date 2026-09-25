@@ -62,7 +62,12 @@ async function main(): Promise<void> {
       log(`backup-check: confirmed ref=${ref}`);
     },
   });
-  log(`migrate: applied ${result.appliedMigrations} migration(s); functions applied atomically`);
+  if (result.skippedFunctions) {
+    log("functions: skipped because the database schema is ahead of this rollback bundle");
+  }
+  log(
+    `migrate: applied ${result.appliedMigrations} migration(s); ${result.skippedFunctions ? "functions skipped for rollback safety" : "functions applied atomically"}`,
+  );
 }
 
 main().catch((error: unknown) => {
