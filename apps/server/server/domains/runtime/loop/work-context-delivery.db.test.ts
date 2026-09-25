@@ -24,17 +24,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { count, eq } = await import("drizzle-orm");
     const { createWork } = await import("../../projects/create-work.js");
     const { createDrizzleProjectWorkRepository } = await import("../../projects/index.js");
-    const {
-      createDrizzleEventJournalReader,
-      createDrizzleEventJournalWriter,
-      createThreadEventHub,
-    } = await import("../../threads/index.js");
+    const { createDrizzleEventJournalReader, createDrizzleEventJournalWriter } = await import(
+      "../../threads/index.js"
+    );
     const { createDrizzleRepositoriesForTest } = await import(
       "../../threads/adapters/drizzle/index.js"
     );
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
     const { createWorkContextDelivery } = await import("./work-context-delivery.js");
-    const { createTurnRunner } = await import("./turn-runner.js");
+    const { createRunSessions } = await import("./run-session.js");
     const { createDrizzleRunAuthority, createDrizzleThreadRunOwnership } = await import(
       "../adapters/drizzle-thread-run-ownership.js"
     );
@@ -238,25 +236,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("runs one primary turn across concurrent starts on the same production adapter", async () => {
       let runTurnCalls = 0;
-      const runner = createTurnRunner({
+      const runner = createRunSessions({
         workContextDelivery: { async beforeTurn() {}, async flushOwned() {} },
-        orchestrator: {
-          async runTurn() {
-            runTurnCalls += 1;
-            return {
-              userTurnId: "turn-user",
-              assistantTurnId: "turn-assistant",
-              events: (async function* emptyEvents() {})(),
-            };
-          },
-          async finalizeGeneratorFailure() {},
+        async setup() {
+          runTurnCalls += 1;
+          const turn = await createDrizzleRepositoriesForTest(db).turns.create({
+            threadId: THREAD_ID,
+            role: "assistant",
+            status: "complete",
+            prevTurnId: null,
+          });
+          return { userTurnId: turn.id, assistantTurnId: turn.id, execute: async () => turn };
+        },
+        async finalizeFailure() {
+          throw new Error("unexpected failure");
         },
         eventSink: createInMemoryEventSink(),
-        hub: createThreadEventHub({
-          journalReader: createDrizzleEventJournalReader(db),
-          journalWriter: createDrizzleEventJournalWriter(db),
-          eventSink: createInMemoryEventSink(),
-        }),
+        headSeq: (id) => createDrizzleEventJournalReader(db).headSeq(id),
         repos: { turns: createDrizzleRepositoriesForTest(db).turns },
         runAuthority: createDrizzleRunAuthority(db),
       });

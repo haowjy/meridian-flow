@@ -23,8 +23,8 @@ import { type TurnRepository, TurnStartConflictError } from "../../threads/index
 import { activatedSkillMetadata } from "../loop/activated-skills.js";
 import type { PersistenceDeps } from "../loop/persistence.js";
 import type { Inbox } from "../loop/ports.js";
+import type { RunningTurnView } from "../loop/run-session.js";
 import type { ThreadedInbox } from "../loop/threaded-inbox.js";
-import type { RunningTurnView } from "../loop/turn-runner.js";
 import { persistWriterEnqueue, WriterEnqueueRollback } from "../loop/writer-enqueue.js";
 import type { AdmissionPersistencePort } from "./drizzle-admission-records.js";
 import {

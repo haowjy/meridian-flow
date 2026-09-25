@@ -91,21 +91,22 @@ describe("document command recovery through the runtime loop", () => {
         throw new Error("Not used");
       },
     };
+    const eventWriter = createInMemoryEventJournalWriter();
     const orchestrator = createOrchestrator(
       createTestOrchestratorDeps({
         boundThreads: () => [thread.id],
         gateway,
         repos,
         creditLedger,
-        eventWriter: createInMemoryEventJournalWriter(),
+        eventWriter,
         toolRegistry,
         toolExecutor: createToolExecutor(toolRegistry),
       }),
     );
 
-    const handle = await orchestrator.runTurn({ threadId: thread.id, userText: "Read chapter." });
-    const events = [];
-    for await (const event of handle.events) events.push(event);
+    const handle = await orchestrator.prepare({ threadId: thread.id, userText: "Read chapter." });
+    expect((await handle.execute()).status).toBe("complete");
+    const events = eventWriter.getEvents(thread.id).map((entry) => entry.event);
 
     const toolResults = events.filter((event) => event.type === "tool.result");
     expect(toolResults).toEqual(
@@ -152,7 +153,7 @@ describe("document command recovery through the runtime loop", () => {
     });
     expect(JSON.stringify(retryMessage)).toContain("invalid_arguments");
     expect((retryMessage as { output: { reason: string } }).output.reason).toBe(repairReason);
-    expect(events.at(-1)?.type).toBe("turn.completed");
+    expect(events.some((event) => event.type === "turn.completed")).toBe(true);
   });
 
   it("persists policy denials for edits and retired read calls while allowing baseline write.read", async () => {
@@ -250,22 +251,23 @@ describe("document command recovery through the runtime loop", () => {
           : undefined;
       },
     };
+    const eventWriter = createInMemoryEventJournalWriter();
     const orchestrator = createOrchestrator(
       createTestOrchestratorDeps({
         boundThreads: () => [thread.id],
         gateway,
         repos,
         creditLedger,
-        eventWriter: createInMemoryEventJournalWriter(),
+        eventWriter,
         toolRegistry,
         toolExecutor: createToolExecutor(toolRegistry),
         agentRevisions,
       }),
     );
 
-    const handle = await orchestrator.runTurn({ threadId: thread.id, userText: "Read chapter." });
-    const events = [];
-    for await (const event of handle.events) events.push(event);
+    const handle = await orchestrator.prepare({ threadId: thread.id, userText: "Read chapter." });
+    expect((await handle.execute()).status).toBe("complete");
+    const events = eventWriter.getEvents(thread.id).map((entry) => entry.event);
 
     const denied = events.filter((event) => event.type === "tool.result" && event.isError === true);
     expect(denied).toEqual(

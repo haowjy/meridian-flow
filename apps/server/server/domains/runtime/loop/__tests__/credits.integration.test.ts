@@ -22,12 +22,6 @@ import { createOrchestrator } from "../orchestrator.js";
 import { gatewayStubDefaults } from "./test-gateway.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
-async function collectEvents(handle: { events: AsyncIterable<OrchestratorEvent> }) {
-  const events: OrchestratorEvent[] = [];
-  for await (const event of handle.events) events.push(event);
-  return events;
-}
-
 function pricedTextResult(text = "done"): GenerateResult {
   return {
     content: [{ type: "text", text }],
@@ -88,20 +82,20 @@ describe("runtime credits", () => {
       reason: "single call",
     });
 
-    const completed = await collectEvents(
-      await orchestrator.runTurn({ threadId: thread.id, userText: "first" }),
-    );
-    expect(completed.at(-1)?.type).toBe("turn.completed");
+    const completed = await (
+      await orchestrator.prepare({ threadId: thread.id, userText: "first" })
+    ).execute();
+    expect(completed.status).toBe("complete");
     expect(await creditLedger.getBalance({ userId: "user-1" })).toBe("170000");
 
-    const second = await collectEvents(
-      await orchestrator.runTurn({ threadId: thread.id, userText: "second" }),
-    );
-    expect(second.at(-1)?.type).toBe("turn.completed");
+    const second = await (
+      await orchestrator.prepare({ threadId: thread.id, userText: "second" })
+    ).execute();
+    expect(second.status).toBe("complete");
     expect(await creditLedger.getBalance({ userId: "user-1" })).toBe("-60000");
 
     await expect(
-      orchestrator.runTurn({ threadId: thread.id, userText: "third" }),
+      orchestrator.prepare({ threadId: thread.id, userText: "third" }),
     ).rejects.toMatchObject({
       code: "credits_exhausted",
       retryable: false,
@@ -167,8 +161,8 @@ describe("runtime credits", () => {
       },
     });
 
-    const handle = await orchestrator.runTurn({ threadId: thread.id, userText: "park" });
-    const eventsPromise = collectEvents(handle);
+    const handle = await orchestrator.prepare({ threadId: thread.id, userText: "park" });
+    const eventsPromise = handle.execute();
     await waitForEvent(eventWriter, thread.id, "interrupt.created");
     expect(
       await creditLedger.getThreadDebitTotal({

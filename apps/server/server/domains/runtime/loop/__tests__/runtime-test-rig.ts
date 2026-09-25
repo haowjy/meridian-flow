@@ -5,7 +5,6 @@
 
 import { type AGUIEvent, EventType } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { createInMemoryAppServices } from "../../../../lib/compose.js";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
 import { createInMemoryEventSink } from "../../../observability/index.js";
@@ -26,7 +25,6 @@ import { createToolExecutor, createToolRegistry, type ToolExecutor } from "../..
 import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
 import type { Inbox } from "../ports.js";
-import { createTurnRunner } from "../turn-runner.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
 export type RuntimeGate<T = void> = {
@@ -68,6 +66,7 @@ export class RuntimeTestRig {
   readonly runner;
   readonly gateway;
   readonly inbox;
+  readonly journal;
   readonly runAuthority;
 
   private readonly eventWaiters = new Set<{
@@ -76,6 +75,7 @@ export class RuntimeTestRig {
   }>();
 
   private constructor(state: {
+    journal: ReturnType<typeof createInMemoryEventJournalWriter>;
     userId: string;
     gatewaySignal: RuntimeGate;
     gateway: Gateway;
@@ -85,7 +85,7 @@ export class RuntimeTestRig {
     creditLedger: ReturnType<typeof createInMemoryCreditLedger>;
     hub: ReturnType<typeof createThreadEventHub>;
     orchestrator: ReturnType<typeof createOrchestrator>;
-    runner: ReturnType<typeof createTurnRunner>;
+    runner: ReturnType<typeof createOrchestrator>;
     inbox: Inbox;
     runAuthority: ReturnType<typeof createInMemoryRunAuthority>;
   }) {
@@ -101,6 +101,7 @@ export class RuntimeTestRig {
     this.orchestrator = state.orchestrator;
     this.runner = state.runner;
     this.inbox = state.inbox;
+    this.journal = state.journal;
     this.runAuthority = state.runAuthority;
     this.hub.subscribe(this.thread.id, (entry) => {
       this.projectedEvents.push(entry);
@@ -157,6 +158,8 @@ export class RuntimeTestRig {
         toolExecutor: options.toolExecutor ?? createToolExecutor(createToolRegistry()),
         repos,
         eventWriter: hub,
+        headSeq: (id) => hub.headSeq(id),
+        onRunStarted: options.onRunStarted,
         interruptRegistry,
         creditLedger,
         eventSink,
@@ -165,15 +168,7 @@ export class RuntimeTestRig {
         runAuthority,
       }),
     );
-    const runner = createTurnRunner({
-      workContextDelivery: { async beforeTurn() {}, async flushOwned() {} },
-      orchestrator,
-      hub,
-      repos: { turns: repos.turns },
-      eventSink,
-      runAuthority,
-      onRunStarted: options.onRunStarted,
-    });
+    const runner = orchestrator;
     const thread = await repos.threads.create({ userId, projectId: project.id });
     await creditLedger.grant({
       userId,
@@ -182,6 +177,7 @@ export class RuntimeTestRig {
       reason: "runtime test seed",
     });
     const rig = new RuntimeTestRig({
+      journal: eventWriter,
       userId,
       gatewaySignal,
       gateway,
@@ -206,12 +202,9 @@ export class RuntimeTestRig {
     });
   }
 
-  async collect(handle: {
-    events: AsyncIterable<OrchestratorEvent>;
-  }): Promise<OrchestratorEvent[]> {
-    const events: OrchestratorEvent[] = [];
-    for await (const event of handle.events) events.push(event);
-    return events;
+  async execute(run: import("../run-turn-port.js").PreparedRun) {
+    const outcome = await run.execute();
+    return { outcome, events: this.journal.getEvents(this.thread.id).map((entry) => entry.event) };
   }
 
   async balance(): Promise<string> {

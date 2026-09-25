@@ -26,7 +26,9 @@ else
     const { createDrizzleRepositoriesForTest } = await import(
       "../../threads/adapters/drizzle/repositories.js"
     );
-    const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
+    const { createDrizzleEventJournalWriter, createDrizzleEventJournalReader } = await import(
+      "../../threads/index.js"
+    );
     const { finalizeExecution } = await import("./execution-finalizer.js");
 
     assertThrowawayDatabaseForRunDbTests(databaseUrl);
@@ -105,9 +107,7 @@ else
           idempotencyKey: text,
         });
       const stopped = await enqueue("stopped request");
-      const lease = await authority.acquire(ids.parent, "cancel-run");
-      if (!lease) throw new Error("expected lease");
-      try {
+      {
         const controller = new AbortController();
         const orchestrator = createOrchestrator(
           createTestOrchestratorDeps({
@@ -119,43 +119,25 @@ else
             boundThreads: () => [ids.parent],
           }),
         );
-        const handle = await orchestrator.runTurn({
+        const handle = await orchestrator.prepare({
           threadId: ids.parent,
           drain: true,
-          lease,
           signal: controller.signal,
         });
         const later = await enqueue("later request");
         controller.abort();
-        await expect(
-          repos.transaction(async () => {
-            await orchestrator.finalizeGeneratorFailure({
-              threadId: ids.parent,
-              assistantTurnId: handle.assistantTurnId,
-              signal: controller.signal,
-              lease,
-              error: "cancelled",
-            });
-            expect((await inbox.listPending(ids.parent)).map((row) => row.id)).toEqual([later.id]);
-            throw new Error("terminal rollback");
-          }),
-        ).rejects.toThrow("terminal rollback");
         expect((await inbox.listPending(ids.parent)).map((row) => row.id)).toEqual([
           stopped.id,
           later.id,
         ]);
-        expect((await repos.turns.findById(handle.assistantTurnId))?.status).toBe("streaming");
-        for await (const _event of handle.events) {
-          /* drive real cancellation */
-        }
+        expect((await handle.execute()).status).toBe("cancelled");
         expect((await repos.turns.findById(handle.assistantTurnId))?.status).toBe("cancelled");
         expect((await inbox.listPending(ids.parent)).map((row) => row.id)).toEqual([later.id]);
         expect(await authority.holder(ids.parent)).toBeNull();
-        const next = await orchestrator.runTurn({ threadId: ids.parent, drain: true });
+        const next = await orchestrator.prepare({ threadId: ids.parent, drain: true });
         expect(next.userTurnId).toBe(later.id);
         expect(next.assistantTurnId).not.toBe(handle.assistantTurnId);
-      } finally {
-        await authority.release(lease);
+        await next.execute();
       }
     });
 
@@ -186,8 +168,6 @@ else
         runStarter: { async start() {} },
         schedulePostCommit() {},
       });
-      const lease = await authority.acquire(ids.child, "split-run");
-      if (!lease) throw new Error("expected lease");
       const controller = new AbortController();
       const requests: import("../gateway/index.js").GenerateRequest[] = [];
       const messageIds: string[] = [];
@@ -305,11 +285,10 @@ else
         amountMillicredits: "1000000",
         reason: "split",
       });
-      try {
-        const run = await createOrchestrator(deps).runTurn({
+      {
+        const run = await createOrchestrator(deps).prepare({
           threadId: ids.child,
           userText: "start",
-          lease,
           signal: controller.signal,
           onAssistantTurnChanged: (id) => {
             terminal = id;
@@ -317,8 +296,13 @@ else
           },
         });
         selector = run.assistantTurnId;
-        const events = [];
-        for await (const event of run.events) events.push(event);
+        const outcome = await run.execute();
+        const events = (await createDrizzleEventJournalReader(db).listByThread(ids.child)).map(
+          (entry) => entry.payload,
+        );
+        expect(outcome.status).toBe(
+          boundary === "cancel" ? "cancelled" : boundary === "rollback" ? "error" : "complete",
+        );
         const turns = await repos.turns.listByThread(ids.child);
         if (boundary === "rollback") {
           expect(terminal).toBeNull();
@@ -363,7 +347,7 @@ else
         );
         if (boundary !== "cancel") {
           expect(splitState).toMatchObject({
-            run: "split-run",
+            run: run.runId,
             oldCancel: false,
             report: { outcome: null, terminalAssistantTurnId: null },
             lookup: { status: "not_ready" },
@@ -375,8 +359,6 @@ else
           expect(text.indexOf("before steer")).toBeLessThan(text.indexOf("child notification"));
           expect(text.indexOf("child notification")).toBeLessThan(text.indexOf("writer steer"));
         }
-      } finally {
-        await authority.release(lease);
       }
     });
 

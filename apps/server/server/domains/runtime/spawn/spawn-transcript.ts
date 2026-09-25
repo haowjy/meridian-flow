@@ -28,7 +28,6 @@ export type SpawnTranscript = {
   turnId: string;
   blockSeqRef: { value: number };
   allBlocks: Block[];
-  events: OrchestratorEvent[];
 };
 
 function customCardBlock(
@@ -74,7 +73,7 @@ export async function persistCustomCard(
     },
   );
   rememberBlock(transcript, persisted.result, existing);
-  transcript.events.push(...persisted.events);
+
   return persisted.result;
 }
 
@@ -166,7 +165,6 @@ export async function bindAdmittedInvocationCard(input: {
     );
     if (persisted.result) {
       rememberBlock(transcript, persisted.result, card);
-      transcript.events.push(...persisted.events);
     }
   });
 }
@@ -232,6 +230,6 @@ export async function persistReturnResult(
     },
   );
   rememberBlock(transcript, persisted.result.tool);
-  transcript.events.push(...persisted.events);
+
   return { block: persisted.result.tool, endTurn: persisted.result.endTurn };
 }

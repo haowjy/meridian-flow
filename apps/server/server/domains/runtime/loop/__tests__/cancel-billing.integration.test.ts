@@ -48,18 +48,19 @@ describe("cancel billing", () => {
   it("debits partial usage when cancelled mid-stream through createGateway", async () => {
     const rig = await RuntimeTestRig.create({ gateway: createMockGateway(mock) });
     const controller = new AbortController();
-    const handle = await rig.orchestrator.runTurn({
+    const handle = await rig.orchestrator.prepare({
       threadId: rig.thread.id,
       userText: "cancel billing",
       signal: controller.signal,
     });
-    const eventsPromise = rig.collect(handle);
+    const eventsPromise = rig.execute(handle);
     await rig.gatewaySignal.promise;
     controller.abort();
-    const events = await eventsPromise;
+    const { events, outcome } = await eventsPromise;
+    expect(outcome.status).toBe("cancelled");
 
     expect(events.some((event) => event.type === "model.response_received")).toBe(true);
-    expect(events.at(-1)?.type).toBe("turn.cancelled");
+    expect(events.some((event) => event.type === "turn.cancelled")).toBe(true);
     const balance = await rig.balance();
     expect(BigInt(balance)).toBeLessThan(1_200_000n);
     expect(balance).not.toBe("1200000");

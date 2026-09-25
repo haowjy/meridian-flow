@@ -235,20 +235,8 @@ async function setup(
   return { thread, inbox, requests, orchestrator, repos };
 }
 
-async function collect(handle: { events: AsyncIterable<unknown> }): Promise<void> {
-  for await (const _event of handle.events) {
-    // drain
-  }
-}
-
-async function collectEvents(handle: {
-  events: AsyncIterable<{ type: string }>;
-}): Promise<Array<{ type: string }>> {
-  const events: Array<{ type: string }> = [];
-  for await (const event of handle.events) {
-    events.push(event);
-  }
-  return events;
+async function execute(run: import("../run-turn-port.js").PreparedRun) {
+  return run.execute();
 }
 
 describe("inbox drain", () => {
@@ -268,8 +256,8 @@ describe("inbox drain", () => {
         textResult("steered answer after tool"),
       ],
     });
-    const run = await orchestrator.runTurn({ threadId: thread.id, userText: "report" });
-    await collect(run);
+    const run = await orchestrator.prepare({ threadId: thread.id, userText: "report" });
+    await execute(run);
     expect(requests).toHaveLength(3);
     const turns = await repos.turns.listByThread(thread.id);
     const terminal = turns.at(-1);
@@ -296,8 +284,8 @@ describe("inbox drain", () => {
       child: true,
       results: [textResult("first result"), textResult("second result")],
     });
-    const first = await orchestrator.runTurn({ threadId: thread.id, userText: "first" });
-    await collect(first);
+    const first = await orchestrator.prepare({ threadId: thread.id, userText: "first" });
+    await execute(first);
     const firstReport = await repos.executionReports.findByExecution(
       thread.id,
       first.assistantTurnId,
@@ -310,8 +298,8 @@ describe("inbox drain", () => {
     });
     expect(firstReport?.costMillicredits).toBeGreaterThan(0);
 
-    const second = await orchestrator.runTurn({ threadId: thread.id, userText: "second" });
-    await collect(second);
+    const second = await orchestrator.prepare({ threadId: thread.id, userText: "second" });
+    await execute(second);
     const secondReport = await repos.executionReports.findByExecution(
       thread.id,
       second.assistantTurnId,
@@ -326,8 +314,8 @@ describe("inbox drain", () => {
 
   it("saves an empty successful report rather than an invented incomplete fallback", async () => {
     const { thread, orchestrator, repos } = await setup({ child: true, results: [textResult("")] });
-    const run = await orchestrator.runTurn({ threadId: thread.id, userText: "empty" });
-    await collect(run);
+    const run = await orchestrator.prepare({ threadId: thread.id, userText: "empty" });
+    await execute(run);
     expect(
       await repos.executionReports.findByExecution(thread.id, run.assistantTurnId),
     ).toMatchObject({
@@ -341,8 +329,8 @@ describe("inbox drain", () => {
   it("treats token exhaustion as failure while retaining durable public text", async () => {
     const exhausted = { ...textResult("partial prose"), finishReason: "max_tokens" as const };
     const { thread, orchestrator, repos } = await setup({ child: true, results: [exhausted] });
-    const run = await orchestrator.runTurn({ threadId: thread.id, userText: "long" });
-    await collect(run);
+    const run = await orchestrator.prepare({ threadId: thread.id, userText: "long" });
+    await execute(run);
     expect(
       await repos.executionReports.findByExecution(thread.id, run.assistantTurnId),
     ).toMatchObject({
@@ -355,7 +343,7 @@ describe("inbox drain", () => {
 
   it("admits exact child executions for writer and queued continuations before returning a handle", async () => {
     const { thread, inbox, orchestrator, repos } = await setup({ child: true });
-    const writer = await orchestrator.runTurn({ threadId: thread.id, userText: "writer prompt" });
+    const writer = await orchestrator.prepare({ threadId: thread.id, userText: "writer prompt" });
     expect(
       await repos.executionReports.findByExecution(thread.id, writer.assistantTurnId),
     ).toMatchObject({
@@ -364,10 +352,10 @@ describe("inbox drain", () => {
       origin: "thread_run",
       outcome: null,
     });
-    await collect(writer);
+    await execute(writer);
 
     await inbox.enqueue(message("queued prompt", thread.id));
-    const queued = await orchestrator.runTurn({ threadId: thread.id, drain: true });
+    const queued = await orchestrator.prepare({ threadId: thread.id, drain: true });
     expect(
       await repos.executionReports.findByExecution(thread.id, queued.assistantTurnId),
     ).toMatchObject({
@@ -377,14 +365,14 @@ describe("inbox drain", () => {
       outcome: null,
     });
     expect(queued.assistantTurnId).not.toBe(writer.assistantTurnId);
-    await collect(queued);
+    await execute(queued);
   });
 
   it("renders a notice as a request-only notice without persisting a turn", async () => {
     const { thread, inbox, requests, orchestrator, repos } = await setup();
     await inbox.enqueue(notice("work context note", thread.id));
 
-    await collect(await orchestrator.runTurn({ threadId: thread.id, userText: "hello" }));
+    await execute(await orchestrator.prepare({ threadId: thread.id, userText: "hello" }));
 
     const texts = messageTexts(requests[0].messages);
     expect(texts.some((text) => text.includes("work context note"))).toBe(true);
@@ -414,7 +402,7 @@ describe("inbox drain", () => {
       },
     });
 
-    await collect(await orchestrator.runTurn({ threadId: thread.id, userText: "hello" }));
+    await execute(await orchestrator.prepare({ threadId: thread.id, userText: "hello" }));
 
     expect(requests).toHaveLength(2);
     const texts = messageTexts(requests[1]?.messages ?? []);
@@ -446,7 +434,7 @@ describe("inbox drain", () => {
       },
     });
 
-    await collect(await orchestrator.runTurn({ threadId: thread.id, userText: "hello" }));
+    await execute(await orchestrator.prepare({ threadId: thread.id, userText: "hello" }));
 
     expect(requests).toHaveLength(2);
     const texts = messageTexts(requests[1]?.messages ?? []);
@@ -465,7 +453,7 @@ describe("inbox drain", () => {
     });
     await inbox.enqueue(message("carry me", thread.id));
 
-    await collect(await orchestrator.runTurn({ threadId: thread.id, userText: "hello" }));
+    await execute(await orchestrator.prepare({ threadId: thread.id, userText: "hello" }));
 
     expect(requests).toHaveLength(2);
     expect(messageTexts(requests[0].messages)).toContain("carry me");
@@ -490,14 +478,14 @@ describe("inbox drain", () => {
 
     // First run drains and persists the message, then fails before the response
     // acks it, so the message stays pending for the next run.
-    await collect(await orchestrator.runTurn({ threadId: thread.id, userText: "first" }));
+    await execute(await orchestrator.prepare({ threadId: thread.id, userText: "first" }));
     expect(await inbox.claimPending(thread.id)).toHaveLength(1);
     let turns = await repos.turns.listByThread(thread.id);
     expect(messageTurns(turns)).toHaveLength(1);
 
     // Second run re-claims the same message; the known-turn filter suppresses a
     // re-render and a re-append, and the successful response acks it.
-    await collect(await orchestrator.runTurn({ threadId: thread.id, userText: "second" }));
+    await execute(await orchestrator.prepare({ threadId: thread.id, userText: "second" }));
 
     turns = await repos.turns.listByThread(thread.id);
     expect(messageTurns(turns)).toHaveLength(1);
@@ -516,16 +504,16 @@ describe("inbox drain", () => {
     // First run freezes the prompt (`bakedSkillSlugs` becomes non-null), so the
     // second run's assembly reuses the stale thread loaded at run start instead
     // of refreshing it from the bake.
-    await collect(await orchestrator.runTurn({ threadId: thread.id, userText: "first" }));
+    await execute(await orchestrator.prepare({ threadId: thread.id, userText: "first" }));
     expect((await repos.threads.findById(thread.id))?.bakedSkillSlugs).not.toBeNull();
 
     await inbox.enqueue(message("baked steer", thread.id));
 
-    const events = await collectEvents(
-      await orchestrator.runTurn({ threadId: thread.id, userText: "second" }),
+    const outcome = await execute(
+      await orchestrator.prepare({ threadId: thread.id, userText: "second" }),
     );
 
-    expect(events.some((event) => event.type === "turn.error")).toBe(false);
+    expect(outcome.status).toBe("complete");
     const turns = await repos.turns.listByThread(thread.id);
     expect(messageTurns(turns)).toHaveLength(1);
     expect(await inbox.claimPending(thread.id)).toEqual([]);
@@ -536,7 +524,7 @@ describe("inbox drain", () => {
     await inbox.enqueue(notice("work context note", thread.id));
     await inbox.enqueue(message("steer body", thread.id));
 
-    await collect(await orchestrator.runTurn({ threadId: thread.id, userText: "hello" }));
+    await execute(await orchestrator.prepare({ threadId: thread.id, userText: "hello" }));
 
     const messages = requests[0]?.messages ?? [];
     const writer = messages.find(
@@ -557,11 +545,9 @@ describe("drain-only start", () => {
     const { thread, inbox, requests, orchestrator, repos } = await setup();
     const inboxMessage = await inbox.enqueue(message("wake me", thread.id));
 
-    const events = await collectEvents(
-      await orchestrator.runTurn({ threadId: thread.id, drain: true }),
-    );
+    const outcome = await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
 
-    expect(events.some((event) => event.type === "turn.error")).toBe(false);
+    expect(outcome.status).toBe("complete");
     expect(requests).toHaveLength(1);
     expect(messageTexts(requests[0]?.messages ?? [])).toContain("wake me");
 
@@ -578,7 +564,7 @@ describe("drain-only start", () => {
     const first = await inbox.enqueue(message("first", thread.id));
     const second = await inbox.enqueue(message("second", thread.id));
 
-    await collect(await orchestrator.runTurn({ threadId: thread.id, drain: true }));
+    await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
 
     const turns = await repos.turns.listByThread(thread.id);
     expect(turns.find((turn) => turn.id === first.id)?.prevTurnId).toBeNull();
@@ -592,7 +578,7 @@ describe("drain-only start", () => {
     await inbox.enqueue(message("wake me", thread.id));
     await inbox.enqueue(notice("work context note", thread.id));
 
-    await collect(await orchestrator.runTurn({ threadId: thread.id, drain: true }));
+    await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
 
     const messages = requests[0]?.messages ?? [];
     const messageEntry = messages.find(
@@ -605,7 +591,7 @@ describe("drain-only start", () => {
   it("does nothing and writes no turn when no durable message is pending", async () => {
     const { thread, orchestrator, repos } = await setup();
 
-    await expect(orchestrator.runTurn({ threadId: thread.id, drain: true })).rejects.toBeInstanceOf(
+    await expect(orchestrator.prepare({ threadId: thread.id, drain: true })).rejects.toBeInstanceOf(
       NoPendingWakeError,
     );
     expect(await repos.turns.listByThread(thread.id)).toEqual([]);
@@ -616,12 +602,12 @@ describe("drain-only start", () => {
     const inboxMessage = await inbox.enqueue(message("crash safe", thread.id));
 
     // First drain persists the message, then the provider fails before the ack.
-    await collect(await orchestrator.runTurn({ threadId: thread.id, drain: true }));
+    await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
     expect(await inbox.claimPending(thread.id)).toHaveLength(1);
 
     // Second drain re-claims the same message, sees the known turn, continues from
     // it, and acks it without a duplicate turn.
-    await collect(await orchestrator.runTurn({ threadId: thread.id, drain: true }));
+    await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
 
     const turns = await repos.turns.listByThread(thread.id);
     expect(turns.filter((turn) => turn.id === inboxMessage.id)).toHaveLength(1);
@@ -645,7 +631,7 @@ describe("drain-only start", () => {
       activatedSkillSlugs: ["writing-principles"],
     });
 
-    await collect(await orchestrator.runTurn({ threadId: thread.id, drain: true }));
+    await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
 
     expect(requests).toHaveLength(1);
     const texts = messageTexts(requests[0]?.messages ?? []);

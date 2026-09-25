@@ -18,9 +18,9 @@ import type {
   ThreadRepositories,
   ThreadRepository,
 } from "../../threads/index.js";
-import { createBoundConversation } from "../../threads/index.js";
+import { createBoundConversation, TurnStartConflictError } from "../../threads/index.js";
 import type { ThreadedInbox } from "../loop/threaded-inbox.js";
-import { appendSubagentActivity, appendSubagentActivityBestEffort } from "./activity-event.js";
+import { appendSubagentActivity } from "./activity-event.js";
 import { authorizeThreadMessage } from "./authorize-thread-message.js";
 import type { ChildDriveInput, ChildRunDriver, PreparedChild } from "./child-run-driver.js";
 import { resolveChildInvocation } from "./resolve-child-invocation.js";
@@ -186,17 +186,12 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         signal: input.signal,
         origin: "spawn",
       });
-      try {
-        await appendSubagentActivity({
-          eventWriter: deps.eventWriter,
-          readActivity: deps.readActivity,
-          rootThreadId: input.parentThread.rootThreadId as ThreadId,
-          childThreadId: child.id,
-        });
-      } catch (error) {
-        await driver.release(prepared);
-        throw error;
-      }
+      await appendSubagentActivity({
+        eventWriter: deps.eventWriter,
+        readActivity: deps.readActivity,
+        rootThreadId: input.parentThread.rootThreadId as ThreadId,
+        childThreadId: child.id,
+      });
       return { ...prepared, description: input.description };
     } catch (error) {
       await deps.repos.threads.updateSpawnLifecycle(child.id as ThreadId, {
@@ -223,32 +218,11 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         ),
       };
     }
-    const resolvedSlug = binding.revision?.slug ?? GENERIC_SUBAGENT_SLUG;
-    try {
-      const prepared = await driver.register(target, resolvedSlug, {
-        background: false,
-        signal: input.signal,
-        origin: "message",
-      });
-      // A wake changes the read model the moment the lease is held, before the
-      // first turn event; best-effort so it never gates the run.
-      await appendSubagentActivityBestEffort({
-        eventWriter: deps.eventWriter,
-        readActivity: deps.readActivity,
-        rootThreadId: target.rootThreadId as ThreadId,
-        childThreadId: target.id,
-        eventSink: deps.eventSink,
-      });
-      return prepared;
-    } catch (error) {
-      return {
-        status: "error",
-        error: meridianErrorFromSystem(
-          "thread_message_target_busy",
-          error instanceof Error ? error.message : String(error),
-        ),
-      };
-    }
+    return driver.register(target, binding.revision?.slug ?? GENERIC_SUBAGENT_SLUG, {
+      background: false,
+      signal: input.signal,
+      origin: "message",
+    });
   }
 
   async function prepare(
@@ -279,19 +253,6 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     });
     if (!authorized.ok) return { status: "error", error: authorized.error };
     return prepareForegroundMessage(request, authorized.target);
-  }
-
-  async function persistRunningCard(
-    transcript: SpawnTranscript | undefined,
-    props: InvocationCardProps,
-    prepared: PreparedChild,
-  ): Promise<Block | null> {
-    try {
-      return await persistInvocationCard(transcript, props);
-    } catch (error) {
-      await driver.release(prepared);
-      throw error;
-    }
   }
 
   function invocationCorrelation(
@@ -419,7 +380,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 
     if (background) {
       // The original card survives parent continuation and B replaces only its status.
-      runCard = await persistRunningCard(options.transcript, cardProps, prepared);
+      runCard = await persistInvocationCard(options.transcript, cardProps);
       if (request.reportCorrelation && runCard) {
         request.reportCorrelation = { ...request.reportCorrelation, cardBlockId: runCard.id };
       }
@@ -451,7 +412,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     }
 
     try {
-      runCard = await persistRunningCard(options.transcript, cardProps, prepared);
+      runCard = await persistInvocationCard(options.transcript, cardProps);
       if (request.reportCorrelation && runCard) {
         request.reportCorrelation = { ...request.reportCorrelation, cardBlockId: runCard.id };
       }
@@ -463,6 +424,15 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           unadmittedInvocationFailure(cardProps),
           runCard,
         );
+      }
+      if (request.kind === "message" && error instanceof TurnStartConflictError) {
+        return {
+          status: "error",
+          error: meridianErrorFromSystem(
+            "thread_message_target_busy",
+            "Child thread already has an active run",
+          ),
+        };
       }
       throw error;
     }

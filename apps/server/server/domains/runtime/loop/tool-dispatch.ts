@@ -64,14 +64,13 @@ export interface ToolDispatchContext {
 
 export type ToolDispatchResult =
   | {
-      events: OrchestratorEvent[];
       block: Block;
       metadata?: Record<string, unknown>;
       cancelled?: false;
       /** Successful return_result asks the orchestrator to complete the turn after this batch. */
       endTurn?: true;
     }
-  | { events: OrchestratorEvent[]; cancelled: true };
+  | { cancelled: true };
 
 function pendingWorkContextOutput(output: JsonValue, message: string): JsonObject {
   const result =
@@ -89,18 +88,15 @@ export async function dispatchToolCall(
   call: ToolCallInput,
   ctx: ToolDispatchContext,
 ): Promise<ToolDispatchResult> {
-  const events: OrchestratorEvent[] = [];
-  const executing = await appendEvent(deps.persistenceDeps.eventWriter, ctx.state.threadId, {
+  await appendEvent(deps.persistenceDeps.eventWriter, ctx.state.threadId, {
     type: "tool.executing",
     toolCallId: call.id,
     name: call.name,
   });
-  events.push(executing);
   if (ctx.state.signal?.aborted) {
-    return { events, cancelled: true };
+    return { cancelled: true };
   }
 
-  const outputDeltaEventBuffer: OrchestratorEvent[] = [];
   let outputDeltaAppendChain: Promise<void> = Promise.resolve();
   let outputDeltaAppendFailed = false;
   const emitOutputDelta = (
@@ -113,15 +109,11 @@ export async function dispatchToolCall(
       stream: chunk.stream,
       text: chunk.text,
     };
-    // Tool-output callbacks run while the generator is blocked inside
-    // `await executeTool(...)`. Append immediately for hub fan-out, but
-    // serialize appends so journal/catch-up order matches chunk order; the
-    // buffer is yielded once the handler returns, before tool.result.
+    // Serialize live output appends while the tool runs so catch-up preserves chunk order.
     outputDeltaAppendChain = outputDeltaAppendChain
       .then(async () => {
         if (outputDeltaAppendFailed) return;
         await appendEvent(deps.persistenceDeps.eventWriter, ctx.state.threadId, event);
-        outputDeltaEventBuffer.push(event);
       })
       .catch((error: unknown) => {
         outputDeltaAppendFailed = true;
@@ -150,7 +142,6 @@ export async function dispatchToolCall(
     turnId: ctx.state.currentTurn.id,
     blockSeqRef: ctx.blockSeqRef,
     allBlocks: ctx.state.allBlocks,
-    events,
   };
 
   const spawn =
@@ -266,9 +257,8 @@ export async function dispatchToolCall(
     },
   );
   await outputDeltaAppendChain;
-  events.push(...outputDeltaEventBuffer, ...ctx.interruptSession.drainEvents());
   if (ctx.state.signal?.aborted) {
-    return { events, cancelled: true };
+    return { cancelled: true };
   }
 
   const stagedWrite = execResult.metadata?.stagedWrite === true && execResult.isError !== true;
@@ -280,7 +270,6 @@ export async function dispatchToolCall(
       executionReports: deps.executionReports,
     });
     return {
-      events,
       block: settled.block,
       ...(settled.endTurn ? { endTurn: true as const } : {}),
     };
@@ -327,7 +316,7 @@ export async function dispatchToolCall(
     },
   );
   ctx.state.allBlocks.push(persistedToolResult.result);
-  events.push(...persistedToolResult.events);
+
   let resultBlock = persistedToolResult.result;
   let resultMetadata = execResult.metadata;
   if (execResult.metadata?.workContextChanged === true) {
@@ -335,7 +324,6 @@ export async function dispatchToolCall(
       const update = await deps.workContextDelivery.deliverNow(ctx.state.threadId);
       ctx.allTurns.push(update.turn);
       ctx.state.allBlocks.push(update.block);
-      events.push(...update.events);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Work context refresh will retry after this turn.";
@@ -382,11 +370,9 @@ export async function dispatchToolCall(
       if (blockIndex >= 0) ctx.state.allBlocks[blockIndex] = patched.result;
       resultBlock = patched.result;
       resultMetadata = metadata;
-      events.push(...patched.events);
     }
   }
   return {
-    events,
     block: resultBlock,
     ...(resultMetadata
       ? {

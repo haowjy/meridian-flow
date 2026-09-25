@@ -1,7 +1,6 @@
 /** Runtime-loop test gateway and port defaults. */
 import type { GenerateRequest, GenerateResult, StreamEvent } from "../../gateway/domain/index.js";
 import type { Gateway } from "../../gateway/ports/gateway.js";
-import type { RunTurnPort } from "../run-turn-port.js";
 
 export const gatewayStubDefaults = {
   getDefaultModel(): string | undefined {
@@ -27,5 +26,3 @@ export function createInertGateway(defaultModel?: string): Gateway {
     },
   };
 }
-
-export const noopFinalizeGeneratorFailure: RunTurnPort["finalizeGeneratorFailure"] = async () => {};

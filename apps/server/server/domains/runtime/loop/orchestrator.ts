@@ -1,25 +1,7 @@
 /**
- * Orchestrator: the agentic turn loop — the runtime's core control loop.
- *
- * One invocation of `runTurn` holds one run across ordered assistant segments
- * and LLM-call + tool-execution iterations, yielding an AsyncGenerator of
- * `OrchestratorEvent`s. Each iteration:
- *
- *   1. Builds context (Message[] + Tool[]) from the accumulated thread state.
- *   2. Calls the gateway's `stream(request)` and maps StreamEvent ->
- *      OrchestratorEvent via `mapStreamEvent` (streaming.ts).
- *   3. On stream end, persists the model response + generated content blocks
- *      in a transaction, then yields the persisted events.
- *   4. If finish_reason is "tool_use", checks permissions, executes each tool,
- *      persists tool_result blocks + events, and loops to step 1.
- *   5. At the safe boundary, splits for directed follow-ups or finalizes the run.
- *
- * Key design decisions:
- *
- * - **Persist-then-emit**: every state mutation goes through
- *   `persistAndAppendEvents` (repo transaction + journal append + read-model
- *   projection) before any event is yielded to the caller. No event is visible
- *   to subscribers until its backing read model is durable.
+ * Ordered model/tool loop. Preparation commits initial turns and report admission;
+ * execution publishes through the journal, never a caller-driven event generator.
+ * A RunSession owns the lease, cancellation, terminal fallback, and cleanup.
  *
  * - **blockSeq allocation**: content blocks (text, reasoning, tool_use) are
  *   numbered sequentially from the count of blocks already stored for the
@@ -135,13 +117,13 @@ import {
 } from "./persistence.js";
 import type { Inbox, InboxMessage, Lease, RunAuthority, ThreadPhase } from "./ports.js";
 import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
+import { createRunSessions } from "./run-session.js";
 import {
-  type DrainRunTurnInput,
+  type DrainRunLoopInput,
   isDrainRun,
   NoPendingWakeError,
-  type RunTurnHandle,
-  type RunTurnInput,
-  type RunTurnPort,
+  type PreparedLoop,
+  type RunLoopInput,
 } from "./run-turn-port.js";
 import {
   collectToolCalls,
@@ -179,6 +161,9 @@ export interface OrchestratorDeps {
   referenceReader: ReferenceReader;
   repos: OrchestratorRepositories;
   eventWriter: EventJournalWriter;
+  headSeq(threadId: ThreadId): Promise<bigint>;
+  onRunStarted?: (threadId: ThreadId) => void;
+  onRunSettled?: (threadId: ThreadId) => void;
   agentRevisions: Pick<
     AgentRevisionStore,
     "readThreadBinding" | "listInstallations" | "readSource" | "readRevision"
@@ -196,7 +181,7 @@ export interface OrchestratorDeps {
   /** Interrupt-boundary artifact flush; explicit noop adapter means disabled. */
   interruptArtifacts: InterruptArtifactFlushPort;
   childRunCoordinator: ChildRunCoordinator;
-  workContextDelivery: Pick<WorkContextDelivery, "deliverNow">;
+  workContextDelivery: Pick<WorkContextDelivery, "deliverNow" | "beforeTurn" | "flushOwned">;
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
   modelRequestDebug: ModelRequestDebugStore;
@@ -225,7 +210,7 @@ export interface OrchestratorDeps {
 }
 
 /** The terminal write a run exit runs under the thread lock before releasing. */
-type TerminalOutcome = { turn?: Turn; events: OrchestratorEvent[] };
+type TerminalOutcome = { turn?: Turn };
 
 type ResponseWriteCommitOutcome =
   | {
@@ -251,54 +236,52 @@ function settledReceipt(
 
 async function finalizeRun(
   deps: OrchestratorDeps,
-  input: Parameters<typeof finalizeExecution>[1] & { lease?: Lease },
+  input: Parameters<typeof finalizeExecution>[1] & { lease: Lease },
 ): ReturnType<typeof finalizeExecution> {
   return deps.repos.transaction(async () => {
     const terminal = await finalizeExecution(deps, input);
     if (terminal.turn.status === "cancelled") {
       // Retire only the adopted receipt, never closeRun's unadopted follow-ups.
-      if (input.lease) {
-        await deps.inbox.ack(
-          input.threadId,
-          await deps.runAuthority.readAdoptedMessageIds(input.lease),
-        );
-        await deps.runAuthority.setAdoptedMessageIds(input.lease, []);
-      }
+      await deps.inbox.ack(
+        input.threadId,
+        await deps.runAuthority.readAdoptedMessageIds(input.lease),
+      );
+      await deps.runAuthority.setAdoptedMessageIds(input.lease, []);
     }
     return terminal;
   });
 }
 
-export function createOrchestrator(deps: OrchestratorDeps): RunTurnPort {
-  return {
-    runTurn(input: RunTurnInput): Promise<RunTurnHandle> {
-      return runTurn(deps, input);
-    },
-    async finalizeGeneratorFailure(input) {
-      await closeRun({
+export function createOrchestrator(deps: OrchestratorDeps) {
+  return createRunSessions({
+    ...deps,
+    setup: (input) => prepareLoop(deps, input),
+    async finalizeFailure(input) {
+      const outcome = await closeRun({
         threadLock: deps.threadLock,
         inbox: deps.inbox,
         runAuthority: deps.runAuthority,
         threadId: input.threadId,
-        lease: input.lease ?? null,
+        lease: input.lease,
         continueOnPending: false,
         complete: async () =>
           finalizeRun(deps, {
             threadId: input.threadId,
-            assistantTurnId:
-              (await deps.runAuthority.readRunningTurnId(input.threadId)) ?? input.assistantTurnId,
+            assistantTurnId: input.assistantTurnId,
             lease: input.lease,
             cause: input.signal?.aborted
               ? { kind: "cancelled", reason: "cancelled" }
               : {
                   kind: "failed",
-                  reason: "generator_error",
+                  reason: "execution_error",
                   error: input.error instanceof Error ? input.error.message : String(input.error),
                 },
           }),
       });
+      if (outcome.kind !== "completed") throw new Error("Fallback did not terminate run");
+      return outcome.completion.turn;
     },
-  };
+  });
 }
 
 // USD rollups are display-side estimates only; the authoritative ledger truth
@@ -362,19 +345,9 @@ async function resolveInterruptAutoResumePolicy(
   return preferences.autoResume ?? defaultInterruptAutoResumePolicy();
 }
 
-// This direct append path is limited to ephemeral transport facts that do not
-// require read-model projection.
-async function* emit(
-  writer: EventJournalWriter,
-  threadId: ThreadId,
-  event: OrchestratorEvent,
-): AsyncGenerator<OrchestratorEvent> {
-  yield await appendEvent(writer, threadId, event);
-}
-
 async function admitRunExecution(
   deps: OrchestratorDeps,
-  input: RunTurnInput,
+  input: RunLoopInput,
   thread: Thread,
   assistantTurnId: TurnId,
   inboxMessageIds: readonly string[],
@@ -401,28 +374,16 @@ async function admitRunExecution(
       description: input.executionReport?.description ?? null,
     });
   }
-  if (input.lease) {
-    await deps.runAuthority.bindTurn(input.lease, assistantTurnId, inboxMessageIds);
-    await deps.eventWriter.appendEvent(input.threadId, {
-      type: "inbox.changed",
-      threadId: input.threadId,
-      pending: await readPendingInbox(deps.inbox, input.threadId),
-    });
-  }
+  await deps.runAuthority.bindTurn(input.lease, assistantTurnId, inboxMessageIds);
+  await deps.eventWriter.appendEvent(input.threadId, {
+    type: "inbox.changed",
+    threadId: input.threadId,
+    pending: await readPendingInbox(deps.inbox, input.threadId),
+  });
 }
 
-/**
- * Creates the user and assistant turns, then returns a handle with IDs and
- * an event generator. The caller can capture IDs immediately (both turn IDs
- * are known after the setup transaction commits), then consume the generator
- * on its own schedule.
- *
- * Setup order: thread status -> "active", then the user turn + user block +
- * assistant turn are persisted atomically. This guarantees the thread is
- * marked active before any subscriber sees the assistant turn.created event
- * and starts expecting streaming deltas.
- */
-export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Promise<RunTurnHandle> {
+/** Commit initial history before handing the session its lazy model loop. */
+async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise<PreparedLoop> {
   const { repos } = deps;
   const thread = await repos.threads.findById(input.threadId);
   if (!thread) {
@@ -493,18 +454,19 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
   return {
     userTurnId: userTurn.id,
     assistantTurnId: assistantTurn.id,
-    events: generateEvents(
-      deps,
-      input,
-      thread,
-      userTurn.id,
-      assistantTurn,
-      [...inheritedTurns, ...priorTurns, userTurn],
-      inheritedBlocks,
-      setup.events,
-      input.treeBudget ?? createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
-      input.activatedSkillSlugs,
-    ),
+    execute: () =>
+      executeLoop(
+        deps,
+        input,
+        thread,
+        userTurn.id,
+        assistantTurn,
+        [...inheritedTurns, ...priorTurns, userTurn],
+        inheritedBlocks,
+        input.treeBudget ??
+          createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
+        input.activatedSkillSlugs,
+      ),
   };
 }
 
@@ -513,15 +475,15 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
  * claims the pending inbox batch, persists each fresh message as a user-role turn
  * chained from the thread leaf, then mints the assistant container chained from
  * the last message. The durable chain is `leaf → message(user) → assistant(streaming)`
- * and the generator's request is built over exactly the drained batch. A redelivered
+ * and the first request is built over exactly the drained batch. A redelivered
  * message already persisted by a crashed run is not re-appended; its existing turn
  * rides in `priorTurns`. No durable pending message means no turn to generate.
  */
 async function runDrainTurn(
   deps: OrchestratorDeps,
-  input: DrainRunTurnInput,
+  input: DrainRunLoopInput,
   thread: Thread,
-): Promise<RunTurnHandle> {
+): Promise<PreparedLoop> {
   let initialBatchIds: string[] = [];
   const setup = await deps.threadLock.withThreadLock(input.threadId, () =>
     persistAndAppendTurnStartEvents(
@@ -602,18 +564,19 @@ async function runDrainTurn(
   return {
     userTurnId: referenceUserTurnId,
     assistantTurnId: assistantTurn.id,
-    events: generateEvents(
-      deps,
-      input,
-      thread,
-      referenceUserTurnId,
-      assistantTurn,
-      [...inheritedTurns, ...priorTurns, ...messageTurns],
-      inheritedBlocks,
-      setup.events,
-      input.treeBudget ?? createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
-      activatedSkillSlugs.length > 0 ? activatedSkillSlugs : undefined,
-    ),
+    execute: () =>
+      executeLoop(
+        deps,
+        input,
+        thread,
+        referenceUserTurnId,
+        assistantTurn,
+        [...inheritedTurns, ...priorTurns, ...messageTurns],
+        inheritedBlocks,
+        input.treeBudget ??
+          createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
+        activatedSkillSlugs.length > 0 ? activatedSkillSlugs : undefined,
+      ),
   };
 }
 
@@ -677,7 +640,7 @@ async function reconcileOrphanedPendingWrites(
 
 async function persistModelResponse(input: {
   deps: OrchestratorDeps;
-  runInput: RunTurnInput;
+  runInput: RunLoopInput;
   thread: Thread;
   currentAssistantTurn: Turn;
   result: GenerateResult;
@@ -692,7 +655,6 @@ async function persistModelResponse(input: {
   createdBlocks: Block[];
   toolCalls: ReturnType<typeof collectToolCalls>;
   nextBlockSeq: number;
-  events: OrchestratorEvent[];
 }> {
   const { deps, runInput, thread, currentAssistantTurn, result, treeBudget, turnAccounting } =
     input;
@@ -788,7 +750,7 @@ async function persistModelResponse(input: {
       // Ack the batch in the same transaction that persists the response carrying
       // it; a crash before commit redelivers and the idempotency key collapses.
       await deps.inbox.ack(runInput.threadId, input.inboxAckIds);
-      if (runInput.lease && input.inboxAckIds.length > 0)
+      if (input.inboxAckIds.length > 0)
         await deps.runAuthority.setAdoptedMessageIds(runInput.lease, []);
       // Ack remains coupled to response persistence. Read the remaining classified
       // rows inside this transaction; earlier adoption already removed consumed
@@ -814,7 +776,6 @@ async function persistModelResponse(input: {
     createdBlocks: persistedResponse.result.createdBlocks,
     toolCalls,
     nextBlockSeq: blockSeq,
-    events: persistedResponse.events,
   };
 }
 
@@ -825,7 +786,7 @@ async function persistModelResponse(input: {
  */
 async function settleCancelledResponse(input: {
   deps: OrchestratorDeps;
-  runInput: RunTurnInput;
+  runInput: RunLoopInput;
   thread: Thread;
   currentAssistantTurn: Turn;
   treeBudget: TreeBudget;
@@ -834,7 +795,7 @@ async function settleCancelledResponse(input: {
   allBlocks: Block[];
   result: GenerateResult | undefined;
   model: string;
-}): Promise<{ events: OrchestratorEvent[]; turn: Turn }> {
+}): Promise<Turn> {
   const settlement = await input.deps.gateway.settleCancelledResult?.({
     model: input.model,
     ...(input.result ? { result: input.result } : {}),
@@ -844,7 +805,6 @@ async function settleCancelledResponse(input: {
   });
 
   let currentAssistantTurn = input.currentAssistantTurn;
-  const events: OrchestratorEvent[] = [];
   if (settlement?.persist) {
     const persistedResponse = await persistModelResponse({
       deps: input.deps,
@@ -860,13 +820,12 @@ async function settleCancelledResponse(input: {
     });
     currentAssistantTurn = persistedResponse.updatedTurn;
     input.allBlocks.push(...persistedResponse.createdBlocks);
-    events.push(...persistedResponse.events);
     await input.deps.responseWrites.rollbackResponse(persistedResponse.responseId, {
       threadId: input.runInput.threadId,
       turnId: currentAssistantTurn.id,
     });
   }
-  return { events, turn: currentAssistantTurn };
+  return currentAssistantTurn;
 }
 
 async function persistToolRejection(input: {
@@ -881,7 +840,7 @@ async function persistToolRejection(input: {
     reason: string;
   };
   blockSeq: number;
-}): Promise<{ block: Block; nextBlockSeq: number; events: OrchestratorEvent[] }> {
+}): Promise<{ block: Block; nextBlockSeq: number }> {
   let blockSeq = input.blockSeq;
   const rejectionOutput = {
     error: input.decision.kind,
@@ -926,7 +885,6 @@ async function persistToolRejection(input: {
   return {
     block: persistedRejection.result,
     nextBlockSeq: blockSeq,
-    events: persistedRejection.events,
   };
 }
 
@@ -935,7 +893,7 @@ async function persistUncommittedWriteResult(input: {
   threadId: ThreadId;
   block: Block;
   text: string;
-}): Promise<{ block: Block; events: OrchestratorEvent[] }> {
+}): Promise<{ block: Block }> {
   const content = input.block.content as { toolCallId?: string } | null;
   const toolCallId = content?.toolCallId ?? "";
   const priorOutput = (input.block.content as { output?: unknown } | null)?.output;
@@ -966,7 +924,7 @@ async function persistUncommittedWriteResult(input: {
       ],
     };
   });
-  return { block: persisted.result, events: persisted.events };
+  return { block: persisted.result };
 }
 
 async function persistCommittedWriteResult(input: {
@@ -974,7 +932,7 @@ async function persistCommittedWriteResult(input: {
   threadId: ThreadId;
   block: Block;
   output: unknown;
-}): Promise<{ block: Block; events: OrchestratorEvent[] }> {
+}): Promise<{ block: Block }> {
   const content = input.block.content as {
     toolCallId?: string;
     metadata?: Record<string, unknown>;
@@ -1000,12 +958,12 @@ async function persistCommittedWriteResult(input: {
       ],
     };
   });
-  return { block: persisted.result, events: persisted.events };
+  return { block: persisted.result };
 }
 
 /**
  * Loads and persists the text-reference reads for one user turn, returning the
- * turn's blocks with the read results applied plus the events to emit. Used both
+ * turn's blocks with the read results applied. Used both
  * at iteration 1 (the run's triggering turn) and when a mid-run drain adopts a
  * writer turn whose references were never read.
  */
@@ -1016,7 +974,7 @@ async function persistReferenceReads(input: {
   assistantTurnId: string;
   blocks: readonly Block[];
   signal?: AbortSignal;
-}): Promise<{ blocks: Block[]; events: OrchestratorEvent[] }> {
+}): Promise<{ blocks: Block[] }> {
   const loaded = await loadReferenceReads({
     blocks: input.blocks,
     userTurnId: input.userTurnId,
@@ -1025,7 +983,7 @@ async function persistReferenceReads(input: {
     reader: input.deps.referenceReader,
     signal: input.signal,
   });
-  if (loaded.length === 0) return { blocks: [...input.blocks], events: [] };
+  if (loaded.length === 0) return { blocks: [...input.blocks] };
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => ({
     result: loaded,
     events: loaded.map((block) => ({
@@ -1044,13 +1002,12 @@ async function persistReferenceReads(input: {
   const updatedById = new Map(persisted.result.map((block) => [block.id, block]));
   return {
     blocks: input.blocks.map((block) => updatedById.get(block.id) ?? block),
-    events: persisted.events,
   };
 }
 
 async function buildGenerateRequest(input: {
   deps: OrchestratorDeps;
-  runInput: RunTurnInput;
+  runInput: RunLoopInput;
   thread: Thread;
   turns: Turn[];
   blocks: Block[];
@@ -1091,9 +1048,142 @@ async function buildGenerateRequest(input: {
   };
 }
 
-async function* generateEvents(
+/** Staged edits belong to a response scope, which rotates at a Work switch. */
+function createResponseScope(input: {
+  deps: OrchestratorDeps;
+  threadId: ThreadId;
+  turnId: TurnId;
+  responseId: string;
+  allBlocks: Block[];
+}) {
+  const { deps, threadId, turnId, allBlocks } = input;
+  const writes = new Map<string, Array<{ block: Block; writeId: string; settlementId: string }>>();
+  let id = input.responseId;
+  let active = true;
+  return {
+    get id() {
+      return id;
+    },
+    get hasWrites() {
+      return writes.size > 0;
+    },
+    rotate() {
+      // Durable tool blocks keep the provider response id; only edit identity rotates.
+      id = crypto.randomUUID();
+      writes.clear();
+      active = true;
+    },
+    stage(dispatched: Extract<Awaited<ReturnType<typeof dispatchToolCall>>, { block: Block }>) {
+      const metadata = dispatched.metadata;
+      if (metadata?.stagedWrite !== true || typeof metadata.documentId !== "string") return;
+      if (typeof metadata.writeId !== "string" || typeof metadata.settlementId !== "string")
+        throw new Error(
+          `Staged write result missing write or settlement id for ${metadata.documentId}.`,
+        );
+      const blocks = writes.get(metadata.documentId) ?? [];
+      blocks.push({
+        block: dispatched.block,
+        writeId: metadata.writeId,
+        settlementId: metadata.settlementId,
+      });
+      writes.set(metadata.documentId, blocks);
+    },
+    async commit() {
+      const finalized: Array<{ write: { block: Block }; block: Block }> = [];
+      const outcome = await deps.responseWrites.commitResponse(
+        id,
+        { threadId, turnId },
+        async (settled) => {
+          for (const [documentId, blocks] of writes) {
+            for (const write of blocks) {
+              const result =
+                settled.status === "committed"
+                  ? await persistCommittedWriteResult({
+                      deps,
+                      threadId,
+                      block: write.block,
+                      output: settledReceipt(settled.receipts, documentId, write.settlementId)
+                        .result,
+                    })
+                  : await persistUncommittedWriteResult({
+                      deps,
+                      threadId,
+                      block: write.block,
+                      text: "The response closed before its staged write could commit. Re-read and retry.",
+                    });
+              finalized.push({ write, block: result.block });
+            }
+          }
+        },
+      );
+      active = false;
+      for (const { write, block } of finalized) {
+        write.block = block;
+        const index = allBlocks.findIndex((existing) => existing.id === block.id);
+        if (index >= 0) allBlocks[index] = block;
+      }
+      return outcome;
+    },
+    async backfill(
+      editsByDocument: Extract<
+        ResponseWriteCommitOutcome,
+        { status: "committed" }
+      >["concurrentEdits"],
+      remainingBytes: number,
+    ) {
+      const renderBudget = { remainingBytes };
+      // Backfill body-complete concurrent runs into the last write result per document.
+      for (const { documentId, concurrentEdits: edits } of editsByDocument) {
+        const boundedEdits = applyConcurrentRenderBudget(edits, renderBudget);
+        const block = writes.get(documentId)?.at(-1)?.block;
+        if (!block) continue;
+        const content = block.content as {
+          toolCallId?: string;
+          output?: unknown;
+          isError?: boolean;
+        } | null;
+        if (!content?.output) continue;
+
+        const output = content.output;
+        if (!isAgentEditResultEnvelope(output)) continue;
+
+        const updatedOutput = {
+          ...output,
+          concurrent: modelConcurrentResult(boundedEdits),
+        };
+        const updatedContent = {
+          ...content,
+          output: updatedOutput,
+        };
+        const updatedBlockRow = contentForBlockInput({
+          id: block.id,
+          turnId: block.turnId,
+          responseId: block.responseId,
+          blockType: "tool_result",
+          sequence: block.sequence,
+          content: toJsonValue(updatedContent),
+          provider: block.provider,
+          status: "complete",
+        });
+        const persistedBackfill = await persistAndAppendEvents(deps, input.threadId, async () => ({
+          result: localBlockFromEvent(updatedBlockRow),
+          events: [{ type: "block.upserted", block: updatedBlockRow }],
+        }));
+        const blockIndex = allBlocks.findIndex((existing) => existing.id === block.id);
+        if (blockIndex >= 0) allBlocks[blockIndex] = persistedBackfill.result;
+      }
+    },
+    async rollback() {
+      if (!active) return;
+      active = false;
+      await deps.responseWrites.rollbackResponse(id, { threadId, turnId });
+    },
+  };
+}
+
+async function executeLoop(
   deps: OrchestratorDeps,
-  input: RunTurnInput,
+  input: RunLoopInput,
   thread: Thread,
   /** The user turn whose admitted references load before the first request. */
   referenceUserTurnId: TurnId,
@@ -1101,7 +1191,6 @@ async function* generateEvents(
   /** Full ordered history before the assistant container, including drained messages. */
   initialTurns: Turn[],
   inheritedBlocks: Block[],
-  initialEvents: OrchestratorEvent[],
   treeBudget: TreeBudget,
   /**
    * Writer-activated skill slugs for this run's triggering turn. A writer start
@@ -1109,7 +1198,7 @@ async function* generateEvents(
    * writer turn it serves. `undefined` when the run activated none.
    */
   activatedSkillSlugs: readonly string[] | undefined,
-): AsyncGenerator<OrchestratorEvent> {
+): Promise<Turn> {
   const { gateway, repos, eventWriter } = deps;
   const eventSink = deps.eventSink;
   const turnAccounting = createTurnAccounting({ billingUsage: deps.billingUsage });
@@ -1119,7 +1208,6 @@ async function* generateEvents(
   // it only leaves the phase briefly stale until the next boundary.
   async function publishPhase(phase: ThreadPhase): Promise<void> {
     const lease = input.lease;
-    if (!lease) return;
     try {
       await deps.runAuthority.publish(lease, phase);
     } catch (error) {
@@ -1133,10 +1221,8 @@ async function* generateEvents(
     }
   }
 
-  yield* initialEvents;
-
   let currentAssistantTurn: Turn = assistantTurn;
-  let activeResponseId: string | undefined;
+  let responseScope: ReturnType<typeof createResponseScope> | undefined;
   const allTurns: Turn[] = [...initialTurns, assistantTurn];
   const allBlocks: Block[] = [
     ...inheritedBlocks,
@@ -1153,7 +1239,6 @@ async function* generateEvents(
       (message) => message.intent === "message" && !knownTurnIds.has(message.id),
     );
     const result = await repos.transaction(async () => {
-      const events: OrchestratorEvent[] = [];
       if (splits) {
         const completed = {
           ...currentAssistantTurn,
@@ -1161,11 +1246,10 @@ async function* generateEvents(
           finishReason: "end_turn" as const,
           completedAt: new Date().toISOString(),
         };
-        const persisted = await persistAndAppendEvents(deps, input.threadId, async () => ({
+        await persistAndAppendEvents(deps, input.threadId, async () => ({
           result: completed,
           events: [{ type: "turn.completed", turn: completed }],
         }));
-        events.push(...persisted.events);
         await repos.threads.updateCost(input.threadId, "0", 1);
       }
       const drain = await drainInbox({
@@ -1190,7 +1274,6 @@ async function* generateEvents(
           return slugs.length > 0 ? loadSkillBodies(slugs) : [];
         },
       });
-      events.push(...drain.persistedEvents);
       let next = currentAssistantTurn;
       if (splits) {
         const leaf =
@@ -1204,32 +1287,29 @@ async function* generateEvents(
           status: "streaming",
           writeMode: currentAssistantTurn.writeMode,
         });
-        const created = await persistAndAppendTurnStartEvents(
+        await persistAndAppendTurnStartEvents(
           deps,
           input.threadId,
           leaf,
           async () => ({ result: next, events: [{ type: "turn.created", turn: next }] }),
           {
             afterEvents: async () => {
-              if (input.lease) await deps.runAuthority.bindTurn(input.lease, next.id, drain.ackIds);
+              await deps.runAuthority.bindTurn(input.lease, next.id, drain.ackIds);
             },
           },
         );
-        events.push(...created.events);
-      } else if (input.lease && batch.length > 0) {
+      } else if (batch.length > 0) {
         if (!(await deps.runAuthority.setAdoptedMessageIds(input.lease, drain.ackIds)))
           throw new Error("Cannot adopt inbox batch after losing live run lease");
       }
-      if (input.lease && batch.length > 0) {
-        events.push(
-          await appendEvent(deps.eventWriter, input.threadId, {
-            type: "inbox.changed",
-            threadId: input.threadId,
-            pending: await readPendingInbox(deps.inbox, input.threadId),
-          }),
-        );
+      if (batch.length > 0) {
+        await appendEvent(deps.eventWriter, input.threadId, {
+          type: "inbox.changed",
+          threadId: input.threadId,
+          pending: await readPendingInbox(deps.inbox, input.threadId),
+        });
       }
-      return { drain: { ...drain, persistedEvents: events }, next };
+      return { drain, next };
     });
     allTurns.push(...result.drain.turns);
     for (const block of result.drain.blocks) {
@@ -1247,13 +1327,9 @@ async function* generateEvents(
   }
 
   async function rollbackActiveResponse(): Promise<void> {
-    if (!activeResponseId) return;
-    const responseId = activeResponseId;
-    activeResponseId = undefined;
-    await deps.responseWrites.rollbackResponse(responseId, {
-      threadId: input.threadId,
-      turnId: currentAssistantTurn.id,
-    });
+    const scope = responseScope;
+    responseScope = undefined;
+    await scope?.rollback();
   }
 
   // The run's single terminal exit. Every terminal route funnels through here so
@@ -1266,33 +1342,23 @@ async function* generateEvents(
   // same run's next iteration. Cancel, hard error, budget cap, and max-iteration
   // pass false: they always finalize and release. Cancel's pending message is a
   // distinct next turn, started by the run owner's post-cancel wake (see
-  // `turn-runner.cancel`).
+  // `run-session.cancel`).
   //
-  // `exitRun` returns `never`: it throws `RunExit`, a private control-flow
-  // signal the `while (true)` loop catches once. `continueRun` means the final
-  // claim found a pending batch and the next iteration must proceed; otherwise
-  // the terminal events were yielded and the run stops. Throwing keeps "continue
-  // vs stop" out of every call site instead of threading a boolean through
-  // `yield*`.
-  class RunExit {
-    constructor(readonly continueRun: boolean) {}
-  }
-
-  async function* exitRun(
+  async function exitRun(
     continueOnPending: boolean,
     complete: () => Promise<TerminalOutcome>,
-  ): AsyncGenerator<OrchestratorEvent, never> {
+  ): Promise<boolean> {
     const outcome = await closeRun<TerminalOutcome>({
       threadLock: deps.threadLock,
       inbox: deps.inbox,
       runAuthority: deps.runAuthority,
       threadId: input.threadId,
-      lease: input.lease ?? null,
+      lease: input.lease,
       continueOnPending,
       complete,
       splitAndContinue: async (batch) => {
         queuedDrain = await adoptBoundary(batch);
-        return { events: queuedDrain.persistedEvents };
+        return {};
       },
       afterRelease: async () => {
         await deps.eventWriter.appendEvent(input.threadId, {
@@ -1303,12 +1369,11 @@ async function* generateEvents(
       },
     });
     if (outcome.kind === "split") {
-      yield* outcome.completion.events;
-      throw new RunExit(true);
+      return true;
     }
     currentAssistantTurn = outcome.completion.turn ?? currentAssistantTurn;
-    yield* outcome.completion.events;
-    throw new RunExit(false);
+
+    return false;
   }
 
   const cancelTerminal = () =>
@@ -1342,11 +1407,10 @@ async function* generateEvents(
 
   // The one cancel exit: discard an in-flight response, then finalize through
   // `exitRun`. Every cancel site calls this so the rollback+cancel sequence
-  // cannot diverge. It never returns at runtime; `exitRun` always throws
-  // `RunExit`.
-  async function* cancelExit(): AsyncGenerator<OrchestratorEvent> {
+  // cannot diverge.
+  async function cancelExit(): Promise<boolean> {
     await rollbackActiveResponse();
-    yield* exitRun(false, cancelTerminal);
+    return exitRun(false, cancelTerminal);
   }
 
   // One loader for request-only skill bodies: a writer start passes its
@@ -1384,552 +1448,425 @@ async function* generateEvents(
     }> = [];
     const interruptAutoResume = await resolveInterruptAutoResumePolicy(deps, thread);
 
-    // Every cancellation/error path must yield terminal events, not just
+    // Every cancellation/error path must persist terminal events, not just
     // return/throw, so subscribers see the turn lifecycle closure.
-    while (true) {
-      try {
-        iteration += 1;
-        if (iteration > MAX_TURN_ITERATIONS) {
-          yield* exitRun(false, errorTerminal("exceeded max tool iterations"));
-        }
+    async function iterate(): Promise<boolean> {
+      iteration += 1;
+      if (iteration > MAX_TURN_ITERATIONS) {
+        return exitRun(false, errorTerminal("exceeded max tool iterations"));
+      }
 
-        // A cancel from another process has no local abort; the lease flag is the
-        // only signal. Read it before acting so the interrupt's next turn starts
-        // from a clean, already-released run.
-        if (input.lease) {
-          const status = await deps.runAuthority.read(input.threadId);
-          if (status.kind === "awake" && status.cancelRequested) leaseCancelled = true;
-        }
-        if (isCancelled()) {
-          yield* cancelExit();
-        }
+      // A cancel from another process has no local abort; the lease flag is the
+      // only signal. Read it before acting so the interrupt's next turn starts
+      // from a clean, already-released run.
+      const status = await deps.runAuthority.read(input.threadId);
+      if (status.kind === "awake" && status.cancelRequested) leaseCancelled = true;
+      if (isCancelled()) {
+        return cancelExit();
+      }
 
-        const budgetError = await turnAccounting.assertPreIterationBudget(treeBudget, thread);
-        if (budgetError) {
-          yield* exitRun(false, errorTerminal(budgetError));
-        }
+      const budgetError = await turnAccounting.assertPreIterationBudget(treeBudget, thread);
+      if (budgetError) {
+        return exitRun(false, errorTerminal(budgetError));
+      }
 
-        turnAccounting.recordIterationSpend(treeBudget);
+      turnAccounting.recordIterationSpend(treeBudget);
 
-        const gatewayAbort = new AbortController();
-        let cancelRequested = isCancelled();
-        if (input.signal) {
-          input.signal.addEventListener(
-            "abort",
-            () => {
-              cancelRequested = true;
-              gatewayAbort.abort();
-            },
-            { once: true },
-          );
-        }
+      const gatewayAbort = new AbortController();
+      let cancelRequested = isCancelled();
+      if (input.signal) {
+        input.signal.addEventListener(
+          "abort",
+          () => {
+            cancelRequested = true;
+            gatewayAbort.abort();
+          },
+          { once: true },
+        );
+      }
 
-        if (iteration === 1) {
-          const prepared = await persistReferenceReads({
-            deps,
-            threadId: input.threadId,
-            userTurnId: referenceUserTurnId,
-            assistantTurnId: currentAssistantTurn.id,
-            blocks: allBlocks,
-            signal: input.signal,
-          });
-          for (const block of prepared.blocks) {
-            const index = allBlocks.findIndex((existing) => existing.id === block.id);
-            if (index >= 0) allBlocks[index] = block;
-          }
-          yield* prepared.events;
-        }
-
-        const drain =
-          queuedDrain ??
-          (await deps.threadLock.withThreadLock(input.threadId, async () =>
-            adoptBoundary(await deps.inbox.claimPending(input.threadId)),
-          ));
-        if (!queuedDrain) yield* drain.persistedEvents;
-        queuedDrain = undefined;
-
-        const built = await buildGenerateRequest({
+      if (iteration === 1) {
+        const prepared = await persistReferenceReads({
           deps,
-          runInput: input,
-          thread,
-          turns: allTurns,
+          threadId: input.threadId,
+          userTurnId: referenceUserTurnId,
+          assistantTurnId: currentAssistantTurn.id,
           blocks: allBlocks,
-          gatewaySignal: gatewayAbort.signal,
+          signal: input.signal,
         });
-        thread = built.thread;
-        const request = built.request;
-        const gatewayCallId = crypto.randomUUID();
-        request.correlation = {
+        for (const block of prepared.blocks) {
+          const index = allBlocks.findIndex((existing) => existing.id === block.id);
+          if (index >= 0) allBlocks[index] = block;
+        }
+      }
+
+      const drain =
+        queuedDrain ??
+        (await deps.threadLock.withThreadLock(input.threadId, async () =>
+          adoptBoundary(await deps.inbox.claimPending(input.threadId)),
+        ));
+
+      queuedDrain = undefined;
+
+      const built = await buildGenerateRequest({
+        deps,
+        runInput: input,
+        thread,
+        turns: allTurns,
+        blocks: allBlocks,
+        gatewaySignal: gatewayAbort.signal,
+      });
+      thread = built.thread;
+      const request = built.request;
+      const gatewayCallId = crypto.randomUUID();
+      request.correlation = {
+        gatewayCallId,
+        threadId: input.threadId,
+        turnId: currentAssistantTurn.id,
+        iteration: iteration - 1,
+        ...(built.agentSlug ? { agentSlug: built.agentSlug } : {}),
+      };
+
+      // The writer's triggering message is pinned before the drain appends
+      // messages; notices and skill bodies must land there, not on a drained one.
+      writerMessageIndex ??= lastUserMessageIndex(request.messages);
+      const baseMessageCount = request.messages.length;
+      const inboxAckIds = drain.ackIds;
+      // These are the same ordered durable message turns, with request-only
+      // skill bodies and rich reference reads resolved at adoption.
+      if (drain.rendered.length > 0)
+        request.messages.splice(
+          request.messages.length - drain.rendered.length,
+          drain.rendered.length,
+          ...drain.rendered,
+        );
+      if (iteration === 1) {
+        preTurnNotices.push(...drain.notices);
+      } else if (drain.notices.length > 0) {
+        postToolNoticeBatches.push({
+          afterMessageCount: baseMessageCount,
+          notices: drain.notices,
+        });
+      }
+
+      if (activatedSkillSlugs?.length) {
+        activatedSkillBodies ??= await loadSkillBodies(activatedSkillSlugs);
+        request.messages = attachSkillBodiesToLatestUserMessage(
+          request.messages,
+          activatedSkillBodies,
+          writerMessageIndex,
+        );
+      }
+      if (preTurnNotices.length > 0) {
+        request.messages = attachNoticesToLatestUserMessage(
+          request.messages,
+          preTurnNotices,
+          writerMessageIndex,
+        );
+      }
+      let insertedNoticeMessages = 0;
+      for (const batch of postToolNoticeBatches) {
+        const beforeInsert = request.messages.length;
+        request.messages = insertPostToolNotices(
+          request.messages,
+          batch.notices,
+          batch.afterMessageCount + insertedNoticeMessages,
+        );
+        insertedNoticeMessages += request.messages.length - beforeInsert;
+      }
+      // After this point the drain is durable. If the provider stream throws before
+      // returning a result, the notice is lost, matching the model-call boundary.
+
+      try {
+        deps.modelRequestDebug.capture({
           gatewayCallId,
           threadId: input.threadId,
           turnId: currentAssistantTurn.id,
           iteration: iteration - 1,
-          ...(built.agentSlug ? { agentSlug: built.agentSlug } : {}),
-        };
+          agentSlug: built.agentSlug,
+          request,
 
-        // The writer's triggering message is pinned before the drain appends
-        // messages; notices and skill bodies must land there, not on a drained one.
-        writerMessageIndex ??= lastUserMessageIndex(request.messages);
-        const baseMessageCount = request.messages.length;
-        const inboxAckIds = drain.ackIds;
-        // These are the same ordered durable message turns, with request-only
-        // skill bodies and rich reference reads resolved at adoption.
-        if (drain.rendered.length > 0)
-          request.messages.splice(
-            request.messages.length - drain.rendered.length,
-            drain.rendered.length,
-            ...drain.rendered,
+          toolRegistry: deps.toolRegistry,
+        });
+      } catch (cause) {
+        eventSink.emit({
+          timestamp: new Date().toISOString(),
+          level: "warn",
+          source: "runtime.orchestrator",
+          name: "model_request_debug.capture_failed",
+          sensitivity: "safe",
+          correlation: { threadId: input.threadId, turnId: currentAssistantTurn.id },
+          payload: unknownToEventPayload(cause),
+        });
+      }
+
+      // The gateway yields a self-terminating stream: a sequence of
+      // text/reasoning/tool_call deltas followed by exactly one 'end'
+      // (with the assembled GenerateResult) or one 'error'.
+      // On cancel, abort the gateway call and drain through 'end' so partial
+      // usage can be persisted before turn.cancelled.
+      await publishPhase("generating");
+      let result: GenerateResult | undefined;
+      let streamModel = request.model ?? "unknown";
+      for await (const event of gateway.stream(request)) {
+        if (isCancelled()) {
+          cancelRequested = true;
+        }
+
+        if (event.type === "start") {
+          streamModel = event.model;
+        }
+
+        const mapped = mapStreamEvent(event);
+        if (mapped) {
+          await appendEvent(eventWriter, input.threadId, mapped);
+        }
+
+        if (event.type === "end") {
+          result = event.result;
+        }
+        if (event.type === "error") {
+          if (cancelRequested) {
+            break;
+          }
+          return exitRun(
+            false,
+            errorTerminal(meridianErrorFromGateway(event.code, event.message, event.retryable)),
           );
-        if (iteration === 1) {
-          preTurnNotices.push(...drain.notices);
-        } else if (drain.notices.length > 0) {
-          postToolNoticeBatches.push({
-            afterMessageCount: baseMessageCount,
-            notices: drain.notices,
-          });
         }
+      }
 
-        if (activatedSkillSlugs?.length) {
-          activatedSkillBodies ??= await loadSkillBodies(activatedSkillSlugs);
-          request.messages = attachSkillBodiesToLatestUserMessage(
-            request.messages,
-            activatedSkillBodies,
-            writerMessageIndex,
-          );
-        }
-        if (preTurnNotices.length > 0) {
-          request.messages = attachNoticesToLatestUserMessage(
-            request.messages,
-            preTurnNotices,
-            writerMessageIndex,
-          );
-        }
-        let insertedNoticeMessages = 0;
-        for (const batch of postToolNoticeBatches) {
-          const beforeInsert = request.messages.length;
-          request.messages = insertPostToolNotices(
-            request.messages,
-            batch.notices,
-            batch.afterMessageCount + insertedNoticeMessages,
-          );
-          insertedNoticeMessages += request.messages.length - beforeInsert;
-        }
-        // After this point the drain is durable. If the provider stream throws before
-        // returning a result, the notice is lost, matching the model-call boundary.
-
-        try {
-          deps.modelRequestDebug.capture({
-            gatewayCallId,
-            threadId: input.threadId,
-            turnId: currentAssistantTurn.id,
-            iteration: iteration - 1,
-            agentSlug: built.agentSlug,
-            request,
-
-            toolRegistry: deps.toolRegistry,
-          });
-        } catch (cause) {
-          eventSink.emit({
-            timestamp: new Date().toISOString(),
-            level: "warn",
-            source: "runtime.orchestrator",
-            name: "model_request_debug.capture_failed",
-            sensitivity: "safe",
-            correlation: { threadId: input.threadId, turnId: currentAssistantTurn.id },
-            payload: unknownToEventPayload(cause),
-          });
-        }
-
-        // The gateway yields a self-terminating stream: a sequence of
-        // text/reasoning/tool_call deltas followed by exactly one 'end'
-        // (with the assembled GenerateResult) or one 'error'.
-        // On cancel, abort the gateway call and drain through 'end' so partial
-        // usage can be persisted before turn.cancelled.
-        await publishPhase("generating");
-        let result: GenerateResult | undefined;
-        let streamModel = request.model ?? "unknown";
-        for await (const event of gateway.stream(request)) {
-          if (isCancelled()) {
-            cancelRequested = true;
-          }
-
-          if (event.type === "start") {
-            streamModel = event.model;
-          }
-
-          const mapped = mapStreamEvent(event);
-          if (mapped) {
-            yield* emit(eventWriter, input.threadId, mapped);
-          }
-
-          if (event.type === "end") {
-            result = event.result;
-          }
-          if (event.type === "error") {
-            if (cancelRequested) {
-              break;
-            }
-            yield* exitRun(
-              false,
-              errorTerminal(meridianErrorFromGateway(event.code, event.message, event.retryable)),
-            );
-          }
-        }
-
-        if (cancelRequested) {
-          const settled = await settleCancelledResponse({
-            deps,
-            runInput: input,
-            thread,
-            currentAssistantTurn,
-            treeBudget,
-            turnAccounting,
-            blockSeq: allBlocks.filter(
-              (b) => (b.turnId as string) === (currentAssistantTurn.id as string),
-            ).length,
-            allBlocks,
-            result,
-            model: result?.model ?? streamModel,
-          });
-          yield* settled.events;
-          currentAssistantTurn = settled.turn;
-          yield* exitRun(false, cancelTerminal);
-        }
-
-        if (!result) {
-          yield* exitRun(false, errorTerminal("Stream ended without result"));
-          return;
-        }
-
-        // blockSeq is the turn-scoped display order. It starts at the blocks
-        // already stored for this assistant turn and is handed to interrupt/tool
-        // collaborators so later blocks remain contiguous.
-        let blockSeq = allBlocks.filter(
-          (b) => (b.turnId as string) === (currentAssistantTurn.id as string),
-        ).length;
-        const persistedResponse = await persistModelResponse({
+      if (cancelRequested) {
+        const settled = await settleCancelledResponse({
           deps,
           runInput: input,
           thread,
           currentAssistantTurn,
-          result,
           treeBudget,
           turnAccounting,
-          blockSeq,
-          inboxAckIds,
+          blockSeq: allBlocks.filter(
+            (b) => (b.turnId as string) === (currentAssistantTurn.id as string),
+          ).length,
+          allBlocks,
+          result,
+          model: result?.model ?? streamModel,
         });
-        currentAssistantTurn = persistedResponse.updatedTurn;
-        blockSeq = persistedResponse.nextBlockSeq;
-        const responseId = persistedResponse.responseId;
-        const toolCallsFromResult = persistedResponse.toolCalls;
-        allBlocks.push(...persistedResponse.createdBlocks);
-        yield* persistedResponse.events;
 
-        if (result.finishReason === "error") {
-          yield* exitRun(false, errorTerminal("Model returned error finish reason"));
-        }
-        if (result.finishReason === "max_tokens") {
-          yield* exitRun(false, errorTerminal("Model exhausted its output tokens", "max_tokens"));
-        }
-
-        // blockSeq continues across tool_result blocks so all blocks for this
-        // turn are numbered contiguously regardless of which iteration
-        // created them.
-        if (result.finishReason === "tool_use" && toolCallsFromResult.length > 0) {
-          activeResponseId = responseId;
-          if (isCancelled()) {
-            yield* cancelExit();
-          }
-
-          const writeBlocksByDocument = new Map<
-            string,
-            Array<{ block: Block; writeId: string; settlementId: string }>
-          >();
-          let editResponseId = responseId;
-
-          async function settleWriteScope() {
-            const finalizedWrites: Array<{
-              documentId: string;
-              index: number;
-              block: Block;
-              events: OrchestratorEvent[];
-            }> = [];
-            const outcome = await deps.responseWrites.commitResponse(
-              editResponseId,
-              { threadId: input.threadId, turnId: currentAssistantTurn.id },
-              async (settled) => {
-                for (const [documentId, blocks] of writeBlocksByDocument) {
-                  for (const [index, write] of blocks.entries()) {
-                    const finalized =
-                      settled.status === "committed"
-                        ? await persistCommittedWriteResult({
-                            deps,
-                            threadId: input.threadId,
-                            block: write.block,
-                            output: settledReceipt(settled.receipts, documentId, write.settlementId)
-                              .result,
-                          })
-                        : await persistUncommittedWriteResult({
-                            deps,
-                            threadId: input.threadId,
-                            block: write.block,
-                            text: "The response closed before its staged write could commit. Re-read and retry.",
-                          });
-                    finalizedWrites.push({ documentId, index, ...finalized });
-                  }
-                }
-              },
-            );
-            const events: OrchestratorEvent[] = [];
-            for (const finalized of finalizedWrites) {
-              const writes = writeBlocksByDocument.get(finalized.documentId);
-              const write = writes?.[finalized.index];
-              if (writes && write) writes[finalized.index] = { ...write, block: finalized.block };
-              const blockIndex = allBlocks.findIndex(
-                (existing) => existing.id === finalized.block.id,
-              );
-              if (blockIndex >= 0) allBlocks[blockIndex] = finalized.block;
-              events.push(...finalized.events);
-            }
-            return { outcome, events };
-          }
-
-          // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
-          // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
-          for (const call of toolCallsFromResult) {
-            if (isCancelled()) {
-              yield* cancelExit();
-            }
-
-            if (
-              call.name === "work" &&
-              call.arguments &&
-              typeof call.arguments === "object" &&
-              "command" in call.arguments &&
-              call.arguments.command === "switch" &&
-              writeBlocksByDocument.size > 0
-            ) {
-              const boundary = await settleWriteScope();
-              activeResponseId = undefined;
-              yield* boundary.events;
-              if (boundary.outcome.status === "draft_closed") {
-                yield* exitRun(true, cancelTerminal);
-              }
-              writeBlocksByDocument.clear();
-              // A closed response fingerprint cannot accept post-switch writes.
-              // Rotate only the agent-edit lifecycle identity; durable tool blocks
-              // remain attached to the provider's model response.
-              editResponseId = crypto.randomUUID();
-              activeResponseId = editResponseId;
-            }
-
-            // If denied, we still persist a tool_result block (with isError: true)
-            // so the model sees the rejection in the next turn's context build.
-            const decision = built.permissionGate.check(call.name, call.arguments);
-            if (!decision.allowed) {
-              const persistedRejection = await persistToolRejection({
-                deps,
-                threadId: input.threadId,
-                turn: currentAssistantTurn,
-                call,
-                decision: { ...decision, category: "tool_denied" },
-                blockSeq,
-              });
-              blockSeq = persistedRejection.nextBlockSeq;
-              allBlocks.push(persistedRejection.block);
-              yield* persistedRejection.events;
-              continue;
-            }
-
-            await publishPhase("waiting");
-            const interruptState = {
-              thread,
-              threadId: input.threadId,
-              currentTurn: currentAssistantTurn,
-              autoResume: interruptAutoResume,
-              signal: input.signal,
-              blockSeqRef: { value: blockSeq },
-              allBlocks,
-            };
-            const interruptSession = createInterruptSession(
-              {
-                interruptRegistry: deps.interruptRegistry,
-                interruptArtifacts: deps.interruptArtifacts,
-                persistenceDeps: deps,
-                eventSink,
-              },
-              interruptState,
-            );
-            const dispatched = await dispatchToolCall(
-              {
-                toolExecutor: deps.toolExecutor,
-                childRunCoordinator: deps.childRunCoordinator,
-                eventSink,
-                persistenceDeps: deps,
-                executionReports: deps.repos.executionReports,
-                readSnapshot: deps.repos.readSnapshot,
-                runningTurn: deps.runAuthority,
-                workContextDelivery: deps.workContextDelivery,
-              },
-              call,
-              {
-                thread,
-                agentSlug: built.agentSlug,
-                responseId,
-                editResponseId,
-                state: interruptState,
-                interruptSession,
-                interruptAutoResume,
-                treeBudget,
-                blockSeqRef: interruptState.blockSeqRef,
-                allTurns,
-              },
-            );
-            currentAssistantTurn = interruptState.currentTurn;
-            blockSeq = interruptState.blockSeqRef.value;
-            yield* dispatched.events;
-            if (
-              !dispatched.cancelled &&
-              dispatched.metadata?.stagedWrite === true &&
-              typeof dispatched.metadata.documentId === "string"
-            ) {
-              if (typeof dispatched.metadata.writeId !== "string") {
-                throw new Error(
-                  `Staged write result missing write id for ${dispatched.metadata.documentId}.`,
-                );
-              }
-              if (typeof dispatched.metadata.settlementId !== "string") {
-                throw new Error(
-                  `Staged write result missing settlement id for ${dispatched.metadata.documentId}.`,
-                );
-              }
-              const blocks = writeBlocksByDocument.get(dispatched.metadata.documentId) ?? [];
-              blocks.push({
-                block: dispatched.block,
-                writeId: dispatched.metadata.writeId,
-                settlementId: dispatched.metadata.settlementId,
-              });
-              writeBlocksByDocument.set(dispatched.metadata.documentId, blocks);
-            }
-            if (dispatched.cancelled || isCancelled()) {
-              yield* cancelExit();
-              return;
-            }
-            if (dispatched.endTurn === true) endTurnRequested = true;
-          }
-          if (isCancelled()) {
-            yield* cancelExit();
-          }
-          const settledScope = await settleWriteScope();
-          const concurrentEdits = settledScope.outcome;
-          activeResponseId = undefined;
-          yield* settledScope.events;
-          if (concurrentEdits.status === "draft_closed") {
-            yield* exitRun(true, cancelTerminal);
-            return;
-          }
-
-          const renderBudget = {
-            remainingBytes: deps.concurrentRenderBudgetBytes?.(request) ?? Number.MAX_SAFE_INTEGER,
-          };
-          // Backfill body-complete concurrent runs into the last write result per document.
-          for (const { documentId, concurrentEdits: edits } of concurrentEdits.concurrentEdits) {
-            const boundedEdits = applyConcurrentRenderBudget(edits, renderBudget);
-            const block = writeBlocksByDocument.get(documentId)?.at(-1)?.block;
-            if (!block) continue;
-            const content = block.content as {
-              toolCallId?: string;
-              output?: unknown;
-              isError?: boolean;
-            } | null;
-            if (!content?.output) continue;
-
-            const output = content.output;
-            if (!isAgentEditResultEnvelope(output)) continue;
-
-            const updatedOutput = {
-              ...output,
-              concurrent: modelConcurrentResult(boundedEdits),
-            };
-            const updatedContent = {
-              ...content,
-              output: updatedOutput,
-            };
-            const updatedBlockRow = contentForBlockInput({
-              id: block.id,
-              turnId: block.turnId,
-              responseId: block.responseId,
-              blockType: "tool_result",
-              sequence: block.sequence,
-              content: toJsonValue(updatedContent),
-              provider: block.provider,
-              status: "complete",
-            });
-            const persistedBackfill = await persistAndAppendEvents(
-              deps,
-              input.threadId,
-              async () => ({
-                result: localBlockFromEvent(updatedBlockRow),
-                events: [{ type: "block.upserted", block: updatedBlockRow }],
-              }),
-            );
-            const blockIndex = allBlocks.findIndex((existing) => existing.id === block.id);
-            if (blockIndex >= 0) allBlocks[blockIndex] = persistedBackfill.result;
-            const documentBlocks = writeBlocksByDocument.get(documentId) ?? [];
-            const lastWrite = documentBlocks.at(-1);
-            if (lastWrite) {
-              documentBlocks[documentBlocks.length - 1] = {
-                ...lastWrite,
-                block: persistedBackfill.result,
-              };
-            }
-            yield* persistedBackfill.events;
-          }
-
-          if (endTurnRequested) {
-            // A child called return_result: the report is captured and persisted,
-            // so the turn ends here instead of looping into another model round.
-            // A message that landed in the exit window keeps the run going.
-            yield* exitRun(true, completeTerminal(result));
-          }
-
-          continue;
-        }
-
-        yield* exitRun(true, completeTerminal(result));
-      } catch (exit) {
-        if (exit instanceof RunExit) {
-          if (exit.continueRun) continue;
-          return;
-        }
-        throw exit;
+        currentAssistantTurn = settled;
+        return exitRun(false, cancelTerminal);
       }
+
+      if (!result) {
+        return exitRun(false, errorTerminal("Stream ended without result"));
+      }
+
+      // blockSeq is the turn-scoped display order. It starts at the blocks
+      // already stored for this assistant turn and is handed to interrupt/tool
+      // collaborators so later blocks remain contiguous.
+      let blockSeq = allBlocks.filter(
+        (b) => (b.turnId as string) === (currentAssistantTurn.id as string),
+      ).length;
+      const persistedResponse = await persistModelResponse({
+        deps,
+        runInput: input,
+        thread,
+        currentAssistantTurn,
+        result,
+        treeBudget,
+        turnAccounting,
+        blockSeq,
+        inboxAckIds,
+      });
+      currentAssistantTurn = persistedResponse.updatedTurn;
+      blockSeq = persistedResponse.nextBlockSeq;
+      const responseId = persistedResponse.responseId;
+      const toolCallsFromResult = persistedResponse.toolCalls;
+      allBlocks.push(...persistedResponse.createdBlocks);
+
+      if (result.finishReason === "error") {
+        return exitRun(false, errorTerminal("Model returned error finish reason"));
+      }
+      if (result.finishReason === "max_tokens") {
+        return exitRun(false, errorTerminal("Model exhausted its output tokens", "max_tokens"));
+      }
+
+      // blockSeq continues across tool_result blocks so all blocks for this
+      // turn are numbered contiguously regardless of which iteration
+      // created them.
+      if (result.finishReason === "tool_use" && toolCallsFromResult.length > 0) {
+        const scope = createResponseScope({
+          deps,
+          threadId: input.threadId,
+          turnId: currentAssistantTurn.id,
+          responseId,
+          allBlocks,
+        });
+        responseScope = scope;
+        if (isCancelled()) {
+          return cancelExit();
+        }
+
+        // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
+        // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
+        for (const call of toolCallsFromResult) {
+          if (isCancelled()) {
+            return cancelExit();
+          }
+
+          if (
+            call.name === "work" &&
+            call.arguments &&
+            typeof call.arguments === "object" &&
+            "command" in call.arguments &&
+            call.arguments.command === "switch" &&
+            scope.hasWrites
+          ) {
+            const boundary = await scope.commit();
+
+            if (boundary.status === "draft_closed") {
+              return exitRun(true, cancelTerminal);
+            }
+            scope.rotate();
+          }
+
+          // If denied, we still persist a tool_result block (with isError: true)
+          // so the model sees the rejection in the next turn's context build.
+          const decision = built.permissionGate.check(call.name, call.arguments);
+          if (!decision.allowed) {
+            const persistedRejection = await persistToolRejection({
+              deps,
+              threadId: input.threadId,
+              turn: currentAssistantTurn,
+              call,
+              decision: { ...decision, category: "tool_denied" },
+              blockSeq,
+            });
+            blockSeq = persistedRejection.nextBlockSeq;
+            allBlocks.push(persistedRejection.block);
+
+            continue;
+          }
+
+          await publishPhase("waiting");
+          const interruptState = {
+            thread,
+            threadId: input.threadId,
+            currentTurn: currentAssistantTurn,
+            autoResume: interruptAutoResume,
+            signal: input.signal,
+            blockSeqRef: { value: blockSeq },
+            allBlocks,
+          };
+          const interruptSession = createInterruptSession(
+            {
+              interruptRegistry: deps.interruptRegistry,
+              interruptArtifacts: deps.interruptArtifacts,
+              persistenceDeps: deps,
+              eventSink,
+            },
+            interruptState,
+          );
+          const dispatched = await dispatchToolCall(
+            {
+              toolExecutor: deps.toolExecutor,
+              childRunCoordinator: deps.childRunCoordinator,
+              eventSink,
+              persistenceDeps: deps,
+              executionReports: deps.repos.executionReports,
+              readSnapshot: deps.repos.readSnapshot,
+              runningTurn: deps.runAuthority,
+              workContextDelivery: deps.workContextDelivery,
+            },
+            call,
+            {
+              thread,
+              agentSlug: built.agentSlug,
+              responseId,
+              editResponseId: scope.id,
+              state: interruptState,
+              interruptSession,
+              interruptAutoResume,
+              treeBudget,
+              blockSeqRef: interruptState.blockSeqRef,
+              allTurns,
+            },
+          );
+          currentAssistantTurn = interruptState.currentTurn;
+          blockSeq = interruptState.blockSeqRef.value;
+
+          if (!dispatched.cancelled) scope.stage(dispatched);
+          if (dispatched.cancelled || isCancelled()) {
+            return cancelExit();
+          }
+          if (dispatched.endTurn === true) endTurnRequested = true;
+        }
+        if (isCancelled()) {
+          return cancelExit();
+        }
+        const concurrentEdits = await scope.commit();
+        responseScope = undefined;
+
+        if (concurrentEdits.status === "draft_closed") {
+          return exitRun(true, cancelTerminal);
+        }
+
+        await scope.backfill(
+          concurrentEdits.concurrentEdits,
+          deps.concurrentRenderBudgetBytes?.(request) ?? Number.MAX_SAFE_INTEGER,
+        );
+
+        if (endTurnRequested) {
+          // A child called return_result: the report is captured and persisted,
+          // so the turn ends here instead of looping into another model round.
+          // A message that landed in the exit window keeps the run going.
+          return exitRun(true, completeTerminal(result));
+        }
+
+        return true;
+      }
+
+      return exitRun(true, completeTerminal(result));
+    }
+    while (await iterate()) {
+      /* The next request starts only after its boundary commits. */
     }
   } catch (err) {
     try {
       await rollbackActiveResponse();
-    } catch (_rollbackError) {
+    } catch (rollbackError) {
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "runtime.orchestrator",
+        name: "response_rollback.failed",
+        correlation: { threadId: input.threadId },
+        payload: unknownToEventPayload(rollbackError),
+      });
       // Keep the original turn failure visible. rollbackResponse invalidates
       // staged runtimes before surfacing cleanup failures, so a second failure
       // here should not hide the error that broke the response.
     }
-    try {
-      const state = input.lease ? await deps.runAuthority.read(input.threadId) : null;
-      if (input.signal?.aborted || (state?.kind === "awake" && state.cancelRequested)) {
-        yield* exitRun(false, cancelTerminal);
-      } else {
-        yield* exitRun(
-          false,
-          errorTerminal(err instanceof Error ? err.message : String(err), "generator_error"),
-        );
-      }
-    } catch (exit) {
-      if (!(exit instanceof RunExit)) throw exit;
+    const state = await deps.runAuthority.read(input.threadId);
+    if (input.signal?.aborted || (state?.kind === "awake" && state.cancelRequested)) {
+      await exitRun(false, cancelTerminal);
+    } else {
+      await exitRun(
+        false,
+        errorTerminal(err instanceof Error ? err.message : String(err), "execution_error"),
+      );
     }
   } finally {
-    await rollbackActiveResponse().catch(() => undefined);
+    await rollbackActiveResponse().catch((error) => {
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "runtime.orchestrator",
+        name: "response_rollback.failed",
+        correlation: { threadId: input.threadId },
+        payload: unknownToEventPayload(error),
+      });
+    });
     // Helper result delivery is flushed by callers after their live-turn registry
     // is cleared. Draining here would race queued helper system turns into a
     // still-running parent thread.
   }
+  return currentAssistantTurn;
 }

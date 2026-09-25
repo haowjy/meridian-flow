@@ -219,12 +219,6 @@ describe("persistInboxMessages", () => {
     transition.mockRestore();
     expect(persisted.turns).toHaveLength(2);
     expect(persisted.turns[1]?.prevTurnId).toBe(persisted.turns[0]?.id);
-    expect(persisted.events.map((event) => event.type)).toEqual([
-      "turn.created",
-      "block.upserted",
-      "turn.created",
-      "block.upserted",
-    ]);
   });
 
   it("persists a child notification as writer-hidden system text, not a report card", async () => {
@@ -299,7 +293,6 @@ describe("drainInbox", () => {
     });
 
     expect(drain.turns).toEqual([]);
-    expect(drain.persistedEvents).toEqual([]);
     expect(drain.ackIds).toEqual([claimedMessage.id]);
     expect(await repos.turns.listByThread(thread.id)).toHaveLength(1);
   });
@@ -355,7 +348,6 @@ describe("drainInbox", () => {
       expectedLeafTurnId: enqueued.id as TurnId,
     });
 
-    expect(drain.persistedEvents).toEqual([]);
     expect(drain.turns.map((turn) => turn.id)).toEqual([enqueued.id]);
     expect(drain.rendered).toHaveLength(1);
     const parts = drain.rendered[0]?.content ?? [];
