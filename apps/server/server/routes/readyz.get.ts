@@ -56,24 +56,6 @@ async function checkSchemaStatus() {
 
 export default defineEventHandler(async (event) => {
   try {
-    await getApp();
-  } catch (error) {
-    emitEvent(getProcessEventSink(), {
-      level: "error",
-      source: "routes.readyz",
-      name: "app_init_failed",
-      payload: unknownToEventPayload(error),
-    });
-    setResponseStatus(event, 503);
-    return {
-      status: "error",
-      service: "api",
-      ready: false,
-      reason: "app_init_failed",
-    };
-  }
-
-  try {
     const schemaStatus = await checkSchemaStatus();
     if (schemaStatus === "behind" || schemaStatus === "divergent") {
       setResponseStatus(event, 503);
@@ -97,6 +79,24 @@ export default defineEventHandler(async (event) => {
       service: "api",
       ready: false,
       reason: "database_unavailable",
+    };
+  }
+
+  try {
+    await getApp();
+  } catch (error) {
+    emitEvent(getProcessEventSink(), {
+      level: "error",
+      source: "routes.readyz",
+      name: "app_init_failed",
+      payload: unknownToEventPayload(error),
+    });
+    setResponseStatus(event, 503);
+    return {
+      status: "error",
+      service: "api",
+      ready: false,
+      reason: "app_init_failed",
     };
   }
 
