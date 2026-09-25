@@ -66,17 +66,25 @@ for attempt in 1 2 3; do
   release_date="$(date -u +%F)"
   node tools/release/release.mjs bump package.json "${version#v}"
   if [[ "$intent_kind" == stable ]]; then
-    node tools/release/release.mjs changelog CHANGELOG.md "${version#v}" "$release_date"
+  node tools/release/release.mjs changelog CHANGELOG.md "${version#v}" "$release_date"
   fi
   git add package.json CHANGELOG.md
   git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "release: ${version}" -m "Release-Trigger: ${TRIGGER_SHA}"
   commit="$(git rev-parse HEAD)"
-  if git push "$remote" HEAD:main; then
+  expected_main="$(git rev-parse HEAD^)"
+  if push_output="$(git push "$remote" HEAD:main 2>&1)"; then
+    printf '%s\n' "$push_output"
     push_tag "$version" "$commit"
     echo "Released ${version} at ${commit}"
     exit 0
   fi
+  printf '%s\n' "$push_output" >&2
   git fetch origin main --force --tags
+  remote_main="$(git rev-parse origin/main)"
+  if [[ "$remote_main" == "$expected_main" ]] && grep -Eiq 'GH013|protected branch|ruleset|permission denied|write access' <<<"$push_output"; then
+    echo '::error::RELEASE_TOKEN was rejected by main protection. The token owner or GitHub App must bypass the protect ruleset; see tools/release/README.md#release-token.'
+    exit 1
+  fi
   if ! git rebase origin/main; then
     git rebase --abort || true
     echo "::error::Could not rebase release after push race (attempt ${attempt}/3)."; exit 1
