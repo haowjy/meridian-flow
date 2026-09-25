@@ -21,11 +21,11 @@ patch), unless `release:rc` or an unknown release label is present, which
 selects an RC. Existing repository labels are `release:patch` and
 `release:minor`; the workflow also accepts the other labels above.
 
-The release commit updates root `package.json` and rolls the current
-`## [Unreleased]` content into a dated `## [X.Y.Z]` section; a fresh empty
-Unreleased section remains. This includes RCs, matching meridian-cli and
-keeping every tag's source changelog truthful. Existing text preceding the
-Unreleased section is preserved as-is.
+The release commit updates root `package.json`. Stable releases roll the
+current `## [Unreleased]` content into a dated `## [X.Y.Z]` section, leaving a
+fresh empty Unreleased section; existing text preceding that section is
+preserved. RC releases leave `CHANGELOG.md` untouched, so their release notes
+come from the current `[Unreleased]` section.
 
 ## Safety and recovery
 
