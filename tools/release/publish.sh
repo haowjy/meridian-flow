@@ -24,7 +24,7 @@ find_prior_release() {
 }
 require_release_token() {
   if [[ -z "${RELEASE_TOKEN:-}" ]]; then
-    echo '::error::Missing RELEASE_TOKEN. Configure an admin fine-grained PAT or ruleset-bypass GitHub App; see tools/release/README.md#release-token.'
+    echo '::error::Missing RELEASE_TOKEN. Configure an admin fine-grained PAT or ruleset-bypass GitHub App; see docs/deploy/runbook.md.'
     exit 1
   fi
   remote="${RELEASE_REMOTE_URL:-https://x-access-token:${RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git}"
@@ -93,7 +93,7 @@ for attempt in 1 2 3; do
   git fetch origin main --force --tags
   remote_main="$(git rev-parse origin/main)"
   if [[ "$remote_main" == "$expected_main" ]] && grep -Eiq 'GH013|protected branch|ruleset|permission denied|write access' <<<"$push_output"; then
-    echo '::error::RELEASE_TOKEN was rejected by main protection. The token owner or GitHub App must bypass the protect ruleset; see tools/release/README.md#release-token.'
+    echo '::error::RELEASE_TOKEN was rejected by main protection. The token owner or GitHub App must bypass the protect ruleset; see docs/deploy/runbook.md.'
     exit 1
   fi
   if ! git rebase origin/main; then

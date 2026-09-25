@@ -25,42 +25,7 @@ pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 
 **Fresh clone:** `pnpm dev:infra` → `pnpm bootstrap` (migrate + apply-functions).
 
-The server image runs `pnpm --filter @meridian/database build:release` at build
-time and carries the bundle at `/app/release/`. The deploy seam invokes
-`node /app/release/release.mjs` before the new server image becomes healthy. If
-migrations are pending, it requires a deploy-seam confirmation in
-`MERIDIAN_BACKUP_REF` (`<provider>:<backup id>:release=<sha>`) whose release
-SHA matches `MERIDIAN_RELEASE_SHA`; then it applies migrations and function SQL
-in one transaction. Neon snapshot creation is owned by the CI deploy seam, so
-the Neon API credential never reaches the application runtime. With no pending
-migrations, no backup confirmation is required. The bundle needs Node at
-runtime, but no `node_modules`.
-
-The release command requires `DATABASE_URL`; `MERIDIAN_RELEASE_SHA` defaults to
-`unknown`. Pending migrations are refused unless `MERIDIAN_BACKUP_REF` confirms
-a pre-migration backup for that exact release. Local development can explicitly
-use `--no-backup-check` with `APP_ENV=dev`, `development`, or `local`; the
-image's default command must not use that escape hatch.
-
-The release bundle contains migration SQL, `meta/_journal.json`, and canonical
-function SQL only; Drizzle snapshot JSON is build-time metadata and is not read
-by the release runner. `getSchemaStatus` uses the same journal parsing and
-ledger comparison as the release runner. A matching prefix that is shorter
-than the image is `behind`, a mismatched history is `divergent`, and a database
-ahead of the image remains a valid rollback target. Server `/readyz` uses this
-check to keep a new image unhealthy until its schema is ready.
-
-When the DB ledger is ahead of a rollback bundle, the release runner skips
-that bundle's canonical function SQL and logs the reason. Function definitions
-follow expand/contract with stable signatures: introduce compatible behavior
-before callers depend on it, then remove obsolete behavior in a later release.
-Do not use rollback bundles to redeploy older function bodies over newer
-schema; in-place signature changes can also leave orphan overloads behind.
-
-`assertSupportedDatabaseUrl` is shared by server startup guards and the release
-CLI. Remove `channel_binding` from `DATABASE_URL` (retain `sslmode=require`);
-postgres.js does not support it. Staging and production also require a Neon
-direct endpoint rather than a `-pooler` host because the server uses LISTEN.
+Deploy builds a self-contained release bundle with `pnpm --filter @meridian/database build:release`; the server image runs `node /app/release/release.mjs` after a confirmed pre-migration Neon snapshot. Pending migrations require a matching `MERIDIAN_BACKUP_REF` and `MERIDIAN_RELEASE_SHA`; use the [deployment runbook](../../docs/deploy/runbook.md) for setup and recovery.
 
 ## Auth boundary
 
