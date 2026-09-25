@@ -40,7 +40,7 @@ export function createThreadedInbox(deps: {
     const message = await deps.inbox.enqueue(draft);
     if (draft.intent === "message") {
       deps.schedulePostCommit(async () => {
-        await deps.runStarter.start(draft.threadId).catch(() => undefined);
+        await deps.runStarter.start(draft.threadId);
       });
     }
     return message;

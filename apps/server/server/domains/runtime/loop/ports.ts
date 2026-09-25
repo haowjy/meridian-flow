@@ -74,8 +74,8 @@ export interface Inbox {
   /** One statement snapshot of raw pending rows and current live-run consumption. */
   readPendingProjection(threadId: ThreadId): Promise<InboxProjection>;
   ack(threadId: ThreadId, ids: string[]): Promise<void>;
-  /** Threads with at least one pending undelivered message, oldest first; the wake sweep's input. */
-  pendingMessageThreads(limit: number): Promise<ThreadId[]>;
+  /** Pending-message threads in stable ID order; keyset paging preserves per-thread enqueue order. */
+  pendingMessageThreads(limit: number, afterThreadId?: ThreadId): Promise<ThreadId[]>;
 }
 
 export type InboxProjection = {

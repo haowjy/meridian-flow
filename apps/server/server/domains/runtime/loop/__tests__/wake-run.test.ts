@@ -6,6 +6,7 @@
 import { EventType } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
+import { createInMemoryEventSink } from "../../../observability/index.js";
 import type { Gateway } from "../../gateway/index.js";
 import type { MessageDraft } from "../ports.js";
 import { createRunStarter } from "../run-starter.js";
@@ -65,7 +66,7 @@ describe("wake run", () => {
     const rig = await RuntimeTestRig.create({ gateway: textGateway() });
     await rig.inbox.enqueue(message("wake me", rig.thread.id));
 
-    await createRunStarter(rig.runner).start(rig.thread.id);
+    await createRunStarter(rig.runner, createInMemoryEventSink()).start(rig.thread.id);
     await rig.awaitEvent(EventType.RUN_FINISHED);
 
     const turns = await rig.repos.turns.listByThread(rig.thread.id);
@@ -83,7 +84,7 @@ describe("wake run", () => {
     const gate = runtimeGate();
     const rig = await RuntimeTestRig.create({ gateway: gatedGateway(gate) });
     await rig.inbox.enqueue(message("wake me", rig.thread.id));
-    const runStarter = createRunStarter(rig.runner);
+    const runStarter = createRunStarter(rig.runner, createInMemoryEventSink());
 
     await runStarter.start(rig.thread.id);
     // The run is live but blocked in its provider stream; the wake is a no-op.
@@ -112,7 +113,7 @@ describe("wake run", () => {
     });
     await rig.inbox.enqueue(message("wake me", rig.thread.id));
 
-    await createRunStarter(rig.runner).start(rig.thread.id);
+    await createRunStarter(rig.runner, createInMemoryEventSink()).start(rig.thread.id);
     // The run is live and blocked in its provider stream; the start notify has
     // already fired, so a woken subagent strip can read `awake` before terminal.
     expect(started).toEqual([rig.thread.id]);
@@ -128,7 +129,7 @@ describe("wake run", () => {
     const rig = await RuntimeTestRig.create({ gateway: gatedGateway(gate) });
     await rig.inbox.enqueue(message("status", rig.thread.id));
 
-    await createRunStarter(rig.runner).start(rig.thread.id);
+    await createRunStarter(rig.runner, createInMemoryEventSink()).start(rig.thread.id);
     // The run owns a live lease and is blocked in its provider stream.
     expect(await rig.runAuthority.read(rig.thread.id)).toEqual({
       kind: "awake",

@@ -25,6 +25,8 @@
 - Make Chat the only in-project landing at `/p/:slug`, combining the composer with Continue, Favorite, and Recent; remove the duplicate project Home and `/chats` destination. Project wordmarks now return to the account library.
 ### Fixed
 
+- Page wake recovery past blocked threads, batch lease checks, and report failed wakes without losing queued messages.
+
 - Retire a stopped run’s adopted inbox messages with cancellation; preserve later follow-ups for the next turn.
 
 - Bound cancelled provider drains to five seconds, even when provider teardown hangs.

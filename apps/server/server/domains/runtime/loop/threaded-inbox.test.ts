@@ -1,3 +1,5 @@
+import { createInMemoryEventSink } from "../../observability/index.js";
+import { createRunStarter } from "./run-starter.js";
 /**
  * The locked producer enqueue: it holds the per-thread lock across the insert
  * (so it serializes with `closeRun`'s final claim) and fires a best-effort
@@ -11,7 +13,7 @@ import {
   createInMemoryRunStarter,
   createInMemoryThreadLock,
 } from "../adapters/in-memory/loop-ports.js";
-import type { Inbox, MessageDraft, RunStarter } from "./ports.js";
+import type { Inbox, MessageDraft } from "./ports.js";
 import type { ThreadLock } from "./thread-lock.js";
 import { createThreadedInbox } from "./threaded-inbox.js";
 
@@ -179,11 +181,15 @@ describe("createThreadedInbox", () => {
   });
 
   it("keeps the enqueue when the best-effort start rejects", async () => {
-    const runStarter: RunStarter = {
-      async start() {
-        throw new Error("wake failed");
+    const eventSink = createInMemoryEventSink();
+    const runStarter = createRunStarter(
+      {
+        async startDrain() {
+          throw new Error("wake failed");
+        },
       },
-    };
+      eventSink,
+    );
     const inbox = createInMemoryInbox();
     const threaded = createThreadedInbox({
       inbox,
@@ -196,6 +202,9 @@ describe("createThreadedInbox", () => {
 
     expect(inboxMessage.intent).toBe("message");
     expect(await inbox.claimPending(THREAD_A)).toHaveLength(1);
+    expect(eventSink.events).toMatchObject([
+      { name: "wake.failed", correlation: { threadId: THREAD_A } },
+    ]);
   });
 
   it("defers the wake to the post-commit scheduler instead of firing inline", async () => {
