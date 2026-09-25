@@ -1,0 +1,177 @@
+name: meridian-production-shaped
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: meridian
+    ports:
+      - "55432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d meridian"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  object-store:
+    image: rustfs/rustfs:latest
+    environment:
+      RUSTFS_ACCESS_KEY: meridian-local
+      RUSTFS_SECRET_KEY: meridian-local-secret
+    ports:
+      - "19001:9000"
+    volumes:
+      - object-store-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/health/live"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  object-store-buckets:
+    image: amazon/aws-cli:2.31.0
+    depends_on:
+      object-store:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: meridian-local
+      AWS_SECRET_ACCESS_KEY: meridian-local-secret
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        for bucket in uploads backups; do
+          if ! aws --endpoint-url http://object-store:9000 s3api head-bucket --bucket "$$bucket" 2>/dev/null; then
+            aws --endpoint-url http://object-store:9000 s3api create-bucket --bucket "$$bucket"
+          fi
+        done
+
+  server:
+    image: meridian-production-shaped-server:latest
+    build:
+      context: ../../..
+      dockerfile: apps/server/Dockerfile
+      args:
+        MERIDIAN_VERSION: ${MERIDIAN_VERSION:-local}
+        MERIDIAN_RELEASE_SHA: ${MERIDIAN_RELEASE_SHA:-local}
+    environment:
+      NODE_ENV: production
+      APP_ENV: production
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/meridian
+      MERIDIAN_BACKENDS: live
+      OBJECT_STORE_PROVIDER: s3
+      S3_ENDPOINT: http://object-store:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:19001
+      S3_REGION: us-east-1
+      S3_BUCKET: uploads
+      S3_ACCESS_KEY: meridian-local
+      S3_SECRET_KEY: meridian-local-secret
+      S3_FORCE_PATH_STYLE: "true"
+      BACKUP_S3_BUCKET: backups
+      BACKUP_S3_REGION: us-east-1
+      BACKUP_S3_ENDPOINT: http://object-store:9000
+      BACKUP_S3_FORCE_PATH_STYLE: "true"
+      BACKUP_S3_ACCESS_KEY: meridian-local
+      BACKUP_S3_SECRET_KEY: meridian-local-secret
+      BACKUP_S3_PREFIX: local
+      WORKOS_API_KEY: sk_prod_prod_boot_smoke_not_a_real_key
+      WORKOS_CLIENT_ID: client_prod_boot_smoke_not_real
+      WORKOS_COOKIE_PASSWORD: prod-boot-smoke-cookie-password-000000000000
+      WORKOS_REDIRECT_URI: http://localhost:18080/api/auth/callback
+      API_REPLICA_COUNT: "1"
+      PORT: "3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      object-store-buckets:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  app:
+    image: meridian-production-shaped-app:latest
+    build:
+      context: ../../..
+      dockerfile: apps/app/Dockerfile
+      args:
+        MERIDIAN_VERSION: ${MERIDIAN_VERSION:-local}
+        MERIDIAN_RELEASE_SHA: ${MERIDIAN_RELEASE_SHA:-local}
+    environment:
+      NODE_ENV: production
+      APP_ENV: production
+      MERIDIAN_API_ORIGIN: http://server:3000
+      WORKOS_API_KEY: sk_prod_prod_boot_smoke_not_a_real_key
+      WORKOS_CLIENT_ID: client_prod_boot_smoke_not_real
+      WORKOS_COOKIE_PASSWORD: prod-boot-smoke-cookie-password-000000000000
+      WORKOS_REDIRECT_URI: http://localhost:18080/api/auth/callback
+      PORT: "3000"
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/login').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  www:
+    image: meridian-production-shaped-www:latest
+    build:
+      context: ../../..
+      dockerfile: apps/www/Dockerfile
+      args:
+        MERIDIAN_VERSION: ${MERIDIAN_VERSION:-local}
+        MERIDIAN_RELEASE_SHA: ${MERIDIAN_RELEASE_SHA:-local}
+    environment:
+      NODE_ENV: production
+      APP_ENV: production
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/meridian
+      PORT: "3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  ingress:
+    image: meridian-production-shaped-ingress:latest
+    build:
+      context: ../../..
+      dockerfile: tools/deploy/ingress/Dockerfile
+      args:
+        MERIDIAN_VERSION: ${MERIDIAN_VERSION:-local}
+        MERIDIAN_RELEASE_SHA: ${MERIDIAN_RELEASE_SHA:-local}
+    environment:
+      PORT: "8080"
+      APP_UPSTREAM: app:3000
+      SERVER_UPSTREAM: server:3000
+    ports:
+      - "18080:8080"
+    depends_on:
+      app:
+        condition: service_started
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/_ingress/health"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  # The release lane will add the backup+migrate one-shot service here.
+
+volumes:
+  postgres-data:
+  object-store-data:

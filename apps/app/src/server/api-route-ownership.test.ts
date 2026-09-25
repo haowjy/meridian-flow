@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
-import { getApiRouteOwner } from "./api-route-ownership";
+import { getApiRouteOwner, getAppOwnedExactApiRoutes } from "./api-route-ownership";
 
 describe("API route ownership", () => {
   it("forwards project ID lookup without claiming adjacent routes", () => {
@@ -41,5 +43,18 @@ describe("API route ownership", () => {
     "/api/auth/dev-login/unimplemented",
   ])("forwards the server-owned auth route %s", (pathname) => {
     expect(getApiRouteOwner(pathname)).toBe("server");
+  });
+  it("routes every app-owned exact API path to the app in Caddy", () => {
+    const caddyfile = readFileSync(
+      new URL("../../../../tools/deploy/ingress/Caddyfile", import.meta.url),
+      "utf8",
+    );
+    const appMatcher = caddyfile
+      .split("\n")
+      .find((line) => line.trimStart().startsWith("@appOwned path"));
+
+    for (const route of getAppOwnedExactApiRoutes()) {
+      expect(appMatcher).toContain(route);
+    }
   });
 });
