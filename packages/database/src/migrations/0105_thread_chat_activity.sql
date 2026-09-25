@@ -1,6 +1,8 @@
 ALTER TABLE "threads" ADD COLUMN "last_activity_at" timestamp with time zone DEFAULT now() NOT NULL;--> statement-breakpoint
 ALTER TABLE "threads" ADD COLUMN "conversational_leaf_turn_id" uuid;--> statement-breakpoint
 CREATE INDEX "threads_project_activity_primary_active" ON "threads" USING btree ("project_id","last_activity_at" DESC NULLS LAST,"id" DESC NULLS LAST) WHERE "threads"."kind" = 'primary' AND "threads"."deleted_at" IS NULL AND "threads"."status" <> 'archived';--> statement-breakpoint
+-- Backfill. The visibility predicate below is a frozen copy of
+-- visibleConversationalTurnSql (apps/server/.../visible-conversation-sql.ts).
 WITH RECURSIVE lineage AS (
   SELECT t.id AS thread_id, tr.id AS turn_id, tr.parent_turn_id, tr.role,
     tr.metadata, tr.created_at, tr.completed_at, 0 AS depth,

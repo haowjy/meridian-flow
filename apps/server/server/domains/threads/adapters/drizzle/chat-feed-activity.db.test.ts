@@ -82,6 +82,35 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect(await activity()).toBe("2025-01-01T00:00:00.000000Z");
     });
 
+    it("advances when a custom block makes a system turn visible, not for text", async () => {
+      const first = await repos.turns.create({
+        threadId: THREAD,
+        role: "user",
+        createdAt: "2025-01-01T00:00:00.000Z",
+      });
+      const system = await repos.turns.create({
+        threadId: THREAD,
+        prevTurnId: first.id,
+        role: "system",
+        createdAt: "2025-01-01T00:05:00.000Z",
+      });
+      await repos.blocks.create({
+        turnId: system.id,
+        blockType: "text",
+        sequence: 0,
+        textContent: "hidden",
+      });
+      expect(await activity()).toBe("2025-01-01T00:00:00.000000Z");
+      await repos.blocks.upsert({
+        id: "00000000-0000-4000-8000-000000000894",
+        turnId: system.id,
+        blockType: "custom",
+        sequence: 1,
+        content: { kind: "notice" },
+      });
+      expect(await activity()).toBe("2025-01-01T00:05:00.000000Z");
+    });
+
     it("changes activity when a branch switches the active leaf", async () => {
       const root = await repos.turns.create({
         threadId: THREAD,
