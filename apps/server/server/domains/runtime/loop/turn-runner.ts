@@ -42,7 +42,6 @@ import {
   TurnStartConflictError,
 } from "../../threads/index.js";
 import type { ChildReportDelivery } from "../spawn/child-report-delivery.js";
-import { ServerRestartingError } from "./abort-reasons.js";
 import type { RunTurnPort } from "./run-turn-port.js";
 import {
   createInMemoryThreadRunOwnership,
@@ -66,10 +65,7 @@ export interface ChildRunRegistry {
   unregisterChild(childThreadId: ThreadId): void;
   markChildTurn(childThreadId: ThreadId, assistantTurnId: TurnId): void;
   abortChild(childThreadId: ThreadId): void;
-  abortChildrenOf(
-    parentThreadId: ThreadId,
-    options?: { includeBackground?: boolean; reason?: unknown },
-  ): void;
+  abortChildrenOf(parentThreadId: ThreadId, options?: { includeBackground?: boolean }): void;
 }
 
 type RunningTurn = {
@@ -106,70 +102,12 @@ export function createTurnRunner(deps: {
   /** WS peers currently connected; a token not in this set cannot authorize a new turn start. */
   const liveConnectionTokens = new Set<string>();
   const childRuns = new Map<ThreadId, ChildRun>();
-  const activeTurnTasks = new Set<Promise<void>>();
-  let stopping = false;
 
   function assertConnectionTokenLive(connectionToken: string | undefined): void {
     if (!connectionToken) return;
     if (!liveConnectionTokens.has(connectionToken)) {
       throw new StaleConnectionTokenError();
     }
-  }
-
-  async function cancel(
-    threadId: ThreadId,
-    turnId: TurnId,
-  ): Promise<"cancelled" | "already_finished" | "not_found"> {
-    const active = running.get(threadId);
-    if (active?.assistantTurnId === turnId) {
-      childRunRegistry.abortChildrenOf(threadId, { includeBackground: true });
-      active.controller.abort();
-      return "cancelled";
-    }
-
-    const turn = await deps.repos.turns.findById(turnId);
-    if (!turn || turn.threadId !== threadId) {
-      return "not_found";
-    }
-
-    if (isTerminalTurnStatus(turn.status)) {
-      return "already_finished";
-    }
-
-    if (active) {
-      return "already_finished";
-    }
-
-    return "not_found";
-  }
-
-  async function shutdown(): Promise<void> {
-    stopping = true;
-    const errors: unknown[] = [];
-    const reason = new ServerRestartingError();
-    for (const [threadId, active] of running) {
-      if (active.assistantTurnId) {
-        childRunRegistry.abortChildrenOf(threadId, { includeBackground: true, reason });
-        active.controller.abort(reason);
-      } else {
-        active.controller.abort(reason);
-      }
-    }
-
-    while (activeTurnTasks.size > 0) {
-      const results = await Promise.allSettled([...activeTurnTasks]);
-      for (const result of results) {
-        if (result.status === "rejected") errors.push(result.reason);
-      }
-    }
-
-    if (errors.length > 0) {
-      throw new AggregateError(errors, "One or more running turns failed to drain on shutdown.");
-    }
-  }
-
-  function assertAccepting(): void {
-    if (stopping) throw new ServerRestartingError();
   }
 
   const childRunRegistry: ChildRunRegistry = {
@@ -202,7 +140,7 @@ export function createTurnRunner(deps: {
       for (const [childThreadId, child] of childRuns) {
         if (child.parentThreadId !== parentThreadId) continue;
         if (child.background && !options?.includeBackground) continue;
-        child.controller.abort(options?.reason);
+        child.controller.abort();
         childRuns.delete(childThreadId);
       }
     },
@@ -218,8 +156,6 @@ export function createTurnRunner(deps: {
     unregisterLiveConnectionToken(connectionToken: string): void {
       liveConnectionTokens.delete(connectionToken);
     },
-
-    assertAccepting,
 
     getRunningTurnId(threadId: ThreadId): TurnId | null {
       return running.get(threadId)?.assistantTurnId ?? null;
@@ -246,7 +182,6 @@ export function createTurnRunner(deps: {
       resumeAfterSeq: string;
       snapshotFloorNextSeq: string;
     }> {
-      assertAccepting();
       if (running.has(input.threadId)) {
         throw new TurnStartConflictError(input.threadId, "already_running");
       }
@@ -300,7 +235,7 @@ export function createTurnRunner(deps: {
           claim,
         });
 
-        const task = (async () => {
+        void (async () => {
           try {
             for await (const _event of handle.events) {
               // Events are written to the hub by the orchestrator's emit();
@@ -343,18 +278,7 @@ export function createTurnRunner(deps: {
               }
             }
           }
-        })().catch((error: unknown) => {
-          emitEvent(eventSink, {
-            level: "error",
-            source: "runtime.turn-runner",
-            name: "task.failed",
-            correlation: { threadId: input.threadId, turnId: handle.assistantTurnId },
-            payload: unknownToEventPayload(error),
-          });
-          throw error;
-        });
-        activeTurnTasks.add(task);
-        void task.catch(() => {}).finally(() => activeTurnTasks.delete(task));
+        })();
 
         return {
           userTurnId: handle.userTurnId,
@@ -369,7 +293,31 @@ export function createTurnRunner(deps: {
       }
     },
 
-    cancel,
-    shutdown,
+    async cancel(
+      threadId: ThreadId,
+      turnId: TurnId,
+    ): Promise<"cancelled" | "already_finished" | "not_found"> {
+      const active = running.get(threadId);
+      if (active?.assistantTurnId === turnId) {
+        childRunRegistry.abortChildrenOf(threadId, { includeBackground: true });
+        active.controller.abort();
+        return "cancelled";
+      }
+
+      const turn = await deps.repos.turns.findById(turnId);
+      if (!turn || turn.threadId !== threadId) {
+        return "not_found";
+      }
+
+      if (isTerminalTurnStatus(turn.status)) {
+        return "already_finished";
+      }
+
+      if (active) {
+        return "already_finished";
+      }
+
+      return "not_found";
+    },
   };
 }

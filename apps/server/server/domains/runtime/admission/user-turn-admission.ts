@@ -54,11 +54,6 @@ export interface AdmissionRecordPort {
     fingerprint: AdmissionFingerprint;
     claimExpiresAt: Date;
   }): Promise<{ kind: "reserved" } | { kind: "winner"; record: AdmissionRecord }>;
-  releasePending(input: {
-    threadId: string;
-    submissionId: string;
-    fingerprint: AdmissionFingerprint;
-  }): Promise<void>;
   reject(input: {
     threadId: string;
     submissionId: string;
@@ -74,7 +69,6 @@ export type AdmissionRecord =
   | { state: "accepted"; fingerprint: AdmissionFingerprint; response: AcceptedAdmission };
 
 export interface AdmissionTurnStarter {
-  assertAccepting?(): void;
   start(input: {
     admission: UserTurnAdmissionInput;
     fingerprint: AdmissionFingerprint;
@@ -406,7 +400,6 @@ export function createUserTurnAdmission(deps: {
       return deps.records.retire(request);
     },
     async admit(input) {
-      deps.starter.assertAccepting?.();
       const blocks = parseUserMessageBlocks(input.blocks, input.text);
       const references = parseSubmittedReferences(input.references);
       validateReferenceMembership(blocks, references);

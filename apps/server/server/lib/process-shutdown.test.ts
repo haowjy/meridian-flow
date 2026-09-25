@@ -25,7 +25,7 @@ describe("process shutdown", () => {
     const failed = await runShutdownSteps(
       [
         {
-          name: "turn-drain",
+          name: "websocket-admission",
           timeoutMs: 1,
           callback: () => new Promise<void>(() => {}),
         },
@@ -41,7 +41,7 @@ describe("process shutdown", () => {
 
     expect(failed).toBe(true);
     expect(visited).toEqual(["database-close"]);
-    expect(events.map(({ name }) => name)).toContain("shutdown.incomplete.turn-drain");
+    expect(events.map(({ name }) => name)).toContain("shutdown.incomplete.websocket-admission");
     expect(events.map(({ name }) => name)).toContain("shutdown.database-close.completed");
   });
 

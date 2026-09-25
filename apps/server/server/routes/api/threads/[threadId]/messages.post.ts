@@ -10,7 +10,6 @@ import {
 import {
   AdmissionConflictError,
   InvalidAdmissionError,
-  ServerRestartingError,
 } from "../../../../domains/runtime/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../lib/request-id.js";
@@ -50,9 +49,6 @@ export default defineEventHandler(async (event): Promise<SendMessageResponse> =>
       status: "accepted",
     };
   } catch (error) {
-    if (error instanceof ServerRestartingError) {
-      throw createError({ statusCode: 503, message: error.code });
-    }
     if (error instanceof InvalidAdmissionError)
       throw createError({ statusCode: 400, message: error.code });
     if (error instanceof AdmissionConflictError)

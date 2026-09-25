@@ -90,25 +90,6 @@ export function createDrizzleAdmissionRecords(db: Database): AdmissionPersistenc
         return { kind: "reserved" };
       });
     },
-    async releasePending(input) {
-      await runInDrizzleTransaction(db, async () => {
-        await currentDrizzleDb(db)
-          .select({ id: threads.id })
-          .from(threads)
-          .where(eq(threads.id, input.threadId as never))
-          .for("update");
-        await currentDrizzleDb(db)
-          .delete(userTurnAdmissions)
-          .where(
-            and(
-              eq(userTurnAdmissions.threadId, input.threadId as never),
-              eq(userTurnAdmissions.submissionId, input.submissionId),
-              eq(userTurnAdmissions.fingerprint, input.fingerprint),
-              eq(userTurnAdmissions.state, "pending"),
-            ),
-          );
-      });
-    },
     async reject(input) {
       return runInDrizzleTransaction(db, async () => {
         await currentDrizzleDb(db)

@@ -57,13 +57,6 @@ registerProcessShutdownCallback(
   },
   { timeoutMs: POLLING_LOOPS_SHUTDOWN_TIMEOUT_MS },
 );
-registerProcessShutdownCallback(
-  "turn-drain",
-  async () => {
-    await (await getApp()).runner.shutdown();
-  },
-  { timeoutMs: 8_000 },
-);
 registerProcessShutdownCallback("http-drain", async () => {
   stopHttpRequestAdmission();
   await waitForHttpRequestDrain(10_000);

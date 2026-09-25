@@ -103,7 +103,6 @@ import type { ImageAssetPort } from "../ports/image-asset.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
-import { isShutdownAbort, shutdownTurnError } from "./abort-reasons.js";
 import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import {
@@ -112,7 +111,7 @@ import {
   insertPostToolNotices,
 } from "./context-builder.js";
 import {
-  finalizeAbortedTurn,
+  finalizeCancelled,
   finalizeError,
   finalizeTurnOnGeneratorFailure,
 } from "./finalization.js";
@@ -684,12 +683,7 @@ async function* settleAndFinalizeCancelled(input: {
     });
   }
 
-  yield* await finalizeAbortedTurn(
-    input.deps,
-    input.runInput.threadId,
-    currentAssistantTurn,
-    input.runInput.signal,
-  );
+  yield* await finalizeCancelled(input.deps, input.runInput.threadId, currentAssistantTurn);
 }
 
 async function persistPermissionDenial(input: {
@@ -958,7 +952,7 @@ async function* generateEvents(
       }
 
       if (input.signal?.aborted) {
-        yield* await finalizeAbortedTurn(deps, input.threadId, currentAssistantTurn, input.signal);
+        yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
         return;
       }
 
@@ -977,7 +971,7 @@ async function* generateEvents(
           "abort",
           () => {
             cancelRequested = true;
-            gatewayAbort.abort(input.signal?.reason);
+            gatewayAbort.abort();
           },
           { once: true },
         );
@@ -1128,15 +1122,6 @@ async function* generateEvents(
           if (cancelRequested) {
             break;
           }
-          if (isShutdownAbort(input.signal)) {
-            yield* await finalizeError(
-              deps,
-              input.threadId,
-              currentAssistantTurn,
-              shutdownTurnError(),
-            );
-            return;
-          }
           yield* await finalizeError(
             deps,
             input.threadId,
@@ -1162,11 +1147,6 @@ async function* generateEvents(
           result,
           model: result?.model ?? streamModel,
         });
-        return;
-      }
-
-      if (isShutdownAbort(input.signal)) {
-        yield* await finalizeError(deps, input.threadId, currentAssistantTurn, shutdownTurnError());
         return;
       }
 
@@ -1220,12 +1200,7 @@ async function* generateEvents(
         activeResponseId = responseId;
         if (input.signal?.aborted) {
           await rollbackActiveResponse();
-          yield* await finalizeAbortedTurn(
-            deps,
-            input.threadId,
-            currentAssistantTurn,
-            input.signal,
-          );
+          yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
           return;
         }
 
@@ -1287,12 +1262,7 @@ async function* generateEvents(
         for (const call of toolCallsFromResult) {
           if (input.signal?.aborted) {
             await rollbackActiveResponse();
-            yield* await finalizeAbortedTurn(
-              deps,
-              input.threadId,
-              currentAssistantTurn,
-              input.signal,
-            );
+            yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
             return;
           }
 
@@ -1308,12 +1278,7 @@ async function* generateEvents(
             activeResponseId = undefined;
             yield* boundary.events;
             if (boundary.outcome.status === "draft_closed") {
-              yield* await finalizeAbortedTurn(
-                deps,
-                input.threadId,
-                currentAssistantTurn,
-                input.signal,
-              );
+              yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
               return;
             }
             writeBlocksByDocument.clear();
@@ -1411,24 +1376,14 @@ async function* generateEvents(
           }
           if (dispatched.cancelled || input.signal?.aborted) {
             await rollbackActiveResponse();
-            yield* await finalizeAbortedTurn(
-              deps,
-              input.threadId,
-              currentAssistantTurn,
-              input.signal,
-            );
+            yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
             return;
           }
           if (dispatched.endTurn === true) endTurnRequested = true;
         }
         if (input.signal?.aborted) {
           await rollbackActiveResponse();
-          yield* await finalizeAbortedTurn(
-            deps,
-            input.threadId,
-            currentAssistantTurn,
-            input.signal,
-          );
+          yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
           return;
         }
         const settledScope = await settleWriteScope();
@@ -1436,12 +1391,7 @@ async function* generateEvents(
         activeResponseId = undefined;
         yield* settledScope.events;
         if (concurrentEdits.status === "draft_closed") {
-          yield* await finalizeAbortedTurn(
-            deps,
-            input.threadId,
-            currentAssistantTurn,
-            input.signal,
-          );
+          yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
           return;
         }
 

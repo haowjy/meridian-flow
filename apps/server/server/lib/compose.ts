@@ -1205,14 +1205,12 @@ export function createInMemoryAppServices(): AppServices {
       },
       registerLiveConnectionToken() {},
       unregisterLiveConnectionToken() {},
-      assertAccepting() {},
       async startTurn() {
         throw new Error("in-memory turn runner is not implemented");
       },
       async cancel() {
         return "not_found" as const;
       },
-      async shutdown() {},
     },
     userTurnAdmission: {
       async admit(input) {
