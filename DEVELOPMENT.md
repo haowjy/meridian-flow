@@ -12,6 +12,8 @@ Use **direnv** so the shell picks up `.envrc`. `pnpm bootstrap` runs `direnv all
 
 Runtime dev-tool contracts: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md).
 
+Deployment environment contract: [docs/deploy/README.md](docs/deploy/README.md); for first provisioning and operations, see the [deploy runbook](docs/deploy/runbook.md) and [deployment operations](docs/deploy/operations.md).
+
 ### Stripe test-mode workflow
 
 Local dev can run with no Stripe keys. In that mode the billing gateway is
