@@ -9,6 +9,7 @@ interface MigrationJournal {
 }
 
 export type SchemaStatus = "current" | "ahead" | "behind" | "divergent";
+type AppliedMigration = { hash: string; created_at: string | number | null };
 
 function readReleaseMigrations(migrationsDirectory: string) {
   const journal = JSON.parse(
@@ -47,15 +48,21 @@ function compareMigrationHistory(
 export async function getSchemaStatus(input: {
   databaseUrl: string;
   migrationsDirectory: string;
+  readAppliedHistory?: () => Promise<AppliedMigration[] | undefined>;
 }): Promise<SchemaStatus> {
   const { migrations } = readReleaseMigrations(input.migrationsDirectory);
+  if (input.readAppliedHistory) {
+    const applied = await input.readAppliedHistory();
+    if (!applied) return migrations.length === 0 ? "current" : "behind";
+    return compareMigrationHistory(applied, migrations);
+  }
   const client = postgres(input.databaseUrl, { max: 1, onnotice: () => {} });
   try {
     const [table] = await client<Array<{ exists: boolean }>>`
       SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS exists
     `;
     if (!table?.exists) return migrations.length === 0 ? "current" : "behind";
-    const applied = await client<Array<{ hash: string; created_at: string | number | null }>>`
+    const applied = await client<AppliedMigration[]>`
       SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id ASC
     `;
     return compareMigrationHistory(applied, migrations);
