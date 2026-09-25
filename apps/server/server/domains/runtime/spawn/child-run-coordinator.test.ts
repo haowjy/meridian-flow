@@ -645,31 +645,23 @@ describe("ChildRunCoordinator invocation overlay", () => {
     expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
   });
 
-  it("rejects patch-invalid overrides before creating a child", async () => {
+  it("rejects an unresolvable typed override before creating a child", async () => {
     const { coordinator, parent, journal } = await fixture();
-    const invalidOverrides = [
-      { subagents: ["ghost"] },
-      { bogus: true },
-      { effort: "bananas" },
-      { tools: { write: "allow" } },
-    ];
-    for (const overrides of invalidOverrides) {
-      const result = await coordinator.runChild(
-        {
-          kind: "spawn",
-          parentThread: parent,
-          parentTurnId: "turn-1" as TurnId,
-          agentSlug: "",
-          prompt,
-          overrides: overrides as never,
-          budget,
-        },
-        { mode: "foreground" },
-      );
-      expect(result.status).toBe("error");
-      if (result.status === "error") {
-        expect(result.error.code).toBe("spawn_invocation_patch_invalid");
-      }
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        overrides: { subagents: ["ghost"] },
+        budget,
+      },
+      { mode: "foreground" },
+    );
+    expect(result.status).toBe("error");
+    if (result.status === "error") {
+      expect(result.error.code).toBe("spawn_invocation_patch_invalid");
     }
     expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
   });

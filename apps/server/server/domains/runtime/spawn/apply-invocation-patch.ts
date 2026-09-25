@@ -1,11 +1,9 @@
 /** Applies a presence-sensitive per-invocation patch to a fully-resolved baseline configuration. */
-import {
-  type InvocationPatch,
-  invocationPatchSchema,
-  type ResolvedAgentConfiguration,
-  type RetainedSkillReference,
+import type {
+  InvocationPatch,
+  ResolvedAgentConfiguration,
+  RetainedSkillReference,
 } from "@meridian/contracts/agents";
-import { ZodError } from "zod";
 import {
   AgentConfigurationError,
   type AgentRevisionStore,
@@ -56,9 +54,7 @@ const PATCH_MERGES: { [K in keyof InvocationPatch]-?: PatchMerge<K> } = {
 export async function applyInvocationPatch(
   input: ApplyInvocationPatchInput,
 ): Promise<ResolvedAgentConfiguration> {
-  const patch = parseInvocationPatch(input.patch);
-  const effective: ApplyInvocationPatchInput = { ...input, patch };
-  const { baseline } = effective;
+  const { baseline } = input;
 
   const result: ResolvedAgentConfiguration = {
     model: baseline.model,
@@ -71,33 +67,13 @@ export async function applyInvocationPatch(
   }
   if (baseline.effort !== undefined) result.effort = baseline.effort;
 
-  for (const key of Object.keys(patch) as Array<keyof InvocationPatch>) {
-    if (patch[key] === undefined) continue;
+  for (const key of Object.keys(input.patch) as Array<keyof InvocationPatch>) {
+    if (input.patch[key] === undefined) continue;
     const merge = PATCH_MERGES[key] as PatchMerge<keyof InvocationPatch>;
-    Object.assign(result, await merge(patch[key] as never, effective));
+    Object.assign(result, await merge(input.patch[key] as never, input));
   }
 
   return result;
-}
-
-/**
- * The schema is the allow-list; this replaces the old hand-rolled shape guard.
- * A `ZodError` becomes the typed error the spawn path already routes to
- * `spawn_invocation_patch_invalid` before any child row is created.
- */
-function parseInvocationPatch(patch: unknown): InvocationPatch {
-  try {
-    return invocationPatchSchema.parse(patch);
-  } catch (error) {
-    if (error instanceof ZodError) {
-      throw new InvocationPatchError(
-        error.issues
-          .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
-          .join("; "),
-      );
-    }
-    throw error;
-  }
 }
 
 interface PatchedTools {

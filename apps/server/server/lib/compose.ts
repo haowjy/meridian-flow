@@ -205,9 +205,7 @@ export type AppServices = {
   threadRepos: ThreadRepositories;
   journalReader: EventJournalReader;
   journalWriter: EventJournalWriter;
-  /** Upstream-compatible alias used by copied route/lib code. */
   repos: ThreadRepositories;
-  /** Upstream-compatible alias used by copied route/lib code. */
   hub: ThreadEventHub;
   threadEventHub: ThreadEventHub;
   threadRuntime: ThreadRuntimeService;
