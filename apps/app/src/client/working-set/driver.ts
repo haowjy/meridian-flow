@@ -13,7 +13,6 @@ import {
   type ProjectWorkingSetRecord,
   type ReconcileContextRoutesInput,
   reconcileSnapshotContextRoutes,
-  setSnapshotThread,
   type WorkingSetStorage,
 } from "./store";
 
@@ -84,10 +83,7 @@ export class WorkingSetSyncDriver {
       return plan;
     }
     if (plan.status === "server") {
-      this.store.adopt(projectId, {
-        recentRoutes: plan.row.recentRoutes,
-        lastThreadId: plan.row.lastThreadId,
-      });
+      this.store.adopt(projectId, { recentRoutes: plan.row.recentRoutes });
       this.confirmBaseline(projectId, plan.row.revision);
     }
     return plan;
@@ -124,10 +120,6 @@ export class WorkingSetSyncDriver {
   replaceRecentRoutes(projectId: string, routes: readonly WorkingSetRoute[]): WorkingSetRoute[] {
     this.report(projectId, (snapshot) => ({ ...snapshot, recentRoutes: [...routes] }));
     return this.readRecentRoutes(projectId);
-  }
-
-  setThread(projectId: string, threadId: string): void {
-    this.report(projectId, (snapshot) => setSnapshotThread(snapshot, threadId));
   }
 
   markSuspectOnReconnect(): void {
@@ -250,7 +242,8 @@ function browserDriver(): WorkingSetSyncDriver | null {
   if (typeof window === "undefined") return null;
   driver ??= new WorkingSetSyncDriver(
     new DeviceWorkingSetStore(getWorkingSetStorage(window)),
-    (projectId, snapshot, keepalive) => updateProjectWorkingSet(projectId, snapshot, { keepalive }),
+    (projectId, { recentRoutes }, keepalive) =>
+      updateProjectWorkingSet(projectId, { recentRoutes }, { keepalive }),
   );
   if (!listenersInstalled) {
     listenersInstalled = true;
@@ -287,10 +280,6 @@ export function readRecentRoutes(projectId: string): WorkingSetRoute[] {
   return browserDriver()?.readRecentRoutes(projectId) ?? [];
 }
 
-export function readRememberedThread(projectId: string): string | null {
-  return browserDriver()?.readRecord(projectId)?.snapshot.lastThreadId ?? null;
-}
-
 export function reconcileContextRoutes(
   projectId: string,
   input: ReconcileContextRoutesInput,
@@ -305,8 +294,4 @@ export function replaceRecentRoutes(
   routes: readonly WorkingSetRoute[],
 ): WorkingSetRoute[] {
   return browserDriver()?.replaceRecentRoutes(projectId, routes) ?? [];
-}
-
-export function setThread(projectId: string, threadId: string): void {
-  browserDriver()?.setThread(projectId, threadId);
 }

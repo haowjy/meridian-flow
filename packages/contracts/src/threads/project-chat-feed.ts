@@ -1,4 +1,4 @@
-/** Neutral Project-chat projection shared by Home and Work feeds. */
+/** Neutral Project-chat projection shared by Project and Work feeds. */
 import { z } from "zod";
 
 export interface ProjectChatItem {
@@ -13,20 +13,10 @@ export interface ProjectChatItem {
   isFavorite: boolean;
 }
 
-export interface WorkChatFeedPage {
+/** One keyset page of project chats: the chat index's feed or one Work's chats. */
+export interface ProjectChatFeedPage {
   items: ProjectChatItem[];
   nextCursor: string | null;
-}
-
-export interface HomeChatFeedPage {
-  featured: {
-    continueChat: ProjectChatItem | null;
-    favoriteChats: ProjectChatItem[];
-  } | null;
-  recentChats: {
-    items: ProjectChatItem[];
-    nextCursor: string | null;
-  };
 }
 
 export const updateThreadUserStateRequestSchema = z

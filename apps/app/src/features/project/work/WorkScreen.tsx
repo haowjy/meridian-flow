@@ -25,7 +25,6 @@ export type WorkScreenProps = {
   projectId: string;
   routeWork: RouteWorkResolution;
   routeCommands: ProjectRouteCommands;
-  onOpenThread: (threadId: string) => void;
 };
 
 export function WorkScreen(props: WorkScreenProps) {

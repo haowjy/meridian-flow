@@ -13,7 +13,7 @@ function address(href: string) {
 }
 function setup(
   initial: string,
-  displayed: DisplayedProjectSelection = { chatId: null, workSlug: null },
+  displayed: DisplayedProjectSelection = { workSlug: null },
   restore?: () => undefined | Promise<boolean>,
 ) {
   const history = createMemoryHistory({ initialEntries: [initial] });
@@ -104,7 +104,6 @@ describe("project navigation", () => {
     const { history, navigation, changes } = setup(
       "/p/550e8400-e29b-41d4-a716-446655440000/editor?settings=usage",
       {
-        chatId: "550e8400-e29b-41d4-a716-446655440000",
         workSlug: "revision",
       },
     );
@@ -112,12 +111,12 @@ describe("project navigation", () => {
       replace: false,
     });
     expect(changes).toEqual([
-      "freeze:/p/550e8400-e29b-41d4-a716-446655440000/editor?chat=550e8400-e29b-41d4-a716-446655440000&work=revision&settings=usage",
+      "freeze:/p/550e8400-e29b-41d4-a716-446655440000/editor?work=revision&settings=usage",
       "push:/p/550e8400-e29b-41d4-a716-446655440000/works?settings=usage",
     ]);
     history.back();
     expect(history.location.href).toBe(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor?chat=550e8400-e29b-41d4-a716-446655440000&work=revision&settings=usage",
+      "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=revision&settings=usage",
     );
     expect(history.length).toBe(2);
     navigation.dispose();
@@ -131,7 +130,7 @@ describe("project navigation", () => {
     expect(
       await navigation.replaceIfCurrent(
         lateDefault,
-        address("/p/550e8400-e29b-41d4-a716-446655440000/editor?chat=new-default&work=revision"),
+        address("/p/550e8400-e29b-41d4-a716-446655440000/editor?work=revision"),
       ),
     ).toEqual({ kind: "superseded" });
     history.back();
@@ -139,8 +138,6 @@ describe("project navigation", () => {
     expect(history.location.state).toMatchObject({
       meridianProjectEmptySelection: {
         href: "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-        chat: true,
-        work: true,
       },
     });
     navigation.dispose();
@@ -149,7 +146,7 @@ describe("project navigation", () => {
     const { history, navigation, changes } = setup(
       "/p/550e8400-e29b-41d4-a716-446655440000/editor",
     );
-    const empty = address("/p/550e8400-e29b-41d4-a716-446655440000/editor?chat=&work=");
+    const empty = address("/p/550e8400-e29b-41d4-a716-446655440000/editor?work=");
     await navigation.replaceIfCurrent(navigation.capture(), empty);
     expect(history.location.href).toBe("/p/550e8400-e29b-41d4-a716-446655440000/editor");
     const restored = parseProjectAddress(
@@ -158,7 +155,7 @@ describe("project navigation", () => {
       history.location.state,
     );
     expect(restored).toMatchObject({
-      address: { chat: { kind: "none" }, work: { kind: "none" } },
+      address: { work: { kind: "none" } },
     });
     expect(
       parseProjectAddress(
@@ -167,14 +164,12 @@ describe("project navigation", () => {
         history.location.state,
       ),
     ).toMatchObject({
-      address: { chat: { kind: "none" }, work: { kind: "none" } },
+      address: { work: { kind: "none" } },
     });
     await navigation.replaceIfCurrent(navigation.capture(), empty);
     expect(changes).toEqual(["replace:/p/550e8400-e29b-41d4-a716-446655440000/editor"]);
     await navigation.navigate(
-      address(
-        "/p/550e8400-e29b-41d4-a716-446655440000/editor?chat=550e8400-e29b-41d4-a716-446655440000&work=revision",
-      ),
+      address("/p/550e8400-e29b-41d4-a716-446655440000/editor?work=revision"),
       {
         replace: false,
       },
@@ -198,50 +193,47 @@ describe("project navigation", () => {
         history.location.state,
       ),
     ).toMatchObject({
-      address: { chat: { kind: "absent" }, work: { kind: "absent" } },
+      address: { work: { kind: "absent" } },
     });
     expect(
       parseProjectAddress(
         "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-        "?chat=550e8400-e29b-41d4-a716-446655440000",
+        "?work=revision",
         history.location.state,
       ),
     ).toMatchObject({
       address: {
-        chat: { kind: "slug", slug: "550e8400-e29b-41d4-a716-446655440000" },
-        work: { kind: "absent" },
+        work: { kind: "slug", slug: "revision" },
       },
     });
     navigation.dispose();
   });
   it("replaces dock and Work choices without another Back entry", async () => {
     const { history, navigation, changes } = setup(
-      "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?chat=&work=",
+      "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?work=",
     );
     await navigation.navigate(
-      address(
-        "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?chat=550e8400-e29b-41d4-a716-446655440000&work=revision",
-      ),
+      address("/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?work=revision"),
       {
         replace: true,
       },
     );
     expect(history.length).toBe(1);
     expect(changes).toEqual([
-      "replace:/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?chat=550e8400-e29b-41d4-a716-446655440000&work=revision",
+      "replace:/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?work=revision",
     ]);
     navigation.dispose();
   });
   it("never turns an explicit malformed or unavailable selection into a default", async () => {
     const { history, navigation } = setup(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor?chat=missing&work=bad+work",
+      "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=bad+work",
     );
     await navigation.navigate(address("/p/550e8400-e29b-41d4-a716-446655440000"), {
       replace: false,
     });
     history.back();
     expect(history.location.href).toBe(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor?chat=missing&work=bad+work",
+      "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=bad+work",
     );
     navigation.dispose();
   });
@@ -271,7 +263,6 @@ describe("project navigation", () => {
   it("retains a scoped local pointer without putting its UUID in the public URL", async () => {
     const local = { accountId: "account", projectId: "project-id", resourceHandle: "resource" };
     const { history, navigation } = setup("/p/550e8400-e29b-41d4-a716-446655440000/editor", {
-      chatId: null,
       workSlug: null,
       local,
     });
@@ -283,8 +274,6 @@ describe("project navigation", () => {
     expect(history.location.state).toMatchObject({
       meridianProjectEmptySelection: {
         href: "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-        chat: true,
-        work: true,
       },
     });
     expect(history.location.state).toMatchObject({
@@ -297,16 +286,15 @@ describe("project navigation", () => {
 describe("optional query entry repair", () => {
   it("replaces only the current entry without invoking destination navigation", () => {
     const { history, navigation, changes } = setup(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=missing&chat=bad%20chat",
+      "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=missing",
     );
     navigation.repairQuerySelections(navigation.capture(), {
-      chat: { status: "ready", entries: [] },
       work: { status: "ready", entries: [] },
     });
     expect(changes).toEqual(["freeze:/p/550e8400-e29b-41d4-a716-446655440000/editor"]);
     expect(history.length).toBe(1);
     expect(history.location.state).toMatchObject({
-      meridianProjectEmptySelection: { chat: true, work: true },
+      meridianProjectEmptySelection: { href: "/p/550e8400-e29b-41d4-a716-446655440000/editor" },
     });
     navigation.dispose();
   });
@@ -317,7 +305,6 @@ describe("optional query entry repair", () => {
     const stale = navigation.capture();
     history.push("/p/550e8400-e29b-41d4-a716-446655440000/editor?work=valid");
     const catalogs = {
-      chat: { status: "ready", entries: [] },
       work: { status: "ready", entries: [{ slug: "valid" }] },
     } as const;
     navigation.repairQuerySelections(stale, catalogs);

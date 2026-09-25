@@ -1,4 +1,14 @@
-/** Drizzle BlockRepository: SQL for the thread blocks table (create/list), mapping rows via mappers.ts. Depends inward on the repository port; runs within the shared drizzle-db transaction context. */
+/**
+ * Drizzle BlockRepository: SQL for the thread blocks table (create/list),
+ * mapping rows via mappers.ts. Depends inward on the repository port; runs
+ * within the shared drizzle-db transaction context.
+ *
+ * The stored chat-activity projection is not maintained here: a Postgres
+ * trigger recomputes it for custom blocks only (see migration 0106 and
+ * domains/threads/.context/CONTEXT.md), so plain text/tool block writes never
+ * pay for it.
+ */
+
 import * as schema from "@meridian/database/schema";
 import { asc, eq } from "drizzle-orm";
 import type {

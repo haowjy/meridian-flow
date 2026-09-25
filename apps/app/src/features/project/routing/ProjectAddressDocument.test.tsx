@@ -82,7 +82,7 @@ it.each([
       path: kind === "alias" ? "before" : "doc",
       workSlug: null,
     },
-    chat: { kind: "none" },
+
     work: { kind: "none" },
     results: false,
   };
@@ -168,7 +168,7 @@ it("preserves a proven local resource handle during readable-route admission", a
       address={{
         projectId: "550e8400-e29b-41d4-a716-446655440000",
         destination: { kind: "document", scheme: "kb", path: "doc", workSlug: null },
-        chat: { kind: "none" },
+
         work: { kind: "none" },
         results: false,
       }}
@@ -222,7 +222,7 @@ it("admits one semantic address when parent state rebuilds equivalent lookup obj
           address={{
             projectId: "550e8400-e29b-41d4-a716-446655440000",
             destination: { kind: "document", scheme: "kb", path: "doc", workSlug: null },
-            chat: { kind: "none" },
+
             work: { kind: "none" },
             results: false,
           }}
@@ -270,7 +270,7 @@ it.each([
   const address: ProjectAddress = {
     projectId: "550e8400-e29b-41d4-a716-446655440000",
     destination: { kind: "document", scheme: "kb", path: "before", workSlug: null },
-    chat: { kind: "none" },
+
     work: { kind: "none" },
     results: false,
   };

@@ -10,10 +10,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 
 export const WORKING_SET_STORAGE_KEY = "meridian:working-set";
 
-export type WorkingSetSnapshot = {
-  recentRoutes: WorkingSetRoute[];
-  lastThreadId: string | null;
-};
+export type WorkingSetSnapshot = { recentRoutes: WorkingSetRoute[] };
 
 export type ReconcileContextRoutesInput = {
   removedLocators: readonly WorkingSetRoute[];
@@ -40,7 +37,7 @@ type PersistedWorkingSets = {
 
 export type WorkingSetStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-const EMPTY_SNAPSHOT: WorkingSetSnapshot = { recentRoutes: [], lastThreadId: null };
+const EMPTY_SNAPSHOT: WorkingSetSnapshot = { recentRoutes: [] };
 
 /**
  * Canonical WorkingSetRoute builder from tab/route coordinates. Returns null
@@ -98,7 +95,6 @@ export function recentRouteForEditorWork(
 
 function snapshotEquals(left: WorkingSetSnapshot, right: WorkingSetSnapshot): boolean {
   return (
-    left.lastThreadId === right.lastThreadId &&
     left.recentRoutes.length === right.recentRoutes.length &&
     left.recentRoutes.every((route, index) =>
       workingSetRouteEquals(route, right.recentRoutes[index] as WorkingSetRoute),
@@ -128,14 +124,10 @@ function parseProjectRecord(value: unknown): ProjectWorkingSetRecord | null {
   if (!snapshot || typeof snapshot !== "object") return null;
   const routes = parseWorkingSetRouteList(snapshot.recentRoutes);
   if (!routes.ok || routes.value.length > 3) return null;
-  if (snapshot.lastThreadId !== null && typeof snapshot.lastThreadId !== "string") return null;
   const parsedPending = pending === undefined ? undefined : parsePending(pending);
   if (pending !== undefined && !parsedPending) return null;
   return {
-    snapshot: {
-      recentRoutes: routes.value,
-      lastThreadId: snapshot.lastThreadId as string | null,
-    },
+    snapshot: { recentRoutes: routes.value },
     ...(parsedPending ? { pending: parsedPending } : {}),
   };
 }
@@ -344,11 +336,4 @@ export function reconcileSnapshotContextRoutes(
       ? snapshot
       : { ...snapshot, recentRoutes };
   return input.promote ? promoteSnapshotRoute(reconciled, input.promote) : reconciled;
-}
-
-export function setSnapshotThread(
-  snapshot: WorkingSetSnapshot,
-  threadId: string,
-): WorkingSetSnapshot {
-  return snapshot.lastThreadId === threadId ? snapshot : { ...snapshot, lastThreadId: threadId };
 }

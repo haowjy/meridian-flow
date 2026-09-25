@@ -8,7 +8,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getProjectDocumentAddress } from "@/client/api/projects-api";
-import { readFirstSendSubmission } from "@/client/chat-submissions";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { type ProjectRouteData, seedProjectRouteData } from "@/client/query/project-route-data";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
@@ -19,17 +18,20 @@ import {
   getContextTabs,
   useContextTabs,
   useContextTabsStore,
-  useIsThreadPendingCreation,
-  useThreadStore,
 } from "@/client/stores";
-import { hydrateWorkingSet, readRecentRoutes, setThread } from "@/client/working-set";
+import { hydrateWorkingSet, readRecentRoutes } from "@/client/working-set";
 import { originalBrowserSearch } from "@/router-search";
-import { useResolvedChatThread } from "../chat/chat-thread-resolution";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
 import { ProjectView } from "../ProjectView";
 import type { ScreenKey } from "../shell/screens";
+import {
+  ChatNavigationProvider,
+  chatSurfaceThreadId,
+  useProjectChatNavigation,
+} from "./chat-navigation";
+import { editorDefaultWorkPending } from "./editor-default-work";
 import { reconcileDocumentAddress, resolveLocalDocumentAddress } from "./local-document-address";
 import { type AddressAdmission, ProjectAddressDocument } from "./ProjectAddressDocument";
 import { type OpenContextOptions, ProjectNavigationProvider } from "./ProjectNavigationContext";
@@ -43,9 +45,7 @@ import {
 } from "./project-address";
 import {
   type AddressResolution,
-  addressChatSelection,
   addressWorkSelection,
-  chatCatalogIssue,
   resolveAddressSelection,
 } from "./project-address-resolution";
 import { resolveLocalDocumentSelection, selectEditorEntryTab } from "./project-local-selection";
@@ -133,7 +133,6 @@ export function ReadableProjectRoute({
       : {
           projectId: project.id,
           destination: { kind: "chat-index" },
-          chat: NONE,
           work: NONE,
           results: false,
         };
@@ -145,35 +144,15 @@ export function ReadableProjectRoute({
     works.status === "ready" || works.status === "empty"
       ? { status: "ready" as const, entries: works.works ?? [] }
       : { status: works.status === "error" ? ("error" as const) : ("loading" as const) };
-  const requestedChat = addressChatSelection(address);
-  const chatCatalog = threads.isError
-    ? { status: "error" as const }
-    : threads.threads !== null
-      ? {
-          status: "ready" as const,
-          entries: threads.threads.map((thread) => ({ id: thread.id, slug: thread.id })),
-        }
-      : { status: "loading" as const };
-  const chat = resolveAddressSelection(requestedChat, chatCatalog);
-  const urlChatId = requestedChat.kind === "slug" ? requestedChat.slug : null;
-  const { resolvedThreadId } = useResolvedChatThread(
+  const chat = useProjectChatNavigation({
+    accountId: user.userId,
     projectId,
-    urlChatId,
-    requestedChat.kind === "absent",
-  );
-  const pendingChat = useIsThreadPendingCreation(urlChatId);
-  const localTurns = useThreadStore((state) =>
-    urlChatId ? state.turnsByThread[urlChatId] : undefined,
-  );
-  const firstSendSubmission = urlChatId ? readFirstSendSubmission(user.userId, urlChatId) : null;
-  const localChat =
-    !!urlChatId &&
-    (pendingChat ||
-      !!firstSendSubmission ||
-      (localTurns !== undefined && localTurns.length > 0) ||
-      chat.status === "resolved");
-  const chatIssue = localChat ? undefined : chatCatalogIssue(destination, chat);
-  const displayedChat = threads.threads?.find((thread) => thread.id === resolvedThreadId) ?? null;
+    activeScreen,
+    urlChatId: destination.kind === "chat" ? destination.chatId : null,
+    go: (next, options) => go(toDestination(next), options),
+  });
+  const chatThreadId = chatSurfaceThreadId(chat.display);
+  const displayedChat = threads.threads?.find((thread) => thread.id === chatThreadId) ?? null;
   const rememberedEditor = useRef<string | null | undefined>(undefined);
   const requestedWork = addressWorkSelection(address);
   const work = resolveAddressSelection(requestedWork, workCatalog);
@@ -189,8 +168,13 @@ export function ReadableProjectRoute({
   const editorDefaultPending =
     rememberedEditor.current === undefined &&
     !(activeScreen === "context" && requestedWork.kind !== "absent") &&
-    (workCatalog.status !== "ready" ||
-      (requestedChat.kind === "absent" && (threads.isError || threads.threads === null)));
+    editorDefaultWorkPending({
+      workCatalogReady: workCatalog.status === "ready",
+      chatThreadId,
+      displayedChatFound: displayedChat !== null,
+      threadsFailed: threads.isError,
+      threadsUnloaded: threads.threads === null,
+    });
   const editorWork: AddressResolution<Work> = editorDefaultPending
     ? { status: works.status === "error" || threads.isError ? "error" : "loading", slug: "" }
     : resolveAddressSelection(editorSelection, workCatalog);
@@ -221,7 +205,7 @@ export function ReadableProjectRoute({
     if (localDocumentId)
       void useContextTabsStore.getState().selectTab(projectId, workId ?? "", localDocumentId);
   }, [projectId, workId, localDocumentId]);
-  const shown = useRef<DisplayedProjectSelection>({ chatId: null, workSlug: null });
+  const shown = useRef<DisplayedProjectSelection>({ workSlug: null });
   const [navigation, setNavigation] = useState<ReturnType<typeof createProjectNavigation> | null>(
     null,
   );
@@ -260,26 +244,9 @@ export function ReadableProjectRoute({
     if (!ticket) return;
     // A cached miss while a catalog refresh is pending is not confirmed unavailability.
     navigation.repairQuerySelections(ticket, {
-      chat: threads.isError
-        ? { status: "error" }
-        : threads.isFetching || threads.threads === null
-          ? { status: "loading" }
-          : {
-              status: "ready",
-              entries: threads.threads.map((thread) => ({ id: thread.id, slug: thread.id })),
-            },
       work: works.isFetching ? { status: "loading" } : workCatalog,
     });
-  }, [
-    navigation,
-    location,
-    threads.threads,
-    threads.isError,
-    threads.isFetching,
-    works.works,
-    works.status,
-    works.isFetching,
-  ]);
+  }, [navigation, location, works.works, works.status, works.isFetching]);
 
   const latest = useRef({ address, location, navigation, works: works.works });
   latest.current = { address, location, navigation, works: works.works };
@@ -289,20 +256,12 @@ export function ReadableProjectRoute({
     return () => !!ticket && !!current?.isCurrent(ticket);
   }, []);
   const reportSelection = useCallback(
-    (value: { threadId: string | null; editorWorkId: string | null }) => {
+    (value: { editorWorkId: string | null }) => {
       const workSlug = works.works?.find((work) => work.id === value.editorWorkId)?.slug ?? null;
-      shown.current = { chatId: value.threadId, workSlug, local: localPointer };
+      shown.current = { workSlug, local: localPointer };
       if (activeScreen === "context" && !issue(editorWork)) rememberedEditor.current = workSlug;
     },
-    [
-      threads.threads,
-      works.works,
-      activeScreen,
-      editorWork.status,
-      localDocumentId,
-      user.userId,
-      projectId,
-    ],
+    [works.works, activeScreen, editorWork.status],
   );
 
   const resourceDestination =
@@ -386,10 +345,6 @@ export function ReadableProjectRoute({
           : "loading"
         : undefined));
 
-  useEffect(() => {
-    if (resolvedThreadId) setThread(projectId, resolvedThreadId);
-  }, [projectId, resolvedThreadId]);
-
   async function go(next: ProjectAddress, options: NavigationOptions) {
     if (!navigation) return;
     return navigation.navigate(next, options);
@@ -404,15 +359,6 @@ export function ReadableProjectRoute({
     const slug = catalog?.works.find((work) => work.id === id && work.deletedAt === null)?.slug;
     if (!slug) throw new Error("Work address is unavailable");
     return slug;
-  }
-  async function openChat(threadId: string, options: NavigationOptions, dock = false) {
-    if (!threadId && dock) return go({ ...address, chat: NONE }, { replace: true });
-    return go(
-      dock
-        ? { ...address, chat: { kind: "slug", slug: threadId } }
-        : toDestination({ kind: "chat", chatId: threadId }),
-      { replace: dock || options.replace },
-    );
   }
   const contextDestination = useCallback(
     (target: ContextRouteTarget, preparedTab?: ContextTab) => {
@@ -536,8 +482,6 @@ export function ReadableProjectRoute({
   );
 
   const routeCommands: ProjectRouteCommands = {
-    openChat: (id, options) => openChat(id, options),
-    openDockThread: (id, options) => openChat(id, options, true),
     openWork: (target, options) =>
       go(toDestination({ kind: "work", workSlug: workSlug(target.workId) }), options),
     workHref: (target) =>
@@ -577,7 +521,6 @@ export function ReadableProjectRoute({
   };
   const search: ProjectSearch = {
     screen: activeScreen,
-    thread: resolvedThreadId ?? undefined,
     work: workId ?? "none",
     scheme: localDocumentId
       ? "unfiled"
@@ -589,8 +532,9 @@ export function ReadableProjectRoute({
     results: address.results ? "" : undefined,
   };
   const selectScreen = (next: ScreenKey) => {
-    if (next === activeScreen && !(next === "chat" && destination.kind === "chat"))
-      return Promise.resolve();
+    if (next === activeScreen && next !== "chat") return Promise.resolve();
+    // Chat reopens the current chat; with none, its index.
+    if (next === "chat") return chat.showChatScreen();
     if (next === "context" && contextRemoval.getProjectSnapshot(projectId).live) {
       const workspace = getContextTabs(projectId);
       const tab = selectEditorEntryTab({
@@ -607,9 +551,7 @@ export function ReadableProjectRoute({
     }
     return go(
       {
-        ...toDestination({
-          kind: next === "work" ? "works" : next === "context" ? "editor" : "chat-index",
-        }),
+        ...toDestination({ kind: next === "work" ? "works" : "editor" }),
         work: selection(rememberedEditor.current ?? shown.current.workSlug),
       },
       { replace: false },
@@ -630,82 +572,80 @@ export function ReadableProjectRoute({
     <ProjectNavigationProvider
       screen={activeScreen}
       openContextRoute={openContext}
-      openNewChat={() => go(toDestination({ kind: "chat-index" }), { replace: false })}
       captureNavigation={captureNavigation}
       registerLeaveGuard={navigation?.registerGuard}
     >
-      <ProjectDocumentNavigationProvider
-        projectId={projectId}
-        captureNavigation={captureNavigation}
-      >
-        {documentDestination ? (
-          <ProjectAddressDocument
-            projectId={projectId}
-            href={location.href}
-            entryKey={location.state.__TSR_key ?? ""}
-            address={address}
-            // Cached paths can have been renamed or reused; only a settled lookup may repair the URL.
-            result={documentResult}
-            localFile={reconciledDocumentAddress.localFile}
-            workId={workId}
-            workSlug={editorWork.status === "resolved" ? editorWork.value.slug : null}
-            navigation={navigation}
-            onAdmission={setAdmission}
-          />
-        ) : null}
-        <ProjectView
-          project={project}
+      <ChatNavigationProvider value={chat}>
+        <ProjectDocumentNavigationProvider
           projectId={projectId}
-          workingSet={data.workingSet}
-          workingSetSyncEnabled={user.workingSetSyncEnabled === true}
-          activeScreen={activeScreen}
-          activeThreadId={resolvedThreadId}
-          chatLanding={destination.kind === "chat-index"}
-          entryHydration={entryHydration}
-          addressOwnsDocumentAdmission
-          routeWork={routeWork(work)}
-          editorRouteWork={routeWork(editorWork)}
-          routeLocationKey={location.state.__TSR_key ?? location.href}
-          routeIssues={{ main: mainIssue, chat: chatIssue, editor: editorIssue }}
-          onDisplayedSelection={reportSelection}
-          routeCommands={routeCommands}
-          contextRemovalRoute={{
-            transition: (_id, target, prepared) => closeDestination(target, prepared),
-            readSearch: () => search,
-            updateSearch: (_id, update) => {
-              const next = update(search);
-              if (projectSearchEquals(next, search)) return;
-              if (next.scheme && next.path !== undefined)
-                void openContext(
-                  {
-                    scheme: next.scheme,
-                    path: next.path,
-                    workId: next.work === "none" ? null : (next.work ?? workId),
-                  },
-                  { replace: true },
-                );
-              else if (next.screen === "work")
-                void go(toDestination({ kind: "works" }), { replace: true });
-              else if (next.screen === "context")
-                void go(toDestination({ kind: "editor" }), { replace: true });
-            },
-          }}
-          activeLocalDocumentId={localDocumentId}
-          activeContextScheme={search.scheme ?? null}
-          activeContextFolder={search.folder ?? null}
-          activeContextPath={search.path ?? null}
-          resultsOpen={address.results}
-          onSelectScreen={selectScreen}
-          onSelectThread={(id) => openChat(id, { replace: false })}
-          onSelectDockThread={(id) => openChat(id, { replace: true }, true)}
-          onSelectContextScheme={(scheme) => browse(scheme)}
-          onExitContextScheme={() => browse(null)}
-          onSelectContextFolder={(path) => browse(search.scheme ?? null, path)}
-          onOpenContextTarget={openContext}
-          onOpenResults={() => go({ ...address, results: true }, { replace: true })}
-          onCloseResults={() => go({ ...address, results: false }, { replace: true })}
-        />
-      </ProjectDocumentNavigationProvider>
+          captureNavigation={captureNavigation}
+        >
+          {documentDestination ? (
+            <ProjectAddressDocument
+              projectId={projectId}
+              href={location.href}
+              entryKey={location.state.__TSR_key ?? ""}
+              address={address}
+              // Cached paths can have been renamed or reused; only a settled lookup may repair the URL.
+              result={documentResult}
+              localFile={reconciledDocumentAddress.localFile}
+              workId={workId}
+              workSlug={editorWork.status === "resolved" ? editorWork.value.slug : null}
+              navigation={navigation}
+              onAdmission={setAdmission}
+            />
+          ) : null}
+          <ProjectView
+            project={project}
+            projectId={projectId}
+            workingSet={data.workingSet}
+            workingSetSyncEnabled={user.workingSetSyncEnabled === true}
+            activeScreen={activeScreen}
+            chatDisplay={chat.display}
+            entryHydration={entryHydration}
+            addressOwnsDocumentAdmission
+            routeWork={routeWork(work)}
+            editorRouteWork={routeWork(editorWork)}
+            routeLocationKey={location.state.__TSR_key ?? location.href}
+            routeIssues={{ main: mainIssue, editor: editorIssue }}
+            onDisplayedSelection={reportSelection}
+            routeCommands={routeCommands}
+            contextRemovalRoute={{
+              transition: (_id, target, prepared) => closeDestination(target, prepared),
+              readSearch: () => search,
+              updateSearch: (_id, update) => {
+                const next = update(search);
+                if (projectSearchEquals(next, search)) return;
+                if (next.scheme && next.path !== undefined)
+                  void openContext(
+                    {
+                      scheme: next.scheme,
+                      path: next.path,
+                      workId: next.work === "none" ? null : (next.work ?? workId),
+                    },
+                    { replace: true },
+                  );
+                else if (next.screen === "work")
+                  void go(toDestination({ kind: "works" }), { replace: true });
+                else if (next.screen === "context")
+                  void go(toDestination({ kind: "editor" }), { replace: true });
+              },
+            }}
+            activeLocalDocumentId={localDocumentId}
+            activeContextScheme={search.scheme ?? null}
+            activeContextFolder={search.folder ?? null}
+            activeContextPath={search.path ?? null}
+            resultsOpen={address.results}
+            onSelectScreen={selectScreen}
+            onSelectContextScheme={(scheme) => browse(scheme)}
+            onExitContextScheme={() => browse(null)}
+            onSelectContextFolder={(path) => browse(search.scheme ?? null, path)}
+            onOpenContextTarget={openContext}
+            onOpenResults={() => go({ ...address, results: true }, { replace: true })}
+            onCloseResults={() => go({ ...address, results: false }, { replace: true })}
+          />
+        </ProjectDocumentNavigationProvider>
+      </ChatNavigationProvider>
     </ProjectNavigationProvider>
   );
 }

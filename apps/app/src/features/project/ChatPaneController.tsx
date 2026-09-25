@@ -5,10 +5,10 @@
  * screen switch. This controller renders only the destination chrome that keeps
  * sidebar/context rail reopen controls reachable above that surface.
  */
-import { Trans } from "@lingui/react/macro";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
+import { ChatIndexChip } from "./chat-index/ChatIndexButton";
+import { useChatNavigation } from "./routing/chat-navigation";
 
-import { PaneTitle } from "./PaneTitle";
 import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ChatPaneControllerProps = {
@@ -16,7 +16,6 @@ export type ChatPaneControllerProps = {
   threadId: string | null;
   sidebarToggle: PaneHeaderRailToggle;
   contextToggle: PaneHeaderRailToggle;
-  onSelectThread: (threadId: string) => void;
 };
 
 export function ChatPaneController({
@@ -24,25 +23,19 @@ export function ChatPaneController({
   threadId,
   sidebarToggle,
   contextToggle,
-  onSelectThread,
 }: ChatPaneControllerProps) {
+  const { openChatIndex } = useChatNavigation();
   return (
     <PaneHeader
+      leading={<ChatIndexChip active={false} onClick={() => void openChatIndex()} />}
       title={
-        threadId ? (
-          <ChatThreadTitle
-            projectId={projectId}
-            threadId={threadId}
-            onSelectThread={onSelectThread}
-            // The centered chat body is page-sheet: the switcher wears the
-            // active-tab chip so the page continues up into the band.
-            variant="tab"
-          />
-        ) : (
-          <PaneTitle>
-            <Trans>Chat</Trans>
-          </PaneTitle>
-        )
+        <ChatThreadTitle
+          projectId={projectId}
+          threadId={threadId}
+          // The centered chat body is page-sheet: the switcher wears the
+          // active-tab chip so the page continues up into the band.
+          variant="tab"
+        />
       }
       left={sidebarToggle}
       right={contextToggle}

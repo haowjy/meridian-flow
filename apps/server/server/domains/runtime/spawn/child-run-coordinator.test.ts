@@ -424,16 +424,17 @@ describe("ChildRunCoordinator spawn selection", () => {
     expect((await repos.threads.listByProject(parent.projectId)).map((row) => row.id)).toEqual([
       parent.id,
     ]);
-    const home = await repos.homeFeed.queryPage({
+    const home = await repos.chatFeed.queryPage({
       projectId: parent.projectId,
       userId: parent.userId,
       after: null,
-      recentLimit: 10,
-      includeFeatured: true,
+      limit: 10,
+      favorite: false,
+      search: null,
     });
-    expect(home.continueChat?.id).toBe(parent.id);
-    expect(home.recent.map((item) => item.id)).not.toContain(childId);
-    expect(home.favorites.map((item) => item.id)).not.toContain(childId);
+    expect(home[0]?.id).toBe(parent.id);
+    expect(home.map((item) => item.id)).not.toContain(childId);
+    expect(home.map((item) => item.id)).not.toContain(childId);
     await expect(repos.threads.findById(childId)).resolves.toMatchObject({
       id: childId,
       kind: "subagent",

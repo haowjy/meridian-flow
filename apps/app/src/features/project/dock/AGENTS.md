@@ -24,9 +24,11 @@ body.
 - **`center` placement**: passthrough — no header, no Changes swap. The occupant
   is a normal center pane. This keeps the chat surface at the same tree depth
   across center↔dock moves so React never reconciles it away.
-- **`dock` placement**: the `DockHeader` appears, and the body is hidden + inert
-  when the writer switches to the Changes view. The primary body **stays mounted**
-  — chat survives a view switch the same way it survives a collapsed dock.
+- **`dock` placement**: the caller-supplied header slot renders (`DockHeader`
+  on desktop, `mobile/MobileChatSheetHeader` for the phone chat sheet), and the
+  body is hidden + inert when the writer switches to the Changes view. The
+  primary body **stays mounted** — chat survives a view switch the same way it
+  survives a collapsed dock.
 
 `useDockView(screen)` resolves the active view from a session-only store. The
 native view is always present; Changes joins it only while `hasDockChanges`
@@ -54,8 +56,13 @@ finds an active draft.
    choice.
 
 5. **One label source.** `DockViewLabel` is the single place dock view labels
-   are spelled. The segmented switch is the only place the view identity
-   appears — the header has no separate section title.
+   are spelled, and `DockViewSwitch` is the one place that renders the segmented
+   switch (`components/ui/segmented-tabs`, shared with the chat index filter) —
+   the header has no separate section title. The left slot belongs to the
+   occupant: the chat puts its switcher there (the dock has no chat index).
+   `DockShell`'s `renderHeader` slot is what lets the phone chat sheet use its
+   own header (`mobile/MobileChatSheetHeader`) instead of `DockHeader`, which
+   stays desktop-only.
 
 6. **The switch stays inside the dock material.** Its recessed track provides
    a complete boundary. The active segment may use page paper only inside that

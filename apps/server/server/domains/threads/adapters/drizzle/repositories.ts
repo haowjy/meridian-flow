@@ -16,8 +16,8 @@ import type { WorkProjectionMutation } from "../../../projects/adapters/work-pro
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type { InternalThreadRepositories } from "../../ports/repositories.js";
 import { createDrizzleBlockRepository } from "./block-repository.js";
+import { createDrizzleProjectChatFeedRepository } from "./chat-feed-repository.js";
 import { createDrizzleChildReportDeliveryRepository } from "./child-report-delivery-repository.js";
-import { createDrizzleHomeChatFeedRepository } from "./home-feed-repository.js";
 import { createDrizzleModelResponseRepository } from "./model-response-repository.js";
 import { createDrizzleThreadDocumentRepository } from "./thread-document-repository.js";
 import { createDrizzleThreadRepository } from "./thread-repository.js";
@@ -38,7 +38,7 @@ function composeDrizzleRepositories(
   const usageRecorder = createDrizzleUsageRecorder(db);
   return {
     threads: createDrizzleThreadRepository(db),
-    homeFeed: createDrizzleHomeChatFeedRepository(db),
+    chatFeed: createDrizzleProjectChatFeedRepository(db),
     workChatFeed: createDrizzleWorkChatFeedRepository(db),
     threadUserState: createDrizzleThreadUserStateRepository(db),
     threadWorks: createDrizzleThreadWorksRepository(db),

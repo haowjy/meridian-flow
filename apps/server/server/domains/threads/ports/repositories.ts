@@ -172,33 +172,27 @@ export interface ProjectChatCursorKey {
   threadId: ThreadId;
 }
 
-export interface WorkChatFeedRow {
-  item: ProjectChatItem;
-  updatedAt: string;
-}
-
 export interface WorkChatFeedRepository {
+  /** Same row shape and stored-activity sort as ProjectChatFeedRepository. */
   queryPage(input: {
     projectId: ProjectId;
     workId: WorkId;
     userId: UserId;
     after: ProjectChatCursorKey | null;
     limit: number;
-  }): Promise<WorkChatFeedRow[]>;
+  }): Promise<ProjectChatItem[]>;
 }
 
-export interface HomeChatFeedRepository {
+export interface ProjectChatFeedRepository {
   queryPage(input: {
     projectId: ProjectId;
     userId: UserId;
     after: ProjectChatCursorKey | null;
-    recentLimit: number;
-    includeFeatured: boolean;
-  }): Promise<{
-    continueChat: ProjectChatItem | null;
-    favorites: ProjectChatItem[];
-    recent: ProjectChatItem[];
-  }>;
+    limit: number;
+    favorite: boolean;
+    /** Case-insensitive title substring; null lists every chat. */
+    search: string | null;
+  }): Promise<ProjectChatItem[]>;
 }
 
 export interface ThreadUserStateRepository {
@@ -382,7 +376,7 @@ export interface ChildReportDeliveryRepository {
 
 export type ThreadRepositories = {
   threads: ThreadRepository;
-  homeFeed: HomeChatFeedRepository;
+  chatFeed: ProjectChatFeedRepository;
   workChatFeed: WorkChatFeedRepository;
   threadUserState: ThreadUserStateRepository;
   threadWorks: ThreadWorksRepository;

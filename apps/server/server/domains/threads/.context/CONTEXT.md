@@ -82,8 +82,8 @@ instead of the N:1 `threads.workId` column.
 | Port | Surface |
 |---|---|
 | `ThreadRepository` | Thread lifecycle plus writer-facing project lists (`kind: "primary"` only) and the hard-bounded `listRecentByWork` model summary. It does not expose an unbounded Work list. Get-by-id still returns subagents. |
-| `HomeChatFeedRepository` | Continue/Favorite/Recent policy over the neutral Project-chat projection of primary threads. Home retains its set-oriented whole-project ranking. |
-| `WorkChatFeedRepository` | Bounded historical-Work association pages over the same primary Project-chat projection, ordered by `(threads.updated_at DESC, threads.id DESC)`. |
+| `ProjectChatFeedRepository` | Flat primary-chat pages ranked by latest visible activity, with an optional Favorite filter before pagination. |
+| `WorkChatFeedRepository` | Bounded historical-Work association pages over the same primary Project-chat projection, ordered by `(threads.last_activity_at DESC, threads.id DESC)` — the same stored activity sort as `ProjectChatFeedRepository`, and the same `ProjectChatItem` row shape (`chatFeedRowsSql`). |
 | `ThreadUserStateRepository` | Per-writer favorite authority. |
 | `TurnRepository` | `create / findById / listByThread / getLatestByThread / updateStatus / recomputeRollups` |
 | `BlockRepository` | `create / findById / listByTurn / listByThread / updatePruned` |
@@ -104,7 +104,7 @@ Entity types (`Thread`, `Turn`, `Block`, `ModelResponse`) and event unions
 
 - **Drizzle** (production) and **in-memory** (test/dev) adapters for all
   repositories and journal reader/writer. The focused Project-chat adapter owns
-  Home and Work visible-head projection in memory; the Drizzle projection module
+  Project and Work visible-head projection in memory; the Drizzle projection module
   owns the shared row mapping, preview, action-required fact, timestamp, and bounded Work
   candidate machinery.
 
@@ -239,21 +239,50 @@ contract shapes.
   child-report continuations, and non-custom system turns. Both visible-turn
   mirrors (`domain/visible-conversation-policy.ts` and the app's
   `visible-chat-turns.ts`) exclude the `child_report` system-update section so
-  the model-visible report never renders as a writer message. Home, project/Work
+  the model-visible report never renders as a writer message. Project and Work
   lists, and snapshots derive the
   independent `actionRequired` fact from a `waiting_interrupt` assistant head.
-  Set-oriented SQL companions are parity-tested against the named domain policy.
-- Home returns Continue and Favorites only on the first page. Recent pagination
-  uses the strict shared Project-chat keyset codec over `(lastActivityAt DESC, threadId DESC)`;
-  every page excludes Continue and Favorites, so equal activity times remain
-  stable without duplicating a chat. Home, the project switcher (`listByProject`),
-  and Work-associated chats list `kind: "primary"` only. Subagent Open is get-by-id.
-- Work-associated chat pages use the same codec over thread update
-  time plus thread ID. The association filter is M:N history among primary
-  threads; row Work identity always comes from the current primary membership.
-  Bound Agent name is projected from the same binding join as thread list
-  (`metadata.name` or slug, or `Subagent` when the binding has no revision) and
-  is the writer-facing row identity.
+
+### Chat activity projection (single owner)
+
+`threads.last_activity_at` and `threads.conversational_leaf_turn_id` are a
+stored projection of the visible-conversational-head walk above, kept so the
+chat feeds can page over an indexed column instead of walking turn lineage per
+row. **Postgres triggers are the only writer of these two columns**
+(migration `0106_thread_chat_activity_trigger.sql`): one `recompute_thread_chat_activity(thread_id)`
+function encodes the canonical predicate, and three trigger families call it —
+`threads UPDATE OF active_leaf_turn_id` (turn creation, and any future
+branch-switch writer that moves the leaf directly), `turns INSERT OR UPDATE OF
+role, metadata, status, completed_at`, and `turn_blocks` insert/update where
+the old or new `block_type` is `custom` (a `WHEN` clause skips every other
+block write, including streaming text/tool content, so the function never
+runs for those). No repository locks a thread or calls a recompute function
+for this projection; `turn-repository.ts` and `block-repository.ts` are plain
+CRUD. This intentionally diverges from `packages/database/.context/CONTEXT.md`'s
+no-triggers rule for thread rollup columns: that rule protects columns with
+exactly one writer (the read-model projector); this projection's defining risk
+is a *future* writer bypassing recompute (branch switching), which only a
+database-level trigger closes.
+
+- Project chat pages use the strict shared keyset codec over
+  `(lastActivityAt DESC, threadId DESC)` (`domain/project-chat-cursor.ts`).
+  `domain/chat-feed-page.ts` owns the shared decode/fetch-one-past-limit/encode
+  policy and the one `InvalidChatFeedCursorError`; `chat-feed.ts` and
+  `work-chat-feed.ts` each supply only their repository call and page size.
+  Favorites filtering happens before the cursor and limit. Project feed,
+  switcher (`listByProject`), and Work-associated chats list primary threads
+  only. Subagent Open is get-by-id.
+- Work-associated chat pages use the same codec and the same
+  `last_activity_at` sort as the Project feed, over thread ID as the tiebreak.
+  The association filter is M:N history among primary threads; row Work
+  identity always comes from the current primary membership. Bound Agent name
+  is projected from the same binding join as thread list (`metadata.name` or
+  slug, or `Subagent` when the binding has no revision) and is the
+  writer-facing row identity. `adapters/drizzle/visible-conversation-sql.ts`'s
+  `chatFeedRowsSql` is the one full chat-row builder both
+  `chat-feed-repository.ts` and `work-chat-feed-repository.ts` call, supplying
+  only their candidate-thread-id CTE and letting the shared builder join
+  primary Work, Agent name, favorite, head turn, and preview.
   Projection and serialization are bounded to 50 rows per page.
 - Project chat lists have no read/unread state. The user-state route and
   repository persist Favorite only; opening a chat performs no state mutation.

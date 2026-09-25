@@ -9,59 +9,26 @@
  * Device-local history paints first. The network adds other devices and never
  * gates this writer's own openings.
  */
-import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useRouter } from "@tanstack/react-router";
 import { FilePlus } from "lucide-react";
-import { useEffect, useState } from "react";
 import { useProject } from "@/client/query/useProjectList";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import type { AccountRecentItem } from "@/client/recents";
 import { readableRecentPath } from "@/client/recents";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
-import { SectionLabel } from "@/components/ui/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { editorColumnChrome } from "@/features/editor/editor-column";
+import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { cn } from "@/lib/utils";
+import { RecencyGroupedList } from "../RecencyGroupedList";
 import { relativeTime } from "../relative-time";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { projectAddressHref } from "../routing/project-address";
 import { useOptionalAccountResourceReplica } from "./account-feature-context";
 import { fileKindIcon } from "./context-file-icon";
 import { useOpenProjectDocument } from "./open-project-document";
-
-/** Age buckets the list groups under, oldest last. */
-const GROUPS = ["today", "yesterday", "earlier"] as const;
-type Group = (typeof GROUPS)[number];
-
-function startOfDay(ms: number): number {
-  const date = new Date(ms);
-  date.setHours(0, 0, 0, 0);
-  return date.getTime();
-}
-
-function groupFor(openedAt: string, nowMs: number): Group {
-  const opened = Date.parse(openedAt);
-  if (Number.isNaN(opened)) return "earlier";
-  const today = startOfDay(nowMs);
-  if (opened >= today) return "today";
-  // Day arithmetic, not a fixed 86400000: a DST day is not 24 hours long.
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  return opened >= yesterday.getTime() ? "yesterday" : "earlier";
-}
-
-function groupLabel(group: Group): string {
-  switch (group) {
-    case "today":
-      return t`Today`;
-    case "yesterday":
-      return t`Yesterday`;
-    default:
-      return t`Earlier`;
-  }
-}
 
 export function RecentDocumentsLanding({
   projectId,
@@ -78,12 +45,7 @@ export function RecentDocumentsLanding({
   const openDocument = useOpenProjectDocument(projectId);
   const openRoute = useOpenContextRoute();
   const resources = useOptionalAccountResourceReplica();
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
+  const now = useMinuteClock();
 
   const documents = recent.documents ?? [];
   // A cached empty list with a refetch in flight is not yet known to be empty.
@@ -125,36 +87,29 @@ export function RecentDocumentsLanding({
           <LandingLoading />
         ) : (
           <>
-            <div className="mt-7 flex flex-col">
-              {GROUPS.map((group) => {
-                const rows = documents.filter((item) => groupFor(item.openedAt, now) === group);
-                if (rows.length === 0) return null;
-                return (
-                  <section key={group} className="mt-7 first:mt-0">
-                    <SectionLabel variant="group">{groupLabel(group)}</SectionLabel>
-                    <ul className="mt-2 divide-y divide-border-subtle">
-                      {rows.map((item) => (
-                        <li key={item.documentId}>
-                          <RecentDocumentRow
-                            item={item}
-                            now={now}
-                            projectId={project?.id}
-                            onOpen={(item) => {
-                              void openRecent(item, {
-                                projectId,
-                                editorWorkId,
-                                openDocument,
-                                openRoute,
-                                resources,
-                              });
-                            }}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                );
-              })}
+            <div className="mt-7">
+              <RecencyGroupedList
+                items={documents}
+                now={now}
+                timestamp={(item) => item.openedAt}
+                itemKey={(item) => item.documentId}
+                renderItem={(item) => (
+                  <RecentDocumentRow
+                    item={item}
+                    now={now}
+                    projectId={project?.id}
+                    onOpen={(item) => {
+                      void openRecent(item, {
+                        projectId,
+                        editorWorkId,
+                        openDocument,
+                        openRoute,
+                        resources,
+                      });
+                    }}
+                  />
+                )}
+              />
             </div>
             {/* A failed refresh over cached rows keeps the list and offers a
                 quiet retry; a failed first load has nothing to show. */}
@@ -317,7 +272,7 @@ function recentDocumentHref(item: AccountRecentItem, projectId: string | undefin
       path,
       workSlug: null,
     },
-    chat: { kind: "absent" },
+
     work: { kind: "absent" },
     results: false,
   });

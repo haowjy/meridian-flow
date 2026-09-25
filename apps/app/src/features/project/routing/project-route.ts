@@ -5,23 +5,27 @@ import type { ScreenKey } from "../shell/screens";
 
 export type ProjectSearch = {
   screen?: ScreenKey;
-  thread?: string;
   scheme?: ProjectContextTreeScheme;
   folder?: string;
   path?: string;
   results?: "";
   work?: string;
+  /** The chat index's Favorites filter; owned by `features/project/chat-index`. */
+  filter?: "favorites";
+  /** The chat index's settled search text; owned by `features/project/chat-index`. */
+  q?: string;
 };
 
 export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): boolean {
   return (
     left.screen === right.screen &&
-    left.thread === right.thread &&
     left.scheme === right.scheme &&
     left.folder === right.folder &&
     left.path === right.path &&
     left.results === right.results &&
-    left.work === right.work
+    left.work === right.work &&
+    left.filter === right.filter &&
+    left.q === right.q
   );
 }
 
@@ -106,8 +110,6 @@ export type WorkContextTarget = {
 };
 
 export type ProjectRouteCommands = {
-  openChat: (threadId: string, options: NavigationOptions) => Promise<void>;
-  openDockThread: (threadId: string, options: NavigationOptions) => Promise<void>;
   openWork: (target: WorkDetailTarget, options: NavigationOptions) => Promise<void>;
   workHref: (target: WorkDetailTarget) => string;
   closeWork: (options: NavigationOptions) => Promise<void>;

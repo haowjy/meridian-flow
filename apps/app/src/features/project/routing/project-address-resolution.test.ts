@@ -2,9 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { parseProjectAddress, projectAddressHref, projectAddressState } from "./project-address";
 import {
-  addressChatSelection,
   addressWorkSelection,
-  chatCatalogIssue,
   guardProjectQuerySelections,
   resolveAddressSelection,
 } from "./project-address-resolution";
@@ -47,53 +45,19 @@ describe("authorized address resolution", () => {
   it("keeps path authority independent from Chat and secondary Work", () => {
     expect(
       addressWorkSelection(
-        address(
-          "/p/550e8400-e29b-41d4-a716-446655440000/work/revision/scratch/notes.md?chat=550e8400-e29b-41d4-a716-446655440000",
-        ),
+        address("/p/550e8400-e29b-41d4-a716-446655440000/work/revision/scratch/notes.md"),
       ),
     ).toEqual({ kind: "slug", slug: "revision" });
     expect(
-      addressWorkSelection(
-        address(
-          "/p/550e8400-e29b-41d4-a716-446655440000/scratch/notes.md?chat=550e8400-e29b-41d4-a716-446655440000",
-        ),
-      ),
+      addressWorkSelection(address("/p/550e8400-e29b-41d4-a716-446655440000/scratch/notes.md")),
     ).toEqual({
       kind: "none",
     });
     expect(
       addressWorkSelection(
-        address(
-          "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?chat=550e8400-e29b-41d4-a716-446655440000&work=revision",
-        ),
+        address("/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?work=revision"),
       ),
     ).toEqual({ kind: "slug", slug: "revision" });
-    expect(
-      addressChatSelection(
-        address(
-          "/p/550e8400-e29b-41d4-a716-446655440000/chat/550e8400-e29b-41d4-a716-446655440000",
-        ),
-      ),
-    ).toEqual({
-      kind: "slug",
-      slug: "550e8400-e29b-41d4-a716-446655440000",
-    });
-  });
-  it("does not overlay a path chat missing from the primary catalog", () => {
-    const childId = "8d67b6b1-a47d-4cc2-86ec-7304666fd560";
-    const miss = resolveAddressSelection(
-      { kind: "slug", slug: childId },
-      { status: "ready", entries: [{ slug: "550e8400-e29b-41d4-a716-446655440000" }] },
-    );
-    expect(miss).toEqual({ status: "unavailable", slug: childId });
-    expect(chatCatalogIssue({ kind: "chat", chatId: childId }, miss)).toBeUndefined();
-  });
-  it("still overlays a missing query chat against the primary catalog", () => {
-    const miss = resolveAddressSelection(
-      { kind: "slug", slug: "00000000-0000-4000-8000-000000000000" },
-      { status: "ready", entries: [{ slug: "550e8400-e29b-41d4-a716-446655440000" }] },
-    );
-    expect(chatCatalogIssue({ kind: "editor" }, miss)).toBe("unavailable");
   });
 });
 
@@ -104,20 +68,18 @@ describe("optional query guard", () => {
   } as const;
   it("clears missing selectors together without changing the document or auxiliary state", () => {
     const input = address(
-      "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?work=missing&chat=00000000-0000-4000-8000-000000000000&settings=general",
+      "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?work=missing&settings=general",
     );
-    expect(guardProjectQuerySelections(input, { chat: ready, work: ready })).toEqual({
+    expect(guardProjectQuerySelections(input, { work: ready })).toEqual({
       ...input,
-      chat: { kind: "none" },
+
       work: { kind: "none" },
     });
   });
   it("removes invalid query values while pinning no selection on reload", () => {
     const repaired = guardProjectQuerySelections(
-      address(
-        "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?work=missing&chat=00000000-0000-4000-8000-000000000000",
-      ),
-      { chat: ready, work: ready },
+      address("/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?work=missing"),
+      { work: ready },
     );
     const href = projectAddressHref(repaired);
     expect(href).toBe("/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md");
@@ -125,34 +87,29 @@ describe("optional query guard", () => {
     expect(reloaded.kind === "valid" && reloaded.address).toEqual(repaired);
   });
   it.each(["loading", "error"] as const)("preserves unresolved values during %s", (status) => {
-    const input = address(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=missing&chat=00000000-0000-4000-8000-000000000000",
-    );
-    expect(guardProjectQuerySelections(input, { chat: { status }, work: { status } })).toBe(input);
+    const input = address("/p/550e8400-e29b-41d4-a716-446655440000/editor?work=missing");
+    expect(guardProjectQuerySelections(input, { work: { status } })).toBe(input);
   });
   it.each([
     "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-    "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=&chat=",
-    "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=valid&chat=550e8400-e29b-41d4-a716-446655440000",
+    "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=",
+    "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=valid",
     "/p/550e8400-e29b-41d4-a716-446655440000/work/missing",
     "/p/550e8400-e29b-41d4-a716-446655440000/chat/00000000-0000-4000-8000-000000000000",
     "/p/550e8400-e29b-41d4-a716-446655440000/work/missing/scratch/notes.md",
   ])("leaves valid, absent, empty and required path identities untouched: %s", (href) => {
     const input = address(href);
-    expect(guardProjectQuerySelections(input, { chat: ready, work: ready })).toBe(input);
+    expect(guardProjectQuerySelections(input, { work: ready })).toBe(input);
   });
   it("clears malformed optional values without waiting for catalogs", () => {
-    const input = address(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=bad%20work&chat=bad%20chat",
-    );
+    const input = address("/p/550e8400-e29b-41d4-a716-446655440000/editor?work=bad%20work");
     expect(
       guardProjectQuerySelections(input, {
-        chat: { status: "loading" },
         work: { status: "error" },
       }),
     ).toEqual({
       ...input,
-      chat: { kind: "none" },
+
       work: { kind: "none" },
     });
   });

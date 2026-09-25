@@ -1,26 +1,49 @@
-/** Shared new-chat composer for the project Chat landing. */
+/** Shared pinned new-chat composer for the center, dock, and phone. */
 import { t } from "@lingui/core/macro";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
 import { useSelectionAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
-import { Composer } from "@/components/app/composer";
+import { Composer, type ComposerHandle } from "@/components/app/composer";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
-import { NewThreadComposerToolbar } from "@/features/project/chat-landing/NewThreadComposerToolbar";
+import { NewThreadComposerToolbar } from "@/features/project/chat/NewThreadComposerToolbar";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { useCreationComposer } from "./useCreationComposer";
 
 export function CreationComposer({
   projectId,
+  variant = "pinned",
   autoFocus = false,
+  newChatFocusRequestId = null,
+  onNewChatFocusHandled,
 }: {
   projectId: string;
+  /** `hero` — the chat index's centered composer; `pinned` — the empty chat's footer. */
+  variant?: "pinned" | "hero";
   autoFocus?: boolean;
+  /**
+   * A one-shot New chat focus intent for the pinned composer, supplied by the
+   * host (project routing owns the request; this composer stays unaware of
+   * project routing beyond this prop).
+   */
+  newChatFocusRequestId?: number | null;
+  onNewChatFocusHandled?: (id: number) => void;
 }) {
   const creation = useCreationComposer(projectId);
+  const composerRef = useRef<ComposerHandle>(null);
+  // An explicit New chat focuses the empty composer showing it. The hero is
+  // not New chat's target: it focuses at mount where a keyboard is likely.
+  // The frame lets a just-revealed dock drop `inert` first. A composer that
+  // mounts fresh already sees the request id in this same render, so mount
+  // timing never races the host publishing it.
+  useEffect(() => {
+    if (variant === "hero" || newChatFocusRequestId == null) return;
+    requestAnimationFrame(() => composerRef.current?.focus());
+    onNewChatFocusHandled?.(newChatFocusRequestId);
+  }, [newChatFocusRequestId, variant, onNewChatFocusHandled]);
   const works = useWorks(projectId);
   const agents = useAgentCatalog(true, projectId);
   const choices = creation.choices;
@@ -63,7 +86,8 @@ export function CreationComposer({
   return (
     <>
       <Composer
-        variant="hero"
+        ref={composerRef}
+        variant={variant}
         autoFocus={autoFocus}
         onSubmit={async (envelope) => ({
           kind:

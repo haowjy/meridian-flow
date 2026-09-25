@@ -1,8 +1,8 @@
 # client/working-set
 
-Device-local recent document routes and remembered thread, with optional server
-sync for cross-device continuity. Recency can rank already-open Editor tabs; it
-never creates workspace membership. Browser-local Editor tabs belong to
+Device-local recent document routes. Optional server sync provides
+cross-device document recency only. Recency can rank already-open Editor tabs;
+it never creates workspace membership. Browser-local Editor tabs belong to
 `../stores/context-tabs-store/`, and document content belongs to Yjs.
 
 Mental model: a deliberately narrow offline-first reconciler. Local
@@ -33,3 +33,6 @@ Key rules:
   Continuity record (`../recents/`), not this store and not a new tier.
 
 Depth: [.context/CONTEXT.md](.context/CONTEXT.md) (contracts and protocol).
+
+The current chat is not working-set state: it is device-local and never
+synced (`../current-chat.ts`).

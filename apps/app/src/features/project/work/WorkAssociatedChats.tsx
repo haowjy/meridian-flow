@@ -3,14 +3,13 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
-import { useEffect, useState } from "react";
-import { useProjectChatUserState } from "@/client/query/useProjectChatUserState";
 import { useWorkThreads } from "@/client/query/useWorkThreads";
-import { useAnnouncement } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
-import { ProjectChatRow } from "../chat-list/ProjectChatRow";
-import { useExternalScrollVirtualList } from "./useExternalScrollVirtualList";
+import { useExternalScrollVirtualList } from "@/hooks/use-external-scroll-virtual-list";
+import { useMinuteClock } from "@/hooks/use-minute-clock";
+import { ProjectChatFeedRow } from "../chat-list/ProjectChatRow";
+import { useChatRowCommands } from "../chat-list/useChatRowCommands";
 
 const chatKey = (item: ProjectChatItem) => item.id;
 const estimateChatRow = () => 52;
@@ -27,8 +26,9 @@ export function WorkAssociatedChats({
   requestOpen: (item: ProjectChatItem) => void;
 }) {
   const query = useWorkThreads(projectId, work.id);
-  const { announce, announceError } = useAnnouncement();
-  const [now, setNow] = useState(Date.now());
+  const { deleteDialog, onFavorite, onDelete, deleteFailure, retryDelete } =
+    useChatRowCommands(projectId);
+  const now = useMinuteClock();
   const threads = query.threads ?? [];
   const { listRef, onActiveChange, virtualizer } = useExternalScrollVirtualList({
     items: threads,
@@ -37,10 +37,6 @@ export function WorkAssociatedChats({
     estimateSize: estimateChatRow,
   });
 
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => clearInterval(timer);
-  }, []);
   return (
     <>
       {query.isError ? (
@@ -62,7 +58,12 @@ export function WorkAssociatedChats({
           >
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const item = threads[virtualRow.index];
-              return item ? (
+              if (!item) return null;
+              const deleteError =
+                deleteFailure?.id === item.id
+                  ? { error: deleteFailure.error, onRetry: retryDelete }
+                  : undefined;
+              return (
                 <li
                   key={item.id}
                   ref={virtualizer.measureElement}
@@ -74,26 +75,18 @@ export function WorkAssociatedChats({
                     transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
                   }}
                 >
-                  <WorkChatRow
+                  <ProjectChatFeedRow
                     projectId={projectId}
                     item={item}
                     now={now}
                     onOpen={requestOpen}
                     onActiveChange={onActiveChange}
-                    onFavorite={(chat, value) => {
-                      void query.setFavorite(chat.id, value).then((saved) => {
-                        if (saved)
-                          announce(
-                            value
-                              ? t`${chat.title} added to favorites`
-                              : t`${chat.title} removed from favorites`,
-                          );
-                        else announceError(t`Favorite wasn’t saved`);
-                      });
-                    }}
+                    onFavorite={onFavorite}
+                    onDelete={onDelete}
+                    deleteError={deleteError}
                   />
                 </li>
-              ) : null;
+              );
             })}
           </ul>
           {query.nextPageIdentity ? (
@@ -115,33 +108,7 @@ export function WorkAssociatedChats({
           <Trans>No chats are associated with this Work.</Trans>
         </p>
       )}
+      {deleteDialog}
     </>
-  );
-}
-
-function WorkChatRow({
-  projectId,
-  item,
-  now,
-  onOpen,
-  onActiveChange,
-  onFavorite,
-}: {
-  projectId: string;
-  item: ProjectChatItem;
-  now: number;
-  onOpen: (item: ProjectChatItem) => void;
-  onActiveChange: (id: string, active: boolean) => void;
-  onFavorite: (item: ProjectChatItem, value: boolean) => void;
-}) {
-  const state = useProjectChatUserState(projectId, item);
-  return (
-    <ProjectChatRow
-      {...state}
-      now={now}
-      onOpen={onOpen}
-      onActiveChange={onActiveChange}
-      onFavorite={onFavorite}
-    />
   );
 }

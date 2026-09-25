@@ -1,6 +1,8 @@
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { cn } from "@/lib/utils";
+
 import { PanelToggleButton } from "./PanelToggleButton";
 
 /**
@@ -32,16 +34,31 @@ export type PaneHeaderProps = {
   right?: PaneHeaderRailToggle;
   /** Right-aligned actions (e.g. share), before the right toggle. */
   actions?: ReactNode;
+  /**
+   * Full-height chip right after the left toggle (the chat index door). Placed
+   * on the same x as the Editor's Recently opened chip in both sidebar states.
+   */
+  leading?: ReactNode;
 };
 
-export function PaneHeader({ title, left, right, actions }: PaneHeaderProps) {
+export function PaneHeader({ title, left, right, actions, leading }: PaneHeaderProps) {
+  const leftToggle = left && !left.open;
   return (
     <header className="flex h-10 shrink-0 items-center gap-1 px-2">
-      {left && !left.open ? (
+      {leftToggle ? (
         <PanelToggleButton icon={PanelLeftOpen} label={left.label} onClick={left.onExpand} />
       ) : null}
+      {leading ? (
+        // The tab strip puts its first chip flush at the pane edge, or 8px past
+        // the toggle's own px-2 zone; the offsets land on those same x values.
+        // -mr-1 cancels the gap so the title chip sits flush like a next tab.
+        <div className={cn("-mr-1 flex shrink-0 self-stretch", leftToggle ? "ml-1" : "-ml-2")}>
+          {leading}
+        </div>
+      ) : null}
 
-      <div className="flex min-w-0 flex-1 items-center">{title}</div>
+      {/* Band-tall, so a title chip can stretch into an inactive tab's full-height hover. */}
+      <div className="flex min-w-0 flex-1 items-center self-stretch">{title}</div>
 
       <div className="flex shrink-0 items-center gap-1">
         {actions}

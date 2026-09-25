@@ -4,7 +4,6 @@ import type { WorkingSetRow, WorkingSetSnapshot } from "./ports/working-set-repo
 export function copyWorkingSetSnapshot(snapshot: WorkingSetSnapshot): WorkingSetSnapshot {
   return {
     recentRoutes: snapshot.recentRoutes.map((route) => ({ ...route })),
-    lastThreadId: snapshot.lastThreadId,
   };
 }
 
