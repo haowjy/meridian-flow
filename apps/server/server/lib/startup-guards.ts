@@ -24,8 +24,15 @@ export type ApiStartupEnv = {
   APP_ENV: "dev" | "staging" | "production";
   DATABASE_URL?: string;
   OBJECT_STORE_PROVIDER: ObjectStoreProvider;
+  S3_BUCKET?: string;
+  S3_ENDPOINT?: string;
   S3_ACCESS_KEY?: string;
   S3_SECRET_KEY?: string;
+  MODEL_PROVIDER?: string;
+  ANTHROPIC_API_KEY?: string;
+  OPENAI_API_KEY?: string;
+  DEEPSEEK_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
   WORKOS_API_KEY: string;
   WORKOS_CLIENT_ID: string;
   WORKOS_COOKIE_PASSWORD?: string;
@@ -125,6 +132,10 @@ export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOut
     if (config.OBJECT_STORE_PROVIDER !== "s3") {
       errors.push("OBJECT_STORE_PROVIDER: must be s3 in staging/production.");
     }
+    requireValue(errors, "S3_BUCKET", config.S3_BUCKET, "required for live object storage.");
+    if (isLocalUrl(config.S3_ENDPOINT)) {
+      errors.push("S3_ENDPOINT: localhost endpoints are not allowed in staging/production.");
+    }
     if (isLocalUrl(config.DATABASE_URL)) {
       errors.push("DATABASE_URL: localhost URLs are not allowed in staging/production.");
     }
@@ -139,6 +150,19 @@ export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOut
       errors.push(
         "WORKOS_DEV_*: development login settings are not allowed in staging/production.",
       );
+    }
+    if (config.MODEL_PROVIDER === "mock") {
+      errors.push("MODEL_PROVIDER: mock is not allowed in staging/production.");
+    }
+    if (
+      ![
+        config.ANTHROPIC_API_KEY,
+        config.OPENAI_API_KEY,
+        config.DEEPSEEK_API_KEY,
+        config.OPENROUTER_API_KEY,
+      ].some(isRealProviderKey)
+    ) {
+      errors.push("MODEL_PROVIDER: at least one live provider API key is required.");
     }
     requireRealSecret(
       errors,
@@ -187,6 +211,10 @@ export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOut
   return { errors, warnings, replicaCount, durableEventBackend };
 }
 
+function isRealProviderKey(key: string | undefined): boolean {
+  return Boolean(key?.trim() && !key.trim().startsWith("dev-"));
+}
+
 export async function assertApiStartupGuards(): Promise<StartupGuardOutcome> {
   const { env } = await import("./env.js");
   const { resolveBackends } = await import("./backend-policy.js");
@@ -197,8 +225,15 @@ export async function assertApiStartupGuards(): Promise<StartupGuardOutcome> {
     APP_ENV: env.APP_ENV,
     DATABASE_URL: env.DATABASE_URL,
     OBJECT_STORE_PROVIDER: backends.objectStore,
+    S3_BUCKET: process.env.S3_BUCKET,
+    S3_ENDPOINT: process.env.S3_ENDPOINT,
     S3_ACCESS_KEY: process.env.S3_ACCESS_KEY,
     S3_SECRET_KEY: process.env.S3_SECRET_KEY,
+    MODEL_PROVIDER: process.env.MODEL_PROVIDER,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
     WORKOS_API_KEY: env.WORKOS_API_KEY,
     WORKOS_CLIENT_ID: env.WORKOS_CLIENT_ID,
     WORKOS_COOKIE_PASSWORD: env.WORKOS_COOKIE_PASSWORD,

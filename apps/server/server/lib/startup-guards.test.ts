@@ -6,9 +6,11 @@ const baseConfig: ApiStartupEnv = {
   APP_ENV: "staging",
   DATABASE_URL: "postgres://service:secret@db.example.net:5432/meridian",
   OBJECT_STORE_PROVIDER: "s3",
+  S3_BUCKET: "meridian-staging",
   S3_ACCESS_KEY: "real-access-key",
   S3_SECRET_KEY: "real-secret-key",
   WORKOS_API_KEY: "sk_test_staging-key",
+  DEEPSEEK_API_KEY: "live-model-key",
   WORKOS_CLIENT_ID: "client_staging",
   WORKOS_COOKIE_PASSWORD: "a-secure-cookie-password-of-32-chars",
   WORKOS_REDIRECT_URI: "https://app.example.net/api/auth/callback",
@@ -23,6 +25,7 @@ describe("staging and production startup guards", () => {
       ...baseConfig,
       DATABASE_URL: "postgres://localhost/meridian",
       OBJECT_STORE_PROVIDER: "local",
+      S3_BUCKET: undefined,
       WORKOS_API_KEY: "dev-workos-key",
       WORKOS_CLIENT_ID: "dev-workos-client",
       WORKOS_COOKIE_PASSWORD: "",
@@ -35,6 +38,17 @@ describe("staging and production startup guards", () => {
     expect(outcome.errors.join("\n")).toContain("WORKOS_API_KEY");
     expect(outcome.errors.join("\n")).toContain("WORKOS_CLIENT_ID");
     expect(outcome.errors.join("\n")).toContain("WORKOS_COOKIE_PASSWORD");
+    expect(outcome.errors.join("\n")).toContain("S3_BUCKET");
+  });
+
+  it("rejects mock-only model setup for a live APP_ENV", () => {
+    const outcome = evaluateApiStartupGuards({
+      ...baseConfig,
+      MODEL_PROVIDER: "mock",
+      DEEPSEEK_API_KEY: "dev-deepseek-key",
+    });
+
+    expect(outcome.errors.join("\n")).toContain("MODEL_PROVIDER");
   });
 
   it("accepts complete staging configuration independent of NODE_ENV", () => {
