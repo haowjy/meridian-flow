@@ -27,6 +27,7 @@ import { sectionLabelVariants } from "@/components/ui/section-label";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
 import { PaneTitle } from "@/features/project/PaneTitle";
 import { relativeTime } from "@/features/project/relative-time";
+import { useChatNavigation } from "@/features/project/routing/chat-navigation";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 
@@ -38,16 +39,12 @@ export function ThreadSwitcherPopover({
   projectId,
   activeThreadId,
   title,
-  onSelectThread,
-  onNewChat,
   onRename,
   variant = "quiet",
 }: {
   projectId: string;
   activeThreadId: string | null;
   title: string;
-  onSelectThread: (threadId: string) => void;
-  onNewChat?: () => void;
   onRename?: () => void;
   /**
    * `quiet` — chrome that stays chrome (the dock): hovers like an inactive
@@ -58,6 +55,7 @@ export function ThreadSwitcherPopover({
    */
   variant?: "quiet" | "tab";
 }) {
+  const { openChat: onSelectThread, openNewChat } = useChatNavigation();
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
   const contentRef = useRef<HTMLDivElement>(null);
   const focusHandoff = useRef(false);
@@ -87,7 +85,7 @@ export function ThreadSwitcherPopover({
   const selectThread = (threadId: string) => {
     focusHandoff.current = threadId !== activeThreadId;
     changeOpen(false);
-    onSelectThread(threadId);
+    void onSelectThread(threadId);
   };
 
   const startRename = () => {
@@ -169,23 +167,21 @@ export function ThreadSwitcherPopover({
         }}
         onKeyDown={handleNavigationKeyDown}
       >
-        {onNewChat ? (
-          <div className="px-2 pt-1">
-            <button
-              data-switcher-focus
-              type="button"
-              className={cn(dropdownRowVariants(), "text-jade-text hover:bg-primary/10")}
-              onClick={() => {
-                focusHandoff.current = true;
-                changeOpen(false);
-                onNewChat();
-              }}
-            >
-              <Plus aria-hidden />
-              <Trans>New chat</Trans>
-            </button>
-          </div>
-        ) : null}
+        <div className="px-2 pt-1">
+          <button
+            data-switcher-focus
+            type="button"
+            className={cn(dropdownRowVariants(), "text-jade-text hover:bg-primary/10")}
+            onClick={() => {
+              focusHandoff.current = true;
+              changeOpen(false);
+              void openNewChat();
+            }}
+          >
+            <Plus aria-hidden />
+            <Trans>New chat</Trans>
+          </button>
+        </div>
         {showSearch ? (
           <div className="px-2 py-1">
             <div className="relative">

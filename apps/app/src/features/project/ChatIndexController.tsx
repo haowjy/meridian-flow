@@ -23,7 +23,12 @@ export function ChatIndexController({
   sidebarToggle,
   contextToggle,
 }: ChatIndexControllerProps) {
-  const { currentThreadId, openChat } = useChatNavigation();
+  const { display, openChat } = useChatNavigation();
+  // ChatIndexController only renders while the index is showing, so the
+  // display is always the "index" variant; the chip reopens the remembered
+  // current chat, which stays live behind the index even though it is not
+  // displayed content.
+  const currentThreadId = display.kind === "index" ? display.currentThreadId : null;
   const { threadById } = useProjectThreadGroups(projectId);
   return (
     <main className="main-pane flex min-h-0 flex-1 flex-col">

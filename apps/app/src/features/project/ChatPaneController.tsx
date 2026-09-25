@@ -16,7 +16,6 @@ export type ChatPaneControllerProps = {
   threadId: string | null;
   sidebarToggle: PaneHeaderRailToggle;
   contextToggle: PaneHeaderRailToggle;
-  onSelectThread: (threadId: string) => void;
 };
 
 export function ChatPaneController({
@@ -24,7 +23,6 @@ export function ChatPaneController({
   threadId,
   sidebarToggle,
   contextToggle,
-  onSelectThread,
 }: ChatPaneControllerProps) {
   const { openChatIndex } = useChatNavigation();
   return (
@@ -34,7 +32,6 @@ export function ChatPaneController({
         <ChatThreadTitle
           projectId={projectId}
           threadId={threadId}
-          onSelectThread={onSelectThread}
           // The centered chat body is page-sheet: the switcher wears the
           // active-tab chip so the page continues up into the band.
           variant="tab"

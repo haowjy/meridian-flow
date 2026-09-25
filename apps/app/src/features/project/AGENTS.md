@@ -15,7 +15,8 @@ screens. Chat, editor, and context domain behavior stays with those features.
   and dock. Remembered subagents are identities, not primary-list lookups.
 - Only destination navigation changes screens. New chat, selection, and first
   Send stay in their pane. `routing/chat-navigation.tsx` owns these commands and
-  journal recovery.
+  journal recovery; leaves call `useChatNavigation()` directly instead of
+  threading `onSelectThread`/`onOpenThread` props down.
 - Project identity is its route UUID plus the current mutable title. Keep rename
   in workspace chrome, use React Query for optimistic propagation, and never
   couple title edits to browser or context-URI slug identity.

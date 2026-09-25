@@ -10,10 +10,11 @@ Read [`AGENTS.md`](../AGENTS.md) first.
 `DockShell` guarantees its occupant's native body (`children`) keeps the same
 React tree depth in both `center` and `dock` placements. In `center`, the shell
 is a bare passthrough — the occupant renders directly inside the grid cell. In
-`dock`, the shell wraps with `DockHeader` and the Changes overlay, but
-`children` still renders at the same nesting level (inside the same `relative
-flex min-h-0 flex-1` div). When the occupant moves between center↔dock in the
-grid, React's reconciliation sees the same component at the same position.
+`dock`, the shell wraps with the caller's header (via the `renderHeader` slot)
+and the Changes overlay, but `children` still renders at the same nesting level
+(inside the same `relative flex min-h-0 flex-1` div). When the occupant moves
+between center↔dock in the grid, React's reconciliation sees the same
+component at the same position.
 
 The primary body stays **mounted** when the Changes view is active. It is hidden
 via `opacity-0 pointer-events-none` + the `inert` attribute. This means:
@@ -68,11 +69,12 @@ The dock grid slot (`layout/desktop-layout.ts`) owns all background chrome:
 Changes view, occupant body) must not paint a hardcoded background — the slot
 paints the material. Transparent/surface-subtle fills are correct, and tonal
 steps may recess (`bg-sidebar-accent`) and re-surface the slot's own tone
-(`bg-sidebar`). One bounded exception: `DockHeader`'s view switch is a
-contained segmented track (a recessed ink-mix well) whose active segment
-surfaces paper (`bg-background`) — the paper stays inside the track's
-boundary, so the dock still reads as one chrome surface. Any other
-`bg-background` or `bg-card` in the dock is a bug (the dock is a sidebar).
+(`bg-sidebar`). One bounded exception: `DockViewSwitch` (shared by `DockHeader`
+and the phone chat sheet's `MobileChatSheetHeader`) is a contained segmented
+track (a recessed ink-mix well) whose active segment surfaces paper
+(`bg-background`) — the paper stays inside the track's boundary, so the dock
+still reads as one chrome surface. Any other `bg-background` or `bg-card` in
+the dock is a bug (the dock is a sidebar).
 
 ### Changes view: controller seam
 
@@ -109,7 +111,7 @@ flowchart LR
     DockShell -->|center: passthrough| Occupant[ChatSurface / ContextSidebar]
     DockShell -->|dock: header + overlay| Occupant
     DockShell -->|dock: view=changes| Changes[DockChangesView]
-    Occupant -->|dock placement| DockHeader
+    Occupant -->|dock placement, renderHeader slot| Header[DockHeader / MobileChatSheetHeader]
     Changes --> DocGroup[ChangesDocumentGroup per doc]
     DocGroup --> Card[ReviewOperationCard per Discard class]
     Card --> Verbs[Selective Discard]

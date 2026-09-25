@@ -152,8 +152,7 @@ export function parseProjectAddress(
     "href" in empty &&
     empty.href === projectAddressHref({ ...address, settings: undefined, results: false })
   ) {
-    if (editor && address.work.kind === "absent" && "work" in empty && empty.work === true)
-      address.work = { kind: "none" };
+    if (editor && address.work.kind === "absent") address.work = { kind: "none" };
   }
   return { kind: "valid", address, href };
 }
@@ -213,10 +212,7 @@ export function projectAddressState(
   return {
     ...state,
     meridianProjectEmptySelection: noWork
-      ? {
-          href: projectAddressHref({ ...address, settings: undefined, results: false }),
-          work: noWork,
-        }
+      ? { href: projectAddressHref({ ...address, settings: undefined, results: false }) }
       : undefined,
   };
 }

@@ -22,10 +22,7 @@ vi.mock("@/client/api/projects-api", async (original) => ({
 }));
 
 it("reads an explicit no-Work image without inheriting the selected chat Work", async () => {
-  const search = openContextRouteSearch(
-    { thread: "thread-a" },
-    { scheme: "uploads", path: "/Map.png", workId: null },
-  );
+  const search = openContextRouteSearch({}, { scheme: "uploads", path: "/Map.png", workId: null });
   expect(search.work).toBe("none");
   const scope = resolveEditorWorkScope({ status: "none" });
   expect(scope).toEqual({ status: "ready", workId: null, source: "route" });
