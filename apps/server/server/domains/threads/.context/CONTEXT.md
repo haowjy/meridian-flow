@@ -234,6 +234,11 @@ Entity types (`Thread`, `Turn`, `Block`, `ModelResponse`) and event unions
   does not — the fork cannot foreground-drive the source's subtree, or vice
   versa. The fork-source edge is not a `threads` column; it is recovered by
   resolving `originTurnId`'s owning thread.
+- **Fork-history resolution** — `domain/thread-conversation-context.ts` resolves
+  inherited history through `findByIdIncludingDeleted` and throws
+  `ThreadConversationContextError` rather than falling back when lineage cannot
+  be reconstructed; run preparation surfaces that error as a failed turn on the
+  writer's message.
 - **ThreadEventHub sequencing** — journal `seq` is multiplied by 1000
   (`EVENT_SEQ_FACTOR`) to leave room for multiple AG-UI events projected from
   a single journal entry. Cursor arithmetic uses this factor.

@@ -13,16 +13,7 @@ import type {
   TurnStatus,
 } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
-import {
-  and,
-  asc,
-  desc,
-  isNotNull as drizzleIsNotNull,
-  eq,
-  getTableColumns,
-  isNull,
-  sql,
-} from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, isNotNull, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { lockThreadAndWorks, lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
@@ -394,7 +385,13 @@ export function createDrizzleThreadRepository(
           originTurnId: schema.threads.originTurnId,
         })
         .from(schema.threads)
-        .where(and(eq(schema.threads.parentThreadId, threadId), isNull(schema.threads.deletedAt)))
+        .where(
+          and(
+            eq(schema.threads.parentThreadId, threadId),
+            eq(schema.threads.kind, "subagent"),
+            isNull(schema.threads.deletedAt),
+          ),
+        )
         .orderBy(asc(schema.threads.createdAt), asc(schema.threads.id));
       return rows.map(
         (row): ThreadChild => ({
@@ -508,7 +505,7 @@ export function createDrizzleThreadRepository(
             eq(schema.threads.id, id),
             target === "deleted"
               ? isNull(schema.threads.deletedAt)
-              : drizzleIsNotNull(schema.threads.deletedAt),
+              : isNotNull(schema.threads.deletedAt),
           ),
         )
         .returning(threadColumns);

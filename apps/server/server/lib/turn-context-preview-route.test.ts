@@ -38,6 +38,6 @@ describe("handleGetTurnContextPreview", () => {
         },
         { threadId: THREAD_ID, userId: USER_ID },
       ),
-    ).rejects.toMatchObject({ statusCode: 409 });
+    ).rejects.toMatchObject({ statusCode: 500 });
   });
 });

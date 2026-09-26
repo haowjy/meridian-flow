@@ -56,11 +56,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         spawnDepth: 2,
         title: "Grandchild",
       });
+      const sourceTurn = await repos.turns.create({
+        threadId: childA.id,
+        role: "user",
+        origin: "writer",
+        status: "complete",
+      });
+      const derivedPrimary = await repos.threads.createDerivedPrimary({
+        userId: ids.userId,
+        projectId: ids.projectId,
+        workId: ids.noWorkId,
+        source: childA,
+        originType: "fork",
+        originTurnId: sourceTurn.id,
+      });
 
       expect((await repos.threads.listChildren(root.id)).map((child) => child.id)).toEqual([
         childA.id,
         childB.id,
       ]);
+      expect(derivedPrimary.kind).toBe("primary");
       expect((await repos.threads.listChildren(childA.id)).map((child) => child.id)).toEqual([
         grandchild.id,
       ]);

@@ -144,7 +144,7 @@ export type OrchestratorEvent =
     }
   | {
       type: "subagent.activity";
-      /** Direct parent whose child activity changed; the event lands on its journal. */
+      /** The child whose create/terminal changed its parent's activity; the event lands on that parent's journal. */
       childThreadId: string;
       /** Full recomputed direct-child activity, so the client replaces state with no refetch race. */
       activity: ThreadActivity;

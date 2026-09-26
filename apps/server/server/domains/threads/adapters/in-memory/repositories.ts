@@ -320,7 +320,10 @@ export function createInMemoryRepositories(
     },
     async listChildren(threadId) {
       return [...threads.values()]
-        .filter((thread) => !thread.deletedAt && thread.parentThreadId === threadId)
+        .filter(
+          (thread) =>
+            thread.kind === "subagent" && !thread.deletedAt && thread.parentThreadId === threadId,
+        )
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
         .map(
           (thread): ThreadChild => ({

@@ -53,7 +53,7 @@ export async function handleGetTurnContextPreview(
     );
   } catch (error) {
     if (error instanceof ThreadConversationContextError) {
-      throwHttpInterruptForStatus(409, error.message);
+      throwHttpInterruptForStatus(500, error.message);
     }
     throw error;
   }
