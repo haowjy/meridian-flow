@@ -50,6 +50,13 @@
       "when": 1790446867716,
       "tag": "0006_model_response_timing",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790452021931,
+      "tag": "0007_thread_current_tool",
+      "breakpoints": true
     }
   ]
 }

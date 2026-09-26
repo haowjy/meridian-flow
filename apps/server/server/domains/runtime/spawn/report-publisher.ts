@@ -105,6 +105,8 @@ export function createReportPublisher(deps: {
                     },
                     childThreadId: report.childThreadId,
                     execution: report.assistantTurnId,
+                    startedAt: report.admittedAt,
+                    terminalAt: report.terminalAt,
                     outcome: report.outcome,
                   }),
                 ),

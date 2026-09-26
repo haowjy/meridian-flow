@@ -60,6 +60,13 @@ export type ThreadStatus =
 export type ThreadLeaseState = {
   status: ThreadStatus;
   runningTurnId: string | null;
+  currentTool: CurrentToolCall | null;
+};
+/** Most recent tool call dispatched by a live run. */
+export type CurrentToolCall = {
+  toolCallId: string;
+  toolName: string;
+  input: JsonValue;
 };
 export type TurnRole = "user" | "assistant" | "system" | "compaction";
 /**
@@ -105,6 +112,14 @@ export type ThreadActivityNode = {
   spawnStatus: SpawnStatus | null;
   /** Derived from the live lease; absent lease reads `asleep`. */
   status: ThreadStatus;
+  /** Delivery behavior for this thread's latest admitted execution. */
+  deliveryMode: "direct" | "background_notification" | null;
+  /** Admission time for the latest run, or null before its first admitted run. */
+  runStartedAt: string | null;
+  /** Terminal time for the latest run, or null while it is running. */
+  runEndedAt: string | null;
+  /** The live run's current or most recently dispatched tool call. */
+  currentTool: CurrentToolCall | null;
   /** Parent turn that spawned this thread (transcript anchor). */
   originTurnId: string | null;
 };

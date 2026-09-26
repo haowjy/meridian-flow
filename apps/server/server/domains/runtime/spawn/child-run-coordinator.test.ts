@@ -213,7 +213,10 @@ async function fixture(
   };
   const eventSink = createInMemoryEventSink();
   const readActivity = (threadId: ThreadId) =>
-    readThreadActivity({ threads: repos.threads, statusReader: runClaim }, threadId);
+    readThreadActivity(
+      { threads: repos.threads, statusReader: runClaim, executionReports: repos.executionReports },
+      threadId,
+    );
   const inbox = createInMemoryInbox();
   const runStarter = createInMemoryRunStarter();
   const delivery = createRuntimeHarness({
@@ -989,6 +992,11 @@ describe("ChildRunCoordinator thread_message", () => {
         },
       },
     });
+    const executionReport = await repos.executionReports.findByExecution(
+      spawned.report.threadId as ThreadId,
+      spawned.execution,
+    );
+    expect(executionReport).not.toBeNull();
     expect((await repos.blocks.findById(customBlocks[0]?.id ?? ""))?.content).toMatchObject({
       kind: "helper-result",
       props: {
@@ -998,6 +1006,8 @@ describe("ChildRunCoordinator thread_message", () => {
         toolCallId: "test-invocation-1",
         deliveryMode: "direct",
         execution: spawned.execution,
+        startedAt: executionReport?.admittedAt,
+        terminalAt: executionReport?.terminalAt,
       },
     });
   });
@@ -1036,7 +1046,13 @@ describe("ChildRunCoordinator thread_message", () => {
     });
     const cardId = customBlocks[0]?.id;
     if (!cardId) throw new Error("missing running card id");
+    if (!spawned.execution) throw new Error("missing background execution id");
 
+    const executionReport = await repos.executionReports.findByExecution(
+      spawned.threadId,
+      spawned.execution,
+    );
+    expect(executionReport).not.toBeNull();
     await vi.waitFor(async () => {
       expect((await repos.blocks.findById(cardId))?.content).toMatchObject({
         kind: "helper-result",
@@ -1046,6 +1062,8 @@ describe("ChildRunCoordinator thread_message", () => {
           toolCallId: "test-invocation-1",
           deliveryMode: "background_notification",
           execution: spawned.execution,
+          startedAt: executionReport?.admittedAt,
+          terminalAt: executionReport?.terminalAt,
         },
       });
     });

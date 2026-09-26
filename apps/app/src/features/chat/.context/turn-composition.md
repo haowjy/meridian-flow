@@ -146,10 +146,13 @@ the complete turn; contiguous presentation groups cannot pair persisted
 are filtered, so authoritative snapshots and result-before-card converge
 without a second output store or per-card store subscription. A settled direct
 error without saved terminal evidence shows its error without claiming a child
-outcome; a later terminal card patch remains authoritative. Background cards
-remain status-only; notification contains no report body and triggers no
-automatic fetch. `thread_report` is an ordinary expandable activity row,
-including saved artifacts, not another artifact card.
+outcome; a later terminal card patch remains authoritative. Invocation cards
+branch on the required `deliveryMode`: background cards stay as one-line launch
+artifacts while the running strip carries live tool activity; direct cards stay
+in place and combine launch, live edge, and expandable result. Background
+completion notices are quiet expandable step rows. `thread_report` is a
+report artifact outside the process fold, with a collapsed one-line summary and
+expanded summary, payload, and saved artifacts.
 
 Child completion delivery persists one system turn with `subagent_update`
 metadata. `visible-chat-turns.ts` and the server visible-conversation policy
@@ -253,9 +256,9 @@ keys must be real runtime tool names from
 `write`, `work`, `ls`, `search`, `ask_user`, `spawn`, `thread_message`,
 `thread_report`, and `return_result`. `ask_user` and `helper-result` render
 through custom cards; `spawn` and `thread_message` tool rows are hidden because
-the retained invocation card owns their writer surface. `thread_report` is a
-visible ordinary activity row with a first-line preview and full expandable
-result. Card `artifacts[]` render through
+the retained invocation card owns their writer surface. `thread_report` is
+hidden from process rows because `partitionTurn` owns its report-artifact
+surface. `return_result` remains a child-report artifact. Card `artifacts[]` render through
 the shared `ArtifactGrid` (`ArtifactGrid.tsx`), reused by `FormBlock`,
 `SpawnReportCard`, and `ChildReportBlock`.
 Process tools (`write`, `work`, `ls`, `search`) render as `ActivityRow`.

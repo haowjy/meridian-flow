@@ -4,6 +4,10 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@lingui/core/macro", () => ({
+  t: (strings: TemplateStringsArray, ...values: unknown[]) =>
+    strings.reduce((result, part, index) => result + part + String(values[index] ?? ""), ""),
+}));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
@@ -46,7 +50,7 @@ describe("HelperResultBlock saved report", () => {
     document.body.innerHTML = "";
   });
 
-  it("loads a background card's saved report collapsed and expands the full result", async () => {
+  it("keeps the background launch card status-only instead of duplicating the report", async () => {
     await act(async () =>
       root.render(
         <QueryClientProvider client={queryClient}>
@@ -71,15 +75,9 @@ describe("HelperResultBlock saved report", () => {
         </QueryClientProvider>,
       ),
     );
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
-
-    expect(host.textContent).toContain("A lantern swims through night.");
+    expect(host.textContent).toContain("Poet");
+    expect(host.textContent).not.toContain("A lantern swims through night.");
     expect(host.textContent).not.toContain("The river keeps its silver name.");
-    const toggle = [...host.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("Show full result"),
-    );
-    expect(toggle).toBeDefined();
-    await act(async () => toggle?.click());
-    expect(host.textContent).toContain("The river keeps its silver name.");
+    expect(host.querySelector("button[aria-expanded]")).toBeNull();
   });
 });

@@ -296,6 +296,8 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         correlation,
         childThreadId: prepared.child.id,
         execution: null,
+        startedAt: new Date().toISOString(),
+        terminalAt: null,
       });
     }
     return invocationCardProps({
@@ -303,6 +305,8 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       correlation,
       childThreadId: prepared.child.id,
       execution: null,
+      startedAt: new Date().toISOString(),
+      terminalAt: null,
     });
   }
 
@@ -362,7 +366,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 
     let admitted: TurnId | null = null;
     let runCard: Block | null = null;
-    const onAdmitted = async (execution: TurnId) => {
+    const onAdmitted = async (execution: TurnId, admittedAt: string) => {
       admitted = execution;
       await bindAdmittedInvocationCard({
         transcript: options.transcript,
@@ -370,6 +374,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         card: runCard,
         props: cardProps,
         execution,
+        admittedAt,
       });
     };
 

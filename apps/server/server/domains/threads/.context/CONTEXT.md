@@ -81,12 +81,14 @@ for the tool-freeze mechanics.
 - **Historical block replacement** — `block.updated` carries a full existing custom block through the read-model projector and AG-UI custom upsert frame. Unlike insertion, it never advances the active frontier or closes open text/reasoning segments. `replaceExisting` retains id, turn and sequence and rejects a missing block; publisher B must not re-create a vanished card.
 - **Thread activity read** — `domain/thread-activity.ts` composes
   `listDescendants` (the *viewed* thread's own subtree, walked down
-  `parent_thread_id`, never `rootThreadId` alone) with the batch lease read
-  (`ThreadStatusReader.readMany`) into the pure `projectThreadActivity`
-  projection. It is the one server-truth "what subagents are running in this
-  thread", attached to `ThreadLiveState.activity` in both the snapshot and the WS
-  `subscribed` state, and live-updated by the root-journal `subagent.activity`
-  event. Never a turn block.
+  `parent_thread_id`, never `rootThreadId` alone), a batch lease read
+  (`ThreadStatusReader.readMany`), and the latest admitted execution report per
+  child into the pure `projectThreadActivity` projection. The report supplies
+  delivery mode and admission/terminal times; the live lease supplies the
+  current tool call. Activity is attached to `ThreadLiveState.activity` in both
+  the snapshot and WS `subscribed` state, and live-updated by the root-journal
+  `subagent.activity` event at run lifecycle and tool-dispatch boundaries. It is
+  never a turn block.
 - **Notification and steering tables** — `thread_inbox_messages` is the durable
   per-thread message queue (global `bigserial` `seq` for per-thread FIFO, unique
   `idempotency_key`, nullable `delivered_at`), drained by the runtime's `Inbox`
@@ -94,8 +96,9 @@ for the tool-freeze mechanics.
   (not a separate tray) from the runtime's [classified pending
   projection](../../runtime/.context/CONTEXT.md), not this storage queue alone.
   `thread_run_leases` is the queryable run lease paired with the runtime's
-  session advisory lock (`phase`, `cancel_requested`, `expires_at`, and the
-  run's bound `turn_id`). Run liveness is read from the lease alone: the project
+  session advisory lock (`phase`, `cancel_requested`, `expires_at`, the run's
+  bound `turn_id`, and its last dispatched `current_tool`). Run liveness is
+  read from the lease alone: the project
   list and `ThreadLiveState.runningTurnId` (snapshot and WS `subscribed`) both
   surface the lease's bound turn, and the orchestrator binds it inside the
   turn-start setup transaction (`RuntimeDelivery.adoptBatch`). Both cascade
@@ -142,8 +145,9 @@ for the tool-freeze mechanics.
   `turns`, `model_responses`, `turn_blocks`, and recomputed token/cost rollups.
 - **Thread snapshot builder** — reads rows, live state, materialized watermark, and journal head in one root repeatable-read view. All participating adapters honor the ambient transaction; blocks and responses are bulk-read per thread. Assembles the full `ThreadSnapshotResponse`
   (thread + turns + blocks + responses + live state) for initial page load.
-  Subagent snapshots include `parent: { id, title }` from a `findById` point
-  lookup, not the parent's conversation.
+  Subagent snapshots include an `ancestors` chain ordered root-first through
+  the direct parent; each entry comes from a `findById` point lookup, not an
+  ancestor conversation.
 - **Thread lifecycle validation** — public create (`normalizeThreadCreate`)
   accepts primary roots only and rejects spawn/fork fields. Subagent threads
   are created only by `SubagentThreadFactory` from the child-run coordinator.

@@ -16,9 +16,12 @@
  * editor bar share one controller so preview selection cannot drift.
  */
 import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
+import type { ThreadActivityNode } from "@meridian/contracts/threads";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { ChevronDown, Users } from "lucide-react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { resolveDocumentLink } from "@/client/api/document-links-api";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import {
@@ -43,11 +46,15 @@ import { displayThreadTitle } from "@/lib/thread-title";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
 import { AgentOnlyComposerToolbar, ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
+import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
+import { requestConversationReveal } from "./conversation-reveal";
 import { DraftDock, useDraftDock } from "./DraftDock";
 import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
+import { SubagentActivityProvider } from "./SubagentActivityContext";
+import { SubagentMark } from "./SubagentMark";
 import { TurnList } from "./TurnList";
 import { activeDescendants } from "./thread-activity";
 import type { UserTurnRecovery } from "./UserTurn";
@@ -67,6 +74,154 @@ import { useThreadHandoff } from "./useThreadHandoff";
 import { useThreadNavigationAnnounce } from "./useThreadNavigationAnnounce";
 
 const EMPTY_TURNS: Turn[] = [];
+
+function SubagentHeader({
+  threadId,
+  running,
+  all,
+}: {
+  threadId: string;
+  running: ThreadActivityNode[];
+  all: ThreadActivityNode[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState("");
+  const openThread = useOpenChatThread();
+  const ordered = [...all].sort((a, b) => {
+    const runningOrder = Number(b.status.kind === "awake") - Number(a.status.kind === "awake");
+    if (runningOrder) return runningOrder;
+    return Date.parse(b.runEndedAt ?? "") - Date.parse(a.runEndedAt ?? "");
+  });
+  const visible = ordered.filter((node) =>
+    `${node.agentName ?? ""} ${node.title ?? ""}`
+      .toLocaleLowerCase()
+      .includes(filter.toLocaleLowerCase()),
+  );
+
+  return (
+    <div className="relative z-20 bg-background">
+      {all.length ? (
+        <div className="flex h-9 items-center justify-end px-3">
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen((value) => !value)}
+            className="focus-ring inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Users className="size-3.5" aria-hidden />
+            <span>
+              <Trans>Subagents</Trans> {all.length}
+            </span>
+            {running.length ? (
+              <span className="size-1.5 animate-pulse rounded-full bg-primary" aria-hidden="true" />
+            ) : null}
+            <ChevronDown className="size-3" aria-hidden />
+          </button>
+        </div>
+      ) : null}
+      {open && all.length ? (
+        <div className="absolute right-3 top-8 z-30 w-[min(22rem,calc(100vw-1.5rem))] rounded-lg border border-border bg-background p-2 shadow-lg">
+          <label className="sr-only" htmlFor="subagent-filter">
+            <Trans>Filter subagents</Trans>
+          </label>
+          <input
+            id="subagent-filter"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder={t`Filter subagents`}
+            className="focus-ring mb-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm"
+          />
+          <ul className="max-h-72 overflow-y-auto">
+            {visible.map((node) => {
+              const name = node.agentName?.trim() || node.title?.trim() || "Subagent";
+              const isRunning = node.status.kind === "awake";
+              return (
+                <li
+                  key={node.threadId}
+                  className="flex items-center gap-2 rounded px-2 py-2 text-sm hover:bg-muted"
+                >
+                  <SubagentMark
+                    name={name}
+                    status={
+                      isRunning ? "running" : node.spawnStatus === "cancelled" ? "stopped" : "done"
+                    }
+                    className="size-5 text-[10px]"
+                  />
+                  <span className="min-w-0 flex-1 truncate">
+                    {name}
+                    {node.title && node.title !== name ? (
+                      <span className="ml-1 text-muted-foreground">{node.title}</span>
+                    ) : null}
+                    {isRunning && node.currentTool ? (
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {subagentToolLabel(node.currentTool.toolName, node.currentTool.input)}
+                      </span>
+                    ) : null}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (node.originTurnId) {
+                        requestConversationReveal({
+                          kind: "turn",
+                          threadId,
+                          turnId: node.originTurnId,
+                        });
+                      }
+                      window.setTimeout(
+                        () => {
+                          const target = [
+                            ...document.querySelectorAll<HTMLElement>("[data-subagent-thread-id]"),
+                          ]
+                            .filter((element) => element.dataset.subagentThreadId === node.threadId)
+                            .at(-1);
+                          target?.scrollIntoView({ behavior: "smooth", block: "center" });
+                          if (target) {
+                            target.classList.add("motion-safe:animate-pulse");
+                            window.setTimeout(
+                              () => target.classList.remove("motion-safe:animate-pulse"),
+                              900,
+                            );
+                          }
+                        },
+                        node.originTurnId ? 250 : 0,
+                      );
+                      setOpen(false);
+                    }}
+                    className="focus-ring rounded px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    <Trans>Show</Trans>
+                  </button>
+                  {openThread ? (
+                    <button
+                      type="button"
+                      onClick={() => openThread(node.threadId)}
+                      className="focus-ring rounded px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      <Trans>Open</Trans>
+                    </button>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
+      {running.length ? <RunningSubagentsStrip descendants={running} /> : null}
+    </div>
+  );
+}
+
+function subagentToolLabel(toolName: string, input: unknown): string {
+  if (toolName !== "spawn") {
+    return toolName.replaceAll("_", " ").replace(/^./, (letter) => letter.toLocaleUpperCase());
+  }
+  const agent =
+    input && typeof input === "object" && !Array.isArray(input)
+      ? (input as Record<string, unknown>).agent
+      : null;
+  return t`Waiting on ${typeof agent === "string" && agent.trim() ? agent : t`Subagent`}`;
+}
 
 export type ChatViewProps = {
   threadId: string;
@@ -123,6 +278,12 @@ export function ChatView({
     seed: snapshotLiveState,
   });
   const runningSubagents = activeDescendants(activity.activity);
+  const directSubagents = activity.activity.descendants.filter(
+    (node) => node.parentThreadId === threadId,
+  );
+  const runningBackgroundSubagents = runningSubagents.filter(
+    (node) => node.parentThreadId === threadId && node.deliveryMode === "background_notification",
+  );
   const pendingInbox = usePendingInbox({ threadId, seed: snapshotLiveState });
   const queuedWriterTurnIds = useMemo(
     () => selectQueuedWriterTurnIds(pendingInbox),
@@ -337,9 +498,11 @@ export function ChatView({
         title={pageTitle}
         surfaceRef={chatSurfaceRef}
         header={
-          runningSubagents.length > 0 ? (
-            <RunningSubagentsStrip selfStatus={activity.status} descendants={runningSubagents} />
-          ) : null
+          <SubagentHeader
+            threadId={threadId}
+            running={runningBackgroundSubagents}
+            all={directSubagents}
+          />
         }
         footer={
           <div data-debug-composer={threadId}>
@@ -391,18 +554,20 @@ export function ChatView({
           </div>
         }
       >
-        <TurnList
-          threadId={threadId}
-          turns={turns}
-          historySettled={historySettled}
-          tailFollowRevision={tailFollowRevision}
-          ariaLabel={t`Chat`}
-          onRespondToInterrupt={handleRespondToInterrupt}
-          failedSendRetry={failedSendRetry}
-          changeTrails={changeTrails.byId}
-          submissionRecoveryByTurnId={submissionRecoveryByTurnId}
-          queuedWriterTurnIds={queuedWriterTurnIds}
-        />
+        <SubagentActivityProvider nodes={activity.activity.descendants}>
+          <TurnList
+            threadId={threadId}
+            turns={turns}
+            historySettled={historySettled}
+            tailFollowRevision={tailFollowRevision}
+            ariaLabel={t`Chat`}
+            onRespondToInterrupt={handleRespondToInterrupt}
+            failedSendRetry={failedSendRetry}
+            changeTrails={changeTrails.byId}
+            submissionRecoveryByTurnId={submissionRecoveryByTurnId}
+            queuedWriterTurnIds={queuedWriterTurnIds}
+          />
+        </SubagentActivityProvider>
       </ChatSurface>
     </TranscriptLinkNavigationContext.Provider>
   );

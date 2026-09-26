@@ -18,8 +18,8 @@ function stubHub(): ThreadEventHub {
   } as unknown as ThreadEventHub;
 }
 
-describe("buildThreadSnapshot parent", () => {
-  it("loads a nested subagent parent by id", async () => {
+describe("buildThreadSnapshot ancestors", () => {
+  it("loads the complete spawn chain root-first by id", async () => {
     const repos = createInMemoryRepositories();
     const parent = await repos.threads.create({
       userId: "user-1",
@@ -55,7 +55,10 @@ describe("buildThreadSnapshot parent", () => {
       nested.id as ThreadId,
     );
 
-    expect(snapshot.parent).toEqual({ id: child.id, title: "Critic" });
+    expect(snapshot.ancestors).toEqual([
+      { id: parent.id, title: "Muse chat", agentName: parent.agentName ?? null },
+      { id: child.id, title: "Critic", agentName: child.agentName ?? null },
+    ]);
   });
 
   it("includes model-response TTFT in the assistant turn snapshot", async () => {

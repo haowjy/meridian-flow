@@ -37,6 +37,8 @@ export type SavedExecutionReport = {
   terminalAssistantTurnId: TurnId | null;
   childThreadId: ThreadId;
   assistantTurnId: TurnId;
+  /** Durable report-row creation time, which commits with run admission. */
+  admittedAt: string;
   handle: string;
   origin: ExecutionReportOrigin;
   deliveryMode: ExecutionReportDelivery;

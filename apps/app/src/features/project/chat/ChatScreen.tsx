@@ -17,7 +17,7 @@ import { CreationComposer } from "@/features/chat/CreationComposer";
 import { useChatNavigation } from "../routing/chat-navigation";
 import type { ContextRouteTarget } from "../routing/project-route";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
-import { SubagentBanner } from "./SubagentBanner";
+import { SubagentPathRow } from "./SubagentPathRow";
 
 export type ChatScreenProps = {
   projectId: string;
@@ -99,14 +99,19 @@ function ChatScreenLoaded({
     refetch,
   } = useThreadSnapshotSync(threadId);
   const thread = projectThreads.find((t) => t.id === threadId) ?? snapshotThread;
-  const parent = snapshot?.parent ?? null;
+  const ancestors = snapshot?.ancestors ?? [];
 
   const isSubagent = thread?.kind === "subagent";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       {isSubagent && thread ? (
-        <SubagentBanner subagent={thread} parent={parent} onOpenParent={onSelectThread} />
+        <SubagentPathRow
+          subagent={thread}
+          ancestors={ancestors}
+          runStatus={snapshotLiveState?.status.kind === "awake" ? "running" : "done"}
+          onOpenParent={onSelectThread}
+        />
       ) : null}
 
       {isError ? (

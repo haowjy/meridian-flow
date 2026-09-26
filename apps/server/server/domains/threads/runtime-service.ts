@@ -7,7 +7,11 @@ import { eventJournal, projects, threads, threadWorks } from "@meridian/database
 import { and, eq, isNull } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
 import { readThreadActivity } from "./domain/thread-activity.js";
-import type { ThreadRepository, ThreadStatusReader } from "./ports/index.js";
+import type {
+  ExecutionReportRepository,
+  ThreadRepository,
+  ThreadStatusReader,
+} from "./ports/index.js";
 
 export type ThreadRuntimeService = ReturnType<typeof createThreadRuntimeService>;
 
@@ -25,6 +29,8 @@ export function createThreadRuntimeService(deps: {
   statusReader: ThreadStatusReader;
   /** Supplies the descendant walk for the per-thread activity read. */
   threads: Pick<ThreadRepository, "listDescendants">;
+  /** Supplies the latest admitted execution per child. */
+  executionReports: Pick<ExecutionReportRepository, "listLatestByChildren">;
   /** Reads the thread's undelivered inbox as the writer-facing pending shape. */
   readPending: (threadId: ThreadId) => Promise<ThreadPendingInbox>;
 }) {
@@ -65,7 +71,11 @@ export function createThreadRuntimeService(deps: {
       status: await deps.statusReader.read(threadId),
       runningTurnId: await deps.statusReader.readRunningTurnId(threadId),
       activity: await readThreadActivity(
-        { threads: deps.threads, statusReader: deps.statusReader },
+        {
+          threads: deps.threads,
+          statusReader: deps.statusReader,
+          executionReports: deps.executionReports,
+        },
         threadId,
       ),
       pending: await deps.readPending(threadId),

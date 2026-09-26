@@ -388,7 +388,11 @@ export async function runtimeScenario(
               status: await harness.runClaim.read(id),
               runningTurnId: await harness.runClaim.readRunningTurnId(id),
               activity: await readThreadActivity(
-                { threads: repos.threads, statusReader: harness.runClaim },
+                {
+                  threads: repos.threads,
+                  statusReader: harness.runClaim,
+                  executionReports: repos.executionReports,
+                },
                 id,
               ),
               pending: await readPendingInbox(harness.delivery, id),

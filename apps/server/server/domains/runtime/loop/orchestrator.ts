@@ -1680,11 +1680,12 @@ async function executeLoop(
               persistenceDeps: deps,
               executionReports: deps.repos.executionReports,
               readSnapshot: deps.repos.readSnapshot,
-              runningTurn: deps.runClaim,
+              runClaim: deps.runClaim,
             },
             call,
             {
               thread,
+              lease: input.lease,
               agentSlug: built.agentSlug,
               responseId,
               editResponseId: scope.id,
