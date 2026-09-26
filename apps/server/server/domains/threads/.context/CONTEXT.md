@@ -47,11 +47,11 @@ for the tool-freeze mechanics.
 - **Thread / Turn / Block / ModelResponse repositories** — CRUD for the
   conversation data model. A thread contains turns; a turn contains blocks
   (text, reasoning, tool_use, tool_result, image, file, custom) and model
-  responses with token/cost rollups. `ThreadRepository.listDescendants` walks a
-  thread's own spawn subtree breadth-first on `parent_thread_id` (served by
+  responses with token/cost rollups. `ThreadRepository.listChildren` selects
+  direct live children on `parent_thread_id` (served by
   `threads_parent_created_active`, excluding soft-deleted rows), returning the
-  fields the recursive activity read needs: id, parent, root, depth, ref, title,
-  agent name, spawn status, and origin turn.
+  fields the direct-child activity read needs: id, parent, ref, title, agent
+  name, spawn status, and origin turn.
 - **Execution reports** — `ExecutionReportRepository` owns one row per admitted
   child run, keyed by its first `assistantTurnId`. Steering may split that run into
   multiple assistant turns; `terminalAssistantTurnId` is set only at finalization.
@@ -79,13 +79,12 @@ for the tool-freeze mechanics.
   for the storage rationale.
 - **Historical block replacement** — `block.updated` carries a full existing custom block through the read-model projector and AG-UI custom upsert frame. Unlike insertion, it never advances the active frontier or closes open text/reasoning segments. `replaceExisting` retains id, turn and sequence and rejects a missing block; publisher B must not re-create a vanished card.
 - **Thread activity read** — `domain/thread-activity.ts` composes
-  `listDescendants` (the *viewed* thread's own subtree, walked down
-  `parent_thread_id`, never `rootThreadId` alone) with the batch lease read
+  `listChildren` for the viewed thread with the batch lease read
   (`ThreadStatusReader.readMany`) into the pure `projectThreadActivity`
-  projection. It is the one server-truth "what subagents are running in this
-  thread", attached to `ThreadLiveState.activity` in both the snapshot and the WS
-  `subscribed` state, and live-updated by the root-journal `subagent.activity`
-  event. Never a turn block.
+  projection. It is the one server-truth "what direct subagents are running in
+  this thread", attached to `ThreadLiveState.activity` in both the snapshot and
+  WS `subscribed` state, and live-updated by the direct-parent-journal
+  `subagent.activity` event. Never a turn block.
 - **Notification and steering tables** — `thread_inbox_messages` is the durable
   per-thread message queue (global `bigserial` `seq` for per-thread FIFO, unique
   `idempotency_key`, nullable `delivered_at`), drained by the runtime's `Inbox`
