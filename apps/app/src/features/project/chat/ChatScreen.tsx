@@ -18,7 +18,6 @@ import { useChatNavigation } from "../routing/chat-navigation";
 import type { ContextRouteTarget } from "../routing/project-route";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
 import { SubagentBanner } from "./SubagentBanner";
-import { SubagentTaskCard } from "./SubagentTaskCard";
 
 export type ChatScreenProps = {
   projectId: string;
@@ -107,10 +106,7 @@ function ChatScreenLoaded({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {isSubagent && thread ? (
-        <>
-          <SubagentBanner subagent={thread} parent={parent} onOpenParent={onSelectThread} />
-          <SubagentTaskCard subagent={thread} />
-        </>
+        <SubagentBanner subagent={thread} parent={parent} onOpenParent={onSelectThread} />
       ) : null}
 
       {isError ? (

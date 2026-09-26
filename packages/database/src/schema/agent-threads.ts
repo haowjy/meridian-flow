@@ -49,10 +49,9 @@ export const threads = pgTable(
     ref: text("ref"),
     kind: text("kind").notNull().default("primary"),
     status: text("status").notNull().default("idle"),
-    workingState: jsonb("working_state"),
     composedSystemPrompt: text("composed_system_prompt"),
     bakedSkillSlugs: jsonb("baked_skill_slugs").$type<string[] | null>(),
-    /** Frozen advertised Tool[] payload, baked atomically with the prompt. Untyped like `workingState`: the runtime owns the shape. */
+    /** Frozen advertised Tool[] payload, baked atomically with the prompt. Untyped: the runtime owns the shape. */
     bakedTools: jsonb("baked_tools"),
     systemPromptHash: text("system_prompt_hash"),
     parentThreadId: uuid("parent_thread_id").$type<ThreadId>(),

@@ -59,17 +59,6 @@ export function buildContext(input: BuildContextInput): {
     );
   }
 
-  if (input.thread.workingState) {
-    messages.push({
-      role: "user",
-      content: [
-        text(
-          `<system_update>\nWorking state:\n${JSON.stringify(input.thread.workingState)}\n</system_update>`,
-        ),
-      ],
-    });
-  }
-
   const blocksByTurn = new Map<string, Block[]>();
   for (const block of input.blocks) {
     if (block.pruned) continue;

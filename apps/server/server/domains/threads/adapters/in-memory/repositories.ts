@@ -95,7 +95,6 @@ function defaultThread(input: CreateThreadInput): Thread {
     composedSystemPrompt: null,
     bakedSkillSlugs: null,
     bakedTools: null,
-    workingState: input.workingState ?? null,
     agentDefinitionRevisionId: null,
     agentName: null,
     nextSeq: "0",

@@ -1793,7 +1793,6 @@ msgstr "Generating"
 msgid "Go ahead"
 msgstr "Go ahead"
 
-#: src/features/project/chat/SubagentTaskCard.tsx
 #: src/features/project/work/WorkDialog.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Goal"

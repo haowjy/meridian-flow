@@ -27,12 +27,6 @@ export type JsonValue =
 
 export type JsonObject = { [key: string]: JsonValue };
 
-export type WorkingState = {
-  goals?: string[];
-  notes?: string[];
-  scratch?: JsonObject;
-};
-
 // TODO(archive-delete): make archive + delete "both real" (product decision).
 // Today `archived` is dead — nothing sets it and no UI reaches it — while
 // `deletedAt` soft-delete (the trash) is real but unwired. Intended model:
@@ -236,7 +230,6 @@ export interface Thread {
    * gateway's `Tool` type. `null` = not yet baked.
    */
   bakedTools?: JsonValue | null;
-  workingState?: WorkingState | null;
   agentDefinitionRevisionId: string | null;
   /** Display name from the retained Agent definition. */
   agentName: string | null;

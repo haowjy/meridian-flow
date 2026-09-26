@@ -179,7 +179,6 @@ export function createDrizzleThreadRepository(
         kind: normalized.kind,
         title: normalized.title,
         composedSystemPrompt: normalized.systemPrompt,
-        workingState: input.workingState ?? null,
         parentThreadId: normalized.parentThreadId,
         rootThreadId: threadId,
         spawnStatus: normalized.spawnStatus,

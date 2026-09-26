@@ -35,7 +35,6 @@ import type {
   TurnRole,
   TurnStatus,
   UpdateThreadUserStateResponse,
-  WorkingState,
 } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { CreateDerivedPrimaryThreadInput } from "../domain/thread-create-derived-primary.js";
@@ -174,7 +173,6 @@ export interface CreateThreadInput {
   kind?: ThreadKind;
   title?: string | null;
   systemPrompt?: string | null;
-  workingState?: WorkingState | null;
   parentThreadId?: ThreadId | null;
   spawnStatus?: SpawnStatus | null;
   spawnDepth?: number;

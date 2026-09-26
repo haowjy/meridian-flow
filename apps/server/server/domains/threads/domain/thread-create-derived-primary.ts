@@ -30,7 +30,6 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     composedSystemPrompt: input.inheritedPrompt?.composedSystemPrompt ?? null,
     bakedSkillSlugs: input.inheritedPrompt?.bakedSkillSlugs ?? null,
     bakedTools: input.inheritedPrompt?.bakedTools ?? null,
-    workingState: null,
     agentDefinitionRevisionId: null,
     agentName: null,
     nextSeq: "0",

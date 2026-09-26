@@ -22,7 +22,6 @@ function thread(): Thread {
     ref: null,
     composedSystemPrompt: "system prompt",
     bakedSkillSlugs: [],
-    workingState: null,
     agentDefinitionRevisionId: null,
     agentName: null,
     activeLeafTurnId: null,
