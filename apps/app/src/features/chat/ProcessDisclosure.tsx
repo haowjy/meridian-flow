@@ -36,7 +36,7 @@ export function ProcessDisclosure({ label, ariaLabel, children }: ProcessDisclos
   };
 
   return (
-    <div className="chat-process-disclosure py-0">
+    <div>
       <button
         type="button"
         onClick={handleToggle}
@@ -64,7 +64,7 @@ export function ProcessDisclosure({ label, ariaLabel, children }: ProcessDisclos
         )}
       >
         <div className="min-w-0 overflow-hidden">
-          <div className="mt-2">{hasOpened ? children : null}</div>
+          <div className="mt-[var(--chat-space-block)]">{hasOpened ? children : null}</div>
         </div>
       </div>
     </div>

@@ -108,54 +108,56 @@ function AssistantTurnComponent({
       data-turn-role="assistant"
       data-turn-status={turn.status}
     >
-      {rows.map(({ item, processOrdinal, processCount }, rowIndex) => (
-        <TurnItemView
-          key={itemRenderKey(item)}
-          item={item}
-          processOrdinal={processOrdinal}
-          processCount={processCount}
-          threadId={resolvedThreadId}
-          turnStatus={turn.status}
-          onRespondToInterrupt={onRespondToInterrupt}
-          writeMode={turn.writeMode ?? "direct"}
-          directResult={
-            item.kind === "artifact" ? (directResults.get(item.block.id) ?? null) : null
-          }
-          deliveryEvents={
-            item.kind === "process" && rowIndex === lastProcessIndex ? deliveryEvents : []
-          }
-        />
-      ))}
-
-      {rows.every(({ item }) => item.kind !== "process") &&
-        deliveryEvents.map((event) => (
-          <DeliveryEventRow
-            key={event.turn.id}
-            turn={event.turn}
-            childThreadId={event.childThreadId}
-            title={event.title}
+      <div className="flex flex-col gap-[var(--chat-space-block)]">
+        {rows.map(({ item, processOrdinal, processCount }, rowIndex) => (
+          <TurnItemView
+            key={itemRenderKey(item)}
+            item={item}
+            processOrdinal={processOrdinal}
+            processCount={processCount}
+            threadId={resolvedThreadId}
+            turnStatus={turn.status}
+            onRespondToInterrupt={onRespondToInterrupt}
+            writeMode={turn.writeMode ?? "direct"}
+            directResult={
+              item.kind === "artifact" ? (directResults.get(item.block.id) ?? null) : null
+            }
+            deliveryEvents={
+              item.kind === "process" && rowIndex === lastProcessIndex ? deliveryEvents : []
+            }
           />
         ))}
 
-      {hasTurnEditsReceiptContent(liveLineageDocuments, changeTrail, workReceipts) ? (
-        <TurnEditsReceipt
-          threadId={resolvedThreadId}
-          turn={turn}
-          documents={liveLineageDocuments}
-          receipt={liveLineage.receipt}
-          workReceipts={workReceipts}
-          changeTrail={changeTrail}
-          navigateToChange={navigateToChange}
-        />
-      ) : null}
+        {rows.every(({ item }) => item.kind !== "process") &&
+          deliveryEvents.map((event) => (
+            <DeliveryEventRow
+              key={event.turn.id}
+              turn={event.turn}
+              childThreadId={event.childThreadId}
+              title={event.title}
+            />
+          ))}
 
-      {isErrored ? (
-        <ErrorBlock
-          isLatest={isLatestAssistant}
-          kind={turn.blocks.length === 0 ? "send" : "generation"}
-          onRetry={isLatestAssistant ? onRetry : undefined}
-        />
-      ) : null}
+        {hasTurnEditsReceiptContent(liveLineageDocuments, changeTrail, workReceipts) ? (
+          <TurnEditsReceipt
+            threadId={resolvedThreadId}
+            turn={turn}
+            documents={liveLineageDocuments}
+            receipt={liveLineage.receipt}
+            workReceipts={workReceipts}
+            changeTrail={changeTrail}
+            navigateToChange={navigateToChange}
+          />
+        ) : null}
+
+        {isErrored ? (
+          <ErrorBlock
+            isLatest={isLatestAssistant}
+            kind={turn.blocks.length === 0 ? "send" : "generation"}
+            onRetry={isLatestAssistant ? onRetry : undefined}
+          />
+        ) : null}
+      </div>
       {isSettled ? <AssistantTurnActions threadId={resolvedThreadId} turn={turn} /> : null}
       {showsInkDrop ? <InkDrop /> : null}
     </div>
@@ -293,14 +295,21 @@ const TurnItemView = memo(function TurnItemView({
 
   if (item.kind === "report") {
     return (
-      <div className="mb-2 space-y-2 text-prose-foreground" data-turn-item-kind="report">
-        <ReportContent report={item.report} empty={null} className="space-y-2" />
+      <div
+        className="space-y-[var(--chat-space-block)] text-prose-foreground"
+        data-turn-item-kind="report"
+      >
+        <ReportContent
+          report={item.report}
+          empty={null}
+          className="space-y-[var(--chat-space-block)]"
+        />
       </div>
     );
   }
 
   return (
-    <div className="space-y-1" data-turn-item-kind={item.kind}>
+    <div className="space-y-[var(--chat-space-row)]" data-turn-item-kind={item.kind}>
       <DeliveryBlock
         block={item.block}
         threadId={threadId}
@@ -360,7 +369,7 @@ const FoldRun = memo(function FoldRun({
   }
 
   return (
-    <div className="space-y-1" data-activity-block data-fold-activity-run>
+    <div className="space-y-[var(--chat-space-row)]" data-activity-block data-fold-activity-run>
       <DeliverySegments
         blocks={run.blocks}
         threadId={threadId}

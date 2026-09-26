@@ -33,7 +33,7 @@ export function AssistantTurnActions({ threadId, turn }: { threadId: string; tur
   return (
     <TooltipProvider>
       <div
-        className="assistant-turn-actions flex min-h-6 items-center gap-1 transition-opacity"
+        className="assistant-turn-actions flex min-h-6 items-center gap-[var(--chat-space-inline)] transition-opacity"
         data-assistant-turn-actions
       >
         <Tooltip>
@@ -68,8 +68,11 @@ export function AssistantTurnActions({ threadId, turn }: { threadId: string; tur
             </TooltipTrigger>
             <TooltipContent>{i18n._(t`Turn information`)}</TooltipContent>
           </Tooltip>
-          <PopoverContent align="start" className="w-64 p-3">
-            <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 text-xs">
+          <PopoverContent
+            align="start"
+            className="w-64 px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]"
+          >
+            <dl className="grid grid-cols-[1fr_auto] gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-row)] text-xs">
               <dt className="text-muted-foreground">{i18n._(t`Model`)}</dt>
               <dd
                 className="max-w-36 truncate text-right font-medium"
@@ -78,18 +81,22 @@ export function AssistantTurnActions({ threadId, turn }: { threadId: string; tur
                 {stats.model ?? i18n._(t`Unknown`)}
                 {stats.callCount > 1 ? ` (${stats.callCount})` : ""}
               </dd>
-              <dt className="text-muted-foreground">{i18n._(t`Output speed`)}</dt>
-              <dd className="text-right font-mono">
-                {stats.outputTokensPerSecond == null
-                  ? i18n._(t`Unavailable`)
-                  : i18n._(t`${compactCount(stats.outputTokensPerSecond)} tok/s`)}
-              </dd>
-              <dt className="text-muted-foreground">{i18n._(t`Time to first token`)}</dt>
-              <dd className="text-right font-mono">
-                {stats.ttftMs == null
-                  ? i18n._(t`Unavailable`)
-                  : i18n._(t`${compactCount(stats.ttftMs)} ms`)}
-              </dd>
+              {stats.outputTokensPerSecond == null ? null : (
+                <>
+                  <dt className="text-muted-foreground">{i18n._(t`Output speed`)}</dt>
+                  <dd className="text-right font-mono">
+                    {i18n._(t`${compactCount(stats.outputTokensPerSecond)} tok/s`)}
+                  </dd>
+                </>
+              )}
+              {stats.ttftMs == null ? null : (
+                <>
+                  <dt className="text-muted-foreground">{i18n._(t`Time to first token`)}</dt>
+                  <dd className="text-right font-mono">
+                    {i18n._(t`${compactCount(stats.ttftMs)} ms`)}
+                  </dd>
+                </>
+              )}
               <dt className="text-muted-foreground">{i18n._(t`Input tokens`)}</dt>
               <dd className="text-right font-mono">{compactCount(stats.inputTokens)}</dd>
               <dt className="text-muted-foreground">{i18n._(t`Output tokens`)}</dt>

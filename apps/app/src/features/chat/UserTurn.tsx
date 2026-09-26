@@ -148,7 +148,7 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
         <p
           data-user-turn-status="pending"
           role="status"
-          className="mt-1 flex items-center justify-end gap-1.5 text-xs text-muted-foreground"
+          className="mt-[var(--chat-space-inline)] flex items-center justify-end gap-[var(--chat-space-inline)] text-xs text-muted-foreground"
         >
           <Loader2 className="size-3 animate-spin" aria-hidden />
           {t`Sending`}
@@ -158,7 +158,7 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
         <p
           data-user-turn-status="queued"
           role="status"
-          className="mt-1 text-right text-xs text-muted-foreground"
+          className="mt-[var(--chat-space-inline)] text-right text-xs text-muted-foreground"
         >
           {t`Queued`}
         </p>
@@ -167,13 +167,13 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
         <p
           data-user-turn-status="error"
           role="status"
-          className="mt-1 text-right text-xs text-destructive"
+          className="mt-[var(--chat-space-inline)] text-right text-xs text-destructive"
         >
           {t`Couldn't send.`}
         </p>
       ) : null}
       {submissionRecovery?.kind === "ambiguous" ? (
-        <div className="mt-1 flex justify-end gap-2">
+        <div className="mt-[var(--chat-space-inline)] flex justify-end gap-[var(--chat-space-inline)]">
           <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onCheck}>
             {t`Check submission status`}
           </Button>
@@ -183,7 +183,7 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
         </div>
       ) : null}
       {submissionRecovery?.kind === "rejected" ? (
-        <div className="mt-1 flex justify-end gap-2">
+        <div className="mt-[var(--chat-space-inline)] flex justify-end gap-[var(--chat-space-inline)]">
           <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onRetry}>
             {t`Retry`}
           </Button>

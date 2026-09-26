@@ -5,14 +5,23 @@ How an assistant turn renders: an ordered list of **process**, **text**, and
 
 ## Turn rhythm and settled actions
 
-`TurnList`'s measured `<li>` owns spacing between turns: 12px after a writer
-turn and 6px after an assistant turn's reserved action row. The hidden row
-still reserves its compact height to prevent hover layout shift, so it is part
-of the exchange rhythm rather than extra separation. The row sits 4px below
-assistant content. Do not add vertical margins to
-`UserTurn` or the `AssistantTurn` root; keeping the gap inside the measured row
-keeps TanStack Virtual's geometry accurate. Within an assistant turn, a process
-fold uses an 8px bottom gap before following prose, report, or artifact content.
+The chat surface uses app-local `--chat-space-*` tokens in `globals.css`: inline
+and row 4px, block 8px, writer-turn 12px, and assistant-exchange 6px. Card
+padding is 12px horizontally and 8px vertically. Markdown paragraphs, lists,
+blockquote, table, and code use the 8px block rhythm; list siblings use 4px,
+h1/h2 start 24px above, h3-h6 16px above, and headings end 8px below. The
+composer uses the same card padding and 4px chip/control gaps.
+
+Every boundary has exactly one spacing owner. In particular, `TurnList`'s
+measured `<li>` owns space between turns using padding inside the row: 12px
+after a writer turn and 6px after the assistant's reserved action row. The
+hidden action row still reserves its compact height to prevent hover layout
+shift. Do not add vertical margins to `UserTurn` or the `AssistantTurn` root;
+keeping the turn gap inside the measured row keeps TanStack Virtual's geometry
+accurate. Assistant sections, receipts, and cards use one 8px parent gap;
+fold-to-body and prose-to-action boundaries are separately owned by their
+inner block and inline spacing respectively. Never stack a margin, padding,
+and gap on one boundary.
 
 Settled assistant turns have a quiet action row below all turn content. Copy
 includes visible assistant text and report summary/payload content only, not
