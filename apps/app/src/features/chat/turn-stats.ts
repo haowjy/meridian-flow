@@ -20,16 +20,14 @@ export function turnStats(turn: Turn): TurnStats {
     (sum, response) => sum + (response.cacheReadTokens ?? 0),
     0,
   );
+  // Speed counts only calls whose generation window the server measured, so
+  // tokens and time come from the same set of calls.
   let generationMs = 0;
   let generationOutputTokens = 0;
-  let hasGenerationTime = false;
   for (const response of responses) {
-    const ttft = response.timeToFirstTokenMs;
-    if (response.latencyMs != null && ttft != null && response.latencyMs > ttft) {
-      generationMs += response.latencyMs - ttft;
-      generationOutputTokens += response.outputTokens;
-      hasGenerationTime = true;
-    }
+    if (response.generationMs == null || response.generationMs <= 0) continue;
+    generationMs += response.generationMs;
+    generationOutputTokens += response.outputTokens;
   }
   const firstTtft = responses[0]?.timeToFirstTokenMs ?? null;
   return {
@@ -39,8 +37,7 @@ export function turnStats(turn: Turn): TurnStats {
     outputTokens,
     cacheHitPercent: inputTokens > 0 ? (cacheReadTokens / inputTokens) * 100 : null,
     ttftMs: firstTtft,
-    outputTokensPerSecond:
-      hasGenerationTime && generationMs > 0 ? (generationOutputTokens * 1000) / generationMs : null,
+    outputTokensPerSecond: generationMs > 0 ? (generationOutputTokens * 1000) / generationMs : null,
   };
 }
 

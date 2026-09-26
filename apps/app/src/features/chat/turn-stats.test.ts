@@ -18,6 +18,7 @@ describe("turnStats", () => {
           cacheReadTokens: 30,
           latencyMs: 1_000,
           timeToFirstTokenMs: 200,
+          generationMs: 800,
         },
         {
           sequence: 2,
@@ -28,6 +29,7 @@ describe("turnStats", () => {
           cacheWriteTokens: 20,
           latencyMs: 2_000,
           timeToFirstTokenMs: 500,
+          generationMs: 1_500,
         },
       ]),
     );
@@ -42,7 +44,7 @@ describe("turnStats", () => {
     expect(stats.outputTokensPerSecond).toBeCloseTo(60_000 / 2_300);
   });
 
-  it("omits speed and TTFT without first-token timing and cache rate for zero input", () => {
+  it("omits speed and TTFT without measured generation and cache rate for zero input", () => {
     const stats = turnStats(
       turn([{ sequence: 1, model: "m", inputTokens: 0, outputTokens: 12, latencyMs: 1_000 }]),
     );
@@ -63,6 +65,7 @@ describe("turnStats", () => {
           outputTokens: 20,
           latencyMs: 1_000,
           timeToFirstTokenMs: 500,
+          generationMs: 500,
         },
         { sequence: 2, model: "m", inputTokens: 2, outputTokens: 80, latencyMs: 1_000 },
       ]),
