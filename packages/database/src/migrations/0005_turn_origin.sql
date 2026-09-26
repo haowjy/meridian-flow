@@ -15,6 +15,6 @@ UPDATE "turns" SET "origin" = CASE -- migration-lint: skip UPDATE_WITHOUT_WHERE 
 END
 WHERE "origin" IS NULL;
 --> statement-breakpoint
-ALTER TABLE "turns" ALTER COLUMN "origin" SET NOT NULL;
+ALTER TABLE "turns" ALTER COLUMN "origin" SET NOT NULL; -- migration-lint: skip SET_NOT_NULL_UNSAFE (pre-launch table, backfilled above)
 --> statement-breakpoint
 ALTER TABLE "turns" ADD CONSTRAINT "turns_origin_valid" CHECK ("turns"."origin" IN ('writer', 'assistant', 'system'));
