@@ -67,7 +67,10 @@ export function SubagentHeader({
           <ChevronDown className="size-3" aria-hidden />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-[min(22rem,calc(100vw-1.5rem))] p-2">
+      <PopoverContent
+        align="end"
+        className="max-h-[min(70vh,30rem)] w-[min(22rem,calc(100vw-1.5rem))] overflow-y-auto p-2"
+      >
         <label className="sr-only" htmlFor="subagent-filter">
           <Trans>Filter subagents</Trans>
         </label>
