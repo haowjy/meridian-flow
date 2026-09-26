@@ -14,18 +14,8 @@
 - Settled assistant turns get Copy (rich HTML and Markdown), turn info (model, calls, output speed, first-token time, tokens, turn cache hit, running thread cache hit and cache reset counts), and debug-gated model-call inspection.
 - Record per-call latency, time to first output, and generation time at provider-event arrival; omit generation time after consumer backpressure.
 - Gateway owns provider retries; honor retry-after hints and retry vetoes.
-- Show subagent lifecycle in chat: background launch, running panel, finished and report lines, foreground card, and a Subagents popover.
-- Disable ask_user until its rework (#601).
-- Fix subagent identity, outcome, live activity, popover placement, and transcript reveal behavior.
-
+- Show subagent lifecycle in chat by delivery mode: background runs get a launch line, a running panel with each child's current tool, a quiet finished line, and a report line; foreground runs get one live card that expands to the result. A tab-row Subagents pop-up lists every run with Show (jumps to its latest point) and Open, and child chats show their full path.
 - Disable ask_user until its rework (#601); no agent is offered the tool.
-
-- Apply one chat-thread spacing scale across turns, cards, prose, and composer controls; omit unavailable output speed and first-token rows from turn info.
-- Fix assistant-turn Copy to write the final answer as rich HTML and Markdown.
-- Tighten chat turn rhythm and add settled assistant copy, usage, and debug actions.
-- Record each model call's time to first streamed output and request-to-end latency.
-
-- Keep the writer's own messages in the chat after the reply starts; only machine-delivered inbox messages fold into activity rows.
 
 - Freeze thread prompts at the database boundary.
 - Keep the same Agent and prompt when forking by default.
