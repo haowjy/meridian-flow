@@ -77,8 +77,9 @@ delivery state is still `waiting`; only those accepted bubbles show `Queued`.
 response is coming. There is no composer queue tray.
 
 The full model lives in
-[`.context/turn-composition.md`](.context/turn-composition.md); one row's
-anatomy and its navigation rules in
+[`.context/turn-composition.md`](.context/turn-composition.md); chat spacing and settled
+actions live in [`.context/turn-rhythm-and-actions.md`](.context/turn-rhythm-and-actions.md);
+one row's anatomy and its navigation rules in
 [`.context/activity-row-anatomy.md`](.context/activity-row-anatomy.md); draft receipts,
 composer mode, and review state live in
 [`.context/turn-edit-receipts.md`](.context/turn-edit-receipts.md),
