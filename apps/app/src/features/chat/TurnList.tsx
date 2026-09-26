@@ -30,7 +30,7 @@ export type TurnListProps = {
   changeTrails?: Record<string, ChangeTrailShell>;
   /** Recovered ambiguous submissions, keyed by the restored user turn id. */
   submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
-  queueStatusByTurnId?: ReadonlyMap<string, "queued" | "waiting">;
+  queuedWriterTurnIds?: ReadonlySet<string>;
 };
 
 /** Estimated row height before measurement; corrected by `measureElement`. */
@@ -48,15 +48,12 @@ export function TurnList({
   failedSendRetry = null,
   changeTrails = {},
   submissionRecoveryByTurnId,
-  queueStatusByTurnId,
+  queuedWriterTurnIds,
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const navigateToChange = useChangeTrailNavigation(threadId);
   const bottomInset = useChatSurfaceBottomInset();
-  const visibleTurns = useMemo(
-    () => filterVisibleTurns(turns, queueStatusByTurnId),
-    [queueStatusByTurnId, turns],
-  );
+  const visibleTurns = useMemo(() => filterVisibleTurns(turns), [turns]);
   const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
   const byTurnId = useMemo(() => {
     const byTurnId = new Map<string, ChangeTrailShell>();
@@ -126,7 +123,7 @@ export function TurnList({
           <UserTurn
             turn={turn}
             submissionRecovery={submissionRecoveryByTurnId?.get(turn.id)}
-            queueStatus={queueStatusByTurnId?.get(turn.id)}
+            queued={queuedWriterTurnIds?.has(turn.id)}
           />
         );
       }
@@ -150,7 +147,7 @@ export function TurnList({
       navigateToChange,
       onRespondToInterrupt,
       submissionRecoveryByTurnId,
-      queueStatusByTurnId,
+      queuedWriterTurnIds,
       threadId,
       turns,
     ],

@@ -39,8 +39,8 @@ export type UserTurnRecovery =
 
 export type UserTurnProps = {
   turn: Turn;
-  /** Server-derived status for this accepted writer turn. */
-  queueStatus?: "queued" | "waiting";
+  /** True while the accepted writer turn has not yet been read by the model. */
+  queued?: boolean;
   /** Check submission status / Start over for a recovered ambiguous send. */
   submissionRecovery?: UserTurnRecovery | null;
 };
@@ -79,7 +79,7 @@ export function projectUserTurn(turn: Turn): {
   return { text, references, skills };
 }
 
-function UserTurnComponent({ turn, submissionRecovery = null, queueStatus }: UserTurnProps) {
+function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: UserTurnProps) {
   const projectId = useProjectDocumentNavigationProjectId();
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
   const projected = useMemo(() => projectUserTurn(turn), [turn]);
@@ -154,13 +154,13 @@ function UserTurnComponent({ turn, submissionRecovery = null, queueStatus }: Use
           {t`Sending`}
         </p>
       ) : null}
-      {queueStatus && turn.status !== "pending" && turn.status !== "error" ? (
+      {queued && turn.status !== "pending" && turn.status !== "error" ? (
         <p
-          data-user-turn-status={queueStatus}
+          data-user-turn-status="queued"
           role="status"
           className="mt-1 text-right text-xs text-muted-foreground"
         >
-          {queueStatus === "queued" ? t`Queued` : t`Waiting for response`}
+          {t`Queued`}
         </p>
       ) : null}
       {turn.status === "error" ? (
@@ -203,6 +203,6 @@ export const UserTurn = memo(
   (prev, next) =>
     prev.turn === next.turn &&
     prev.submissionRecovery === next.submissionRecovery &&
-    prev.queueStatus === next.queueStatus,
+    prev.queued === next.queued,
 );
 UserTurn.displayName = "UserTurn";

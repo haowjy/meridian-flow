@@ -3,16 +3,14 @@
  *
  * System turns are model-plumbing (commit echoes, agent-swap seeds); they carry
  * context for the model's next request but are not standalone chat bubbles.
- * Inbox delivery turns render inside the preceding assistant's activity rows.
+ * Inbox-message turns are machine deliveries, rendered in the preceding
+ * assistant's activity rows rather than as standalone chat bubbles.
  *
  * Other system turns with custom blocks remain visible as UI content.
  */
 import type { Turn } from "@meridian/contracts/protocol";
 
-export function isVisibleChatTurn(
-  turn: Turn,
-  queueStatusByTurnId?: ReadonlyMap<string, "queued" | "waiting">,
-): boolean {
+export function isVisibleChatTurn(turn: Turn): boolean {
   if (turn.role === "user") {
     const metadata = turn.metadata;
     if (
@@ -30,7 +28,7 @@ export function isVisibleChatTurn(
       !Array.isArray(metadata) &&
       metadata.kind === "inbox_message"
     )
-      return queueStatusByTurnId?.has(turn.id) ?? false;
+      return false;
     return true;
   }
   if (turn.role === "assistant") return true;
@@ -47,9 +45,6 @@ export function isVisibleChatTurn(
   return turn.blocks.some((block) => block.blockType === "custom");
 }
 
-export function filterVisibleTurns(
-  turns: Turn[],
-  queueStatusByTurnId?: ReadonlyMap<string, "queued" | "waiting">,
-): Turn[] {
-  return turns.filter((turn) => isVisibleChatTurn(turn, queueStatusByTurnId));
+export function filterVisibleTurns(turns: Turn[]): Turn[] {
+  return turns.filter(isVisibleChatTurn);
 }

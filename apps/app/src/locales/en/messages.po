@@ -4152,8 +4152,8 @@ msgid "Waiting"
 msgstr "Waiting"
 
 #: src/features/chat/UserTurn.tsx
-msgid "Waiting for response"
-msgstr "Waiting for response"
+#~ msgid "Waiting for response"
+#~ msgstr "Waiting for response"
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Mounted transcript regression for awaiting-run status propagation. */
+/** Mounted transcript regression for queued writer status propagation. */
 import type { ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -50,7 +50,7 @@ afterAll(() => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
 });
 
-describe("TurnList awaiting status", () => {
+describe("TurnList queued status", () => {
   let host: HTMLDivElement;
   let root: Root;
 
@@ -93,27 +93,23 @@ describe("TurnList awaiting status", () => {
     };
 
     await act(async () =>
-      root.render(<TurnList {...stableProps} queueStatusByTurnId={new Map()} />),
+      root.render(<TurnList {...stableProps} queuedWriterTurnIds={new Set()} />),
     );
     expect(host.textContent).not.toContain("Waiting for response");
 
     await act(async () =>
-      root.render(
-        <TurnList {...stableProps} queueStatusByTurnId={new Map([["user-1", "queued"]])} />,
-      ),
+      root.render(<TurnList {...stableProps} queuedWriterTurnIds={new Set(["user-1"])} />),
     );
     expect(host.textContent).toContain("Queued");
     expect(host.querySelectorAll('[data-user-turn-status="queued"]')).toHaveLength(1);
 
     await act(async () =>
-      root.render(
-        <TurnList {...stableProps} queueStatusByTurnId={new Map([["user-1", "waiting"]])} />,
-      ),
+      root.render(<TurnList {...stableProps} queuedWriterTurnIds={new Set()} />),
     );
-    expect(host.textContent).toContain("Waiting for response");
+    expect(host.textContent).not.toContain("Waiting for response");
 
     await act(async () =>
-      root.render(<TurnList {...stableProps} queueStatusByTurnId={new Map()} />),
+      root.render(<TurnList {...stableProps} queuedWriterTurnIds={new Set()} />),
     );
     expect(host.textContent).not.toContain("Waiting for response");
   });

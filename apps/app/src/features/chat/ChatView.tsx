@@ -45,7 +45,7 @@ import { AgentOnlyComposerToolbar, ChatComposerToolbar } from "./ChatComposerToo
 import { ChatSurface } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
-import { writerTurnQueueStatus } from "./pending-inbox";
+import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
 import { TurnList } from "./TurnList";
@@ -124,7 +124,10 @@ export function ChatView({
   });
   const runningSubagents = activeDescendants(activity.activity);
   const pendingInbox = usePendingInbox({ threadId, seed: snapshotLiveState });
-  const queueStatusByTurnId = useMemo(() => writerTurnQueueStatus(pendingInbox), [pendingInbox]);
+  const queuedWriterTurnIds = useMemo(
+    () => selectQueuedWriterTurnIds(pendingInbox),
+    [pendingInbox],
+  );
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
 
@@ -398,7 +401,7 @@ export function ChatView({
           failedSendRetry={failedSendRetry}
           changeTrails={changeTrails.byId}
           submissionRecoveryByTurnId={submissionRecoveryByTurnId}
-          queueStatusByTurnId={queueStatusByTurnId}
+          queuedWriterTurnIds={queuedWriterTurnIds}
         />
       </ChatSurface>
     </TranscriptLinkNavigationContext.Provider>
