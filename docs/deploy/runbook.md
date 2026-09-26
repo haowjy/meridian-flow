@@ -4,6 +4,14 @@ The [deployment contract](./README.md) defines the release flow and variables. U
 initial setup, deploys, rollback, and recovery. No step may bypass a failed backup, migration, readiness,
 or smoke check.
 
+## Before provisioning: final migration baseline
+
+Migration history can be replaced only while no deployed database must be kept. Before the first staging
+deploy, after the feature branches planned for launch have merged, squash all migrations into one fresh
+`0000_baseline.sql` and confirm `packages/database/src/fresh-migrations.db.test.ts` passes. After the
+first staging deploy, migrations are append-only: a replaced history makes `/readyz` report
+`schema_divergent`, and a deploy against an existing database stalls.
+
 ## 1. GitHub controls and release credentials
 
 1. In **Settings → Rules → Rulesets**, confirm `protect` on `main` permits the release actor to bypass
