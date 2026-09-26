@@ -51,6 +51,8 @@ export function createOpenRouterAdapter(config: ProviderConfig): ProviderAdapter
     apiKey: apiKey ?? "not-needed",
     baseURL: baseUrl,
     defaultHeaders: openRouterHeaders(config),
+    // The gateway owns retries (streamWithRetry + retry.maxAttempts); SDK retries would multiply them.
+    maxRetries: 0,
   });
   const providerId = config.id;
 

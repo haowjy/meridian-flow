@@ -38,7 +38,7 @@ import type { CliEvent } from "../run-events";
 import type { Session } from "../session";
 import { openThreadSocket } from "../thread-socket";
 import { followThread } from "../thread-stream";
-import { enqueueMockScript } from "./mock";
+import { enqueueMockScript, removeMockScript } from "./mock";
 
 const DEFAULT_AGENT_SLUG = "general";
 
@@ -236,14 +236,22 @@ export async function admitMessage(session: Session, input: Omit<SendInput, "tim
     skills: await resolveSkills(session, input.threadId, input.skills ?? []),
     references: await resolveReferences(session, input.threadId, input.refs ?? []),
   });
-  if (input.mock !== undefined) await enqueueMockScript(session, input.mock, message.text);
+  const mockScriptId =
+    input.mock === undefined
+      ? null
+      : (await enqueueMockScript(session, input.mock, message.text)).id;
   const submissionId = randomUUID();
-  const admitted = await session.request<SendMessageResponse>(
-    "POST",
-    apiThreadMessagePath(input.threadId),
-    { submissionId, ...message } satisfies SendMessageRequest,
-  );
-  return { submissionId, admitted };
+  try {
+    const admitted = await session.request<SendMessageResponse>(
+      "POST",
+      apiThreadMessagePath(input.threadId),
+      { submissionId, ...message } satisfies SendMessageRequest,
+    );
+    return { submissionId, admitted, mockScriptId };
+  } catch (error) {
+    if (mockScriptId) await removeMockScript(session, mockScriptId).catch(() => undefined);
+    throw error;
+  }
 }
 
 /**
@@ -255,7 +263,21 @@ export async function sendMessage(
   out: Output,
   input: SendInput,
 ): Promise<SendOutcome> {
-  const { admitted } = await admitMessage(session, input);
+  const { admitted, mockScriptId } = await admitMessage(session, input);
+  try {
+    return await followToOutcome(session, out, input, admitted);
+  } finally {
+    // A scripted sticky error would otherwise keep failing later calls with the same text.
+    if (mockScriptId) await removeMockScript(session, mockScriptId).catch(() => undefined);
+  }
+}
+
+async function followToOutcome(
+  session: Session,
+  out: Output,
+  input: SendInput,
+  admitted: SendMessageResponse,
+): Promise<SendOutcome> {
   const { threadId } = input;
   let ourTurn: string | null = admitted.assistantTurnId;
   let interrupt: SendOutcome["interrupt"];
@@ -365,7 +387,10 @@ export const threadSendCommand: CommandSpec = {
     const threadId = await resolveThreadId(session, rawThread, stringOption(ctx, "project"));
 
     if (flag(ctx, "no-wait")) {
-      const { submissionId, admitted } = await admitMessage(session, { threadId, ...input });
+      const { submissionId, admitted, mockScriptId } = await admitMessage(session, {
+        threadId,
+        ...input,
+      });
       ctx.out.result(
         {
           threadId,
@@ -373,9 +398,18 @@ export const threadSendCommand: CommandSpec = {
           userTurnId: admitted.userTurnId,
           assistantTurnId: admitted.assistantTurnId,
           resumeAfterSeq: admitted.resumeAfterSeq,
+          // Nothing waits here to remove it; clear it with `./mf mock clear --id` when done.
+          mockScriptId,
         },
         (value) =>
-          `accepted ${value.userTurnId} (./mf thread tail ${threadId} --since ${value.resumeAfterSeq})`,
+          [
+            `accepted ${value.userTurnId} (./mf thread tail ${threadId} --since ${value.resumeAfterSeq})`,
+            value.mockScriptId
+              ? `mock script ${value.mockScriptId} stays queued (./mf mock clear --id ${value.mockScriptId})`
+              : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
       );
       return undefined;
     }

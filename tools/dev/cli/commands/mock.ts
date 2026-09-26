@@ -2,6 +2,7 @@
 import {
   API_DEBUG_MOCK_MODEL_SCRIPT_PATH,
   type MockModelScript,
+  type MockModelScriptEnqueued,
   type MockModelScriptState,
   parseMockModelScript,
 } from "@meridian/contracts/protocol";
@@ -17,7 +18,7 @@ export async function enqueueMockScript(
   session: Session,
   raw: unknown,
   defaultMatch?: string,
-): Promise<MockModelScriptState> {
+): Promise<MockModelScriptEnqueued> {
   const parsed = parseMockModelScript(raw);
   if (!parsed.ok) throw usageError(`Invalid mock script: ${parsed.error}`);
   const script: MockModelScript = {
@@ -25,7 +26,7 @@ export async function enqueueMockScript(
     ...(parsed.value.match === undefined && defaultMatch ? { match: defaultMatch } : {}),
   };
   try {
-    return await session.request<MockModelScriptState>(
+    return await session.request<MockModelScriptEnqueued>(
       "POST",
       API_DEBUG_MOCK_MODEL_SCRIPT_PATH,
       script,
@@ -44,7 +45,8 @@ function renderState(state: MockModelScriptState): string {
   if (state.scripts.length === 0) return "(no queued mock scripts)";
   return state.scripts
     .map(
-      (script) => `${script.id}  remaining=${script.remaining}  match=${script.match ?? "(any)"}`,
+      (script) =>
+        `${script.id}  remaining=${script.remaining}${script.sticky ? " (sticky error)" : ""}  match=${script.match ?? "(any)"}`,
     )
     .join("\n");
 }
@@ -91,15 +93,28 @@ export const mockListCommand: CommandSpec = {
   },
 };
 
+/** Removes one queued script (e.g. the one a finished send queued). */
+export async function removeMockScript(session: Session, id: string): Promise<void> {
+  await session.request(
+    "DELETE",
+    `${API_DEBUG_MOCK_MODEL_SCRIPT_PATH}?id=${encodeURIComponent(id)}`,
+  );
+}
+
 export const mockClearCommand: CommandSpec = {
   path: ["mock", "clear"],
-  summary: "Drop every queued mock script",
-  route: "DELETE /api/debug/mock-model/script",
-  examples: ["./mf mock clear"],
+  summary: "Drop one queued mock script (--id), or all of them",
+  route: "DELETE /api/debug/mock-model/script[?id=]",
+  options: { id: { type: "string", description: "Script id from `./mf mock list`" } },
+  examples: ["./mf mock clear", "./mf mock clear --id <scriptId>"],
   async run(ctx) {
+    const id = stringOption(ctx, "id");
     const session = await ctx.session();
     ctx.out.result(
-      await session.request<MockModelScriptState>("DELETE", API_DEBUG_MOCK_MODEL_SCRIPT_PATH),
+      await session.request<MockModelScriptState>(
+        "DELETE",
+        `${API_DEBUG_MOCK_MODEL_SCRIPT_PATH}${id ? `?id=${encodeURIComponent(id)}` : ""}`,
+      ),
       renderState,
     );
     return undefined;

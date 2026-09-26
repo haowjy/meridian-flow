@@ -78,11 +78,16 @@ Contract:
 
 Scripting the model: with `MODEL_PROVIDER=mock` (or no provider keys) and the
 debug gate open, the in-process mock model accepts queued replies through the
-`/api/debug/mock-model/script` route. Each step answers one model call with
-`text`, `toolCalls` (`[{name, args}]`), an `error` (`{status, message}`), and
-an optional `delayMs`. `send --mock` scopes the script to that message, so
-concurrent threads cannot consume it; `./mf mock script|list|clear` manage the
-queue directly. Unscripted calls keep the mock's canned behavior.
+`/api/debug/mock-model/script` route. A step replies with `text`, `toolCalls`
+(`[{name, args}]`), or an `error` (`{status, message}`), plus optional
+`delayMs` and `times` (how many model calls it answers, default 1). An `error`
+step without `times` is sticky: it answers every matching call, so gateway
+retries cannot slip past it and the run fails (`send` exits 1). Use
+`"times": 1` to test the gateway recovering on retry. `send --mock` scopes the
+script to that message, so concurrent threads cannot consume it, and removes
+it once the run settles; `./mf mock script|list|clear [--id]` manage the queue
+directly. Unscripted calls keep the mock's canned behavior. The gateway is the
+only retry layer: provider SDK clients run with `maxRetries: 0`.
 
 ## Debug Gate
 

@@ -347,6 +347,8 @@ contract shapes.
   by ref, and `GET /api/projects/:projectId/threads/by-ref/:ref` resolves a
   live ref for the project owner (`./mf` wraps it). Title is not an identifier
   and is not unique. Chat URLs use the client-minted thread `id`, not `ref`.
+  Refs are model-facing (tool currency) and dev-facing (`./mf`, the by-ref
+  route); they are not meant for writers.
   Create-or-get matches ownership only. A same-user same-project retry of a
   deleted thread conflicts; persist must not resurrect the tombstone.
 - **Work membership mutation is serialized.** Additions and rebinds follow the

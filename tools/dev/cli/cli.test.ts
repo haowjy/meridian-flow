@@ -99,6 +99,7 @@ function createFake() {
   const turns: FakeTurn[] = [];
   const sockets = new Set<WebSocket>();
   const mockScripts: unknown[] = [];
+  const removedMockScripts: string[] = [];
   let runCounter = 0;
   const nextSeq = () => String(journal.length + 1);
 
@@ -226,6 +227,10 @@ function createFake() {
     }
     if (route === "POST /api/debug/mock-model/script") {
       mockScripts.push(await readBody(req));
+      return send(200, { id: `script-${mockScripts.length}`, scripts: [] });
+    }
+    if (route === "DELETE /api/debug/mock-model/script") {
+      removedMockScripts.push(url.searchParams.get("id") ?? "*");
       return send(200, { scripts: [] });
     }
     if (route === "GET /api/big") return send(200, { blob: "x".repeat(300_000) });
@@ -252,7 +257,7 @@ function createFake() {
     });
   });
 
-  return { server, mockScripts };
+  return { server, mockScripts, removedMockScripts };
 }
 
 let fake: ReturnType<typeof createFake>;
@@ -381,7 +386,7 @@ describe("./mf", () => {
     });
   });
 
-  it("send --mock queues the script scoped to the message text first", async () => {
+  it("send --mock queues a script scoped to the message text, then removes it", async () => {
     const before = fake.mockScripts.length;
     const result = await mf([
       "thread",
@@ -395,6 +400,7 @@ describe("./mf", () => {
     expect(fake.mockScripts.slice(before)).toEqual([
       { match: "scripted hi", steps: [{ text: "ok" }] },
     ]);
+    expect(fake.removedMockScripts).toContain(`script-${fake.mockScripts.length}`);
   });
 
   it("thread events replays the journal from a seq", async () => {

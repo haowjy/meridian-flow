@@ -19,10 +19,38 @@ describe("createMockScriptQueue", () => {
     expect(queue.state().scripts).toEqual([]);
   });
 
-  it("clears everything", () => {
+  it("clears everything, or one script by id", () => {
     const queue = createMockScriptQueue();
-    queue.enqueue({ steps: [{ text: "x" }] });
+    const first = queue.enqueue({ steps: [{ text: "x" }] });
+    queue.enqueue({ steps: [{ text: "y" }] });
+    expect(queue.clear(first.id).scripts).toEqual([
+      expect.objectContaining({ remaining: 1, sticky: false }),
+    ]);
     expect(queue.clear().scripts).toEqual([]);
+  });
+
+  it("keeps a timeless error step for every matching call so retries cannot slip past it", () => {
+    const queue = createMockScriptQueue();
+    queue.enqueue({ match: "go", steps: [{ error: { status: 500, message: "boom" } }] });
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      expect(queue.take("go")?.error?.message).toBe("boom");
+    }
+    expect(queue.state().scripts).toEqual([expect.objectContaining({ sticky: true })]);
+    expect(queue.take("other")).toBeNull();
+  });
+
+  it("answers `times` calls per step before moving on", () => {
+    const queue = createMockScriptQueue();
+    queue.enqueue({
+      steps: [
+        { error: { status: 503, message: "blip" }, times: 1 },
+        { text: "ok", times: 2 },
+      ],
+    });
+    expect(queue.take("x")?.error?.status).toBe(503);
+    expect(queue.take("x")?.text).toBe("ok");
+    expect(queue.take("x")?.text).toBe("ok");
+    expect(queue.take("x")).toBeNull();
   });
 });
 
@@ -64,6 +92,17 @@ describe("mock server scripted replies", () => {
       await post({ stream: true, messages: [{ role: "user", content: "draft the scene" }] })
     ).text();
     expect(canned).toContain("Acknowledged");
+  });
+
+  it("keeps failing repeated calls with a sticky scripted error", async () => {
+    const queue = createMockScriptQueue();
+    server = await createMockOpenAICompatibleServer({ script: queue });
+    queue.enqueue({ match: "go", steps: [{ error: { status: 500, message: "down" } }] });
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const response = await post({ stream: true, messages: [{ role: "user", content: "go" }] });
+      expect(response.status).toBe(500);
+      await response.text();
+    }
   });
 
   it("returns scripted provider errors with their status", async () => {

@@ -2,7 +2,11 @@
  * Route core for /api/debug/mock-model/script — dev-only scripted replies for the
  * in-process mock model. 404 whenever no scriptable mock is composed (real providers, production).
  */
-import { type MockModelScriptState, parseMockModelScript } from "@meridian/contracts/protocol";
+import {
+  type MockModelScriptEnqueued,
+  type MockModelScriptState,
+  parseMockModelScript,
+} from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
 import type { MockScriptQueue } from "../domains/runtime/gateway/index.js";
 
@@ -19,7 +23,7 @@ function requireQueue(queue: MockScriptQueue | null): MockScriptQueue {
 export function enqueueMockModelScript(
   queue: MockScriptQueue | null,
   body: unknown,
-): MockModelScriptState {
+): MockModelScriptEnqueued {
   const target = requireQueue(queue);
   const parsed = parseMockModelScript(body);
   if (!parsed.ok) throw createError({ statusCode: 400, message: parsed.error });
@@ -30,6 +34,10 @@ export function readMockModelScripts(queue: MockScriptQueue | null): MockModelSc
   return requireQueue(queue).state();
 }
 
-export function clearMockModelScripts(queue: MockScriptQueue | null): MockModelScriptState {
-  return requireQueue(queue).clear();
+/** Removes the script with `id`, or every script when `id` is absent. */
+export function clearMockModelScripts(
+  queue: MockScriptQueue | null,
+  id?: string,
+): MockModelScriptState {
+  return requireQueue(queue).clear(id);
 }
