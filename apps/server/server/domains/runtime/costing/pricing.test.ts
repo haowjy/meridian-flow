@@ -39,6 +39,23 @@ describe("model pricing", () => {
     expect(cost.pricingSnapshot.sourceLayer).toBe("pinned");
   });
 
+  it("prices an Anthropic 1h cache write at 2x input, not the 5m tier's 1.25x", () => {
+    // loop/prompt-cache-marks.ts + the Anthropic adapter always request
+    // ttl: "1h" (the owner-chosen default), so every cache-write token this
+    // codebase produces must price at Anthropic's 1h tier (2x input), never
+    // the 5m tier (1.25x) — see the registry's cacheWriteUsdPerMillionTokens
+    // comment.
+    const cost = computeModelCost({
+      provider: "anthropic",
+      model: "claude-sonnet-4-20250514",
+      usage: { inputTokens: 1_000_000, cacheWriteTokens: 1_000_000, outputTokens: 0 },
+      rateSource,
+    });
+
+    expect(cost.costUsd).toBe("6.000000");
+    expect(cost.pricingSnapshot.cacheWriteUsdPerMillionTokens).toBe("6.00");
+  });
+
   it("prices OpenAI's inclusive cache counters without double-counting input", () => {
     const usage = mapOpenAIUsage({
       input_tokens: 1_903,

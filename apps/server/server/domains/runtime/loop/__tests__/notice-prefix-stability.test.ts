@@ -30,12 +30,15 @@ function textResult(text: string): GenerateResult {
   };
 }
 
-/** Strips the ephemeral Anthropic cache-control marks so marks-only diffs don't fail the comparison. */
+/** Strips the ephemeral prompt-cache marks so marks-only diffs don't fail the comparison. */
 function stripCacheMarks(messages: readonly Message[]): unknown {
   return messages.map((message) => ({
     ...message,
     content: message.content.map((part) => {
-      const { providerOptions, ...rest } = part as { providerOptions?: unknown } & typeof part;
+      const { providerOptions, cacheBreakpoint, ...rest } = part as {
+        providerOptions?: unknown;
+        cacheBreakpoint?: unknown;
+      } & typeof part;
       return rest;
     }),
   }));

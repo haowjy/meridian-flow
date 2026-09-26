@@ -13,16 +13,18 @@
  *   text-only messages use the simpler string content format.
  * - `stream_options: { include_usage: true }` is always set so the final
  *   chunk carries cumulative token usage (per OpenAI streaming docs).
- * - `providerOptions.anthropic.cacheControl` on a system/user/tool-result text
- *   part forces array-format content with an OpenRouter-style `cache_control`
- *   block (identical shape to Anthropic's own wire format), for
- *   Anthropic-backed models routed through OpenRouter's chat-completions
- *   surface. `applyPromptCacheMarks` marks the frozen system message and
- *   whichever message is last -- mid tool-loop that is usually the tool
- *   result -- so the tool branch must carry the mark too, the same way
- *   Anthropic's own tool_result block already does on the direct adapter.
- *   Assistant tool-call messages don't carry it: a tool_use block is never
- *   the request's last content and Anthropic doesn't need it cached there.
+ * - Prompt caching (OpenRouter's Anthropic-family models only — capability-
+ *   gated in the model registry, so a plain OpenAI-Chat-Compatible endpoint
+ *   never sees any of this): the loop's canonical `ContentPart.cacheBreakpoint`
+ *   is only honored on the *system* message, as an explicit per-part
+ *   `cache_control` (OpenRouter's own wire shape, identical to Anthropic's).
+ *   Whenever the system message carries a mark, this mapper also sets a
+ *   top-level, request-wide `cache_control` — OpenRouter's "automatic
+ *   caching" toggle, which places a breakpoint on the last cacheable block
+ *   for us. That one field does the job of the read-point/tail marks the
+ *   loop also leaves on other messages (deliberately unread here — see
+ *   `mapMessage`), so the rest of the conversation never needs an explicit
+ *   per-part mark. Both use the owner-chosen 1h ttl.
  */
 import type OpenAI from "openai";
 
@@ -42,40 +44,43 @@ function textFromParts(parts: ContentPart[]): string {
     .join("");
 }
 
+/** Owner-chosen default: 1h everywhere OpenRouter makes cache TTL configurable. */
+const CACHE_CONTROL_1H = { type: "ephemeral" as const, ttl: "1h" as const };
+
+/** OpenRouter's per-part `cache_control` passthrough uses Anthropic's own block shape. */
+type CacheControllableTextPart = OpenAI.Chat.Completions.ChatCompletionContentPartText & {
+  cache_control?: typeof CACHE_CONTROL_1H;
+};
+
+/**
+ * OpenRouter-only request-level field: "automatic caching" (breakpoint on the
+ * last cacheable block), documented for Anthropic/Vertex/Azure/Bedrock
+ * providers. Not part of the OpenAI SDK's own ChatCompletionCreateParams type.
+ */
+type ChatCompletionCreateParamsWithCache = OpenAI.Chat.Completions.ChatCompletionCreateParams & {
+  cache_control?: typeof CACHE_CONTROL_1H;
+};
+
 /**
  * Map canonical ContentPart[] to Chat Completions content.
  * Text-only messages use the string shorthand; messages with images use the
  * array format (text + image_url blocks). Non-text/non-image parts are
  * silently dropped because Chat Completions has no native reasoning_part or
- * tool_use_part in user/assistant message content.
+ * tool_use_part in user/assistant message content. Cache-agnostic: only the
+ * dedicated system-message mapping below ever emits `cache_control`.
  */
-/** OpenRouter's `cache_control` passthrough uses Anthropic's own block shape. */
-type CacheControllableTextPart = OpenAI.Chat.Completions.ChatCompletionContentPartText & {
-  cache_control?: { type: "ephemeral" };
-};
-
 function mapContentParts(
   parts: ContentPart[],
 ): string | OpenAI.Chat.Completions.ChatCompletionContentPart[] {
   const hasImage = parts.some((p) => p.type === "image");
-  const hasCacheControl = parts.some(
-    (p) => "providerOptions" in p && p.providerOptions?.anthropic?.cacheControl,
-  );
-  if (!hasImage && !hasCacheControl) {
-    return textFromParts(parts);
-  }
+  if (!hasImage) return textFromParts(parts);
 
   const mapped: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [];
   for (const part of parts) {
     switch (part.type) {
       case "text":
         if (part.text.length > 0) {
-          const cacheControl = part.providerOptions?.anthropic?.cacheControl;
-          mapped.push({
-            type: "text",
-            text: part.text,
-            ...(cacheControl ? { cache_control: cacheControl } : {}),
-          } as CacheControllableTextPart);
+          mapped.push({ type: "text", text: part.text });
         }
         break;
       case "image": {
@@ -95,6 +100,29 @@ function mapContentParts(
   return mapped;
 }
 
+/**
+ * Map the canonical system message. This is the one place the loop's
+ * `cacheBreakpoint` mark is honored per-part (see the file header): each
+ * marked text part gets an explicit `cache_control`.
+ */
+function mapSystemMessage(
+  message: Message,
+): OpenAI.Chat.Completions.ChatCompletionMessageParam | null {
+  const textParts = message.content.filter(
+    (p): p is Extract<ContentPart, { type: "text" }> => p.type === "text" && p.text.length > 0,
+  );
+  if (textParts.length === 0) return null;
+  if (!textParts.some((p) => p.cacheBreakpoint)) {
+    return { role: "system", content: textFromParts(textParts) };
+  }
+  const content: CacheControllableTextPart[] = textParts.map((p) => ({
+    type: "text",
+    text: p.text,
+    ...(p.cacheBreakpoint ? { cache_control: CACHE_CONTROL_1H } : {}),
+  }));
+  return { role: "system", content };
+}
+
 function hasContent(
   content: string | OpenAI.Chat.Completions.ChatCompletionContentPart[] | null,
 ): boolean {
@@ -112,23 +140,18 @@ function hasContent(
  * filtered out (null return).
  */
 function mapMessage(message: Message): OpenAI.Chat.Completions.ChatCompletionMessageParam | null {
+  if (message.role === "system") return mapSystemMessage(message);
+
   if (message.role === "tool") {
     const result = message.content.find((p) => p.type === "tool_result");
     if (!result) return null;
-    const text = safeToolOutput(result.output);
-    const cacheControl = result.providerOptions?.anthropic?.cacheControl;
+    // Never cache-marked here even if the loop marked this message's tail:
+    // the top-level automatic `cache_control` (see toOpenAIChatCompletionParams)
+    // already extends the cache over the rest of the conversation.
     return {
       role: "tool",
       tool_call_id: result.toolCallId,
-      // The tail prompt-cache mark (`applyPromptCacheMarks`) lands on
-      // whichever message is last, which mid-tool-loop is usually this one.
-      // Anthropic's own tool_result content block accepts `cache_control`
-      // (the direct adapter already forwards it there), and OpenRouter's
-      // passthrough mirrors Anthropic's block shape, so array-format content
-      // carries the mark the same way a system/user text part does.
-      content: cacheControl
-        ? ([{ type: "text", text, cache_control: cacheControl }] as CacheControllableTextPart[])
-        : text,
+      content: safeToolOutput(result.output),
     };
   }
 
@@ -218,6 +241,13 @@ function mapResponseFormat(
   };
 }
 
+/** True when the loop marked the system message for prompt caching (registry capability-gated). */
+function systemHasCacheBreakpoint(messages: Message[]): boolean {
+  return messages.some(
+    (m) => m.role === "system" && m.content.some((p) => p.type === "text" && p.cacheBreakpoint),
+  );
+}
+
 /**
  * Assemble the full ChatCompletionCreateParams from a canonical
  * GenerateRequest. Always sets stream:true and stream_options with
@@ -227,7 +257,7 @@ function mapResponseFormat(
 export function toOpenAIChatCompletionParams(
   request: GenerateRequest,
   modelId: string,
-): OpenAI.Chat.Completions.ChatCompletionCreateParams {
+): ChatCompletionCreateParamsWithCache {
   return {
     model: modelId,
     messages: request.messages
@@ -242,5 +272,6 @@ export function toOpenAIChatCompletionParams(
     response_format: mapResponseFormat(request.responseFormat),
     stream: true,
     stream_options: { include_usage: true },
+    ...(systemHasCacheBreakpoint(request.messages) ? { cache_control: CACHE_CONTROL_1H } : {}),
   };
 }

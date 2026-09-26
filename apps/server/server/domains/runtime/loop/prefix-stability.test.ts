@@ -19,7 +19,7 @@ import { describe, expect, it } from "vitest";
 import { createInMemoryAgentRevisionStore } from "../../packages/index.js";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
 import { createInMemoryRepositories } from "../../threads/index.js";
-import type { Gateway, GenerateRequest, ModelInfo } from "../gateway/index.js";
+import type { Gateway, GenerateRequest, Message, ModelInfo } from "../gateway/index.js";
 import { createToolRegistry } from "../tools/index.js";
 import { formatInvokedSkills } from "./activated-skills.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
@@ -148,13 +148,33 @@ function assistantToolExchangeTurn(
   return { turn, blocks: [toolUse, toolResult] };
 }
 
+/**
+ * Cache marks are metadata about caching, not content: `cacheBreakpoint` on a
+ * settled (non-tail) message can legitimately come and go as the read point
+ * moves forward with the tail (`prompt-cache-marks.ts`'s moving-breakpoint
+ * heuristic), same as `notice-prefix-stability.test.ts`'s `stripCacheMarks`.
+ * Providers hash content, not this marker, so stripping it before comparing
+ * asserts the invariant that actually matters: content stability.
+ */
+function withoutCacheMarks(message: Message): Message {
+  return {
+    ...message,
+    content: message.content.map((part) => {
+      const { cacheBreakpoint, ...rest } = part;
+      return rest;
+    }),
+  };
+}
+
 /** Every message before the previous request's final one must stay byte-identical. */
 function assertIsStableExtension(previous: GenerateRequest, next: GenerateRequest) {
   expect(next.tools).toEqual(previous.tools);
   expect(next.messages.length).toBeGreaterThanOrEqual(previous.messages.length);
   const stableCount = previous.messages.length - 1;
   for (let index = 0; index < stableCount; index++) {
-    expect(next.messages[index]).toEqual(previous.messages[index]);
+    expect(withoutCacheMarks(next.messages[index])).toEqual(
+      withoutCacheMarks(previous.messages[index]),
+    );
   }
 }
 
@@ -334,14 +354,16 @@ describe("prefix stability across a growing thread", () => {
     );
     expect(r7.generateRequest.tools).toEqual(r0.generateRequest.tools);
 
-    // The frozen system message carries the same cache mark on every request.
-    for (const request of [r0, r1, r2, r3, r4, r5, r6].map((r) => r.generateRequest)) {
-      const system = request.messages[0];
+    // The frozen system message carries the same cache mark on every request,
+    // and every request carries the thread's stable prompt-cache routing key.
+    for (const request of [r0, r1, r2, r3, r4, r5, r6]) {
+      const system = request.generateRequest.messages[0];
       expect(system.role).toBe("system");
       const lastPart = system.content.at(-1);
-      expect(
-        lastPart && "providerOptions" in lastPart ? lastPart.providerOptions : undefined,
-      ).toEqual({ anthropic: { cacheControl: { type: "ephemeral" } } });
+      expect(lastPart && "cacheBreakpoint" in lastPart ? lastPart.cacheBreakpoint : undefined).toBe(
+        true,
+      );
+      expect(request.generateRequest.promptCacheKey).toBe(request.thread.id);
     }
   });
 
@@ -390,10 +412,11 @@ describe("prefix stability across a growing thread", () => {
     });
     for (const message of assembled.generateRequest.messages) {
       for (const part of message.content) {
-        expect(
-          "providerOptions" in part ? part.providerOptions?.anthropic : undefined,
-        ).toBeUndefined();
+        expect("cacheBreakpoint" in part ? part.cacheBreakpoint : undefined).toBeUndefined();
       }
     }
+    // promptCacheKey is unconditional (harmless for adapters that ignore it),
+    // unlike the capability-gated per-part marks above.
+    expect(assembled.generateRequest.promptCacheKey).toBe(thread.id);
   });
 });

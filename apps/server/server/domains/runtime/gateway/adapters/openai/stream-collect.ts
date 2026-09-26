@@ -196,6 +196,12 @@ export function mapUsage(usage: OpenAI.Responses.ResponseUsage): Usage {
   // Both fields are confirmed in the OpenAI reasoning guide and the installed
   // SDK's ResponseUsage shape. Meridian only sets optional Usage fields when the
   // provider reports a positive value.
+  //
+  // No `cacheWriteTokens` here: the installed SDK (6.45.0) has no
+  // `cache_write_tokens`-shaped field anywhere in Responses or Chat
+  // Completions usage, and OpenAI's own pricing has no separate cache-write
+  // tier (unlike Anthropic) — only a discount on cached reads. There is
+  // nothing to parse.
   const result: Usage = {
     inputTokens: usage.input_tokens,
     outputTokens: usage.output_tokens,

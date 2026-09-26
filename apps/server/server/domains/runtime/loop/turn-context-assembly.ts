@@ -67,7 +67,10 @@ export interface AssembledNextTurnContext {
   policy: EffectiveToolPolicy;
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
   baked: boolean;
-  generateRequest: Pick<GenerateRequest, "messages" | "tools" | "model" | "reasoning">;
+  generateRequest: Pick<
+    GenerateRequest,
+    "messages" | "tools" | "model" | "reasoning" | "promptCacheKey"
+  >;
 }
 
 function functionToolsFromAdvertised(tools: Tool[] | undefined): FunctionTool[] {
@@ -181,6 +184,11 @@ export async function assembleNextTurnContext(
     generateRequest: {
       messages,
       tools: contextTools,
+      // Unconditional (not gated on `supportsPromptCaching`): a stable
+      // per-thread routing hint is harmless for adapters that ignore it
+      // (Anthropic has no such concept) and each adapter decides for itself
+      // whether to forward it (e.g. OpenAI Responses `prompt_cache_key`).
+      promptCacheKey: thread.id,
       ...gatewayParams,
     },
   };

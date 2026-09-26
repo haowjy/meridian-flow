@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { assistant, system, toolResult, user } from "../../helpers/messages.js";
 import { toAnthropicMessageParams } from "./request-map.js";
 
-const EPHEMERAL = { type: "ephemeral" as const };
+const EPHEMERAL_1H = { type: "ephemeral" as const, ttl: "1h" as const };
 
 const skillTool = {
   type: "function" as const,
@@ -167,19 +167,13 @@ describe("Anthropic message alternation", () => {
 });
 
 describe("Anthropic prompt-cache breakpoints", () => {
-  it("forwards providerOptions.anthropic.cacheControl for system, tool, and tool result blocks", () => {
+  it("translates a cacheBreakpoint into ephemeral cache_control with a 1h ttl for system, tool_use, and tool_result blocks", () => {
     const params = toAnthropicMessageParams(
       {
         messages: [
           {
             ...system("You are Writer."),
-            content: [
-              {
-                type: "text",
-                text: "You are Writer.",
-                providerOptions: { anthropic: { cacheControl: EPHEMERAL } },
-              },
-            ],
+            content: [{ type: "text", text: "You are Writer.", cacheBreakpoint: true }],
           },
           assistant([
             {
@@ -187,7 +181,7 @@ describe("Anthropic prompt-cache breakpoints", () => {
               toolCallId: "call_1",
               toolName: "search",
               input: {},
-              providerOptions: { anthropic: { cacheControl: EPHEMERAL } },
+              cacheBreakpoint: true,
             },
           ]),
           {
@@ -198,33 +192,27 @@ describe("Anthropic prompt-cache breakpoints", () => {
                 toolCallId: "call_1",
                 output: "result",
                 isError: false,
-                providerOptions: { anthropic: { cacheControl: EPHEMERAL } },
+                cacheBreakpoint: true,
               },
             ],
           },
         ],
-        tools: [
-          {
-            type: "function",
-            name: "search",
-            description: "Search.",
-            inputSchema: {},
-            providerOptions: { anthropic: { cacheControl: EPHEMERAL } },
-          },
-        ],
+        tools: [{ type: "function", name: "search", description: "Search.", inputSchema: {} }],
       },
       "claude-sonnet-4-5",
       256,
     );
     expect(params.system).toEqual([
-      { type: "text", text: "You are Writer.", cache_control: EPHEMERAL },
+      { type: "text", text: "You are Writer.", cache_control: EPHEMERAL_1H },
     ]);
-    expect(params.tools?.[0]).toMatchObject({ cache_control: EPHEMERAL });
+    // Tools are never marked directly (Anthropic renders tools before system,
+    // so the system breakpoint above already covers them).
+    expect(params.tools?.[0]).not.toHaveProperty("cache_control");
     const assistantMessage = params.messages.find((m) => m.role === "assistant");
     if (!assistantMessage) throw new Error("Expected an assistant message");
     expect(assistantBlocks({ ...params, messages: [assistantMessage] })[0]).toMatchObject({
       type: "tool_use",
-      cache_control: EPHEMERAL,
+      cache_control: EPHEMERAL_1H,
     });
     const toolMessage = params.messages.find(
       (m) =>
@@ -236,6 +224,44 @@ describe("Anthropic prompt-cache breakpoints", () => {
     const toolBlock = (Array.isArray(toolContent) ? toolContent : []).find(
       (block: { type: string }) => block.type === "tool_result",
     );
-    expect(toolBlock).toMatchObject({ cache_control: EPHEMERAL });
+    expect(toolBlock).toMatchObject({ cache_control: EPHEMERAL_1H });
+  });
+
+  it("never emits more than 4 cache_control breakpoints for the loop's 3-mark scheme", () => {
+    // Mirrors what `loop/prompt-cache-marks.ts` marks: the system message,
+    // the previous request's tail (read point), and this request's tail.
+    const params = toAnthropicMessageParams(
+      {
+        messages: [
+          {
+            ...system("You are Writer."),
+            content: [{ type: "text", text: "You are Writer.", cacheBreakpoint: true }],
+          },
+          {
+            ...user("History line one."),
+            content: [{ type: "text", text: "History line one.", cacheBreakpoint: true }],
+          },
+          assistant([{ type: "tool_use", toolCallId: "call_1", toolName: "search", input: {} }]),
+          {
+            ...toolResult("call_1", "result", false),
+            content: [
+              {
+                type: "tool_result",
+                toolCallId: "call_1",
+                output: "result",
+                isError: false,
+                cacheBreakpoint: true,
+              },
+            ],
+          },
+        ],
+      },
+      "claude-sonnet-4-5",
+      256,
+    );
+    const wireJson = JSON.stringify(params);
+    const breakpointCount = wireJson.split('"cache_control"').length - 1;
+    expect(breakpointCount).toBe(3);
+    expect(breakpointCount).toBeLessThanOrEqual(4);
   });
 });

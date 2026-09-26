@@ -15,6 +15,14 @@
  * - `partIndex` on stream deltas is the provider's content-block/output-item position
  *   index (Anthropic block `index`, OpenAI Responses `output_index`, OpenAI-Chat
  *   `tool_calls[].index`), used by adapters to reconstruct source order.
+ * - `ContentPart.cacheBreakpoint` and `GenerateRequest.promptCacheKey` are
+ *   canonical prompt-cache *intent*, not provider syntax, so they stay
+ *   top-level (never nested in `providerOptions`): the loop that assembles a
+ *   request knows where a cache boundary belongs and what the thread's stable
+ *   key is, but has no opinion on TTL or wire shape. Each adapter decides
+ *   whether and how to translate that intent for its own API (explicit
+ *   `cache_control` breakpoints, an automatic top-level marker, a
+ *   `prompt_cache_key` routing hint, or nothing at all).
  */
 import type { Usage } from "@meridian/contracts/runtime";
 
@@ -74,20 +82,30 @@ export interface ModelInfo {
  *   (e.g., hosted-tool web_search results) that have no canonical representation.
  */
 
-export interface TextPart {
+/**
+ * Marks this part as a recommended provider prompt-cache boundary. Set by
+ * `loop/prompt-cache-marks.ts`; each adapter decides how many of its marked
+ * parts it can honor and how to encode the boundary for its own API. Absent
+ * (not `false`) means "no opinion" — there is no meaningful false state.
+ */
+export interface CacheBreakpointMarker {
+  cacheBreakpoint?: true;
+}
+
+export interface TextPart extends CacheBreakpointMarker {
   type: "text";
   text: string;
   providerOptions?: ProviderOptions;
 }
 
-export interface ImagePart {
+export interface ImagePart extends CacheBreakpointMarker {
   type: "image";
   data: string | URL;
   mediaType: string;
   providerOptions?: ProviderOptions;
 }
 
-export interface FilePart {
+export interface FilePart extends CacheBreakpointMarker {
   type: "file";
   data: string | URL;
   mediaType: string;
@@ -95,13 +113,13 @@ export interface FilePart {
   providerOptions?: ProviderOptions;
 }
 
-export interface ReasoningPart {
+export interface ReasoningPart extends CacheBreakpointMarker {
   type: "reasoning";
   text: string;
   providerOptions?: ProviderOptions;
 }
 
-export interface ToolUsePart {
+export interface ToolUsePart extends CacheBreakpointMarker {
   type: "tool_use";
   toolCallId: string;
   toolName: string;
@@ -116,7 +134,7 @@ export interface ToolUsePart {
   providerOptions?: ProviderOptions;
 }
 
-export interface ToolResultPart {
+export interface ToolResultPart extends CacheBreakpointMarker {
   type: "tool_result";
   toolCallId: string;
   output: unknown;
@@ -124,7 +142,7 @@ export interface ToolResultPart {
   providerOptions?: ProviderOptions;
 }
 
-export interface CustomPart {
+export interface CustomPart extends CacheBreakpointMarker {
   type: "custom";
   kind: `${string}.${string}`;
   data?: unknown;
@@ -217,6 +235,14 @@ export interface GenerateRequest {
   reasoning?: "disabled" | "adaptive" | { effort: "low" | "medium" | "high" | "max" };
   providerOptions?: ProviderOptions;
   signal?: AbortSignal;
+  /**
+   * Stable per-thread cache-routing key (opaque, not a secret): unlike
+   * `correlation` below, adapters MAY map this into the provider request —
+   * e.g. OpenAI Responses `prompt_cache_key`, which improves cache-affinity
+   * routing for automatic caching. Anthropic has no equivalent concept and
+   * ignores it.
+   */
+  promptCacheKey?: string;
   /** Observability-only context; adapters must never map it into provider requests. */
   correlation?: {
     /** Preallocated by callers that need to join request content to lifecycle evidence. */

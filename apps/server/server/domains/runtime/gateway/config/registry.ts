@@ -80,10 +80,15 @@ const DEEPSEEK_PRICING_SOURCE =
   "https://api-docs.deepseek.com/quick_start/pricing (pinned 2026-06-10)";
 const OPENROUTER_PRICING_SOURCE = "https://openrouter.ai/docs/pricing (pinned fallback 2026-06-15)";
 
+// `cacheWriteUsdPerMillionTokens` is the 1h-ttl write rate (2x input), not the
+// 5m-ttl rate (1.25x): `loop/prompt-cache-marks.ts` + the Anthropic/OpenRouter
+// adapters always request `ttl: "1h"` (the owner-chosen default everywhere
+// Anthropic makes cache TTL configurable), so every cache-write token this
+// codebase produces bills at the 2x tier.
 const CLAUDE_SONNET_4_PRICING: ModelPricing = {
   inputUsdPerMillionTokens: "3.00",
   cachedInputUsdPerMillionTokens: "0.30",
-  cacheWriteUsdPerMillionTokens: "3.75",
+  cacheWriteUsdPerMillionTokens: "6.00",
   outputUsdPerMillionTokens: "15.00",
   source: ANTHROPIC_PRICING_SOURCE,
 };
@@ -91,7 +96,7 @@ const CLAUDE_SONNET_4_PRICING: ModelPricing = {
 const CLAUDE_HAIKU_4_5_PRICING: ModelPricing = {
   inputUsdPerMillionTokens: "1.00",
   cachedInputUsdPerMillionTokens: "0.10",
-  cacheWriteUsdPerMillionTokens: "1.25",
+  cacheWriteUsdPerMillionTokens: "2.00",
   outputUsdPerMillionTokens: "5.00",
   source: ANTHROPIC_PRICING_SOURCE,
 };
@@ -99,7 +104,7 @@ const CLAUDE_HAIKU_4_5_PRICING: ModelPricing = {
 const CLAUDE_3_5_HAIKU_PRICING: ModelPricing = {
   inputUsdPerMillionTokens: "0.80",
   cachedInputUsdPerMillionTokens: "0.08",
-  cacheWriteUsdPerMillionTokens: "1.00",
+  cacheWriteUsdPerMillionTokens: "1.60",
   outputUsdPerMillionTokens: "4.00",
   source: ANTHROPIC_PRICING_SOURCE,
 };
@@ -281,8 +286,16 @@ const DEEPSEEK_V4_FLASH_MODEL = {
   pricing: DEEPSEEK_FLASH_PRICING,
 } satisfies RegisteredModel;
 
+// OpenRouter bills the same underlying Anthropic rates for this model, and
+// `computeModelCost` prefers OpenRouter's own `reportedCostUsd` (real,
+// per-call) over this pinned rate whenever it's available — this is only the
+// fallback when it isn't. Cache fields mirror CLAUDE_SONNET_4_PRICING (1h
+// writes at 2x input) so that fallback doesn't default to the full input
+// rate for cache reads/writes.
 const OPENROUTER_CLAUDE_SONNET_4_PRICING: ModelPricing = {
   inputUsdPerMillionTokens: "3.00",
+  cachedInputUsdPerMillionTokens: "0.30",
+  cacheWriteUsdPerMillionTokens: "6.00",
   outputUsdPerMillionTokens: "15.00",
   source: OPENROUTER_PRICING_SOURCE,
 };
