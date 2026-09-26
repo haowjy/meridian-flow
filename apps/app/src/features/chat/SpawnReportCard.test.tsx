@@ -69,6 +69,61 @@ describe("SpawnReportCard", () => {
     expect(openThread).toHaveBeenCalledWith("child-1");
   });
 
+  it("shows the persisted p17 result, duration, and expansion control", async () => {
+    const callId = "call_00_ViHYdu2IAn05PnxA5aQR1107";
+    const use = block("p17-use", 1, "tool_use", {
+      toolCallId: callId,
+      toolName: "spawn",
+      input: { mode: "foreground", description: "Repeat-read comparison" },
+      output: null,
+      isError: false,
+    });
+    const card = block("p17-card", 2, "custom", {
+      kind: "helper-result",
+      props: {
+        parentTurnId: "parent-turn",
+        toolCallId: callId,
+        childThreadId: "dd343f46-16e9-44b5-8196-92c5c243d87d",
+        deliveryMode: "direct",
+        execution: "0e068ea5-aeb7-41e0-81bc-06ac27e5fde0",
+        status: "completed",
+        outcome: "succeeded",
+        startedAt: "2026-09-26T21:13:52.043Z",
+        terminalAt: "2026-09-26T21:14:21.983Z",
+      },
+    });
+    const result = block("p17-result", 3, "tool_result", {
+      toolCallId: callId,
+      output: {
+        report: { handle: "p17", summary: "Read the document 21 times. All reads matched." },
+        status: "completed",
+        outcome: "succeeded",
+      },
+    });
+    const directResult = directResultsForTurn([use, card, result]).get(card.id);
+    expect(directResult).toBeDefined();
+    await act(async () =>
+      root.render(
+        <SpawnReportCard
+          agentName="Repeat-read comparison"
+          title="Repeat-read comparison"
+          status="completed"
+          outcome="succeeded"
+          deliveryMode="direct"
+          startedAt="2026-09-26T21:13:52.043Z"
+          terminalAt="2026-09-26T21:14:21.983Z"
+          childThreadId="dd343f46-16e9-44b5-8196-92c5c243d87d"
+          directResult={directResult}
+        />,
+      ),
+    );
+
+    expect(host.textContent).toContain("29s");
+    expect(findButton("Show result")).toBeDefined();
+    await act(async () => findButton("Show result")?.click());
+    expect(host.textContent).toContain("Read the document 21 times. All reads matched.");
+  });
+
   it("degrades Open to inert text outside a provider", async () => {
     await act(async () =>
       root.render(

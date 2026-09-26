@@ -3673,8 +3673,13 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/SubagentHeader.tsx
-msgid "Subagents"
-msgstr ""
+#~ msgid "Subagents"
+#~ msgstr ""
+
+#. placeholder {0}: nodes.length
+#: src/features/chat/SubagentHeader.tsx
+msgid "Subagents, {0}"
+msgstr "子代理，{0}"
 
 #: src/features/chat/TextBlock.tsx
 msgid "Submit"

@@ -9,7 +9,7 @@ import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { DirectInvocationResult } from "./invocation-direct-result";
 import { ReportContent } from "./ReportContent";
 import { SubagentMark } from "./SubagentMark";
-import { Elapsed, subagentStatus } from "./subagent-display";
+import { Elapsed, formatSubagentElapsed, subagentStatus } from "./subagent-display";
 
 type Props = {
   agentName: string;
@@ -33,6 +33,7 @@ export function SpawnReportCard({
   outcome,
   deliveryMode,
   startedAt,
+  terminalAt,
   childThreadId,
   directResult = null,
   liveTool,
@@ -78,6 +79,11 @@ export function SpawnReportCard({
         {running && startedAt ? (
           <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
             <Elapsed startedAt={startedAt} />
+          </span>
+        ) : null}
+        {!running && startedAt && terminalAt ? (
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+            {formatSubagentElapsed(startedAt, terminalAt)}
           </span>
         ) : null}
         {openButton}

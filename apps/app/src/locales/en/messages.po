@@ -3677,8 +3677,13 @@ msgstr "Subagent chat path"
 #~ msgstr "Subagent:"
 
 #: src/features/chat/SubagentHeader.tsx
-msgid "Subagents"
-msgstr "Subagents"
+#~ msgid "Subagents"
+#~ msgstr "Subagents"
+
+#. placeholder {0}: nodes.length
+#: src/features/chat/SubagentHeader.tsx
+msgid "Subagents, {0}"
+msgstr "Subagents, {0}"
 
 #: src/features/chat/TextBlock.tsx
 msgid "Submit"

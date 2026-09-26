@@ -2,7 +2,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadActivityNode } from "@meridian/contracts/threads";
-import { ChevronDown, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { requestConversationReveal } from "./conversation-reveal";
@@ -55,18 +55,16 @@ export function SubagentHeader({
       <PopoverTrigger asChild>
         <button
           type="button"
+          aria-label={t`Subagents, ${nodes.length}`}
           aria-expanded={open}
           aria-haspopup="dialog"
-          className="focus-ring inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="focus-ring inline-flex items-center gap-1.5 whitespace-nowrap rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <Users className="size-3.5" aria-hidden />
-          <span>
-            <Trans>Subagents</Trans> {nodes.length}
-          </span>
+          <span aria-hidden="true">{nodes.length}</span>
           {running.length ? (
             <span className="size-1.5 animate-pulse rounded-full bg-primary" aria-hidden="true" />
           ) : null}
-          <ChevronDown className="size-3" aria-hidden />
         </button>
       </PopoverTrigger>
       <PopoverContent
