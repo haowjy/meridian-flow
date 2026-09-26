@@ -243,7 +243,10 @@ export function createOrchestrator(deps: OrchestratorDeps) {
               reason: contextError?.code ?? "execution_error",
               ...(contextError ? { acknowledgeInbox: true } : {}),
               error: contextError
-                ? meridianErrorFromSystem("thread_context_error", contextError.message)
+                ? meridianErrorFromSystem(
+                    "thread_context_error",
+                    "This chat's fork history couldn't be loaded.",
+                  )
                 : input.error instanceof Error
                   ? input.error.message
                   : String(input.error),
@@ -374,21 +377,9 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
       input.threadId,
       thread.activeLeafTurnId,
       async () => {
-        let runStartContext: Awaited<ReturnType<typeof loadRunStartContext>>;
-        try {
-          runStartContext = await loadRunStartContext(deps, thread);
-        } catch (error) {
-          if (!(error instanceof ThreadConversationContextError)) throw error;
-          preparationError = error;
-          const priorTurns = await repos.turns.listByThread(input.threadId);
-          runStartContext = {
-            priorTurns,
-            inheritedTurns: [],
-            inheritedBlocks: [],
-            prevTurnId: thread.activeLeafTurnId ?? priorTurns.at(-1)?.id ?? null,
-          };
-        }
-        const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = runStartContext;
+        const ctx = await loadRunStartContext(deps, thread);
+        preparationError = ctx.contextError;
+        const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;
         // Read inside the setup transaction so the turn's durable write vocabulary
         // matches the mode in effect at the moment the turn was minted.
         const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
@@ -483,7 +474,6 @@ async function runDrainTurn(
   input: DrainRunLoopInput,
   thread: Thread,
 ): Promise<PreparedLoop> {
-  const { repos } = deps;
   let initialBatchIds: string[] = [];
   let preparationError: ThreadConversationContextError | null = null;
   const setup = await deps.delivery.adoptBatch(input.lease, async (batch, workContext) => {
@@ -493,31 +483,9 @@ async function runDrainTurn(
       input.threadId,
       thread.activeLeafTurnId,
       async () => {
-        let preparationEvents: OrchestratorEvent[] = [];
-        let runStartContext: Awaited<ReturnType<typeof loadRunStartContext>>;
-        try {
-          runStartContext = await loadRunStartContext(deps, thread);
-        } catch (error) {
-          if (!(error instanceof ThreadConversationContextError)) throw error;
-          preparationError = error;
-          const priorTurns = await repos.turns.listByThread(input.threadId);
-          const localTurnIds = new Set(priorTurns.map((turn) => turn.id));
-          const fallbackPlan = planMessageTurns({
-            threadId: input.threadId,
-            batch,
-            workContext,
-            prevTurnId: thread.activeLeafTurnId ?? priorTurns.at(-1)?.id ?? null,
-            knownTurnIds: localTurnIds,
-          });
-          preparationEvents = fallbackPlan.events;
-          runStartContext = {
-            priorTurns: [...priorTurns, ...fallbackPlan.turns],
-            inheritedTurns: [],
-            inheritedBlocks: fallbackPlan.blocks.map(localBlockFromEvent),
-            prevTurnId: fallbackPlan.leafTurnId ?? thread.activeLeafTurnId ?? null,
-          };
-        }
-        const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = runStartContext;
+        const ctx = await loadRunStartContext(deps, thread);
+        preparationError = ctx.contextError;
+        const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;
         const knownTurnIds = new Set<string>([
           ...inheritedTurns.map((turn) => turn.id),
           ...priorTurns.map((turn) => turn.id),
@@ -572,11 +540,7 @@ async function runDrainTurn(
             inheritedBlocks,
             activatedSkillSlugs,
           },
-          events: [
-            ...preparationEvents,
-            ...plan.events,
-            { type: "turn.created", turn: assistantTurn },
-          ],
+          events: [...plan.events, { type: "turn.created", turn: assistantTurn }],
         };
       },
       {
@@ -631,14 +595,38 @@ async function loadRunStartContext(
   inheritedTurns: Turn[];
   inheritedBlocks: Block[];
   prevTurnId: TurnId | null;
+  contextError: ThreadConversationContextError | null;
 }> {
   const { repos } = deps;
   await reconcileOrphanedPendingWrites(deps, thread.id);
   const priorTurns = await repos.turns.listByThread(thread.id);
-  const conversation = await loadThreadConversationContext(
-    { threads: repos.threads, turns: repos.turns, blocks: repos.blocks },
-    thread,
-  );
+  let conversation: Awaited<ReturnType<typeof loadThreadConversationContext>>;
+  try {
+    conversation = await loadThreadConversationContext(
+      { threads: repos.threads, turns: repos.turns, blocks: repos.blocks },
+      thread,
+    );
+  } catch (error) {
+    if (!(error instanceof ThreadConversationContextError)) throw error;
+    emitEvent(deps.eventSink, {
+      level: "warn",
+      source: "runtime.orchestrator",
+      name: "thread.conversation_context.load_failed",
+      correlation: { threadId: error.threadId },
+      payload: {
+        threadId: error.threadId,
+        cutoffTurnId: error.originTurnId,
+        errorCode: error.code,
+      },
+    });
+    return {
+      priorTurns,
+      inheritedTurns: [],
+      inheritedBlocks: [],
+      prevTurnId: thread.activeLeafTurnId ?? priorTurns.at(-1)?.id ?? null,
+      contextError: error,
+    };
+  }
   const inheritedTurnCount = Math.max(0, conversation.turns.length - priorTurns.length);
   const inheritedTurns = conversation.turns.slice(0, inheritedTurnCount);
   const inheritedTurnIds = new Set(inheritedTurns.map((turn) => turn.id));
@@ -648,7 +636,7 @@ async function loadRunStartContext(
   // which can disagree with `activeLeafTurnId` after a restart or an
   // equal-timestamp batch, which would fork the turn chain.
   const prevTurnId = thread.activeLeafTurnId ?? sortedLeaf?.id ?? null;
-  return { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId };
+  return { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId, contextError: null };
 }
 
 async function reconcileOrphanedPendingWrites(

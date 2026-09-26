@@ -165,8 +165,26 @@ describe("RunSession", () => {
       .find((event) => event.type === "turn.error");
     expect(terminal).toMatchObject({
       type: "turn.error",
-      error: { code: "thread_context_error", source: "system", retryable: false },
+      error: {
+        code: "thread_context_error",
+        message: "This chat's fork history couldn't be loaded.",
+        source: "system",
+        retryable: false,
+      },
     });
+    expect(f.sink.events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        source: "runtime.orchestrator",
+        name: "thread.conversation_context.load_failed",
+        correlation: { threadId: f.thread.id },
+        payload: {
+          threadId: f.thread.id,
+          cutoffTurnId: "missing-cutoff",
+          errorCode: "missing_cutoff_turn",
+        },
+      }),
+    );
     expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
     expect(await f.deps.delivery.selectPending(f.thread.id)).toEqual([]);
     expect(await f.deps.delivery.pendingMessageThreads(10)).toEqual([]);
