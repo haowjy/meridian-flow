@@ -13,6 +13,7 @@ export type ReportContentValue = {
   artifacts: ArtifactRef[];
   reason?: string | null;
   partial?: boolean;
+  outcome?: "succeeded" | "failed" | "cancelled" | null;
 };
 
 type ReportContentProps = {

@@ -3,17 +3,19 @@ import { Trans } from "@lingui/react/macro";
 import type { Thread, ThreadSnapshotAncestor } from "@meridian/contracts/protocol";
 import { ChevronLeft } from "lucide-react";
 import { SubagentMark } from "@/features/chat/SubagentMark";
-import { resolveSubagentName } from "@/features/chat/subagent-display";
+import { Elapsed, resolveSubagentName, subagentStatus } from "@/features/chat/subagent-display";
 
 export function SubagentPathRow({
   subagent,
   ancestors,
   runStatus,
+  startedAt,
   onOpenParent,
 }: {
   subagent: Thread;
   ancestors: ThreadSnapshotAncestor[];
-  runStatus: "running" | "done";
+  runStatus: "running" | "succeeded" | "failed" | "cancelled" | null;
+  startedAt?: string | null;
   onOpenParent: (threadId: string) => void;
 }) {
   const name = resolveSubagentName(subagent);
@@ -42,14 +44,23 @@ export function SubagentPathRow({
               onClick={() => onOpenParent(ancestor.id)}
               className="focus-ring max-w-36 truncate rounded px-1 py-1 text-muted-foreground hover:text-foreground"
             >
-              {ancestor.agentName?.trim() || ancestor.title?.trim() || <Trans>Writer</Trans>}
+              {resolveSubagentName(ancestor)}
             </button>
           </li>
         ))}
         {ancestors.length ? <li className="text-muted-foreground">/</li> : null}
         <li className="flex shrink-0 items-center gap-1.5 font-medium text-foreground">
-          <SubagentMark name={name} status={runStatus} className="size-5 text-[10px]" />
+          <SubagentMark
+            name={name}
+            status={subagentStatus(runStatus, runStatus === "running")}
+            className="size-5 text-[10px]"
+          />
           {name}
+          {runStatus === "running" && startedAt ? (
+            <span className="text-muted-foreground">
+              <Elapsed startedAt={startedAt} />
+            </span>
+          ) : null}
         </li>
       </ol>
     </nav>

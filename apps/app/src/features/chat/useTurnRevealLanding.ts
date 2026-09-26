@@ -42,12 +42,14 @@ export function useTurnRevealLanding({
 }): void {
   const request = useTurnReveal(threadId);
   const scroll = useRef(scrollToIndex);
+  const resolve = useRef(resolveTurnId);
+  resolve.current = resolveTurnId;
   scroll.current = scrollToIndex;
 
   useEffect(() => {
     if (!request) return;
     const targetTurnId =
-      resolveTurnId?.(request.turnId, request.subagentThreadId) ?? request.turnId;
+      resolve.current?.(request.turnId, request.subagentThreadId) ?? request.turnId;
     const index = turns.findIndex((turn) => turn.id === targetTurnId);
     if (index < 0) {
       // Absent from a settled transcript means absent from this conversation.
@@ -57,20 +59,24 @@ export function useTurnRevealLanding({
     }
     const viewport = viewportRef.current;
     if (!viewport) return;
+    let raf = 0;
+    let flashTimer = 0;
+    let cancelled = false;
 
     const land = () => {
       scroll.current(index);
       request.landed();
       const subagentThreadId = request.subagentThreadId;
       if (subagentThreadId) {
-        let attempts = 0;
+        const deadline = performance.now() + 5000;
         const revealBlock = () => {
+          if (cancelled) return;
           const row = viewport.querySelector<HTMLElement>(
             `[data-turn-id="${CSS.escape(targetTurnId)}"]`,
           );
           const target = row ? latestSubagentBlockRevealTarget(row, subagentThreadId) : undefined;
-          if (!target && attempts++ < 12) {
-            requestAnimationFrame(revealBlock);
+          if ((!target || !row?.getBoundingClientRect().height) && performance.now() < deadline) {
+            raf = requestAnimationFrame(revealBlock);
             return;
           }
           if (!target) return;
@@ -81,9 +87,12 @@ export function useTurnRevealLanding({
             block: "center",
           });
           target.classList.add("subagent-reveal-flash");
-          window.setTimeout(() => target.classList.remove("subagent-reveal-flash"), 900);
+          flashTimer = window.setTimeout(
+            () => target.classList.remove("subagent-reveal-flash"),
+            900,
+          );
         };
-        requestAnimationFrame(revealBlock);
+        raf = requestAnimationFrame(revealBlock);
       }
     };
 
@@ -91,16 +100,22 @@ export function useTurnRevealLanding({
     // chat un-collapses it in the same commit that delivers the request, and
     // this viewport is 0×0 until that lands. Centering inside a zero-height
     // scroller computes garbage, so wait for the surface to get its size.
+    let observer: ResizeObserver | undefined;
     if (viewport.clientHeight > 0) {
       land();
-      return;
+    } else {
+      observer = new ResizeObserver(() => {
+        if (viewport.clientHeight === 0) return;
+        observer?.disconnect();
+        land();
+      });
+      observer.observe(viewport);
     }
-    const observer = new ResizeObserver(() => {
-      if (viewport.clientHeight === 0) return;
-      observer.disconnect();
-      land();
-    });
-    observer.observe(viewport);
-    return () => observer.disconnect();
-  }, [historySettled, request, resolveTurnId, turns, viewportRef]);
+    return () => {
+      cancelled = true;
+      observer?.disconnect();
+      cancelAnimationFrame(raf);
+      window.clearTimeout(flashTimer);
+    };
+  }, [historySettled, request, turns, viewportRef]);
 }

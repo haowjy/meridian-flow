@@ -51,8 +51,10 @@ branch on `deliveryMode`: background cards are one-line launches while direct
 cards combine launch, live current tool, and expandable result. Branch on the
 run's `deliveryMode`, never on which blocks happen to exist. Server activity
 (snapshot plus `meridian.subagent.activity`) is still the viewed thread's whole
-subtree; `ChatView` filters it to direct children: running background ones for
-the live panel, all of them for the Subagents pop-up at the right end of the chat tab row. `thread_report` is a report
+subtree. The shared `useThreadActivity` store owns the cached live view and a
+single transport subscription per thread; `ChatView` filters direct running
+background children for the live panel, while the pane and dock headers filter
+direct children for the Subagents pop-up. `thread_report` is a report
 artifact outside the process fold. Background `subagent_update` notices render
 as quiet expandable completion rows; adjacent completions merge at their
 transcript boundary. Every surface names a child through `subagent-display.ts`

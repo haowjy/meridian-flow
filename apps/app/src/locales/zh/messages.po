@@ -14,6 +14,16 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. js-lingui-explicit-id
+#: src/features/chat/AssistantTurn.tsx
+msgid "finished"
+msgstr "已完成"
+
+#. js-lingui-explicit-id
+#: src/features/chat/AssistantTurn.tsx
+msgid "stopped"
+msgstr "已停止"
+
+#. js-lingui-explicit-id
 #: src/features/chat/subagent-display.ts
 msgid "Subagent"
 msgstr ""
@@ -118,6 +128,11 @@ msgstr ""
 msgid "{0, plural, one {read # document} other {read # documents}}"
 msgstr ""
 
+#. placeholder {0}: list( entries.map( ({ name, outcome }) => `${name} ${outcome === "succeeded" ? i18n._("finished") : i18n._("stopped")}`, ), )
+#: src/features/chat/AssistantTurn.tsx
+msgid "{0}"
+msgstr ""
+
 #. placeholder {0}: chat.title
 #: src/features/project/work/WorkAssociatedChats.tsx
 #~ msgid "{0} added to favorites"
@@ -153,7 +168,7 @@ msgstr ""
 msgid "{0} edit canceled"
 msgstr ""
 
-#. placeholder {0}: names.join(", ")
+#. placeholder {0}: list(names)
 #: src/features/chat/AssistantTurn.tsx
 msgid "{0} finished"
 msgstr ""
@@ -229,7 +244,7 @@ msgstr ""
 msgid "{0} source copied"
 msgstr ""
 
-#. placeholder {0}: names.join(", ")
+#. placeholder {0}: list(names)
 #: src/features/chat/AssistantTurn.tsx
 msgid "{0} stopped"
 msgstr ""
@@ -249,6 +264,12 @@ msgstr ""
 msgid "{0} subagents finished"
 msgstr ""
 
+#. placeholder {0}: names.length
+#. placeholder {1}: stopped.length
+#: src/features/chat/AssistantTurn.tsx
+msgid "{0} subagents finished ({1} stopped)"
+msgstr "{0} 个子代理已完成（{1} 个已停止）"
+
 #. placeholder {0}: descendants.length
 #: src/features/chat/RunningSubagentsStrip.tsx
 #~ msgid "{0} subagents running"
@@ -256,8 +277,8 @@ msgstr ""
 
 #. placeholder {0}: names.length
 #: src/features/chat/AssistantTurn.tsx
-msgid "{0} subagents stopped"
-msgstr ""
+#~ msgid "{0} subagents stopped"
+#~ msgstr ""
 
 #. placeholder {0}: compactCount(stats.outputTokensPerSecond)
 #: src/features/chat/AssistantTurnActions.tsx
@@ -1869,9 +1890,10 @@ msgstr ""
 #~ msgid "Finish the current chat attempt"
 #~ msgstr ""
 
+#: src/features/chat/AssistantTurn.tsx
 #: src/features/chat/SubagentMark.tsx
 msgid "finished"
-msgstr ""
+msgstr "已完成"
 
 #: src/features/chat/SubagentHeader.tsx
 msgid "Finished"
@@ -2808,6 +2830,7 @@ msgid "Open results"
 msgstr ""
 
 #: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/RunningSubagentsStrip.tsx
 #: src/features/chat/SpawnReportCard.tsx
 msgid "Open subagent chat"
 msgstr ""
@@ -3495,6 +3518,10 @@ msgstr ""
 msgid "Settings sections"
 msgstr ""
 
+#: src/features/chat/AssistantTurn.tsx
+msgid "Shared an attachment"
+msgstr "分享了附件"
+
 #: src/features/chat/SubagentHeader.tsx
 msgid "Show"
 msgstr ""
@@ -3611,9 +3638,10 @@ msgstr "停止"
 msgid "Stop run"
 msgstr ""
 
+#: src/features/chat/AssistantTurn.tsx
 #: src/features/chat/SubagentMark.tsx
 msgid "stopped"
-msgstr ""
+msgstr "已停止"
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Stopped"
@@ -4495,8 +4523,8 @@ msgid "Write mode"
 msgstr ""
 
 #: src/features/project/chat/SubagentPathRow.tsx
-msgid "Writer"
-msgstr ""
+#~ msgid "Writer"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Writing…"

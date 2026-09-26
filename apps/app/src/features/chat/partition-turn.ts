@@ -81,6 +81,10 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
         const result = typeof toolCallId === "string" ? resultByCall.get(toolCallId) : undefined;
         const failed = result?.ok === false;
         const output = isRecord(result) && isRecord(result.output) ? result.output : result;
+        if (content.toolName === "thread_report" && output?.deliveryMode === "direct") {
+          pushProcessBlock("activity", block);
+          continue;
+        }
         const artifacts =
           content.toolName === "return_result" ? input.artifacts : output?.artifacts;
         flushProcess();
@@ -107,6 +111,12 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
                 }),
             artifacts: Array.isArray(artifacts) ? artifacts.filter(isArtifactRef) : [],
             partial: failed || content.isError === true || output?.partial === true,
+            ...(content.toolName === "thread_report" &&
+            (output?.outcome === "succeeded" ||
+              output?.outcome === "failed" ||
+              output?.outcome === "cancelled")
+              ? { outcome: output.outcome }
+              : {}),
             ...(typeof output?.reason === "string"
               ? { reason: output.reason }
               : typeof result?.message === "string"

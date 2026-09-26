@@ -294,7 +294,27 @@ describe("partitionTurn", () => {
     expect(items[0]).toMatchObject({
       kind: "report",
       ref: "p3",
-      report: { summary: "Report summary" },
+      report: { summary: "Report summary", outcome: "succeeded" },
     });
+  });
+
+  it("keeps a foreground thread_report as an ordinary process tool", () => {
+    const reportUse = block({
+      blockType: "tool_use",
+      sequence: 1,
+      content: { toolCallId: "report-direct", toolName: "thread_report", input: { ref: "p3" } },
+    });
+    const reportResult = block({
+      blockType: "tool_result",
+      sequence: 2,
+      content: {
+        toolCallId: "report-direct",
+        output: { deliveryMode: "direct", outcome: "succeeded", summary: "Already shown above" },
+      },
+    });
+    const items = partitionTurn([reportUse, reportResult]);
+
+    expect(kinds(items)).toEqual(["process"]);
+    expect(items[0]).toMatchObject({ kind: "process", runs: [{ blocks: [reportUse] }] });
   });
 });

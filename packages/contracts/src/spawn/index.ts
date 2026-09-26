@@ -66,6 +66,7 @@ export type ThreadReportResult =
       ref: string;
       run: number;
       outcome: SavedOutcome;
+      deliveryMode: ExecutionReportDelivery;
       source: ExecutionReportSource;
       summary: string;
       payload?: JsonValue;

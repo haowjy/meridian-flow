@@ -1,4 +1,6 @@
 /** AssistantTurn — single render path for assistant turns. */
+
+import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import {
@@ -216,6 +218,7 @@ function DeliveryEventRows({ events }: { events: DeliveryEvent[] }) {
 
 function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
   const nodes = useSubagentActivityNodes();
+  const openThread = useOpenChatThread();
   const entries = events.map((event) => {
     const update = event.subagentUpdate;
     const node = nodes.find((candidate) => candidate.ref === update?.handle);
@@ -223,21 +226,23 @@ function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
       event,
       update,
       name: resolveSubagentName(node ?? { agentName: null, title: event.title ?? null }),
+      threadId: node?.threadId ?? event.childThreadId,
+      outcome: update?.outcome,
     };
   });
   const names = entries.map(({ name }) => name);
-  const allSucceeded = events.every(
-    ({ subagentUpdate }) => subagentUpdate?.outcome === "succeeded",
-  );
+  const stopped = entries.filter(({ outcome }) => outcome !== "succeeded");
+  const list = (values: string[]) =>
+    new Intl.ListFormat(i18n.locale, { style: "long", type: "conjunction" }).format(values);
   return (
     <details className="group min-w-0 text-sm text-muted-foreground" data-subagent-finished>
-      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm py-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm py-[var(--chat-space-row)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <span className="flex -space-x-1.5">
           {names.slice(0, 3).map((name, index) => (
             <span key={`${name}-${index}`} className="rounded-full bg-background p-[2px]">
               <SubagentMark
                 name={name}
-                status={allSucceeded ? "done" : "stopped"}
+                status={subagentStatus(entries[index]?.outcome)}
                 className="size-5 border-background text-[10px]"
               />
             </span>
@@ -245,30 +250,49 @@ function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
         </span>
         <span className="truncate font-medium text-foreground">
           {names.length > 3 ? (
-            allSucceeded ? (
-              <Trans>{names.length} subagents finished</Trans>
+            stopped.length ? (
+              <Trans>
+                {names.length} subagents finished ({stopped.length} stopped)
+              </Trans>
             ) : (
-              <Trans>{names.length} subagents stopped</Trans>
+              <Trans>{names.length} subagents finished</Trans>
             )
-          ) : allSucceeded ? (
-            <Trans>{names.join(", ")} finished</Trans>
+          ) : stopped.length === 0 ? (
+            <Trans>{list(names)} finished</Trans>
+          ) : stopped.length === entries.length ? (
+            <Trans>{list(names)} stopped</Trans>
           ) : (
-            <Trans>{names.join(", ")} stopped</Trans>
+            <Trans>
+              {list(
+                entries.map(
+                  ({ name, outcome }) =>
+                    `${name} ${outcome === "succeeded" ? i18n._("finished") : i18n._("stopped")}`,
+                ),
+              )}
+            </Trans>
           )}
         </span>
       </summary>
-      <div className="ml-7 space-y-2 border-l border-border-subtle py-1 pl-3 text-xs text-muted-foreground">
-        {entries.map(({ event: { turn, title }, name }) => {
+      <div className="ml-7 space-y-[var(--chat-space-block)] border-l border-border-subtle py-[var(--chat-space-row)] pl-3 text-xs text-muted-foreground">
+        {entries.map(({ event: { turn, title }, name, threadId }) => {
           const text = turn.blocks
             .filter((block) => block.blockType === "text")
             .map((block) => block.textContent ?? "")
             .join("");
           return (
-            <div key={turn.id}>
-              {title && title !== name ? (
-                <p className="font-medium text-foreground">{title}</p>
-              ) : null}
+            <div key={turn.id} data-subagent-thread-id={threadId}>
+              <p className="font-medium text-foreground">{name}</p>
+              {title && title !== name ? <p>{title}</p> : null}
               {text ? <p className="whitespace-pre-wrap">{text}</p> : null}
+              {threadId && openThread ? (
+                <button
+                  type="button"
+                  onClick={() => openThread(threadId)}
+                  className="mt-[var(--chat-space-row)] underline underline-offset-4 hover:text-foreground"
+                >
+                  <Trans>Open chat</Trans>
+                </button>
+              ) : null}
             </div>
           );
         })}
@@ -284,7 +308,6 @@ function DeliveryEventRow({ turn, childThreadId, title, subagentUpdate }: Delive
     const node = nodes.find((candidate) => candidate.ref === subagentUpdate.handle);
     const name = resolveSubagentName(node ?? { agentName: null, title: title ?? null });
     const outcome = subagentUpdate.outcome;
-    const label = outcome === "succeeded" ? "finished" : "stopped";
     const body = turn.blocks
       .filter((block) => block.blockType === "text")
       .map((block) => block.textContent ?? "")
@@ -295,24 +318,27 @@ function DeliveryEventRow({ turn, childThreadId, title, subagentUpdate }: Delive
         data-subagent-finished
         data-subagent-thread-id={node?.threadId ?? childThreadId ?? undefined}
       >
-        <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm py-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm py-[var(--chat-space-row)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <SubagentMark
             name={name}
             status={subagentStatus(outcome)}
             className="size-5 text-[10px]"
           />
           <span className="truncate">
-            <span className="font-medium text-foreground">{name}</span> {label}
+            <span className="font-medium text-foreground">{name}</span>{" "}
+            {outcome === "succeeded" ? <Trans>finished</Trans> : <Trans>stopped</Trans>}
           </span>
         </summary>
-        <div className="ml-7 border-l border-border-subtle py-1 pl-3 text-xs text-muted-foreground">
-          {title && title !== name ? <p className="mb-1 text-foreground">{title}</p> : null}
+        <div className="ml-7 border-l border-border-subtle py-[var(--chat-space-row)] pl-3 text-xs text-muted-foreground">
+          {title && title !== name ? (
+            <p className="mb-[var(--chat-space-row)] text-foreground">{title}</p>
+          ) : null}
           {body ? <p className="whitespace-pre-wrap">{body}</p> : null}
           {childThreadId && openThread ? (
             <button
               type="button"
               onClick={() => openThread(childThreadId)}
-              className="mt-1 inline-block rounded-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="mt-[var(--chat-space-row)] inline-block rounded-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Trans>Open chat</Trans>
             </button>
@@ -327,7 +353,9 @@ function DeliveryEventRow({ turn, childThreadId, title, subagentUpdate }: Delive
     .join("");
   return (
     <ActivityRow Icon={MessageSquareText}>
-      <span className="whitespace-pre-wrap text-foreground">{body || "Shared an attachment"}</span>
+      <span className="whitespace-pre-wrap text-foreground">
+        {body || <Trans>Shared an attachment</Trans>}
+      </span>
     </ActivityRow>
   );
 }
@@ -459,7 +487,19 @@ function ThreadReportArtifact({
       data-subagent-thread-id={subagent?.threadId}
     >
       <div className="flex min-w-0 items-center gap-[var(--chat-space-row)]">
-        <SubagentMark name={agentName} status={subagentStatus(subagent?.spawnStatus)} />
+        {report.outcome || report.partial ? (
+          <SubagentMark
+            name={agentName}
+            status={subagentStatus(report.outcome ?? (report.partial ? "failed" : null))}
+          />
+        ) : (
+          <span
+            aria-hidden
+            className="grid size-7 shrink-0 place-items-center rounded-full border border-border text-[10px] font-medium text-muted-foreground"
+          >
+            {agentName.trim().slice(0, 2).toLocaleUpperCase()}
+          </span>
+        )}
         <span className="shrink-0 text-sm font-medium text-foreground">{agentName}</span>
         <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
           <Trans>Report</Trans>
@@ -496,7 +536,7 @@ function ThreadReportArtifact({
         <ReportContent
           report={report}
           empty={<Trans>No report text was returned.</Trans>}
-          className="mt-[var(--chat-space-block)] pl-8 space-y-[var(--chat-space-block)]"
+          className="mt-[var(--chat-space-block)] pl-[calc(1.5rem+var(--chat-space-row))] space-y-[var(--chat-space-block)]"
         />
       ) : null}
     </div>

@@ -1,7 +1,7 @@
 /** Shared writer-facing identity, outcome, and elapsed-time display for subagent runs. */
 
 import type { ThreadActivityNode } from "@meridian/contracts/threads";
-import { useSyncExternalStore } from "react";
+import { createElement, useSyncExternalStore } from "react";
 import { i18n } from "@/lib/i18n";
 import { liveToolActivityLabel } from "./command-descriptor";
 
@@ -43,6 +43,12 @@ export function formatSubagentElapsed(
 /** One shared clock cadence keeps every visible running duration in sync. */
 export function useSubagentClock(): number {
   return useSyncExternalStore(subscribeClock, readClock, readClock);
+}
+
+/** A clock subscriber exists only while the represented run is still active. */
+export function Elapsed({ startedAt }: { startedAt?: string | null }) {
+  const now = useSubagentClock();
+  return createElement("span", null, formatSubagentElapsed(startedAt, null, now));
 }
 
 let clockNow = Date.now();

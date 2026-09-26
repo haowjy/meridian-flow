@@ -1,20 +1,16 @@
 /** In-flow summary of direct background runs, with current work on expansion. */
+
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadActivityNode } from "@meridian/contracts/threads";
 import { ChevronRight, ExternalLink } from "lucide-react";
 import { useState } from "react";
 import { useOpenChatThread } from "./ChatThreadNavigation";
 import { SubagentMark } from "./SubagentMark";
-import {
-  formatSubagentElapsed,
-  resolveSubagentName,
-  subagentCurrentToolLabel,
-  useSubagentClock,
-} from "./subagent-display";
+import { Elapsed, resolveSubagentName, subagentCurrentToolLabel } from "./subagent-display";
 
 export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActivityNode[] }) {
   const [expanded, setExpanded] = useState(false);
-  const now = useSubagentClock();
   const openThread = useOpenChatThread();
   if (!descendants.length) return null;
   const single = descendants.length === 1 ? descendants[0] : undefined;
@@ -44,7 +40,7 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
                 ) : null}
               </span>
               <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                {formatSubagentElapsed(single.runStartedAt, null, now)}
+                <Elapsed startedAt={single.runStartedAt} />
               </span>
               <ChevronRight
                 className={`size-3 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
@@ -54,7 +50,7 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
             {openThread ? (
               <button
                 type="button"
-                aria-label="Open subagent chat"
+                aria-label={t`Open subagent chat`}
                 onClick={() => openThread(single.threadId)}
                 className="focus-ring grid size-7 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
               >
@@ -111,12 +107,12 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
                     ) : null}
                   </span>
                   <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                    {formatSubagentElapsed(node.runStartedAt, null, now)}
+                    <Elapsed startedAt={node.runStartedAt} />
                   </span>
                   {openThread ? (
                     <button
                       type="button"
-                      aria-label="Open subagent chat"
+                      aria-label={t`Open subagent chat`}
                       onClick={() => openThread(node.threadId)}
                       className="focus-ring grid size-7 place-items-center rounded text-muted-foreground hover:bg-muted"
                     >
@@ -125,7 +121,7 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
                   ) : null}
                 </div>
                 {node.currentTool ? (
-                  <p className="truncate pl-7 text-xs text-muted-foreground">
+                  <p className="truncate pl-[calc(var(--chat-space-row)+1.25rem)] text-xs text-muted-foreground">
                     {subagentCurrentToolLabel(node.currentTool.toolName, node.currentTool.input)}
                   </p>
                 ) : null}
@@ -135,7 +131,7 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
         </ul>
       ) : null}
       {expanded && single?.currentTool ? (
-        <p className="mx-auto w-full max-w-chat-column truncate px-6 pb-1 pl-[calc(1.5rem+var(--chat-space-row))] text-xs text-muted-foreground md:px-8">
+        <p className="mx-auto w-full max-w-chat-column truncate pl-[calc(2.75rem+var(--chat-space-inline))] pb-1 text-xs text-muted-foreground">
           {subagentCurrentToolLabel(single.currentTool.toolName, single.currentTool.input)}
         </p>
       ) : null}

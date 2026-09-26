@@ -14,6 +14,7 @@ import { ChatSurface as ChatFrame } from "@/features/chat/ChatSurface";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import { ChatView } from "@/features/chat/ChatView";
 import { CreationComposer } from "@/features/chat/CreationComposer";
+import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { useChatNavigation } from "../routing/chat-navigation";
 import type { ContextRouteTarget } from "../routing/project-route";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
@@ -100,6 +101,12 @@ function ChatScreenLoaded({
   } = useThreadSnapshotSync(threadId);
   const thread = projectThreads.find((t) => t.id === threadId) ?? snapshotThread;
   const ancestors = snapshot?.ancestors ?? [];
+  const activity = useThreadActivity({
+    threadId: thread?.rootThreadId ?? threadId,
+    rootThreadId: thread?.rootThreadId ?? threadId,
+    seed: null,
+  });
+  const currentRun = activity.activity.descendants.find((node) => node.threadId === threadId);
 
   const isSubagent = thread?.kind === "subagent";
 
@@ -109,7 +116,10 @@ function ChatScreenLoaded({
         <SubagentPathRow
           subagent={thread}
           ancestors={ancestors}
-          runStatus={snapshotLiveState?.status.kind === "awake" ? "running" : "done"}
+          runStatus={
+            thread.spawnStatus ?? (snapshotLiveState?.status.kind === "awake" ? "running" : null)
+          }
+          startedAt={currentRun?.runStartedAt}
           onOpenParent={onSelectThread}
         />
       ) : null}

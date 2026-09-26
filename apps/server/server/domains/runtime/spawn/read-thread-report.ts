@@ -34,6 +34,7 @@ export async function readThreadReport(input: {
       ref: input.ref,
       run,
       outcome: record.outcome,
+      deliveryMode: record.deliveryMode,
       source: record.source,
       summary: record.summary,
       ...(record.payload !== undefined ? { payload: record.payload } : {}),
