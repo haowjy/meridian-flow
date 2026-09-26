@@ -27,9 +27,9 @@ function StreamingTextWithPlayback({ text }: StreamingTextProps) {
 
 function StreamingTextView({ text }: StreamingTextProps) {
   return (
-    <div className="[&:not(:last-child)]:mb-3">
+    <div>
       <Markdown mode="streaming">{text}</Markdown>
-      <span aria-hidden className="mt-1 block">
+      <span aria-hidden className="mt-[var(--chat-space-inline)] block">
         <StreamCaret />
       </span>
     </div>

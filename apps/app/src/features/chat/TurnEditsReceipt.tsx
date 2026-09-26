@@ -159,7 +159,7 @@ export function TurnEditsReceipt({
   }
   return (
     <div
-      className="mt-3 overflow-hidden rounded-lg border border-border bg-chat-interactive text-caption text-ink-muted"
+      className="overflow-hidden rounded-lg border border-border bg-chat-interactive text-caption text-ink-muted"
       data-turn-receipt
     >
       {/* The WHOLE header row is the expand/collapse target — hover washes the
@@ -168,7 +168,7 @@ export function TurnEditsReceipt({
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
       <div
         onClick={() => setExpanded((value) => !value)}
-        className="flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors hover:bg-muted"
+        className="flex cursor-pointer items-center gap-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] transition-colors hover:bg-muted"
       >
         <button
           type="button"
@@ -178,7 +178,7 @@ export function TurnEditsReceipt({
             event.stopPropagation();
             setExpanded((value) => !value);
           }}
-          className="focus-ring -mx-1 flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 text-left"
+          className="focus-ring -mx-1 flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] rounded-md px-1 text-left"
         >
           <ChevronDown
             className={cn(
@@ -206,7 +206,7 @@ export function TurnEditsReceipt({
         </button>
         {undoUnavailable ? (
           <span
-            className="shrink-0 rounded-full border border-border-subtle px-2 py-0.5 font-medium text-ink-muted"
+            className="shrink-0 rounded-full border border-border-subtle px-[var(--chat-space-block)] py-0.5 font-medium text-ink-muted"
             data-undo-unavailable
           >
             <Trans>Can't undo</Trans>
@@ -228,11 +228,11 @@ export function TurnEditsReceipt({
         )}
       </div>
       {expanded ? (
-        <div id={panelId} className="border-border-subtle border-t py-1">
+        <div id={panelId} className="border-border-subtle border-t">
           {restoredNotices?.map((notice) => (
             <p
               key={notice}
-              className="px-3 py-2 pl-9 text-prose-foreground"
+              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-9 text-prose-foreground"
               data-work-restored
               role="status"
             >
@@ -240,7 +240,11 @@ export function TurnEditsReceipt({
             </p>
           ))}
           {guardCopy ? (
-            <p className="px-3 py-2 pl-9 text-ink-muted" data-undo-unavailable-reason role="status">
+            <p
+              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-9 text-ink-muted"
+              data-undo-unavailable-reason
+              role="status"
+            >
               {guardCopy}
             </p>
           ) : null}
@@ -271,7 +275,7 @@ export function TurnEditsReceipt({
             <ul className="flex flex-col">
               {reversibleWorkReceipts.map((workRow, index) => (
                 <li key={`${index}:${workRow.operation}:${workRow.workId}`}>
-                  <span className="flex min-h-6 items-center truncate px-3 pl-9 text-prose-foreground">
+                  <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-9 text-prose-foreground">
                     {workReceiptLine(workRow)}
                   </span>
                 </li>
@@ -386,7 +390,7 @@ function ChangeViewDetail({
   if (shell.state !== "settled") return null;
   if (detail.isError) {
     return (
-      <div className="px-3 py-2 text-caption text-ink-muted">
+      <div className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-caption text-ink-muted">
         <p>
           <Trans>Couldn't load change details.</Trans>
         </p>
@@ -399,7 +403,10 @@ function ChangeViewDetail({
   return detail.data?.map((document) => {
     if ("unavailable" in document) {
       return (
-        <p key={document.documentId} className="px-3 py-2 text-caption text-ink-muted">
+        <p
+          key={document.documentId}
+          className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-caption text-ink-muted"
+        >
           <Trans>This chapter is no longer available, so its change details can't be shown.</Trans>
         </p>
       );
@@ -418,12 +425,12 @@ function ChangeViewDetail({
             canOpenContextUri={canOpenContextUri}
           />
         ) : (
-          <span className="flex min-h-6 items-center truncate px-3 pl-9 text-prose-foreground">
+          <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-9 text-prose-foreground">
             {document.documentTitle}
           </span>
         )}
         {document.anchorState === "deleted" ? (
-          <p className="px-3 py-1 text-caption text-ink-muted">
+          <p className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-caption text-ink-muted">
             <Trans>
               This chapter is no longer available. Copy any saved text you want to keep.
             </Trans>
@@ -466,7 +473,7 @@ function DocumentRow({
 }) {
   if (!onOpenContextUri || !canOpenContextUri?.(document.uri)) {
     return (
-      <span className="flex min-h-6 items-center truncate px-3 pl-9 text-prose-foreground">
+      <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-9 text-prose-foreground">
         <DocumentName path={document.uri} insideDoor />
       </span>
     );
@@ -475,7 +482,7 @@ function DocumentRow({
     <button
       type="button"
       onClick={() => onOpenContextUri(document.uri)}
-      className="focus-ring flex min-h-6 w-full items-center px-3 pl-9 text-left transition-colors hover:bg-muted"
+      className="focus-ring flex min-h-6 w-full items-center px-[var(--chat-card-pad-x)] pl-9 text-left transition-colors hover:bg-muted"
     >
       {/* The whole row is the door here, so the name inside it stays inert. */}
       <DocumentName path={document.uri} insideDoor />

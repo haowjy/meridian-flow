@@ -30,7 +30,7 @@ export type ChatThreadHeaderProps = {
 
 export function ChatThreadHeader(props: ChatThreadHeaderProps) {
   return (
-    <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-3">
+    <div className="flex h-11 shrink-0 items-center gap-[var(--chat-space-inline)] border-b border-border px-[var(--chat-card-pad-x)]">
       <ChatThreadTitle {...props} />
     </div>
   );
@@ -173,7 +173,7 @@ function RenameField({
       onBlur={commit}
       // min-w-0 beats the UA's intrinsic min-width on inputs, so flex-1 can
       // actually shrink the field to the slot instead of overflowing it.
-      className="pane-title focus-ring min-w-0 flex-1 rounded-md border border-border-focus bg-background px-2 py-1 outline-none"
+      className="pane-title focus-ring min-w-0 flex-1 rounded-md border border-border-focus bg-background px-[var(--chat-card-pad-x)] py-[var(--chat-space-inline)] outline-none"
     />
   );
 }

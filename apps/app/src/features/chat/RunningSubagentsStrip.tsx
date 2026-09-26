@@ -34,12 +34,12 @@ export function RunningSubagentsStrip({ selfStatus, descendants }: RunningSubage
 
   return (
     <div className="border-b border-border-subtle bg-card" data-running-subagents>
-      <div className="mx-auto flex w-full max-w-chat-column items-center gap-2 px-6 py-1 md:px-8">
+      <div className="mx-auto flex w-full max-w-chat-column items-center gap-[var(--chat-space-inline)] px-6 py-1 md:px-8">
         <button
           type="button"
           aria-expanded={expanded}
           onClick={() => setExpanded((value) => !value)}
-          className="focus-ring flex min-w-0 flex-1 items-center gap-1.5 rounded-sm py-0.5 text-left text-caption text-ink-muted"
+          className="focus-ring flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] rounded-sm py-0.5 text-left text-caption text-ink-muted"
         >
           <ChevronRight
             className={cn(
@@ -97,9 +97,10 @@ function SubagentRow({ node, indent }: { node: ThreadActivityNode; indent: numbe
   );
 
   const className = cn(
-    "flex w-full items-center gap-2 py-1 pr-3 text-sm",
+    "flex w-full items-center gap-[var(--chat-space-row)] py-1 pr-[var(--chat-card-pad-x)] text-sm",
     openThread && "focus-ring rounded-sm transition-colors hover:bg-muted",
   );
+  // The 1.5rem base indent aligns with the thread-icon column; the extra rems are tree depth.
   const style = { paddingInlineStart: `calc(1.5rem + ${indent}rem)` };
 
   return (

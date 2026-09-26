@@ -43,15 +43,21 @@ function ActiveError({ kind, onRetry }: { kind: ErrorBlockProps["kind"]; onRetry
     <Alert
       variant="destructive"
       className={cn(
-        "mt-2 border-destructive-border bg-destructive-tint shadow-none",
-        "rounded-field px-3.5 py-3",
+        "border-destructive-border bg-destructive-tint shadow-none",
+        "rounded-field px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]",
       )}
     >
       <CircleAlert className="text-destructive" aria-hidden />
       <AlertDescription className="text-compact text-ink-muted">
         <p>{errorCopy(kind)}</p>
         {onRetry ? (
-          <Button type="button" variant="outline" size="sm" className="mt-2" onClick={onRetry}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-[var(--chat-space-block)]"
+            onClick={onRetry}
+          >
             <Trans>Retry</Trans>
           </Button>
         ) : null}
@@ -62,7 +68,7 @@ function ActiveError({ kind, onRetry }: { kind: ErrorBlockProps["kind"]; onRetry
 
 function HistoricalError({ kind }: { kind: ErrorBlockProps["kind"] }) {
   return (
-    <p className="mt-2 text-caption text-muted-foreground">
+    <p className="text-caption text-muted-foreground">
       <Trans>Errored.</Trans> {errorCopy(kind)}
     </p>
   );

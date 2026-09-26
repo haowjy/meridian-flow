@@ -65,7 +65,7 @@ export function TextBlock({
         ) : undefined
       }
     >
-      <form className="flex gap-2" onSubmit={handleSubmit}>
+      <form className="flex gap-[var(--chat-space-inline)]" onSubmit={handleSubmit}>
         <Input
           value={value}
           disabled={!isAwaitingResponse || responseLocked || submitted}
@@ -77,7 +77,7 @@ export function TextBlock({
         <button
           type="submit"
           disabled={!isAwaitingResponse || responseLocked || submitted}
-          className="focus-ring inline-flex items-center rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-button transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          className="focus-ring inline-flex items-center rounded-md bg-primary px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-sm font-medium text-primary-foreground shadow-button transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Trans>Submit</Trans>
         </button>

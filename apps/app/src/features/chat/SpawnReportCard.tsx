@@ -97,7 +97,7 @@ function DirectResult({ result }: { result: DirectInvocationResult }) {
   const hasResult = hasReportText || result.payload !== undefined || result.artifacts.length > 0;
 
   return (
-    <div className="mt-2 min-w-0">
+    <div className="mt-[var(--chat-space-block)] min-w-0">
       {firstLine ? <Markdown variant="compact">{firstLine}</Markdown> : null}
       {!hasResult ? (
         <ReportContent
@@ -114,7 +114,7 @@ function DirectResult({ result }: { result: DirectInvocationResult }) {
         />
       ) : null}
       {hasResult ? (
-        <div className="mt-1">
+        <div className="mt-[var(--chat-space-inline)]">
           <button
             type="button"
             aria-expanded={expanded}
@@ -128,7 +128,7 @@ function DirectResult({ result }: { result: DirectInvocationResult }) {
               report={result}
               empty={<Trans>No report text was returned.</Trans>}
               message={result.message}
-              className="mt-2 space-y-2"
+              className="mt-[var(--chat-space-block)] space-y-[var(--chat-space-block)]"
             />
           ) : null}
         </div>

@@ -52,11 +52,11 @@ export function DocumentName({
         event.stopPropagation();
         openContextUri(uri, passage);
       }}
-      // `-my-2 py-2` grows the touch target to ~37px without changing row
+      // `-my-2 py-[var(--chat-card-pad-y)]` grows the touch target to ~37px without changing row
       // rhythm. The overflow lands inside the row's own 8px bottom padding, so
       // it never covers a neighbouring row's title or expand contents — and no
       // ancestor may clip it, which is why truncation lives on the inner span.
-      className="focus-ring relative z-10 -my-2 flex min-w-0 items-baseline rounded-sm py-2 text-left text-muted-foreground underline decoration-border decoration-1 underline-offset-[3px] transition-colors hover:text-jade-text hover:decoration-jade-text focus-visible:text-jade-text focus-visible:decoration-jade-text"
+      className="focus-ring relative z-10 -my-2 flex min-w-0 items-baseline rounded-sm py-[var(--chat-space-block)] text-left text-muted-foreground underline decoration-border decoration-1 underline-offset-[3px] transition-colors hover:text-jade-text hover:decoration-jade-text focus-visible:text-jade-text focus-visible:decoration-jade-text"
     >
       {name}
     </button>

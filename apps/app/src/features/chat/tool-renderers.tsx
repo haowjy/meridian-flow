@@ -68,7 +68,7 @@ function asString(value: JsonValue | undefined): string | undefined {
 /** A command and what it acted on, laid out as one line. */
 function CommandTitle({ verb, parameter }: { verb: ReactNode; parameter?: ReactNode }) {
   return (
-    <span className="flex w-full min-w-0 items-baseline gap-1.5">
+    <span className="flex w-full min-w-0 items-baseline gap-[var(--chat-space-inline)]">
       <span className="shrink-0">{verb}</span>
       {parameter ? (
         <span className="flex min-w-0 items-baseline font-normal text-muted-foreground">
@@ -102,7 +102,7 @@ function rowKey(row: ToolResultRow, index: number): string {
 function ResultRows({ results }: { results: SearchResultRows }) {
   const bound = boundLabel(results);
   return (
-    <div className="rounded-md border border-border bg-result-card p-2.5">
+    <div className="rounded-md border border-border bg-result-card px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]">
       <p className="border-border-subtle border-b pb-2 text-meta text-ink-subtle">
         {searchCardSummary(results)}
       </p>
@@ -110,7 +110,10 @@ function ResultRows({ results }: { results: SearchResultRows }) {
         {results.rows.map((row, index) => (
           <li
             key={`${index}:${row.uri}`}
-            className={cn("py-2.5", index > 0 && "border-border-subtle border-t")}
+            className={cn(
+              "py-[var(--chat-card-pad-y)]",
+              index > 0 && "border-border-subtle border-t",
+            )}
           >
             <SearchHit row={row} />
           </li>
@@ -127,7 +130,7 @@ function SearchHit({ row }: { row: SearchHitRow }) {
   const [best, ...rest] = row.passages;
   return (
     <>
-      <div className="flex min-w-0 items-baseline gap-[7px] text-compact font-medium text-prose-foreground">
+      <div className="flex min-w-0 items-baseline gap-[var(--chat-space-inline)] text-compact font-medium text-prose-foreground">
         <DocumentName path={row.uri} />
         <MatchCount count={row.matchCount} />
       </div>
@@ -145,7 +148,7 @@ function SearchHit({ row }: { row: SearchHitRow }) {
               event.stopPropagation();
               setOpen((wasOpen) => !wasOpen);
             }}
-            className="focus-ring mt-1 inline-flex items-center gap-0.5 rounded-sm text-meta text-muted-foreground underline decoration-border decoration-1 underline-offset-[3px] transition-colors hover:text-jade-text hover:decoration-jade-text focus-visible:text-jade-text focus-visible:decoration-jade-text"
+            className="focus-ring mt-[var(--chat-space-inline)] inline-flex items-center gap-[var(--chat-space-inline)] rounded-sm text-meta text-muted-foreground underline decoration-border decoration-1 underline-offset-[3px] transition-colors hover:text-jade-text hover:decoration-jade-text focus-visible:text-jade-text focus-visible:decoration-jade-text"
           >
             {moreMatchesLabel(rest.length)}
             <ChevronRight
@@ -157,7 +160,7 @@ function SearchHit({ row }: { row: SearchHitRow }) {
             // Indented against a rule so the extra passages read as belonging
             // to the document above them. It grows in place: the transcript is
             // the single scroll owner and no expand may own another.
-            <div className="mt-1 ml-[13px] space-y-0.5 border-border-subtle border-l pl-2.5">
+            <div className="mt-[var(--chat-space-inline)] ml-[var(--chat-tool-list-indent)] space-y-[var(--chat-space-row)] border-border-subtle border-l pl-2.5">
               {rest.map((passage, index) => (
                 <PassageDoor
                   key={`${index}:${passage.excerpt.match}${passage.excerpt.trail}`}
@@ -176,14 +179,15 @@ function SearchHit({ row }: { row: SearchHitRow }) {
 
 function MatchCount({ count }: { count: number }) {
   return (
-    <span className="ml-auto inline-grid min-w-5 shrink-0 place-items-center rounded-full border border-border bg-muted px-1.5 py-px text-meta font-semibold text-ink-muted">
+    <span className="ml-auto inline-grid min-w-5 shrink-0 place-items-center rounded-full border border-border bg-muted px-2 py-0.5 text-meta font-semibold text-ink-muted">
       <span aria-hidden>{count}</span>
       <span className="sr-only">{matchCountLabel(count)}</span>
     </span>
   );
 }
 
-const LISTING_ROW = "flex min-w-0 items-baseline gap-[7px] py-0.5 text-compact";
+const LISTING_ROW =
+  "flex min-w-0 items-baseline gap-[var(--chat-space-inline)] py-0.5 text-compact";
 
 function ListingRows({ results }: { results: ToolResultRows }) {
   const bound = boundLabel(results);
@@ -317,7 +321,7 @@ function submittedContent(tool: ToolView): ToolExpand | null {
   if (!content) return null;
   const path = readPath(tool);
   return () => (
-    <div className="rounded-md border border-border-subtle bg-muted px-3 py-2">
+    <div className="rounded-md border border-border-subtle bg-muted px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]">
       <QuotedPreview markup={content} path={path} />
     </div>
   );
@@ -519,8 +523,8 @@ function threadReportExpand(tool: ToolView): ToolExpand | null {
           ? t`No report text was returned.`
           : t`No partial report text was returned.`
       }
-      className="space-y-2"
-      emptyClassName="space-y-1 text-caption text-muted-foreground"
+      className="space-y-[var(--chat-space-block)]"
+      emptyClassName="space-y-[var(--chat-space-row)] text-caption text-muted-foreground"
     />
   );
 }

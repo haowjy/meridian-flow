@@ -50,7 +50,7 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
   if (!projectId || !thread) {
     return (
       <div className="flex h-full min-h-0 w-full flex-col bg-background text-foreground">
-        <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border px-3">
+        <header className="flex h-11 shrink-0 items-center gap-[var(--chat-space-inline)] border-b border-border px-[var(--chat-card-pad-x)]">
           <IconButton
             size="sm"
             aria-label={t`View projects`}
@@ -66,7 +66,10 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
           {snapshotIsError ? (
             <InlineErrorRow message={t`Chat couldn’t load`} onRetry={refetchSnapshot} />
           ) : (
-            <p role="status" className="px-4 py-3 text-sm text-muted-foreground">
+            <p
+              role="status"
+              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-sm text-muted-foreground"
+            >
               <Trans>Loading chat…</Trans>
             </p>
           )}
@@ -156,7 +159,7 @@ function IndependentChatProjectView({
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-background text-foreground">
-      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border px-3">
+      <header className="flex h-11 shrink-0 items-center gap-[var(--chat-space-inline)] border-b border-border px-[var(--chat-card-pad-x)]">
         <IconButton
           size="sm"
           aria-label={t`View projects`}

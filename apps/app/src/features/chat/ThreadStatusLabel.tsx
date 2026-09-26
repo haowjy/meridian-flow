@@ -17,7 +17,10 @@ export function ThreadStatusLabel({ status, className }: ThreadStatusLabelProps)
   if (status.kind === "asleep") {
     return (
       <span
-        className={cn("inline-flex items-center gap-1.5 text-caption text-ink-subtle", className)}
+        className={cn(
+          "inline-flex items-center gap-[var(--chat-space-inline)] text-caption text-ink-subtle",
+          className,
+        )}
       >
         <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-status-live-dot" />
         {t`Asleep`}
@@ -26,7 +29,12 @@ export function ThreadStatusLabel({ status, className }: ThreadStatusLabelProps)
   }
 
   return (
-    <span className={cn("inline-flex items-center gap-1.5 text-caption text-ink-muted", className)}>
+    <span
+      className={cn(
+        "inline-flex items-center gap-[var(--chat-space-inline)] text-caption text-ink-muted",
+        className,
+      )}
+    >
       <span aria-hidden className="streaming-dot" />
       {status.phase === "generating" ? t`Generating` : t`Waiting`}
     </span>

@@ -49,9 +49,9 @@ export function ArtifactGrid({ artifacts }: { artifacts: ArtifactRef[] }) {
   const thumbs = artifacts.filter((artifact) => artifact.type !== "liveView");
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-[var(--chat-space-block)]">
       {thumbs.length > 0 ? (
-        <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+        <ul className="grid grid-cols-2 gap-[var(--chat-space-block)] sm:grid-cols-3 lg:grid-cols-4">
           {thumbs.map((artifact, index) => (
             <li key={artifactKey(artifact, index)}>
               <ArtifactThumb artifact={artifact} />
@@ -99,7 +99,9 @@ function ImageArtifact({ image }: { image: Extract<ArtifactRef, { type: "image" 
             loading="lazy"
           />
           {image.label ? (
-            <span className="block truncate px-2 py-1 text-foreground text-xs">{image.label}</span>
+            <span className="block truncate px-[var(--chat-space-block)] py-[var(--chat-space-inline)] text-foreground text-xs">
+              {image.label}
+            </span>
           ) : null}
         </button>
       </DialogTrigger>
@@ -114,7 +116,11 @@ function ImageArtifact({ image }: { image: Extract<ArtifactRef, { type: "image" 
             <img src={image.url} alt={label} className="h-auto w-full" />
           </button>
         </DialogClose>
-        {image.label ? <p className="mt-2 text-muted-foreground text-sm">{image.label}</p> : null}
+        {image.label ? (
+          <p className="mt-[var(--chat-space-block)] text-muted-foreground text-sm">
+            {image.label}
+          </p>
+        ) : null}
       </DialogContent>
     </Dialog>
   );
@@ -127,7 +133,7 @@ function ObjectArtifact({ object }: { object: Extract<ArtifactRef, { type: "obje
       href={object.uri}
       target="_blank"
       rel="noreferrer"
-      className="focus-ring flex h-full min-h-20 flex-col justify-between rounded-md border border-border-subtle bg-muted p-2 transition-all hover:border-border-focus"
+      className="focus-ring flex h-full min-h-20 flex-col justify-between rounded-md border border-border-subtle bg-muted px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] transition-all hover:border-border-focus"
     >
       <span className="font-medium text-foreground text-xs uppercase tracking-wide">
         <Trans>Object</Trans>
@@ -148,7 +154,7 @@ function LiveViewSlot({ artifact }: { artifact: Extract<ArtifactRef, { type: "li
   // this slot is the contract landing zone.
   return (
     <div className="overflow-hidden rounded-md border border-border-subtle bg-muted">
-      <div className="flex items-center justify-between border-border-subtle border-b px-3 py-1.5">
+      <div className="flex items-center justify-between border-border-subtle border-b px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]">
         <span className="font-medium text-foreground text-xs uppercase tracking-wide">
           <Trans>Live view</Trans>
         </span>

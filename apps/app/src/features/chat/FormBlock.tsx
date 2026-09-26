@@ -175,12 +175,16 @@ function InterruptForm({
   return (
     <ArtifactCard icon={Pause} tone="pending" title={prompt}>
       {artifacts.length > 0 ? (
-        <div className="mb-3 border-border-subtle border-b pb-3">
+        <div className="mb-[var(--chat-space-block)] border-border-subtle border-b pb-[var(--chat-space-block)]">
           <ArtifactGrid artifacts={artifacts} />
         </div>
       ) : null}
 
-      <form className="flex flex-col gap-3" onSubmit={handleSubmit} noValidate>
+      <form
+        className="flex flex-col gap-[var(--chat-space-block)]"
+        onSubmit={handleSubmit}
+        noValidate
+      >
         {fields.length === 0 ? (
           <p className="text-muted-foreground text-xs">
             <Trans>No fields required; confirm to continue.</Trans>
@@ -198,11 +202,11 @@ function InterruptForm({
           ))
         )}
 
-        <div className="mt-1 flex flex-wrap items-center gap-2">
+        <div className="mt-[var(--chat-space-inline)] flex flex-wrap items-center gap-[var(--chat-space-block)]">
           <button
             type="submit"
             disabled={formDisabled}
-            className="focus-ring inline-flex items-center rounded-md bg-primary px-3 py-1.5 font-medium text-primary-foreground text-sm shadow-button transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            className="focus-ring inline-flex items-center rounded-md bg-primary px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] font-medium text-primary-foreground text-sm shadow-button transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Trans>Confirm</Trans>
           </button>
@@ -210,7 +214,7 @@ function InterruptForm({
             type="button"
             disabled={formDisabled}
             onClick={handleStop}
-            className="focus-ring inline-flex items-center rounded-md border border-border-subtle bg-muted px-3 py-1.5 font-medium text-foreground text-sm transition-all hover:bg-card disabled:cursor-not-allowed disabled:opacity-60"
+            className="focus-ring inline-flex items-center rounded-md border border-border-subtle bg-muted px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] font-medium text-foreground text-sm transition-all hover:bg-card disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Trans>Stop run</Trans>
           </button>
@@ -242,7 +246,7 @@ function FieldRow({
   const describedBy = [descriptionId, errorId].filter(Boolean).join(" ") || undefined;
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-[var(--chat-space-inline)]">
       <label htmlFor={inputId} className="font-medium text-foreground text-sm">
         {labelText}
         {requiredHint}
@@ -299,7 +303,7 @@ function FieldInput({
         aria-describedby={describedBy}
         onChange={(event) => onChange(event.target.value)}
         className={cn(
-          "focus-ring rounded-md border border-border-subtle bg-muted px-2 py-1.5 text-foreground text-sm",
+          "focus-ring rounded-md border border-border-subtle bg-muted px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-foreground text-sm",
           disabled && "cursor-not-allowed opacity-60",
         )}
       >
@@ -315,7 +319,7 @@ function FieldInput({
 
   if (field.kind === "boolean") {
     return (
-      <label className="inline-flex items-center gap-2 text-foreground text-sm">
+      <label className="inline-flex items-center gap-[var(--chat-space-block)] text-foreground text-sm">
         <input
           id={inputId}
           type="checkbox"
