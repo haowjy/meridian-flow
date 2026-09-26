@@ -7,6 +7,7 @@
 
 ## [Unreleased]
 
+- Fix assistant-turn Copy to write the final answer as rich HTML and Markdown.
 - Tighten chat turn rhythm and add settled assistant copy, usage, and debug actions.
 - Record each model call's time to first streamed output and request-to-end latency.
 

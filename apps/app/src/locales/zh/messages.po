@@ -1031,9 +1031,11 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/app/CopyTextButton.tsx
+#: src/features/chat/AssistantTurnActions.tsx
 msgid "Copied"
 msgstr ""
 
+#: src/features/chat/AssistantTurnActions.tsx
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Copy"
 msgstr ""
@@ -1045,8 +1047,8 @@ msgid "Copy {0} source"
 msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
-msgid "Copy answer"
-msgstr ""
+#~ msgid "Copy answer"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/objects/CodeBlockChips.tsx
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx

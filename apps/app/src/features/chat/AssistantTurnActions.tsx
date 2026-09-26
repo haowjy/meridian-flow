@@ -1,14 +1,14 @@
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import type { Turn } from "@meridian/contracts/protocol";
-import { Bug, Copy, Info } from "lucide-react";
+import { Bug, Check, Copy, Info } from "lucide-react";
+import { useMemo, useState } from "react";
 import { CopyTextButton } from "@/components/app/CopyTextButton";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { DEBUG_FEATURE_ALLOWED, useDebugEnabled } from "@/features/debug/use-debug-enabled";
-import { partitionTurn } from "./partition-turn";
-import { payloadText } from "./ReportContent";
+import { assistantTurnCopy } from "./assistant-turn-copy";
 import { compactCount, turnStats } from "./turn-stats";
 
 const actionClass = "size-6 text-muted-foreground";
@@ -16,19 +16,11 @@ const actionClass = "size-6 text-muted-foreground";
 export function AssistantTurnActions({ threadId, turn }: { threadId: string; turn: Turn }) {
   const { i18n } = useLingui();
   const { enabled } = useDebugEnabled();
+  const [copied, setCopied] = useState(false);
   const stats = turnStats(turn);
-  const answer = partitionTurn([...turn.blocks].sort((a, b) => a.sequence - b.sequence))
-    .flatMap((item) => {
-      if (item.kind === "text") return [item.block.textContent ?? ""];
-      if (item.kind === "report") {
-        return [item.report.summary, payloadText(item.report.payload)].filter((part) =>
-          part.trim(),
-        );
-      }
-      return [];
-    })
-    .filter((text) => text.trim().length > 0)
-    .join("\n\n");
+  const copy = useMemo(() => assistantTurnCopy(turn), [turn]);
+  const copyLabel = i18n._(t`Copy`);
+  const copiedLabel = i18n._(t`Copied`);
 
   return (
     <TooltipProvider>
@@ -39,18 +31,22 @@ export function AssistantTurnActions({ threadId, turn }: { threadId: string; tur
         <Tooltip>
           <TooltipTrigger asChild>
             <CopyTextButton
-              text={answer}
+              text={copy.markdown}
+              html={copy.html}
               variant="quiet"
               size="icon-xs"
               className={actionClass}
-              aria-label={i18n._(t`Copy answer`)}
-              title={i18n._(t`Copy answer`)}
-              disabled={!answer}
+              aria-label={copyLabel}
+              title={copyLabel}
+              copiedLabel={copiedLabel}
+              copiedContent={<Check aria-hidden />}
+              onCopiedChange={setCopied}
+              disabled={!copy.markdown}
             >
               <Copy aria-hidden />
             </CopyTextButton>
           </TooltipTrigger>
-          <TooltipContent>{i18n._(t`Copy answer`)}</TooltipContent>
+          <TooltipContent>{copied ? copiedLabel : copyLabel}</TooltipContent>
         </Tooltip>
         <Popover>
           <Tooltip>
