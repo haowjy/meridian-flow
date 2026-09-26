@@ -1363,6 +1363,59 @@ describe("ChildRunCoordinator direct-parent activity journal", () => {
     expect(journal.some((entry) => entry.type === "agent.spawn")).toBe(true);
   });
 
+  it("routes a root foreground message to a grandchild through the grandchild's parent", async () => {
+    const { coordinator, parent, repos, journal } = await fixture();
+    const outer = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "outer-turn" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
+    if (outer.status !== "completed") throw new Error("outer spawn failed");
+    const grandchildParent = await repos.threads.findById(outer.report.threadId as ThreadId);
+    if (!grandchildParent) throw new Error("outer child missing");
+    const grandchild = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: grandchildParent,
+        parentTurnId: "nested-turn" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
+    if (grandchild.status !== "completed") throw new Error("grandchild spawn failed");
+    journal.length = 0;
+
+    const continued = await coordinator.runChild(
+      {
+        kind: "message",
+        parentThread: parent,
+        parentTurnId: "root-message-turn" as TurnId,
+        ref: grandchild.report.handle,
+        prompt: "continue the nested task",
+        toolCallId: "root-to-grandchild",
+        budget,
+      },
+      { mode: "foreground" },
+    );
+
+    expect(continued.status).toBe("completed");
+    const activityEvents = journal.filter((entry) => entry.type === "subagent.activity");
+    expect(activityEvents.length).toBeGreaterThan(0);
+    expect(activityEvents.every((entry) => entry.threadId === grandchildParent.id)).toBe(true);
+    expect(activityEvents.every((entry) => entry.threadId !== parent.id)).toBe(true);
+    expect(
+      activityEvents.every((entry) => entry.childThreadId === grandchild.report.threadId),
+    ).toBe(true);
+  });
+
   it("emits the terminal activity frame asleep after the lease is released", async () => {
     const { coordinator, parent, journal } = await fixture();
     const result = await coordinator.runChild(

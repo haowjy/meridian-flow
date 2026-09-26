@@ -18,13 +18,13 @@ export type RunningSubagentsStripProps = {
   /** The viewed thread's own derived status. */
   selfStatus: ThreadStatus;
   /** Active direct children of the viewed thread. */
-  children: ThreadActivityNode[];
+  subagents: ThreadActivityNode[];
 };
 
-export function RunningSubagentsStrip({ selfStatus, children }: RunningSubagentsStripProps) {
+export function RunningSubagentsStrip({ selfStatus, subagents }: RunningSubagentsStripProps) {
   const [expanded, setExpanded] = useState(true);
 
-  if (children.length === 0) return null;
+  if (subagents.length === 0) return null;
 
   return (
     <div className="border-b border-border-subtle bg-card" data-running-subagents>
@@ -43,10 +43,10 @@ export function RunningSubagentsStrip({ selfStatus, children }: RunningSubagents
             aria-hidden
           />
           <span className="truncate">
-            {children.length === 1 ? (
+            {subagents.length === 1 ? (
               <Trans>1 subagent running</Trans>
             ) : (
-              <Trans>{children.length} subagents running</Trans>
+              <Trans>{subagents.length} subagents running</Trans>
             )}
           </span>
         </button>
@@ -55,7 +55,7 @@ export function RunningSubagentsStrip({ selfStatus, children }: RunningSubagents
 
       {expanded ? (
         <ul className="mx-auto w-full max-w-chat-column pb-1">
-          {children.map((node) => (
+          {subagents.map((node) => (
             <SubagentRow key={node.threadId} node={node} />
           ))}
         </ul>

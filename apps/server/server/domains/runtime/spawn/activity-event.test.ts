@@ -7,8 +7,16 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
-import type { EventJournalWriter } from "../../threads/index.js";
-import { appendSubagentActivityBestEffort, emitRunActivityBestEffort } from "./activity-event.js";
+import {
+  createInMemoryRepositories,
+  type EventJournalWriter,
+  readThreadActivity,
+} from "../../threads/index.js";
+import {
+  appendSubagentActivityBestEffort,
+  createSubagentActivityRefresher,
+  emitRunActivityBestEffort,
+} from "./activity-event.js";
 
 const ROOT = "root-thread" as ThreadId;
 const PARENT = "parent-thread" as ThreadId;
@@ -71,6 +79,55 @@ describe("emitRunActivityBestEffort", () => {
     expect(eventSink.events.some((event) => event.name === "subagent.activity.emit_failed")).toBe(
       true,
     );
+  });
+
+  it("refreshes a drain-woken nested subagent on its direct parent's journal", async () => {
+    const repos = createInMemoryRepositories();
+    const root = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+    const parent = await repos.threads.createSubagent({
+      userId: "user-1",
+      projectId: "project-1",
+      parentThreadId: root.id,
+      rootThreadId: root.id,
+      spawnDepth: 1,
+    });
+    const nested = await repos.threads.createSubagent({
+      userId: "user-1",
+      projectId: "project-1",
+      parentThreadId: parent.id,
+      rootThreadId: root.id,
+      spawnDepth: 2,
+    });
+    const { appended, eventWriter } = recordingWriter();
+    const refreshSubagentActivity = createSubagentActivityRefresher({
+      findThread: (threadId) => repos.threads.findById(threadId),
+      eventWriter,
+      readActivity: (threadId) =>
+        readThreadActivity(
+          {
+            threads: repos.threads,
+            statusReader: {
+              async readMany() {
+                return new Map();
+              },
+            },
+          },
+          threadId,
+        ),
+      eventSink: createInMemoryEventSink(),
+    });
+
+    await refreshSubagentActivity(nested.id as ThreadId);
+
+    expect(appended).toHaveLength(1);
+    expect(appended[0]?.threadId).toBe(parent.id);
+    expect(appended[0]?.event).toMatchObject({
+      type: "subagent.activity",
+      childThreadId: nested.id,
+      activity: {
+        children: [{ threadId: nested.id, parentThreadId: parent.id }],
+      },
+    });
   });
 });
 

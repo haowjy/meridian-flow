@@ -90,3 +90,10 @@ export async function emitRunActivityBestEffort(input: {
     });
   }
 }
+
+/** Bind the run-lifecycle refresh to its activity ports once at composition. */
+export function createSubagentActivityRefresher(
+  deps: Omit<Parameters<typeof emitRunActivityBestEffort>[0], "threadId">,
+) {
+  return (threadId: ThreadId) => emitRunActivityBestEffort({ ...deps, threadId });
+}

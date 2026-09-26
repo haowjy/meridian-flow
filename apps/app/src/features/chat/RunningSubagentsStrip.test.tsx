@@ -65,7 +65,7 @@ describe("RunningSubagentsStrip", () => {
 
   it("renders nothing when there are no active children", async () => {
     await act(async () =>
-      root.render(<RunningSubagentsStrip selfStatus={{ kind: "asleep" }} children={[]} />),
+      root.render(<RunningSubagentsStrip selfStatus={{ kind: "asleep" }} subagents={[]} />),
     );
     expect(host.textContent?.trim()).toBe("");
   });
@@ -77,7 +77,7 @@ describe("RunningSubagentsStrip", () => {
         <ChatThreadNavigationProvider onOpenThread={openThread}>
           <RunningSubagentsStrip
             selfStatus={{ kind: "asleep" }}
-            children={[
+            subagents={[
               node({ threadId: "child-a", agentName: "Critic", title: "Review the chapter" }),
               node({
                 threadId: "child-b",
@@ -106,7 +106,7 @@ describe("RunningSubagentsStrip", () => {
       root.render(
         <RunningSubagentsStrip
           selfStatus={{ kind: "asleep" }}
-          children={[node({ threadId: "child-a", agentName: "Critic" })]}
+          subagents={[node({ threadId: "child-a", agentName: "Critic" })]}
         />,
       ),
     );

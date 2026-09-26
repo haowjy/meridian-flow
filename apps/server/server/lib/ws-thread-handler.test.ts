@@ -2,14 +2,21 @@
 
 import {
   EventType,
-  parseWsServerMessage,
   type ThreadLiveState,
   type WsServerMessage,
 } from "@meridian/contracts/protocol";
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createNoopEventSink } from "../domains/observability/index.js";
+import { appendSubagentActivity } from "../domains/runtime/spawn/activity-event.js";
+import {
+  createInMemoryEventJournalWriter,
+  createInMemoryRepositories,
+  createThreadEventHub,
+  readThreadActivity,
+} from "../domains/threads/index.js";
 import type { SequencedEventInternal } from "../domains/threads/thread-event-hub.js";
+import { buildThreadSnapshot } from "../domains/threads/thread-snapshot.js";
 import type { AppServices } from "./app.js";
 import { createThreadWebSocketSession, type WsPeer } from "./ws-thread-handler.js";
 
@@ -86,51 +93,54 @@ describe("thread WS handler subscribe handoff", () => {
     expect(frames.at(-1)).toMatchObject({ type: "event", seq: UNDELIVERED_HEAD.toString() });
   });
 
-  it("uses the same direct-child activity shape in subscribed state and live frames", async () => {
-    const activity = {
-      children: [
-        {
-          threadId: "child-1",
-          parentThreadId: THREAD_ID,
-          ref: "p1",
-          title: "Critic",
-          agentName: "Critic",
-          spawnStatus: "running" as const,
-          status: { kind: "asleep" as const },
-          originTurnId: "turn-1",
-        },
-      ],
-    };
-    const { session, frames, deliverEntry } = createDelayedDeliveryHarness([], {
-      ...LIVE_STATE,
-      activity,
+  it("journals producer activity from the same read as the thread snapshot", async () => {
+    const repos = createInMemoryRepositories();
+    const parent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+    const child = await repos.threads.createSubagent({
+      userId: "user-1",
+      projectId: "project-1",
+      parentThreadId: parent.id,
+      rootThreadId: parent.id,
+      spawnDepth: 1,
+      title: "Critic",
     });
-    session.open();
-    await session.onMessage(
-      JSON.stringify({ type: "subscribe", threadId: THREAD_ID, lastSeq: "0" }),
-    );
-
-    const subscribed = parseWsServerMessage(JSON.stringify(frames[1]));
-    expect(subscribed?.type).toBe("subscribed");
-    if (subscribed?.type !== "subscribed") throw new Error("Expected subscribed frame");
-    expect(subscribed.state.activity).toEqual(activity);
-
-    deliverEntry({
-      seq: 1_000n,
-      event: {
-        type: EventType.CUSTOM,
-        name: "meridian.subagent.activity",
-        value: activity,
+    const journal = createInMemoryEventJournalWriter();
+    const hub = createThreadEventHub({
+      journalWriter: journal,
+      journalReader: journal,
+      eventSink: createNoopEventSink(),
+    });
+    const statusReader = {
+      async read() {
+        return { kind: "asleep" as const };
       },
-    } as unknown as SequencedEventInternal);
-    const live = parseWsServerMessage(JSON.stringify(frames.at(-1)));
-    expect(live?.type).toBe("event");
-    if (live?.type !== "event") throw new Error("Expected live event frame");
-    expect(live.event).toMatchObject({
-      type: EventType.CUSTOM,
-      name: "meridian.subagent.activity",
-      value: activity,
+      async readRunningTurnId() {
+        return null;
+      },
+      async readMany() {
+        return new Map();
+      },
+      async readPending() {
+        return { items: [] };
+      },
+    };
+    const readActivity = (threadId: ThreadId) =>
+      readThreadActivity({ threads: repos.threads, statusReader }, threadId);
+
+    await appendSubagentActivity({
+      eventWriter: hub,
+      readActivity,
+      parentThreadId: parent.id as ThreadId,
+      childThreadId: child.id,
     });
+
+    const event = journal.getEvents(parent.id).at(-1)?.event;
+    expect(event?.type).toBe("subagent.activity");
+    if (event?.type !== "subagent.activity") throw new Error("Expected activity journal event");
+    const liveRead = await readActivity(parent.id as ThreadId);
+    const snapshot = await buildThreadSnapshot(repos, hub, statusReader, parent.id as ThreadId);
+    expect(event.activity).toEqual(liveRead);
+    expect(event.activity).toEqual(snapshot.liveState.activity);
   });
 });
 
