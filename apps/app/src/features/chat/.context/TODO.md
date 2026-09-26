@@ -50,3 +50,15 @@ step, and read again per row by `useProjectChatUserState`. The cached copy exist
 only for the Favorites filter. Keep feed caches as server truth, hold Favorite
 records in one per-project map, and apply it at read time for rows and filter
 alike.
+
+## Fold labels name documents and outcomes, not step counts
+
+The process fold's digest (`thinking-digest.ts`) reads "Edited 1 document, 3
+steps" or just "2 steps": counts that hide which documents and what happened.
+Owner-approved direction (thread-ux subagent design,
+[mockup](https://claude.ai/artifact/WVkaCxq7uvpvNFumvKDg6y)): name the
+documents and outcomes instead, writes first, then reads, then other tools, at
+most three clauses ("Read and edited loop-test.md, 1 edit failed"). A failure
+shows in the label without opening the fold; a live fold names the current
+action. Deferred out of the subagent UI change because it rewrites the digest
+contract in `turn-composition.md`.
