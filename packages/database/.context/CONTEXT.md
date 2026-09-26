@@ -78,7 +78,7 @@ exactly one writer (the read-model projector), any future writer that moves
 `threads.active_leaf_turn_id` (branch switching, for example) must not be able
 to leave this projection stale, so Postgres triggers own it instead. See
 [`domains/threads/.context/CONTEXT.md`](../../../apps/server/server/domains/threads/.context/CONTEXT.md#chat-activity-projection-single-owner)
-and migration `0106_thread_chat_activity_trigger.sql`.
+and migration `0000_baseline.sql` (the `recompute_thread_chat_activity` function and its triggers).
 
 ### Yjs document heads and checkpoints
 
@@ -216,7 +216,7 @@ vs string `mode` split is a known inconsistency, not a pattern to extend.
 The `threads_frozen_prompt` trigger rejects changes to any of the three bake
 fields (`composed_system_prompt`, `baked_skill_slugs`, `baked_tools`) once
 `baked_skill_slugs` is non-null (including `[]`). `baked_tools` (migration
-`0002_freeze_thread_tools.sql`) is untyped `jsonb`, like `working_state`: the
+`0002_freeze_thread_tools.sql`) is untyped `jsonb`: the
 runtime domain (not this package) owns its shape (`Tool[]`). First bake
 remains a CAS across all three fields together; identical-value writes and
 unrelated updates remain legal. No compaction rebake exists. A future

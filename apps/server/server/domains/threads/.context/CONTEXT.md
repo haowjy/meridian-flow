@@ -15,14 +15,14 @@ The database rejects later changes to `composed_system_prompt`,
 `baked_skill_slugs`, or `baked_tools` (migration `0002_freeze_thread_tools.sql`
 extends the `threads_frozen_prompt` trigger from migration
 `0001_freeze_thread_prompt.sql` to also watch `baked_tools`). `baked_tools` is
-untyped `jsonb`, like `working_state`: the runtime domain owns its exact shape
-(the gateway's `Tool[]`), not this domain. Forks copy that bake (prompt +
+untyped `jsonb`: the runtime domain owns its exact shape (the gateway's
+`Tool[]`), not this domain. Forks copy that bake (prompt +
 tools together) under the parent row lock; an unfrozen parent yields an
 unfrozen fork. Inherited bakes receive a current-Work refresh through
 conversation content so a historical fork point or summary-only handoff
 cannot leave stale Work authority. A subagent-only or generic binding cannot
 become a primary thread without selecting a primary Agent. Work changes,
-notices, child results, skills and working state are in-place conversation
+notices, child results, and skills are in-place conversation
 content, never system-prompt or tool-list edits. Fork/handoff seed turns
 render as user-role `<system_update>` content. Only an Agent-changing
 derivation gets a new prompt and tool bake.
@@ -89,7 +89,8 @@ for the tool-freeze mechanics.
 - **Notification and steering tables** — `thread_inbox_messages` is the durable
   per-thread message queue (global `bigserial` `seq` for per-thread FIFO, unique
   `idempotency_key`, nullable `delivered_at`), drained by the runtime's `Inbox`
-  port. The writer's queued tray uses the runtime's [classified pending
+  port. The writer's own turns render inline with a live queued/waiting status
+  (not a separate tray) from the runtime's [classified pending
   projection](../../runtime/.context/CONTEXT.md), not this storage queue alone.
   `thread_run_leases` is the queryable run lease paired with the runtime's
   session advisory lock (`phase`, `cancel_requested`, `expires_at`, and the
@@ -371,7 +372,7 @@ contract shapes.
 stored projection of the visible-conversational-head walk above, kept so the
 chat feeds can page over an indexed column instead of walking turn lineage per
 row. **Postgres triggers are the only writer of these two columns**
-(migration `0106_thread_chat_activity_trigger.sql`): one `recompute_thread_chat_activity(thread_id)`
+(migration `0000_baseline.sql`): one `recompute_thread_chat_activity(thread_id)`
 function encodes the canonical predicate, and three trigger families call it —
 `threads UPDATE OF active_leaf_turn_id` (turn creation, and any future
 branch-switch writer that moves the leaf directly), `turns INSERT OR UPDATE OF

@@ -124,8 +124,9 @@ Historical card replacement is sent over the existing
 `meridian.block.upserted` frame. Replace a loaded historical turn in place; if
 it is absent, invalidate/refetch its durable snapshot rather than creating a
 fake streaming turn. Equal replay is a reference-preserving no-op. Pending
-inbox remains complete in the transport/model path and is filtered to writer
-provenance only in the composer's tray.
+inbox remains complete in the transport/model path; `writerTurnQueueStatus`
+(`pending-inbox.ts`) filters it to writer provenance to derive each writer
+turn's own inline queued/waiting status -- there is no separate tray.
 
 ### Interrupt response settlement
 
