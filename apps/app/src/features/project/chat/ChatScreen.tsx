@@ -106,7 +106,12 @@ function ChatScreenLoaded({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {isSubagent && thread ? (
-        <SubagentPathRow subagent={thread} ancestors={ancestors} onOpenParent={onSelectThread} />
+        <SubagentPathRow
+          subagent={thread}
+          ancestors={ancestors}
+          runStatus={snapshotLiveState?.status.kind === "awake" ? "running" : "done"}
+          onOpenParent={onSelectThread}
+        />
       ) : null}
 
       {isError ? (
