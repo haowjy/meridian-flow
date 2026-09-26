@@ -124,13 +124,13 @@ import {
   createRunStarter,
   createSkillToolRegistrations,
   createSpawnToolRegistrations,
+  createSubagentActivityRefresher,
   createToolExecutor,
   createToolRegistry,
   createUserTurnAdmission,
   createWorkContextReader,
   createWriterTurnProducer,
   type DeliveryProducer,
-  emitRunActivityBestEffort,
   type Gateway,
   InvalidAdmissionError,
   type RunClaim,
@@ -636,18 +636,15 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       threadId,
     );
   // A drain-woken subagent run (a child report or thread_message) has no driver
-  // to emit its activity frames; refresh the root's activity when its lease goes
+  // to emit its activity frames; refresh its parent's activity when its lease goes
   // live and after it releases, so the strip never reads `asleep` during the run
   // nor stays `awake` after it.
-  const refreshSubagentActivity = (threadId: ThreadId) => {
-    void emitRunActivityBestEffort({
-      findThread: (id) => ports.threadRepos.threads.findById(id),
-      threadId,
-      eventWriter: threadEventHub,
-      readActivity,
-      eventSink: ports.eventSink,
-    });
-  };
+  const refreshSubagentActivity = createSubagentActivityRefresher({
+    findThread: (id) => ports.threadRepos.threads.findById(id),
+    eventWriter: threadEventHub,
+    readActivity,
+    eventSink: ports.eventSink,
+  });
   const threadLock = createDrizzleThreadLock(ports.db);
   const inbox = delivery;
   const readPending = (threadId: ThreadId) => readPendingInbox(delivery, threadId);

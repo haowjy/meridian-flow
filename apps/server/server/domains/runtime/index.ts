@@ -98,6 +98,7 @@ export { unavailableImageAssetPort } from "./ports/image-asset.js";
 export {
   appendSubagentActivity,
   appendSubagentActivityBestEffort,
+  createSubagentActivityRefresher,
   emitRunActivityBestEffort,
 } from "./spawn/activity-event.js";
 export {

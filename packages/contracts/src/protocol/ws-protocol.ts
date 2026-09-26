@@ -119,8 +119,6 @@ const threadActivityNodeSchema: z.ZodType<import("../threads/index.js").ThreadAc
   z.object({
     threadId: z.string().min(1),
     parentThreadId: z.string().min(1).nullable(),
-    rootThreadId: z.string().min(1),
-    depth: z.number().int(),
     ref: z.string().min(1).nullable(),
     title: z.string().nullable(),
     agentName: z.string().nullable(),
@@ -130,7 +128,7 @@ const threadActivityNodeSchema: z.ZodType<import("../threads/index.js").ThreadAc
   });
 
 const threadActivitySchema: z.ZodType<import("../threads/index.js").ThreadActivity> = z.object({
-  descendants: z.array(threadActivityNodeSchema),
+  children: z.array(threadActivityNodeSchema),
 });
 
 const messageProvenanceSchema: z.ZodType<import("../threads/index.js").MessageProvenance> = z.union(

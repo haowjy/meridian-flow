@@ -1,6 +1,10 @@
 /** The advertised journal head never replaces the client's delivered cursor. */
 
-import { EventType, type WsServerMessage } from "@meridian/contracts/protocol";
+import {
+  EventType,
+  type ThreadLiveState,
+  type WsServerMessage,
+} from "@meridian/contracts/protocol";
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createNoopEventSink } from "../domains/observability/index.js";
@@ -12,16 +16,19 @@ const THREAD_ID = "00000000-0000-4000-8000-000000000901" as ThreadId;
 const USER_ID = "user-1" as UserId;
 const UNDELIVERED_HEAD = 23_081_000n;
 
-const LIVE_STATE = {
+const LIVE_STATE: ThreadLiveState = {
   threadId: THREAD_ID,
   status: { kind: "asleep" as const },
   runningTurnId: null,
-  activity: { descendants: [] },
+  activity: { children: [] },
   pending: { items: [] },
   resumeAfterSeq: "0",
 };
 
-function createDelayedDeliveryHarness(catchup: SequencedEventInternal[] = []) {
+function createDelayedDeliveryHarness(
+  catchup: SequencedEventInternal[] = [],
+  liveState = LIVE_STATE,
+) {
   let deliverLive!: (entry: SequencedEventInternal) => void;
   const hub = {
     async catchupAndSubscribe(_threadId: ThreadId, _lastSeq: bigint, listener: typeof deliverLive) {
@@ -39,7 +46,7 @@ function createDelayedDeliveryHarness(catchup: SequencedEventInternal[] = []) {
     threadRuntime: {
       async requireOwnedThread() {},
       async liveState() {
-        return LIVE_STATE;
+        return liveState;
       },
     },
   } as unknown as AppServices;

@@ -116,11 +116,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     });
   }
 
-  async function finish(
-    prepared: PreparedChild,
-    input: ChildDriveInput,
-    handle: PreparedRun,
-  ): Promise<SpawnResult> {
+  async function finish(prepared: PreparedChild, handle: PreparedRun): Promise<SpawnResult> {
     const childThreadId = prepared.child.id as ThreadId;
     const outcome = await handle.execute();
 
@@ -138,7 +134,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     await appendSubagentActivityBestEffort({
       eventWriter: deps.eventWriter,
       readActivity: deps.readActivity,
-      rootThreadId: (input.parentThread.rootThreadId ?? input.parentThread.id) as ThreadId,
+      parentThreadId: prepared.child.parentThreadId as ThreadId,
       childThreadId,
       eventSink: deps.eventSink,
     });
@@ -161,7 +157,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     onAdmitted?: (execution: TurnId) => Promise<void>,
   ): Promise<SpawnResult> {
     const handle = await start(prepared, input, onAdmitted);
-    return finish(prepared, input, handle);
+    return finish(prepared, handle);
   }
 
   async function driveBackground(
@@ -170,7 +166,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     onAdmitted?: (execution: TurnId) => Promise<void>,
   ): Promise<TurnId> {
     const handle = await start(prepared, input, onAdmitted);
-    void finish(prepared, input, handle).catch((error) => {
+    void finish(prepared, handle).catch((error) => {
       observeCleanupFailure(prepared, "child.background_driver_failed", error);
     });
     return handle.assistantTurnId;

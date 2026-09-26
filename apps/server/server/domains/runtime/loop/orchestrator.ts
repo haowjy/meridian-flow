@@ -80,6 +80,10 @@ import type {
   ThreadRepository,
   TurnRepository,
 } from "../../threads/index.js";
+import {
+  loadThreadConversationContext,
+  ThreadConversationContextError,
+} from "../../threads/index.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ImageAssetPort } from "../ports/image-asset.js";
@@ -96,7 +100,6 @@ import {
 import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import type { TerminalCause } from "./execution-finalizer.js";
-import { loadThreadConversationContext } from "./fork-thread-context.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
@@ -228,6 +231,8 @@ export function createOrchestrator(deps: OrchestratorDeps) {
     ...deps,
     setup: (input) => prepareLoop(deps, input),
     async finalizeFailure(input) {
+      const contextError =
+        input.error instanceof ThreadConversationContextError ? input.error : null;
       const outcome = await deps.delivery.close({
         lease: input.lease,
         assistantTurnId: input.assistantTurnId,
@@ -235,8 +240,16 @@ export function createOrchestrator(deps: OrchestratorDeps) {
           ? { kind: "cancelled", reason: "cancelled" }
           : {
               kind: "failed",
-              reason: "execution_error",
-              error: input.error instanceof Error ? input.error.message : String(input.error),
+              reason: contextError?.code ?? "execution_error",
+              ...(contextError ? { acknowledgeInbox: true } : {}),
+              error: contextError
+                ? meridianErrorFromSystem(
+                    "thread_context_error",
+                    "This chat's fork history couldn't be loaded.",
+                  )
+                : input.error instanceof Error
+                  ? input.error.message
+                  : String(input.error),
             },
       });
       if (outcome.kind !== "completed") throw new Error("Failure finalization cannot split");
@@ -339,6 +352,7 @@ async function admitRunExecution(
 /** Commit initial history before handing the session its lazy model loop. */
 async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise<PreparedLoop> {
   const { repos } = deps;
+  let preparationError: ThreadConversationContextError | null = null;
   const thread = await repos.threads.findById(input.threadId);
   if (!thread) {
     throw new Error(`Thread not found: ${input.threadId}`);
@@ -363,8 +377,9 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
       input.threadId,
       thread.activeLeafTurnId,
       async () => {
-        const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } =
-          await loadRunStartContext(deps, thread);
+        const ctx = await loadRunStartContext(deps, thread);
+        preparationError = ctx.contextError;
+        const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;
         // Read inside the setup transaction so the turn's durable write vocabulary
         // matches the mode in effect at the moment the turn was minted.
         const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
@@ -427,8 +442,9 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
   return {
     userTurnId: userTurn.id,
     assistantTurnId: assistantTurn.id,
-    execute: () =>
-      executeLoop(
+    execute: async () => {
+      if (preparationError) throw preparationError;
+      return executeLoop(
         deps,
         input,
         thread,
@@ -439,7 +455,8 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
         input.treeBudget ??
           createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
         input.activatedSkillSlugs,
-      ),
+      );
+    },
   };
 }
 
@@ -458,20 +475,22 @@ async function runDrainTurn(
   thread: Thread,
 ): Promise<PreparedLoop> {
   let initialBatchIds: string[] = [];
+  let preparationError: ThreadConversationContextError | null = null;
   const setup = await deps.delivery.adoptBatch(input.lease, async (batch, workContext) => {
+    initialBatchIds = batch.map(({ id }) => id);
     const value = await persistAndAppendTurnStartEvents(
       deps,
       input.threadId,
       thread.activeLeafTurnId,
       async () => {
-        const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } =
-          await loadRunStartContext(deps, thread);
+        const ctx = await loadRunStartContext(deps, thread);
+        preparationError = ctx.contextError;
+        const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;
         const knownTurnIds = new Set<string>([
           ...inheritedTurns.map((turn) => turn.id),
           ...priorTurns.map((turn) => turn.id),
         ]);
 
-        initialBatchIds = batch.map(({ id }) => id);
         // The wake sweep only starts a thread with a derived wake need; a race that
         // drains the last message first must leave no phantom assistant turn behind.
         if (!batch.some((message) => message.intent === "message")) {
@@ -544,8 +563,9 @@ async function runDrainTurn(
   return {
     userTurnId: referenceUserTurnId,
     assistantTurnId: assistantTurn.id,
-    execute: () =>
-      executeLoop(
+    execute: async () => {
+      if (preparationError) throw preparationError;
+      return executeLoop(
         deps,
         input,
         thread,
@@ -556,7 +576,8 @@ async function runDrainTurn(
         input.treeBudget ??
           createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
         activatedSkillSlugs.length > 0 ? activatedSkillSlugs : undefined,
-      ),
+      );
+    },
   };
 }
 
@@ -574,14 +595,38 @@ async function loadRunStartContext(
   inheritedTurns: Turn[];
   inheritedBlocks: Block[];
   prevTurnId: TurnId | null;
+  contextError: ThreadConversationContextError | null;
 }> {
   const { repos } = deps;
   await reconcileOrphanedPendingWrites(deps, thread.id);
   const priorTurns = await repos.turns.listByThread(thread.id);
-  const conversation = await loadThreadConversationContext(
-    { threads: repos.threads, turns: repos.turns, blocks: repos.blocks },
-    thread,
-  );
+  let conversation: Awaited<ReturnType<typeof loadThreadConversationContext>>;
+  try {
+    conversation = await loadThreadConversationContext(
+      { threads: repos.threads, turns: repos.turns, blocks: repos.blocks },
+      thread,
+    );
+  } catch (error) {
+    if (!(error instanceof ThreadConversationContextError)) throw error;
+    emitEvent(deps.eventSink, {
+      level: "warn",
+      source: "runtime.orchestrator",
+      name: "thread.conversation_context.load_failed",
+      correlation: { threadId: error.threadId },
+      payload: {
+        threadId: error.threadId,
+        cutoffTurnId: error.originTurnId,
+        errorCode: error.code,
+      },
+    });
+    return {
+      priorTurns,
+      inheritedTurns: [],
+      inheritedBlocks: [],
+      prevTurnId: thread.activeLeafTurnId ?? priorTurns.at(-1)?.id ?? null,
+      contextError: error,
+    };
+  }
   const inheritedTurnCount = Math.max(0, conversation.turns.length - priorTurns.length);
   const inheritedTurns = conversation.turns.slice(0, inheritedTurnCount);
   const inheritedTurnIds = new Set(inheritedTurns.map((turn) => turn.id));
@@ -591,7 +636,7 @@ async function loadRunStartContext(
   // which can disagree with `activeLeafTurnId` after a restart or an
   // equal-timestamp batch, which would fork the turn chain.
   const prevTurnId = thread.activeLeafTurnId ?? sortedLeaf?.id ?? null;
-  return { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId };
+  return { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId, contextError: null };
 }
 
 async function reconcileOrphanedPendingWrites(

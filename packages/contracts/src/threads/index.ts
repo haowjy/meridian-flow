@@ -88,14 +88,11 @@ export type ThreadOriginType = "spawn" | "handoff" | "fork";
 export type SpawnStatus = "running" | "succeeded" | "failed" | "cancelled";
 export type PriceSource = "computed" | "provider_reported" | "configured_rate" | "unknown";
 
-/** One live-or-recent descendant thread in a thread's spawn subtree. Derived; never persisted as a block. */
+/** One live-or-recent direct child thread. Derived; never persisted as a block. */
 export type ThreadActivityNode = {
   threadId: string;
-  /** Immediate spawner in this subtree. */
+  /** Immediate spawner. */
   parentThreadId: string | null;
-  rootThreadId: string;
-  /** threads.spawn_depth. */
-  depth: number;
   /** Server-assigned `pN` handle. */
   ref: string | null;
   title: string | null;
@@ -109,9 +106,9 @@ export type ThreadActivityNode = {
   originTurnId: string | null;
 };
 
-/** Recursive activity read: the full subtree of one viewed thread, ordered (depth, createdAt). */
+/** Direct-child activity read for one viewed thread, ordered by createdAt. */
 export type ThreadActivity = {
-  descendants: ThreadActivityNode[];
+  children: ThreadActivityNode[];
 };
 
 /**
@@ -188,7 +185,7 @@ export type JournalEventType =
   | "agent.fork"
   | "agent.spawn" // PRODUCED NOW — ChildRunCoordinator
   | "agent.run_completed" // PRODUCED NOW — ReportPublisher B, body-free metadata
-  | "subagent.activity" // PRODUCED NOW — ChildRunCoordinator/Driver (root journal, full recomputed activity)
+  | "subagent.activity" // PRODUCED NOW — ChildRunCoordinator/Driver (direct-parent journal, direct children)
   | "inbox.changed" // PRODUCED NOW — enqueue, bind/adoption/release, and ack (full classified inbox)
   | "block.pruned" // PRODUCED NOW — generic block lifecycle; child run cards are replaced in place
   | "context.assembled"

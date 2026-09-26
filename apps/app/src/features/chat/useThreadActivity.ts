@@ -1,6 +1,6 @@
 /**
  * useThreadActivity — the live `ThreadActivity` + `ThreadStatus` for one viewed
- * thread's own subtree.
+ * thread's own direct activity.
  *
  * Sources, in precedence order: the HTTP snapshot seeds the first render; the
  * `subscribed` live state reconciles on every (re)subscribe after catch-up so a
@@ -19,7 +19,7 @@ import type { ThreadActivity, ThreadStatus } from "@meridian/contracts/threads";
 import { useEffect, useRef, useState } from "react";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { useIsThreadPendingCreation } from "@/client/stores";
-import { EMPTY_THREAD_ACTIVITY, isThreadActivity, subtreeOf } from "./thread-activity";
+import { EMPTY_THREAD_ACTIVITY, isThreadActivity } from "./thread-activity";
 
 const ASLEEP: ThreadStatus = { kind: "asleep" };
 
@@ -30,10 +30,9 @@ export type ThreadActivityView = {
 
 export function useThreadActivity(input: {
   threadId: string;
-  rootThreadId: string;
   seed: ThreadLiveState | null;
 }): ThreadActivityView {
-  const { threadId, rootThreadId, seed } = input;
+  const { threadId, seed } = input;
   const transport = useThreadTransport();
   const isPendingCreation = useIsThreadPendingCreation(threadId);
   const [view, setView] = useState<ThreadActivityView>(() => seedView(seed));
@@ -62,16 +61,14 @@ export function useThreadActivity(input: {
       onEvent: ({ event }) => {
         if (event.type !== EventType.CUSTOM || event.name !== "meridian.subagent.activity") return;
         if (!isThreadActivity(event.value)) return;
-        // A frame carries the run-tree root's subtree; re-base it for a
-        // non-root viewer. Root views receive their own subtree directly.
-        const next = threadId === rootThreadId ? event.value : subtreeOf(event.value, threadId);
-        setView((current) => ({ ...current, activity: next }));
+        // Frames are already scoped to this thread's direct children.
+        setView((current) => ({ ...current, activity: event.value }));
       },
       onLiveState: (state) => {
         setView({ activity: state.activity ?? EMPTY_THREAD_ACTIVITY, status: state.status });
       },
     });
-  }, [transport, threadId, rootThreadId, isPendingCreation]);
+  }, [transport, threadId, isPendingCreation]);
 
   return view;
 }

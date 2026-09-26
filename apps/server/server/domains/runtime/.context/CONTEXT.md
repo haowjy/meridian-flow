@@ -318,10 +318,9 @@ candidate content with its successful ordinary `tool_result` in one
 transaction; capture alone never makes success. `spawn_status` remains a
 lifecycle hint for activity readers, while the removed `spawn_result` column is
 not a competing body store. Every child run publishes neutral, body-free
-`agent.run_completed` metadata; there is no spawn-named completion event. Create and terminal also append a neutral `subagent.activity` fact to the
-**root** thread's journal (not the immediate parent), carrying the root's full
-recomputed `ThreadActivity` so every subscriber of the run tree shares one
-activity source. A foreground `thread_message` appends it once the wake lease is
+`agent.run_completed` metadata; there is no spawn-named completion event. Create and terminal also append a neutral `subagent.activity` fact to the child's
+**direct parent's** journal, carrying that parent's recomputed direct-child
+`ThreadActivity`. A foreground `thread_message` appends it once the wake lease is
 held, and a drain-woken run (a child report or background `thread_message`) is
 driven by the turn runner, which appends at lease acquire and again at lease
 release so the strip reads awake for the whole run and asleep after. The

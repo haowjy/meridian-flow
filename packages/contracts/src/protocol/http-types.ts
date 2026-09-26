@@ -54,7 +54,7 @@ export type ThreadLiveState = {
   /** Derived from the live lease, not the durable thread row. */
   status: ThreadStatus;
   runningTurnId: string | null;
-  /** Recursive subagent activity for this thread's own subtree; derived, never a turn block. */
+  /** Direct subagent activity for this thread; derived, never a turn block. */
   activity: ThreadActivity;
   /** Undelivered inbox rows for this thread, ordered by `seq`; derived, never a turn block. */
   pending: ThreadPendingInbox;

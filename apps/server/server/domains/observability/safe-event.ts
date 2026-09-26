@@ -20,6 +20,7 @@ const SAFE_METRIC_KEYS = new Set(["firstOutputMs", "inputTokens", "outputTokens"
 const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
   "callbackKind",
   "commandId",
+  "cutoffTurnId",
   "deletedNodeTypes",
   "documentId",
   "documentIds",

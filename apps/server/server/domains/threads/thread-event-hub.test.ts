@@ -2,7 +2,7 @@
  * Live-delivery contract for the thread event hub: appending a persisted
  * orchestrator event must publish its projected AG-UI frames to subscribers at
  * append time, not only on journal replay. Background lifecycle events remain
- * journal-only; `subagent.activity` projects the full recomputed activity tree.
+ * journal-only; `subagent.activity` projects the recomputed direct-child activity.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent, ThreadActivity } from "@meridian/contracts/threads";
@@ -27,9 +27,8 @@ function createCappedReader(
   withGaps = false,
   payload: OrchestratorEvent | ((index: number) => OrchestratorEvent) = {
     type: "subagent.activity",
-    rootThreadId: THREAD_ID,
     childThreadId: "child-1",
-    activity: { descendants: [] },
+    activity: { children: [] },
   },
 ): EventJournalReader {
   const entries: JournalEntry[] = Array.from({ length: windowRows }, (_, index) => ({
@@ -163,9 +162,8 @@ describe("thread event hub committed invalidations", () => {
       const journal = createInMemoryEventJournalWriter();
       await journal.appendEvent(THREAD_ID, {
         type: "subagent.activity",
-        rootThreadId: THREAD_ID,
         childThreadId: "child",
-        activity: { descendants: [] },
+        activity: { children: [] },
       });
       let entered!: () => void;
       let rejectRead!: (error: Error) => void;
@@ -401,9 +399,8 @@ describe("thread event hub committed invalidations", () => {
     for (const marker of ["one", "two", "three"]) {
       await hub.appendEvent(THREAD_ID, {
         type: "subagent.activity",
-        rootThreadId: THREAD_ID,
         childThreadId: marker,
-        activity: { descendants: [{ threadId: marker }] } as ThreadActivity,
+        activity: { children: [{ threadId: marker }] } as ThreadActivity,
       });
     }
 
@@ -422,9 +419,8 @@ describe("thread event hub committed invalidations", () => {
     const reader = createInMemoryEventJournalReader(journal);
     const firstEvent: OrchestratorEvent = {
       type: "subagent.activity",
-      rootThreadId: THREAD_ID,
       childThreadId: "before-replay",
-      activity: { descendants: [] },
+      activity: { children: [] },
     };
     await journal.appendEvent(THREAD_ID, firstEvent);
 
@@ -463,9 +459,8 @@ describe("thread event hub committed invalidations", () => {
     await readStarted;
     await journal.appendEvent(THREAD_ID, {
       type: "subagent.activity",
-      rootThreadId: THREAD_ID,
       childThreadId: "during-replay",
-      activity: { descendants: [] },
+      activity: { children: [] },
     });
     hub.invalidateCommittedJournal(THREAD_ID);
     releaseRead();
@@ -481,18 +476,16 @@ describe("thread event hub committed invalidations", () => {
 });
 
 describe("thread event hub subagent activity", () => {
-  it("projects the full recomputed activity as one custom frame", async () => {
+  it("projects the full recomputed direct-child activity as one custom frame", async () => {
     const { hub } = createHub();
     const received: SequencedEventInternal[] = [];
     hub.subscribe(THREAD_ID, (entry) => received.push(entry));
 
     const activity: ThreadActivity = {
-      descendants: [
+      children: [
         {
           threadId: "child-1",
           parentThreadId: THREAD_ID,
-          rootThreadId: THREAD_ID,
-          depth: 1,
           ref: "p1",
           title: "Review the chapter",
           agentName: "Critic",
@@ -504,7 +497,6 @@ describe("thread event hub subagent activity", () => {
     };
     await hub.appendEvent(THREAD_ID, {
       type: "subagent.activity",
-      rootThreadId: THREAD_ID,
       childThreadId: "child-1",
       activity,
     });

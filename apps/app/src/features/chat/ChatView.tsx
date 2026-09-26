@@ -49,7 +49,7 @@ import { writerTurnQueueStatus } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
 import { TurnList } from "./TurnList";
-import { activeDescendants } from "./thread-activity";
+import { activeChildren } from "./thread-activity";
 import type { UserTurnRecovery } from "./UserTurn";
 import {
   type FailedChatSubmission,
@@ -119,10 +119,9 @@ export function ChatView({
   const availableSkills = useThreadAvailableSkills(threadId);
   const activity = useThreadActivity({
     threadId,
-    rootThreadId: activeThread?.rootThreadId ?? threadId,
     seed: snapshotLiveState,
   });
-  const runningSubagents = activeDescendants(activity.activity);
+  const runningSubagents = activeChildren(activity.activity);
   const pendingInbox = usePendingInbox({ threadId, seed: snapshotLiveState });
   const queueStatusByTurnId = useMemo(() => writerTurnQueueStatus(pendingInbox), [pendingInbox]);
 
@@ -335,7 +334,7 @@ export function ChatView({
         surfaceRef={chatSurfaceRef}
         header={
           runningSubagents.length > 0 ? (
-            <RunningSubagentsStrip selfStatus={activity.status} descendants={runningSubagents} />
+            <RunningSubagentsStrip selfStatus={activity.status} subagents={runningSubagents} />
           ) : null
         }
         footer={

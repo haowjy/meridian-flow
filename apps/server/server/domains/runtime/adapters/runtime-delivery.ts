@@ -313,7 +313,12 @@ export function createDeliveryAdapter(
           assistantTurnId: input.assistantTurnId,
           cause,
         });
-        if (completion.turn.status === "cancelled") await inbox.ack(threadId, receipt?.ids ?? []);
+        if (
+          completion.turn.status === "cancelled" ||
+          (cause.kind === "failed" && cause.acknowledgeInbox)
+        ) {
+          await inbox.ack(threadId, receipt?.ids ?? []);
+        }
         await deps.runClaim.release(input.lease);
         await appendPending(threadId);
         return { kind: "completed", completion };

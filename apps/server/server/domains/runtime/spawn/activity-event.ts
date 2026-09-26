@@ -1,6 +1,6 @@
 /**
- * The one producer of the `subagent.activity` journal fact: reads the run-tree
- * root's recomputed activity and appends it to the root thread's journal. Both
+ * The one producer of the `subagent.activity` journal fact: reads the direct
+ * parent's activity and appends it to that parent's journal. Both
  * child-run producers (create and terminal) call this so the event shape and the
  * read-then-append ordering have a single owner. The best-effort variant owns
  * the rule that a failed emission never gates a run.
@@ -13,13 +13,12 @@ import type { EventJournalWriter } from "../../threads/index.js";
 export async function appendSubagentActivity(input: {
   eventWriter: EventJournalWriter;
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
-  rootThreadId: ThreadId;
+  parentThreadId: ThreadId;
   childThreadId: string;
 }): Promise<bigint> {
-  const activity = await input.readActivity(input.rootThreadId);
-  return input.eventWriter.appendEvent(input.rootThreadId, {
+  const activity = await input.readActivity(input.parentThreadId);
+  return input.eventWriter.appendEvent(input.parentThreadId, {
     type: "subagent.activity",
-    rootThreadId: input.rootThreadId,
     childThreadId: input.childThreadId,
     activity,
   });
@@ -33,7 +32,7 @@ export async function appendSubagentActivity(input: {
 export async function appendSubagentActivityBestEffort(input: {
   eventWriter: EventJournalWriter;
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
-  rootThreadId: ThreadId;
+  parentThreadId: ThreadId;
   childThreadId: string;
   eventSink: EventSink;
 }): Promise<void> {
@@ -44,7 +43,7 @@ export async function appendSubagentActivityBestEffort(input: {
       level: "warn",
       source: "runtime.activity",
       name: "subagent.activity.append_failed",
-      correlation: { threadId: input.rootThreadId, childRunId: input.childThreadId },
+      correlation: { threadId: input.parentThreadId, childRunId: input.childThreadId },
       payload: {
         childThreadId: input.childThreadId,
         ...unknownToEventPayload(error),
@@ -54,7 +53,7 @@ export async function appendSubagentActivityBestEffort(input: {
 }
 
 /**
- * Emit the run-tree root's activity for a subagent's drain-woken run. Spawn and
+ * Emit the direct parent's activity for a subagent's drain-woken run. Spawn and
  * foreground-message runs are emitted by the child-run driver; a run woken by a
  * child report or `thread_message` is driven by the turn runner, so it must emit
  * both when the lease goes live (otherwise the strip reads `asleep` until the
@@ -65,7 +64,7 @@ export async function appendSubagentActivityBestEffort(input: {
 export async function emitRunActivityBestEffort(input: {
   findThread: (
     threadId: ThreadId,
-  ) => Promise<{ id: string; kind: string; rootThreadId: string } | null>;
+  ) => Promise<{ id: string; kind: string; parentThreadId: string | null } | null>;
   threadId: ThreadId;
   eventWriter: EventJournalWriter;
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
@@ -73,11 +72,11 @@ export async function emitRunActivityBestEffort(input: {
 }): Promise<void> {
   try {
     const thread = await input.findThread(input.threadId);
-    if (thread?.kind !== "subagent") return;
+    if (thread?.kind !== "subagent" || !thread.parentThreadId) return;
     await appendSubagentActivityBestEffort({
       eventWriter: input.eventWriter,
       readActivity: input.readActivity,
-      rootThreadId: thread.rootThreadId as ThreadId,
+      parentThreadId: thread.parentThreadId as ThreadId,
       childThreadId: thread.id,
       eventSink: input.eventSink,
     });
@@ -90,4 +89,11 @@ export async function emitRunActivityBestEffort(input: {
       payload: { threadId: input.threadId, ...unknownToEventPayload(error) },
     });
   }
+}
+
+/** Bind the run-lifecycle refresh to its activity ports once at composition. */
+export function createSubagentActivityRefresher(
+  deps: Omit<Parameters<typeof emitRunActivityBestEffort>[0], "threadId">,
+) {
+  return (threadId: ThreadId) => emitRunActivityBestEffort({ ...deps, threadId });
 }

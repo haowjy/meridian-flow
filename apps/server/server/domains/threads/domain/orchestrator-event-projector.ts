@@ -441,8 +441,8 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
-      // The producer recomputed the full subtree, so the frame is a bounded
-      // replace of the client's activity state with no refetch race.
+      // The producer recomputed the parent's direct children, so this frame is
+      // a bounded replace of the client's activity state with no refetch race.
       case "subagent.activity":
         return [
           parseAguiEvent({

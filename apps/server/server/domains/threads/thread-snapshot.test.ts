@@ -57,4 +57,50 @@ describe("buildThreadSnapshot parent", () => {
 
     expect(snapshot.parent).toEqual({ id: child.id, title: "Critic" });
   });
+
+  it("snapshots direct children without grandchildren or lineage-only fields", async () => {
+    const repos = createInMemoryRepositories();
+    const parent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+    const child = await repos.threads.createSubagent({
+      userId: "user-1",
+      projectId: "project-1",
+      parentThreadId: parent.id as ThreadId,
+      rootThreadId: parent.id as ThreadId,
+      spawnDepth: 1,
+      title: "Critic",
+    });
+    await repos.threads.createSubagent({
+      userId: "user-1",
+      projectId: "project-1",
+      parentThreadId: child.id as ThreadId,
+      rootThreadId: parent.id as ThreadId,
+      spawnDepth: 2,
+      title: "Helper",
+    });
+
+    const snapshot = await buildThreadSnapshot(
+      repos,
+      stubHub(),
+      {
+        read: async () => ({ kind: "asleep" as const }),
+        readRunningTurnId: async () => null,
+        readMany: async () => new Map(),
+        readPending: async () => ({ items: [] }),
+      },
+      parent.id as ThreadId,
+    );
+
+    expect(snapshot.liveState.activity.children).toEqual([
+      {
+        threadId: child.id,
+        parentThreadId: parent.id,
+        ref: child.ref,
+        title: "Critic",
+        agentName: child.agentName,
+        spawnStatus: "running",
+        status: { kind: "asleep" },
+        originTurnId: null,
+      },
+    ]);
+  });
 });

@@ -183,7 +183,7 @@ msgstr ""
 msgid "{0} source copied"
 msgstr ""
 
-#. placeholder {0}: descendants.length
+#. placeholder {0}: subagents.length
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "{0} subagents running"
 msgstr ""
