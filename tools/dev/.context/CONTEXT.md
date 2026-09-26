@@ -15,10 +15,15 @@ Local-dev-only utilities. Not loaded by the application runtime.
 - **Readiness** — `dev-readiness.ts` (real HTTP probes before reporting started)
 - **Tailscale lifecycle** — `lib/tailscale-lifecycle.ts` (stale route pruning, verified external routes)
 - **Worktree cleanup** — `lib/worktree-cleanup.ts` + `prune-worktrees.ts` (merged-branch resource teardown)
-- **Diagnostic queries** — `debug-http-client.ts` owns current-worktree Portless
-  discovery, dev auth, response bounds, and the five-second deadline.
-  `debug-events.ts` reads safe event records; `debug-model-context.ts` reads the
-  content-bearing model-request seam through the app's shared projection.
+- **`./mf` dev CLI** — `cli/` is the agent-facing CLI behind the repo-root `./mf`
+  shim. It is a thin wrapper over the app's own HTTP routes and thread WebSocket:
+  `cli/session.ts` owns Portless discovery, the in-memory dev-login cookie,
+  and bounded requests; `cli/thread-stream.ts` follows a thread's sequenced
+  events; commands live in `cli/commands/` (one file per noun). It never reads
+  Postgres and holds no business logic. When the API cannot answer a question,
+  add a (dev-gated) server route instead of a CLI-side query. The only server
+  seam it added is the dev mock-model script queue
+  (`/api/debug/mock-model/script`).
 
 ## Directory layout
 
@@ -42,9 +47,8 @@ tools/dev/
 ├── docker-compose.yml
 ├── bootstrap.ts               pnpm bootstrap
 ├── check-db-gate.ts           Reachability-aware local `pnpm check` DB gate
-├── debug-http-client.ts       Authenticated bounded Portless HTTP client
-├── debug-events.ts            Authenticated current-worktree EventQuery client
-├── debug-model-context.ts     Canonical model-request JSON query client
+├── cli/                       ./mf: main.ts (command table, help), session.ts, thread-socket.ts,
+│                              thread-stream.ts, run-events.ts, transcript.ts, commands/, fixtures/
 ├── dev-tmux.ts                pnpm dev entry point (thin — see session plan, readiness, tailscale)
 ├── dev-session-plan.ts        Session command construction + redaction + internal API origin
 ├── dev-readiness.ts           HTTP readiness probes (server /readyz + app origin)

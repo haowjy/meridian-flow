@@ -74,6 +74,7 @@ represented as a fully-typed slot:
 | `toolRegistry` | runtime | Name-keyed tool registration map |
 | `toolExecutor` | runtime | Dispatches tool calls to registered handlers |
 | `modelRequestDebug` | runtime | Env-selected model request debug store |
+| `mockModelScript` | runtime | Dev-only scripted replies for the in-process mock model; null with real providers or in production |
 | `runOwnership` | runtime | One PostgreSQL advisory-lock session per server process; owns live thread runs across replicas |
 
 ## Tool wiring
@@ -142,6 +143,7 @@ the handlers: Nitro treats test modules under `routes/` as production routes.
 | `work-attachment.ts` | Determines a new thread's Work: root omission/null binds No Work; children inherit the parent's primary. |
 | `project-preferences-route.ts` | Unit-testable handlers for project preferences GET/PUT. |
 | `project-results-route.ts` | Ownership-gated project result listing and signed artifact URL refresh. |
+| `mock-model-script-route.ts` | Dev-only `/api/debug/mock-model/script` queue/list/clear; 404 when no scriptable mock is composed. |
 | `context-read-route.ts` | Ownership-gated context path resolution. Tracked files return content/schema; binary refs resolve signed object-store URLs. |
 | `document-access.ts` | `DocumentAccessPort` interface plus allow-all and Drizzle adapters for Yjs document authorization. |
 | `backend-policy.ts` | Small policy helpers for backend selection/guarding. |

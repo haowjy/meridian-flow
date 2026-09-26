@@ -5,6 +5,8 @@
  * This is the single import entry point for gateway consumers (orchestrator,
  * turn runner, routes). Every public type and factory is re-exported here.
  */
+
+export type { MockScriptQueue } from "./adapters/mock/script-queue.js";
 export type { MockOpenAIServer } from "./adapters/mock/server.js";
 export { createMockOpenAICompatibleServer } from "./adapters/mock/server.js";
 export type { GatewayFromEnv } from "./config/create-from-env.js";

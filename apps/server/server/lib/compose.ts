@@ -102,7 +102,7 @@ import {
   agentExecutionUnavailableReasons,
   agentModelUnavailableReasons,
 } from "../domains/runtime/agent-definition-support.js";
-import { MODEL_REGISTRY } from "../domains/runtime/gateway/index.js";
+import { MODEL_REGISTRY, type MockScriptQueue } from "../domains/runtime/gateway/index.js";
 import {
   createChildRunCoordinator,
   createChildRunDriver,
@@ -250,6 +250,8 @@ export type AppServices = {
   toolRegistry: ToolRegistry;
   toolExecutor: ToolExecutor;
   modelRequestDebug: ModelRequestDebugStore;
+  /** Dev-only scripted replies for the in-process mock model; null with real providers. */
+  mockModelScript: MockScriptQueue | null;
   objectStore: ObjectStorePort;
   localObjectStore: LocalObjectStoreAdapter | null;
   uploadIntake: UploadIntake;
@@ -297,6 +299,7 @@ export type ProductionAppPorts = {
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
   modelRequestDebug: ModelRequestDebugStore;
+  mockModelScript: MockScriptQueue | null;
   objectStore: ObjectStorePort;
   localObjectStore: LocalObjectStoreAdapter | null;
   uploadIntake: UploadIntake;
@@ -344,7 +347,11 @@ export async function createProductionAppPorts(input: {
 }): Promise<ProductionAppPorts> {
   const environment = input.environment ?? process.env;
   const eventSink = input.eventSink;
-  const { gateway: rawGateway, defaultModel } = await createGatewayFromEnv(environment, {
+  const {
+    gateway: rawGateway,
+    defaultModel,
+    mockScript,
+  } = await createGatewayFromEnv(environment, {
     onInfo: (info) => {
       emitEvent(eventSink, {
         level: "info",
@@ -541,6 +548,8 @@ export async function createProductionAppPorts(input: {
     workingSet,
     recentDocuments,
     modelRequestDebug: createModelRequestDebugStoreFromEnv(eventSink),
+    // Scripted mock replies are a local-dev affordance only.
+    mockModelScript: environment.NODE_ENV === "production" ? null : (mockScript ?? null),
     objectStore,
     localObjectStore,
     uploadIntake,
@@ -863,6 +872,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     toolRegistry,
     toolExecutor,
     modelRequestDebug: ports.modelRequestDebug,
+    mockModelScript: ports.mockModelScript,
     objectStore: ports.objectStore,
     localObjectStore: ports.localObjectStore,
     uploadIntake: ports.uploadIntake,
@@ -1373,6 +1383,7 @@ export function createInMemoryAppServices(): AppServices {
     },
     notices,
     modelRequestDebug,
+    mockModelScript: null,
     changeTrails: {
       async listShells() {
         return [];

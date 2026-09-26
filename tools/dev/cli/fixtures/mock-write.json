@@ -1,0 +1,18 @@
+{
+  "steps": [
+    {
+      "text": "Drafting the scene now.",
+      "toolCalls": [
+        {
+          "name": "write",
+          "args": {
+            "command": "create",
+            "path": "manuscript://mf-scene.md",
+            "content": "# Scene\n\nRain beat on the jade steps of the Azure Peak sect."
+          }
+        }
+      ]
+    },
+    { "text": "Done. The scene is in manuscript://mf-scene.md." }
+  ]
+}

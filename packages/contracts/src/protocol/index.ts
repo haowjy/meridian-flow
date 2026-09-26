@@ -48,6 +48,7 @@ export * from "./document-links.js";
 export * from "./event-seq.js";
 export * from "./filetype.js";
 export * from "./http-types.js";
+export * from "./mock-model-script.js";
 export * from "./paths.js";
 export * from "./recent-documents.js";
 export * from "./thread-documents.js";

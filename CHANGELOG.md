@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- `tools`: added `./mf`, a local CLI that drives this worktree's stack through its own API. It creates threads, sends and waits (exit code = run outcome), tails and replays events, prints transcripts and model context, seeds docs and scenarios, and scripts the dev mock model (`/api/debug/mock-model/script`). It replaces `pnpm debug:events` (now `./mf log`) and `pnpm debug:model-context` (now `./mf thread context`).
+
 - Freeze thread prompts at the database boundary.
 - Keep the same Agent and prompt when forking by default.
 

@@ -4,6 +4,11 @@ Verifies the project agent composer sends through `POST /api/threads/:id/message
 the copied runtime orchestrator streams over `/api/threads/ws`, and the turn rows
 settle in Postgres.
 
+For non-visual checks (admission, streaming, turn settlement, tool calls) prefer
+the CLI: `./mf thread send <id> "browser smoke $(date +%s)"` exits 0 only when
+the run completes, and `./mf thread view <id>` shows the settled turns. Use this
+runbook when the rendered composer and stream are what you are verifying.
+
 ## Preconditions
 
 Run [`quick-chat-create.md`](quick-chat-create.md) and stay on

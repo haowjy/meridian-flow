@@ -58,7 +58,7 @@ There is no ambient fallback in domain code: if a service emits diagnostics, its
 constructor/deps require an `EventSink` so disabled observability is an explicit
 adapter choice.
 
-LLM-facing local monitors should use `pnpm debug:events` for bounded authenticated
+LLM-facing local monitors should use `./mf log` for bounded authenticated
 queries, or read the structured JSONL stream for post-restart forensics. Do not
 build dashboards by scraping arbitrary console text.
 
