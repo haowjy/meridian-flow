@@ -12,7 +12,7 @@ export type Run = { kind: "reasoning"; blocks: Block[] } | { kind: "activity"; b
 export type RenderItem =
   | { kind: "process"; runs: Run[] }
   | { kind: "text"; block: Block }
-  | { kind: "report"; block: Block; report: ReportContentValue }
+  | { kind: "report"; block: Block; report: ReportContentValue; ref?: string }
   | { kind: "artifact"; block: Block };
 
 export function isReasoningBlock(block: Block): boolean {
@@ -25,7 +25,8 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
     blocks.flatMap((block) => {
       if (block.blockType !== "tool_use") return [];
       const content = blockContentRecord(block);
-      return content.toolName === "return_result" && typeof content.toolCallId === "string"
+      return (content.toolName === "return_result" || content.toolName === "thread_report") &&
+        typeof content.toolCallId === "string"
         ? [content.toolCallId]
         : [];
     }),
@@ -59,20 +60,45 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
     if (isToolDeliveryBlock(block)) {
       const content = blockContentRecord(block);
       const toolCallId = content.toolCallId;
-      if (block.blockType === "tool_use" && content.toolName === "return_result") {
+      if (
+        block.blockType === "tool_use" &&
+        (content.toolName === "return_result" || content.toolName === "thread_report")
+      ) {
         const input = isRecord(content.input) ? content.input : {};
         const result = typeof toolCallId === "string" ? resultByCall.get(toolCallId) : undefined;
         const failed = result?.ok === false;
+        const output = isRecord(result) && isRecord(result.output) ? result.output : result;
+        const artifacts =
+          content.toolName === "return_result" ? input.artifacts : output?.artifacts;
         flushProcess();
         items.push({
           kind: "report",
           block,
+          ...(content.toolName === "thread_report" && typeof input.ref === "string"
+            ? { ref: input.ref }
+            : {}),
           report: {
-            summary: typeof input.summary === "string" ? input.summary : "",
-            ...(input.payload === undefined ? {} : { payload: input.payload }),
-            artifacts: Array.isArray(input.artifacts) ? input.artifacts.filter(isArtifactRef) : [],
-            partial: failed || content.isError === true,
-            ...(typeof result?.message === "string" ? { reason: result.message } : {}),
+            summary:
+              content.toolName === "return_result"
+                ? typeof input.summary === "string"
+                  ? input.summary
+                  : ""
+                : typeof output?.summary === "string"
+                  ? output.summary
+                  : "",
+            ...((content.toolName === "return_result" ? input.payload : output?.payload) ===
+            undefined
+              ? {}
+              : {
+                  payload: content.toolName === "return_result" ? input.payload : output?.payload,
+                }),
+            artifacts: Array.isArray(artifacts) ? artifacts.filter(isArtifactRef) : [],
+            partial: failed || content.isError === true || output?.partial === true,
+            ...(typeof output?.reason === "string"
+              ? { reason: output.reason }
+              : typeof result?.message === "string"
+                ? { reason: result.message }
+                : {}),
           },
         });
         continue;

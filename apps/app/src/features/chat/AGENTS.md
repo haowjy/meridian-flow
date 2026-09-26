@@ -46,13 +46,14 @@ folded.
 Run liveness is never a turn block. Each admitted spawn invocation has one
 durable retained card on the parent turn. At settlement, the card's status is
 the child execution outcome, not parent protocol admission. Foreground cards join the durable direct `spawn` or `thread_message` result
-by parent turn, tool call, child execution and direct delivery mode. Background
-cards read the exact saved report through the lineage-authorized report read.
-Both keep report bodies out of the retained invocation block; the writer UI
-loads them into the shared report presentation. `thread_report` is an ordinary
-expandable activity row. The live subagent surface remains server truth:
-`ThreadActivity` from snapshot + `meridian.subagent.activity`, rendered by
-`RunningSubagentsStrip` in `ChatView`'s header.
+by parent turn, tool call, child execution and direct delivery mode. Cards
+branch on `deliveryMode`: background cards are one-line launches while direct
+cards combine launch, live current tool, and expandable result. The live
+panel filters to direct background children and uses snapshot plus
+`meridian.subagent.activity` as server truth. `thread_report` is a report
+artifact outside the process fold. Background `subagent_update` notices render
+as quiet expandable completion rows; adjacent completions merge at their
+transcript boundary.
 
 Child completion is a separate durable transcript event: system turns with
 `metadata.kind === "subagent_update"` render as a quiet inline row at their

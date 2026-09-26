@@ -1,11 +1,10 @@
-/** The retained invocation card; background cards read their exact saved report on demand. */
-import { useQuery } from "@tanstack/react-query";
-import { getThreadExecutionReport } from "@/client/api/execution-reports-api";
+/** Retained invocation card adapter for current run activity and direct results. */
+import { t } from "@lingui/core/macro";
 import type { ComponentBlockProps } from "./component-registry";
-import type { DirectInvocationResult } from "./invocation-direct-result";
 import { SpawnReportCard } from "./SpawnReportCard";
+import { useSubagentActivity } from "./SubagentActivityContext";
 
-export function HelperResultBlock({ content, invocationResult, threadId }: ComponentBlockProps) {
+export function HelperResultBlock({ content, invocationResult }: ComponentBlockProps) {
   const props = content.props as {
     agentName: string;
     title?: string;
@@ -17,60 +16,33 @@ export function HelperResultBlock({ content, invocationResult, threadId }: Compo
     startedAt: string;
     terminalAt: string | null;
   };
-  const shouldReadSavedReport =
-    props.deliveryMode === "background_notification" &&
-    props.status !== "running" &&
-    Boolean(threadId && props.childThreadId && props.execution);
-  const saved = useQuery({
-    queryKey: ["thread-execution-report", threadId, props.childThreadId, props.execution],
-    queryFn: () =>
-      getThreadExecutionReport({
-        threadId: threadId as string,
-        childThreadId: props.childThreadId as string,
-        execution: props.execution as string,
-      }),
-    enabled: shouldReadSavedReport,
-    staleTime: Number.POSITIVE_INFINITY,
-  });
-  const savedReport: DirectInvocationResult | null =
-    saved.data && "outcome" in saved.data
-      ? {
-          execution: props.execution as string,
-          outcome: saved.data.outcome,
-          summary: saved.data.summary,
-          ...(saved.data.payload === undefined ? {} : { payload: saved.data.payload }),
-          artifacts: saved.data.artifacts ?? [],
-          partial: saved.data.partial,
-          message: null,
-          reason: saved.data.reason,
-        }
-      : null;
-  const unavailable =
-    saved.data &&
-    "status" in saved.data &&
-    (saved.data.status === "unavailable" || saved.data.status === "not_ready")
-      ? ({
-          execution: props.execution ?? "",
-          outcome: null,
-          summary: "",
-          artifacts: [],
-          partial: false,
-          message: "Report is unavailable",
-          reason: null,
-        } satisfies DirectInvocationResult)
-      : null;
+  const live = useSubagentActivity(props.childThreadId ?? null);
+  const liveTool =
+    live?.currentTool?.toolName === "spawn"
+      ? t`Waiting on ${inputAgent(live.currentTool.input)}`
+      : (live?.currentTool?.toolName.replaceAll("_", " ") ?? null);
   return (
     <SpawnReportCard
       agentName={props.agentName}
       title={props.title ?? null}
       status={props.status}
       outcome={props.outcome}
+      deliveryMode={props.deliveryMode}
+      liveTool={liveTool}
       startedAt={props.startedAt}
       terminalAt={props.terminalAt}
       childThreadId={props.childThreadId ?? null}
-      directResult={invocationResult ?? savedReport ?? unavailable}
-      loadingReport={shouldReadSavedReport && saved.isPending}
-      reportError={shouldReadSavedReport && saved.isError}
+      directResult={invocationResult}
+      loadingReport={false}
+      reportError={false}
     />
   );
+}
+
+function inputAgent(input: unknown): string {
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    const value = (input as Record<string, unknown>).agent;
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "Subagent";
 }

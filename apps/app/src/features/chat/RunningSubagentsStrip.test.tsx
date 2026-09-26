@@ -8,7 +8,8 @@ import type { ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray) => strings[0],
+  t: (strings: TemplateStringsArray, ...values: unknown[]) =>
+    strings.reduce((result, part, index) => result + part + String(values[index] ?? ""), ""),
 }));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -71,9 +72,7 @@ describe("RunningSubagentsStrip", () => {
   });
 
   it("renders nothing when there are no active descendants", async () => {
-    await act(async () =>
-      root.render(<RunningSubagentsStrip selfStatus={{ kind: "asleep" }} descendants={[]} />),
-    );
+    await act(async () => root.render(<RunningSubagentsStrip descendants={[]} />));
     expect(host.textContent?.trim()).toBe("");
   });
 
@@ -83,7 +82,6 @@ describe("RunningSubagentsStrip", () => {
       root.render(
         <ChatThreadNavigationProvider onOpenThread={openThread}>
           <RunningSubagentsStrip
-            selfStatus={{ kind: "asleep" }}
             descendants={[
               node({ threadId: "child-a", agentName: "Critic", title: "Review the chapter" }),
               node({
@@ -99,11 +97,15 @@ describe("RunningSubagentsStrip", () => {
       ),
     );
 
-    expect(host.textContent).toContain("2 subagents running");
+    expect(host.textContent).toContain("2 subagents");
+    expect(host.textContent).toContain("2 running");
+    expect(host.textContent).not.toContain("Critic");
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')?.click(),
+    );
     expect(host.textContent).toContain("Critic");
     expect(host.textContent).toContain("Reader");
-    // The viewed thread is asleep while its children run; the grandchild waits.
-    expect(host.textContent).toContain("Asleep");
+    // Parent status stays out of the child panel; the nested run reports its current phase.
     expect(host.textContent).toContain("Waiting");
 
     await act(async () => buttonContaining("Reader")?.click());
@@ -114,13 +116,15 @@ describe("RunningSubagentsStrip", () => {
     await act(async () =>
       root.render(
         <RunningSubagentsStrip
-          selfStatus={{ kind: "asleep" }}
           descendants={[node({ threadId: "child-a", agentName: "Critic" })]}
         />,
       ),
     );
 
-    expect(buttonContaining("Critic")).toBeUndefined();
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')?.click(),
+    );
+    expect(host.querySelector('[aria-label="Open subagent chat"]')).toBeNull();
     expect(host.textContent).toContain("Critic");
   });
 });

@@ -1,17 +1,24 @@
 /** AssistantTurn — single render path for assistant turns. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { type Block, isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
-import { CheckCircle2, CircleAlert, MessageSquareText, XCircle } from "lucide-react";
-import { memo, useMemo } from "react";
+import {
+  type Block,
+  blockContentRecord,
+  isTerminalTurnStatus,
+  type Turn,
+} from "@meridian/contracts/protocol";
+import { ChevronDown, ExternalLink, MessageSquareText } from "lucide-react";
+import { memo, useMemo, useState } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
+import { cn } from "@/lib/utils";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
 import { ActivityRow } from "./ActivityRow";
 import { AssistantTurnActions } from "./AssistantTurnActions";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
+import { useOpenChatThread } from "./ChatThreadNavigation";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
 import { ErrorBlock } from "./ErrorBlock";
 import { groupDeliverySegments } from "./group-delivery-segments";
@@ -23,8 +30,10 @@ import {
   type RenderItem,
   type Run,
 } from "./partition-turn";
-import { ReportContent } from "./ReportContent";
+import { payloadText, ReportContent } from "./ReportContent";
 import { StreamingText } from "./StreamingText";
+import { useSubagentActivityByRef } from "./SubagentActivityContext";
+import { SubagentMark } from "./SubagentMark";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
 import { hasTurnEditsReceiptContent, TurnEditsReceipt } from "./TurnEditsReceipt";
@@ -128,15 +137,9 @@ function AssistantTurnComponent({
           />
         ))}
 
-        {rows.every(({ item }) => item.kind !== "process") &&
-          deliveryEvents.map((event) => (
-            <DeliveryEventRow
-              key={event.turn.id}
-              turn={event.turn}
-              childThreadId={event.childThreadId}
-              title={event.title}
-            />
-          ))}
+        {rows.every(({ item }) => item.kind !== "process") ? (
+          <DeliveryEventRows events={deliveryEvents} />
+        ) : null}
 
         {hasTurnEditsReceiptContent(liveLineageDocuments, changeTrail, workReceipts) ? (
           <TurnEditsReceipt
@@ -164,43 +167,141 @@ function AssistantTurnComponent({
   );
 }
 
-function DeliveryEventRow({
-  turn,
-  childThreadId,
-  title,
-}: {
-  turn: Turn;
-  childThreadId?: string;
-  title?: string;
-}) {
+type DeliveryEvent = NonNullable<AssistantTurnProps["deliveryEvents"]>[number];
+
+function DeliveryEventRows({ events }: { events: DeliveryEvent[] }) {
+  const groups: DeliveryEvent[][] = [];
+  for (const event of events) {
+    const metadata = event.turn.metadata as Record<string, unknown> | null;
+    const isUpdate = metadata?.kind === "subagent_update";
+    const previous = groups.at(-1)?.[0]?.turn.metadata as
+      | Record<string, unknown>
+      | null
+      | undefined;
+    if (isUpdate && previous?.kind === "subagent_update") groups.at(-1)?.push(event);
+    else groups.push([event]);
+  }
+  return (
+    <>
+      {groups.map((group) => {
+        if (group.length > 1) {
+          return (
+            <MergedCompletionRow
+              key={group.map((event) => event.turn.id).join(":")}
+              events={group}
+            />
+          );
+        }
+        const event = group[0];
+        return event ? <DeliveryEventRow key={event.turn.id} {...event} /> : null;
+      })}
+    </>
+  );
+}
+
+function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
+  const names = events.map(({ turn }) =>
+    String((turn.metadata as Record<string, unknown>).handle ?? "Subagent"),
+  );
+  const allSucceeded = events.every(
+    ({ turn }) => (turn.metadata as Record<string, unknown>).outcome === "succeeded",
+  );
+  const allCancelled = events.every(
+    ({ turn }) => (turn.metadata as Record<string, unknown>).outcome === "cancelled",
+  );
+  return (
+    <details className="group min-w-0 text-sm text-muted-foreground" data-subagent-finished>
+      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm py-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <span className="flex -space-x-2">
+          {names.slice(0, 3).map((name, index) => (
+            <SubagentMark
+              key={`${name}-${index}`}
+              name={name}
+              status={allSucceeded ? "done" : "stopped"}
+              className="size-5 border-background text-[10px]"
+            />
+          ))}
+        </span>
+        <span className="truncate font-medium text-foreground">
+          {names.length > 3 ? (
+            allSucceeded ? (
+              <Trans>{names.length} subagents finished</Trans>
+            ) : allCancelled ? (
+              <Trans>{names.length} subagents stopped</Trans>
+            ) : (
+              <Trans>{names.length} subagents completed</Trans>
+            )
+          ) : allSucceeded ? (
+            <Trans>{names.join(", ")} finished</Trans>
+          ) : allCancelled ? (
+            <Trans>{names.join(", ")} stopped</Trans>
+          ) : (
+            <Trans>{names.join(", ")} completed</Trans>
+          )}
+        </span>
+        <span className="ml-auto text-xs">+</span>
+      </summary>
+      <div className="ml-7 space-y-2 border-l border-border-subtle py-1 pl-3 text-xs text-muted-foreground">
+        {events.map(({ turn, title }) => {
+          const text = turn.blocks
+            .filter((block) => block.blockType === "text")
+            .map((block) => block.textContent ?? "")
+            .join("");
+          return (
+            <div key={turn.id}>
+              {title ? <p className="font-medium text-foreground">{title}</p> : null}
+              {text ? <p className="whitespace-pre-wrap">{text}</p> : null}
+            </div>
+          );
+        })}
+      </div>
+    </details>
+  );
+}
+
+function DeliveryEventRow({ turn, childThreadId, title }: DeliveryEvent) {
   const metadata =
     turn.metadata && typeof turn.metadata === "object" && !Array.isArray(turn.metadata)
       ? (turn.metadata as Record<string, unknown>)
       : {};
   if (metadata.kind === "subagent_update") {
     const outcome = String(metadata.outcome);
-    const Icon =
-      outcome === "succeeded" ? CheckCircle2 : outcome === "failed" ? CircleAlert : XCircle;
     const label =
-      outcome === "succeeded" ? "finished" : outcome === "failed" ? "failed" : "was cancelled";
+      outcome === "succeeded" ? "finished" : outcome === "failed" ? "failed" : "stopped";
+    const body = turn.blocks
+      .filter((block) => block.blockType === "text")
+      .map((block) => block.textContent ?? "")
+      .join("");
     return (
-      <ActivityRow Icon={Icon}>
-        <span>
-          Subagent {String(metadata.handle)} {label}
-          {title ? `: ${title}` : ""}.
-        </span>
-        {childThreadId ? (
-          <>
-            {" "}
+      <details
+        className="group min-w-0 text-sm text-muted-foreground"
+        data-subagent-finished
+        data-subagent-thread-id={childThreadId ?? undefined}
+      >
+        <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm py-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <SubagentMark
+            name={String(metadata.handle)}
+            status={outcome === "succeeded" ? "done" : "stopped"}
+            className="size-5 text-[10px]"
+          />
+          <span className="truncate">
+            <span className="font-medium text-foreground">{String(metadata.handle)}</span> {label}
+          </span>
+          <span className="ml-auto text-xs">+</span>
+        </summary>
+        <div className="ml-7 border-l border-border-subtle py-1 pl-3 text-xs text-muted-foreground">
+          {title ? <p className="mb-1 text-foreground">{title}</p> : null}
+          {body ? <p className="whitespace-pre-wrap">{body}</p> : null}
+          {childThreadId ? (
             <a
-              className="rounded-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="mt-1 inline-block rounded-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               href={`/chat/${childThreadId}`}
             >
-              Open
+              <Trans>Open chat</Trans>
             </a>
-          </>
-        ) : null}
-      </ActivityRow>
+          ) : null}
+        </div>
+      </details>
     );
   }
   const body = turn.blocks
@@ -281,19 +382,16 @@ const TurnItemView = memo(function TurnItemView({
             />
           ))}
         </ProcessDisclosure>
-        {deliveryEvents?.map((event) => (
-          <DeliveryEventRow
-            key={event.turn.id}
-            turn={event.turn}
-            childThreadId={event.childThreadId}
-            title={event.title}
-          />
-        ))}
+        {deliveryEvents?.length ? <DeliveryEventRows events={deliveryEvents} /> : null}
       </div>
     );
   }
 
   if (item.kind === "report") {
+    const content = blockContentRecord(item.block);
+    if (content.toolName === "thread_report") {
+      return <ThreadReportArtifact refName={item.ref ?? ""} report={item.report} />;
+    }
     return (
       <div
         className="space-y-[var(--chat-space-block)] text-prose-foreground"
@@ -323,6 +421,68 @@ const TurnItemView = memo(function TurnItemView({
 
 function thinkingLabel() {
   return <Trans>Thinking</Trans>;
+}
+
+function ThreadReportArtifact({
+  refName,
+  report,
+}: {
+  refName: string;
+  report: import("./ReportContent").ReportContentValue;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const subagent = useSubagentActivityByRef(refName);
+  const openThread = useOpenChatThread();
+  const agentName = subagent?.agentName?.trim() || refName || "Subagent";
+  const preview =
+    report.summary || (report.payload === undefined ? "" : payloadText(report.payload));
+  return (
+    <div
+      className="rounded-lg border border-border bg-background px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] shadow-sm"
+      data-thread-report={refName}
+      data-subagent-thread-id={subagent?.threadId}
+    >
+      <div className="flex min-w-0 items-center gap-[var(--chat-space-row)]">
+        <SubagentMark name={agentName} status="done" />
+        <span className="shrink-0 text-sm font-medium text-foreground">{agentName}</span>
+        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+          <Trans>Report</Trans>
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+          {subagent?.title || preview.split(/\r?\n/, 1)[0]}
+        </span>
+        {subagent && openThread ? (
+          <button
+            type="button"
+            aria-label={t`Open subagent chat`}
+            onClick={() => openThread(subagent.threadId)}
+            className="focus-ring grid size-7 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <ExternalLink className="size-3.5" aria-hidden />
+          </button>
+        ) : null}
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-label={expanded ? t`Hide report` : t`Show report`}
+          onClick={() => setExpanded((value) => !value)}
+          className="focus-ring grid size-7 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <ChevronDown
+            className={cn("size-4 transition-transform", expanded && "rotate-180")}
+            aria-hidden
+          />
+        </button>
+      </div>
+      {expanded ? (
+        <ReportContent
+          report={report}
+          empty={<Trans>No report text was returned.</Trans>}
+          className="mt-[var(--chat-space-block)] pl-8 space-y-[var(--chat-space-block)]"
+        />
+      ) : null}
+    </div>
+  );
 }
 
 function thinkingAriaLabel(processIndex: number, processCount: number): string | undefined {
