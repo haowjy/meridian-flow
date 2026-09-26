@@ -38,11 +38,20 @@ export function createInMemoryProjectChatAdapter(
 ) {
   const key = (threadId: string, userId: string) => `${threadId}:${userId}`;
 
-  function conversationalHead(thread: Thread): Turn | null {
+  function activeLineage(thread: Thread): Turn[] {
+    const lineage: Turn[] = [];
     let turn = thread.activeLeafTurnId ? source.turn(thread.activeLeafTurnId) : undefined;
     const visited = new Set<string>();
     while (turn && !visited.has(turn.id)) {
       visited.add(turn.id);
+      lineage.push(turn);
+      turn = turn.parentTurnId ? source.turn(turn.parentTurnId) : undefined;
+    }
+    return lineage;
+  }
+
+  function conversationalHead(thread: Thread): Turn | null {
+    for (const turn of activeLineage(thread)) {
       const hasCustomBlock = [...source.blocks()].some(
         (block) => block.turnId === turn?.id && block.blockType === "custom",
       );
@@ -55,15 +64,13 @@ export function createInMemoryProjectChatAdapter(
       ) {
         return turn;
       }
-      turn = turn.parentTurnId ? source.turn(turn.parentTurnId) : undefined;
     }
     return null;
   }
 
-  function actionRequired(head: Turn | null): boolean {
+  function actionRequired(thread: Thread): boolean {
     return isThreadActionRequired({
-      headRole: head?.role ?? null,
-      headStatus: head?.status ?? null,
+      activeLineage: activeLineage(thread),
     });
   }
 
@@ -92,7 +99,7 @@ export function createInMemoryProjectChatAdapter(
       lastActivityAt: exactTimestamp(
         head ? (head.completedAt ?? head.createdAt) : thread.createdAt,
       ),
-      actionRequired: actionRequired(head),
+      actionRequired: actionRequired(thread),
       isFavorite: state?.isFavorite ?? false,
     };
   }
@@ -168,5 +175,5 @@ export function createInMemoryProjectChatAdapter(
     },
   };
 
-  return { chatFeed, workChatFeed, threadUserState, conversationalHead };
+  return { chatFeed, workChatFeed, threadUserState, actionRequired };
 }

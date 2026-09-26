@@ -105,6 +105,7 @@ import {
   type InterruptRegistry,
 } from "./interrupts.js";
 import { createLocalTurn } from "./local-turn.js";
+import { modelResponseTimingFields } from "./model-response-timing.js";
 import { type PermissionGate, permissionGateFromToolPolicy } from "./permissions/index.js";
 import {
   appendEvent,
@@ -673,8 +674,7 @@ async function persistModelResponse(input: {
           priceSource: computedCost.priceSource,
           pricingSnapshot: computedCost.pricingSnapshot,
           finishReason: result.finishReason,
-          latencyMs: result.latencyMs ?? null,
-          timeToFirstTokenMs: result.timeToFirstTokenMs ?? null,
+          ...modelResponseTimingFields(result),
           rawUsage: toJsonValue(result.usage),
         };
         const updatedTurn = applyResponseToTurnSnapshot(currentAssistantTurn, response);

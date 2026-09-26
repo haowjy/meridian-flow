@@ -371,8 +371,10 @@ contract shapes.
   bubble list; the app renders them inside the preceding assistant's activity
   steps. The stored chat-activity projection below (`recompute_thread_chat_activity`)
   is a frozen SQL copy of this same predicate. Project and Work lists, and
-  snapshots derive the independent `actionRequired` fact from a
-  `waiting_interrupt` assistant head.
+  snapshots and thread lists derive the independent `actionRequired` fact from
+  the nearest assistant turn in the active lineage. A visible writer turn may
+  be the conversational head while an ancestor assistant remains parked on
+  `waiting_interrupt`; that still needs the writer's answer.
 
 ### Chat activity projection (single owner)
 
@@ -436,7 +438,7 @@ key off `role`/`metadata`, not this column.
 - Draft-review action-required state remains an extension point. Establishing it requires
   collab-domain branch/journal queries and review-state semantics, so the
   threads projector currently sources `actionRequired` only from the durable
-  `ask_user` interrupt status already on the logical-head turn.
+  `ask_user` interrupt status on the nearest assistant in the active lineage.
 
 ## Cross-domain dependencies
 

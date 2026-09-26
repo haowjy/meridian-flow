@@ -48,6 +48,7 @@ function responseToCreateInput(response: ModelResponseReceivedRow): CreateModelR
     finishReason: response.finishReason ?? null,
     latencyMs: response.latencyMs ?? null,
     timeToFirstTokenMs: response.timeToFirstTokenMs ?? null,
+    generationMs: response.generationMs ?? null,
     rawUsage: response.rawUsage ?? null,
   };
 }

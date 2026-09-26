@@ -39,6 +39,7 @@ export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter 
   const apiKey = resolveApiKey(config.auth);
   const client = new Anthropic({
     apiKey,
+    maxRetries: 0,
     ...(config.baseUrl ? { baseURL: config.baseUrl } : {}),
     defaultHeaders: config.auth?.headers,
   });
@@ -60,7 +61,6 @@ export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter 
           model.maxOutputTokens,
           providerId,
         );
-        request.onProviderRequestStart?.();
         const stream = await client.messages.create(params, { signal: request.signal });
 
         for await (const event of stream) {

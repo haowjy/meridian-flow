@@ -41,6 +41,7 @@ export async function writeModelResponse(
       responseMetadata: null,
       latencyMs: input.latencyMs ?? null,
       timeToFirstTokenMs: input.timeToFirstTokenMs ?? null,
+      generationMs: input.generationMs ?? null,
     })
     .onConflictDoNothing({ target: schema.modelResponses.id })
     .returning();

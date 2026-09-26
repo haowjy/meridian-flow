@@ -80,6 +80,7 @@ describe("buildThreadSnapshot parent", () => {
       priceSource: "unknown",
       latencyMs: 100,
       timeToFirstTokenMs: 27,
+      generationMs: 73,
     });
 
     const snapshot = await buildThreadSnapshot(
@@ -97,6 +98,49 @@ describe("buildThreadSnapshot parent", () => {
     expect(snapshot.turns[0]?.responses[0]).toMatchObject({
       latencyMs: 100,
       timeToFirstTokenMs: 27,
+      generationMs: 73,
     });
+  });
+
+  it("keeps a parked assistant question action-required behind a writer turn", async () => {
+    const repos = createInMemoryRepositories();
+    const thread = await repos.threads.create({
+      userId: "user-1",
+      projectId: "project-1",
+      title: "Muse chat",
+    });
+    const parkedAssistant = await repos.turns.create({
+      threadId: thread.id as ThreadId,
+      role: "assistant",
+      origin: "assistant",
+      status: "waiting_interrupt",
+    });
+    const writerTurn = await repos.turns.create({
+      threadId: thread.id as ThreadId,
+      prevTurnId: parkedAssistant.id,
+      role: "user",
+      origin: "writer",
+      status: "complete",
+    });
+    await repos.blocks.create({
+      turnId: writerTurn.id,
+      blockType: "text",
+      sequence: 0,
+      textContent: "one more detail",
+    });
+
+    const snapshot = await buildThreadSnapshot(
+      repos,
+      stubHub(),
+      {
+        read: async () => ({ kind: "asleep" as const }),
+        readRunningTurnId: async () => null,
+        readMany: async () => new Map(),
+        readPending: async () => ({ items: [] }),
+      },
+      thread.id as ThreadId,
+    );
+
+    expect(snapshot.actionRequired).toBe(true);
   });
 });

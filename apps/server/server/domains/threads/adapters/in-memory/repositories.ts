@@ -222,13 +222,10 @@ export function createInMemoryRepositories(
     const projected = projectThread(thread);
     const work =
       projected.workId && options.works ? await options.works.findById(projected.workId) : null;
-    const latestTurn = conversationalHead(projected);
-
     return toThreadListItem({
       thread: projected,
       workTitle: work && !work.deletedAt ? work.name : null,
-      lastTurnRole: latestTurn?.role ?? null,
-      lastTurnStatus: latestTurn?.status ?? null,
+      actionRequired: projectChatActionRequired(projected),
       // Run liveness is the live lease, which this durable fake does not model;
       // tests read it through the in-memory RunClaim instead.
       runningTurnId: null,
@@ -743,6 +740,7 @@ export function createInMemoryRepositories(
         finishReason: input.finishReason ?? null,
         latencyMs: input.latencyMs ?? null,
         timeToFirstTokenMs: input.timeToFirstTokenMs ?? null,
+        generationMs: input.generationMs ?? null,
         rawUsage: input.rawUsage ?? null,
         createdAt: toIsoString(new Date()),
       };
@@ -838,20 +836,24 @@ export function createInMemoryRepositories(
     },
   };
 
-  const { chatFeed, workChatFeed, threadUserState, conversationalHead } =
-    createInMemoryProjectChatAdapter(
-      {
-        threads: () => threads.values(),
-        turn: (id) => turns.get(id),
-        blocks: () => blocks.values(),
-        isProjectVisible: threadInActiveProject,
-        primaryWorkId: primaryWorkIdForThread,
-        hasWorkMembership: (threadId, workId) =>
-          threadWorks.has(membershipKey(threadId, workId as WorkId)),
-        work: async (id) => options.works?.findById(id) ?? null,
-      },
-      userStateByThreadUser,
-    );
+  const {
+    chatFeed,
+    workChatFeed,
+    threadUserState,
+    actionRequired: projectChatActionRequired,
+  } = createInMemoryProjectChatAdapter(
+    {
+      threads: () => threads.values(),
+      turn: (id) => turns.get(id),
+      blocks: () => blocks.values(),
+      isProjectVisible: threadInActiveProject,
+      primaryWorkId: primaryWorkIdForThread,
+      hasWorkMembership: (threadId, workId) =>
+        threadWorks.has(membershipKey(threadId, workId as WorkId)),
+      work: async (id) => options.works?.findById(id) ?? null,
+    },
+    userStateByThreadUser,
+  );
 
   return {
     threads: threadRepo,

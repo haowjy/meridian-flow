@@ -1,7 +1,7 @@
 /** Canonical PostgreSQL projection machinery for visible Project-chat rows. */
 import { GENERIC_SUBAGENT_NAME } from "@meridian/contracts/agents";
 import type { ProjectChatItem } from "@meridian/contracts/threads";
-import { type SQL, sql } from "drizzle-orm";
+import { type SQL, type SQLWrapper, sql } from "drizzle-orm";
 
 export type ProjectChatSqlRow = {
   thread_id: string;
@@ -28,16 +28,28 @@ export function mapProjectChatRow(row: ProjectChatSqlRow): ProjectChatItem {
   };
 }
 
-type ActionRequiredColumns = {
-  headRole: SQL;
-  headStatus: SQL;
-};
+type ActionRequiredColumns = { activeLeafTurnId: SQLWrapper };
 
-/** Canonical SQL expression for a chat paused for the writer's answer. */
+/** The nearest assistant in the active lineage is waiting for the writer. */
 export function threadActionRequiredSql(columns: ActionRequiredColumns): SQL<boolean> {
-  return sql<boolean>`COALESCE(
-    ${columns.headRole} = 'assistant' AND ${columns.headStatus} = 'waiting_interrupt', false
-  )`;
+  return sql<boolean>`COALESCE((
+    WITH RECURSIVE active_lineage AS (
+      SELECT tr.id, tr.parent_turn_id, tr.role, tr.status, 0 AS depth,
+        ARRAY[tr.id]::uuid[] AS path
+      FROM turns tr WHERE tr.id = ${columns.activeLeafTurnId}
+      UNION ALL
+      SELECT parent.id, parent.parent_turn_id, parent.role, parent.status,
+        active_lineage.depth + 1, active_lineage.path || parent.id
+      FROM active_lineage
+      JOIN turns parent ON parent.id = active_lineage.parent_turn_id
+      WHERE NOT parent.id = ANY(active_lineage.path)
+    )
+    SELECT nearest.status = 'waiting_interrupt'
+    FROM active_lineage nearest
+    WHERE nearest.role = 'assistant'
+    ORDER BY nearest.depth
+    LIMIT 1
+  ), false)`;
 }
 
 /** One correlated, whitespace-normalized 240-character visible-head preview. */
@@ -71,8 +83,7 @@ export function chatFeedRowsSql(input: { candidates: SQL; userId: string }): SQL
     SELECT t.id AS thread_id, t.title,
       primary_work.work_id, primary_work.work_title, agent.agent_name,
       ${threadActionRequiredSql({
-        headRole: sql`head.role`,
-        headStatus: sql`head.status`,
+        activeLeafTurnId: sql`t.active_leaf_turn_id`,
       })} AS action_required,
       COALESCE(tus.is_favorite, false) AS is_favorite,
       conversation_preview.last_message_preview,

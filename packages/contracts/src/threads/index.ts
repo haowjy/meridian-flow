@@ -370,10 +370,12 @@ export interface ModelResponse {
   stopReason?: string | null;
   requestParams?: JsonValue | null;
   responseMetadata?: JsonValue | null;
-  /** Request-send to stream-end duration. */
+  /** Adapter invocation to provider stream-end arrival; excludes consumer persistence time. */
   latencyMs: number | null;
-  /** Request-send to first text, reasoning, tool-argument, or custom content delta; null if none. */
+  /** Adapter invocation to first text, reasoning, or tool-argument delta arrival; null if none. */
   timeToFirstTokenMs: number | null;
+  /** First output arrival to provider stream-end arrival; null if no output delta arrived. */
+  generationMs: number | null;
   rawUsage?: JsonValue | null;
   createdAt: string;
   completedAt?: string | null;

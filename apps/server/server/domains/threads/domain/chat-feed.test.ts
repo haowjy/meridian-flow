@@ -67,3 +67,44 @@ it("searches titles case-insensitively, literally, and within Favorites", async 
   expect(await titlesOf({ search: "50%" })).toEqual(["50% off pills"]);
   expect((await getProjectChatFeedPage({ ...input, search: "   " })).items).toHaveLength(4);
 });
+
+it("keeps a parked assistant question action-required after a visible writer follow-up", async () => {
+  const repos = createInMemoryRepositories();
+  const thread = await repos.threads.create({ projectId: "project", userId: "user" });
+  const parkedAssistant = await repos.turns.create({
+    threadId: thread.id as ThreadId,
+    role: "assistant",
+    origin: "assistant",
+    status: "waiting_interrupt",
+  });
+  const writerTurn = await repos.turns.create({
+    threadId: thread.id as ThreadId,
+    prevTurnId: parkedAssistant.id,
+    role: "user",
+    origin: "writer",
+    status: "complete",
+  });
+  await repos.blocks.create({
+    turnId: writerTurn.id,
+    blockType: "text",
+    sequence: 0,
+    textContent: "one more detail",
+  });
+
+  const [item] = await repos.chatFeed.queryPage({
+    projectId: "project",
+    userId: "user",
+    after: null,
+    limit: 10,
+    favorite: false,
+    search: null,
+  });
+
+  expect(item).toMatchObject({
+    actionRequired: true,
+    lastMessagePreview: "one more detail",
+  });
+  await expect(repos.threads.listByProject("project")).resolves.toMatchObject([
+    { actionRequired: true },
+  ]);
+});

@@ -39,6 +39,7 @@ export function createOpenAIResponsesAdapter(config: ProviderConfig): ProviderAd
   const apiKey = resolveApiKey(config.auth);
   const client = new OpenAI({
     apiKey,
+    maxRetries: 0,
     ...(config.baseUrl ? { baseURL: config.baseUrl } : {}),
     defaultHeaders: config.auth?.headers,
   });
@@ -55,7 +56,6 @@ export function createOpenAIResponsesAdapter(config: ProviderConfig): ProviderAd
 
       try {
         const params = toOpenAIResponsesParams(request, model.id, providerId);
-        request.onProviderRequestStart?.();
         const stream = await client.responses.create(params, { signal: request.signal });
 
         for await (const event of stream) {
