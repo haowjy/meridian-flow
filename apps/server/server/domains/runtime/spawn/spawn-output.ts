@@ -88,6 +88,8 @@ export function invocationCardProps(input: {
   correlation: Pick<InvocationCardProps, "parentTurnId" | "toolCallId" | "deliveryMode">;
   childThreadId: ThreadId;
   execution: TurnId | null;
+  startedAt: string;
+  terminalAt: string | null;
   outcome?: SavedOutcome;
 }): InvocationCardProps {
   const slug = input.agent?.trim() || GENERIC_SUBAGENT_SLUG;
@@ -98,23 +100,26 @@ export function invocationCardProps(input: {
     toolCallId: input.correlation.toolCallId,
     deliveryMode: input.correlation.deliveryMode,
     childThreadId: input.childThreadId,
+    startedAt: input.startedAt,
     ...(input.description !== undefined ? { title: input.description } : {}),
   };
   if (input.outcome) {
     if (!input.execution) throw new Error("Terminal invocation card has no execution");
+    if (!input.terminalAt) throw new Error("Terminal invocation card has no terminal time");
     return {
       ...base,
       status: input.outcome === "succeeded" ? "completed" : "failed",
       execution: input.execution,
       outcome: input.outcome,
+      terminalAt: input.terminalAt,
     };
   }
-  return { ...base, status: "running", execution: input.execution };
+  return { ...base, status: "running", execution: input.execution, terminalAt: null };
 }
 
 export function unadmittedInvocationFailure(props: InvocationCardProps): InvocationCardProps {
   const { status: _status, execution: _execution, outcome: _outcome, ...identity } = props;
-  return { ...identity, status: "failed", execution: null };
+  return { ...identity, status: "failed", execution: null, terminalAt: new Date().toISOString() };
 }
 
 function isRecord(value: JsonValue | undefined): value is Record<string, JsonValue> {

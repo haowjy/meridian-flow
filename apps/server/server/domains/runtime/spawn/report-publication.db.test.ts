@@ -370,8 +370,11 @@ else
           },
           childThreadId: ids.child,
           execution: null,
+          startedAt: "2026-01-01T00:00:00.000Z",
+          terminalAt: null,
         }),
         execution: ids.execution,
+        admittedAt: "2026-01-01T00:00:00.000Z",
       });
       expect((await repos.blocks.findById(ids.card))?.content).toEqual(terminalCard.content);
       const afterEvents = await db

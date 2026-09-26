@@ -106,6 +106,7 @@ export async function bindAdmittedInvocationCard(input: {
   card: Block | null;
   props: InvocationCardProps;
   execution: TurnId;
+  admittedAt: string;
 }): Promise<void> {
   const { transcript, card } = input;
   if (!transcript || !card) return;
@@ -151,6 +152,8 @@ export async function bindAdmittedInvocationCard(input: {
             toolCallId: input.props.toolCallId,
             deliveryMode: input.props.deliveryMode,
             childThreadId: input.props.childThreadId,
+            startedAt: input.admittedAt,
+            terminalAt: null,
             ...(input.props.title !== undefined ? { title: input.props.title } : {}),
             status: "running",
             execution: input.execution,

@@ -67,11 +67,18 @@ export type InvocationCardProps = {
   toolCallId: string;
   childThreadId: ThreadId;
   deliveryMode: Extract<ExecutionReportDelivery, "direct" | "background_notification">;
+  startedAt: string;
+  terminalAt: string | null;
   title?: string;
 } & (
-  | { status: "running"; execution: TurnId | null; outcome?: never }
-  | { status: "failed"; execution: null; outcome?: never }
-  | { status: "completed" | "failed"; execution: TurnId; outcome: SavedOutcome }
+  | { status: "running"; execution: TurnId | null; outcome?: never; terminalAt: null }
+  | { status: "failed"; execution: null; outcome?: never; terminalAt: string }
+  | {
+      status: "completed" | "failed";
+      execution: TurnId;
+      outcome: SavedOutcome;
+      terminalAt: string;
+    }
 );
 
 export function buildInvocationCardContent(input: InvocationCardProps): ComponentBlockContent {

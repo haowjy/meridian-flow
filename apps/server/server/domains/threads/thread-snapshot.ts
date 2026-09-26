@@ -28,6 +28,7 @@ export interface ThreadSnapshotRepositories extends Pick<ThreadRepositories, "re
   turns: TurnRepository;
   blocks: BlockRepository;
   modelResponses: ModelResponseRepository;
+  executionReports: ThreadRepositories["executionReports"];
 }
 
 function isObjectContent(content: JsonValue): content is Record<string, JsonValue> {
@@ -72,9 +73,20 @@ export async function buildThreadSnapshot(
     if (!thread) {
       throw new Error(`Thread not found: ${threadId}`);
     }
-    const parentThread = thread.parentThreadId
+    const ancestors: NonNullable<ThreadSnapshotResponse["ancestors"]> = [];
+    let parentThread = thread.parentThreadId
       ? await repos.threads.findById(thread.parentThreadId as ThreadId)
       : null;
+    while (parentThread) {
+      ancestors.unshift({
+        id: parentThread.id,
+        title: parentThread.title,
+        agentName: parentThread.agentName ?? null,
+      });
+      parentThread = parentThread.parentThreadId
+        ? await repos.threads.findById(parentThread.parentThreadId as ThreadId)
+        : null;
+    }
 
     const runningTurnId = await statusReader.readRunningTurnId(threadId);
     const headSeq = await hub.headSeq(threadId);
@@ -105,13 +117,16 @@ export async function buildThreadSnapshot(
 
     const nextSeq = (headSeq + 1n).toString();
     const resumeAfterSeq = (await hub.readModelProjectionWatermark(threadId)).toString();
-    const activity = await readThreadActivity({ threads: repos.threads, statusReader }, threadId);
+    const activity = await readThreadActivity(
+      { threads: repos.threads, statusReader, executionReports: repos.executionReports },
+      threadId,
+    );
     const pending = await statusReader.readPending(threadId);
 
     return {
       threadId,
       thread,
-      parent: parentThread ? { id: parentThread.id, title: parentThread.title } : null,
+      ancestors,
       turns: threadTurns,
       liveState: {
         threadId,

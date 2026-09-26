@@ -422,9 +422,10 @@ export type CancelTurnResponse = {
   status: "cancelled" | "already_finished" | "not_found";
 };
 
-export type ThreadSnapshotParent = {
+export type ThreadSnapshotAncestor = {
   id: string;
   title: string | null;
+  agentName: string | null;
 };
 
 export type ThreadSnapshotResponse = {
@@ -435,8 +436,8 @@ export type ThreadSnapshotResponse = {
   actionRequired: boolean;
   /** First event position after this snapshot; clients reject it below their stored floor. */
   nextSeq: string;
-  /** Point-lookup parent for subagent chrome. Absent conversation payload. */
-  parent?: ThreadSnapshotParent | null;
+  /** Point-looked-up spawn path, ordered root → direct parent; no ancestor conversations. */
+  ancestors: ThreadSnapshotAncestor[];
 };
 
 /** Dev-only: per-request model context captured by the orchestrator. */

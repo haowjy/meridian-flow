@@ -16,6 +16,8 @@ type SpawnReportCardProps = {
   title: string | null;
   status: SpawnReportStatus;
   outcome?: SpawnReportOutcome;
+  startedAt?: string;
+  terminalAt?: string | null;
   childThreadId: string | null;
   directResult?: DirectInvocationResult | null;
   loadingReport?: boolean;

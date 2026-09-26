@@ -142,6 +142,8 @@ export interface ExecutionReportRepository {
     childThreadId: ThreadId,
     assistantTurnId: TurnId,
   ): Promise<SavedExecutionReport | null>;
+  /** Latest admitted execution per child, ordered from report admission truth. */
+  listLatestByChildren(childThreadIds: readonly ThreadId[]): Promise<LatestChildExecution[]>;
   listFinishedByChild(childThreadId: ThreadId): Promise<SavedExecutionReport[]>;
   /** Bounded metadata for admitted executions still lacking terminal truth. */
   listUnfinalized(
@@ -165,6 +167,11 @@ export interface ExecutionReportRepository {
     publication: "published" | "skipped",
   ): Promise<void>;
 }
+
+export type LatestChildExecution = Pick<
+  SavedExecutionReport,
+  "childThreadId" | "deliveryMode" | "admittedAt" | "terminalAt"
+>;
 
 export interface CreateThreadInput {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */

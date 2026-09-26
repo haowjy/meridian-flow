@@ -1,10 +1,10 @@
 import { Trans } from "@lingui/react/macro";
-import type { Thread } from "@meridian/contracts/protocol";
+import type { Thread, ThreadSnapshotAncestor } from "@meridian/contracts/protocol";
 import { ChevronLeft } from "lucide-react";
 
 export type SubagentBannerProps = {
   subagent: Thread;
-  parent: { id: string; title: string | null } | null;
+  ancestors: ThreadSnapshotAncestor[];
   onOpenParent: (threadId: string) => void;
 };
 
@@ -12,7 +12,8 @@ export type SubagentBannerProps = {
  * Sticky 36-44px banner above the subagent conversation. Surfaces the parent
  * thread link and the subagent's own title. Run state stays on the composer.
  */
-export function SubagentBanner({ subagent, parent, onOpenParent }: SubagentBannerProps) {
+export function SubagentBanner({ subagent, ancestors, onOpenParent }: SubagentBannerProps) {
+  const parent = ancestors.at(-1) ?? null;
   return (
     <div className="sticky top-0 z-10 flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-border bg-card px-4 py-2 text-xs">
       {parent ? (

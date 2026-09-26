@@ -9,7 +9,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
-import type { JsonValue, PriceSource } from "@meridian/contracts/threads";
+import type { CurrentToolCall, JsonValue, PriceSource } from "@meridian/contracts/threads";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -244,6 +244,7 @@ export const threadRunLeases = pgTable(
     holderId: text("holder_id").notNull(),
     phase: text("phase").notNull().default("generating"),
     cancelRequested: boolean("cancel_requested").notNull().default(false),
+    currentTool: jsonb("current_tool").$type<CurrentToolCall | null>(),
     acquiredAt: timestamp("acquired_at", { withTimezone: true }).notNull().defaultNow(),
     renewedAt: timestamp("renewed_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),

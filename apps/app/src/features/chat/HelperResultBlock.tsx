@@ -13,7 +13,9 @@ export function HelperResultBlock({ content, invocationResult, threadId }: Compo
     outcome?: "succeeded" | "failed" | "cancelled";
     childThreadId?: string;
     execution?: string | null;
-    deliveryMode?: "direct" | "background_notification";
+    deliveryMode: "direct" | "background_notification";
+    startedAt: string;
+    terminalAt: string | null;
   };
   const shouldReadSavedReport =
     props.deliveryMode === "background_notification" &&
@@ -63,6 +65,8 @@ export function HelperResultBlock({ content, invocationResult, threadId }: Compo
       title={props.title ?? null}
       status={props.status}
       outcome={props.outcome}
+      startedAt={props.startedAt}
+      terminalAt={props.terminalAt}
       childThreadId={props.childThreadId ?? null}
       directResult={invocationResult ?? savedReport ?? unavailable}
       loadingReport={shouldReadSavedReport && saved.isPending}

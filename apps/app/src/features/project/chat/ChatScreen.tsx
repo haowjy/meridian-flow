@@ -99,14 +99,14 @@ function ChatScreenLoaded({
     refetch,
   } = useThreadSnapshotSync(threadId);
   const thread = projectThreads.find((t) => t.id === threadId) ?? snapshotThread;
-  const parent = snapshot?.parent ?? null;
+  const ancestors = snapshot?.ancestors ?? [];
 
   const isSubagent = thread?.kind === "subagent";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       {isSubagent && thread ? (
-        <SubagentBanner subagent={thread} parent={parent} onOpenParent={onSelectThread} />
+        <SubagentBanner subagent={thread} ancestors={ancestors} onOpenParent={onSelectThread} />
       ) : null}
 
       {isError ? (
