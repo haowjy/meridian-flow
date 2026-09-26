@@ -1,6 +1,13 @@
 import type { Turn } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
-import { turnStats } from "./turn-stats";
+import { cacheHitPercent, turnStats } from "./turn-stats";
+
+describe("cacheHitPercent", () => {
+  it("uses inclusive prompt input and hides empty totals", () => {
+    expect(cacheHitPercent(25, 100)).toBe(25);
+    expect(cacheHitPercent(0, 0)).toBeNull();
+  });
+});
 
 function turn(responses: Array<Record<string, unknown>>): Turn {
   return { model: "fallback", responses } as unknown as Turn;
@@ -16,6 +23,7 @@ describe("turnStats", () => {
           inputTokens: 100,
           outputTokens: 20,
           cacheReadTokens: 30,
+          cacheReset: true,
           latencyMs: 1_000,
           timeToFirstTokenMs: 200,
           generationMs: 800,
@@ -39,6 +47,9 @@ describe("turnStats", () => {
       inputTokens: 400,
       outputTokens: 60,
       cacheHitPercent: 32.5,
+      cacheReportedInputTokens: 400,
+      cacheReportedCalls: 2,
+      cacheResets: 1,
       ttftMs: 200,
     });
     expect(stats.outputTokensPerSecond).toBeCloseTo(60_000 / 2_300);
@@ -53,6 +64,18 @@ describe("turnStats", () => {
       ttftMs: null,
       outputTokensPerSecond: null,
     });
+  });
+
+  it("excludes calls whose providers omit cache counters from cache-rate input", () => {
+    const stats = turnStats(
+      turn([
+        { sequence: 1, inputTokens: 100, outputTokens: 1, cacheReadTokens: 50 },
+        { sequence: 2, inputTokens: 900, outputTokens: 1, cacheReadTokens: null },
+      ]),
+    );
+    expect(stats.cacheHitPercent).toBe(50);
+    expect(stats.cacheReportedInputTokens).toBe(100);
+    expect(stats.cacheReportedCalls).toBe(1);
   });
 
   it("excludes calls without timing from both sides of the speed calculation", () => {

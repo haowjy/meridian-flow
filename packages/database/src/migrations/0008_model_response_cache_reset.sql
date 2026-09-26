@@ -1,0 +1,1 @@
+ALTER TABLE "model_responses" ADD COLUMN "cache_reset" boolean DEFAULT false NOT NULL;

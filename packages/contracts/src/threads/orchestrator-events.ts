@@ -31,6 +31,7 @@ export interface ModelResponseReceivedRow {
   reasoningTokens?: number | null;
   cacheReadTokens?: number | null;
   cacheWriteTokens?: number | null;
+  cacheReset?: boolean;
   costUsd?: string | null;
   millicredits?: string | null;
   priceSource?: PriceSource;

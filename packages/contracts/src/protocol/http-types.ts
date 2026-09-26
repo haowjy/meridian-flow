@@ -432,6 +432,16 @@ export type ThreadSnapshotResponse = {
   threadId: string;
   thread: Thread;
   turns: Turn[];
+  /** Token totals across every model response billed to this thread, all turn branches included. */
+  threadUsage: {
+    inputTokens: number;
+    cacheReadTokens: number;
+    cacheReportedInputTokens: number;
+    cacheReportedCalls: number;
+    cacheWriteTokens: number;
+    outputTokens: number;
+    cacheResets: number;
+  };
   liveState: ThreadLiveState;
   actionRequired: boolean;
   /** First event position after this snapshot; clients reject it below their stored floor. */

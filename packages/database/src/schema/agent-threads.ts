@@ -337,6 +337,7 @@ export const modelResponses = pgTable(
     reasoningTokens: integer("reasoning_tokens"),
     cacheReadTokens: integer("cache_read_tokens"),
     cacheWriteTokens: integer("cache_write_tokens"),
+    cacheReset: boolean("cache_reset").notNull().default(false),
     usageBreakdown: jsonb("usage_breakdown").default(sql`'{}'::jsonb`),
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
     millicredits: bigint("millicredits", { mode: "number" }),
