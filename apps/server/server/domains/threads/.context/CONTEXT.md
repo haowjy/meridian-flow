@@ -47,7 +47,8 @@ for the tool-freeze mechanics.
 - **Thread / Turn / Block / ModelResponse repositories** — CRUD for the
   conversation data model. A thread contains turns; a turn contains blocks
   (text, reasoning, tool_use, tool_result, image, file, custom) and model
-  responses with token/cost rollups. `ThreadRepository.listDescendants` walks a
+  responses with token/cost rollups and per-call request latency/TTFT.
+  `ThreadRepository.listDescendants` walks a
   thread's own spawn subtree breadth-first on `parent_thread_id` (served by
   `threads_parent_created_active`, excluding soft-deleted rows), returning the
   fields the recursive activity read needs: id, parent, root, depth, ref, title,

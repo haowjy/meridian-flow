@@ -6,7 +6,6 @@ import type { EventCorrelation, EventLevel, EventSink } from "../../observabilit
 import { emitEvent } from "../../observability/index.js";
 import type { GenerateRequest, GenerateResult, StreamEvent } from "./domain/index.js";
 import type { Gateway } from "./ports/gateway.js";
-import { isPartialOutputEvent } from "./stream-events.js";
 
 const VERBOSE_CHUNKS = "gateway.chunks";
 const UTF8_ENCODER = new TextEncoder();
@@ -140,6 +139,10 @@ type StreamTerminal =
   | { type: "end"; at: number; result: GenerateResult }
   | { type: "error"; at: number; errorCode?: string; cause?: unknown };
 
+function elapsedMs(startedAt: number, endedAt: number): number {
+  return Math.max(0, Math.round(endedAt - startedAt));
+}
+
 function createStreamObservation(input: {
   request: GenerateRequest;
   emitter: CallEmitter;
@@ -147,12 +150,14 @@ function createStreamObservation(input: {
   startedAt: number;
 }): {
   observe(source: AsyncIterable<StreamEvent>): AsyncIterable<StreamEvent>;
+  requestSent(): void;
   fail(error: unknown): void;
 } {
   let route = { provider: input.request.provider, model: input.request.model };
   let startCount = 0;
   let chunkCount = 0;
   const chunkCounts = new Map<StreamEvent["type"], number>();
+  let requestStartedAt: number | undefined;
   let firstOutputMs: number | undefined;
   let terminal: StreamTerminal | undefined;
   let closed = false;
@@ -162,7 +167,7 @@ function createStreamObservation(input: {
     const errorCode = errorCodeFrom(error);
     terminal = {
       type: "error",
-      at: Date.now(),
+      at: performance.now(),
       cause: error,
       ...(errorCode ? { errorCode } : {}),
     };
@@ -171,14 +176,14 @@ function createStreamObservation(input: {
   function close(): void {
     if (closed) return;
     closed = true;
-    const terminalAt = terminal?.at ?? Date.now();
+    const terminalAt = terminal?.at ?? performance.now();
     const outcome = classifyTerminalOutcome(terminal ?? { type: "none" }, input.request.signal);
     const errorCode = terminal?.type === "error" ? terminal.errorCode : undefined;
     input.emitter.emit(
       outcome === "ok" ? "info" : "warn",
       "stream.close",
       streamClosePayload({
-        durationMs: terminalAt - input.startedAt,
+        durationMs: elapsedMs(input.startedAt, terminalAt),
         firstOutputMs,
         chunkCount,
         chunkCounts,
@@ -189,6 +194,11 @@ function createStreamObservation(input: {
       route,
       { errorCode },
     );
+  }
+
+  function requestSent(): void {
+    requestStartedAt = performance.now();
+    firstOutputMs = undefined;
   }
 
   async function* observe(source: AsyncIterable<StreamEvent>): AsyncIterable<StreamEvent> {
@@ -212,18 +222,33 @@ function createStreamObservation(input: {
           }
         }
 
-        let eventAt: number | undefined;
-        if (firstOutputMs === undefined && isPartialOutputEvent(event)) {
-          eventAt = Date.now();
-          firstOutputMs = eventAt - input.startedAt;
-          input.emitter.emit("debug", "stream.first_output", { latencyMs: firstOutputMs }, route);
-        }
+        let observedEvent = event;
 
         if (terminal === undefined && event.type === "end") {
           route = { provider: event.result.provider, model: event.result.model };
-          terminal = { type: "end", result: event.result, at: eventAt ?? Date.now() };
+          const endedAt = performance.now();
+          const result = {
+            ...event.result,
+            latencyMs: requestStartedAt === undefined ? null : elapsedMs(requestStartedAt, endedAt),
+            timeToFirstTokenMs: firstOutputMs ?? null,
+          };
+          observedEvent = { ...event, result };
+          terminal = { type: "end", result, at: endedAt };
         } else if (terminal === undefined && event.type === "error") {
-          terminal = { type: "error", errorCode: event.code, at: Date.now() };
+          terminal = { type: "error", errorCode: event.code, at: performance.now() };
+        }
+
+        if (
+          firstOutputMs === undefined &&
+          requestStartedAt !== undefined &&
+          (event.type === "text.delta" ||
+            event.type === "reasoning.delta" ||
+            event.type === "tool_call.delta" ||
+            event.type === "custom.delta")
+        ) {
+          const firstDeltaAt = performance.now();
+          firstOutputMs = elapsedMs(requestStartedAt, firstDeltaAt);
+          input.emitter.emit("debug", "stream.first_output", { latencyMs: firstOutputMs }, route);
         }
 
         if (input.verboseChunks) {
@@ -239,7 +264,7 @@ function createStreamObservation(input: {
           });
         }
 
-        yield event;
+        yield observedEvent;
       }
     } catch (error) {
       recordFailure(error);
@@ -251,6 +276,7 @@ function createStreamObservation(input: {
 
   return {
     observe,
+    requestSent,
     fail(error) {
       recordFailure(error);
       close();
@@ -265,7 +291,7 @@ export function createInstrumentedGateway(
 ): Gateway {
   const instrumented: Gateway = {
     stream(request) {
-      const startedAt = Date.now();
+      const startedAt = performance.now();
       const gatewayCallId = request.correlation?.gatewayCallId ?? crypto.randomUUID();
       const emitter = createCallEmitter(request, deps, gatewayCallId);
       const observation = createStreamObservation({
@@ -275,7 +301,15 @@ export function createInstrumentedGateway(
         startedAt,
       });
       try {
-        return observation.observe(gateway.stream(request));
+        return observation.observe(
+          gateway.stream({
+            ...request,
+            onProviderRequestStart: () => {
+              request.onProviderRequestStart?.();
+              observation.requestSent();
+            },
+          }),
+        );
       } catch (error) {
         observation.fail(error);
         throw error;
@@ -283,7 +317,8 @@ export function createInstrumentedGateway(
     },
 
     async generate(request) {
-      const startedAt = Date.now();
+      const startedAt = performance.now();
+      let requestStartedAt: number | undefined;
       const gatewayCallId = request.correlation?.gatewayCallId ?? crypto.randomUUID();
       const emitter = createCallEmitter(request, deps, gatewayCallId);
       let route = {
@@ -293,15 +328,23 @@ export function createInstrumentedGateway(
       emitter.emit("debug", "stream.open", routePayload(route), route);
 
       try {
-        const result = await gateway.generate(request);
-        const terminalAt = Date.now();
+        const result = await gateway.generate({
+          ...request,
+          onProviderRequestStart: () => {
+            request.onProviderRequestStart?.();
+            requestStartedAt = performance.now();
+          },
+        });
+        const terminalAt = performance.now();
+        const latencyMs =
+          requestStartedAt === undefined ? null : elapsedMs(requestStartedAt, terminalAt);
         route = { provider: result.provider, model: result.model };
         const outcome = classifyTerminalOutcome({ type: "end" }, request.signal);
         emitter.emit(
           outcome === "ok" ? "info" : "warn",
           "stream.close",
           {
-            durationMs: terminalAt - startedAt,
+            durationMs: elapsedMs(startedAt, terminalAt),
             inputTokens: result.usage.inputTokens,
             outputTokens: result.usage.outputTokens,
             finishReason: result.finishReason,
@@ -309,16 +352,16 @@ export function createInstrumentedGateway(
           },
           route,
         );
-        return result;
+        return { ...result, latencyMs, timeToFirstTokenMs: null };
       } catch (error) {
-        const terminalAt = Date.now();
+        const terminalAt = performance.now();
         const errorCode = errorCodeFrom(error);
         const outcome = classifyTerminalOutcome({ type: "error", cause: error }, request.signal);
         emitter.emit(
           "warn",
           "stream.close",
           {
-            durationMs: terminalAt - startedAt,
+            durationMs: elapsedMs(startedAt, terminalAt),
             outcome,
             ...(errorCode ? { errorCode } : {}),
           },

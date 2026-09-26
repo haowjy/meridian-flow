@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 - Tighten chat turn rhythm and add settled assistant copy, usage, and debug actions.
+- Record each model call's time to first streamed output and request-to-end latency.
 
 - Keep the writer's own messages in the chat after the reply starts; only machine-delivered inbox messages fold into activity rows.
 

@@ -60,6 +60,7 @@ export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter 
           model.maxOutputTokens,
           providerId,
         );
+        request.onProviderRequestStart?.();
         const stream = await client.messages.create(params, { signal: request.signal });
 
         for await (const event of stream) {

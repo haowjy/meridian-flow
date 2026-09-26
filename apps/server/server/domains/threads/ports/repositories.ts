@@ -91,6 +91,7 @@ export interface CreateModelResponseInput {
   pricingSnapshot?: JsonValue | null;
   finishReason?: FinishReason | null;
   latencyMs?: number | null;
+  timeToFirstTokenMs?: number | null;
   rawUsage?: JsonValue | null;
 }
 

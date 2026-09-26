@@ -144,6 +144,7 @@ export function mapModelResponse(row: typeof schema.modelResponses.$inferSelect)
     requestParams: row.requestParams as ModelResponse["requestParams"],
     responseMetadata: row.responseMetadata as ModelResponse["responseMetadata"],
     latencyMs: row.latencyMs != null ? Number(row.latencyMs) : null,
+    timeToFirstTokenMs: row.timeToFirstTokenMs != null ? Number(row.timeToFirstTokenMs) : null,
     rawUsage: row.usageBreakdown as ModelResponse["rawUsage"],
     createdAt: toIsoString(row.createdAt),
     completedAt: row.completedAt ? toIsoString(row.completedAt) : null,

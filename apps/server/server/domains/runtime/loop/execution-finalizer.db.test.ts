@@ -412,4 +412,21 @@ else
         costMillicredits: 7,
       });
     });
+
+    it("persists request latency and TTFT on model responses", async () => {
+      const response = await repos.modelResponses.create({
+        turnId: ids.execution,
+        sequence: 0,
+        provider: "test",
+        model: "test-model",
+        priceSource: "unknown",
+        latencyMs: 92,
+        timeToFirstTokenMs: 27,
+      });
+
+      expect(response.row).toMatchObject({ latencyMs: 92, timeToFirstTokenMs: 27 });
+      await expect(repos.modelResponses.listByTurn(ids.execution)).resolves.toMatchObject([
+        { latencyMs: 92, timeToFirstTokenMs: 27 },
+      ]);
+    });
   });

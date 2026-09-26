@@ -58,6 +58,7 @@ export function createOpenAICompatibleAdapter(config: ProviderConfig): ProviderA
 
       try {
         const params = toOpenAIChatCompletionParams(request, model.id);
+        request.onProviderRequestStart?.();
         const stream = await client.chat.completions.create(
           { ...params, stream: true },
           { signal: request.signal },

@@ -673,6 +673,8 @@ async function persistModelResponse(input: {
           priceSource: computedCost.priceSource,
           pricingSnapshot: computedCost.pricingSnapshot,
           finishReason: result.finishReason,
+          latencyMs: result.latencyMs ?? null,
+          timeToFirstTokenMs: result.timeToFirstTokenMs ?? null,
           rawUsage: toJsonValue(result.usage),
         };
         const updatedTurn = applyResponseToTurnSnapshot(currentAssistantTurn, response);

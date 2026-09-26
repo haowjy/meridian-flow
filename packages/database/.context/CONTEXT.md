@@ -68,9 +68,9 @@ ReturnResultCapture object (including rejecting JSON null).
 The `threads`, `turns`, `model_responses`, and `turn_blocks` tables persist the
 JSON-natural thread contract fields that repository conformance reads back:
 thread total cost, turn usage rollups/latest model metadata, model-response
-reasoning/cache token counts, and block provider metadata. These columns are
-maintained by TypeScript repositories and the read-model projector; do not add
-database triggers/functions for these rollups.
+reasoning/cache token counts and request latency/TTFT, and block provider
+metadata. These values are written by TypeScript repositories and the
+read-model projector; do not add database triggers/functions for them.
 
 The one deliberate exception is `threads.last_activity_at` and
 `threads.conversational_leaf_turn_id`: unlike the rollups above, which have

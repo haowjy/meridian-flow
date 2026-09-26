@@ -46,6 +46,8 @@ function responseToCreateInput(response: ModelResponseReceivedRow): CreateModelR
     priceSource: response.priceSource ?? "unknown",
     pricingSnapshot: response.pricingSnapshot ?? null,
     finishReason: response.finishReason ?? null,
+    latencyMs: response.latencyMs ?? null,
+    timeToFirstTokenMs: response.timeToFirstTokenMs ?? null,
     rawUsage: response.rawUsage ?? null,
   };
 }
