@@ -7,17 +7,15 @@
 
 ## [Unreleased]
 
-- Disable ask_user until its rework (#601); no agent is offered the tool.
-
-- Tighten chat-thread rhythm and make settled assistant actions reliable: rich final-answer copy, computable turn stats, and scoped debug inspection.
-- Record each model call's time to first streamed output and request-to-end latency.
-- Apply one chat-thread spacing scale across turns, cards, prose, and composer controls; omit unavailable output speed and first-token rows from turn info.
-- Fix assistant-turn Copy to write the final answer as rich HTML and Markdown.
-- Tighten chat turn rhythm and add settled assistant copy, usage, and debug actions.
-- Record per-attempt provider latency, time to first output, and generation duration without charging downstream persistence to model timing, while preserving ask-user action state behind writer turns.
-- Bound provider-event buffering by bytes and omit generation timing after consumer backpressure; honor provider retry-after hints and retry vetoes.
-
-- Keep the writer's own messages in the chat after the reply starts; only machine-delivered inbox messages fold into activity rows.
+- Keep writer messages visible after the reply starts; only machine-delivered inbox messages fold into activity rows.
+- Show only "Queued" under a writer message the model has not read yet.
+- Keep "needs your answer" on a chat when the writer sends while a question is parked.
+- One chat spacing scale across turns, cards, prose, and composer; non-chat prose keeps its spacing.
+- Settled assistant turns get Copy (rich HTML and Markdown), turn info (model, calls, output speed, first-token time, tokens, cache hit), and debug-gated model-call inspection.
+- Record per-call latency, time to first output, and generation time at provider-event arrival; omit generation time after consumer backpressure.
+- Gateway owns provider retries; honor retry-after hints and retry vetoes.
+- Show subagent lifecycle in chat: background launch, running panel, finished and report lines, foreground card, and a Subagents popover.
+- Disable ask_user until its rework (#601).
 
 - Freeze thread prompts at the database boundary.
 - Keep the same Agent and prompt when forking by default.
