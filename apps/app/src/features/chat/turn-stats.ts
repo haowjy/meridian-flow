@@ -1,3 +1,4 @@
+/** Per-assistant-turn usage summary for the turn info popover. */
 import type { Turn } from "@meridian/contracts/protocol";
 
 export type TurnStats = {
@@ -23,25 +24,21 @@ export function turnStats(turn: Turn): TurnStats {
   let generationOutputTokens = 0;
   let hasGenerationTime = false;
   for (const response of responses) {
-    // TODO(thread-ux): drop cast once ModelResponse.timeToFirstTokenMs lands
-    const ttft = (response as { timeToFirstTokenMs?: number | null }).timeToFirstTokenMs;
+    const ttft = response.timeToFirstTokenMs;
     if (response.latencyMs != null && ttft != null && response.latencyMs > ttft) {
       generationMs += response.latencyMs - ttft;
       generationOutputTokens += response.outputTokens;
       hasGenerationTime = true;
     }
   }
-  // TODO(thread-ux): drop cast once ModelResponse.timeToFirstTokenMs lands
-  const firstTtft = responses[0]
-    ? (responses[0] as { timeToFirstTokenMs?: number | null }).timeToFirstTokenMs
-    : null;
+  const firstTtft = responses[0]?.timeToFirstTokenMs ?? null;
   return {
     model: responses[0]?.model ?? turn.model ?? null,
     callCount: responses.length,
     inputTokens,
     outputTokens,
     cacheHitPercent: inputTokens > 0 ? (cacheReadTokens / inputTokens) * 100 : null,
-    ttftMs: firstTtft ?? null,
+    ttftMs: firstTtft,
     outputTokensPerSecond:
       hasGenerationTime && generationMs > 0 ? (generationOutputTokens * 1000) / generationMs : null,
   };
