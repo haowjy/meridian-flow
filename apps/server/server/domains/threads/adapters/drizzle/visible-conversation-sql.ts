@@ -15,6 +15,9 @@ export type ProjectChatSqlRow = {
   is_favorite: boolean;
 };
 
+// Bound malformed/cyclic lineages when no assistant is encountered.
+const MAX_ACTIVE_LINEAGE_DEPTH = 10_000;
+
 export function mapProjectChatRow(row: ProjectChatSqlRow): ProjectChatItem {
   return {
     id: row.thread_id,
@@ -34,21 +37,19 @@ type ActionRequiredColumns = { activeLeafTurnId: SQLWrapper };
 export function threadActionRequiredSql(columns: ActionRequiredColumns): SQL<boolean> {
   return sql<boolean>`COALESCE((
     WITH RECURSIVE active_lineage AS (
-      SELECT tr.id, tr.parent_turn_id, tr.role, tr.status, 0 AS depth,
-        ARRAY[tr.id]::uuid[] AS path
+      SELECT tr.id, tr.parent_turn_id, tr.role, tr.status, 0 AS depth
       FROM turns tr WHERE tr.id = ${columns.activeLeafTurnId}
       UNION ALL
       SELECT parent.id, parent.parent_turn_id, parent.role, parent.status,
-        active_lineage.depth + 1, active_lineage.path || parent.id
+        active_lineage.depth + 1
       FROM active_lineage
       JOIN turns parent ON parent.id = active_lineage.parent_turn_id
-      WHERE NOT parent.id = ANY(active_lineage.path)
+      WHERE active_lineage.role <> 'assistant'
+        AND active_lineage.depth < ${MAX_ACTIVE_LINEAGE_DEPTH}
     )
     SELECT nearest.status = 'waiting_interrupt'
     FROM active_lineage nearest
     WHERE nearest.role = 'assistant'
-    ORDER BY nearest.depth
-    LIMIT 1
   ), false)`;
 }
 

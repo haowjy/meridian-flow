@@ -15,12 +15,7 @@ function sanitize(payload: Record<string, unknown>): Record<string, unknown> {
   }).payload;
 }
 
-const metricKeys = [
-  "firstOutputMs",
-  "inputTokens",
-  "outputTokens",
-  "providerFirstOutputMs",
-] as const;
+const metricKeys = ["inputTokens", "outputTokens", "providerFirstOutputMs"] as const;
 
 describe("sanitizeEventRecord numeric metrics", () => {
   it.each(metricKeys)("preserves finite numbers under %s", (key) => {

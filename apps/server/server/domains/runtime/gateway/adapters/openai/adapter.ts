@@ -92,12 +92,7 @@ export function createOpenAIResponsesAdapter(config: ProviderConfig): ProviderAd
           return;
         }
         const mapped = mapOpenAIResponsesError(err);
-        yield {
-          type: "error",
-          code: mapped.code,
-          message: mapped.message,
-          retryable: mapped.retryable,
-        };
+        yield { type: "error", ...mapped };
       }
     },
   };
