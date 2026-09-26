@@ -742,6 +742,7 @@ export function createInMemoryRepositories(
         pricingSnapshot: input.pricingSnapshot ?? null,
         finishReason: input.finishReason ?? null,
         latencyMs: input.latencyMs ?? null,
+        timeToFirstTokenMs: input.timeToFirstTokenMs ?? null,
         rawUsage: input.rawUsage ?? null,
         createdAt: toIsoString(new Date()),
       };

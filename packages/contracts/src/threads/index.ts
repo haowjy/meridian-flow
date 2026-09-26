@@ -370,7 +370,10 @@ export interface ModelResponse {
   stopReason?: string | null;
   requestParams?: JsonValue | null;
   responseMetadata?: JsonValue | null;
+  /** Request-send to stream-end duration. */
   latencyMs: number | null;
+  /** Request-send to first text, reasoning, tool-argument, or custom content delta; null if none. */
+  timeToFirstTokenMs: number | null;
   rawUsage?: JsonValue | null;
   createdAt: string;
   completedAt?: string | null;

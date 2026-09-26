@@ -57,4 +57,46 @@ describe("buildThreadSnapshot parent", () => {
 
     expect(snapshot.parent).toEqual({ id: child.id, title: "Critic" });
   });
+
+  it("includes model-response TTFT in the assistant turn snapshot", async () => {
+    const repos = createInMemoryRepositories();
+    const thread = await repos.threads.create({
+      userId: "user-1",
+      projectId: "project-1",
+      title: "Muse chat",
+    });
+    const turn = await repos.turns.create({
+      threadId: thread.id as ThreadId,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
+    await repos.modelResponses.create({
+      id: "response-1",
+      turnId: turn.id,
+      sequence: 0,
+      provider: "test-provider",
+      model: "test-model",
+      priceSource: "unknown",
+      latencyMs: 100,
+      timeToFirstTokenMs: 27,
+    });
+
+    const snapshot = await buildThreadSnapshot(
+      repos,
+      stubHub(),
+      {
+        read: async () => ({ kind: "asleep" as const }),
+        readRunningTurnId: async () => null,
+        readMany: async () => new Map(),
+        readPending: async () => ({ items: [] }),
+      },
+      thread.id as ThreadId,
+    );
+
+    expect(snapshot.turns[0]?.responses[0]).toMatchObject({
+      latencyMs: 100,
+      timeToFirstTokenMs: 27,
+    });
+  });
 });
