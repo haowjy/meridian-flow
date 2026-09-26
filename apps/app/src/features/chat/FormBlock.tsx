@@ -206,7 +206,7 @@ function InterruptForm({
           <button
             type="submit"
             disabled={formDisabled}
-            className="focus-ring inline-flex items-center rounded-md bg-primary px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] font-medium text-primary-foreground text-sm shadow-button transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            className="focus-ring inline-flex items-center rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground text-sm shadow-button transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Trans>Confirm</Trans>
           </button>
@@ -214,7 +214,7 @@ function InterruptForm({
             type="button"
             disabled={formDisabled}
             onClick={handleStop}
-            className="focus-ring inline-flex items-center rounded-md border border-border-subtle bg-muted px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] font-medium text-foreground text-sm transition-all hover:bg-card disabled:cursor-not-allowed disabled:opacity-60"
+            className="focus-ring inline-flex items-center rounded-md border border-border-subtle bg-muted px-3 py-2 font-medium text-foreground text-sm transition-all hover:bg-card disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Trans>Stop run</Trans>
           </button>
@@ -303,7 +303,7 @@ function FieldInput({
         aria-describedby={describedBy}
         onChange={(event) => onChange(event.target.value)}
         className={cn(
-          "focus-ring rounded-md border border-border-subtle bg-muted px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-foreground text-sm",
+          "focus-ring rounded-md border border-border-subtle bg-muted px-3 py-2 text-foreground text-sm",
           disabled && "cursor-not-allowed opacity-60",
         )}
       >

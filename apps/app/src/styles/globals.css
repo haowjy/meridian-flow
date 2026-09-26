@@ -33,28 +33,18 @@
   --chat-scroll-scrollbar-gap: 0.5rem;
   /* Chat rhythm is intentionally an app-only scale: each boundary has one
      owner, and virtual-row spacing stays inside the measured row. */
-  --chat-space-inline: 4px;
-  --chat-space-row: 4px;
-  --chat-space-block: 8px;
-  --chat-space-turn: 12px;
-  --chat-space-exchange: 6px;
-  --chat-card-pad-x: 12px;
-  --chat-card-pad-y: 8px;
-  /* Alignment geometry, not rhythm: centers status dots and aligns tool-list rails. */
-  --chat-row-status-center-offset: 7px;
-  --chat-tool-list-indent: 13px;
+  /* Prose rhythm defaults stay independent from chat and preserve non-chat surfaces. */
+  --prose-space-inline: 4px;
+  --prose-space-row: 4px;
+  --prose-space-block: 8px;
+  --prose-space-heading-large: 24px;
+  --prose-space-heading-small: 16px;
+  --prose-space-rule: 16px;
 }
 
-/* Vertical space is inside each measured virtual row so geometry stays true. */
-[data-chat-turn-row][data-chat-turn-role="user"] {
-  padding-bottom: var(--chat-space-turn);
-}
-[data-chat-turn-row][data-chat-turn-role="assistant"] {
-  padding-bottom: var(--chat-space-exchange);
-}
-.assistant-turn-actions {
-  margin-top: var(--chat-space-inline);
-}
+/* Every virtual row owns a gap; user rows receive the larger user-to-reply spacing. */
+[data-chat-turn-row] { padding-bottom: var(--chat-space-exchange); }
+[data-chat-turn-row][data-chat-turn-role="user"] { padding-bottom: var(--chat-space-turn); }
 
 :root[data-text-size="sm"] {
   /* Small anchors near the old chat body (14.5px): 0.875rem ≈ 14px at browser default. */
@@ -80,6 +70,27 @@
    opt back in with this class. */
 @utility text-tier-chat {
   --text-scale: var(--text-scale-chat);
+  --chat-space-inline: 4px;
+  --chat-space-row: 4px;
+  --chat-space-block: 8px;
+  --chat-space-turn: 12px;
+  --chat-space-exchange: 6px;
+  --chat-card-pad-x: 12px;
+  --chat-card-pad-y: 8px;
+  --chat-row-status-center-offset: 7px;
+  --chat-tool-list-indent: 13px;
+  /* Chat-specific alignment geometry, separate from the rhythm scale. */
+  --chat-geometry-hit-area-x: 4px;
+  --chat-geometry-draft-indent: 28px;
+  --chat-geometry-draft-inset: 10px;
+  --chat-geometry-receipt-indent: 36px;
+  --chat-geometry-fold-icon-offset: 6px;
+  --prose-space-inline: var(--chat-space-inline);
+  --prose-space-row: var(--chat-space-row);
+  --prose-space-block: var(--chat-space-block);
+  --prose-space-heading-large: 24px;
+  --prose-space-heading-small: 16px;
+  --prose-space-rule: 16px;
 }
 
 /* Compact tier — markdown in the dense meta voice (tool output, reasoning).
@@ -432,13 +443,23 @@
     opacity: 0;
   }
   [data-assistant-turn]:not([data-latest-assistant="true"]):hover .assistant-turn-actions,
-  [data-assistant-turn]:not([data-latest-assistant="true"]):focus-within .assistant-turn-actions {
+  [data-assistant-turn]:not([data-latest-assistant="true"]):focus-within .assistant-turn-actions,
+  [data-assistant-turn]:has(.assistant-turn-actions [aria-expanded="true"]) .assistant-turn-actions {
     opacity: 1;
   }
 }
+@media (hover: none), (pointer: coarse) {
+  [data-assistant-turn] .assistant-turn-actions { opacity: 1; }
+}
+
+@utility chat-card {
+  padding: var(--chat-card-pad-y) var(--chat-card-pad-x);
+  border: 1px solid var(--chat-card-border, var(--color-border));
+  border-radius: var(--chat-card-radius, var(--radius-md));
+}
 
 @utility user-message-bubble {
-  @apply overflow-hidden rounded-[var(--radius-lg)_var(--radius-sm)_var(--radius-lg)_var(--radius-lg)] border border-border-subtle bg-chat-interactive px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-prose-foreground;
+  @apply overflow-hidden rounded-[var(--radius-lg)_var(--radius-sm)_var(--radius-lg)_var(--radius-lg)] border border-border-subtle bg-chat-interactive px-4 py-3 text-prose-foreground;
 }
 
 /* Context-dependent interactive lift for chat elements (user bubble, composer,
@@ -468,57 +489,57 @@
   & h1 {
     font-size: 1.875em;
     @apply leading-[1.25] font-semibold tracking-prose-heading text-foreground;
-    margin-block: 24px var(--chat-space-block);
+    margin-block: var(--prose-space-heading-large) var(--prose-space-block);
     &:first-child { margin-top: 0; }
   }
   & h2 {
     font-size: 1.375em;
     @apply leading-[1.3] font-semibold tracking-prose-heading text-foreground;
-    margin-block: 24px var(--chat-space-block);
+    margin-block: var(--prose-space-heading-large) var(--prose-space-block);
     &:first-child { margin-top: 0; }
   }
   & h3 {
     font-size: 1.25em;
     @apply leading-[1.35] font-semibold text-foreground;
-    margin-block: 16px var(--chat-space-block);
+    margin-block: var(--prose-space-heading-small) var(--prose-space-block);
     &:first-child { margin-top: 0; }
   }
   & h4 {
     font-size: 1.125em;
     @apply leading-[1.4] font-semibold text-foreground;
-    margin-block: 16px var(--chat-space-block);
+    margin-block: var(--prose-space-heading-small) var(--prose-space-block);
     &:first-child { margin-top: 0; }
   }
   & h5 {
     font-size: 1.0625em;
     @apply leading-[1.4] font-semibold text-foreground;
-    margin-block: 16px var(--chat-space-block);
+    margin-block: var(--prose-space-heading-small) var(--prose-space-block);
     &:first-child { margin-top: 0; }
   }
   & h6 {
     font-size: 1.0625em;
     @apply leading-[1.45] font-semibold text-muted-foreground;
-    margin-block: 16px var(--chat-space-block);
+    margin-block: var(--prose-space-heading-small) var(--prose-space-block);
     &:first-child { margin-top: 0; }
   }
   & p {
-    margin-block: var(--chat-space-block);
+    margin-block: var(--prose-space-block);
     &:first-child { margin-top: 0; }
     &:last-child { margin-bottom: 0; }
   }
   & ul {
     @apply list-disc pl-6 marker:text-muted-foreground;
-    margin-block: var(--chat-space-block);
+    margin-block: var(--prose-space-block);
     &:first-child { margin-top: 0; }
     &:last-child { margin-bottom: 0; }
-    & > li + li { margin-top: var(--chat-space-row); }
+    & > li + li { margin-top: var(--prose-space-row); }
   }
   & ol {
     @apply list-decimal pl-6 marker:text-muted-foreground;
-    margin-block: var(--chat-space-block);
+    margin-block: var(--prose-space-block);
     &:first-child { margin-top: 0; }
     &:last-child { margin-bottom: 0; }
-    & > li + li { margin-top: var(--chat-space-row); }
+    & > li + li { margin-top: var(--prose-space-row); }
   }
   & li {
     @apply pl-1;
@@ -533,18 +554,18 @@
   }
   & li > ul,
   & li > ol {
-    margin-block: var(--chat-space-block) 0;
+    margin-block: var(--prose-space-block) 0;
   }
   & strong {
     @apply font-semibold text-foreground;
   }
   & blockquote {
     @apply border-l-4 border-primary/30 pl-4 text-muted-foreground italic;
-    margin-block: var(--chat-space-block);
+    margin-block: var(--prose-space-block);
   }
   & hr {
     @apply border-0 border-t border-border-subtle;
-    margin-block: 16px;
+    margin-block: var(--prose-space-rule);
   }
   & a {
     @apply focus-ring rounded-sm text-primary underline decoration-primary/30 underline-offset-[3px] transition-colors hover:decoration-primary;
@@ -592,7 +613,7 @@
 
   & [data-streamdown="table-wrapper"] {
     @apply max-w-full overflow-x-auto rounded-md border border-border-subtle;
-    margin-block: var(--chat-space-block);
+    margin-block: var(--prose-space-block);
   }
   & > :first-child {
     margin-top: 0;

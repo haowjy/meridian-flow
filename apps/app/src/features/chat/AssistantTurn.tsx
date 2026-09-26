@@ -10,6 +10,7 @@ import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
 import { ActivityRow } from "./ActivityRow";
 import { AssistantTurnActions } from "./AssistantTurnActions";
+import { assistantTurnCopyMarkdown } from "./assistant-turn-copy";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
@@ -60,6 +61,7 @@ function AssistantTurnComponent({
   );
   const isSettled = isTerminalTurnStatus(turn.status);
   const items = useMemo(() => partitionTurn(sortedBlocks), [sortedBlocks]);
+  const copyMarkdown = useMemo(() => assistantTurnCopyMarkdown(items), [items]);
   const directResults = useMemo(() => directResultsForTurn(sortedBlocks), [sortedBlocks]);
   // Progressive-disclosure label: "Thinking part N" for a turn with several
   // process folds (one per artifact/interrupt-delimited stretch).
@@ -158,7 +160,9 @@ function AssistantTurnComponent({
           />
         ) : null}
       </div>
-      {isSettled ? <AssistantTurnActions threadId={resolvedThreadId} turn={turn} /> : null}
+      {isSettled ? (
+        <AssistantTurnActions threadId={resolvedThreadId} turn={turn} markdown={copyMarkdown} />
+      ) : null}
       {showsInkDrop ? <InkDrop /> : null}
     </div>
   );

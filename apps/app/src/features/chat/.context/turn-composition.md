@@ -5,9 +5,13 @@ How an assistant turn renders: an ordered list of **process**, **text**, and
 
 ## Turn rhythm and settled actions
 
-The chat surface uses app-local `--chat-space-*` tokens in `globals.css`: inline
-and row 4px, block 8px, writer-turn 12px, and assistant-exchange 6px. Card
-padding is 12px horizontally and 8px vertically. Markdown paragraphs, lists,
+`text-tier-chat` scopes `--chat-space-*` and `--chat-card-pad-*` to the chat
+surface (and opted-in portaled chat overlays), so manuscript and shared prose
+surfaces cannot consume chat rhythm. Shared `prose-tokens` use independent
+`--prose-space-*` variables; chat Markdown maps those to the chat scale. The scale is inline and row 4px, block
+8px, writer-turn 12px, and assistant-exchange 6px. The `chat-card` utility
+bundles card padding, border, and radius; card padding is 12px horizontally and
+8px vertically. Controls keep their component-size geometry. Markdown paragraphs, lists,
 blockquote, table, and code use the 8px block rhythm; list siblings use 4px,
 h1/h2 start 24px above, h3-h6 16px above, and headings end 8px below. The
 composer uses the same card padding and 4px chip/control gaps.
@@ -25,15 +29,20 @@ and gap on one boundary.
 
 Settled assistant turns have a quiet action row below all turn content. Copy
 includes visible assistant text and report summary/payload content only, not
-thinking, tool rows, or delivery events. The information popover summarizes
+thinking, tool rows, or delivery events. Report payloads stay in a fenced JSON
+block in both clipboard formats. The information popover summarizes
 `Turn.responses`: input/output tokens are summed, cache hit is summed
 `cacheReadTokens / inputTokens` (cache writes are misses), TTFT is the first
 call's first-token time, and output speed sums output tokens and
 `latencyMs - timeToFirstTokenMs` only across calls with both measurements.
-Speed is omitted without a measurable generation interval; cache percentage is
-omitted for zero input. Debug is available only while the existing debug gate
-and user toggle are enabled, and scopes the LLM Calls viewer to this thread and
-turn.
+Speed and TTFT are omitted when they cannot be computed; cache hit is omitted
+for zero input. No Info button is rendered until a turn has model responses.
+Debug is gated by the shared debug store. Opening from a turn always sets the
+LLM Calls scope; the pill always opens unscoped, and the viewer's Show all
+control clears an active scope. Settled actions use the shared enabled boolean,
+so they cannot remain visible after debug is disabled. The latest settled turn
+keeps its row visible; older rows reveal actions on hover/focus and touch keeps
+them visible. An open popover keeps its anchored row visible.
 
 ## Three tiers
 

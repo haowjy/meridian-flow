@@ -67,6 +67,11 @@ msgstr "'.' and '..' cannot be used as names"
 msgid "(also {0})"
 msgstr "(also {0})"
 
+#. placeholder {0}: stats.callCount
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "{0, plural, one {# call} other {# calls}}"
+msgstr "{0, plural, one {# call} other {# calls}}"
+
 #. placeholder {0}: children.length - visible.length
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "{0, plural, one {# more item} other {# more items}}"
@@ -117,6 +122,11 @@ msgstr "{0, plural, one {read # document} other {read # documents}}"
 msgid "{0} additional balance"
 msgstr "{0} additional balance"
 
+#. placeholder {0}: stats.callCount
+#: src/features/chat/AssistantTurnActions.tsx
+#~ msgid "{0} calls"
+#~ msgstr "{0} calls"
+
 #. placeholder {0}: dock.serverActiveCount
 #: src/features/chat/DraftDock.tsx
 msgid "{0} documents"
@@ -164,8 +174,8 @@ msgstr "{0} isn't in {section}."
 
 #. placeholder {0}: compactCount(stats.ttftMs)
 #: src/features/chat/AssistantTurnActions.tsx
-msgid "{0} ms"
-msgstr "{0} ms"
+#~ msgid "{0} ms"
+#~ msgstr "{0} ms"
 
 #. placeholder {0}: chat.title
 #: src/features/project/work/WorkAssociatedChats.tsx
@@ -176,6 +186,11 @@ msgstr "{0} ms"
 #: src/features/project/chat-index/ChatIndex.tsx
 #~ msgid "{0} removed from Favorites"
 #~ msgstr "{0} removed from Favorites"
+
+#. placeholder {0}: (stats.ttftMs / 1000).toFixed(1)
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "{0} s"
+msgstr "{0} s"
 
 #. placeholder {0}: fieldLabel(target)
 #: src/features/project/work/WorkMetadata.tsx
@@ -657,6 +672,10 @@ msgstr "Buy extra usage"
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Cache hit"
 msgstr "Cache hit"
+
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "Calls"
+msgstr "Calls"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Can't undo"
@@ -1974,10 +1993,6 @@ msgstr "Insert row above"
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Insert row below"
 msgstr "Insert row below"
-
-#: src/features/chat/AssistantTurnActions.tsx
-msgid "Inspect model calls"
-msgstr "Inspect model calls"
 
 #: src/features/agents/AgentPicker.tsx
 #~ msgid "Installed"
@@ -4060,7 +4075,6 @@ msgstr "Unarchive Work"
 msgid "workReceipt.unarchived"
 msgstr "Unarchived Work {name}"
 
-#: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/ComposerWorkControl.tsx
 msgid "Unavailable"
 msgstr "Unavailable"

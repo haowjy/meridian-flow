@@ -393,7 +393,7 @@ function DockRowShell({
     <div
       onClick={onOpen}
       className={cn(
-        "group flex min-h-7 cursor-pointer items-center gap-[var(--chat-space-inline)] border-b border-border-subtle pr-2.5 pl-7 text-caption transition-colors last:border-b-0 hover:bg-muted",
+        "group flex min-h-7 cursor-pointer items-center gap-[var(--chat-space-inline)] border-b border-border-subtle pr-[var(--chat-geometry-draft-inset)] pl-[var(--chat-geometry-draft-indent)] text-caption transition-colors last:border-b-0 hover:bg-muted",
         className,
       )}
     >
@@ -419,7 +419,7 @@ function ReviewPill({ onClick, disabled }: { onClick: () => void; disabled?: boo
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="focus-ring inline-flex h-5 shrink-0 items-center rounded-sm bg-primary px-[var(--chat-card-pad-x)] text-caption font-semibold text-primary-foreground disabled:opacity-50"
+      className="focus-ring inline-flex h-5 shrink-0 items-center rounded-sm bg-primary px-2 text-caption font-semibold text-primary-foreground disabled:opacity-50"
     >
       <Trans>Review draft</Trans>
     </button>

@@ -22,7 +22,7 @@
  * - i18n exception: DEV-only debug surface; inline English strings bypass
  *   Lingui by design.
  */
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
@@ -46,7 +46,15 @@ import {
   subscribeToServerFeed,
 } from "./trace/server-feed";
 import { openTraceViewerWindow, TraceViewer, type TraceViewerTarget } from "./trace/TraceViewer";
-import { DEBUG_FEATURE_ALLOWED, useDebugEnabled } from "./use-debug-enabled";
+import {
+  clearLlmCallsScope,
+  closeLlmCalls,
+  DEBUG_FEATURE_ALLOWED,
+  openLlmCalls,
+  setLlmCallsViewerOpener,
+  useDebugEnabled,
+  useDebugState,
+} from "./use-debug-enabled";
 
 export function DebugOverlay() {
   const { enabled, toggle } = useDebugEnabled();
@@ -77,12 +85,10 @@ const SERVER_FEED_DOT: Record<ServerFeedState, string> = {
 };
 
 function DebugPill({ onDisable }: { onDisable: () => void }) {
+  const debugState = useDebugState();
   const [open, setOpen] = useState(false);
   const [traceViewerTarget, setTraceViewerTarget] = useState<TraceViewerTarget | null>(null);
   const [llmCallsViewerTarget, setLlmCallsViewerTarget] = useState<LlmCallsViewerTarget | null>(
-    null,
-  );
-  const [llmCallsFilter, setLlmCallsFilter] = useState<{ threadId: string; turnId: string } | null>(
     null,
   );
   const [popupBlocked, setPopupBlocked] = useState(false);
@@ -99,7 +105,24 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
   }, []);
   const closeLlmCallsViewer = useCallback((target: LlmCallsViewerTarget) => {
     setLlmCallsViewerTarget((current) => (current === target ? null : current));
+    closeLlmCalls();
   }, []);
+  const openLlmCallsViewer = useCallback(() => {
+    if (llmCallsViewerTarget && !llmCallsViewerTarget.popup.closed) {
+      llmCallsViewerTarget.popup.focus();
+      setPopupBlocked(false);
+      setOpen(false);
+      return;
+    }
+    const target = openLlmCallsViewerWindow();
+    if (!target) {
+      setPopupBlocked(true);
+      return;
+    }
+    setPopupBlocked(false);
+    setLlmCallsViewerTarget(target);
+    setOpen(false);
+  }, [llmCallsViewerTarget]);
 
   useEffect(() => {
     if (!serverFeedEnabled) {
@@ -110,16 +133,10 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
     return stopServerFeed;
   }, [serverFeedEnabled]);
 
-  useEffect(() => {
-    function openScopedViewer(event: Event) {
-      const detail = (event as CustomEvent<{ threadId?: string; turnId?: string }>).detail;
-      if (!detail?.threadId || !detail.turnId) return;
-      setLlmCallsFilter({ threadId: detail.threadId, turnId: detail.turnId });
-      openLlmCallsViewer();
-    }
-    window.addEventListener("meridian:debug-open-llm-calls", openScopedViewer);
-    return () => window.removeEventListener("meridian:debug-open-llm-calls", openScopedViewer);
-  });
+  useLayoutEffect(() => {
+    setLlmCallsViewerOpener(openLlmCallsViewer);
+    return () => setLlmCallsViewerOpener(null);
+  }, [openLlmCallsViewer]);
 
   function openTraceViewer() {
     if (traceViewerTarget && !traceViewerTarget.popup.closed) {
@@ -139,24 +156,6 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
     setOpen(false);
   }
 
-  function openLlmCallsViewer() {
-    if (llmCallsViewerTarget && !llmCallsViewerTarget.popup.closed) {
-      llmCallsViewerTarget.popup.focus();
-      setPopupBlocked(false);
-      setOpen(false);
-      return;
-    }
-
-    const target = openLlmCallsViewerWindow();
-    if (!target) {
-      setPopupBlocked(true);
-      return;
-    }
-    setPopupBlocked(false);
-    setLlmCallsViewerTarget(target);
-    setOpen(false);
-  }
-
   return (
     <>
       <DebugErrorBoundary title="Streams">
@@ -164,9 +163,10 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
       </DebugErrorBoundary>
       <DebugErrorBoundary title="LLM Calls">
         <LlmCallsViewer
-          target={llmCallsViewerTarget}
+          target={debugState.viewerOpen ? llmCallsViewerTarget : null}
           onClose={closeLlmCallsViewer}
-          filter={llmCallsFilter}
+          filter={debugState.filter}
+          onShowAll={clearLlmCallsScope}
         />
       </DebugErrorBoundary>
       <div className="fixed bottom-3 right-3 z-[55] flex flex-col items-end gap-2">
@@ -211,7 +211,7 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
                   <button
                     type="button"
                     className="focus-ring min-w-0 flex-1 rounded border border-border px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-muted"
-                    onClick={openLlmCallsViewer}
+                    onClick={() => openLlmCalls(null)}
                   >
                     LLM Calls
                   </button>

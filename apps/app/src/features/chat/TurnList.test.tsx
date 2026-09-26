@@ -95,7 +95,7 @@ describe("TurnList queued status", () => {
     await act(async () =>
       root.render(<TurnList {...stableProps} queuedWriterTurnIds={new Set()} />),
     );
-    expect(host.textContent).not.toContain("Waiting for response");
+    expect(host.textContent).not.toContain("Queued");
 
     await act(async () =>
       root.render(<TurnList {...stableProps} queuedWriterTurnIds={new Set(["user-1"])} />),
@@ -106,11 +106,7 @@ describe("TurnList queued status", () => {
     await act(async () =>
       root.render(<TurnList {...stableProps} queuedWriterTurnIds={new Set()} />),
     );
-    expect(host.textContent).not.toContain("Waiting for response");
-
-    await act(async () =>
-      root.render(<TurnList {...stableProps} queuedWriterTurnIds={new Set()} />),
-    );
-    expect(host.textContent).not.toContain("Waiting for response");
+    expect(host.textContent).not.toContain("Queued");
+    expect(host.querySelectorAll('[data-user-turn-status="queued"]')).toHaveLength(0);
   });
 });

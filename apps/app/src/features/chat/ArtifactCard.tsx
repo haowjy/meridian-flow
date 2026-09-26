@@ -47,7 +47,7 @@ export function ArtifactCard({
   return (
     <section
       className={cn(
-        "surface-card rounded-xl border border-border-subtle px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] shadow-xs",
+        "surface-card chat-card [--chat-card-radius:var(--radius-xl)] [--chat-card-border:var(--color-border-subtle)] shadow-xs",
         className,
       )}
     >

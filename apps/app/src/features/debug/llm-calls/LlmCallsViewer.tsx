@@ -47,19 +47,27 @@ export function LlmCallsViewer({
   target,
   onClose,
   filter,
+  onShowAll,
 }: {
   target: LlmCallsViewerTarget | null;
   onClose: (target: LlmCallsViewerTarget) => void;
   filter?: { threadId: string; turnId: string } | null;
+  onShowAll?: () => void;
 }) {
   return (
     <DebugPopout target={target} onClose={onClose}>
-      <LlmCallsContent filter={filter} />
+      <LlmCallsContent filter={filter} onShowAll={onShowAll} />
     </DebugPopout>
   );
 }
 
-function LlmCallsContent({ filter }: { filter?: { threadId: string; turnId: string } | null }) {
+function LlmCallsContent({
+  filter,
+  onShowAll,
+}: {
+  filter?: { threadId: string; turnId: string } | null;
+  onShowAll?: () => void;
+}) {
   const [state, setState] = useState<CallsState>({ status: "loading" });
 
   useEffect(() => {
@@ -129,9 +137,18 @@ function LlmCallsContent({ filter }: { filter?: { threadId: string; turnId: stri
             Gateway lifecycle and canonical model requests, refreshed while this window is open
           </p>
           {filter ? (
-            <p className="mt-1 font-mono text-meta text-muted-foreground">
-              Thread {filter.threadId}, turn {filter.turnId}
-            </p>
+            <div className="mt-1 flex items-center gap-3">
+              <p className="font-mono text-meta text-muted-foreground">
+                Thread {filter.threadId}, turn {filter.turnId}
+              </p>
+              <button
+                type="button"
+                className="focus-ring rounded-sm text-meta text-primary underline"
+                onClick={onShowAll}
+              >
+                Show all
+              </button>
+            </div>
           ) : null}
         </div>
         {state.status === "loaded" ? (

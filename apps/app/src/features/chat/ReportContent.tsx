@@ -5,6 +5,7 @@ import type { JsonValue } from "@meridian/contracts/protocol";
 import type { ReactNode } from "react";
 import { Markdown } from "@/rich-content/Markdown";
 import { ArtifactGrid } from "./ArtifactGrid";
+import { payloadText } from "./report-payload";
 
 export type ReportContentValue = {
   summary: string;
@@ -66,9 +67,4 @@ export function ReportContent({
       ) : null}
     </div>
   );
-}
-
-export function payloadText(payload: JsonValue | undefined): string {
-  if (payload === undefined) return "";
-  return typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
 }

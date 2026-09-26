@@ -15,6 +15,15 @@ export type RenderItem =
   | { kind: "report"; block: Block; report: ReportContentValue }
   | { kind: "artifact"; block: Block };
 
+/** The writer-facing answer is the prose/report suffix after the final process fold. */
+export function finalMessageItems(items: RenderItem[]): RenderItem[] {
+  let lastProcess = -1;
+  items.forEach((item, index) => {
+    if (item.kind === "process") lastProcess = index;
+  });
+  return items.slice(lastProcess + 1);
+}
+
 export function isReasoningBlock(block: Block): boolean {
   return block.blockType === "reasoning" || block.blockType === "thinking";
 }

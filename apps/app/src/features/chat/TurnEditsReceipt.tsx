@@ -232,7 +232,7 @@ export function TurnEditsReceipt({
           {restoredNotices?.map((notice) => (
             <p
               key={notice}
-              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-9 text-prose-foreground"
+              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground"
               data-work-restored
               role="status"
             >
@@ -241,7 +241,7 @@ export function TurnEditsReceipt({
           ))}
           {guardCopy ? (
             <p
-              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-9 text-ink-muted"
+              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-ink-muted"
               data-undo-unavailable-reason
               role="status"
             >
@@ -275,7 +275,7 @@ export function TurnEditsReceipt({
             <ul className="flex flex-col">
               {reversibleWorkReceipts.map((workRow, index) => (
                 <li key={`${index}:${workRow.operation}:${workRow.workId}`}>
-                  <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-9 text-prose-foreground">
+                  <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground">
                     {workReceiptLine(workRow)}
                   </span>
                 </li>
@@ -425,7 +425,7 @@ function ChangeViewDetail({
             canOpenContextUri={canOpenContextUri}
           />
         ) : (
-          <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-9 text-prose-foreground">
+          <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground">
             {document.documentTitle}
           </span>
         )}
@@ -473,7 +473,7 @@ function DocumentRow({
 }) {
   if (!onOpenContextUri || !canOpenContextUri?.(document.uri)) {
     return (
-      <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-9 text-prose-foreground">
+      <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground">
         <DocumentName path={document.uri} insideDoor />
       </span>
     );
@@ -482,7 +482,7 @@ function DocumentRow({
     <button
       type="button"
       onClick={() => onOpenContextUri(document.uri)}
-      className="focus-ring flex min-h-6 w-full items-center px-[var(--chat-card-pad-x)] pl-9 text-left transition-colors hover:bg-muted"
+      className="focus-ring flex min-h-6 w-full items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-left transition-colors hover:bg-muted"
     >
       {/* The whole row is the door here, so the name inside it stays inert. */}
       <DocumentName path={document.uri} insideDoor />

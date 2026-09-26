@@ -67,6 +67,11 @@ msgstr ""
 msgid "(also {0})"
 msgstr ""
 
+#. placeholder {0}: stats.callCount
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "{0, plural, one {# call} other {# calls}}"
+msgstr ""
+
 #. placeholder {0}: children.length - visible.length
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "{0, plural, one {# more item} other {# more items}}"
@@ -117,6 +122,11 @@ msgstr ""
 msgid "{0} additional balance"
 msgstr ""
 
+#. placeholder {0}: stats.callCount
+#: src/features/chat/AssistantTurnActions.tsx
+#~ msgid "{0} calls"
+#~ msgstr ""
+
 #. placeholder {0}: dock.serverActiveCount
 #: src/features/chat/DraftDock.tsx
 msgid "{0} documents"
@@ -164,8 +174,8 @@ msgstr ""
 
 #. placeholder {0}: compactCount(stats.ttftMs)
 #: src/features/chat/AssistantTurnActions.tsx
-msgid "{0} ms"
-msgstr ""
+#~ msgid "{0} ms"
+#~ msgstr ""
 
 #. placeholder {0}: chat.title
 #: src/features/project/work/WorkAssociatedChats.tsx
@@ -176,6 +186,11 @@ msgstr ""
 #: src/features/project/chat-index/ChatIndex.tsx
 #~ msgid "{0} removed from Favorites"
 #~ msgstr ""
+
+#. placeholder {0}: (stats.ttftMs / 1000).toFixed(1)
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "{0} s"
+msgstr ""
 
 #. placeholder {0}: fieldLabel(target)
 #: src/features/project/work/WorkMetadata.tsx
@@ -656,6 +671,10 @@ msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Cache hit"
+msgstr ""
+
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "Calls"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -1973,10 +1992,6 @@ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Insert row below"
-msgstr ""
-
-#: src/features/chat/AssistantTurnActions.tsx
-msgid "Inspect model calls"
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
@@ -4056,7 +4071,6 @@ msgstr ""
 msgid "workReceipt.unarchived"
 msgstr ""
 
-#: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/ComposerWorkControl.tsx
 msgid "Unavailable"
 msgstr ""

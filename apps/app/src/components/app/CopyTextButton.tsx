@@ -15,7 +15,7 @@ type CopyTextButtonProps = React.ComponentProps<typeof Button> & {
   /** Text placed on the clipboard when clicked. */
   text: string;
   /** Optional rich representation; plain text remains the markdown source. */
-  html?: string;
+  html?: string | (() => string);
   /** Alternate visual for icon-only controls after a successful copy. */
   copiedContent?: React.ReactNode;
   /** Accessible label while the copied confirmation is visible. */
@@ -45,9 +45,10 @@ export function CopyTextButton({
   async function handleCopy() {
     try {
       if (html && typeof ClipboardItem !== "undefined" && navigator.clipboard.write) {
+        const richHtml = typeof html === "function" ? html() : html;
         await navigator.clipboard.write([
           new ClipboardItem({
-            "text/html": new Blob([html], { type: "text/html" }),
+            "text/html": new Blob([richHtml], { type: "text/html" }),
             "text/plain": new Blob([text], { type: "text/plain" }),
           }),
         ]);

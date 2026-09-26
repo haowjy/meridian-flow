@@ -105,7 +105,7 @@ function ImageArtifact({ image }: { image: Extract<ArtifactRef, { type: "image" 
           ) : null}
         </button>
       </DialogTrigger>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="text-tier-chat max-w-3xl">
         <DialogTitle className="sr-only">{label}</DialogTitle>
         <DialogClose asChild>
           <button
@@ -133,7 +133,7 @@ function ObjectArtifact({ object }: { object: Extract<ArtifactRef, { type: "obje
       href={object.uri}
       target="_blank"
       rel="noreferrer"
-      className="focus-ring flex h-full min-h-20 flex-col justify-between rounded-md border border-border-subtle bg-muted px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] transition-all hover:border-border-focus"
+      className="focus-ring flex h-full min-h-20 flex-col justify-between rounded-md border border-border-subtle bg-muted px-3 py-2 transition-all hover:border-border-focus"
     >
       <span className="font-medium text-foreground text-xs uppercase tracking-wide">
         <Trans>Object</Trans>

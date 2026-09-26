@@ -6,7 +6,8 @@ import { Markdown } from "@/rich-content/Markdown";
 import { ArtifactCard, type ArtifactCardTone } from "./ArtifactCard";
 import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { DirectInvocationResult } from "./invocation-direct-result";
-import { payloadText, ReportContent } from "./ReportContent";
+import { ReportContent } from "./ReportContent";
+import { payloadText } from "./report-payload";
 
 type SpawnReportStatus = "running" | "completed" | "failed";
 type SpawnReportOutcome = "succeeded" | "failed" | "cancelled";

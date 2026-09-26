@@ -22,8 +22,9 @@ import { DocumentName } from "./DocumentName";
 import { documentDisplayName, folderDisplayName } from "./document-display-name";
 import type { ToolView } from "./group-delivery-segments";
 import { PassageDoor } from "./PassageDoor";
-import { payloadText, ReportContent } from "./ReportContent";
+import { ReportContent } from "./ReportContent";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
+import { payloadText } from "./report-payload";
 import { stringInput, toolInputObject, type WriteMode } from "./tool-command";
 import {
   boundLabel,
@@ -102,7 +103,7 @@ function rowKey(row: ToolResultRow, index: number): string {
 function ResultRows({ results }: { results: SearchResultRows }) {
   const bound = boundLabel(results);
   return (
-    <div className="rounded-md border border-border bg-result-card px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]">
+    <div className="chat-card bg-result-card">
       <p className="border-border-subtle border-b pb-2 text-meta text-ink-subtle">
         {searchCardSummary(results)}
       </p>
@@ -321,7 +322,7 @@ function submittedContent(tool: ToolView): ToolExpand | null {
   if (!content) return null;
   const path = readPath(tool);
   return () => (
-    <div className="rounded-md border border-border-subtle bg-muted px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]">
+    <div className="chat-card [--chat-card-border:var(--color-border-subtle)] bg-muted">
       <QuotedPreview markup={content} path={path} />
     </div>
   );

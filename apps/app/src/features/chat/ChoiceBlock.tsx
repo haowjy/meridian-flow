@@ -76,7 +76,7 @@ export function ChoiceBlock({
                 respond({ value: option.value });
               }}
               className={cn(
-                "focus-ring inline-flex items-center gap-[var(--chat-space-inline)] rounded-md border px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-sm font-medium transition-all disabled:cursor-not-allowed disabled:opacity-60",
+                "focus-ring inline-flex items-center gap-[var(--chat-space-inline)] rounded-md border px-3 py-2 text-sm font-medium transition-all disabled:cursor-not-allowed disabled:opacity-60",
                 isRecommended
                   ? "border-primary bg-primary text-primary-foreground shadow-button"
                   : "border-border-subtle bg-muted text-foreground hover:border-border-focus hover:bg-sidebar-accent",
