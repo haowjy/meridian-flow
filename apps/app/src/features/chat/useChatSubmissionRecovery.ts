@@ -1,31 +1,4 @@
-/**
- * useChatSubmissionRecovery — reconciles durable unresolved existing-thread
- * submissions for the mounted thread.
- *
- * On mount it rebuilds one pending user row per journal entry and asks the
- * server for the admission by `submissionId`:
- *
- * - accepted admission: rename the row and retire the entry;
- * - definitive rejection: keep the failed row and retire the entry, exposing
- *   Retry (always) and Edit (only when a faithful draft can be focused or
- *   rebuilt from a plain-text fingerprint);
- * - `not-seen` (the server has no record): replay the stored fingerprint with
- *   the same `submissionId` so the displayed send is not lost;
- * - `pending`/unknown: keep both and expose Check submission status / Start
- *   over.
- *
- * `replaySubmission` shares that replay path for an in-session Check of a
- * submission whose live optimistic row recovery has never tracked (the
- * composer is still mounted, so its mount effect did not run for it).
- *
- * A live proved rejection is registered through `markRejected`, so live and
- * reload-recovered rejections share one owner, one failed-row presentation, and
- * one identity policy: Retry remints the submission id because the server never
- * re-admits a rejected `(threadId, submissionId)`. A retry's fresh id is only
- * treated as a proved rejection once the retry proves rejected; while it is
- * unresolved the journal entry is the sole witness, so a remount reconciles it
- * as Check / Start over and never offers a second reminted Retry.
- */
+/** Reconciles and retries persisted chat submissions. */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type ExistingThreadChatSubmission,
@@ -48,11 +21,6 @@ export type RecoveredChatSubmission = {
 export type FailedChatSubmission = RecoveredChatSubmission & {
   /** The exact dispatch fingerprint, retained so Retry can remint and Edit can check faithfulness. */
   fingerprint: ExistingThreadChatSubmission;
-  /**
-   * Whether the live composer still holds this send's draft. A live or
-   * composer-checked rejection keeps it; a reload/remount recovery resets the
-   * composer, so only a plain-text-faithful fingerprint can be restored there.
-   */
   draftRetained: boolean;
 };
 
@@ -61,19 +29,9 @@ export type ChatSubmissionRecovery = {
   rejected: FailedChatSubmission[];
   check: (submissionId: string) => void;
   retire: (submissionId: string) => void;
-  /**
-   * Record a live proved rejection against the user turn it belongs to. The
-   * journal witness is retired; the row stays failed and the fingerprint is
-   * retained for Retry / Edit.
-   */
   markRejected: (submissionId: string, optimisticTurnId: string) => void;
   /** Re-admit a rejected submission under a fresh submission id. */
   retry: (optimisticTurnId: string) => Promise<void>;
-  /**
-   * In-session re-admission for a live optimistic row recovery has not tracked
-   * (the composer Check path). Replays the stored fingerprint through the same
-   * path as mount recovery with the caller's live optimistic turn id.
-   */
   replaySubmission: (
     submissionId: string,
     optimisticTurnId: string,
@@ -87,21 +45,8 @@ function isExistingThreadFor(
   return entry.kind === "existing-thread" && entry.threadId === threadId;
 }
 
-/**
- * The thread store outlives a ChatView mount, but a component ref does not.
- * Remember which local row belongs to each unresolved submission for the
- * session so navigating away and back reuses it instead of appending a second
- * pending row. Live sends register their row before dispatch, mount recovery
- * reuses it, and acknowledgement/proved rejection clears it.
- */
 const restoredTurnIds = new Map<string, string>();
 
-/**
- * Register the local row for an unresolved submission for the session. Called
- * by a live send immediately after it appends the row — before the POST awaits
- * admission — so a remount while the server still holds the lease reuses that
- * row instead of appending a duplicate.
- */
 export function rememberSubmissionTurnId(
   accountId: string,
   submissionId: string,
@@ -120,14 +65,7 @@ export function forgetSubmissionTurnId(accountId: string, submissionId: string):
   restoredTurnIds.delete(`${accountId}:${submissionId}`);
 }
 
-/**
- * A proved rejection is a resolved outcome, so its durable journal entry is
- * retired. The failed row stays for edit/retry recovery, and the exact
- * dispatch fingerprint is retained here for the session so Retry can re-admit
- * under a fresh submission id (a rejected `(threadId, submissionId)` is never
- * re-admitted) and Edit can restore the message. Like `restoredTurnIds`, this
- * is session memory rather than a store, and its key fences it by account.
- */
+/** A proved rejection is a resolved outcome, so its durable journal entry is retired. */
 type RetainedRejection = {
   entry: ExistingThreadChatSubmission;
   optimisticTurnId: string;
@@ -136,11 +74,7 @@ type RetainedRejection = {
 
 const rejectedSubmissions = new Map<string, RetainedRejection>();
 
-/**
- * Drop session-scoped recovery memory: the restored row ids and the retained
- * rejection fingerprints. Used when the session's account/thread scope is
- * discarded, and between tests so module memory cannot leak across suites.
- */
+/** Drop session-scoped recovery memory: the restored row ids and the retained rejection fingerprints. */
 export function clearChatSubmissionRecoverySession(): void {
   restoredTurnIds.clear();
   rejectedSubmissions.clear();
@@ -265,12 +199,7 @@ export function useChatSubmissionRecovery(
     [accountId, dropRecovered, dropRejected],
   );
 
-  /**
-   * A proved rejection is an actionable failure, not a dropped send: keep the
-   * user row failed, retire the rejected admission witness, and retain the
-   * fingerprint for Retry/Edit. A rejected `(threadId, submissionId)` is never
-   * re-admitted, so Retry remints the identity before dispatching.
-   */
+  /** A proved rejection is an actionable failure, not a dropped send: keep the user row failed, retire the rejected admission witness, and retain the fingerprint for Retry/Edit. */
   const reject = useCallback(
     (entry: ExistingThreadChatSubmission, optimisticTurnId: string, draftRetained: boolean) => {
       const retainedKey = rejectedKey(accountId, entry.submissionId);
@@ -298,12 +227,7 @@ export function useChatSubmissionRecovery(
     [accountId, dropRecovered, raiseRejected, threadId],
   );
 
-  /**
-   * The lookup proved the server never saw this submission. Re-issue the exact
-   * stored fingerprint with the same `submissionId`; because the identity is
-   * stable, a concurrent duplicate admission collapses instead of running twice.
-   * Returns the dispatch outcome so an in-session Check can settle the composer.
-   */
+  /** The lookup proved the server never saw this submission. */
   const replay = useCallback(
     async (
       entry: ExistingThreadChatSubmission,

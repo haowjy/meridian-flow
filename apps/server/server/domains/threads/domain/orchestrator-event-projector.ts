@@ -224,6 +224,16 @@ export function createOrchestratorEventProjector() {
         return [];
       }
 
+      case "block.updated":
+        if (event.block.blockType !== "custom") return [];
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: "meridian.block.upserted",
+            value: { block: event.block },
+          }),
+        ];
+
       case "block.upserted": {
         advancePastProjectedBlock(event.block);
         if (event.block.blockType !== "custom") return [];
@@ -243,6 +253,15 @@ export function createOrchestratorEventProjector() {
         );
         return events;
       }
+
+      case "block.pruned":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: "meridian.block.pruned",
+            value: { blockId: event.blockId },
+          }),
+        ];
 
       case "tool.executing":
         return [
@@ -419,6 +438,28 @@ export function createOrchestratorEventProjector() {
               version: event.version,
               shell: event.shell,
             },
+          }),
+        ];
+
+      // The producer recomputed the full subtree, so the frame is a bounded
+      // replace of the client's activity state with no refetch race.
+      case "subagent.activity":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: "meridian.subagent.activity",
+            value: event.activity,
+          }),
+        ];
+
+      // Same full-replace contract as activity: the producer read the current
+      // pending rows, so the tray state is replaced wholesale.
+      case "inbox.changed":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: "meridian.inbox.changed",
+            value: event.pending,
           }),
         ];
 

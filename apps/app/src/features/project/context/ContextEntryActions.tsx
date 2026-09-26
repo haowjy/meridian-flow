@@ -1,13 +1,4 @@
-/**
- * ContextEntryActions — right-click context menu and hover kebab button for
- * file/folder rows in the desktop context tree.
- *
- * Actions: New file / New folder (open the inline create row nested at the
- * target folder), Rename (opens inline rename row), Delete (confirms then
- * deletes). Both the right-click menu and the kebab dropdown share the same
- * action dispatch — only the trigger differs. Schemes without in-tree
- * creation (see `schemeAllowsCreation`) drop the create group.
- */
+/** ContextEntryActions — right-click context menu and hover kebab button for file/folder rows in the desktop context tree. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -70,11 +61,6 @@ const ENTRY_ACTIONS: readonly EntryActionSpec[] = [
   },
 ];
 
-/**
- * Per-scheme capability filter (`schemeAllowsCreation`): schemes without
- * in-tree creation (uploads is intake only) drop the create group from both
- * menus; manage actions always show.
- */
 function visibleEntryActions(allowCreate: boolean): readonly EntryActionSpec[] {
   return allowCreate ? ENTRY_ACTIONS : ENTRY_ACTIONS.filter((spec) => spec.group !== "create");
 }
@@ -127,16 +113,6 @@ export function ContextEntryMenu({
   );
 }
 
-/**
- * Radix menu teardown fights inline inputs for focus: selecting an item
- * closes the menu, whose focus scope reclaims focus mid-teardown and then
- * returns it to the trigger. An action that mounts an autofocusing row
- * (create/rename) would have its input blurred instantly — and blur commits
- * or cancels the row. So actions are deferred to `onCloseAutoFocus`: the
- * menu is fully closed before the action runs, and the default focus return
- * is suppressed so the row's own autofocus wins. Plain dismissal
- * (Escape/outside click) selects nothing and keeps the focus restore.
- */
 function useMenuActionDispatch(onAction: (action: EntryAction) => void) {
   const pendingRef = useRef<EntryAction | null>(null);
   const dispatch = useCallback((action: EntryAction) => {

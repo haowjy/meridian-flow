@@ -52,6 +52,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       const turn = await repos.turns.create({
         threadId: THREAD,
         role: "assistant",
+        origin: "assistant",
         createdAt: "2025-01-01T00:00:00.000Z",
       });
       expect(await activity()).toBe("2025-01-01T00:00:00.000000Z");
@@ -66,12 +67,14 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       const first = await repos.turns.create({
         threadId: THREAD,
         role: "user",
+        origin: "writer",
         createdAt: "2025-01-01T00:00:00.000Z",
       });
       const hidden = await repos.turns.create({
         threadId: THREAD,
         prevTurnId: first.id,
         role: "user",
+        origin: "system",
         metadata: { kind: "system_update", section: "work_context" },
         createdAt: "2025-01-01T00:05:00.000Z",
       });
@@ -82,22 +85,36 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect(await activity()).toBe("2025-01-01T00:00:00.000000Z");
     });
 
-    it("does not advance for a hidden child-report continuation", async () => {
+    it("does not advance for a hidden subagent_update continuation, even with a custom block", async () => {
+      // A background child's completion notice is a system-role turn carrying
+      // `{ kind: "subagent_update" }` (messageTurnFor in inbox-context.ts). It
+      // never anchors the head, unlike an ordinary custom-block system turn
+      // below: `kind: "subagent_update"` overrides having a custom block.
       const first = await repos.turns.create({
         threadId: THREAD,
         role: "user",
+        origin: "writer",
         createdAt: "2025-01-01T00:00:00.000Z",
       });
       const hidden = await repos.turns.create({
         threadId: THREAD,
         prevTurnId: first.id,
-        role: "user",
-        metadata: { kind: "system_update", section: "child_report" },
+        role: "system",
+        origin: "system",
+        metadata: { kind: "subagent_update", handle: "h1", outcome: "success", execution: "e1" },
         createdAt: "2025-01-01T00:05:00.000Z",
       });
       await repos.turns.updateStatus(hidden.id, {
         status: "complete",
         completedAt: "2025-01-01T00:06:00.000Z",
+      });
+      expect(await activity()).toBe("2025-01-01T00:00:00.000000Z");
+      await repos.blocks.upsert({
+        id: "00000000-0000-4000-8000-000000000895",
+        turnId: hidden.id,
+        blockType: "custom",
+        sequence: 0,
+        content: { kind: "notice" },
       });
       expect(await activity()).toBe("2025-01-01T00:00:00.000000Z");
     });
@@ -106,12 +123,14 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       const first = await repos.turns.create({
         threadId: THREAD,
         role: "user",
+        origin: "writer",
         createdAt: "2025-01-01T00:00:00.000Z",
       });
       const system = await repos.turns.create({
         threadId: THREAD,
         prevTurnId: first.id,
         role: "system",
+        origin: "system",
         createdAt: "2025-01-01T00:05:00.000Z",
       });
       await repos.blocks.create({
@@ -135,18 +154,21 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       const root = await repos.turns.create({
         threadId: THREAD,
         role: "user",
+        origin: "writer",
         createdAt: "2025-01-01T00:00:00.000Z",
       });
       await repos.turns.create({
         threadId: THREAD,
         prevTurnId: root.id,
         role: "assistant",
+        origin: "assistant",
         createdAt: "2025-01-01T00:02:00.000Z",
       });
       const secondSibling = await repos.turns.create({
         threadId: THREAD,
         prevTurnId: root.id,
         role: "assistant",
+        origin: "assistant",
         createdAt: "2025-01-01T00:01:00.000Z",
       });
       expect(await activity()).toBe("2025-01-01T00:01:00.000000Z");
@@ -164,18 +186,21 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       const root = await repos.turns.create({
         threadId: THREAD,
         role: "user",
+        origin: "writer",
         createdAt: "2025-01-01T00:00:00.000Z",
       });
       const firstSibling = await repos.turns.create({
         threadId: THREAD,
         prevTurnId: root.id,
         role: "assistant",
+        origin: "assistant",
         createdAt: "2025-01-01T00:01:00.000Z",
       });
       await repos.turns.create({
         threadId: THREAD,
         prevTurnId: root.id,
         role: "assistant",
+        origin: "assistant",
         createdAt: "2025-01-01T00:02:00.000Z",
       });
       expect(await activity()).toBe("2025-01-01T00:02:00.000000Z");

@@ -22,10 +22,13 @@ the same owner lock. Project, Work and chat handles remain reserved through soft
 deletion. Exact `findLiveByOwnerSlug` lookup is separate from UUID `findById`;
 missing, foreign-owner and deleted handles resolve unavailable.
 
+The repository `Project` uses `name` and `systemPrompt`; project HTTP routes
+translate those to `title` and `description` in `ProjectDto`.
+
 | Contract | Purpose |
 |---|---|
 | `ProjectRepository.ensureDefaultBootstrap(userId)` | Returns the converged `DefaultBootstrap` bundle for the authenticated user. |
-| `ProjectRepository.ensureDefaultBootstrapReady(userId)` | Auth path: performs one idempotent repair check per process, then uses the durable completion flag as its lock-free fast path. Seed failures leave no partial bootstrap and return false without failing unrelated requests. |
+| `ProjectRepository.ensureDefaultBootstrapReady(userId)` | Auth path: trusts the durable completion flag as its lock-free fast path. Incomplete bootstrap is retried transactionally; seed failures leave no partial bootstrap and return false without failing unrelated requests. |
 | `ProjectBootstrapResult` | Project, manuscript document/source, and URI IDs needed by the app shell. |
 | `WorkRepository` | Creates/lists/updates/archives/unarchives/deletes/restores Works; delete is guarded by all Work-owned durable content. Its `transaction` boundary keeps compound Work commands atomic. |
 | `ProjectWorkAuthorityResolver` | Exact same-project `byId`/`bySlug` and transactional `lockById` resolution; it is the only projects-domain mint for opaque stable Work URI authority. |
@@ -56,10 +59,8 @@ missing, foreign-owner and deleted handles resolve unavailable.
 - The project, locked No Work, chapter row, initialize-only canonical seed, live manifest
   membership, No Work Scratch/Uploads sources, and readiness flag commit in one ambient
   transaction. Interruption leaves no partial bootstrap.
-- Auth provisioning performs one idempotent bootstrap repair check per user and
-  repository instance so older ready projects with a ghost chapter gain manifest
-  membership without replacing writer content. Later ready checks take no
-  advisory lock and never enter collab.
+- Auth provisioning treats the durable readiness flag as authoritative; legacy
+  data repair belongs to a future import, not a process-local readiness overlay.
 - Readiness becomes true only after document authority and manifest membership
   are durable, rather than merely after row existence.
 - Omitted and explicit-null root-create `workId` both bind the project's locked

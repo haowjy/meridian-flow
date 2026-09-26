@@ -1,11 +1,4 @@
-/**
- * reduce-turn-event — maps live AG-UI events straight into ThreadStore turns.
- *
- * The unified-block model has no live `live view-state` accumulator: every event
- * writes the canonical assistant `Turn.blocks[]` row through store actions, and
- * `liveMeta.eventsApplied` is the only transient counter used for deterministic
- * opaque block IDs.
- */
+/** Applies accepted stream events to a turn. */
 import {
   type InterruptAnswerProvenance,
   interruptResolvedPropsFromAnswer,
@@ -13,7 +6,7 @@ import {
 import type { AGUIEvent, Block, BlockType, JsonValue, Turn } from "@meridian/contracts/protocol";
 import { blockContentRecord, EventType, interruptIdForBlock } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
-
+import { WORK_CONTEXT_PROJECTION_EVENT } from "@meridian/contracts/works";
 import {
   eventH,
   nextBlockSequence,
@@ -44,6 +37,10 @@ type CustomBlockUpsertPayload = {
   };
 };
 
+type BlockPrunedPayload = {
+  blockId: string;
+};
+
 type PositionalBlockIdentity = {
   id: string;
   turnId: string;
@@ -58,6 +55,8 @@ type StoreEventTarget = {
     opts?: { createdAt?: string; writeMode?: Turn["writeMode"] },
   ): void;
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
+  removeAssistantBlock(threadId: string, blockId: string): void;
+  invalidateThreadSnapshot(threadId: string): void;
   patchTurnStatus(
     threadId: string,
     turnId: string,
@@ -238,12 +237,6 @@ function recordContentField(
     : null;
 }
 
-/**
- * Server-authored result metadata riding the live `tool.result` event (the
- * AG-UI TOOL_CALL_RESULT schema is passthrough, so the field survives the
- * protocol parse). Same shape as the durable block's `content.metadata` —
- * this is how the work receipt reaches a live turn before reload.
- */
 function toolResultEventMetadata(event: object): Record<string, JsonValue> | null {
   const value = (event as Record<string, unknown>).metadata;
   return value && typeof value === "object" && !Array.isArray(value)
@@ -382,6 +375,13 @@ function parseCustomBlockUpsertPayload(value: unknown): CustomBlockUpsertPayload
   };
 }
 
+function parseBlockPrunedPayload(value: unknown): BlockPrunedPayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const blockId = (value as Record<string, unknown>).blockId;
+  if (typeof blockId !== "string" || blockId.length === 0) return null;
+  return { blockId };
+}
+
 function blockFromCustomUpsertPayload(payload: CustomBlockUpsertPayload): Block {
   return baseBlock({
     id: payload.block.id,
@@ -395,15 +395,6 @@ function blockFromCustomUpsertPayload(payload: CustomBlockUpsertPayload): Block 
   });
 }
 
-/**
- * Payload schema for the `meridian.tool.output_delta` CUSTOM event.
- *
- * Wire format (server projector → AG-UI CUSTOM event):
- *   { toolCallId: string, stream: "stdout" | "stderr", text: string }
- *
- * `text` is an INCREMENTAL chunk (append; not cumulative). The authoritative
- * final result still arrives via `TOOL_CALL_RESULT`.
- */
 type ToolOutputDeltaPayload = {
   toolCallId: string;
   stream: "stdout" | "stderr";
@@ -420,12 +411,6 @@ function parseToolOutputDeltaPayload(value: unknown): ToolOutputDeltaPayload | n
   return { toolCallId, stream, text };
 }
 
-/**
- * Payload schema for the `meridian.tool.result_error` CUSTOM event.
- *
- * AG-UI's TOOL_CALL_RESULT event has no failure marker, so the server sends
- * this adjacent companion event only for failed tool calls.
- */
 type ToolResultErrorPayload = {
   toolCallId: string;
   isError: true;
@@ -522,15 +507,7 @@ function patchInterruptBlock(block: Block, payload: InterruptLifecyclePayload): 
   };
 }
 
-/**
- * Buffered interrupt resolution patches keyed by thread/turn/interrupt id.
- *
- * The live hub can replay `meridian.interrupt` before `meridian.block.upserted`
- * when a client reconnects around an ask_user pause/resume boundary. The buffer
- * lets the late component block receive its resolved props, but entries must be
- * cleared on snapshot/terminal boundaries because this map is module-global,
- * not tied to a ThreadStore provider lifetime.
- */
+/** Buffered interrupt resolution patches keyed by thread/turn/interrupt id. */
 const pendingInterruptPatches = new Map<string, InterruptLifecyclePayload>();
 
 function pendingInterruptPatchKey(threadId: string, turnId: string, interruptId: string): string {
@@ -567,9 +544,12 @@ function applyCustomBlockUpsertEvent(
   threadId: string,
   payload: CustomBlockUpsertPayload,
 ): void {
-  store.ensureAssistantTurn(threadId, payload.block.turnId, {
-    createdAt: new Date().toISOString(),
-  });
+  // Custom upserts include historical same-card replacements. Never mint a
+  // synthetic streaming turn for one: the durable snapshot is the authority.
+  if (!turnById(store, threadId, payload.block.turnId)) {
+    store.invalidateThreadSnapshot(threadId);
+    return;
+  }
 
   let block = blockFromCustomUpsertPayload(payload);
   const pendingPatch = pendingInterruptPatchForBlock(threadId, block);
@@ -639,19 +619,61 @@ function writeModeFromRunStarted(rawEvent: unknown): Turn["writeMode"] | undefin
     : undefined;
 }
 
-/**
- * Applies one live AG-UI event to the unified thread store.
- *
- * Cross-thread events are ignored without bumping the counter, matching the old
- * reducer's addressed-slot guard. Accepted no-op vocabulary still bumps
- * `eventsApplied` so reconnect/replay keeps opaque block IDs deterministic.
- */
+/** The addressed block vocabulary has one reducer owner, independent of a run. */
+export function isDurableBlockEvent(event: AGUIEvent): boolean {
+  return (
+    event.type === EventType.CUSTOM &&
+    (event.name === "meridian.block.upserted" || event.name === "meridian.block.pruned")
+  );
+}
+
+export function isWellFormedDurableBlockEvent(event: AGUIEvent): boolean {
+  if (!isDurableBlockEvent(event) || event.type !== EventType.CUSTOM) return false;
+  return event.name === "meridian.block.upserted"
+    ? parseCustomBlockUpsertPayload(event.value) !== null
+    : parseBlockPrunedPayload(event.value) !== null;
+}
+
+/** False means the owned vocabulary was malformed, not an opaque CUSTOM event. */
+export function applyDurableBlockEvent(
+  store: StoreEventTarget,
+  threadId: string,
+  event: AGUIEvent,
+): boolean {
+  if (!isDurableBlockEvent(event) || (eventH(event) && event.threadId !== threadId)) return false;
+  if (event.type !== EventType.CUSTOM) return false;
+  if (event.name === "meridian.block.upserted") {
+    const payload = parseCustomBlockUpsertPayload(event.value);
+    if (!payload) return false;
+    applyCustomBlockUpsertEvent(store, threadId, payload);
+    return true;
+  }
+  const payload = parseBlockPrunedPayload(event.value);
+  if (!payload) return false;
+  if (
+    !(store.turns(threadId) ?? []).some((turn) =>
+      turn.blocks.some((block) => block.id === payload.blockId),
+    )
+  ) {
+    store.invalidateThreadSnapshot(threadId);
+    return true;
+  }
+  store.removeAssistantBlock(threadId, payload.blockId);
+  return true;
+}
+
+/** Applies one live AG-UI event to the unified thread store. */
 export function applyAguiEventToStore(
   store: StoreEventTarget,
   threadId: string,
   event: AGUIEvent,
 ): void {
   if (eventH(event) && event.threadId !== threadId) return;
+
+  if (isDurableBlockEvent(event)) {
+    applyDurableBlockEvent(store, threadId, event);
+    return;
+  }
 
   const eventsApplied = store.bumpEventsApplied(threadId);
 
@@ -998,11 +1020,6 @@ export function applyAguiEventToStore(
     }
 
     case EventType.CUSTOM: {
-      if (event.name === "meridian.block.upserted") {
-        const payload = parseCustomBlockUpsertPayload(event.value);
-        if (payload) applyCustomBlockUpsertEvent(store, threadId, payload);
-        return;
-      }
       if (event.name === "meridian.interrupt") {
         const payload = parseInterruptLifecyclePayload(event.value);
         if (payload) applyInterruptLifecycleEvent(store, threadId, payload);
@@ -1069,12 +1086,19 @@ export function applyAguiEventToStore(
         return;
       }
       if (event.name === "meridian.usage" || event.name === "meridian.permission.denied") return;
-      // Durable custom projections are consumed by useThreadDurableProjections' event
-      // listener; falling through here rendered each one as an "Unknown
+      // Subagent activity is live read-model state consumed via ThreadLiveState;
+      // it is not transcript content, so it never becomes a turn block.
+      if (event.name === "meridian.subagent.activity") return;
+      // Durable custom projections are consumed by live listeners — the
+      // useThreadDurableProjections trail/Work-binding listener and the
+      // pending-inbox projection (usePendingInbox) — so they are not transcript
+      // content. Falling through here rendered each one as an "Unknown
       // component" note under the digest for the duration of the turn.
       if (
         event.name === "meridian.turn_change_trail.updated" ||
-        event.name === "meridian.turn_change_trail.settled"
+        event.name === "meridian.turn_change_trail.settled" ||
+        event.name === WORK_CONTEXT_PROJECTION_EVENT ||
+        event.name === "meridian.inbox.changed"
       ) {
         return;
       }

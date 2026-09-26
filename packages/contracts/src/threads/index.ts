@@ -27,12 +27,6 @@ export type JsonValue =
 
 export type JsonObject = { [key: string]: JsonValue };
 
-export type WorkingState = {
-  goals?: string[];
-  notes?: string[];
-  scratch?: JsonObject;
-};
-
 // TODO(archive-delete): make archive + delete "both real" (product decision).
 // Today `archived` is dead — nothing sets it and no UI reaches it — while
 // `deletedAt` soft-delete (the trash) is real but unwired. Intended model:
@@ -40,8 +34,43 @@ export type WorkingState = {
 //             browsable in an "Archived" view (unarchive returns it to idle)
 //   delete  → deletedAt tombstone → trashed, excluded from every list
 // Wire archive/unarchive mutations + a user-facing delete; keep them distinct.
-export type ThreadStatus = "idle" | "active" | "blocked" | "error" | "archived";
+/**
+ * Durable thread lifecycle. Run state (`active`/`idle`/`error`) is no longer
+ * stored here; it is derived from the live lease. See {@link ThreadStatus}.
+ */
+export type ThreadLifecycleStatus = "idle" | "archived";
+
+/** Lease phase published by the running loop; `generating` around the model call, `waiting` between tool waits. */
+export type ThreadPhase = "generating" | "waiting";
+
+/**
+ * Derived run status: awake iff a live lease exists, with the phase the holder
+ * last published. Never a second durable truth — a dead process expires its
+ * lease and reads `asleep`.
+ */
+export type ThreadStatus =
+  | { kind: "asleep" }
+  | { kind: "awake"; phase: ThreadPhase; cancelRequested: boolean };
+
+/**
+ * One thread's live-lease projection: the derived run status plus the assistant
+ * turn the lease is bound to. Batched lease reads (`readMany`) return this per
+ * thread; a thread absent from the map is asleep.
+ */
+export type ThreadLeaseState = {
+  status: ThreadStatus;
+  runningTurnId: string | null;
+};
 export type TurnRole = "user" | "assistant" | "system" | "compaction";
+/**
+ * Who authored a turn, independent of `role`: `writer` is any human send
+ * (idle send or mid-run steer), `assistant` is model output, `system` is
+ * everything else the platform or an agent injected (child completions,
+ * Work-context updates, notices, non-writer inbox provenance). Logging/
+ * bookkeeping only today — chat-activity and rendering still key off
+ * `role`/`metadata`, not this field.
+ */
+export type TurnOrigin = "writer" | "assistant" | "system";
 export type BlockType =
   | "text"
   | "image"
@@ -58,6 +87,65 @@ export type ThreadKind = "primary" | "subagent";
 export type ThreadOriginType = "spawn" | "handoff" | "fork";
 export type SpawnStatus = "running" | "succeeded" | "failed" | "cancelled";
 export type PriceSource = "computed" | "provider_reported" | "configured_rate" | "unknown";
+
+/** One live-or-recent descendant thread in a thread's spawn subtree. Derived; never persisted as a block. */
+export type ThreadActivityNode = {
+  threadId: string;
+  /** Immediate spawner in this subtree. */
+  parentThreadId: string | null;
+  rootThreadId: string;
+  /** threads.spawn_depth. */
+  depth: number;
+  /** Server-assigned `pN` handle. */
+  ref: string | null;
+  title: string | null;
+  /** Display name from the retained Agent definition. */
+  agentName: string | null;
+  /** Durable child lifecycle. */
+  spawnStatus: SpawnStatus | null;
+  /** Derived from the live lease; absent lease reads `asleep`. */
+  status: ThreadStatus;
+  /** Parent turn that spawned this thread (transcript anchor). */
+  originTurnId: string | null;
+};
+
+/** Recursive activity read: the full subtree of one viewed thread, ordered (depth, createdAt). */
+export type ThreadActivity = {
+  descendants: ThreadActivityNode[];
+};
+
+/**
+ * Durable inbox message intent. A directed `message` wakes the thread; a
+ * `notice` supplies context without starting a run.
+ */
+export type MessageIntent = "message" | "notice";
+
+/** Who authored a durable inbox message. JSON-natural; ids are plain strings at the wire. */
+export type MessageProvenance =
+  | { kind: "writer"; actorId: string }
+  | { kind: "agent"; threadId: string }
+  | { kind: "child"; threadId: string; reportId: string; handle: string; outcome: string }
+  | { kind: "system"; source: string };
+
+/**
+ * One durably unacknowledged inbox row with server-derived delivery progress.
+ * `waiting` alone belongs in the writer's queued tray; never a persisted block.
+ */
+export type PendingInboxItem = {
+  id: string;
+  seq: number;
+  intent: MessageIntent;
+  provenance: MessageProvenance;
+  deliveryState: "awaiting_run" | "waiting";
+  /** Body text, or a report/notice summary. */
+  summary: string;
+  enqueuedAt: string;
+};
+
+/** A thread's unacknowledged inbox, ordered by `seq`; snapshots replace state wholesale. */
+export type ThreadPendingInbox = {
+  items: PendingInboxItem[];
+};
 
 /**
  * Canonical event-name registry for the thread journal and live event hub.
@@ -89,8 +177,8 @@ export type JournalEventType =
   /** DEFERRED — reserved vocabulary, payload typed when its producer lands. */
   | "block.created"
   | "block.upserted"
+  | "block.updated"
   | "block.delta"
-  | "block.pruned"
   | "tool.invoked"
   | "tool.denied"
   | "tool.corrected"
@@ -99,7 +187,10 @@ export type JournalEventType =
   | "agent.handoff"
   | "agent.fork"
   | "agent.spawn" // PRODUCED NOW — ChildRunCoordinator
-  | "agent.run_completed" // PRODUCED NOW — ChildRunCoordinator (spawn or continue)
+  | "agent.run_completed" // PRODUCED NOW — ReportPublisher B, body-free metadata
+  | "subagent.activity" // PRODUCED NOW — ChildRunCoordinator/Driver (root journal, full recomputed activity)
+  | "inbox.changed" // PRODUCED NOW — enqueue, bind/adoption/release, and ack (full classified inbox)
+  | "block.pruned" // PRODUCED NOW — generic block lifecycle; child run cards are replaced in place
   | "context.assembled"
   | "context.compacted"
   | "context.skill_loaded"
@@ -108,9 +199,7 @@ export type JournalEventType =
   | "model.request_sent"
   | "model.response_received"
   | "model.retried"
-  | "background.started"
-  | "background.completed"
-  | "background.failed"
+  | "background.started" // PRODUCED NOW — launch metadata; terminal truth is agent.run_completed
   | "background.rearmed"
   | "background.killed"
   | "permission.requested"
@@ -133,7 +222,7 @@ export interface Thread {
   workId: string | null;
   userId: string;
   kind: ThreadKind;
-  status: ThreadStatus;
+  status: ThreadLifecycleStatus;
   title: string | null;
   /** Server-assigned handle: `cN` for primaries, `pN` for subagents; null before persist. */
   ref: string | null;
@@ -144,27 +233,43 @@ export interface Thread {
    * (or subagent creation). `null` = not yet baked; `[]` = baked with no skills.
    */
   bakedSkillSlugs?: string[] | null;
-  workingState?: WorkingState | null;
+  /**
+   * Advertised Tool[] payload frozen with `composedSystemPrompt` at first
+   * attempt (or subagent creation): opaque JSON, shaped by the runtime
+   * gateway's `Tool` type. `null` = not yet baked.
+   */
+  bakedTools?: JsonValue | null;
   agentDefinitionRevisionId: string | null;
   /** Display name from the retained Agent definition. */
   agentName: string | null;
   nextSeq?: string;
   /** Canonical logical head of the active conversation branch. */
   activeLeafTurnId: string | null;
+  /**
+   * Spawn-tree parent: null for a root, the spawning thread for a subagent.
+   * A fork/handoff derivation is a SIBLING of its source, not the source's
+   * child, so it takes the source's own `parentThreadId` (null when the
+   * source is itself a root) rather than pointing at the source.
+   */
   parentThreadId: string | null;
   /** Set when this thread was derived via handoff or fork. */
   originType?: ThreadOriginType | null;
-  /** Fork/handoff anchor turn on the parent thread. */
+  /**
+   * Fork/handoff anchor turn on the SOURCE thread (not necessarily
+   * `parentThreadId`); resolving its owning thread recovers the fork-source
+   * edge, since `parentThreadId` never carries it.
+   */
   originTurnId?: string | null;
   /**
-   * Identifies the run tree this thread belongs to. For primary threads this equals
-   * the thread's own id; subagent threads (P2b) will point at the spawning root.
-   * Used for run-scoped project workspace paths such as `runs/<rootThreadId>/input/…`.
+   * Identifies the run tree this thread belongs to. An organic root equals its
+   * own id; a subagent takes its spawning parent's root; a fork/handoff
+   * derivation takes its SOURCE's root (sharing lineage with it instead of
+   * starting a new tree). Used for run-scoped project workspace paths such as
+   * `runs/<rootThreadId>/input/…`.
    */
   rootThreadId: string;
   spawnDepth: number;
   spawnStatus: SpawnStatus | null;
-  spawnResult?: JsonValue | null;
   totalCostUsd: string;
   turnCount: number;
   historySummary?: string | null;
@@ -191,6 +296,8 @@ export interface Turn {
   prevTurnId?: string | null;
   parentTurnId?: string | null;
   role: TurnRole;
+  /** Who authored this turn; see {@link TurnOrigin}. */
+  origin: TurnOrigin;
   /** Write policy frozen when this turn began; null identifies pre-contract turns. */
   writeMode: AiWriteMode | null;
   status: TurnStatus;

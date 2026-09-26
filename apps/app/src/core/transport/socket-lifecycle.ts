@@ -1,19 +1,4 @@
-/**
- * socket-lifecycle — the boring, shared WebSocket control plane for the WS
- * transports.
- *
- * Owns everything that is identical between `WsThreadTransport` and the
- * Hocuspocus-backed document transport: socket creation, generation/epoch tracking,
- * connect/reconnect with jittered backoff (via `ws-reconnect`), ping-timeout
- * liveness, terminal-close policy (via `isTerminalWsClose`), and connection-state
- * publication. The consumer owns only its domain: URL/binaryType, what to do on
- * open/message, whether it still wants a connection, and how to fan connection
- * state out to its own registry.
- *
- * Terminal closes (4401/4403) publish a `terminal` `ConnectionState` and STOP
- * retrying — the controller will refuse to (re)connect afterward. This is why
- * both transports get auth-close-as-terminal for free.
- */
+/** Manages WebSocket reconnects and current-generation callbacks. */
 
 import { DEBUG_FEATURE_ALLOWED } from "../debug-gate";
 import type { ConnectionState } from "./ThreadTransport";
@@ -112,11 +97,6 @@ export class SocketLifecycleController {
     return this.socket;
   }
 
-  /**
-   * Generation of the socket most recently created (or, at close time, the one
-   * that just closed). Bumped on every `startSocket`/`teardown`, so a consumer
-   * can tag a write and later recognize its socket's close.
-   */
   get currentGeneration(): number {
     return this.socketGeneration;
   }
@@ -175,11 +155,7 @@ export class SocketLifecycleController {
     this.publishConnectionState({ kind: "disconnected" });
   }
 
-  /**
-   * Write one frame to the current socket. Returns false when no open socket
-   * exists or the write throws, so callers that must distinguish "never sent"
-   * from "sent, awaiting response" can classify honestly.
-   */
+  /** Write one frame to the current socket. */
   send(data: string | ArrayBufferLike | ArrayBufferView): boolean {
     if (!this.isSocketOpen()) return false;
     const socket = this.socket;

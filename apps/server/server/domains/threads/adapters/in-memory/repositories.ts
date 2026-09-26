@@ -5,7 +5,7 @@
  */
 
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
-import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Block, ModelResponse, Thread, Turn, TurnUsage } from "@meridian/contracts/threads";
 import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
@@ -18,16 +18,15 @@ import { formatThreadRef } from "../../domain/thread-ref.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type {
   BlockRepository,
-  ChildReportDeliveryObligation,
   CreateBlockInput,
   CreateModelResponseInput,
   CreateThreadInput,
   CreateTurnInput,
   DerivedPrimaryThreadFactory,
-  EnqueueChildReportDeliveryInput,
   InternalThreadRepositories,
   ModelResponseRepository,
   SubagentThreadFactory,
+  ThreadDescendant,
   ThreadDocument,
   ThreadDocumentRepository,
   ThreadRepository,
@@ -42,6 +41,7 @@ import {
   ThreadMembershipUnavailableError,
   ThreadWorkProjectMismatchError,
 } from "../../ports/repositories.js";
+import { createInMemoryExecutionReportRepository } from "./execution-report-repository.js";
 import { createInMemoryProjectChatAdapter } from "./project-chat-adapter.js";
 
 // USD rollups are display-side only; integer millicredits in the billing
@@ -94,7 +94,7 @@ function defaultThread(input: CreateThreadInput): Thread {
     ref: null,
     composedSystemPrompt: null,
     bakedSkillSlugs: null,
-    workingState: input.workingState ?? null,
+    bakedTools: null,
     agentDefinitionRevisionId: null,
     agentName: null,
     nextSeq: "0",
@@ -103,7 +103,6 @@ function defaultThread(input: CreateThreadInput): Thread {
     rootThreadId: id,
     spawnDepth: normalized.spawnDepth,
     spawnStatus: normalized.spawnStatus,
-    spawnResult: null,
     totalCostUsd: "0",
     turnCount: 0,
     historySummary: null,
@@ -120,6 +119,7 @@ function defaultTurn(input: CreateTurnInput): Turn {
     threadId: input.threadId,
     prevTurnId: input.prevTurnId ?? null,
     role: input.role,
+    origin: input.origin,
     writeMode: input.writeMode ?? null,
     status: input.status ?? "pending",
     parentTurnId: input.prevTurnId ?? null,
@@ -181,19 +181,8 @@ export function createInMemoryRepositories(
     string,
     { threadId: ThreadId; workId: WorkId; isPrimary: boolean }
   >();
-  const workContextDeliveries = transactionOwner.set<string>();
-  const childReportDeliveries = transactionOwner.map<string, ChildReportDeliveryObligation>();
   const userStateByThreadUser = transactionOwner.map<string, { isFavorite: boolean }>();
   const threadCounters = transactionOwner.map<string, number>();
-
-  async function receivesWorkContextUpdate(thread: Thread | undefined): Promise<boolean> {
-    return (
-      !!thread &&
-      !thread.deletedAt &&
-      thread.status !== "archived" &&
-      (await threadInActiveProject(thread))
-    );
-  }
 
   function nextRef(projectId: string, kind: Thread["kind"]): string {
     const n = (threadCounters.get(projectId) ?? 0) + 1;
@@ -233,21 +222,16 @@ export function createInMemoryRepositories(
     const projected = projectThread(thread);
     const work =
       projected.workId && options.works ? await options.works.findById(projected.workId) : null;
-    const threadTurns = [...turns.values()].filter((turn) => turn.threadId === thread.id);
     const latestTurn = conversationalHead(projected);
-    const runningTurn = [...threadTurns]
-      .reverse()
-      .find(
-        (turn) =>
-          turn.role === "assistant" && (turn.status === "pending" || turn.status === "streaming"),
-      );
 
     return toThreadListItem({
       thread: projected,
       workTitle: work && !work.deletedAt ? work.name : null,
       lastTurnRole: latestTurn?.role ?? null,
       lastTurnStatus: latestTurn?.status ?? null,
-      runningTurnId: runningTurn?.id ?? null,
+      // Run liveness is the live lease, which this durable fake does not model;
+      // tests read it through the in-memory RunClaim instead.
+      runningTurnId: null,
     });
   }
 
@@ -278,7 +262,6 @@ export function createInMemoryRepositories(
       const updated = {
         ...thread,
         spawnStatus: input.spawnStatus,
-        spawnResult: input.spawnResult ?? thread.spawnResult ?? null,
         updatedAt: toIsoString(new Date()),
       };
       threads.set(id, updated);
@@ -331,6 +314,34 @@ export function createInMemoryRepositories(
       const ordered = visible.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       return Promise.all(ordered.map(toListItem));
     },
+    async listDescendants(threadId) {
+      const descendants: ThreadDescendant[] = [];
+      const seen = new Set<string>([threadId]);
+      let frontier = [threadId as string];
+      while (frontier.length > 0) {
+        const level = [...threads.values()]
+          .filter((thread) => !thread.deletedAt && frontier.includes(thread.parentThreadId ?? ""))
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+        frontier = [];
+        for (const thread of level) {
+          if (seen.has(thread.id)) continue;
+          seen.add(thread.id);
+          descendants.push({
+            id: thread.id,
+            parentThreadId: thread.parentThreadId,
+            rootThreadId: thread.rootThreadId,
+            spawnDepth: thread.spawnDepth,
+            ref: thread.ref,
+            title: thread.title,
+            agentName: projectThread(thread).agentName ?? null,
+            spawnStatus: thread.spawnStatus,
+            originTurnId: thread.originTurnId ?? null,
+          });
+          frontier.push(thread.id);
+        }
+      }
+      return descendants;
+    },
     async listRecentByWork(projectId, workId, limit) {
       const boundedLimit = Math.max(0, Math.min(Math.trunc(limit), 50));
       const visible: Thread[] = [];
@@ -380,6 +391,7 @@ export function createInMemoryRepositories(
         ...thread,
         composedSystemPrompt: input.composedSystemPrompt,
         bakedSkillSlugs: input.bakedSkillSlugs,
+        bakedTools: input.bakedTools,
         updatedAt: toIsoString(new Date()),
       };
       threads.set(id, updated);
@@ -462,10 +474,6 @@ export function createInMemoryRepositories(
       const workId = primaryWorkIdForThread(threadId);
       return workId ? { workId } : null;
     },
-    async lockPrimary(threadId) {
-      const workId = primaryWorkIdForThread(threadId);
-      return workId ? { workId } : null;
-    },
     async rebindPrimary(threadId, workId) {
       const thread = threads.get(threadId);
       if (!thread || thread.deletedAt) throw new ThreadMembershipUnavailableError(threadId);
@@ -533,6 +541,21 @@ export function createInMemoryRepositories(
     async getLatestByThread(threadId) {
       const threadTurns = await this.listByThread(threadId);
       return threadTurns.at(-1) ?? null;
+    },
+    async findRunningAssistantId(threadId, options) {
+      const createdAfter = options?.createdAfter?.toISOString();
+      const threadTurns = await this.listByThread(threadId);
+      const running = [...threadTurns]
+        .reverse()
+        .find(
+          (turn) =>
+            turn.role === "assistant" &&
+            (turn.status === "pending" ||
+              turn.status === "streaming" ||
+              turn.status === "waiting_interrupt") &&
+            (createdAfter === undefined || turn.createdAt >= createdAfter),
+        );
+      return running?.id ?? null;
     },
     async updateStatus(id, input: UpdateTurnStatusInput) {
       const turn = turns.get(id);
@@ -648,6 +671,23 @@ export function createInMemoryRepositories(
       blocks.set(block.id, block);
       return block;
     },
+    async replaceExisting(input) {
+      const existing = blocks.get(input.id);
+      if (
+        !existing ||
+        existing.turnId !== input.turnId ||
+        existing.sequence !== input.sequence ||
+        existing.blockType !== input.blockType
+      )
+        return null;
+      const updated = {
+        ...existing,
+        content: input.content ?? null,
+        status: input.status ?? "complete",
+      } as Block;
+      blocks.set(input.id, updated);
+      return updated;
+    },
     async findById(id) {
       return blocks.get(id) ?? null;
     },
@@ -671,7 +711,7 @@ export function createInMemoryRepositories(
     },
     async updatePruned(id, pruned) {
       const block = blocks.get(id);
-      if (!block) throw new Error(`Block not found: ${id}`);
+      if (!block) return null;
       const updated = { ...block, pruned };
       blocks.set(id, updated);
       return updated;
@@ -710,6 +750,14 @@ export function createInMemoryRepositories(
     },
     async findById(id) {
       return modelResponses.get(id) ?? null;
+    },
+    async listByThread(threadId) {
+      const turnIds = new Set(
+        [...turns.values()].filter((turn) => turn.threadId === threadId).map((turn) => turn.id),
+      );
+      return [...modelResponses.values()]
+        .filter((response) => turnIds.has(response.turnId))
+        .sort((a, b) => a.sequence - b.sequence);
     },
     async listByTurn(turnId) {
       return [...modelResponses.values()]
@@ -813,84 +861,15 @@ export function createInMemoryRepositories(
     turns: turnRepo,
     blocks: blockRepo,
     modelResponses: modelResponseRepo,
+    executionReports: createInMemoryExecutionReportRepository(transactionOwner, {
+      threads,
+      turns,
+      blocks,
+      projects: options.projects,
+    }),
+    readSnapshot: (operation) => transactionOwner.run(operation),
     threadDocuments: threadDocumentRepo,
     documentTouches: documentTouchRepo,
-    workContextDeliveries: {
-      async enqueueThread(threadId) {
-        if (!(await receivesWorkContextUpdate(threads.get(threadId)))) return [];
-        workContextDeliveries.add(threadId);
-        return [threadId];
-      },
-      async enqueueProject(projectId: ProjectId) {
-        const selected: ThreadId[] = [];
-        for (const thread of threads.values()) {
-          if (thread.projectId === projectId && (await receivesWorkContextUpdate(thread))) {
-            workContextDeliveries.add(thread.id);
-            selected.push(thread.id as ThreadId);
-          }
-        }
-        return selected;
-      },
-      async listPendingThreadIds() {
-        const selected: ThreadId[] = [];
-        for (const threadId of workContextDeliveries) {
-          if (await receivesWorkContextUpdate(threads.get(threadId))) {
-            selected.push(threadId as ThreadId);
-          }
-        }
-        return selected;
-      },
-      async isPending(threadId) {
-        return workContextDeliveries.has(threadId);
-      },
-      async lockPending(threadId) {
-        return (
-          workContextDeliveries.has(threadId) &&
-          (await receivesWorkContextUpdate(threads.get(threadId)))
-        );
-      },
-      async acknowledge(threadId) {
-        workContextDeliveries.delete(threadId);
-      },
-    },
-    childReportDeliveries: {
-      async enqueue(input: EnqueueChildReportDeliveryInput) {
-        const key = input.reportId as string;
-        if (childReportDeliveries.has(key)) return;
-        childReportDeliveries.set(key, {
-          reportId: input.reportId,
-          parentThreadId: input.parentThreadId,
-          childThreadId: input.childThreadId,
-          agentSlug: input.agentSlug,
-          description: input.description ?? null,
-          result: input.result,
-          systemTurnId: input.systemTurnId ?? null,
-          submissionEpoch: 0,
-        });
-      },
-      async listPendingParentThreadIds() {
-        return [...new Set([...childReportDeliveries.values()].map((row) => row.parentThreadId))];
-      },
-      async listPendingByParent(parentThreadId) {
-        return [...childReportDeliveries.values()].filter(
-          (row) => row.parentThreadId === parentThreadId,
-        );
-      },
-      async findByReportId(reportId) {
-        return childReportDeliveries.get(reportId as string) ?? null;
-      },
-      async setSystemTurnId(reportId, systemTurnId) {
-        const row = childReportDeliveries.get(reportId as string);
-        if (row && row.systemTurnId === null) row.systemTurnId = systemTurnId;
-      },
-      async advanceEpoch(reportId) {
-        const row = childReportDeliveries.get(reportId as string);
-        if (row) row.submissionEpoch += 1;
-      },
-      async acknowledge(reportId) {
-        childReportDeliveries.delete(reportId as string);
-      },
-    },
     transaction: (operation) => transactionOwner.run(operation),
     async runTurnStartTransition(threadId, expectedActiveLeafTurnId, operation) {
       return this.transaction(async () => {
@@ -899,17 +878,6 @@ export function createInMemoryRepositories(
         }
         return operation();
       });
-    },
-    async recordModelResponseUsage(input) {
-      const modelResponseResult = await modelResponseRepo.create(input.response);
-      if (!modelResponseResult.inserted) {
-        const turn = await turnRepo.findById(input.response.turnId);
-        if (!turn) throw new Error(`Turn not found: ${input.response.turnId}`);
-        return { modelResponse: modelResponseResult.row, turn };
-      }
-      const turn = await turnRepo.recomputeRollups(input.response.turnId);
-      await threadRepo.recomputeCostFromModelResponses(turn.threadId);
-      return { modelResponse: modelResponseResult.row, turn };
     },
   };
 }

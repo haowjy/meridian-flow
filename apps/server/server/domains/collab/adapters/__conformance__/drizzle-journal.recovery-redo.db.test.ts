@@ -113,15 +113,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         title: "Journal Thread",
         kind: "primary",
-        status: "active",
+        status: "idle",
       });
       await db.insert(turns).values([
-        { id: TURN_A, threadId: THREAD_ID, role: "assistant", status: "complete" },
+        {
+          id: TURN_A,
+          threadId: THREAD_ID,
+          role: "assistant",
+          origin: "assistant",
+          status: "complete",
+        },
         {
           id: TURN_B,
           threadId: THREAD_ID,
           parentTurnId: TURN_A,
           role: "assistant",
+          origin: "assistant",
           status: "complete",
         },
         {
@@ -129,6 +136,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadId: THREAD_ID,
           parentTurnId: TURN_B,
           role: "assistant",
+          origin: "assistant",
           status: "complete",
         },
         {
@@ -136,6 +144,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadId: THREAD_ID,
           parentTurnId: TURN_C,
           role: "assistant",
+          origin: "assistant",
           status: "complete",
         },
         {
@@ -143,6 +152,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadId: THREAD_ID,
           parentTurnId: TURN_D,
           role: "assistant",
+          origin: "assistant",
           status: "complete",
         },
         ...CONCURRENT_TURNS.map((id) => ({
@@ -150,6 +160,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadId: THREAD_ID,
           parentTurnId: TURN_E,
           role: "assistant" as const,
+          origin: "assistant" as const,
           status: "complete" as const,
         })),
       ]);

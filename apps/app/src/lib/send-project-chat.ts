@@ -11,7 +11,7 @@ import { deriveTitleFromMessage } from "./thread-title";
 
 const OPTIMISTIC_OWNER_ID = "optimistic-local";
 
-const persistJobs = new Map<string, Promise<void>>();
+const persistJobs = new WeakMap<AbortSignal, Map<string, Promise<Thread>>>();
 
 /**
  * Per-tab session ids for an in-flight first send. A remount before
@@ -23,12 +23,21 @@ const firstSendSessionIds = new Map<
   { optimisticUserTurnId: string; workingTurnId: string }
 >();
 
-/** Serializes background persist work per thread within one tab. */
-export function runExclusivePersist(threadId: string, job: () => Promise<void>): Promise<void> {
-  const existing = persistJobs.get(threadId);
+/** Share only create-or-get across mounts in one account epoch; each mount owns dispatch. */
+export function runExclusiveThreadCreation(
+  accountEpoch: AbortSignal,
+  threadId: string,
+  create: () => Promise<Thread>,
+): Promise<Thread> {
+  let jobs = persistJobs.get(accountEpoch);
+  if (!jobs) {
+    jobs = new Map();
+    persistJobs.set(accountEpoch, jobs);
+  }
+  const existing = jobs.get(threadId);
   if (existing) return existing;
-  const running = job().finally(() => persistJobs.delete(threadId));
-  persistJobs.set(threadId, running);
+  const running = create().finally(() => jobs.delete(threadId));
+  jobs.set(threadId, running);
   return running;
 }
 

@@ -71,6 +71,7 @@ function turnToCreateInput(turn: Turn): CreateTurnInput {
     createdAt: turn.createdAt,
     prevTurnId: turn.prevTurnId ?? turn.parentTurnId ?? null,
     role: turn.role,
+    origin: turn.origin,
     writeMode: turn.writeMode,
     status: turn.status,
     requestParams: turn.requestParams ?? null,
@@ -150,6 +151,10 @@ export async function projectReadModelEvent(
     }
     case "block.upserted":
       await repos.blocks.upsert(blockToUpsertInput(event.block));
+      return;
+    case "block.updated":
+      if (!(await repos.blocks.replaceExisting(blockToUpsertInput(event.block))))
+        throw new Error(`Cannot replace missing block ${event.block.id}`);
       return;
     case "block.pruned":
       await repos.blocks.updatePruned(event.blockId, true);

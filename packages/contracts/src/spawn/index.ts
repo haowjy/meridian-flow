@@ -5,12 +5,10 @@
  * spent counters are updated in-process until P4 wires the ledger.
  */
 import type { ArtifactRef, MeridianError } from "../interrupt/index.js";
+import type { ThreadId, TurnBlockId, TurnId } from "../runtime/index.js";
 import type { JsonValue } from "../threads/index.js";
 
-/**
- * What a child returns through return_result before final child cost is known.
- * ChildRunCoordinator folds in costMillicredits after the child turn stops.
- */
+/** Candidate content supplied by return_result, before terminal cause is known. */
 export type ReturnResultCapture = {
   summary: string;
   payload?: JsonValue;
@@ -19,6 +17,61 @@ export type ReturnResultCapture = {
 
 /** A run accepts one report; a second return_result is refused, not thrown. */
 export type ReturnResultOutcome = { ok: true } | { ok: false; message: string };
+
+export type SavedOutcome = "succeeded" | "failed" | "cancelled";
+export type ExecutionReportSource = "return_result" | "final_assistant" | "empty";
+export type ExecutionReportOrigin = "spawn" | "foreground_message" | "thread_run";
+export type ExecutionReportDelivery = "background_notification" | "direct" | "none";
+
+/** Parent-side identity passed at child admission; the child turn ID is added only after admission commits. */
+export type ExecutionReportCorrelation = {
+  callerThreadId: ThreadId | null;
+  callerTurnId: TurnId | null;
+  toolCallId: string | null;
+  cardBlockId: TurnBlockId | null;
+  origin: ExecutionReportOrigin;
+  deliveryMode: ExecutionReportDelivery;
+};
+
+export type SavedExecutionReport = {
+  terminalAssistantTurnId: TurnId | null;
+  childThreadId: ThreadId;
+  assistantTurnId: TurnId;
+  handle: string;
+  origin: ExecutionReportOrigin;
+  deliveryMode: ExecutionReportDelivery;
+  callerThreadId: ThreadId | null;
+  callerTurnId: TurnId | null;
+  toolCallId: string | null;
+  cardBlockId: TurnBlockId | null;
+  agentSlug: string | null;
+  description: string | null;
+  capture: ReturnResultCapture | null;
+  captureToolCallId: string | null;
+  reason: string | null;
+  payload?: JsonValue;
+  artifacts: ArtifactRef[] | null;
+  costMillicredits: number | null;
+  publication: "none" | "pending" | "published" | "skipped";
+  publishedAt: string | null;
+} & (
+  | { outcome: null; source: null; summary: null; terminalAt: null }
+  | { outcome: SavedOutcome; source: ExecutionReportSource; summary: string; terminalAt: string }
+);
+
+export type ThreadReportResult =
+  | {
+      ref: string;
+      run: number;
+      outcome: SavedOutcome;
+      source: ExecutionReportSource;
+      summary: string;
+      payload?: JsonValue;
+      artifacts?: ArtifactRef[];
+      partial: boolean;
+      reason: string | null;
+    }
+  | { ref: string; status: "not_ready" | "unavailable" };
 
 export function isReturnResultOutcome(value: unknown): value is ReturnResultOutcome {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
@@ -29,7 +82,7 @@ export function isReturnResultOutcome(value: unknown): value is ReturnResultOutc
 
 /** Child agent terminal hand-back (execution-model §4.1). */
 export type AgentReport = {
-  /** Short model-facing handle (`pN`); the model's currency for continue. */
+  /** Short model-facing handle (`pN`); the model's currency for thread_message. */
   handle: string;
   /** Internal UUID for UI navigation; never sent to the model. */
   threadId: string;
@@ -37,20 +90,28 @@ export type AgentReport = {
   payload?: JsonValue;
   artifacts?: ArtifactRef[];
   costMillicredits: number;
-  /** Set when the child ended without calling return_result. */
-  incomplete?: boolean;
 };
 
 export type SpawnResult =
-  | { status: "completed"; report: AgentReport }
+  | { status: "completed"; execution: TurnId; outcome: "succeeded"; report: AgentReport }
   | {
       status: "background";
       handle: string;
       threadId: string;
       agentSlug: string;
       description?: string;
+      /** Present for a spawned execution; absent for queue-only thread_message. */
+      execution?: TurnId;
     }
-  | { status: "error"; error: MeridianError };
+  | {
+      status: "error";
+      error: MeridianError;
+      execution?: TurnId;
+      outcome?: "failed" | "cancelled";
+      report?: AgentReport;
+      partial?: boolean;
+      reason?: string | null;
+    };
 // DEFERRED(interrupt-bubbling): add { status: "interrupt" } arm when a deep worker must reach the human without parent mediation — no pilot case
 
 type AssertJsonValue<T extends JsonValue> = T;

@@ -87,7 +87,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       await store.bindThread(THREAD, first.id, bindingConfiguration, null);
       expect((await threads.findById(THREAD))?.agentDefinitionRevisionId).toBe(first.id);
       expect((await threads.listByUser(USER))[0]?.agentDefinitionRevisionId).toBe(first.id);
-      const updated = await threads.updateStatus(THREAD, "active");
+      const updated = await threads.updateStatus(THREAD, "idle");
       expect(updated?.agentDefinitionRevisionId).toBe(first.id);
       expect(updated?.agentName).toBe("Retained Name");
       expect((await threads.findById(THREAD))?.agentName).toBe("Retained Name");
@@ -104,7 +104,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect((await threads.findById(THREAD))?.agentDefinitionRevisionId).toBeNull();
       expect((await threads.findById(THREAD))?.agentName).toBe("Subagent");
       expect((await threads.listByUser(USER))[0]?.agentName).toBe("Subagent");
-      const updated = await threads.updateStatus(THREAD, "active");
+      const updated = await threads.updateStatus(THREAD, "idle");
       expect(updated?.agentName).toBe("Subagent");
       const feed = await repos.chatFeed.queryPage({
         projectId: PROJECT,
@@ -147,8 +147,16 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         const firstThreads = createDrizzleThreadRepository(db);
         const otherThreads = createDrizzleThreadRepository(otherDb);
         const candidates = [
-          { composedSystemPrompt: "First retained prompt", bakedSkillSlugs: ["first-skill"] },
-          { composedSystemPrompt: "Second retained prompt", bakedSkillSlugs: ["second-skill"] },
+          {
+            composedSystemPrompt: "First retained prompt",
+            bakedSkillSlugs: ["first-skill"],
+            bakedTools: [],
+          },
+          {
+            composedSystemPrompt: "Second retained prompt",
+            bakedSkillSlugs: ["second-skill"],
+            bakedTools: [],
+          },
         ];
         const winners = await Promise.all([
           firstThreads.bakeComposedSystemPrompt(THREAD, candidates[0]),
@@ -156,13 +164,16 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         ]);
         expect(winners[0].composedSystemPrompt).toBe(winners[1].composedSystemPrompt);
         expect(winners[0].bakedSkillSlugs).toEqual(winners[1].bakedSkillSlugs);
+        expect(winners[0].bakedTools).toEqual(winners[1].bakedTools);
         expect(candidates).toContainEqual({
           composedSystemPrompt: winners[0].composedSystemPrompt,
           bakedSkillSlugs: winners[0].bakedSkillSlugs,
+          bakedTools: winners[0].bakedTools,
         });
         const reloaded = await otherThreads.findById(THREAD);
         expect(reloaded?.composedSystemPrompt).toBe(winners[0].composedSystemPrompt);
         expect(reloaded?.bakedSkillSlugs).toEqual(winners[0].bakedSkillSlugs);
+        expect(reloaded?.bakedTools).toEqual(winners[0].bakedTools);
       } finally {
         await otherDb.close();
       }

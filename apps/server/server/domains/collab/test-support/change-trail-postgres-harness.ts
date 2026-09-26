@@ -192,12 +192,13 @@ export async function resetDatabase(): Promise<void> {
     createdByUserId: USER_ID,
     title: "Thread",
     kind: "primary",
-    status: "active",
+    status: "idle",
   });
   await db.insert(schema.turns).values({
     id: TURN_ID,
     threadId: THREAD_ID,
     role: "assistant",
+    origin: "assistant",
     status: "complete",
   });
   await db.insert(schema.threadWorks).values({
@@ -325,6 +326,9 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     lifecycle: persistence.lifecycle,
     initialDocumentSeeds: persistence.lifecycle,
     metaForOrigin: () => ({ origin: "system", seq: 0 }),
+    identityPreservingWrite: async () => {
+      throw new Error("Identity-preserving writes are not part of this harness");
+    },
     resolveFiletype: async (documentId) => {
       const [row] = await db
         .select({ filetype: schema.documents.fileType })
@@ -459,7 +463,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         return deliveredEvents.length;
       },
     } as never,
-    eventHub: { publishPersistedEvent() {} },
+    eventHub: { invalidateCommittedJournal() {} },
     retryBranch: (branchId) => {
       if (failAllTrailRetries || failNextTrailRetry) {
         failNextTrailRetry = false;

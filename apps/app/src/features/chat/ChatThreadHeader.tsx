@@ -1,9 +1,4 @@
-/**
- * ChatThreadHeader — desktop chat header and thread switcher chrome. The route
- * owns thread selection; this file coordinates title resolution and inline
- * rename while the popover owns navigation presentation. Rename persists on the
- * server through the P1 command; success is announced only after confirmation.
- */
+/** Renders the current chat title and thread actions. */
 import { t } from "@lingui/core/macro";
 import type { Thread } from "@meridian/contracts/protocol";
 import { THREAD_TITLE_MAX_LENGTH } from "@meridian/contracts/protocol";

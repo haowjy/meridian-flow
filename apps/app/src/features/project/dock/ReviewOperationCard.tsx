@@ -1,18 +1,4 @@
-/**
- * ReviewOperationCard — one proposal card in the dock Changes view.
- *
- * Closure=card (spec §5.3): each card renders ONE closure class — a quiet verb
- * (Rewrote / Added / Removed, or `Merged` for a CRDT merge artifact, or
- * `New document` for a draft-created doc) over the intended change, plus a
- * single Discard. Contributing turns are attributed
- * on the card and writer edits that joined the class show an informational
- * "Includes your edits" badge. There is NO dependency prompt anywhere:
- * discarding acts on the whole class at once — the writer never learns the
- * internal write structure. Applying is a document-level header action.
- *
- * The card body is focus/scroll only; Discard is its sole mutating target and
- * fences its own propagation.
- */
+/** ReviewOperationCard — one proposal card in the dock Changes view. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { GitMerge } from "lucide-react";
@@ -86,14 +72,6 @@ export function ReviewOperationCard({
   );
 }
 
-/**
- * The proposal's selective Discard action. It reveals on card hover/focus
- * (matching the doc row's hover-Review verb), but stays visible while this card
- * is in-flight so its state can't hide. It disables while ANY review
- * disposition is in flight (`controller.isDisposing`) so the writer can't stack
- * overlapping dispositions. Apply is intentionally document-scoped and lives
- * only in the review header.
- */
 function CardVerbs({
   proposal,
   controller,
@@ -165,11 +143,6 @@ function VerbButton({
   );
 }
 
-/**
- * Quiet verb for the class. A new document reads `New document`; a merge
- * artifact reads the system-voice `Merged` with a `GitMerge` marker + tooltip
- * (spec §6.2) — distinct from the AI-authored Added / Removed / Rewrote.
- */
 function ProposalVerb({
   proposal,
   isNewDocument,
@@ -216,11 +189,6 @@ function ProposalVerb({
   }
 }
 
-/**
- * Attribution: when a closure class combines more than one AI turn (it may span
- * threads, spec §5.3), a quiet count says so. A single-turn class — the common
- * case — shows nothing; the card is the write.
- */
 function ProposalAttribution({ proposal }: { proposal: ReviewProposal }) {
   if (proposal.contributingTurnIds.length <= 1) return null;
   return (
@@ -230,13 +198,6 @@ function ProposalAttribution({ proposal }: { proposal: ReviewProposal }) {
   );
 }
 
-/**
- * The card body: the intended change, styled per class, carrying the editor's
- * inline-review tint tokens so a card reads like the mark it points at. A new
- * document is all additions (jade); a merge artifact renders in the neutral
- * dashed merged tone; otherwise additions/removals/rewrites use their hued
- * tints. Empty change → verb-only card.
- */
 function ProposalChange({
   proposal,
   isNewDocument,
@@ -272,13 +233,6 @@ function ProposalChange({
   );
 }
 
-/**
- * One tinted change line. Reuses the editor's inline-review tint tokens
- * (`--color-review-{added,removed,merged}-*`) so the card reads the same as the
- * manuscript; `box-decoration-clone` keeps the tint hugging wrapped lines like
- * the editor mark does. The merged tone is neutral + dashed underline, NOT a
- * fourth hued authorship tint (spec §6.2).
- */
 export function TintedChangeText({
   tone,
   text,

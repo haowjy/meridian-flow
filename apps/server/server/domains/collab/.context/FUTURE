@@ -1,0 +1,8 @@
+# FUTURE — collab testability
+
+- Review whether `domain/thread-peer-core-pool.ts` needs the entire
+  `AgentEditCore` interface for response ownership and commit routing.
+  `composition.transaction-delegation.test.ts` builds unused methods and casts
+  to exercise this seam; narrow the production capability only if the ownership
+  boundary supports it. Preserve degraded rollback and live-reversal tests
+  until a stronger behavioral boundary replaces them.

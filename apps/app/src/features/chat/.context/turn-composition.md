@@ -36,8 +36,8 @@ back *above* it, and prose never rolls into a fold.
    to the open run as an `activity` run. Adjacent tools pair into ToolViews at
    render time.
 3. **Hidden protocol** — a `tool_use`/`tool_result` whose row a custom card
-   already surfaces (`ask_user`, `spawn`, `return_result`) — is dropped, not
-   folded.
+   already surfaces (`ask_user`, `spawn`, `thread_message`, `return_result`) — is
+   dropped, not folded.
 4. **An `image` block and a `file` block are artifacts** (`isArtifactBlock`).
 5. **Text** flushes the open run and emits a `text` item. Empty text is dropped.
 6. **Custom cards** flush the open run and emit an `artifact` item.
@@ -89,14 +89,44 @@ via `ask_user`), a **spawn helper-result card** (`kind: "helper-result"`), and a
 **child-report card** (`kind: "child-report"`, from `return_result`).
 
 Cards hide their tool_use/tool_result rows (`tool-view-visibility.ts`). The
-custom card is the surface. Spawn and `return_result` protocol are persisted for
-the model; the writer never sees their rows. Parent spawn cards render only from
-the helper-result custom block.
+custom card is the surface. Spawn and `return_result` protocol remain model
+history; the writer does not see their duplicate rows.
 
-Foreground persists a running helper-result card before the child runs, so it
-appears as soon as the parent turn holds the block. Background posts the card
-on a later system turn after the child completes; the parent shows nothing
-while that child runs.
+Each card-bearing admitted invocation has one retained helper-result card
+with the original parent-turn/tool-call/child/delivery/execution tuple.
+Background `thread_message` is queue-only and makes no card promise. Terminal
+status is child execution truth, not parent protocol admission. If B card
+publication lags, a settled direct terminal outcome supplies the visible status
+without rewriting the card; terminal B props take precedence once published. A foreground card joins only a settled `spawn` or `thread_message` result
+whose execution matches and whose delivery mode is direct. The turn renderer
+indexes protocol identity once over
+the complete turn; contiguous presentation groups cannot pair persisted
+`tool_use → card → tool_result`. The lookup reads before hidden protocol rows
+are filtered, so authoritative snapshots and result-before-card converge
+without a second output store or per-card store subscription. A settled direct
+error without saved terminal evidence shows its error without claiming a child
+outcome; a later terminal card patch remains authoritative. Background cards
+remain status-only; notification contains no report body and triggers no
+automatic fetch. `thread_report` is an ordinary expandable activity row,
+including saved artifacts, not another artifact card.
+
+Child completion delivery persists one system turn with `subagent_update`
+metadata. `visible-chat-turns.ts` and the server visible-conversation policy
+keep delivery turns out of the top-level bubble list; `AssistantTurn` renders
+them as quiet activity rows inside the preceding assistant's steps. The row
+shows the handle and outcome, and correlates the internal execution id to its
+invocation card for the optional short description and Open door. Adopted
+writer messages use the same inline tool-row chrome with the writer's text.
+This is consistent whether a completion wakes an idle parent or is adopted at
+a mid-run steer split; do not infer events by parsing notice text.
+
+Historical card replacement is sent over the existing
+`meridian.block.upserted` frame. Replace a loaded historical turn in place; if
+it is absent, invalidate/refetch its durable snapshot rather than creating a
+fake streaming turn. Equal replay is a reference-preserving no-op. Pending
+inbox remains complete in the transport/model path; `writerTurnQueueStatus`
+(`pending-inbox.ts`) filters it to writer provenance to derive each writer
+turn's own inline queued/waiting status -- there is no separate tray.
 
 ### Interrupt response settlement
 
@@ -179,14 +209,12 @@ AssistantTurn.tsx
 `tool-renderers.tsx` is the registry for tool-name-specific presentation. Registry
 keys must be real runtime tool names from
 `apps/server/server/domains/runtime/tools/`. The current runtime surface is
-`write`, `work`, `ls`, `search`, `ask_user`, `spawn`, `continue`, and
-`return_result`. `ask_user`, `spawn`, and `return_result` render through custom
-cards (`choice`/`form`/`free-text`, `helper-result` → `SpawnReportCard`, and
-`child-report` → `ChildReportBlock`), all built on the shared `ArtifactCard` shell
-(`icon`/`tone`/`title`/`door`/`hint`/children). Their tool rows are hidden.
-`continue` reuses the `helper-result` card, but `tool-view-visibility.ts` does
-not yet hide its protocol rows, so it currently falls through to the bare-name
-process row (tracked in `.context/TODO.md`). Card `artifacts[]` render through
+`write`, `work`, `ls`, `search`, `ask_user`, `spawn`, `thread_message`,
+`thread_report`, and `return_result`. `ask_user` and `helper-result` render
+through custom cards; `spawn` and `thread_message` tool rows are hidden because
+the retained invocation card owns their writer surface. `thread_report` is a
+visible ordinary activity row with a first-line preview and full expandable
+result. Card `artifacts[]` render through
 the shared `ArtifactGrid` (`ArtifactGrid.tsx`), reused by `FormBlock`,
 `SpawnReportCard`, and `ChildReportBlock`.
 Process tools (`write`, `work`, `ls`, `search`) render as `ActivityRow`.
@@ -248,3 +276,11 @@ Implemented in `partition-turn.ts`, `ProcessDisclosure.tsx`, and
 `process` items carry their ordered reasoning/activity runs, `text` and
 `artifact` items carry their block. `ProcessDisclosure` is a default-collapsed
 shell; process items compose reasoning rows and folded activity runs.
+
+Inbox delivery turns are not standalone bubbles after adoption. A writer turn
+keeps its visible `Queued`/`Waiting for response` row while pending, then the
+`inbox_message` marker hides that bubble once adopted. `AssistantTurn` renders
+the adopted inbox chain as ActivityRows after the assistant's final process
+item, preserving causal placement and the tool-step timeline chrome. Child
+completion rows correlate to invocation cards by their internal execution id
+for description and child-thread navigation.

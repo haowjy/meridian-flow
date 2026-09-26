@@ -18,6 +18,8 @@ export {
   handoffThreadAgent,
   type ThreadAgentSwapDeps,
 } from "./domain/derive-conversation.js";
+export { ExecutionReportConflictError } from "./domain/execution-report-conflict.js";
+export { isInSubtree, type LineageThread, sameLineage } from "./domain/lineage.js";
 export {
   createOrchestratorEventProjector,
   projectOrchestratorEvents,
@@ -28,6 +30,11 @@ export {
   type RebindThreadWorkInput,
   rebindThreadWork,
 } from "./domain/rebind-thread-work.js";
+export {
+  projectThreadActivity,
+  readThreadActivity,
+  type ThreadActivityReadDeps,
+} from "./domain/thread-activity.js";
 export {
   requireWorkDraftOwner,
   threadExecutionContext,

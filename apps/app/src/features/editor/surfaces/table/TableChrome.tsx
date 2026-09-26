@@ -1,44 +1,4 @@
-/**
- * TableChrome — the table's approach chrome, drawn entirely outside the frame.
- *
- * At rest a table is just a table (§5.4). Hovering it fades in a grip above the
- * hovered column, a grip left of the hovered row, and quiet add tabs on the
- * right and bottom edges; leaving fades them out. All four are portalled into
- * the manuscript's own scroll pane and positioned from measured rects, so the
- * manuscript never reserves a pixel for them and no line of text moves when
- * they appear.
- *
- * **A grip is a label on the hovered row, not a thing that travels between
- * rows** (human ruling, 2026-07-30). It appears at the row instantly, it rides
- * the pane's scroll natively because it is measured in the pane's own
- * coordinates (`chrome/manuscript-overlay.ts`), and the pane clips it — so
- * there is no state in which it is drawn beside a row it does not serve, and
- * none in which it is drawn outside the editor.
- *
- * A grip press does one thing: select the row or the column. Everything the
- * menus then offer reads that selection, so a menu item, its keyboard twin,
- * and a hand-swept cell selection all run the same verb over the same cells.
- *
- * Column resize is prosemirror-tables' own `columnResizing` plugin (already
- * mounted by the table extension), restyled to Q6's hover-only hairline. It
- * writes widths to `colwidth`, which is exactly what the `Layout widths`
- * codec reads, so persistence needed nothing from this lane.
- *
- * **Elements are geometry, holds are identity.** The approach settles on a
- * `NodeHold` of the cell; the cell's element is resolved from it for each
- * measurement. So a peer's write that rebuilds the table moves the grips instead
- * of closing the menu open on them, and the anchor is released only when the
- * cell itself is gone or has left the manuscript's pane.
- *
- * **Every menu here has exactly one target, and it is held.** A grip menu's
- * target is the cell the grips serve; a swept rectangle's is the pair of cells
- * that describe it. Both are `NodeHold`s, both are resolved into a selection at
- * the moment a verb runs (`TableMenuTarget`), and both close rather than re-aim
- * when what they held is gone. Nothing about the document is remembered as a
- * number or a screen point: the Yjs binding restores the writer's place as a
- * caret on every remote write, so a menu that read the selection it was opened
- * with would offer a rectangle's verbs to a caret.
- */
+/** Renders table selection chrome and actions. */
 
 import type { Editor } from "@tiptap/core";
 import type { Command } from "@tiptap/pm/state";
@@ -117,12 +77,7 @@ export function TableChrome({ editor }: { editor: Editor }) {
   const openMenuRef = useRef<Axis | null>(null);
   openMenuRef.current = openMenu;
 
-  /**
-   * The hovered cell has left the manuscript's pane — scrolled out, or taken
-   * away by a peer's write. Everything aimed at it goes with it: an open menu
-   * that outlived its row would offer row verbs against whatever the selection
-   * has become.
-   */
+  /** The hovered cell has left the manuscript's pane — scrolled out, or taken away by a peer's write. */
   const releaseAnchor = useCallback(() => {
     setOpenMenu(null);
     holdAnchorCell(null);
@@ -158,28 +113,7 @@ export function TableChrome({ editor }: { editor: Editor }) {
     holdSweptCells(null);
   }, [sweptCells, holdSweptCells]);
 
-  /**
-   * The approach. This lane answers one question — which cell is at this point
-   * — and the kernel's coordinator owns the rest: the timing, the pointer's
-   * last place, and which block owns hover chrome at all. A cell that scrolls
-   * away under a still hand is therefore released by the same mechanism that
-   * releases every other lane, rather than by a branch here.
-   *
-   * `holds` and `reconcile` are the parts only this lane knows. The grips live
-   * OUTSIDE the frame (Q6), so the pixels BETWEEN the frame and a grip belong
-   * to the reveal too; without them the travel to a grip crosses several
-   * pixels of nothing and fades out the control the writer is reaching for
-   * (`holds`). For a table nested in another table's cell, those same pixels
-   * are on the OUTER cell rather than on nothing, so the probe hits fresh and
-   * the lane arbitrates: the inner cell keeps the reveal while the pointer is
-   * still on its hover surface (`reconcile`).
-   *
-   * The reading this lane hands over is a HOLD, not a position. The coordinator
-   * keeps a lane's reading until the pointer moves again and re-delivers it
-   * whenever the manuscript moves underneath — and a peer's inserted row leaves
-   * a different, empty cell at the number the reading was taken as, so a
-   * re-delivered number moves the grips to the wrong row.
-   */
+  /** The approach. */
   useEffect(() => {
     if (!chrome || !editable) return;
     return chrome.registerHoverAnchor<NodeHold>({
@@ -234,17 +168,7 @@ export function TableChrome({ editor }: { editor: Editor }) {
     [anchorPos, editor],
   );
 
-  /**
-   * An open grip menu re-arms its axis whenever the held cell moves.
-   *
-   * This is the row's HIGHLIGHT, not the menu's aim: prosemirror-tables paints
-   * the selected cells, and the Yjs binding restores the writer's place as a
-   * caret, so a peer's write leaves the row the writer opened the menu on
-   * looking unselected. The verbs themselves take the menu's target and
-   * materialize it as they run, so they never depend on this landing.
-   * Re-arming is safe because an open menu already owns the anchor, and it runs
-   * only when the cell moved — never against a selection the writer made.
-   */
+  /** An open grip menu re-arms its axis whenever the held cell moves. */
   useEffect(() => {
     if (openMenu === null || anchorPos === null) return;
     selectAxis(openMenu);
@@ -445,11 +369,7 @@ export function TableChrome({ editor }: { editor: Editor }) {
   );
 }
 
-/**
- * Radix passes its trigger props through `asChild`, including the
- * `onPointerDown` that opens the menu, so this composes rather than replaces:
- * arming the selection first and letting the library open second.
- */
+/** Radix passes its trigger props through `asChild`, including the `onPointerDown` that opens the menu, so this composes rather than replaces: arming the selection first and letting the library open second. */
 function GripButton({
   axis,
   label,
@@ -517,12 +437,7 @@ function pieceStyle(piece: TableChromePiece): CSSProperties {
   return { left: piece.left, top: piece.top, width: piece.width, height: piece.height };
 }
 
-/**
- * Menu contents, mounted only while the menu is open (Radix keeps its content
- * unmounted otherwise), which is what makes `tableMenuProps` free to read the
- * whole verb matrix — and to read it against the menu's own target rather than
- * against the selection, which a peer's write has already turned into a caret.
- */
+/** Menu contents, mounted only while the menu is open (Radix keeps its content unmounted otherwise), which is what makes `tableMenuProps` free to read the whole verb matrix — and to read it against the menu's own target rather than against the selection, which a peer's write has already turned into a caret. */
 function TableMenuContent({
   editor,
   shape,
@@ -547,15 +462,7 @@ function TableMenuContent({
 /** The cell positions a claim reports, or null to let the rectangle go. */
 type SweptCellPositions = { anchor: number; head: number } | null;
 
-/**
- * The two cells a swept rectangle is described by, held.
- *
- * Two holds rather than one because a rectangle is not a node: the pair is
- * exactly what a `CellSelection` is made of, and either cell taken away is a
- * rectangle that can no longer be named. Composed from the same plumbing every
- * other surface aims with, so a rectangle survives a peer's write for the same
- * reason a grip's cell does.
- */
+/** The two cells a swept rectangle is described by, held. */
 function useSweptCells(
   editor: Editor,
 ): [{ anchor: NodeHold; head: NodeHold } | null, (cells: SweptCellPositions) => void] {
@@ -576,12 +483,7 @@ function useSweptCells(
   return [cells, take];
 }
 
-/**
- * Alt+Arrows move the row or the column (§4, deepest owner). Inside a table
- * they are ALWAYS consumed, refusal included: handing a refused move down the
- * ladder would move the whole table instead, which is not what the writer
- * asked for by pressing a key that means "move this row".
- */
+/** Alt+Arrows move the row or the column. */
 function useTableKeymap(chrome: ReturnType<typeof useEditorChrome>, editable: boolean) {
   useEffect(() => {
     if (!chrome || !editable) return;
@@ -609,15 +511,7 @@ function useTableKeymap(chrome: ReturnType<typeof useEditorChrome>, editable: bo
   }, [chrome, editable]);
 }
 
-/**
- * The hovered cell's geometry, in the overlay's coordinates, followed while the
- * chrome is up.
- *
- * These numbers do not change when the pane scrolls — that is the point of the
- * space they are in — so what is being followed is the manuscript reflowing
- * underneath: a row that grows as the writer types into it, a peer's write
- * above the table, a column drag resizing the frame live.
- */
+/** The hovered cell's geometry, in the overlay's coordinates, followed while the chrome is up. */
 function useTableChromeRects(
   editor: Editor,
   cell: HTMLElement | null,

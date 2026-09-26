@@ -1,21 +1,4 @@
-/**
- * TurnEditsReceipt — the compact per-turn receipt for what a turn changed.
- *
- * INVARIANT: record, not control panel — no draft affordance may be added here.
- * Review / Apply / Discard belong to the composer-attached DraftDock. Undo/Redo
- * is the only turn control. At rest, the receipt is one quiet borderless line.
- * The header counts documents and carries durable word deltas — it never
- * names one (names are doors, and chrome carries no doors); expanding lists
- * each document as a navigable row in the same bordered card.
- *
- * A turn's changes have two halves: document edits and Work mutations. A Work
- * receipt carrying an inverse is as much this card's business as an edited
- * chapter — a Work-only delete must still offer Undo, and a reversal that
- * restored a Work must read as the success it was.
- *
- * Turn lineage owns Undo authority. Authorized trail detail owns durable row
- * evidence and navigation.
- */
+/** Renders durable document and Work change receipts. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ReversalOutcome, Turn, TurnReceiptChip } from "@meridian/contracts/protocol";
@@ -54,13 +37,7 @@ function hasTurnEditsReceiptDocuments(
   );
 }
 
-/**
- * Whether this turn has a receipt to show at all: committed document edits,
- * or a reversible Work mutation receipt. Both callers
- * (`AssistantTurn`'s render gate and this component's own null return) must
- * ask the same predicate, or a Work-only turn passes one gate and fails the
- * other.
- */
+/** Whether this turn has a receipt to show at all: committed document edits, or a reversible Work mutation receipt. */
 export function hasTurnEditsReceiptContent(
   documents: TurnEditDocument[],
   changeTrail: ChangeTrailShell | undefined,
@@ -307,14 +284,7 @@ export function TurnEditsReceipt({
   );
 }
 
-/**
- * A reversal the writer asked for and did not get, plus the direction they
- * asked in — the direction the receipt carries can flip under a refusal, and
- * the copy has to name the command the writer actually pressed.
- *
- * `request_failed` covers everything that never reached a status: a rejected
- * fetch, an HTTP error envelope, a dropped connection.
- */
+/** A reversal the writer asked for and did not get, plus the direction they asked in — the direction the receipt carries can flip under a refusal, and the copy has to name the comm.... */
 type ReversalRefusal = {
   direction: ReversalDirection;
   status: Exclude<ReversalOutcome["status"], SuccessfulReversalStatus> | "request_failed";
@@ -330,13 +300,7 @@ function refusedReversalStatus(
   return status;
 }
 
-/**
- * Writer-facing copy for a refused reversal. Total by construction: the switch
- * is exhaustive over the wire union, and the fallback covers a server that
- * sends a status this client has never heard of. A refusal without copy is a
- * click that does nothing and explains nothing, which is the one outcome this
- * surface may never produce.
- */
+/** Writer-facing copy for a refused reversal. */
 function reversalRefusalCopy(refusal: ReversalRefusal): string {
   switch (refusal.status) {
     case "nothing_to_redo":

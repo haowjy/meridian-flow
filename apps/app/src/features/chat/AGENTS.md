@@ -29,9 +29,11 @@ An assistant turn renders as one **ordered list of render items** (see
   folded into one `Thinking` disclosure in place. Its visible label becomes a
   deterministic digest when it contains tools.
 - **Text** (visible) — an assistant text block, always rendered as prose. Text
-  never folds and never remounts.
+  never folds; settlement or partition changes do not remount an already-mounted
+  text item. The virtual viewport may still unmount and remount off-screen turns.
 - **Artifact** (visible) — a writer-facing block: a custom card (`ask_user`
-  interrupt, spawn `helper-result`, child `child-report`), an image, or a file.
+  interrupt, spawn/`thread_message` `helper-result`), an
+  image, or a file.
 
 Text and artifacts close the open process run, so a reasoning run that arrives
 after visible prose starts a fresh fold below it instead of merging back above
@@ -40,6 +42,35 @@ for the durable status flip. The partition keys off block order/type only and
 never reads transient stream state (`isLive`, partial blocks). Hidden protocol
 (the `tool_use`/`tool_result` rows a card already surfaces) is dropped, not
 folded.
+
+Run liveness is never a turn block. Each admitted spawn invocation has one
+durable retained card on the parent turn. At settlement, the card's status is
+the child execution outcome, not parent protocol admission. Foreground cards join the durable direct `spawn` or `thread_message` result
+by parent turn, tool call, child execution and direct delivery mode. Background
+cards read the exact saved report through the lineage-authorized report read.
+Both keep report bodies out of the retained invocation block; the writer UI
+loads them into the shared report presentation. `thread_report` is an ordinary
+expandable activity row. The live subagent surface remains server truth:
+`ThreadActivity` from snapshot + `meridian.subagent.activity`, rendered by
+`RunningSubagentsStrip` in `ChatView`'s header.
+
+Child completion is a separate durable transcript event: system turns with
+`metadata.kind === "subagent_update"` render as a quiet inline row at their
+causal position. Its execution UUID is internal correlation to the matching
+invocation card; copy comes from structured handle/outcome metadata, never
+notice-text parsing. Keep this visibility rule aligned with
+`threads/domain/visible-conversation-policy.ts`.
+
+The mounted snapshot-sync hook, not the run controller, owns addressed
+`meridian.block.upserted` and `meridian.block.pruned` projection for the whole
+mounted thread lifetime. The existing upsert frame also carries historical card
+replacements. Update a loaded target turn without touching active-turn state;
+when the target turn is absent, invalidate/refetch the durable snapshot rather
+than creating a synthetic streaming turn. Store duplicate replacement as a
+reference-preserving no-op. The pending inbox remains generic for transport
+and model drain. `writerTurnQueueStatus` filters writer provenance into one
+ID-keyed inline status per accepted bubble: `waiting` means Queued, and
+`awaiting_run` means Waiting for response. There is no composer queue tray.
 
 The full model lives in
 [`.context/turn-composition.md`](.context/turn-composition.md); one row's
@@ -58,7 +89,7 @@ composer mode, and review state live in
    collapse into their `Thinking` disclosure as they stream. There is no
    settlement-time fold and no visible frontier. Text and artifacts never fold.
 3. **Artifact cards stay visible.** Custom cards (`ask_user` interrupt, spawn
-   `helper-result`, child `child-report`) render through the shared `ArtifactCard`
+   `helper-result`) render through the shared `ArtifactCard`
    shell (`icon`/`tone`/`title`/`door`/`hint`/children); process tools render as
    `ActivityRow`. Their tool protocol is dropped, not folded. The two tool kinds
   are named in `tool-kind.ts`: an artifact's result is writer-facing (custom

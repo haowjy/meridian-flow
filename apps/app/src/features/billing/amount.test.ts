@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { equalsUsd, formatPreset, parseUsd, toInputValue, validateAmount } from "./amount";
+import { parseUsd, validateAmount } from "./amount";
 
 describe("parseUsd", () => {
   it("accepts whole and two-decimal amounts", () => {
@@ -14,27 +14,6 @@ describe("parseUsd", () => {
     expect(parseUsd("abc")).toBeNull();
     expect(parseUsd("1.234")).toBeNull();
     expect(parseUsd("-5")).toBeNull();
-  });
-});
-
-describe("formatPreset", () => {
-  it("strips trailing .00 for whole-dollar amounts", () => {
-    expect(formatPreset("5.00")).toBe("$5");
-    expect(formatPreset("12.50")).toBe("$12.50");
-  });
-});
-
-describe("toInputValue", () => {
-  it("normalises whole-dollar default for the input field", () => {
-    expect(toInputValue("10.00")).toBe("10");
-    expect(toInputValue("12.50")).toBe("12.5");
-  });
-});
-
-describe("equalsUsd", () => {
-  it("compares numeric values, not string identity", () => {
-    expect(equalsUsd("5.00", "5")).toBe(true);
-    expect(equalsUsd("5", "5.01")).toBe(false);
   });
 });
 

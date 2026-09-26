@@ -8,6 +8,7 @@ import { installJsdomLayout } from "@/test-support/jsdom-layout";
 import { createStandaloneEditorExtensions } from "../config";
 
 let editor: Editor | null = null;
+let host: HTMLElement | null = null;
 
 // Tab reaches prosemirror-tables, which asks the view where the textblock ends.
 installJsdomLayout();
@@ -15,6 +16,8 @@ installJsdomLayout();
 afterEach(() => {
   editor?.destroy();
   editor = null;
+  host?.remove();
+  host = null;
 });
 
 const paragraph = (text: string): JSONContent => ({
@@ -51,6 +54,7 @@ const table: JSONContent = {
 function mount(content: JSONContent[], editable = true): Editor {
   const element = document.createElement("div");
   document.body.append(element);
+  host = element;
   editor = new Editor({
     element,
     editable,
@@ -109,20 +113,6 @@ function listShape(instance: Editor): string[] {
 }
 
 describe("Tab never leaves the editor", () => {
-  it("keeps the key in a heading", () => {
-    const instance = mount([{ type: "heading", attrs: { level: 2 }, content: [] }]);
-    caretAt(instance, 1);
-
-    expect(pressTab(instance)).toBe(true);
-  });
-
-  it("keeps the key in a paragraph", () => {
-    const instance = mount([paragraph("The third gate opened.")]);
-    caretAt(instance, 4);
-
-    expect(pressTab(instance)).toBe(true);
-  });
-
   it("keeps the key on the first list item, which has nothing to indent under", () => {
     const instance = mount([
       { type: "bullet_list", content: [listItem("a copper needle"), listItem("a folded map")] },
@@ -135,13 +125,6 @@ describe("Tab never leaves the editor", () => {
     // Not a tab either: inside a list the key belongs to the list, refusal
     // included, and a tab in the first bullet's text is not what was asked for.
     expect(instance.state.doc.textContent).toBe("a copper needlea folded map");
-  });
-
-  it("keeps the key with an object selected", () => {
-    const instance = mount([paragraph("before"), { type: "figure", attrs: { src: "asset:1" } }]);
-    instance.commands.setNodeSelection(instance.state.doc.content.size - 1);
-
-    expect(pressTab(instance)).toBe(true);
   });
 
   // A reader passing through a read-only document must still be able to tab

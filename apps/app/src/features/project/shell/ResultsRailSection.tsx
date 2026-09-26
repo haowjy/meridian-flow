@@ -1,17 +1,4 @@
-/**
- * ResultsRailSection — collapsible section in the Context rail that lists
- * promoted artifacts ("Results") for the active project, with type icon,
- * agent attribution, and a click-through to the producing thread.
- *
- * Visual language intentionally matches the sibling sections (Uploads /
- * Recent) so the rail reads as one IA. The row composition is its own primitive
- * because results carry attribution + a click affordance that the document
- * sections don't.
- *
- * The click-through is a REVEAL, not a navigation: it hands the producing
- * thread + turn to `requestConversationReveal`, and the shell brings that
- * conversation up on whatever surface already hosts it on the current screen.
- */
+/** Renders the project results rail section. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { FileImage, FileSpreadsheet, FileText, type LucideIcon, Sparkles } from "lucide-react";

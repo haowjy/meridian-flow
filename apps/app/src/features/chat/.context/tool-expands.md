@@ -17,8 +17,8 @@ rendering tiers and the expand contents.
 titles, listing rows, quoted previews, terminal tails. Raw payloads are a
 debugging concern and belong behind a dev-only setting, never in chat.
 
-Tier 2 is keyed by **tool name**, but the document tools (`read` and `write`)
-together carry reading, skimming, creating, editing, reverting and reviewing. Which of those a row is
+Tier 2 is keyed by **tool name**; the single document tool (`write`)
+carries reading, skimming, creating, editing, deleting, reverting and reviewing. Which of those a row is
 comes from `tool-command.ts`, and what to do about it comes from
 `command-descriptor.ts`, including the expand's shape. A renderer never
 switches on a command itself.
@@ -66,10 +66,10 @@ the UI says neither "intent" nor "outcome".
 
 | Command | Expand | Cut by | Doors inside |
 |---|---|---|---|
-| `read` | The passage that came back, as quoted prose | Height, with a fade | The document, at the fade |
-| `read format:outline` | The headings it saw, indented by depth | The listing cap, with a count | None; the row title's door serves |
+| `write(command: read)` | The passage that came back, as quoted prose | Height, with a fade | The document, at the fade |
+| `write(command: read, format: outline)` | The headings it saw, indented by depth | The listing cap, with a count | None; the row title's door serves |
 | `create` / `insert` / `replace` | The submitted content, on the recessed surface | Height, with a fade | The document, at the fade |
-| `undo` / `redo` / `diff` | Nothing | — | — |
+| `delete` / `undo` / `redo` / `diff` | Nothing | — | — |
 | `search` | A result card: totals, then a section per document | The document cap, with a count | Each matched passage |
 | `ls` | Listing rows: name plus glyph | The listing cap, with a count | Each document; folders are inert |
 | unknown | Nothing | — | — |
@@ -86,7 +86,7 @@ belong to continuous prose, where the need to see the rest arrives only after
 reading. A clipped outline is already answered by the door in the row title.
 
 Read payloads arrive in two shapes, and `read-payload.ts` accepts either so no
-renderer branches on it. The `read` tool returns the `meridian.agent-edit.v1`
+renderer branches on it. The `write(command: read)` command returns the `meridian.agent-edit.v1`
 envelope, whose block items already separate `hash` from `body`; those bodies
 are taken verbatim. Any remaining caller hands back hashlines, and outline reads
 interleave locator lines the model uses to read further. Both are addressing

@@ -46,7 +46,7 @@ function fixture(initial: WorkId = SOURCE_ID, target: Work | null = work(TARGET_
   const source = work(SOURCE_ID, "Source");
   const locked = noWorkRow();
   let current: WorkId | null = initial;
-  const enqueueThread = vi.fn(async () => [THREAD_ID]);
+  const threadChanged = vi.fn(async () => {});
   const deps = {
     threads: {
       findById: async () =>
@@ -65,9 +65,9 @@ function fixture(initial: WorkId = SOURCE_ID, target: Work | null = work(TARGET_
         return { previousWorkId, changed };
       },
     },
-    obligations: { enqueueThread },
+    workContextNotices: { threadChanged },
   };
-  return { deps, enqueueThread };
+  return { deps, threadChanged };
 }
 
 describe("rebindThreadWork", () => {
@@ -84,7 +84,7 @@ describe("rebindThreadWork", () => {
         inverse: null,
       },
     });
-    expect(h.enqueueThread).toHaveBeenCalledTimes(1);
+    expect(h.threadChanged).toHaveBeenCalledTimes(1);
   });
 
   it("rebinds No Work to named Work", async () => {
@@ -101,7 +101,7 @@ describe("rebindThreadWork", () => {
     const h = fixture(NO_WORK_ID);
     const result = await rebindThreadWork(h.deps, { threadId: THREAD_ID, workId: NO_WORK_ID });
     expect(result.changed).toBe(false);
-    expect(h.enqueueThread).not.toHaveBeenCalled();
+    expect(h.threadChanged).not.toHaveBeenCalled();
   });
 
   it.each([

@@ -1,6 +1,6 @@
 /** Browser address resolution and navigation over one authorized, ID-backed project shell. */
 
-import type { Project } from "@meridian/contracts/projects";
+import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { WorksSnapshot } from "@meridian/contracts/works";

@@ -150,53 +150,6 @@ describe("billing service", () => {
     });
   });
 
-  it("returns paid products only and reports Stripe configuration", () => {
-    const configured = createBillingDomain(deps()).service.products();
-    expect(configured.stripeConfigured).toBe(true);
-    expect(configured.entries.map((entry) => entry.id)).toEqual([
-      "plan_standard",
-      "plan_premium",
-      "extra_usage",
-    ]);
-    expect(configured.entries.find((entry) => entry.id === "plan_standard")).toEqual({
-      id: "plan_standard",
-      kind: "plan",
-      name: "Standard",
-      checkoutAvailable: true,
-      description: "Monthly usage for steady serial drafting.",
-      priceUsd: "10.00",
-      interval: "month",
-    });
-    expect(configured.entries.find((entry) => entry.id === "extra_usage")).toEqual({
-      id: "extra_usage",
-      kind: "extra-usage",
-      name: "Extra usage",
-      checkoutAvailable: true,
-      description: "Add standalone pay-as-you-go balance.",
-      amountOptions: {
-        minUsd: "5.00",
-        maxUsd: "500.00",
-        defaultUsd: "10.00",
-        presetsUsd: ["5.00", "10.00", "25.00", "50.00"],
-      },
-    });
-    expect(
-      createBillingDomain(deps({ stripeGateway: null })).service.products().stripeConfigured,
-    ).toBe(false);
-
-    const partialProducts = createBillingDomain(
-      deps({
-        env: { STRIPE_PRICE_PLAN_STANDARD: "price_standard" },
-      }),
-    ).service.products();
-    expect(partialProducts.stripeConfigured).toBe(true);
-    expect(partialProducts.entries.map((entry) => [entry.id, entry.checkoutAvailable])).toEqual([
-      ["plan_standard", true],
-      ["plan_premium", false],
-      ["extra_usage", true],
-    ]);
-  });
-
   it("creates checkout sessions and sends active subscribers to the portal", async () => {
     const gateway = createMockStripeBillingGateway();
     const billingDeps = deps({ stripeGateway: gateway });

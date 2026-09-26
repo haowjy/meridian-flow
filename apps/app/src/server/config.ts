@@ -39,7 +39,3 @@ export function getAppServerConfig(): AppServerConfig {
   if (!cachedConfig) cachedConfig = parseAppServerConfig(process.env);
   return cachedConfig;
 }
-
-export function getAppRuntimeConfig(): RuntimeConfig {
-  return getAppServerConfig().runtime;
-}

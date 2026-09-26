@@ -31,9 +31,9 @@ function activeDb(db: Database): ActiveDb {
 
 function toBigInt(value: unknown): bigint {
   if (typeof value === "bigint") return value;
-  if (typeof value === "number") return BigInt(value);
-  if (typeof value === "string") return BigInt(value);
-  return 0n;
+  if (typeof value === "number" && Number.isSafeInteger(value)) return BigInt(value);
+  if (typeof value === "string" && /^-?\d+$/.test(value)) return BigInt(value);
+  throw new TypeError(`Invalid persisted credit amount: ${String(value)}`);
 }
 
 function iso(value: unknown): string {

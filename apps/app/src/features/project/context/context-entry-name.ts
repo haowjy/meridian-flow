@@ -1,17 +1,4 @@
-/**
- * Shared naming logic for inline context-entry create rows.
- *
- * Both create surfaces — the desktop tree panel's CreateRow and the phone
- * Files browser's MobileCreateRow — turn a typed leaf name plus the current
- * parent folder into the `path` for the create mutation. Keeping the join and
- * validation here means the two rows cannot drift on what counts as a legal
- * name (single source of truth; the server still enforces its own checks).
- *
- * Deliberate scope: no extension handling. A file is created exactly as
- * typed (`notes` stays `notes`, `notes.md` stays `notes.md`) — this matches
- * the desktop flow, where the server's filename parsing owns extension
- * semantics.
- */
+/** Shared naming logic for inline context-entry create rows. */
 import { t } from "@lingui/core/macro";
 import {
   type ContextEntryValidationError,
@@ -38,48 +25,22 @@ function validationReason(error: ContextEntryValidationError): string {
   }
 }
 
-/**
- * Joins a parent folder path (`""` or `/a/b` — scheme root is the empty
- * string) with a leaf name into the absolute scheme-relative path the create
- * endpoint expects (`/leaf`, `/a/b/leaf`).
- */
 export function joinContextEntryPath(parent: string, leaf: string): string {
   const prefix = parent && parent !== "/" ? parent.replace(/\/+$/, "") : "";
   return `${prefix}/${leaf}`;
 }
 
-/**
- * Parent folder of an absolute scheme-relative entry path — the inverse of
- * `joinContextEntryPath`. Top-level entries (`/notes.md`) return `""`, the
- * same scheme-root sentinel the create flow already uses for `parent`.
- */
 export function parentContextEntryPath(path: string): string {
   const cut = path.lastIndexOf("/");
   return cut <= 0 ? "" : path.slice(0, cut);
 }
 
-/**
- * Localized validation error for a proposed (already-trimmed) entry name, or
- * null when the name is acceptable. An empty name is not an error — both
- * create rows treat committing an empty input as cancel, so only callers
- * with a non-empty name ask for a reason.
- */
 export function invalidContextEntryNameReason(name: string): string | null {
   const result = validateSharedContextEntryName(name);
   return result.ok ? null : validationReason(result);
 }
 
-/**
- * Live severity for the desktop tree's inline create/rename input, shown as a
- * floating overlay (never inline, so rows don't shift). Mirrors VS Code:
- *
- * - empty → `null` (no message; committing empty cancels the edit)
- * - `/` in name, or a name colliding with a sibling → blocking `error`
- * - leading/trailing whitespace → non-blocking `warning` (commit trims it)
- *
- * Sibling names may carry a trailing `/` (folders); that is normalized before
- * comparison so `notes` collides with an existing `notes/` folder.
- */
+/** Live severity for the desktop tree's inline create/rename input, shown as a floating overlay (never inline, so rows don't shift). */
 export type ContextEntryNameSeverity = {
   level: "error" | "warning";
   message: string;

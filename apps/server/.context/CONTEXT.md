@@ -99,12 +99,18 @@ checks, not on WorkOS client objects.
 In-process fan-out over a durable event journal. The orchestrator writes events
 through it; WebSocket subscribers read from it.
 
-- **Write path:** append a domain event, project AG-UI protocol events, assign
-  monotonic `bigint` sequence numbers, and fan out to active listeners.
+- **Write path:** append a domain event and schedule a commit-aware invalidation.
+  One per-thread drain reads committed journal rows after its cursor in sequence,
+  projects AG-UI protocol events, assigns cursor sub-sequences, and fans out.
+  Local post-commit callbacks and PostgreSQL notifications are both invalidations,
+  never payload delivery.
 - **Read path:** `catchup(threadId, afterSeq)` returns missed events;
   `subscribe(threadId, listener)` adds a live listener.
 - **Catchup + subscribe:** live events that arrive during replay are buffered and
   merged so clients do not miss a gap.
+- **Cold replay:** pages from journal zero through the captured committed head
+  with a stateful projector, then sends only the client suffix. It is complete
+  but O(history); there is no checkpoint or bounded-bootstrap contract.
 - **Eviction:** per-thread hub state is removed after idle timeout.
 
 Hot cache is process-local. Journal rows persist through Drizzle/in-memory
@@ -161,9 +167,12 @@ primitives in `server/lib/`:
 
 ## Model gateway deadlines
 
-`domains/runtime/gateway` enforces a per-attempt wall-clock timeout
-(`MODEL_CALL_TIMEOUT_MS`, default 120_000ms). Timeout aborts the in-flight stream
-and surfaces as a retryable provider error when no output has been emitted.
+`domains/runtime/gateway` guards each model attempt with an inactivity (stall)
+timer re-armed by every stream event (`MODEL_CALL_STALL_MS`, default 120_000ms)
+plus an absolute ceiling backstop (`MODEL_CALL_TIMEOUT_MS`, default 600_000ms,
+0 disables). Either abort surfaces as a retryable provider error, and an attempt
+aborted before any committed output (visible text or a tool call) may retry; the
+stall guard never kills a slow-but-streaming model.
 
 ## Observability event sink
 
@@ -219,11 +228,12 @@ to `server/lib/*-route.ts` and unit-test that route-core directly.
 
 - **`pnpm test` is deterministic** — pure unit + in-memory adapter conformance;
   DB tests remain opt-in.
-- **Database checks** use `@meridian/database` and local Postgres when
-  `RUN_DB_TESTS=1` and `DATABASE_URL` are set. The manifest in
-  `vitest.db.config.ts` must exactly match every discovered `*.db.test.ts`
-  suite; a real-Postgres suite with another suffix remains outside the gate
-  until it is renamed and registered.
+- **Database checks** run through root `pnpm test:db`, whose owned local
+  database lifecycle is in `tools/dev/run-db-tests.ts`. The closed manifest in
+  `apps/server/vitest.db.config.ts` must exactly match every discovered
+  `*.db.test.ts` suite in the server and database package. A real-Postgres
+  suite with another suffix remains outside the gate until it is renamed and
+  registered. Do not use a separate root Vitest DB wrapper.
 - **Browser/runtime checks** should use portless HTTPS routes, never raw ports,
   so tests exercise the real proxy/TLS path.
 

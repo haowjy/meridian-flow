@@ -67,6 +67,15 @@ export function createDrizzleModelResponseRepository(db: DrizzleDb): ModelRespon
         .where(eq(schema.modelResponses.id, id));
       return row ? mapModelResponse(row) : null;
     },
+    async listByThread(threadId) {
+      const rows = await currentDrizzleDb(db)
+        .select({ response: schema.modelResponses })
+        .from(schema.modelResponses)
+        .innerJoin(schema.turns, eq(schema.turns.id, schema.modelResponses.turnId))
+        .where(eq(schema.turns.threadId, threadId))
+        .orderBy(asc(schema.modelResponses.sequence));
+      return rows.map(({ response }) => mapModelResponse(response));
+    },
     async listByTurn(turnId) {
       const rows = await currentDrizzleDb(db)
         .select()

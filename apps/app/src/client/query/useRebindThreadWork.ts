@@ -3,6 +3,7 @@ import type { RebindThreadWorkResponse, Work } from "@meridian/contracts/works";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { isMeridianApiError } from "@/client/api/http-client";
 import { rebindThreadWork } from "@/client/api/threads-api";
+import { useAccountEpochSignal } from "@/features/project/context/account-feature-context";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 import {
@@ -33,6 +34,7 @@ export type ThreadWorkMutationOutcome =
 
 export function useRebindThreadWork(projectId: string, threadId: string) {
   const client = useQueryClient();
+  const accountSignal = useAccountEpochSignal();
   return useMutation<ThreadWorkMutationOutcome, unknown, ThreadWorkMutationInput>({
     mutationFn: async (input) => {
       const targetWorkId = "workId" in input ? input.workId : input.targetWorkId;
@@ -47,10 +49,15 @@ export function useRebindThreadWork(projectId: string, threadId: string) {
       } catch (cause) {
         if (isMeridianApiError(cause)) throw cause;
       }
+      accountSignal.throwIfAborted();
       const settled = client.getQueryData<ThreadWorkProjectionCursor>(cursorKey)?.seq ?? null;
       const overlapped = admitted !== settled;
       if (response && !overlapped) {
-        convergeThreadWorkBinding(client, { source: "confirmed", projectId, result: response });
+        convergeThreadWorkBinding(
+          client,
+          { source: "confirmed", projectId, result: response },
+          accountSignal,
+        );
         const work = workFromSnapshot(
           client.getQueryData<import("@meridian/contracts/protocol").ListWorksResponse>(
             projectQueryKeys.works(projectId),
@@ -66,11 +73,15 @@ export function useRebindThreadWork(projectId: string, threadId: string) {
         }
       }
 
-      const fresh = await readStableThreadWorkBinding(client, {
-        projectId,
-        threadId,
-        previousWorkId,
-      });
+      const fresh = await readStableThreadWorkBinding(
+        client,
+        {
+          projectId,
+          threadId,
+          previousWorkId,
+        },
+        accountSignal,
+      );
       const currentWork = workFromSnapshot(fresh.catalog, fresh.workId);
       if (fresh.workId === targetWorkId) {
         if (response) {

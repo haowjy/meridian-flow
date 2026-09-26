@@ -69,7 +69,8 @@ change-trail events, not manuscript content.
   resolve the parity schema and already refuse to run inside code. Check
   whether a trigger is already firing before writing a rule for it, because a
   second rule races the first. `MarkdownAutoformatExtension` owns the
-  exceptions and its test is the truth table for the whole surface.
+  exceptions; its tests cover representative inherited triggers and distinct
+  local rules, not every accepted spelling.
 
 - **Which characters close themselves is a registration, not a keymap.**
   `extensions/auto-pair/` holds one table of `{ open, close, contexts }` rows

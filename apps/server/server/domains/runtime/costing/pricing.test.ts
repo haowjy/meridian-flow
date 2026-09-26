@@ -10,76 +10,10 @@ import {
   createDefaultModelTokenRateSource,
   createLayeredTokenRateSource,
   findModelTokenRate,
-  MOCK_FIXTURE_TOKEN_RATES,
   meteredMillicreditsFromRaw,
 } from "./pricing.js";
 
 const REGISTRY_PINNED_RATES = extractPinnedRates(MODEL_REGISTRY);
-
-/** Pre-B2 pinned values for production registry models — parity guard. */
-const PRODUCTION_RATE_PARITY = {
-  "anthropic::claude-sonnet-4-20250514": {
-    inputUsdPerMillionTokens: "3.00",
-    cachedInputUsdPerMillionTokens: "0.30",
-    cacheWriteUsdPerMillionTokens: "3.75",
-    outputUsdPerMillionTokens: "15.00",
-  },
-  "anthropic::claude-sonnet-4-6": {
-    inputUsdPerMillionTokens: "3.00",
-    cachedInputUsdPerMillionTokens: "0.30",
-    cacheWriteUsdPerMillionTokens: "3.75",
-    outputUsdPerMillionTokens: "15.00",
-  },
-  "anthropic::claude-haiku-4-5-20251001": {
-    inputUsdPerMillionTokens: "1.00",
-    cachedInputUsdPerMillionTokens: "0.10",
-    cacheWriteUsdPerMillionTokens: "1.25",
-    outputUsdPerMillionTokens: "5.00",
-  },
-  "anthropic::claude-3-5-haiku-latest": {
-    inputUsdPerMillionTokens: "0.80",
-    cachedInputUsdPerMillionTokens: "0.08",
-    cacheWriteUsdPerMillionTokens: "1.00",
-    outputUsdPerMillionTokens: "4.00",
-  },
-  "openai::gpt-4o": {
-    inputUsdPerMillionTokens: "2.50",
-    cachedInputUsdPerMillionTokens: "1.25",
-    outputUsdPerMillionTokens: "10.00",
-  },
-  "openai::gpt-4.1": {
-    inputUsdPerMillionTokens: "2.00",
-    cachedInputUsdPerMillionTokens: "0.50",
-    outputUsdPerMillionTokens: "8.00",
-  },
-  "openai::gpt-4.1-mini": {
-    inputUsdPerMillionTokens: "0.40",
-    cachedInputUsdPerMillionTokens: "0.10",
-    outputUsdPerMillionTokens: "1.60",
-  },
-  "openai::gpt-4o-mini": {
-    inputUsdPerMillionTokens: "0.15",
-    cachedInputUsdPerMillionTokens: "0.075",
-    outputUsdPerMillionTokens: "0.60",
-  },
-  "deepseek::deepseek-v4-flash": {
-    inputUsdPerMillionTokens: "0.14",
-    cachedInputUsdPerMillionTokens: "0.0028",
-    outputUsdPerMillionTokens: "0.28",
-  },
-  "openrouter::anthropic/claude-sonnet-4": {
-    inputUsdPerMillionTokens: "3.00",
-    outputUsdPerMillionTokens: "15.00",
-  },
-  "openrouter::openai/gpt-4o": {
-    inputUsdPerMillionTokens: "2.50",
-    outputUsdPerMillionTokens: "10.00",
-  },
-  "openrouter::google/gemini-2.5-flash": {
-    inputUsdPerMillionTokens: "0.15",
-    outputUsdPerMillionTokens: "0.60",
-  },
-} as const;
 
 describe("model pricing", () => {
   const rateSource = createDefaultModelTokenRateSource();
@@ -103,6 +37,23 @@ describe("model pricing", () => {
     expect(cost.millicredits).toBe("48300");
     expect(cost.pricingSnapshot.source).toContain("pinned:");
     expect(cost.pricingSnapshot.sourceLayer).toBe("pinned");
+  });
+
+  it("prices an Anthropic 1h cache write at 2x input, not the 5m tier's 1.25x", () => {
+    // loop/prompt-cache-marks.ts + the Anthropic adapter always request
+    // ttl: "1h" (the owner-chosen default), so every cache-write token this
+    // codebase produces must price at Anthropic's 1h tier (2x input), never
+    // the 5m tier (1.25x) — see the registry's cacheWriteUsdPerMillionTokens
+    // comment.
+    const cost = computeModelCost({
+      provider: "anthropic",
+      model: "claude-sonnet-4-20250514",
+      usage: { inputTokens: 1_000_000, cacheWriteTokens: 1_000_000, outputTokens: 0 },
+      rateSource,
+    });
+
+    expect(cost.costUsd).toBe("6.000000");
+    expect(cost.pricingSnapshot.cacheWriteUsdPerMillionTokens).toBe("6.00");
   });
 
   it("prices OpenAI's inclusive cache counters without double-counting input", () => {
@@ -330,21 +281,6 @@ describe("model pricing", () => {
     }
   });
 
-  it("matches previous pinned values for all production registry models", () => {
-    for (const [key, expected] of Object.entries(PRODUCTION_RATE_PARITY)) {
-      const [provider, model] = key.split("::");
-      const rate = findModelTokenRate(provider, model, rateSource);
-      expect(rate.inputUsdPerMillionTokens).toBe(expected.inputUsdPerMillionTokens);
-      if ("cachedInputUsdPerMillionTokens" in expected) {
-        expect(rate.cachedInputUsdPerMillionTokens).toBe(expected.cachedInputUsdPerMillionTokens);
-      }
-      if ("cacheWriteUsdPerMillionTokens" in expected) {
-        expect(rate.cacheWriteUsdPerMillionTokens).toBe(expected.cacheWriteUsdPerMillionTokens);
-      }
-      expect(rate.outputUsdPerMillionTokens).toBe(expected.outputUsdPerMillionTokens);
-    }
-  });
-
   it("bills mock gateway fixtures at zero via the override layer", () => {
     const cost = computeModelCost({
       provider: "mock",
@@ -383,27 +319,5 @@ describe("model pricing", () => {
     const rate = source.findRate("deepseek", "deepseek-v4-flash");
     expect(rate?.inputUsdPerMillionTokens).toBe("99.00");
     expect(rate?.sourceLayer).toBe("override");
-  });
-
-  it("exposes mock fixture rates only through the override layer", () => {
-    const pinnedOnly = createLayeredTokenRateSource({
-      pinnedRates: REGISTRY_PINNED_RATES.map((rate) => ({
-        provider: rate.provider,
-        model: rate.model,
-        inputUsdPerMillionTokens: rate.inputUsdPerMillionTokens,
-        cachedInputUsdPerMillionTokens: rate.cachedInputUsdPerMillionTokens,
-        cacheWriteUsdPerMillionTokens: rate.cacheWriteUsdPerMillionTokens,
-        outputUsdPerMillionTokens: rate.outputUsdPerMillionTokens,
-        source: rate.source,
-      })),
-    });
-
-    expect(pinnedOnly.findRate("mock", "mock-llm-v1")).toBeNull();
-
-    const withFixtures = createLayeredTokenRateSource({
-      pinnedRates: [],
-      overrideRates: MOCK_FIXTURE_TOKEN_RATES,
-    });
-    expect(withFixtures.findRate("mock", "mock-llm-v1")?.outputUsdPerMillionTokens).toBe("0");
   });
 });

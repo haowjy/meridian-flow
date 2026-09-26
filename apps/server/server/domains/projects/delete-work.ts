@@ -2,11 +2,11 @@
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Work } from "@meridian/contracts/works";
 import { WorkLockedError, type WorkRepository } from "./ports/work-repository.js";
-import type { WorkContextDelivery } from "./work-context-delivery.js";
+import type { WorkContextNotices } from "./work-context-notices.js";
 
 type Deps = {
   works: WorkRepository;
-  workContextDelivery: Pick<WorkContextDelivery, "projectChanged">;
+  workContextNotices: Pick<WorkContextNotices, "projectChanged">;
 };
 
 export type DeleteWorkTransition = { before: Work | null; after: Work | null; changed: boolean };
@@ -26,7 +26,7 @@ export async function deleteWorkTransition(
     await deps.works.softDelete(workId);
     const after = await deps.works.findById(workId);
     const transition = { before, after, changed: !!after?.deletedAt };
-    if (transition.changed) await deps.workContextDelivery.projectChanged(before.projectId);
+    if (transition.changed) await deps.workContextNotices.projectChanged(before.projectId);
     return transition;
   });
   return transition;
@@ -37,7 +37,7 @@ export async function restoreWork(deps: Deps, workId: WorkId): Promise<Work> {
     const before = await deps.works.lockById(workId);
     if (!before) throw new Error(`Work not found: ${workId}`);
     const work = before.deletedAt ? await deps.works.restore(workId) : before;
-    if (before.deletedAt) await deps.workContextDelivery.projectChanged(work.projectId);
+    if (before.deletedAt) await deps.workContextNotices.projectChanged(work.projectId);
     return work;
   });
 }

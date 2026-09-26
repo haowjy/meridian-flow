@@ -15,6 +15,14 @@
  * - `partIndex` on stream deltas is the provider's content-block/output-item position
  *   index (Anthropic block `index`, OpenAI Responses `output_index`, OpenAI-Chat
  *   `tool_calls[].index`), used by adapters to reconstruct source order.
+ * - `ContentPart.cacheBreakpoint` and `GenerateRequest.promptCacheKey` are
+ *   canonical prompt-cache *intent*, not provider syntax, so they stay
+ *   top-level (never nested in `providerOptions`): the loop that assembles a
+ *   request knows where a cache boundary belongs and what the thread's stable
+ *   key is, but has no opinion on TTL or wire shape. Each adapter decides
+ *   whether and how to translate that intent for its own API (explicit
+ *   `cache_control` breakpoints, an automatic top-level marker, a
+ *   `prompt_cache_key` routing hint, or nothing at all).
  */
 import type { Usage } from "@meridian/contracts/runtime";
 
@@ -50,6 +58,10 @@ export interface ModelInfo {
   maxOutputTokens: number;
   capabilities: Set<Capability>;
   hostedTools?: Set<string>;
+  /** Per-model inactivity window override. 0 disables the stall guard. */
+  stallTimeoutMs?: number;
+  /** Per-model absolute ceiling override. 0 disables the ceiling backstop. */
+  ceilingTimeoutMs?: number;
 }
 
 /**
@@ -70,20 +82,30 @@ export interface ModelInfo {
  *   (e.g., hosted-tool web_search results) that have no canonical representation.
  */
 
-export interface TextPart {
+/**
+ * Marks this part as a recommended provider prompt-cache boundary. Set by
+ * `loop/prompt-cache-marks.ts`; each adapter decides how many of its marked
+ * parts it can honor and how to encode the boundary for its own API. Absent
+ * (not `false`) means "no opinion" — there is no meaningful false state.
+ */
+export interface CacheBreakpointMarker {
+  cacheBreakpoint?: true;
+}
+
+export interface TextPart extends CacheBreakpointMarker {
   type: "text";
   text: string;
   providerOptions?: ProviderOptions;
 }
 
-export interface ImagePart {
+export interface ImagePart extends CacheBreakpointMarker {
   type: "image";
   data: string | URL;
   mediaType: string;
   providerOptions?: ProviderOptions;
 }
 
-export interface FilePart {
+export interface FilePart extends CacheBreakpointMarker {
   type: "file";
   data: string | URL;
   mediaType: string;
@@ -91,13 +113,13 @@ export interface FilePart {
   providerOptions?: ProviderOptions;
 }
 
-export interface ReasoningPart {
+export interface ReasoningPart extends CacheBreakpointMarker {
   type: "reasoning";
   text: string;
   providerOptions?: ProviderOptions;
 }
 
-export interface ToolUsePart {
+export interface ToolUsePart extends CacheBreakpointMarker {
   type: "tool_use";
   toolCallId: string;
   toolName: string;
@@ -109,16 +131,18 @@ export interface ToolUsePart {
    */
   input: Record<string, unknown>;
   inputParseError?: { raw: string; message: string };
+  providerOptions?: ProviderOptions;
 }
 
-export interface ToolResultPart {
+export interface ToolResultPart extends CacheBreakpointMarker {
   type: "tool_result";
   toolCallId: string;
   output: unknown;
   isError?: boolean;
+  providerOptions?: ProviderOptions;
 }
 
-export interface CustomPart {
+export interface CustomPart extends CacheBreakpointMarker {
   type: "custom";
   kind: `${string}.${string}`;
   data?: unknown;
@@ -211,6 +235,14 @@ export interface GenerateRequest {
   reasoning?: "disabled" | "adaptive" | { effort: "low" | "medium" | "high" | "max" };
   providerOptions?: ProviderOptions;
   signal?: AbortSignal;
+  /**
+   * Stable per-thread cache-routing key (opaque, not a secret): unlike
+   * `correlation` below, adapters MAY map this into the provider request —
+   * e.g. OpenAI Responses `prompt_cache_key`, which improves cache-affinity
+   * routing for automatic caching. Anthropic has no equivalent concept and
+   * ignores it.
+   */
+  promptCacheKey?: string;
   /** Observability-only context; adapters must never map it into provider requests. */
   correlation?: {
     /** Preallocated by callers that need to join request content to lifecycle evidence. */
@@ -376,20 +408,28 @@ export interface ProviderConfig {
  * Gateway configuration — the single input to createGateway().
  *
  * Policy knobs:
- * - `attemptTimeoutMs`: per-call wall-clock timeout (default 120s). Enforced
- *   by the deadline helper, which derives an AbortSignal that aborts the
- *   in-flight provider stream. Timeouts are retryable.
+ * - `attemptStallMs`: inactivity (stall) timeout for one provider attempt
+ *   (default 120s). Enforced by the deadline helper, which aborts the in-flight
+ *   provider stream when no progress arrives within the window. Every stream
+ *   event re-arms it, so a slow-but-streaming model is never killed. 0 disables.
+ * - `attemptCeilingMs`: absolute backstop for one provider attempt (default
+ *   10 min), fixed from attempt start. Not the normal terminator; 0 disables it
+ *   for self-hosted models. Per-model `stallTimeoutMs`/`ceilingTimeoutMs`
+ *   override these. Timeouts are retryable.
  * - `retry`: controls per-provider retry with exponential backoff. Only
- *   retries before any output has been emitted to the caller.
+ *   retries before committed output (visible text or a tool call) has been
+ *   emitted to the caller; reasoning-only attempts are retryable.
  * - `fallback`: when enabled, tries providers in order; fails over on
- *   retryable errors (including timeouts) before output.
+ *   retryable errors (including timeouts) before committed output.
  * - `onTrace`/`onError`: observability hooks; called per provider attempt.
  */
 export interface GatewayConfig {
   providers: ProviderConfig[];
   defaultModel?: string;
-  /** Wall-clock deadline for one provider attempt. Retry/backoff is outside this window. */
-  attemptTimeoutMs?: number;
+  /** Inactivity window for one provider attempt; re-armed on every event. 0 disables. */
+  attemptStallMs?: number;
+  /** Absolute ceiling for one provider attempt. 0 disables. Retry/backoff is outside this window. */
+  attemptCeilingMs?: number;
   retry?: { maxAttempts: number; initialDelayMs: number; maxDelayMs: number };
   fallback?: { enabled: boolean; order?: string[] };
   /** Registry build warnings (e.g. duplicate model IDs skipped). */

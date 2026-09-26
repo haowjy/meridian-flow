@@ -4,9 +4,9 @@
  */
 import type { EventCorrelation, EventLevel, EventSink } from "../../observability/index.js";
 import { emitEvent } from "../../observability/index.js";
-import { isPartialOutputEvent } from "./create-gateway.js";
 import type { GenerateRequest, GenerateResult, StreamEvent } from "./domain/index.js";
 import type { Gateway } from "./ports/gateway.js";
+import { isPartialOutputEvent } from "./stream-events.js";
 
 const VERBOSE_CHUNKS = "gateway.chunks";
 const UTF8_ENCODER = new TextEncoder();

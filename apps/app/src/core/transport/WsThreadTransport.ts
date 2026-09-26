@@ -32,6 +32,7 @@ import type {
 } from "./ThreadTransport";
 import {
   type ActiveThreadSubscription,
+  selectNewestSeq,
   WsThreadSubscriptionRegistry,
 } from "./ws-thread-subscription";
 
@@ -52,7 +53,6 @@ export class WsThreadTransport implements ThreadTransport {
   private readonly socketGenerationClosedListeners = new Set<(generation: number) => void>();
   private wantsConnection = false;
   private serverConnected = false;
-  private connectionToken: string | undefined;
 
   constructor(options: WsThreadTransportOptions = {}) {
     this.socket = new SocketLifecycleController(
@@ -61,12 +61,10 @@ export class WsThreadTransport implements ThreadTransport {
         wantsConnection: () => this.wantsConnection,
         onOpen: () => {
           this.serverConnected = false;
-          this.connectionToken = undefined;
         },
         onMessage: (data) => this.handleMessage(data),
         onClose: (event) => {
           this.serverConnected = false;
-          this.connectionToken = undefined;
           // The generation that just closed is still `currentGeneration` here
           // (it only advances on the next `startSocket`/`teardown`), so a send
           // tagged with it can be recognized as unconfirmed.
@@ -97,7 +95,6 @@ export class WsThreadTransport implements ThreadTransport {
   disconnect(_reason?: "logout" | "app_unmount"): void {
     this.wantsConnection = false;
     this.serverConnected = false;
-    this.connectionToken = undefined;
     this.socket.teardown();
     this.subscriptions.clearServerSubscribed();
   }
@@ -192,50 +189,6 @@ export class WsThreadTransport implements ThreadTransport {
     return cancelTurn({ data: { threadId, turnId } });
   }
 
-  getConnectionToken(): string | undefined {
-    return this.connectionToken;
-  }
-
-  awaitConnectionToken(): Promise<string> {
-    const existing = this.connectionToken;
-    if (existing) return Promise.resolve(existing);
-
-    return new Promise((resolve, reject) => {
-      const timeoutMs = 30_000;
-      const timer = setTimeout(() => {
-        cleanup();
-        reject(new Error("Timed out waiting for WebSocket connection token"));
-      }, timeoutMs);
-
-      const onState = (state: ConnectionState) => {
-        const token = this.connectionToken;
-        if (token && state.kind === "connected") {
-          cleanup();
-          resolve(token);
-          return;
-        }
-        if (state.kind === "terminal") {
-          cleanup();
-          reject(new Error(state.reason || "WebSocket connection failed"));
-        }
-      };
-
-      const removeListener = this.onConnectionState(onState);
-      this.ensureConnected();
-
-      const cleanup = () => {
-        clearTimeout(timer);
-        removeListener();
-      };
-
-      const token = this.connectionToken;
-      if (token && this.serverConnected) {
-        cleanup();
-        resolve(token);
-      }
-    });
-  }
-
   private ensureConnected(): void {
     this.wantsConnection = true;
     this.socket.ensureConnected();
@@ -261,8 +214,7 @@ export class WsThreadTransport implements ThreadTransport {
         this.dispatchSequencedEvent(threadId, seq, aguiEvent, error, sourceThreadId),
       handleGap: (gap) => this.handleGap(gap),
       send: (payload) => this.send(payload),
-      onConnected: (connectionToken) => {
-        this.connectionToken = connectionToken;
+      onConnected: () => {
         this.socket.resetBackoff();
         this.serverConnected = true;
         this.publishConnectionState({ kind: "connected" });
@@ -336,6 +288,15 @@ export class WsThreadTransport implements ThreadTransport {
         message: message.message,
         gapCount: subscription.gapCount,
       });
+    }
+
+    // A gap means the server could not replay from our cursor. Jump the resume
+    // point to the head it reported so the next subscribe requests events the
+    // server can actually serve; re-requesting the same unreplayable window
+    // would gap forever. The truncated history is recovered from the thread
+    // snapshot the onGap consumers refetch.
+    if (message.toSeq) {
+      subscription.lastSeq = selectNewestSeq(subscription.lastSeq, message.toSeq);
     }
 
     if (this.socket.isSocketOpen()) {

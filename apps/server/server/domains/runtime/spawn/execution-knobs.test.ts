@@ -1,5 +1,5 @@
 /** One execution-knob contract across compile, resolve, patch, and provider params. */
-import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
+import { invocationPatchSchema, type ResolvedAgentConfiguration } from "@meridian/contracts/agents";
 import { describe, expect, it } from "vitest";
 import {
   createInMemoryAgentRevisionStore,
@@ -29,7 +29,7 @@ describe("one definition across all four surfaces", () => {
             model: "muse-model",
             effort: "max",
             mode: "primary",
-            tools: { read: "allow", edit: "deny" },
+            tools: { edit: "deny" },
             "disallowed-tools": ["bash"],
             subagents: ["critic"],
             skills: { load: ["outline"], available: ["proofread"] },
@@ -70,21 +70,21 @@ describe("one definition across all four surfaces", () => {
         ],
       },
       namedTargets: [{ name: "critic", definitionRevisionId: critic.id }],
-      tools: { read: "allow", edit: "deny" },
+      tools: { edit: "deny" },
       "disallowed-tools": ["bash"],
       effort: "xhigh",
     });
 
     const patched = await applyInvocationPatch({
       baseline,
-      patch: {
+      patch: invocationPatchSchema.parse({
         model: "patched-model",
         effort: "none",
-        tools: { shell: "allow", read: "deny" },
+        tools: { shell: "allow" },
         "disallowed-tools": ["edit"],
         subagents: ["critic"],
         skills: { load: ["outline"], available: [] },
-      },
+      }),
       caller: baseline,
       store: revisions,
       packageRevisionId: installed.packageRevisionId,
@@ -103,7 +103,7 @@ describe("one definition across all four surfaces", () => {
         available: [],
       },
       namedTargets: [{ name: "critic", definitionRevisionId: critic.id }],
-      tools: { read: "deny", edit: "deny", bash: "allow" },
+      tools: { edit: "deny", bash: "allow" },
       "disallowed-tools": ["edit"],
       effort: "none",
     });
@@ -117,7 +117,7 @@ describe("one definition across all four surfaces", () => {
 describe("override alias folding and coupled merge", () => {
   it("lifts a baseline denial when a map allow targets the same tool", async () => {
     const baseline = config({
-      tools: { read: "allow", edit: "deny" },
+      tools: { edit: "deny" },
       "disallowed-tools": ["edit"],
     });
     const patched = await applyInvocationPatch({

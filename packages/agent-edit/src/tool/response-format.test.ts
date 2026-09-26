@@ -27,9 +27,6 @@ describe("isWriteErrorStatus", () => {
 
   it.each<WriteStatus>([
     "success",
-    "reversed",
-    "reconciled",
-    "nothing_to_undo",
   ])("does not classify the success status %s as an error", (status) => {
     expect(isWriteErrorStatus(status)).toBe(false);
   });

@@ -10,24 +10,23 @@
  * while the tool handler is awaited.
  */
 
-import type { ArtifactRef } from "@meridian/contracts/interrupt";
-import type { TreeBudget } from "@meridian/contracts/spawn";
+import type { ReturnResultCapture, TreeBudget } from "@meridian/contracts/spawn";
 import type {
   Block,
-  JsonObject,
   JsonValue,
   OrchestratorEvent,
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { WorkContextDelivery } from "../../projects/index.js";
 import type { ChildRunCoordinator, ChildRunRequest } from "../spawn/child-run-coordinator.js";
+import { readThreadReport } from "../spawn/read-thread-report.js";
 import { spawnOutputForTranscript } from "../spawn/spawn-output.js";
 import { persistReturnResult, type SpawnTranscript } from "../spawn/spawn-transcript.js";
 import type {
-  ContinueToolArgs,
   SpawnToolArgs,
+  ThreadMessageArgs,
+  ThreadReportArgs,
   ToolCallInput,
   ToolExecutor,
 } from "../tools/index.js";
@@ -35,14 +34,15 @@ import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
 import type { InterruptAutoResumePolicy } from "./interrupts.js";
 import { appendEvent, type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
-import type { ReturnResultCompleter } from "./run-turn-port.js";
 
 export interface ToolDispatchDeps {
   toolExecutor: ToolExecutor;
   childRunCoordinator: ChildRunCoordinator;
   eventSink: EventSink;
   persistenceDeps: PersistenceDeps;
-  workContextDelivery: Pick<WorkContextDelivery, "deliverNow">;
+  executionReports: import("../../threads/ports/repositories.js").ThreadRepositories["executionReports"];
+  readSnapshot: import("../../threads/ports/repositories.js").ThreadRepositories["readSnapshot"];
+  runningTurn: Pick<import("./ports.js").RunClaim, "readRunningTurnId">;
 }
 
 export interface ToolDispatchContext {
@@ -56,49 +56,33 @@ export interface ToolDispatchContext {
   interruptAutoResume: InterruptAutoResumePolicy;
   treeBudget: TreeBudget;
   blockSeqRef: { value: number };
-  returnResultCompleter?: ReturnResultCompleter;
   allTurns: Turn[];
 }
 
 export type ToolDispatchResult =
   | {
-      events: OrchestratorEvent[];
       block: Block;
       metadata?: Record<string, unknown>;
       cancelled?: false;
       /** Successful return_result asks the orchestrator to complete the turn after this batch. */
       endTurn?: true;
     }
-  | { events: OrchestratorEvent[]; cancelled: true };
-
-function pendingWorkContextOutput(output: JsonValue, message: string): JsonObject {
-  const result =
-    output !== null && typeof output === "object" && !Array.isArray(output)
-      ? output
-      : { result: output };
-  return {
-    ...result,
-    contextUpdate: { status: "pending", message },
-  };
-}
+  | { cancelled: true };
 
 export async function dispatchToolCall(
   deps: ToolDispatchDeps,
   call: ToolCallInput,
   ctx: ToolDispatchContext,
 ): Promise<ToolDispatchResult> {
-  const events: OrchestratorEvent[] = [];
-  const executing = await appendEvent(deps.persistenceDeps.eventWriter, ctx.state.threadId, {
+  await appendEvent(deps.persistenceDeps.eventWriter, ctx.state.threadId, {
     type: "tool.executing",
     toolCallId: call.id,
     name: call.name,
   });
-  events.push(executing);
   if (ctx.state.signal?.aborted) {
-    return { events, cancelled: true };
+    return { cancelled: true };
   }
 
-  const outputDeltaEventBuffer: OrchestratorEvent[] = [];
   let outputDeltaAppendChain: Promise<void> = Promise.resolve();
   let outputDeltaAppendFailed = false;
   const emitOutputDelta = (
@@ -111,15 +95,11 @@ export async function dispatchToolCall(
       stream: chunk.stream,
       text: chunk.text,
     };
-    // Tool-output callbacks run while the generator is blocked inside
-    // `await executeTool(...)`. Append immediately for hub fan-out, but
-    // serialize appends so journal/catch-up order matches chunk order; the
-    // buffer is yielded once the handler returns, before tool.result.
+    // Serialize live output appends while the tool runs so catch-up preserves chunk order.
     outputDeltaAppendChain = outputDeltaAppendChain
       .then(async () => {
         if (outputDeltaAppendFailed) return;
         await appendEvent(deps.persistenceDeps.eventWriter, ctx.state.threadId, event);
-        outputDeltaEventBuffer.push(event);
       })
       .catch((error: unknown) => {
         outputDeltaAppendFailed = true;
@@ -148,7 +128,6 @@ export async function dispatchToolCall(
     turnId: ctx.state.currentTurn.id,
     blockSeqRef: ctx.blockSeqRef,
     allBlocks: ctx.state.allBlocks,
-    events,
   };
 
   const spawn =
@@ -166,45 +145,77 @@ export async function dispatchToolCall(
               : {}),
             ...(spawnInput.overrides !== undefined ? { overrides: spawnInput.overrides } : {}),
             budget: ctx.treeBudget,
+            reportCorrelation: {
+              callerThreadId: ctx.thread.id,
+              callerTurnId: ctx.state.currentTurn.id,
+              toolCallId: call.id,
+              cardBlockId: null,
+              origin: "spawn",
+              deliveryMode: spawnInput.mode === "background" ? "background_notification" : "direct",
+            },
             signal: ctx.state.signal,
           };
           return deps.childRunCoordinator.runChild(request, {
             mode: spawnInput.mode,
-            ...(spawnInput.mode === "foreground" ? { transcript } : {}),
+            transcript,
           });
         }
       : undefined;
 
-  const continueChild =
-    call.name === "continue"
-      ? async (continueInput: ContinueToolArgs) => {
+  const threadMessage =
+    call.name === "thread_message"
+      ? async (messageInput: ThreadMessageArgs) => {
           const request: ChildRunRequest = {
-            kind: "continue",
+            kind: "message",
             parentThread: ctx.thread,
             parentTurnId: ctx.state.currentTurn.id,
-            handle: continueInput.handle,
-            prompt: continueInput.prompt,
+            ref: messageInput.ref,
+            prompt: messageInput.message,
+            toolCallId: call.id,
             budget: ctx.treeBudget,
+            ...(messageInput.mode === "foreground"
+              ? {
+                  reportCorrelation: {
+                    callerThreadId: ctx.thread.id,
+                    callerTurnId: ctx.state.currentTurn.id,
+                    toolCallId: call.id,
+                    cardBlockId: null,
+                    origin: "foreground_message" as const,
+                    deliveryMode: "direct" as const,
+                  },
+                }
+              : {}),
             signal: ctx.state.signal,
           };
           return deps.childRunCoordinator.runChild(request, {
-            mode: continueInput.mode,
-            ...(continueInput.mode === "foreground" ? { transcript } : {}),
+            mode: messageInput.mode,
+            ...(messageInput.mode === "foreground" ? { transcript } : {}),
           });
         }
       : undefined;
 
-  const returnResultCompleter = ctx.returnResultCompleter;
-  let returnResultSummary = "";
-  let returnResultArtifacts: ArtifactRef[] | undefined;
-  const returnResult = async (capture: Parameters<ReturnResultCompleter>[0]) => {
-    if (!returnResultCompleter) {
+  const threadReport =
+    call.name === "thread_report"
+      ? (reportInput: ThreadReportArgs) =>
+          readThreadReport({
+            callerThreadId: ctx.thread.id as never,
+            ref: reportInput.ref,
+            run: reportInput.run,
+            repos: {
+              threads: deps.persistenceDeps.repos.threads,
+              executionReports: deps.executionReports,
+              readSnapshot: deps.readSnapshot,
+            },
+          })
+      : undefined;
+
+  let returnResultCapture: ReturnResultCapture | undefined;
+  const returnResult = async (capture: ReturnResultCapture) => {
+    if (ctx.thread.kind !== "subagent") {
       return { ok: false as const, message: "return_result is not available on this run." };
     }
-    const outcome = await returnResultCompleter(capture);
-    returnResultSummary = capture.summary;
-    returnResultArtifacts = capture.artifacts;
-    return outcome;
+    returnResultCapture = capture;
+    return { ok: true as const };
   };
 
   const execResult = await deps.toolExecutor.executeTool(
@@ -225,14 +236,14 @@ export async function dispatchToolCall(
       interrupt: ctx.interruptSession.interrupt,
       updateComponentBlock: ctx.interruptSession.updateComponentBlock,
       spawn,
-      continue: continueChild,
+      threadMessage,
+      threadReport,
       returnResult,
     },
   );
   await outputDeltaAppendChain;
-  events.push(...outputDeltaEventBuffer, ...ctx.interruptSession.drainEvents());
   if (ctx.state.signal?.aborted) {
-    return { events, cancelled: true };
+    return { cancelled: true };
   }
 
   const stagedWrite = execResult.metadata?.stagedWrite === true && execResult.isError !== true;
@@ -240,18 +251,19 @@ export async function dispatchToolCall(
     const settled = await persistReturnResult(transcript, {
       toolCallId: execResult.toolCallId,
       outcome: execResult.returnResult,
-      summary: returnResultSummary,
-      artifacts: returnResultArtifacts,
+      capture: returnResultCapture,
+      executionReports: deps.executionReports,
     });
     return {
-      events,
       block: settled.block,
       ...(settled.endTurn ? { endTurn: true as const } : {}),
     };
   }
   const persistedOutput: JsonValue =
-    call.name === "spawn" || call.name === "continue"
-      ? spawnOutputForTranscript(execResult.output)
+    call.name === "spawn" || call.name === "thread_message"
+      ? spawnOutputForTranscript(execResult.output, {
+          queuedNoReply: call.name === "thread_message",
+        })
       : execResult.output;
   const persistedIsError = execResult.isError;
   const persistedMetadata = execResult.metadata;
@@ -289,66 +301,10 @@ export async function dispatchToolCall(
     },
   );
   ctx.state.allBlocks.push(persistedToolResult.result);
-  events.push(...persistedToolResult.events);
-  let resultBlock = persistedToolResult.result;
-  let resultMetadata = execResult.metadata;
-  if (execResult.metadata?.workContextChanged === true) {
-    try {
-      const update = await deps.workContextDelivery.deliverNow(ctx.state.threadId);
-      ctx.allTurns.push(update.turn);
-      ctx.state.allBlocks.push(update.block);
-      events.push(...update.events);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Work context refresh will retry after this turn.";
-      const output = pendingWorkContextOutput(execResult.output, message);
-      const metadata: JsonObject = {
-        ...execResult.metadata,
-        workContextDelivery: "pending",
-        workContextWarning: message,
-      };
-      const patched = await persistAndAppendEvents(
-        deps.persistenceDeps,
-        ctx.state.threadId,
-        async () => {
-          const block = contentForBlockInput({
-            id: persistedToolResult.result.id,
-            turnId: ctx.state.currentTurn.id,
-            ...(stagedWrite ? { responseId: ctx.responseId } : {}),
-            blockType: "tool_result",
-            sequence: persistedToolResult.result.sequence,
-            content: {
-              toolCallId: execResult.toolCallId,
-              output,
-              ...(persistedIsError !== undefined ? { isError: persistedIsError } : {}),
-              metadata,
-            },
-            status: "complete",
-          });
-          return {
-            result: localBlockFromEvent(block),
-            events: [
-              { type: "block.upserted" as const, block },
-              {
-                type: "tool.result" as const,
-                toolCallId: execResult.toolCallId,
-                output,
-                isError: persistedIsError,
-                metadata,
-              },
-            ],
-          };
-        },
-      );
-      const blockIndex = ctx.state.allBlocks.findIndex((block) => block.id === patched.result.id);
-      if (blockIndex >= 0) ctx.state.allBlocks[blockIndex] = patched.result;
-      resultBlock = patched.result;
-      resultMetadata = metadata;
-      events.push(...patched.events);
-    }
-  }
+
+  const resultBlock = persistedToolResult.result;
+  const resultMetadata = execResult.metadata;
   return {
-    events,
     block: resultBlock,
     ...(resultMetadata
       ? {

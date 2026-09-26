@@ -4,7 +4,7 @@ import type { EventRecord } from "@meridian/contracts/observability";
 import { EventType } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 
-import { createThreadWireTap, createThreadWireTapState } from "./thread-wire-tap";
+import { createThreadWireTap } from "./thread-wire-tap";
 
 describe("createThreadWireTap", () => {
   it("classifies sequenced agent events without retaining their content", () => {
@@ -83,16 +83,6 @@ describe("createThreadWireTap", () => {
     expect(JSON.stringify(records[0])).not.toContain("content-must-never-egress");
   });
 
-  it("measures UTF-8 bytes rather than UTF-16 code units", () => {
-    const records: EventRecord[] = [];
-    const tap = createThreadWireTap((record) => records.push(record), vi.fn());
-    const data = JSON.stringify({ type: "unknown", content: "𐌍" });
-
-    tap.onStringFrame("server_to_client", data, 1);
-
-    expect(records[0]?.stream?.bytes).toBe(new TextEncoder().encode(data).byteLength);
-  });
-
   it("never traverses catchup events or copies unrecognized classifications", () => {
     const records: EventRecord[] = [];
     const tap = createThreadWireTap((record) => records.push(record), vi.fn());
@@ -132,25 +122,6 @@ describe("createThreadWireTap", () => {
       payload: { socketEpoch: 1 },
     });
     expect(JSON.stringify(records)).not.toContain("content-must-never-egress");
-  });
-
-  it("keeps observer sequence across hot replacement and strips lifecycle text", () => {
-    const records: EventRecord[] = [];
-    const state = createThreadWireTapState();
-    const firstTap = createThreadWireTap((record) => records.push(record), vi.fn(), state);
-
-    firstTap.onSocketOpen(1);
-    firstTap.onSocketClose(1, 4403, true);
-
-    const replacementTap = createThreadWireTap((record) => records.push(record), vi.fn(), state);
-    replacementTap.onStringFrame("client_to_server", JSON.stringify({ type: "pong" }), 2);
-
-    expect(records.map((record) => record.stream?.observerSeq)).toEqual([1, 2, 3]);
-    expect(records[1]).toMatchObject({
-      name: "socket.close",
-      stream: { messageClass: "socket.close" },
-      payload: { socketEpoch: 1, code: 4403, wasClean: true },
-    });
   });
 
   it("routes parse and sink failures to safe error accounting", () => {

@@ -4,6 +4,7 @@ import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { eq } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createTestDrizzleDelivery } from "../runtime/loop/__tests__/test-drizzle-delivery.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -153,7 +154,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await updateHasLock;
       const commandUpdate = updateWorkTransition(
-        { works, workContextDelivery: { async projectChanged() {} } },
+        { works, workContextNotices: { async projectChanged() {} } },
         work.id,
         { name: "C" },
       );
@@ -182,7 +183,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await deleteHasLock;
       const commandDelete = deleteWorkTransition(
-        { works, workContextDelivery: { async projectChanged() {} } },
+        { works, workContextNotices: { async projectChanged() {} } },
         work.id,
       );
       await waitForLock("transactionid");
@@ -192,9 +193,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("serializes Work restore and enqueues only the transition that restores", async () => {
-      const { createDrizzleRepositoriesForTest } = await import(
-        "../threads/adapters/drizzle/index.js"
-      );
       await db.insert(schema.threads).values({
         id: THREAD_ID,
         projectId: PROJECT_ID,
@@ -203,7 +201,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const work = await works.create({ projectId: PROJECT_ID, name: "Restorable" });
       await works.softDelete(work.id);
-      const threads = createDrizzleRepositoriesForTest(db);
       let release!: () => void;
       const gate = new Promise<void>((resolve) => {
         release = resolve;
@@ -218,10 +215,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const first = restoreWork(
         {
           works,
-          workContextDelivery: {
+          workContextNotices: {
             async projectChanged(projectId) {
               firstEnqueues += 1;
-              await threads.workContextDeliveries.enqueueProject(projectId);
+              await createTestDrizzleDelivery(db).projectChanged(projectId);
               entered();
               await gate;
             },
@@ -233,10 +230,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const second = restoreWork(
         {
           works,
-          workContextDelivery: {
+          workContextNotices: {
             async projectChanged(projectId) {
               secondEnqueues += 1;
-              await threads.workContextDeliveries.enqueueProject(projectId);
+              await createTestDrizzleDelivery(db).projectChanged(projectId);
             },
           },
         },
@@ -251,7 +248,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(Promise.all([first, second])).resolves.toHaveLength(2);
       expect(firstEnqueues).toBe(1);
       expect(secondEnqueues).toBe(0);
-      await expect(threads.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
+      await expect(
+        createTestDrizzleDelivery(db)
+          .selectPending(THREAD_ID)
+          .then((rows) => rows.length > 0),
+      ).resolves.toBe(true);
     });
 
     it("makes identical locked updates storage no-ops and applies real changes once", async () => {
@@ -261,7 +262,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         goal: "Finish it",
         description: "Private notes",
       });
-      const deps = { works, workContextDelivery: { async projectChanged() {} } };
+      const deps = { works, workContextNotices: { async projectChanged() {} } };
       await control.unsafe(`
         CREATE SEQUENCE test_work_update_count;
         CREATE FUNCTION test_count_work_update() RETURNS trigger

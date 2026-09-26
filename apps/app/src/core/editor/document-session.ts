@@ -61,16 +61,6 @@ import { SessionMarkerStore } from "./session-marker-store";
 /** Give normal IndexedDB replay priority without letting blocked storage hold collaboration offline. */
 const LOCAL_PERSISTENCE_TRANSPORT_TIMEOUT_MS = 1_000;
 
-export function deleteIndexedDb(name: string): Promise<void> {
-  if (typeof indexedDB === "undefined") return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.deleteDatabase(name);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-    request.onblocked = () => reject(new Error(`IndexedDB deletion blocked: ${name}`));
-  });
-}
-
 export type DocumentSessionStatus =
   | "detached"
   | "syncing"

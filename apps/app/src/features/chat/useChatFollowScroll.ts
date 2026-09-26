@@ -1,63 +1,15 @@
-/**
- * useChatFollowScroll — the explicit `follow | free` policy machine for the chat
- * transcript viewport.
- *
- * The transcript has exactly two policy states, and this hook is their single
- * owner:
- *   - `follow` — pinned to the live edge; every content revision re-pins the
- *     viewport to the bottom; the jump-to-latest pill is hidden.
- *   - `free`   — the reader is reading history; nothing auto-scrolls; the pill
- *     is visible.
- *
- * Geometry (distance from bottom) only FEEDS transitions — it is never the
- * state. Deriving "at bottom" per-frame from scroll offsets is what made the
- * pill flicker and follow-release feel inconsistent.
- *
- * Transitions:
- *   → free:   deliberate upward intent — wheel up, downward touch drag,
- *             ArrowUp/PageUp/Home — releases IMMEDIATELY, plus scrollbar drags
- *             that move up while genuinely away from the bottom.
- *   → follow: reaching the bottom band (silent re-lock), or an explicit
- *             `enterFollow()` (jump-to-latest pill, submit).
- *
- * Two non-obvious invariants, both learned the hard way (see
- * work/chat-follow-state/study/SYNTHESIS.md in meridian-flow-docs):
- *   1. The self-scroll guard is a TIME window (~180ms, re-armed on every
- *      programmatic write), not a rAF latch. One pin triggers a burst of
- *      ResizeObserver/measure scroll events; a frame latch clears mid-burst and
- *      the tail events false-read as user scroll-up.
- *   2. In the scroll handler, the near-bottom check wins BEFORE the "moved up"
- *      release check — otherwise a 1px downward settle at the bottom
- *      false-releases. A ~1px upward deadzone guards sub-pixel jitter.
- *
- * Geometry comes from cached heights (the virtualizer's total content height,
- * the ResizeObserver-tracked viewport height) instead of reading `scrollHeight`
- * per revision: the pin runs on every content revision, and forcing a layout of
- * the whole scroll container on each one is measurable jank. `scrollTop` is the
- * only value read at pin time. The cached sizes are exactly what a read would
- * return — the virtualized list's height IS the content height.
- */
+/** Coordinates follow/free scroll policy for the transcript. */
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 export type FollowMode = "follow" | "free";
 
 /** Distance from the bottom that still counts as the live edge (px). */
 const BOTTOM_THRESHOLD_PX = 32;
-/**
- * Self-scroll guard window. Mirrors shadcn's message-scroller
- * (`AUTOSCROLLING_CLEAR_DELAY = 180ms`); react-virtuoso uses 200ms for the
- * same job. Re-armed on every programmatic write so a whole streaming burst
- * stays inside one guarded window.
- */
+/** Self-scroll guard window. */
 const AUTOSCROLL_GUARD_MS = 180;
 
 type Options = {
   scrollRef: RefObject<HTMLElement | null>;
-  /**
-   * Total scrollable content height (the virtualizer's `getTotalSize()`, i.e.
-   * the rendered content height the viewport scrolls over). Its identity as a
-   * number is also the content revision: every change re-pins in `follow`.
-   */
   contentHeight: number;
 };
 
@@ -67,12 +19,7 @@ function maxScrollTopFrom(contentHeight: number, viewportHeight: number): number
 
 export function useChatFollowScroll({ scrollRef, contentHeight }: Options): {
   mode: FollowMode;
-  /**
-   * Re-acquire follow (pill click, submit): flips mode synchronously — so the
-   * pill hides in the same commit — then pins instantly. Instant on purpose: a
-   * smooth scroll here would be cancelled by the very next content-revision pin,
-   * so the API only offers the behavior it can actually deliver.
-   */
+  /** Re-acquire follow (pill click, submit): flips mode synchronously — so the pill hides in the same commit — then pins instantly. */
   enterFollow: () => void;
 } {
   const [mode, setMode] = useState<FollowMode>("follow");

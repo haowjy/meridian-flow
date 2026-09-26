@@ -1,11 +1,8 @@
 /**
  * Interrupt session for tool-driven pause/resume inside one orchestrator turn.
  *
- * Tools cannot yield from their interrupt callbacks because they run while the
- * orchestrator is awaiting tool execution. This session persists interrupt and
- * component-block events immediately for hub fan-out, buffers those same events
- * for the outer generator to yield deterministically, and mutates the supplied
- * turn state so the orchestrator resumes with the latest turn/block snapshot.
+ * Persists interrupt and component-block events immediately for hub fan-out,
+ * and updates the supplied turn state before tool execution resumes.
  */
 
 import {
@@ -76,7 +73,6 @@ export interface InterruptTurnState {
 export interface InterruptSession {
   interrupt(request: AskRequest, timeoutMs?: number): Promise<InterruptResponse>;
   updateComponentBlock(interruptId: string, propsPatch: JsonObject): Promise<void>;
-  drainEvents(): OrchestratorEvent[];
 }
 
 export function createNoopInterruptArtifactFlushPort(): InterruptArtifactFlushPort {
@@ -92,7 +88,6 @@ export function createInterruptSession(
   state: InterruptTurnState,
 ): InterruptSession {
   const interruptBlocks = new Map<string, BlockUpsertedRow>();
-  const interruptEventBuffer: OrchestratorEvent[] = [];
 
   async function interrupt(request: AskRequest, timeoutMs?: number): Promise<InterruptResponse> {
     const effectiveTimeoutMs = timeoutMs ?? state.autoResume.timeoutMs;
@@ -165,7 +160,6 @@ export function createInterruptSession(
     }
     state.allBlocks.push(persistedInterrupt.result.block);
     state.currentTurn = persistedInterrupt.result.updatedTurn;
-    interruptEventBuffer.push(...persistedInterrupt.events);
 
     if (request.artifacts.length > 0 && state.thread.workId) {
       // DEFERRED(project workspace-reaper): no-reap-while-parked is policy; interrupt flush is the safety net.
@@ -232,7 +226,7 @@ export function createInterruptSession(
       return { result: updatedTurn, events: [event] };
     });
     state.currentTurn = resumed.result;
-    interruptEventBuffer.push(...resumed.events);
+
     return response;
   }
 
@@ -272,14 +266,10 @@ export function createInterruptSession(
     } else {
       state.allBlocks.push(persistedUpdate.result);
     }
-    interruptEventBuffer.push(...persistedUpdate.events);
   }
 
   return {
     interrupt,
     updateComponentBlock,
-    drainEvents(): OrchestratorEvent[] {
-      return interruptEventBuffer.splice(0);
-    },
   };
 }

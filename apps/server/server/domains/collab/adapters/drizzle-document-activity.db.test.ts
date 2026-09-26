@@ -96,7 +96,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         title: "Activity Thread",
         kind: "primary",
-        status: "active",
+        status: "idle",
       });
       await db.insert(threadDocuments).values({
         threadId: THREAD_ID,

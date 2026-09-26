@@ -21,6 +21,14 @@
  *   is repaired earlier in context-builder `completeToolResultGroups`.
  * - Thinking budget is computed as a percentage of max_tokens, scaled by the
  *   effort level (low=25%, medium=50%, high=75%, max=100%).
+ * - Prompt caching: a canonical `ContentPart.cacheBreakpoint` (set by
+ *   `loop/prompt-cache-marks.ts`, at most three per request) becomes an
+ *   explicit `cache_control: { type: "ephemeral", ttl: "1h" }` on that part.
+ *   1h is the owner-chosen default TTL everywhere Anthropic makes it
+ *   configurable; a 1h write costs 2x input tokens (vs 1.25x for 5m) — see
+ *   the registry's `cacheWriteUsdPerMillionTokens` pinned rates. Tools are
+ *   never marked directly: Anthropic renders tools before system before
+ *   messages, so the system-message breakpoint already covers them.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 
@@ -32,6 +40,12 @@ import type {
   Tool,
 } from "../../domain/index.js";
 import { safeToolOutput } from "../../helpers/serialize.js";
+
+/** Owner-chosen default: 1h everywhere Anthropic makes cache TTL configurable. */
+const CACHE_CONTROL_1H: Anthropic.Messages.CacheControlEphemeral = {
+  type: "ephemeral",
+  ttl: "1h",
+};
 
 // ── Content part mapping ──────────────────────────────────────────
 //
@@ -70,12 +84,7 @@ function mapContentPartToAnthropicBlock(
       return {
         type: "text" as const,
         text: part.text,
-        ...(part.providerOptions?.anthropic?.cacheControl
-          ? {
-              cache_control: part.providerOptions.anthropic
-                .cacheControl as Anthropic.Messages.CacheControlEphemeral,
-            }
-          : {}),
+        ...(part.cacheBreakpoint ? { cache_control: CACHE_CONTROL_1H } : {}),
       } as any;
     case "image": {
       const data = part.data instanceof URL ? part.data.href : part.data;
@@ -100,6 +109,7 @@ function mapContentPartToAnthropicBlock(
         id: part.toolCallId,
         name: part.toolName,
         input: part.input,
+        ...(part.cacheBreakpoint ? { cache_control: CACHE_CONTROL_1H } : {}),
       } as any;
     case "tool_result":
       return {
@@ -107,6 +117,7 @@ function mapContentPartToAnthropicBlock(
         tool_use_id: part.toolCallId,
         content: safeToolOutput(part.output),
         is_error: part.isError ?? false,
+        ...(part.cacheBreakpoint ? { cache_control: CACHE_CONTROL_1H } : {}),
       } as any;
     case "reasoning": {
       if (!matchesReasoningOrigin(part, targetProviderId, targetModelId)) return null;
@@ -189,11 +200,8 @@ function mapMessage(
   if (hasOnlyText && message.content.length > 0) {
     const text = textFromParts(message.content);
     if (text.length === 0) return null;
-    // Check for cache control on any part
-    const hasCacheControl = message.content.some(
-      (p) => "providerOptions" in p && p.providerOptions?.anthropic?.cacheControl,
-    );
-    if (!hasCacheControl) {
+    const hasCacheBreakpoint = message.content.some((p) => p.cacheBreakpoint);
+    if (!hasCacheBreakpoint) {
       return { role, content: text };
     }
   }
@@ -279,11 +287,9 @@ function extractSystem(
   if (systemMessages.length === 0) return undefined;
 
   const systemParts = systemMessages.flatMap((m) => m.content);
-  const hasCacheControl = systemParts.some(
-    (p) => "providerOptions" in p && p.providerOptions?.anthropic?.cacheControl,
-  );
+  const hasCacheBreakpoint = systemParts.some((p) => p.cacheBreakpoint);
 
-  if (!hasCacheControl) {
+  if (!hasCacheBreakpoint) {
     const system = textFromParts(systemParts);
     return system.length > 0 ? system : undefined;
   }
@@ -291,16 +297,11 @@ function extractSystem(
   const systemBlocks = systemParts
     .filter((p): p is Extract<ContentPart, { type: "text" }> => p.type === "text")
     .filter((p) => p.text.length > 0)
-    .map((p) => {
-      const cacheControl = p.providerOptions?.anthropic?.cacheControl;
-      return {
-        type: "text" as const,
-        text: p.text,
-        ...(cacheControl
-          ? { cache_control: cacheControl as Anthropic.Messages.CacheControlEphemeral }
-          : {}),
-      };
-    });
+    .map((p) => ({
+      type: "text" as const,
+      text: p.text,
+      ...(p.cacheBreakpoint ? { cache_control: CACHE_CONTROL_1H } : {}),
+    }));
 
   return systemBlocks.length > 0 ? systemBlocks : undefined;
 }
@@ -309,7 +310,9 @@ function extractSystem(
 //
 // Canonical Tool[] → Anthropic ToolUnion[]. Function tools map to Anthropic
 // tools with input_schema; hosted tools map to web_search_20250305 or
-// code_execution_20250522. Cache_control from providerOptions is forwarded.
+// code_execution_20250522. Tools are never cache-marked directly: Anthropic
+// renders tools before system before messages, so the system message's own
+// breakpoint already covers them (see the file header).
 //
 
 function mapTools(tools: Tool[] | undefined): Anthropic.Messages.ToolUnion[] | undefined {
@@ -323,12 +326,6 @@ function mapTools(tools: Tool[] | undefined): Anthropic.Messages.ToolUnion[] | u
         name: ft.name,
         description: ft.description,
         input_schema: ft.inputSchema as Anthropic.Messages.Tool.InputSchema,
-        ...(ft.providerOptions?.anthropic?.cacheControl
-          ? {
-              cache_control: ft.providerOptions.anthropic
-                .cacheControl as Anthropic.Messages.CacheControlEphemeral,
-            }
-          : {}),
       });
     } else if (tool.type === "hosted") {
       if (tool.kind === "web_search" || tool.kind.startsWith("anthropic.web_search")) {
@@ -399,8 +396,9 @@ function mapThinking(
 //
 // Assembles the full MessageCreateParamsStreaming from a canonical
 // GenerateRequest. Always sets stream:true. Passes through any extra
-// providerOptions.anthropic keys (excluding cacheControl which is handled
-// per-part).
+// providerOptions.anthropic keys verbatim; prompt-cache marks are canonical
+// `ContentPart.cacheBreakpoint`, not a providerOptions key, so nothing needs
+// excluding here.
 //
 
 export function toAnthropicMessageParams(
@@ -435,12 +433,6 @@ export function toAnthropicMessageParams(
     ...(request.topP !== undefined ? { top_p: request.topP } : {}),
     ...(request.stopSequences?.length ? { stop_sequences: request.stopSequences } : {}),
     ...(thinking ? { thinking } : {}),
-    ...(request.providerOptions?.anthropic
-      ? Object.fromEntries(
-          Object.entries(request.providerOptions.anthropic).filter(
-            ([k]) => !["cacheControl"].includes(k),
-          ),
-        )
-      : {}),
+    ...(request.providerOptions?.anthropic ?? {}),
   };
 }

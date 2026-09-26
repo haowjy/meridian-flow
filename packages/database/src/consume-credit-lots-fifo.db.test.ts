@@ -170,8 +170,8 @@ describe.skipIf(!runDbTests || !databaseUrl)("consume_credit_lots_fifo", () => {
         VALUES (${grantId}::uuid, ${userId}::uuid, 'grant', 5000, 5000, 'free_tier_user_2026_05', ${soon})
       `;
       await sql`
-        INSERT INTO credit_lots (id, user_id, source_type, original_amount_millicredits, remaining_millicredits)
-        VALUES (${purchaseId}::uuid, ${userId}::uuid, 'purchase', 3000, 3000)
+        INSERT INTO credit_lots (id, user_id, source_type, original_amount_millicredits, remaining_millicredits, stripe_session_id)
+        VALUES (${purchaseId}::uuid, ${userId}::uuid, 'purchase', 3000, 3000, ${`cs_${randomUUID()}`})
       `;
 
       await sql`
@@ -192,45 +192,16 @@ describe.skipIf(!runDbTests || !databaseUrl)("consume_credit_lots_fifo", () => {
       `;
       expect(Number(grantRemaining[0]?.remaining_millicredits)).toBe(0);
       expect(Number(purchaseRemaining[0]?.remaining_millicredits)).toBe(2000);
-    } finally {
-      await sql`DELETE FROM credit_transactions WHERE user_id = ${userId}::uuid`;
-      await sql`DELETE FROM credit_lots WHERE user_id = ${userId}::uuid`;
-      await sql.end();
-    }
-  });
-
-  it("allows purchase lots without a subscription", async () => {
-    assertLocalDevPostgresOrExplicitAllow(databaseUrl);
-    const { databaseUrl: dbUrl, userId } = await testConfig();
-    const sql = postgres(dbUrl, { max: 1 });
-
-    try {
-      await sql`DELETE FROM credit_transactions WHERE user_id = ${userId}::uuid`;
-      await sql`DELETE FROM credit_lots WHERE user_id = ${userId}::uuid`;
-
-      const purchaseId = randomUUID();
-      await sql`
-        INSERT INTO credit_lots (
-          id,
-          user_id,
-          source_type,
-          original_amount_millicredits,
-          remaining_millicredits,
-          stripe_session_id
-        )
-        VALUES (${purchaseId}::uuid, ${userId}::uuid, 'purchase', 1000, 1000, ${`cs_${randomUUID()}`})
-      `;
 
       await sql`
         UPDATE credit_lots
         SET metadata = jsonb_build_object('updated_without_subscription', true)
         WHERE id = ${purchaseId}::uuid
       `;
-
-      const rows = await sql<{ metadata: { updated_without_subscription?: boolean } }[]>`
+      const metadataRows = await sql<{ metadata: { updated_without_subscription?: boolean } }[]>`
         SELECT metadata FROM credit_lots WHERE id = ${purchaseId}::uuid
       `;
-      expect(rows[0]?.metadata.updated_without_subscription).toBe(true);
+      expect(metadataRows[0]?.metadata.updated_without_subscription).toBe(true);
     } finally {
       await sql`DELETE FROM credit_transactions WHERE user_id = ${userId}::uuid`;
       await sql`DELETE FROM credit_lots WHERE user_id = ${userId}::uuid`;

@@ -1,31 +1,4 @@
-/**
- * ContextTabBar — the tab strip above the context main pane.
- *
- * Renders the open context-tab working set and delegates selection / close to
- * the parent controller. The active tab id is route-derived, not store-owned.
- * One affordance per tab: a file-kind glyph + the leaf name + a hover-revealed
- * close button.
- *
- * Separation is purely tonal — no horizontal rules anywhere. The strip paints
- * NOTHING of its own: it sits transparent on the center cell's chrome field
- * (the same rule as `PaneHeader` and `DockHeader` — the slot paints the
- * material, bands never do). The active tab is borderless canvas
- * (`bg-background`, rounded top, Obsidian-style bottom flares) so it reads
- * as the page continuing upward into the strip. Short
- * vertical dividers appear only against an inactive neighbor — between two
- * adjacent *inactive* tabs, and before the `+` control when the last tab is
- * inactive; the active tab's shape is the only selection signal. (See project
- * `.context/CONTEXT.md` seam invariant — the band is transparent; the center
- * slot's `chrome-field` owns the paint.)
- *
- * Layout is three zones — pinned `leading` on the left, scrollable tabs in
- * the middle, pinned `trailing` on the right — so the project's
- * sidebar/dock expand toggles live in the strip itself (no separate header
- * band above) and stay reachable while the tabs scroll between them.
- *
- * Pin and drag-to-reorder are deferred — the store exposes `reorderTabs`
- * as the primitive both will compose with.
- */
+/** ContextTabBar — the tab strip above the context main pane. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import {
@@ -49,29 +22,14 @@ import type { OptimisticContextTab } from "./context-pane-state";
 export type ContextTabBarProps = {
   tabs: ContextTab[];
   activeTabId: string | null;
-  /**
-   * Tab whose document is under inline draft review. That chip surfaces the
-   * review strip's tone (dock-surface) instead of canvas, so the tab and the
-   * review banner below it read as one continuous surface.
-   */
   reviewingTabId?: string | null;
   optimisticTab?: OptimisticContextTab | null;
   onSelect: (documentId: string) => void;
   onClose: (documentId: string) => void;
   onNewDocument?: () => void;
-  /**
-   * Return to the Editor destination with nothing selected (the recently-opened
-   * chooser) without closing a tab. Pinned between the leading rail toggle and
-   * the scrolling tabs, so it stays put however far the working set scrolls.
-   */
   onShowRecents?: () => void;
   /** Whether that chooser is the surface on screen, so the control reads as current. */
   recentsActive?: boolean;
-  /**
-   * Pinned control docked at the strip's far-left edge (e.g. the project
-   * sidebar expand toggle when the sidebar is collapsed). When present, the
-   * strip renders even with zero open tabs so the control stays reachable.
-   */
   leading?: ReactNode;
   /**
    * Pinned control docked at the strip's far-right edge (e.g. the chat dock

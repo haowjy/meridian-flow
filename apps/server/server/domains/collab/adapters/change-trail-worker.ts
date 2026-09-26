@@ -12,7 +12,7 @@ export type ChangeTrailWorker = { drain(): Promise<number> };
 export function createChangeTrailWorker(input: {
   db: Database;
   journalWriter: EventJournalWriter;
-  eventHub: Pick<ThreadEventHub, "publishPersistedEvent">;
+  eventHub: Pick<ThreadEventHub, "invalidateCommittedJournal">;
   retryBranch?: (branchId: string) => Promise<unknown>;
   recoverPendingLiveSettlements?: () => Promise<number>;
   onRetryExhausted?: (threadId: string, documentId: string) => void;

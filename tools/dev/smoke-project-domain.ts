@@ -89,13 +89,18 @@ async function main(): Promise<void> {
   try {
     await cleanupSmokeRows(db);
 
+    const workRepository = createDrizzleWorkRepository({
+      db,
+      hasUnreviewedDraft: async () => false,
+      projectionMutation: workProjectionMutation,
+    });
     const repos = {
-      projects: createDrizzleProjectRepository({ db }),
-      works: createDrizzleWorkRepository({
+      projects: createDrizzleProjectRepository({
         db,
-        hasUnreviewedDraft: async () => false,
-        projectionMutation: workProjectionMutation,
+        catalogLifecycle: contextCatalog,
+        ensureNoWork: (projectId) => workRepository.ensureNoWork(projectId),
       }),
+      works: workRepository,
       ...createDrizzleRepositories(db, workProjectionMutation),
     };
 
@@ -122,7 +127,7 @@ async function main(): Promise<void> {
       title: "Renamed Smoke",
       description: "About bones",
     });
-    if (updated.title !== "Renamed Smoke") {
+    if (updated.name !== "Renamed Smoke") {
       throw new Error("update title failed");
     }
 

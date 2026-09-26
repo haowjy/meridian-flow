@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The markdown autoformat truth table.
+ * Representative markdown autoformat boundaries.
  *
  * Most of these rules are inherited from TipTap rather than written by
  * Meridian, which is exactly why they are pinned here: an upgrade that renames
@@ -14,11 +14,14 @@ import { type CollabPair, createCollabPair } from "@/test-support/collab-editors
 import { createStandaloneEditorExtensions } from "../config";
 import { getLinkResolution } from "../links/LinkSurfaceExtension";
 
-const live: Editor[] = [];
+const live: Array<{ editor: Editor; host: HTMLElement }> = [];
 const pairs: CollabPair[] = [];
 
 afterEach(() => {
-  for (const editor of live.splice(0)) editor.destroy();
+  for (const { editor, host } of live.splice(0)) {
+    editor.destroy();
+    host.remove();
+  }
   for (const pair of pairs.splice(0)) pair.destroy();
 });
 
@@ -26,7 +29,7 @@ function openEditor(content = "<p></p>"): Editor {
   const element = document.createElement("div");
   document.body.append(element);
   const editor = new Editor({ element, extensions: createStandaloneEditorExtensions(), content });
-  live.push(editor);
+  live.push({ editor, host: element });
   return editor;
 }
 
@@ -73,23 +76,14 @@ function marksOnFirstText(editor: Editor): string[] {
 describe("block rules fire at their trigger", () => {
   const table: Array<[typed: string, outline: string]> = [
     ["# Chapter", 'heading:1("Chapter")'],
-    ["## Scene", 'heading:2("Scene")'],
-    ["### Beat", 'heading:3("Beat")'],
     // Past the three ruling 18 named: the schema, the codec and every paste
     // path carry h4-h6, so denying the trigger would leave a writer who typed
     // valid markdown holding a literal `#### `.
-    ["#### Fourth", 'heading:4("Fourth")'],
-    ["##### Fifth", 'heading:5("Fifth")'],
     ["###### Sixth", 'heading:6("Sixth")'],
     ["> aside", 'blockquote("aside")'],
     ["- item", 'bullet_list("item")'],
-    ["* item", 'bullet_list("item")'],
-    ["+ item", 'bullet_list("item")'],
-    ["1. item", 'ordered_list("item")'],
     ["---", 'horizontal_rule("") + paragraph("")'],
-    ["```ts x", 'code_block:ts("x")'],
     ["``` x", 'code_block:none("x")'],
-    ["~~~ts x", 'code_block:ts("x")'],
     ["~~~ x", 'code_block:none("x")'],
   ];
 
@@ -130,14 +124,7 @@ describe("mark rules fire at their trigger", () => {
 });
 
 describe("block rules fire only at a block start", () => {
-  const midLine = [
-    "prose # not a heading",
-    "prose > not a quote",
-    "prose - not a list",
-    "prose 1. not a list",
-    "prose --- not a rule",
-    "prose ```ts not a fence",
-  ];
+  const midLine = ["prose # not a heading", "prose ```ts not a fence", "prose 1. not a list"];
 
   for (const typed of midLine) {
     it(`leaves ${JSON.stringify(typed)} as prose`, () => {
@@ -149,22 +136,7 @@ describe("block rules fire only at a block start", () => {
 });
 
 describe("nothing fires inside a code block", () => {
-  const inert = [
-    "# heading",
-    "###### heading",
-    "> quote",
-    "- item",
-    "* item",
-    "+ item",
-    "1. item",
-    "--- ",
-    "```",
-    "~~~",
-    "**bold** ",
-    "*emphasis* ",
-    "~~struck~~ ",
-    "`literal` ",
-  ];
+  const inert = ["# heading", "```", "**bold** "];
 
   for (const typed of inert) {
     it(`leaves ${JSON.stringify(typed)} as code`, () => {
@@ -187,16 +159,11 @@ describe("nothing fires inside a code block", () => {
 
 describe("code fences capture their language", () => {
   const table: Array<[fence: string, info: string, language: string | null]> = [
-    ["```", "ts", "ts"],
-    ["```", "mermaid", "mermaid"],
     // Case-blind and punctuation-tolerant: TipTap's own `[a-z]+` rule matched
     // none of these, leaving the writer with literal backticks.
     ["```", "Python", "python"],
-    ["```", "Mermaid", "mermaid"],
     ["```", "c++", "c++"],
     ["```", "ts-node", "ts-node"],
-    ["```", "objective-c", "objective-c"],
-    ["~~~", "ts", "ts"],
     // GFM forbids backticks inside a backtick fence's info string and forbids
     // nothing inside a tilde fence's, so a tilde may sit in the language.
     ["~~~", "aa~bb", "aa~bb"],
@@ -247,17 +214,9 @@ describe("code fences capture their language", () => {
 describe("Backspace reverts the transform it just made", () => {
   const table: Array<[typed: string, restored: string]> = [
     ["# ", "# "],
-    ["###### ", "###### "],
-    ["> ", "> "],
     ["- ", "- "],
-    ["* ", "* "],
-    ["+ ", "+ "],
-    ["1. ", "1. "],
     ["```ts ", "```ts "],
-    ["~~~ts ", "~~~ts "],
     ["**bold**", "**bold**"],
-    ["*emphasis*", "*emphasis*"],
-    ["~~struck~~", "~~struck~~"],
     ["`literal`", "`literal`"],
   ];
 

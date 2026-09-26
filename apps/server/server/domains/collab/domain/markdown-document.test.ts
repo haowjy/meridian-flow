@@ -43,6 +43,9 @@ function setup(filetype = "typescript") {
       },
     },
     metaForOrigin: () => ({ origin: "system", seq: 0 }),
+    identityPreservingWrite: async () => {
+      throw new Error("Identity-preserving writes are not part of this test");
+    },
     resolveFiletype: async () => filetype,
     observeSerializationAnomaly: createMarkdownSerializationAnomalyObserver(eventSink),
   });

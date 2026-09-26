@@ -5,7 +5,7 @@ import { requireAppUser } from "../../../../lib/auth-gate.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const { repos, projectRepo, workContextDelivery } = app;
+  const { repos, projectRepo, workContextNotices } = app;
   const { userId } = user;
   const threadId = getRouterParam(event, "threadId") ?? "";
 
@@ -13,8 +13,7 @@ export default defineEventHandler(async (event) => {
     {
       repos,
       projects: projectRepo,
-      obligations: repos.workContextDeliveries,
-      workContextDelivery,
+      workContextNotices,
       workAuthorityResolver: app.workAuthorityResolver,
       works: app.workRepo,
     },

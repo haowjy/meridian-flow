@@ -38,12 +38,14 @@ export type SequencedEvent = {
   sourceThreadId?: string;
 };
 
-export const sequencedEventSchema: z.ZodType<SequencedEvent> = z.object({
+const sequencedEventObjectSchema = z.object({
   seq: wsEventSeqSchema,
   event: z.custom<AGUIEvent>((value) => EventSchemas.safeParse(value).success),
   error: meridianErrorSchema.optional(),
   sourceThreadId: z.string().min(1).optional(),
 });
+
+export const sequencedEventSchema: z.ZodType<SequencedEvent> = sequencedEventObjectSchema;
 
 const wsSubscribeMessageSchema = z.object({
   type: z.literal("subscribe"),
@@ -104,14 +106,71 @@ export const wsGapCauseSchema = z.enum(["replay_limit_exceeded", "server_restart
 
 export type WsGapCause = z.infer<typeof wsGapCauseSchema>;
 
-const threadLiveStateSchema: z.ZodType<ThreadLiveState> = z.object({
-  threadId: z.string().min(1),
-  status: z.enum(["idle", "active", "blocked", "error", "archived"]),
-  runningTurnId: z.string().min(1).nullable(),
-  resumeAfterSeq: wsEventSeqSchema,
+const threadStatusSchema: z.ZodType<import("../threads/index.js").ThreadStatus> = z.union([
+  z.object({ kind: z.literal("asleep") }),
+  z.object({
+    kind: z.literal("awake"),
+    phase: z.enum(["generating", "waiting"]),
+    cancelRequested: z.boolean(),
+  }),
+]);
+
+const threadActivityNodeSchema: z.ZodType<import("../threads/index.js").ThreadActivityNode> =
+  z.object({
+    threadId: z.string().min(1),
+    parentThreadId: z.string().min(1).nullable(),
+    rootThreadId: z.string().min(1),
+    depth: z.number().int(),
+    ref: z.string().min(1).nullable(),
+    title: z.string().nullable(),
+    agentName: z.string().nullable(),
+    spawnStatus: z.enum(["running", "succeeded", "failed", "cancelled"]).nullable(),
+    status: threadStatusSchema,
+    originTurnId: z.string().min(1).nullable(),
+  });
+
+const threadActivitySchema: z.ZodType<import("../threads/index.js").ThreadActivity> = z.object({
+  descendants: z.array(threadActivityNodeSchema),
 });
 
-const aguiEventSchema = z.custom<AGUIEvent>((value) => EventSchemas.safeParse(value).success);
+const messageProvenanceSchema: z.ZodType<import("../threads/index.js").MessageProvenance> = z.union(
+  [
+    z.object({ kind: z.literal("writer"), actorId: z.string().min(1) }),
+    z.object({ kind: z.literal("agent"), threadId: z.string().min(1) }),
+    z.object({
+      kind: z.literal("child"),
+      threadId: z.string().min(1),
+      reportId: z.string().min(1),
+      handle: z.string().min(1),
+      outcome: z.enum(["succeeded", "failed", "cancelled"]),
+    }),
+    z.object({ kind: z.literal("system"), source: z.string().min(1) }),
+  ],
+);
+
+const pendingInboxItemSchema: z.ZodType<import("../threads/index.js").PendingInboxItem> = z.object({
+  id: z.string().min(1),
+  seq: z.number().int(),
+  intent: z.enum(["message", "notice"]),
+  provenance: messageProvenanceSchema,
+  deliveryState: z.enum(["awaiting_run", "waiting"]),
+  summary: z.string(),
+  enqueuedAt: z.string().min(1),
+});
+
+const threadPendingInboxSchema: z.ZodType<import("../threads/index.js").ThreadPendingInbox> =
+  z.object({
+    items: z.array(pendingInboxItemSchema),
+  });
+
+const threadLiveStateSchema: z.ZodType<ThreadLiveState> = z.object({
+  threadId: z.string().min(1),
+  status: threadStatusSchema,
+  runningTurnId: z.string().min(1).nullable(),
+  activity: threadActivitySchema,
+  pending: threadPendingInboxSchema,
+  resumeAfterSeq: wsEventSeqSchema,
+});
 
 // Deferred: directory, interaction, approval per design
 
@@ -128,18 +187,8 @@ export type WsServerMessage =
       threadId: string;
       catchup: SequencedEvent[];
       state: ThreadLiveState;
-      /** First event position after the subscription snapshot. */
-      nextSeq: string;
     }
-  | {
-      type: "event";
-      threadId: string;
-      seq: string;
-      event: AGUIEvent;
-      /** Present when `event` is RUN_ERROR; mirrors the journal MeridianError envelope. */
-      error?: MeridianError;
-      sourceThreadId?: string;
-    }
+  | (SequencedEvent & { type: "event"; threadId: string })
   | {
       type: "gap";
       threadId: string;
@@ -177,15 +226,10 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
     threadId: z.string().min(1),
     catchup: z.array(sequencedEventSchema),
     state: threadLiveStateSchema,
-    nextSeq: wsEventSeqSchema,
   }),
-  z.object({
+  sequencedEventObjectSchema.extend({
     type: z.literal("event"),
     threadId: z.string().min(1),
-    seq: wsEventSeqSchema,
-    event: aguiEventSchema,
-    error: meridianErrorSchema.optional(),
-    sourceThreadId: z.string().min(1).optional(),
   }),
   z.object({
     type: z.literal("gap"),

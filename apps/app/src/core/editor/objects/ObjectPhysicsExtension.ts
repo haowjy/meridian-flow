@@ -1,22 +1,4 @@
-/**
- * ObjectPhysicsExtension — the second register's physics (§1, laws 1–3).
- *
- * A click selects an object instead of opening it — and on an object with no
- * inside, the PRESS does, before the browser can park a caret in content the
- * object is not showing (`selectObjectUnderPress`). Arrows walk onto it and
- * then past it. Enter engages it, per type. Esc walks home, which is the
- * kernel's chain rather than this file's business. A tap is a click, so touch
- * comes free.
- *
- * The per-type parts are contributions, not branches here: `object-types.ts`
- * says what Enter means for a type, `registerObjectEngagement` is how a lane
- * supplies the surface Enter opens, and `registerObjectKeymap` is how it adds
- * keys that only apply while its object is selected. This file knows about no
- * particular object.
- *
- * Keys go through the kernel's keymap ladder at scope `object`, so a surface
- * open over the document (scope `layer`) still gets the arrow keys first.
- */
+/** Coordinates selection, engagement, and key behavior for registered editor objects. */
 
 import { type Editor, Extension } from "@tiptap/core";
 import { NodeSelection, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
@@ -40,58 +22,22 @@ const OBJECT_PHYSICS_NAME = "meridianObjectPhysics";
 
 export const objectPhysicsPluginKey = new PluginKey(OBJECT_PHYSICS_NAME);
 
-/**
- * The class the jade ring paints on — law 1's click, read back.
- *
- * NOT ProseMirror's own `ProseMirror-selectednode`. That one is applied once,
- * imperatively, by a node view's `selectNode` lifecycle call, and a remote
- * write does not go through it: y-prosemirror rebuilds the document from the
- * Yjs type, the node views are replaced under a selection that never changed,
- * and nothing tells the new one it is selected. The ring vanished on a peer's
- * first keystroke and never came back — not even on re-selecting — for the
- * rest of the session.
- *
- * A decoration has no such lifecycle. ProseMirror derives it from state on
- * every view update, so a rebuilt view is built holding it.
- */
+/** The class the jade ring paints on. */
 export const SELECTED_OBJECT_CLASS = "meridian-object-selected";
 
-/**
- * The same fact in the same decoration, for a node view that has to DO
- * something about being selected rather than only look different — an image's
- * resize handles, which exist while the jade ring does and not otherwise.
- *
- * Read from the decoration for the reason the ring is painted by one: a node
- * view's own `selected` prop comes from `selectNode`/`deselectNode`, which a
- * peer's whole-document rebuild never calls.
- */
+/** The same fact in the same decoration, for a node view that has to DO something about being selected rather than only look different — an image's resize handles, which exist while the jade ring does and not otherwise. */
 export function objectSelectedInDecorations(decorations: readonly { spec?: unknown }[]): boolean {
   return decorations.some(
     (decoration) => (decoration.spec as { selectedObject?: unknown } | undefined)?.selectedObject,
   );
 }
 
-/**
- * Opens the object's own surface.
- *
- * It returns nothing, and that is the contract rather than an omission: Enter
- * on a selected object is consumed whether or not this runs. Letting the key
- * fall through would hand a node selection to the base keymap, which splits
- * the block around it and leaves stray paragraphs in the manuscript — a
- * structural edit from a key that was supposed to open something.
- */
-/**
- * Why an object's surface is opening.
- *
- * A surface usually shows what is already there; one opening on an object made
- * a moment ago has nothing to show, and law 2's exception says it opens ready
- * to work instead. Only the lane that owns the surface can act on that, so the
- * physics carries the reason rather than deciding for it.
- */
+/** Opens the object's own surface. */
+/** Why an object's surface is opening. */
 export type ObjectOpening =
   /** The writer asked to look at an object that already exists. */
   | "engage"
-  /** Just created, with nothing to view yet (law 2's sole exception). */
+  /** Just created, with nothing to view yet ( sole exception). */
   | "created";
 
 export type ObjectEngagement = (target: ObjectAt, opening: ObjectOpening) => void;
@@ -111,15 +57,7 @@ function physicsStorage(editor: Editor): ObjectPhysicsStorage | null {
   return editor.storage[OBJECT_PHYSICS_NAME] ?? null;
 }
 
-/**
- * Supply what Enter opens for one object registration (its `surface` intent).
- *
- * Keyed by the registration's `id`, never by its node type: one node type
- * carries several registrations — every fenced diagram dialect is a `code_block`
- * — and a node-type key would let the second dialect overwrite the first's
- * surface. `objectTypeSpec(node).id` is how a caller names the registration a
- * node matched.
- */
+/** Supply what Enter opens for one object registration (its `surface` intent). */
 export function registerObjectEngagement(
   editor: Editor,
   specId: string,
@@ -133,17 +71,7 @@ export function registerObjectEngagement(
   };
 }
 
-/**
- * Run an object type's registered engagement — the one way its surface opens.
- *
- * `opening` is why, and the surface is entitled to care: law 2 lets a
- * just-created object open ready to work, because there is nothing to view
- * yet, while everything else opens on what is there. Enter and a double-click
- * say `engage`; the lane that just made the object says `created`.
- *
- * False means no lane has registered a surface, and the caller keeps whatever
- * opening it already made.
- */
+/** Run an object type's registered engagement — the one way its surface opens. */
 export function engageObject(editor: Editor, target: ObjectAt, opening: ObjectOpening): boolean {
   const storage = physicsStorage(editor);
   const spec = objectTypeSpec(target.node);
@@ -154,15 +82,7 @@ export function engageObject(editor: Editor, target: ObjectAt, opening: ObjectOp
   return true;
 }
 
-/**
- * Keys that apply only while an object of this registration is selected —
- * Ctrl+Enter for a diagram's source hatch, Alt+Arrows for a move the type owns.
- * They register at the kernel's `object` scope, so an open menu still wins.
- *
- * Keyed by registration for the same reason engagements are: the selected fence
- * is a diagram of one particular dialect, and the resolved context names which
- * (`chrome/chrome-context.ts`).
- */
+/** Keys that apply only while an object of this registration is selected — Ctrl+Enter for a diagram's source hatch, Alt+Arrows for a move the type owns. */
 export function registerObjectKeymap(
   editor: Editor,
   specId: string,
@@ -180,15 +100,7 @@ export function registerObjectKeymap(
   });
 }
 
-/**
- * The object whose body `element` is part of, or null outside every object.
- *
- * Reads the DOM rather than the pointer's coordinates: a press lands on a
- * `<polygon>` in a diagram or on an `<img>`, and both are somewhere ProseMirror
- * can map back to a position, while coordinates can fall in a gap between
- * boxes. The walk is over the DOCUMENT — the position's own ancestors — so it
- * finds the object however many node views the press happened to land inside.
- */
+/** The object whose body `element` is part of, or null outside every object. */
 function objectAtDOM(view: EditorView, element: Element): ObjectAt | null {
   let pos: number;
   try {
@@ -211,36 +123,7 @@ function objectAtDOM(view: EditorView, element: Element): ObjectAt | null {
   return null;
 }
 
-/**
- * Law 1 at PRESS time, for an object body the writer cannot type into.
- *
- * `handleClickOn` is a mouseup path, and one repaint too late. Between the two
- * events the browser answers the press its own way: pressing something marked
- * `contenteditable="false"` sends it hunting for the nearest editable position,
- * and inside a node view that hides its own text — a rendered diagram — the
- * nearest one is that hidden text. The caret lands there, the node view brings
- * the source back so those keystrokes stay reachable, the page moves under the
- * pointer, and the mouseup lands in the source it just revealed. A press that
- * travels more than a few pixels never reaches `handleClickOn` at all, so the
- * source simply stays.
- *
- * The rule is the DOM's own, not a list of node types: **an object body that
- * refuses a caret takes the press.** A plain fence and a table cell are
- * editable, their click IS a caret (§5.3, §5.4), and neither is touched here.
- *
- * One object leaves the press alone all the same: the kind that travels by
- * ProseMirror's own drag to land between two words. Chrome will not start a
- * drag out of a press whose default was refused, so refusing here is refusing
- * the gesture — and there is nothing to protect the writer from, because the
- * nearest editable position beside an inline picture is the sentence it is
- * already standing in. The click that never travels still rings it, one
- * mouseup later, through `handleClickOn`.
- *
- * Bound as a plain listener rather than through `handleDOMEvents`, which reads
- * a prevented default as "the plugin owns the whole press" and skips the mouse
- * machinery that counts clicks and double-clicks. This has to run beside that
- * machinery, not instead of it.
- */
+/** at PRESS time, for an object body the writer cannot type into. */
 function selectObjectUnderPress(view: EditorView, event: MouseEvent): void {
   // The primary button only: a right-click belongs to the context-claim
   // ladder, and the browser's own default is how it gets there.
@@ -284,11 +167,7 @@ export const ObjectPhysicsExtension = Extension.create({
       new Plugin({
         key: objectPhysicsPluginKey,
 
-        /**
-         * Registration rides the view's lifetime rather than TipTap's `create`
-         * event, which is emitted a macrotask late — long enough for a first
-         * keystroke to miss it.
-         */
+        /** Registration rides the view's lifetime rather than TipTap's `create` event, which is emitted a macrotask late — long enough for a first keystroke to miss it. */
         view(editorView) {
           const chrome = getEditorChrome(editor);
           // Two contributions, because the arrows and Enter are live in
@@ -314,7 +193,7 @@ export const ObjectPhysicsExtension = Extension.create({
             }),
             chrome?.registerKeymap({
               id: "object-engage",
-              // Not `object` scope: §4's Enter row covers a selected plain
+              // Not `object` scope:'s Enter row covers a selected plain
               // fence too, and a plain fence is not an object. The binding
               // still declines anything that is not a whole block selection,
               // which hands the key back for ordinary typing.
@@ -338,17 +217,7 @@ export const ObjectPhysicsExtension = Extension.create({
         },
 
         props: {
-          /**
-           * The ring, derived rather than remembered.
-           *
-           * Every node ProseMirror has selected wears it — the same set its
-           * own `ProseMirror-selectednode` covers — and so does a selected
-           * table, whose selection is a `CellSelection` over every cell that
-           * no `NodeSelection` test can see. Leaving the table out left the
-           * one gesture that selects it without asking (Delete at the end of
-           * the line above) showing the writer nothing at all before the next
-           * press took the table.
-           */
+          /** The ring, derived rather than remembered. */
           decorations(state) {
             const range = selectedObjectRange(state);
             if (!range) return null;
@@ -362,22 +231,7 @@ export const ObjectPhysicsExtension = Extension.create({
             ]);
           },
 
-          /**
-           * A printable character while an object is selected types BESIDE it
-           * (law 1's other half).
-           *
-           * ProseMirror replaces the selection, which is right for prose and
-           * wrong here: closing an image's full-screen view leaves the picture
-           * node-selected, and the next letter used to be the end of the
-           * picture. A table selected by the join gesture lost every cell to
-           * the same keystroke. Only `Delete` and `Backspace` are destructive
-           * verbs, and they still are.
-           *
-           * `selectedObject` is the whole gate, which is why a writer sweeping
-           * across some cells still types over them: that is a partial
-           * `CellSelection` — a deliberate edit inside the table — and the
-           * table is not standing there as an object.
-           */
+          /** A printable character while an object is selected types BESIDE it ( other half). */
           handleTextInput(view, _from, _to, text) {
             const selected = selectedObject(view.state);
             if (!selected) return false;
@@ -387,12 +241,7 @@ export const ObjectPhysicsExtension = Extension.create({
             return true;
           },
 
-          /**
-           * Law 1: a click reads. On an object that reading is a selection,
-           * never its source. `direct` keeps the click at the node the pointer
-           * actually hit — without it, a click in a table cell would walk out
-           * to the table and select the whole thing.
-           */
+          /**: a click reads. */
           handleClickOn(view, _pos, node, nodePos, _event, direct) {
             if (!direct || !isEditorObject(node)) return false;
             const transaction = selectObjectTransaction(view.state, nodePos);
@@ -402,14 +251,7 @@ export const ObjectPhysicsExtension = Extension.create({
             return true;
           },
 
-          /**
-           * The pointer's twin of Enter (§5.2, §5.6): a double-click on an
-           * object engages it, with no click-to-select step in between.
-           *
-           * The same registered engagement Enter uses, so a lane wires its
-           * surface once and both doors open it. In prose this stands aside
-           * and the browser's word selection happens as it always did.
-           */
+          /** The pointer's twin of Enter: a double-click on an object engages it, with no click-to-select step in between. */
           handleDoubleClickOn(view, _pos, node, nodePos, _event, direct) {
             if (!direct || !isEditorObject(node)) return false;
             const selected = selectObjectTransaction(view.state, nodePos);
@@ -425,14 +267,7 @@ export const ObjectPhysicsExtension = Extension.create({
   },
 });
 
-/**
- * Enter on a selected plain fence puts the caret at its start (§4).
- *
- * Its own text is what there is to engage — a code block's rendering IS its
- * source, so there is no surface to open and nothing to convert. Falling
- * through to the base keymap instead appended a paragraph after the fence and
- * left the caret in it.
- */
+/** Enter on a selected plain fence puts the caret at its start. */
 function engageSourceBlock(
   state: Parameters<KeymapBinding>[0],
   dispatch: Parameters<KeymapBinding>[1],
@@ -464,16 +299,7 @@ function selectedObjectRange(
   return { from: selection.from, to: selection.to };
 }
 
-/**
- * Delete and Backspace take the whole object, not the selection over it.
- *
- * They differ for exactly one type and that is the type it matters for: a
- * table is selected as a `CellSelection` across every cell, so the base
- * keymap's `deleteSelection` empties the cells and leaves the grid. The join
- * reflex — Delete at the end of the line above a table — lands on that
- * selection, so the second press wiped the table's contents while its shell
- * stayed put.
- */
+/** Delete and Backspace take the whole object, not the selection over it. */
 const removeSelected: KeymapBinding = (state, dispatch) => {
   const selected = selectedObject(state);
   if (!selected) return false;
@@ -512,18 +338,7 @@ function walk(
 /** Registrations already reported as unengageable, so the warning fires once. */
 const warnedMissingEngagement = new Set<string>();
 
-/**
- * Enter engages the selected object per its registered intent (§4).
- *
- * A selected object ALWAYS consumes the key, even when its intent is `none`
- * or its lane has not shipped the surface yet — see `ObjectEngagement` for
- * why falling through would edit the document.
- *
- * A `surface` type with no handler is therefore a dead key, which law 5
- * forbids on anything shipped. It is legal only while its lane is unbuilt, so
- * it says so in development rather than waiting to be found by a writer
- * pressing Enter on a diagram and getting nothing.
- */
+/** Enter engages the selected object per its registered intent. */
 function engage(
   editor: Editor,
   state: Parameters<KeymapBinding>[0],

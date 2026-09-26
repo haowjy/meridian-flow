@@ -1,18 +1,4 @@
-/**
- * MobileContextBrowser — drill-in phone Files surface.
- *
- * Replaces the desktop expand/collapse tree with one-folder-per-screen
- * navigation. The root level is a pure context-source list — the context
- * schemes (KB / User / Work / Project Workspace, mirroring the desktop tree panel's
- * section order); Results live on their own full-screen view
- * (`MobileResultsView`, `?results=`), not here. Entering a scheme or
- * folder is driven entirely by the route's `scheme`/`folder` params, so
- * OS/browser back pops levels naturally and the top-bar breadcrumb stays in
- * sync. Data comes from the
- * same `useContextCatalogView` query the desktop tree panel uses — the
- * client tree is already fully loaded per scheme, so drilling is pure lookup
- * (`findContextDir`), not refetching.
- */
+/** Renders the mobile context browser. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -53,11 +39,7 @@ export type MobileContextBrowserProps = Pick<
   | "onSelectContextFolder"
   | "onSelectContextPath"
 > & {
-  /**
-   * Pending inline create row, or null. Owned by MobileProject because the
-   * `+` entry point is top-bar chrome; the location is always the current
-   * scheme+folder from the route ("create where you are").
-   */
+  /** Pending inline create row, or null. */
   creating: {
     kind: ContextCreateKind;
     scheme: ProjectContextTreeScheme;
@@ -152,11 +134,6 @@ export function MobileContextBrowser({
   );
 }
 
-/**
- * One folder level of a scheme's tree: folders first, then files, preserving
- * the server's order within each kind. Folder taps drill in via the route;
- * file taps open the document.
- */
 function MobileFolderListing({
   projectId,
   editorWorkId,
@@ -343,12 +320,7 @@ function FolderListingBody({
   );
 }
 
-/**
- * Phone inline naming row, pinned above the folder listing (iOS Files style).
- * State machine lives in useCreateEntryForm; this component owns only the
- * phone chrome (44px touch targets, 16px text to prevent iOS zoom, inline
- * error below input instead of portal overlay).
- */
+/** Phone inline naming row, pinned above the folder listing (iOS Files style). */
 function MobileCreateRow({
   projectId,
   editorWorkId,
@@ -611,12 +583,6 @@ function MobileRenameRow({
   );
 }
 
-/**
- * Section label between project-scoped and work-scoped schemes in the root
- * list. iOS-style section header: muted label with spacing above, no
- * hairline — the DrillRow borders already separate items, so a centered
- * hairline (the desktop treatment) would double-line against them.
- */
 function MobileWorkBoundary({ label }: { label: string }) {
   return (
     <li aria-hidden className="px-4 pt-3 pb-1">
@@ -625,13 +591,6 @@ function MobileWorkBoundary({ label }: { label: string }) {
   );
 }
 
-/**
- * Full-width tappable row. Borderless — matches the desktop tree's clean
- * visual language. Touch feedback via `active:bg-sidebar-accent`.
- *
- * `trailing` renders after the label: either a chevron for drill-in scheme
- * rows, or an action button for file/folder rows with rename/delete.
- */
 function DrillRow({
   icon,
   label,

@@ -15,9 +15,13 @@ the authoritative history fetch:
 - The query is always stale (`staleTime: 0`) with `refetchOnMount: "always"`, so
   every activation refetches. Cached turns render first and the fetch reconciles
   behind them; navigate-first is preserved.
-- The hook subscribes to the thread transport and refetches (debounced 250 ms)
-  on `RUN_STARTED` and on gap. A server-initiated run has no local submit to
-  learn it from, so this subscription is what surfaces its turn and card.
+- The hook owns one mounted-thread transport subscription. It refetches
+  (debounced 250 ms) on `RUN_STARTED` and gap, and directly applies addressed
+  custom block upserts/prunes even after the parent run ends. Missing turns
+  request authoritative history, never a synthetic streaming turn. The store's
+  durable wire cursor and snapshot floor reject replay rewinds and old HTTP
+  responses. A server-initiated run has no local submit to learn it from, so
+  this subscription also surfaces its turn and card.
 
 Both this fetch and the transport's gap recovery funnel through
 `applyThreadSnapshot`. The reconciliation mechanics — identity bridge, monotonic
@@ -28,7 +32,14 @@ snapshot reconciliation" section.
 ## Per-run resume
 
 `useThreadHandoff` (`../useThreadHandoff.ts`) reads the snapshot's `liveState`
-and attaches the controller that applies the run's AG-UI deltas:
+and attaches the controller that applies the run's AG-UI deltas. Before a
+first-send run can subscribe, create-or-get returns the thread and message
+admission accepts. The controller then invokes the current mount's projection
+activation at the accepted replay cursor before attaching its run handler.
+Pending creation gates the other mounted projection listeners until they can
+join that same subscription. A remount joins only the shared creation promise;
+its own fenced continuation dispatches and activates. Existing-thread resume also
+activates first:
 
 - The guard latches **per active run** (`resumedRunRef`, keyed by
   `runningTurnId`/`resumeAfterSeq`), never on an idle snapshot. An idle latch

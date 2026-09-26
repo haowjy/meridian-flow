@@ -28,12 +28,7 @@ export function skillFileEntryToBuffer(entry: SkillFileEntry): Buffer {
   if (typeof entry === "string") {
     return Buffer.from(entry, "utf8");
   }
-  if (entry.encoding === "base64") {
-    return Buffer.from(entry.data, "base64");
-  }
-  throw new Error(
-    `Unsupported skill file encoding: ${String((entry as { encoding?: string }).encoding)}`,
-  );
+  return Buffer.from(entry.data, "base64");
 }
 
 export async function readSkillFileFromDisk(filePath: string): Promise<SkillFileEntry> {
@@ -42,27 +37,6 @@ export async function readSkillFileFromDisk(filePath: string): Promise<SkillFile
 
 export async function writeSkillFileToDisk(filePath: string, entry: SkillFileEntry): Promise<void> {
   await writeFile(filePath, skillFileEntryToBuffer(entry));
-}
-
-export function skillFilesFromJson(value: unknown): SkillFiles {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const files: SkillFiles = {};
-  for (const [key, entry] of Object.entries(value)) {
-    if (typeof entry === "string") {
-      files[key] = entry;
-      continue;
-    }
-    if (
-      entry &&
-      typeof entry === "object" &&
-      !Array.isArray(entry) &&
-      (entry as { encoding?: string }).encoding === "base64" &&
-      typeof (entry as { data?: unknown }).data === "string"
-    ) {
-      files[key] = { encoding: "base64", data: (entry as { data: string }).data };
-    }
-  }
-  return files;
 }
 
 export function normalizeSkillFilesForChecksum(files: SkillFiles): SkillFiles {

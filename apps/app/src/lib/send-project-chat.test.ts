@@ -7,6 +7,7 @@ import { readCurrentChat, writeCurrentChat } from "@/client/current-chat";
 import type { ThreadStoreActions } from "@/client/stores";
 import {
   rehydrateFirstSendSubmission,
+  runExclusiveThreadCreation,
   type SendProjectChatArgs,
   sendProjectChat,
 } from "./send-project-chat";
@@ -159,5 +160,39 @@ describe("sendProjectChat", () => {
       submissionId: "dock-reload",
       projectId,
     });
+  });
+});
+
+describe("first-send creation sharing", () => {
+  it("shares one epoch/thread create, but not a later A→B→A epoch", async () => {
+    const firstEpoch = new AbortController().signal;
+    const nextEpoch = new AbortController().signal;
+    const returnedEpoch = new AbortController().signal;
+    let resolveFirst!: (thread: import("@meridian/contracts/protocol").Thread) => void;
+    const first = new Promise<import("@meridian/contracts/protocol").Thread>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const thread = { id: "thread-1" } as import("@meridian/contracts/protocol").Thread;
+    let creates = 0;
+    const old = runExclusiveThreadCreation(firstEpoch, "thread-1", () => {
+      creates++;
+      return first;
+    });
+    const joined = runExclusiveThreadCreation(firstEpoch, "thread-1", () => {
+      creates++;
+      return Promise.resolve(thread);
+    });
+    expect(joined).toBe(old);
+    const middle = runExclusiveThreadCreation(nextEpoch, "thread-1", () => {
+      creates++;
+      return Promise.resolve(thread);
+    });
+    const returned = runExclusiveThreadCreation(returnedEpoch, "thread-1", () => {
+      creates++;
+      return Promise.resolve(thread);
+    });
+    expect(creates).toBe(3);
+    resolveFirst(thread);
+    await Promise.all([old, joined, middle, returned]);
   });
 });

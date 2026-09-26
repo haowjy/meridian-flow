@@ -89,13 +89,16 @@ function patchSnapshot(client: QueryClient, threadId: string, workId: string | n
 export function convergeThreadWorkBinding(
   client: QueryClient,
   transition: ThreadWorkConvergence,
+  accountSignal?: AbortSignal,
 ): void {
+  if (accountSignal?.aborted) return;
   if (transition.source === "projected") {
     const { seq, signal } = transition;
     const cursorKey = threadQueryKeys.workProjectionCursor(signal.threadId);
     const cursor = client.getQueryData<ThreadWorkProjectionCursor>(cursorKey);
     if (cursor && compareSeq(seq, cursor.seq) <= 0) return;
     notifyManager.batch(() => {
+      if (accountSignal?.aborted) return;
       const projectedWorkId = signal.scope.workId;
       const catalog = client.getQueryData<ListWorksResponse>(
         projectQueryKeys.works(signal.projectId),
@@ -125,6 +128,7 @@ export function convergeThreadWorkBinding(
   const threadId =
     transition.source === "confirmed" ? transition.result.threadId : transition.threadId;
   notifyManager.batch(() => {
+    if (accountSignal?.aborted) return;
     if (transition.source === "confirmed") {
       const { result } = transition;
       const catalog = client.getQueryData<ListWorksResponse>(projectQueryKeys.works(projectId));
@@ -175,21 +179,28 @@ export class ThreadWorkOutcomeUnconfirmedError extends Error {
 export async function readStableThreadWorkBinding(
   client: QueryClient,
   input: { projectId: string; threadId: string; previousWorkId: string | null },
+  accountSignal?: AbortSignal,
 ): Promise<{ threads: ThreadListItem[]; catalog: ListWorksResponse; workId: string | null }> {
   const cursorKey = threadQueryKeys.workProjectionCursor(input.threadId);
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (accountSignal?.aborted) throw new ThreadWorkOutcomeUnconfirmedError(accountSignal.reason);
     const before = client.getQueryData<ThreadWorkProjectionCursor>(cursorKey)?.seq ?? null;
     try {
       await Promise.all([
         client.cancelQueries({ queryKey: projectQueryKeys.threads(input.projectId), exact: true }),
       ]);
       const [threads, catalog] = await Promise.all([
-        listProjectThreads(input.projectId),
+        listProjectThreads(input.projectId, { signal: accountSignal }),
         refreshWorksSnapshot(client, input.projectId),
       ]);
+      if (accountSignal?.aborted) throw accountSignal.reason;
       const after = client.getQueryData<ThreadWorkProjectionCursor>(cursorKey)?.seq ?? null;
       if (before !== after) continue;
-      convergeThreadWorkBinding(client, { source: "reconciled", ...input, threads, catalog });
+      convergeThreadWorkBinding(
+        client,
+        { source: "reconciled", ...input, threads, catalog },
+        accountSignal,
+      );
       return {
         threads,
         catalog,

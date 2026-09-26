@@ -1,13 +1,4 @@
-/**
- * useWorkingSetSyncPreference — P1 command for the cross-device working-set
- * preference.
- *
- * `PATCH /api/account/settings` is an absolute set with no version or idempotency
- * key, so a repeated write is safe and an ambiguous result can be settled by the
- * authoritative GET. The authenticated route loader stays the read owner; this
- * hook owns only the immediate projection the settings row shows and the
- * transient write lifecycle (direct TanStack `useMutation`, no wrapper/store).
- */
+/** useWorkingSetSyncPreference — P1 command for the cross-device working-set preference. */
 import type { AccountSettings } from "@meridian/contracts/protocol";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
@@ -30,11 +21,7 @@ export type WorkingSetSyncRowError = {
 
 export type WorkingSetSyncPreference = {
   value: boolean;
-  /**
-   * The last revision-and-epoch-confirmed server value. Account-lifetime
-   * consumers (the working-set driver) follow this instead of the optimistic
-   * `value`, so a stale loader commit cannot move sync state.
-   */
+  /** The last revision-and-epoch-confirmed server value. */
   confirmed: boolean;
   /** Whether an authoritative value exists (a loader seed or a local confirm). */
   available: boolean;
@@ -110,11 +97,7 @@ export function useWorkingSetSyncPreference(serverValue: boolean | null): Workin
     );
   }
 
-  /**
-   * Adopt a server-confirmed value. The confirmed base always advances; only the
-   * latest intent may move the projection or refresh the loader, so the
-   * working-set driver never follows a superseded write.
-   */
+  /** Adopt a server-confirmed value. */
   function applyConfirmed(settings: AccountSettings, variables: WriteVariables) {
     if (!isCurrentEpoch(variables)) return;
     confirmedRef.current = settings.workingSetSyncEnabled;

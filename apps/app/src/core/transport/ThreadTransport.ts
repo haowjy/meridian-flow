@@ -1,14 +1,9 @@
-/**
- * ThreadTransport — the subscribe/cancel contract between the UI/Copilot adapter
- * and the live agent event stream, plus `ConnectionState` and `ThreadGapEvent`.
- *
- * The single seam that contains transport swaps (WS ↔ test doubles). Production
- * impl is `WsThreadTransport`; consumers depend on this interface, never the impl.
- */
+/** Thread event subscription, cancellation, and connection-state contract. */
 import type {
   CancelTurnResponse,
   CatalogWakeHint,
   SequencedEvent,
+  ThreadLiveState,
   WsClientMessage,
   WsGapCause,
 } from "@meridian/contracts/protocol";
@@ -38,32 +33,18 @@ export type ThreadGapEvent = {
   gapCount: number;
 };
 
-/**
- * A non-fatal interrupt-response rejection frame, routed to the interrupt
- * settlement owner rather than the generic thread-error sink. The wire frame
- * carries only `threadId`; the client correlates it to the newest pending
- * response for that thread.
- */
 export type ThreadInterruptResponseError = {
   threadId: string;
   error: Error;
 };
 
-/**
- * Result of an `interrupt.respond` write. `sent: false` is the only proven
- * "never left the client"; a successful write reports the socket generation it
- * was queued on so a later close can mark it ambiguous instead of pending.
- */
+/** Only `sent: false` proves the response never left the client. */
 export type InterruptRespondReceipt = { sent: false } | { sent: true; socketGeneration: number };
 
-/**
- * Transport-shaped contract for subscribing to an assistant turn's event stream
- * and cancelling an in-flight run. The production implementation is
- * `WsThreadTransport`; tests may provide local doubles without changing
- * Copilot adapter or UI consumers.
- */
 export interface ThreadTransportHandlers {
   onEvent: (event: SequencedEvent) => void;
+  /** Reconciliation snapshot after catch-up; it supersedes replayed live-state frames. */
+  onLiveState?: (state: ThreadLiveState) => void;
   onGap?: (event: ThreadGapEvent) => void;
   onConnectionState?: (state: ConnectionState) => void;
   onClose?: (event: CloseEvent) => void;
@@ -104,34 +85,12 @@ export interface ThreadTransport {
   /** Send an interrupt answer over the existing thread WebSocket. */
   respondInterrupt(input: InterruptRespondInput): InterruptRespondReceipt;
 
-  /**
-   * Receive non-fatal interrupt-response rejection frames. These never tear
-   * down the thread subscription (the run is still valid); they only settle the
-   * matching local response. Returns an unsubscribe fn.
-   */
+  /** Rejections settle a response attempt without closing the thread stream. */
   onInterruptResponseError(listener: (event: ThreadInterruptResponseError) => void): () => void;
 
-  /**
-   * Notified with the generation of a socket that closed for a non-terminal
-   * reason. Responses written on that generation have no server confirmation
-   * yet, so the settlement owner marks them ambiguous/retryable. Returns an
-   * unsubscribe fn.
-   */
+  /** Responses on a closed generation are ambiguous until server reconciliation. */
   onSocketGenerationClosed(listener: (generation: number) => void): () => void;
 
   /** Cancel an in-flight turn via HTTP. */
   cancel(threadId: string, turnId: string): Promise<CancelTurnResponse>;
-
-  /**
-   * Token from the latest server `connected` frame on this transport's socket.
-   * Sent with message POSTs so the server rejects starts from a stale socket.
-   */
-  getConnectionToken(): string | undefined;
-
-  /**
-   * Resolves once the transport has a connection token from the server
-   * `connected` frame. Submit paths await this so turn starts are authorized
-   * against the live socket and stale-socket starts are rejected.
-   */
-  awaitConnectionToken(): Promise<string>;
 }

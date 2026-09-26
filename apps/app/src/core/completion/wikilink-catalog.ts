@@ -1,20 +1,4 @@
-/**
- * What a `[[…]]` may name: the project's documents, ranked by title.
- *
- * A wikilink resolves by title or alias, so this ranks titles and nothing
- * else — a document the writer picks here has to be a document the resolver
- * will find, or the link lands dashed the moment it is inserted.
- *
- * The create row is an item rather than a footer, because the keyboard has to
- * be able to reach it: Enter on it inserts an unresolved wikilink deliberately
- * (mockup 06 state D, "links now, page later"). It never creates a document.
- *
- * The ranking is the whole reason this is not filed under the editor: a
- * `[[Name]]` spliced into the composer's textarea has to offer the same
- * documents in the same order as the one typed in prose, and nothing here reads
- * a document, a view, or a caret. See the module header in
- * [`index.ts`](index.ts).
- */
+/** What a `[[…]]` may name: the project's documents, ranked by title. */
 
 export type WikilinkDocument = {
   /** Persisted identity, stable across reorder, move, and rename. */
@@ -43,12 +27,6 @@ export type WikilinkMenuItem =
       location: string;
       /** Which alias matched, when the writer recalled one instead of the title. */
       matchedAlias: string | null;
-      /**
-       * Another document answers to this same name, so the resolver will refuse
-       * both (ambiguity resolves to nothing rather than to a guess). The row
-       * says so; picking it still inserts, because renaming one of the two is
-       * the writer's fix and not the menu's.
-       */
       ambiguous: boolean;
     }
   | { kind: "create"; key: "create"; name: string };
@@ -58,13 +36,7 @@ const MAX_QUERY_LENGTH = 80;
 
 const MAX_DOCUMENT_ROWS = 20;
 
-/**
- * The rows for what the writer has typed after `[[`.
- *
- * An empty list closes the menu (law 5), which is what a query the wire format
- * cannot carry should do: `]` or `|` inside the brackets is not a wikilink at
- * all, so a writer who closes the brackets themselves is simply left alone.
- */
+/** The rows for what the writer has typed after `[[`. */
 export function filterWikilinkItems(
   documents: readonly WikilinkDocument[],
   query: string,

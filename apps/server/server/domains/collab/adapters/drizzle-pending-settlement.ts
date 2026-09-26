@@ -169,7 +169,8 @@ export function createDrizzlePendingSettlementStore(
             ),
           ),
         )
-        .orderBy(branchPushSettlementOutbox.createdAt);
+        .orderBy(branchPushSettlementOutbox.createdAt)
+        .limit(100);
       return rows.map((row) => row.pushId);
     },
 

@@ -10,12 +10,8 @@ export default defineEventHandler(async (event) => {
   const workId = requireRequestId(getRouterParam(event, "workId"), "workId");
   await requireWorkOwner({ works: app.workRepo, projects: app.projectRepo }, workId, user.userId);
   return serializeTransport(
-    await updateWork(
-      { works: app.workRepo, workContextDelivery: app.workContextDelivery },
-      workId,
-      {
-        status: "active",
-      },
-    ),
+    await updateWork({ works: app.workRepo, workContextNotices: app.workContextNotices }, workId, {
+      status: "active",
+    }),
   );
 });

@@ -1,25 +1,25 @@
-/**
- * Per-thread turn + coordination state (Zustand vanilla store + React context).
- *
- * Phase 1: project rows live in React Query; project-level soft-delete lives
- * in `ProjectStoreProvider`. This store now holds only per-thread turns,
- * handoff flags, streaming coordination, and the pending-creation gate that
- * the optimistic Home → Project flow uses to suppress fetches until the
- * server-side project + thread exist. Live assistant blocks are written into
- * `turnsByThread`, so chat has one store-backed source of truth.
- */
+/** Stores per-thread turns and run coordination state. */
 
 import {
   type Block,
   blockContentRecord,
+  compareSeq,
   interruptIdForBlock,
+  parseSeq,
   type ThreadListItem,
   type Turn,
   type TurnStatus,
 } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { useQueryClient } from "@tanstack/react-query";
-import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useState,
+} from "react";
 import { createStore, type StoreApi, useStore } from "zustand";
 import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
@@ -32,6 +32,7 @@ import {
   clearPendingInterruptPatchesForTurn,
 } from "@/core/session/reduce-turn-event";
 import { baseTurnFields } from "@/core/session/state-helpers";
+import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 
 import { buildOptimisticUserTurn } from "./build-optimistic-user-turn";
 import { isOptimisticTurnId, OPTIMISTIC_TURN_ID_PREFIX } from "./optimistic-turn-id";
@@ -46,11 +47,6 @@ import type {
   TurnStatusPatch,
 } from "./types";
 
-/**
- * Pending-creation gate. While a project / thread is being created on the
- * server after an optimistic navigation, queries for that scope return
- * `enabled: false` so they don't fire and 404.
- */
 type PendingCreationState = {
   projectIds: Record<string, true>;
   threadIds: Record<string, true>;
@@ -60,6 +56,7 @@ type ThreadStoreSliceState = ThreadStoreState & {
   turnsByThread: Record<string, Turn[]>;
   /** Minimum snapshot nextSeq accepted; snapshots below this floor are rejected. */
   snapshotNextSeqFloorByThread: Record<string, string>;
+  durableBlockCursorByThread: Record<string, string>;
   handoffPendingThreadIds: Record<string, true>;
   pendingStreamByThreadId: Record<string, PendingStreamStart>;
   pendingCreation: PendingCreationState;
@@ -81,13 +78,7 @@ type ThreadStoreConfig = ThreadStoreSeed & {
 
 type ThreadStoreApi = StoreApi<ThreadStoreSlice>;
 
-/**
- * Generate an optimistic turn ID with the shared local-turn prefix.
- *
- * These IDs are never persisted — the server assigns canonical IDs that
- * replace the local ones during snapshot reconciliation. The prefix makes
- * it visually clear which turns are still unconfirmed.
- */
+/** Generate an optimistic turn ID with the shared local-turn prefix. */
 function nextTurnId(counter: number): { id: string; next: number } {
   const next = counter + 1;
   return { id: `${OPTIMISTIC_TURN_ID_PREFIX}${next}`, next };
@@ -150,16 +141,6 @@ function interruptBlockHasResolvedValue(block: Block): boolean {
   return Object.hasOwn(props, "resolvedValue");
 }
 
-/**
- * Reconcile local interrupt settlements against an authoritative snapshot for
- * one thread.
- *
- * A snapshot that already shows the interrupt resolved/expired, or a turn that
- * is no longer `waiting_interrupt`, proves the send is over: drop its
- * settlement. A snapshot that still shows the turn waiting with no resolution
- * proves nothing was applied: a still-pending send becomes ambiguous/retryable
- * rather than a permanent lock. Returns null when nothing changed.
- */
 function reconcileInterruptResponsesForThread(
   responses: Record<string, InterruptResponseEntry>,
   threadId: string,
@@ -206,6 +187,7 @@ function createAssistantTurn(
     threadId,
     prevTurnId,
     role: "assistant",
+    origin: "assistant",
     writeMode: opts?.writeMode ?? null,
     status: "streaming",
     finishReason: null,
@@ -236,9 +218,13 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     removeOptimisticUserTurn: state.removeOptimisticUserTurn,
     ensureAssistantTurn: state.ensureAssistantTurn,
     upsertAssistantBlock: state.upsertAssistantBlock,
+    removeAssistantBlock: state.removeAssistantBlock,
+    invalidateThreadSnapshot: state.invalidateThreadSnapshot,
     patchTurnStatus: state.patchTurnStatus,
     pruneStaleAssistantTurns: state.pruneStaleAssistantTurns,
     bumpEventsApplied: state.bumpEventsApplied,
+    acceptDurableBlockSeq: state.acceptDurableBlockSeq,
+    acceptsThreadSnapshot: state.acceptsThreadSnapshot,
     applyThreadSnapshot: state.applyThreadSnapshot,
     markPendingStream: state.markPendingStream,
     consumePendingStream: state.consumePendingStream,
@@ -262,6 +248,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         now,
         turnsByThread: {},
         snapshotNextSeqFloorByThread: {},
+        durableBlockCursorByThread: {},
         liveMeta: {},
         handoffPendingThreadIds: {},
         pendingStreamByThreadId: {},
@@ -325,14 +312,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
 
             const hasServerTurn = turns.some((turn) => turn.id === serverTurnId);
 
-            /**
-             * The POST /messages response is the explicit identity bridge from
-             * the local `turn_local_*` row to the persisted user turn. Snapshots
-             * only carry server IDs, so the client must rewrite the local row
-             * as soon as the append is acknowledged; otherwise by-id snapshot
-             * reconcile has no way to know the optimistic and server rows are
-             * the same user message.
-             */
+            /** The POST /messages response is the explicit identity bridge from the local `turn_local_*` row to the persisted user turn. */
             const nextTurns = turns
               .filter((turn) => !(hasServerTurn && turn.id === optimisticTurnId))
               .map((turn) => {
@@ -440,22 +420,43 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             if (!turn) return state;
 
             const normalizedBlock = block.turnId === turnId ? block : { ...block, turnId };
+            const currentBlock = turn.blocks.find(
+              (existingBlock) => existingBlock.sequence === block.sequence,
+            );
+            if (currentBlock && sameBlock(currentBlock, normalizedBlock)) return state;
             const blocks = [
               ...turn.blocks.filter((existingBlock) => existingBlock.sequence !== block.sequence),
               normalizedBlock,
             ].sort((a, b) => a.sequence - b.sequence);
 
-            /**
-             * `sequence` is the block identity within a turn. Upserting by it,
-             * instead of append order, makes live tail events and snapshot head
-             * blocks commute when they arrive in either order.
-             */
             const nextTurns = turns.map((existingTurn, index) =>
               index === turnIndex ? { ...existingTurn, blocks } : existingTurn,
             );
             const turnsByThread = { ...state.turnsByThread, [threadId]: nextTurns };
             return { turnsByThread };
           });
+        },
+
+        removeAssistantBlock(threadId, blockId) {
+          set((state) => {
+            const turns = state.turnsByThread[threadId];
+            if (!turns) return state;
+            let changed = false;
+            const nextTurns = turns.map((turn) => {
+              if (!turn.blocks.some((block) => block.id === blockId)) return turn;
+              changed = true;
+              return {
+                ...turn,
+                blocks: turn.blocks.filter((block) => block.id !== blockId),
+              };
+            });
+            if (!changed) return state;
+            return { turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns } };
+          });
+        },
+
+        invalidateThreadSnapshot(threadId) {
+          threadCache.invalidateThreadSnapshot(threadId);
         },
 
         patchTurnStatus(threadId, turnId, status, patch = {}) {
@@ -551,27 +552,36 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           return nextEventsApplied;
         },
 
+        acceptDurableBlockSeq(threadId, seq) {
+          if (parseSeq(seq) === null) return false;
+          const state = get();
+          const cursor = state.durableBlockCursorByThread[threadId];
+          if (cursor !== undefined && compareSeq(seq, cursor) <= 0) return false;
+          const nextFloor = (BigInt(seq) + 1n).toString();
+          const floor = state.snapshotNextSeqFloorByThread[threadId];
+          set({
+            durableBlockCursorByThread: {
+              ...state.durableBlockCursorByThread,
+              [threadId]: seq,
+            },
+            snapshotNextSeqFloorByThread: {
+              ...state.snapshotNextSeqFloorByThread,
+              [threadId]: floor && compareSeq(floor, nextFloor) > 0 ? floor : nextFloor,
+            },
+          });
+          return true;
+        },
+
+        acceptsThreadSnapshot(threadId, nextSeq) {
+          if (parseSeq(nextSeq) === null) return false;
+          const floor = get().snapshotNextSeqFloorByThread[threadId];
+          return floor === undefined || compareSeq(nextSeq, floor) >= 0;
+        },
+
         applyThreadSnapshot(thread, serverTurns, options) {
           const threadId = thread.id;
           const { nextSeq, lifecycle } = options;
-          const lastAppliedSeq = get().snapshotNextSeqFloorByThread[threadId];
-          if (lastAppliedSeq !== undefined && BigInt(nextSeq) < BigInt(lastAppliedSeq)) {
-            return;
-          }
-          /**
-           * Handoff: the optimistic Home → Project navigation flow.
-           *
-           * When the user creates a project from Home, the client
-           * optimistically creates the thread + project and navigates
-           * before the server confirms. While waiting, the server may
-           * return an empty snapshot (the thread doesn't exist yet). In
-           * that case, `keepLocalTurns = true` preserves the optimistic
-           * local turns so the UI doesn't flash blank.
-           *
-           * Once the server returns real turns (handoffComplete), the
-           * local optimistic turns are merged with server data via
-           * `reconcileSnapshotTurns`.
-           */
+          if (!get().acceptsThreadSnapshot(threadId, nextSeq)) return false;
           const handoffPending = Boolean(get().handoffPendingThreadIds[threadId]);
           const keepLocalTurns = handoffPending && serverTurns.length === 0;
 
@@ -616,6 +626,15 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               nextState.interruptResponses = reconciledInterruptResponses;
             }
 
+            const coveredSeq = (BigInt(nextSeq) - 1n).toString();
+            const priorCursor = state.durableBlockCursorByThread[threadId];
+            if (BigInt(nextSeq) > 0n && (!priorCursor || compareSeq(coveredSeq, priorCursor) > 0)) {
+              nextState.durableBlockCursorByThread = {
+                ...state.durableBlockCursorByThread,
+                [threadId]: coveredSeq,
+              };
+            }
+
             nextState.snapshotNextSeqFloorByThread = {
               ...state.snapshotNextSeqFloorByThread,
               [threadId]: nextSeq,
@@ -632,6 +651,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
 
             return nextState;
           });
+          return true;
         },
 
         markPendingStream(threadId, start) {
@@ -643,15 +663,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           }));
         },
 
-        /**
-         * One-shot read-and-remove of pending stream metadata.
-         *
-         * The pending stream is consumed by the chat handoff
-         * exactly once — the metadata carries the first-message text
-         * and thread creation flags that the agent uses to begin the
-         * conversation. It must not be re-read (would resend the message)
-         * or left in the store (would pollute the next run).
-         */
+        /** One-shot read-and-remove of pending stream metadata. */
         consumePendingStream(threadId) {
           const pending = get().pendingStreamByThreadId[threadId];
           if (!pending) return null;
@@ -779,6 +791,45 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
   );
 }
 
+function sameBlock(left: Block, right: Block): boolean {
+  return (
+    left.id === right.id &&
+    left.turnId === right.turnId &&
+    left.responseId === right.responseId &&
+    left.blockType === right.blockType &&
+    left.sequence === right.sequence &&
+    left.textContent === right.textContent &&
+    left.provider === right.provider &&
+    left.executionSide === right.executionSide &&
+    left.status === right.status &&
+    sameJson(left.content, right.content) &&
+    sameJson(left.providerData, right.providerData) &&
+    sameJson(left.collapsedContent, right.collapsedContent)
+  );
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (!left || !right || typeof left !== "object" || typeof right !== "object") return false;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => sameJson(value, right[index]))
+    );
+  }
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const keys = Object.keys(leftRecord);
+  return (
+    keys.length === Object.keys(rightRecord).length &&
+    keys.every(
+      (key) => Object.hasOwn(rightRecord, key) && sameJson(leftRecord[key], rightRecord[key]),
+    )
+  );
+}
+
 const ThreadStoreContext = createContext<ThreadStoreApi | null>(null);
 
 function useThreadStoreApi(): ThreadStoreApi {
@@ -791,9 +842,37 @@ function useThreadStoreApi(): ThreadStoreApi {
 
 export function ThreadStoreProvider({ now, children }: ThreadStoreSeed & { children: ReactNode }) {
   const queryClient = useQueryClient();
+  const accountSignal = useOptionalAccountEpochSignal();
   const [store] = useState(() =>
-    createThreadStore({ now, threadCache: createThreadCache(queryClient) }),
+    createThreadStore({
+      now,
+      threadCache: createThreadCache(queryClient, accountSignal ?? undefined),
+    }),
   );
+
+  // The QueryClient outlives an account epoch. Retire only account-authorized
+  // snapshot Query objects synchronously at close, including inactive threads.
+  useLayoutEffect(() => {
+    if (!accountSignal) return;
+    let retired = false;
+    const retireSnapshots = () => {
+      if (retired) return;
+      retired = true;
+      queryClient.removeQueries({
+        predicate: ({ queryKey }) =>
+          queryKey.length === 3 &&
+          queryKey[0] === "threads" &&
+          typeof queryKey[1] === "string" &&
+          queryKey[2] === "snapshot",
+      });
+    };
+    accountSignal.addEventListener("abort", retireSnapshots, { once: true });
+    if (accountSignal.aborted) retireSnapshots();
+    return () => {
+      accountSignal.removeEventListener("abort", retireSnapshots);
+      retireSnapshots();
+    };
+  }, [accountSignal, queryClient]);
 
   // Keep `store.now` fresh for relative-time labels ("just now" vs "2 min ago")
   // via a timer instead of relying on route-loader refetches on every navigation.

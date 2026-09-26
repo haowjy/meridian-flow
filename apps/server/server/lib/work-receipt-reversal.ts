@@ -10,7 +10,7 @@ import {
   type WorkReceipt,
   type WorkReceiptState,
 } from "@meridian/contracts/works";
-import type { WorkContextDelivery, WorkRepository } from "../domains/projects/index.js";
+import type { WorkContextNotices, WorkRepository } from "../domains/projects/index.js";
 import type {
   BlockRepository,
   ThreadRepository,
@@ -22,7 +22,7 @@ type WorkReceiptReversalDeps = {
   turns: Pick<TurnRepository, "findById">;
   threads: Pick<ThreadRepository, "findById">;
   works: WorkRepository;
-  workContextDelivery: Pick<WorkContextDelivery, "projectChanged">;
+  workContextNotices: Pick<WorkContextNotices, "projectChanged">;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
 };
 
@@ -99,7 +99,7 @@ export async function reverseWorkReceipts(
         );
       }
       await Promise.all(
-        [...changedProjects].map((projectId) => deps.workContextDelivery.projectChanged(projectId)),
+        [...changedProjects].map((projectId) => deps.workContextNotices.projectChanged(projectId)),
       );
       return applied;
     });

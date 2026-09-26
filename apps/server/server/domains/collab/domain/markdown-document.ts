@@ -74,7 +74,7 @@ type MarkdownDocumentEngineDeps = {
   metaForOrigin(origin: RuntimeOrigin): UpdateMeta;
   deferUntilCommit?(callback: () => void | Promise<void>): boolean;
   afterWrite?: MarkdownWriteHook;
-  identityPreservingWrite?(input: {
+  identityPreservingWrite(input: {
     documentId: DocumentId;
     markdown: string;
     actor: MutationActor;
@@ -422,9 +422,6 @@ export function createMarkdownDocumentEngine(
     if (!format.ok) return format;
     if (input.origin.type === "user" && !input.threadId) return setMarkdown(input);
     const actor = mutationActor(input.origin, input.threadId);
-    if (!deps.identityPreservingWrite) {
-      throw new Error("Identity-preserving document writes are not configured");
-    }
     const outcome = await deps.identityPreservingWrite({
       documentId: input.documentId,
       markdown: identityPreservingContent(input.markdown, format.value),

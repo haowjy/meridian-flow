@@ -1,27 +1,4 @@
-/**
- * The document toolbar's command layer: what each control can do in the
- * current context, and the fenced commands behind the controls.
- *
- * Two jobs live here because they share one set of refusal predicates, and the
- * sharing is the point — a control may never advertise what dispatch will
- * refuse:
- *
- * - `documentToolbarControls` derives the enablement matrix the toolbar
- *   renders. A control that cannot apply reports WHY, so the surface can grey
- *   it with a reason instead of letting a press silently no-op (law 5). The
- *   matrix never removes a control: the toolbar's geometry is fixed
- *   (ruling 15).
- * - the exported commands re-check the same predicates before touching the
- *   document. The greyed button is the first fence; this is the second, and
- *   for the block-type commands it is load-bearing — a selected figure, a
- *   mermaid fence, or a registered component must never convert into a
- *   heading, however the command is reached (interaction model §7, F6).
- *
- * The two families fence differently on purpose. A block-type conversion
- * rewrites whole blocks, so it refuses a selection where ANY target is
- * protected. A mark lands only on the inline content that accepts it, so it
- * refuses only when NO target can take it.
- */
+/** Defines document-toolbar state and commands. */
 
 import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
@@ -65,41 +42,27 @@ export type ToolbarBlockedReason =
   | "code-document"
   | "no-project";
 
-/**
- * The subset a whole-block conversion can refuse with. Named because the block
- * menu's Turn into and the formatting menu's carry the same verbs and must
- * refuse the same targets — `blockTypeRefusal` is the one fence behind all of
- * them, and its answers are these.
- */
+/** The subset a whole-block conversion can refuse with. */
 export type BlockTypeRefusalReason = Extract<
   ToolbarBlockedReason,
   "object-selection" | "code-block" | "embedded-block" | "mixed-selection"
 >;
 
 export type ToolbarControlState = {
-  /** Lit when the control's state is currently applied (law 6, F9). */
+  /** Lit when the control's state is currently applied (, F9). */
   active: boolean;
-  /** Null when the control can run; a reason to show otherwise (law 5). */
+  /** Null when the control can run; a reason to show otherwise (). */
   blockedBy: ToolbarBlockedReason | null;
 };
 
 export type ToolbarControlStates = Record<ToolbarControlId, ToolbarControlState>;
 
-/**
- * A control state whose refusal can only be a whole-block one. Narrower than
- * `ToolbarControlState` because the surfaces that render Turn into show the
- * reason as block-type copy, and no other reason can reach them.
- */
+/** A control state whose refusal can only be a whole-block one. */
 export type BlockTypeState = ToolbarControlState & { blockedBy: BlockTypeRefusalReason | null };
 
 export type ToolbarMarkName = "strong" | "em" | "code" | "strike";
 
-/**
- * The block types "Turn into" offers (§5.1). The toolbar carries three of them
- * as buttons; the formatting menu and the block menu carry the whole list, and
- * every one of them refuses through the fence below — which is why the set
- * lives here rather than beside the menu that renders it.
- */
+/** The block types "Turn into" offers. */
 export type BlockTypeId =
   | "paragraph"
   | "heading1"
@@ -192,7 +155,7 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
       blockedBy: readOnly ?? blockType,
     },
     // No precondition on having a selection: a bare caret opens the
-    // two-field form instead (interaction model §5.5).
+    // two-field form instead.
     link: blockedFirst(readOnly, textMarkState(editor, "link")),
     alignment: {
       active: alignment !== "default",
@@ -213,26 +176,12 @@ export function currentAlignmentValue(editor: Editor): ToolbarAlignmentValue {
   return align === "center" || align === "right" ? align : "default";
 }
 
-/**
- * What a mark control should show: lit when applied, and the reason it cannot
- * apply otherwise. The toolbar's own bold/italic/link rows read this, and so
- * does every surface that carries the same marks, so a control can never
- * advertise what `toggleTextMark` will refuse.
- */
+/** What a mark control should show: lit when applied, and the reason it cannot apply otherwise. */
 export function textMarkState(editor: Editor, mark: ToolbarMarkName | "link"): ToolbarControlState {
   return { active: isMarkActive(editor, mark), blockedBy: markBlocker(editor, mark) };
 }
 
-/**
- * The whole "Turn into" truth table for the current selection (law 6): which
- * type the blocks already are, and why the others cannot apply here.
- *
- * `paragraph` and `codeBlock` share the code-block exception the toolbar's
- * Code button has — a plain fence is what they REVERSE, so a fence is not a
- * refusal for either of them. Every other type refuses it, and an object fence
- * (a rendered mermaid diagram) refuses all eight: un-fencing a diagram would
- * destroy it exactly the way converting one to a heading would (F6).
- */
+/** The whole "Turn into" truth table for the current selection (): which type the blocks already are, and why the others cannot apply here. */
 export function blockTypeStates(editor: Editor): Record<BlockTypeId, BlockTypeState> {
   const strict = blockTypeRefusal(editor);
   const reversible = codeBlockRefusal(editor);
@@ -249,11 +198,7 @@ export function blockTypeStates(editor: Editor): Record<BlockTypeId, BlockTypeSt
   ) as Record<BlockTypeId, BlockTypeState>;
 }
 
-/**
- * The block type the selection already is. Exactly one, deepest wins: a
- * paragraph inside a bullet list is a bullet list, or the menu would show two
- * checks for one block.
- */
+/** The block type the selection already is. */
 function activeBlockTypeId(editor: Editor): BlockTypeId | null {
   if (editor.isActive("code_block")) return "codeBlock";
   if (editor.isActive("bullet_list")) return "bulletList";
@@ -271,11 +216,7 @@ function headingLevel(id: BlockTypeId): Level | null {
     : null;
 }
 
-/**
- * Convert the blocks under the selection in place (§5.1). A true toggle: the
- * type the blocks already are returns them to a paragraph, which is why the
- * menu can check the current type and reverse on a second choice.
- */
+/** Convert the blocks under the selection in place. */
 export function turnIntoBlockType(editor: Editor, id: BlockTypeId): boolean {
   if (!canWrite(editor) || blockTypeStates(editor)[id].blockedBy) return false;
 
@@ -303,19 +244,7 @@ function applyBlockType(editor: Editor, id: BlockTypeId): boolean {
   }
 }
 
-/**
- * Per-block application across a swept rectangle (§10) — the shape marks
- * already have. A `CellSelection` reports only its FIRST cell as `from`..`to`,
- * so the toggles above reach one cell and advertise the rest; this walks
- * `selection.ranges` exactly as `spannedRefusals` does, for the same reason.
- *
- * The toggle's direction is decided ONCE for the whole sweep, the way a mark
- * lands across ranges: only a rectangle whose every block is already `id`
- * reads as active and toggles back. Each cell is then brought TO that answer —
- * toggling blindly per cell would trade types in a mixed rectangle instead of
- * converging it. The sweep itself is restored afterwards: the writer selected
- * a rectangle, and the conversion must not eat it.
- */
+/** Per-block application across a swept rectangle — the shape marks already have. */
 function turnIntoSweptCells(editor: Editor, id: BlockTypeId, selection: CellSelection): boolean {
   const undoes = activeBlockTypeId(editor) === id;
   const cells = selection.ranges.map((range) => ({ from: range.$from.pos, to: range.$to.pos }));
@@ -364,13 +293,7 @@ function turnIntoSweptCells(editor: Editor, id: BlockTypeId, selection: CellSele
   }
 }
 
-/**
- * Read-only outranks every contextual reason, and still reports the state.
- *
- * Generic over both reasons because the surfaces layering their own on top of
- * a toolbar state — the formatting menu's clipboard reasons — layer them the
- * same way, and one rule for "which reason wins" is the point.
- */
+/** Read-only outranks every contextual reason, and still reports the state. */
 export function blockedFirst<Outranking, Reason>(
   outranking: Outranking | null,
   state: { active: boolean; blockedBy: Reason | null },
@@ -378,7 +301,7 @@ export function blockedFirst<Outranking, Reason>(
   return outranking ? { active: state.active, blockedBy: outranking } : state;
 }
 
-/** True toggle: pressing on an H1 returns the block to a paragraph (law 6). */
+/** True toggle: pressing on an H1 returns the block to a paragraph (). */
 export function toggleHeadingBlock(editor: Editor): boolean {
   return turnIntoBlockType(editor, "heading1");
 }
@@ -388,7 +311,7 @@ export function toggleCodeBlockBlock(editor: Editor): boolean {
   return turnIntoBlockType(editor, "codeBlock");
 }
 
-/** True toggle: one press lists, one press un-lists, however deep (law 6). */
+/** True toggle: one press lists, one press un-lists, however deep (). */
 export function toggleBulletListBlock(editor: Editor): boolean {
   return turnIntoBlockType(editor, "bulletList");
 }
@@ -412,13 +335,7 @@ export function setToolbarAlignment(editor: Editor, value: ToolbarAlignmentValue
   return true;
 }
 
-/**
- * Undo is the Yjs UndoManager's, shared with the Mod-z binding the editor owns
- * (ruling 17). It is the writer's recovery over LLM writes, so the toolbar
- * reports its real depth rather than a hopeful always-enabled button, and it
- * hands focus back to the prose like every other command here — a writer who
- * clicked Undo has not left editing, and the next Space must be a space.
- */
+/** Undo is the Yjs UndoManager's, shared with the Mod-z binding the editor owns. */
 export function undoDocument(editor: Editor): boolean {
   if (!canWrite(editor) || !hasCollaborativeHistory(editor)) return false;
   return editor.chain().focus().undo().run();
@@ -447,19 +364,7 @@ function hasCollaborativeHistory(editor: Editor): boolean {
   return !editor.isDestroyed && typeof editor.commands.undo === "function";
 }
 
-/**
- * TipTap reverses a list by looking for an ancestor whose extension group holds
- * "list", and the Meridian list nodes declare `group: "block"` to stay in
- * parity with the server schema — so its own toggle only ever wraps. Owning the
- * reverse means owning all of it.
- *
- * And "all of it" is one list at a time. `liftListItem` works on the block
- * range around the selection, and a selection spanning two sibling lists has no
- * single range to lift: it refuses, and a checked control that does nothing is
- * exactly what law 6 forbids. So each list the writer's range reaches is lifted
- * on its own, and that range travels through the lifts — every lift moves the
- * positions after it.
- */
+/** TipTap reverses a list by looking for an ancestor whose extension group holds "list", and the Meridian list nodes declare `group: "block"` to stay in parity with the server schema — so its own toggle only ever wraps. */
 function toggleListBlock(editor: Editor, listType: "bullet_list" | "ordered_list"): boolean {
   if (!editor.isActive(listType)) {
     const chain = editor.chain().focus();
@@ -497,15 +402,7 @@ function toggleListBlock(editor: Editor, listType: "bullet_list" | "ordered_list
   }
 }
 
-/**
- * The part of the next list of this type that the writer's range actually
- * reaches, or null when none is left.
- *
- * Only the overlap is lifted, so a caret in one item still un-lists that item
- * alone. "Reaches" is strict for a caret: once its item has been lifted out,
- * the caret sits against the remaining list's edge rather than inside it, and
- * counting that would un-list a list the writer never pointed at.
- */
+/** The part of the next list of this type that the writer's range actually reaches, or null when none is left. */
 function listRangeReachedBy(
   state: EditorState,
   listType: string,
@@ -545,26 +442,7 @@ function uploadBlocker(context: ToolbarContext): ToolbarBlockedReason | null {
   return context.imageUploadAvailable ? null : "no-project";
 }
 
-/**
- * What the deepest context under the selection refuses, or null when that
- * context is the document itself and nothing local stands in the way.
- *
- * The kernel already resolves that context for the Esc chain and the
- * context-menu router (`core/editor/chrome`); this reads the same answer as a
- * reason. Inspecting the selection a second time here is precisely what used
- * to grey a whole SELECTED table as though the caret were in a cell:
- * prosemirror-tables spells "this table is selected" as a `CellSelection`, and
- * only the kernel's resolver reads both spellings.
- *
- * The resolver is called rather than the kernel's cached `chrome.context`,
- * because the commands re-check this fence mid-chain and a code-schema
- * document mounts no chrome at all.
- *
- * A `code_block` reads two ways, and the owner is what decides which: one that
- * owns an `object` context is a RENDERED fence — a diagram on the page, since
- * the kernel only names an object what `isEditorObject` accepts — while one
- * that owns a `source-block` context is a plain fence the writer types in.
- */
+/** What the deepest context under the selection refuses, or null when that context is the document itself and nothing local stands in the way. */
 function chromeContextRefusal(context: ChromeContext): BlockTypeRefusalReason | null {
   switch (context.owner) {
     case "object":
@@ -581,19 +459,7 @@ function chromeContextRefusal(context: ChromeContext): BlockTypeRefusalReason | 
   }
 }
 
-/**
- * The block-type fence, shared with every other surface that rewrites a whole
- * block (the block menu's Turn into, the formatting menu's). Exported so those
- * surfaces refuse the same targets for the same reasons rather than growing a
- * second fence beside this one.
- *
- * Two readings, in order. The deepest context under the selection answers
- * first, because a writer standing inside something is owed that thing's
- * reason: a caret in a diagram nested in a table cell is in the DIAGRAM. Only
- * when the document itself owns the context does what the selection SPANS
- * decide, and then every block it covers is read through the same resolver at
- * its own position.
- */
+/** The block-type fence, shared with every other surface that rewrites a whole block (the block menu's Turn into, the formatting menu's). */
 export function blockTypeRefusal(editor: Editor): BlockTypeRefusalReason | null {
   const owner = chromeContextRefusal(resolveChromeContext(editor.state));
   if (owner) return owner;
@@ -613,19 +479,7 @@ export function blockTypeRefusal(editor: Editor): BlockTypeRefusalReason | null 
   return uniform ? refused[0] : "mixed-selection";
 }
 
-/**
- * The fence for the two commands a plain code block REVERSES rather than
- * refuses — the code-block toggle and "turn into paragraph". Pressing either
- * inside a fence returns the block to prose (law 6), so only the reasons that
- * would destroy something still stand: an object, a component, a table cell,
- * or a mixed selection where the conversion would strip a fence's language
- * along the way.
- *
- * A rendered object fence is NOT reversible here. Its reason is
- * `embedded-block` rather than `code-block`, so un-fencing a mermaid diagram
- * refuses like every other conversion (F6, and the reason the menu can offer
- * "Paragraph" at all).
- */
+/** The fence for the two commands a plain code block REVERSES rather than refuses — the code-block toggle and "turn into paragraph". */
 export function codeBlockRefusal(editor: Editor): BlockTypeRefusalReason | null {
   const blocker = blockTypeRefusal(editor);
   return blocker === "code-block" ? null : blocker;
@@ -635,7 +489,7 @@ function markBlocker(editor: Editor, mark: ToolbarMarkName | "link"): ToolbarBlo
   const noProse = noProseToMark(editor);
   if (noProse) return noProse;
 
-  // A mark that is already there can always come off (law 6), whatever the
+  // A mark that is already there can always come off (), whatever the
   // schema thinks about adding it.
   if (isMarkActive(editor, mark)) return null;
   // `can().setMark` is the command's own answer — schema allowance and mark
@@ -644,12 +498,7 @@ function markBlocker(editor: Editor, mark: ToolbarMarkName | "link"): ToolbarBlo
   return editor.can().setMark(mark) ? null : "inline-code";
 }
 
-/**
- * Why the selection holds no prose a mark could land on, or null when it holds
- * some: marks land per node, so a mixed selection formats the prose it reaches
- * and leaves the rest alone. It matters most for a selected table, whose
- * cells hold every word in it — a table selected whole still takes bold.
- */
+/** Why the selection holds no prose a mark could land on, or null when it holds some: marks land per node, so a mixed selection formats the prose it reaches and leaves the rest alone. */
 function noProseToMark(editor: Editor): BlockTypeRefusalReason | null {
   const { state } = editor;
   const refusals = spannedRefusals(state);
@@ -661,20 +510,7 @@ function noProseToMark(editor: Editor): BlockTypeRefusalReason | null {
   return refusals[0] ?? null;
 }
 
-/**
- * What each text block the selection covers refuses, in document order.
- *
- * Walks `selection.ranges` rather than `from`..`to`: a `CellSelection` reports
- * only its FIRST cell as that pair, while ProseMirror's own commands run over
- * every range — so a fence sitting in the fourth cell would be advertised as
- * convertible and then refused by dispatch, which is the dead control law 5
- * forbids.
- *
- * Each block is read at its own first inside position, so the resolver answers
- * about the block rather than about its neighbours. A selection is not a
- * context; asking per block is what tells a select-all across a fence from a
- * caret inside one.
- */
+/** What each text block the selection covers refuses, in document order. */
 function spannedRefusals(state: EditorState): (BlockTypeRefusalReason | null)[] {
   const { doc, selection } = state;
   const refusals: (BlockTypeRefusalReason | null)[] = [];

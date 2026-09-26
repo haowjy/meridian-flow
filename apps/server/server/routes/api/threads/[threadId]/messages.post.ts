@@ -27,7 +27,6 @@ export default defineEventHandler(async (event): Promise<SendMessageResponse> =>
       text: body.text,
       blocks: body.blocks,
       references: body.references,
-      connectionToken: body.connectionToken,
       activatedSkillSlugs: body.activatedSkillSlugs,
     });
     if (result.kind === "pending") {

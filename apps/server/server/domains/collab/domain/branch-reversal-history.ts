@@ -31,20 +31,17 @@ export async function resolveBranchReversalScope(input: {
       documentId: DocumentId,
       threadId: ThreadId,
     ): Promise<{ branchId: string; doc: Y.Doc }>;
-    getBranch?(
+    getBranch(
       branchId: string,
     ): Promise<Pick<BranchSnapshot, "upstreamBranchId" | "generation" | "state"> | null>;
   };
-  branchRows?: {
+  branchRows: {
     listJournalRowsForBranch(input: {
       branchId: string;
       generation: number;
     }): Promise<BranchJournalRow[]>;
   };
 }): Promise<BranchReversalScope | null> {
-  if (!input.branches.getBranch || !input.branchRows) {
-    throw new Error("Branch reversal history is unavailable");
-  }
   const peer = await input.branches.resolveThreadBranch(input.documentId, input.threadId);
   peer.doc.destroy();
   const peerSnapshot = await input.branches.getBranch(peer.branchId);
@@ -108,7 +105,7 @@ export function groupedOrdinalKey(documentId: string, threadId: string, groupId:
 }
 
 export function stageBranchReversal(input: {
-  pending: { push(entry: JournalBatchAppendEntry): void } | undefined;
+  pending: { push(entry: JournalBatchAppendEntry): void };
   docId: string;
   threadId: ThreadId;
   scope: BranchReversalScope;
@@ -117,7 +114,6 @@ export function stageBranchReversal(input: {
   actor: ReversalActor;
   operation: BranchReversalOperation;
 }): void {
-  if (!input.pending) throw new Error("Branch reversal persistence is unavailable");
   const turnId =
     input.operation.direction === "undo" ? (input.operation.records[0]?.turnId ?? null) : null;
   const authoringResponseId = input.actor.type === "agent" ? input.actor.responseId : undefined;

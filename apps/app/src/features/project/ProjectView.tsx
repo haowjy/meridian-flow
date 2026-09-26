@@ -13,7 +13,7 @@
  */
 
 import { t } from "@lingui/core/macro";
-import type { Project } from "@meridian/contracts/projects";
+import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import {
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
@@ -183,7 +183,7 @@ export function ProjectView(props: ProjectViewProps) {
       const list = queryClient.getQueryData<Project[] | null>(projectQueryKeys.list);
       const detail = queryClient.getQueryData<Project>(projectQueryKeys.detail(props.projectId));
       const previousRow = list?.find((project) => project.id === props.projectId);
-      const optimistic = (project: Project): Project => ({ ...project, title, name: title });
+      const optimistic = (project: Project): Project => ({ ...project, title });
       queryClient.setQueryData<Project[] | null>(projectQueryKeys.list, (current) =>
         (current ?? [props.project]).map((project) =>
           project.id === props.projectId ? optimistic(project) : project,
@@ -567,11 +567,7 @@ function expandToggle(
   return { open, onExpand: () => onSetCollapsed(surfaceId, false), label };
 }
 
-/**
- * Desktop layout for every destination. Persistent shell state lives on stable
- * surfaces; per-screen rendering is delegated to pane controllers that receive
- * only the props they need.
- */
+/** Desktop layout for every destination. */
 export function DesktopProject(props: ReviewScopedProjectProps) {
   const priorEditor = useRef<Pick<
     ReviewScopedProjectProps,
@@ -823,11 +819,6 @@ function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: Surfa
   }
 }
 
-/**
- * Collapse chrome once when entering compact desktop widths. The listener only
- * runs on mount/media-boundary changes, so a user can re-expand rails without
- * the effect immediately fighting that preference.
- */
 function useCompactDesktopAutoCollapse(
   setDockCollapsed: (collapsed: boolean) => void,
   setSurfaceCollapsed: (surfaceId: SurfaceId, collapsed: boolean) => void,

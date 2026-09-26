@@ -30,7 +30,7 @@ function thread(): Thread {
     workId: WORK_ID,
     userId: "user-1",
     kind: "primary",
-    status: "active",
+    status: "idle",
     title: "Custom project thread",
     ref: null,
     agentDefinitionRevisionId: null,

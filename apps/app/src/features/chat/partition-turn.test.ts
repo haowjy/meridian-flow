@@ -51,7 +51,6 @@ const spawnResult = (sequence: number, useSequence: number) =>
     sequence,
     content: {
       toolCallId: `spawn-${useSequence}`,
-      toolName: "spawn",
       output: { status: "completed", report: { threadId: "child-1", summary: "2+2=4." } },
     },
   });
@@ -64,8 +63,25 @@ const spawnCard = (sequence: number) =>
       props: { agentName: "Helper", status: "completed", summary: "2+2=4.", childThreadId: "c" },
     },
   });
-const childReport = (sequence: number) =>
-  block({ blockType: "custom", sequence, content: { kind: "child-report", props: {} } });
+const threadMessageUse = (sequence: number) =>
+  block({
+    blockType: "tool_use",
+    sequence,
+    content: {
+      toolCallId: `thread-message-${sequence}`,
+      toolName: "thread_message",
+      input: { handle: "p3", prompt: "keep going" },
+    },
+  });
+const threadMessageResult = (sequence: number, useSequence: number) =>
+  block({
+    blockType: "tool_result",
+    sequence,
+    content: {
+      toolCallId: `thread-message-${useSequence}`,
+      output: { status: "completed", report: { threadId: "child-1", summary: "Done." } },
+    },
+  });
 
 const kinds = (items: ReturnType<typeof partitionTurn>) => items.map((item) => item.kind);
 
@@ -130,21 +146,42 @@ describe("partitionTurn", () => {
     expect(items[1]).toMatchObject({ block: { sequence: 4 } });
   });
 
-  it("drops hidden return_result protocol and keeps the child report", () => {
+  it("renders return_result as the child's report", () => {
     const returnUse = block({
       blockType: "tool_use",
       sequence: 1,
-      content: { toolCallId: "return-1", toolName: "return_result", input: { summary: "done" } },
+      content: {
+        toolCallId: "return-1",
+        toolName: "return_result",
+        input: { summary: "First line.\nFull report.", payload: { answer: 42 }, artifacts: [] },
+      },
     });
     const returnResult = block({
       blockType: "tool_result",
       sequence: 2,
       content: { toolCallId: "return-1", output: { ok: true } },
     });
-    const items = partitionTurn([returnUse, returnResult, childReport(3)]);
+    const items = partitionTurn([returnUse, returnResult]);
 
-    expect(kinds(items)).toEqual(["artifact"]);
+    expect(kinds(items)).toEqual(["report"]);
+    expect(items[0]).toMatchObject({
+      kind: "report",
+      block: { sequence: 1 },
+      report: { summary: "First line.\nFull report.", payload: { answer: 42 }, partial: false },
+    });
+  });
+
+  it("drops hidden thread_message protocol and keeps only the card", () => {
+    const items = partitionTurn([
+      threadMessageUse(1),
+      threadMessageResult(2, 1),
+      spawnCard(3),
+      prose(4, "Continuing."),
+    ]);
+
+    expect(kinds(items)).toEqual(["artifact", "text"]);
     expect(items[0]).toMatchObject({ block: { sequence: 3 } });
+    expect(items[1]).toMatchObject({ block: { sequence: 4 } });
   });
 
   it("drops empty reasoning and does not let it split a process run", () => {

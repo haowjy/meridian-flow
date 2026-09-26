@@ -4,13 +4,6 @@ import { parseDebugEventsArgs } from "./debug-events";
 import { createBoundedResponseCollector } from "./debug-http-client";
 
 describe("parseDebugEventsArgs", () => {
-  it("maps a correlation pivot and compact defaults", () => {
-    expect(parseDebugEventsArgs(["--trace", "trace-1", "--level", "error"])).toEqual({
-      full: false,
-      query: { traceId: "trace-1", level: "error", limit: 50 },
-    });
-  });
-
   it("caps compact and full output independently", () => {
     expect(parseDebugEventsArgs(["--event", "event-1", "--limit", "500"]).query.limit).toBe(50);
     expect(

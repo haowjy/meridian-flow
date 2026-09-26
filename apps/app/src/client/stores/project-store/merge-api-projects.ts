@@ -4,7 +4,7 @@
  * creation inserts before the server list lands). Pure reconcile helper for the
  * project list cache/store.
  */
-import type { Project } from "@meridian/contracts/projects";
+import type { ProjectDto as Project } from "@meridian/contracts/projects";
 
 /**
  * Merge an API project list with any cached rows not yet in the response.

@@ -76,12 +76,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         title: "Runtime settlement",
         kind: "primary",
-        status: "active",
+        status: "idle",
       });
       await db.insert(schema.turns).values({
         id: TURN_ID,
         threadId: THREAD_ID,
         role: "assistant",
+        origin: "assistant",
         status: "complete",
       });
       await db.insert(schema.threadWorks).values({

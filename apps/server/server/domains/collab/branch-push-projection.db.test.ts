@@ -114,12 +114,13 @@ describe("branch-push durable projection", () => {
       createdByUserId: userId,
       title: "Projection thread",
       kind: "primary",
-      status: "active",
+      status: "idle",
     });
     await db.insert(turns).values({
       id: turnId,
       threadId,
       role: "assistant",
+      origin: "assistant",
       status: "complete",
     });
     await db.insert(threadWorks).values({ threadId, workId, projectId, isPrimary: true });
@@ -137,6 +138,9 @@ describe("branch-push durable projection", () => {
       lifecycle: persistence.lifecycle,
       initialDocumentSeeds: persistence.lifecycle,
       metaForOrigin: () => ({ origin: "system", seq: 0 }),
+      identityPreservingWrite: async () => {
+        throw new Error("Identity-preserving writes are not part of this projection scenario");
+      },
       resolveFiletype: async (resolvedDocumentId) => {
         const [row] = await db
           .select({ filetype: documents.fileType })
@@ -321,12 +325,13 @@ describe("branch-push durable projection", () => {
       createdByUserId: userId,
       title: "Recovery thread",
       kind: "primary",
-      status: "active",
+      status: "idle",
     });
     await db.insert(turns).values({
       id: turnId,
       threadId,
       role: "assistant",
+      origin: "assistant",
       status: "complete",
     });
     await db.insert(threadWorks).values({ threadId, workId, projectId, isPrimary: true });
@@ -344,6 +349,9 @@ describe("branch-push durable projection", () => {
       lifecycle: persistence.lifecycle,
       initialDocumentSeeds: persistence.lifecycle,
       metaForOrigin: () => ({ origin: "system", seq: 0 }),
+      identityPreservingWrite: async () => {
+        throw new Error("Identity-preserving writes are not part of this projection scenario");
+      },
       resolveFiletype: async () => "markdown",
     });
     let failProjection = true;
@@ -510,7 +518,7 @@ describe("branch-push durable projection", () => {
       createdByUserId: userId,
       title: "Retry rollback thread",
       kind: "primary",
-      status: "active",
+      status: "idle",
     });
     await db.insert(threadDocuments).values({
       threadId,
@@ -523,6 +531,7 @@ describe("branch-push durable projection", () => {
       id: turnId,
       threadId,
       role: "assistant",
+      origin: "assistant",
       status: "complete",
     });
     await db.insert(threadWorks).values({ threadId, workId, projectId, isPrimary: true });
@@ -540,6 +549,9 @@ describe("branch-push durable projection", () => {
       lifecycle: persistence.lifecycle,
       initialDocumentSeeds: persistence.lifecycle,
       metaForOrigin: () => ({ origin: "system", seq: 0 }),
+      identityPreservingWrite: async () => {
+        throw new Error("Identity-preserving writes are not part of this projection scenario");
+      },
       resolveFiletype: async () => "markdown",
     });
     const changeTrails = createDrizzleChangeTrailAggregateWriter(db);

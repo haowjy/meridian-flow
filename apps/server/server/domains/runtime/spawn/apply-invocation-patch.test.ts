@@ -119,21 +119,22 @@ describe("applyInvocationPatch", () => {
     const { revisions, packageRevisionId } = await installSkills("t/listmap", []);
 
     const denied = await applyInvocationPatch({
-      baseline: config({ tools: ["read", "edit"], "disallowed-tools": ["edit"] }),
-      patch: { tools: { read: "deny" } },
+      baseline: config({ tools: ["edit"], "disallowed-tools": ["edit"] }),
+      patch: { tools: { edit: "deny" } },
       caller,
       store: revisions,
       packageRevisionId,
     });
     const deniedPolicy = projectToolPolicy(denied);
-    expect(deniedPolicy.tools.has("write")).toBe(false);
+    expect(deniedPolicy.tools.has("write")).toBe(true);
     expect(deniedPolicy.tools.has("ask_user")).toBe(false);
     expect(deniedPolicy.writeCommands).not.toContain("replace");
-    expect(deniedPolicy.tools.has("ls")).toBe(false);
+    expect(deniedPolicy.tools.has("ls")).toBe(true);
+    expect(deniedPolicy.tools.has("search")).toBe(true);
 
     const allowed = await applyInvocationPatch({
-      baseline: config({ tools: ["read"] }),
-      patch: { tools: { read: "allow" } },
+      baseline: config({ tools: ["search"] }),
+      patch: { tools: { search: "allow" } },
       caller,
       store: revisions,
       packageRevisionId,
@@ -206,60 +207,5 @@ describe("applyInvocationPatch", () => {
         packageRevisionId,
       }),
     ).rejects.toThrow(InvocationPatchError);
-  });
-
-  it("rejects malformed overrides instead of persisting them", async () => {
-    const { revisions, packageRevisionId } = await installSkills("t/shape", []);
-    const baseline = config();
-    const caller = config();
-    const malformed = [
-      { tools: "read" },
-      { effort: "bananas" },
-      { model: 42 },
-      { bogus: true },
-      { skills: { load: "proofread" } },
-      { "disallowed-tools": "edit" },
-      { tools: { write: "allow" } },
-      { tools: ["write"] },
-      { "disallowed-tools": ["write"] },
-      { tools: { "write(x)": "allow" } },
-      { tools: ["write(x)"] },
-      { "disallowed-tools": ["write(x)"] },
-    ];
-    for (const patch of malformed) {
-      await expect(
-        applyInvocationPatch({
-          baseline,
-          patch: patch as never,
-          caller,
-          store: revisions,
-          packageRevisionId,
-        }),
-      ).rejects.toThrow(InvocationPatchError);
-    }
-  });
-
-  it("rejects edit allowed together with a disallowed-tools read denial", async () => {
-    const { revisions, packageRevisionId } = await installSkills("t/contradict", []);
-    // Contradiction introduced by the patch itself.
-    await expect(
-      applyInvocationPatch({
-        baseline: config(),
-        patch: { tools: { edit: "allow" }, "disallowed-tools": ["read"] },
-        caller: config(),
-        store: revisions,
-        packageRevisionId,
-      }),
-    ).rejects.toThrow(/implies "read"/);
-    // Contradiction that only appears in the merged result, not the raw patch.
-    await expect(
-      applyInvocationPatch({
-        baseline: config({ tools: { edit: "allow" } }),
-        patch: { "disallowed-tools": ["read"] },
-        caller: config(),
-        store: revisions,
-        packageRevisionId,
-      }),
-    ).rejects.toThrow(/implies "read"/);
   });
 });

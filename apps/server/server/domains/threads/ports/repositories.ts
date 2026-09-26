@@ -4,9 +4,15 @@
  * transactional ThreadRepositories aggregate. The boundary both adapter sets implement.
  */
 
+import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
-import type { SpawnResult } from "@meridian/contracts/spawn";
+import type {
+  ExecutionReportCorrelation,
+  ExecutionReportSource,
+  SavedExecutionReport,
+  SavedOutcome,
+} from "@meridian/contracts/spawn";
 import type {
   Block,
   BlockStatus,
@@ -20,13 +26,16 @@ import type {
   SpawnStatus,
   Thread,
   ThreadKind,
+  ThreadLeaseState,
+  ThreadLifecycleStatus,
   ThreadListItem,
+  ThreadPendingInbox,
   ThreadStatus,
   Turn,
+  TurnOrigin,
   TurnRole,
   TurnStatus,
   UpdateThreadUserStateResponse,
-  WorkingState,
 } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { CreateDerivedPrimaryThreadInput } from "../domain/thread-create-derived-primary.js";
@@ -54,11 +63,14 @@ export interface UpsertBlockInput extends CreateBlockInput {
 export interface BlockRepository {
   create(input: CreateBlockInput): Promise<Block>;
   upsert(input: UpsertBlockInput): Promise<Block>;
+  /** Replace an existing block without minting a missing card or changing its placement. */
+  replaceExisting(input: UpsertBlockInput): Promise<Block | null>;
   findById(id: string): Promise<Block | null>;
   listByTurn(turnId: TurnId): Promise<Block[]>;
   /** All blocks across all turns for a thread, ordered by turn creation then block sequence. */
   listByThread(threadId: ThreadId): Promise<Block[]>;
-  updatePruned(id: string, pruned: boolean): Promise<Block>;
+  /** Sets the prune flag. A missing row is a no-op (`null`), not an error. */
+  updatePruned(id: string, pruned: boolean): Promise<Block | null>;
 }
 
 export interface CreateModelResponseInput {
@@ -92,6 +104,65 @@ export interface ModelResponseRepository {
   create(input: CreateModelResponseInput): Promise<CreateModelResponseResult>;
   findById(id: string): Promise<ModelResponse | null>;
   listByTurn(turnId: TurnId): Promise<ModelResponse[]>;
+  listByThread(threadId: ThreadId): Promise<ModelResponse[]>;
+}
+
+export interface AdmitExecutionReportInput extends ExecutionReportCorrelation {
+  childThreadId: ThreadId;
+  assistantTurnId: TurnId;
+  handle: string;
+  agentSlug?: string | null;
+  description?: string | null;
+}
+export interface FinalizeExecutionReportInput {
+  terminalAssistantTurnId?: TurnId;
+  childThreadId: ThreadId;
+  assistantTurnId: TurnId;
+  outcome: SavedOutcome;
+  reason: string | null;
+  source: ExecutionReportSource;
+  summary: string;
+  payload?: import("@meridian/contracts/threads").JsonValue | null;
+  artifacts?: ArtifactRef[] | null;
+  costMillicredits?: number | null;
+}
+export interface ExecutionReportRepository {
+  /** Nearest admitted execution on this assistant's ancestor chain. */
+  findByTurn(childThreadId: ThreadId, turnId: TurnId): Promise<SavedExecutionReport | null>;
+  admit(input: AdmitExecutionReportInput): Promise<SavedExecutionReport>;
+  captureOnce(
+    childThreadId: ThreadId,
+    assistantTurnId: TurnId,
+    toolCallId: string,
+    capture: import("@meridian/contracts/spawn").ReturnResultCapture,
+  ): Promise<SavedExecutionReport>;
+  finalizeOnce(input: FinalizeExecutionReportInput): Promise<SavedExecutionReport>;
+  findByExecution(
+    childThreadId: ThreadId,
+    assistantTurnId: TurnId,
+  ): Promise<SavedExecutionReport | null>;
+  listFinishedByChild(childThreadId: ThreadId): Promise<SavedExecutionReport[]>;
+  /** Bounded metadata for admitted executions still lacking terminal truth. */
+  listUnfinalized(
+    limit: number,
+    afterExecutionId?: TurnId,
+  ): Promise<Array<Pick<SavedExecutionReport, "childThreadId" | "assistantTurnId">>>;
+  /** Bounded, deliverable discovery. Soft-deleted callers stay pending until restoration. */
+  listPendingPublication(
+    limit: number,
+    afterExecutionId?: TurnId,
+  ): Promise<
+    Array<Pick<SavedExecutionReport, "childThreadId" | "assistantTurnId" | "callerThreadId">>
+  >;
+  lockPendingPublication(
+    childThreadId: ThreadId,
+    assistantTurnId: TurnId,
+  ): Promise<SavedExecutionReport | null>;
+  markPublished(
+    childThreadId: ThreadId,
+    assistantTurnId: TurnId,
+    publication: "published" | "skipped",
+  ): Promise<void>;
 }
 
 export interface CreateThreadInput {
@@ -103,7 +174,6 @@ export interface CreateThreadInput {
   kind?: ThreadKind;
   title?: string | null;
   systemPrompt?: string | null;
-  workingState?: WorkingState | null;
   parentThreadId?: ThreadId | null;
   spawnStatus?: SpawnStatus | null;
   spawnDepth?: number;
@@ -111,13 +181,14 @@ export interface CreateThreadInput {
 
 export interface UpdateSpawnLifecycleInput {
   spawnStatus: SpawnStatus;
-  spawnResult?: JsonValue | null;
 }
 
-/** Atomic first-attempt bake payload for gateway prompt + skill contract. */
+/** Atomic first-attempt bake payload for gateway prompt + skill + tool contract. */
 export interface BakeComposedSystemPromptInput {
   composedSystemPrompt: string;
   bakedSkillSlugs: string[];
+  /** Exact advertised Tool[] payload, opaque JSON; the runtime owns its shape. */
+  bakedTools: JsonValue;
 }
 
 export interface ThreadRepository {
@@ -128,18 +199,28 @@ export interface ThreadRepository {
   findLiveByProjectRef(projectId: ProjectId, ref: string): Promise<Thread | null>;
   /** Returns the owning project even when the thread is soft-deleted. */
   findProjectIdByIdIncludingDeleted(id: ThreadId): Promise<ProjectId | null>;
-  /** Locks and returns the thread lifecycle row, including soft-deleted threads. */
-  lockByIdIncludingDeleted(id: ThreadId): Promise<Thread | null>;
+  /** Locks the thread; optional Work targets lock with its primary in canonical order (restore). */
+  lockByIdIncludingDeleted(
+    id: ThreadId,
+    additionalWorkIds?: readonly WorkId[],
+  ): Promise<Thread | null>;
   listByUser(userId: UserId): Promise<Thread[]>;
   /** Primary threads in a project (excludes subagents and soft-deleted threads; caller must gate project access). */
   listByProject(projectId: ProjectId): Promise<ThreadListItem[]>;
+  /**
+   * Every live descendant of `threadId` in its spawn subtree, breadth-first by
+   * `(spawnDepth, createdAt, id)`. Walks `parent_thread_id` from the viewed
+   * thread (so a sibling branch sharing the root is excluded), skips soft-deleted
+   * rows, and never includes the thread itself. Feeds the recursive activity read.
+   */
+  listDescendants(threadId: ThreadId): Promise<ThreadDescendant[]>;
   /** Hard-bounded model-facing summary of primary chats historically associated with a Work. */
   listRecentByWork(
     projectId: ProjectId,
     workId: WorkId,
     limit: number,
   ): Promise<WorkThreadSummary[]>;
-  updateStatus(id: ThreadId, status: ThreadStatus): Promise<Thread>;
+  updateStatus(id: ThreadId, status: ThreadLifecycleStatus): Promise<Thread>;
   /** Persists a writer-authored title and refreshes `updatedAt`; returns the authoritative row. */
   updateTitle(id: ThreadId, title: string): Promise<Thread>;
   /**
@@ -164,8 +245,51 @@ export interface ThreadRepository {
 export interface WorkThreadSummary {
   title: string | null;
   updatedAt: string;
-  status: ThreadStatus;
+  status: ThreadLifecycleStatus;
 }
+
+/** One descendant in a thread's spawn subtree, as the activity read needs it. */
+export type ThreadDescendant = Pick<
+  Thread,
+  | "id"
+  | "parentThreadId"
+  | "rootThreadId"
+  | "spawnDepth"
+  | "ref"
+  | "title"
+  | "agentName"
+  | "spawnStatus"
+  | "originTurnId"
+>;
+
+/**
+ * Read seam for the derived run status. The runtime's lease authority
+ * (`RunClaim`) satisfies it; the threads domain depends on this narrow
+ * port rather than the runtime domain, so status stays a pure lease function.
+ */
+export interface ThreadStatusReader {
+  read(threadId: ThreadId): Promise<ThreadStatus>;
+  /** Assistant turn bound to the thread's live lease; null when asleep or unbound. */
+  readRunningTurnId(threadId: ThreadId): Promise<TurnId | null>;
+  /**
+   * Batch lease read for a page of threads, so list reads do not re-derive
+   * liveness in SQL. Only live leases appear in the map.
+   */
+  readMany(threadIds: readonly ThreadId[]): Promise<Map<ThreadId, ThreadLeaseState>>;
+}
+
+/**
+ * Read seam for a thread's undelivered inbox rows as the writer-facing
+ * `ThreadPendingInbox`. The runtime composition supplies a projection over the
+ * raw `InboxReader`; the threads domain depends on this narrow port, not the runtime
+ * domain, so pending stays a pure read.
+ */
+export interface ThreadPendingInboxReader {
+  readPending(threadId: ThreadId): Promise<ThreadPendingInbox>;
+}
+
+/** The derived live reads the snapshot builder and WS `subscribed` state share. */
+export interface ThreadLiveReaders extends ThreadStatusReader, ThreadPendingInboxReader {}
 
 export interface ProjectChatCursorKey {
   sortAt: string;
@@ -223,6 +347,8 @@ export interface CreateTurnInput {
   createdAt?: string;
   prevTurnId?: TurnId | null;
   role: TurnRole;
+  /** No default: every creation path must state who authored the turn. */
+  origin: TurnOrigin;
   writeMode?: AiWriteMode | null;
   status?: TurnStatus;
   requestParams?: JsonValue | null;
@@ -242,25 +368,20 @@ export interface TurnRepository {
   findById(id: TurnId): Promise<Turn | null>;
   listByThread(threadId: ThreadId): Promise<Turn[]>;
   getLatestByThread(threadId: ThreadId): Promise<Turn | null>;
+  /**
+   * The assistant container of a run that the caller has already proven live
+   * (via the runner map), or null. Durable status is not a liveness authority:
+   * this is the setup-window fallback for when the runner owns the thread but
+   * has not published the assistant id yet, so `createdAfter` excludes older
+   * crash-orphaned non-terminal turns.
+   */
+  findRunningAssistantId(
+    threadId: ThreadId,
+    options?: { createdAfter?: Date },
+  ): Promise<TurnId | null>;
   updateStatus(id: TurnId, input: UpdateTurnStatusInput): Promise<Turn>;
   /** Recomputes usage rollups from this turn's model_responses rows. */
   recomputeRollups(id: TurnId): Promise<Turn>;
-}
-
-/** Response row; rollups and thread cost derive from the turn owning `response.turnId`. */
-export interface RecordModelResponseUsageInput {
-  response: CreateModelResponseInput;
-}
-
-export interface RecordModelResponseUsageResult {
-  modelResponse: ModelResponse;
-  turn: Turn;
-}
-
-export interface UsageRecorder {
-  recordModelResponseUsage(
-    input: RecordModelResponseUsageInput,
-  ): Promise<RecordModelResponseUsageResult>;
 }
 
 export interface ThreadDocument {
@@ -290,8 +411,6 @@ export interface ThreadWorksRepository {
     threadId: ThreadId,
     workId: WorkId,
   ): Promise<{ previousWorkId: WorkId | null; changed: boolean }>;
-  /** Locks the thread after callers have acquired any Work lifecycle locks. */
-  lockPrimary(threadId: ThreadId): Promise<{ workId: WorkId } | null>;
   findPrimary(threadId: ThreadId): Promise<{ workId: WorkId } | null>;
   /** Upserts a primary onto an already-locked Work while restore holds the thread row lock. */
   rebindPrimaryForRestore(threadId: ThreadId, workId: WorkId): Promise<void>;
@@ -328,52 +447,6 @@ export interface TurnDocumentTouchRepository {
   listThreadIdsByDocument(documentId: string): Promise<ThreadId[]>;
 }
 
-/** Durable, coalesced delivery state for model-visible Work context refreshes. */
-export interface WorkContextDeliveryRepository {
-  enqueueThread(threadId: ThreadId): Promise<ThreadId[]>;
-  enqueueProject(projectId: ProjectId): Promise<ThreadId[]>;
-  listPendingThreadIds(): Promise<ThreadId[]>;
-  isPending(threadId: ThreadId): Promise<boolean>;
-  /** Locks the obligation for the ambient delivery transaction. */
-  lockPending(threadId: ThreadId): Promise<boolean>;
-  acknowledge(threadId: ThreadId): Promise<void>;
-}
-
-export interface ChildReportDeliveryObligation {
-  reportId: TurnId;
-  parentThreadId: ThreadId;
-  childThreadId: ThreadId;
-  agentSlug: string;
-  description: string | null;
-  result: SpawnResult;
-  systemTurnId: TurnId | null;
-  submissionEpoch: number;
-}
-
-export interface EnqueueChildReportDeliveryInput {
-  reportId: TurnId;
-  parentThreadId: ThreadId;
-  childThreadId: ThreadId;
-  agentSlug: string;
-  description?: string | null;
-  result: SpawnResult;
-  systemTurnId?: TurnId | null;
-}
-
-/** Durable exactly-once delivery facts for a background child's terminal report. */
-export interface ChildReportDeliveryRepository {
-  /** Inserts the obligation if absent; enlists in the ambient transaction. */
-  enqueue(input: EnqueueChildReportDeliveryInput): Promise<void>;
-  listPendingParentThreadIds(): Promise<ThreadId[]>;
-  listPendingByParent(parentThreadId: ThreadId): Promise<ChildReportDeliveryObligation[]>;
-  findByReportId(reportId: TurnId): Promise<ChildReportDeliveryObligation | null>;
-  /** Records the card's system-turn container once; later calls are no-ops. */
-  setSystemTurnId(reportId: TurnId, systemTurnId: TurnId): Promise<void>;
-  /** Advances the attempt epoch after the current submission id terminally rejected. */
-  advanceEpoch(reportId: TurnId): Promise<void>;
-  acknowledge(reportId: TurnId): Promise<void>;
-}
-
 export type ThreadRepositories = {
   threads: ThreadRepository;
   chatFeed: ProjectChatFeedRepository;
@@ -383,10 +456,11 @@ export type ThreadRepositories = {
   turns: TurnRepository;
   blocks: BlockRepository;
   modelResponses: ModelResponseRepository;
+  executionReports: ExecutionReportRepository;
+  /** One repeatable-read snapshot for authorization-sensitive multi-repository reads. */
+  readSnapshot<T>(operation: () => Promise<T>): Promise<T>;
   threadDocuments: ThreadDocumentRepository;
   documentTouches: TurnDocumentTouchRepository;
-  workContextDeliveries: WorkContextDeliveryRepository;
-  childReportDeliveries: ChildReportDeliveryRepository;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   /**
    * Serializes a complete turn-start transition on the thread and rejects
@@ -397,7 +471,7 @@ export type ThreadRepositories = {
     expectedActiveLeafTurnId: TurnId | null,
     operation: () => Promise<T>,
   ): Promise<T>;
-} & UsageRecorder;
+};
 
 /** Adapter-level aggregate used only at composition time for internal spawn wiring. */
 export type InternalThreadRepositories = ThreadRepositories & {

@@ -143,6 +143,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: turnId,
           threadId,
           role: "assistant",
+          origin: "assistant",
           status: "complete",
         });
         await db.insert(eventJournal).values({

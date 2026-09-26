@@ -7,7 +7,7 @@
  * behavior unless present in the user message that triggers a write):
  *   `[[write <uri>]]` — target `<uri>` instead of `manuscript://chapter-1.md`
  *   `[[write <uri> overwrite]]` — same with `overwrite: true` on create
- * Still requires the vertical-slice trigger phrase ("Phase 7 final gate").
+ * A user message must include the mock's write trigger before these directives apply.
  */
 import { createServer, type Server } from "node:http";
 import { parseWriteDirective } from "./write-directive.js";

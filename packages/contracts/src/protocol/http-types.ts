@@ -12,7 +12,7 @@ import {
   type WorkScopedContextUriScheme,
 } from "../context-uri.js";
 import type { DocumentId, UserId, WorkId } from "../ids.js";
-import type { Project } from "../projects/index.js";
+import type { ProjectDto } from "../projects/index.js";
 import { parseRequestId } from "../request-id.js";
 import type {
   Block,
@@ -21,7 +21,10 @@ import type {
   ModelRequestDebugRetention,
   ModelResponse,
   Thread,
+  ThreadActivity,
   ThreadListItem,
+  ThreadPendingInbox,
+  ThreadStatus,
   Turn,
   TurnContextPreview,
   TurnRole,
@@ -48,8 +51,13 @@ export type {
 
 export type ThreadLiveState = {
   threadId: string;
-  status: Thread["status"];
+  /** Derived from the live lease, not the durable thread row. */
+  status: ThreadStatus;
   runningTurnId: string | null;
+  /** Recursive subagent activity for this thread's own subtree; derived, never a turn block. */
+  activity: ThreadActivity;
+  /** Undelivered inbox rows for this thread, ordered by `seq`; derived, never a turn block. */
+  pending: ThreadPendingInbox;
   /** Last event already materialized in snapshot rows; WS replay resumes strictly after it. */
   resumeAfterSeq: string;
 };
@@ -61,7 +69,7 @@ export type CreateProjectRequest = {
   description?: string | null;
 };
 
-export type CreateProjectResponse = Project;
+export type CreateProjectResponse = ProjectDto;
 
 export type UpdateProjectRequest = {
   title?: string;
@@ -69,7 +77,7 @@ export type UpdateProjectRequest = {
 };
 
 export type ListProjectsResponse = {
-  projects: Project[];
+  projects: ProjectDto[];
 };
 
 export type ListProjectThreadsResponse = {
@@ -353,6 +361,12 @@ export type CreateThreadRequest = {
 
 export type CreateThreadResponse = Thread;
 
+/** Omission or the parent's revision retains its frozen prompt and Agent configuration. */
+export type ForkThreadRequest = {
+  agentSelection?: AgentSelection;
+  originTurnId?: string | null;
+};
+
 export type UpdateWorkWriteModeRequest = {
   aiWriteMode: AiWriteMode;
   confirmedPush?: boolean;
@@ -373,8 +387,6 @@ export type SendMessageRequest = {
   text: string;
   blocks: unknown;
   references: SubmittedReference[];
-  /** Client connection token from the WebSocket `connected` frame; rejects starts from stale sockets. */
-  connectionToken?: string;
   /** Writer-picked skill slugs for this Send. Missing or empty means none. */
   activatedSkillSlugs?: string[];
 };
@@ -392,7 +404,8 @@ export type ThreadAvailableSkillsResponse = {
 export type SendMessageResponse = {
   threadId: string;
   userTurnId: string;
-  assistantTurnId: string;
+  /** The live run's assistant turn on a merged send; null for a fresh run. */
+  assistantTurnId: string | null;
   /** Pre-start event position; the client subscription replays events strictly after it. */
   resumeAfterSeq: string;
   /**

@@ -5,11 +5,18 @@
  */
 import { GENERIC_SUBAGENT_NAME } from "@meridian/contracts/agents";
 import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
-import type { ThreadKind, ThreadStatus, TurnRole, TurnStatus } from "@meridian/contracts/threads";
+import type {
+  SpawnStatus,
+  ThreadKind,
+  ThreadLifecycleStatus,
+  TurnRole,
+  TurnStatus,
+} from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
-import { and, desc, eq, getTableColumns, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
+import { lockThreadAndWorks, lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
@@ -19,7 +26,9 @@ import type {
   CreateThreadInput,
   DerivedPrimaryThreadFactory,
   SubagentThreadFactory,
+  ThreadDescendant,
   ThreadRepository,
+  ThreadStatusReader,
   UpdateSpawnLifecycleInput,
 } from "../../ports/repositories.js";
 import { mapThread } from "./mappers.js";
@@ -56,31 +65,20 @@ const threadColumns = {
   agentName,
 };
 
-const runningTurnId = sql<string | null>`(
-  SELECT ${schema.turns.id}
-  FROM ${schema.turns}
-  WHERE ${schema.turns.threadId} = ${schema.threads.id}
-    AND ${schema.turns.role} = 'assistant'
-    AND ${schema.turns.status} IN ('pending', 'streaming')
-  ORDER BY ${schema.turns.createdAt} DESC
-  LIMIT 1
-)`;
-
 type ThreadListRow = typeof schema.threads.$inferSelect & {
   workId: string | null;
   workTitle: string | null;
   lastTurnRole: (typeof schema.turns.$inferSelect)["role"] | null;
   lastTurnStatus: (typeof schema.turns.$inferSelect)["status"] | null;
-  runningTurnId: string | null;
 };
 
-function mapThreadListRow(row: ThreadListRow) {
+function mapThreadListRow(row: ThreadListRow, runningTurnId: string | null) {
   return toThreadListItem({
     thread: mapThread(row),
     workTitle: row.workTitle,
     lastTurnRole: row.lastTurnRole as TurnRole | null,
     lastTurnStatus: row.lastTurnStatus as TurnStatus | null,
-    runningTurnId: row.runningTurnId,
+    runningTurnId,
   });
 }
 
@@ -93,7 +91,6 @@ function threadListSelect() {
     workTitle: schema.works.name,
     lastTurnRole: conversationalHead.role,
     lastTurnStatus: conversationalHead.status,
-    runningTurnId,
   };
 }
 
@@ -168,7 +165,9 @@ async function insertThreadRow(
 
 export function createDrizzleThreadRepository(
   db: DrizzleDatabase,
+  options: { statusReader?: ThreadStatusReader } = {},
 ): ThreadRepository & SubagentThreadFactory & DerivedPrimaryThreadFactory {
+  const statusReader = options.statusReader;
   return {
     async create(input: CreateThreadInput) {
       const normalized = normalizeThreadCreate(input);
@@ -180,8 +179,8 @@ export function createDrizzleThreadRepository(
         kind: normalized.kind,
         title: normalized.title,
         composedSystemPrompt: normalized.systemPrompt,
-        workingState: input.workingState ?? null,
         parentThreadId: normalized.parentThreadId,
+        rootThreadId: threadId,
         spawnStatus: normalized.spawnStatus,
         spawnDepth: normalized.spawnDepth,
         status: "idle",
@@ -199,8 +198,9 @@ export function createDrizzleThreadRepository(
         title: thread.title ?? "",
         composedSystemPrompt: thread.composedSystemPrompt,
         bakedSkillSlugs: thread.bakedSkillSlugs,
+        bakedTools: thread.bakedTools,
         parentThreadId: thread.parentThreadId,
-        rootThreadId: thread.kind === "subagent" ? thread.rootThreadId : null,
+        rootThreadId: thread.rootThreadId,
         originTurnId: input.originTurnId ?? thread.id,
         originType: "spawn",
         spawnStatus: thread.spawnStatus,
@@ -219,10 +219,13 @@ export function createDrizzleThreadRepository(
         kind: "primary",
         title: thread.title ?? "",
         composedSystemPrompt: thread.composedSystemPrompt,
-        parentThreadId: input.parentThreadId,
-        originTurnId: input.originTurnId ?? null,
-        originType: input.originType,
-        spawnDepth: 0,
+        bakedSkillSlugs: thread.bakedSkillSlugs,
+        bakedTools: thread.bakedTools,
+        parentThreadId: thread.parentThreadId,
+        rootThreadId: thread.rootThreadId,
+        originTurnId: thread.originTurnId,
+        originType: thread.originType,
+        spawnDepth: thread.spawnDepth,
         status: thread.status,
       });
       if (!row) throw new Error("Failed to create derived primary thread");
@@ -233,7 +236,6 @@ export function createDrizzleThreadRepository(
         .update(schema.threads)
         .set({
           spawnStatus: input.spawnStatus,
-          ...(input.spawnResult !== undefined ? { spawnResult: input.spawnResult } : {}),
           updatedAt: new Date(),
         })
         .where(eq(schema.threads.id, id))
@@ -291,14 +293,11 @@ export function createDrizzleThreadRepository(
         .limit(1);
       return row?.projectId ?? null;
     },
-    async lockByIdIncludingDeleted(id: ThreadId) {
+    async lockByIdIncludingDeleted(id: ThreadId, additionalWorkIds) {
       const activeDb = currentDrizzleDb(db);
-      const [locked] = await activeDb
-        .select({ id: schema.threads.id })
-        .from(schema.threads)
-        .where(eq(schema.threads.id, id))
-        .for("update")
-        .limit(1);
+      const locked = additionalWorkIds
+        ? await lockThreadAndWorks(db, id, additionalWorkIds)
+        : await lockThreadForMutation(db, id);
       if (!locked) return null;
       const [row] = await activeDb
         .select(threadColumns)
@@ -353,7 +352,60 @@ export function createDrizzleThreadRepository(
           ),
         )
         .orderBy(desc(schema.threads.updatedAt));
-      return rows.map(mapThreadListRow);
+      // Liveness comes from the lease port for the page, never a second SQL
+      // predicate: one implementation of "live" (the lease adapter).
+      const leaseStates =
+        statusReader && rows.length > 0
+          ? await statusReader.readMany(rows.map((row) => row.id as ThreadId))
+          : null;
+      return rows.map((row) =>
+        mapThreadListRow(row, leaseStates?.get(row.id as ThreadId)?.runningTurnId ?? null),
+      );
+    },
+    async listDescendants(threadId: ThreadId) {
+      const activeDb = currentDrizzleDb(db);
+      const descendants: ThreadDescendant[] = [];
+      const seen = new Set<string>([threadId]);
+      let frontier: ThreadId[] = [threadId];
+      // Level-by-level BFS so each hop is an index lookup on
+      // `threads_parent_created_active` (parent_thread_id, created_at DESC).
+      while (frontier.length > 0) {
+        const rows = await activeDb
+          .select({
+            id: schema.threads.id,
+            parentThreadId: schema.threads.parentThreadId,
+            rootThreadId: schema.threads.rootThreadId,
+            spawnDepth: schema.threads.spawnDepth,
+            ref: schema.threads.ref,
+            title: schema.threads.title,
+            agentName,
+            spawnStatus: schema.threads.spawnStatus,
+            originTurnId: schema.threads.originTurnId,
+          })
+          .from(schema.threads)
+          .where(
+            and(inArray(schema.threads.parentThreadId, frontier), isNull(schema.threads.deletedAt)),
+          )
+          .orderBy(asc(schema.threads.createdAt), asc(schema.threads.id));
+        frontier = [];
+        for (const row of rows) {
+          if (seen.has(row.id)) continue;
+          seen.add(row.id);
+          descendants.push({
+            id: row.id,
+            parentThreadId: row.parentThreadId,
+            rootThreadId: row.rootThreadId ?? row.id,
+            spawnDepth: row.spawnDepth,
+            ref: row.ref,
+            title: row.title === "" ? null : row.title,
+            agentName: row.agentName ?? null,
+            spawnStatus: row.spawnStatus as SpawnStatus | null,
+            originTurnId: row.originTurnId ?? null,
+          });
+          frontier.push(row.id);
+        }
+      }
+      return descendants;
     },
     async listRecentByWork(projectId: ProjectId, workId: WorkId, limit: number) {
       const boundedLimit = Math.max(0, Math.min(Math.trunc(limit), 50));
@@ -376,7 +428,7 @@ export function createDrizzleThreadRepository(
       return Array.from(
         rows as unknown as Iterable<{
           title: string | null;
-          status: ThreadStatus;
+          status: ThreadLifecycleStatus;
           updated_at_exact: string;
         }>,
       ).map((row) => ({
@@ -422,6 +474,7 @@ export function createDrizzleThreadRepository(
         .set({
           composedSystemPrompt: input.composedSystemPrompt,
           bakedSkillSlugs: input.bakedSkillSlugs,
+          bakedTools: input.bakedTools,
           updatedAt: new Date(),
         })
         .where(and(eq(schema.threads.id, id), isNull(schema.threads.bakedSkillSlugs)))

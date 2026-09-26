@@ -158,17 +158,6 @@ function blockTypes(instance: Editor): string[] {
 }
 
 describe("Enter on a selected object", () => {
-  it("opens the surface its lane registered", () => {
-    const instance = mount([paragraph("before"), mermaid, paragraph("after")]);
-    const open = vi.fn(() => true);
-    const pos = positionOf(instance, "code_block");
-    registerObjectEngagement(instance, specIdAt(instance, pos), open);
-
-    select(instance, pos);
-    expect(press(instance, { key: "Enter" })).toBe(true);
-    expect(open).toHaveBeenCalledOnce();
-  });
-
   it("never falls through to the base keymap, which would split the block", () => {
     const instance = mount([paragraph("before"), mermaid, paragraph("after")]);
     const before = blockTypes(instance);

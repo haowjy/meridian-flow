@@ -1,10 +1,13 @@
 /** PostgreSQL contracts for committed change-event replace-set projections. */
 
 import type { TrailChangeV1 } from "@meridian/contracts";
+import type { TurnId } from "@meridian/contracts/runtime";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   ALPHA_ID,
   closeDatabase,
+  createHarness,
   db,
   resetDatabase,
   schema,
@@ -54,6 +57,108 @@ const trail = (changes: TrailChangeV1[]) => ({
 describe("change trail aggregate projections (postgres)", () => {
   beforeEach(resetDatabase);
   afterAll(closeDatabase);
+
+  it("bounds reconciliation and revisits earlier pages to settle every trail", async () => {
+    const turnIds = Array.from({ length: 101 }, () => crypto.randomUUID() as TurnId);
+    await db.insert(schema.turns).values(
+      turnIds.map((id) => ({
+        id,
+        threadId: THREAD_ID,
+        parentTurnId: TURN_ID,
+        role: "assistant" as const,
+        origin: "assistant" as const,
+        status: "complete" as const,
+      })),
+    );
+    await db.insert(schema.changeTrailShells).values(
+      turnIds.map((turnId) => ({
+        id: crypto.randomUUID(),
+        threadId: THREAD_ID,
+        turnId,
+        ownerKind: "turn" as const,
+        changeCount: 0,
+        documentCount: 0,
+      })),
+    );
+    const writer = createDrizzleChangeTrailAggregateWriter(db);
+    const states = async () =>
+      (await db.select().from(schema.changeTrailShells)).map((row) => row.state);
+    await writer.reconcileTerminalOwners();
+    expect((await states()).filter((state) => state === "settling")).toHaveLength(100);
+    await writer.reconcileTerminalOwners();
+    expect((await states()).filter((state) => state === "settling")).toHaveLength(101);
+    await writer.reconcileTerminalOwners();
+    expect((await states()).filter((state) => state === "settled")).toHaveLength(100);
+    await writer.reconcileTerminalOwners();
+    expect((await states()).filter((state) => state === "settled")).toHaveLength(101);
+  });
+
+  it("settles new trails without scanning already-settled history", async () => {
+    const turnIds = Array.from({ length: 102 }, () => crypto.randomUUID() as TurnId);
+    await db.insert(schema.turns).values(
+      turnIds.map((id) => ({
+        id,
+        threadId: THREAD_ID,
+        parentTurnId: TURN_ID,
+        role: "assistant" as const,
+        origin: "assistant" as const,
+        status: "complete" as const,
+      })),
+    );
+    const freshId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+    await db.insert(schema.changeTrailShells).values(
+      turnIds.map((turnId, index) => ({
+        id:
+          index === 101
+            ? freshId
+            : `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+        threadId: THREAD_ID,
+        turnId,
+        ownerKind: "turn" as const,
+        state: index === 101 ? ("building" as const) : ("settled" as const),
+        settledAt: index === 101 ? null : new Date(),
+        changeCount: 0,
+        documentCount: 0,
+      })),
+    );
+    const writer = createDrizzleChangeTrailAggregateWriter(db);
+    await writer.reconcileTerminalOwners();
+    await writer.reconcileTerminalOwners();
+    const [fresh] = await db
+      .select()
+      .from(schema.changeTrailShells)
+      .where(eq(schema.changeTrailShells.id, freshId));
+    expect(fresh?.state).toBe("settled");
+  });
+
+  it("reopens a shared trail when new work arrives during an active turn", async () => {
+    const harness = createHarness();
+    try {
+      await harness.seedDestructivePush("shared-active-reopen");
+      await db
+        .update(schema.turns)
+        .set({ status: "streaming" })
+        .where(eq(schema.turns.id, TURN_ID));
+      const id = crypto.randomUUID();
+      await db.insert(schema.changeTrailShells).values({
+        id,
+        threadId: THREAD_ID,
+        ownerKind: "shared",
+        state: "settled",
+        settledAt: new Date(0),
+        changeCount: 0,
+        documentCount: 0,
+      });
+      await createDrizzleChangeTrailAggregateWriter(db).reconcileTerminalOwners();
+      const [shared] = await db
+        .select()
+        .from(schema.changeTrailShells)
+        .where(eq(schema.changeTrailShells.id, id));
+      expect(shared).toMatchObject({ state: "building", settledAt: null, version: 2 });
+    } finally {
+      harness.destroyWarmState();
+    }
+  });
 
   it("keeps cumulative changes attributed to the push that admitted each one", async () => {
     const [autoPush, manualPush] = await db

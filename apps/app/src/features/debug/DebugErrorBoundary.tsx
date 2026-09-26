@@ -1,18 +1,4 @@
-/**
- * DebugErrorBoundary — shared error boundary used throughout the dev-only
- * debug overlay.
- *
- * Key decisions:
- * - Catches render errors from any subtree (one section, one store row) and
- *   degrades to "not available — <error>" instead of tearing the overlay down.
- *   The product-lift track is moving hooks under us; a debug tool that crashes
- *   on a moved hook is worse than useless.
- * - Logs to `console.warn` so dev sees the failing surface and can fix the
- *   read.
- * - Single shared implementation — previously duplicated as `SectionBoundary`
- *   in `DebugOverlay.tsx` and `SafeRow` in `sections/StoresSection.tsx`.
- * - i18n exception: DEV-only.
- */
+/** Isolates development-only debug sections and logs their render failures. */
 import { Component, type ReactNode } from "react";
 
 type Props = {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { assistant, toolResult, user } from "../../helpers/messages.js";
+import { assistant, system, toolResult, user } from "../../helpers/messages.js";
 import { toAnthropicMessageParams } from "./request-map.js";
+
+const EPHEMERAL_1H = { type: "ephemeral" as const, ttl: "1h" as const };
 
 const skillTool = {
   type: "function" as const,
@@ -132,5 +134,134 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
       "deepseek",
     );
     expect(assistantBlocks(params)[0]).toEqual({ type: "thinking", thinking: "" });
+  });
+});
+
+describe("Anthropic message alternation", () => {
+  it("merges adjacent delivery user messages after a tool result", () => {
+    const params = toAnthropicMessageParams(
+      {
+        messages: [
+          assistant([
+            { type: "tool_use", toolCallId: "call_delivery", toolName: "spawn", input: {} },
+          ]),
+          toolResult("call_delivery", { ok: true }),
+          user("<system_update>child finished</system_update>"),
+          user("writer message one"),
+          user("writer message two"),
+        ],
+      },
+      "claude-sonnet-4-5",
+      256,
+    );
+    expect(params.messages.map((message) => message.role)).toEqual(["assistant", "user"]);
+    expect(params.messages[1]).toMatchObject({
+      content: [
+        { type: "tool_result", tool_use_id: "call_delivery" },
+        { type: "text", text: "<system_update>child finished</system_update>" },
+        { type: "text", text: "writer message one" },
+        { type: "text", text: "writer message two" },
+      ],
+    });
+  });
+});
+
+describe("Anthropic prompt-cache breakpoints", () => {
+  it("translates a cacheBreakpoint into ephemeral cache_control with a 1h ttl for system, tool_use, and tool_result blocks", () => {
+    const params = toAnthropicMessageParams(
+      {
+        messages: [
+          {
+            ...system("You are Writer."),
+            content: [{ type: "text", text: "You are Writer.", cacheBreakpoint: true }],
+          },
+          assistant([
+            {
+              type: "tool_use",
+              toolCallId: "call_1",
+              toolName: "search",
+              input: {},
+              cacheBreakpoint: true,
+            },
+          ]),
+          {
+            ...toolResult("call_1", "result", false),
+            content: [
+              {
+                type: "tool_result",
+                toolCallId: "call_1",
+                output: "result",
+                isError: false,
+                cacheBreakpoint: true,
+              },
+            ],
+          },
+        ],
+        tools: [{ type: "function", name: "search", description: "Search.", inputSchema: {} }],
+      },
+      "claude-sonnet-4-5",
+      256,
+    );
+    expect(params.system).toEqual([
+      { type: "text", text: "You are Writer.", cache_control: EPHEMERAL_1H },
+    ]);
+    // Tools are never marked directly (Anthropic renders tools before system,
+    // so the system breakpoint above already covers them).
+    expect(params.tools?.[0]).not.toHaveProperty("cache_control");
+    const assistantMessage = params.messages.find((m) => m.role === "assistant");
+    if (!assistantMessage) throw new Error("Expected an assistant message");
+    expect(assistantBlocks({ ...params, messages: [assistantMessage] })[0]).toMatchObject({
+      type: "tool_use",
+      cache_control: EPHEMERAL_1H,
+    });
+    const toolMessage = params.messages.find(
+      (m) =>
+        m.role === "user" &&
+        Array.isArray(m.content) &&
+        m.content.some((block) => block.type === "tool_result"),
+    );
+    const toolContent = toolMessage?.content;
+    const toolBlock = (Array.isArray(toolContent) ? toolContent : []).find(
+      (block: { type: string }) => block.type === "tool_result",
+    );
+    expect(toolBlock).toMatchObject({ cache_control: EPHEMERAL_1H });
+  });
+
+  it("never emits more than 4 cache_control breakpoints for the loop's 3-mark scheme", () => {
+    // Mirrors what `loop/prompt-cache-marks.ts` marks: the system message,
+    // the previous request's tail (read point), and this request's tail.
+    const params = toAnthropicMessageParams(
+      {
+        messages: [
+          {
+            ...system("You are Writer."),
+            content: [{ type: "text", text: "You are Writer.", cacheBreakpoint: true }],
+          },
+          {
+            ...user("History line one."),
+            content: [{ type: "text", text: "History line one.", cacheBreakpoint: true }],
+          },
+          assistant([{ type: "tool_use", toolCallId: "call_1", toolName: "search", input: {} }]),
+          {
+            ...toolResult("call_1", "result", false),
+            content: [
+              {
+                type: "tool_result",
+                toolCallId: "call_1",
+                output: "result",
+                isError: false,
+                cacheBreakpoint: true,
+              },
+            ],
+          },
+        ],
+      },
+      "claude-sonnet-4-5",
+      256,
+    );
+    const wireJson = JSON.stringify(params);
+    const breakpointCount = wireJson.split('"cache_control"').length - 1;
+    expect(breakpointCount).toBe(3);
+    expect(breakpointCount).toBeLessThanOrEqual(4);
   });
 });

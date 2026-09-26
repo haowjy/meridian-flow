@@ -1,8 +1,10 @@
 /**
  * Purpose: Defines the shared custom component-block and interrupt-answer contracts used by server persistence and client renderers.
- * Key decisions: component block content stays JSON-natural and generic at the envelope, while the MVP `ask_user` component props are typed here so server builders, reducers, and renderers do not re-spell per-kind schemas.
+ * Key decisions: component block content stays JSON-natural and generic at the envelope, while invocation cards and `ask_user` props have explicit typed builders so server producers do not lose their required fields.
  */
 import type { ArtifactRef } from "../interrupt/index.js";
+import type { ThreadId, TurnId } from "../runtime/index.js";
+import type { ExecutionReportDelivery, SavedOutcome } from "../spawn/index.js";
 import type { JsonObject, JsonValue } from "../threads/index.js";
 
 /** Registry key for a renderer/tool-owned custom component. */
@@ -57,24 +59,23 @@ export function buildHelperResultComponentContent(
   };
 }
 
-/** The child's returned report, rendered as an `ArtifactCard` in the child transcript. */
-export type ChildReportProps = JsonObject & {
-  summary: string;
-  artifacts?: ArtifactRef[];
-};
+/** Exact parent invocation identity retained on a child run's historical card. */
+export type InvocationCardProps = {
+  agentSlug: string;
+  agentName: string;
+  parentTurnId: TurnId;
+  toolCallId: string;
+  childThreadId: ThreadId;
+  deliveryMode: Extract<ExecutionReportDelivery, "direct" | "background_notification">;
+  title?: string;
+} & (
+  | { status: "running"; execution: TurnId | null; outcome?: never }
+  | { status: "failed"; execution: null; outcome?: never }
+  | { status: "completed" | "failed"; execution: TurnId; outcome: SavedOutcome }
+);
 
-export type ChildReportComponentContent = ComponentBlockContent & {
-  kind: "child-report";
-  props: ChildReportProps;
-};
-
-export function buildChildReportComponentContent(
-  input: ChildReportProps,
-): ChildReportComponentContent {
-  return {
-    kind: "child-report",
-    props: input,
-  };
+export function buildInvocationCardContent(input: InvocationCardProps): ComponentBlockContent {
+  return { kind: "helper-result", props: input as unknown as JsonObject };
 }
 
 /** Answer returned to interrupt tools after user response or auto-resume. */

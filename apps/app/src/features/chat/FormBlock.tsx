@@ -27,7 +27,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import { Pause } from "lucide-react";
-import { type FormEvent, type ReactNode, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -141,11 +141,9 @@ function InterruptForm({
   responseState: ComponentBlockProps["responseState"];
   retry: ComponentBlockProps["retry"];
 }) {
-  // The form's initial values depend on schema + recommended; recomputing on
-  // every keystroke would clobber user input. Memoize on the props that
-  // actually feed the seed.
-  const seedValues = useMemo(() => initialFormValues(fields, recommended), [fields, recommended]);
-  const [values, setValues] = useState<InterruptFormValues>(seedValues);
+  const [values, setValues] = useState<InterruptFormValues>(() =>
+    initialFormValues(fields, recommended),
+  );
   const [errors, setErrors] = useState<InterruptFormErrors>({});
   const [submitted, setSubmitted] = useState(false);
 

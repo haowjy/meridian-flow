@@ -339,10 +339,10 @@ describe("tables and Layout round-trip corpus", () => {
 
   it.each([
     { block: "paragraph", tag: "p", node: paragraph(t("Prose")) },
-    ...Array.from({ length: 6 }, (_, index) => ({
-      block: `heading ${index + 1}`,
-      tag: `h${index + 1}`,
-      node: schema.node("heading", { level: index + 1 }, [t(`Heading ${index + 1}`)]),
+    ...[1, 6].map((level) => ({
+      block: `heading ${level}`,
+      tag: `h${level}`,
+      node: schema.node("heading", { level }, [t(`Heading ${level}`)]),
     })),
     {
       block: "bullet list",

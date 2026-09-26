@@ -1,32 +1,4 @@
-/**
- * Where a press that landed OUTSIDE the prose puts the caret.
- *
- * The editor pane has no click-dead margins (user call 2026-07-16): a press on
- * the page gutter, the padding below the last block, or the inert strip between
- * two blocks is caret territory. That press has no ProseMirror position of its
- * own — it is answered here, once, for every block kind alike. A lane shipping
- * a new block view adds nothing: the answer reads the object registration
- * (`objects/object-types.ts`), never a node name.
- *
- * Two rules make the answer safe, and both exist because a caret in DOM the
- * writer cannot see eats every keystroke it is given:
- *
- * 1. **An outside press never lands in an opaque object's interior.** A
- *    rendered diagram, a picture, a rule: the body stands in for text that is
- *    not on screen, so `posAtCoords` finding that hidden text is an accident of
- *    geometry, not an intention.
- * 2. **A press in the seam BETWEEN two blocks prefers prose to source.** A
- *    seam belongs to neither block, so a fence does not volunteer for it. A
- *    press ON a fence's own band (the gutter beside it) still enters it —
- *    that text is visible, and the writer is pointing at it.
- *
- * Both policies are geometry-independent, and cells hold any block now (§4 of
- * the cell addendum), so the same walk answers one level down: the bands may
- * be a CELL's children instead of the document's, and then a third rule joins
- * the two — a press inside a cell resolves inside that cell, never a
- * neighbouring cell and never the document. The cell is isolating; an answer
- * that leaves it is a wrong answer, not a nearest one.
- */
+/** Maps pointer events to editor document boundaries. */
 
 import { GapCursor } from "@tiptap/pm/gapcursor";
 import type { Node as PMNode } from "@tiptap/pm/model";
@@ -43,12 +15,7 @@ export type BlockBand = {
   bottom: number;
 };
 
-/**
- * The block container whose children the bands are — a table cell, when the
- * press is inside one. The container is isolating, so every answer must stay
- * inside it: a press inside a cell never resolves to a neighbouring cell or
- * to the document (§4's cell-flavoured cousin of the no-row-children rule).
- */
+/** The block container whose children the bands are — a table cell, when the press is inside one. */
 export type PointerBoundaryContainer = {
   node: PMNode;
   /** Document position of the container node itself. */
@@ -59,13 +26,7 @@ export type PointerBoundaryInput = {
   doc: PMNode;
   /** Viewport y of the press, unclamped — how far outside is the question. */
   y: number;
-  /**
-   * The bands of the blocks nearest the press, in document order — top-level
-   * blocks, or the pressed cell's children when `container` names one. They
-   * must bracket the press or the press lies past the container's end;
-   * `blockBandsNear` guarantees that by centring the window on the block
-   * `posAtCoords` answered with.
-   */
+  /** The bands of the blocks nearest the press, in document order — top-level blocks, or the pressed cell's children when `container` names one. */
   bands: readonly BlockBand[];
   /** What `posAtCoords` answered for the press clamped into the prose column. */
   coordsPos: number | null;
@@ -73,14 +34,7 @@ export type PointerBoundaryInput = {
   container?: PointerBoundaryContainer;
 };
 
-/**
- * Where the press puts the caret, or that it must not place one.
- *
- * `decline` is a real answer, not a failure: a document with no writer text
- * anywhere (one diagram, and nothing else) has nowhere safe to put a caret, and
- * leaving the selection where it stands beats inventing a position inside
- * hidden source. It is never a silent fall-through.
- */
+/** Where the press puts the caret, or that it must not place one. */
 export type PointerBoundaryDecision =
   | { kind: "place"; selection: Selection }
   | { kind: "decline"; reason: PointerBoundaryDecline };
@@ -94,18 +48,7 @@ export type PointerBoundaryDecline =
 /** How many blocks either side of the press are measured. */
 const BAND_WINDOW = 2;
 
-/**
- * The decision for a press at viewport `(clientX, clientY)`.
- *
- * The one impure step: it reads the prose rectangle and the neighbouring block
- * rectangles, then hands pure data to `resolvePointerBoundary`. Callers
- * dispatch the selection; nothing here touches editor state.
- *
- * `known` is the pressed cell when the caller already holds it from the DOM
- * (`cell-interior-press.ts`, whose event target IS the cell element). It
- * outranks the geometric reading below, which depends on `posAtCoords` — the
- * very reading a border press cannot trust.
- */
+/** The decision for a press at viewport `(clientX, clientY)`. */
 export function pointerBoundaryDecision(
   view: EditorView,
   clientX: number,
@@ -127,15 +70,7 @@ export function pointerBoundaryDecision(
   });
 }
 
-/**
- * The deepest cell the press itself is inside, or null for a top-level press.
- *
- * Both readings have to agree before a cell scopes the answer: `posAtCoords`
- * says the press's document neighbourhood is in the cell, and the cell's own
- * rectangle holds the pointer. A gutter press beside a table resolves to a
- * position inside a cell too, and scoping THAT press to the cell would trap a
- * page-margin click inside a grid the writer never touched.
- */
+/** The deepest cell the press itself is inside, or null for a top-level press. */
 function cellUnderPress(
   view: EditorView,
   clientX: number,
@@ -211,14 +146,7 @@ function boundaryScope(doc: PMNode, container?: PointerBoundaryContainer): Scope
   return { node: container.node, start, end: start + container.node.content.size };
 }
 
-/**
- * The pointer-boundary policy itself, over geometry and the document alone.
- *
- * Three sites, two policies. A press whose y falls inside a block's band — or
- * past the first/last band, which is the gutter above or below the container
- * — is a press ON that block. A press in the vertical margin between two
- * bands is a seam, and belongs to neither.
- */
+/** The pointer-boundary policy itself, over geometry and the document alone. */
 export function resolvePointerBoundary({
   doc,
   y,
@@ -242,14 +170,7 @@ export function resolvePointerBoundary({
   return seamDecision(doc, scope, before?.pos ?? null, after?.pos ?? null);
 }
 
-/**
- * A press the block owns: the writer pointed at this block from its margin.
- *
- * `posAtCoords` already found the line beside the pointer, so the answer is the
- * text position there — unless that text is an opaque object's hidden interior,
- * in which case the block cannot hold a caret at all and the press falls to the
- * nearer of its two edges, as a seam.
- */
+/** A press the block owns: the writer pointed at this block from its margin. */
 function pressOnBlock(
   doc: PMNode,
   scope: Scope,
@@ -290,14 +211,7 @@ function pressOnBlock(
   return seamDecision(doc, scope, before?.pos ?? null, after?.pos ?? null);
 }
 
-/**
- * A press in the strip between two blocks, which neither block claims.
- *
- * The following block answers first: a writer clicking under a paragraph is
- * heading down the page. Then the one above, then the gap between them when the
- * schema admits one (two pictures with nothing typeable between them). Only
- * when the whole document offers no visible caret does the press decline.
- */
+/** A press in the strip between two blocks, which neither block claims. */
 function seamDecision(
   doc: PMNode,
   scope: Scope,
@@ -334,16 +248,7 @@ function placeText(doc: PMNode, pos: number): PointerBoundaryDecision {
   return { kind: "place", selection: TextSelection.create(doc, pos) };
 }
 
-/**
- * The first (`1`) or last (`-1`) position inside `node` a writer can see a
- * caret in, or null when the node holds none.
- *
- * Null for three kinds: an opaque object (its body stands in for text that is
- * not on screen), a source block (visible, but a seam press prefers prose to
- * syntax), and a leaf. A container is asked of its children in press order, so
- * a table answers with its first cell and a blockquote with its first
- * paragraph.
- */
+/** The first (`1`) or last (`-1`) position inside `node` a writer can see a caret in, or null when the node holds none. */
 function writerTextEdge(node: PMNode, pos: number, direction: 1 | -1): number | null {
   if (isOpaqueObject(node)) return null;
   if (node.isTextblock) {

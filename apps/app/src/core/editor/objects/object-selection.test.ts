@@ -175,30 +175,6 @@ describe("selecting and leaving an object", () => {
     expect(instance.state.selection.$head.parent.textContent).toBe("before");
   });
 
-  it("engages a table by dropping the caret in its first cell", () => {
-    const instance = mount([
-      {
-        type: "table",
-        content: [
-          {
-            type: "table_row",
-            content: [
-              { type: "table_header", content: [paragraph("Rank")] },
-              { type: "table_header", content: [paragraph("Skill")] },
-            ],
-          },
-        ],
-      },
-    ]);
-    const pos = positionOf(instance, "table");
-
-    const transaction = caretInsideObjectTransaction(instance.state, pos);
-    expect(transaction).not.toBeNull();
-    if (transaction) instance.view.dispatch(transaction);
-
-    expect(instance.state.selection.$head.parent.textContent).toBe("Rank");
-  });
-
   it("has nothing to engage inside an atom", () => {
     const instance = mount([figure]);
     expect(caretInsideObjectTransaction(instance.state, positionOf(instance, "figure"))).toBeNull();

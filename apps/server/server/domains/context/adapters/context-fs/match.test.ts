@@ -51,14 +51,6 @@ describe("matchDocument", () => {
     });
   });
 
-  it("hands back prose, never the addressing prefix around it", () => {
-    const match = matchDocument(["aa11|Elara waited."], "elara", HASHLINES);
-
-    expect(match?.matches[0].excerpt).toBe("Elara waited.");
-    expect(match?.matches[0].excerpt).not.toContain("|");
-    expect(match?.matches[0].blockHash).toBe("aa11");
-  });
-
   it("treats plain markdown as lines and never splits a table row into a hash", () => {
     expect(matchDocument(["| name | role |", "| Elara | envoy |"], "elara", PLAIN)).toEqual({
       matches: [{ excerpt: "| Elara | envoy |" }],

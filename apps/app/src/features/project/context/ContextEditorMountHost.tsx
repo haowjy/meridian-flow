@@ -1,33 +1,4 @@
-/**
- * ContextEditorMountHost — hosts the *active* TRACKED context document with
- * a bounded "keep-warm" set of recently-viewed editors.
- *
- * Why this exists. Switching context tabs naively (unmount old, mount new)
- * tears down every `DocumentSession` on every click — losing cursor + scroll
- * state and forcing a full Yjs sync round-trip. We want VS Code / Cursor
- * behaviour: switching tabs is instant and preserves state. So we mount each
- * recently-used tracked editor and hide the inactive ones with `hidden`
- * instead of removing them from the React tree. Document-session transport
- * subscriptions are retained by the registry for the true open-tab set, so a
- * warm-set eviction drops only the view, not the live Yjs session.
- *
- * Bounded set. We cap the warm set at MAX (small) entries. The currently
- * active tab is *always* in the warm set; on eviction we drop the least
- * recently used (other) editor. Its `EditorView` unmounts, but the registry
- * keeps the session alive until the tab actually closes or this host unmounts.
- * That separation preserves document continuity without duplicate
- * transport-level subscriptions when a view remounts.
- *
- * One host owns one slot per documentId — even a `documentId` re-entering
- * the warm set re-uses its same JSX slot keyed by id, so it always passes
- * through React's mount/unmount lifecycle in the natural order:
- *   open A → mount A           [A:active]
- *   open B → mount B           [A:warm, B:active]
- *   open C → mount C           [A:warm, B:warm, C:active]  (if MAX≥3)
- *   open D, evicting A:        unmount A → mount D         [B:warm, C:warm, D:active]
- * React commits the unmount cleanup BEFORE the next render's mount effect for
- * the same `documentId`, so subscribe/unsubscribe stay paired.
- */
+/** ContextEditorMountHost — hosts the *active* TRACKED context document with a bounded "keep-warm" set of recently-viewed editors. */
 import { Trans } from "@lingui/react/macro";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
@@ -65,12 +36,6 @@ export type ContextEditorMountHostProps = {
   onUntitledBecameNonEmpty?: (documentId: string) => Promise<void>;
 };
 
-/**
- * Picks which subset of TRACKED tab ids should be MOUNTED right now. The
- * caller owns the LRU bookkeeping (a stack of document ids most-recently
- * accessed first). We always include `activeTabId`, then fill with the LRU
- * order until we hit `MAX_MOUNTED_EDITORS`.
- */
 export function pickMountedIds(
   lru: readonly string[],
   trackedIds: readonly string[],

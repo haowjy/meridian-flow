@@ -17,7 +17,7 @@
  *   guarantee non-interleaving during streaming, so Meridian buffers by index
  *   and sorts at assembly time rather than trusting arrival order.
  * - `response.function_call_arguments.delta` events carry `item_id` and
- *   `output_index` but NOT `call_id` (confirmed in SDK types). This is why
+ *   `output_index` but not `call_id`. This is why
  *   argument deltas are buffered in `pendingDeltas` until the durable `call_id`
  *   arrives via `response.output_item.added` or a later event.
  * - SDK v6 renamed the streaming event literals from `response.reasoning.*`
@@ -196,6 +196,12 @@ export function mapUsage(usage: OpenAI.Responses.ResponseUsage): Usage {
   // Both fields are confirmed in the OpenAI reasoning guide and the installed
   // SDK's ResponseUsage shape. Meridian only sets optional Usage fields when the
   // provider reports a positive value.
+  //
+  // No `cacheWriteTokens` here: the installed SDK (6.45.0) has no
+  // `cache_write_tokens`-shaped field anywhere in Responses or Chat
+  // Completions usage, and OpenAI's own pricing has no separate cache-write
+  // tier (unlike Anthropic) — only a discount on cached reads. There is
+  // nothing to parse.
   const result: Usage = {
     inputTokens: usage.input_tokens,
     outputTokens: usage.output_tokens,

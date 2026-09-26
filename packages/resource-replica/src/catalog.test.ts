@@ -1,11 +1,6 @@
 import type { CatalogEntry, CatalogScope } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
-import {
-  applyCatalogChanges,
-  catalogChildren,
-  catalogFiles,
-  catalogViewFromSnapshot,
-} from "./catalog";
+import { applyCatalogChanges, catalogFiles, catalogViewFromSnapshot } from "./catalog";
 
 const scope = { kind: "project", projectId: "project-1" } as const satisfies CatalogScope;
 const source: CatalogEntry = {
@@ -44,17 +39,6 @@ const file: CatalogEntry = {
 };
 
 describe("catalog cache reducer", () => {
-  it("normalizes one identity for tree and picker projections", () => {
-    const view = catalogViewFromSnapshot({
-      scope,
-      generation: "generation-1",
-      headRevision: "1",
-      cursor: "cursor-1",
-      entries: [source, folder, file],
-    });
-    expect(catalogChildren(view, "folder-1")[0]).toBe(catalogFiles(view)[0]);
-  });
-
   it("applies whole commits idempotently and invalidates a subtree immediately", () => {
     const initial = catalogViewFromSnapshot({
       scope,

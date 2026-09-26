@@ -1,21 +1,4 @@
-/**
- * DockChangesView — the dock's work-scoped Changes view (query/group shell).
- *
- * Lists every document with pending AI changes for the Work, one row each:
- * name + `+N −N` word totals + a hover-revealed Review verb. Whole-row click
- * is Review, routed through the SAME launcher the composer DraftDock uses
- * (`useAiDraftLauncher`), so opening review and switching the dock to Changes
- * stay one gesture with one code path.
- *
- * The document CURRENTLY under inline review expands to proposal cards read
- * from the live preview (`useDraftPreview`): the flat operation list is
- * partitioned into closure classes (`partitionClosureClasses`), one card per
- * class (spec §5.3). This module orchestrates: it fetches the preview,
- * partitions the classes, renders the card list,
- * and renders the single session message line. The card + verb rendering lives
- * in `ReviewOperationCard`; the closure partition + card-body text extraction
- * live in `closure-classes` / `operation-change-text`.
- */
+/** Renders the Changes view in the project dock. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
@@ -104,16 +87,6 @@ type ActivePreview = {
   isNewDocument?: boolean;
 };
 
-/**
- * One document group: the header row Reviews it (the lane's whole-row target
- * grammar). When this document is under review, its operations render as change
- * cards beneath the header.
- *
- * Rail grammar throughout (matches ContextSidebar's DocumentRow): transparent
- * rows, `text-sm` names, `text-caption` secondary in the muted-foreground ramp,
- * `sidebar-accent` tints. The stats label sizes itself from context, so the
- * caption wrapper here is what keeps `+2,033` quieter than the document name.
- */
 function ChangesDocumentGroup({
   row,
   controller,
@@ -176,16 +149,6 @@ function ChangesDocumentGroup({
   );
 }
 
-/**
- * Proposal cards for the document under review (spec §5.3, closure=card). The
- * flat operation list is partitioned into closure classes here — causal drag ∪
- * hunk-sharing — and each class renders as ONE card. Local active state is the
- * click echo, keyed by class: clicking a card body scrolls the manuscript and
- * rings the card; the editor is the source of truth for the span.
- *
- * Each card can selectively discard its represented closure. Applying remains
- * a document-level command in the review header.
- */
 function ReviewOperationCards({
   preview,
   controller,
@@ -237,12 +200,6 @@ function ReviewOperationCards({
   );
 }
 
-/**
- * The one active review message, resolved from the controller's coded state:
- * an Apply message when present, otherwise a Discard error. The controller
- * emits only codes (it is a state machine with no writer-facing strings); the
- * copy is localized here.
- */
 function currentReviewMessage(
   controller: DraftReviewController,
 ): { code: InlineReviewMessageCode; tone: "info" | "error" } | null {

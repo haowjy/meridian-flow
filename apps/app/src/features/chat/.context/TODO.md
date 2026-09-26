@@ -27,15 +27,6 @@ read as compact conversational receipts.
 
 Track with GitHub issue: #130.
 
-## `continue` tool rows are not hidden
-
-`tool-view-visibility.ts` hides the protocol rows for `ask_user`, `spawn`, and
-`return_result`, but not `continue`. A model `continue` persists the same
-`helper-result` card as `spawn`, so the writer sees an extra humanized
-"continue" activity row in the Thinking fold beside the card. Add `continue` to
-the hidden set so a continue reads like a spawn (`tool-view-visibility.ts`, with
-the same parity in `partition-turn.ts` and `tool-renderers.tsx`).
-
 ## Composer `@ for reference` rotation hint
 
 When mentions land, append ", @ for reference" to the rotating composer

@@ -106,6 +106,7 @@ export function refinePushChanges(
 }
 
 export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTrailAggregateWriter {
+  let cursor: { owner?: { thread_id: string; turn_id: string }; shell?: string } = {};
   const writer: ChangeTrailAggregateWriter = {
     async record(input) {
       const tx = currentDrizzleDb(db);
@@ -396,22 +397,38 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
       }
     },
     async reconcileTerminalOwners() {
-      await reconcileTerminalOwners(db);
+      cursor = await reconcileTerminalOwners(db, cursor);
     },
   };
   return writer;
 }
 
 /** Advances turn trails only after the terminal turn policy has covered every owned row. */
-async function reconcileTerminalOwners(db: Database): Promise<void> {
-  await runInRootDrizzleTransaction(db, async () => {
+async function reconcileTerminalOwners(
+  db: Database,
+  cursor: { owner?: { thread_id: string; turn_id: string }; shell?: string },
+) {
+  return runInRootDrizzleTransaction(db, async () => {
     const tx = currentDrizzleDb(db);
-    const owners = await tx.execute(sql`
+    const ownersPage = (after: typeof cursor.owner | null) =>
+      tx.execute(sql`
       SELECT DISTINCT work.thread_id, work.turn_id
       FROM turn_trail_work work
       JOIN turns turn ON turn.id = work.turn_id
+      LEFT JOIN change_trail_shells shell
+        ON shell.thread_id = work.thread_id AND shell.turn_id = work.turn_id
+          AND shell.owner_kind = 'turn'
       WHERE turn.status IN ('complete', 'cancelled', 'error')
+        AND (shell.id IS NULL OR shell.state <> 'settled' OR EXISTS (
+          SELECT 1 FROM turn_trail_work newer
+          WHERE newer.thread_id = work.thread_id AND newer.turn_id = work.turn_id
+            AND newer.updated_at > shell.settled_at
+        ))
+        ${after ? sql`AND (work.thread_id, work.turn_id) > (${after.thread_id}::uuid, ${after.turn_id}::uuid)` : sql``}
+      ORDER BY work.thread_id, work.turn_id LIMIT 100
     `);
+    let owners = await ownersPage(cursor.owner);
+    if (owners.length === 0 && cursor.owner) owners = await ownersPage(null);
     const turnShells = (owners as unknown as Array<{ thread_id: string; turn_id: string }>).map(
       (owner) => ({
         ...owner,
@@ -422,22 +439,43 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
         }),
       }),
     );
-    const mutableShells = await tx.execute(sql`
+    const shellsPage = (after: string | undefined | null) =>
+      tx.execute(sql`
       SELECT shell.id
       FROM change_trail_shells shell
-      WHERE (shell.turn_id IS NOT NULL AND EXISTS (
-          SELECT 1 FROM turns turn
-          WHERE turn.id = shell.turn_id AND turn.status IN ('complete', 'cancelled', 'error')
-        )) OR (shell.owner_kind = 'shared' AND NOT EXISTS (
-          SELECT 1 FROM turns turn
-          WHERE turn.thread_id = shell.thread_id
-            AND turn.status NOT IN ('complete', 'cancelled', 'error')
+      WHERE (
+        (shell.state <> 'settled' AND (
+          (shell.turn_id IS NOT NULL AND EXISTS (
+            SELECT 1 FROM turns turn
+            WHERE turn.id = shell.turn_id AND turn.status IN ('complete', 'cancelled', 'error')
+          )) OR (shell.owner_kind = 'shared' AND NOT EXISTS (
+            SELECT 1 FROM turns turn
+            WHERE turn.thread_id = shell.thread_id
+              AND turn.status NOT IN ('complete', 'cancelled', 'error')
+          ))
+        )) OR (shell.state = 'settled' AND EXISTS (
+          SELECT 1 FROM turn_trail_work work
+          WHERE work.thread_id = shell.thread_id
+            AND (shell.owner_kind = 'shared' OR work.turn_id = shell.turn_id)
+            AND work.updated_at > shell.settled_at
         ))
+      )
+        ${after ? sql`AND shell.id > ${after}::uuid` : sql``}
+      ORDER BY shell.id LIMIT 100
     `);
+    let mutableShells = await shellsPage(cursor.shell);
+    if (mutableShells.length === 0 && cursor.shell) mutableShells = await shellsPage(null);
     const lockedTrailIds = new Set([
       ...turnShells.map((owner) => owner.id),
       ...(mutableShells as unknown as Array<{ id: string }>).map((shell) => shell.id),
     ]);
+    const selected =
+      lockedTrailIds.size > 0
+        ? sql`IN (${sql.join(
+            [...lockedTrailIds].map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )})`
+        : sql`IS NULL`;
     for (const id of [...lockedTrailIds].sort()) {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${id}))`);
     }
@@ -457,7 +495,7 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
     const reopened = await tx.execute(sql`
       UPDATE change_trail_shells shell SET state = 'building', version = version + 1,
         settled_at = NULL, updated_at = now()
-      WHERE shell.state = 'settled' AND EXISTS (
+      WHERE shell.id ${selected} AND shell.state = 'settled' AND EXISTS (
         SELECT 1 FROM turn_trail_work work
         WHERE work.thread_id = shell.thread_id
           AND (shell.owner_kind = 'shared' OR work.turn_id = shell.turn_id)
@@ -494,7 +532,7 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
         shell.document_count, shell.documents,
         shell.words_added, shell.words_removed
       FROM change_trail_shells AS shell
-      WHERE shell.state = 'settling'
+      WHERE shell.id ${selected} AND shell.state = 'settling'
         AND (
           (shell.turn_id IS NOT NULL AND NOT EXISTS (
             SELECT 1 FROM turn_trail_work work
@@ -553,7 +591,7 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
       UPDATE change_trail_shells AS shell
       SET state = 'settling', version = shell.version + 1, updated_at = now()
       FROM turns
-      WHERE shell.turn_id = turns.id
+      WHERE shell.id ${selected} AND shell.turn_id = turns.id
         AND shell.state = 'building'
         AND turns.status IN ('complete', 'cancelled', 'error')
       RETURNING shell.id, shell.thread_id, shell.version, shell.change_count,
@@ -562,7 +600,7 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
 
     await tx.execute(sql`
       UPDATE change_trail_shells shell SET state = 'settling', version = version + 1, updated_at = now()
-      WHERE shell.owner_kind = 'shared' AND shell.state = 'building'
+      WHERE shell.id ${selected} AND shell.owner_kind = 'shared' AND shell.state = 'building'
         AND NOT EXISTS (
           SELECT 1 FROM turns turn WHERE turn.thread_id = shell.thread_id
             AND turn.status NOT IN ('complete', 'cancelled', 'error')
@@ -588,5 +626,9 @@ async function reconcileTerminalOwners(db: Database): Promise<void> {
         })
         .onConflictDoNothing();
     }
+    return {
+      owner: turnShells.at(-1),
+      shell: (mutableShells as unknown as Array<{ id: string }>).at(-1)?.id,
+    };
   });
 }

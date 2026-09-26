@@ -17,3 +17,15 @@ and incremental index over turn text. It returns chat, excerpt, and deep link.
 It is not an extension of title search. Postgres built-in FTS does not segment
 Chinese: choose between `pg_trgm`, a segmentation extension, or a dedicated
 engine from a real English and Chinese relevance set.
+
+## Prompt/tool refresh ("prompt epoch")
+
+There is no refresh event today: a frozen thread's prompt and tools never
+change until compaction ships. When compaction lands, it should be the first
+and only trigger for a "prompt epoch" — a rebake of prompt + tools recorded
+as a visible history turn (see
+[runtime CONTEXT.md](../../runtime/.context/CONTEXT.md)).
+Do not add a refresh path ahead of that: not on model change, not on an
+idle/cache-TTL timer, not on an Agent revision update. A mid-thread change the
+model needs to learn about is a system notification in conversation, never a
+prompt or tool-list rewrite.

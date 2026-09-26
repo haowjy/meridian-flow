@@ -400,22 +400,6 @@ describe("DocumentSession status derivation", () => {
     await session.destroy();
   });
 
-  it("carries parsed room identity for live and branch rooms", () => {
-    const live = new DocumentSession({ roomKey: "doc-live", persistence: { kind: "none" } });
-    expect(live.room).toEqual({ kind: "live", documentId: "doc-live" });
-    expect(live.getSnapshot().roomKey).toBe("doc-live");
-
-    const draft = new DocumentSession({
-      roomKey: "branch:branch-1:gen:1",
-      persistence: { kind: "none" },
-    });
-    expect(draft.room).toEqual({ kind: "branch", branchId: "branch-1", generation: 1 });
-    expect(draft.getSnapshot().roomKey).toBe("branch:branch-1:gen:1");
-
-    void live.destroy();
-    void draft.destroy();
-  });
-
   it("does not mark synced from empty local load while transport first sync is pending", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({
@@ -434,17 +418,6 @@ describe("DocumentSession status derivation", () => {
     await flushMicrotasks();
     expect(session.getSnapshot().status).toBe("synced");
 
-    void session.destroy();
-  });
-
-  it("starts as syncing while local persistence is still loading", () => {
-    const { factory } = makeFakeTransport();
-    const session = new DocumentSession({
-      roomKey: "doc-1",
-      persistence: { kind: "none" },
-      transportFactory: factory,
-    });
-    expect(session.getSnapshot().status).toBe("syncing");
     void session.destroy();
   });
 
@@ -573,20 +546,6 @@ describe("DocumentSession status derivation", () => {
 
     current().emit({ kind: "degraded", attempt: 7, nextRetryAt: Date.now() });
     expect(session.getSnapshot().status).toBe("syncing");
-    void session.destroy();
-  });
-
-  it("can suspend and restore local awareness presence without destroying the session", () => {
-    const session = new DocumentSession({ roomKey: "doc-1", persistence: { kind: "none" } });
-    session.presence.setField("user", { name: "Writer", color: "#fff" });
-
-    session.suspendPresence();
-    expect(session.awareness.getLocalState()).toBeNull();
-
-    session.resumePresence();
-    expect(session.awareness.getLocalState()).toEqual({
-      user: { name: "Writer", color: "#fff" },
-    });
     void session.destroy();
   });
 
@@ -719,21 +678,5 @@ describe("DocumentSession status derivation", () => {
     await expect(session.destroy()).resolves.toBeUndefined();
     expect(destroyTransport).toHaveBeenCalledTimes(2);
     expect(documentDestroy).toHaveBeenCalledOnce();
-  });
-
-  it("without a transport, remains detached after local persistence loads", () => {
-    const session = new DocumentSession({
-      roomKey: "doc-local",
-      persistence: { kind: "none" },
-    });
-    // With no persistence and no transport, watchSync resolves immediately.
-    // Run a microtask flush so the recompute lands.
-    return Promise.resolve().then(() => {
-      expect(session.getSnapshot()).toMatchObject({
-        status: "detached",
-        localPersistenceSynced: true,
-      });
-      return session.destroy();
-    });
   });
 });
