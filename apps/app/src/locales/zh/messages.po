@@ -3003,13 +3003,17 @@ msgstr ""
 msgid "Read-only preview"
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
+msgid "Reading"
+msgstr ""
+
 #: src/features/account/SettingsDialog.tsx
 msgid "Reading text size"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
-msgid "Reading…"
-msgstr ""
+#~ msgid "Reading…"
+#~ msgstr ""
 
 #. placeholder {0}: report.reason
 #: src/features/chat/ReportContent.tsx
@@ -3536,8 +3540,12 @@ msgid "Skimmed"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
-msgid "Skimming…"
+msgid "Skimming"
 msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+#~ msgid "Skimming…"
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Small"

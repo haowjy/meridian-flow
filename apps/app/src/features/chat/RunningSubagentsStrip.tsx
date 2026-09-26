@@ -82,15 +82,13 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
                 ))}
               </span>
             ) : null}
+            <span className="truncate">
+              <Trans>{descendants.length} subagents</Trans>
+            </span>
             {!expanded ? (
-              <>
-                <span className="truncate">
-                  <Trans>{descendants.length} subagents</Trans>
-                </span>
-                <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                  <Trans>{descendants.length} running</Trans>
-                </span>
-              </>
+              <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                <Trans>{descendants.length} running</Trans>
+              </span>
             ) : (
               <ChevronRight className="size-3 shrink-0 rotate-90" aria-hidden />
             )}
@@ -103,31 +101,33 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
           {descendants.map((node) => {
             const name = resolveSubagentName(node);
             return (
-              <li key={node.threadId} className="flex min-w-0 items-center gap-2 py-1 text-sm">
-                <SubagentMark name={name} status="running" className="size-5 text-[10px]" />
-                <span className="min-w-0 flex-1 truncate">
-                  <span className="font-medium">{name}</span>
-                  {node.title && node.title !== name ? (
-                    <span className="ml-1.5 text-muted-foreground">{node.title}</span>
-                  ) : null}
-                </span>
-                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                  {formatSubagentElapsed(node.runStartedAt, null, now)}
-                </span>
-                {openThread ? (
-                  <button
-                    type="button"
-                    aria-label="Open subagent chat"
-                    onClick={() => openThread(node.threadId)}
-                    className="focus-ring grid size-7 place-items-center rounded text-muted-foreground hover:bg-muted"
-                  >
-                    <ExternalLink className="size-3.5" aria-hidden />
-                  </button>
-                ) : null}
-                {node.currentTool ? (
-                  <span className="basis-full truncate pl-7 text-xs text-muted-foreground">
-                    {subagentCurrentToolLabel(node.currentTool.toolName, node.currentTool.input)}
+              <li key={node.threadId} className="py-1 text-sm">
+                <div className="flex min-w-0 items-center gap-2">
+                  <SubagentMark name={name} status="running" className="size-5 text-[10px]" />
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="font-medium">{name}</span>
+                    {node.title && node.title !== name ? (
+                      <span className="ml-1.5 text-muted-foreground">{node.title}</span>
+                    ) : null}
                   </span>
+                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                    {formatSubagentElapsed(node.runStartedAt, null, now)}
+                  </span>
+                  {openThread ? (
+                    <button
+                      type="button"
+                      aria-label="Open subagent chat"
+                      onClick={() => openThread(node.threadId)}
+                      className="focus-ring grid size-7 place-items-center rounded text-muted-foreground hover:bg-muted"
+                    >
+                      <ExternalLink className="size-3.5" aria-hidden />
+                    </button>
+                  ) : null}
+                </div>
+                {node.currentTool ? (
+                  <p className="truncate pl-7 text-xs text-muted-foreground">
+                    {subagentCurrentToolLabel(node.currentTool.toolName, node.currentTool.input)}
+                  </p>
                 ) : null}
               </li>
             );

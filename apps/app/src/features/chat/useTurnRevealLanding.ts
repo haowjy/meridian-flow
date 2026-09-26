@@ -25,6 +25,7 @@ export function latestSubagentBlockRevealTarget(
 export function useTurnRevealLanding({
   threadId,
   turns,
+  resolveTurnId,
   historySettled,
   viewportRef,
   scrollToIndex,
@@ -32,6 +33,8 @@ export function useTurnRevealLanding({
   threadId: string;
   /** Rows in render order — the turns this transcript can actually land on. */
   turns: readonly { id: string }[];
+  /** Transcript data can redirect a block-level reveal beyond its origin turn. */
+  resolveTurnId?: (turnId: string, subagentThreadId?: string) => string;
   /** Whether the thread's history request has resolved. */
   historySettled: boolean;
   viewportRef: RefObject<HTMLElement | null>;
@@ -43,7 +46,9 @@ export function useTurnRevealLanding({
 
   useEffect(() => {
     if (!request) return;
-    const index = turns.findIndex((turn) => turn.id === request.turnId);
+    const targetTurnId =
+      resolveTurnId?.(request.turnId, request.subagentThreadId) ?? request.turnId;
+    const index = turns.findIndex((turn) => turn.id === targetTurnId);
     if (index < 0) {
       // Absent from a settled transcript means absent from this conversation.
       // While history is still loading, a missing turn is one yet to arrive.
@@ -61,7 +66,7 @@ export function useTurnRevealLanding({
         let attempts = 0;
         const revealBlock = () => {
           const row = viewport.querySelector<HTMLElement>(
-            `[data-turn-id="${CSS.escape(request.turnId)}"]`,
+            `[data-turn-id="${CSS.escape(targetTurnId)}"]`,
           );
           const target = row ? latestSubagentBlockRevealTarget(row, subagentThreadId) : undefined;
           if (!target && attempts++ < 12) {
@@ -97,5 +102,5 @@ export function useTurnRevealLanding({
     });
     observer.observe(viewport);
     return () => observer.disconnect();
-  }, [historySettled, request, turns, viewportRef]);
+  }, [historySettled, request, resolveTurnId, turns, viewportRef]);
 }

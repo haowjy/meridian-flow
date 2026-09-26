@@ -16,7 +16,7 @@ import {
   Wrench,
 } from "lucide-react";
 
-import { folderDisplayName } from "./document-display-name";
+import { documentFileName, folderDisplayName } from "./document-display-name";
 import type { ToolView } from "./group-delivery-segments";
 import {
   humanizeSkillSlug,
@@ -88,7 +88,7 @@ function workTenses(tool: ToolView, active: string, complete: string): ToolActiv
 const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   read: {
     Icon: BookOpen,
-    phrases: () => tenses(t`Reading…`, t`Read`),
+    phrases: (tool) => documentReadTenses(tool, t`Reading`, t`Read`),
     failureVerb: () => t`Couldn't read`,
     pathlessTitle: () => t`Read file`,
     expand: "output-preview",
@@ -97,7 +97,7 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   // over that payload claims the model saw the words.
   skim: {
     Icon: List,
-    phrases: () => tenses(t`Skimming…`, t`Skimmed`),
+    phrases: (tool) => documentReadTenses(tool, t`Skimming`, t`Skimmed`),
     failureVerb: () => t`Couldn't read`,
     pathlessTitle: () => t`Read file`,
     expand: "output-outline",
@@ -235,6 +235,21 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     expand: "none",
   },
 };
+
+function documentReadTenses(
+  tool: ToolView,
+  activeVerb: string,
+  completeVerb: string,
+): ToolActivityVocabulary {
+  const input = toolInputObject(tool);
+  const file = stringInput(input, "path") ?? stringInput(input, "file");
+  if (!file) return tenses(`${activeVerb}…`, completeVerb);
+  const name = documentFileName(file);
+  return {
+    active: { verb: activeVerb, parameter: `${name}…` },
+    complete: { verb: completeVerb, parameter: name },
+  };
+}
 
 export function descriptorFor(tool: ToolView): CommandDescriptor {
   return COMMAND_DESCRIPTORS[toolCommand(tool)];

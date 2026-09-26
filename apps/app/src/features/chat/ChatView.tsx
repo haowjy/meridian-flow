@@ -415,6 +415,7 @@ export function ChatView({
               submissionRecoveryByTurnId={submissionRecoveryByTurnId}
               queuedWriterTurnIds={queuedWriterTurnIds}
               threadUsage={snapshotThreadUsage}
+              subagentNodes={activity.activity.descendants}
             />
           </div>
         </SubagentActivityProvider>

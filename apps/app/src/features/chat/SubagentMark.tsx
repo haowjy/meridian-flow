@@ -30,16 +30,16 @@ export function SubagentMark({
       {status !== "running" ? (
         <span
           className={cn(
-            "absolute -right-1 -bottom-1 grid size-3.5 place-items-center rounded-full border border-background",
+            "absolute -right-1.5 -bottom-1.5 grid size-3 place-items-center rounded-full border border-background",
             status === "done"
               ? "bg-primary text-primary-foreground"
               : "bg-destructive text-destructive-foreground",
           )}
         >
           {status === "done" ? (
-            <Check className="size-2.5" aria-hidden />
+            <Check className="size-2" aria-hidden />
           ) : (
-            <X className="size-2.5" aria-hidden />
+            <X className="size-2" aria-hidden />
           )}
         </span>
       ) : null}

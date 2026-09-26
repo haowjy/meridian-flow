@@ -39,7 +39,7 @@ vi.mock("@/rich-content/Markdown", () => ({
 import type { Turn } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { TurnList } from "./TurnList";
+import { resolveSubagentRevealTurnId, TurnList } from "./TurnList";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 const previousActEnvironment = actGlobal.IS_REACT_ACT_ENVIRONMENT;
@@ -82,7 +82,7 @@ describe("TurnList queued status", () => {
           },
         ],
       },
-    ] as Turn[];
+    ] as unknown as Turn[];
     const stableProps = {
       threadId: "thread-1",
       turns,
@@ -108,5 +108,72 @@ describe("TurnList queued status", () => {
     );
     expect(host.textContent).not.toContain("Queued");
     expect(host.querySelectorAll('[data-user-turn-status="queued"]')).toHaveLength(0);
+  });
+});
+
+describe("subagent reveal turn resolution", () => {
+  const nodes = [{ threadId: "child", ref: "p3" }] as never;
+  const helper = {
+    id: "helper",
+    turnId: "launch",
+    responseId: null,
+    blockType: "custom",
+    sequence: 0,
+    content: {
+      kind: "helper-result",
+      props: { execution: "execution-1", childThreadId: "child", title: "Task" },
+    },
+  };
+
+  it("prefers the latest report turn whose ref resolves to the child", () => {
+    const turns = [
+      { id: "launch", role: "assistant", blocks: [helper] },
+      {
+        id: "report",
+        role: "assistant",
+        blocks: [
+          {
+            id: "report-block",
+            turnId: "report",
+            responseId: null,
+            blockType: "tool_use",
+            sequence: 0,
+            content: { toolName: "thread_report", input: { ref: "p3" } },
+          },
+        ],
+      },
+    ] as unknown as Turn[];
+    expect(resolveSubagentRevealTurnId(turns, "child", "launch", nodes)).toBe("report");
+  });
+
+  it("lands on the assistant turn that renders the completion row when there is no report", () => {
+    const turns = [
+      { id: "launch", role: "assistant", blocks: [helper] },
+      { id: "completion-turn", role: "assistant", blocks: [] },
+      {
+        id: "notice",
+        role: "system",
+        prevTurnId: "completion-turn",
+        metadata: {
+          kind: "subagent_update",
+          handle: "p3",
+          execution: "execution-1",
+          outcome: "succeeded",
+        },
+        blocks: [],
+      },
+    ] as unknown as Turn[];
+    expect(resolveSubagentRevealTurnId(turns, "child", "launch", nodes)).toBe("completion-turn");
+  });
+
+  it("falls back to the origin turn while no later child point is loaded", () => {
+    expect(
+      resolveSubagentRevealTurnId(
+        [{ id: "launch", blocks: [] } as unknown as Turn],
+        "child",
+        "launch",
+        nodes,
+      ),
+    ).toBe("launch");
   });
 });
