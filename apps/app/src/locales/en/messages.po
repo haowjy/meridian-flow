@@ -202,7 +202,7 @@ msgstr "{0} isn't in {section}."
 msgid "{0} running"
 msgstr "{0} running"
 
-#. placeholder {0}: new Intl.NumberFormat(i18n.locale, { minimumFractionDigits: 1, maximumFractionDigits: 1, }).format(stats.ttftMs / 1000)
+#. placeholder {0}: formatFixed(stats.ttftMs / 1000, i18n.locale)
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0} s"
 msgstr "{0} s"
@@ -719,12 +719,12 @@ msgid "Buy extra usage"
 msgstr "Buy extra usage"
 
 #: src/features/chat/AssistantTurnActions.tsx
-#~ msgid "Cache hit"
-#~ msgstr "Cache hit"
+msgid "Cache hit"
+msgstr "Cache hit"
 
 #: src/features/chat/AssistantTurnActions.tsx
-msgid "Cache reset"
-msgstr "Cache reset"
+#~ msgid "Cache reset"
+#~ msgstr "Cache reset"
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Cache resets"
@@ -4128,8 +4128,8 @@ msgid "Thread"
 msgstr "Thread"
 
 #: src/features/chat/AssistantTurnActions.tsx
-msgid "Thread cache hit"
-msgstr "Thread cache hit"
+#~ msgid "Thread cache hit"
+#~ msgstr "Thread cache hit"
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Time to first token"
@@ -4166,8 +4166,8 @@ msgid "Turn"
 msgstr "Turn"
 
 #: src/features/chat/AssistantTurnActions.tsx
-msgid "Turn cache hit"
-msgstr "Turn cache hit"
+#~ msgid "Turn cache hit"
+#~ msgstr "Turn cache hit"
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Turn information"

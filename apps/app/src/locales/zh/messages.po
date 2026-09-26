@@ -202,7 +202,7 @@ msgstr ""
 msgid "{0} running"
 msgstr ""
 
-#. placeholder {0}: new Intl.NumberFormat(i18n.locale, { minimumFractionDigits: 1, maximumFractionDigits: 1, }).format(stats.ttftMs / 1000)
+#. placeholder {0}: formatFixed(stats.ttftMs / 1000, i18n.locale)
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0} s"
 msgstr ""
@@ -719,12 +719,12 @@ msgid "Buy extra usage"
 msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
-#~ msgid "Cache hit"
-#~ msgstr ""
+msgid "Cache hit"
+msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
-msgid "Cache reset"
-msgstr ""
+#~ msgid "Cache reset"
+#~ msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Cache resets"
@@ -4124,8 +4124,8 @@ msgid "Thread"
 msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
-msgid "Thread cache hit"
-msgstr ""
+#~ msgid "Thread cache hit"
+#~ msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Time to first token"
@@ -4162,8 +4162,8 @@ msgid "Turn"
 msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
-msgid "Turn cache hit"
-msgstr ""
+#~ msgid "Turn cache hit"
+#~ msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Turn information"

@@ -2,6 +2,7 @@ import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import type { Turn } from "@meridian/contracts/protocol";
 import { Bug, Check, Copy, Info } from "lucide-react";
+import type { ReactNode } from "react";
 import { useState } from "react";
 import { CopyTextButton } from "@/components/app/CopyTextButton";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,78 @@ import { assistantTurnCopyHtml } from "./assistant-turn-copy";
 import { cacheHitPercent, compactCount, turnStats } from "./turn-stats";
 
 const actionClass = "size-6 text-muted-foreground";
+
+function StatRow({
+  label,
+  value,
+  mono = false,
+  valueClassName,
+  title,
+}: {
+  label: string;
+  value: ReactNode;
+  mono?: boolean;
+  valueClassName?: string;
+  title?: string;
+}) {
+  return (
+    <>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className={`text-right ${mono ? "font-mono" : ""} ${valueClassName ?? ""}`} title={title}>
+        {value}
+      </dd>
+    </>
+  );
+}
+
+function StatSection({
+  title,
+  children,
+  separated,
+}: {
+  title: string;
+  children: ReactNode;
+  separated: boolean;
+}) {
+  return (
+    <>
+      <dt
+        className={`col-span-2 font-medium text-foreground ${
+          separated
+            ? "mt-[var(--chat-space-row)] border-t border-border pt-[var(--chat-space-row)]"
+            : ""
+        }`}
+      >
+        {title}
+      </dt>
+      {children}
+    </>
+  );
+}
+
+function formatPercent(locale: string, percent: number): string {
+  return new Intl.NumberFormat(locale, {
+    style: "percent",
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(percent / 100);
+}
+
+function cacheHitValue(
+  percent: number | null,
+  reported: boolean,
+  locale: string,
+  notReported: string,
+): string {
+  return reported && percent != null ? formatPercent(locale, percent) : notReported;
+}
+
+function formatFixed(value: number, locale: string): string {
+  return new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value);
+}
 
 export function AssistantTurnActions({
   threadId,
@@ -43,6 +116,84 @@ export function AssistantTurnActions({
   const threadHitPercent = threadUsage
     ? cacheHitPercent(threadUsage.cacheReadTokens, threadUsage.cacheReportedInputTokens)
     : null;
+  const threadCacheReported = (threadUsage?.cacheReportedCalls ?? 0) > 0;
+  const sections = [
+    {
+      title: i18n._(t`Thread`),
+      rows: (
+        <>
+          {threadUsage ? (
+            <StatRow
+              label={i18n._(t`Cache hit`)}
+              value={cacheHitValue(
+                threadHitPercent,
+                threadCacheReported,
+                i18n.locale,
+                i18n._(t`Not reported`),
+              )}
+              mono={threadCacheReported}
+            />
+          ) : null}
+          {threadCacheReported ? (
+            <StatRow label={i18n._(t`Cache resets`)} value={threadUsage?.cacheResets ?? 0} mono />
+          ) : null}
+        </>
+      ),
+    },
+    {
+      title: i18n._(t`Turn`),
+      rows: (
+        <>
+          <StatRow
+            label={i18n._(t`Model`)}
+            value={stats.model ?? i18n._(t`Unknown`)}
+            valueClassName="max-w-36 truncate font-medium"
+            title={stats.model ?? undefined}
+          />
+          <StatRow
+            label={i18n._(t`Calls`)}
+            value={i18n._(plural(stats.callCount, { one: "# call", other: "# calls" }))}
+          />
+          {stats.outputTokensPerSecond == null ? null : (
+            <StatRow
+              label={i18n._(t`Output speed`)}
+              value={i18n._(t`${compactCount(stats.outputTokensPerSecond)} tok/s`)}
+              mono
+            />
+          )}
+          {stats.ttftMs == null ? null : (
+            <StatRow
+              label={i18n._(t`Time to first token`)}
+              value={
+                stats.ttftMs < 100
+                  ? i18n._(t`<0.1 s`)
+                  : i18n._(t`${formatFixed(stats.ttftMs / 1000, i18n.locale)} s`)
+              }
+              mono
+            />
+          )}
+          <StatRow label={i18n._(t`Input tokens`)} value={compactCount(stats.inputTokens)} mono />
+          <StatRow label={i18n._(t`Output tokens`)} value={compactCount(stats.outputTokens)} mono />
+          {stats.callCount > 0 &&
+          (stats.cacheReportedCalls === 0 || stats.cacheHitPercent != null) ? (
+            <StatRow
+              label={i18n._(t`Cache hit`)}
+              value={cacheHitValue(
+                stats.cacheHitPercent,
+                stats.cacheReportedCalls > 0,
+                i18n.locale,
+                i18n._(t`Not reported`),
+              )}
+              mono={stats.cacheReportedCalls > 0}
+            />
+          ) : null}
+          {stats.cacheResets > 0 ? (
+            <StatRow label={i18n._(t`Cache resets`)} value={stats.cacheResets} mono />
+          ) : null}
+        </>
+      ),
+    },
+  ];
   const copyLabel = i18n._(t`Copy`);
   const copiedLabel = i18n._(t`Copied`);
 
@@ -89,84 +240,11 @@ export function AssistantTurnActions({
           </Tooltip>
           <PopoverContent align="start" className="text-tier-chat chat-card w-64">
             <dl className="grid grid-cols-[1fr_auto] gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-row)] text-xs">
-              <dt className="col-span-2 mt-[var(--chat-space-row)] border-t border-border pt-[var(--chat-space-row)] font-medium text-foreground">
-                {i18n._(t`Thread`)}
-              </dt>
-              {threadUsage?.cacheReportedCalls === 0 ? (
-                <>
-                  <dt className="text-muted-foreground">{i18n._(t`Thread cache hit`)}</dt>
-                  <dd className="text-right">{i18n._(t`Not reported`)}</dd>
-                </>
-              ) : threadHitPercent != null ? (
-                <>
-                  <dt className="text-muted-foreground">{i18n._(t`Thread cache hit`)}</dt>
-                  <dd className="text-right font-mono">{threadHitPercent.toFixed(1)}%</dd>
-                </>
-              ) : null}
-              {threadUsage && threadUsage.cacheResets > 0 ? (
-                <>
-                  <dt className="text-muted-foreground">{i18n._(t`Cache resets`)}</dt>
-                  <dd className="text-right font-mono">{threadUsage.cacheResets}</dd>
-                </>
-              ) : null}
-              <dt className="col-span-2 mt-[var(--chat-space-row)] border-t border-border pt-[var(--chat-space-row)] font-medium text-foreground">
-                {i18n._(t`Turn`)}
-              </dt>
-              <dt className="text-muted-foreground">{i18n._(t`Model`)}</dt>
-              <dd
-                className="max-w-36 truncate text-right font-medium"
-                title={stats.model ?? undefined}
-              >
-                {stats.model ?? i18n._(t`Unknown`)}
-              </dd>
-              <dt className="text-muted-foreground">{i18n._(t`Calls`)}</dt>
-              <dd className="text-right">
-                {i18n._(plural(stats.callCount, { one: "# call", other: "# calls" }))}
-              </dd>
-              {stats.outputTokensPerSecond == null ? null : (
-                <>
-                  <dt className="text-muted-foreground">{i18n._(t`Output speed`)}</dt>
-                  <dd className="text-right font-mono">
-                    {i18n._(t`${compactCount(stats.outputTokensPerSecond)} tok/s`)}
-                  </dd>
-                </>
-              )}
-              {stats.ttftMs == null ? null : (
-                <>
-                  <dt className="text-muted-foreground">{i18n._(t`Time to first token`)}</dt>
-                  <dd className="text-right font-mono">
-                    {stats.ttftMs < 100
-                      ? i18n._(t`<0.1 s`)
-                      : i18n._(
-                          t`${new Intl.NumberFormat(i18n.locale, {
-                            minimumFractionDigits: 1,
-                            maximumFractionDigits: 1,
-                          }).format(stats.ttftMs / 1000)} s`,
-                        )}
-                  </dd>
-                </>
-              )}
-              <dt className="text-muted-foreground">{i18n._(t`Input tokens`)}</dt>
-              <dd className="text-right font-mono">{compactCount(stats.inputTokens)}</dd>
-              <dt className="text-muted-foreground">{i18n._(t`Output tokens`)}</dt>
-              <dd className="text-right font-mono">{compactCount(stats.outputTokens)}</dd>
-              {stats.callCount > 0 && stats.cacheReportedCalls === 0 ? (
-                <>
-                  <dt className="text-muted-foreground">{i18n._(t`Turn cache hit`)}</dt>
-                  <dd className="text-right">{i18n._(t`Not reported`)}</dd>
-                </>
-              ) : stats.cacheHitPercent != null ? (
-                <>
-                  <dt className="text-muted-foreground">{i18n._(t`Turn cache hit`)}</dt>
-                  <dd className="text-right font-mono">{stats.cacheHitPercent.toFixed(1)}%</dd>
-                </>
-              ) : null}
-              {stats.cacheResets > 0 ? (
-                <>
-                  <dt className="text-muted-foreground">{i18n._(t`Cache reset`)}</dt>
-                  <dd className="text-right font-mono">{stats.cacheResets}</dd>
-                </>
-              ) : null}
+              {sections.map(({ title, rows }, index) => (
+                <StatSection key={title} title={title} separated={index > 0}>
+                  {rows}
+                </StatSection>
+              ))}
             </dl>
           </PopoverContent>
         </Popover>
