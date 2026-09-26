@@ -162,6 +162,11 @@ msgstr ""
 #~ msgid "{0} moved to Recent chats"
 #~ msgstr ""
 
+#. placeholder {0}: compactCount(stats.ttftMs)
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "{0} ms"
+msgstr ""
+
 #. placeholder {0}: chat.title
 #: src/features/project/work/WorkAssociatedChats.tsx
 #~ msgid "{0} removed from favorites"
@@ -186,6 +191,11 @@ msgstr ""
 #. placeholder {0}: descendants.length
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "{0} subagents running"
+msgstr ""
+
+#. placeholder {0}: compactCount(stats.outputTokensPerSecond)
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "{0} tok/s"
 msgstr ""
 
 #. placeholder {0}: work.name
@@ -644,6 +654,10 @@ msgstr ""
 msgid "Buy extra usage"
 msgstr ""
 
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "Cache hit"
+msgstr ""
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Can't undo"
 msgstr ""
@@ -1028,6 +1042,10 @@ msgstr ""
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Copy {0} source"
+msgstr ""
+
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "Copy answer"
 msgstr ""
 
 #: src/features/editor/surfaces/objects/CodeBlockChips.tsx
@@ -1927,6 +1945,10 @@ msgstr ""
 msgid "Inline code takes no other formatting."
 msgstr ""
 
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "Input tokens"
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Insert"
 msgstr ""
@@ -1949,6 +1971,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Insert row below"
+msgstr ""
+
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "Inspect model calls"
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
@@ -2227,6 +2253,10 @@ msgstr ""
 
 #: src/features/chat/CustomBlockRenderer.tsx
 msgid "missing kind"
+msgstr ""
+
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "Model"
 msgstr ""
 
 #: src/features/billing/UsageCard.tsx
@@ -2681,6 +2711,14 @@ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ordered"
+msgstr ""
+
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "Output speed"
+msgstr ""
+
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "Output tokens"
 msgstr ""
 
 #: src/features/billing/UsageCard.tsx
@@ -3952,6 +3990,10 @@ msgstr ""
 msgid "This Work is unavailable."
 msgstr ""
 
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "Time to first token"
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "title"
 msgstr ""
@@ -3976,6 +4018,10 @@ msgstr ""
 
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Try again, or return to the live document."
+msgstr ""
+
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "Turn information"
 msgstr ""
 
 #: src/features/editor/surfaces/blocks/block-copy.ts
@@ -4008,6 +4054,7 @@ msgstr ""
 msgid "workReceipt.unarchived"
 msgstr ""
 
+#: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/ComposerWorkControl.tsx
 msgid "Unavailable"
 msgstr ""
@@ -4044,6 +4091,10 @@ msgstr ""
 
 #: src/features/project/context/context-schemes.ts
 msgid "Unfiled"
+msgstr ""
+
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "Unknown"
 msgstr ""
 
 #: src/features/chat/CustomBlockRenderer.tsx

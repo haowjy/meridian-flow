@@ -36,7 +36,7 @@ export function ProcessDisclosure({ label, ariaLabel, children }: ProcessDisclos
   };
 
   return (
-    <div className="mb-3 py-1.5">
+    <div className="chat-process-disclosure py-0">
       <button
         type="button"
         onClick={handleToggle}

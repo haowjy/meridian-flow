@@ -31,6 +31,26 @@
      may still float over content; `scrollbar-gutter: stable` on the scrollport helps. */
   --chat-scroll-scrollbar-width: 6px;
   --chat-scroll-scrollbar-gap: 0.5rem;
+  /* Conversation cadence. Kept together so a later full rhythm pass can tune
+     the transcript without chasing per-component spacing literals. */
+  --chat-rhythm-user-to-assistant: 0.75rem;
+  --chat-rhythm-assistant-to-user: 0.375rem;
+  --chat-rhythm-fold-to-content: 0.5rem;
+  --chat-rhythm-prose-to-actions: 0.25rem;
+}
+
+/* Vertical space is inside each measured virtual row so geometry stays true. */
+[data-chat-turn-row][data-chat-turn-role="user"] {
+  padding-bottom: var(--chat-rhythm-user-to-assistant);
+}
+[data-chat-turn-row][data-chat-turn-role="assistant"] {
+  padding-bottom: var(--chat-rhythm-assistant-to-user);
+}
+.chat-process-disclosure {
+  margin-bottom: var(--chat-rhythm-fold-to-content);
+}
+.assistant-turn-actions {
+  margin-top: var(--chat-rhythm-prose-to-actions);
 }
 
 :root[data-text-size="sm"] {
@@ -399,7 +419,19 @@
 }
 
 @utility user-turn {
-  @apply mb-8 ml-auto w-fit max-w-[95%];
+  @apply ml-auto w-fit max-w-[95%];
+}
+
+/* Keep settled history actions available to keyboard users while keeping the
+   reading surface quiet for pointer users. Touch devices have no hover affordance. */
+@media (hover: hover) {
+  [data-assistant-turn]:not([data-latest-assistant="true"]) .assistant-turn-actions {
+    opacity: 0;
+  }
+  [data-assistant-turn]:not([data-latest-assistant="true"]):hover .assistant-turn-actions,
+  [data-assistant-turn]:not([data-latest-assistant="true"]):focus-within .assistant-turn-actions {
+    opacity: 1;
+  }
 }
 
 @utility user-message-bubble {

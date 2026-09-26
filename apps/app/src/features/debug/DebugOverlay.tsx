@@ -82,6 +82,9 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
   const [llmCallsViewerTarget, setLlmCallsViewerTarget] = useState<LlmCallsViewerTarget | null>(
     null,
   );
+  const [llmCallsFilter, setLlmCallsFilter] = useState<{ threadId: string; turnId: string } | null>(
+    null,
+  );
   const [popupBlocked, setPopupBlocked] = useState(false);
   const [serverFeedEnabled, setServerFeedEnabled] = useState(false);
   const serverFeedState = useSyncExternalStore(
@@ -106,6 +109,17 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
     startServerFeed();
     return stopServerFeed;
   }, [serverFeedEnabled]);
+
+  useEffect(() => {
+    function openScopedViewer(event: Event) {
+      const detail = (event as CustomEvent<{ threadId?: string; turnId?: string }>).detail;
+      if (!detail?.threadId || !detail.turnId) return;
+      setLlmCallsFilter({ threadId: detail.threadId, turnId: detail.turnId });
+      openLlmCallsViewer();
+    }
+    window.addEventListener("meridian:debug-open-llm-calls", openScopedViewer);
+    return () => window.removeEventListener("meridian:debug-open-llm-calls", openScopedViewer);
+  });
 
   function openTraceViewer() {
     if (traceViewerTarget && !traceViewerTarget.popup.closed) {
@@ -149,7 +163,11 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
         <TraceViewer target={traceViewerTarget} onClose={closeTraceViewer} />
       </DebugErrorBoundary>
       <DebugErrorBoundary title="LLM Calls">
-        <LlmCallsViewer target={llmCallsViewerTarget} onClose={closeLlmCallsViewer} />
+        <LlmCallsViewer
+          target={llmCallsViewerTarget}
+          onClose={closeLlmCallsViewer}
+          filter={llmCallsFilter}
+        />
       </DebugErrorBoundary>
       <div className="fixed bottom-3 right-3 z-[55] flex flex-col items-end gap-2">
         {open ? (

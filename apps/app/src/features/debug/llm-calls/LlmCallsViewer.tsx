@@ -46,18 +46,20 @@ export function openLlmCallsViewerWindow(): LlmCallsViewerTarget | null {
 export function LlmCallsViewer({
   target,
   onClose,
+  filter,
 }: {
   target: LlmCallsViewerTarget | null;
   onClose: (target: LlmCallsViewerTarget) => void;
+  filter?: { threadId: string; turnId: string } | null;
 }) {
   return (
     <DebugPopout target={target} onClose={onClose}>
-      <LlmCallsContent />
+      <LlmCallsContent filter={filter} />
     </DebugPopout>
   );
 }
 
-function LlmCallsContent() {
+function LlmCallsContent({ filter }: { filter?: { threadId: string; turnId: string } | null }) {
   const [state, setState] = useState<CallsState>({ status: "loading" });
 
   useEffect(() => {
@@ -101,9 +103,18 @@ function LlmCallsContent() {
     };
   }, []);
 
-  const calls = useMemo(
+  const allCalls = useMemo(
     () => (state.status === "loaded" ? deriveLlmCalls(state.events) : []),
     [state],
+  );
+  const calls = useMemo(
+    () =>
+      filter
+        ? allCalls.filter(
+            (call) => call.threadId === filter.threadId && call.turnId === filter.turnId,
+          )
+        : allCalls,
+    [allCalls, filter],
   );
 
   return (
@@ -117,6 +128,11 @@ function LlmCallsContent() {
           <p className="text-meta text-muted-foreground">
             Gateway lifecycle and canonical model requests, refreshed while this window is open
           </p>
+          {filter ? (
+            <p className="mt-1 font-mono text-meta text-muted-foreground">
+              Thread {filter.threadId}, turn {filter.turnId}
+            </p>
+          ) : null}
         </div>
         {state.status === "loaded" ? (
           <div className="flex flex-1 flex-wrap items-center gap-3 text-meta text-muted-foreground">
@@ -139,8 +155,9 @@ function LlmCallsContent() {
         ) : null}
         {state.status === "loaded" && calls.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            No gateway calls are retained. Start a generation, then leave this window open to
-            refresh.
+            {filter
+              ? "No calls match this thread and turn. The viewer refreshes while this window is open."
+              : "No gateway calls are retained. Start a generation, then leave this window open to refresh."}
           </p>
         ) : null}
         {calls.length > 0 ? (

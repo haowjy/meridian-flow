@@ -187,8 +187,9 @@ export function TurnList({
                   key={virtualItem.key}
                   data-index={virtualItem.index}
                   data-chat-turn-row="settled"
+                  data-chat-turn-role={turn.role}
                   ref={virtualizer.measureElement}
-                  className="absolute inset-x-0 top-0 pb-6"
+                  className="absolute inset-x-0 top-0"
                   style={{ transform: `translateY(${virtualItem.start}px)` }}
                 >
                   {renderTurn(turn, virtualItem.index)}

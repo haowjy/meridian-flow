@@ -9,6 +9,7 @@ import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
 import { ActivityRow } from "./ActivityRow";
+import { AssistantTurnActions } from "./AssistantTurnActions";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
@@ -101,7 +102,8 @@ function AssistantTurnComponent({
 
   return (
     <div
-      className="mb-10"
+      data-assistant-turn
+      data-latest-assistant={isLatestAssistant ? "true" : undefined}
       data-turn-id={turn.id}
       data-turn-role="assistant"
       data-turn-status={turn.status}
@@ -154,6 +156,7 @@ function AssistantTurnComponent({
           onRetry={isLatestAssistant ? onRetry : undefined}
         />
       ) : null}
+      {isSettled ? <AssistantTurnActions threadId={resolvedThreadId} turn={turn} /> : null}
       {showsInkDrop ? <InkDrop /> : null}
     </div>
   );

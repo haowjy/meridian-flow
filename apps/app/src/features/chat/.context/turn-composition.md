@@ -3,6 +3,28 @@
 How an assistant turn renders: an ordered list of **process**, **text**, and
 **artifact** items. This is the implemented contract for the turn render surface.
 
+## Turn rhythm and settled actions
+
+`TurnList`'s measured `<li>` owns spacing between turns: 12px after a writer
+turn and 6px after an assistant turn's reserved action row. The hidden row
+still reserves its compact height to prevent hover layout shift, so it is part
+of the exchange rhythm rather than extra separation. The row sits 4px below
+assistant content. Do not add vertical margins to
+`UserTurn` or the `AssistantTurn` root; keeping the gap inside the measured row
+keeps TanStack Virtual's geometry accurate. Within an assistant turn, a process
+fold uses an 8px bottom gap before following prose, report, or artifact content.
+
+Settled assistant turns have a quiet action row below all turn content. Copy
+includes visible assistant text only. The information popover summarizes
+`Turn.responses`: input/output tokens are summed, cache hit is summed
+`cacheReadTokens / inputTokens` (cache writes are misses), TTFT is the first
+call's first-token time, and output speed sums output tokens and
+`latencyMs - timeToFirstTokenMs` only across calls with both measurements.
+Speed is omitted without a measurable generation interval; cache percentage is
+omitted for zero input. Debug is available only while the existing debug gate
+and user toggle are enabled, and scopes the LLM Calls viewer to this thread and
+turn.
+
 ## Three tiers
 
 An assistant turn is **one ordered list** of render items, in block order. Each
