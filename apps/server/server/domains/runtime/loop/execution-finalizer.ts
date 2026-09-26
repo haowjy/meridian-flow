@@ -17,7 +17,13 @@ import { persistAndAppendEvents } from "./persistence.js";
 
 export type TerminalCause =
   | { kind: "success"; finishReason: FinishReason }
-  | { kind: "failed"; reason: string; error: MeridianError | string }
+  | {
+      kind: "failed";
+      reason: string;
+      error: MeridianError | string;
+      /** Retire this adopted batch so an unrecoverable preparation error is not swept again. */
+      acknowledgeInbox?: boolean;
+    }
   | { kind: "cancelled"; reason: string };
 
 export type FinalizedExecution = {

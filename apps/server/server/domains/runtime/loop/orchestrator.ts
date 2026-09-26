@@ -80,7 +80,10 @@ import type {
   ThreadRepository,
   TurnRepository,
 } from "../../threads/index.js";
-import { loadThreadConversationContext } from "../../threads/index.js";
+import {
+  loadThreadConversationContext,
+  ThreadConversationContextError,
+} from "../../threads/index.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ImageAssetPort } from "../ports/image-asset.js";
@@ -228,6 +231,8 @@ export function createOrchestrator(deps: OrchestratorDeps) {
     ...deps,
     setup: (input) => prepareLoop(deps, input),
     async finalizeFailure(input) {
+      const contextError =
+        input.error instanceof ThreadConversationContextError ? input.error : null;
       const outcome = await deps.delivery.close({
         lease: input.lease,
         assistantTurnId: input.assistantTurnId,
@@ -235,8 +240,13 @@ export function createOrchestrator(deps: OrchestratorDeps) {
           ? { kind: "cancelled", reason: "cancelled" }
           : {
               kind: "failed",
-              reason: "execution_error",
-              error: input.error instanceof Error ? input.error.message : String(input.error),
+              reason: contextError?.code ?? "execution_error",
+              ...(contextError ? { acknowledgeInbox: true } : {}),
+              error: contextError
+                ? meridianErrorFromSystem("thread_context_error", contextError.message)
+                : input.error instanceof Error
+                  ? input.error.message
+                  : String(input.error),
             },
       });
       if (outcome.kind !== "completed") throw new Error("Failure finalization cannot split");
@@ -339,6 +349,7 @@ async function admitRunExecution(
 /** Commit initial history before handing the session its lazy model loop. */
 async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise<PreparedLoop> {
   const { repos } = deps;
+  let preparationError: ThreadConversationContextError | null = null;
   const thread = await repos.threads.findById(input.threadId);
   if (!thread) {
     throw new Error(`Thread not found: ${input.threadId}`);
@@ -363,8 +374,21 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
       input.threadId,
       thread.activeLeafTurnId,
       async () => {
-        const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } =
-          await loadRunStartContext(deps, thread);
+        let runStartContext: Awaited<ReturnType<typeof loadRunStartContext>>;
+        try {
+          runStartContext = await loadRunStartContext(deps, thread);
+        } catch (error) {
+          if (!(error instanceof ThreadConversationContextError)) throw error;
+          preparationError = error;
+          const priorTurns = await repos.turns.listByThread(input.threadId);
+          runStartContext = {
+            priorTurns,
+            inheritedTurns: [],
+            inheritedBlocks: [],
+            prevTurnId: thread.activeLeafTurnId ?? priorTurns.at(-1)?.id ?? null,
+          };
+        }
+        const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = runStartContext;
         // Read inside the setup transaction so the turn's durable write vocabulary
         // matches the mode in effect at the moment the turn was minted.
         const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
@@ -427,8 +451,9 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
   return {
     userTurnId: userTurn.id,
     assistantTurnId: assistantTurn.id,
-    execute: () =>
-      executeLoop(
+    execute: async () => {
+      if (preparationError) throw preparationError;
+      return executeLoop(
         deps,
         input,
         thread,
@@ -439,7 +464,8 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
         input.treeBudget ??
           createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
         input.activatedSkillSlugs,
-      ),
+      );
+    },
   };
 }
 
@@ -457,21 +483,46 @@ async function runDrainTurn(
   input: DrainRunLoopInput,
   thread: Thread,
 ): Promise<PreparedLoop> {
+  const { repos } = deps;
   let initialBatchIds: string[] = [];
+  let preparationError: ThreadConversationContextError | null = null;
   const setup = await deps.delivery.adoptBatch(input.lease, async (batch, workContext) => {
+    initialBatchIds = batch.map(({ id }) => id);
     const value = await persistAndAppendTurnStartEvents(
       deps,
       input.threadId,
       thread.activeLeafTurnId,
       async () => {
-        const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } =
-          await loadRunStartContext(deps, thread);
+        let preparationEvents: OrchestratorEvent[] = [];
+        let runStartContext: Awaited<ReturnType<typeof loadRunStartContext>>;
+        try {
+          runStartContext = await loadRunStartContext(deps, thread);
+        } catch (error) {
+          if (!(error instanceof ThreadConversationContextError)) throw error;
+          preparationError = error;
+          const priorTurns = await repos.turns.listByThread(input.threadId);
+          const localTurnIds = new Set(priorTurns.map((turn) => turn.id));
+          const fallbackPlan = planMessageTurns({
+            threadId: input.threadId,
+            batch,
+            workContext,
+            prevTurnId: thread.activeLeafTurnId ?? priorTurns.at(-1)?.id ?? null,
+            knownTurnIds: localTurnIds,
+          });
+          preparationEvents = fallbackPlan.events;
+          runStartContext = {
+            priorTurns: [...priorTurns, ...fallbackPlan.turns],
+            inheritedTurns: [],
+            inheritedBlocks: fallbackPlan.blocks.map(localBlockFromEvent),
+            prevTurnId: fallbackPlan.leafTurnId ?? thread.activeLeafTurnId ?? null,
+          };
+        }
+        const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = runStartContext;
         const knownTurnIds = new Set<string>([
           ...inheritedTurns.map((turn) => turn.id),
           ...priorTurns.map((turn) => turn.id),
         ]);
 
-        initialBatchIds = batch.map(({ id }) => id);
         // The wake sweep only starts a thread with a derived wake need; a race that
         // drains the last message first must leave no phantom assistant turn behind.
         if (!batch.some((message) => message.intent === "message")) {
@@ -521,7 +572,11 @@ async function runDrainTurn(
             inheritedBlocks,
             activatedSkillSlugs,
           },
-          events: [...plan.events, { type: "turn.created", turn: assistantTurn }],
+          events: [
+            ...preparationEvents,
+            ...plan.events,
+            { type: "turn.created", turn: assistantTurn },
+          ],
         };
       },
       {
@@ -544,8 +599,9 @@ async function runDrainTurn(
   return {
     userTurnId: referenceUserTurnId,
     assistantTurnId: assistantTurn.id,
-    execute: () =>
-      executeLoop(
+    execute: async () => {
+      if (preparationError) throw preparationError;
+      return executeLoop(
         deps,
         input,
         thread,
@@ -556,7 +612,8 @@ async function runDrainTurn(
         input.treeBudget ??
           createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
         activatedSkillSlugs.length > 0 ? activatedSkillSlugs : undefined,
-      ),
+      );
+    },
   };
 }
 

@@ -1,4 +1,6 @@
 /** Run admission is lazy; one owner settles cancellation, crashes, and cleanup. */
+
+import type { TurnId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import {
@@ -8,6 +10,7 @@ import {
 import { createRuntimeHarness } from "./__tests__/runtime-harness.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
 import { DEFAULT_LEASE_TTL_MS } from "./ports.js";
+import { sweepWakes } from "./sweep-wakes.js";
 
 async function fixture(configure?: (deps: OrchestratorDeps) => void) {
   const journal = createInMemoryEventJournalWriter();
@@ -126,6 +129,80 @@ describe("RunSession", () => {
     expect(await run.execute()).toMatchObject({ status: "error" });
     expect(f.journal.getEvents(f.thread.id).map(({ event }) => event.type)).toContain("turn.error");
     expect(f.sink.events.map((event) => event.name)).toEqual(["execution.failed"]);
+    expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
+  });
+
+  it("finalizes fork-context prep failure on the adopted message without a wake retry", async () => {
+    const f = await fixture();
+    const message = await f.deps.delivery.enqueue({
+      threadId: f.thread.id,
+      intent: "message",
+      provenance: { kind: "writer", actorId: f.thread.userId },
+      body: { kind: "text", text: "Keep writing" },
+      idempotencyKey: "context-failure",
+    });
+    const findById = f.repos.threads.findById;
+    f.repos.threads.findById = async (threadId) => {
+      const thread = await findById(threadId);
+      return thread?.id === f.thread.id
+        ? { ...thread, originType: "fork", originTurnId: "missing-cutoff" as TurnId }
+        : thread;
+    };
+
+    const run = await f.runtime.prepare({ threadId: f.thread.id, drain: true });
+    expect(await f.repos.turns.findById(message.id as TurnId)).toMatchObject({
+      id: message.id,
+      role: "user",
+      origin: "writer",
+    });
+    expect(await f.deps.runClaim.holder(f.thread.id)).toBe(run.runId);
+
+    expect(await run.execute()).toMatchObject({ status: "error", turn: { status: "error" } });
+    expect(await f.repos.turns.findById(run.assistantTurnId)).toMatchObject({ status: "error" });
+    const terminal = f.journal
+      .getEvents(f.thread.id)
+      .map(({ event }) => event)
+      .find((event) => event.type === "turn.error");
+    expect(terminal).toMatchObject({
+      type: "turn.error",
+      error: { code: "thread_context_error", source: "system", retryable: false },
+    });
+    expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
+    expect(await f.deps.delivery.selectPending(f.thread.id)).toEqual([]);
+    expect(await f.deps.delivery.pendingMessageThreads(10)).toEqual([]);
+
+    const start = vi.fn(async () => {});
+    await sweepWakes({
+      delivery: f.deps.delivery,
+      authority: f.deps.runClaim,
+      runStarter: { start },
+      eventSink: f.deps.eventSink,
+      limit: 10,
+    });
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("finalizes a typed fork-context failure from a writer-started run", async () => {
+    const f = await fixture();
+    const findById = f.repos.threads.findById;
+    f.repos.threads.findById = async (threadId) => {
+      const thread = await findById(threadId);
+      return thread?.id === f.thread.id
+        ? { ...thread, originType: "fork", originTurnId: "missing-cutoff" as TurnId }
+        : thread;
+    };
+
+    const run = await f.prepare();
+    expect(await f.repos.turns.findById(run.userTurnId)).toMatchObject({
+      role: "user",
+      origin: "writer",
+    });
+    expect(await run.execute()).toMatchObject({ status: "error", turn: { status: "error" } });
+    expect(await f.repos.turns.findById(run.assistantTurnId)).toMatchObject({ status: "error" });
+    expect(f.journal.getEvents(f.thread.id).some(({ event }) => event.type === "turn.error")).toBe(
+      true,
+    );
+    expect(f.calls()).toBe(0);
     expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
   });
 
