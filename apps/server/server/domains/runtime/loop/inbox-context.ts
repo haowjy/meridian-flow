@@ -303,7 +303,9 @@ export function messageTurnFor(
           }
         : message.body.kind === "work_context_refresh"
           ? { kind: "system_update", section: "work_context" }
-          : { kind: "inbox_message" },
+          : message.provenance.kind === "writer"
+            ? null
+            : { kind: "inbox_message" },
     createdAt: message.enqueuedAt,
   });
   const text =

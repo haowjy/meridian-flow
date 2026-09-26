@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Keep the writer's own messages in the chat after the reply starts; only machine-delivered inbox messages fold into activity rows.
+
 - Freeze thread prompts at the database boundary.
 - Keep the same Agent and prompt when forking by default.
 

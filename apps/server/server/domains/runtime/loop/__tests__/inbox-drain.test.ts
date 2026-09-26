@@ -76,11 +76,8 @@ function messageText(message: Message): string {
   return message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
 }
 
-function messageTurns(turns: readonly { role: string; metadata?: unknown }[]) {
-  return turns.filter(
-    (turn) =>
-      turn.role === "user" && (turn.metadata as { kind?: string } | null)?.kind === "inbox_message",
-  );
+function turnsWithId(turns: readonly { id: string }[], id: string) {
+  return turns.filter((turn) => turn.id === id);
 }
 
 async function setup(
@@ -483,7 +480,7 @@ describe("inbox drain", () => {
     const { thread, inbox, requests, orchestrator, repos } = await setup({
       results: [toolCallResult("ask_user", "call-1"), textResult("done")],
     });
-    await inbox.enqueue(message("carry me", thread.id));
+    const carried = await inbox.enqueue(message("carry me", thread.id));
 
     await execute(await orchestrator.prepare({ threadId: thread.id, userText: "hello" }));
 
@@ -494,12 +491,10 @@ describe("inbox drain", () => {
     expect(messageTexts(requests[1].messages)).toContain("carry me");
 
     const turns = await repos.turns.listByThread(thread.id);
-    const messageTurn = turns.find(
-      (turn) =>
-        turn.role === "user" &&
-        (turn.metadata as { kind?: string } | null)?.kind === "inbox_message",
-    );
-    expect(messageTurn).toBeDefined();
+    const messageTurn = turns.find((turn) => turn.id === carried.id);
+    expect(messageTurn?.role).toBe("user");
+    // A writer message is the writer's own turn, not a hidden inbox delivery.
+    expect(messageTurn?.metadata).toBeNull();
     const blocks = await repos.blocks.listByTurn(messageTurn?.id as string);
     expect(blocks.some((block) => block.textContent === "carry me")).toBe(true);
     expect(await inbox.selectPending(thread.id)).toEqual([]);
@@ -507,21 +502,21 @@ describe("inbox drain", () => {
 
   it("redelivers an unacked message once, without a second turn or render", async () => {
     const { thread, inbox, requests, orchestrator, repos } = await setup({ errorAtCall: 1 });
-    await inbox.enqueue(message("crash safe", thread.id));
+    const crashSafe = await inbox.enqueue(message("crash safe", thread.id));
 
     // First run drains and persists the message, then fails before the response
     // acks it, so the message stays pending for the next run.
     await execute(await orchestrator.prepare({ threadId: thread.id, userText: "first" }));
     expect(await inbox.selectPending(thread.id)).toHaveLength(1);
     let turns = await repos.turns.listByThread(thread.id);
-    expect(messageTurns(turns)).toHaveLength(1);
+    expect(turnsWithId(turns, crashSafe.id)).toHaveLength(1);
 
     // Second run re-claims the same message; the known-turn filter suppresses a
     // re-render and a re-append, and the successful response acks it.
     await execute(await orchestrator.prepare({ threadId: thread.id, userText: "second" }));
 
     turns = await repos.turns.listByThread(thread.id);
-    expect(messageTurns(turns)).toHaveLength(1);
+    expect(turnsWithId(turns, crashSafe.id)).toHaveLength(1);
     const secondRequest = requests[1];
     expect(secondRequest).toBeDefined();
     const renderCount = messageTexts(secondRequest?.messages ?? []).filter(
@@ -540,7 +535,7 @@ describe("inbox drain", () => {
     await execute(await orchestrator.prepare({ threadId: thread.id, userText: "first" }));
     expect((await repos.threads.findById(thread.id))?.bakedSkillSlugs).not.toBeNull();
 
-    await inbox.enqueue(message("baked steer", thread.id));
+    const baked = await inbox.enqueue(message("baked steer", thread.id));
 
     const outcome = await execute(
       await orchestrator.prepare({ threadId: thread.id, userText: "second" }),
@@ -548,7 +543,7 @@ describe("inbox drain", () => {
 
     expect(outcome.status).toBe("complete");
     const turns = await repos.turns.listByThread(thread.id);
-    expect(messageTurns(turns)).toHaveLength(1);
+    expect(turnsWithId(turns, baked.id)).toHaveLength(1);
     expect(await inbox.selectPending(thread.id)).toEqual([]);
   });
 
