@@ -89,11 +89,11 @@ function ChatScreenLoaded({
   onOpenContextTarget?: (target: ContextRouteTarget) => void;
 }) {
   const {
-    snapshot,
     activateProjection,
     thread: snapshotThread,
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
+    snapshot,
     isError,
     settled: historySettled,
     refetch,
@@ -139,6 +139,7 @@ function ChatScreenLoaded({
               activeWork={activeWork}
               snapshotLiveState={snapshotLiveState}
               snapshotNextSeq={snapshotNextSeq}
+              snapshotThreadUsage={snapshot?.threadUsage}
               historySettled={historySettled}
               activateProjection={activateProjection}
               key={`${projectId}:${threadId}`}

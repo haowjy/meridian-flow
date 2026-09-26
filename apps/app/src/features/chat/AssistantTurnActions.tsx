@@ -13,23 +13,36 @@ import {
   useDebugEnabled,
 } from "@/features/debug/use-debug-enabled";
 import { assistantTurnCopyHtml } from "./assistant-turn-copy";
-import { compactCount, turnStats } from "./turn-stats";
+import { cacheHitPercent, compactCount, turnStats } from "./turn-stats";
 
 const actionClass = "size-6 text-muted-foreground";
 
 export function AssistantTurnActions({
   threadId,
   turn,
+  threadUsage,
   markdown,
 }: {
   threadId: string;
   turn: Turn;
+  threadUsage: {
+    inputTokens: number;
+    cacheReadTokens: number;
+    cacheReportedInputTokens: number;
+    cacheReportedCalls: number;
+    cacheWriteTokens: number;
+    outputTokens: number;
+    cacheResets: number;
+  } | null;
   markdown: string;
 }) {
   const { i18n } = useLingui();
   const { enabled } = useDebugEnabled();
   const [copied, setCopied] = useState(false);
   const stats = turnStats(turn);
+  const threadHitPercent = threadUsage
+    ? cacheHitPercent(threadUsage.cacheReadTokens, threadUsage.cacheReportedInputTokens)
+    : null;
   const copyLabel = i18n._(t`Copy`);
   const copiedLabel = i18n._(t`Copied`);
 
@@ -76,6 +89,29 @@ export function AssistantTurnActions({
           </Tooltip>
           <PopoverContent align="start" className="text-tier-chat chat-card w-64">
             <dl className="grid grid-cols-[1fr_auto] gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-row)] text-xs">
+              <dt className="col-span-2 mt-[var(--chat-space-row)] border-t border-border pt-[var(--chat-space-row)] font-medium text-foreground">
+                {i18n._(t`Thread`)}
+              </dt>
+              {threadUsage?.cacheReportedCalls === 0 ? (
+                <>
+                  <dt className="text-muted-foreground">{i18n._(t`Thread cache hit`)}</dt>
+                  <dd className="text-right">{i18n._(t`Not reported`)}</dd>
+                </>
+              ) : threadHitPercent != null ? (
+                <>
+                  <dt className="text-muted-foreground">{i18n._(t`Thread cache hit`)}</dt>
+                  <dd className="text-right font-mono">{threadHitPercent.toFixed(1)}%</dd>
+                </>
+              ) : null}
+              {threadUsage && threadUsage.cacheResets > 0 ? (
+                <>
+                  <dt className="text-muted-foreground">{i18n._(t`Cache resets`)}</dt>
+                  <dd className="text-right font-mono">{threadUsage.cacheResets}</dd>
+                </>
+              ) : null}
+              <dt className="col-span-2 mt-[var(--chat-space-row)] border-t border-border pt-[var(--chat-space-row)] font-medium text-foreground">
+                {i18n._(t`Turn`)}
+              </dt>
               <dt className="text-muted-foreground">{i18n._(t`Model`)}</dt>
               <dd
                 className="max-w-36 truncate text-right font-medium"
@@ -114,12 +150,23 @@ export function AssistantTurnActions({
               <dd className="text-right font-mono">{compactCount(stats.inputTokens)}</dd>
               <dt className="text-muted-foreground">{i18n._(t`Output tokens`)}</dt>
               <dd className="text-right font-mono">{compactCount(stats.outputTokens)}</dd>
-              {stats.cacheHitPercent == null ? null : (
+              {stats.callCount > 0 && stats.cacheReportedCalls === 0 ? (
                 <>
-                  <dt className="text-muted-foreground">{i18n._(t`Cache hit`)}</dt>
+                  <dt className="text-muted-foreground">{i18n._(t`Turn cache hit`)}</dt>
+                  <dd className="text-right">{i18n._(t`Not reported`)}</dd>
+                </>
+              ) : stats.cacheHitPercent != null ? (
+                <>
+                  <dt className="text-muted-foreground">{i18n._(t`Turn cache hit`)}</dt>
                   <dd className="text-right font-mono">{stats.cacheHitPercent.toFixed(1)}%</dd>
                 </>
-              )}
+              ) : null}
+              {stats.cacheResets > 0 ? (
+                <>
+                  <dt className="text-muted-foreground">{i18n._(t`Cache reset`)}</dt>
+                  <dd className="text-right font-mono">{stats.cacheResets}</dd>
+                </>
+              ) : null}
             </dl>
           </PopoverContent>
         </Popover>

@@ -85,6 +85,7 @@ export interface CreateModelResponseInput {
   reasoningTokens?: number | null;
   cacheReadTokens?: number | null;
   cacheWriteTokens?: number | null;
+  cacheReset?: boolean;
   costUsd?: string;
   millicredits?: string | null;
   priceSource: PriceSource;
@@ -107,6 +108,18 @@ export interface ModelResponseRepository {
   findById(id: string): Promise<ModelResponse | null>;
   listByTurn(turnId: TurnId): Promise<ModelResponse[]>;
   listByThread(threadId: ThreadId): Promise<ModelResponse[]>;
+  sumUsageByThread(threadId: ThreadId): Promise<{
+    inputTokens: number;
+    cacheReadTokens: number;
+    cacheReportedInputTokens: number;
+    cacheReportedCalls: number;
+    cacheWriteTokens: number;
+    outputTokens: number;
+    cacheResets: number;
+  }>;
+  cacheResetContext(
+    threadId: ThreadId,
+  ): Promise<{ hasCacheActivity: boolean; previousInputTokens: number | null }>;
 }
 
 export interface AdmitExecutionReportInput extends ExecutionReportCorrelation {

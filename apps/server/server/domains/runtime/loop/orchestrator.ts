@@ -71,6 +71,7 @@ import type { AiWriteMode } from "@meridian/contracts/works";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { AccountSkillInstallStore, AgentRevisionStore } from "../../packages/index.js";
+import { isCacheReset } from "../../threads/domain/cache-reset.js";
 import type {
   ActiveDocumentResolver,
   BlockRepository,
@@ -657,6 +658,9 @@ async function persistModelResponse(input: {
           responseId,
         );
         const costUsd = computedCost.costUsd;
+        const cacheResetContext = await deps.repos.modelResponses.cacheResetContext(
+          runInput.threadId,
+        );
         const response: ModelResponseReceivedRow = {
           id: responseId,
           turnId: currentAssistantTurn.id,
@@ -669,6 +673,10 @@ async function persistModelResponse(input: {
           reasoningTokens: result.usage.reasoningTokens ?? null,
           cacheReadTokens: result.usage.cacheReadTokens ?? null,
           cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
+          cacheReset: isCacheReset({
+            ...cacheResetContext,
+            currentCacheReadTokens: result.usage.cacheReadTokens ?? null,
+          }),
           costUsd,
           millicredits: computedCost.millicredits,
           priceSource: computedCost.priceSource,

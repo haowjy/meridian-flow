@@ -41,6 +41,7 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
     activateProjection,
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
+    snapshot: threadSnapshot,
     settled: historySettled,
     isError: snapshotIsError,
     refetch: refetchSnapshot,
@@ -86,6 +87,7 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
       activateProjection={activateProjection}
       snapshotLiveState={snapshotLiveState}
       snapshotNextSeq={snapshotNextSeq}
+      threadUsage={threadSnapshot?.threadUsage}
       historySettled={historySettled}
     />
   );
@@ -98,6 +100,7 @@ function IndependentChatProjectView({
   activateProjection,
   snapshotLiveState,
   snapshotNextSeq,
+  threadUsage,
   historySettled,
 }: {
   threadId: string;
@@ -106,6 +109,15 @@ function IndependentChatProjectView({
   activateProjection: ReturnType<typeof useThreadSnapshotSync>["activateProjection"];
   snapshotLiveState: ReturnType<typeof useThreadSnapshotSync>["liveState"];
   snapshotNextSeq: ReturnType<typeof useThreadSnapshotSync>["nextSeq"];
+  threadUsage?: {
+    inputTokens: number;
+    cacheReadTokens: number;
+    cacheReportedInputTokens: number;
+    cacheReportedCalls: number;
+    cacheWriteTokens: number;
+    outputTokens: number;
+    cacheResets: number;
+  } | null;
   historySettled: boolean;
 }) {
   const navigate = useNavigate();
@@ -209,6 +221,7 @@ function IndependentChatProjectView({
                   activeWork={activeWork}
                   snapshotLiveState={snapshotLiveState}
                   snapshotNextSeq={snapshotNextSeq}
+                  snapshotThreadUsage={threadUsage}
                   historySettled={historySettled}
                   activateProjection={activateProjection}
                   key={threadId}

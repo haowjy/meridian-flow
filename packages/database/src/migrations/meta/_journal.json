@@ -57,6 +57,13 @@
       "when": 1790452021931,
       "tag": "0007_thread_current_tool",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790453017315,
+      "tag": "0008_model_response_cache_reset",
+      "breakpoints": true
     }
   ]
 }

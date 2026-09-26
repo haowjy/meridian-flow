@@ -230,6 +230,15 @@ export type ChatViewProps = {
   activeWork?: Work | null;
   snapshotLiveState?: ThreadLiveState | null;
   snapshotNextSeq?: string | null;
+  snapshotThreadUsage?: {
+    inputTokens: number;
+    cacheReadTokens: number;
+    cacheReportedInputTokens: number;
+    cacheReportedCalls: number;
+    cacheWriteTokens: number;
+    outputTokens: number;
+    cacheResets: number;
+  } | null;
   /**
    * Whether the thread snapshot request has resolved. Feeds the transcript's
    * conversation-reveal ownership: only a settled history can say a named turn
@@ -246,6 +255,7 @@ export function ChatView({
   activeWork = null,
   snapshotLiveState = null,
   snapshotNextSeq = null,
+  snapshotThreadUsage = null,
   historySettled,
   activateProjection,
 }: ChatViewProps) {
@@ -566,6 +576,7 @@ export function ChatView({
             changeTrails={changeTrails.byId}
             submissionRecoveryByTurnId={submissionRecoveryByTurnId}
             queuedWriterTurnIds={queuedWriterTurnIds}
+            threadUsage={snapshotThreadUsage}
           />
         </SubagentActivityProvider>
       </ChatSurface>

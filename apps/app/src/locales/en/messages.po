@@ -719,8 +719,16 @@ msgid "Buy extra usage"
 msgstr "Buy extra usage"
 
 #: src/features/chat/AssistantTurnActions.tsx
-msgid "Cache hit"
-msgstr "Cache hit"
+#~ msgid "Cache hit"
+#~ msgstr "Cache hit"
+
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "Cache reset"
+msgstr "Cache reset"
+
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "Cache resets"
+msgstr "Cache resets"
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Calls"
@@ -2627,6 +2635,10 @@ msgstr "No Work yet."
 msgid "Not Found"
 msgstr "Not Found"
 
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "Not reported"
+msgstr "Not reported"
+
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Nothing carries that name yet"
 msgstr "Nothing carries that name yet"
@@ -4112,6 +4124,14 @@ msgid "This Work is unavailable."
 msgstr "This Work is unavailable."
 
 #: src/features/chat/AssistantTurnActions.tsx
+msgid "Thread"
+msgstr "Thread"
+
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "Thread cache hit"
+msgstr "Thread cache hit"
+
+#: src/features/chat/AssistantTurnActions.tsx
 msgid "Time to first token"
 msgstr "Time to first token"
 
@@ -4140,6 +4160,14 @@ msgstr "Try again"
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Try again, or return to the live document."
 msgstr "Try again, or return to the live document."
+
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "Turn"
+msgstr "Turn"
+
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "Turn cache hit"
+msgstr "Turn cache hit"
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Turn information"

@@ -294,6 +294,7 @@ export interface Thread {
 }
 
 export type TurnUsage = {
+  /** Provider-normalized prompt total, including cache-read and cache-write token subsets. */
   inputTokens: number;
   outputTokens: number;
   reasoningTokens?: number | null;
@@ -376,6 +377,8 @@ export interface ModelResponse {
   reasoningTokens?: number | null;
   cacheReadTokens?: number | null;
   cacheWriteTokens?: number | null;
+  /** True when this call's reported cache read dropped below half the previous prompt after prior cache activity. */
+  cacheReset: boolean;
   usageBreakdown?: JsonValue | null;
   costUsd: string | null;
   millicredits?: string | null;

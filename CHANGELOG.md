@@ -11,7 +11,7 @@
 - Show only "Queued" under a writer message the model has not read yet.
 - Keep "needs your answer" on a chat when the writer sends while a question is parked.
 - One chat spacing scale across turns, cards, prose, and composer; non-chat prose keeps its spacing.
-- Settled assistant turns get Copy (rich HTML and Markdown), turn info (model, calls, output speed, first-token time, tokens, cache hit), and debug-gated model-call inspection.
+- Settled assistant turns get Copy (rich HTML and Markdown), turn info (model, calls, output speed, first-token time, tokens, turn cache hit, running thread cache hit and cache reset counts), and debug-gated model-call inspection.
 - Record per-call latency, time to first output, and generation time at provider-event arrival; omit generation time after consumer backpressure.
 - Gateway owns provider retries; honor retry-after hints and retry vetoes.
 - Show subagent lifecycle in chat: background launch, running panel, finished and report lines, foreground card, and a Subagents popover.

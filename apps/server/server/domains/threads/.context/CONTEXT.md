@@ -48,6 +48,20 @@ for the tool-freeze mechanics.
   conversation data model. A thread contains turns; a turn contains blocks
   (text, reasoning, tool_use, tool_result, image, file, custom) and model
   responses with token/cost rollups and per-call request latency/TTFT.
+  `ModelResponseRepository.sumUsageByThread` returns prompt/cache/output token sums
+  for every response billed to a thread, including all turn branches. It also
+  carries the prompt total and number of calls whose provider reported cache
+  counters; only those calls contribute to the cache-hit denominator. Snapshot
+  `threadUsage` carries these raw totals; the app derives the cache-hit rate as
+  cache-read tokens divided by the reported-call input tokens. `inputTokens`
+  includes cache reads and writes, which are both subsets; writes remain misses.
+  Each `ModelResponse` persists `cacheReset`, computed against the prior response
+  and prior cache activity. The aggregate counts resets with a filtered COUNT.
+  This scope includes every call billed to this thread and its turn branches,
+  but never descendant child/subagent threads, which own separate stats. The
+  `(turns.thread_id, turns.created_at)` and `(model_responses.turn_id, sequence)`
+  indexes support the join and response lookup. Stats deliberately cover calls
+  billed to this thread only; child/subagent threads report independently.
   `ThreadRepository.listDescendants` walks a
   thread's own spawn subtree breadth-first on `parent_thread_id` (served by
   `threads_parent_created_active`, excluding soft-deleted rows), returning the
@@ -206,7 +220,7 @@ transactions. See the [runtime contract](../../runtime/.context/CONTEXT.md).
 | `ThreadUserStateRepository` | Per-writer favorite authority. |
 | `TurnRepository` | `create / findById / listByThread / getLatestByThread / updateStatus / recomputeRollups` |
 | `BlockRepository` | `create / findById / listByTurn / listByThread / updatePruned` |
-| `ModelResponseRepository` | `create / findById / listByTurn / listByThread` |
+| `ModelResponseRepository` | `create / findById / listByTurn / listByThread / sumUsageByThread / cacheResetContext` |
 | `ThreadRepositories` | aggregate of the repositories + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
 | `ThreadWorksRepository` | Adds organizational memberships and reads the primary. Its thread-before-Work primary rebind revalidates thread lifecycle under the same row lock, then demotes the old membership and promotes/upserts the target WorkId, retaining association history while preserving exactly one primary. |
 | `rebindThreadWork` | Transaction-composable mutation above `rebindPrimary`; binding, receipt, typed lifecycle errors, and targeted durable inbox notice have one policy owner. Actor adapters own the business transaction. |

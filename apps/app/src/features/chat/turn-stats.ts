@@ -6,10 +6,18 @@ export type TurnStats = {
   callCount: number;
   outputTokens: number;
   inputTokens: number;
+  cacheReportedInputTokens: number;
+  cacheReportedCalls: number;
   cacheHitPercent: number | null;
+  cacheResets: number;
   ttftMs: number | null;
   outputTokensPerSecond: number | null;
 };
+
+/** Token-weighted prompt cache hit rate. Cache writes are already misses within input tokens. */
+export function cacheHitPercent(read: number, input: number): number | null {
+  return input > 0 ? (read / input) * 100 : null;
+}
 
 /** Summary of the model calls that produced one assistant turn. */
 export function turnStats(turn: Turn): TurnStats {
@@ -20,6 +28,12 @@ export function turnStats(turn: Turn): TurnStats {
     (sum, response) => sum + (response.cacheReadTokens ?? 0),
     0,
   );
+  const cacheReportedResponses = responses.filter((response) => response.cacheReadTokens != null);
+  const cacheReportedInputTokens = cacheReportedResponses.reduce(
+    (sum, response) => sum + response.inputTokens,
+    0,
+  );
+  const cacheResets = responses.filter((response) => response.cacheReset === true).length;
   // Speed counts only calls whose generation window the server measured, so
   // tokens and time come from the same set of calls.
   let generationMs = 0;
@@ -34,8 +48,11 @@ export function turnStats(turn: Turn): TurnStats {
     model: responses[0]?.model ?? turn.model ?? null,
     callCount: responses.length,
     inputTokens,
+    cacheReportedInputTokens,
+    cacheReportedCalls: cacheReportedResponses.length,
     outputTokens,
-    cacheHitPercent: inputTokens > 0 ? (cacheReadTokens / inputTokens) * 100 : null,
+    cacheHitPercent: cacheHitPercent(cacheReadTokens, cacheReportedInputTokens),
+    cacheResets,
     ttftMs: firstTtft,
     outputTokensPerSecond: generationMs > 0 ? (generationOutputTokens * 1000) / generationMs : null,
   };

@@ -31,6 +31,15 @@ export type TurnListProps = {
   /** Recovered ambiguous submissions, keyed by the restored user turn id. */
   submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
   queuedWriterTurnIds?: ReadonlySet<string>;
+  threadUsage?: {
+    inputTokens: number;
+    cacheReadTokens: number;
+    cacheReportedInputTokens: number;
+    cacheReportedCalls: number;
+    cacheWriteTokens: number;
+    outputTokens: number;
+    cacheResets: number;
+  } | null;
 };
 
 /** Estimated row height before measurement; corrected by `measureElement`. */
@@ -49,6 +58,7 @@ export function TurnList({
   changeTrails = {},
   submissionRecoveryByTurnId,
   queuedWriterTurnIds,
+  threadUsage = null,
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const navigateToChange = useChangeTrailNavigation(threadId);
@@ -131,6 +141,7 @@ export function TurnList({
         <AssistantTurn
           threadId={threadId}
           turn={turn}
+          threadUsage={threadUsage}
           deliveryEvents={deliveryEventsAfter(turn, turns)}
           isLatestAssistant={idx === lastAssistantIdx}
           onRetry={turn.id === failedSendRetry?.turnId ? failedSendRetry.retry : undefined}

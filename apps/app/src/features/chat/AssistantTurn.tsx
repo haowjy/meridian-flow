@@ -48,6 +48,15 @@ import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 export type AssistantTurnProps = {
   threadId?: string;
   turn: Turn;
+  threadUsage?: {
+    inputTokens: number;
+    cacheReadTokens: number;
+    cacheReportedInputTokens: number;
+    cacheReportedCalls: number;
+    cacheWriteTokens: number;
+    outputTokens: number;
+    cacheResets: number;
+  } | null;
   deliveryEvents?: Array<{ turn: Turn; childThreadId?: string; title?: string }>;
   isLatestAssistant?: boolean;
   onRetry?: () => void;
@@ -59,6 +68,7 @@ export type AssistantTurnProps = {
 function AssistantTurnComponent({
   threadId,
   turn,
+  threadUsage,
   deliveryEvents = [],
   isLatestAssistant = false,
   onRetry,
@@ -163,7 +173,12 @@ function AssistantTurnComponent({
         ) : null}
       </div>
       {isSettled ? (
-        <AssistantTurnActions threadId={resolvedThreadId} turn={turn} markdown={copyMarkdown} />
+        <AssistantTurnActions
+          threadId={resolvedThreadId}
+          turn={turn}
+          markdown={copyMarkdown}
+          threadUsage={threadUsage ?? null}
+        />
       ) : null}
       {showsInkDrop ? <InkDrop /> : null}
     </div>

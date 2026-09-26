@@ -134,6 +134,7 @@ export function mapModelResponse(row: typeof schema.modelResponses.$inferSelect)
     reasoningTokens: row.reasoningTokens,
     cacheReadTokens: row.cacheReadTokens,
     cacheWriteTokens: row.cacheWriteTokens,
+    cacheReset: row.cacheReset,
     usageBreakdown: row.usageBreakdown as ModelResponse["usageBreakdown"],
     costUsd: decimalString(row.costUsd),
     millicredits: row.millicredits?.toString(),
