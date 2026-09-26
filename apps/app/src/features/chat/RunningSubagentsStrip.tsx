@@ -1,10 +1,9 @@
 /**
- * RunningSubagentsStrip — the per-thread, recursive running-subagent surface.
+ * RunningSubagentsStrip — the per-thread running direct-subagent surface.
  *
  * Anchored to the thread, not a turn, so a terminal parent turn cannot erase
- * it; fed by the server-truth `ThreadActivity` (leases + lineage). One surface
- * per viewed thread: a child shows its own children with no primary special
- * case. Each row opens that child thread; rows indent by spawn depth.
+ * it; fed by the server-truth `ThreadActivity` (leases + lineage). Each row
+ * opens one direct child thread; all rows share the same alignment.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -18,19 +17,14 @@ import { ThreadStatusLabel } from "./ThreadStatusLabel";
 export type RunningSubagentsStripProps = {
   /** The viewed thread's own derived status. */
   selfStatus: ThreadStatus;
-  /** Active descendants of the viewed thread, ordered (depth, createdAt). */
-  descendants: ThreadActivityNode[];
+  /** Active direct children of the viewed thread. */
+  children: ThreadActivityNode[];
 };
 
-export function RunningSubagentsStrip({ selfStatus, descendants }: RunningSubagentsStripProps) {
+export function RunningSubagentsStrip({ selfStatus, children }: RunningSubagentsStripProps) {
   const [expanded, setExpanded] = useState(true);
 
-  if (descendants.length === 0) return null;
-
-  const minDepth = descendants.reduce(
-    (min, node) => Math.min(min, node.depth),
-    Number.POSITIVE_INFINITY,
-  );
+  if (children.length === 0) return null;
 
   return (
     <div className="border-b border-border-subtle bg-card" data-running-subagents>
@@ -49,10 +43,10 @@ export function RunningSubagentsStrip({ selfStatus, descendants }: RunningSubage
             aria-hidden
           />
           <span className="truncate">
-            {descendants.length === 1 ? (
+            {children.length === 1 ? (
               <Trans>1 subagent running</Trans>
             ) : (
-              <Trans>{descendants.length} subagents running</Trans>
+              <Trans>{children.length} subagents running</Trans>
             )}
           </span>
         </button>
@@ -61,12 +55,8 @@ export function RunningSubagentsStrip({ selfStatus, descendants }: RunningSubage
 
       {expanded ? (
         <ul className="mx-auto w-full max-w-chat-column pb-1">
-          {descendants.map((node) => (
-            <SubagentRow
-              key={node.threadId}
-              node={node}
-              indent={Number.isFinite(minDepth) ? node.depth - minDepth : 0}
-            />
+          {children.map((node) => (
+            <SubagentRow key={node.threadId} node={node} />
           ))}
         </ul>
       ) : null}
@@ -74,7 +64,7 @@ export function RunningSubagentsStrip({ selfStatus, descendants }: RunningSubage
   );
 }
 
-function SubagentRow({ node, indent }: { node: ThreadActivityNode; indent: number }) {
+function SubagentRow({ node }: { node: ThreadActivityNode }) {
   const openThread = useOpenChatThread();
   const name = node.agentName?.trim() || node.title?.trim() || t`Subagent`;
   const title = node.title?.trim();
@@ -100,8 +90,6 @@ function SubagentRow({ node, indent }: { node: ThreadActivityNode; indent: numbe
     "flex w-full items-center gap-2 py-1 pr-3 text-sm",
     openThread && "focus-ring rounded-sm transition-colors hover:bg-muted",
   );
-  const style = { paddingInlineStart: `calc(1.5rem + ${indent}rem)` };
-
   return (
     <li>
       {openThread ? (
@@ -109,14 +97,11 @@ function SubagentRow({ node, indent }: { node: ThreadActivityNode; indent: numbe
           type="button"
           onClick={() => openThread(node.threadId)}
           className={cn(className, "text-left")}
-          style={style}
         >
           {body}
         </button>
       ) : (
-        <div className={className} style={style}>
-          {body}
-        </div>
+        <div className={className}>{body}</div>
       )}
     </li>
   );

@@ -49,7 +49,7 @@ function subscribedMessage(): WsServerMessage {
       threadId: "thread-1",
       status: { kind: "asleep" },
       runningTurnId: null,
-      activity: { descendants: [] },
+      activity: { children: [] },
       pending: { items: [] },
       resumeAfterSeq: "1",
     },

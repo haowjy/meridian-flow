@@ -372,7 +372,7 @@ describe("real-store first-send retry", () => {
     );
     vi.spyOn(trails, "listChangeTrailShells").mockResolvedValue([]);
     function Listeners() {
-      useThreadActivity({ threadId: THREAD_ID, rootThreadId: THREAD_ID, seed: null });
+      useThreadActivity({ threadId: THREAD_ID, seed: null });
       usePendingInbox({ threadId: THREAD_ID, seed: null });
       useThreadDurableProjections({ threadId: THREAD_ID, projectId: "project-1" });
       return null;
