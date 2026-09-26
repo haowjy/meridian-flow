@@ -8,15 +8,7 @@ import {
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createNoopEventSink } from "../domains/observability/index.js";
-import { appendSubagentActivity } from "../domains/runtime/spawn/activity-event.js";
-import {
-  createInMemoryEventJournalWriter,
-  createInMemoryRepositories,
-  createThreadEventHub,
-  readThreadActivity,
-} from "../domains/threads/index.js";
 import type { SequencedEventInternal } from "../domains/threads/thread-event-hub.js";
-import { buildThreadSnapshot } from "../domains/threads/thread-snapshot.js";
 import type { AppServices } from "./app.js";
 import { createThreadWebSocketSession, type WsPeer } from "./ws-thread-handler.js";
 
@@ -91,56 +83,6 @@ describe("thread WS handler subscribe handoff", () => {
     // client resumes from delivered event frames, not the durable head.
     deliverLive(UNDELIVERED_HEAD);
     expect(frames.at(-1)).toMatchObject({ type: "event", seq: UNDELIVERED_HEAD.toString() });
-  });
-
-  it("journals producer activity from the same read as the thread snapshot", async () => {
-    const repos = createInMemoryRepositories();
-    const parent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
-    const child = await repos.threads.createSubagent({
-      userId: "user-1",
-      projectId: "project-1",
-      parentThreadId: parent.id,
-      rootThreadId: parent.id,
-      spawnDepth: 1,
-      title: "Critic",
-    });
-    const journal = createInMemoryEventJournalWriter();
-    const hub = createThreadEventHub({
-      journalWriter: journal,
-      journalReader: journal,
-      eventSink: createNoopEventSink(),
-    });
-    const statusReader = {
-      async read() {
-        return { kind: "asleep" as const };
-      },
-      async readRunningTurnId() {
-        return null;
-      },
-      async readMany() {
-        return new Map();
-      },
-      async readPending() {
-        return { items: [] };
-      },
-    };
-    const readActivity = (threadId: ThreadId) =>
-      readThreadActivity({ threads: repos.threads, statusReader }, threadId);
-
-    await appendSubagentActivity({
-      eventWriter: hub,
-      readActivity,
-      parentThreadId: parent.id as ThreadId,
-      childThreadId: child.id,
-    });
-
-    const event = journal.getEvents(parent.id).at(-1)?.event;
-    expect(event?.type).toBe("subagent.activity");
-    if (event?.type !== "subagent.activity") throw new Error("Expected activity journal event");
-    const liveRead = await readActivity(parent.id as ThreadId);
-    const snapshot = await buildThreadSnapshot(repos, hub, statusReader, parent.id as ThreadId);
-    expect(event.activity).toEqual(liveRead);
-    expect(event.activity).toEqual(snapshot.liveState.activity);
   });
 });
 

@@ -1,18 +1,17 @@
-/**
- * The drain-woken run activity emitter, used at both the start and settle of a
- * subagent's own run: it must emit the direct parent's activity frame so the live strip
- * reads `awake` during the run and never stays frozen there after release. A
- * non-subagent thread and any failure are no-ops.
- */
+/** Subagent activity producer and direct-parent run-refresh behavior. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
-import { createInMemoryEventSink } from "../../observability/index.js";
+import { createInMemoryEventSink, createNoopEventSink } from "../../observability/index.js";
 import {
+  createInMemoryEventJournalWriter,
   createInMemoryRepositories,
+  createThreadEventHub,
   type EventJournalWriter,
   readThreadActivity,
 } from "../../threads/index.js";
+import { buildThreadSnapshot } from "../../threads/thread-snapshot.js";
 import {
+  appendSubagentActivity,
   appendSubagentActivityBestEffort,
   createSubagentActivityRefresher,
   emitRunActivityBestEffort,
@@ -34,6 +33,58 @@ function recordingWriter() {
 }
 
 const readActivity = async () => ({ children: [] });
+
+describe("appendSubagentActivity", () => {
+  it("journals the same activity as the live read and thread snapshot", async () => {
+    const repos = createInMemoryRepositories();
+    const parent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+    const child = await repos.threads.createSubagent({
+      userId: "user-1",
+      projectId: "project-1",
+      parentThreadId: parent.id,
+      rootThreadId: parent.id,
+      spawnDepth: 1,
+      title: "Critic",
+    });
+    const journal = createInMemoryEventJournalWriter();
+    const hub = createThreadEventHub({
+      journalWriter: journal,
+      journalReader: journal,
+      eventSink: createNoopEventSink(),
+    });
+    const statusReader = {
+      async read() {
+        return { kind: "asleep" as const };
+      },
+      async readRunningTurnId() {
+        return null;
+      },
+      async readMany() {
+        return new Map();
+      },
+      async readPending() {
+        return { items: [] };
+      },
+    };
+    const readParentActivity = (threadId: ThreadId) =>
+      readThreadActivity({ threads: repos.threads, statusReader }, threadId);
+
+    await appendSubagentActivity({
+      eventWriter: hub,
+      readActivity: readParentActivity,
+      parentThreadId: parent.id as ThreadId,
+      childThreadId: child.id,
+    });
+
+    const event = journal.getEvents(parent.id).at(-1)?.event;
+    expect(event?.type).toBe("subagent.activity");
+    if (event?.type !== "subagent.activity") throw new Error("Expected activity journal event");
+    const liveRead = await readParentActivity(parent.id as ThreadId);
+    const snapshot = await buildThreadSnapshot(repos, hub, statusReader, parent.id as ThreadId);
+    expect(event.activity).toEqual(liveRead);
+    expect(event.activity).toEqual(snapshot.liveState.activity);
+  });
+});
 
 describe("emitRunActivityBestEffort", () => {
   it("emits the frame to the direct parent's journal for a subagent drain run", async () => {
