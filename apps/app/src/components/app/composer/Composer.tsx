@@ -292,7 +292,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       },
       attributes: {
         "aria-label": t`Message`,
-        class: "composer-input min-h-10 max-h-60 overflow-y-auto px-1.5 py-1 outline-none",
+        class:
+          "composer-input min-h-10 max-h-60 overflow-y-auto px-[var(--chat-space-inline)] py-[var(--chat-space-inline)] outline-none",
       },
     },
     onTransaction: ({ editor: current, transaction }) => {
@@ -566,7 +567,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     <div
       data-composer=""
       className={cn(
-        "border border-composer-border bg-composer-surface px-4 pt-4 pb-3 focus-within:border-border-focus",
+        "border border-composer-border bg-composer-surface px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-[var(--chat-card-pad-y)] focus-within:border-border-focus",
         variant === "hero" ? "rounded-composer" : "rounded-composer-pinned",
       )}
       aria-busy={busy || pending > 0 || undefined}
@@ -578,7 +579,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       />
       {editor ? <AtReferenceMenu editor={editor} /> : null}
       {editor ? <ComposerCommandMenu editor={editor} /> : null}
-      <div className="mt-1 flex items-center gap-2">
+      <div className="mt-[var(--chat-space-inline)] flex items-center gap-[var(--chat-space-inline)]">
         <div className="min-w-0 flex-1">{toolbarLeft}</div>
         {resolvedUploadPort ? (
           <>
@@ -657,7 +658,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         ) : null}
       </div>
       {submitFailure ? (
-        <p role="alert" className="mt-1 text-right text-xs text-destructive">
+        <p
+          role="alert"
+          className="mt-[var(--chat-space-inline)] text-right text-xs text-destructive"
+        >
           {t`Couldn't send. Your message was not lost.`}
         </p>
       ) : null}
