@@ -49,10 +49,12 @@ pruning runs when the sink rolls segments. External provider policy is deliberat
 not wired into production composition yet; inject another `EventSink` later
 without changing route or domain code.
 
-With the local provider, `NODE_ENV=development|test` also registers the recent
-buffer on `AppServices.eventQuery`. Authenticated `/api/debug/events` and
-`/api/debug/events/stream` routes expose filtered history and live-only SSE;
-both are absent in every other environment and for disabled sink providers.
+With the local provider and the debug gate open (`APP_DEBUG=1`, never in
+production; see `resolveDebugPathsEnabled` in `lib/env.ts`), composition also
+registers the recent buffer on `AppServices.eventQuery`. Authenticated
+`/api/debug/events` and `/api/debug/events/stream` routes expose filtered
+history and live-only SSE; both are absent when the gate is closed and for
+disabled sink providers.
 
 There is no ambient fallback in domain code: if a service emits diagnostics, its
 constructor/deps require an `EventSink` so disabled observability is an explicit

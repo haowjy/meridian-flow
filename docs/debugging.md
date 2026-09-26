@@ -75,13 +75,30 @@ Contract:
 - `MF_SERVER_URL` plus `MF_COOKIE` (or `MF_APP_URL` for dev login) target a
   stack other than this worktree's Portless routes.
 
-Scripting the model: with `MODEL_PROVIDER=mock` (or no provider keys) the
-in-process mock model accepts queued replies through the dev-only
+Scripting the model: with `MODEL_PROVIDER=mock` (or no provider keys) and the
+debug gate open, the in-process mock model accepts queued replies through the
 `/api/debug/mock-model/script` route. Each step answers one model call with
 `text`, `toolCalls` (`[{name, args}]`), an `error` (`{status, message}`), and
 an optional `delayMs`. `send --mock` scopes the script to that message, so
 concurrent threads cannot consume it; `./mf mock script|list|clear` manage the
 queue directly. Unscripted calls keep the mock's canned behavior.
+
+## Debug Gate
+
+Every debug path shares one server gate, `resolveDebugPathsEnabled` in
+`apps/server/server/lib/env.ts`: model-request capture, `/api/debug/events`
+(and `/stream`), the debug account-skill routes, and the mock-model script
+queue. The rule is:
+
+- Never in production: `APP_ENV=production`, or `NODE_ENV=production` with
+  `APP_ENV` unset or `dev`. The flag cannot override this.
+- Everywhere else (dev, test, staging), only with an explicit `APP_DEBUG=1`.
+  `pnpm dev` sets it unless `.env` sets `APP_DEBUG` itself. A staging deploy
+  opts in by setting `APP_DEBUG=1` in its environment.
+
+Dev login is separate and stays non-production only, so `./mf` against a
+deployed staging server authenticates with `MF_SERVER_URL` plus `MF_COOKIE`
+(a real session cookie).
 
 ## Temporary Probes
 
@@ -166,12 +183,12 @@ Text output prints the readable Markdown (or the raw request) directly; under
 followed by supporting debug metadata and the retention details.
 
 This is the canonical request immediately before Meridian's gateway dispatch,
-not a claim about a provider SDK's private wire encoding. Capture is enabled in
-local development, lives only in process memory, and is bounded to 200 records,
+not a claim about a provider SDK's private wire encoding. Capture is enabled
+with the debug gate (see [Debug Gate](#debug-gate)), lives only in process memory, and is bounded to 200 records,
 2 MiB per request, and 16 MiB total. Oversized requests keep metadata and a
 digest but omit their body. A server restart clears the ring. Request content
 never enters `EventSink`, the event journal, thread snapshots, or JSONL logs.
-Staging and production cannot enable this capture. The Readable lens contains
+Production can never enable this capture. The Readable lens contains
 writer Markdown within explicit message boundaries and limits each projected
 part to 32 KiB of UTF-8; Raw remains exact up to the request capture ceiling.
 
@@ -194,9 +211,8 @@ time), and `--limit` (default 50). Compact output omits payloads; `--full`
 includes the sanitized records. JSON output includes dropped record/byte counts.
 Failures exit nonzero with a hint.
 
-Authenticated local development/test servers with the `local` event provider
-retain up to 5,000 sanitized records or 16 MiB in memory. Other environments
-and disabled providers return 404; there is no runtime override.
+Servers with the debug gate open and the `local` event provider retain up to
+5,000 sanitized records or 16 MiB in memory. Otherwise these routes return 404.
 
 For direct `curl` access, bootstrap through the app and retarget the host-only
 development session cookie to the paired server origin:

@@ -158,7 +158,7 @@ import {
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import {
   createInMemoryModelRequestDebugStore,
-  createModelRequestDebugStoreFromEnv,
+  createModelRequestDebugStore,
 } from "../domains/runtime/model-request-debug/index.js";
 import type { LocalObjectStoreAdapter, ObjectStorePort } from "../domains/storage/index.js";
 import { createDrizzleEventJournalReader } from "../domains/threads/adapters/drizzle/event-reader.js";
@@ -191,7 +191,7 @@ import {
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
-import { resolveObsVerbose } from "./env.js";
+import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { readThreadContextDocument } from "./thread-context-route.js";
 import {
@@ -347,6 +347,11 @@ export async function createProductionAppPorts(input: {
 }): Promise<ProductionAppPorts> {
   const environment = input.environment ?? process.env;
   const eventSink = input.eventSink;
+  const debugPaths = resolveDebugPathsEnabled({
+    rawNodeEnv: environment.NODE_ENV,
+    rawAppEnv: environment.APP_ENV,
+    debugFlag: environment.APP_DEBUG,
+  });
   const {
     gateway: rawGateway,
     defaultModel,
@@ -547,9 +552,8 @@ export async function createProductionAppPorts(input: {
     preferences,
     workingSet,
     recentDocuments,
-    modelRequestDebug: createModelRequestDebugStoreFromEnv(eventSink),
-    // Scripted mock replies are a local-dev affordance only.
-    mockModelScript: environment.NODE_ENV === "production" ? null : (mockScript ?? null),
+    modelRequestDebug: createModelRequestDebugStore({ enabled: debugPaths, eventSink }),
+    mockModelScript: debugPaths ? (mockScript ?? null) : null,
     objectStore,
     localObjectStore,
     uploadIntake,

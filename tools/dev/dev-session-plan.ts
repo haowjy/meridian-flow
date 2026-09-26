@@ -112,6 +112,8 @@ function appRuntimeEnv(env: NodeJS.ProcessEnv, internalApiOrigin: string): NodeJ
   return {
     ...env,
     MERIDIAN_API_ORIGIN: internalApiOrigin,
+    // Local dev opts into debug paths (./mf, debug routes, model capture) unless .env says otherwise.
+    APP_DEBUG: env.APP_DEBUG ?? "1",
   };
 }
 

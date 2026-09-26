@@ -5,6 +5,8 @@ export const env = createEnv({
   server: {
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     APP_ENV: z.enum(["dev", "staging", "production"]).default("dev"),
+    /** Explicit opt-in for debug paths; see `resolveDebugPathsEnabled`. */
+    APP_DEBUG: z.enum(["0", "1", "true", "false"]).optional(),
     PORT: z.coerce.number().int().positive().default(4000),
     DATABASE_URL: z.string().min(1).optional(),
 
@@ -20,42 +22,31 @@ export const env = createEnv({
   emptyStringAsUndefined: true,
 });
 
-export const modelRequestDebugCaptureEnabled = resolveModelRequestDebugCaptureEnabled({
-  rawNodeEnv: process.env.NODE_ENV,
-  rawAppEnv: env.APP_ENV,
-  debugCaptureOverride: process.env.MODEL_REQUEST_DEBUG_CAPTURE,
-});
-
-export const recentEventsEnabled = resolveRecentEventsEnabled({
-  rawNodeEnv: process.env.NODE_ENV,
-});
-
 /**
- * Fail-safe model-request debug capture gate.
+ * The one gate for every debug path: model-request capture, recent events
+ * (`/api/debug/events`), debug routes, and the mock-model script queue.
  *
- * Capture is structurally unavailable outside local development/test.
- * MODEL_REQUEST_DEBUG_CAPTURE can disable it locally but cannot enable it in
- * staging or production.
+ * Never on in production, even with the flag. `NODE_ENV=production` with
+ * `APP_ENV` unset or `dev` also counts as production, so a deployed process
+ * missing `APP_ENV` fails closed. Everywhere else (dev, test, staging) debug
+ * paths are on only with an explicit `APP_DEBUG=1`; `pnpm dev` sets it.
  */
-export function resolveModelRequestDebugCaptureEnabled(input: {
+export function resolveDebugPathsEnabled(input: {
   rawNodeEnv?: string;
   rawAppEnv?: string;
-  debugCaptureOverride?: string;
+  debugFlag?: string;
 }): boolean {
-  if (
-    (input.rawNodeEnv !== "development" && input.rawNodeEnv !== "test") ||
-    input.rawAppEnv !== "dev"
-  ) {
-    return false;
-  }
-  if (input.debugCaptureOverride === "0" || input.debugCaptureOverride === "false") return false;
-  return true;
+  const appEnv = input.rawAppEnv ?? "dev";
+  if (appEnv === "production") return false;
+  if (input.rawNodeEnv === "production" && appEnv === "dev") return false;
+  return input.debugFlag === "1" || input.debugFlag === "true";
 }
 
-/** Recent-event consumption is structurally unavailable outside local test/dev processes. */
-export function resolveRecentEventsEnabled(input: { rawNodeEnv?: string }): boolean {
-  return input.rawNodeEnv === "development" || input.rawNodeEnv === "test";
-}
+export const debugPathsEnabled = resolveDebugPathsEnabled({
+  rawNodeEnv: process.env.NODE_ENV,
+  rawAppEnv: process.env.APP_ENV,
+  debugFlag: process.env.APP_DEBUG,
+});
 
 /** Wake-sweep cadence; the recovery may also run on process startup. */
 export function resolveWakeSweepIntervalMs(raw: string | undefined): number {
