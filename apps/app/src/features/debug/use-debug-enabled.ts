@@ -6,7 +6,8 @@ export { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 export type LlmCallsScope = { threadId: string; turnId: string } | null;
 type DebugState = { enabled: boolean; viewerOpen: boolean; filter: LlmCallsScope };
 const STORAGE_KEY = "meridian:debug-overlay";
-let state: DebugState = { enabled: false, viewerOpen: false, filter: null };
+const INITIAL_STATE: DebugState = { enabled: false, viewerOpen: false, filter: null };
+let state: DebugState = INITIAL_STATE;
 const subscribers = new Set<() => void>();
 let initialized = false;
 let openViewer: (() => void) | null = null;
@@ -79,7 +80,7 @@ export function useDebugEnabled() {
   return { enabled: DEBUG_FEATURE_ALLOWED && enabled, toggle: toggleDebug };
 }
 export function useDebugState(): DebugState {
-  return useSyncExternalStore(subscribe, getState, getState);
+  return useSyncExternalStore(subscribe, getState, () => INITIAL_STATE);
 }
 export function setLlmCallsViewerOpener(opener: (() => void) | null) {
   openViewer = opener;
@@ -94,4 +95,30 @@ export function clearLlmCallsScope() {
 }
 export function closeLlmCalls() {
   publish({ ...state, viewerOpen: false });
+}
+
+/** Reset module state between tests without exposing a production reset path. */
+export function resetDebugStoreForTests() {
+  if (import.meta.env.MODE !== "test") {
+    throw new Error("resetDebugStoreForTests is only available in tests");
+  }
+  if (typeof window !== "undefined") {
+    window.removeEventListener("keydown", onKeyDown);
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* Storage is optional; resetting in-memory state is still sufficient. */
+    }
+  }
+  state = INITIAL_STATE;
+  initialized = false;
+  openViewer = null;
+  subscribers.clear();
+}
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    if (typeof window !== "undefined") window.removeEventListener("keydown", onKeyDown);
+    initialized = false;
+  });
 }

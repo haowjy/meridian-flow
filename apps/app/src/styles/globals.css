@@ -31,15 +31,38 @@
      may still float over content; `scrollbar-gutter: stable` on the scrollport helps. */
   --chat-scroll-scrollbar-width: 6px;
   --chat-scroll-scrollbar-gap: 0.5rem;
+  /* Chat layout tokens are global because some chat chrome and portaled menus
+     intentionally render outside the text-tier-chat subtree. */
+  --chat-space-inline: 4px;
+  --chat-space-row: 4px;
+  --chat-space-block: 8px;
+  --chat-space-turn: 12px;
+  --chat-space-exchange: 6px;
+  --chat-card-pad-x: 12px;
+  --chat-card-pad-y: 8px;
+  --chat-row-status-center-offset: 7px;
+  --chat-tool-list-indent: 13px;
+  --chat-geometry-hit-area-x: 4px;
+  --chat-geometry-draft-indent: 28px;
+  --chat-geometry-draft-inset: 10px;
+  --chat-geometry-receipt-indent: 36px;
+  --chat-geometry-fold-icon-offset: 6px;
   /* Chat rhythm is intentionally an app-only scale: each boundary has one
      owner, and virtual-row spacing stays inside the measured row. */
   /* Prose rhythm defaults stay independent from chat and preserve non-chat surfaces. */
   --prose-space-inline: 4px;
   --prose-space-row: 4px;
   --prose-space-block: 8px;
-  --prose-space-heading-large: 24px;
-  --prose-space-heading-small: 16px;
-  --prose-space-rule: 16px;
+  --prose-space-heading-large-top: 24px;
+  --prose-space-h1-bottom: 12px;
+  --prose-space-h2-bottom: 10px;
+  --prose-space-heading-small-top: 16px;
+  --prose-space-heading-small-bottom: 8px;
+  --prose-space-heading-h3-top: 20px;
+  --prose-space-nested-list: 4px;
+  --prose-space-rule: 20px;
+  --prose-space-quote: 12px;
+  --prose-space-table: 12px;
 }
 
 /* Every virtual row owns a gap; user rows receive the larger user-to-reply spacing. */
@@ -70,27 +93,19 @@
    opt back in with this class. */
 @utility text-tier-chat {
   --text-scale: var(--text-scale-chat);
-  --chat-space-inline: 4px;
-  --chat-space-row: 4px;
-  --chat-space-block: 8px;
-  --chat-space-turn: 12px;
-  --chat-space-exchange: 6px;
-  --chat-card-pad-x: 12px;
-  --chat-card-pad-y: 8px;
-  --chat-row-status-center-offset: 7px;
-  --chat-tool-list-indent: 13px;
-  /* Chat-specific alignment geometry, separate from the rhythm scale. */
-  --chat-geometry-hit-area-x: 4px;
-  --chat-geometry-draft-indent: 28px;
-  --chat-geometry-draft-inset: 10px;
-  --chat-geometry-receipt-indent: 36px;
-  --chat-geometry-fold-icon-offset: 6px;
   --prose-space-inline: var(--chat-space-inline);
   --prose-space-row: var(--chat-space-row);
   --prose-space-block: var(--chat-space-block);
-  --prose-space-heading-large: 24px;
-  --prose-space-heading-small: 16px;
+  --prose-space-heading-large-top: 24px;
+  --prose-space-h1-bottom: 8px;
+  --prose-space-h2-bottom: 8px;
+  --prose-space-heading-small-top: 16px;
+  --prose-space-heading-small-bottom: 8px;
+  --prose-space-heading-h3-top: 16px;
+  --prose-space-nested-list: 8px;
   --prose-space-rule: 16px;
+  --prose-space-quote: 8px;
+  --prose-space-table: 8px;
 }
 
 /* Compact tier — markdown in the dense meta voice (tool output, reasoning).
@@ -489,37 +504,37 @@
   & h1 {
     font-size: 1.875em;
     @apply leading-[1.25] font-semibold tracking-prose-heading text-foreground;
-    margin-block: var(--prose-space-heading-large) var(--prose-space-block);
+    margin-block: var(--prose-space-heading-large-top) var(--prose-space-h1-bottom);
     &:first-child { margin-top: 0; }
   }
   & h2 {
     font-size: 1.375em;
     @apply leading-[1.3] font-semibold tracking-prose-heading text-foreground;
-    margin-block: var(--prose-space-heading-large) var(--prose-space-block);
+    margin-block: var(--prose-space-heading-large-top) var(--prose-space-h2-bottom);
     &:first-child { margin-top: 0; }
   }
   & h3 {
     font-size: 1.25em;
     @apply leading-[1.35] font-semibold text-foreground;
-    margin-block: var(--prose-space-heading-small) var(--prose-space-block);
+    margin-block: var(--prose-space-heading-h3-top) var(--prose-space-heading-small-bottom);
     &:first-child { margin-top: 0; }
   }
   & h4 {
     font-size: 1.125em;
     @apply leading-[1.4] font-semibold text-foreground;
-    margin-block: var(--prose-space-heading-small) var(--prose-space-block);
+    margin-block: var(--prose-space-heading-small-top) var(--prose-space-heading-small-bottom);
     &:first-child { margin-top: 0; }
   }
   & h5 {
     font-size: 1.0625em;
     @apply leading-[1.4] font-semibold text-foreground;
-    margin-block: var(--prose-space-heading-small) var(--prose-space-block);
+    margin-block: var(--prose-space-heading-small-top) var(--prose-space-heading-small-bottom);
     &:first-child { margin-top: 0; }
   }
   & h6 {
     font-size: 1.0625em;
     @apply leading-[1.45] font-semibold text-muted-foreground;
-    margin-block: var(--prose-space-heading-small) var(--prose-space-block);
+    margin-block: var(--prose-space-heading-small-top) var(--prose-space-heading-small-bottom);
     &:first-child { margin-top: 0; }
   }
   & p {
@@ -552,16 +567,12 @@
   & li > p:first-child:has(+ ol) {
     @apply inline;
   }
-  & li > ul,
-  & li > ol {
-    margin-block: var(--prose-space-block) 0;
-  }
   & strong {
     @apply font-semibold text-foreground;
   }
   & blockquote {
     @apply border-l-4 border-primary/30 pl-4 text-muted-foreground italic;
-    margin-block: var(--prose-space-block);
+    margin-block: var(--prose-space-quote);
   }
   & hr {
     @apply border-0 border-t border-border-subtle;
@@ -613,7 +624,7 @@
 
   & [data-streamdown="table-wrapper"] {
     @apply max-w-full overflow-x-auto rounded-md border border-border-subtle;
-    margin-block: var(--prose-space-block);
+    margin-block: var(--prose-space-table);
   }
   & > :first-child {
     margin-top: 0;
@@ -647,6 +658,12 @@
     font-size: 1em;
     @apply px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] align-top text-foreground;
   }
+}
+
+.prose-tokens li > ul,
+.prose-tokens li > ol {
+  margin-top: var(--prose-space-nested-list);
+  margin-bottom: 0;
 }
 
 /* Single source of truth for the green-tinted focus ring.

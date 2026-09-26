@@ -1,7 +1,7 @@
 import type { Block, JsonValue } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 
-import { partitionTurn } from "./partition-turn";
+import { finalMessageItems, lastProcessIndex, partitionTurn } from "./partition-turn";
 
 function block(args: {
   blockType: Block["blockType"];
@@ -86,6 +86,18 @@ const threadMessageResult = (sequence: number, useSequence: number) =>
 const kinds = (items: ReturnType<typeof partitionTurn>) => items.map((item) => item.kind);
 
 describe("partitionTurn", () => {
+  it("shares final process-fold selection between the transcript and final answer", () => {
+    const items = partitionTurn([
+      reasoning(0, "Earlier process."),
+      prose(1, "Interim answer."),
+      reasoning(2, "Final process."),
+      prose(3, "Final answer."),
+    ]);
+
+    expect(lastProcessIndex(items)).toBe(2);
+    expect(finalMessageItems(items)).toEqual([items[3]]);
+  });
+
   it("keeps prose visible between process runs, in chronological order", () => {
     const items = partitionTurn([
       reasoning(0, "First thought."),

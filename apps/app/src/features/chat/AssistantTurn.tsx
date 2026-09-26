@@ -20,6 +20,7 @@ import { type DirectInvocationResult, directResultsForTurn } from "./invocation-
 import { ProcessDisclosure } from "./ProcessDisclosure";
 import {
   hasVisibleReasoningText,
+  lastProcessIndex,
   partitionTurn,
   type RenderItem,
   type Run,
@@ -80,10 +81,7 @@ function AssistantTurnComponent({
     }
     return result;
   }, [items]);
-  let lastProcessIndex = -1;
-  rows.forEach(({ item }, index) => {
-    if (item.kind === "process") lastProcessIndex = index;
-  });
+  const finalProcessIndex = lastProcessIndex(items);
   const isErrored = turn.status === "error";
   const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
   const isLive = !isSettled;
@@ -125,7 +123,7 @@ function AssistantTurnComponent({
               item.kind === "artifact" ? (directResults.get(item.block.id) ?? null) : null
             }
             deliveryEvents={
-              item.kind === "process" && rowIndex === lastProcessIndex ? deliveryEvents : []
+              item.kind === "process" && rowIndex === finalProcessIndex ? deliveryEvents : []
             }
           />
         ))}

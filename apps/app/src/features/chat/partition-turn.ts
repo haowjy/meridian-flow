@@ -17,11 +17,15 @@ export type RenderItem =
 
 /** The writer-facing answer is the prose/report suffix after the final process fold. */
 export function finalMessageItems(items: RenderItem[]): RenderItem[] {
-  let lastProcess = -1;
-  items.forEach((item, index) => {
-    if (item.kind === "process") lastProcess = index;
-  });
-  return items.slice(lastProcess + 1);
+  return items.slice(lastProcessIndex(items) + 1);
+}
+
+/** Index of the final process fold, shared by answer selection and delivery placement. */
+export function lastProcessIndex(items: RenderItem[]): number {
+  for (let index = items.length - 1; index >= 0; index--) {
+    if (items[index]?.kind === "process") return index;
+  }
+  return -1;
 }
 
 export function isReasoningBlock(block: Block): boolean {

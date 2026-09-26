@@ -46,6 +46,8 @@ function stripPresentation(tree: HastNode): void {
   for (const node of tree.children) {
     if (node.type === "element" && node.properties) {
       for (const key of Object.keys(node.properties)) {
+        // className is intentionally stripped; KaTeX relies on it for styling,
+        // so copied math remains semantic HTML but pastes without KaTeX styles.
         if (
           /^(className|style|role|tabIndex|target|rel)$/.test(key) ||
           /^(aria|data)[A-Z-]/i.test(key)

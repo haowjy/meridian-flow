@@ -99,7 +99,14 @@ export function AssistantTurnActions({
                 <>
                   <dt className="text-muted-foreground">{i18n._(t`Time to first token`)}</dt>
                   <dd className="text-right font-mono">
-                    {i18n._(t`${(stats.ttftMs / 1000).toFixed(1)} s`)}
+                    {stats.ttftMs < 100
+                      ? i18n._(t`<0.1 s`)
+                      : i18n._(
+                          t`${new Intl.NumberFormat(i18n.locale, {
+                            minimumFractionDigits: 1,
+                            maximumFractionDigits: 1,
+                          }).format(stats.ttftMs / 1000)} s`,
+                        )}
                   </dd>
                 </>
               )}

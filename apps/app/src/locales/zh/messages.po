@@ -187,7 +187,7 @@ msgstr ""
 #~ msgid "{0} removed from Favorites"
 #~ msgstr ""
 
-#. placeholder {0}: (stats.ttftMs / 1000).toFixed(1)
+#. placeholder {0}: new Intl.NumberFormat(i18n.locale, { minimumFractionDigits: 1, maximumFractionDigits: 1, }).format(stats.ttftMs / 1000)
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0} s"
 msgstr ""
@@ -288,6 +288,10 @@ msgstr ""
 
 #: src/features/project/chat-list/useChatRowCommands.tsx
 msgid "{title} removed from Favorites"
+msgstr ""
+
+#: src/features/chat/AssistantTurnActions.tsx
+msgid "<0.1 s"
 msgstr ""
 
 #. placeholder {0}: target.name

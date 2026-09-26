@@ -22,7 +22,14 @@
  * - i18n exception: DEV-only debug surface; inline English strings bypass
  *   Lingui by design.
  */
-import { useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
@@ -91,6 +98,7 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
   const [llmCallsViewerTarget, setLlmCallsViewerTarget] = useState<LlmCallsViewerTarget | null>(
     null,
   );
+  const llmCallsViewerTargetRef = useRef<LlmCallsViewerTarget | null>(null);
   const [popupBlocked, setPopupBlocked] = useState(false);
   const [serverFeedEnabled, setServerFeedEnabled] = useState(false);
   const serverFeedState = useSyncExternalStore(
@@ -104,7 +112,9 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
     setTraceViewerTarget((current) => (current === target ? null : current));
   }, []);
   const closeLlmCallsViewer = useCallback((target: LlmCallsViewerTarget) => {
-    setLlmCallsViewerTarget((current) => (current === target ? null : current));
+    if (llmCallsViewerTargetRef.current !== target) return;
+    llmCallsViewerTargetRef.current = null;
+    setLlmCallsViewerTarget(null);
     closeLlmCalls();
   }, []);
   const openLlmCallsViewer = useCallback(() => {
@@ -120,6 +130,7 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
       return;
     }
     setPopupBlocked(false);
+    llmCallsViewerTargetRef.current = target;
     setLlmCallsViewerTarget(target);
     setOpen(false);
   }, [llmCallsViewerTarget]);

@@ -1,5 +1,5 @@
 /** Renders the transcript and owns its scroll viewport. */
-import type { Turn } from "@meridian/contracts/protocol";
+import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -328,7 +328,8 @@ function JumpToLatestButton({
 /** Index of the last assistant turn in `turns`, or -1 if none. */
 function findLastAssistantIndex(turns: Turn[]): number {
   for (let i = turns.length - 1; i >= 0; i--) {
-    if (turns[i].role === "assistant") return i;
+    const turn = turns[i];
+    if (turn?.role === "assistant" && isTerminalTurnStatus(turn.status)) return i;
   }
   return -1;
 }
