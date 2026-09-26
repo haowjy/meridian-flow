@@ -48,9 +48,11 @@ durable retained card on the parent turn. At settlement, the card's status is
 the child execution outcome, not parent protocol admission. Foreground cards join the durable direct `spawn` or `thread_message` result
 by parent turn, tool call, child execution and direct delivery mode. Cards
 branch on `deliveryMode`: background cards are one-line launches while direct
-cards combine launch, live current tool, and expandable result. The live
-panel filters to direct background children and uses snapshot plus
-`meridian.subagent.activity` as server truth. `thread_report` is a report
+cards combine launch, live current tool, and expandable result. Branch on the
+run's `deliveryMode`, never on which blocks happen to exist. Server activity
+(snapshot plus `meridian.subagent.activity`) is still the viewed thread's whole
+subtree; `ChatView` filters it to direct children: running background ones for
+the live panel, all of them for the header's Subagents popover. `thread_report` is a report
 artifact outside the process fold. Background `subagent_update` notices render
 as quiet expandable completion rows; adjacent completions merge at their
 transcript boundary.

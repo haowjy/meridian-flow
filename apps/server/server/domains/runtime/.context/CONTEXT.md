@@ -269,9 +269,14 @@ UUIDs do not enter the model surface. `context-builder.ts` emits every persisted
 system-role history turn in place as a user message wrapped once in
 `<system_update>`. Only the actual thread system prompt uses the provider
 system field; adapters merge adjacent user messages as required by Anthropic.
-Writer sends persisted for inbox adoption carry `kind: "inbox_message"`; the
-client keeps them visible with their inline queue state until adoption, then
-places them with other inbox updates inside the preceding assistant turn.
+A writer send is never an inbox delivery: `writer-enqueue.ts` persists the
+writer's user turn with its own metadata (activated skill slugs or null) and no
+`kind`, so it stays a visible bubble before and after adoption. Only machine
+deliveries (an agent `thread_message`, other non-child messages) materialize
+with `kind: "inbox_message"`, which hides them from the bubble list; the client
+renders them as delivery rows inside the preceding assistant turn. Tagging a
+writer turn `inbox_message` makes the writer's own message vanish once a run
+drains it.
 `spawn/orphan-report-repair.ts` scans bounded unfinalized metadata and requires
 the real session claim before failing a nonterminal admitted turn without a
 model call. The process scheduler runs wake, repair, and publication in separate lanes
@@ -325,7 +330,10 @@ recomputed `ThreadActivity` so every subscriber of the run tree shares one
 activity source. A foreground `thread_message` appends it once the wake lease is
 held, and a drain-woken run (a child report or background `thread_message`) is
 driven by the turn runner, which appends at lease acquire and again at lease
-release so the strip reads awake for the whole run and asleep after. The
+release so the strip reads awake for the whole run and asleep after. Tool
+dispatch in a subagent run records the dispatched call on its lease
+(`thread_run_leases.current_tool`, via `RunClaim.setCurrentTool`) and appends
+the same activity fact only when that call changed. The
 create-side append is strict (a failure fails the spawn), while terminal and
 wake appends are best-effort: a read-model failure is reported to the
 `EventSink` (`subagent.activity.append_failed`, or
@@ -368,8 +376,8 @@ child `assistantTurnId` is assigned only after turn admission. The runtime
 admits each child run once, finalizes its saved report with the terminal
 assistant turn, and publishes a parent card/notification from that durable
 row. Generic `ThreadPendingInbox` projects every provenance; the app's
-`writerTurnQueueStatus` (`pending-inbox.ts`) is the client-side selector that
-filters `provenance.kind === "writer"` to derive per-turn queue status.
+`queuedWriterTurnIds` (`pending-inbox.ts`) is the client-side selector that
+keeps writer-provenance rows in `waiting` so only those bubbles show Queued.
 
 ### Vocabulary note
 
@@ -387,6 +395,11 @@ facet.
   command is `invalid_arguments`; a recognized but disabled command or tool is
   `permission_denied`. Dispatch does not apply policy. Direct
   `toolExecutor.executeTool` does not apply policy.
+- `ask_user` is never advertised until its rework (composer-attached answer
+  input and defined subagent semantics,
+  [#601](https://github.com/haowjy/meridian-flow/issues/601)), even when an
+  Agent's Mars policy allows it (`project-tool-policy.ts`). The interrupt
+  runtime and the app's interrupt card remain; re-enabling is that one line.
 - The single document tool is `write` and every call requires an explicit
   `command`. Baseline `write({ command: "read", path: "..." })` reads and
   `write({ command: "diff" })` inspects the folded turn trail; these baseline

@@ -47,7 +47,9 @@ for the tool-freeze mechanics.
 - **Thread / Turn / Block / ModelResponse repositories** — CRUD for the
   conversation data model. A thread contains turns; a turn contains blocks
   (text, reasoning, tool_use, tool_result, image, file, custom) and model
-  responses with token/cost rollups and per-call request latency/TTFT.
+  responses with token/cost rollups and per-call latency, time to first token,
+  and generation duration (measured by the gateway attempt loop; see the
+  [runtime context](../../runtime/.context/CONTEXT.md)).
   `ThreadRepository.listDescendants` walks a
   thread's own spawn subtree breadth-first on `parent_thread_id` (served by
   `threads_parent_created_active`, excluding soft-deleted rows), returning the
@@ -373,8 +375,15 @@ contract shapes.
   (`domain/visible-conversation-policy.ts` and the app's `visible-chat-turns.ts`)
   keep `subagent_update` and adopted inbox-message turns out of the top-level
   bubble list; the app renders them inside the preceding assistant's activity
-  steps. The stored chat-activity projection below (`recompute_thread_chat_activity`)
-  is a frozen SQL copy of this same predicate. Project and Work lists, and
+  steps. `inbox_message` marks machine deliveries only (agent `thread_message`
+  and other non-writer messages); a writer send never carries it and stays a
+  visible bubble. Visibility keys on `metadata.kind`, not `origin`: a child
+  run's first prompt is a `system`-origin user turn that must stay visible. The
+  stored chat-activity projection below (`recompute_thread_chat_activity`)
+  is a frozen SQL copy of this same predicate, and `threadActionRequiredSql`
+  (`adapters/drizzle/visible-conversation-sql.ts`) is the SQL copy of
+  `isThreadActionRequired`; change the TS policy, both SQL copies, and the
+  app's `visible-chat-turns.ts` together. Project and Work lists, and
   snapshots and thread lists derive the independent `actionRequired` fact from
   the nearest assistant turn in the active lineage. Lineage walks stop at that
   assistant and are capped at a depth of 10,000; the chat-activity projection

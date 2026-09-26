@@ -5,16 +5,22 @@ How an assistant turn renders: an ordered list of **process**, **text**, and
 
 ## Turn rhythm and settled actions
 
-`text-tier-chat` scopes `--chat-space-*` and `--chat-card-pad-*` to the chat
-surface (and opted-in portaled chat overlays), so manuscript and shared prose
-surfaces cannot consume chat rhythm. Shared `prose-tokens` use independent
-`--prose-space-*` variables; chat Markdown maps those to the chat scale. The scale is inline and row 4px, block
+`--chat-space-*`, `--chat-card-pad-*`, and `--chat-geometry-*` live on `:root`
+because chat chrome and portaled menus (the independent chat header, composer
+reference and command menus, Work pickers) render outside the chat subtree;
+scoping them to `text-tier-chat` collapses those surfaces to zero spacing.
+Shared `prose-tokens` read independent `--prose-space-*` variables whose
+`:root` defaults keep manuscript and other non-chat prose at their own values;
+`text-tier-chat` alone remaps them to the chat scale. Never point a
+`--prose-space-*` default at a chat token. The scale is inline and row 4px, block
 8px, writer-turn 12px, and assistant-exchange 6px. The `chat-card` utility
 bundles card padding, border, and radius; card padding is 12px horizontally and
-8px vertically. Controls keep their component-size geometry. Markdown paragraphs, lists,
+8px vertically. Markdown paragraphs, lists,
 blockquote, table, and code use the 8px block rhythm; list siblings use 4px,
 h1/h2 start 24px above, h3-h6 16px above, and headings end 8px below. The
-composer uses the same card padding and 4px chip/control gaps.
+composer uses the same card padding and 4px chip/control gaps. Card padding
+tokens are for card surfaces and sibling gaps, not buttons or inputs; those keep
+their component-size geometry. The writer bubble pads 16px by 12px.
 
 Every boundary has exactly one spacing owner. In particular, `TurnList`'s
 measured `<li>` owns space between turns using padding inside the row: 12px
@@ -28,15 +34,23 @@ inner block and inline spacing respectively. Never stack a margin, padding,
 and gap on one boundary.
 
 Settled assistant turns have a quiet action row below all turn content. Copy
-includes visible assistant text and report summary/payload content only, not
-thinking, tool rows, or delivery events. Report payloads stay in a fenced JSON
+takes the turn's final message: the text and report items after its last
+process fold (`finalMessageItems`), never thinking, tool rows, delivery events,
+or earlier prose. Markdown is the plain-text flavor and is memoized; the HTML
+flavor is rendered only inside the click handler through a module-level
+unified pipeline that strips presentation properties on the HAST tree (never
+by regex on serialized HTML, which corrupts code text). Stripping `className`
+leaves copied KaTeX unstyled by design. Report payloads stay in a fenced JSON
 block in both clipboard formats. The information popover summarizes
 `Turn.responses`: input/output tokens are summed, cache hit is summed
-`cacheReadTokens / inputTokens` (cache writes are misses), TTFT is the first
-call's first-token time, and output speed sums output tokens and
-`latencyMs - timeToFirstTokenMs` only across calls with both measurements.
+`cacheReadTokens / inputTokens` (input includes cache tokens, so cache writes
+are misses), TTFT is the first call's first-token time, and output speed sums
+output tokens and `generationMs` across calls whose generation time the server
+measured. Never derive speed from `latencyMs - timeToFirstTokenMs`; the server
+nulls `generationMs` when backpressure made the measurement unreliable.
 Speed and TTFT are omitted when they cannot be computed; cache hit is omitted
-for zero input. No Info button is rendered until a turn has model responses.
+for zero input. No row ever reads "Unavailable". No Info button is rendered
+until a turn has model responses.
 Debug is gated by the shared debug store. Opening from a turn always sets the
 LLM Calls scope; the pill always opens unscoped, and the viewer's Show all
 control clears an active scope. Settled actions use the shared enabled boolean,
@@ -127,7 +141,10 @@ reasoning run still shows `Thinking`. The accessible name remains `Thinking` /
 
 Writer-facing cards are custom blocks: an **interrupt** (`content.interrupt.id`,
 via `ask_user`), a **spawn helper-result card** (`kind: "helper-result"`), and a
-**child-report card** (`kind: "child-report"`, from `return_result`).
+**child-report card** (`kind: "child-report"`, from `return_result`). The
+server does not advertise `ask_user` until its rework
+([#601](https://github.com/haowjy/meridian-flow/issues/601)); keep the
+interrupt card and its response path, they are not dead code.
 
 Cards hide their tool_use/tool_result rows (`tool-view-visibility.ts`). The
 custom card is the surface. Spawn and `return_result` protocol remain model
@@ -159,8 +176,10 @@ metadata. `visible-chat-turns.ts` and the server visible-conversation policy
 keep delivery turns out of the top-level bubble list; `AssistantTurn` renders
 them as quiet activity rows inside the preceding assistant's steps. The row
 shows the handle and outcome, and correlates the internal execution id to its
-invocation card for the optional short description and Open door. Adopted
-writer messages use the same inline tool-row chrome with the writer's text.
+invocation card for the optional short description and Open door. Machine
+deliveries (`inbox_message` turns, such as an agent `thread_message`) use the
+same inline row chrome with the message text. Writer sends never become
+delivery rows; they stay bubbles.
 This is consistent whether a completion wakes an idle parent or is adopted at
 a mid-run steer split; do not infer events by parsing notice text.
 
@@ -168,9 +187,10 @@ Historical card replacement is sent over the existing
 `meridian.block.upserted` frame. Replace a loaded historical turn in place; if
 it is absent, invalidate/refetch its durable snapshot rather than creating a
 fake streaming turn. Equal replay is a reference-preserving no-op. Pending
-inbox remains complete in the transport/model path; `writerTurnQueueStatus`
-(`pending-inbox.ts`) filters it to writer provenance to derive each writer
-turn's own inline queued/waiting status -- there is no separate tray.
+inbox remains complete in the transport/model path; `queuedWriterTurnIds`
+(`pending-inbox.ts`) keeps writer-provenance rows still in `waiting`, and only
+those bubbles show Queued. `awaiting_run` has no label -- there is no separate
+tray.
 
 ### Interrupt response settlement
 
