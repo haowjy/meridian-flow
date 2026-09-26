@@ -152,7 +152,7 @@ function SubagentHeader({
                     ) : null}
                     {isRunning && node.currentTool ? (
                       <span className="block truncate text-xs text-muted-foreground">
-                        {node.currentTool.toolName.replaceAll("_", " ")}
+                        {subagentToolLabel(node.currentTool.toolName, node.currentTool.input)}
                       </span>
                     ) : null}
                   </span>
@@ -208,6 +208,17 @@ function SubagentHeader({
       {running.length ? <RunningSubagentsStrip descendants={running} /> : null}
     </div>
   );
+}
+
+function subagentToolLabel(toolName: string, input: unknown): string {
+  if (toolName !== "spawn") {
+    return toolName.replaceAll("_", " ").replace(/^./, (letter) => letter.toLocaleUpperCase());
+  }
+  const agent =
+    input && typeof input === "object" && !Array.isArray(input)
+      ? (input as Record<string, unknown>).agent
+      : null;
+  return t`Waiting on ${typeof agent === "string" && agent.trim() ? agent : t`Subagent`}`;
 }
 
 export type ChatViewProps = {

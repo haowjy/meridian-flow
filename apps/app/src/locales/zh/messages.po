@@ -3562,6 +3562,7 @@ msgstr "已取消"
 msgid "Strikethrough"
 msgstr ""
 
+#: src/features/chat/ChatView.tsx
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "Subagent"
 msgstr ""
@@ -4297,6 +4298,7 @@ msgstr ""
 
 #. placeholder {0}: inputAgent(live.currentTool.input)
 #. placeholder {0}: typeof agent === "string" && agent.trim() ? agent : t`Subagent`
+#: src/features/chat/ChatView.tsx
 #: src/features/chat/HelperResultBlock.tsx
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "Waiting on {0}"
