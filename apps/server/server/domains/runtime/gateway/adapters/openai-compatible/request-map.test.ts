@@ -53,4 +53,52 @@ describe("toOpenAIChatCompletionParams prompt-cache passthrough", () => {
       ],
     });
   });
+
+  it("carries the mark on a tool-result message when it is the request's last message", () => {
+    // `applyPromptCacheMarks` marks the frozen system message and whichever
+    // message is last; mid tool-loop that is almost always this one. Without
+    // this, the tail prompt-cache breakpoint silently never lands for an
+    // Anthropic-backed model routed through OpenRouter.
+    const params = toOpenAIChatCompletionParams(
+      {
+        messages: [
+          system("You are Writer."),
+          {
+            role: "tool",
+            content: [
+              {
+                type: "tool_result",
+                toolCallId: "call_1",
+                output: { ok: true },
+                providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
+              },
+            ],
+          },
+        ],
+      },
+      "anthropic/claude-sonnet-4",
+    );
+    expect(params.messages[1]).toEqual({
+      role: "tool",
+      tool_call_id: "call_1",
+      content: [
+        { type: "text", text: JSON.stringify({ ok: true }), cache_control: { type: "ephemeral" } },
+      ],
+    });
+  });
+
+  it("keeps plain string content on a tool-result message with no mark", () => {
+    const params = toOpenAIChatCompletionParams(
+      {
+        messages: [
+          {
+            role: "tool",
+            content: [{ type: "tool_result", toolCallId: "call_1", output: "done" }],
+          },
+        ],
+      },
+      "anthropic/claude-sonnet-4",
+    );
+    expect(params.messages[0]).toEqual({ role: "tool", tool_call_id: "call_1", content: "done" });
+  });
 });

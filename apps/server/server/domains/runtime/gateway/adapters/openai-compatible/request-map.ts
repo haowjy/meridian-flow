@@ -13,12 +13,16 @@
  *   text-only messages use the simpler string content format.
  * - `stream_options: { include_usage: true }` is always set so the final
  *   chunk carries cumulative token usage (per OpenAI streaming docs).
- * - `providerOptions.anthropic.cacheControl` on a system/user text part forces
- *   array-format content with an OpenRouter-style `cache_control` block
- *   (identical shape to Anthropic's own wire format), for Anthropic-backed
- *   models routed through OpenRouter's chat-completions surface. Assistant
- *   tool-call and tool-result messages don't carry it: OpenRouter's
- *   cache_control passthrough is documented only for system/user content.
+ * - `providerOptions.anthropic.cacheControl` on a system/user/tool-result text
+ *   part forces array-format content with an OpenRouter-style `cache_control`
+ *   block (identical shape to Anthropic's own wire format), for
+ *   Anthropic-backed models routed through OpenRouter's chat-completions
+ *   surface. `applyPromptCacheMarks` marks the frozen system message and
+ *   whichever message is last -- mid tool-loop that is usually the tool
+ *   result -- so the tool branch must carry the mark too, the same way
+ *   Anthropic's own tool_result block already does on the direct adapter.
+ *   Assistant tool-call messages don't carry it: a tool_use block is never
+ *   the request's last content and Anthropic doesn't need it cached there.
  */
 import type OpenAI from "openai";
 
@@ -111,10 +115,20 @@ function mapMessage(message: Message): OpenAI.Chat.Completions.ChatCompletionMes
   if (message.role === "tool") {
     const result = message.content.find((p) => p.type === "tool_result");
     if (!result) return null;
+    const text = safeToolOutput(result.output);
+    const cacheControl = result.providerOptions?.anthropic?.cacheControl;
     return {
       role: "tool",
       tool_call_id: result.toolCallId,
-      content: safeToolOutput(result.output),
+      // The tail prompt-cache mark (`applyPromptCacheMarks`) lands on
+      // whichever message is last, which mid-tool-loop is usually this one.
+      // Anthropic's own tool_result content block accepts `cache_control`
+      // (the direct adapter already forwards it there), and OpenRouter's
+      // passthrough mirrors Anthropic's block shape, so array-format content
+      // carries the mark the same way a system/user text part does.
+      content: cacheControl
+        ? ([{ type: "text", text, cache_control: cacheControl }] as CacheControllableTextPart[])
+        : text,
     };
   }
 
