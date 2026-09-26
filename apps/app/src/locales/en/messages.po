@@ -1031,9 +1031,11 @@ msgstr "Continue navigation"
 #~ msgstr "Continue the saved creation attempt."
 
 #: src/components/app/CopyTextButton.tsx
+#: src/features/chat/AssistantTurnActions.tsx
 msgid "Copied"
 msgstr "Copied"
 
+#: src/features/chat/AssistantTurnActions.tsx
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Copy"
 msgstr "Copy"
@@ -1045,8 +1047,8 @@ msgid "Copy {0} source"
 msgstr "Copy {0} source"
 
 #: src/features/chat/AssistantTurnActions.tsx
-msgid "Copy answer"
-msgstr "Copy answer"
+#~ msgid "Copy answer"
+#~ msgstr "Copy answer"
 
 #: src/features/editor/surfaces/objects/CodeBlockChips.tsx
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx

@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 - Apply one chat-thread spacing scale across turns, cards, prose, and composer controls; omit unavailable output speed and first-token rows from turn info.
+- Fix assistant-turn Copy to write the final answer as rich HTML and Markdown.
 - Tighten chat turn rhythm and add settled assistant copy, usage, and debug actions.
 - Record each model call's time to first streamed output and request-to-end latency.
 
