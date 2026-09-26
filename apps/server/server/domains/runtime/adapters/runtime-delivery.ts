@@ -90,6 +90,7 @@ export function createDeliveryAdapter(
     );
     const leaf = (await deps.repos.threads.findById(threadId))?.activeLeafTurnId ?? null;
     const plan = planMessageTurns({
+      threadId,
       batch: work.batch,
       workContext: work.workContext,
       prevTurnId: leaf,
@@ -162,10 +163,19 @@ export function createDeliveryAdapter(
     }
     const committedIds = new Set(committed.map((message) => message.id));
     batch = [...committed, ...batch.filter((message) => !committedIds.has(message.id))];
+    // Destructive: drained at most once per adopt, and folded into the same
+    // split/persist decision as the batch so it lands in the same durable
+    // `system_update` turn `drainInbox` builds below (never spliced request-only).
+    const notices = await deps.notices.drainForModelContext(threadId);
     const split =
       !!work.workContext ||
       committedWorkIds.length > 0 ||
-      batch.some((message) => message.intent === "message" && !input.knownTurnIds.has(message.id));
+      notices.length > 0 ||
+      batch.some(
+        (message) =>
+          (message.intent === "message" && !input.knownTurnIds.has(message.id)) ||
+          (message.intent === "notice" && message.body.kind !== "work_context_refresh"),
+      );
     if (split) {
       const completed = {
         ...currentTurn,
@@ -182,7 +192,7 @@ export function createDeliveryAdapter(
     const drain = await drainInbox({
       ...input,
       persistence: deps,
-      notices: deps.notices,
+      notices,
       threadId,
       batch,
       workContext: work.workContext,

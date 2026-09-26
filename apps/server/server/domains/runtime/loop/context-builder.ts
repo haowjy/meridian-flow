@@ -8,18 +8,10 @@ import { assistant, system, text, toolResult } from "../gateway/helpers/messages
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
 import { assembleComposedSystemPrompt, isThreadPromptFrozen } from "./composed-system-prompt.js";
 
-/** A request-only skill body inlined onto the activating writer message. */
-export interface ActivatedSkillBody {
-  slug: string;
-  description: string;
-  body: string;
-}
-
 export interface BuildContextInput {
   thread: Thread;
   turns: Turn[];
   blocks: Block[];
-  skillBodiesByTurn?: ReadonlyMap<string, readonly ActivatedSkillBody[]>;
   tools?: Tool[];
   /** Raw agent/project prompt used only while the thread prompt is not frozen. */
   unfrozenBasePrompt?: string | null;
@@ -94,8 +86,6 @@ export function buildContext(input: BuildContextInput): {
     const turnBlocks = blocksByTurn.get(turn.id as string) ?? [];
     if (turn.role === "user") {
       const parts = userTurnContentParts(turnBlocks);
-      const skills = input.skillBodiesByTurn?.get(turn.id);
-      if (skills?.length) parts.push(text(skills.map(formatInvokedSkill).join("\n\n")));
       if (parts.length > 0) {
         messages.push({ role: "user", content: parts });
       }
@@ -322,98 +312,6 @@ function blockToContentPart(block: Block): ContentPart | null {
     default:
       return null;
   }
-}
-
-/** Appends content to the selected user message. */
-export function attachSkillBodiesToLatestUserMessage(
-  messages: readonly Message[],
-  skills: readonly ActivatedSkillBody[],
-  targetIndex?: number,
-): Message[] {
-  if (skills.length === 0) return [...messages];
-  return appendTextToUserMessage(
-    messages,
-    skills.map(formatInvokedSkill).join("\n\n"),
-    "skill bodies",
-    targetIndex,
-  );
-}
-
-function formatInvokedSkill(skill: ActivatedSkillBody): string {
-  const description = skill.description.replace(/\s+/g, " ").trim();
-  return [
-    `skill invoked: ${skill.slug}`,
-    ...(description ? ["", `description: ${description}`] : []),
-    "",
-    skill.body,
-  ].join("\n");
-}
-
-export function attachNoticesToLatestUserMessage(
-  messages: readonly Message[],
-  notices: readonly Notice[],
-  targetIndex?: number,
-): Message[] {
-  const content = formatNotices(notices);
-  if (!content) return [...messages];
-  return appendTextToUserMessage(
-    messages,
-    `\n\nMeridian context for this message:\n${content}`,
-    "pre-turn notices",
-    targetIndex,
-  );
-}
-
-/** Returns the last user-message index, if present. */
-export function lastUserMessageIndex(messages: readonly Message[]): number | undefined {
-  for (let index = messages.length - 1; index >= 0; index--) {
-    if (messages[index]?.role === "user") return index;
-  }
-  return undefined;
-}
-
-function appendTextToUserMessage(
-  messages: readonly Message[],
-  value: string,
-  label: string,
-  targetIndex?: number,
-): Message[] {
-  const updated = [...messages];
-  const part = text(value);
-  if (targetIndex !== undefined) {
-    const message = updated[targetIndex];
-    if (message?.role !== "user") {
-      throw new Error(`Cannot attach ${label}: message ${targetIndex} is not a writer message`);
-    }
-    updated[targetIndex] = { ...message, content: [...message.content, part] };
-    return updated;
-  }
-  const index = lastUserMessageIndex(updated);
-  if (index === undefined) {
-    throw new Error(`Cannot attach ${label} without a writer message`);
-  }
-  const message = updated[index] as Message;
-  updated[index] = { ...message, content: [...message.content, part] };
-  return updated;
-}
-
-export function insertPostToolNotices(
-  messages: readonly Message[],
-  notices: readonly Notice[],
-  afterMessageCount: number,
-): Message[] {
-  const content = formatNotices(notices);
-  if (!content) return [...messages];
-  if (afterMessageCount < 0 || afterMessageCount > messages.length) {
-    throw new Error("Post-tool notice anchor is outside the model request");
-  }
-
-  const updated = [...messages];
-  updated.splice(afterMessageCount, 0, {
-    role: "user",
-    content: [text(`Meridian context after the preceding edits:\n${content}`)],
-  });
-  return mergeAdjacentUserMessages(updated);
 }
 
 export function formatNotices(notices: readonly Notice[]): string {

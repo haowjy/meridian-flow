@@ -1,9 +1,11 @@
 /**
- * The inbox drain seam: materializes a claimed batch as durable history and
- * collects request-only notices and skill bodies. A text `message` becomes a
- * persisted turn. Child-provenance messages become structured subagent-update
- * system turns; Work refreshes become durable system updates, and other notices
- * remain request-only user context.
+ * The inbox drain seam: materializes a claimed batch as durable history. A text
+ * `message` becomes a persisted turn. Child-provenance messages become
+ * structured subagent-update system turns; Work refreshes and every other
+ * request-only notice (`NoticePort.drainForModelContext` plus non-message inbox
+ * entries) become one durable `system_update` turn, so a rebuilt request always
+ * reproduces exactly what an earlier request saw -- required for the frozen
+ * prefix's Anthropic cache breakpoints (thread AGENTS.md / runtime CONTEXT.md).
  *
  * The persisted message turn reuses the durable inbox message id as its turn and
  * block id. The inbox collapses `(threadId, idempotencyKey)` to one row, so a
@@ -14,15 +16,15 @@
  *
  * A message whose turn is already durable (a writer send persisted at enqueue,
  * then claimed mid-run) is adopted, not re-persisted. `prepareAdoptedTurn`
- * persists its missing text-reference reads; `loadActivatedSkillBodies` loads
- * request-only skill bodies. The shared context assembler owns all rendering,
- * including image projection across the complete request's occurrence budget.
+ * persists its missing text-reference reads (and any activated skill bodies).
+ * The shared context assembler owns all rendering, including image projection
+ * across the complete request's occurrence budget.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, BlockUpsertedRow, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
-import type { Notice, NoticePort } from "../../notices/index.js";
+import type { Notice } from "../../notices/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import type { ActivatedSkillBody } from "./context-builder.js";
+import { formatNotices } from "./context-builder.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { InboxMessage } from "./ports.js";
@@ -33,13 +35,9 @@ export interface AdoptedTurnPreparation {
   blocks: Block[];
 }
 
-/** The loop's view of one drained batch: durable writes and request-only context. */
+/** The loop's view of one drained batch: durable turns/blocks for the loop's in-memory accumulator. */
 export interface InboxDrain {
-  /** Request-only skill bodies keyed by the writer turn that activated them. */
-  skillBodiesByTurn: ReadonlyMap<TurnId, readonly ActivatedSkillBody[]>;
-  /** Durable notices plus request-only inbox `notice` entries, in batch order. */
-  notices: Notice[];
-  /** Persisted message turns/blocks for the loop's in-memory accumulator. */
+  /** Persisted message/notice/subagent-update turns, in batch order plus a trailing notices turn. */
   turns: Turn[];
   blocks: Block[];
   /** Ids of the whole claimed batch, acked with the response that carries it. */
@@ -47,39 +45,38 @@ export interface InboxDrain {
 }
 
 /**
- * Materializes the caller's locked pending batch. Work refresh notices become
- * durable system_update turns; other notices stay request-only. Messages already
- * in `knownTurnIds` are redeliveries and are not appended again. The whole fresh
- * message batch persists in one turn-start transition.
+ * Materializes the caller's locked pending batch. Work refresh notices and every
+ * other request-only notice become one durable `system_update` turn; messages
+ * already in `knownTurnIds` are redeliveries and are not appended again. The
+ * whole fresh message batch (plus the notices turn) persists in one turn-start
+ * transition.
  */
 export async function drainInbox(input: {
   persistence: PersistenceDeps;
   batch: InboxMessage[];
   workContext?: RenderedWorkContext;
-  notices: NoticePort;
+  /**
+   * Already-drained `NoticePort` notices for this thread. Draining is
+   * destructive, so the caller (`adopt()`) owns calling it exactly once and
+   * folding the result into the same split/persist decision as the batch.
+   */
+  notices: readonly Notice[];
   threadId: ThreadId;
   knownTurnIds: ReadonlySet<TurnId>;
   expectedLeafTurnId: TurnId | null;
   /**
    * Resolves an adopted turn's rich model-facing blocks before it renders (for
-   * example, reads text-reference occurrences that lack a persisted result),
-   * returning the updated blocks. A writer send
-   * persisted at enqueue has no run yet to read its references at first
-   * iteration, so adoption is where its reads land.
+   * example, reads text-reference occurrences that lack a persisted result, or
+   * persists a mid-run steer's activated skill bodies), returning the updated
+   * blocks. A writer send persisted at enqueue has no run yet to resolve these
+   * at first iteration, so adoption is where they land.
    */
   prepareAdoptedTurn?: (turn: Turn, blocks: Block[]) => Promise<AdoptedTurnPreparation>;
-  /**
-   * Resolves the request-only skill bodies a writer turn activated, read back
-   * off its persisted metadata. Applied to the adopted message the turn renders,
-   * so a mid-run `/skill` send carries its instructions like a fresh drain does.
-   */
-  loadActivatedSkillBodies?: (turn: Turn) => Promise<readonly ActivatedSkillBody[]>;
 }): Promise<InboxDrain> {
   const batch = input.batch;
   const fresh: InboxMessage[] = [];
   const adoptedTurns: Turn[] = [];
   const adoptedBlocks: Block[] = [];
-  const skillBodiesByTurn = new Map<TurnId, readonly ActivatedSkillBody[]>();
   for (const message of batch) {
     if (message.intent !== "message" && message.body.kind !== "work_context_refresh") {
       fresh.push(message);
@@ -99,28 +96,39 @@ export async function drainInbox(input: {
         const prepared = await input.prepareAdoptedTurn(existing, blocks);
         blocks = prepared.blocks;
       }
-      const skillBodies = await input.loadActivatedSkillBodies?.(existing);
-      if (skillBodies?.length) skillBodiesByTurn.set(existing.id, skillBodies);
       adoptedTurns.push(existing);
       adoptedBlocks.push(...blocks);
       continue;
     }
     fresh.push(message);
   }
-  // Chain fresh messages from the durable leaf so a pre-persisted writer turn
-  // (adopted above) is not forked past.
-  const persistLeafTurnId = fresh.some(
-    (message) => message.intent === "message" || message.body.kind === "work_context_refresh",
-  )
-    ? ((await input.persistence.repos.threads.findById(input.threadId))?.activeLeafTurnId ??
-      input.expectedLeafTurnId)
-    : input.expectedLeafTurnId;
+  // Every non-message, non-work-refresh batch entry is itself a request-only
+  // notice (an `inbox_notice`); fold it in with whatever `NoticePort` drained so
+  // both become the same durable turn.
+  const notices: Notice[] = [
+    ...input.notices,
+    ...batch
+      .filter(
+        (message) => message.intent !== "message" && message.body.kind !== "work_context_refresh",
+      )
+      .map(inboxMessageNotice),
+  ];
+  // Chain fresh messages (and the notices turn) from the durable leaf so a
+  // pre-persisted writer turn (adopted above) is not forked past.
+  const persistLeafTurnId =
+    fresh.some(
+      (message) => message.intent === "message" || message.body.kind === "work_context_refresh",
+    ) || notices.length > 0
+      ? ((await input.persistence.repos.threads.findById(input.threadId))?.activeLeafTurnId ??
+        input.expectedLeafTurnId)
+      : input.expectedLeafTurnId;
   const persisted = await persistInboxMessages({
     deps: input.persistence,
     threadId: input.threadId,
     expectedLeafTurnId: persistLeafTurnId,
     batch: fresh,
     workContext: input.workContext,
+    notices,
   });
   const turnByMessageId = new Map(
     [...adoptedTurns, ...persisted.turns].map((turn) => [turn.id, turn] as const),
@@ -129,33 +137,27 @@ export async function drainInbox(input: {
     const turn = turnByMessageId.get(message.id as TurnId);
     return turn ? [turn] : [];
   });
-  const notices = [
-    ...(await input.notices.drainForModelContext(input.threadId)),
-    ...batch
-      .filter(
-        (message) => message.intent !== "message" && message.body.kind !== "work_context_refresh",
-      )
-      .map(inboxMessageNotice),
-  ];
+  const noticesTurn = persisted.turns.find((turn) => turn.id === persisted.noticesTurnId);
   return {
-    skillBodiesByTurn,
-    notices,
-    turns: orderedTurns,
+    turns: noticesTurn ? [...orderedTurns, noticesTurn] : orderedTurns,
     blocks: [...adoptedBlocks, ...persisted.blocks],
     ackIds: batch.map((message) => message.id),
   };
 }
 
 /**
- * The one planner for "an inbox batch becomes durable message turns": filters
- * `knownTurnIds`, chains each fresh `message` from the previous turn, and emits
- * the `turn.created` + `block.upserted` pair that advances the leaf. Pure, so
- * both the drain start (`runDrainTurn`) and the mid-run drain
+ * The one planner for "an inbox batch (plus its notices) becomes durable
+ * turns": filters `knownTurnIds`, chains each fresh `message` from the previous
+ * turn, appends a trailing `system_update` turn for `notices` when present, and
+ * emits the `turn.created` + `block.upserted` pairs that advance the leaf. Pure,
+ * so both the drain start (`runDrainTurn`) and the mid-run drain
  * (`persistInboxMessages`) share one home for chain and idempotency semantics.
  */
 export function planMessageTurns(input: {
+  threadId: ThreadId;
   batch: readonly InboxMessage[];
   workContext?: RenderedWorkContext;
+  notices?: readonly Notice[];
   prevTurnId: TurnId | null;
   knownTurnIds: ReadonlySet<TurnId>;
 }): {
@@ -163,6 +165,8 @@ export function planMessageTurns(input: {
   blocks: BlockUpsertedRow[];
   events: OrchestratorEvent[];
   leafTurnId: TurnId | null;
+  /** The trailing notices turn's id, when `notices` was non-empty. */
+  noticesTurnId: TurnId | null;
 } {
   const turns: Turn[] = [];
   const blocks: BlockUpsertedRow[] = [];
@@ -192,13 +196,22 @@ export function planMessageTurns(input: {
     }
     leafTurnId = turn.id;
   }
-  return { turns, blocks, events, leafTurnId };
+  let noticesTurnId: TurnId | null = null;
+  if (input.notices?.length) {
+    const { turn, block } = noticesTurnFor(input.threadId, input.notices, leafTurnId);
+    turns.push(turn);
+    blocks.push(block);
+    events.push({ type: "turn.created", turn }, { type: "block.upserted", block });
+    leafTurnId = turn.id;
+    noticesTurnId = turn.id;
+  }
+  return { turns, blocks, events, leafTurnId, noticesTurnId };
 }
 
 /**
  * Persists each directed `message` in a claimed batch as a user-role turn at the
- * thread tail. Returns the appended turns/blocks for the loop's in-memory
- * accumulator. Work refresh notices are durable too; other notices are request-only.
+ * thread tail, plus a trailing `system_update` turn for `notices` when present.
+ * Returns the appended turns/blocks for the loop's in-memory accumulator.
  */
 export async function persistInboxMessages(input: {
   deps: PersistenceDeps;
@@ -207,38 +220,41 @@ export async function persistInboxMessages(input: {
   expectedLeafTurnId: TurnId | null;
   batch: readonly InboxMessage[];
   workContext?: RenderedWorkContext;
-}): Promise<{ turns: Turn[]; blocks: Block[] }> {
-  if (
-    !input.batch.some(
-      (message) => message.intent === "message" || message.body.kind === "work_context_refresh",
-    )
-  ) {
-    return { turns: [], blocks: [] };
+  notices?: readonly Notice[];
+}): Promise<{ turns: Turn[]; blocks: Block[]; noticesTurnId: TurnId | null }> {
+  const hasMessageContent = input.batch.some(
+    (message) => message.intent === "message" || message.body.kind === "work_context_refresh",
+  );
+  if (!hasMessageContent && !input.notices?.length) {
+    return { turns: [], blocks: [], noticesTurnId: null };
   }
   // One transition for the whole batch: a mid-batch failure cannot leave a
-  // half-persisted batch, and the chain links each message to the previous within
-  // the same transaction.
+  // half-persisted batch, and the chain links each message (and the notices
+  // turn) to the previous within the same transaction.
   const persisted = await persistAndAppendTurnStartEvents(
     input.deps,
     input.threadId,
     input.expectedLeafTurnId,
     async () => {
       const plan = planMessageTurns({
+        threadId: input.threadId,
         batch: input.batch,
         workContext: input.workContext,
+        notices: input.notices,
         prevTurnId: input.expectedLeafTurnId,
         knownTurnIds: new Set(),
       });
       return {
-        result: { turns: plan.turns, blocks: plan.blocks.map(localBlockFromEvent) },
+        result: {
+          turns: plan.turns,
+          blocks: plan.blocks.map(localBlockFromEvent),
+          noticesTurnId: plan.noticesTurnId,
+        },
         events: plan.events,
       };
     },
   );
-  return {
-    turns: persisted.result.turns,
-    blocks: persisted.result.blocks,
-  };
+  return persisted.result;
 }
 
 /**
@@ -280,6 +296,37 @@ export function messageTurnFor(
     turnId: turn.id,
     blockType: "text",
     textContent: text,
+    sequence: 0,
+    status: "complete",
+  });
+  return { turn, block };
+}
+
+/**
+ * Builds the durable system turn and text block carrying every request-only
+ * notice for one drain: `NoticePort`-drained notices (`undo`,
+ * `awareness_degraded`, writer `work_switched`) and non-message inbox entries,
+ * formatted exactly like the request-only rendering they replace. Persisting
+ * this once makes the notice reproduce identically on every later request
+ * instead of vanishing once the drain that carried it ends.
+ */
+function noticesTurnFor(
+  threadId: ThreadId,
+  notices: readonly Notice[],
+  prevTurnId: TurnId | null,
+): { turn: Turn; block: BlockUpsertedRow } {
+  const turn = createLocalTurn({
+    threadId,
+    prevTurnId,
+    role: "system",
+    status: "complete",
+    metadata: { kind: "system_update", section: "notices" },
+  });
+  const block = contentForBlockInput({
+    id: turn.id,
+    turnId: turn.id,
+    blockType: "text",
+    textContent: `<system_update>\n${formatNotices(notices)}\n</system_update>`,
     sequence: 0,
     status: "complete",
   });

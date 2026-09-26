@@ -271,7 +271,7 @@ describe("inbox drain", () => {
     await execute(queued);
   });
 
-  it("renders a notice as a request-only notice without persisting a turn", async () => {
+  it("persists a request-only notice as a durable system_update turn", async () => {
     const { thread, inbox, requests, orchestrator, repos } = await setup();
     await inbox.enqueue(notice("work context note", thread.id));
 
@@ -279,8 +279,20 @@ describe("inbox drain", () => {
 
     const texts = messageTexts(requests[0].messages);
     expect(texts.some((text) => text.includes("work context note"))).toBe(true);
-    // The run's own user + assistant turns are the only persisted turns.
-    expect(await repos.turns.listByThread(thread.id)).toHaveLength(2);
+    // The run's own user + assistant turns, plus a durable notices turn so the
+    // notice reproduces identically on a later request instead of vanishing.
+    // A notice (like a Work refresh) splits the run: the original empty
+    // assistant turn completes and a fresh one continues after the notice.
+    const turns = await repos.turns.listByThread(thread.id);
+    expect(turns).toHaveLength(4);
+    const noticesTurn = turns.find(
+      (turn) =>
+        (turn.metadata as { kind?: string; section?: string } | null)?.section === "notices",
+    );
+    expect(noticesTurn).toMatchObject({
+      role: "system",
+      metadata: { kind: "system_update", section: "notices" },
+    });
     expect(await inbox.selectPending(thread.id)).toEqual([]);
   });
 

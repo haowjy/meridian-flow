@@ -13,7 +13,7 @@ export type DeliveryTransaction = {
 export type DeliveryProducer = Pick<RuntimeDelivery, "enqueue" | "withThreadLock">;
 export type DeliveryBoundary = Pick<
   Parameters<typeof drainInbox>[0],
-  "knownTurnIds" | "expectedLeafTurnId" | "prepareAdoptedTurn" | "loadActivatedSkillBodies"
+  "knownTurnIds" | "expectedLeafTurnId" | "prepareAdoptedTurn"
 > & {
   lease: Lease;
   currentTurn: Turn;

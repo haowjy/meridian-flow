@@ -21,6 +21,7 @@ import { createInMemoryProjectRepository } from "../../projects/index.js";
 import { createInMemoryRepositories } from "../../threads/index.js";
 import type { Gateway, GenerateRequest, ModelInfo } from "../gateway/index.js";
 import { createToolRegistry } from "../tools/index.js";
+import { formatInvokedSkill } from "./activated-skills.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
 import type { WorkContextReader } from "./work-context.js";
 
@@ -190,15 +191,7 @@ describe("prefix stability across a growing thread", () => {
     ];
     const workContext = noWorkContext(project.id);
 
-    async function assemble(
-      turns: Turn[],
-      blocks: Block[],
-      skillBodiesByTurn?: Map<
-        string,
-        readonly { slug: string; description: string; body: string }[]
-      >,
-      liveBaseTools = baseTools,
-    ) {
+    async function assemble(turns: Turn[], blocks: Block[], liveBaseTools = baseTools) {
       const thread = (await repos.threads.findById(thread0.id)) as Thread;
       const withThreadId = turns.map((turn) => ({ ...turn, threadId: thread.id }));
       const withThreadIdBlocks = blocks;
@@ -206,7 +199,6 @@ describe("prefix stability across a growing thread", () => {
         thread,
         turns: withThreadId,
         blocks: withThreadIdBlocks,
-        skillBodiesByTurn,
         agentRevisions,
         toolRegistry,
         gateway,
@@ -248,17 +240,27 @@ describe("prefix stability across a growing thread", () => {
     assertIsStableExtension(r2.generateRequest, r3.generateRequest);
     expect(r3.generateRequest.messages.length).toBe(r0.generateRequest.messages.length);
 
-    // 4. Skill invocation: request-only body inlined onto the activating turn.
-    const skillBodies = new Map([
-      [
-        "turn-1",
-        [{ slug: "story-review", description: "Review drafts.", body: "story-review body." }],
-      ],
-    ]);
+    // 4. Skill invocation: the activated skill's body is a durable second block
+    // on the activating turn (baked once by `persistSkillBodies`, never a
+    // request-only rendering), so it is byte-identical on every later request.
+    const skillBodyText = formatInvokedSkill({
+      slug: "story-review",
+      description: "Review drafts.",
+      body: "story-review body.",
+    });
+    const skillBodyBlock: Block = {
+      id: "turn-1-skill",
+      turnId: "turn-1",
+      responseId: null,
+      blockType: "text",
+      sequence: 1,
+      textContent: skillBodyText,
+      content: { text: skillBodyText },
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
     const r4 = await assemble(
       [t1.turn, steer.turn, workSwitch.turn, subagentDone.turn],
-      [t1.block, steer.block, workSwitch.block, subagentDone.block],
-      skillBodies,
+      [t1.block, skillBodyBlock, steer.block, workSwitch.block, subagentDone.block],
     );
     assertIsStableExtension(r3.generateRequest, r4.generateRequest);
     expect(r4.generateRequest.messages.length).toBe(r0.generateRequest.messages.length);
@@ -267,8 +269,14 @@ describe("prefix stability across a growing thread", () => {
     const toolExchange = assistantToolExchangeTurn("turn-5", "call_1");
     const r5 = await assemble(
       [t1.turn, steer.turn, workSwitch.turn, subagentDone.turn, toolExchange.turn],
-      [t1.block, steer.block, workSwitch.block, subagentDone.block, ...toolExchange.blocks],
-      skillBodies,
+      [
+        t1.block,
+        skillBodyBlock,
+        steer.block,
+        workSwitch.block,
+        subagentDone.block,
+        ...toolExchange.blocks,
+      ],
     );
     assertIsStableExtension(r4.generateRequest, r5.generateRequest);
     expect(r5.generateRequest.messages.length).toBe(r0.generateRequest.messages.length + 2);
@@ -282,13 +290,13 @@ describe("prefix stability across a growing thread", () => {
       [t1.turn, steer.turn, workSwitch.turn, subagentDone.turn, toolExchange.turn, nextTurn.turn],
       [
         t1.block,
+        skillBodyBlock,
         steer.block,
         workSwitch.block,
         subagentDone.block,
         ...toolExchange.blocks,
         nextTurn.block,
       ],
-      skillBodies,
     );
     assertIsStableExtension(r5.generateRequest, r6.generateRequest);
     expect(r6.generateRequest.messages.length).toBe(r5.generateRequest.messages.length + 1);
@@ -302,13 +310,13 @@ describe("prefix stability across a growing thread", () => {
       [t1.turn, steer.turn, workSwitch.turn, subagentDone.turn, toolExchange.turn, nextTurn.turn],
       [
         t1.block,
+        skillBodyBlock,
         steer.block,
         workSwitch.block,
         subagentDone.block,
         ...toolExchange.blocks,
         nextTurn.block,
       ],
-      skillBodies,
       changedBaseTools,
     );
     expect(r7.generateRequest.tools).toEqual(r0.generateRequest.tools);

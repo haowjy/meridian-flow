@@ -69,7 +69,7 @@ import type {
 } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { BillingUsagePolicy } from "../../billing/index.js";
-import type { Notice, NoticePort } from "../../notices/index.js";
+import type { NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { AccountSkillInstallStore, AgentRevisionStore } from "../../packages/index.js";
 import type {
@@ -87,16 +87,14 @@ import type { ImageAssetPort } from "../ports/image-asset.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
-import { readActivatedSkillSlugs } from "./activated-skills.js";
-import { loadUserSkillBody } from "./available-skills.js";
-import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import {
   type ActivatedSkillBody,
-  attachNoticesToLatestUserMessage,
-  attachSkillBodiesToLatestUserMessage,
-  insertPostToolNotices,
-  lastUserMessageIndex,
-} from "./context-builder.js";
+  formatInvokedSkill,
+  readActivatedSkillSlugs,
+  SKILL_BODY_BLOCK_MARKER,
+} from "./activated-skills.js";
+import { loadUserSkillBody } from "./available-skills.js";
+import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import type { TerminalCause } from "./execution-finalizer.js";
 import { loadThreadConversationContext } from "./fork-thread-context.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
@@ -372,6 +370,7 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
         // matches the mode in effect at the moment the turn was minted.
         const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
         const workPlan = planMessageTurns({
+          threadId: input.threadId,
           batch: batch.filter((message) => message.body.kind === "work_context_refresh"),
           prevTurnId,
           knownTurnIds: new Set(priorTurns.map((turn) => turn.id)),
@@ -492,7 +491,13 @@ async function runDrainTurn(
         ];
 
         const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
-        const plan = planMessageTurns({ batch, prevTurnId, knownTurnIds, workContext });
+        const plan = planMessageTurns({
+          threadId: input.threadId,
+          batch,
+          prevTurnId,
+          knownTurnIds,
+          workContext,
+        });
 
         const assistantTurn = createLocalTurn({
           threadId: input.threadId,
@@ -963,8 +968,47 @@ async function persistReferenceReads(input: {
   };
 }
 
+/**
+ * Loads and persists one text block carrying every activated skill's body onto
+ * the turn that invoked them. Idempotent: a turn that already carries a
+ * skill-body block (recognized by `SKILL_BODY_BLOCK_MARKER`) is left alone, so
+ * a retried drain never double-persists. Baking the body in once means a later
+ * request reproduces the exact bytes an earlier request saw even if the
+ * skill's live content changes afterward -- unlike the deleted request-only
+ * splice, which vanished on the very next request.
+ */
+async function persistSkillBodies(input: {
+  deps: OrchestratorDeps;
+  threadId: ThreadId;
+  turnId: TurnId;
+  blocks: readonly Block[];
+  slugs: readonly string[];
+  loadSkillBodies: (slugs: readonly string[]) => Promise<ActivatedSkillBody[]>;
+}): Promise<{ blocks: Block[] }> {
+  if (input.slugs.length === 0) return { blocks: [...input.blocks] };
+  const turnBlocks = input.blocks.filter((block) => block.turnId === input.turnId);
+  const alreadyPersisted = turnBlocks.some((block) =>
+    block.textContent?.startsWith(SKILL_BODY_BLOCK_MARKER),
+  );
+  if (alreadyPersisted) return { blocks: [...input.blocks] };
+  const skills = await input.loadSkillBodies(input.slugs);
+  const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
+    const block = contentForBlockInput({
+      turnId: input.turnId,
+      blockType: "text",
+      sequence: turnBlocks.length,
+      textContent: skills.map(formatInvokedSkill).join("\n\n"),
+      status: "complete",
+    });
+    return {
+      result: localBlockFromEvent(block),
+      events: [{ type: "block.upserted" as const, block }],
+    };
+  });
+  return { blocks: [...input.blocks, persisted.result] };
+}
+
 async function buildGenerateRequest(input: {
-  skillBodiesByTurn: ReadonlyMap<TurnId, readonly ActivatedSkillBody[]>;
   deps: OrchestratorDeps;
   runInput: RunLoopInput;
   thread: Thread;
@@ -981,7 +1025,6 @@ async function buildGenerateRequest(input: {
     thread: input.thread,
     turns: input.turns,
     blocks: input.blocks,
-    skillBodiesByTurn: input.skillBodiesByTurn,
     agentRevisions: input.deps.agentRevisions,
     toolRegistry: input.deps.toolRegistry,
     gateway: input.deps.gateway,
@@ -1188,7 +1231,6 @@ async function executeLoop(
     ...inheritedBlocks,
     ...(await repos.blocks.listByThread(input.threadId)),
   ];
-  const skillBodiesByTurn = new Map<TurnId, readonly ActivatedSkillBody[]>();
   let queuedDrain: Awaited<ReturnType<typeof drainInbox>> | undefined;
   let endTurnRequested = false;
 
@@ -1198,26 +1240,28 @@ async function executeLoop(
       currentTurn: currentAssistantTurn,
       knownTurnIds: new Set(allTurns.map((turn) => turn.id)),
       expectedLeafTurnId: allTurns.at(-1)?.id ?? null,
-      prepareAdoptedTurn: (turn, blocks) =>
-        persistReferenceReads({
+      prepareAdoptedTurn: async (turn, blocks) => {
+        const withReferences = await persistReferenceReads({
           deps,
           threadId: input.threadId,
           userTurnId: turn.id,
           assistantTurnId: currentAssistantTurn.id,
           blocks,
           signal: input.signal,
-        }),
-      loadActivatedSkillBodies: async (turn) => {
-        const slugs = readActivatedSkillSlugs(turn);
-        return slugs.length > 0 ? loadSkillBodies(slugs) : [];
+        });
+        return persistSkillBodies({
+          deps,
+          threadId: input.threadId,
+          turnId: turn.id,
+          blocks: withReferences.blocks,
+          slugs: readActivatedSkillSlugs(turn),
+          loadSkillBodies,
+        });
       },
     };
   }
   function acceptBoundary(result: AdoptedBatch) {
     allTurns.push(...result.drain.turns);
-    for (const [turnId, skills] of result.drain.skillBodiesByTurn) {
-      skillBodiesByTurn.set(turnId, skills);
-    }
     for (const block of result.drain.blocks) {
       const index = allBlocks.findIndex((existing) => existing.id === block.id);
       if (index < 0) allBlocks.push(block);
@@ -1293,17 +1337,6 @@ async function executeLoop(
     // the run exits, so no suppression state is needed.
     let leaseCancelled = false;
     const isCancelled = () => (input.signal?.aborted ?? false) || leaseCancelled;
-    // Pinned once before the first drain appends messages, so notices and skill
-    // bodies attach to the writer's triggering message, never a drained message.
-    let writerMessageIndex: number | undefined;
-    let activatedSkillBodies:
-      | Array<{ slug: string; description: string; body: string }>
-      | undefined;
-    const preTurnNotices: Notice[] = [];
-    const postToolNoticeBatches: Array<{
-      afterMessageCount: number;
-      notices: Notice[];
-    }> = [];
     const interruptAutoResume = await resolveInterruptAutoResumePolicy(deps, thread);
 
     // Every cancellation/error path must persist terminal events, not just
@@ -1356,6 +1389,21 @@ async function executeLoop(
           const index = allBlocks.findIndex((existing) => existing.id === block.id);
           if (index >= 0) allBlocks[index] = block;
         }
+        if (activatedSkillSlugs?.length) {
+          const withSkills = await persistSkillBodies({
+            deps,
+            threadId: input.threadId,
+            turnId: referenceUserTurnId,
+            blocks: allBlocks,
+            slugs: activatedSkillSlugs,
+            loadSkillBodies,
+          });
+          for (const block of withSkills.blocks) {
+            const index = allBlocks.findIndex((existing) => existing.id === block.id);
+            if (index >= 0) allBlocks[index] = block;
+            else allBlocks.push(block);
+          }
+        }
       }
 
       const drain =
@@ -1369,7 +1417,6 @@ async function executeLoop(
         thread,
         turns: allTurns,
         blocks: allBlocks,
-        skillBodiesByTurn,
         gatewaySignal: gatewayAbort.signal,
       });
       thread = built.thread;
@@ -1383,48 +1430,13 @@ async function executeLoop(
         ...(built.agentSlug ? { agentSlug: built.agentSlug } : {}),
       };
 
-      // The writer's triggering message is pinned before the drain appends
-      // messages; notices and skill bodies must land there, not on a drained one.
-      writerMessageIndex ??= lastUserMessageIndex(request.messages);
-      const baseMessageCount = request.messages.length;
+      // Notices, adopted-turn skill bodies, and message turns are already durable
+      // by this point: `drain` came from `deps.delivery.splitAndContinue`, which
+      // persists its whole batch (including the trailing notices turn) in one
+      // transition before returning. `buildGenerateRequest` above already
+      // rendered them from `allTurns`/`allBlocks`, so there is nothing left to
+      // splice onto `request.messages` here.
       const inboxAckIds = drain.ackIds;
-      // Adopted turns use the same whole-request image projection as history.
-      if (iteration === 1) {
-        preTurnNotices.push(...drain.notices);
-      } else if (drain.notices.length > 0) {
-        postToolNoticeBatches.push({
-          afterMessageCount: baseMessageCount,
-          notices: drain.notices,
-        });
-      }
-
-      if (activatedSkillSlugs?.length) {
-        activatedSkillBodies ??= await loadSkillBodies(activatedSkillSlugs);
-        request.messages = attachSkillBodiesToLatestUserMessage(
-          request.messages,
-          activatedSkillBodies,
-          writerMessageIndex,
-        );
-      }
-      if (preTurnNotices.length > 0) {
-        request.messages = attachNoticesToLatestUserMessage(
-          request.messages,
-          preTurnNotices,
-          writerMessageIndex,
-        );
-      }
-      let insertedNoticeMessages = 0;
-      for (const batch of postToolNoticeBatches) {
-        const beforeInsert = request.messages.length;
-        request.messages = insertPostToolNotices(
-          request.messages,
-          batch.notices,
-          batch.afterMessageCount + insertedNoticeMessages,
-        );
-        insertedNoticeMessages += request.messages.length - beforeInsert;
-      }
-      // After this point the drain is durable. If the provider stream throws before
-      // returning a result, the notice is lost, matching the model-call boundary.
 
       try {
         deps.modelRequestDebug.capture({
