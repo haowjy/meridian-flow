@@ -344,6 +344,7 @@ export const modelResponses = pgTable(
     responseMetadata: jsonb("response_metadata"),
     latencyMs: bigint("latency_ms", { mode: "number" }),
     timeToFirstTokenMs: bigint("time_to_first_token_ms", { mode: "number" }),
+    generationMs: bigint("generation_ms", { mode: "number" }),
     createdAt: createdAt(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },

@@ -1,5 +1,5 @@
 {
-  "id": "30413873-fdb7-49c7-82bb-fb871754eea7",
+  "id": "c16396d7-c608-4d2a-8626-03756d030d5d",
   "prevId": "a230e5e7-cb6f-442d-863b-a3057c4e70c6",
   "version": "7",
   "dialect": "postgresql",
@@ -1185,6 +1185,12 @@
         },
         "time_to_first_token_ms": {
           "name": "time_to_first_token_ms",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "generation_ms": {
+          "name": "generation_ms",
           "type": "bigint",
           "primaryKey": false,
           "notNull": false

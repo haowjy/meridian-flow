@@ -8,10 +8,7 @@
 import type { Block, JsonValue, ThreadSnapshotResponse, Turn } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { readThreadActivity } from "./domain/thread-activity.js";
-import {
-  isThreadActionRequired,
-  isVisibleConversationalTurn,
-} from "./domain/visible-conversation-policy.js";
+import { isThreadActionRequired } from "./domain/visible-conversation-policy.js";
 import { orderTurnsCausally } from "./order-turns.js";
 import type {
   BlockRepository,
@@ -134,18 +131,11 @@ export async function buildThreadSnapshot(
 function snapshotActionRequired(activeLeafTurnId: TurnId | null, turns: Turn[]): boolean {
   let turn = turns.find((candidate) => candidate.id === activeLeafTurnId);
   const visited = new Set<string>();
+  const activeLineage: Array<Pick<Turn, "role" | "status">> = [];
   while (turn && !visited.has(turn.id)) {
     visited.add(turn.id);
-    if (
-      isVisibleConversationalTurn({
-        role: turn.role,
-        metadata: turn.metadata ?? null,
-        hasCustomBlock: turn.blocks.some((block) => block.blockType === "custom"),
-      })
-    ) {
-      return isThreadActionRequired({ headRole: turn.role, headStatus: turn.status });
-    }
+    activeLineage.push({ role: turn.role, status: turn.status });
     turn = turns.find((candidate) => candidate.id === turn?.prevTurnId);
   }
-  return false;
+  return isThreadActionRequired({ activeLineage });
 }

@@ -284,6 +284,9 @@ export function messageTurnFor(
   workContext?: RenderedWorkContext,
 ): { turn: Turn; block: BlockUpsertedRow } {
   const isChildNotification = message.provenance.kind === "child";
+  // Production writer sends are persisted and adopted by id at enqueue; keep
+  // this fallback's writer metadata aligned if an inbox writer turn is ever
+  // materialized without that normal path.
   const turn = createLocalTurn({
     id: message.id,
     threadId: message.threadId,

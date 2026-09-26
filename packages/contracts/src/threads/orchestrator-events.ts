@@ -38,6 +38,7 @@ export interface ModelResponseReceivedRow {
   finishReason?: FinishReason | null;
   latencyMs?: number | null;
   timeToFirstTokenMs?: number | null;
+  generationMs?: number | null;
   rawUsage?: JsonValue | null;
 }
 

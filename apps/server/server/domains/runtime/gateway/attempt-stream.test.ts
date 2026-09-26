@@ -193,6 +193,164 @@ describe("streamWithRetry retry gate", () => {
   });
 });
 
+describe("per-attempt timing", () => {
+  it("stamps provider arrivals before a slow consumer handles 50 deltas", async () => {
+    let time = 0;
+    let finishProvider!: () => void;
+    const providerFinished = new Promise<void>((resolve) => {
+      finishProvider = resolve;
+    });
+    const adapter: ProviderAdapter = {
+      providerId: "test",
+      async *stream() {
+        time = 10;
+        yield start;
+        for (let index = 0; index < 50; index++) {
+          time += 1;
+          yield { type: "text.delta", text: `token-${index}` };
+        }
+        time = 70;
+        yield end;
+        finishProvider();
+      },
+    };
+
+    let terminal: StreamEvent | undefined;
+    const completion = (async () => {
+      for await (const event of streamWithRetry(
+        adapter,
+        REQUEST,
+        MODEL,
+        RETRY,
+        { stallMs: 60_000, ceilingMs: 0 },
+        { now: () => time },
+      )) {
+        if (event.type === "start") await providerFinished;
+        if (event.type === "text.delta") await new Promise((resolve) => setTimeout(resolve, 10));
+        if (event.type === "end") terminal = event;
+      }
+    })();
+
+    await providerFinished;
+    await vi.advanceTimersByTimeAsync(500);
+    await completion;
+
+    expect(terminal?.type === "end" ? terminal.result.timing : undefined).toEqual({
+      latencyMs: 70,
+      timeToFirstTokenMs: 11,
+      generationMs: 59,
+    });
+  });
+
+  it("reports timing from the successful retry attempt only", async () => {
+    let time = 0;
+    const { adapter } = scriptedAdapter([
+      async function* () {
+        time = 10;
+        yield start;
+        time = 20;
+        yield { type: "reasoning.delta", text: "retryable thought" };
+        time = 50;
+        yield { type: "error", code: "provider_error", message: "retry", retryable: true };
+      },
+      async function* () {
+        time = 200;
+        yield start;
+        time = 205;
+        yield { type: "text.delta", text: "answer" };
+        time = 210;
+        yield end;
+      },
+    ]);
+
+    const completion = collect(
+      streamWithRetry(
+        adapter,
+        REQUEST,
+        MODEL,
+        RETRY,
+        { stallMs: 60_000, ceilingMs: 0 },
+        { now: () => time },
+      ),
+    );
+    await vi.advanceTimersByTimeAsync(1);
+    const events = await completion;
+    const terminal = last(events);
+
+    expect(terminal?.type === "end" ? terminal.result.timing : undefined).toEqual({
+      latencyMs: 160,
+      timeToFirstTokenMs: 155,
+      generationMs: 5,
+    });
+  });
+
+  it("keeps TTFT and generation duration null for usage-only output", async () => {
+    const { adapter } = scriptedAdapter([
+      async function* () {
+        yield { type: "usage", usage: { inputTokens: 9, outputTokens: 0 } };
+        yield end;
+      },
+    ]);
+
+    const events = await collect(
+      streamWithRetry(
+        adapter,
+        REQUEST,
+        MODEL,
+        RETRY,
+        { stallMs: 60_000, ceilingMs: 0 },
+        {
+          now: (() => {
+            let time = 0;
+            return () => (time += 10);
+          })(),
+        },
+      ),
+    );
+
+    expect(last(events)).toMatchObject({
+      type: "end",
+      result: { timing: { timeToFirstTokenMs: null, generationMs: null } },
+    });
+  });
+
+  it("does not count custom content or tool identity without argument deltas as first output", async () => {
+    const { adapter } = scriptedAdapter([
+      async function* () {
+        yield { type: "custom.delta", kind: "ui-only", data: { text: "not writer output" } };
+        yield {
+          type: "tool_call.delta",
+          id: "call-1",
+          name: "search",
+          argumentsDelta: "",
+        };
+        yield end;
+      },
+    ]);
+
+    const events = await collect(
+      streamWithRetry(
+        adapter,
+        REQUEST,
+        MODEL,
+        RETRY,
+        { stallMs: 60_000, ceilingMs: 0 },
+        {
+          now: (() => {
+            let time = 0;
+            return () => (time += 10);
+          })(),
+        },
+      ),
+    );
+
+    expect(last(events)).toMatchObject({
+      type: "end",
+      result: { timing: { timeToFirstTokenMs: null, generationMs: null } },
+    });
+  });
+});
+
 describe("default timeouts", () => {
   it("exposes a 60s stall and a 15m ceiling", () => {
     expect(DEFAULT_ATTEMPT_STALL_MS).toBe(60_000);

@@ -49,6 +49,7 @@ export function createOpenRouterAdapter(config: ProviderConfig): ProviderAdapter
   const baseUrl = config.baseUrl ?? DEFAULT_OPENROUTER_BASE_URL;
   const client = new OpenAI({
     apiKey: apiKey ?? "not-needed",
+    maxRetries: 0,
     baseURL: baseUrl,
     defaultHeaders: openRouterHeaders(config),
   });
@@ -62,7 +63,6 @@ export function createOpenRouterAdapter(config: ProviderConfig): ProviderAdapter
 
       try {
         const params = toOpenAIChatCompletionParams(request, model.id);
-        request.onProviderRequestStart?.();
         const stream = await client.chat.completions.create(
           { ...params, stream: true },
           { signal: request.signal },

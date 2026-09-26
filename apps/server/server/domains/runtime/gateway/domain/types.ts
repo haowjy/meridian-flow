@@ -235,8 +235,6 @@ export interface GenerateRequest {
   reasoning?: "disabled" | "adaptive" | { effort: "low" | "medium" | "high" | "max" };
   providerOptions?: ProviderOptions;
   signal?: AbortSignal;
-  /** Internal timing hook called immediately before an adapter sends the provider request. */
-  onProviderRequestStart?: () => void;
   /**
    * Stable per-thread cache-routing key (opaque, not a secret): unlike
    * `correlation` below, adapters MAY map this into the provider request —
@@ -374,10 +372,18 @@ export interface GenerateResult {
   /** Provider request/generation identifier when an adapter can expose one generically. */
   providerRequestId?: string;
   providerData?: unknown;
-  /** Request-send-to-stream-end duration, measured by the instrumented gateway. */
-  latencyMs?: number | null;
-  /** Request-send-to-first-content-delta duration; null when no delta was streamed. */
-  timeToFirstTokenMs?: number | null;
+  /** Populated by the per-attempt gateway loop on a successful terminal event. */
+  timing?: ModelCallTiming;
+}
+
+/** Provider-arrival timing for one successful model request attempt. */
+export interface ModelCallTiming {
+  /** Adapter invocation to provider stream-end arrival, excluding downstream event persistence. */
+  latencyMs: number;
+  /** Adapter invocation to the first text, reasoning, or tool-argument delta arrival. */
+  timeToFirstTokenMs: number | null;
+  /** First output arrival to provider stream-end arrival; null when no output delta arrived. */
+  generationMs: number | null;
 }
 
 /**
