@@ -92,7 +92,7 @@ export const threadViewCommand: CommandSpec = {
     full: { type: "boolean", description: "No truncation, all turns" },
   },
   examples: [
-    "./mf thread view 3f9a",
+    "./mf thread view 3f9a1c   # unique id prefix",
     "./mf thread view <id> --turn <turnId> --full",
     "./mf thread view <id> --json --fields turns",
   ],

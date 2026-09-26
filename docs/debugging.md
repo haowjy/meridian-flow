@@ -69,7 +69,9 @@ Contract:
   1 failed, 5 cancelled, 8 waiting on an interrupt (answer with
   `./mf thread respond`), 124 timeout. 2 is usage, 3 not found, 4 the stack is
   not running or dev login failed. Every wait is bounded by `--timeout`.
-- `<thread>` accepts a full id, a unique prefix, a `cN` ref, or an app URL.
+- `<thread>` accepts a full id, an app URL containing one, or a unique id
+  prefix. `cN`/`pN` refs are per-project display handles, so they are not
+  accepted.
 - `MF_SERVER_URL` plus `MF_COOKIE` (or `MF_APP_URL` for dev login) target a
   stack other than this worktree's Portless routes.
 

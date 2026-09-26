@@ -145,12 +145,19 @@ export function readJsonArg(raw: string, name: string): unknown {
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
-/** Accepts a full id, an app URL containing one, a unique id prefix, or a `cN`/`pN` ref. */
+const THREAD_REF = /^[cp]\d+$/i;
+
+/** Accepts a full id, an app URL containing one, or a unique id prefix (like git). */
 export async function resolveThreadId(session: Session, raw: string): Promise<string> {
   const embedded = raw.match(UUID)?.[0];
   if (embedded) return embedded.toLowerCase();
+  if (THREAD_REF.test(raw)) {
+    throw new CliError("not_found", `"${raw}" is a thread ref, not an id`, {
+      hint: "Refs are per-project display handles; use the thread id (`./mf thread list`).",
+    });
+  }
   const { threads } = await session.request<ListThreadsResponse>("GET", API_THREADS_PATH);
-  const matches = threads.filter((thread) => thread.id.startsWith(raw) || thread.ref === raw);
+  const matches = threads.filter((thread) => thread.id.startsWith(raw.toLowerCase()));
   if (matches.length === 1) return (matches[0] as { id: string }).id;
   if (matches.length === 0) {
     throw new CliError("not_found", `No thread matches "${raw}"`, {

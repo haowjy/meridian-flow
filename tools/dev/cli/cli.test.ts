@@ -305,14 +305,17 @@ describe("./mf", () => {
     expect((await mf(["thread", "list"], { MF_COOKIE: "wrong" })).code).toBe(EXIT.unavailable);
   });
 
-  it("resolves thread refs and id prefixes", async () => {
-    const byRef = await mf(["thread", "view", "c1", "--json", "--fields", "thread"]);
-    expect(byRef.code).toBe(EXIT.ok);
-    expect(JSON.parse(byRef.stdout)).toEqual({
-      thread: expect.objectContaining({ id: THREAD_ID }),
+  it("addresses threads by id or unique id prefix, never by per-project ref", async () => {
+    const byPrefix = await mf(["thread", "view", "1111", "--json", "--fields", "thread"]);
+    expect(byPrefix.code).toBe(EXIT.ok);
+    expect(JSON.parse(byPrefix.stdout)).toEqual({
+      thread: expect.objectContaining({ id: THREAD_ID, ref: "c1" }),
     });
-    expect((await mf(["thread", "view", "1111"])).code).toBe(EXIT.ok);
+    expect((await mf(["thread", "view", `https://app.x/threads/${THREAD_ID}`])).code).toBe(EXIT.ok);
     expect((await mf(["thread", "view", "9999"])).code).toBe(EXIT.notFound);
+    const byRef = await mf(["thread", "view", "c1"]);
+    expect(byRef.code).toBe(EXIT.notFound);
+    expect(byRef.stderr).toContain("use the thread id");
   });
 
   it("creates a thread with the default agent", async () => {
