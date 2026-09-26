@@ -67,7 +67,9 @@ describe("runtime credits", () => {
     });
   });
 
-  it("does not debit additional credits while parked on a interrupt", async () => {
+  // Dormant while ask_user is disabled: nothing can park a run on an interrupt.
+  // Re-enable with https://github.com/haowjy/meridian-flow/issues/601
+  it.skip("does not debit additional credits while parked on a interrupt", async () => {
     let call = 0;
     const gateway: Gateway = {
       ...gatewayStubDefaults,
