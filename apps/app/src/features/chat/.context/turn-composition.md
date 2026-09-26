@@ -119,9 +119,10 @@ expanded summary, payload, and saved artifacts.
 Child completion delivery persists one system turn with `subagent_update`
 metadata. `visible-chat-turns.ts` and the server visible-conversation policy
 keep delivery turns out of the top-level bubble list; `AssistantTurn` renders
-them as quiet activity rows inside the preceding assistant's steps. The row
-shows the handle and outcome, and correlates the internal execution id to its
-invocation card for the optional short description and Open door. Machine
+them as quiet expandable step rows inside the preceding assistant's steps. The
+row shows the child's resolved name and outcome (never the raw handle) and
+correlates the internal execution id to its invocation card for the task and
+Open door; expanding shows the task and the notice text the model received. Machine
 deliveries (`inbox_message` turns, such as an agent `thread_message`) use the
 same inline row chrome with the message text. Writer sends never become
 delivery rows; they stay bubbles.

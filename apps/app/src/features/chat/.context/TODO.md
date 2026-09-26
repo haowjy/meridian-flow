@@ -62,13 +62,3 @@ most three clauses ("Read and edited loop-test.md, 1 edit failed"). A failure
 shows in the label without opening the fold; a live fold names the current
 action. Deferred out of the subagent UI change because it rewrites the digest
 contract in `turn-composition.md`.
-
-## Subagent follow-ups from the thread-ux live check
-
-- The expanded background running panel showed "Waiting" where the mockup
-  shows each child's current tool call. Check that `current_tool` reaches the
-  panel for a child mid-tool (`SubagentActivityContext`, the thread activity
-  read model) and fix whichever side drops it.
-- The Subagents pop-up's "Show" scrolls to the invocation card. The direction
-  also proposed jumping to the latest point (launch, then finished line, then
-  latest report). This is pending an owner decision; build it only if confirmed.

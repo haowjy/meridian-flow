@@ -52,10 +52,14 @@ cards combine launch, live current tool, and expandable result. Branch on the
 run's `deliveryMode`, never on which blocks happen to exist. Server activity
 (snapshot plus `meridian.subagent.activity`) is still the viewed thread's whole
 subtree; `ChatView` filters it to direct children: running background ones for
-the live panel, all of them for the header's Subagents popover. `thread_report` is a report
+the live panel, all of them for the Subagents pop-up at the right end of the chat tab row. `thread_report` is a report
 artifact outside the process fold. Background `subagent_update` notices render
 as quiet expandable completion rows; adjacent completions merge at their
-transcript boundary.
+transcript boundary. Every surface names a child through `subagent-display.ts`
+(agent name, else thread title; never a raw ref) and maps outcome to mark
+status there. The pop-up's Show uses a block-level conversation reveal that
+lands on the child's latest point: launch while running, the finished row until
+its report is read, then the latest report line.
 
 Child completion is a separate durable transcript event: system turns with
 `metadata.kind === "subagent_update"` render as a quiet inline row at their

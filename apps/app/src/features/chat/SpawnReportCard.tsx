@@ -76,7 +76,7 @@ export function SpawnReportCard({
 
   return (
     <div
-      className="min-w-0 rounded-lg border border-border bg-background px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] shadow-sm"
+      className="min-w-0 chat-card [--chat-card-radius:var(--radius-xl)] [--chat-card-border:var(--color-border-subtle)] bg-background shadow-xs"
       data-subagent-card
       data-subagent-thread-id={childThreadId ?? undefined}
       data-delivery-mode={deliveryMode}

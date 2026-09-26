@@ -454,7 +454,7 @@ function ThreadReportArtifact({
   const taskTitle = subagent?.title?.trim();
   return (
     <div
-      className="rounded-lg border border-border bg-background px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] shadow-sm"
+      className="chat-card [--chat-card-radius:var(--radius-xl)] [--chat-card-border:var(--color-border-subtle)] bg-background shadow-xs"
       data-thread-report={refName}
       data-subagent-thread-id={subagent?.threadId}
     >
