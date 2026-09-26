@@ -193,6 +193,115 @@ describe("streamWithRetry retry gate", () => {
   });
 });
 
+describe("streamWithRetry retry-after", () => {
+  it("waits for the longer retry-after duration before retrying", async () => {
+    const { adapter, calls } = scriptedAdapter([
+      async function* () {
+        yield {
+          type: "error",
+          code: "rate_limited",
+          message: "retry",
+          retryable: true,
+          retryAfterMs: 2_500,
+        };
+      },
+      async function* () {
+        yield end;
+      },
+    ]);
+    const completion = collect(
+      streamWithRetry(
+        adapter,
+        REQUEST,
+        MODEL,
+        { maxAttempts: 2, initialDelayMs: 100, maxDelayMs: 100 },
+        {
+          stallMs: 60_000,
+          ceilingMs: 0,
+        },
+      ),
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls()).toBe(1);
+    await vi.advanceTimersByTimeAsync(2_499);
+    expect(calls()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await completion;
+
+    expect(calls()).toBe(2);
+  });
+
+  it("caps retry-after waits at 60 seconds", async () => {
+    const { adapter, calls } = scriptedAdapter([
+      async function* () {
+        yield {
+          type: "error",
+          code: "rate_limited",
+          message: "retry",
+          retryable: true,
+          retryAfterMs: 90_000,
+        };
+      },
+      async function* () {
+        yield end;
+      },
+    ]);
+    const completion = collect(
+      streamWithRetry(
+        adapter,
+        REQUEST,
+        MODEL,
+        { maxAttempts: 2, initialDelayMs: 100, maxDelayMs: 100 },
+        {
+          stallMs: 60_000,
+          ceilingMs: 0,
+        },
+      ),
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(calls()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await completion;
+    expect(calls()).toBe(2);
+  });
+
+  it("aborts an active retry-after wait", async () => {
+    const controller = new AbortController();
+    const { adapter, calls } = scriptedAdapter([
+      async function* () {
+        yield {
+          type: "error",
+          code: "rate_limited",
+          message: "retry",
+          retryable: true,
+          retryAfterMs: 90_000,
+        };
+      },
+      async function* () {
+        yield end;
+      },
+    ]);
+    const completion = collect(
+      streamWithRetry(
+        adapter,
+        { ...REQUEST, signal: controller.signal },
+        MODEL,
+        { maxAttempts: 2, initialDelayMs: 100, maxDelayMs: 100 },
+        { stallMs: 60_000, ceilingMs: 0 },
+      ),
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    controller.abort();
+    await expect(completion).rejects.toBe(controller.signal.reason);
+    expect(calls()).toBe(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
 describe("per-attempt timing", () => {
   it("stamps provider arrivals before a slow consumer handles 50 deltas", async () => {
     let time = 0;
@@ -239,6 +348,66 @@ describe("per-attempt timing", () => {
       latencyMs: 70,
       timeToFirstTokenMs: 11,
       generationMs: 59,
+    });
+  });
+
+  it("omits generation timing when a slow consumer backpressures the byte-bounded buffer", async () => {
+    let time = 0;
+    let deltaCount = 0;
+    let reachByteLimit!: () => void;
+    const byteLimitReached = new Promise<void>((resolve) => {
+      reachByteLimit = resolve;
+    });
+    let releaseConsumer!: () => void;
+    const consumerReleased = new Promise<void>((resolve) => {
+      releaseConsumer = resolve;
+    });
+    const adapter: ProviderAdapter = {
+      providerId: "test",
+      async *stream() {
+        time = 10;
+        yield start;
+        for (let index = 0; index < 24; index++) {
+          time += 1;
+          deltaCount += 1;
+          if (index === 7) reachByteLimit();
+          yield { type: "text.delta", text: "x".repeat(65_536) };
+        }
+        time += 1;
+        yield end;
+      },
+    };
+
+    let terminal: StreamEvent | undefined;
+    const completion = (async () => {
+      for await (const event of streamWithRetry(
+        adapter,
+        REQUEST,
+        MODEL,
+        RETRY,
+        { stallMs: 60_000, ceilingMs: 0 },
+        { now: () => time },
+      )) {
+        if (event.type === "start") await consumerReleased;
+        if (event.type === "text.delta") {
+          time += 2;
+          await new Promise((resolve) => setTimeout(resolve, 2));
+        }
+        if (event.type === "end") terminal = event;
+      }
+    })();
+
+    await byteLimitReached;
+    for (let index = 0; index < 5; index++) await Promise.resolve();
+    expect(deltaCount).toBe(8);
+    releaseConsumer();
+    await vi.advanceTimersByTimeAsync(500);
+    await completion;
+
+    expect(terminal?.type === "end" ? terminal.result.timing : undefined).toEqual({
+      latencyMs: null,
+      timeToFirstTokenMs: 11,
+      generationMs: null,
     });
   });
 

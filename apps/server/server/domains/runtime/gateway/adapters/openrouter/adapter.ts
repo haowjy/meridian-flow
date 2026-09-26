@@ -97,12 +97,7 @@ export function createOpenRouterAdapter(config: ProviderConfig): ProviderAdapter
           return;
         }
         const mapped = mapOpenAIError(err);
-        yield {
-          type: "error",
-          code: mapped.code,
-          message: mapped.message,
-          retryable: mapped.retryable,
-        };
+        yield { type: "error", ...mapped };
       }
     },
   };

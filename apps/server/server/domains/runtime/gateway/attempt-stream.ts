@@ -30,13 +30,13 @@ import {
 
 /** Wall-clock bound for post-output cancel drain — providers that ignore abort must not hang forever. */
 const CANCEL_DRAIN_TIMEOUT_MS = 5_000;
-const MAX_BUFFERED_EVENTS = 256;
 const MAX_BUFFERED_BYTES = 1_048_576;
 
 interface ArrivingEvent {
   event: StreamEvent;
   arrivedAt: number;
   estimatedBytes: number;
+  arrivedBeforeBackpressure: boolean;
 }
 
 /**
@@ -57,13 +57,17 @@ class EventBuffer {
     | undefined;
   private spaceAvailable: (() => void) | undefined;
 
-  async push(event: ArrivingEvent): Promise<boolean> {
+  async push(event: ArrivingEvent, onBackpressure: () => void): Promise<boolean> {
+    let waiting = false;
     while (
       !this.closed &&
       this.events.length > 0 &&
-      (this.events.length >= MAX_BUFFERED_EVENTS ||
-        this.bytes + event.estimatedBytes > MAX_BUFFERED_BYTES)
+      this.bytes + event.estimatedBytes > MAX_BUFFERED_BYTES
     ) {
+      if (!waiting) {
+        waiting = true;
+        onBackpressure();
+      }
       await new Promise<void>((resolve) => {
         this.spaceAvailable = resolve;
       });
@@ -221,6 +225,9 @@ export async function* streamWithRetry(
       .stream({ ...request, signal: attemptSignal.signal }, model)
       [Symbol.asyncIterator]();
     const buffer = new EventBuffer();
+    let backpressured = false;
+    let firstTokenAt: number | undefined;
+    let firstTokenArrivedBeforeBackpressure = false;
 
     const pump = async () => {
       try {
@@ -232,11 +239,23 @@ export async function* streamWithRetry(
           }
           if (!attemptSignal.signal.aborted) attemptSignal.notifyProgress();
           const event = next.value;
-          const accepted = await buffer.push({
-            event,
-            arrivedAt: now(),
-            estimatedBytes: estimatedEventBytes(event),
-          });
+          const arrivedAt = now();
+          const arrivedBeforeBackpressure = !backpressured;
+          if (firstTokenAt === undefined && isFirstTokenEvent(event)) {
+            firstTokenAt = arrivedAt;
+            firstTokenArrivedBeforeBackpressure = arrivedBeforeBackpressure;
+          }
+          const accepted = await buffer.push(
+            {
+              event,
+              arrivedAt,
+              estimatedBytes: estimatedEventBytes(event),
+              arrivedBeforeBackpressure,
+            },
+            () => {
+              backpressured = true;
+            },
+          );
           if (!accepted) return;
         }
       } catch (error) {
@@ -272,7 +291,6 @@ export async function* streamWithRetry(
       if (next.error !== undefined) throw next.error;
       return { done: true, value: undefined };
     };
-    let firstTokenAt: number | undefined;
     const timeTerminalEvent = (arrival: ArrivingEvent): StreamEvent => {
       if (arrival.event.type !== "end") return arrival.event;
       return {
@@ -280,11 +298,17 @@ export async function* streamWithRetry(
         result: {
           ...arrival.event.result,
           timing: {
-            latencyMs: elapsedMs(startedAt, arrival.arrivedAt),
+            latencyMs: arrival.arrivedBeforeBackpressure
+              ? elapsedMs(startedAt, arrival.arrivedAt)
+              : null,
             timeToFirstTokenMs:
-              firstTokenAt === undefined ? null : elapsedMs(startedAt, firstTokenAt),
+              firstTokenAt === undefined || !firstTokenArrivedBeforeBackpressure
+                ? null
+                : elapsedMs(startedAt, firstTokenAt),
             generationMs:
-              firstTokenAt === undefined ? null : elapsedMs(firstTokenAt, arrival.arrivedAt),
+              firstTokenAt === undefined || backpressured
+                ? null
+                : elapsedMs(firstTokenAt, arrival.arrivedAt),
           },
         },
       };
@@ -294,8 +318,7 @@ export async function* streamWithRetry(
         const next = await read();
         if (next.done) break;
         if (!attemptSignal.signal.aborted) attemptSignal.notifyProgress();
-        const { event, arrivedAt } = next.value;
-        if (firstTokenAt === undefined && isFirstTokenEvent(event)) firstTokenAt = arrivedAt;
+        const { event } = next.value;
         if (event.type === "error") {
           // If the attempt was killed by a timer, surface that timeout event
           // (retryable) instead of whatever the SDK emitted.
@@ -326,9 +349,6 @@ export async function* streamWithRetry(
             const next = await read();
             if (next.done) return;
             const { event } = next.value;
-            if (firstTokenAt === undefined && isFirstTokenEvent(event)) {
-              firstTokenAt = next.value.arrivedAt;
-            }
             const terminalEvent = timeTerminalEvent(next.value);
             yield terminalEvent;
             if (event.type === "end" || event.type === "error") return;
@@ -364,7 +384,7 @@ export async function* streamWithRetry(
     if (sawError?.type === "error") {
       if (sawError.retryable && attempt < maxAttempts) {
         // Exponential backoff: wait before retrying, respecting parent abort.
-        await sleep(delay, request.signal);
+        await sleep(Math.min(Math.max(delay, sawError.retryAfterMs ?? 0), 60_000), request.signal);
         delay = Math.min(delay * 2, maxDelay);
         continue;
       }

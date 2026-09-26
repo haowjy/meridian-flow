@@ -372,9 +372,12 @@ contract shapes.
   steps. The stored chat-activity projection below (`recompute_thread_chat_activity`)
   is a frozen SQL copy of this same predicate. Project and Work lists, and
   snapshots and thread lists derive the independent `actionRequired` fact from
-  the nearest assistant turn in the active lineage. A visible writer turn may
-  be the conversational head while an ancestor assistant remains parked on
-  `waiting_interrupt`; that still needs the writer's answer.
+  the nearest assistant turn in the active lineage. Lineage walks stop at that
+  assistant and are capped at a depth of 10,000; the chat-activity projection
+  also stops at the first assistant because every assistant turn is visible. A
+  visible writer turn may be the conversational head while an ancestor
+  assistant remains parked on `waiting_interrupt`; that still needs the
+  writer's answer.
 
 ### Chat activity projection (single owner)
 

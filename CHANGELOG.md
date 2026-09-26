@@ -15,6 +15,7 @@
 - Fix assistant-turn Copy to write the final answer as rich HTML and Markdown.
 - Tighten chat turn rhythm and add settled assistant copy, usage, and debug actions.
 - Record per-attempt provider latency, time to first output, and generation duration without charging downstream persistence to model timing, while preserving ask-user action state behind writer turns.
+- Bound provider-event buffering by bytes and omit generation timing after consumer backpressure; honor provider retry-after hints and retry vetoes.
 
 - Keep the writer's own messages in the chat after the reply starts; only machine-delivered inbox messages fold into activity rows.
 

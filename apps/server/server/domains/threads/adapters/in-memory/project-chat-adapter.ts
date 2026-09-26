@@ -11,6 +11,9 @@ import type {
   WorkChatFeedRepository,
 } from "../../ports/repositories.js";
 
+// Match the database lineage cap and stop the nearest-assistant walk early.
+const MAX_ACTIVE_LINEAGE_DEPTH = 10_000;
+
 export type InMemoryThreadUserState = {
   isFavorite: boolean;
 };
@@ -41,10 +44,9 @@ export function createInMemoryProjectChatAdapter(
   function activeLineage(thread: Thread): Turn[] {
     const lineage: Turn[] = [];
     let turn = thread.activeLeafTurnId ? source.turn(thread.activeLeafTurnId) : undefined;
-    const visited = new Set<string>();
-    while (turn && !visited.has(turn.id)) {
-      visited.add(turn.id);
+    while (turn && lineage.length <= MAX_ACTIVE_LINEAGE_DEPTH) {
       lineage.push(turn);
+      if (turn.role === "assistant") break;
       turn = turn.parentTurnId ? source.turn(turn.parentTurnId) : undefined;
     }
     return lineage;
