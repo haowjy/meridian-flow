@@ -1,6 +1,6 @@
 /**
  * The drain-woken run activity emitter, used at both the start and settle of a
- * subagent's own run: it must emit the root activity frame so the live strip
+ * subagent's own run: it must emit the direct parent's activity frame so the live strip
  * reads `awake` during the run and never stays frozen there after release. A
  * non-subagent thread and any failure are no-ops.
  */
@@ -11,6 +11,7 @@ import type { EventJournalWriter } from "../../threads/index.js";
 import { appendSubagentActivityBestEffort, emitRunActivityBestEffort } from "./activity-event.js";
 
 const ROOT = "root-thread" as ThreadId;
+const PARENT = "parent-thread" as ThreadId;
 const CHILD = "child-thread" as ThreadId;
 
 function recordingWriter() {
@@ -24,27 +25,27 @@ function recordingWriter() {
   return { appended, eventWriter };
 }
 
-const readActivity = async () => ({ descendants: [] });
+const readActivity = async () => ({ children: [] });
 
 describe("emitRunActivityBestEffort", () => {
-  it("emits the root frame for a subagent drain run", async () => {
+  it("emits the frame to the direct parent's journal for a subagent drain run", async () => {
     const { appended, eventWriter } = recordingWriter();
     await emitRunActivityBestEffort({
-      findThread: async () => ({ id: CHILD, kind: "subagent", rootThreadId: ROOT }),
+      findThread: async () => ({ id: CHILD, kind: "subagent", parentThreadId: PARENT }),
       threadId: CHILD,
       eventWriter,
       readActivity,
       eventSink: createInMemoryEventSink(),
     });
     expect(appended).toHaveLength(1);
-    expect(appended[0]?.threadId).toBe(ROOT);
+    expect(appended[0]?.threadId).toBe(PARENT);
     expect((appended[0]?.event as { type: string }).type).toBe("subagent.activity");
   });
 
   it("does nothing for a non-subagent thread", async () => {
     const { appended, eventWriter } = recordingWriter();
     await emitRunActivityBestEffort({
-      findThread: async () => ({ id: ROOT, kind: "primary", rootThreadId: ROOT }),
+      findThread: async () => ({ id: ROOT, kind: "primary", parentThreadId: null }),
       threadId: ROOT,
       eventWriter,
       readActivity,
@@ -85,7 +86,7 @@ describe("appendSubagentActivityBestEffort", () => {
       appendSubagentActivityBestEffort({
         eventWriter,
         readActivity,
-        rootThreadId: ROOT,
+        parentThreadId: PARENT,
         childThreadId: CHILD,
         eventSink,
       }),

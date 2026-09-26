@@ -1271,8 +1271,55 @@ describe("ChildRunCoordinator thread_message", () => {
   });
 });
 
-describe("ChildRunCoordinator root activity journal", () => {
-  it("appends subagent.activity to the spawn root on create and terminal", async () => {
+describe("ChildRunCoordinator direct-parent activity journal", () => {
+  it("appends a child spawned from a fork to the fork's journal, not its source's", async () => {
+    const { coordinator, parent, repos, revisions, parentConfiguration, journal } = await fixture();
+    const cutoff = await repos.turns.create({
+      threadId: parent.id as ThreadId,
+      role: "user",
+      origin: "writer",
+      status: "complete",
+    });
+    const binding = await revisions.readThreadBinding(parent.id);
+    if (!binding?.revision) throw new Error("parent binding missing");
+    const fork = await repos.threads.createDerivedPrimary({
+      userId: parent.userId,
+      projectId: parent.projectId,
+      workId: parent.workId,
+      source: parent,
+      originType: "fork",
+      originTurnId: cutoff.id,
+    });
+    const callerTurn = await repos.turns.create({
+      threadId: fork.id as ThreadId,
+      prevTurnId: cutoff.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
+    await revisions.bindThread(fork.id, binding.revision.id, parentConfiguration, null);
+    journal.length = 0;
+
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: fork,
+        parentTurnId: callerTurn.id as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
+
+    expect(result.status).toBe("completed");
+    const activityEvents = journal.filter((entry) => entry.type === "subagent.activity");
+    expect(activityEvents).toHaveLength(2);
+    expect(activityEvents.every((entry) => entry.threadId === fork.id)).toBe(true);
+    expect(activityEvents.every((entry) => entry.threadId !== parent.id)).toBe(true);
+  });
+
+  it("appends nested subagent.activity to its direct parent's journal on create and terminal", async () => {
     const { coordinator, parent, repos, journal } = await fixture();
     const outer = await coordinator.runChild(
       {
@@ -1288,7 +1335,7 @@ describe("ChildRunCoordinator root activity journal", () => {
     if (outer.status !== "completed") throw new Error("outer spawn failed");
     const nestedParent = await repos.threads.findById(outer.report.threadId as ThreadId);
     if (!nestedParent) throw new Error("outer child missing");
-    const rootThreadId = parent.id as ThreadId;
+    const parentThreadId = nestedParent.id as ThreadId;
     journal.length = 0;
 
     const result = await coordinator.runChild(
@@ -1309,7 +1356,8 @@ describe("ChildRunCoordinator root activity journal", () => {
     const activityEvents = journal.filter((entry) => entry.type === "subagent.activity");
     // One on create (after the lease is acquired) and one on terminal.
     expect(activityEvents).toHaveLength(2);
-    expect(activityEvents.every((entry) => entry.threadId === rootThreadId)).toBe(true);
+    expect(activityEvents.every((entry) => entry.threadId === parentThreadId)).toBe(true);
+    expect(activityEvents.every((entry) => entry.threadId !== parent.id)).toBe(true);
     expect(activityEvents.every((entry) => entry.childThreadId === childThreadId)).toBe(true);
     // The other lifecycle facts still land on the immediate parent.
     expect(journal.some((entry) => entry.type === "agent.spawn")).toBe(true);
@@ -1336,10 +1384,10 @@ describe("ChildRunCoordinator root activity journal", () => {
     expect(activityEvents).toHaveLength(2);
     const terminal = activityEvents[1] as unknown as {
       activity: {
-        descendants: Array<{ threadId: string; status: { kind: string }; spawnStatus: string }>;
+        children: Array<{ threadId: string; status: { kind: string }; spawnStatus: string }>;
       };
     };
-    const node = terminal.activity.descendants.find((entry) => entry.threadId === childThreadId);
+    const node = terminal.activity.children.find((entry) => entry.threadId === childThreadId);
     expect(node?.spawnStatus).toBe("succeeded");
     expect(node?.status.kind).toBe("asleep");
   });

@@ -20,7 +20,7 @@ export type {
   ProjectChatCursorKey,
   ProjectChatFeedRepository,
   SubagentThreadFactory,
-  ThreadDescendant,
+  ThreadChild,
   ThreadDocument,
   ThreadDocumentRepository,
   ThreadLiveReaders,

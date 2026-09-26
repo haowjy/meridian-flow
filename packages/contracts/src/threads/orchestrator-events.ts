@@ -144,11 +144,9 @@ export type OrchestratorEvent =
     }
   | {
       type: "subagent.activity";
-      /** Run-tree root whose subtree changed; the event lands on this thread's journal. */
-      rootThreadId: string;
-      /** The descendant whose create/terminal changed the tree. */
+      /** Direct parent whose child activity changed; the event lands on its journal. */
       childThreadId: string;
-      /** Full recomputed subtree, so the client replaces state with no refetch race. */
+      /** Full recomputed direct-child activity, so the client replaces state with no refetch race. */
       activity: ThreadActivity;
     }
   | {

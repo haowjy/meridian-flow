@@ -1,14 +1,11 @@
-/**
- * Fork history hydration: a fork inherits its SOURCE's history through
- * `originTurnId`. Forks are siblings of their source, so `parentThreadId` is
- * the source's parent and must never be used to find the source.
- */
+/** Fork history hydration resolves the cutoff owner and refuses incomplete lineage. */
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import {
-  type ForkThreadContextDeps,
   loadThreadConversationContext,
-} from "./fork-thread-context.js";
+  type ThreadConversationContextDeps,
+  ThreadConversationContextError,
+} from "./thread-conversation-context.js";
 
 function thread(id: string, extra: Partial<Thread> = {}): Thread {
   return { id, originType: null, originTurnId: null, parentThreadId: null, ...extra } as Thread;
@@ -20,9 +17,11 @@ function block(id: string, turnId: string): Block {
   return { id, turnId } as Block;
 }
 
-function depsFor(threads: Thread[], turns: Turn[], blocks: Block[]): ForkThreadContextDeps {
+function depsFor(threads: Thread[], turns: Turn[], blocks: Block[]): ThreadConversationContextDeps {
   return {
-    threads: { findById: async (id: string) => threads.find((t) => t.id === id) ?? null },
+    threads: {
+      findByIdIncludingDeleted: async (id: string) => threads.find((t) => t.id === id) ?? null,
+    },
     turns: {
       listByThread: async (id: string) => turns.filter((t) => t.threadId === id),
       findById: async (id: string) => turns.find((t) => t.id === id) ?? null,
@@ -31,7 +30,7 @@ function depsFor(threads: Thread[], turns: Turn[], blocks: Block[]): ForkThreadC
       listByThread: async (id: string) =>
         blocks.filter((b) => turns.some((t) => t.id === b.turnId && t.threadId === id)),
     },
-  } as unknown as ForkThreadContextDeps;
+  } as unknown as ThreadConversationContextDeps;
 }
 
 describe("loadThreadConversationContext", () => {
@@ -82,5 +81,51 @@ describe("loadThreadConversationContext", () => {
     );
 
     expect(context.turns.map((t) => t.id)).toEqual(["r1", "f1"]);
+  });
+
+  it("throws a typed error when the cutoff is missing instead of returning local turns", async () => {
+    const fork = thread("fork", { originType: "fork", originTurnId: "missing" });
+
+    await expect(
+      loadThreadConversationContext(depsFor([fork], [turn("local", "fork")], []), fork),
+    ).rejects.toMatchObject({
+      name: "ThreadConversationContextError",
+      code: "missing_cutoff_turn",
+      threadId: "fork",
+    });
+  });
+
+  it("throws a typed error when the cutoff owner is missing", async () => {
+    const fork = thread("fork", { originType: "fork", originTurnId: "orphaned" });
+
+    const context = loadThreadConversationContext(
+      depsFor([fork], [turn("orphaned", "deleted")], []),
+      fork,
+    );
+    await expect(context).rejects.toBeInstanceOf(ThreadConversationContextError);
+    await expect(context).rejects.toMatchObject({ code: "missing_cutoff_owner" });
+  });
+
+  it("throws a typed error when the cutoff is not in its owner's effective transcript", async () => {
+    const owner = thread("owner");
+    const fork = thread("fork", { originType: "fork", originTurnId: "after-cutoff" });
+    const deps = depsFor([owner, fork], [turn("after-cutoff", "owner")], []);
+    deps.turns.listByThread = async () => [];
+
+    await expect(loadThreadConversationContext(deps, fork)).rejects.toMatchObject({
+      code: "cutoff_not_in_transcript",
+    });
+  });
+
+  it("refuses a cycle in fork lineage", async () => {
+    const forkA = thread("fork-a", { originType: "fork", originTurnId: "turn-b" });
+    const forkB = thread("fork-b", { originType: "fork", originTurnId: "turn-a" });
+
+    await expect(
+      loadThreadConversationContext(
+        depsFor([forkA, forkB], [turn("turn-a", "fork-a"), turn("turn-b", "fork-b")], []),
+        forkA,
+      ),
+    ).rejects.toMatchObject({ code: "fork_cycle" });
   });
 });

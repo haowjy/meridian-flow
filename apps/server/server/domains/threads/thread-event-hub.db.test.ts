@@ -85,9 +85,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const event = {
         type: "subagent.activity" as const,
-        rootThreadId: THREAD_ID,
         childThreadId: "child",
-        activity: { descendants: [] },
+        activity: { children: [] },
       };
       try {
         await expect(

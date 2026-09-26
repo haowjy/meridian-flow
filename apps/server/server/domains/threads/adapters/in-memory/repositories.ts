@@ -26,7 +26,7 @@ import type {
   InternalThreadRepositories,
   ModelResponseRepository,
   SubagentThreadFactory,
-  ThreadDescendant,
+  ThreadChild,
   ThreadDocument,
   ThreadDocumentRepository,
   ThreadRepository,
@@ -272,6 +272,10 @@ export function createInMemoryRepositories(
       if (!thread || thread.deletedAt || !(await threadInActiveProject(thread))) return null;
       return projectThread(thread);
     },
+    async findByIdIncludingDeleted(id) {
+      const thread = threads.get(id);
+      return thread ? projectThread(thread) : null;
+    },
     async findLiveByProjectRef(projectId, ref) {
       const thread = [...threads.values()].find(
         (thread) => thread.projectId === projectId && thread.ref === ref && !thread.deletedAt,
@@ -314,33 +318,21 @@ export function createInMemoryRepositories(
       const ordered = visible.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       return Promise.all(ordered.map(toListItem));
     },
-    async listDescendants(threadId) {
-      const descendants: ThreadDescendant[] = [];
-      const seen = new Set<string>([threadId]);
-      let frontier = [threadId as string];
-      while (frontier.length > 0) {
-        const level = [...threads.values()]
-          .filter((thread) => !thread.deletedAt && frontier.includes(thread.parentThreadId ?? ""))
-          .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
-        frontier = [];
-        for (const thread of level) {
-          if (seen.has(thread.id)) continue;
-          seen.add(thread.id);
-          descendants.push({
+    async listChildren(threadId) {
+      return [...threads.values()]
+        .filter((thread) => !thread.deletedAt && thread.parentThreadId === threadId)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+        .map(
+          (thread): ThreadChild => ({
             id: thread.id,
             parentThreadId: thread.parentThreadId,
-            rootThreadId: thread.rootThreadId,
-            spawnDepth: thread.spawnDepth,
             ref: thread.ref,
             title: thread.title,
             agentName: projectThread(thread).agentName ?? null,
             spawnStatus: thread.spawnStatus,
             originTurnId: thread.originTurnId ?? null,
-          });
-          frontier.push(thread.id);
-        }
-      }
-      return descendants;
+          }),
+        );
     },
     async listRecentByWork(projectId, workId, limit) {
       const boundedLimit = Math.max(0, Math.min(Math.trunc(limit), 50));

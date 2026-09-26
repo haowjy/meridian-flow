@@ -36,6 +36,13 @@ export {
   type ThreadActivityReadDeps,
 } from "./domain/thread-activity.js";
 export {
+  loadThreadConversationContext,
+  type ThreadConversationContext,
+  type ThreadConversationContextDeps,
+  ThreadConversationContextError,
+  type ThreadConversationContextErrorCode,
+} from "./domain/thread-conversation-context.js";
+export {
   requireWorkDraftOwner,
   threadExecutionContext,
   WorkRequiredError,

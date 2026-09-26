@@ -23,8 +23,8 @@ export function createThreadRuntimeService(deps: {
   db: Database;
   /** Supplies the lease-derived run status; the runtime authority satisfies it. */
   statusReader: ThreadStatusReader;
-  /** Supplies the descendant walk for the per-thread activity read. */
-  threads: Pick<ThreadRepository, "listDescendants">;
+  /** Supplies direct children for the per-thread activity read. */
+  threads: Pick<ThreadRepository, "listChildren">;
   /** Reads the thread's undelivered inbox as the writer-facing pending shape. */
   readPending: (threadId: ThreadId) => Promise<ThreadPendingInbox>;
 }) {

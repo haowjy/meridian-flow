@@ -230,7 +230,7 @@ describe("RunSession", () => {
       orchestrator: f.runtime,
       repos: f.deps.repos,
       eventWriter: f.journal,
-      readActivity: async () => ({ descendants: [] }),
+      readActivity: async () => ({ children: [] }),
       eventSink: f.sink,
       publisher: {
         async publish(threadId, execution) {

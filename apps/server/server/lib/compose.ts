@@ -636,7 +636,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       threadId,
     );
   // A drain-woken subagent run (a child report or thread_message) has no driver
-  // to emit its activity frames; refresh the root's activity when its lease goes
+  // to emit its activity frames; refresh its parent's activity when its lease goes
   // live and after it releases, so the strip never reads `asleep` during the run
   // nor stays `awake` after it.
   const refreshSubagentActivity = (threadId: ThreadId) => {

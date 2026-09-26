@@ -82,7 +82,7 @@ export interface ChildRunCoordinatorDeps {
     parentThreadId?: string | null;
   }): Promise<string>;
   eventWriter: EventJournalWriter;
-  /** Recomputes a run tree's activity; feeds the root-journal `subagent.activity` fact. */
+  /** Recomputes a parent's direct-child activity for its `subagent.activity` fact. */
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
   /** Producer-facing inbox: background thread_message enqueues here. */
   delivery: DeliveryProducer;
@@ -194,7 +194,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       await appendSubagentActivity({
         eventWriter: deps.eventWriter,
         readActivity: deps.readActivity,
-        rootThreadId: input.parentThread.rootThreadId as ThreadId,
+        parentThreadId: input.parentThread.id as ThreadId,
         childThreadId: child.id,
       });
       return { ...prepared, description: input.description };

@@ -1,6 +1,11 @@
 /** The advertised journal head never replaces the client's delivered cursor. */
 
-import { EventType, type WsServerMessage } from "@meridian/contracts/protocol";
+import {
+  EventType,
+  parseWsServerMessage,
+  type ThreadLiveState,
+  type WsServerMessage,
+} from "@meridian/contracts/protocol";
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createNoopEventSink } from "../domains/observability/index.js";
@@ -12,16 +17,19 @@ const THREAD_ID = "00000000-0000-4000-8000-000000000901" as ThreadId;
 const USER_ID = "user-1" as UserId;
 const UNDELIVERED_HEAD = 23_081_000n;
 
-const LIVE_STATE = {
+const LIVE_STATE: ThreadLiveState = {
   threadId: THREAD_ID,
   status: { kind: "asleep" as const },
   runningTurnId: null,
-  activity: { descendants: [] },
+  activity: { children: [] },
   pending: { items: [] },
   resumeAfterSeq: "0",
 };
 
-function createDelayedDeliveryHarness(catchup: SequencedEventInternal[] = []) {
+function createDelayedDeliveryHarness(
+  catchup: SequencedEventInternal[] = [],
+  liveState = LIVE_STATE,
+) {
   let deliverLive!: (entry: SequencedEventInternal) => void;
   const hub = {
     async catchupAndSubscribe(_threadId: ThreadId, _lastSeq: bigint, listener: typeof deliverLive) {
@@ -39,7 +47,7 @@ function createDelayedDeliveryHarness(catchup: SequencedEventInternal[] = []) {
     threadRuntime: {
       async requireOwnedThread() {},
       async liveState() {
-        return LIVE_STATE;
+        return liveState;
       },
     },
   } as unknown as AppServices;
@@ -76,6 +84,53 @@ describe("thread WS handler subscribe handoff", () => {
     // client resumes from delivered event frames, not the durable head.
     deliverLive(UNDELIVERED_HEAD);
     expect(frames.at(-1)).toMatchObject({ type: "event", seq: UNDELIVERED_HEAD.toString() });
+  });
+
+  it("uses the same direct-child activity shape in subscribed state and live frames", async () => {
+    const activity = {
+      children: [
+        {
+          threadId: "child-1",
+          parentThreadId: THREAD_ID,
+          ref: "p1",
+          title: "Critic",
+          agentName: "Critic",
+          spawnStatus: "running" as const,
+          status: { kind: "asleep" as const },
+          originTurnId: "turn-1",
+        },
+      ],
+    };
+    const { session, frames, deliverEntry } = createDelayedDeliveryHarness([], {
+      ...LIVE_STATE,
+      activity,
+    });
+    session.open();
+    await session.onMessage(
+      JSON.stringify({ type: "subscribe", threadId: THREAD_ID, lastSeq: "0" }),
+    );
+
+    const subscribed = parseWsServerMessage(JSON.stringify(frames[1]));
+    expect(subscribed?.type).toBe("subscribed");
+    if (subscribed?.type !== "subscribed") throw new Error("Expected subscribed frame");
+    expect(subscribed.state.activity).toEqual(activity);
+
+    deliverEntry({
+      seq: 1_000n,
+      event: {
+        type: EventType.CUSTOM,
+        name: "meridian.subagent.activity",
+        value: activity,
+      },
+    } as unknown as SequencedEventInternal);
+    const live = parseWsServerMessage(JSON.stringify(frames.at(-1)));
+    expect(live?.type).toBe("event");
+    if (live?.type !== "event") throw new Error("Expected live event frame");
+    expect(live.event).toMatchObject({
+      type: EventType.CUSTOM,
+      name: "meridian.subagent.activity",
+      value: activity,
+    });
   });
 });
 

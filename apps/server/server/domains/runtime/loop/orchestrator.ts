@@ -80,6 +80,7 @@ import type {
   ThreadRepository,
   TurnRepository,
 } from "../../threads/index.js";
+import { loadThreadConversationContext } from "../../threads/index.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ImageAssetPort } from "../ports/image-asset.js";
@@ -96,7 +97,6 @@ import {
 import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import type { TerminalCause } from "./execution-finalizer.js";
-import { loadThreadConversationContext } from "./fork-thread-context.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {

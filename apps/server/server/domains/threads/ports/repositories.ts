@@ -195,6 +195,8 @@ export interface ThreadRepository {
   create(input: CreateThreadInput): Promise<Thread>;
   updateSpawnLifecycle(id: ThreadId, input: UpdateSpawnLifecycleInput): Promise<Thread>;
   findById(id: ThreadId): Promise<Thread | null>;
+  /** Reads a thread even when it or its project is soft-deleted, for inherited history. */
+  findByIdIncludingDeleted(id: ThreadId): Promise<Thread | null>;
   /** Exact live handle lookup by server-assigned `cN`/`pN` ref; caller must authorize the project. */
   findLiveByProjectRef(projectId: ProjectId, ref: string): Promise<Thread | null>;
   /** Returns the owning project even when the thread is soft-deleted. */
@@ -207,13 +209,8 @@ export interface ThreadRepository {
   listByUser(userId: UserId): Promise<Thread[]>;
   /** Primary threads in a project (excludes subagents and soft-deleted threads; caller must gate project access). */
   listByProject(projectId: ProjectId): Promise<ThreadListItem[]>;
-  /**
-   * Every live descendant of `threadId` in its spawn subtree, breadth-first by
-   * `(spawnDepth, createdAt, id)`. Walks `parent_thread_id` from the viewed
-   * thread (so a sibling branch sharing the root is excluded), skips soft-deleted
-   * rows, and never includes the thread itself. Feeds the recursive activity read.
-   */
-  listDescendants(threadId: ThreadId): Promise<ThreadDescendant[]>;
+  /** Direct live children of `threadId`, ordered by `(createdAt, id)`. */
+  listChildren(threadId: ThreadId): Promise<ThreadChild[]>;
   /** Hard-bounded model-facing summary of primary chats historically associated with a Work. */
   listRecentByWork(
     projectId: ProjectId,
@@ -248,18 +245,10 @@ export interface WorkThreadSummary {
   status: ThreadLifecycleStatus;
 }
 
-/** One descendant in a thread's spawn subtree, as the activity read needs it. */
-export type ThreadDescendant = Pick<
+/** One direct child row, as the activity read needs it. */
+export type ThreadChild = Pick<
   Thread,
-  | "id"
-  | "parentThreadId"
-  | "rootThreadId"
-  | "spawnDepth"
-  | "ref"
-  | "title"
-  | "agentName"
-  | "spawnStatus"
-  | "originTurnId"
+  "id" | "parentThreadId" | "ref" | "title" | "agentName" | "spawnStatus" | "originTurnId"
 >;
 
 /**
