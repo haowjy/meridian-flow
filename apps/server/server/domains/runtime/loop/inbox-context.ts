@@ -30,9 +30,17 @@ import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persist
 import type { InboxMessage } from "./ports.js";
 import type { RenderedWorkContext } from "./work-context.js";
 
-/** The rich blocks an adopted turn's preparation resolved. */
+/** The rich blocks (and any hidden sibling turns) an adopted turn's preparation resolved. */
 export interface AdoptedTurnPreparation {
   blocks: Block[];
+  /**
+   * Hidden turns (with their own blocks) to render immediately after the
+   * adopted turn -- for example, a skill-body turn. Never a block on the
+   * adopted turn itself: anything that projects a user turn's text (chat
+   * previews, `UserTurn.tsx`) concatenates every text block on it, so
+   * model-only content must live on its own turn.
+   */
+  extraTurns?: readonly { turn: Turn; blocks: readonly Block[] }[];
 }
 
 /** The loop's view of one drained batch: durable turns/blocks for the loop's in-memory accumulator. */
@@ -75,7 +83,9 @@ export async function drainInbox(input: {
 }): Promise<InboxDrain> {
   const batch = input.batch;
   const fresh: InboxMessage[] = [];
-  const adoptedTurns: Turn[] = [];
+  // Keyed by message id, in final render order per message: the adopted turn
+  // itself plus any hidden sibling turns its preparation persisted.
+  const adoptedTurnsByMessageId = new Map<string, Turn[]>();
   const adoptedBlocks: Block[] = [];
   for (const message of batch) {
     if (message.intent !== "message" && message.body.kind !== "work_context_refresh") {
@@ -92,11 +102,16 @@ export async function drainInbox(input: {
     const existing = await input.persistence.repos.turns.findById(message.id as TurnId);
     if (existing) {
       let blocks = await input.persistence.repos.blocks.listByTurn(existing.id);
+      const extraTurns: Turn[] = [];
       if (input.prepareAdoptedTurn) {
         const prepared = await input.prepareAdoptedTurn(existing, blocks);
         blocks = prepared.blocks;
+        for (const extra of prepared.extraTurns ?? []) {
+          extraTurns.push(extra.turn);
+          adoptedBlocks.push(...extra.blocks);
+        }
       }
-      adoptedTurns.push(existing);
+      adoptedTurnsByMessageId.set(message.id, [existing, ...extraTurns]);
       adoptedBlocks.push(...blocks);
       continue;
     }
@@ -130,13 +145,14 @@ export async function drainInbox(input: {
     workContext: input.workContext,
     notices,
   });
-  const turnByMessageId = new Map(
-    [...adoptedTurns, ...persisted.turns].map((turn) => [turn.id, turn] as const),
-  );
-  const orderedTurns = batch.flatMap((message) => {
-    const turn = turnByMessageId.get(message.id as TurnId);
-    return turn ? [turn] : [];
-  });
+  // Each fresh message maps to exactly the one turn `planMessageTurns` built for
+  // it (the trailing notices turn has no owning message and is appended below).
+  const turnsByMessageId = new Map<string, Turn[]>(adoptedTurnsByMessageId);
+  for (const turn of persisted.turns) {
+    if (turn.id === persisted.noticesTurnId) continue;
+    turnsByMessageId.set(turn.id, [turn]);
+  }
+  const orderedTurns = batch.flatMap((message) => turnsByMessageId.get(message.id) ?? []);
   const noticesTurn = persisted.turns.find((turn) => turn.id === persisted.noticesTurnId);
   return {
     turns: noticesTurn ? [...orderedTurns, noticesTurn] : orderedTurns,

@@ -38,8 +38,8 @@ skeleton and delegates the moving parts.
 
 | File | Role |
 |---|---|
-| `orchestrator.ts` | One admitted run may span several assistant turns. At a safe boundary, adopting directed messages completes A, appends/adopts message turns, creates B, and rebinds the held lease in one thread-locked transaction. Requests use A → messages → B graph order. Every durable notice source -- Work refreshes, `NoticePort.drainForModelContext` (`undo`, `awareness_degraded`, writer `work_switched`), and any other non-message inbox entry -- forces the same split: `adopt()` drains them, folds them into one `system_update`/`notices` turn positioned exactly where the drain happened (after the writer message pre-turn, after the preceding tool result mid-run), and only then mints the next assistant turn. There is no request-only notice path left: a thread's whole cached request prefix (thread AGENTS.md / runtime CONTEXT.md) must be byte-stable across requests, and a notice spliced onto the live request only (never persisted) silently vanished on the next request, invalidating the Anthropic cache breakpoint one request later than the change that caused it. Response+ack clears the lease receipt; cancel retires adopted IDs only, leaving later messages for a new run. The locked final claim uses the same split transition, not a second continuation path. Report admission happens only at run setup, and terminal finalization only at run exit. |
-| `inbox-context.ts` | Materializes a claimed batch as durable turns/blocks. `drainInbox` takes the caller's already-drained `NoticePort` notices (draining is destructive, so `adopt()` in `runtime-delivery.ts` owns calling it exactly once) plus any non-message, non-work-refresh inbox entries, folds both into one trailing `{ kind: "system_update", section: "notices" }` system turn built by `noticesTurnFor`/`formatNotices`, and chains it after every message/work turn in the same batch. Existing writer turns are adopted without a second append; `prepareAdoptedTurn` persists their missing text-reference reads and, via `persistSkillBodies` in orchestrator.ts, any activated skill bodies. `planMessageTurns` and `messageTurnFor` own fresh message history. Child completions persist a system turn with `{ kind: "subagent_update", handle, outcome, execution }` metadata; the execution UUID is for internal card correlation only. The loop accumulates these turns, then the shared context assembler renders them from `turns`/`blocks` alone. Never splice a second inbox rendering over the assembled request: that bypasses image authorization, model capability, and the whole-request occurrence budget, and (as the deleted `attachNoticesToLatestUserMessage`/`insertPostToolNotices`/`attachSkillBodiesToLatestUserMessage` proved) breaks the frozen prefix the moment the spliced content is not also persisted. |
+| `orchestrator.ts` | One admitted run may span several assistant turns. At a safe boundary, adopting directed messages completes A, appends/adopts message turns, creates B, and rebinds the held lease in one thread-locked transaction. Requests use A → messages → B graph order. Every durable notice source -- Work refreshes, `NoticePort.drainForModelContext` (`undo`, `awareness_degraded`, writer `work_switched`), and any other non-message inbox entry -- forces the same split: `adopt()` drains them, folds them into one `system_update`/`notices` turn positioned exactly where the drain happened (after the writer message pre-turn, after the preceding tool result mid-run), and only then mints the next assistant turn. No notice is ever request-only: a thread's whole cached request prefix (thread AGENTS.md / runtime CONTEXT.md) must be byte-stable across requests, so every notice is durable turn history the moment it is drained. Response+ack clears the lease receipt; cancel retires adopted IDs only, leaving later messages for a new run. The locked final claim uses the same split transition, not a second continuation path. Report admission happens only at run setup, and terminal finalization only at run exit. |
+| `inbox-context.ts` | Materializes a claimed batch as durable turns/blocks. `drainInbox` takes the caller's already-drained `NoticePort` notices (draining is destructive, so `adopt()` in `runtime-delivery.ts` owns calling it exactly once) plus any non-message, non-work-refresh inbox entries, folds both into one trailing `{ kind: "system_update", section: "notices" }` system turn built by `noticesTurnFor`/`formatNotices`, and chains it after every message/work turn in the same batch. Existing writer turns are adopted without a second append; `prepareAdoptedTurn` persists their missing text-reference reads and, via `persistSkillBodies` in orchestrator.ts, a hidden sibling turn for any activated skill bodies (`AdoptedTurnPreparation.extraTurns`) -- never a block on the adopted turn itself, since anything that projects a user turn's text (`UserTurn.tsx`) concatenates every text block on it. `planMessageTurns` and `messageTurnFor` own fresh message history. Child completions persist a system turn with `{ kind: "subagent_update", handle, outcome, execution }` metadata; the execution UUID is for internal card correlation only. The loop accumulates these turns, then the shared context assembler renders them from `turns`/`blocks` alone. Never splice a second inbox rendering over the assembled request: that bypasses image authorization, model capability, and the whole-request occurrence budget, and re-derives content that must instead be durable turn history for the frozen prefix to stay byte-stable. |
 | `runtime-delivery.ts` / `adapters/runtime-delivery.ts` | One domain delivery boundary owns locked enqueue, initial batch adoption, response+ack, A → messages → B split and terminal close. The concrete Drizzle adapter joins all writes to one ambient transaction and appends the classified pending replacement before commit. Journal failure rolls the transition back; only the physical wake is best-effort after commit. Recovery and backstop release refresh through this same append path so expired queues reclassify live. Close locks the lease receipt before deciding whether to split or terminalize, honoring a remote cancellation accepted during the final model call. Publication B uses its scoped parent producer without reacquiring the parent lock. |
 | `run-starter.ts` / `sweep-wakes.ts` | The wake actuation seam. `createRunStarter` maps `RunStarter.start` to the turn runner's `startDrain`, handling `TurnStartConflictError` quietly and reporting unexpected failures once through EventSink because a wake is best-effort. `sweepWakes` is the durable recovery: it keyset-pages pending threads in stable thread-ID order, batch-reads live leases, and starts eligible threads with bounded concurrency. Its caller retains the returned cursor across sweeps; an empty suffix wraps to the first page. One candidate’s failure is reported without stranding the rest. `app.ts` registers the sweep with the process recovery scheduler at boot, then rearms it after completion with `WAKE_SWEEP_INTERVAL_MS` (default 30s). The `enqueue` wake is the latency path; the sweep is the guarantee. |
 | `thread-lock.ts` | Short per-thread transaction serialization, distinct from the session run claim. Delivery acquires the advisory lock, then the shared `NO KEY UPDATE` thread row lock before enqueue or consumption/close. Work rows follow the thread row in sorted id order through `shared/thread-work-lock.ts`; publication parent locking and writer admission use the same order. Work-only notice insertion takes no thread mutation/advisory lock, only compatible FK `KEY SHARE`. No provider call runs under these locks. |
@@ -50,7 +50,7 @@ skeleton and delegates the moving parts.
 | `run-turn-port.ts` | `prepare(input)` returns a `PreparedRun` with run/initial assistant identity, pre-setup replay cursor, post-setup snapshot floor, and one-shot `execute(): Promise<RunOutcome>`. Setup commits before returning; only execute enters the model loop. The journal/hub is the sole event consumer, not an orchestrator generator. |
 | `run-session.ts` | One owner for writer and child claims, AbortController, current-turn registry, heartbeat, cancel, terminal fallback, and best-effort release. `execute` settles after cleanup; child report publication B follows it. A primary completion aborts foreground descendants only; a child invocation bounds its whole subtree and aborts background descendants too. Explicit cancellation includes background descendants. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
-| `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. Child-provenance system text contains a compact exact `thread_report` call, never the report body; the parent model may fetch that report with the authorized tool. Assistant custom blocks stay UI-only to preserve tool_use→tool_result adjacency. |
+| `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; renders every persisted turn, including the durable notices/skill-body/subagent-update `system`-role turns and the `user`-role work-context turn that `inbox-context.ts` builds (via its own `formatNotices`). Child-provenance system text contains a compact exact `thread_report` call, never the report body; the parent model may fetch that report with the authorized tool. Assistant custom blocks stay UI-only to preserve tool_use→tool_result adjacency. |
 | `composed-system-prompt.ts` | Assembles the first gateway system prompt in a fixed layer order: immutable agent body (revision body or the host-owned empty default), the invocation overlay's additive `appendSystemPrompt`, frozen Work context, available skill slugs (name when it differs) and descriptions, named subagent slug/name/description from the bound roster, core document dialect, runtime URI instruction, and, for subagent threads only, the mandatory closing report instruction as the last layer. An empty or absent append adds nothing, and the guidance string is a module constant (`SUBAGENT_GUIDANCE`). Freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled. |
 | `work-context.ts` / delivery adapter | Renders authoritative Work state. Mutations enqueue immutable system-provenance refresh notices in the business transaction. The delivery boundary coalesces a batch into one durable system update and event and acknowledges its notice IDs atomically. Idle recovery uses a short run claim; notices never wake a model. |
 | `ports.ts` / `adapters/drizzle-run-claim.ts` | `InboxReader` is read-only; `selectPending` does not claim or mutate. `RunClaim` shares one nonreentrant session advisory claim across `withExclusiveThread` (short admission/Work/recovery work without a lease) and `startExecution` (observable, heartbeating lease). Only delivery binds the current assistant and receipt. Receipt mutation is guarded by thread/run/holder and exact IDs when clearing; the held session claim, not heartbeat expiry, authorizes a paid response commit. Guarded `cancelExecution(threadId, currentTurnId)` cannot cancel a successor run or a steered segment through a stale turn ID. Session release deletes only its own lease and physically unlocks after commit; the session owner retains one failure-backstop release. |
@@ -59,7 +59,7 @@ skeleton and delegates the moving parts.
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
 | `execution-finalizer.ts` | Terminal transaction projects the current assistant event and finalizes the one admitted report found on its ancestor chain. The selector stays the first assistant; `terminalAssistantTurnId` records the final assistant. Fallback text is from that terminal turn’s final persisted response; cost sums every assistant response from selector to terminal. Run-scoped capture keeps the existing partial-outcome policy. Intermediate splits never publish a report. |
 | `persistence.ts` | Transactional persist/project-then-emit helper. **Ordering**: `projectReadModelEvent` runs before `eventWriter.appendEvent` so the `event_journal.turn_id` FK can reference the turn row created by the projector. Both happen in the same repo transaction. |
-| `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata that whichever drain first adopts the turn reads back and bakes into a durable skill-body block (`persistSkillBodies`, orchestrator.ts), and appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status: a mid-run send yields the runner's live assistant turn id (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly), a fresh run yields null and the client learns the turn from `RUN_STARTED`. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission. `admission-turn-starter.ts` and `TurnRunner.startTurn` are gone. |
+| `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata that whichever drain first adopts the turn reads back and bakes into a hidden `system`-role skill-body turn chained right after it (`persistSkillBodies`, orchestrator.ts), and appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status: a mid-run send yields the runner's live assistant turn id (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly), a fresh run yields null and the client learns the turn from `RUN_STARTED`. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission. `admission-turn-starter.ts` and `TurnRunner.startTurn` are gone. |
 | `reference-context.ts` | Before the first model call, loads admitted current-turn text references through the host-wired shared agent-edit read operation; a mid-run adopted writer turn's unread references load at adoption. Reads run outside admission/persistence transactions; results are persisted server-side at `reference.read.result` before gateway submission. Duplicate `(documentId, uri)` identities read once per turn; replay reuses the frozen result, while a later mention reads afresh. Images retain their separate projection, and client admission rejects `read` payloads. |
 | `image-context.ts` / `ports/image-asset.ts` | Late image bytes are identity-resolved after admission, read-deduplicated, and quietly omitted without losing writer text. `projectImageBlocksForModel` runs once per assembled request over history and adopted turns together, spending the occurrence budget newest-first. Projection is request-only: durable and accumulated blocks keep their `image_reference` identity, never bytes. |
 | `permissions/` | `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow tool names and command sets (`write`, `work`). `write` is always advertised with `read` and `diff`; existing `edit` policy adds or removes mutation commands. `advertiseTools` uses that same command set to narrow both the schema and `write` description, so denied-command instructions are not exposed. Retained historical `read` policy metadata is inert. `commandSetForTool` is the single command mapping. Advertise and the per-turn permission gate (name + command) use that policy. `invocation-authority` validates that an invocation patch never grants the child more than the caller holds, applied only to the patch delta. Dispatch does not apply policy. The core catalogue stays policy-free. |
@@ -74,18 +74,18 @@ represented by explicit adapters (for example no-op sinks), not by omitted deps.
 
 ## Inbox delivery: worked examples
 
-What the model actually receives for four common deliveries, so "durable
+What the model actually receives for five common deliveries, so "durable
 `system_update` turn" and "merged into one message" stay concrete:
 
 1. **Writer steer mid-run, after a tool call.** The writer sends "also tighten
    the dialogue" while a tool call is in flight. `drainInbox` persists it as an
-   ordinary user turn chained onto the thread; `context-builder.ts` renders the
-   preceding response's `tool_result` as a canonical `role: "tool"` message and
-   the steer as a canonical `role: "user"` message, back to back. The Anthropic
-   adapter maps `tool` to `user` (Anthropic requires tool results in a user
-   turn) and then merges consecutive same-role messages, so the two arrive as
-   one Anthropic `user` message: the `tool_result` block immediately followed
-   by the text block `"also tighten the dialogue"`.
+   ordinary `user`-role turn chained onto the thread; `context-builder.ts`
+   renders the preceding response's `tool_result` as a canonical `role: "tool"`
+   message and the steer as a canonical `role: "user"` message, back to back.
+   The Anthropic adapter maps `tool` to `user` (Anthropic requires tool results
+   in a user turn) and then merges consecutive same-role messages, so the two
+   arrive as one Anthropic `user` message: the `tool_result` block immediately
+   followed by the text block `"also tighten the dialogue"`.
 2. **Background subagent completion.** `spawn/report-publisher.ts` enqueues a
    child-provenance `message`; `messageTurnFor` persists it as a `system`-role
    turn (`{ kind: "subagent_update", handle, outcome, execution }`) whose block
@@ -99,7 +99,7 @@ What the model actually receives for four common deliveries, so "durable
    authorized `thread_report` tool call named in the text.
 3. **Work switch.** A Work mutation enqueues a `work_context_refresh` notice;
    `adopt()` renders the current authorized state and `messageTurnFor` persists
-   it as a `system`-role turn (`{ kind: "system_update", section: "work_context"
+   it as a `user`-role turn (`{ kind: "system_update", section: "work_context"
    }`) whose block text is:
    ```
    <system_update>
@@ -110,27 +110,42 @@ What the model actually receives for four common deliveries, so "durable
    </work_context>
    </system_update>
    ```
-4. **A request-only notice, after this change.** An `awareness_degraded`
-   notice recorded through `NoticePort.record` drains on the next `adopt()`
-   call. `noticesTurnFor` persists it as a `system`-role turn (`{ kind:
-   "system_update", section: "notices" }`) whose block text is:
+4. **A request-only notice.** An `awareness_degraded` notice recorded through
+   `NoticePort.record` drains on the next `adopt()` call. `noticesTurnFor`
+   persists it as a `system`-role turn (`{ kind: "system_update", section:
+   "notices" }`) whose block text is:
    ```
    <system_update>
    The system could not verify whether concurrent writer content was preserved in chapter-12.md. Re-read the document before making another write.
    </system_update>
    ```
-   Before this change, that same text was spliced onto the live request only
-   (`attachNoticesToLatestUserMessage`) and never persisted, so it read
-   identically in the moment but was silently absent from every later
-   request's history -- invalidating the Anthropic cache breakpoint one
-   request later, without changing anything about that later request's own
-   content.
+5. **A `/skill` activation.** A writer send stamps its activated slugs as
+   hidden turn metadata at admission. Whichever drain first adopts that turn
+   loads each body and `persistSkillBodies` (orchestrator.ts) persists a
+   `system`-role turn (`SKILL_BODY_METADATA`, i.e. `{ kind: "system_update",
+   section: "skill_body" }`) chained immediately after it -- never a block on
+   the writer's own turn, so `UserTurn.tsx`'s `projectUserTurn` (which
+   concatenates every text block of a user turn) never renders it. Its block
+   text is:
+   ```
+   <system_update>
+   skill invoked: writing-principles
 
-Every one of these is a `system`-role turn with no custom block (or, for the
-steer, an ordinary `user` turn), so `visible-conversation-policy.ts` and the
-app's `visible-chat-turns.ts` already keep it out of the chat transcript with
-no UI change: both mirrors treat a non-`subagent_update` system turn as
-visible only when it carries a custom block, and neither of these does.
+   description: Craft rules for revision
+
+   Show, do not tell.
+   </system_update>
+   ```
+
+Every one of these five is either a `system`-role turn with no custom block
+(2, 4, 5) or a `user`-role turn carrying one of the specific hidden-metadata
+shapes above (1 is genuinely visible; 3 is not). `visible-conversation-policy.ts`
+and the app's `visible-chat-turns.ts` keep every hidden one out of the chat
+transcript with no UI change: a `system`-role turn is visible only if it is
+not `subagent_update` **and** carries a custom block (never true for 2, 4, or
+5), and a `user`-role turn is hidden only for `inbox_message` or
+`system_update`/`work_context` (true for 3, false for the writer's own turns
+in 1 and 5).
 
 ## Bound Agent preparation
 
@@ -151,13 +166,14 @@ installations (each walked with `retainedPackageSkillMaps`) plus account
 installs; first installed package file wins slug collisions, and package files
 win over account rows. The bound Agent package is not the slash catalog.
 Prompt lifetime: system prompt bytes are constant across every request and run
-of a thread. Work, notices, child results, working state and invoked skills enter
-as durable in-place conversation turns/blocks, never a live-request-only splice:
-an invoked skill's body is baked onto its activating turn once
-(`persistSkillBodies`), and Work refreshes and every other notice land in one
-durable `system_update` turn (`inbox-context.ts`), so both reproduce
-byte-identically on a later request instead of vanishing once their triggering
-drain ends. Default forks and same-Agent forks or handoffs inherit the exact persisted
+of a thread. Work, notices, child results, and invoked skills enter as durable
+in-place conversation turns, never a live-request-only splice: an invoked
+skill's body is baked once onto its own hidden `system`-role turn chained
+right after its activating turn (`persistSkillBodies`), a Work refresh is its
+own durable `user`-role `system_update` turn, and every other notice is its own
+durable `system`-role `system_update` turn (`inbox-context.ts`); each
+reproduces byte-identically on every later request. Default forks and
+same-Agent forks or handoffs inherit the exact persisted
 bake; only an explicitly different Agent starts a new bake. Compaction
 is the sole planned in-thread exception and is not implemented; its future
 repository operation must coordinate narrowly with the database freeze guard.
@@ -335,18 +351,24 @@ aborts that child's own descendants (background runs included): a background
 descendant cannot outlive the subagent that spawned it, and long-lived watchers
 belong to the parent.
 
-Step 2 exposes `thread_report({ ref, execution })` as an ordinary advertised
-tool. It resolves one saved assistant-turn report through the threads
-repository and applies live caller/project/lineage authorization in one
-root repeatable-read snapshot. The selector uses the canonical request-ID grammar;
-`not_ready` requires the requested execution to own the assistant currently
-bound to the live run lease (resolved through graph ancestry). An admitted but unbound or older nonterminal run is `unavailable`. `ChildDriveInput.reportCorrelation` carries only the
-caller/turn/tool/card and origin/delivery metadata; the actual child
-`assistantTurnId` is assigned only after turn admission. The runtime admits
-each child run once, finalizes its saved report with the terminal assistant turn,
-and publishes a parent card/notification from that durable row. Generic
-`ThreadPendingInbox` projects every provenance; the writer-only tray selector
-must filter `provenance.kind === "writer"` on the client.
+Step 2 exposes `thread_report({ ref, run? })` as an ordinary advertised tool
+(`spawn/read-thread-report.ts`). `ref` is the `pN`/`cN` thread-ref grammar
+(`thread-ref.ts`); an omitted `run` defaults to the child's latest finished
+report, and an explicit 1-based `run` reads an earlier one. Authorization is
+same project and same spawn root (`sameLineage`) plus caller ownership, all in
+one root repeatable-read snapshot. A `run` with no matching finished report, or
+one whose outcome/source/summary never finalized, is `unavailable` -- the only
+non-success status this tool returns. (The separate writer-facing
+`GET .../reports/[childThreadId]/[execution]` route additionally returns
+`not_ready` for an execution that has not finished yet; it resolves `execution`
+to a `run` index itself and is not the model-facing tool.) `ChildDriveInput.reportCorrelation`
+carries only the caller/turn/tool/card and origin/delivery metadata; the actual
+child `assistantTurnId` is assigned only after turn admission. The runtime
+admits each child run once, finalizes its saved report with the terminal
+assistant turn, and publishes a parent card/notification from that durable
+row. Generic `ThreadPendingInbox` projects every provenance; the app's
+`writerTurnQueueStatus` (`pending-inbox.ts`) is the client-side selector that
+filters `provenance.kind === "writer"` to derive per-turn queue status.
 
 ### Vocabulary note
 
@@ -403,13 +425,15 @@ facet.
   persisted `tool_use` intent and synthesizes transient error results for calls
   missing results in the immediately following tool-role group. Repairs are
   never persisted and never rerun tools.
-- **Edit-intent notices** — before every provider stream, the model loop drains the
-  single notice port for the thread and its active documents. Notices present
-  before the first call attach to that writer message and remain there for every
-  tool-loop iteration. Notices recorded mid-turn are inserted after the tool
-  exchange that caused them and retain that causal position on later
-  iterations. This keeps the already-sent request prefix stable without
-  changing the frozen system prompt or persisting notices into the turn graph.
+- **Edit-intent notices** — `adopt()` drains the single notice port for the
+  thread and its active documents at most once per delivery boundary (before
+  every provider stream and at every mid-run inbox drain) and folds the result
+  into `drainInbox`'s durable `system_update`/`notices` turn (`inbox-context.ts`),
+  positioned exactly where the drain happened: after the writer message
+  pre-turn, after the preceding tool exchange mid-run. This keeps the already-
+  sent request prefix stable without changing the frozen system prompt, and
+  reproduces the notice byte-identically on every later request because it is
+  part of the turn graph, not a live-request-only splice.
 - **Inbox adoption is lease-owned and transactional.** The current batch's exact
   IDs live in `thread_run_leases.adopted_message_ids`, never turn metadata.
   Binding a new assistant and recording its receipt commit with the graph split.

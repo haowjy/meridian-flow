@@ -69,7 +69,6 @@ import type {
 } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { BillingUsagePolicy } from "../../billing/index.js";
-import type { NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { AccountSkillInstallStore, AgentRevisionStore } from "../../packages/index.js";
 import type {
@@ -89,9 +88,10 @@ import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import {
   type ActivatedSkillBody,
-  formatInvokedSkill,
+  formatInvokedSkills,
+  isSkillBodyTurn,
   readActivatedSkillSlugs,
-  SKILL_BODY_BLOCK_MARKER,
+  SKILL_BODY_METADATA,
 } from "./activated-skills.js";
 import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
@@ -180,7 +180,6 @@ export interface OrchestratorDeps {
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
   modelRequestDebug: ModelRequestDebugStore;
-  notices: NoticePort;
   /** Durable per-thread message queue drained into each model request. */
   delivery: RuntimeDelivery;
   /** Session claim and observable lease lifetime. */
@@ -968,44 +967,70 @@ async function persistReferenceReads(input: {
   };
 }
 
+/** The outcome of trying to persist one turn's activated skill bodies. */
+type SkillBodyPersistResult =
+  | { kind: "none" }
+  | { kind: "existing"; turn: Turn }
+  | { kind: "created"; turn: Turn; block: Block };
+
 /**
- * Loads and persists one text block carrying every activated skill's body onto
- * the turn that invoked them. Idempotent: a turn that already carries a
- * skill-body block (recognized by `SKILL_BODY_BLOCK_MARKER`) is left alone, so
- * a retried drain never double-persists. Baking the body in once means a later
- * request reproduces the exact bytes an earlier request saw even if the
- * skill's live content changes afterward -- unlike the deleted request-only
- * splice, which vanished on the very next request.
+ * Loads and persists one hidden `system`-role turn carrying every activated
+ * skill's body, chained immediately after the turn that invoked them. Never a
+ * block on the invoking turn itself -- `UserTurn.tsx`'s `projectUserTurn` (and
+ * chat previews, fork/handoff copies) concatenates every text block of a user
+ * turn, so a body block placed there renders inside the writer's own bubble.
+ * A separate `system`-role turn with `SKILL_BODY_METADATA` and no custom block
+ * is already invisible everywhere `visible-conversation-policy.ts` and the
+ * app's `visible-chat-turns.ts` hide a `system_update` turn, and is never
+ * routed to `UserTurn` in the first place.
+ *
+ * Idempotent: `existingTurns` (the run's accumulated turn list, seeded from
+ * durable history at run start) is searched for an already-persisted body
+ * turn chained from `invokingTurnId` before minting a new one, so a retried
+ * drain (a crash between commit and ack) never double-persists. Baking the
+ * body in once means a later request reproduces the exact bytes an earlier
+ * request saw even if the skill's live content changes afterward -- unlike
+ * the deleted request-only splice, which vanished on the very next request.
  */
 async function persistSkillBodies(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
-  turnId: TurnId;
-  blocks: readonly Block[];
+  invokingTurnId: TurnId;
+  existingTurns: readonly Turn[];
   slugs: readonly string[];
   loadSkillBodies: (slugs: readonly string[]) => Promise<ActivatedSkillBody[]>;
-}): Promise<{ blocks: Block[] }> {
-  if (input.slugs.length === 0) return { blocks: [...input.blocks] };
-  const turnBlocks = input.blocks.filter((block) => block.turnId === input.turnId);
-  const alreadyPersisted = turnBlocks.some((block) =>
-    block.textContent?.startsWith(SKILL_BODY_BLOCK_MARKER),
+}): Promise<SkillBodyPersistResult> {
+  if (input.slugs.length === 0) return { kind: "none" };
+  const existing = input.existingTurns.find(
+    (turn) => turn.prevTurnId === input.invokingTurnId && isSkillBodyTurn(turn),
   );
-  if (alreadyPersisted) return { blocks: [...input.blocks] };
+  if (existing) return { kind: "existing", turn: existing };
   const skills = await input.loadSkillBodies(input.slugs);
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
+    const turn = createLocalTurn({
+      threadId: input.threadId,
+      prevTurnId: input.invokingTurnId,
+      role: "system",
+      status: "complete",
+      metadata: SKILL_BODY_METADATA,
+    });
     const block = contentForBlockInput({
-      turnId: input.turnId,
+      id: turn.id,
+      turnId: turn.id,
       blockType: "text",
-      sequence: turnBlocks.length,
-      textContent: skills.map(formatInvokedSkill).join("\n\n"),
+      sequence: 0,
+      textContent: `<system_update>\n${formatInvokedSkills(skills)}\n</system_update>`,
       status: "complete",
     });
     return {
-      result: localBlockFromEvent(block),
-      events: [{ type: "block.upserted" as const, block }],
+      result: { turn, block: localBlockFromEvent(block) },
+      events: [
+        { type: "turn.created" as const, turn },
+        { type: "block.upserted" as const, block },
+      ],
     };
   });
-  return { blocks: [...input.blocks, persisted.result] };
+  return { kind: "created", turn: persisted.result.turn, block: persisted.result.block };
 }
 
 async function buildGenerateRequest(input: {
@@ -1249,14 +1274,23 @@ async function executeLoop(
           blocks,
           signal: input.signal,
         });
-        return persistSkillBodies({
+        const skillBody = await persistSkillBodies({
           deps,
           threadId: input.threadId,
-          turnId: turn.id,
-          blocks: withReferences.blocks,
+          invokingTurnId: turn.id,
+          existingTurns: allTurns,
           slugs: readActivatedSkillSlugs(turn),
           loadSkillBodies,
         });
+        return {
+          blocks: withReferences.blocks,
+          extraTurns:
+            skillBody.kind === "created"
+              ? [{ turn: skillBody.turn, blocks: [skillBody.block] }]
+              : skillBody.kind === "existing"
+                ? [{ turn: skillBody.turn, blocks: [] }]
+                : [],
+        };
       },
     };
   }
@@ -1390,18 +1424,20 @@ async function executeLoop(
           if (index >= 0) allBlocks[index] = block;
         }
         if (activatedSkillSlugs?.length) {
-          const withSkills = await persistSkillBodies({
+          const skillBody = await persistSkillBodies({
             deps,
             threadId: input.threadId,
-            turnId: referenceUserTurnId,
-            blocks: allBlocks,
+            invokingTurnId: referenceUserTurnId,
+            existingTurns: allTurns,
             slugs: activatedSkillSlugs,
             loadSkillBodies,
           });
-          for (const block of withSkills.blocks) {
-            const index = allBlocks.findIndex((existing) => existing.id === block.id);
-            if (index >= 0) allBlocks[index] = block;
-            else allBlocks.push(block);
+          if (skillBody.kind === "created") {
+            // Render immediately after the invoking turn, not at the tail:
+            // `assistantTurn` is already the last entry in `allTurns`.
+            const invokingIndex = allTurns.findIndex((t) => t.id === referenceUserTurnId);
+            allTurns.splice(invokingIndex + 1, 0, skillBody.turn);
+            allBlocks.push(skillBody.block);
           }
         }
       }

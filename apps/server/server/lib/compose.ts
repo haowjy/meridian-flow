@@ -800,7 +800,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
     modelRequestDebug: ports.modelRequestDebug,
     responseWrites,
-    notices: ports.notices,
     delivery,
     runClaim: ports.runClaim,
     activeDocuments: ports.activeDocuments,

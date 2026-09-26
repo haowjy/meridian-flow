@@ -9,6 +9,7 @@ import {
   createInMemoryCreditLedger,
 } from "../../../billing/index.js";
 import { createContextCatalogWakeHub } from "../../../context/context-catalog-wake-hub.js";
+import type { NoticePort } from "../../../notices/index.js";
 import { createInMemoryEventSink } from "../../../observability/index.js";
 import { createInMemoryAccountSkillInstallStore } from "../../../packages/index.js";
 import { createInMemoryProjectPreferencesRepository } from "../../../preferences/index.js";
@@ -57,6 +58,8 @@ export function createRuntimeHarness(
     threadLock?: import("../thread-lock.js").ThreadLock;
     creditLedger?: CreditLedger;
     boundThreads?: () => readonly string[];
+    /** Delivery-only: `OrchestratorDeps` has no `notices` field of its own. */
+    notices?: NoticePort;
     runStarter?: Parameters<typeof createInMemoryRuntimeDelivery>[0]["runStarter"];
     schedulePostCommit?: Parameters<typeof createInMemoryRuntimeDelivery>[0]["schedulePostCommit"];
   } = {},
@@ -68,6 +71,7 @@ export function createRuntimeHarness(
     runStarter,
     schedulePostCommit,
     creditLedger: suppliedLedger,
+    notices: suppliedNotices,
     ...dependencies
   } = overrides;
   const projects = createInMemoryProjectRepository();
@@ -86,7 +90,7 @@ export function createRuntimeHarness(
   const journal = createInMemoryEventJournalWriter();
   const eventWriter = overrides.eventWriter ?? journal;
   const toolRegistry = overrides.toolRegistry ?? createToolRegistry();
-  const notices = overrides.notices ?? createTestNoticePort();
+  const notices = suppliedNotices ?? createTestNoticePort();
   const runClaim = overrides.runClaim ?? createInMemoryRunClaim();
   const inbox = suppliedInbox ?? createInMemoryInbox();
   const threadLock = suppliedLock ?? createInMemoryThreadLock();
@@ -147,7 +151,6 @@ export function createRuntimeHarness(
     interruptRegistry: createInterruptRegistry(),
     eventSink: createInMemoryEventSink(),
     modelRequestDebug: createInMemoryModelRequestDebugStore(),
-    notices,
     runClaim,
     delivery:
       overrides.delivery ??
@@ -264,6 +267,7 @@ export async function runtimeScenario(
     creditsMillicredits?: string;
     signalGatewayEvent?: (event: StreamEvent) => boolean;
     runStarter?: NonNullable<Parameters<typeof createRuntimeHarness>[0]>["runStarter"];
+    notices?: NonNullable<Parameters<typeof createRuntimeHarness>[0]>["notices"];
   },
 ) {
   const {

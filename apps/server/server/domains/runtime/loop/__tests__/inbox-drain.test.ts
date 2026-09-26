@@ -1,6 +1,7 @@
 /** Loop-level inbox drain: batch delivery, request-only rendering, and the final-claim continuation. */
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { Turn } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryAccountSkillInstallStore } from "../../../packages/index.js";
 import type { Gateway, GenerateResult, Message } from "../../gateway/index.js";
@@ -297,7 +298,7 @@ describe("inbox drain", () => {
   });
 
   it("keeps a mid-run writer-activated skill body on its adopted message across iterations", async () => {
-    const { thread, requests, orchestrator, send } = await setup({
+    const { thread, requests, orchestrator, repos, send } = await setup({
       results: [textResult("first"), toolCallResult("unknown", "call-1"), textResult("done")],
       skill: {
         slug: "writing-principles",
@@ -324,6 +325,42 @@ describe("inbox drain", () => {
       expect(messageText(adopted as Message)).toContain("skill invoked: writing-principles");
       expect(messageText(adopted as Message)).toContain("Show, do not tell.");
     }
+
+    // The model still sees the body merged into the steer's own message, but
+    // the body is never a block on the writer's own turn: it lives on a
+    // separate, hidden `system`-role turn chained right after it. Anything
+    // that projects a user turn's text (`UserTurn.tsx`'s `projectUserTurn`,
+    // chat previews, fork/handoff copies) reads only the writer's own turns,
+    // so a body block placed there would leak into the writer's own bubble.
+    const turns = await repos.turns.listByThread(thread.id);
+    const userTurns = turns.filter((turn) => turn.role === "user");
+    expect(userTurns.length).toBeGreaterThan(0);
+    for (const turn of userTurns) {
+      const blocks = await repos.blocks.listByTurn(turn.id);
+      for (const block of blocks) {
+        expect(block.textContent ?? "").not.toContain("skill invoked:");
+        expect(block.textContent ?? "").not.toContain("Show, do not tell.");
+      }
+    }
+    const steerTurn = userTurns.find((turn) =>
+      Array.isArray(
+        (turn.metadata as { activatedSkillSlugs?: unknown } | null)?.activatedSkillSlugs,
+      ),
+    ) as Turn;
+    expect(steerTurn).toBeDefined();
+    const skillBodyTurn = turns.find(
+      (turn) =>
+        (turn.metadata as { kind?: string; section?: string } | null)?.section === "skill_body",
+    ) as Turn;
+    expect(skillBodyTurn).toMatchObject({
+      role: "system",
+      prevTurnId: steerTurn.id,
+      metadata: { kind: "system_update", section: "skill_body" },
+    });
+    const skillBodyBlocks = await repos.blocks.listByTurn(skillBodyTurn.id);
+    expect(skillBodyBlocks).toHaveLength(1);
+    expect(skillBodyBlocks[0]?.blockType).toBe("text");
+    expect(skillBodyBlocks[0]?.textContent ?? "").toContain("skill invoked: writing-principles");
   });
 
   it.each([

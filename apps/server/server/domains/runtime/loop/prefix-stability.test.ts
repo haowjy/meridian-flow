@@ -21,7 +21,7 @@ import { createInMemoryProjectRepository } from "../../projects/index.js";
 import { createInMemoryRepositories } from "../../threads/index.js";
 import type { Gateway, GenerateRequest, ModelInfo } from "../gateway/index.js";
 import { createToolRegistry } from "../tools/index.js";
-import { formatInvokedSkill } from "./activated-skills.js";
+import { formatInvokedSkills } from "./activated-skills.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
 import type { WorkContextReader } from "./work-context.js";
 
@@ -240,27 +240,24 @@ describe("prefix stability across a growing thread", () => {
     assertIsStableExtension(r2.generateRequest, r3.generateRequest);
     expect(r3.generateRequest.messages.length).toBe(r0.generateRequest.messages.length);
 
-    // 4. Skill invocation: the activated skill's body is a durable second block
-    // on the activating turn (baked once by `persistSkillBodies`, never a
-    // request-only rendering), so it is byte-identical on every later request.
-    const skillBodyText = formatInvokedSkill({
-      slug: "story-review",
-      description: "Review drafts.",
-      body: "story-review body.",
-    });
-    const skillBodyBlock: Block = {
-      id: "turn-1-skill",
-      turnId: "turn-1",
-      responseId: null,
-      blockType: "text",
-      sequence: 1,
-      textContent: skillBodyText,
-      content: { text: skillBodyText },
-      createdAt: "2026-01-01T00:00:00.000Z",
-    };
+    // 4. Skill invocation: the activated skill's body is a durable hidden
+    // `system`-role turn chained right after the activating turn (baked once
+    // by `persistSkillBodies`, never a block on the writer's own turn and
+    // never a request-only rendering), so it is byte-identical on every later
+    // request. It renders adjacent to turn-1 in the model's history exactly
+    // like a Work-switch or subagent notice, merged into the same message by
+    // `mergeAdjacentUserMessages` -- and, being `system`-role with no custom
+    // block, stays out of the writer's own transcript
+    // (`visible-conversation-policy.ts` / the app's `visible-chat-turns.ts`).
+    const skillTurn = systemNoticeTurn(
+      "turn-1-skill",
+      formatInvokedSkills([
+        { slug: "story-review", description: "Review drafts.", body: "story-review body." },
+      ]),
+    );
     const r4 = await assemble(
-      [t1.turn, steer.turn, workSwitch.turn, subagentDone.turn],
-      [t1.block, skillBodyBlock, steer.block, workSwitch.block, subagentDone.block],
+      [t1.turn, skillTurn.turn, steer.turn, workSwitch.turn, subagentDone.turn],
+      [t1.block, skillTurn.block, steer.block, workSwitch.block, subagentDone.block],
     );
     assertIsStableExtension(r3.generateRequest, r4.generateRequest);
     expect(r4.generateRequest.messages.length).toBe(r0.generateRequest.messages.length);
@@ -268,10 +265,10 @@ describe("prefix stability across a growing thread", () => {
     // 5. Tool call/result: a genuine append. The merged user message freezes.
     const toolExchange = assistantToolExchangeTurn("turn-5", "call_1");
     const r5 = await assemble(
-      [t1.turn, steer.turn, workSwitch.turn, subagentDone.turn, toolExchange.turn],
+      [t1.turn, skillTurn.turn, steer.turn, workSwitch.turn, subagentDone.turn, toolExchange.turn],
       [
         t1.block,
-        skillBodyBlock,
+        skillTurn.block,
         steer.block,
         workSwitch.block,
         subagentDone.block,
@@ -287,10 +284,18 @@ describe("prefix stability across a growing thread", () => {
     // (final at step 5) may lose its cache mark now that it is no longer final.
     const nextTurn = userTurn("turn-6", "Continue into the next scene.");
     const r6 = await assemble(
-      [t1.turn, steer.turn, workSwitch.turn, subagentDone.turn, toolExchange.turn, nextTurn.turn],
+      [
+        t1.turn,
+        skillTurn.turn,
+        steer.turn,
+        workSwitch.turn,
+        subagentDone.turn,
+        toolExchange.turn,
+        nextTurn.turn,
+      ],
       [
         t1.block,
-        skillBodyBlock,
+        skillTurn.block,
         steer.block,
         workSwitch.block,
         subagentDone.block,
@@ -307,10 +312,18 @@ describe("prefix stability across a growing thread", () => {
       tool.name === "thread_message" ? { ...tool, description: "v2 tool description." } : tool,
     );
     const r7 = await assemble(
-      [t1.turn, steer.turn, workSwitch.turn, subagentDone.turn, toolExchange.turn, nextTurn.turn],
+      [
+        t1.turn,
+        skillTurn.turn,
+        steer.turn,
+        workSwitch.turn,
+        subagentDone.turn,
+        toolExchange.turn,
+        nextTurn.turn,
+      ],
       [
         t1.block,
-        skillBodyBlock,
+        skillTurn.block,
         steer.block,
         workSwitch.block,
         subagentDone.block,
