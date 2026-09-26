@@ -5,10 +5,10 @@
  * and Retry of a failed first send with the same thread and message ids.
  */
 
-import type { ThreadLiveState } from "@meridian/contracts/protocol";
+import type { Thread, ThreadLiveState } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createProject, createProjectThread } from "@/client/api/projects-api";
+import { createProject, createProjectThread, getProject } from "@/client/api/projects-api";
 import { createThread } from "@/client/api/threads-api";
 import { getChatSubmissionEpoch, readFirstSendSubmission } from "@/client/chat-submissions";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
@@ -22,10 +22,11 @@ import {
   plainComposerDoc,
   serializeComposerDraft,
 } from "@/components/app/composer/composer-document";
+import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 import {
   rehydrateFirstSendSubmission,
   retireFirstSendSubmission,
-  runExclusivePersist,
+  runExclusiveThreadCreation,
 } from "@/lib/send-project-chat";
 import { shouldRetireSubmission } from "./chat-submission-retirement";
 
@@ -40,10 +41,11 @@ export type FailedSendRetry = {
 type SnapshotResumeState = {
   liveState: ThreadLiveState | null;
   nextSeq: string | null;
+  activateProjection: (after?: string) => boolean;
 };
 
 function isActiveSnapshot(liveState: ThreadLiveState): boolean {
-  return liveState.runningTurnId !== null || liveState.status === "active";
+  return liveState.runningTurnId !== null || liveState.status.kind === "awake";
 }
 
 export function activeSnapshotResumeAfterSeq(liveState: ThreadLiveState): string | null {
@@ -63,7 +65,7 @@ export function useThreadHandoff(
   accountId: string,
   controller: Controller,
   actions: ThreadStoreActions,
-  snapshotResume?: SnapshotResumeState,
+  snapshotResume: SnapshotResumeState,
 ): FailedSendRetry | null {
   const pendingResumeRef = useRef(false);
   const handoffStartedRef = useRef(false);
@@ -73,6 +75,19 @@ export function useThreadHandoff(
   const sendSucceededRef = useRef(false);
   const [failedTurnId, setFailedTurnId] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const providedEpoch = useOptionalAccountEpochSignal();
+  const fallbackEpoch = useRef<AbortController | null>(null);
+  fallbackEpoch.current ??= new AbortController();
+  const accountEpoch = providedEpoch ?? fallbackEpoch.current.signal;
+  const lifetimeRef = useRef<object | null>(null);
+  useEffect(() => {
+    const lifetime = {};
+    lifetimeRef.current = lifetime;
+    return () => {
+      if (lifetimeRef.current === lifetime) lifetimeRef.current = null;
+    };
+  }, [accountEpoch, projectId, threadId]);
+  const isCurrent = (lifetime: object) => lifetimeRef.current === lifetime && !accountEpoch.aborted;
 
   useEffect(() => {
     pendingResumeRef.current = false;
@@ -100,6 +115,7 @@ export function useThreadHandoff(
 
     const startResume = (after?: string, expectedTurnId?: string) => {
       try {
+        if (!snapshotResume.activateProjection()) return;
         controller.resume(threadId, { after, expectedTurnId });
       } catch (error) {
         announceError(error instanceof Error ? error.message : "Failed to resume stream");
@@ -116,8 +132,10 @@ export function useThreadHandoff(
       actions.clearPendingCreation({ threadId });
     };
 
-    const startSubmit = (creation: Creation) => {
+    const startSubmit = (creation: Creation, lifetime: object) => {
+      if (!isCurrent(lifetime)) return;
       if (!creation.text) {
+        if (!snapshotResume.activateProjection()) return;
         pendingResumeRef.current = false;
         finishFirstSend(creation, getChatSubmissionEpoch());
         return;
@@ -136,9 +154,12 @@ export function useThreadHandoff(
           {
             optimisticUserTurnId: creation.optimisticUserTurnId,
             keepOptimisticOnFailure: true,
+            activateProjection: (after) =>
+              isCurrent(lifetime) && snapshotResume.activateProjection(after),
           },
         )
         .then((outcome) => {
+          if (!isCurrent(lifetime)) return;
           if (outcome.kind === "accepted") {
             clearFailedSend();
             finishFirstSend(creation, epoch);
@@ -152,14 +173,17 @@ export function useThreadHandoff(
           failSend(creation);
         })
         .catch(() => {
+          if (!isCurrent(lifetime)) return;
           failSend(creation);
         })
         .finally(() => {
-          pendingResumeRef.current = false;
+          if (isCurrent(lifetime)) pendingResumeRef.current = false;
         });
     };
 
     const persistCreation = (creation: Creation) => {
+      const lifetime = lifetimeRef.current;
+      if (!lifetime || !isCurrent(lifetime)) return;
       creationRef.current = creation;
       handoffStartedRef.current = true;
       pendingResumeRef.current = true;
@@ -168,47 +192,53 @@ export function useThreadHandoff(
       if (creation.workingTurnId) {
         actions.patchTurnStatus(threadId, creation.workingTurnId, "streaming");
       }
-      void runExclusivePersist(threadId, async () => {
-        try {
-          if (creation.createProject) {
+      void runExclusiveThreadCreation(accountEpoch, threadId, async (): Promise<Thread> => {
+        if (accountEpoch.aborted) throw accountEpoch.reason;
+        if (creation.createProject) {
+          try {
             await createProject({ id: creation.projectId, title: creation.title });
-            const thread = await createThread({
-              data: {
-                id: threadId,
-                projectId: creation.projectId,
-                title: creation.title,
-                agentSelection: creation.agentSelection,
-              },
+          } catch (error) {
+            if (accountEpoch.aborted) throw accountEpoch.reason;
+            const existing = await getProject(creation.projectId).catch(() => {
+              throw error;
             });
-            actions.ensureThread(thread);
-            actions.clearPendingCreation({ projectId: creation.projectId, threadId });
-            await Promise.all([
-              invalidateProjectThreadData(queryClient, creation.projectId),
-              ...(thread.workId
-                ? [invalidateWorkThreads(queryClient, creation.projectId, thread.workId)]
-                : []),
-            ]);
-          } else {
-            const thread = await createProjectThread(creation.projectId, {
-              id: threadId,
-              title: creation.title,
-              workId: creation.workId ?? null,
-              agentSelection: creation.agentSelection,
-            });
-            actions.ensureThread(thread);
-            actions.clearPendingCreation({ threadId });
-            await Promise.all([
-              invalidateProjectThreadData(queryClient, creation.projectId),
-              ...(thread.workId
-                ? [invalidateWorkThreads(queryClient, creation.projectId, thread.workId)]
-                : []),
-            ]);
+            if (existing.id !== creation.projectId || existing.userId !== accountId) throw error;
           }
-          startSubmit(creation);
-        } catch {
-          failSend(creation);
+          if (accountEpoch.aborted) throw accountEpoch.reason;
+          return createThread({
+            data: {
+              id: threadId,
+              projectId: creation.projectId,
+              title: creation.title,
+              agentSelection: creation.agentSelection,
+            },
+          });
         }
-      });
+        return createProjectThread(creation.projectId, {
+          id: threadId,
+          title: creation.title,
+          workId: creation.workId ?? null,
+          agentSelection: creation.agentSelection,
+        });
+      })
+        .then(async (thread) => {
+          if (!isCurrent(lifetime)) return;
+          actions.ensureThread(thread);
+          if (creation.createProject) {
+            actions.clearPendingCreation({ projectId: creation.projectId });
+          }
+          await Promise.all([
+            invalidateProjectThreadData(queryClient, creation.projectId),
+            ...(thread.workId
+              ? [invalidateWorkThreads(queryClient, creation.projectId, thread.workId)]
+              : []),
+          ]);
+          if (!isCurrent(lifetime)) return;
+          startSubmit(creation, lifetime);
+        })
+        .catch(() => {
+          if (isCurrent(lifetime)) failSend(creation);
+        });
     };
     persistRef.current = persistCreation;
 
@@ -258,7 +288,17 @@ export function useThreadHandoff(
     resumedRunRef.current = runKey;
     pendingResumeRef.current = true;
     startResume(after, liveState.runningTurnId ?? undefined);
-  }, [accountId, actions, controller, projectId, queryClient, snapshotResume?.liveState, threadId]);
+  }, [
+    accountEpoch,
+    accountId,
+    actions,
+    controller,
+    projectId,
+    queryClient,
+    snapshotResume.activateProjection,
+    snapshotResume.liveState,
+    threadId,
+  ]);
 
   const retry = useCallback(() => {
     const creation = creationRef.current;

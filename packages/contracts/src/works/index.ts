@@ -22,14 +22,7 @@ export interface Work {
   aiWriteMode: AiWriteMode;
   /** Durable per-entity ordering fence. JSON form of a monotonic bigint. */
   entityRevision: string;
-  /**
-   * the server's count of unpushed `branch_write_journal` rows across
-   * this work's branches (spec §3.4) — the single denominator the whole review
-   * surface trusts. The confirm-and-push popover renders this exact N ("Apply N
-   * and switch") and the server pushes exactly this many, so the copy cannot
-   * lie. MUST come from the server, never recomputed from visible dock rows.
-   * Produced by the S4 server lane; `null`/absent until it lands.
-   */
+  /** Server count of unpushed branch-write rows across this Work's branches; never derive from visible rows. */
   unpushedChangeCount?: number | null;
   createdAt: string;
   updatedAt: string;

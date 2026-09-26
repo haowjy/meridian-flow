@@ -1,1 +1,0 @@
-ALTER TABLE "document_yjs_drafts" ADD COLUMN "base_live_update_seq" bigint DEFAULT 0 NOT NULL;

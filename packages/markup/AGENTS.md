@@ -6,18 +6,16 @@ not import from `@meridian/agent-edit` or any app/server shell.
 
 ## Mental model
 
-`createMarkupCodec({ schema, assetPathResolver })` returns a builder. Plugins register block and
-mark codecs plus optional remark and parse hooks. Built codecs parse text into
-ProseMirror blocks and serialize ProseMirror blocks back to text; hash-prefixed
-agent-edit echo/view formatting lives outside this package.
+Consumers use `markdownCodec` and `mdxCodec`. Codec/plugin composition stays
+internal to this package; hash-prefixed agent-edit echo/view formatting lives
+outside it.
 
 ## Invariants
 
 - One codec name per ProseMirror node/mark. Duplicate block or mark
   registrations are build-time errors.
-- Every schema mark must have a mark codec. Block schema coverage is opt-in via
-  `requiredBlockNames` or `requireSchemaBlockCoverage`.
-- Block parse priority is LIFO by plugin: later `.use()` calls are tried first.
+- Every schema mark must have a mark codec and both presets validate block
+  schema coverage during construction.
 - MDX component registries are closure-captured by MDX block codec factories, not
   threaded through parse/serialize contexts.
 - Runtime source is the preprocessed source so AST positions and fallback slicing
@@ -28,5 +26,4 @@ agent-edit echo/view formatting lives outside this package.
   to exactly one asset, because a wrong guess writes a reference into the
   document that can never render.
 
-See [`.context/CONTEXT.md`](.context/CONTEXT.md) for the public API and builder
-contract.
+See [`.context/CONTEXT.md`](.context/CONTEXT.md) for the public API contract.

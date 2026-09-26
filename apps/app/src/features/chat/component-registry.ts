@@ -13,7 +13,6 @@ import type { ComponentBlockContent } from "@meridian/contracts/components";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { ComponentType } from "react";
 import type { InterruptResponseState } from "@/core/session/interrupt-response";
-import { ChildReportBlock } from "./ChildReportBlock";
 import { ChoiceBlock } from "./ChoiceBlock";
 import { FormBlock } from "./FormBlock";
 import { HelperResultBlock } from "./HelperResultBlock";
@@ -29,6 +28,8 @@ export type ComponentBlockProps = {
   responseState: InterruptResponseState | null;
   /** Re-send the stored answer with the same correlation tuple. */
   retry: () => void;
+  invocationResult?: import("./invocation-direct-result").DirectInvocationResult | null;
+  threadId?: string;
 };
 
 export type ComponentEntry = ComponentType<ComponentBlockProps>;
@@ -38,5 +39,4 @@ export const COMPONENT_REGISTRY: Record<string, ComponentEntry> = {
   "free-text": TextBlock,
   form: FormBlock,
   "helper-result": HelperResultBlock,
-  "child-report": ChildReportBlock,
 };

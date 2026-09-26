@@ -5,27 +5,106 @@ the event journal that bridges orchestrator writes to AG-UI client streams.
 Threads now use an M:N membership model with Works (`thread_works` join table)
 instead of the N:1 `threads.workId` column.
 
-`domain/bound-conversation.ts` owns atomic thread creation, retained Agent configuration and optional Work membership. Root and child creation and the `derive-conversation.ts` handoff/fork operations use it. Derived requests require exact catalog selection rather than mutable target slugs; each mode includes required history and provenance writes in its outer transaction. Spawn execution begins only after commit.
+`domain/bound-conversation.ts` owns atomic thread creation, retained Agent configuration and optional Work membership. Root and child creation and the `derive-conversation.ts` handoff/fork operations use it. Fork selection is optional: omitted or same-revision selection inherits the retained Agent configuration and frozen prompt, independent of catalog changes. Handoff to the same revision also retains the prompt; selecting a different Agent revision starts unfrozen. Explicit changes require exact catalog selection rather than mutable target slugs; each mode includes required history and provenance writes in its outer transaction. Spawn execution begins only after commit.
+
+## Prompt lifetime
+
+A thread's system prompt **and its advertised tool list** are frozen together
+at first context assembly, including failed or cancelled provider attempts.
+The database rejects later changes to `composed_system_prompt`,
+`baked_skill_slugs`, or `baked_tools` (migration `0002_freeze_thread_tools.sql`
+extends the `threads_frozen_prompt` trigger from migration
+`0001_freeze_thread_prompt.sql` to also watch `baked_tools`). `baked_tools` is
+untyped `jsonb`: the runtime domain owns its exact shape (the gateway's
+`Tool[]`), not this domain. Forks copy that bake (prompt +
+tools together) under the parent row lock; an unfrozen parent yields an
+unfrozen fork. Inherited bakes receive a current-Work refresh through
+conversation content so a historical fork point or summary-only handoff
+cannot leave stale Work authority. A subagent-only or generic binding cannot
+become a primary thread without selecting a primary Agent. Work changes,
+notices, child results, and skills are in-place conversation
+content, never system-prompt or tool-list edits. Fork/handoff seed turns
+render as user-role `<system_update>` content. Only an Agent-changing
+derivation gets a new prompt and tool bake.
+
+**There is no refresh path today.** A thread's whole cached request prefix —
+prompt, tools, and history — stays fixed for the thread's life; a code
+deploy that changes the tool registry, an Agent revision update, a model
+change, or an idle/cache-TTL timer must never rebake a live thread. Compaction
+is the only planned in-thread exception, and it is the *only* sanctioned
+trigger once built; no compaction path exists yet. Its eventual implementation
+must own one named repository operation and the corresponding narrow DB
+authorization (see the
+[database contract](../../../../../../packages/database/.context/CONTEXT.md)).
+When the model needs to learn about a change mid-thread, that is a system
+notification folded into conversation (the existing inbox/notice path), never
+a prompt or tool-list change — see the
+[runtime contract](../../runtime/.context/CONTEXT.md)
+for the tool-freeze mechanics.
 
 ## What it owns
 
 - **Thread / Turn / Block / ModelResponse repositories** — CRUD for the
   conversation data model. A thread contains turns; a turn contains blocks
   (text, reasoning, tool_use, tool_result, image, file, custom) and model
-  responses with token/cost rollups.
-- **Child-report delivery obligations** — `child_report_deliveries` (schema in
-  `agent-threads.ts`) is the durable "undelivered background report" marker,
-  one row per child execution keyed by the child run's assistant turn id
-  (`report_id`), carrying `submission_epoch` and a reused nullable
-  `system_turn_id`. Enqueued atomically with the child's terminal lifecycle and
-  deleted once the parent continuation is durably admitted. Delivered by
-  `domains/runtime/spawn/child-report-delivery.ts`.
+  responses with token/cost rollups. `ThreadRepository.listDescendants` walks a
+  thread's own spawn subtree breadth-first on `parent_thread_id` (served by
+  `threads_parent_created_active`, excluding soft-deleted rows), returning the
+  fields the recursive activity read needs: id, parent, root, depth, ref, title,
+  agent name, spawn status, and origin turn.
+- **Execution reports** — `ExecutionReportRepository` owns one row per admitted
+  child run, keyed by its first `assistantTurnId`. Steering may split that run into
+  multiple assistant turns; `terminalAssistantTurnId` is set only at finalization.
+  `findByTurn` resolves the nearest admitted ancestor, never the latest report. Capture and
+  terminal writes are idempotent compare-and-set operations. The domain report-state
+  module owns identity, capture and terminal comparisons and the delivery-to-publication
+  policy for both adapters. Storage decodes typed captures once; outcome discriminates
+  admitted rows from complete terminal content. Admission validates
+  the child handle, assistant role, caller ownership, turn, and card before
+  persisting correlation. Finalization derives a pending publication obligation
+  from admitted delivery mode; publication remains separate bookkeeping. The
+  bounded discovery query skips soft-deleted callers and projects while retaining
+  their pending obligations for restoration, and surfaces null callers for
+  abandonment. `thread_report` performs an exact child+turn lookup
+  inside one root repeatable-read snapshot after reloading the live caller, resolving
+  the target handle in its project, and checking same-owner/same-lineage. It
+  never selects a latest report or reads transcript tails. Runtime terminal A
+  joins the turn/journal write and finalizes this row; parent-first publication
+  B consumes its pending state separately. An admitted row alone does not
+  imply a terminal result. The adapter selects payload as PostgreSQL `::text`
+  and parses once; SQL `NULL` means absent, while JSONB `null` is present.
+  Capture also uses `::text`: only SQL NULL is absent; present JSON must decode
+  as a ReturnResultCapture, so JSON null and scalar strings are rejected. See
+  the [database JSONB contract](../../../../../../packages/database/.context/CONTEXT.md)
+  for the storage rationale.
+- **Historical block replacement** — `block.updated` carries a full existing custom block through the read-model projector and AG-UI custom upsert frame. Unlike insertion, it never advances the active frontier or closes open text/reasoning segments. `replaceExisting` retains id, turn and sequence and rejects a missing block; publisher B must not re-create a vanished card.
+- **Thread activity read** — `domain/thread-activity.ts` composes
+  `listDescendants` (the *viewed* thread's own subtree, walked down
+  `parent_thread_id`, never `rootThreadId` alone) with the batch lease read
+  (`ThreadStatusReader.readMany`) into the pure `projectThreadActivity`
+  projection. It is the one server-truth "what subagents are running in this
+  thread", attached to `ThreadLiveState.activity` in both the snapshot and the WS
+  `subscribed` state, and live-updated by the root-journal `subagent.activity`
+  event. Never a turn block.
+- **Notification and steering tables** — `thread_inbox_messages` is the durable
+  per-thread message queue (global `bigserial` `seq` for per-thread FIFO, unique
+  `idempotency_key`, nullable `delivered_at`), drained by the runtime's `Inbox`
+  port. The writer's own turns render inline with a live queued/waiting status
+  (not a separate tray) from the runtime's [classified pending
+  projection](../../runtime/.context/CONTEXT.md), not this storage queue alone.
+  `thread_run_leases` is the queryable run lease paired with the runtime's
+  session advisory lock (`phase`, `cancel_requested`, `expires_at`, and the
+  run's bound `turn_id`). Run liveness is read from the lease alone: the project
+  list and `ThreadLiveState.runningTurnId` (snapshot and WS `subscribed`) both
+  surface the lease's bound turn, and the orchestrator binds it inside the
+  turn-start setup transaction (`RuntimeDelivery.adoptBatch`). Both cascade
+  from `threads`.
 - **Thread↔Work membership** — `thread_works` join table (exactly one primary per live thread; No Work is a real row). `threads.workId` column is **dropped**. Membership is organizational;
   same-project Work-authority URIs do not require membership.
 - **Thread Work rebind** — `rebindThreadWork` is the canonical mutation for
   explicitly changing an existing thread's primary Work. It owns lifecycle validation,
   the transaction-composable binding transition, the exact binding receipt, idempotent no-op behavior, and the
-      targeted durable context refresh obligation. Writer and model commands share
+      targeted durable context refresh inbox notice. Writer and model commands share
       that transition; switch receipts are factual and are not reversible through
       turn Undo/Redo. The authenticated writer adapter additionally holds
       cross-process thread-run ownership across its transaction. Preflight
@@ -40,15 +119,27 @@ instead of the N:1 `threads.workId` column.
   turn ordering. The turn tree (`parent_turn_id`, `active_leaf_turn_id`) remains
   the ordering model. Turns have no `seq` column.
 - **ThreadEventHub** — in-memory pub/sub + hot cache that sits on top of the
-  journal. Subscribers get live events; late joiners get catchup via hot cache
-  or journal replay. Eviction on idle (grace period, default 60 s).
+  journal. Local appends schedule only a committed-journal invalidation; local
+  and PostgreSQL invalidations only drain existing observed/cached threads. Explicit
+  catchup/subscription creates state; cold catchup seeds the projector and cache
+  while collecting replay in the same pass. One ordered per-thread drain reads
+  and projects committed rows after its journal cursor. Late joiners catch up
+  from the hot cache or a cursor-paged replay from zero through the live
+  projector's reached journal cursor. Replay projects the prefix to reconstruct
+  state but retains only the requested suffix; the catchup guard also buffers
+  only events beyond that cursor. Eviction waits for the final active or
+  requested drain to settle, including failed reads, then starts a fresh grace
+  period (default 60 s).
 - **Orchestrator event projector** — stateful transform from
   `OrchestratorEvent` to AG-UI events (run lifecycle, text/reasoning
-  streaming, tool call lifecycle, usage, permissions).
+  streaming, tool call lifecycle, usage, permissions). `subagent.activity`
+  maps to the `meridian.subagent.activity` custom frame carrying the event's
+  recomputed `ThreadActivity`; the producer computed it at emit time so the
+  projector stays a pure function of the journal.
 - **Read-model projector** — synchronous in-transaction transform from durable
   `turn.created` / `model.response_received` / `block.upserted` events to
   `turns`, `model_responses`, `turn_blocks`, and recomputed token/cost rollups.
-- **Thread snapshot builder** — assembles the full `ThreadSnapshotResponse`
+- **Thread snapshot builder** — reads rows, live state, materialized watermark, and journal head in one root repeatable-read view. All participating adapters honor the ambient transaction; blocks and responses are bulk-read per thread. Assembles the full `ThreadSnapshotResponse`
   (thread + turns + blocks + responses + live state) for initial page load.
   Subagent snapshots include `parent: { id, title }` from a `findById` point
   lookup, not the parent's conversation.
@@ -77,6 +168,29 @@ instead of the N:1 `threads.workId` column.
   active threads for a document so drain-time notice fan-out and retention use
   the same definition.
 
+## Mutation lock order
+
+The shared `server/shared/thread-work-lock.ts` owns **thread row (`NO KEY
+UPDATE`) → participating Work rows (sorted by id)**. `lockThreadAndWorks`
+stabilizes the primary membership under the thread lock before acquiring the
+primary and any target/fallback Works together. Membership and restore use it;
+turn creation, thread-peer creation, publication, trash, runtime and admission
+take the same thread lock before any later Work write or FK check. These
+single-Work paths use the write's own lock rather than eagerly locking Work
+rows on read-only paths. No Work-first snapshot or deadlock retry is needed.
+Restore includes No Work in the initial lock set.
+Spawn, handoff and fork lock their existing source thread before creating the
+new thread and acquiring its Work membership, because their source journal is
+written in the same transaction. A new, uncommitted thread cannot contend with
+another transaction.
+
+Work-only mutations may enqueue immutable inbox markers while holding Work
+rows: their thread FK `KEY SHARE` does not conflict with `NO KEY UPDATE`.
+They must not acquire a thread mutation/advisory lock or append its journal in
+that transaction. Runtime delivery's advisory lock precedes its thread row
+lock; the long-lived run claim is separate and acquired outside these DB
+transactions. See the [runtime contract](../../runtime/.context/CONTEXT.md).
+
 ## Contracts (ports)
 
 | Port | Surface |
@@ -87,15 +201,13 @@ instead of the N:1 `threads.workId` column.
 | `ThreadUserStateRepository` | Per-writer favorite authority. |
 | `TurnRepository` | `create / findById / listByThread / getLatestByThread / updateStatus / recomputeRollups` |
 | `BlockRepository` | `create / findById / listByTurn / listByThread / updatePruned` |
-| `ModelResponseRepository` | `create / findById / listByTurn` |
-| `UsageRecorder` | `recordModelResponseUsage` — legacy helper retained for repository conformance/direct callers; runtime model responses now flow through the read-model projector |
-| `ThreadRepositories` | aggregate of the above four + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
-| `ThreadWorksRepository` | Adds organizational memberships and reads the primary. Its Work-before-thread primary rebind revalidates thread lifecycle under the same row lock, then demotes the old membership and promotes/upserts the target WorkId, retaining association history while preserving exactly one primary. |
-| `rebindThreadWork` | Transaction-composable mutation above `rebindPrimary`; binding, receipt, typed lifecycle errors, and targeted durable obligation have one policy owner. Actor adapters own transaction and post-commit delivery. |
-| `restoreOwnedThreadFromTrash` | Authenticated restore boundary; revalidates historical primary Work then thread under Work-before-thread locks. It restores the exact available Work, or rebinds an unavailable historical primary to No Work. |
+| `ModelResponseRepository` | `create / findById / listByTurn / listByThread` |
+| `ThreadRepositories` | aggregate of the repositories + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
+| `ThreadWorksRepository` | Adds organizational memberships and reads the primary. Its thread-before-Work primary rebind revalidates thread lifecycle under the same row lock, then demotes the old membership and promotes/upserts the target WorkId, retaining association history while preserving exactly one primary. |
+| `rebindThreadWork` | Transaction-composable mutation above `rebindPrimary`; binding, receipt, typed lifecycle errors, and targeted durable inbox notice have one policy owner. Actor adapters own the business transaction. |
+| `restoreOwnedThreadFromTrash` | Authenticated restore boundary; revalidates the thread then historical primary Work under thread-before-Work locks. It restores the exact available Work, or rebinds an unavailable historical primary to No Work. |
 | `EventJournalWriter` | `appendEvent(threadId, event) -> bigint seq` |
 | `EventJournalReader` | `readAfter / headSeq / listByThread / listByType / listSince / listByTimeRange` |
-| `ChildReportDeliveryRepository` | Durable exactly-once delivery facts for a background child's terminal report: `enqueue` (idempotent on `report_id`, enlists in the ambient transaction), pending-parent listing, `findByReportId`, one-time `setSystemTurnId`, `advanceEpoch` after a terminally rejected attempt, and `acknowledge`. |
 
 Entity types (`Thread`, `Turn`, `Block`, `ModelResponse`) and event unions
 (`OrchestratorEvent`) live in `@meridian/contracts/threads`. All are JSON-natural.
@@ -110,6 +222,19 @@ Entity types (`Thread`, `Turn`, `Block`, `ModelResponse`) and event unions
 
 ## Key domain logic
 
+- **Lineage predicates** — `domain/lineage.ts` owns `sameLineage` (same project
+  and `rootThreadId`: background authority) and `isInSubtree` (caller is the
+  target itself or a spawn ancestor, walking `parentThreadId`: foreground
+  authority). Both are pure over thread rows. `rootThreadId` is authoritative on
+  every create path — an organic root roots itself, a subagent takes its spawn
+  parent's root, and a fork/handoff takes its SOURCE's root — so the column is
+  never NULL; the `?? id` mapper fallback is a read guard only. A fork/handoff
+  is a sibling of its source, never the source's child: `buildDerivedPrimaryThreadRow`
+  gives it the source's `parentThreadId` too (null when the source is itself a
+  root) and `spawnDepth`, so `sameLineage` holds between them but `isInSubtree`
+  does not — the fork cannot foreground-drive the source's subtree, or vice
+  versa. The fork-source edge is not a `threads` column; it is recovered by
+  resolving `originTurnId`'s owning thread.
 - **ThreadEventHub sequencing** — journal `seq` is multiplied by 1000
   (`EVENT_SEQ_FACTOR`) to leave room for multiple AG-UI events projected from
   a single journal entry. Cursor arithmetic uses this factor.
@@ -130,7 +255,7 @@ Meridian Flow's Postgres schema. Key column mappings:
 | `threads.projectId` | `threads.projectId` | Foreign key into Meridian `projects` |
 | `threads.createdBy` | `threads.createdByUserId` | Explicit user-ID column name |
 | `threads.agentName` | **binding join** (`thread_agent_bindings` → `agent_definition_revisions`) | Display name (`metadata.name` or slug), or `Subagent` when the binding has no revision; never a threads column |
-| `threads.rootThreadId` | `threads.rootThreadId` | Persisted spawn-tree root; primary threads use their own ID |
+| `threads.rootThreadId` | `threads.rootThreadId` | Persisted spawn-tree root; an organic root uses its own id, a fork/handoff takes its source's root |
 | `threads.totalCostUsd` | `threads.totalCostUsd` | Persisted aggregate maintained by repository/projector recompute |
 | `threads.bakedSkillSlugs` | `threads.bakedSkillSlugs` | `null` means not baked; array means first-attempt bake won |
 | `threads.historySummary` | — | Not a column; hardcoded `null` |
@@ -208,7 +333,7 @@ contract shapes.
   threads have the same thread-scoped not-found result.
 - **The complete trash command set is serialized.** Delete and restore decide
   changed/no-op from the locked row. Only a real `deleted -> visible` transition
-  enqueues its targeted Work-context obligation; retries, concurrent no-ops, and
+  enqueues its targeted Work-context inbox notice; retries, concurrent no-ops, and
   deletion never wake delivery.
 - Trash preserves the last committed primary membership as history. A deleted
   thread has no active scope. Restore never substitutes a same-name Work: membership follows Work ID, and a missing/deleted historical
@@ -222,26 +347,31 @@ contract shapes.
   client-minted thread `id`, not `ref`.
   Create-or-get matches ownership only. A same-user same-project retry of a
   deleted thread conflicts; persist must not resurrect the tombstone.
-- **Work membership mutation is serialized.** Primary additions and rebinds lock
-  the current and target Works in canonical id order before the thread row;
-  non-primary additions lock their target Work before the thread. A changed
-  primary snapshot retries the whole transaction. This prevents deletion races,
-  opposite lock orders, and concurrent moves validating stale primary state.
+- **Work membership mutation is serialized.** Additions and rebinds follow the
+  mutation lock order above: the primary is read under the
+  thread lock, then current and target Works lock together. This prevents
+  deletion races and concurrent moves validating stale primary state.
 - Public create accepts only `kind: "primary"` with `spawnDepth: 0`.
   `normalizeThreadCreate` rejects all spawn/fork lifecycle fields.
   Subagent rows are created only through `SubagentThreadFactory`.
-- Hot cache is bounded at 500 events; older events fall through to journal
-  replay (capped at 10,000 entries).
-- Thread status is stored in DB using the domain vocabulary
-  (`idle`, `active`, `blocked`, `error`, `archived`) and mapped back unchanged.
+- Hot cache is bounded at 500 events; older events fall through to cursor-paged
+  journal replay (one projector from journal start through the live cursor).
+  Sequence gaps from rolled-back allocations are legal. This is complete
+  replay, not bounded-cost bootstrap; cold cost remains O(history).
+- `threads.status` is lifecycle only (`idle` | `archived`) and mapped back
+  unchanged. Run liveness is never stored there; it is derived from the live
+  lease (`ThreadStatus`).
 - `threads.active_leaf_turn_id` anchors one visible-conversational-head policy:
-  projections walk its active lineage past hidden Work-context, compaction,
-  child-report continuations, and non-custom system turns. Both visible-turn
-  mirrors (`domain/visible-conversation-policy.ts` and the app's
-  `visible-chat-turns.ts`) exclude the `child_report` system-update section so
-  the model-visible report never renders as a writer message. Project and Work
-  lists, and snapshots derive the
-  independent `actionRequired` fact from a `waiting_interrupt` assistant head.
+  projections walk its active lineage past hidden Work-context and
+  inbox-message user turns, compaction turns, `subagent_update` system turns,
+  and other non-custom system turns. Both visible-turn mirrors
+  (`domain/visible-conversation-policy.ts` and the app's `visible-chat-turns.ts`)
+  keep `subagent_update` and adopted inbox-message turns out of the top-level
+  bubble list; the app renders them inside the preceding assistant's activity
+  steps. The stored chat-activity projection below (`recompute_thread_chat_activity`)
+  is a frozen SQL copy of this same predicate. Project and Work lists, and
+  snapshots derive the independent `actionRequired` fact from a
+  `waiting_interrupt` assistant head.
 
 ### Chat activity projection (single owner)
 
@@ -249,7 +379,7 @@ contract shapes.
 stored projection of the visible-conversational-head walk above, kept so the
 chat feeds can page over an indexed column instead of walking turn lineage per
 row. **Postgres triggers are the only writer of these two columns**
-(migration `0106_thread_chat_activity_trigger.sql`): one `recompute_thread_chat_activity(thread_id)`
+(migration `0000_baseline.sql`): one `recompute_thread_chat_activity(thread_id)`
 function encodes the canonical predicate, and three trigger families call it —
 `threads UPDATE OF active_leaf_turn_id` (turn creation, and any future
 branch-switch writer that moves the leaf directly), `turns INSERT OR UPDATE OF
@@ -263,6 +393,22 @@ no-triggers rule for thread rollup columns: that rule protects columns with
 exactly one writer (the read-model projector); this projection's defining risk
 is a *future* writer bypassing recompute (branch switching), which only a
 database-level trigger closes.
+
+### Turn authorship (`turns.origin`)
+
+`turns.origin` (`"writer" | "assistant" | "system"`) records who authored a
+turn, independent of `role`: `writer` is a human send (idle send or mid-run
+steer, always via `writer-enqueue.ts`'s `createLocalTurn` call or an adopted
+inbox `message` whose `provenance.kind` is `"writer"`); `assistant` is model
+output; `system` is everything else the platform or an agent injected — a
+child's seed prompt (`orchestrator.ts` sets `origin: input.child ? "system" :
+"writer"` on the run's first user turn), a background `thread_message` send
+(`agent` provenance), a child completion notice, a Work-context refresh, a
+request-only notice, or an invoked skill's baked body. `domain/read-model-
+projector.ts`'s `turnToCreateInput` and every direct `turns.create` caller
+must set it; there is no column default. **Logging/bookkeeping only today**
+— the chat-activity trigger above and `visible-conversation-policy.ts` still
+key off `role`/`metadata`, not this column.
 
 - Project chat pages use the strict shared keyset codec over
   `(lastActivityAt DESC, threadId DESC)` (`domain/project-chat-cursor.ts`).

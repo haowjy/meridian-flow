@@ -1,38 +1,9 @@
-/**
- * Pure, i18n-aware helpers for curated tool-result rows and bounded preview
- * text. Owns only display formatting.
- *
- * One parser per payload the timeline knows how to read. Each stops at its own
- * cap, which is what lets a closed row ask "is there anything behind this
- * chevron?" without paying for the whole list, and each answers that question
- * with the same code that fills the expand, so the two can't disagree.
- *
- * **The caller picks the parser, because the caller knows the tool.** A search
- * hit and a listing entry are both `{uri, …}` objects, and guessing which one a
- * payload holds by looking at its first recognizable entry throws away every
- * later row that disagrees with the guess. Tool identity selects the parser;
- * the row's own discriminant then selects how it renders.
- *
- * Rows say what they *are* rather than carrying a string the renderer has to
- * sniff: a document's name is a door, a folder's name is not, and only the
- * parser knows which it just read.
- *
- * Snippets arrive as prose. A block hash is how the model addresses a block, it
- * is not a word, and it travels in its own field rather than glued to the text
- * a writer reads, so nothing here has to know the hashline format to render a
- * sentence. This is the seam where a tool payload becomes a line of the
- * writer's book.
- */
+/** Parses tool outputs into bounded, writer-facing previews. */
 import { plural, t } from "@lingui/core/macro";
 
 import type { JsonValue } from "@meridian/contracts/protocol";
 import type { ContextPassageAnchor } from "./ChatContextNavigation";
 
-/**
- * A matched passage, split so the row can weight the match itself. Centred on
- * the match rather than started at the line's beginning: what the writer is
- * looking for is the word they searched, not the paragraph's opening.
- */
 export type ExcerptSpan = {
   lead: string;
   /** The match in the document's own casing, empty when the pattern is unknown. */
@@ -48,39 +19,19 @@ export type ToolResultRow =
   /** A folder in a listing. Never a door: folders are not documents. */
   | { kind: "folder"; uri: string };
 
-/**
- * One passage a search matched. The anchor is present only when the passage
- * can actually be navigated to — a hash to find the block, and the term that
- * verifies it is still the passage that matched. Without both, the excerpt is
- * quoted prose and the document's own name is the only door.
- */
+/** One passage a search matched. */
 export type SearchPassage = {
   excerpt: ExcerptSpan;
   passage?: ContextPassageAnchor;
 };
 
-/**
- * One document a search matched. `matchCount` counts the whole document, while
- * `passages` holds only what the server sent — the count is what stays honest
- * about the difference.
- *
- * Both are guaranteed here rather than guarded downstream: a hit with no
- * passage has nothing to show, and a hit that cannot say how much it found
- * cannot fill its badge. Either one is a malformed payload, and the honest
- * place to refuse it is the boundary that reads it.
- */
+/** One document a search matched. */
 export type SearchHitRow = {
   uri: string;
   passages: [SearchPassage, ...SearchPassage[]];
   matchCount: number;
 };
 
-/**
- * A discrete list, cut to what fits, plus what it was cut from. `total` counts
- * every entry the tool returned, including ones too malformed to render: the
- * writer is being told the size of the payload, not the size of what we could
- * parse.
- */
 export type CappedList<T> = {
   rows: T[];
   total: number;
@@ -88,18 +39,9 @@ export type CappedList<T> = {
 
 export type ToolResultRows = CappedList<ToolResultRow>;
 
-/**
- * A capped list of documents plus what the search found across all of them.
- * `matches` is 0 when the payload holds an entry that cannot say, which is
- * what keeps the card's header from claiming a total it cannot stand behind.
- */
+/** A capped list of documents plus what the search found across all of them. */
 export type SearchResultRows = CappedList<SearchHitRow> & { matches: number };
 
-/**
- * One line per entry, so this is what fits before a list starts crowding the
- * transcript. Shared by `ls` listings and skim outlines, which are the same
- * shape of thing.
- */
 export const LISTING_CAP = 8;
 
 /** Cut a discrete list to its cap, keeping the size it was cut from. */
@@ -117,11 +59,6 @@ type RowSpec<T> = {
 const SEARCH_CAP = 4;
 const LISTING: RowSpec<ToolResultRow> = { cap: LISTING_CAP, toRow: listingEntry };
 
-/**
- * What `search` returned: one document per hit, with the passage it matched. The
- * pattern comes from the tool input so the row can find the match inside the
- * line and weight it.
- */
 export function normalizeSearchHits(
   output: JsonValue | undefined,
   pattern?: string,
@@ -133,15 +70,6 @@ export function normalizeSearchHits(
   return { ...list, matches: totalMatches(output) };
 }
 
-/**
- * Sums per-document counts across the WHOLE payload, unlike the row parse,
- * which stops at the cap: "12 results in 3 documents" is a claim about the
- * search, not about the four rows that fit. Reading one number per entry is
- * cheap; building a row is not.
- *
- * Zero when any entry declines to count, because a partial sum stated as a
- * total is worse than not stating one.
- */
 function totalMatches(output: JsonValue | undefined): number {
   if (!Array.isArray(output)) return 0;
   let total = 0;
@@ -177,14 +105,7 @@ function isRecord(value: JsonValue): value is Record<string, JsonValue> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-/**
- * One document's section of the result card.
- *
- * The hash is never shown and always carried. It arrives in its own field and
- * the excerpt arrives as prose, so neither has to be parsed out of the other.
- * A passage without a hash (every scheme but manuscript) still reads; it just
- * cannot promise a destination, and the document's own name remains the door.
- */
+/** One document's section of the result card. */
 function searchHit(row: Record<string, JsonValue>, pattern?: string): SearchHitRow | null {
   if (typeof row.uri !== "string" || !Array.isArray(row.matches)) return null;
   if (typeof row.matchCount !== "number" || row.matchCount < 1) return null;
@@ -225,10 +146,6 @@ function excerptAround(text: string, pattern?: string): ExcerptSpan {
   };
 }
 
-/**
- * An `ls` entry. `kind` picks the glyph and decides door versus plain text;
- * it routes nothing, because no folder route exists to route to.
- */
 function listingEntry(row: Record<string, JsonValue>): ToolResultRow | null {
   if (typeof row.uri !== "string") return null;
   if (row.kind === "directory") return { kind: "folder", uri: row.uri };
@@ -243,15 +160,7 @@ export function boundLabel<T>({ rows, total }: CappedList<T>): string | null {
   return t`${shown} of ${total}`;
 }
 
-/**
- * The card's header: what this search found, and nothing else. It never
- * repeats the query, because the row title directly above already says it.
- *
- * Results and documents are equal whenever every document matched once, and
- * stating both would say the same thing twice, so the header drops to the
- * document count alone. How many documents were *shown* is a different fact
- * and belongs to the bound line.
- */
+/** The card's header: what this search found, and nothing else. */
 export function searchCardSummary(results: SearchResultRows): string {
   const documents = results.total;
   if (results.matches <= documents) {
@@ -262,11 +171,6 @@ export function searchCardSummary(results: SearchResultRows): string {
   return t`${matches} results in ${inDocuments}`;
 }
 
-/**
- * What a count badge means, for anyone who hears the card rather than sees it.
- * The badge itself is the bare number: it sits in a column, and a column reads
- * by shape.
- */
 export function matchCountLabel(count: number): string {
   return plural(count, { one: "# match", other: "# matches" });
 }

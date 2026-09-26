@@ -171,7 +171,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         title: "Projection thread",
         kind: "primary",
-        status: "active",
+        status: "idle",
       });
       await db.insert(threadWorks).values({
         threadId: THREAD_ID,
@@ -216,6 +216,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: TURN_ID,
         threadId: THREAD_ID,
         role: "user",
+        origin: "writer",
       });
       const after = await projectionState();
       expect(after.updatedAt?.getTime()).toBeGreaterThan(before.updatedAt?.getTime() ?? 0);
@@ -229,7 +230,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const before = await projectionState();
       await expect(
         repos.transaction(async () => {
-          await repos.turns.create({ id: TURN_ID, threadId: THREAD_ID, role: "user" });
+          await repos.turns.create({
+            id: TURN_ID,
+            threadId: THREAD_ID,
+            role: "user",
+            origin: "writer",
+          });
           throw new Error("forced rollback");
         }),
       ).rejects.toThrow("forced rollback");

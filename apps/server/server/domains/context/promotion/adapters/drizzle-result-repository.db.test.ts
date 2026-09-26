@@ -60,7 +60,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
       });
-      await db.insert(turns).values({ id: TURN_ID, threadId: THREAD_ID, role: "assistant" });
+      await db.insert(turns).values({
+        id: TURN_ID,
+        threadId: THREAD_ID,
+        role: "assistant",
+        origin: "assistant",
+      });
     });
 
     afterAll(async () => {

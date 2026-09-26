@@ -542,11 +542,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       id: "composer-submit",
       scope: "document",
       bindings: {
-        Enter: () => (streaming ? false : send()),
+        Enter: send,
         "Mod-Enter": send,
       },
     });
-  }, [editor, streaming]);
+  }, [editor]);
 
   const keyDown = (event: React.KeyboardEvent) => {
     if (
@@ -561,6 +561,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       onStop?.();
     }
   };
+  const showStop = streaming && !hasContent;
   return (
     <div
       data-composer=""
@@ -631,17 +632,23 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         <Button
           type="button"
           size="icon-sm"
-          onClick={() => (streaming ? onStop?.() : void submit())}
-          disabled={!streaming && (!hasContent || submitDisabled || pending > 0 || locked)}
-          aria-label={streaming ? t`Stop` : t`Send message`}
-          aria-describedby={!streaming && submitDisabledReason ? disabledReasonId : undefined}
-          className={streaming ? "rounded-full" : "rounded-field"}
+          onClick={() => (showStop ? onStop?.() : void submit())}
+          disabled={!showStop && (!hasContent || submitDisabled || pending > 0 || locked)}
+          aria-label={showStop ? t`Stop` : t`Send message`}
+          aria-describedby={!showStop && submitDisabledReason ? disabledReasonId : undefined}
+          className={streaming ? "relative rounded-full" : "rounded-field"}
         >
-          {streaming ? (
+          {showStop ? (
             <span className="size-2.5 rounded-[3px] bg-primary-foreground" />
           ) : (
             <ArrowUp className="size-4" />
           )}
+          {streaming && hasContent ? (
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
+            />
+          ) : null}
         </Button>
         {submitDisabledReason ? (
           <span id={disabledReasonId} className="sr-only">

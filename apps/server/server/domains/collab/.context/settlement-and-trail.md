@@ -180,3 +180,16 @@
   retain the ordinary before/after record regardless of classification; writer
   lineage only decides whether an authenticated connected session elevates the
   mark.
+
+## Recovery pass bounds
+
+The process recovery scheduler invokes the change-trail worker as an independent
+lane. Each pass considers at most 100 recoverable live settlements, reconciles
+100 terminal-owner keys and 100 shell IDs, and dispatches at most 100 outbox
+rows. Reconciliation pages only actionable owners/shells (including shared reopen
+work while a turn is active), retaining separate wraparound keyset cursors and acquiring a
+sorted union of the selected trail locks; all updates are restricted to that
+locked set. It keeps its own root transaction, not the runtime inbox owner.
+
+The change-trail scheduler count is dispatched outbox rows, not reconciliation
+transitions or settlement-recovery attempts. Other lanes report candidate counts.

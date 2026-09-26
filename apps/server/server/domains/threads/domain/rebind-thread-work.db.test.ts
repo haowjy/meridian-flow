@@ -1,6 +1,7 @@
 /** PostgreSQL coverage for No Work and concurrent thread Work rebinds. */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
+import { createTestDrizzleDelivery } from "../../runtime/loop/__tests__/test-drizzle-delivery.js";
 import {
   resetThreadWorkRaceFixture,
   THREAD_WORK_RACE,
@@ -40,9 +41,9 @@ else
         rebindThreadWork(
           {
             threads: repos.threads,
+            workContextNotices: createTestDrizzleDelivery(db),
             threadWorks: repos.threadWorks,
             works,
-            obligations: repos.workContextDeliveries,
           },
           { threadId: ids.threadId, workId },
         ),
@@ -101,7 +102,7 @@ else
         userId: ids.userId,
         projectId: ids.projectId,
         workId: ids.noWorkId,
-        parentThreadId: ids.threadId,
+        source: { parentThreadId: null, rootThreadId: ids.threadId, spawnDepth: 0 },
         originType: "handoff",
       } as never);
       const subagent = await repos.threads.createSubagent({
@@ -177,8 +178,8 @@ else
               threads: repos.threads,
               threadWorks: repos.threadWorks,
               works,
-              obligations: {
-                enqueueThread: async () => {
+              workContextNotices: {
+                threadChanged: async () => {
                   throw new Error("injected durable enqueue failure");
                 },
               },
@@ -229,9 +230,9 @@ else
           rebindThreadWork(
             {
               threads: repos.threads,
+              workContextNotices: createTestDrizzleDelivery(db),
               threadWorks: repos.threadWorks,
               works: racingWorks,
-              obligations: repos.workContextDeliveries,
             },
             {
               threadId: ids.threadId,

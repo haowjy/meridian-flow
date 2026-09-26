@@ -21,6 +21,8 @@ import {
 } from "@/client/query/thread-work-binding-cache";
 import { convergeWorkProjection } from "@/client/query/work-projection-cache";
 import { repairWorksSnapshot } from "@/client/query/works-projection-acquisition";
+import { useIsThreadPendingCreation } from "@/client/stores";
+import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 
 type TrailEventValue = {
   threadId: string;
@@ -89,7 +91,9 @@ export function useThreadDurableProjections({
   projectId: string | null;
 }) {
   const transport = useThreadTransport();
+  const isPendingCreation = useIsThreadPendingCreation(threadId);
   const queryClient = useQueryClient();
+  const accountSignal = useOptionalAccountEpochSignal();
   const [state, setState] = useState(emptyTrailShellState);
   /**
    * Subscription identity, bumped when the thread changes or the hook unmounts.
@@ -112,6 +116,13 @@ export function useThreadDurableProjections({
    */
   const inFlight = useRef(false);
   const again = useRef(false);
+  /**
+   * The Work-binding resync triggered by a gap fetches threads + works and
+   * invalidates the thread namespace. A gap burst must not run it per gap, so it
+   * coalesces like the trail list above: one in flight, one follow-up.
+   */
+  const bindingInFlight = useRef(false);
+  const bindingAgain = useRef(false);
   const reconcile = useCallback(
     async (requestGeneration: number) => {
       if (generation.current !== requestGeneration) return;
@@ -146,16 +157,52 @@ export function useThreadDurableProjections({
     [threadId],
   );
 
+  const resyncBinding = useCallback(
+    async (requestGeneration: number) => {
+      if (!projectId || generation.current !== requestGeneration) return;
+      if (bindingInFlight.current) {
+        bindingAgain.current = true;
+        return;
+      }
+      bindingInFlight.current = true;
+      try {
+        await readStableThreadWorkBinding(
+          queryClient,
+          {
+            projectId,
+            threadId,
+            previousWorkId: null,
+          },
+          accountSignal ?? undefined,
+        );
+      } catch {
+        // Best effort: the next gap or snapshot refresh re-runs the resync.
+      } finally {
+        bindingInFlight.current = false;
+      }
+      if (generation.current !== requestGeneration) return;
+      if (bindingAgain.current) {
+        bindingAgain.current = false;
+        void resyncBinding(requestGeneration);
+      }
+    },
+    [accountSignal, projectId, queryClient, threadId],
+  );
+
   useEffect(() => {
+    if (isPendingCreation) return;
     setState(emptyTrailShellState());
     reconciled.current = false;
     inFlight.current = false;
     again.current = false;
+    bindingInFlight.current = false;
+    bindingAgain.current = false;
     const threadGeneration = ++generation.current;
     void queryClient.removeQueries({ queryKey: ["change-trail-detail", threadId] });
     void reconcile(threadGeneration);
     const unsubscribe = transport.subscribe(threadId, {
       onEvent: ({ seq, event }) => {
+        if (accountSignal?.aborted) return;
         const receipt = decodeWorkReceipt(event);
         const receiptChanged =
           receipt?.category === "binding"
@@ -175,7 +222,11 @@ export function useThreadDurableProjections({
         }
         const projection = decodeWorkProjection(threadId, seq, event);
         if (projection) {
-          convergeThreadWorkBinding(queryClient, { source: "projected", ...projection });
+          convergeThreadWorkBinding(
+            queryClient,
+            { source: "projected", ...projection },
+            accountSignal ?? undefined,
+          );
           return;
         }
         if (
@@ -197,6 +248,7 @@ export function useThreadDurableProjections({
         });
       },
       onGap: () => {
+        if (accountSignal?.aborted) return;
         reconciled.current = false;
         setState((current) => (current.gapPending ? current : { ...current, gapPending: true }));
         // Deliberately NOT dropping change-trail detail here. Detail is immutable
@@ -206,13 +258,7 @@ export function useThreadDurableProjections({
         // journal outgrows the server's replay window gap continuously — there,
         // an expanded card's change rows could never finish loading at all.
         void reconcile(threadGeneration);
-        if (projectId) {
-          void readStableThreadWorkBinding(queryClient, {
-            projectId,
-            threadId,
-            previousWorkId: null,
-          }).catch(() => undefined);
-        }
+        void resyncBinding(threadGeneration);
       },
     });
     return () => {
@@ -221,6 +267,15 @@ export function useThreadDurableProjections({
       unsubscribe();
       void queryClient.removeQueries({ queryKey: ["change-trail-detail", threadId] });
     };
-  }, [projectId, queryClient, reconcile, threadId, transport]);
+  }, [
+    accountSignal,
+    projectId,
+    queryClient,
+    reconcile,
+    resyncBinding,
+    threadId,
+    transport,
+    isPendingCreation,
+  ]);
   return { changeTrails: state };
 }

@@ -12,6 +12,9 @@ export type ManifestMutationResult = {
 
 export type ApplicationBranchStore = BranchStore &
   BranchResolver & {
+    appendJournal(
+      input: import("../branch-coordinator.js").AppendBranchJournalInput,
+    ): Promise<void>;
     removeWorkManifestEntryForDraftDiscard(input: {
       lease: BranchLockLease;
       manifestBranchId: string;

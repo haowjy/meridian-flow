@@ -1,19 +1,4 @@
-/**
- * command-descriptor — everything the timeline says and shows about one
- * command, in one exhaustive table.
- *
- * `tool-command.ts` answers *which command is this*. This module answers *what
- * do we do with it*: the glyph, whether it changed the document, both tenses of
- * its verb, what a failure is called, and what the row says when the command
- * named no document. Those five used to be five switches in three files, so
- * adding a command meant finding all of them and a wrong failure verb was
- * invisible. One entry per command now, and `Record<ToolCommand, ...>` makes a
- * missing entry a type error.
- *
- * Every copy field is a function because Lingui's `t` resolves against the
- * active locale when it runs. A table of top-level strings would freeze the
- * catalog at module load.
- */
+/** Maps tool commands to their transcript labels and metadata. */
 import { t } from "@lingui/core/macro";
 import {
   BookOpen,
@@ -44,11 +29,6 @@ import {
 } from "./tool-command";
 import { workReceiptLine } from "./work-receipt-copy";
 
-/**
- * A row title split the way the timeline renders it: the command leads at full
- * ink, and what it acted on follows, quieter. `parameter` is absent when the
- * phrase names nothing the writer would read as a separate thing.
- */
 export type ToolActivityPhrase = {
   verb: string;
   /**
@@ -66,13 +46,6 @@ export type ToolActivityVocabulary = {
   complete: ToolActivityPhrase;
 };
 
-/**
- * What a command's row shows behind its chevron. The registry keys expands by
- * tool name, but one `write` tool covers reading, skimming, creating and
- * editing, and those show different things. Naming the shape here keeps that
- * per-command decision beside the command's other policy instead of becoming
- * another switch in a renderer.
- */
 export type CommandExpand =
   /** Nothing worth an affordance. A chevron is a promise. */
   | "none"
@@ -91,11 +64,7 @@ export type CommandDescriptor = {
   phrases: (tool: ToolView, writeMode: WriteMode) => ToolActivityVocabulary;
   /** A failure is its own claim, so it never reuses the success verb. */
   failureVerb: (writeMode: WriteMode) => string;
-  /**
-   * The complete-tense title when the command named no document. `null` for
-   * commands that never name one, whose phrase already reads as a whole
-   * sentence.
-   */
+  /** The complete-tense title when the command named no document. */
   pathlessTitle: ((writeMode: WriteMode) => string) | null;
   expand: CommandExpand;
 };
@@ -110,13 +79,6 @@ function truncatePattern(pattern: string): string {
   return pattern.length <= 60 ? pattern : `${pattern.slice(0, 59).trimEnd()}…`;
 }
 
-/**
- * A Work command's tenses. The complete tense is the server's receipt line —
- * the factual record of what happened, written in Work names — worn as the
- * row title. Rows carry no terminal punctuation, so the sentence's period is
- * dropped; everything else is verbatim. The client verb covers a result that
- * carried no receipt (in flight, a failure, or an older server).
- */
 function workTenses(tool: ToolView, active: string, complete: string): ToolActivityVocabulary {
   const receipt = workReceipt(tool);
   const line = receipt ? workReceiptLine(receipt) : null;

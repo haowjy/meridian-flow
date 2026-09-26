@@ -1,23 +1,6 @@
 /** PostgreSQL proof that admission and explicit retirement choose one serialized winner. */
 
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ThreadRunOwnership } from "../loop/thread-run-ownership.js";
-
-function barrier() {
-  let release!: () => void;
-  let reached = false;
-  const promise = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  return {
-    promise,
-    resolve() {
-      reached = true;
-      release();
-    },
-    wait: () => vi.waitFor(() => expect(reached).toBe(true), { timeout: 2000 }),
-  };
-}
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 const RUN = process.env.RUN_DB_TESTS === "1" && process.env.DATABASE_URL;
 if (!RUN) {
@@ -44,15 +27,17 @@ if (!RUN) {
     const { createDrizzleUploadIntakeRepository } = await import(
       "../../context/uploads/drizzle-upload-intake.js"
     );
-    const { createInMemoryCreditLedger } = await import("../../billing/index.js");
     const { createDrizzleAdmissionRecords } = await import("./drizzle-admission-records.js");
-    const { createAdmissionTurnStarter } = await import("./admission-turn-starter.js");
+    const { createWriterTurnProducer } = await import("./writer-turn-producer.js");
     const { createUserTurnAdmission } = await import("./user-turn-admission.js");
-    const { createInMemoryThreadRunOwnership } = await import("../loop/thread-run-ownership.js");
-    const { createTurnRunner } = await import("../loop/turn-runner.js");
-    const { createOrchestrator } = await import("../loop/orchestrator.js");
-    const { createTestOrchestratorDeps } = await import(
-      "../loop/__tests__/test-orchestrator-deps.js"
+    const { createInMemoryRunClaim } = await import("../adapters/in-memory/loop-ports.js");
+    const { createTestDrizzleDelivery } = await import(
+      "../loop/__tests__/test-drizzle-delivery.js"
+    );
+    const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
+
+    const { runInDrizzleTransaction, runInDrizzleSavepoint } = await import(
+      "../../../shared/drizzle-transaction.js"
     );
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL disappeared after the DB test gate");
@@ -124,61 +109,22 @@ if (!RUN) {
       documentId: string;
       uri: string;
       failAfterProvenance?: boolean;
-      runOwnership?: ThreadRunOwnership;
-      beforeTurn?: () => Promise<void>;
-      finishRun?: Promise<void>;
+      prepareLookup?: () => Promise<void>;
     }) {
-      const runOwnership = input.runOwnership ?? createInMemoryThreadRunOwnership();
-      const creditLedger = createInMemoryCreditLedger();
-      await creditLedger.grant({
-        userId: USER,
-        source: "manual",
-        amountMillicredits: "1000000",
-        reason: "admission transaction proof",
-      });
       const eventReader = createDrizzleEventJournalReader(firstDb);
       const hub = createThreadEventHub({
         journalWriter: createDrizzleEventJournalWriter(firstDb),
         journalReader: eventReader,
         eventSink: createNoopEventSink(),
       });
-      const deps = createTestOrchestratorDeps({
-        boundThreads: () => [input.threadId],
-        repos,
-        eventWriter: hub,
-        creditLedger,
-        gateway: {
-          getDefaultModel() {
-            return "blocked-test-model";
-          },
-          async *stream() {
-            await (input.finishRun ?? new Promise(() => {}));
-            throw new Error("fixture run finished");
-          },
-          async generate() {
-            throw new Error("generate is not used");
-          },
-        },
-      });
-      const runner = createTurnRunner({
-        runOwnership,
-        orchestrator: createOrchestrator(deps),
-        hub,
-        repos: { turns: repos.turns },
-        eventSink: deps.eventSink,
-        workContextDelivery: {
-          async beforeTurn() {
-            await input.beforeTurn?.();
-          },
-          async flushOwned() {},
-        },
-      });
       const uploadIntake = createDrizzleUploadIntakeRepository(firstDb);
+      const delivery = createTestDrizzleDelivery(firstDb, { repos, eventWriter: hub });
       return createUserTurnAdmission({
-        runOwnership,
+        runClaim: createInMemoryRunClaim(),
         records,
         availability: {
           async lookup() {
+            await input.prepareLookup?.();
             return {
               projectId: PROJECT,
               resolutionId: "resolution",
@@ -224,8 +170,13 @@ if (!RUN) {
         async verifyDraftUpload() {
           return true;
         },
-        starter: createAdmissionTurnStarter({
-          runner,
+        producer: createWriterTurnProducer({
+          inbox: createDrizzleInbox(firstDb),
+          persistence: { repos, eventWriter: hub },
+          hub,
+          runner: { getRunningTurn: () => null },
+          turns: repos.turns,
+          delivery,
           records,
           consumeUploads: (documentIds) => uploadIntake.consume(documentIds),
           async attachDocument(threadId, documentId, relationship) {
@@ -252,14 +203,107 @@ if (!RUN) {
         references: [],
       };
 
-      await expect(service.admit(request)).resolves.toMatchObject({
-        kind: "accepted",
-        snapshotFloorNextSeq: "3001",
-      });
+      const accepted = await service.admit(request);
+      expect(accepted).toMatchObject({ kind: "accepted" });
+      if (accepted.kind !== "accepted" && accepted.kind !== "already-accepted") {
+        throw new Error("expected accepted admission");
+      }
+      // The writer turn is persisted at enqueue; no assistant container exists yet.
+      const turns = (await firstDb.select().from(schema.turns)).filter(
+        (turn) => turn.threadId === THREAD,
+      );
+      expect(turns).toHaveLength(1);
+      expect(turns[0]?.role).toBe("user");
       await expect(service.admit(request)).resolves.toMatchObject({
         kind: "already-accepted",
-        snapshotFloorNextSeq: "3001",
+        snapshotFloorNextSeq: accepted.snapshotFloorNextSeq,
       });
+    });
+
+    it("rolls the writer turn, inbox row, and journal back on an admission winner", async () => {
+      const hub = createThreadEventHub({
+        journalWriter: createDrizzleEventJournalWriter(firstDb),
+        journalReader: createDrizzleEventJournalReader(firstDb),
+        eventSink: createNoopEventSink(),
+      });
+      const wakeCallbacks: string[] = [];
+      const _inbox = createDrizzleInbox(firstDb);
+      const delivery = createTestDrizzleDelivery(firstDb, {
+        repos,
+        eventWriter: hub,
+        runStarter: {
+          async start() {
+            wakeCallbacks.push("wake");
+          },
+        },
+      });
+      const reserved = await records.reserve({
+        actorUserId: USER as never,
+        threadId: THREAD,
+        submissionId: "winner-rollback",
+        fingerprint: "fingerprint",
+        claimExpiresAt: new Date(Date.now() + 60_000),
+      });
+      expect(reserved.kind).toBe("reserved");
+      await records.reject({
+        threadId: THREAD,
+        submissionId: "winner-rollback",
+        fingerprint: "fingerprint",
+        code: "recovery_no_committed_turn",
+      });
+
+      const producer = createWriterTurnProducer({
+        inbox: createDrizzleInbox(firstDb),
+        persistence: {
+          repos,
+          eventWriter: hub,
+          savepoint: (operation) => runInDrizzleSavepoint(firstDb, operation),
+        },
+        hub,
+        runner: { getRunningTurn: () => null },
+        turns: repos.turns,
+        delivery,
+        records: {
+          ...records,
+          async accept(input) {
+            return records.accept(input);
+          },
+        },
+        consumeUploads: async () => undefined,
+        attachDocument: async () => undefined,
+      });
+
+      const result = await runInDrizzleTransaction(firstDb, () =>
+        producer.enqueue({
+          admission: {
+            actorUserId: USER as never,
+            threadId: THREAD,
+            submissionId: "winner-rollback",
+            text: "late",
+            blocks: [{ type: "text" as const, text: "late" }],
+            references: [],
+          },
+          fingerprint: "fingerprint",
+          blocks: [{ type: "text" as const, text: "late" }],
+          references: [],
+        }),
+      );
+
+      expect(result).toMatchObject({ kind: "rejected", code: "recovery_no_committed_turn" });
+      const turns = (await firstDb.select().from(schema.turns)).filter(
+        (turn) => turn.threadId === THREAD,
+      );
+      expect(turns).toHaveLength(0);
+      const inboxRows = (await firstDb.select().from(schema.threadInboxMessages)).filter(
+        (row) => row.threadId === THREAD,
+      );
+      expect(inboxRows).toHaveLength(0);
+      expect(await firstDb.select().from(schema.eventJournal)).toHaveLength(0);
+      expect(await records.lookup(THREAD, "winner-rollback")).toMatchObject({
+        state: "rejected",
+        code: "recovery_no_committed_turn",
+      });
+      expect(wakeCallbacks).toEqual([]);
     });
 
     it("persists ordered occurrences, replays their actual sparse cursor, and rolls the whole accepted settlement back together", async () => {
@@ -306,7 +350,7 @@ if (!RUN) {
       const service = await composeAdmission({ threadId: THREAD, documentId: DOCUMENT, uri });
       const request = admission(THREAD, DOCUMENT, uri);
       const accepted = await service.admit(request);
-      expect(accepted).toMatchObject({ kind: "accepted", snapshotFloorNextSeq: "8001" });
+      expect(accepted).toMatchObject({ kind: "accepted" });
       if (accepted.kind !== "accepted" && accepted.kind !== "already-accepted") {
         throw new Error("expected accepted admission");
       }
@@ -345,7 +389,7 @@ if (!RUN) {
       expect(persisted.filter((block) => block.blockType === "image")).toHaveLength(2);
       await expect(service.admit(request)).resolves.toMatchObject({
         kind: "already-accepted",
-        snapshotFloorNextSeq: "8001",
+        snapshotFloorNextSeq: (accepted as { snapshotFloorNextSeq: string }).snapshotFloorNextSeq,
       });
       await expect(
         service.admit({
@@ -392,93 +436,6 @@ if (!RUN) {
       expect(uploads.find((row) => row.documentId === ROLLBACK_DOCUMENT)?.consumedAt).toBeNull();
       const provenance = await firstDb.select().from(schema.threadDocuments);
       expect(provenance.some((row) => row.threadId === ROLLBACK_THREAD)).toBe(false);
-    });
-
-    it("persists and replays a production-composed stale-token rejection", async () => {
-      let orchestratorStarts = 0;
-      const consumeUploads = vi.fn();
-      const runner = createTurnRunner({
-        orchestrator: {
-          async runTurn() {
-            orchestratorStarts += 1;
-            throw new Error("a terminal identity re-entered turn effects");
-          },
-        } as never,
-        hub: {} as never,
-        repos: { turns: {} as never },
-        eventSink: {} as never,
-        workContextDelivery: {} as never,
-      });
-      const service = createUserTurnAdmission({
-        runOwnership: createInMemoryThreadRunOwnership(),
-        records,
-        availability: {
-          async lookup() {
-            return { projectId: PROJECT, resolutionId: "resolution", resolutions: [] };
-          },
-        } as never,
-        async threadProject() {
-          return PROJECT;
-        },
-        starter: createAdmissionTurnStarter({
-          runner,
-          records,
-          consumeUploads,
-          attachDocument: vi.fn(),
-        }),
-      });
-      const admission = {
-        actorUserId: USER as never,
-        threadId: THREAD,
-        submissionId: "stale-token-rejection",
-        connectionToken: "not-registered",
-        text: "writer text",
-        blocks: [{ type: "text" as const, text: "writer text" }],
-        references: [],
-      };
-
-      await expect(service.admit(admission)).resolves.toEqual({
-        kind: "rejected",
-        submissionId: admission.submissionId,
-        code: "connection_token_not_live",
-      });
-      await expect(
-        service.lookup({
-          actorUserId: USER as never,
-          threadId: THREAD,
-          submissionId: admission.submissionId,
-        }),
-      ).resolves.toEqual({
-        kind: "rejected",
-        submissionId: admission.submissionId,
-        code: "connection_token_not_live",
-      });
-      await expect(firstDb.select().from(schema.userTurnAdmissions)).resolves.toMatchObject([
-        {
-          threadId: THREAD,
-          submissionId: admission.submissionId,
-          actorUserId: USER,
-          state: "rejected",
-          rejectionCode: "connection_token_not_live",
-        },
-      ]);
-
-      runner.registerLiveConnectionToken(admission.connectionToken);
-      await expect(service.admit(admission)).resolves.toEqual({
-        kind: "rejected",
-        submissionId: admission.submissionId,
-        code: "connection_token_not_live",
-      });
-      await expect(
-        service.admit({
-          ...admission,
-          text: "different",
-          blocks: [{ type: "text", text: "different" }],
-        }),
-      ).rejects.toMatchObject({ code: "idempotency_conflict" });
-      expect(orchestratorStarts).toBe(0);
-      expect(consumeUploads).not.toHaveBeenCalled();
-      await expect(firstDb.select().from(schema.turns)).resolves.toHaveLength(0);
     });
 
     it("lets exactly one same-identity contender reserve the pending row", async () => {
@@ -575,227 +532,12 @@ if (!RUN) {
       });
     });
 
-    it("keeps a claimed original live through expiry and accepts its one settlement", async () => {
-      const { createDrizzleThreadRunOwnership } = await import(
-        "../adapters/drizzle-thread-run-ownership.js"
-      );
-      const { eq } = await import("drizzle-orm");
-      const originalOwnership = createDrizzleThreadRunOwnership(firstDb);
-      const recoveryOwnership = createDrizzleThreadRunOwnership(secondDb);
-      const claimed = barrier();
-      const continueOriginal = barrier();
-      const finishRun = barrier();
-      const original = await composeAdmission({
-        threadId: THREAD,
-        documentId: DOCUMENT,
-        uri: "",
-        runOwnership: originalOwnership,
-        beforeTurn: async () => {
-          claimed.resolve();
-          await continueOriginal.promise;
-        },
-        finishRun: finishRun.promise,
-      });
-      const recovery = createUserTurnAdmission({
-        records: retireRecords,
-        runOwnership: recoveryOwnership,
-        availability: {
-          async lookup() {
-            throw new Error("unexpected reference resolution");
-          },
-        },
-        async threadProject() {
-          return PROJECT;
-        },
-        starter: {
-          async start() {
-            throw new Error("unexpected replay start");
-          },
-        },
-      });
-      const request = {
-        actorUserId: USER as never,
-        threadId: THREAD,
-        submissionId: "live-original",
-        text: "original",
-        blocks: [{ type: "text" as const, text: "original" }],
-        references: [],
-      };
-      const admission = original.admit(request);
-      try {
-        await claimed.wait();
-        await firstDb
-          .update(schema.userTurnAdmissions)
-          .set({ claimExpiresAt: new Date(0) })
-          .where(eq(schema.userTurnAdmissions.threadId, THREAD));
-        await expect(recovery.lookup(request)).resolves.toMatchObject({ kind: "pending" });
-        continueOriginal.resolve();
-        const accepted = await admission;
-        expect(accepted.kind).toBe("accepted");
-        await expect(recovery.admit(request)).resolves.toMatchObject({ kind: "already-accepted" });
-        expect(await secondDb.select().from(schema.turns)).toHaveLength(2);
-        expect(await secondDb.select().from(schema.userTurnAdmissions)).toMatchObject([
-          { state: "accepted" },
-        ]);
-      } finally {
-        continueOriginal.resolve();
-        finishRun.resolve();
-        await admission;
-        await vi.waitFor(async () => {
-          const released = await recoveryOwnership.tryAcquire(THREAD);
-          expect(released).not.toBeNull();
-          await released?.release();
-        });
-      }
-    });
-
-    it("holds recovery ownership through commit against a delayed original runner", async () => {
-      const { createDrizzleThreadRunOwnership } = await import(
-        "../adapters/drizzle-thread-run-ownership.js"
-      );
-      const { currentDrizzleDb, runInDrizzleTransaction } = await import(
-        "../../../shared/drizzle-transaction.js"
-      );
-      const { eq } = await import("drizzle-orm");
-      const recoveryOwnership = createDrizzleThreadRunOwnership(firstDb);
-      const originalOwnership = createDrizzleThreadRunOwnership(secondDb);
-      const reserved = barrier();
-      const continueOriginal = barrier();
-      const recoveryLocked = barrier();
-      const commitRecovery = barrier();
-      const rejectedStart = barrier();
-      const originalRecords = {
-        ...retireRecords,
-        async reject(input: Parameters<typeof retireRecords.reject>[0]) {
-          rejectedStart.resolve();
-          return retireRecords.reject(input);
-        },
-      };
-      let started = 0;
-      const consumeUploads = vi.fn();
-      const attachDocument = vi.fn();
-      const runner = createTurnRunner({
-        runOwnership: originalOwnership,
-        orchestrator: {
-          async runTurn() {
-            started++;
-            throw new Error("recovery lost its claim");
-          },
-          async finalizeGeneratorFailure() {
-            throw new Error("unexpected generator failure");
-          },
-        },
-        hub: createThreadEventHub({
-          journalWriter: createDrizzleEventJournalWriter(secondDb),
-          journalReader: createDrizzleEventJournalReader(secondDb),
-          eventSink: createNoopEventSink(),
-        }),
-        repos: { turns: createDrizzleRepositoriesForTest(secondDb).turns },
-        eventSink: createNoopEventSink(),
-        workContextDelivery: { async beforeTurn() {}, async flushOwned() {} },
-      });
-      const original = createUserTurnAdmission({
-        records: originalRecords,
-        runOwnership: originalOwnership,
-        availability: {
-          async lookup() {
-            reserved.resolve();
-            await continueOriginal.promise;
-            return { projectId: PROJECT, resolutionId: "race", resolutions: [] };
-          },
-        } as never,
-        async threadProject() {
-          return PROJECT;
-        },
-        starter: createAdmissionTurnStarter({
-          runner,
-          records: originalRecords,
-          consumeUploads,
-          attachDocument,
-        }),
-        now: () => new Date(0),
-      });
-      const recovery = createUserTurnAdmission({
-        records: {
-          ...records,
-          async recoverExpiredPending(input) {
-            return runInDrizzleTransaction(firstDb, async () => {
-              await currentDrizzleDb(firstDb)
-                .select()
-                .from(schema.threads)
-                .where(eq(schema.threads.id, THREAD))
-                .for("update");
-              recoveryLocked.resolve();
-              await commitRecovery.promise;
-              return records.recoverExpiredPending(input);
-            });
-          },
-        },
-        runOwnership: recoveryOwnership,
-        availability: {
-          async lookup() {
-            throw new Error("unexpected resolution");
-          },
-        },
-        async threadProject() {
-          return PROJECT;
-        },
-        starter: {
-          async start() {
-            throw new Error("unexpected start");
-          },
-        },
-      });
-      const request = {
-        actorUserId: USER as never,
-        threadId: THREAD,
-        submissionId: "delayed-original",
-        text: "original",
-        blocks: [{ type: "text" as const, text: "original" }],
-        references: [],
-      };
-      const admission = original.admit(request).then(
-        (result) => result,
-        (error: unknown) => error,
-      );
-      await reserved.wait();
-      const recovering = recovery.lookup(request);
-      try {
-        await recoveryLocked.wait();
-        continueOriginal.resolve();
-        await rejectedStart.wait();
-        commitRecovery.resolve();
-        await expect(recovering).resolves.toMatchObject({
-          kind: "rejected",
-          code: "recovery_no_committed_turn",
-        });
-        await expect(admission).resolves.toMatchObject({
-          kind: "rejected",
-          code: "recovery_no_committed_turn",
-        });
-        expect(started).toBe(0);
-        expect(consumeUploads).not.toHaveBeenCalled();
-        expect(attachDocument).not.toHaveBeenCalled();
-        expect(await firstDb.select().from(schema.turns)).toHaveLength(0);
-        expect(await firstDb.select().from(schema.eventJournal)).toHaveLength(0);
-        const released = await originalOwnership.tryAcquire(THREAD);
-        expect(released).not.toBeNull();
-        await released?.release();
-      } finally {
-        continueOriginal.resolve();
-        commitRecovery.resolve();
-        await Promise.allSettled([admission, recovering]);
-      }
-    });
-
     it.each([
       "lookup",
       "admit",
       "retire",
     ] as const)("recovers expired orphan admissions through %s", async (operation) => {
-      const { createDrizzleThreadRunOwnership } = await import(
-        "../adapters/drizzle-thread-run-ownership.js"
-      );
+      const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
       const { canonicalAdmissionFingerprint } = await import("./user-turn-admission.js");
       const input = {
         actorUserId: USER as never,
@@ -812,7 +554,7 @@ if (!RUN) {
       });
       const service = createUserTurnAdmission({
         records,
-        runOwnership: createDrizzleThreadRunOwnership(firstDb),
+        runClaim: createDrizzleRunClaim(firstDb),
         availability: {
           async lookup() {
             throw new Error("Recovery entered reference effects");
@@ -821,19 +563,19 @@ if (!RUN) {
         async threadProject() {
           throw new Error("Recovery entered project resolution");
         },
-        starter: {
-          async start() {
+        producer: {
+          async enqueue() {
             throw new Error("Recovery started a duplicate turn");
           },
         },
       });
-      const remoteOwnership = createDrizzleThreadRunOwnership(secondDb);
-      const liveClaim = await remoteOwnership.tryAcquire(THREAD);
+      const remoteOwnership = createDrizzleRunClaim(secondDb);
+      const liveClaim = await remoteOwnership.startExecution(THREAD, crypto.randomUUID());
       expect(liveClaim).not.toBeNull();
       try {
         await expect(service[operation](input)).resolves.toMatchObject({ kind: "pending" });
       } finally {
-        await liveClaim?.release();
+        if (liveClaim) await remoteOwnership.release(liveClaim);
       }
       await expect(service[operation](input)).resolves.toMatchObject({
         kind: "rejected",
@@ -844,9 +586,9 @@ if (!RUN) {
       ).rejects.toMatchObject({ code: "idempotency_conflict" });
       expect(await firstDb.select().from(schema.turns)).toHaveLength(0);
       expect(await firstDb.select().from(schema.eventJournal)).toHaveLength(0);
-      const releasedClaim = await remoteOwnership.tryAcquire(THREAD);
+      const releasedClaim = await remoteOwnership.startExecution(THREAD, crypto.randomUUID());
       expect(releasedClaim).not.toBeNull();
-      await releasedClaim?.release();
+      if (releasedClaim) await remoteOwnership.release(releasedClaim);
     });
 
     it("does not turn claim expiry into rejection until recovery proves no live claim or committed turn", async () => {

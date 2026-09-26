@@ -18,7 +18,7 @@
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { resolveDocumentLink } from "@/client/api/document-links-api";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import {
@@ -45,8 +45,11 @@ import { AgentOnlyComposerToolbar, ChatComposerToolbar } from "./ChatComposerToo
 import { ChatSurface } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
+import { writerTurnQueueStatus } from "./pending-inbox";
+import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
 import { TurnList } from "./TurnList";
+import { activeDescendants } from "./thread-activity";
 import type { UserTurnRecovery } from "./UserTurn";
 import {
   type FailedChatSubmission,
@@ -57,6 +60,8 @@ import {
 } from "./useChatSubmissionRecovery";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
+import { usePendingInbox } from "./usePendingInbox";
+import { useThreadActivity } from "./useThreadActivity";
 import { useThreadDurableProjections } from "./useThreadDurableProjections";
 import { useThreadHandoff } from "./useThreadHandoff";
 import { useThreadNavigationAnnounce } from "./useThreadNavigationAnnounce";
@@ -76,6 +81,7 @@ export type ChatViewProps = {
    * is not in this conversation.
    */
   historySettled: boolean;
+  activateProjection: (after?: string) => boolean;
 };
 
 export function ChatView({
@@ -86,6 +92,7 @@ export function ChatView({
   snapshotLiveState = null,
   snapshotNextSeq = null,
   historySettled,
+  activateProjection,
 }: ChatViewProps) {
   const openReferenceDocument = useOpenProjectDocument(projectId ?? undefined);
   const actions = useThreadActions();
@@ -110,6 +117,14 @@ export function ChatView({
     t`Reference a file`,
   );
   const availableSkills = useThreadAvailableSkills(threadId);
+  const activity = useThreadActivity({
+    threadId,
+    rootThreadId: activeThread?.rootThreadId ?? threadId,
+    seed: snapshotLiveState,
+  });
+  const runningSubagents = activeDescendants(activity.activity);
+  const pendingInbox = usePendingInbox({ threadId, seed: snapshotLiveState });
+  const queueStatusByTurnId = useMemo(() => writerTurnQueueStatus(pendingInbox), [pendingInbox]);
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
 
@@ -125,6 +140,7 @@ export function ChatView({
   const failedSendRetry = useThreadHandoff(threadId, projectId, accountId, controller, actions, {
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
+    activateProjection,
   });
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 
@@ -317,6 +333,11 @@ export function ChatView({
       <ChatSurface
         title={pageTitle}
         surfaceRef={chatSurfaceRef}
+        header={
+          runningSubagents.length > 0 ? (
+            <RunningSubagentsStrip selfStatus={activity.status} descendants={runningSubagents} />
+          ) : null
+        }
         footer={
           <div data-debug-composer={threadId}>
             {/* The dock strip sits BEHIND (below) the composer — narrower via
@@ -377,6 +398,7 @@ export function ChatView({
           failedSendRetry={failedSendRetry}
           changeTrails={changeTrails.byId}
           submissionRecoveryByTurnId={submissionRecoveryByTurnId}
+          queueStatusByTurnId={queueStatusByTurnId}
         />
       </ChatSurface>
     </TranscriptLinkNavigationContext.Provider>

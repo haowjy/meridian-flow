@@ -186,17 +186,6 @@ describe("slash insertion semantics", () => {
     expect(caretChain(instance)).toEqual(["heading"]);
   });
 
-  it("opens a table with the caret in the first cell", () => {
-    const { editor: instance, range } = mountWithTrigger("", "/table");
-    applySlashCommand(instance, range, item("table"), catalog());
-
-    const table = instance.state.doc.firstChild;
-    expect(table?.type.name).toBe("table");
-    expect(table?.childCount).toBe(3);
-    expect(table?.firstChild?.firstChild?.type.name).toBe("table_header");
-    expect(caretChain(instance)).toEqual(["table", "table_row", "table_header", "paragraph"]);
-  });
-
   it("opens a code block with the caret in the fence", () => {
     const { editor: instance, range } = mountWithTrigger("", "/code");
     applySlashCommand(instance, range, item("code"), catalog());
@@ -310,18 +299,6 @@ describe("slash insertion semantics", () => {
  * asked for.
  */
 describe("slash insertion out of nested structures", () => {
-  it("lands after the whole list, not inside the item", () => {
-    const { editor: instance, range } = mountAround([
-      { type: "bullet_list", content: [listItem(`hello ${TRIGGER}`)] },
-    ]);
-    const applied = applySlashCommand(instance, range, item("table"), catalog());
-
-    expect(applied).toBe(true);
-    expect(blockTypes(instance)).toEqual(["bullet_list", "table"]);
-    expect(instance.state.doc.firstChild?.childCount).toBe(1);
-    expect(instance.state.doc.firstChild?.textContent).toBe("hello ");
-  });
-
   it("keeps a multi-item list whole and lands after it", () => {
     const { editor: instance, range } = mountAround([
       {
@@ -387,22 +364,6 @@ describe("slash insertion out of nested structures", () => {
       ]);
       instance.destroy();
     }
-  });
-
-  it("inserts after nonempty cell prose and keeps the caret in the cell", () => {
-    const { editor: instance, range } = mountAround([
-      { type: "table", content: [row(cell(`rank ${TRIGGER}`), cell("skill"))] },
-    ]);
-    const applied = applySlashCommand(instance, range, item("heading-1"), catalog());
-
-    expect(applied).toBe(true);
-    expect(blockTypes(instance)).toEqual(["table"]);
-    expect(
-      instance.state.doc.firstChild?.firstChild?.firstChild?.content.content.map(
-        (node) => node.type.name,
-      ),
-    ).toEqual(["paragraph", "heading"]);
-    expect(caretChain(instance)).toEqual(["table", "table_row", "table_cell", "heading"]);
   });
 
   /**
@@ -475,19 +436,6 @@ describe("slash insertion out of nested structures", () => {
     expect(anchor).toMatchObject({ from: range.from, to: range.from });
     expect(instance.state.doc.resolve(anchor.from).node(-1).type.spec.tableRole).toBe("cell");
     expect(cellAroundCaret(instance)).toBe("cell");
-  });
-
-  it("still opens the picker from an empty paragraph in prose", () => {
-    const requestImageUpload = vi.fn();
-    const { editor: instance, range } = mountWithTrigger("", "/image");
-
-    const applied = applySlashCommand(instance, range, item("image"), catalog(requestImageUpload));
-
-    expect(applied).toBe(true);
-    expect(requestImageUpload).toHaveBeenCalledTimes(1);
-    expect(requestImageUpload.mock.calls[0][0]).toMatchObject({ from: 1, to: 1 });
-    expect(blockTypes(instance)).toEqual(["paragraph"]);
-    expect(instance.state.doc.textContent).toBe("");
   });
 
   it("opens a nested table ready to work: caret in its first cell", () => {

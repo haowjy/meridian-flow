@@ -7,17 +7,16 @@ import { createError } from "nitro/h3";
 import type { NoticePort } from "../domains/notices/index.js";
 import type {
   ProjectRepository,
-  WorkContextDelivery,
+  WorkContextNotices,
   WorkRepository,
 } from "../domains/projects/index.js";
-import type { ThreadRunOwnership } from "../domains/runtime/index.js";
+import type { RunClaim } from "../domains/runtime/index.js";
 import {
   RebindThreadWorkError,
   rebindThreadWork,
   requireThreadOwner,
   type ThreadRepository,
   type ThreadWorksRepository,
-  type WorkContextDeliveryRepository,
 } from "../domains/threads/index.js";
 import { throwHttpInterrupt } from "./interrupt-boundary.js";
 import { requireRequestId } from "./request-id.js";
@@ -28,11 +27,10 @@ export interface ThreadWorkRebindRouteDeps {
   threadWorks: Pick<ThreadWorksRepository, "rebindPrimary">;
   projects: Pick<ProjectRepository, "findById">;
   works: Pick<WorkRepository, "findById" | "findNoWork">;
-  obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
-  workContextDelivery: Pick<WorkContextDelivery, "deliverAfterCommit">;
+  workContextNotices: Pick<WorkContextNotices, "threadChanged" | "materializeIdle">;
   notices: Pick<NoticePort, "record">;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
-  runOwnership: ThreadRunOwnership;
+  runClaim: Pick<RunClaim, "withExclusiveThread">;
 }
 
 export function parseRebindThreadWorkRequest(raw: unknown): RebindThreadWorkRequest {
@@ -74,27 +72,29 @@ export async function handleRebindThreadWorkRequest(
     workId = input.body.workId;
   }
 
-  const claim = await deps.runOwnership.tryAcquire(thread.id);
-  if (!claim) {
-    throwHttpInterrupt(
-      meridianErrorFromSystem(
-        "thread_busy",
-        "This thread is currently generating a response. Stop it or wait, then retry.",
-        true,
-      ),
-      409,
-    );
-  }
   let transition: Awaited<ReturnType<typeof rebindThreadWork>>;
   try {
-    transition = await deps.transaction(async () => {
-      const rebound = await rebindThreadWork(deps, {
-        threadId: thread.id,
-        workId,
-      });
-      await recordWriterWorkSwitchNotice(deps.notices, rebound);
-      return rebound;
-    });
+    const claimed = await deps.runClaim.withExclusiveThread(thread.id, () =>
+      deps.transaction(async () => {
+        const rebound = await rebindThreadWork(deps, {
+          threadId: thread.id,
+          workId,
+        });
+        await recordWriterWorkSwitchNotice(deps.notices, rebound);
+        return rebound;
+      }),
+    );
+    if (!claimed) {
+      throwHttpInterrupt(
+        meridianErrorFromSystem(
+          "thread_busy",
+          "This thread is currently generating a response. Stop it or wait, then retry.",
+          true,
+        ),
+        409,
+      );
+    }
+    transition = claimed;
   } catch (cause) {
     if (cause instanceof RebindThreadWorkError && cause.code === "thread_unavailable") {
       throwHttpInterrupt(meridianErrorFromSystem("not_found", "Thread or Work not found"), 404);
@@ -114,10 +114,8 @@ export async function handleRebindThreadWorkRequest(
       );
     }
     throw cause;
-  } finally {
-    await claim.release();
   }
   if (!transition.changed) return { ...transition, contextUpdate: "not_required" };
-  const contextUpdate = await deps.workContextDelivery.deliverAfterCommit(transition.threadId);
+  const contextUpdate = await deps.workContextNotices.materializeIdle(transition.threadId);
   return { ...transition, contextUpdate };
 }

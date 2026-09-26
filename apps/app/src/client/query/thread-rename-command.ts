@@ -1,20 +1,4 @@
-/**
- * thread-rename-command — QueryClient-scoped authority for the thread-title P1
- * command.
- *
- * A rename projects the requested title into the cached project thread list
- * immediately, then confirms it against `PATCH /api/threads/:id/title`. The
- * record stored at `projectQueryKeys.threadRename` carries the per-thread
- * revision fence, the last confirmed title (the revert target), and the
- * classified failure so the header can render pending, revert, or Retry.
- *
- * Overlap is serialized by TanStack's mutation `scope` (see `useRenameThread`);
- * the revision check here makes a late completion from an older intent unable
- * to overwrite a newer one. The project thread list read is part of the same
- * fence: `beginThreadRename` cancels an in-flight list read, and a list
- * response captured before a rename moves is re-projected through
- * `applyThreadRenameFence` instead of restoring the pre-rename row.
- */
+/** thread-rename-command — QueryClient-scoped authority for the thread-title P1 command. */
 
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
@@ -112,11 +96,7 @@ function invalidateThreadList(client: QueryClient, projectId: string): void {
   void client.invalidateQueries({ queryKey: projectQueryKeys.threads(projectId), exact: true });
 }
 
-/**
- * A snapshot of every live rename revision for a project. A list read captures
- * this before dispatch and compares it when the response lands, so a response
- * that predates a rename cannot restore the old title.
- */
+/** A snapshot of every live rename revision for a project. */
 export type ThreadRenameFence = ReadonlyMap<
   string,
   { revision: number; confirmedRevision: number }
@@ -141,12 +121,7 @@ export function captureThreadRenameFence(
   return snapshot;
 }
 
-/**
- * Re-apply the newest known title to a list read whose rename fence moved. A
- * still-pending intent keeps its `desiredTitle`; a settled one keeps the
- * confirmed `baseTitle`. Rows whose record did not move pass through untouched
- * so the server stays authoritative.
- */
+/** Re-apply the newest known title to a list read whose rename fence moved. */
 export function applyThreadRenameFence(
   client: QueryClient,
   projectId: string,
@@ -167,11 +142,6 @@ export function applyThreadRenameFence(
   });
 }
 
-/**
- * Classify a failed write using the existing HTTP boundary. A 4xx refusal or a
- * non-retryable structured error proves the server rejected the write; anything
- * else (network loss, timeout, 5xx, abort) leaves the outcome unknown.
- */
 export function classifyThreadRenameFailure(error: unknown): ThreadRenameFailureKind {
   if (error instanceof DOMException && error.name === "AbortError") return "abandoned";
   if (isMeridianApiError(error)) {
@@ -213,14 +183,7 @@ export function beginThreadRename(
   return { projectId, threadId, revision };
 }
 
-/**
- * Settle a confirmed rename. Returns whether this was still the latest intent,
- * which gates the caller's success announcement.
- *
- * Only the latest intent that leaves no other rename in flight invalidates the
- * authoritative list and feeds; an older settlement must not start a refetch
- * that can race a newer projection.
- */
+/** Settle a confirmed rename. */
 export function confirmThreadRename(
   client: QueryClient,
   context: ThreadRenameMutationContext,
@@ -266,11 +229,7 @@ export function rejectThreadRename(
   });
 }
 
-/**
- * Retain the projection for an unknown outcome and refresh the authoritative
- * thread list instead of treating the write as rejected. The refresh is fenced
- * and only starts once the latest intent is the only one left.
- */
+/** Retain the projection for an unknown outcome and refresh the authoritative thread list instead of treating the write as rejected. */
 export function reconcileThreadRename(
   client: QueryClient,
   context: ThreadRenameMutationContext,
@@ -309,11 +268,7 @@ export function abandonThreadRename(
   });
 }
 
-/**
- * Account replacement drops the whole record and its projection. The epoch
- * aborted before the request settled, so the old account's optimistic title
- * must not linger in the shared client or be announced on the new lifetime.
- */
+/** Account replacement drops the whole record and its projection. */
 export function discardThreadRename(
   client: QueryClient,
   projectId: string,

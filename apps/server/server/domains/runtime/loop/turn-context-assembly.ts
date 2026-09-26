@@ -9,14 +9,13 @@
  *   `skills.available` slugs on first attempt via compare-and-swap
  *   `bakeComposedSystemPrompt`. Empty Agent available still writes `[]`. A losing
  *   concurrent bake refetches and uses the winner's frozen prompt + slugs. After
- *   freeze, new available slugs do not rewrite the prompt. Compact (M4) is the
- *   rebake.
+ *   freeze, dynamic context never rewrites the prompt.
  * - Freeze happens at first turn attempt (context assembly), even if the gateway
- *   send then fails or is cancelled; autoprune is the only future re-bake trigger.
+ *   send then fails or is cancelled.
  */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { Block, Thread, Turn } from "@meridian/contracts/threads";
+import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
 import type { AgentRevisionStore } from "../../packages/index.js";
 import type { BakeComposedSystemPromptInput } from "../../threads/ports/repositories.js";
 import type { FunctionTool, Gateway, GenerateRequest, Tool } from "../gateway/index.js";
@@ -27,14 +26,20 @@ import {
   resolveThreadModelAvailableSkills,
 } from "./available-skills.js";
 import {
+  assembleComposedSystemPrompt,
   isThreadPromptFrozen,
   type PromptInventoryListing,
-  rebakeComposedSystemPrompt,
 } from "./composed-system-prompt.js";
 import { buildContext } from "./context-builder.js";
 import { projectImageBlocksForModel } from "./image-context.js";
 import type { EffectiveToolPolicy } from "./permissions/project-tool-policy.js";
+import { applyPromptCacheMarks } from "./prompt-cache-marks.js";
 import type { WorkContextReader } from "./work-context.js";
+
+/** Frozen `bakedTools` is opaque JSON at the contract boundary; the runtime owns its shape. */
+function toolsFromBakedJson(value: Thread["bakedTools"]): Tool[] | null {
+  return Array.isArray(value) ? (value as unknown as Tool[]) : null;
+}
 
 export interface AssembleNextTurnContextInput {
   thread: Thread;
@@ -62,7 +67,10 @@ export interface AssembledNextTurnContext {
   policy: EffectiveToolPolicy;
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
   baked: boolean;
-  generateRequest: Pick<GenerateRequest, "messages" | "tools" | "model" | "reasoning">;
+  generateRequest: Pick<
+    GenerateRequest,
+    "messages" | "tools" | "model" | "reasoning" | "promptCacheKey"
+  >;
 }
 
 function functionToolsFromAdvertised(tools: Tool[] | undefined): FunctionTool[] {
@@ -81,7 +89,7 @@ export async function assembleNextTurnContext(
     baseTools: input.baseTools,
   });
 
-  const tools = agentContext.tools;
+  let tools = agentContext.tools;
   let workContextSection: string | undefined;
   let unfrozenBasePrompt: string | null | undefined;
   let appendPromptForUnfrozen: string | undefined;
@@ -93,6 +101,7 @@ export async function assembleNextTurnContext(
 
   if (isThreadPromptFrozen(thread)) {
     systemPrompt = thread.composedSystemPrompt ?? "";
+    tools = toolsFromBakedJson(thread.bakedTools) ?? tools;
   } else {
     const availableSkills = await resolveThreadModelAvailableSkills({
       thread,
@@ -103,7 +112,7 @@ export async function assembleNextTurnContext(
       agentRevisions: input.agentRevisions,
     });
     const workContext = (await input.workContext.renderForThread(thread.id as ThreadId)).text;
-    const bakedPrompt = rebakeComposedSystemPrompt({
+    const bakedPrompt = assembleComposedSystemPrompt({
       basePrompt: agentContext.agentBody,
       appendPrompt: agentContext.appendPrompt,
       workContext,
@@ -116,10 +125,13 @@ export async function assembleNextTurnContext(
       thread = await input.bakeComposedSystemPrompt(thread.id as ThreadId, {
         composedSystemPrompt: bakedPrompt,
         bakedSkillSlugs: availableSkills.map((skill) => skill.slug),
+        bakedTools: tools as unknown as JsonValue,
       });
       if (!isThreadPromptFrozen(thread))
         throw new Error("Thread prompt freeze returned an unfrozen thread");
       systemPrompt = thread.composedSystemPrompt ?? bakedPrompt;
+      // A losing CAS refetches the winner's frozen tools, mirroring the prompt above.
+      tools = toolsFromBakedJson(thread.bakedTools) ?? tools;
     } else {
       systemPrompt = bakedPrompt;
       unfrozenBasePrompt = agentContext.agentBody;
@@ -133,11 +145,9 @@ export async function assembleNextTurnContext(
 
   const gatewayParams = agentContext.gatewayParams;
   const modelId = gatewayParams.model ?? input.gateway?.getDefaultModel?.();
-  const supportsImageInput =
-    input.gateway
-      ?.listModels?.()
-      .find((model) => model.id === modelId)
-      ?.capabilities.has("image_input") ?? false;
+  const resolvedModel = input.gateway?.listModels?.().find((model) => model.id === modelId);
+  const supportsImageInput = resolvedModel?.capabilities.has("image_input") ?? false;
+  const supportsPromptCaching = resolvedModel?.capabilities.has("caching") ?? false;
   const blocks = await projectImageBlocksForModel({
     thread,
     blocks: input.blocks,
@@ -148,7 +158,7 @@ export async function assembleNextTurnContext(
       },
     },
   });
-  const { messages, tools: contextTools } = buildContext({
+  const built = buildContext({
     thread,
     turns: input.turns,
     blocks,
@@ -160,6 +170,8 @@ export async function assembleNextTurnContext(
     namedSubagents: namedSubagentsForUnfrozen,
     subagentGuidance: subagentGuidanceForUnfrozen,
   });
+  const contextTools = built.tools;
+  const messages = supportsPromptCaching ? applyPromptCacheMarks(built.messages) : built.messages;
 
   return {
     thread,
@@ -172,6 +184,11 @@ export async function assembleNextTurnContext(
     generateRequest: {
       messages,
       tools: contextTools,
+      // Unconditional (not gated on `supportsPromptCaching`): a stable
+      // per-thread routing hint is harmless for adapters that ignore it
+      // (Anthropic has no such concept) and each adapter decides for itself
+      // whether to forward it (e.g. OpenAI Responses `prompt_cache_key`).
+      promptCacheKey: thread.id,
       ...gatewayParams,
     },
   };

@@ -20,7 +20,7 @@ import type {
 } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import type { FunctionTool } from "../gateway/index.js";
-import type { ContinueToolArgs, SpawnToolArgs } from "./spawn-tools.js";
+import type { SpawnToolArgs, ThreadMessageArgs, ThreadReportArgs } from "./spawn-tools.js";
 
 // ── Payload types (tool call → execution) ──
 
@@ -73,7 +73,8 @@ export interface ToolExecutionContext {
   interrupt?: InterruptToolHandlerContext["interrupt"];
   updateComponentBlock?: InterruptToolHandlerContext["updateComponentBlock"];
   spawn?: SpawnToolHandlerContext["spawn"];
-  continue?: ContinueToolHandlerContext["continue"];
+  threadMessage?: ThreadMessageToolHandlerContext["threadMessage"];
+  threadReport?: ThreadReportToolHandlerContext["threadReport"];
   returnResult?: ReturnResultToolHandlerContext["returnResult"];
 }
 
@@ -124,7 +125,7 @@ export interface ToolExecutor {
  * stdout/stderr streaming sink. Interactive or orchestrator-adjacent powers are
  * explicit registration-declared capabilities: `interrupt` receives the
  * user-input suspend/resume callbacks, `spawn` receives the nested-agent
- * launcher, `continue` receives the existing-child relauncher, and
+ * launcher, `thread_message` receives the thread-messenger, and
  * `return_result` receives the child-to-parent completion hook. The executor
  * enforces that capability declaration before injecting those extensions, so
  * ordinary handlers never see channels they did not request.
@@ -157,8 +158,13 @@ export interface SpawnToolHandlerContext extends ToolHandlerContext {
   spawn(input: SpawnToolArgs): Promise<SpawnResult>;
 }
 
-export interface ContinueToolHandlerContext extends ToolHandlerContext {
-  continue(input: ContinueToolArgs): Promise<SpawnResult>;
+export interface ThreadMessageToolHandlerContext extends ToolHandlerContext {
+  threadMessage(input: ThreadMessageArgs): Promise<SpawnResult>;
+}
+export interface ThreadReportToolHandlerContext extends ToolHandlerContext {
+  threadReport(
+    input: ThreadReportArgs,
+  ): Promise<import("@meridian/contracts/spawn").ThreadReportResult>;
 }
 
 export interface ReturnResultToolHandlerContext extends ToolHandlerContext {
@@ -245,13 +251,14 @@ export interface ToolRegistration {
           | ToolHandler
           | ToolHandler<InterruptToolHandlerContext>
           | ToolHandler<SpawnToolHandlerContext>
-          | ToolHandler<ContinueToolHandlerContext>
+          | ToolHandler<ThreadMessageToolHandlerContext>
+          | ToolHandler<ThreadReportToolHandlerContext>
           | ToolHandler<ReturnResultToolHandlerContext>;
       }
     | { type: "client" };
   timeoutMs?: number;
   sequential?: boolean;
-  capability?: "interrupt" | "spawn" | "continue" | "return_result";
+  capability?: "interrupt" | "spawn" | "thread_message" | "thread_report" | "return_result";
   /** Maps executor-owned failures into a tool's model-facing result protocol. */
   formatExecutionError?: (error: ToolExecutionError) => unknown;
 }

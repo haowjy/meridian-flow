@@ -1,4 +1,4 @@
-/** Mars tools / disallowed-tools projected onto Flow names and read/write document commands. */
+/** Mars mutation policy projected onto the canonical document command set. */
 import { describe, expect, it } from "vitest";
 import {
   type EffectiveToolPolicy,
@@ -19,24 +19,22 @@ const WORK_NAV = ["list", "show", "switch"] as const;
 const WORK_MUTATE = ["create", "delete", "update"] as const;
 const ALL_FLOW_TOOLS = [
   "ask_user",
-  "continue",
   "ls",
-  "read",
   "search",
   "skill",
   "spawn",
+  "thread_message",
+  "thread_report",
   "work",
   "write",
 ];
 
 const WRITER_MAP = {
-  read: "allow",
   edit: "allow",
   ask_user: "allow",
 } as const;
 
 const CRITIC_MAP = {
-  read: "allow",
   edit: "deny",
   ask_user: "allow",
 } as const;
@@ -44,7 +42,6 @@ const CRITIC_MAP = {
 function snapshot(policy: EffectiveToolPolicy) {
   return {
     tools: [...policy.tools].sort(),
-    readCommands: [...policy.readCommands].sort(),
     writeCommands: [...policy.writeCommands].sort(),
     workCommands: [...policy.workCommands].sort(),
   };
@@ -55,8 +52,7 @@ describe("projectToolPolicy", () => {
     const omitted = snapshot(projectToolPolicy({}));
     expect(omitted).toEqual({
       tools: ALL_FLOW_TOOLS,
-      readCommands: WRITE_READ,
-      writeCommands: [...WRITE_MUTATE].sort(),
+      writeCommands: [...WRITE_MUTATE, ...WRITE_READ].sort(),
       workCommands: [...WORK_NAV, ...WORK_MUTATE].sort(),
     });
     expect(snapshot(projectToolPolicy({ tools: [] }))).toEqual(omitted);
@@ -67,18 +63,31 @@ describe("projectToolPolicy", () => {
       snapshot(projectToolPolicy({})),
     );
     expect(snapshot(projectToolPolicy({ tools: CRITIC_MAP }))).toEqual({
-      tools: ALL_FLOW_TOOLS.filter((tool) => tool !== "write"),
-      readCommands: WRITE_READ,
-      writeCommands: [],
+      tools: ALL_FLOW_TOOLS,
+      writeCommands: [...WRITE_READ],
       workCommands: WORK_NAV,
     });
   });
 
-  it("keeps document read when only edit is allowed", () => {
+  it("ignores historical read metadata and uses edit only for mutations", () => {
     const policy = projectToolPolicy({ tools: { read: "deny", edit: "allow" } });
-    expect(policy.tools.has("read")).toBe(true);
+    expect(policy.tools.has("read")).toBe(false);
     expect(policy.tools.has("write")).toBe(true);
-    expect([...policy.readCommands].sort()).toEqual(WRITE_READ);
-    expect([...policy.writeCommands].sort()).toEqual([...WRITE_MUTATE].sort());
+    expect([...policy.writeCommands].sort()).toEqual([...WRITE_MUTATE, ...WRITE_READ].sort());
+  });
+
+  it("keeps baseline document inspection under restrictive retained policies", () => {
+    for (const metadata of [
+      { tools: ["bash"] as string[] },
+      { tools: ["read"] as string[] },
+      { tools: { read: "deny", edit: "deny" } as Record<string, "allow" | "deny"> },
+      { "disallowed-tools": ["read", "edit", "ls", "search"] as string[] },
+    ]) {
+      const policy = projectToolPolicy(metadata);
+      expect(policy.tools.has("write")).toBe(true);
+      expect(policy.tools.has("ls")).toBe(true);
+      expect(policy.tools.has("search")).toBe(true);
+      expect([...policy.writeCommands].sort()).toEqual([...WRITE_READ]);
+    }
   });
 });

@@ -16,10 +16,13 @@ Drizzle schema, migrations, functions, and Postgres connection helpers for the M
   Handwritten follow-on migrations contain only database behavior Drizzle cannot
   model, such as trigger functions and triggers; create them with
   `drizzle-kit generate --custom` so the journal remains coherent.
-- Migrations: squashed baseline `0000_thankful_tarantula.sql` (no
+- Migrations: fresh-install baseline `0000_baseline.sql` (no
   `auth.users` references) plus additive migrations listed in
   `src/migrations/meta/_journal.json`. `pnpm db:generate` appends the next
   migration.
+- Existing dev databases from the old chain must be reset with `pnpm db:reset`
+  (destroys local data); the new baseline is not an incremental upgrade. Never
+  reset another developer's database. Legacy imports are a separate ETL.
 - `document_yjs_heads.latest_checkpoint_id` is a Drizzle-declared FK, not custom
   SQL. Yjs checkpoints are append-only and disappear only with their parent
   document cascade.

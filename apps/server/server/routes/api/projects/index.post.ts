@@ -3,6 +3,7 @@ import { type CreateProjectRequest, serializeTransport } from "@meridian/contrac
 import { createError, defineEventHandler, readBody } from "nitro/h3";
 
 import { requireAppUser } from "../../../lib/auth-gate.js";
+import { projectDto } from "../../../lib/project-dto.js";
 import { parseOptionalRequestId } from "../../../lib/request-id.js";
 
 export default defineEventHandler(async (event) => {
@@ -22,5 +23,5 @@ export default defineEventHandler(async (event) => {
   });
 
   event.res.status = 201;
-  return serializeTransport(project);
+  return serializeTransport(projectDto(project));
 });

@@ -1,8 +1,4 @@
-/**
- * thread-store types — the thread store's state/action contracts plus the
- * pending-stream / standalone-creation handoff shape. The canonical thread store
- * vocabulary read by the chat flow and the standalone creation handoff.
- */
+/** Shared types for the per-thread store. */
 import type { AgentSelection } from "@meridian/contracts/agents";
 import type { Block, Thread, ThreadListItem, Turn, TurnStatus } from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
@@ -15,11 +11,6 @@ import type {
 export type PendingStreamStart = {
   after?: string;
   expectedTurnId?: string;
-  /**
-   * When set, the chat surface should persist the thread on the server and
-   * (optionally) send `text` as the first user message before subscribing.
-   * Empty `text` means "create only". Independent chat also creates the project.
-   */
   creation?: {
     projectId: string;
     title: string;
@@ -35,13 +26,6 @@ export type PendingStreamStart = {
 };
 
 export type LiveTurnMeta = {
-  /**
-   * Count of live protocol events applied to this thread.
-   *
-   * Unit: event applications, not block count. The unified-block reducer will
-   * use this to generate deterministic opaque/process block IDs without
-   * storing reducer-frontier counters on the contract `Turn`.
-   */
   eventsApplied: number;
   /**
    * Contract `Turn.id` for the assistant turn currently streaming on this
@@ -78,12 +62,7 @@ export type TurnStatusPatch = Partial<
 export type ThreadStoreState = {
   /** Stable reference time (epoch ms) for relative-time labels in chat. */
   now: number;
-  /**
-   * Transient live-turn bookkeeping keyed by thread id.
-   *
-   * These values are store mechanics only. They must not be copied onto the
-   * JSON-natural contract `Turn`/`Block` objects that snapshots persist.
-   */
+  /** Transient live-turn bookkeeping keyed by thread id. */
   liveMeta: Record<string, LiveTurnMeta>;
   streamingThreadId: string | null;
   streamingProjectId: string | null;
@@ -94,14 +73,7 @@ export type ThreadStoreState = {
   interruptResponses: Record<string, InterruptResponseEntry>;
 };
 
-/**
- * Mutations — use `useThreadActions()` only. Do not call from selectors.
- *
- * Per-project soft-delete + rename live in `ProjectStoreProvider`; this store
- * owns per-thread turns (optimistic + snapshot apply), handoff, streaming
- * coordination, and the pending-creation gate for optimistic standalone creation
- * navigation.
- */
+/** Mutations — use `useThreadActions()` only. */
 export type ThreadStoreActions = {
   turns(id: string): Turn[] | undefined;
   setStreamingThreadId(id: string | null, projectId?: string | null): void;
@@ -117,6 +89,8 @@ export type ThreadStoreActions = {
   removeOptimisticUserTurn(threadId: string, optimisticTurnId: string): void;
   ensureAssistantTurn(threadId: string, turnId: string, opts?: EnsureAssistantTurnOptions): void;
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
+  removeAssistantBlock(threadId: string, blockId: string): void;
+  invalidateThreadSnapshot(threadId: string): void;
   patchTurnStatus(
     threadId: string,
     turnId: string,
@@ -125,6 +99,10 @@ export type ThreadStoreActions = {
   ): void;
   pruneStaleAssistantTurns(threadId: string): void;
   bumpEventsApplied(threadId: string): number;
+  /** Admit a durable block wire sequence, independent of run cursor rewinds. */
+  acceptDurableBlockSeq(threadId: string, seq: string): boolean;
+  /** Whether an acquired snapshot may affect cache, lifecycle, store, or handoff. */
+  acceptsThreadSnapshot(threadId: string, nextSeq: string): boolean;
   applyThreadSnapshot(
     thread: Thread,
     turns: Turn[],
@@ -132,26 +110,14 @@ export type ThreadStoreActions = {
       lifecycle: Pick<ThreadListItem, "actionRequired" | "runningTurnId">;
       nextSeq: string;
     },
-  ): void;
+  ): boolean;
   markPendingStream(threadId: string, start?: PendingStreamStart): void;
   consumePendingStream(threadId: string): PendingStreamStart | null;
-  /**
-   * Mark a (projectId, threadId) pair as pending server creation. Set by the
-   * optimistic standalone creation flow before navigation; cleared by the chat
-   * handoff once `createProject` and `createThread` resolve on the server.
-   * Consumed by data hooks (`useProjectThreads`, `useWorks`,
-   * `useThreadSnapshotSync`) to gate fetches that would otherwise 404.
-   */
   markPendingCreation(args: { projectId?: string; threadId: string }): void;
   clearPendingCreation(args: { projectId?: string; threadId?: string }): void;
 
   /** Read the tracked settlement for one tuple, if any (overlap guard). */
   interruptResponseFor(identity: InterruptResponseIdentity): InterruptResponseEntry | undefined;
-  /**
-   * Record an interrupt response as pending on the wire and expose its state to
-   * the card. The value is retained so Retry can reuse the correlation tuple;
-   * `generation` is the socket the frame was written on.
-   */
   beginInterruptResponse(
     input: InterruptResponseIdentity & { value: JsonValue; generation: number },
   ): void;

@@ -1,27 +1,9 @@
-/**
- * partition-turn — turns an ordered `Block[]` into the ordered render items the
- * transcript draws.
- *
- * A turn is one list, in block order. Each item is one of three tiers:
- *   - `process`  — a contiguous run of reasoning and process tools, collapsed
- *                  into one Thinking disclosure, in place.
- *   - `text`     — an assistant text block, always rendered as prose.
- *   - `artifact` — a writer-facing block (custom card, image, file), always
- *                  rendered (see `tool-kind.ts`).
- *
- * Text and artifacts close the open process run. A reasoning run that arrives
- * after visible prose therefore starts a fresh fold below it instead of
- * merging back above it, and prose never rolls into a fold. The old
- * frontier/fold split — where the last activity run stayed visible and earlier
- * prose disappeared into the fold — is gone.
- *
- * Hidden protocol (the `tool_use`/`tool_result` rows a custom card already
- * surfaces) is dropped: `ToolRow` renders nothing for it, and the fold digest
- * reads through the same visibility predicate.
- */
+/** partition-turn — turns an ordered `Block[]` into the ordered render items the transcript draws. */
 import { type Block, blockContentRecord, blockPlainText } from "@meridian/contracts/protocol";
+import { isArtifactRef } from "./ArtifactGrid";
 import { isToolDeliveryBlock } from "./block-kind";
 import { groupDeliverySegments } from "./group-delivery-segments";
+import type { ReportContentValue } from "./ReportContent";
 import { isArtifactBlock } from "./tool-kind";
 import { isToolViewVisible } from "./tool-view-visibility";
 
@@ -30,6 +12,7 @@ export type Run = { kind: "reasoning"; blocks: Block[] } | { kind: "activity"; b
 export type RenderItem =
   | { kind: "process"; runs: Run[] }
   | { kind: "text"; block: Block }
+  | { kind: "report"; block: Block; report: ReportContentValue }
   | { kind: "artifact"; block: Block };
 
 export function isReasoningBlock(block: Block): boolean {
@@ -38,6 +21,26 @@ export function isReasoningBlock(block: Block): boolean {
 
 export function partitionTurn(blocks: Block[]): RenderItem[] {
   const hidden = hiddenToolCallIds(blocks);
+  const reportCalls = new Set(
+    blocks.flatMap((block) => {
+      if (block.blockType !== "tool_use") return [];
+      const content = blockContentRecord(block);
+      return content.toolName === "return_result" && typeof content.toolCallId === "string"
+        ? [content.toolCallId]
+        : [];
+    }),
+  );
+  const resultByCall = new Map<
+    string,
+    Record<string, import("@meridian/contracts/protocol").JsonValue>
+  >();
+  for (const block of blocks) {
+    if (block.blockType !== "tool_result") continue;
+    const content = blockContentRecord(block);
+    if (typeof content.toolCallId === "string" && isRecord(content.output)) {
+      resultByCall.set(content.toolCallId, content.output);
+    }
+  }
   const items: RenderItem[] = [];
   let runs: Run[] | null = null;
 
@@ -54,7 +57,33 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
 
   for (const block of blocks) {
     if (isToolDeliveryBlock(block)) {
-      const toolCallId = blockContentRecord(block).toolCallId;
+      const content = blockContentRecord(block);
+      const toolCallId = content.toolCallId;
+      if (block.blockType === "tool_use" && content.toolName === "return_result") {
+        const input = isRecord(content.input) ? content.input : {};
+        const result = typeof toolCallId === "string" ? resultByCall.get(toolCallId) : undefined;
+        const failed = result?.ok === false;
+        flushProcess();
+        items.push({
+          kind: "report",
+          block,
+          report: {
+            summary: typeof input.summary === "string" ? input.summary : "",
+            ...(input.payload === undefined ? {} : { payload: input.payload }),
+            artifacts: Array.isArray(input.artifacts) ? input.artifacts.filter(isArtifactRef) : [],
+            partial: failed || content.isError === true,
+            ...(typeof result?.message === "string" ? { reason: result.message } : {}),
+          },
+        });
+        continue;
+      }
+      if (
+        block.blockType === "tool_result" &&
+        typeof toolCallId === "string" &&
+        reportCalls.has(toolCallId)
+      ) {
+        continue;
+      }
       if (typeof toolCallId === "string" && hidden.has(toolCallId)) continue;
       pushProcessBlock("activity", block);
       continue;
@@ -91,11 +120,12 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
   return items;
 }
 
-/**
- * toolCallIds whose tool rows a custom card hides, read through the same
- * visibility policy the render path uses. `tool_result` does not stamp
- * `toolName`; pairing with `tool_use` supplies the name before classification.
- */
+function isRecord(
+  value: unknown,
+): value is Record<string, import("@meridian/contracts/protocol").JsonValue> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
 function hiddenToolCallIds(blocks: Block[]): Set<string> {
   const hidden = new Set<string>();
   for (const segment of groupDeliverySegments(blocks)) {

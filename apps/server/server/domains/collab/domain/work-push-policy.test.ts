@@ -3,6 +3,7 @@
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
+import { unimplementedBranchMutations } from "../test-support/unimplemented-branch-mutations.js";
 import type { BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import type { WorkPushPolicyStore } from "./branch-push-contracts.js";
 import type { WorkDraftPending } from "./work-draft-pending.js";
@@ -34,6 +35,7 @@ function workDraft(
 function createHarness(branch: BranchSnapshot | null = workDraft("manual")) {
   const events: string[] = [];
   const branchStore: BranchStore = {
+    ...unimplementedBranchMutations(),
     getBranch: vi.fn(async () => branch),
     updateBranchSnapshot: vi.fn(),
     deferUntilCommit: vi.fn(() => false),

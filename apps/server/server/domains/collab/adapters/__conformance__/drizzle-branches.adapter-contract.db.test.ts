@@ -38,6 +38,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleBranchStore } = await import("../drizzle-branches.js");
+    const { createHocuspocusPersistenceService } = await import("../../hocuspocus-persistence.js");
     const {
       createDrizzleBranchJournalReadStore,
       createDrizzlePushCommitStore,
@@ -106,11 +107,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       },
       async recover() {},
     };
-    let store = createDrizzleBranchStore(db, {
-      journal: livePersistence.journal,
-      lifecycle: livePersistence.lifecycle,
-      coordinator: liveCoordinator,
-    });
+    function createBranchStore() {
+      return createDrizzleBranchStore(db, {
+        journal: livePersistence.journal,
+        lifecycle: livePersistence.lifecycle,
+        coordinator: liveCoordinator,
+      });
+    }
+
+    let store = createBranchStore();
+
+    function branchRoomPersistence(branchStore = store) {
+      return createHocuspocusPersistenceService({
+        journal: livePersistence.journal,
+        branchStore,
+        branchCoordinator: createBranchCoordinator({ store: branchStore }),
+        hocuspocus: () => null,
+        metaForOrigin: () => ({ origin: "system", seq: 0 }),
+        latestUpdateSeq: async () => 0,
+        emitAgentEditInvariantViolation: () => undefined,
+      });
+    }
 
     function docWithText(value: string): Y.Doc {
       const doc = new Y.Doc({ gc: false });
@@ -160,11 +177,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     beforeEach(async () => {
       db = database.current;
       livePersistence = createDrizzleCollabPersistence(db);
-      store = createDrizzleBranchStore(db, {
-        journal: livePersistence.journal,
-        lifecycle: livePersistence.lifecycle,
-        coordinator: liveCoordinator,
-      });
+      store = createBranchStore();
       await db.insert(users).values(conformanceUserValues(USER_ID, "drizzle-branches"));
       await db.insert(projects).values({
         id: PROJECT_ID,
@@ -200,12 +213,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         title: "Thread",
         kind: "primary",
-        status: "active",
+        status: "idle",
       });
       await db.insert(turns).values({
         id: TURN_ID as never,
         threadId: THREAD_ID as never,
         role: "assistant",
+        origin: "assistant",
         status: "complete",
       });
       await db
@@ -623,11 +637,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(before.members).toEqual([DOC_ID]);
       await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, DOC_ID));
 
-      const reloaded = createDrizzleBranchStore(db, {
-        journal: livePersistence.journal,
-        lifecycle: livePersistence.lifecycle,
-        coordinator: liveCoordinator,
-      });
+      const reloaded = createBranchStore();
       const after = await reloaded.resolveManifestMembership({ projectId: PROJECT_ID as never });
       expect(after.members).toEqual([DOC_ID]);
     });
@@ -1264,25 +1274,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("G2 §6.1 entry success: missing work-draft row is created and branch room loads that branch", async () => {
       const { branchRoomName } = await import("@meridian/contracts/protocol");
-      const { createHocuspocusPersistenceService } = await import(
-        "../../hocuspocus-persistence.js"
-      );
       const live = docWithText("live review seed");
       const branch = await store.resolveWorkDraftBranchForWork({
         documentId: DOC_ID as never,
         workId: WORK_ID as never,
         liveDoc: live,
       });
-      const coordinator = createBranchCoordinator({ store });
-      const persistence = createHocuspocusPersistenceService({
-        journal: livePersistence.journal,
-        branchStore: store,
-        branchCoordinator: coordinator,
-        hocuspocus: () => null,
-        metaForOrigin: () => ({ origin: "system", seq: 0 }),
-        latestUpdateSeq: async () => 0,
-        emitAgentEditInvariantViolation: () => undefined,
-      });
+      const persistence = branchRoomPersistence();
 
       const room = await persistence.resolveBranchHocuspocusRoom(
         branch.branchId,
@@ -1420,9 +1418,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("G2 §6.1 entry corrupt snapshot fails loudly at branch-room load", async () => {
-      const { createHocuspocusPersistenceService } = await import(
-        "../../hocuspocus-persistence.js"
-      );
       const { BranchCorruptError } = await import("../../domain/branch-resolver.js");
       await db.insert(documentBranches).values({
         id: "branch_corrupt_review_entry",
@@ -1437,15 +1432,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         stateVector: Buffer.from([0]),
         schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
       });
-      const persistence = createHocuspocusPersistenceService({
-        journal: livePersistence.journal,
-        branchStore: store,
-        branchCoordinator: createBranchCoordinator({ store }),
-        hocuspocus: () => null,
-        metaForOrigin: () => ({ origin: "system", seq: 0 }),
-        latestUpdateSeq: async () => 0,
-        emitAgentEditInvariantViolation: () => undefined,
-      });
+      const persistence = branchRoomPersistence();
 
       await expect(
         persistence.loadHocuspocusBranchState("branch_corrupt_review_entry", 1),
@@ -1483,9 +1470,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("G2 §6.1 entry mid-reset rebinds to the bumped generation branch room", async () => {
-      const { createHocuspocusPersistenceService } = await import(
-        "../../hocuspocus-persistence.js"
-      );
       const coordinator = createBranchCoordinator({ store });
       const branch = await store.ensureWorkDraftBranch({
         documentId: DOC_ID as never,
@@ -1493,15 +1477,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         liveDoc: docWithText("before reset"),
       });
       await coordinator.resetFromDoc(branch.branchId, docWithText("after reset"));
-      const persistence = createHocuspocusPersistenceService({
-        journal: livePersistence.journal,
-        branchStore: store,
-        branchCoordinator: coordinator,
-        hocuspocus: () => null,
-        metaForOrigin: () => ({ origin: "system", seq: 0 }),
-        latestUpdateSeq: async () => 0,
-        emitAgentEditInvariantViolation: () => undefined,
-      });
+      const persistence = branchRoomPersistence();
 
       const freshGeneration = branch.generation + 1;
       const room = await persistence.resolveBranchHocuspocusRoom(branch.branchId, freshGeneration);
@@ -1516,18 +1492,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("G2 §6.1 entry connect failure is a typed branch-room miss, never live fallback", async () => {
       const { parseYjsRoomName } = await import("@meridian/contracts/protocol");
-      const { createHocuspocusPersistenceService } = await import(
-        "../../hocuspocus-persistence.js"
-      );
-      const persistence = createHocuspocusPersistenceService({
-        journal: livePersistence.journal,
-        branchStore: store,
-        branchCoordinator: createBranchCoordinator({ store }),
-        hocuspocus: () => null,
-        metaForOrigin: () => ({ origin: "system", seq: 0 }),
-        latestUpdateSeq: async () => 0,
-        emitAgentEditInvariantViolation: () => undefined,
-      });
+      const persistence = branchRoomPersistence();
 
       expect(parseYjsRoomName("branch:missing-review-branch:gen:1")).toEqual({
         kind: "branch",

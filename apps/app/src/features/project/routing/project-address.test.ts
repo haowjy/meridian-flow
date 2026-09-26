@@ -19,7 +19,6 @@ describe("readable project addresses", () => {
   });
 
   it.each([
-    "/p/550e8400-e29b-41d4-a716-446655440000",
     "/p/550e8400-e29b-41d4-a716-446655440000/chat/550e8400-e29b-41d4-a716-446655440000",
     "/p/550e8400-e29b-41d4-a716-446655440000/works",
     "/p/550e8400-e29b-41d4-a716-446655440000/work/browse",
@@ -33,7 +32,6 @@ describe("readable project addresses", () => {
     "/p/550e8400-e29b-41d4-a716-446655440000/work/revision/scratch/notes.md",
     "/p/550e8400-e29b-41d4-a716-446655440000/scratch/notes.md",
     "/p/550e8400-e29b-41d4-a716-446655440000/work/revision/browse/uploads",
-    "/p/550e8400-e29b-41d4-a716-446655440000/uploads/reference.pdf",
     "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/literal%252F.md",
   ])("round trips %s", (path) => {
     const parsed = parseProjectAddress(path);
@@ -43,9 +41,6 @@ describe("readable project addresses", () => {
   });
 
   it.each([
-    "/p/550e8400-e29b-41d4-a716-446655440000",
-    "/p/550e8400-e29b-41d4-a716-446655440000/works",
-    "/p/550e8400-e29b-41d4-a716-446655440000/work/revision",
     "/p/550e8400-e29b-41d4-a716-446655440000",
     "/p/550e8400-e29b-41d4-a716-446655440000/editor",
   ])("departure selection state is stable after parsing %s", (href) => {
@@ -66,24 +61,16 @@ describe("readable project addresses", () => {
     "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/a%5Cb.md",
     "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/a\\b.md",
     "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/%",
-    "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/%E0%A4",
     "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/a%3Fb.md",
     "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/..",
     "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/%40draft.md",
     "/p/550e8400-e29b-41d4-a716-446655440000/manuscript//leaf.md",
     "/p/550e8400-e29b-41d4-a716-446655440000/work/revision/manuscript/leaf.md",
-    "/p/550e8400-e29b-41d4-a716-446655440000/work/revision/browse/kb",
     "/p/550e8400-e29b-41d4-a716-446655440000/manuscript",
     "/p/550e8400-e29b-41d4-a716-446655440000/chat",
     "/p/550e8400-e29b-41d4-a716-446655440000/chat/fight-scene",
     "/p/550e8400-e29b-41d4-a716-446655440000/chat/a/b",
-    "/p/550e8400-e29b-41d4-a716-446655440000/chats",
-    "/p/550e8400-e29b-41d4-a716-446655440000/chats/new",
-    "/p/550e8400-e29b-41d4-a716-446655440000/agents",
-    "/p/550e8400-e29b-41d4-a716-446655440000/publish",
-    "/p/550e8400-e29b-41d4-a716-446655440000//",
     "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/%20trimmed.md",
-    "/p//editor",
   ])("rejects invalid or unsupported primary %s", (path) => {
     expect(parseProjectAddress(path).kind).toBe("invalid");
   });

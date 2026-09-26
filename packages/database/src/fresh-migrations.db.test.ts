@@ -1,8 +1,8 @@
-/** Migration-chain catalog proof against the runner-owned fresh PostgreSQL database. */
+/** Fresh-baseline catalog and bootstrap contracts on runner-owned PostgreSQL. */
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
-import { withPopulatedMigrationDatabase } from "./__test-support__/migration-fixtures";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -11,178 +11,40 @@ if (!enabled || !databaseUrl) {
   describe.skip("fresh database migrations (postgres)", () => {});
 } else {
   describe("fresh database migrations (postgres)", () => {
-    it("keeps the renumbered migration tail eligible for incremental upgrades", async () => {
+    it("installs the baseline and ordered journal entries", async () => {
       const journal = JSON.parse(
         await readFile(new URL("./migrations/meta/_journal.json", import.meta.url), "utf8"),
-      ) as {
-        entries: Array<{ tag: string; when: number }>;
-      };
-      const tailStart = journal.entries.findIndex(
-        (entry) => entry.tag === "0060_cultured_cobalt_man",
-      );
-      const tail = journal.entries.slice(tailStart);
-
-      expect(tailStart).toBeGreaterThanOrEqual(0);
-      for (let index = 1; index < tail.length; index += 1) {
-        expect(tail[index]?.when).toBeGreaterThan(tail[index - 1]?.when ?? 0);
+      ) as { entries: Array<{ idx: number; tag: string; when: number }> };
+      expect(journal.entries[0]).toMatchObject({ idx: 0, tag: "0000_baseline" });
+      for (let index = 1; index < journal.entries.length; index += 1) {
+        expect(journal.entries[index]?.when).toBeGreaterThan(journal.entries[index - 1]?.when ?? 0);
+      }
+      const baseline = await readFile(new URL("./migrations/0000_baseline.sql", import.meta.url));
+      const target = postgres(databaseUrl, { max: 1 });
+      try {
+        const applied =
+          await target`SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at`;
+        expect(applied).toHaveLength(journal.entries.length);
+        expect(applied[0]).toEqual({
+          hash: createHash("sha256").update(baseline).digest("hex"),
+          created_at: String(journal.entries[0]?.when),
+        });
+      } finally {
+        await target.end();
       }
     });
-    it("moves only provisional Scratch writing into Unfiled without changing document identity", {
-      timeout: 90_000,
-    }, async () => {
-      await withPopulatedMigrationDatabase({
-        databaseUrl,
-        seedBefore: "0086_unfiled_provisional_documents",
-        seed: async (target) => {
-          await target.unsafe(`
-INSERT INTO users(id,external_id,email) VALUES ('00000000-0000-4000-8000-000000000099','unfiled-migration','unfiled-migration@test.invalid');
-INSERT INTO projects(id,user_id,name,slug) VALUES ('00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000099','Probe','probe');
-INSERT INTO works(id,project_id,created_by_user_id,name,slug,status) VALUES ('00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000099','Archived','archived','archived');
-INSERT INTO context_sources(id,project_id,name,slug) VALUES ('00000000-0000-4000-8000-000000000003','00000000-0000-4000-8000-000000000001','Shared','scratch'),('00000000-0000-4000-8000-000000000005','00000000-0000-4000-8000-000000000001','Unfiled','unfiled');
-INSERT INTO context_sources(id,work_id,name,slug,scope) VALUES ('00000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000002','Scratch','scratch','work');
-INSERT INTO folders(id,context_source_id,name) VALUES ('00000000-0000-4000-8000-000000000006','00000000-0000-4000-8000-000000000004','Nested'),('00000000-0000-4000-8000-000000000007','00000000-0000-4000-8000-000000000005','Untitled 2.md');
-INSERT INTO documents(id,context_source_id,folder_id,name,provisional_name,markdown_projection) VALUES ('00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000003',NULL,'Untitled 1',true,'one'),('00000000-0000-4000-8000-000000000011','00000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000006','Untitled 1',true,'two'),('00000000-0000-4000-8000-000000000012','00000000-0000-4000-8000-000000000004',NULL,'Keep scratch',false,'three'),('00000000-0000-4000-8000-000000000013','00000000-0000-4000-8000-000000000005',NULL,'Untitled 1',false,'occupied');
-INSERT INTO context_catalog_scope_heads(scope_key,scope) VALUES ('project:probe',jsonb_build_object('kind','project','projectId','00000000-0000-4000-8000-000000000001'));
-          `);
-        },
-        verify: async (target) => {
-          const documents = await target`
-            SELECT d.id, s.slug, d.name, d.folder_id, d.markdown_projection
-            FROM documents d JOIN context_sources s ON s.id = d.context_source_id
-            WHERE d.kind = 'content' ORDER BY d.id`;
-          expect(documents).toEqual([
-            {
-              id: "00000000-0000-4000-8000-000000000010",
-              slug: "unfiled",
-              name: "Untitled 3",
-              folder_id: null,
-              markdown_projection: "one",
-            },
-            {
-              id: "00000000-0000-4000-8000-000000000011",
-              slug: "unfiled",
-              name: "Untitled 4",
-              folder_id: null,
-              markdown_projection: "two",
-            },
-            {
-              id: "00000000-0000-4000-8000-000000000012",
-              slug: "scratch",
-              name: "Keep scratch",
-              folder_id: null,
-              markdown_projection: "three",
-            },
-            {
-              id: "00000000-0000-4000-8000-000000000013",
-              slug: "unfiled",
-              name: "Untitled 1",
-              folder_id: null,
-              markdown_projection: "occupied",
-            },
-          ]);
-          expect(
-            await target`SELECT path, document_id FROM document_previous_locations ORDER BY document_id`,
-          ).toEqual([
-            { path: "Untitled 1.md", document_id: "00000000-0000-4000-8000-000000000010" },
-            { path: "Nested/Untitled 1.md", document_id: "00000000-0000-4000-8000-000000000011" },
-          ]);
-          expect(await target`SELECT scope_key FROM context_catalog_scope_heads`).toEqual([]);
-          expect(await target`SELECT authority_key FROM context_availability_heads`).toEqual([
-            { authority_key: "project:00000000-0000-4000-8000-000000000001" },
-          ]);
-          await target.unsafe(
-            await readFile(
-              new URL("./migrations/0086_unfiled_provisional_documents.sql", import.meta.url),
-              "utf8",
-            ),
-          );
-          expect(
-            await target`
-            SELECT d.id, s.slug, d.name, d.folder_id, d.markdown_projection
-            FROM documents d JOIN context_sources s ON s.id = d.context_source_id
-            WHERE d.kind = 'content' ORDER BY d.id`,
-          ).toEqual(documents);
-        },
-      });
-    });
-
-    it("backfills readable project and untitled chat handles with deleted reservations", {
-      timeout: 90_000,
-    }, async () => {
-      await withPopulatedMigrationDatabase({
-        databaseUrl,
-        seedBefore: "0083_watery_wind_dancer",
-        seed: async (target) => {
-          await target.unsafe(`
-            INSERT INTO users (id, external_id, email) VALUES ('00000000-0000-4000-8000-000000000231', 'readable-upgrade', 'readable-upgrade@test.invalid');
-            INSERT INTO projects (id, user_id, name, slug, created_at, deleted_at) VALUES
-              ('00000000-0000-4000-8000-000000000232', '00000000-0000-4000-8000-000000000231', 'Silver Moon', 'silver-moon-12345678', '2026-01-01', '2026-01-02'),
-              ('00000000-0000-4000-8000-000000000233', '00000000-0000-4000-8000-000000000231', 'Silver Moon', 'silver-moon-87654321', '2026-01-03', NULL);
-            INSERT INTO threads (id, project_id, created_by_user_id, title, slug) VALUES
-              ('00000000-0000-4000-8000-000000000234', '00000000-0000-4000-8000-000000000233', '00000000-0000-4000-8000-000000000231', '', NULL),
-              ('00000000-0000-4000-8000-000000000235', '00000000-0000-4000-8000-000000000233', '00000000-0000-4000-8000-000000000231', 'Chat', 'chat'),
-              ('00000000-0000-4000-8000-000000000236', '00000000-0000-4000-8000-000000000233', '00000000-0000-4000-8000-000000000231', 'Fight Scene', NULL);
-            INSERT INTO threads (id, project_id, created_by_user_id, title, slug, deleted_at) VALUES
-              ('00000000-0000-4000-8000-000000000237', '00000000-0000-4000-8000-000000000233', '00000000-0000-4000-8000-000000000231', 'Deleted Chat', 'chat', '2026-01-01');
-          `);
-        },
-        verify: async (target) => {
-          expect(
-            await target`SELECT slug FROM projects WHERE user_id = '00000000-0000-4000-8000-000000000231' ORDER BY created_at`,
-          ).toEqual([{ slug: "silver-moon" }, { slug: "silver-moon-2" }]);
-          expect(
-            await target`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'threads' AND column_name = 'slug'`,
-          ).toEqual([]);
-          expect(
-            await target`SELECT ref FROM threads WHERE project_id = '00000000-0000-4000-8000-000000000233' ORDER BY id`,
-          ).toEqual([{ ref: "c1" }, { ref: "c2" }, { ref: "c3" }, { ref: "c4" }]);
-        },
-      });
-    });
-
-    it("deletes working-set rows whose routes predate stable identity", {
-      timeout: 90_000,
-    }, async () => {
-      const ids = {
-        user: "00000000-0000-4000-8000-000000000221",
-        project: "00000000-0000-4000-8000-000000000222",
-      };
-      await withPopulatedMigrationDatabase({
-        databaseUrl,
-        seedBefore: "0080_reset_working_set_routes",
-        seed: async (target) => {
-          await target.unsafe(`
-            INSERT INTO users (id, external_id, email)
-            VALUES ('${ids.user}', 'working-set-reset-fixture', 'working-set-reset@test.invalid');
-            INSERT INTO projects (id, user_id, name, slug)
-            VALUES ('${ids.project}', '${ids.user}', 'Working set reset', 'working-set-reset');
-            INSERT INTO project_user_working_sets (user_id, project_id, recent_routes)
-            VALUES ('${ids.user}', '${ids.project}', '[{"scheme":"kb","path":"/old.md"}]');
-          `);
-        },
-        verify: async (target) => {
-          const [{ count }] = await target<{ count: string }[]>`
-            SELECT count(*)::text AS count FROM project_user_working_sets
-            WHERE project_id = ${ids.project}
-          `;
-          expect(count).toBe("0");
-        },
-      });
-    });
-
     it("exposes the expected catalog on the runner-migrated database", async () => {
       const target = postgres(databaseUrl, { max: 1 });
       try {
         const rows = await target<{ table_name: string }[]>`
             SELECT table_name FROM information_schema.tables
             WHERE table_schema = 'public'
-              AND table_name IN ('turn_trail_work', 'change_trail_document_occurrences', 'branch_write_journal', 'work_context_delivery_obligations')
+              AND table_name IN ('turn_trail_work', 'change_trail_document_occurrences', 'branch_write_journal')
           `;
         expect(rows.map((row) => row.table_name).sort()).toEqual([
           "branch_write_journal",
           "change_trail_document_occurrences",
           "turn_trail_work",
-          "work_context_delivery_obligations",
         ]);
         const triggers = await target<{ event_object_table: string; trigger_name: string }[]>`
             SELECT event_object_table, trigger_name
@@ -201,6 +63,68 @@ INSERT INTO context_catalog_scope_heads(scope_key,scope) VALUES ('project:probe'
             trigger_name: "enlist_turn_trail_work",
           },
         ]);
+        // The chat-activity projection's trigger family (migration
+        // 0000_baseline.sql; see domains/threads/.context/CONTEXT.md
+        // "Chat activity projection") stays a single owner across threads,
+        // turns, and turn_blocks.
+        const chatActivityTriggers = await target<
+          { event_object_table: string; trigger_name: string }[]
+        >`
+            -- DISTINCT: information_schema.triggers denormalizes a multi-event
+            -- trigger (INSERT OR UPDATE OF ...) into one row per event type.
+            SELECT DISTINCT event_object_table, trigger_name
+            FROM information_schema.triggers
+            WHERE trigger_schema = 'public'
+              AND trigger_name LIKE 'recompute_thread_chat_activity%'
+            ORDER BY trigger_name
+          `;
+        expect(chatActivityTriggers).toEqual([
+          {
+            event_object_table: "threads",
+            trigger_name: "recompute_thread_chat_activity_on_active_leaf",
+          },
+          {
+            event_object_table: "turn_blocks",
+            trigger_name: "recompute_thread_chat_activity_on_block_insert",
+          },
+          {
+            event_object_table: "turn_blocks",
+            trigger_name: "recompute_thread_chat_activity_on_block_update",
+          },
+          {
+            event_object_table: "turns",
+            trigger_name: "recompute_thread_chat_activity_on_turn",
+          },
+        ]);
+        const functions = await target<{ name: string }[]>`
+          SELECT p.proname AS name FROM pg_proc p
+          JOIN pg_namespace n ON n.oid = p.pronamespace
+          WHERE n.nspname = 'public'
+            AND NOT EXISTS (
+              SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass
+                AND d.objid = p.oid AND d.deptype = 'e'
+            )
+          ORDER BY name
+        `;
+        expect(functions.map((row) => row.name)).toEqual([
+          "complete_turn_trail_work",
+          "consume_credit_lots_fifo",
+          "enforce_thread_prompt_freeze",
+          "enlist_turn_trail_work",
+          "recompute_thread_chat_activity",
+          "recompute_thread_chat_activity_from_block_insert",
+          "recompute_thread_chat_activity_from_block_update",
+          "recompute_thread_chat_activity_from_thread",
+          "recompute_thread_chat_activity_from_turn",
+          "update_updated_at_column",
+          "validate_active_leaf_is_leaf",
+          "validate_active_leaf_same_thread",
+          "validate_parent_turn_links_same_thread",
+          "validate_parent_turn_same_thread",
+        ]);
+        expect(await target`SELECT extname FROM pg_extension WHERE extname = 'pg_trgm'`).toEqual([
+          { extname: "pg_trgm" },
+        ]);
         const indexes = await target<{ indexdef: string; indexname: string }[]>`
           SELECT indexname, indexdef
           FROM pg_indexes
@@ -218,288 +142,76 @@ INSERT INTO context_catalog_scope_heads(scope_key,scope) VALUES ('project:probe'
         await target.end();
       }
     });
-    it("preserves active Work handles while reserving disambiguated deleted handles", {
-      timeout: 90_000,
-    }, async () => {
-      const ids = {
-        user: "00000000-0000-4000-8000-000000000211",
-        project: "00000000-0000-4000-8000-000000000212",
-        deletedFirst: "00000000-0000-4000-8000-000000000213",
-        live: "00000000-0000-4000-8000-000000000214",
-        archived: "00000000-0000-4000-8000-000000000215",
-        deletedLast: "00000000-0000-4000-8000-000000000216",
-      };
-
-      await withPopulatedMigrationDatabase({
-        databaseUrl,
-        seedBefore: "0070_opposite_white_queen",
-        seed: async (target) => {
-          await target.unsafe(`
-            INSERT INTO users (id, external_id, email)
-            VALUES ('${ids.user}', 'work-slug-fixture', 'work-slug@test.invalid');
-            INSERT INTO projects (id, user_id, name, slug)
-            VALUES ('${ids.project}', '${ids.user}', 'Work slug fixture', 'work-slug-fixture');
-            INSERT INTO works (
-              id, project_id, created_by_user_id, name, status, created_at, deleted_at
-            ) VALUES
-              ('${ids.deletedFirst}', '${ids.project}', '${ids.user}', 'Book 2!', 'active',
-                '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z'),
-              ('${ids.live}', '${ids.project}', '${ids.user}', 'Book 2?', 'active',
-                '2026-01-03T00:00:00Z', NULL),
-              ('${ids.archived}', '${ids.project}', '${ids.user}', 'Book 2.', 'archived',
-                '2026-01-04T00:00:00Z', NULL),
-              ('${ids.deletedLast}', '${ids.project}', '${ids.user}', 'Book 2#', 'active',
-                '2026-01-05T00:00:00Z', '2026-01-06T00:00:00Z');
-          `);
-        },
-        verify: async (target) => {
-          const rows = await target<{ id: string; slug: string }[]>`
-            SELECT id, slug FROM works WHERE project_id = ${ids.project}
-          `;
-          const slugs = new Map(rows.map((row) => [row.id, row.slug]));
-          expect(slugs.get(ids.live)).toBe("book-2");
-          expect(slugs.get(ids.archived)).toBe("book-2-2");
-          expect(slugs.get(ids.deletedFirst)).toBe("book-2-3");
-          expect(slugs.get(ids.deletedLast)).toBe("book-2-4");
-        },
-      });
+    it("supports locked No Work and primary thread bindings without seeded identities", async () => {
+      const target = postgres(databaseUrl, { max: 1 });
+      try {
+        await target.begin(async (tx) => {
+          const [user] = await tx`INSERT INTO users (external_id, email)
+            VALUES ('baseline-no-work', 'baseline-no-work@example.test') RETURNING id`;
+          const [project] = await tx`INSERT INTO projects (user_id, name, slug)
+            VALUES (${user.id}, 'Baseline', 'baseline') RETURNING id`;
+          // Projects created after migration are bootstrapped by the application, not a trigger.
+          expect(await tx`SELECT id FROM works WHERE project_id = ${project.id}`).toEqual([]);
+          const [work] =
+            await tx`INSERT INTO works (project_id, created_by_user_id, name, is_no_work)
+            VALUES (${project.id}, ${user.id}, 'No Work', true)
+            RETURNING id, slug, status, ai_write_mode`;
+          expect(work).toMatchObject({ slug: null, status: "active", ai_write_mode: "direct" });
+          await expect(
+            tx.savepoint(
+              (save) => save`UPDATE works SET status = 'archived' WHERE id = ${work.id}`,
+            ),
+          ).rejects.toMatchObject({ constraint_name: "works_no_work_active" });
+          await expect(
+            tx.savepoint((save) => save`UPDATE works SET slug = 'named' WHERE id = ${work.id}`),
+          ).rejects.toMatchObject({ constraint_name: "works_no_work_slug" });
+          await expect(
+            tx.savepoint(
+              (save) => save`INSERT INTO works (project_id, created_by_user_id, name, is_no_work)
+            VALUES (${project.id}, ${user.id}, 'Another No Work', true)`,
+            ),
+          ).rejects.toMatchObject({ constraint_name: "works_project_no_work_active" });
+          const [thread] = await tx`INSERT INTO threads (project_id, created_by_user_id)
+            VALUES (${project.id}, ${user.id}) RETURNING id`;
+          await tx`INSERT INTO thread_works (thread_id, work_id, project_id, is_primary)
+            VALUES (${thread.id}, ${work.id}, ${project.id}, true)`;
+          expect(
+            await tx`SELECT work_id, is_primary FROM thread_works WHERE thread_id = ${thread.id}`,
+          ).toEqual([{ work_id: work.id, is_primary: true }]);
+          await tx`DELETE FROM users WHERE id = ${user.id}`;
+        });
+      } finally {
+        await target.end();
+      }
     });
-    // Replays the entire migration chain into a fresh database: 10-22s alone,
-    // and past the package's 30s default when parallel checkouts share the
-    // one Postgres container. The budget is the replay's, not the assertion's.
-    it("renames the frozen search directive without touching prompts that only mention grep", {
-      timeout: 90_000,
-    }, async () => {
-      const ids = {
-        user: "00000000-0000-4000-8000-000000000201",
-        project: "00000000-0000-4000-8000-000000000202",
-        directive: "00000000-0000-4000-8000-000000000203",
-        partial: "00000000-0000-4000-8000-000000000204",
-        prose: "00000000-0000-4000-8000-000000000205",
-        empty: "00000000-0000-4000-8000-000000000206",
-      };
-      const directiveBefore =
-        "Use `write` with command=create/read for document content; use `ls` and `grep` for discovery.";
-      const directiveAfter =
-        "Use `write` with command=create/read for document content; use `ls` and `search` for discovery.";
-      // Close enough to be selected by a loose predicate, never close enough to
-      // be rewritten by the replacement: the row that stayed eligible forever.
-      const partial = "When you need a file, call `grep` for discovery.";
-      const prose = "The writer asked about grep yesterday; do not mention it.";
-
-      await withPopulatedMigrationDatabase({
-        databaseUrl,
-        seedBefore: "0068_search_tool_rename",
-        seed: async (target) => {
-          await target.unsafe(`
-            INSERT INTO users (id, external_id, email)
-            VALUES ('${ids.user}', 'search-rename-fixture', 'search-rename@test.invalid');
-            INSERT INTO projects (id, user_id, name, slug)
-            VALUES ('${ids.project}', '${ids.user}', 'Search rename fixture', 'search-rename-fixture');
-          `);
-          for (const [id, prompt] of [
-            [ids.directive, `'${directiveBefore}'`],
-            [ids.partial, `'${partial}'`],
-            [ids.prose, `'${prose}'`],
-            [ids.empty, "NULL"],
-          ] as const) {
-            await target.unsafe(`
-              INSERT INTO threads (
-                id, project_id, created_by_user_id, title, kind, status, composed_system_prompt
-              )
-              VALUES ('${id}', '${ids.project}', '${ids.user}', 'Search rename fixture', 'primary', 'idle', ${prompt});
-            `);
-          }
-        },
-        verify: async (target) => {
-          const prompts = new Map(
-            (
-              await target<{ id: string; composed_system_prompt: string | null }[]>`
-                SELECT id, composed_system_prompt FROM threads
-                WHERE project_id = ${ids.project}
-              `
-            ).map((row) => [row.id, row.composed_system_prompt]),
-          );
-
-          expect(prompts.get(ids.directive)).toBe(directiveAfter);
-          expect(prompts.get(ids.partial)).toBe(partial);
-          expect(prompts.get(ids.prose)).toBe(prose);
-          expect(prompts.get(ids.empty)).toBeNull();
-
-          // Selection-idempotent, not merely value-idempotent: re-running the
-          // migration must find nothing left to do. A predicate wider than its
-          // own replacement keeps re-selecting rows it can never change.
-          const migration = await readFile(
-            new URL("./migrations/0068_search_tool_rename.sql", import.meta.url),
-            "utf8",
-          );
-          const replayed = await target.unsafe(
-            migration.replaceAll("--> statement-breakpoint", ""),
-          );
-          expect(replayed.count).toBe(0);
-        },
-      });
-    });
-
-    it("replaces word thread slugs with sequential cN refs", {
-      timeout: 90_000,
-    }, async () => {
-      const ids = {
-        user: "00000000-0000-4000-8000-000000000241",
-        project: "00000000-0000-4000-8000-000000000242",
-        first: "00000000-0000-4000-8000-000000000243",
-        second: "00000000-0000-4000-8000-000000000244",
-      };
-      await withPopulatedMigrationDatabase({
-        databaseUrl,
-        seedBefore: "0095_lame_tombstone",
-        seed: async (target) => {
-          await target.unsafe(`
-            INSERT INTO users (id, external_id, email)
-            VALUES ('${ids.user}', 'thread-ref-upgrade', 'thread-ref-upgrade@test.invalid');
-            INSERT INTO projects (id, user_id, name, slug)
-            VALUES ('${ids.project}', '${ids.user}', 'Ref upgrade', 'ref-upgrade');
-            INSERT INTO threads (id, project_id, created_by_user_id, title, slug, kind, created_at)
-            VALUES
-              ('${ids.first}', '${ids.project}', '${ids.user}', 'Fight Scene', 'fight-scene', 'primary', '2026-01-01'),
-              ('${ids.second}', '${ids.project}', '${ids.user}', 'Chat', 'chat', 'primary', '2026-01-02');
-          `);
-        },
-        verify: async (target) => {
-          expect(await target`SELECT ref FROM threads WHERE id = ${ids.first}`).toEqual([
-            { ref: "c1" },
-          ]);
-          expect(await target`SELECT ref FROM threads WHERE id = ${ids.second}`).toEqual([
-            { ref: "c2" },
-          ]);
-          expect(
-            await target`SELECT n FROM project_thread_counters WHERE project_id = ${ids.project}`,
-          ).toEqual([{ n: 2 }]);
-        },
-      });
-    });
-
-    it("inserts locked No Work, re-keys unlabeled scratch/uploads, and binds threads without a primary", {
-      timeout: 90_000,
-    }, async () => {
-      const ids = {
-        user: "00000000-0000-4000-8000-000000000261",
-        project: "00000000-0000-4000-8000-000000000262",
-        deletedProject: "00000000-0000-4000-8000-000000000263",
-        namedNoWork: "00000000-0000-4000-8000-000000000264",
-        named: "00000000-0000-4000-8000-000000000265",
-        scratch: "00000000-0000-4000-8000-000000000266",
-        uploads: "00000000-0000-4000-8000-000000000267",
-        manuscript: "00000000-0000-4000-8000-000000000268",
-        unbound: "00000000-0000-4000-8000-000000000269",
-        bound: "00000000-0000-4000-8000-000000000270",
-        deletedThread: "00000000-0000-4000-8000-000000000271",
-        document: "00000000-0000-4000-8000-000000000272",
-      };
-      await withPopulatedMigrationDatabase({
-        databaseUrl,
-        seedBefore: "0099_military_ultragirl",
-        seed: async (target) => {
-          await target.unsafe(`
-            INSERT INTO users (id, external_id, email)
-            VALUES ('${ids.user}', 'no-work-upgrade', 'no-work-upgrade@test.invalid');
-            INSERT INTO projects (id, user_id, name, slug)
-            VALUES ('${ids.project}', '${ids.user}', 'No Work upgrade', 'no-work-upgrade');
-            INSERT INTO projects (id, user_id, name, slug, deleted_at)
-            VALUES ('${ids.deletedProject}', '${ids.user}', 'Deleted', 'deleted-upgrade', '2026-01-02');
-            INSERT INTO works (id, project_id, created_by_user_id, name, slug, status)
-            VALUES
-              ('${ids.namedNoWork}', '${ids.project}', '${ids.user}', 'No Work', 'no-work', 'active'),
-              ('${ids.named}', '${ids.project}', '${ids.user}', 'Fight Scene', 'fight-scene', 'active');
-            INSERT INTO context_sources (id, project_id, name, slug)
-            VALUES
-              ('${ids.scratch}', '${ids.project}', 'Scratch', 'scratch'),
-              ('${ids.uploads}', '${ids.project}', 'Uploads', 'uploads'),
-              ('${ids.manuscript}', '${ids.project}', 'Manuscript', 'manuscript');
-            INSERT INTO documents (id, context_source_id, name, markdown_projection)
-            VALUES ('${ids.document}', '${ids.scratch}', 'note', 'hello');
-            INSERT INTO threads (id, project_id, created_by_user_id, title, kind)
-            VALUES
-              ('${ids.unbound}', '${ids.project}', '${ids.user}', 'Unbound', 'primary'),
-              ('${ids.bound}', '${ids.project}', '${ids.user}', 'Bound', 'primary');
-            INSERT INTO threads (id, project_id, created_by_user_id, title, kind, deleted_at)
-            VALUES ('${ids.deletedThread}', '${ids.project}', '${ids.user}', 'Deleted', 'primary', '2026-01-02');
-            INSERT INTO thread_works (thread_id, work_id, project_id, is_primary)
-            VALUES ('${ids.bound}', '${ids.named}', '${ids.project}', true);
-          `);
-          expect(
-            await target`SELECT slug, work_id FROM context_sources WHERE id IN (${ids.scratch}, ${ids.uploads}) ORDER BY slug`,
-          ).toEqual([
-            { slug: "scratch", work_id: null },
-            { slug: "uploads", work_id: null },
-          ]);
-          expect(
-            await target`SELECT work_id FROM thread_works WHERE thread_id = ${ids.unbound} AND is_primary`,
-          ).toEqual([]);
-          expect(
-            await target`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'works' AND column_name = 'is_no_work'`,
-          ).toEqual([]);
-        },
-        verify: async (target) => {
-          const locked = await target<{ id: string; name: string; slug: string | null }[]>`
-            SELECT id, name, slug FROM works
-            WHERE project_id = ${ids.project} AND is_no_work AND deleted_at IS NULL`;
-          expect(locked).toEqual([expect.objectContaining({ name: "No Work", slug: null })]);
-          const noWorkId = locked[0]?.id;
-          expect(
-            await target`SELECT id FROM works WHERE project_id = ${ids.deletedProject} AND is_no_work`,
-          ).toEqual([]);
-          expect(await target`SELECT name, slug FROM works WHERE id = ${ids.namedNoWork}`).toEqual([
-            { name: "No Work (named)", slug: "no-work" },
-          ]);
-          expect(
-            await target`
-              SELECT id, work_id, project_id, scope, slug
-              FROM context_sources
-              WHERE id IN (${ids.scratch}, ${ids.uploads}, ${ids.manuscript})
-              ORDER BY slug`,
-          ).toEqual([
+    it("applies the post-migrate FIFO function with replay-safe debits", async () => {
+      const target = postgres(databaseUrl, { max: 1 });
+      try {
+        await target.begin(async (tx) => {
+          const [user] = await tx`INSERT INTO users (external_id, email)
+            VALUES ('baseline-functions', 'baseline-functions@example.test') RETURNING id`;
+          await tx`INSERT INTO credit_lots (user_id, original_amount_millicredits, remaining_millicredits, source_type, grant_reason)
+            VALUES (${user.id}, 100, 100, 'grant', 'baseline-probe')`;
+          const first =
+            await tx`SELECT * FROM consume_credit_lots_fifo(${user.id}::uuid, 30, gen_random_uuid(), 'baseline-usage')`;
+          expect(first).toEqual([
             {
-              id: ids.manuscript,
-              work_id: null,
-              project_id: ids.project,
-              scope: "project",
-              slug: "manuscript",
-            },
-            {
-              id: ids.scratch,
-              work_id: noWorkId,
-              project_id: null,
-              scope: "work",
-              slug: "scratch",
-            },
-            {
-              id: ids.uploads,
-              work_id: noWorkId,
-              project_id: null,
-              scope: "work",
-              slug: "uploads",
+              remaining_balance: "70",
+              went_negative: false,
+              consumption_group_id: expect.any(String),
             },
           ]);
           expect(
-            await target`SELECT context_source_id FROM documents WHERE id = ${ids.document}`,
-          ).toEqual([{ context_source_id: ids.scratch }]);
+            await tx`SELECT * FROM consume_credit_lots_fifo(${user.id}::uuid, 30, gen_random_uuid(), 'baseline-usage')`,
+          ).toEqual(first);
           expect(
-            await target`SELECT work_id, is_primary FROM thread_works WHERE thread_id = ${ids.unbound}`,
-          ).toEqual([{ work_id: noWorkId, is_primary: true }]);
-          expect(
-            await target`SELECT work_id FROM thread_works WHERE thread_id = ${ids.bound} AND is_primary`,
-          ).toEqual([{ work_id: ids.named }]);
-          expect(
-            await target`SELECT work_id FROM thread_works WHERE thread_id = ${ids.deletedThread}`,
-          ).toEqual([]);
-          expect(
-            await target`
-              SELECT count(*)::int AS count FROM context_sources
-              WHERE work_id IS NULL AND slug IN ('scratch', 'uploads') AND deleted_at IS NULL`,
-          ).toEqual([{ count: 0 }]);
-        },
-      });
+            await tx`SELECT amount_millicredits FROM credit_transactions WHERE user_id = ${user.id}`,
+          ).toEqual([{ amount_millicredits: "-30" }]);
+          await tx`DELETE FROM users WHERE id = ${user.id}`;
+        });
+      } finally {
+        await target.end();
+      }
     });
   });
 }

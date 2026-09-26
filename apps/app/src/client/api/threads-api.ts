@@ -50,7 +50,6 @@ export type AppendUserMessageInput = {
   text: string;
   blocks: readonly import("@meridian/contracts/protocol").UserMessageBlock[];
   references: readonly import("@meridian/contracts/protocol").SubmittedReference[];
-  connectionToken?: string;
   activatedSkillSlugs?: readonly string[];
 };
 
@@ -128,10 +127,12 @@ export function deleteThread({ data }: { data: { threadId: string } }): Promise<
 
 export function getThreadSnapshot({
   data,
+  signal,
 }: {
   data: GetThreadSnapshotInput;
+  signal?: AbortSignal;
 }): Promise<ThreadSnapshotResponse> {
-  return getJson(apiThreadSnapshotPath(data.threadId, { after: data.after }));
+  return getJson(apiThreadSnapshotPath(data.threadId, { after: data.after }), { signal });
 }
 
 export function updateThreadUserState(

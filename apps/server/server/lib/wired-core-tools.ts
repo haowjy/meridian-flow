@@ -56,7 +56,7 @@ import {
   createWork,
   deleteWorkTransition,
   updateWorkTransition,
-  type WorkContextDelivery,
+  type WorkContextNotices,
   WorkDeleteBlockedError,
   WorkNameRequiredError,
   type WorkRepository,
@@ -73,7 +73,6 @@ import type {
   ThreadRepository,
   ThreadWorksRepository,
   TurnDocumentTouchRepository,
-  WorkContextDeliveryRepository,
 } from "../domains/threads/index.js";
 import {
   RebindThreadWorkError,
@@ -93,8 +92,7 @@ export interface ToolWiringDeps {
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "rebindPrimary">;
   works: WorkRepository;
   workAuthorityResolver: import("../domains/projects/index.js").ProjectWorkAuthorityResolver;
-  workContextDelivery: Pick<WorkContextDelivery, "projectChanged">;
-  obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
+  workContextNotices: Pick<WorkContextNotices, "projectChanged" | "threadChanged">;
   drafts: Pick<CollabDrafts, "draftReview">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
@@ -763,7 +761,6 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
   };
 
   return createCoreToolRegistrations({
-    read: documentToolHandler,
     write: documentToolHandler,
     work: async (input: unknown, ctx: ToolHandlerContext) => {
       const parsed = WorkCommandSchema.safeParse(input);
@@ -784,7 +781,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           const work = await createWork(
             {
               works: deps.works,
-              workContextDelivery: deps.workContextDelivery,
+              workContextNotices: deps.workContextNotices,
             },
             {
               projectId: thread.projectId,
@@ -807,7 +804,6 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
                 after: receiptState(work),
                 inverse: { command: "delete", workId: work.id },
               } satisfies WorkReceipt,
-              workContextChanged: true,
             },
           };
         }
@@ -832,7 +828,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
                 threads: deps.threads,
                 threadWorks: deps.threadWorks,
                 works: deps.works,
-                obligations: deps.obligations,
+                workContextNotices: deps.workContextNotices,
               },
               {
                 threadId: thread.id,
@@ -852,7 +848,6 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             },
             metadata: {
               workReceipt: rebound.receipt,
-              ...(rebound.changed ? { workContextChanged: true } : {}),
             },
           };
         }
@@ -879,7 +874,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
 
         if (command.command === "update") {
           const transition = await updateWorkTransition(
-            { works: deps.works, workContextDelivery: deps.workContextDelivery },
+            { works: deps.works, workContextNotices: deps.workContextNotices },
             selected.id,
             {
               name: command.name,
@@ -904,18 +899,13 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
                   ? { command: "update", workId: before.id, state: receiptState(before) }
                   : null,
               } satisfies WorkReceipt,
-              ...(before.name !== updated.name ||
-              before.goal !== updated.goal ||
-              before.status !== updated.status
-                ? { workContextChanged: true }
-                : {}),
             },
           };
         }
 
         if (command.command === "delete") {
           const transition = await deleteWorkTransition(
-            { works: deps.works, workContextDelivery: deps.workContextDelivery },
+            { works: deps.works, workContextNotices: deps.workContextNotices },
             selected.id,
           );
           const before = transition.before ?? selected;
@@ -933,7 +923,6 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
                 after: null,
                 inverse: transition.changed ? { command: "restore", workId: before.id } : null,
               } satisfies WorkReceipt,
-              ...(transition.changed ? { workContextChanged: true } : {}),
             },
           };
         }

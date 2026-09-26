@@ -1,29 +1,10 @@
-/**
- * tool-command — reads a `ToolView` and answers one question: which command is
- * this, in the writer's terms?
- *
- * The writer cares about the command, not the tool that carried it: the
- * document tools (`read` and `write`) carry reading, creating, editing,
- * reverting and reviewing, and those are five different things to someone
- * watching their manuscript. Classifying once
- * here means the glyph, the chip tone, the visible verb and the announced verb
- * all derive from one decision and cannot drift apart.
- *
- * What the timeline then *says* about a command lives in
- * `command-descriptor.ts`. Classification stays here so it has no opinion about
- * presentation and no React in its imports.
- */
+/** Maps tool views to writer-facing commands and labels. */
 import type { Block, JsonValue } from "@meridian/contracts/protocol";
 import { parseWorkReceipt, type WorkReceipt } from "@meridian/contracts/works";
 import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
 
 export type WriteMode = "direct" | "draft";
 
-/**
- * What the agent did, in the writer's terms. `skim` and `read` are one tool
- * argument apart (`format: "outline"`) but a different claim about the book: a
- * skim saw headings, a read saw prose.
- */
 export type ToolCommand =
   | "read"
   | "skim"
@@ -44,7 +25,6 @@ export type ToolCommand =
 
 export function toolCommand(tool: ToolView): ToolCommand {
   switch (tool.toolName) {
-    case "read":
     case "write":
       return documentCommand(toolInputObject(tool));
     case "search":
@@ -60,24 +40,14 @@ export function toolCommand(tool: ToolView): ToolCommand {
   }
 }
 
-/**
- * The server's receipt for one `work` command: its category, one factual line
- * already written in Work names (never slugs), and — for mutations — the
- * inverse that would put things back. Produced by the server tool handler and
- * carried on the tool result's metadata; absent for reads and failures.
- */
+/** The server's receipt for one `work` command: its category, one factual line already written in Work names (never slugs), and — for mutations — the inverse that would put things.... */
 export type { WorkReceipt } from "@meridian/contracts/works";
 
 export function workReceipt(tool: ToolView): WorkReceipt | null {
   return parseWorkReceipt(tool.metadata?.workReceipt);
 }
 
-/**
- * Every factual Work receipt a turn's tool results carry, in block order.
- * Callers decide whether a receipt is presentation-only (binding) or a
- * reversible mutation. Blocks are paired with the same grouping the timeline
- * renders from, so live and durable block shapes answer identically.
- */
+/** Every factual Work receipt a turn's tool results carry, in block order. */
 export function turnWorkReceipts(blocks: Block[]): WorkReceipt[] {
   return groupDeliverySegments(blocks).flatMap((segment) => {
     if (segment.kind === "tool") return workReceiptOrNone(segment.tool);
@@ -133,6 +103,7 @@ function documentCommand(input: Record<string, JsonValue>): ToolCommand {
       return "create";
     case "insert":
     case "replace":
+    case "delete":
       return "edit";
     case "undo":
       return "undo";

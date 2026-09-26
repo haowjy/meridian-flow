@@ -54,7 +54,7 @@ describe("resolveAgentDependencies execution fields", () => {
       coordinate: "launch-agents",
       files: {
         "agents/critic.md":
-          "---\nname: Critic\nmode: primary\neffort: high\ntools:\n  read: allow\n  edit: deny\ndisallowed-tools:\n  - bash\n---\nCritic body.\n",
+          "---\nname: Critic\nmode: primary\neffort: high\ntools:\n  edit: deny\ndisallowed-tools:\n  - bash\n---\nCritic body.\n",
       },
     });
     const critic = installed.definitions.find((agent) => agent.slug === "critic");
@@ -63,7 +63,7 @@ describe("resolveAgentDependencies execution fields", () => {
       {
         skills: { load: [], available: [] },
         namedTargets: [],
-        tools: { read: "allow", edit: "deny" },
+        tools: { edit: "deny" },
         "disallowed-tools": ["bash"],
         effort: "high",
       },

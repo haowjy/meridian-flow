@@ -1,7 +1,12 @@
 /** Applies EffectiveToolPolicy to advertisement and the name+command permission gate. */
 
 import type { Tool } from "../../gateway/index.js";
-import { commandSetForTool, type EffectiveToolPolicy } from "./project-tool-policy.js";
+import { writeToolDescription } from "../../tools/write-tool-description.js";
+import {
+  commandSetForTool,
+  type EffectiveToolPolicy,
+  knownCommandSetForTool,
+} from "./project-tool-policy.js";
 import type { PermissionGate } from "./types.js";
 
 export function permissionGateFromToolPolicy(
@@ -12,18 +17,38 @@ export function permissionGateFromToolPolicy(
   return {
     check(toolName, input) {
       if (!allowed.has(toolName)) {
-        return { allowed: false, reason: `Tool "${toolName}" is not enabled.` };
+        return {
+          allowed: false,
+          kind: "permission_denied",
+          reason: `Tool "${toolName}" is not enabled.`,
+        };
       }
       const commands = commandSetForTool(policy, toolName);
       if (commands) {
-        const command = commandName(input);
-        if (command === undefined || !commands.has(command)) {
+        const command = commandValue(input);
+        if (typeof command !== "string") {
+          const detail =
+            command === undefined
+              ? "missing required string `command`"
+              : "`command` must be a string";
           return {
             allowed: false,
-            reason:
-              command === undefined
-                ? `Command is not enabled for ${toolName}.`
-                : `Command "${command}" is not enabled for ${toolName}.`,
+            kind: "invalid_arguments",
+            reason: `Invalid arguments for ${toolName}: ${detail}; use ${commandExamples(commands)}.`,
+          };
+        }
+        if (!knownCommandSetForTool(toolName).has(command)) {
+          return {
+            allowed: false,
+            kind: "invalid_arguments",
+            reason: `Invalid arguments for ${toolName}: unknown command "${command}"; use ${commandExamples(commands)}.`,
+          };
+        }
+        if (!commands.has(command)) {
+          return {
+            allowed: false,
+            kind: "permission_denied",
+            reason: `Command "${command}" is not enabled for ${toolName}.`,
           };
         }
       }
@@ -39,7 +64,11 @@ export function advertiseTools(baseTools: Tool[] | undefined, policy: EffectiveT
       if (tool.type !== "function") return tool;
       const commands = commandSetForTool(policy, tool.name);
       if (!commands) return tool;
-      return { ...tool, inputSchema: narrowCommandSchema(tool.inputSchema, commands) };
+      return {
+        ...tool,
+        ...(tool.name === "write" ? { description: writeToolDescription(commands) } : {}),
+        inputSchema: narrowCommandSchema(tool.inputSchema, commands),
+      };
     });
 }
 
@@ -47,10 +76,16 @@ function toolName(tool: Tool): string {
   return tool.type === "function" ? tool.name : tool.kind;
 }
 
-function commandName(input: unknown): string | undefined {
+function commandValue(input: unknown): unknown {
   if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
-  const command = (input as { command?: unknown }).command;
-  return typeof command === "string" ? command : undefined;
+  return (input as { command?: unknown }).command;
+}
+
+function commandExamples(commands: ReadonlySet<string>): string {
+  const examples = [...commands].map((command) => `\`command: "${command}"\``);
+  return examples.length === 1
+    ? examples[0]
+    : `${examples.slice(0, -1).join(", ")} or ${examples.at(-1)}`;
 }
 
 function narrowCommandSchema(

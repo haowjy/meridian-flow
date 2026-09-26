@@ -86,10 +86,9 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   documents: Pick<MarkdownDocumentStore, "seedFromMarkdown"> &
     Pick<DocumentCreationAggregate, "createDocumentAtomically" | "repairDocumentAtomically"> &
     Pick<BranchPeerShadowAccess, "recordManifestDocumentCreated">;
-  catalogLifecycle?: ContextCatalogLifecyclePort;
+  catalogLifecycle: ContextCatalogLifecyclePort;
 }): ProjectBootstrapRepository {
   const { db } = deps;
-  const repairedReadyUsers = new Set<UserId>();
   type BootstrapDb = Pick<Database, "execute" | "insert" | "select" | "update">;
 
   async function lockBootstrap(tx: BootstrapDb, userId: UserId): Promise<void> {
@@ -286,16 +285,15 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         .where(eq(projects.id, projectId))
         .returning({ id: projects.id });
       if (!updated) throw new Error("Failed to mark default bootstrap ready");
-      await deps.catalogLifecycle?.refreshProject(projectId);
+      await deps.catalogLifecycle.refreshProject(projectId);
       return result;
     });
-    repairedReadyUsers.add(userId);
     return bootstrap;
   }
 
   return {
     async ensureDefaultBootstrapReady(userId) {
-      if ((await isDefaultBootstrapReady(userId)) && repairedReadyUsers.has(userId)) return true;
+      if (await isDefaultBootstrapReady(userId)) return true;
       try {
         await attemptDefaultBootstrap(userId);
         return true;
@@ -359,8 +357,4 @@ export {
   type WorkTransition,
 } from "./update-work.js";
 export { requireWorkOwner } from "./work-access.js";
-export type {
-  DeliveredWorkContextUpdate,
-  WorkContextDelivery,
-  WorkContextPostCommitResult,
-} from "./work-context-delivery.js";
+export type { WorkContextNotices } from "./work-context-notices.js";

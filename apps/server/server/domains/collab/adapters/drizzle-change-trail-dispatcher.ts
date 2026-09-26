@@ -16,7 +16,7 @@ export type ChangeTrailDispatcher = { drain(): Promise<number> };
 export function createDrizzleChangeTrailDispatcher(input: {
   db: Database;
   journalWriter: EventJournalWriter;
-  eventHub: Pick<ThreadEventHub, "publishPersistedEvent">;
+  eventHub: Pick<ThreadEventHub, "invalidateCommittedJournal">;
 }): ChangeTrailDispatcher {
   async function dispatchOne(): Promise<boolean> {
     const persisted = await runInRootDrizzleTransaction(input.db, async () => {
@@ -100,20 +100,16 @@ export function createDrizzleChangeTrailDispatcher(input: {
                 wordsRemoved: row.wordsRemoved,
               },
             };
-      const seq = await input.journalWriter.appendEvent(row.threadId, event);
+      await input.journalWriter.appendEvent(row.threadId, event);
       await tx
         .update(changeTrailDeliveryOutbox)
         .set({ deliveredAt: new Date() })
         .where(eq(changeTrailDeliveryOutbox.eventId, row.eventId));
-      return { event, seq };
+      return { threadId: event.threadId };
     });
 
     if (persisted) {
-      input.eventHub.publishPersistedEvent(
-        persisted.event.threadId,
-        persisted.seq,
-        persisted.event,
-      );
+      input.eventHub.invalidateCommittedJournal(persisted.threadId);
     }
     return persisted !== null;
   }
@@ -121,7 +117,7 @@ export function createDrizzleChangeTrailDispatcher(input: {
   return {
     async drain() {
       let count = 0;
-      while (await dispatchOne()) count += 1;
+      while (count < 100 && (await dispatchOne())) count += 1;
       return count;
     },
   };

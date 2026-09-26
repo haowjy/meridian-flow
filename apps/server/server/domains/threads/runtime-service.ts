@@ -1,10 +1,13 @@
 /** Thread runtime reads used by HTTP and WebSocket transport boundaries. */
 import type { ThreadLiveState } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { eventJournal, projects, threads, threadWorks } from "@meridian/database";
 import { and, eq, isNull } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
+import { readThreadActivity } from "./domain/thread-activity.js";
+import type { ThreadRepository, ThreadStatusReader } from "./ports/index.js";
 
 export type ThreadRuntimeService = ReturnType<typeof createThreadRuntimeService>;
 
@@ -14,10 +17,17 @@ type OwnedThread = {
   workId: WorkId | null;
   activeLeafTurnId: TurnId | null;
   nextSeq: bigint;
-  status: string;
 };
 
-export function createThreadRuntimeService(deps: { db: Database }) {
+export function createThreadRuntimeService(deps: {
+  db: Database;
+  /** Supplies the lease-derived run status; the runtime authority satisfies it. */
+  statusReader: ThreadStatusReader;
+  /** Supplies the descendant walk for the per-thread activity read. */
+  threads: Pick<ThreadRepository, "listDescendants">;
+  /** Reads the thread's undelivered inbox as the writer-facing pending shape. */
+  readPending: (threadId: ThreadId) => Promise<ThreadPendingInbox>;
+}) {
   async function requireOwnedThread(threadId: ThreadId, userId: UserId): Promise<OwnedThread> {
     const [thread] = await deps.db
       .select({
@@ -26,7 +36,6 @@ export function createThreadRuntimeService(deps: { db: Database }) {
         workId: threadWorks.workId,
         activeLeafTurnId: threads.activeLeafTurnId,
         nextSeq: threads.nextSeq,
-        status: threads.status,
       })
       .from(threads)
       .innerJoin(projects, eq(projects.id, threads.projectId))
@@ -53,8 +62,13 @@ export function createThreadRuntimeService(deps: { db: Database }) {
     const headSeq = thread.nextSeq;
     return {
       threadId,
-      status: thread.status === "archived" ? "archived" : "idle",
-      runningTurnId: null,
+      status: await deps.statusReader.read(threadId),
+      runningTurnId: await deps.statusReader.readRunningTurnId(threadId),
+      activity: await readThreadActivity(
+        { threads: deps.threads, statusReader: deps.statusReader },
+        threadId,
+      ),
+      pending: await deps.readPending(threadId),
       resumeAfterSeq: headSeq.toString(),
     };
   }
@@ -62,6 +76,14 @@ export function createThreadRuntimeService(deps: { db: Database }) {
   return {
     requireOwnedThread,
     liveState,
+    /** The lease-derived status seam, exposed so snapshot reads share it. */
+    read: (threadId: ThreadId) => deps.statusReader.read(threadId),
+    /** Batch status seam for list pages; same lease read as `read`. */
+    readMany: (threadIds: readonly ThreadId[]) => deps.statusReader.readMany(threadIds),
+    /** The lease's bound running turn, exposed so snapshot reads share one truth. */
+    readRunningTurnId: (threadId: ThreadId) => deps.statusReader.readRunningTurnId(threadId),
+    /** The undelivered inbox read, exposed so snapshot reads share one projection. */
+    readPending: (threadId: ThreadId) => deps.readPending(threadId),
     async journalEvents(threadId: ThreadId) {
       return deps.db.select().from(eventJournal).where(eq(eventJournal.threadId, threadId));
     },

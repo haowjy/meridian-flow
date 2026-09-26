@@ -51,10 +51,6 @@ export const toolAliases: Record<string, string> = {
   terminal: "bash",
   exec_command: "bash",
   shell_command: "bash",
-  read: "read",
-  cat: "read",
-  view: "read",
-  file_read: "read",
   file_write: "edit",
   apply_patch: "edit",
   edit: "edit",
@@ -110,29 +106,41 @@ export const toolAliases: Record<string, string> = {
   toolsearch: "tool_search",
 };
 
-/** Authoring capability names are `read` and `edit`; `write` is only the model tool. */
+/** `write` is a model tool name, never an authoring capability. */
 export const WRITE_IS_MODEL_TOOL_ERROR =
   '"write" is the model tool name; use "edit" for the document-edit capability';
 
-/** `edit` implies `read`; an explicit `disallowed-tools` read denial contradicts it. */
-export const EDIT_IMPLIES_READ_ERROR =
-  '"edit" implies "read"; remove "read" from "disallowed-tools" or drop "edit"';
+const RETIRED_READ_NAMES = new Set(["read", "cat", "view", "file_read"]);
+const RETIRED_READ_ERROR =
+  'Reading is always available; remove this retired read capability entry. Use "edit" to control document mutations.';
+
+function validateAuthoringToolName(
+  value: string,
+): { normalized: NormalizedToolName; error?: undefined } | { normalized: null; error: string } {
+  const open = value.indexOf("(");
+  const rawHead = (open < 0 ? value : value.slice(0, open)).trim().toLowerCase();
+  const normalized = normalizeToolName(value);
+  if (RETIRED_READ_NAMES.has(rawHead) || (normalized && RETIRED_READ_NAMES.has(normalized.head))) {
+    return { normalized: null, error: RETIRED_READ_ERROR };
+  }
+  if (!normalized) return { normalized: null, error: "Invalid Mars tool reference" };
+  if (normalized.head === "write") {
+    return { normalized: null, error: WRITE_IS_MODEL_TOOL_ERROR };
+  }
+  return { normalized };
+}
 
 export const toolReferenceSchema = z
   .string()
   .trim()
   .min(1)
   .transform((value, context) => {
-    const normalized = normalizeToolName(value);
-    if (normalized === null) {
-      context.addIssue({ code: "custom", message: "Invalid Mars tool reference" });
+    const validated = validateAuthoringToolName(value);
+    if (!validated.normalized) {
+      context.addIssue({ code: "custom", message: validated.error });
       return z.NEVER;
     }
-    if (normalized.head === "write") {
-      context.addIssue({ code: "custom", message: WRITE_IS_MODEL_TOOL_ERROR });
-      return z.NEVER;
-    }
-    return normalized.name;
+    return validated.normalized.name;
   });
 export const toolReferencesSchema = z
   .array(toolReferenceSchema)
@@ -146,28 +154,29 @@ export const toolReferencesSchema = z
 export const toolMapSchema = z
   .record(z.string(), toolPolicySchema)
   .transform((map) =>
-    Object.entries(map).map(([name, policy]) => [normalizeToolName(name.trim()), policy] as const),
+    Object.entries(map).map(
+      ([name, policy]) => [validateAuthoringToolName(name.trim()), policy] as const,
+    ),
   )
   .superRefine((folded, context) => {
     const names = new Map<string, string>();
-    for (const [normalized, policy] of folded) {
-      if (normalized?.head === "write") {
-        context.addIssue({ code: "custom", message: WRITE_IS_MODEL_TOOL_ERROR });
+    for (const [validated, policy] of folded) {
+      const normalized = validated.normalized;
+      if (!normalized) {
+        context.addIssue({ code: "custom", message: validated.error });
         continue;
       }
-      const name = normalized?.name;
-      if (!name || (names.has(name) && names.get(name) !== policy)) {
+      const name = normalized.name;
+      if (names.has(name) && names.get(name) !== policy) {
         context.addIssue({ code: "custom", message: "Empty or duplicate normalized tool name" });
       }
-      if (name) names.set(name, policy);
+      names.set(name, policy);
     }
   })
   .transform((folded) =>
     Object.fromEntries(
-      folded.flatMap(([normalized, policy]) =>
-        normalized === null || normalized.head === "write"
-          ? []
-          : [[normalized.name, policy] as const],
+      folded.flatMap(([validated, policy]) =>
+        !validated.normalized ? [] : [[validated.normalized.name, policy] as const],
       ),
     ),
   );
@@ -192,26 +201,7 @@ export const resolvedToolsSchema = z.union([
   z.record(z.string(), toolPolicySchema),
 ]);
 
-/** Authoring tool selection; resolved configurations are already canonical. */
-export interface AuthoringToolSelection {
-  tools?: string[] | Record<string, ToolPolicy>;
-  "disallowed-tools"?: string[];
-}
-
-/**
- * `edit` implies `read`. Only the explicit `disallowed-tools` denial is a
- * contradiction: a mere absence of `read` stays a policy-projected auto-enable.
- */
-export function authoringToolContradiction(selection: AuthoringToolSelection): string | null {
-  const disallowed = selection["disallowed-tools"] ?? [];
-  if (!disallowed.includes("read") || disallowed.includes("edit")) return null;
-  const tools = selection.tools;
-  const editAllowed =
-    tools === undefined ||
-    (Array.isArray(tools) ? tools.length === 0 || tools.includes("edit") : tools.edit !== "deny");
-  return editAllowed ? EDIT_IMPLIES_READ_ERROR : null;
-}
-
+/** A retained skill reference resolved by binding preparation. */
 export const retainedSkillReferenceSchema = z.object({
   packageRevisionId: z.string(),
   path: z.string(),

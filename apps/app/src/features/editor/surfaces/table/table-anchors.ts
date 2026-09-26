@@ -1,32 +1,4 @@
-/**
- * Turning a pointer into a place in the table, and a place in the table into
- * chrome geometry.
- *
- * The kernel resolves document positions; making DOM out of them is the lane's
- * job, and for a table that is the whole trick. Grips live OUTSIDE the frame
- * (Q6), so they are measured from the hovered cell and the table's own box,
- * portalled clear of the manuscript. Nothing here renders inside the table, and
- * nothing here can shift a line of text.
- *
- * **Placement is in the manuscript overlay's coordinates**
- * (`features/editor/chrome/manuscript-overlay.ts`), which is what makes a grip
- * a label on its row rather than a thing that chases it. Measured against the
- * viewport, every number here changed on every scroll and could only be
- * corrected a frame later, so a fast scroll drew the grip beside a row three
- * away from the pointer's. In the overlay these numbers do not change when the
- * pane scrolls at all: the pane carries the chrome with the row and clips
- * whatever has left it.
- *
- * Placement is a pure function of three rectangles, so where every piece goes
- * is decided in one testable place. `table-chrome.css` keeps the look; every
- * number that decides a position is here.
- *
- * **Elements are geometry, holds are identity.** A cell element is what the
- * grips are measured from and never what says which cell they serve: the chrome
- * is up while collaborators write, and every remote change rebuilds the
- * document. `cellDocPosition` and `cellElementAt` are the two crossings, and
- * what the surface keeps between them is a hold (`core/editor/anchors.ts`).
- */
+/** Resolves table-cell and table-selection anchors. */
 
 import { cellAround } from "@tiptap/pm/tables";
 import type { EditorView } from "@tiptap/pm/view";
@@ -41,45 +13,13 @@ const ADD_TAB = 18;
 const COLUMN_GRIP_GAP = 4;
 const ROW_GRIP_GAP = 6;
 const ADD_TAB_GAP = 9;
-/**
- * The add-row tab hangs INSIDE the bottom edge rather than below it.
- *
- * Below it, the tab does not fit. All that separates two blocks is
- * `.ProseMirror > * + *`, which is `0.9em` — 14.4px at the reading size and
- * less at a smaller one — while the tab is 18px. Drawn in that seam it reached
- * into the paragraph under the table (measured: tab to 1092.6, that
- * paragraph's first line box from 1083), so a writer clicking their own first
- * line pressed "add a row", and a click meant to place a caret changed the
- * document. Shrinking the gap cannot fix a tab taller than the seam, so it
- * moves inside — ruling 8's inside-corner physics, the same trade every object
- * overlay in this editor already makes. Mockup 05 draws it below; the
- * constraint wins (human ruling, 2026-07-29).
- *
- * Sideways there is nothing to reach into. A table is a block, so the space
- * beside it is the page gutter or the table's own empty half, and the
- * add-column tab keeps its gap.
- */
+/** The add-row tab hangs INSIDE the bottom edge rather than below it. */
 const ADD_TAB_INSET = 6;
 
-/**
- * A rectangle, in whichever space its caller is working in. Placement is in
- * overlay coordinates; the hover zone is in the pointer's own viewport ones,
- * because a pointer event is the only thing it is ever compared against.
- */
+/** A rectangle, in whichever space its caller is working in. */
 export type Box = { left: number; top: number; right: number; bottom: number };
 
-/**
- * How far past each edge of the frame this lane's chrome reaches.
- *
- * Derived from the placements below rather than chosen: each piece is drawn in
- * the band on its own side, so a band is that side's gap plus that piece's
- * size, and the hover zone covers every piece by construction.
- *
- * Below the frame nothing is placed on purpose. What still reaches there is a
- * row grip centred on a last row shorter than the grip itself, which overhangs
- * by at most half the grip — so that is the band, and it stays inside the
- * 14.4px seam a table shares with the paragraph under it.
- */
+/** How far past each edge of the frame this lane's chrome reaches. */
 const CHROME_BAND = {
   top: COLUMN_GRIP_GAP + GRIP_SHORT,
   left: ROW_GRIP_GAP + GRIP_SHORT,
@@ -90,15 +30,7 @@ const CHROME_BAND = {
 /** One piece of chrome, in the manuscript overlay's coordinates. */
 export type TableChromePiece = { left: number; top: number; width: number; height: number };
 
-/**
- * The four pieces.
- *
- * None of them is ever clamped or dropped for being out of the pane: they are
- * drawn IN the pane, which clips them itself, exactly and on the frame the
- * scroll lands. A piece pushed back inside would sit beside a row it does not
- * serve, and one dropped by a JavaScript test of a viewport rect is one that
- * flickers a frame after the scroll that moved it.
- */
+/** The four pieces. */
 export type TableChromeRects = {
   columnGrip: TableChromePiece;
   rowGrip: TableChromePiece;
@@ -114,11 +46,7 @@ export function tableCellUnder(view: EditorView, target: EventTarget | null): HT
   return cell;
 }
 
-/**
- * The document position immediately BEFORE the cell — the spelling
- * prosemirror-tables uses for "this cell", and what `CellSelection` takes.
- * Null once the element has left the document under the pointer.
- */
+/** The document position immediately BEFORE the cell — the spelling prosemirror-tables uses for "this cell", and what `CellSelection` takes. */
 export function cellDocPosition(view: EditorView, cell: HTMLElement): number | null {
   if (!cell.isConnected || !view.dom.contains(cell)) return null;
   const inside = view.posAtDOM(cell, 0);
@@ -135,17 +63,7 @@ export function cellElementAt(view: EditorView, pos: number): HTMLElement | null
   return dom instanceof HTMLElement ? dom : null;
 }
 
-/**
- * Where each piece of chrome goes, given the table's box and the hovered
- * column and row bands — all three in the manuscript overlay's coordinates,
- * and so is every answer.
- *
- * There is no scrollport argument because there is nothing to clip against:
- * the pane these are drawn in is the scrollport, and the document toolbar sits
- * ABOVE that pane rather than inside it. "Never cover the toolbar" is a
- * property of where the chrome lives now, not a test anything has to remember
- * to run.
- */
+/** Where each piece of chrome goes, given the table's box and the hovered column and row bands — all three in the manuscript overlay's coordinates, and so is every answer. */
 export function tableChromePieces({
   table,
   column,
@@ -183,21 +101,7 @@ export function tableChromePieces({
   };
 }
 
-/**
- * The frame plus the bands its chrome hovers in: the surface a revealed table
- * chrome is held by, which is NOT the table's own rect.
- *
- * Chrome outside the frame (Q6) is only reachable if the pointer can travel to
- * it, and the travel leaves the frame several pixels before it arrives — the
- * gap alone dismissed the grips the writer was reaching for. The zone reveals
- * nothing: a cell does that. It only decides when a reveal is over. It stops at
- * the bottom edge, because the add-row tab is inside the frame and a zone
- * reaching under the table would hold the reveal open over the paragraph there.
- *
- * The left band stops exactly at the row grip's outer edge, 21px, because the
- * margin is shared: M9's block handle owns everything past 22 (see
- * `.context/CONTEXT.md`). Widening this side takes the handle's band with it.
- */
+/** The frame plus the bands its chrome hovers in: the surface a revealed table chrome is held by, which is NOT the table's own rect. */
 export function tableHoverZone(table: Box): Box {
   return {
     left: table.left - CHROME_BAND.left,
@@ -225,23 +129,7 @@ export function pointerHoldsTableChrome(
   return boxHolds(tableHoverZone(boxOf(table)), clientX, clientY);
 }
 
-/**
- * Between a held cell and a freshly hit one, the reveal stays with the held
- * cell — true only for tables nested in another table's cell.
- *
- * The gap beside a NESTED table's frame is on no cell of that table, so the
- * hit test there answers with the outer cell the table is nested in: a fresh
- * hit that would re-anchor every grip to the outer table while the writer is
- * mid-travel to an inner grip. The held cell keeps the reveal while the fresh
- * cell's table CONTAINS the held cell's table and the pointer is still on the
- * held table's hover surface. Any other fresh cell wins: grips follow the
- * pointer cell to cell within one table, and hovering a nested table's cell
- * moves the reveal inward.
- *
- * Ancestry is `contains`, never a depth count, so a depth-3 hold outranks a
- * depth-2 hit and a depth-1 hit alike, for exactly as long as its own zone
- * holds the pointer.
- */
+/** Between a held cell and a freshly hit one, the reveal stays with the held cell — true only for tables nested in another table's cell. */
 export function nestedCellKeepsReveal(
   heldCell: HTMLElement,
   hitCell: HTMLElement,
@@ -264,16 +152,7 @@ function overlaps(a: Box, b: Box): boolean {
   return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
 
-/**
- * Measure the chrome for a hovered cell, in `overlay`'s coordinates, or null
- * once the cell itself has left the manuscript's pane — at which point the
- * approach is over, whether or not the pointer moved.
- *
- * The visible-window test is about the TARGET, never about placement: a grip
- * whose row is halfway off the bottom of the pane is drawn and clipped like
- * the row it labels, but a row the writer has scrolled entirely past has
- * nothing left for a menu to be open on.
- */
+/** Measure the chrome for a hovered cell, in `overlay`'s coordinates, or null once the cell itself has left the manuscript's pane — at which point the approach is over, whether or not the pointer moved. */
 export function measureTableChrome(
   overlay: HTMLElement,
   cell: HTMLElement,

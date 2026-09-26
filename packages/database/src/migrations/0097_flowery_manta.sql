@@ -1,1 +1,0 @@
-ALTER TABLE "project_results" DROP COLUMN "agent_slug"; -- migration-lint: skip DROP_COLUMN (pre-release; Agent identity is the bound revision join, not a stored slug)

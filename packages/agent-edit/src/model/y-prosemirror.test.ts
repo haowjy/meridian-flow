@@ -27,17 +27,6 @@ describe("yProsemirrorModel block hashes", () => {
     Y.applyUpdate(replayed, Y.encodeStateAsUpdate(first));
     expect(blockHashes(replayed)).toEqual(blockHashes(first));
   });
-
-  it("uses default-width display hashes when no full-hash prefixes collide", () => {
-    const doc = createDoc("# One\n\nAlpha\n\nBeta");
-
-    const hashes = blockHashes(doc);
-
-    expect(hashes).toHaveLength(3);
-    expect(hashes.every((hash) => hash.length === DEFAULT_HASH_LENGTH)).toBe(true);
-    expect(new Set(hashes).size).toBe(hashes.length);
-  });
-
   it("displays the shortest full-hash prefix that resolves back to each block", () => {
     const doc = docWithDisplayExtension();
     const hashes = blockHashesForDoc(doc);

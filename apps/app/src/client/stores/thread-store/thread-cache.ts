@@ -32,9 +32,14 @@ export interface ThreadCachePort {
    * its thread list, canonical Work catalog, and the project's context trees.
    */
   invalidateThread(threadId: string, projectId: string | null): void;
+  /** Refetch the durable snapshot when a historical live projection has no loaded turn. */
+  invalidateThreadSnapshot(threadId: string): void;
 }
 
-export function createThreadCache(client: QueryClient): ThreadCachePort {
+export function createThreadCache(
+  client: QueryClient,
+  accountSignal?: AbortSignal,
+): ThreadCachePort {
   return {
     upsertThread(thread, lifecycle) {
       upsertThreadInProject(client, thread, lifecycle);
@@ -52,6 +57,7 @@ export function createThreadCache(client: QueryClient): ThreadCachePort {
       // The store writes its turn state synchronously first; the cache catches
       // projector-only fields (final usage/cost metadata) on the next tick.
       queueMicrotask(() => {
+        if (accountSignal?.aborted) return;
         if (projectId) {
           invalidateThreadProjectionDependencies(client, {
             threadId,
@@ -63,6 +69,15 @@ export function createThreadCache(client: QueryClient): ThreadCachePort {
         } else {
           void client.invalidateQueries({ queryKey: threadQueryKeys.thread(threadId) });
         }
+      });
+    },
+    invalidateThreadSnapshot(threadId) {
+      queueMicrotask(() => {
+        if (accountSignal?.aborted) return;
+        void client.invalidateQueries(
+          { queryKey: threadQueryKeys.snapshot(threadId), exact: true },
+          { cancelRefetch: false },
+        );
       });
     },
   };

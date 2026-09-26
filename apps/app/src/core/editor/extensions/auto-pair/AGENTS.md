@@ -13,6 +13,10 @@ opens, steps over, and unpairs by reading it. A new pair is one row and
 nothing else. This is the same seam shape as
 [`../../objects/object-types.ts`](../../objects/object-types.ts).
 
+The gesture tests use explicit representative rows, not a matrix derived from
+the registry. A new row or context with distinct behavior needs an explicit
+test choice; changing the table does not extend coverage automatically.
+
 **Openers are one character and pairs compose.** `[[` is the `[` row firing
 twice: `[` gives `[]`, a second `[` gives `[[]]`, and `]]` steps out of both
 in order. A multi-character row would need its own matching logic and would

@@ -5,7 +5,7 @@
 
 import type { TurnId } from "../ids.js";
 import type { AskRequest, MeridianError } from "../interrupt/index.js";
-import type { AgentReport, SpawnResult } from "../spawn/index.js";
+import type { AgentReport, SavedOutcome, SpawnResult } from "../spawn/index.js";
 import type { WorkContextProjectionSignal } from "../works/index.js";
 import type {
   BlockStatus,
@@ -14,6 +14,8 @@ import type {
   JournalEventType,
   JsonValue,
   PriceSource,
+  ThreadActivity,
+  ThreadPendingInbox,
   Turn,
 } from "./index.js";
 
@@ -84,6 +86,7 @@ export type OrchestratorEvent =
     }
   | { type: "model.response_received"; response: ModelResponseReceivedRow }
   | { type: "block.upserted"; block: BlockUpsertedRow }
+  | { type: "block.updated"; block: BlockUpsertedRow }
   | { type: "block.pruned"; blockId: string }
   | {
       type: "interrupt.created";
@@ -133,9 +136,27 @@ export type OrchestratorEvent =
   | {
       type: "agent.run_completed";
       parentThreadId: string;
-      parentTurnId: string;
+      parentTurnId: string | null;
       childThreadId: string;
-      result: SpawnResult;
+      execution: string;
+      handle: string;
+      outcome: SavedOutcome;
+    }
+  | {
+      type: "subagent.activity";
+      /** Run-tree root whose subtree changed; the event lands on this thread's journal. */
+      rootThreadId: string;
+      /** The descendant whose create/terminal changed the tree. */
+      childThreadId: string;
+      /** Full recomputed subtree, so the client replaces state with no refetch race. */
+      activity: ThreadActivity;
+    }
+  | {
+      type: "inbox.changed";
+      /** Thread whose pending inbox changed. */
+      threadId: string;
+      /** Full recomputed pending inbox, so the client replaces the tray state wholesale. */
+      pending: ThreadPendingInbox;
     }
   | {
       type: "background.started";
@@ -144,22 +165,6 @@ export type OrchestratorEvent =
       childThreadId: string;
       agentSlug: string;
       description?: string;
-    }
-  | {
-      type: "background.completed";
-      parentThreadId: string;
-      parentTurnId: string;
-      childThreadId: string;
-      agentSlug: string;
-      result: SpawnResult;
-    }
-  | {
-      type: "background.failed";
-      parentThreadId: string;
-      parentTurnId: string;
-      childThreadId?: string;
-      agentSlug: string;
-      error: string;
     }
   | {
       type: "agent.handoff";

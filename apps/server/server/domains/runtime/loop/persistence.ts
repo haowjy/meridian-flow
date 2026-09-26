@@ -41,6 +41,8 @@ export type PersistenceDeps = {
     "blocks" | "modelResponses" | "runTurnStartTransition" | "threads" | "transaction" | "turns"
   >;
   eventWriter: EventJournalWriter;
+  /** Real nested transaction boundary when caller already owns a transaction. */
+  savepoint?: <T>(operation: () => Promise<T>) => Promise<T>;
 };
 
 // The transactional path: journal append + read-model projection in a

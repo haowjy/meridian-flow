@@ -22,7 +22,12 @@ import type { AppServices } from "./app.js";
 const SERVER_VERSION = "0.0.0";
 
 export type WsAuthenticatedContext = Readonly<{
-  app: AppServices;
+  app: Pick<
+    AppServices,
+    "eventSink" | "threadEventHub" | "projectRepo" | "interruptRegistry" | "contextCatalogWakeHub"
+  > & {
+    threadRuntime: Pick<AppServices["threadRuntime"], "requireOwnedThread" | "liveState">;
+  };
   userId: UserId;
   traceId: string;
 }>;
@@ -37,9 +42,20 @@ export type WsPeer = {
 type WsPeerState = {
   closed: boolean;
   connectionToken: string;
-  subscriptions: Map<ThreadId, () => void>;
-  liveWatermark: Map<ThreadId, bigint>;
+  subscriptions: Map<ThreadId, ThreadSubscriptionSlot>;
   catalogSubscriptions: Map<string, () => void>;
+};
+
+type ThreadSubscriptionLease = {
+  phase: "pending" | "flushing" | "active" | "disposed";
+  buffered: SequencedEventInternal[];
+  delivered: bigint;
+  unsubscribe?: () => void;
+};
+
+type ThreadSubscriptionSlot = {
+  request: object;
+  lease?: ThreadSubscriptionLease;
 };
 
 const peerStates = new WeakMap<WsPeer, WsPeerState>();
@@ -51,7 +67,6 @@ function getPeerState(peer: WsPeer): WsPeerState {
       closed: false,
       connectionToken: randomUUID(),
       subscriptions: new Map(),
-      liveWatermark: new Map(),
       catalogSubscriptions: new Map(),
     };
     peerStates.set(peer, state);
@@ -74,7 +89,7 @@ function interruptRejectionError(
 }
 
 function toProtocolSequencedEvent(event: SequencedEventInternal): SequencedEvent {
-  return { seq: event.seq.toString(), event: event.event };
+  return { ...event, seq: event.seq.toString() };
 }
 
 function sendFrame(peer: WsPeer, message: WsServerMessage): boolean {
@@ -91,8 +106,11 @@ function sendFrame(peer: WsPeer, message: WsServerMessage): boolean {
         payload: unknownToEventPayload(error),
       });
     }
-    peer.close(1011, "send_failed");
-    disposeSubscriptions(peer);
+    try {
+      peer.close(1011, "send_failed");
+    } finally {
+      disposeSubscriptions(peer);
+    }
     return false;
   }
 }
@@ -104,6 +122,34 @@ function sendError(peer: WsPeer, error: MeridianError, threadId?: string): boole
 function runInPeerScope<T>(peer: WsPeer, operation: () => T): T {
   const traceId = peer.context?.traceId;
   return traceId ? runWithEventCorrelation({ traceId }, operation) : operation();
+}
+
+function disposeLease(lease: ThreadSubscriptionLease | undefined): void {
+  if (!lease || lease.phase === "disposed") return;
+  lease.phase = "disposed";
+  lease.buffered.length = 0;
+  lease.unsubscribe?.();
+  lease.unsubscribe = undefined;
+}
+
+function sendLiveEvent(
+  peer: WsPeer,
+  threadId: ThreadId,
+  lease: ThreadSubscriptionLease,
+  entry: SequencedEventInternal,
+): void {
+  if ((lease.phase !== "active" && lease.phase !== "flushing") || entry.seq <= lease.delivered)
+    return;
+  if (
+    sendFrame(peer, {
+      type: "event",
+      threadId,
+      ...toProtocolSequencedEvent(entry),
+    }) &&
+    (lease.phase === "active" || lease.phase === "flushing")
+  ) {
+    lease.delivered = entry.seq;
+  }
 }
 
 async function subscribeThread(
@@ -122,6 +168,7 @@ async function subscribeThread(
     sendError(peer, meridianError("not_found", "Thread not found"), requestedThreadId);
     return;
   }
+  const subscriptionThreadId = threadId;
 
   const parsedLastSeq = lastSeq ? parseSeq(lastSeq) : "0";
   if (parsedLastSeq === null) {
@@ -129,79 +176,115 @@ async function subscribeThread(
     return;
   }
 
+  const state = getPeerState(peer);
+  if (state.closed) return;
+  let slot = state.subscriptions.get(threadId);
+  if (!slot) {
+    slot = { request: {} };
+    state.subscriptions.set(threadId, slot);
+  }
+  const request = {};
+  slot.request = request;
+  // Request arrival wins. Keep an active lease until this request passes auth,
+  // but invalidate an older pending handoff immediately.
+  if (slot.lease?.phase !== "active") {
+    disposeLease(slot.lease);
+    slot.lease = undefined;
+  }
+  const currentRequest = () =>
+    !state.closed && state.subscriptions.get(threadId) === slot && slot.request === request;
+
   try {
     await auth.app.threadRuntime.requireOwnedThread(threadId, auth.userId);
   } catch {
-    sendError(peer, meridianError("not_found", "Thread not found"), threadId);
+    if (currentRequest()) {
+      sendError(peer, meridianError("not_found", "Thread not found"), threadId);
+      if (!slot.lease) state.subscriptions.delete(threadId);
+    }
     return;
   }
 
-  const state = getPeerState(peer);
-  state.subscriptions.get(threadId)?.();
+  if (!currentRequest()) return;
+  disposeLease(slot.lease);
+  const lease: ThreadSubscriptionLease = {
+    phase: "pending",
+    buffered: [],
+    delivered: BigInt(parsedLastSeq),
+  };
+  slot.lease = lease;
+  const currentLease = () =>
+    !state.closed &&
+    state.subscriptions.get(threadId) === slot &&
+    slot.lease === lease &&
+    lease.phase !== "disposed";
 
-  let watermark = BigInt(parsedLastSeq);
-  const { catchup, hitReplayLimit, unsubscribe } =
-    await auth.app.threadEventHub.catchupAndSubscribe(threadId, watermark, (entry) => {
-      runInPeerScope(peer, () => {
-        if (state.closed) return;
-        const minSeq = state.liveWatermark.get(threadId) ?? 0n;
-        if (entry.seq <= minSeq) return;
-        state.liveWatermark.set(threadId, entry.seq);
-        sendFrame(peer, {
-          type: "event",
-          threadId,
-          seq: entry.seq.toString(),
-          event: entry.event,
-        });
-      });
-    });
-
-  for (const entry of catchup) {
-    if (entry.seq > watermark) watermark = entry.seq;
-  }
-
-  if (state.closed) {
-    unsubscribe();
-    return;
-  }
-
-  state.liveWatermark.set(threadId, watermark);
-  state.subscriptions.set(threadId, unsubscribe);
-
-  if (hitReplayLimit) {
-    sendFrame(peer, {
-      type: "gap",
+  try {
+    const { catchup, unsubscribe } = await auth.app.threadEventHub.catchupAndSubscribe(
       threadId,
-      cause: "replay_limit_exceeded",
-      message: "Journal replay capped at 10000 events",
-    });
+      lease.delivered,
+      (entry) => {
+        runInPeerScope(peer, () => {
+          if (!currentLease()) return;
+          lease.buffered.push(entry);
+          if (lease.phase === "active") flushBuffered();
+        });
+      },
+    );
+    if (!currentLease()) {
+      unsubscribe();
+      return;
+    }
+    lease.unsubscribe = unsubscribe;
+
+    const liveState = await auth.app.threadRuntime.liveState(threadId, auth.userId);
+    if (!currentLease()) return;
+    if (
+      !sendFrame(peer, {
+        type: "subscribed",
+        threadId,
+        catchup: catchup.map(toProtocolSequencedEvent),
+        state: liveState,
+      }) ||
+      !currentLease()
+    )
+      return;
+
+    for (const entry of catchup) {
+      if (entry.seq > lease.delivered) lease.delivered = entry.seq;
+    }
+    lease.phase = "flushing";
+    flushBuffered();
+  } catch (error) {
+    if (!currentLease()) return;
+    disposeLease(lease);
+    state.subscriptions.delete(threadId);
+    throw error;
   }
 
-  const liveState = await auth.app.threadRuntime.liveState(threadId, auth.userId);
-  sendFrame(peer, {
-    type: "subscribed",
-    threadId,
-    catchup: catchup.map(toProtocolSequencedEvent),
-    state: liveState,
-    nextSeq: ((await auth.app.hub.headSeq(threadId)) + 1n).toString(),
-  });
+  function flushBuffered(): void {
+    if (!currentLease() || (lease.phase !== "active" && lease.phase !== "flushing")) return;
+    lease.phase = "flushing";
+    while (currentLease() && lease.buffered.length > 0) {
+      const buffered = lease.buffered
+        .splice(0)
+        .sort((a, b) => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0));
+      for (const entry of buffered) {
+        if (!currentLease()) return;
+        if (entry.seq <= lease.delivered) continue;
+        sendLiveEvent(peer, subscriptionThreadId, lease, entry);
+      }
+    }
+    if (currentLease()) lease.phase = "active";
+  }
 }
 
 function disposeSubscriptions(peer: WsPeer): void {
   const state = getPeerState(peer);
   state.closed = true;
-  unregisterPeerConnectionToken(peer);
-  for (const unsubscribe of state.subscriptions.values()) unsubscribe();
+  for (const slot of state.subscriptions.values()) disposeLease(slot.lease);
   state.subscriptions.clear();
-  state.liveWatermark.clear();
   for (const unsubscribe of state.catalogSubscriptions.values()) unsubscribe();
   state.catalogSubscriptions.clear();
-}
-
-function unregisterPeerConnectionToken(peer: WsPeer): void {
-  const auth = peer.context;
-  if (!auth) return;
-  auth.app.runner.unregisterLiveConnectionToken?.(getPeerState(peer).connectionToken);
 }
 
 export function createThreadWebSocketSession(peer: WsPeer) {
@@ -223,9 +306,6 @@ export function createThreadWebSocketSession(peer: WsPeer) {
           serverVersion: SERVER_VERSION,
           connectionToken,
         });
-        if (sent) {
-          auth.app.runner.registerLiveConnectionToken?.(connectionToken);
-        }
         return sent;
       });
     },
@@ -260,9 +340,8 @@ export function createThreadWebSocketSession(peer: WsPeer) {
                 return;
               }
               const state = getPeerState(peer);
-              state.subscriptions.get(threadId)?.();
+              disposeLease(state.subscriptions.get(threadId)?.lease);
               state.subscriptions.delete(threadId);
-              state.liveWatermark.delete(threadId);
               return;
             }
             case "catalog.subscribe": {

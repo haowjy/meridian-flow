@@ -1,11 +1,11 @@
 /** Deterministic safety-provenance facts, replay, and client namespace admission. */
 
 import {
+  type LineageRange,
   type SemanticEditIRV1,
   type SemanticProvenanceWriter,
   unwrapBlock,
   unwrapDoc,
-  type WriterLineageRange,
 } from "@meridian/agent-edit/integration";
 import type { DocumentAuthorityId } from "@meridian/contracts";
 import { PROSEMIRROR_FRAGMENT_NAME, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
@@ -25,8 +25,8 @@ export type SafetyBirthClass = "writer_protected" | "agent";
 
 export type ProvenanceTargetFactV1 = {
   version: 1;
-  target: WriterLineageRange;
-  root: WriterLineageRange;
+  target: LineageRange;
+  root: LineageRange;
 };
 
 export type JournalReplayKey = {
@@ -46,7 +46,7 @@ export type AttributionManifestV1 = {
 };
 
 export type AttributionRunV1 = {
-  range: WriterLineageRange;
+  range: LineageRange;
   birthClass: SafetyBirthClass;
   origin: JournalReplayKey;
 };
@@ -60,14 +60,14 @@ export type AttributedJournalRow = JournalReplayKey & {
 };
 
 export type ProvenanceRun = {
-  target: WriterLineageRange;
-  root: WriterLineageRange;
+  target: LineageRange;
+  root: LineageRange;
   birthClass: SafetyBirthClass;
 };
 
 export type RootLineageRun = {
-  target: WriterLineageRange;
-  root: WriterLineageRange;
+  target: LineageRange;
+  root: LineageRange;
 };
 
 export type ProvenanceMaterialization = {
@@ -408,8 +408,8 @@ function visibleOutputWindow(
   edit: MappedEdit["edit"],
   declarations: readonly MappedEdit[],
   outputLength: number,
-  inserted: readonly WriterLineageRange[],
-): WriterLineageRange[] {
+  inserted: readonly LineageRange[],
+): LineageRange[] {
   if (edit.kind === "insert" || edit.kind === "delete") {
     throw new ProvenanceMaterializationError(
       `Certified ${edit.kind} output cannot materialize continuation or restoration facts`,
@@ -451,9 +451,9 @@ function visibleOutputWindow(
 
 function replacedBlockOutputRanges(
   block: Y.XmlElement,
-  inserted: readonly WriterLineageRange[],
+  inserted: readonly LineageRange[],
   outputLength: number,
-): WriterLineageRange[] {
+): LineageRange[] {
   const item = (block as unknown as { _item: YItemLike | null })._item;
   if (!item?.deleted) return [];
   // A structural remint inserts beside the input tombstone. Accept only one adjacent
@@ -500,8 +500,8 @@ function textEditOutputLength(edit: MappedEdit["edit"]): number {
 
 function resolvedRootUnits(
   assignments: RangeIndex<ProvenanceTargetFactV1>,
-  source: WriterLineageRange,
-): WriterLineageRange[] {
+  source: LineageRange,
+): LineageRange[] {
   return Array.from({ length: source.length }, (_, offset) => {
     const sourceUnit = unit(source, offset);
     const assignment = assignments.valueAt(sourceUnit);
@@ -511,7 +511,7 @@ function resolvedRootUnits(
   });
 }
 
-function insertedStringRanges(update: Uint8Array): WriterLineageRange[] {
+function insertedStringRanges(update: Uint8Array): LineageRange[] {
   return (Y.decodeUpdate(update) as DecodedUpdate).structs.flatMap((value) => {
     const struct = asStruct(value);
     return struct.content?.constructor?.name === "ContentString"
@@ -521,9 +521,9 @@ function insertedStringRanges(update: Uint8Array): WriterLineageRange[] {
 }
 
 function intersectRangesInOrder(
-  ordered: readonly WriterLineageRange[],
-  candidates: readonly WriterLineageRange[],
-): WriterLineageRange[] {
+  ordered: readonly LineageRange[],
+  candidates: readonly LineageRange[],
+): LineageRange[] {
   return ordered.flatMap((range) =>
     candidates
       .filter((candidate) => rangesOverlap(range, candidate))
@@ -540,11 +540,11 @@ function intersectRangesInOrder(
 }
 
 function sliceRanges(
-  ranges: readonly WriterLineageRange[],
+  ranges: readonly LineageRange[],
   from: number,
   length: number,
-): WriterLineageRange[] {
-  const result: WriterLineageRange[] = [];
+): LineageRange[] {
+  const result: LineageRange[] = [];
   let offset = 0;
   const to = from + length;
   for (const range of ranges) {
@@ -762,7 +762,7 @@ function validateReplayRows(
   }
 }
 
-export function journalInsertionRanges(update: Uint8Array): WriterLineageRange[] {
+export function journalInsertionRanges(update: Uint8Array): LineageRange[] {
   return (Y.decodeUpdate(update) as DecodedUpdate).structs.map((value) => {
     const struct = asStruct(value);
     return { clientID: struct.id.client, clock: struct.id.clock, length: struct.length };
@@ -779,10 +779,10 @@ function readTargetFacts(doc: Y.Doc): RangeIndex<ProvenanceTargetFactV1> {
 }
 
 class RangeIndex<T> {
-  readonly #byClient = new Map<number, Array<{ range: WriterLineageRange; value: T }>>();
+  readonly #byClient = new Map<number, Array<{ range: LineageRange; value: T }>>();
   constructor(private readonly label: string) {}
 
-  add(rangeValue: WriterLineageRange, value: T, same: (left: T, right: T) => boolean): void {
+  add(rangeValue: LineageRange, value: T, same: (left: T, right: T) => boolean): void {
     const range = parseRange(rangeValue);
     const entries = this.#byClient.get(range.clientID) ?? [];
     for (const entry of entries) {
@@ -795,10 +795,10 @@ class RangeIndex<T> {
 
   /** Journal sync updates may repeat already-integrated structs. Their insertion
    * clocks retain the first row's attribution; only previously unseen gaps are born here. */
-  addUncovered(rangeValue: WriterLineageRange, value: T): WriterLineageRange[] {
+  addUncovered(rangeValue: LineageRange, value: T): LineageRange[] {
     const range = parseRange(rangeValue);
     const entries = this.#byClient.get(range.clientID) ?? [];
-    const added: WriterLineageRange[] = [];
+    const added: LineageRange[] = [];
     let cursor = range.clock;
     const limit = end(range);
     for (const covered of entries
@@ -828,7 +828,7 @@ class RangeIndex<T> {
       ?.find(({ range }) => point.clock >= range.clock && point.clock < end(range))?.value;
   }
 
-  covers(range: WriterLineageRange): boolean {
+  covers(range: LineageRange): boolean {
     for (let clock = range.clock; clock < end(range); clock += 1) {
       if (!this.valueAt({ clientID: range.clientID, clock })) return false;
     }
@@ -852,12 +852,12 @@ type YItemLike = {
   right?: YItemLike | null;
 };
 
-function visibleProseStringRanges(doc: Y.Doc): WriterLineageRange[] {
+function visibleProseStringRanges(doc: Y.Doc): LineageRange[] {
   return visibleStringRanges(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME));
 }
 
-function visibleStringRanges(type: Y.XmlElement | Y.XmlText | Y.XmlFragment): WriterLineageRange[] {
-  const ranges: WriterLineageRange[] = [];
+function visibleStringRanges(type: Y.XmlElement | Y.XmlText | Y.XmlFragment): LineageRange[] {
+  const ranges: LineageRange[] = [];
   const visit = (current: Y.XmlElement | Y.XmlText | Y.XmlFragment): void => {
     if (current instanceof Y.XmlText) {
       let item = (current as unknown as { _start: YItemLike | null })._start;
@@ -926,8 +926,8 @@ function collectTypeStructs(type: unknown, index: ReservedRangeIndex): void {
 }
 
 class ReservedRangeIndex {
-  readonly byClient = new Map<number, WriterLineageRange[]>();
-  add(range: WriterLineageRange): void {
+  readonly byClient = new Map<number, LineageRange[]>();
+  add(range: LineageRange): void {
     const ranges = this.byClient.get(range.clientID) ?? [];
     ranges.push(range);
     this.byClient.set(range.clientID, ranges);
@@ -939,7 +939,7 @@ class ReservedRangeIndex {
         ?.some((range) => id.clock >= range.clock && id.clock < end(range)) ?? false
     );
   }
-  overlaps(range: WriterLineageRange): boolean {
+  overlaps(range: LineageRange): boolean {
     return this.byClient.get(range.clientID)?.some((value) => rangesOverlap(value, range)) ?? false;
   }
 }
@@ -952,7 +952,7 @@ function parseTargetFact(value: unknown): ProvenanceTargetFactV1 {
   return { version: 1, target, root };
 }
 
-function parseRange(value: unknown): WriterLineageRange {
+function parseRange(value: unknown): LineageRange {
   if (!isRecord(value)) throw blocked("Invalid lineage range");
   const { clientID, clock, length } = value;
   if (
@@ -1042,18 +1042,18 @@ function sameAttribution(left: AttributionRunV1, right: AttributionRunV1): boole
 function sameTargetFact(left: ProvenanceTargetFactV1, right: ProvenanceTargetFactV1): boolean {
   return sameRange(left.target, right.target) && sameRange(left.root, right.root);
 }
-function sameRange(left: WriterLineageRange, right: WriterLineageRange): boolean {
+function sameRange(left: LineageRange, right: LineageRange): boolean {
   return (
     left.clientID === right.clientID && left.clock === right.clock && left.length === right.length
   );
 }
-function rangesOverlap(left: WriterLineageRange, right: WriterLineageRange): boolean {
+function rangesOverlap(left: LineageRange, right: LineageRange): boolean {
   return left.clientID === right.clientID && left.clock < end(right) && right.clock < end(left);
 }
-function unit(range: WriterLineageRange, offset = 0): WriterLineageRange {
+function unit(range: LineageRange, offset = 0): LineageRange {
   return { clientID: range.clientID, clock: range.clock + offset, length: 1 };
 }
-function end(range: WriterLineageRange): number {
+function end(range: LineageRange): number {
   return range.clock + range.length;
 }
 function replayKey(value: JournalReplayKey): JournalReplayKey {

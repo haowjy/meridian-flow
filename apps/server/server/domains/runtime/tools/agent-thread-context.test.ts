@@ -1,4 +1,4 @@
-/** Writer vs Critic metadata advertise different read/write document tool schemas. */
+/** Writer vs Critic metadata advertise one shared, command-narrowed document tool. */
 import {
   GENERIC_AGENT_BODY,
   GENERIC_SUBAGENT_SLUG,
@@ -15,13 +15,11 @@ import { createSpawnToolRegistrations } from "./spawn-tools.js";
 import { createToolRegistry } from "./tool-registry.js";
 
 const WRITER_MAP = {
-  read: "allow",
   edit: "allow",
   ask_user: "allow",
 } as const;
 
 const CRITIC_MAP = {
-  read: "allow",
   edit: "deny",
   ask_user: "allow",
 } as const;
@@ -29,7 +27,6 @@ const CRITIC_MAP = {
 function stubHandlers(): CoreToolHandlers {
   const noop = async () => ({ ok: true });
   return {
-    read: noop,
     write: noop,
     work: noop,
     ls: noop,
@@ -124,22 +121,48 @@ function spawnDescription(tools: Tool[]): string {
 }
 
 describe("resolveAgentThreadTurnContext tool policy", () => {
-  it("advertises Critic read only and Writer read plus mutate write", async () => {
+  it("advertises an explicit write(read) invocation and requires the command discriminator", () => {
+    const registrations = createCoreToolRegistrations(stubHandlers());
+    expect(registrations.map((registration) => registration.definition.name)).not.toContain("read");
+    const write = registrations.find((registration) => registration.definition.name === "write");
+    expect(write?.definition.description).toContain('{ "command": "read", "path": "..." }');
+    expect(write?.definition.description).toContain("explicit `command`");
+    const branches = write?.definition.inputSchema.oneOf;
+    expect(Array.isArray(branches)).toBe(true);
+    expect(branches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          required: expect.arrayContaining(["command", "path"]),
+          properties: expect.objectContaining({ command: { const: "read", type: "string" } }),
+        }),
+      ]),
+    );
+  });
+
+  it("advertises Critic read/diff and Writer all commands on one write tool", async () => {
     const critic = await boundContext({ tools: CRITIC_MAP });
     const writer = await boundContext({ tools: WRITER_MAP });
-    expect([...commandConsts(critic.tools, "read")].sort()).toEqual(["diff", "read"]);
-    expect(hasTool(critic.tools, "write")).toBe(false);
+    expect([...commandConsts(critic.tools, "write")].sort()).toEqual(["diff", "read"]);
+    expect(hasTool(critic.tools, "read")).toBe(false);
     expect(commandConsts(writer.tools, "write")).toContain("replace");
-    expect(commandConsts(writer.tools, "write")).not.toContain("read");
-    expect([...commandConsts(writer.tools, "read")].sort()).toEqual(["diff", "read"]);
+    expect([...commandConsts(writer.tools, "write")].sort()).toEqual([
+      "create",
+      "delete",
+      "diff",
+      "insert",
+      "read",
+      "redo",
+      "replace",
+      "undo",
+    ]);
     expect(hasTool(critic.tools, "spawn")).toBe(true);
     expect(hasTool(writer.tools, "spawn")).toBe(true);
   });
 
   it("advertises a generic child's inherited Critic execution, not General's absent tools", async () => {
     const generic = await boundContext({ tools: CRITIC_MAP, definitionTools: WRITER_MAP });
-    expect([...commandConsts(generic.tools, "read")].sort()).toEqual(["diff", "read"]);
-    expect(hasTool(generic.tools, "write")).toBe(false);
+    expect([...commandConsts(generic.tools, "write")].sort()).toEqual(["diff", "read"]);
+    expect(hasTool(generic.tools, "read")).toBe(false);
   });
 
   it("tells an empty-roster caller not to spawn, and a rostered caller to prefer named", async () => {

@@ -1,30 +1,20 @@
-/**
- * AssistantTurn — single render path for assistant turns.
- *
- * One `Block[]` for live and settled alike: no synthetic `"live-reasoning"`
- * block and no separate `thinkingStream`/`textStream`/`visibleTool` props.
- * `partitionTurn` reduces it to an ordered `RenderItem[]` — process folds
- * (reasoning + process tools) collapse in place, text and artifacts stay
- * visible — so prose never folds and is never remounted by a later reasoning
- * run. Render keys derive from `(turnId, sequence)` via `blockRenderKey`.
- *
- * Draft affordances live OFF the transcript now: pending AI changes are the
- * composer-attached DraftDock's job, and this turn only records what it edited
- * (see `TurnEditsReceipt`). Write vocabulary comes from the mode frozen on the turn.
- */
+/** AssistantTurn — single render path for assistant turns. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { type Block, isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
+import { CheckCircle2, CircleAlert, MessageSquareText, XCircle } from "lucide-react";
 import { memo, useMemo } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
+import { ActivityRow } from "./ActivityRow";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
 import { ErrorBlock } from "./ErrorBlock";
 import { groupDeliverySegments } from "./group-delivery-segments";
+import { type DirectInvocationResult, directResultsForTurn } from "./invocation-direct-result";
 import { ProcessDisclosure } from "./ProcessDisclosure";
 import {
   hasVisibleReasoningText,
@@ -32,6 +22,7 @@ import {
   type RenderItem,
   type Run,
 } from "./partition-turn";
+import { ReportContent } from "./ReportContent";
 import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
@@ -44,6 +35,7 @@ import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 export type AssistantTurnProps = {
   threadId?: string;
   turn: Turn;
+  deliveryEvents?: Array<{ turn: Turn; childThreadId?: string; title?: string }>;
   isLatestAssistant?: boolean;
   onRetry?: () => void;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
@@ -54,6 +46,7 @@ export type AssistantTurnProps = {
 function AssistantTurnComponent({
   threadId,
   turn,
+  deliveryEvents = [],
   isLatestAssistant = false,
   onRetry,
   onRespondToInterrupt,
@@ -66,6 +59,7 @@ function AssistantTurnComponent({
   );
   const isSettled = isTerminalTurnStatus(turn.status);
   const items = useMemo(() => partitionTurn(sortedBlocks), [sortedBlocks]);
+  const directResults = useMemo(() => directResultsForTurn(sortedBlocks), [sortedBlocks]);
   // Progressive-disclosure label: "Thinking part N" for a turn with several
   // process folds (one per artifact/interrupt-delimited stretch).
   // Ordinals count only visible folds: a process item whose runs have nothing
@@ -83,6 +77,10 @@ function AssistantTurnComponent({
     }
     return result;
   }, [items]);
+  let lastProcessIndex = -1;
+  rows.forEach(({ item }, index) => {
+    if (item.kind === "process") lastProcessIndex = index;
+  });
   const isErrored = turn.status === "error";
   const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
   const isLive = !isSettled;
@@ -108,7 +106,7 @@ function AssistantTurnComponent({
       data-turn-role="assistant"
       data-turn-status={turn.status}
     >
-      {rows.map(({ item, processOrdinal, processCount }) => (
+      {rows.map(({ item, processOrdinal, processCount }, rowIndex) => (
         <TurnItemView
           key={itemRenderKey(item)}
           item={item}
@@ -118,8 +116,24 @@ function AssistantTurnComponent({
           turnStatus={turn.status}
           onRespondToInterrupt={onRespondToInterrupt}
           writeMode={turn.writeMode ?? "direct"}
+          directResult={
+            item.kind === "artifact" ? (directResults.get(item.block.id) ?? null) : null
+          }
+          deliveryEvents={
+            item.kind === "process" && rowIndex === lastProcessIndex ? deliveryEvents : []
+          }
         />
       ))}
+
+      {rows.every(({ item }) => item.kind !== "process") &&
+        deliveryEvents.map((event) => (
+          <DeliveryEventRow
+            key={event.turn.id}
+            turn={event.turn}
+            childThreadId={event.childThreadId}
+            title={event.title}
+          />
+        ))}
 
       {hasTurnEditsReceiptContent(liveLineageDocuments, changeTrail, workReceipts) ? (
         <TurnEditsReceipt
@@ -145,6 +159,56 @@ function AssistantTurnComponent({
   );
 }
 
+function DeliveryEventRow({
+  turn,
+  childThreadId,
+  title,
+}: {
+  turn: Turn;
+  childThreadId?: string;
+  title?: string;
+}) {
+  const metadata =
+    turn.metadata && typeof turn.metadata === "object" && !Array.isArray(turn.metadata)
+      ? (turn.metadata as Record<string, unknown>)
+      : {};
+  if (metadata.kind === "subagent_update") {
+    const outcome = String(metadata.outcome);
+    const Icon =
+      outcome === "succeeded" ? CheckCircle2 : outcome === "failed" ? CircleAlert : XCircle;
+    const label =
+      outcome === "succeeded" ? "finished" : outcome === "failed" ? "failed" : "was cancelled";
+    return (
+      <ActivityRow Icon={Icon}>
+        <span>
+          Subagent {String(metadata.handle)} {label}
+          {title ? `: ${title}` : ""}.
+        </span>
+        {childThreadId ? (
+          <>
+            {" "}
+            <a
+              className="rounded-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              href={`/chat/${childThreadId}`}
+            >
+              Open
+            </a>
+          </>
+        ) : null}
+      </ActivityRow>
+    );
+  }
+  const body = turn.blocks
+    .filter((block) => block.blockType === "text")
+    .map((block) => block.textContent ?? "")
+    .join("");
+  return (
+    <ActivityRow Icon={MessageSquareText}>
+      <span className="whitespace-pre-wrap text-foreground">{body || "Shared an attachment"}</span>
+    </ActivityRow>
+  );
+}
+
 function InkDrop() {
   return (
     <div className="mt-[7px] flex min-h-5 items-center" data-live-turn-ink>
@@ -153,14 +217,7 @@ function InkDrop() {
   );
 }
 
-/**
- * One entry per document, preferring its committed (`live`) lineage.
- *
- * A turn that drafted an edit the writer later applied carries BOTH a `draft`
- * and a `live` entry for the same URI, draft first. The card is a receipt for
- * what happened to the manuscript, so the committed entry is the one that
- * counts — keeping the draft would render an applied edit as if it never landed.
- */
+/** One entry per document, preferring its committed (`live`) lineage. */
 function dedupeTurnEditDocuments<T extends { uri: string; scope: "live" | "draft" }>(
   documents: readonly T[],
 ): T[] {
@@ -181,6 +238,8 @@ const TurnItemView = memo(function TurnItemView({
   turnStatus,
   onRespondToInterrupt,
   writeMode,
+  directResult,
+  deliveryEvents,
 }: {
   item: RenderItem;
   processOrdinal: number;
@@ -189,6 +248,8 @@ const TurnItemView = memo(function TurnItemView({
   turnStatus: Turn["status"];
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   writeMode: "direct" | "draft";
+  directResult: DirectInvocationResult | null;
+  deliveryEvents: AssistantTurnProps["deliveryEvents"];
 }) {
   const runs = item.kind === "process" ? item.runs : null;
   const digest = useMemo(
@@ -215,6 +276,22 @@ const TurnItemView = memo(function TurnItemView({
             />
           ))}
         </ProcessDisclosure>
+        {deliveryEvents?.map((event) => (
+          <DeliveryEventRow
+            key={event.turn.id}
+            turn={event.turn}
+            childThreadId={event.childThreadId}
+            title={event.title}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (item.kind === "report") {
+    return (
+      <div className="mb-2 space-y-2 text-prose-foreground" data-turn-item-kind="report">
+        <ReportContent report={item.report} empty={null} className="space-y-2" />
       </div>
     );
   }
@@ -226,6 +303,7 @@ const TurnItemView = memo(function TurnItemView({
         threadId={threadId}
         turnStatus={turnStatus}
         onRespondToInterrupt={onRespondToInterrupt}
+        directResult={directResult}
       />
     </div>
   );
@@ -239,14 +317,7 @@ function thinkingAriaLabel(processIndex: number, processCount: number): string |
   return processCount <= 1 ? t`Thinking` : t`Thinking part ${processIndex + 1}`;
 }
 
-/**
- * A process item earns its disclosure only when it holds something the writer
- * can read. Reasoning runs always qualify (empty ones are dropped in
- * `partitionTurn`); an activity run qualifies with at least one visible tool
- * row. The gate covers the one gap: a hidden protocol block whose provider
- * omitted its `toolCallId` is not detected as hidden, and `ToolRow` renders
- * nothing for it.
- */
+/** A process item earns its disclosure only when it holds something the writer can read. */
 function foldHasVisibleContent(runs: Run[]): boolean {
   return runs.some((run) => run.kind === "reasoning") || toolViewsInFold(runs).length > 0;
 }
@@ -315,12 +386,6 @@ function runRenderKey(run: Run): string {
 export const AssistantTurn = memo(AssistantTurnComponent);
 AssistantTurn.displayName = "AssistantTurn";
 
-/**
- * Process rows: reasoning, tools, and other process blocks render as icon-rail
- * rows inside the Thinking disclosure. Text and artifacts render outside it
- * (see `DeliveryBlock`); that contrast carries the meaning — the fold is "what
- * the assistant did", prose is "what the assistant said".
- */
 const DeliverySegments = memo(function DeliverySegments({
   blocks,
   threadId,
@@ -377,11 +442,13 @@ function DeliveryBlock({
   threadId,
   turnStatus,
   onRespondToInterrupt,
+  directResult,
 }: {
   block: Block;
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
+  directResult?: DirectInvocationResult | null;
 }) {
   // `activity` blocks are AG-UI progress placeholders (`ACTIVITY_SNAPSHOT` /
   // `ACTIVITY_DELTA` events with no tool target) that the reducer parks under
@@ -402,6 +469,7 @@ function DeliveryBlock({
         threadId={threadId}
         turnStatus={turnStatus}
         onRespondToInterrupt={onRespondToInterrupt}
+        directResult={directResult}
       />
     );
   }

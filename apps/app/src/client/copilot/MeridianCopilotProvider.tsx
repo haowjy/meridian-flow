@@ -7,10 +7,14 @@
  * now the direct transport controller.
  */
 
-import { createContext, type ReactNode, useContext, useEffect, useMemo } from "react";
+import { createContext, type ReactNode, useContext, useLayoutEffect, useMemo } from "react";
 
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { useThreadActions } from "@/client/stores";
+import {
+  useAccountEpochSignal,
+  useAccountId,
+} from "@/features/project/context/account-feature-context";
 
 import { ThreadRunController } from "./ThreadRunController";
 
@@ -27,12 +31,21 @@ export function useMeridianAgent(): ThreadRunController {
 export function MeridianCopilotProvider({ children }: { children: ReactNode }) {
   const transport = useThreadTransport();
   const actions = useThreadActions();
+  const accountSignal = useAccountEpochSignal();
+  const accountId = useAccountId();
   const controller = useMemo(
-    () => new ThreadRunController({ transport, actions }),
-    [actions, transport],
+    () =>
+      new ThreadRunController({
+        transport,
+        actions,
+        accountSignal,
+        accountId,
+      }),
+    [actions, transport, accountSignal, accountId],
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    controller.activate();
     return () => {
       controller.dispose();
     };

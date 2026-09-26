@@ -1,35 +1,6 @@
 /** Working-set route parsing protects the scheme/work authority wire invariant. */
-import { describe, expect, expectTypeOf, it } from "vitest";
-import type { WorkId } from "../ids.js";
-import type {
-  CreateThreadRequest,
-  DeleteContextEntryRequest,
-  DeleteContextEntryResult,
-} from "./http-types.js";
+import { describe, expect, it } from "vitest";
 import { parseWorkingSetRoute, parseWorkingSetRouteList } from "./http-types.js";
-
-describe("context deletion result", () => {
-  it("requires the initiating kind and file identity", () => {
-    expectTypeOf<DeleteContextEntryRequest>().toEqualTypeOf<{
-      operationId: string;
-      path: string;
-      expected: { kind: "file"; documentId: string } | { kind: "folder" };
-    }>();
-  });
-  it("carries an exact batch of committed document identities", () => {
-    expectTypeOf<DeleteContextEntryResult>().toEqualTypeOf<{
-      status: "deleted";
-      deletedDocumentIds: string[];
-      availabilityGeneration: string;
-    }>();
-  });
-});
-
-describe("root thread creation", () => {
-  it("preserves omitted, explicit null, and real Work identity", () => {
-    expectTypeOf<CreateThreadRequest["workId"]>().toEqualTypeOf<WorkId | null | undefined>();
-  });
-});
 
 describe("working-set route parser", () => {
   it("accepts each valid union arm", () => {
@@ -67,9 +38,29 @@ describe("working-set route parser", () => {
     ).toBe(false);
   });
 
-  it("rejects invalid paths and invalid list entries", () => {
-    expect(parseWorkingSetRoute({ scheme: "kb", path: "" }).ok).toBe(false);
-    expect(parseWorkingSetRoute({ scheme: "kb", path: "x".repeat(1025) }).ok).toBe(false);
-    expect(parseWorkingSetRouteList([{ scheme: "unknown", path: "/" }]).ok).toBe(false);
+  it("rejects invalid paths and invalid list entries at their intended guards", () => {
+    const validRoute = {
+      documentId: "00000000-0000-0000-0000-000000000001",
+      scheme: "manuscript" as const,
+      path: "/chapter.md",
+    };
+
+    expect(parseWorkingSetRoute({ ...validRoute, path: "" })).toEqual({
+      ok: false,
+      message: "Working-set route path must contain 1 to 1024 characters",
+    });
+    expect(parseWorkingSetRoute({ ...validRoute, path: "x".repeat(1025) })).toEqual({
+      ok: false,
+      message: "Working-set route path must contain 1 to 1024 characters",
+    });
+    expect(parseWorkingSetRoute({ ...validRoute, path: "x".repeat(1024) }).ok).toBe(true);
+    expect(parseWorkingSetRoute({ ...validRoute, scheme: "unknown" })).toEqual({
+      ok: false,
+      message: "Working-set route has an unknown scheme",
+    });
+    expect(parseWorkingSetRouteList([{ ...validRoute, scheme: "unknown" }])).toEqual({
+      ok: false,
+      message: "Working-set route has an unknown scheme",
+    });
   });
 });

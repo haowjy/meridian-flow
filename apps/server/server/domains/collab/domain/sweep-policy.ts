@@ -4,11 +4,11 @@ import {
   type AgentEditCodec,
   type BlockSnapshot,
   intersectLineageRanges,
+  type LineageRange,
   normalizeLineageRanges,
   snapshotBlocks,
   subtractLineageRanges,
   toDocHandle,
-  type WriterLineageRange,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { UserId } from "@meridian/contracts/runtime";
@@ -28,7 +28,7 @@ export type SweepEvidence = {
     update: Uint8Array;
     byUser: ReadonlyArray<{
       userId: UserId;
-      rootsAfterObservationWatermark: readonly WriterLineageRange[];
+      rootsAfterObservationWatermark: readonly LineageRange[];
     }>;
   }>;
 };
@@ -50,7 +50,7 @@ export function materializeSweepEvidence(input: {
       /** Stable within one materialization so candidates can share first-birth replay. */
       key: string;
       /** Neutral checkpoint roots: later sync payloads cannot claim these old roots. */
-      roots: readonly WriterLineageRange[];
+      roots: readonly LineageRange[];
     };
   }[];
 }): SweepEvidence {
@@ -132,8 +132,8 @@ function affectedBlockIdentities(input: {
   documentId: string;
   beforeBlocks: readonly BlockSnapshot[];
   beforeLineage: readonly RootLineageRun[];
-  survivingRoots: readonly WriterLineageRange[];
-  recipientRoots: readonly WriterLineageRange[];
+  survivingRoots: readonly LineageRange[];
+  recipientRoots: readonly LineageRange[];
 }): Set<string> {
   const visibleBeforeRoots = input.beforeLineage.map((run) => run.root);
   const deletedRecipientRoots = subtractLineageRanges(
@@ -168,7 +168,7 @@ type FirstBirthRow = {
   journalRowId: bigint;
   originType: string | null;
   actorUserId: string | null;
-  roots: readonly WriterLineageRange[];
+  roots: readonly LineageRange[];
 };
 
 function materializeFirstBirthRows(
@@ -178,7 +178,7 @@ function materializeFirstBirthRows(
     actorUserId: string | null;
     update: Uint8Array;
   }[],
-  retainedRoots: readonly WriterLineageRange[],
+  retainedRoots: readonly LineageRange[],
 ): FirstBirthRow[] {
   let coveredRoots = normalizeLineageRanges(retainedRoots);
   return rows.map((row) => {
@@ -197,8 +197,8 @@ function materializeFirstBirthRows(
 function recentWriterRootsByUser(
   rows: readonly FirstBirthRow[],
   observedBaseUpdateSeq: number,
-): Map<UserId, WriterLineageRange[]> {
-  const rootsByUser = new Map<UserId, WriterLineageRange[]>();
+): Map<UserId, LineageRange[]> {
+  const rootsByUser = new Map<UserId, LineageRange[]>();
   for (const row of rows) {
     if (
       row.originType !== "human" ||

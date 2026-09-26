@@ -9,17 +9,13 @@ import type { UserId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import { throwHttpInterruptForStatus } from "../../lib/interrupt-boundary.js";
 import { parseRequestId } from "../../shared/uuid.js";
-import type { ProjectRepository, WorkContextDelivery } from "../projects/index.js";
+import type { ProjectRepository, WorkContextNotices } from "../projects/index.js";
 import {
   type ThreadTrashState,
   ThreadTrashUnavailableError,
   transitionThreadTrash,
 } from "./domain/thread-trash-lifecycle.js";
-import type {
-  ThreadRepositories,
-  ThreadRepository,
-  WorkContextDeliveryRepository,
-} from "./ports/repositories.js";
+import type { ThreadRepositories, ThreadRepository } from "./ports/repositories.js";
 
 interface ProjectOwnerRepository {
   findById(id: string): Promise<Project | null>;
@@ -52,8 +48,7 @@ export async function requireThreadOwner(
 export interface SetOwnedThreadTrashStateDeps {
   repos: Pick<ThreadRepositories, "threads" | "threadWorks" | "transaction">;
   projects: Pick<ProjectRepository, "findById">;
-  obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
-  workContextDelivery: Pick<WorkContextDelivery, "deliverAfterCommit">;
+  workContextNotices: Pick<WorkContextNotices, "threadChanged" | "materializeIdle">;
   workAuthorityResolver: import("../projects/index.js").ProjectWorkAuthorityResolver;
   works: Pick<import("../projects/index.js").WorkRepository, "findNoWork">;
 }
@@ -83,7 +78,7 @@ export async function setOwnedThreadTrashState(
     throw cause;
   }
   if (transition.changed && target === "visible") {
-    await deps.workContextDelivery.deliverAfterCommit(parsedThreadId);
+    await deps.workContextNotices.materializeIdle(parsedThreadId);
   }
   return transition.thread;
 }

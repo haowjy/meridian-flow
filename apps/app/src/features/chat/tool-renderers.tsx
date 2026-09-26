@@ -1,26 +1,4 @@
-/**
- * tool-renderers — the per-tool presentation registry that drives the activity
- * timeline's tier-2 rows.
- *
- * Each registered tool contributes a single-line title that reads the tool's
- * input (e.g. `Read Chapter 1`, `Searched "dragon"`) and an optional inline
- * expansion (curated search result rows, outlines, or prose). Glyphs are not here: they belong to the
- * command, which `ToolRow` resolves.
- *
- * Three-tier contract documented in `.context/tool-expands.md`:
- *   - **Tier 1 (default fallback)** — unknown tool. Static one-line row
- *     showing the humanized tool name only. No expand or interaction.
- *   - **Tier 2 (registered)** — the entries in this file. Per-tool one-liner
- *     plus optional curated expansion.
- *   - **Tier 3 (generative)** — model-authored React. Not implemented here.
- *
- * Titles never derive their own tense: both forms come from `tool-command`, so
- * the visible row and the screen-reader announcement cannot disagree.
- *
- * Hard rule: **never expose raw JSON in default UX**. Renderers produce
- * curated content (titles, result rows, terminal tail) only. If we need raw
- * JSON for debugging, it goes behind a dev-only setting — not into chat.
- */
+/** Curated renderers for chat tool activity rows. */
 import { t } from "@lingui/core/macro";
 import {
   type JsonValue,
@@ -31,6 +9,7 @@ import { type ReactNode, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
+import { isArtifactRef } from "./ArtifactGrid";
 import { BoundLine, ClippedProse } from "./ClippedExpand";
 import {
   type CommandExpand,
@@ -43,6 +22,7 @@ import { DocumentName } from "./DocumentName";
 import { documentDisplayName, folderDisplayName } from "./document-display-name";
 import type { ToolView } from "./group-delivery-segments";
 import { PassageDoor } from "./PassageDoor";
+import { payloadText, ReportContent } from "./ReportContent";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
 import { stringInput, toolInputObject, type WriteMode } from "./tool-command";
 import {
@@ -65,15 +45,7 @@ export type ToolRenderContext = {
   writeMode?: WriteMode;
 };
 
-/**
- * Builds an expand's contents on demand. Returning one is a promise that there
- * is something behind the chevron; returning `null` from `expand` means the
- * row shows no chevron at all, because an affordance that opens onto nothing
- * is worse than one that was never offered.
- *
- * The split matters as expands grow: deciding *whether* there is content is
- * cheap, rendering it is not, and a settled turn holds a dozen closed rows.
- */
+/** Builds an expand's contents on demand. */
 export type ToolExpand = () => ReactNode;
 
 export type ToolRenderer = {
@@ -93,18 +65,7 @@ function asString(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-/**
- * A command and what it acted on, laid out as one line.
- *
- * The command must outrank the parameter: making document names into doors
- * adds weight to the parameter, and without this the most important
- * distinction in the timeline — did the agent *look at* my book or *change*
- * it — is carried by the least emphasised word. The verb inherits the row's
- * ink/medium voice; the parameter steps back a shade and a weight.
- *
- * `DocumentName` sets its own tone, because for a document name tone and
- * linkability are coupled.
- */
+/** A command and what it acted on, laid out as one line. */
 function CommandTitle({ verb, parameter }: { verb: ReactNode; parameter?: ReactNode }) {
   return (
     <span className="flex w-full min-w-0 items-baseline gap-1.5">
@@ -138,18 +99,6 @@ function rowKey(row: ToolResultRow, index: number): string {
   return `${index}:${row.uri}`;
 }
 
-/**
- * A search result set, as one contained surface.
- *
- * The card exists so a set of results reads as a set: the transcript is a
- * column of the agent's actions, and eight passages loose in it would be eight
- * more actions. Its header carries the totals and nothing else — the row title
- * directly above already says what was searched for, and saying it twice makes
- * the card look like a different question.
- *
- * **Documents are separated by rules, not by spacing alone.** That separation
- * is the whole reason this shape was chosen over a looser list.
- */
 function ResultRows({ results }: { results: SearchResultRows }) {
   const bound = boundLabel(results);
   return (
@@ -172,15 +121,7 @@ function ResultRows({ results }: { results: SearchResultRows }) {
   );
 }
 
-/**
- * One document's section: its name, how much of the query it holds, its best
- * passage, and a way to see the rest without leaving the transcript.
- *
- * The disclosure sits *after* the passage it extends, not beside the document
- * name. In the header it would take focus before the passage a writer is
- * actually reading, and a focus order that disagrees with reading order is the
- * one thing keyboard users cannot recover from.
- */
+/** One document's section: its name, how much of the query it holds, its best passage, and a way to see the rest without leaving the transcript. */
 function SearchHit({ row }: { row: SearchHitRow }) {
   const [open, setOpen] = useState(false);
   const [best, ...rest] = row.passages;
@@ -233,11 +174,6 @@ function SearchHit({ row }: { row: SearchHitRow }) {
   );
 }
 
-/**
- * How much of the query this document holds, as a column. The bare number is
- * the point — a column reads by shape — so the words live where a screen
- * reader can still hear them.
- */
 function MatchCount({ count }: { count: number }) {
   return (
     <span className="ml-auto inline-grid min-w-5 shrink-0 place-items-center rounded-full border border-border bg-muted px-1.5 py-px text-meta font-semibold text-ink-muted">
@@ -247,18 +183,8 @@ function MatchCount({ count }: { count: number }) {
   );
 }
 
-/**
- * One line per entry, the density every list-shaped expand shares. Exported as
- * a constant rather than a component so the outline can wear the same rhythm
- * while carrying different content.
- */
 const LISTING_ROW = "flex min-w-0 items-baseline gap-[7px] py-0.5 text-compact";
 
-/**
- * What the model received from `ls`. A record, not a file browser: the tree
- * panel already browses, and nothing consumes a folder route, so folders are
- * inert here and there is nothing else to click.
- */
 function ListingRows({ results }: { results: ToolResultRows }) {
   const bound = boundLabel(results);
   return (
@@ -348,10 +274,6 @@ function DocumentToolTitle({ tool, context }: { tool: ToolView; context?: ToolRe
   return <CommandTitle verb={phrase.verb} parameter={<DocumentName path={path} />} />;
 }
 
-/**
- * What a document row opens onto, by command. A failure always wins: the most
- * useful thing a failed write can say is why it failed.
- */
 const COMMAND_EXPANDS: Record<CommandExpand, (tool: ToolView) => ToolExpand | null> = {
   none: () => null,
   renderer: () => null,
@@ -389,12 +311,7 @@ function outputOutline(tool: ToolView): ToolExpand | null {
   return () => <OutlineRows outline={outline} />;
 }
 
-/**
- * What the model submitted, read from the tool *input*: the output carries
- * formatted status and diagnostics, and only the input holds the exact content.
- * Never diff-coloured. Those tokens mean a real, persisted change, and this is
- * what was sent, which is a different claim; the receipt card owns the other.
- */
+/** What the model submitted, read from the tool *input*: the output carries formatted status and diagnostics, and only the input holds the exact content. */
 function submittedContent(tool: ToolView): ToolExpand | null {
   const content = asString(inputObject(tool).content);
   if (!content) return null;
@@ -426,13 +343,6 @@ function resultRowsOrNothing(tool: ToolView): ToolExpand | null {
   );
 }
 
-/**
- * The passage the model read, or the content it submitted, as quoted matter.
- *
- * Top-anchored: the opening of the passage is what the writer wants. When it
- * doesn't fit, the door at the fade offers the whole document, which is a
- * different and larger thing than "more" of a finite payload.
- */
 function QuotedPreview({ markup, path }: { markup: string; path?: string }) {
   return (
     <ClippedProse
@@ -444,10 +354,6 @@ function QuotedPreview({ markup, path }: { markup: string; path?: string }) {
   );
 }
 
-/**
- * The second door, at the point of need. The row title carries the first one,
- * at the top; this one sits where the writer has read to the bound.
- */
 function OpenDocumentDoor({ path }: { path: string }) {
   return (
     <span className="flex min-w-0 text-meta">
@@ -456,16 +362,6 @@ function OpenDocumentDoor({ path }: { path: string }) {
   );
 }
 
-/**
- * What a skim saw. A list, not prose, so it takes the discrete-list treatment
- * whole: the listing rhythm, the listing cap, and a count when it is cut. An
- * outline read returned structure, and rendering it as paragraphs would claim
- * the model read the words under those headings.
- *
- * No fade and no door at the bottom. Those belong to continuous prose, where
- * the need to see the rest arrives only after reading; a clipped outline is
- * already answered by the row title's own door.
- */
 function OutlineRows({ outline }: { outline: CappedList<OutlineHeading> }) {
   const bound = boundLabel(outline);
   return (
@@ -486,12 +382,6 @@ function OutlineRows({ outline }: { outline: CappedList<OutlineHeading> }) {
   );
 }
 
-/**
- * A Work receipt worn as a row title: the server's one factual line, already
- * written in Work names, truncating as a whole. No verb/parameter split —
- * the line is the sentence, and carving the name back out of server copy to
- * restyle it would couple this renderer to the server's phrasing.
- */
 function WorkToolTitle({ tool }: { tool: ToolView }) {
   if (tool.isError) return descriptorFor(tool).failureVerb("direct");
   // `block` so truncate applies: the title slot is a flexified span, and an
@@ -499,10 +389,6 @@ function WorkToolTitle({ tool }: { tool: ToolView }) {
   return <span className="block truncate">{toolActivityPhrase(tool).verb}</span>;
 }
 
-/**
- * A failed Work command explains itself with the structured message, exactly
- * as reported — these are already sentences about Works, not machine detail.
- */
 function workExpand(tool: ToolView): ToolExpand | null {
   if (!tool.isError || tool.output == null) return null;
   const message = meridianErrorFromStructuredToolOutput(tool.output).message;
@@ -520,10 +406,7 @@ function phraseTitle(tool: ToolView): ReactNode {
   return <PhraseTitle phrase={toolActivityPhrase(tool)} />;
 }
 
-/**
- * Tier-1 default — unknown tool. Static one-liner; no expand affordance,
- * no destination. Arguments are developer detail and never enter the title.
- */
+/** Tier-1 default — unknown tool. */
 const DEFAULT_RENDERER: ToolRenderer = {
   title: (tool) => humanizeToolName(tool.toolName),
 };
@@ -533,8 +416,29 @@ const DOCUMENT_TOOL_RENDERER: ToolRenderer = {
   expand: documentExpand,
 };
 
+const THREAD_REPORT_RENDERER: ToolRenderer = {
+  title: (tool) => {
+    const report = threadReport(tool.output);
+    const preview = report ? report.summary || reportPayloadText(report.payload) : "";
+    if (preview) return <CommandTitle verb={preview.split(/\r?\n/, 1)[0] ?? ""} />;
+    if (tool.message) return <CommandTitle verb={tool.message} />;
+    if (report?.status === "not_ready") return <CommandTitle verb={t`Report is still running`} />;
+    if (report?.status === "unavailable") return <CommandTitle verb={t`Report is unavailable`} />;
+    if (report?.outcome === "failed") return <CommandTitle verb={t`The child run failed`} />;
+    if (report?.outcome === "cancelled") return <CommandTitle verb={t`The child run stopped`} />;
+    if (report?.artifacts?.length) return <CommandTitle verb={t`Saved artifacts`} />;
+    if (report?.reason) return <CommandTitle verb={report.reason} />;
+    if (report) return <CommandTitle verb={t`No report text was returned`} />;
+    return <CommandTitle verb={t`Report unavailable`} />;
+  },
+  expand: threadReportExpand,
+};
+
+function reportPayloadText(payload: JsonValue | undefined): string {
+  return payloadText(payload);
+}
+
 const RENDERERS: Record<string, ToolRenderer> = {
-  read: DOCUMENT_TOOL_RENDERER,
   write: DOCUMENT_TOOL_RENDERER,
   ls: {
     title: phraseTitle,
@@ -548,8 +452,75 @@ const RENDERERS: Record<string, ToolRenderer> = {
     title: (tool) => <WorkToolTitle tool={tool} />,
     expand: workExpand,
   },
+  thread_report: THREAD_REPORT_RENDERER,
 };
 
 export function rendererFor(toolName: string): ToolRenderer {
   return RENDERERS[toolName] ?? DEFAULT_RENDERER;
+}
+
+type ThreadReportView = {
+  status?: "not_ready" | "unavailable";
+  outcome?: "succeeded" | "failed" | "cancelled";
+  summary?: string;
+  payload?: JsonValue;
+  artifacts?: import("@meridian/contracts/interrupt").ArtifactRef[];
+  reason?: string | null;
+  partial?: boolean;
+};
+
+function threadReport(output: JsonValue | null): ThreadReportView | null {
+  if (!output || typeof output !== "object" || Array.isArray(output)) return null;
+  const record = output as Record<string, JsonValue>;
+  if (record.status === "not_ready" || record.status === "unavailable") {
+    return { status: record.status };
+  }
+  if (
+    record.outcome !== "succeeded" &&
+    record.outcome !== "failed" &&
+    record.outcome !== "cancelled"
+  )
+    return null;
+  return {
+    outcome: record.outcome,
+    summary: typeof record.summary === "string" ? record.summary : "",
+    ...(Object.hasOwn(record, "payload") ? { payload: record.payload } : {}),
+    artifacts: Array.isArray(record.artifacts) ? record.artifacts.filter(isArtifactRef) : [],
+    reason: typeof record.reason === "string" ? record.reason : null,
+    partial: record.partial === true,
+  };
+}
+
+function threadReportExpand(tool: ToolView): ToolExpand | null {
+  const report = threadReport(tool.output);
+  if (!report) {
+    const message = tool.message;
+    return message ? () => <Markdown variant="compact">{message}</Markdown> : null;
+  }
+  if (report.status)
+    return () => (
+      <p className="text-caption text-muted-foreground">
+        {report.status === "not_ready"
+          ? t`This execution has not finished.`
+          : t`This report is unavailable.`}
+      </p>
+    );
+  return () => (
+    <ReportContent
+      report={{
+        summary: report.summary ?? "",
+        payload: report.payload,
+        artifacts: report.artifacts ?? [],
+        reason: report.reason,
+        partial: report.partial,
+      }}
+      empty={
+        report.outcome === "succeeded"
+          ? t`No report text was returned.`
+          : t`No partial report text was returned.`
+      }
+      className="space-y-2"
+      emptyClassName="space-y-1 text-caption text-muted-foreground"
+    />
+  );
 }

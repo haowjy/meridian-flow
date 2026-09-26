@@ -1,21 +1,25 @@
 /**
- * Spawn primitive tools: spawn (create a child), continue (run an existing
- * child again), and return_result (child-side). Handlers are thin —
+ * Spawn primitive tools: spawn (create a child), thread_message (put a message
+ * into a thread), and return_result (child-side). Handlers are thin —
  * ChildRunCoordinator owns lifecycle; these only validate input.
  */
-import type { InvocationPatch } from "@meridian/contracts/agents";
+import { type InvocationPatch, invocationPatchSchema } from "@meridian/contracts/agents";
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
+import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { SpawnResult } from "@meridian/contracts/spawn";
 import type { JsonValue } from "@meridian/contracts/threads";
+import { ZodError } from "zod";
+import { InvocationPatchError } from "../spawn/apply-invocation-patch.js";
 import type {
-  ContinueToolHandlerContext,
   ReturnResultToolHandlerContext,
   SpawnToolHandlerContext,
+  ThreadMessageToolHandlerContext,
+  ThreadReportToolHandlerContext,
   ToolRegistration,
 } from "./types.js";
 
 const SPAWN_DESCRIPTION =
-  "Run a subagent in its own thread to delegate a task. Prefer a named specialist from your subagents roster when one fits; use the generic subagent (omit agent or pass an empty string) sparingly. Use mode=background for non-blocking subagent checks.";
+  "Run a subagent in its own thread to delegate a task. Prefer a named specialist from your subagents roster when one fits; use the generic subagent (omit agent or pass an empty string) sparingly. Use mode=background for non-blocking subagent checks. After starting background work, end your turn to wait; its completion message will wake you. Read the latest result with thread_report using the returned pN ref. Do not message the child to wait or promise completion in this response.";
 const SPAWN_DESCRIPTION_EMPTY_ROSTER = `${SPAWN_DESCRIPTION} You have no named subagents; do not spawn unless the writer asks.`;
 
 export type SpawnToolArgs = {
@@ -42,9 +46,24 @@ export function parseSpawnToolArgs(input: unknown): SpawnToolArgs {
       ? { append_system_prompt: rec.append_system_prompt }
       : {}),
     ...(rec.overrides !== null && typeof rec.overrides === "object" && !Array.isArray(rec.overrides)
-      ? { overrides: rec.overrides as InvocationPatch }
+      ? { overrides: parseInvocationPatch(rec.overrides) }
       : {}),
   };
+}
+
+function parseInvocationPatch(input: unknown): InvocationPatch {
+  try {
+    return invocationPatchSchema.parse(input);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      throw new InvocationPatchError(
+        error.issues
+          .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+          .join("; "),
+      );
+    }
+    throw error;
+  }
 }
 
 /** Roster-aware spawn description; the caller's binding supplies whether it has named targets. */
@@ -52,31 +71,75 @@ export function spawnToolDescription(hasNamedTargets: boolean): string {
   return hasNamedTargets ? SPAWN_DESCRIPTION : SPAWN_DESCRIPTION_EMPTY_ROSTER;
 }
 
-const CONTINUE_DESCRIPTION =
-  "Run an existing subagent again with a new prompt. Pass the handle (for example p3) returned by spawn. The child keeps its configuration and history. Use mode=background for non-blocking follow-ups.";
+const THREAD_MESSAGE_DESCRIPTION =
+  "Send a message to a thread. ref is the thread handle (for example p3 for a subagent, c1 for a primary) from a spawn/thread_message result. Omitted mode is background: the message is queued and returns immediately, and no reply is pushed back. Use mode=foreground to wait for a subagent in your subtree to finish and return its report. If you started background work, end your turn to wait; its completion message wakes you. Read a finished child result with thread_report using its ref. Do not send a message to the child just to wait for its completion.";
 
-export type ContinueToolArgs = {
-  /** Short server-assigned handle (`pN`/`cN`) from a spawn/continue result. */
-  handle: string;
-  prompt: string;
-  mode: "foreground" | "background";
+export type ThreadMessageMode = "foreground" | "background";
+
+export type ThreadMessageArgs = {
+  /** Thread handle (`pN`/`cN`); never an internal id. */
+  ref: string;
+  message: string;
+  mode: ThreadMessageMode;
 };
 
-/** One parse for continue tool arguments; omitted mode is foreground. */
-export function parseContinueToolArgs(input: unknown): ContinueToolArgs {
+export type ThreadReportArgs = { ref: string; run?: number };
+export function parseThreadReportArgs(input: unknown): ThreadReportArgs {
   const rec =
     input && typeof input === "object" && !Array.isArray(input)
       ? (input as Record<string, unknown>)
       : {};
   return {
-    handle: typeof rec.handle === "string" ? rec.handle : "",
-    prompt: typeof rec.prompt === "string" ? rec.prompt : "",
-    mode: rec.mode === "background" ? "background" : "foreground",
+    ref: typeof rec.ref === "string" ? rec.ref : "",
+    ...(Number.isInteger(rec.run) && Number(rec.run) > 0 ? { run: Number(rec.run) } : {}),
+  };
+}
+
+/** One parse for thread_message arguments; omitted mode is background. */
+export function parseThreadMessageArgs(input: unknown): ThreadMessageArgs {
+  const rec =
+    input && typeof input === "object" && !Array.isArray(input)
+      ? (input as Record<string, unknown>)
+      : {};
+  return {
+    ref: typeof rec.ref === "string" ? rec.ref : "",
+    message: typeof rec.message === "string" ? rec.message : "",
+    mode: rec.mode === "foreground" ? "foreground" : "background",
   };
 }
 
 export function createSpawnToolRegistrations(): ToolRegistration[] {
   return [
+    {
+      source: "spawn",
+      definition: {
+        type: "function",
+        name: "thread_report",
+        description:
+          "Read the latest finished report from a child in your lineage using its pN ref. Optionally pass run (1-based per child) to read an earlier report. This does not wait for an active execution.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            ref: { type: "string", description: "Authorized child thread handle, for example p3." },
+            run: {
+              type: "integer",
+              minimum: 1,
+              description: "Earlier finished run number for this child.",
+            },
+          },
+          required: ["ref"],
+          additionalProperties: false,
+        },
+      },
+      execution: {
+        type: "server",
+        handler: async (input: unknown, ctx: ThreadReportToolHandlerContext) =>
+          ctx.threadReport(parseThreadReportArgs(input)),
+      },
+      sequential: true,
+      capability: "thread_report",
+      advertise: true,
+    },
     {
       source: "spawn",
       definition: {
@@ -96,8 +159,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
             mode: {
               type: "string",
               enum: ["foreground", "background"],
-              description:
-                "foreground waits for return_result; background returns immediately and posts an inline helper result when done.",
+              description: "foreground waits for the child; background returns immediately.",
             },
             append_system_prompt: {
               type: "string",
@@ -117,7 +179,15 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: SpawnToolHandlerContext) => {
-          return ctx.spawn(parseSpawnToolArgs(input));
+          try {
+            return await ctx.spawn(parseSpawnToolArgs(input));
+          } catch (error) {
+            if (!(error instanceof InvocationPatchError)) throw error;
+            return {
+              ok: false,
+              error: meridianErrorFromSystem("spawn_invocation_patch_invalid", error.message),
+            };
+          }
         },
       },
       sequential: true,
@@ -128,35 +198,36 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       source: "spawn",
       definition: {
         type: "function",
-        name: "continue",
-        description: CONTINUE_DESCRIPTION,
+        name: "thread_message",
+        description: THREAD_MESSAGE_DESCRIPTION,
         inputSchema: {
           type: "object",
           properties: {
-            handle: {
+            ref: {
               type: "string",
-              description: "Short handle returned by spawn, for example p3.",
+              description:
+                "Thread handle from a spawn/thread_message result, for example p3 or c1.",
             },
-            prompt: { type: "string", description: "Next task message for the child." },
+            message: { type: "string", description: "Message to deliver to the thread." },
             mode: {
               type: "string",
               enum: ["foreground", "background"],
               description:
-                "foreground waits for return_result; background returns immediately and posts an inline helper result when done.",
+                "background (default) queues the message and returns immediately with no pushed reply; foreground waits for a subagent in your subtree and returns its report.",
             },
           },
-          required: ["handle", "prompt"],
+          required: ["ref", "message"],
           additionalProperties: false,
         },
       },
       execution: {
         type: "server",
-        handler: async (input: unknown, ctx: ContinueToolHandlerContext) => {
-          return ctx.continue(parseContinueToolArgs(input));
+        handler: async (input: unknown, ctx: ThreadMessageToolHandlerContext) => {
+          return ctx.threadMessage(parseThreadMessageArgs(input));
         },
       },
       sequential: true,
-      capability: "continue",
+      capability: "thread_message",
       advertise: true,
     },
     {

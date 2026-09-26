@@ -147,6 +147,11 @@ msgstr "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgid "{0} isn't in {section}."
 msgstr "{0} isn't in {section}."
 
+#. placeholder {0}: pending.items.length
+#: src/features/chat/PendingInboxTray.tsx
+#~ msgid "{0} messages queued"
+#~ msgstr "{0} messages queued"
+
 #. placeholder {0}: item.title
 #: src/features/project/chat-landing/ChatLandingScreen.tsx
 #~ msgid "{0} moved to Favorite chats"
@@ -177,6 +182,11 @@ msgstr "{0} saved"
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{0} source copied"
 msgstr "{0} source copied"
+
+#. placeholder {0}: descendants.length
+#: src/features/chat/RunningSubagentsStrip.tsx
+msgid "{0} subagents running"
+msgstr "{0} subagents running"
 
 #. placeholder {0}: work.name
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
@@ -269,6 +279,14 @@ msgstr "<0>{0}</0> and its messages will be deleted."
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "<0>{0}</0> will be permanently deleted."
 msgstr "<0>{0}</0> will be permanently deleted."
+
+#: src/features/chat/PendingInboxTray.tsx
+#~ msgid "1 message queued"
+#~ msgstr "1 message queued"
+
+#: src/features/chat/RunningSubagentsStrip.tsx
+msgid "1 subagent running"
+msgstr "1 subagent running"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "3 by 3, header row"
@@ -505,6 +523,10 @@ msgstr "Archived Work {name}"
 #~ msgid "Ask about your data, methods, or the next step in your work—plain language is enough."
 #~ msgstr "Ask about your data, methods, or the next step in your work—plain language is enough."
 
+#: src/features/chat/ThreadStatusLabel.tsx
+msgid "Asleep"
+msgstr "Asleep"
+
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
 msgstr "Assistant is thinking"
@@ -719,6 +741,10 @@ msgstr "Chat away"
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Chat context"
 msgstr "Chat context"
+
+#: src/features/chat/IndependentChatView.tsx
+msgid "Chat couldn’t load"
+msgstr "Chat couldn’t load"
 
 #: src/features/chat/CreationComposer.tsx
 #~ msgid "Chat creation is still being reconciled."
@@ -1470,6 +1496,10 @@ msgstr "Documents the AI reads in this chat appear here."
 #~ msgid "Documents you open show up here."
 #~ msgstr "Documents you open show up here."
 
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Done"
+msgstr "Done"
+
 #: src/features/project/context/viewers/DownloadFallback.tsx
 msgid "Download {name}"
 msgstr "Download {name}"
@@ -1664,6 +1694,10 @@ msgstr "Exploring folders…"
 msgid "Extra usage"
 msgstr "Extra usage"
 
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Failed"
+msgstr "Failed"
+
 #: src/rich-content/ImageBlock.tsx
 msgid "Failed to load image"
 msgstr "Failed to load image"
@@ -1751,11 +1785,14 @@ msgstr "Folder name"
 msgid "Form payload is malformed."
 msgstr "Form payload is malformed."
 
+#: src/features/chat/ThreadStatusLabel.tsx
+msgid "Generating"
+msgstr "Generating"
+
 #: src/components/app/composer/placeholders.ts
 msgid "Go ahead"
 msgstr "Go ahead"
 
-#: src/features/project/chat/SubagentTaskCard.tsx
 #: src/features/project/work/WorkDialog.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Goal"
@@ -1808,6 +1845,10 @@ msgstr "Heading 2"
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading 3"
 msgstr "Heading 3"
+
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Hide full result"
+msgstr "Hide full result"
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Hide source"
@@ -2042,6 +2083,10 @@ msgstr "Loading {0}"
 msgid "Loading agents…"
 msgstr "Loading agents…"
 
+#: src/features/chat/IndependentChatView.tsx
+msgid "Loading chat…"
+msgstr "Loading chat…"
+
 #: src/features/project/chat-index/ChatIndexLoading.tsx
 msgid "Loading chats"
 msgstr "Loading chats"
@@ -2078,6 +2123,10 @@ msgstr "Loading recent documents…"
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 msgid "Loading references…"
 msgstr "Loading references…"
+
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Loading report…"
+msgstr "Loading report…"
 
 #: src/features/project/shell/ResultViewerOverlay.tsx
 msgid "Loading result…"
@@ -2403,6 +2452,11 @@ msgstr "No messages yet."
 msgid "No model"
 msgstr "No model"
 
+#: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/tool-renderers.tsx
+msgid "No partial report text was returned."
+msgstr "No partial report text was returned."
+
 #: src/features/project/dock/DockChangesView.tsx
 msgid "No pending changes"
 msgstr "No pending changes"
@@ -2426,6 +2480,15 @@ msgstr "No projects yet"
 #: src/features/home/RecentProjects.tsx
 #~ msgid "No projects yet."
 #~ msgstr "No projects yet."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "No report text was returned"
+msgstr "No report text was returned"
+
+#: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/tool-renderers.tsx
+msgid "No report text was returned."
+msgstr "No report text was returned."
 
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "No results yet."
@@ -2488,8 +2551,8 @@ msgid "ol"
 msgstr "ol"
 
 #: src/lib/date-groups.ts
-msgid "Older"
-msgstr "Older"
+#~ msgid "Older"
+#~ msgstr "Older"
 
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Only on this device"
@@ -2640,6 +2703,10 @@ msgstr "Parent unknown"
 msgid "Parent:"
 msgstr "Parent:"
 
+#: src/features/chat/ReportContent.tsx
+msgid "Partial result"
+msgstr "Partial result"
+
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Paste"
 msgstr "Paste"
@@ -2749,6 +2816,10 @@ msgstr "Purchase confirmed."
 msgid "Put the caret in a table first."
 msgstr "Put the caret in a table first."
 
+#: src/features/chat/UserTurn.tsx
+msgid "Queued"
+msgstr "Queued"
+
 #: src/components/app/composer/placeholders.ts
 msgid "Quick thought"
 msgstr "Quick thought"
@@ -2781,6 +2852,11 @@ msgstr "Reading text size"
 #: src/features/chat/command-descriptor.ts
 msgid "Reading…"
 msgstr "Reading…"
+
+#. placeholder {0}: report.reason
+#: src/features/chat/ReportContent.tsx
+msgid "Reason: {0}"
+msgstr "Reason: {0}"
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Recent"
@@ -2952,6 +3028,19 @@ msgstr "Reopens your last document and chat when you switch devices"
 msgid "Replace image"
 msgstr "Replace image"
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Report is still running"
+msgstr "Report is still running"
+
+#: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/tool-renderers.tsx
+msgid "Report is unavailable"
+msgstr "Report is unavailable"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Report unavailable"
+msgstr "Report unavailable"
+
 #: src/features/chat/FormBlock.tsx
 msgid "Required"
 msgstr "Required"
@@ -2975,6 +3064,10 @@ msgstr "Resize sidebar"
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Response complete"
 msgstr "Response complete"
+
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Result unavailable"
+msgstr "Result unavailable"
 
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/ContextSidebar.tsx
@@ -3031,8 +3124,8 @@ msgid "Retry Work"
 msgstr "Retry Work"
 
 #: src/features/chat/ChildReportBlock.tsx
-msgid "Return"
-msgstr "Return"
+#~ msgid "Return"
+#~ msgstr "Return"
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "Returned from the billing portal."
@@ -3072,6 +3165,10 @@ msgstr "Row options"
 msgid "rule"
 msgstr "rule"
 
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Running"
+msgstr "Running"
+
 #. placeholder {0}: fieldLabel(field).toLowerCase()
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Save {0}"
@@ -3097,6 +3194,10 @@ msgstr "Save metadata changes?"
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
 msgstr "Save name and location"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Saved artifacts"
+msgstr "Saved artifacts"
 
 #: src/features/chat/ChatView.tsx
 #~ msgid "Saved first message"
@@ -3229,6 +3330,10 @@ msgstr "Settings sections"
 msgid "Show chats"
 msgstr "Show chats"
 
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Show full result"
+msgstr "Show full result"
+
 #: src/routes/dev-login.tsx
 msgid "Sign in as dev user"
 msgstr "Sign in as dev user"
@@ -3321,6 +3426,7 @@ msgstr "Stop"
 msgid "Stop run"
 msgstr "Stop run"
 
+#: src/features/chat/SpawnReportCard.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Stopped"
 msgstr "Stopped"
@@ -3336,6 +3442,10 @@ msgstr "Stopped"
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Strikethrough"
 msgstr "Strikethrough"
+
+#: src/features/chat/RunningSubagentsStrip.tsx
+msgid "Subagent"
+msgstr "Subagent"
 
 #: src/features/project/chat/SubagentBanner.tsx
 msgid "Subagent:"
@@ -3383,7 +3493,7 @@ msgstr "Switched Work"
 msgid "Switching Work…"
 msgstr "Switching Work…"
 
-#: src/features/agents/AgentPicker.tsx
+#: src/features/chat/PendingInboxTray.tsx
 #~ msgid "System"
 #~ msgstr "System"
 
@@ -3518,6 +3628,14 @@ msgstr "The browser blocked the clipboard. Check this site's permissions."
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "The change could not be confirmed. Try again."
 msgstr "The change could not be confirmed. Try again."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The child run failed"
+msgstr "The child run failed"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The child run stopped"
+msgstr "The child run stopped"
 
 #: src/features/chat/CreationComposer.tsx
 #~ msgid "The created destination didn’t match your choices."
@@ -3745,6 +3863,10 @@ msgstr "This document is still opening."
 msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
 msgstr "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "This execution has not finished."
+msgstr "This execution has not finished."
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "This file holds code only."
 msgstr "This file holds code only."
@@ -3794,6 +3916,10 @@ msgstr "This project couldn’t load. It may be unavailable."
 #~ msgid "This project has no chats yet."
 #~ msgstr "This project has no chats yet."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "This report is unavailable."
+msgstr "This report is unavailable."
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "This row is already at the edge."
 msgstr "This row is already at the edge."
@@ -3811,8 +3937,8 @@ msgid "This stored figure needs a project before it can be rendered."
 msgstr "This stored figure needs a project before it can be rendered."
 
 #: src/lib/date-groups.ts
-msgid "This week"
-msgstr "This week"
+#~ msgid "This week"
+#~ msgstr "This week"
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "This Work has {count, plural, one {# AI change} other {# AI changes}} in draft."
@@ -3835,7 +3961,6 @@ msgid "title"
 msgstr "title"
 
 #: src/features/project/RecencyGroupedList.tsx
-#: src/lib/date-groups.ts
 msgid "Today"
 msgstr "Today"
 
@@ -4022,6 +4147,14 @@ msgstr "Viewing chat resources is not available yet. These files remain availabl
 msgid "Wait for this response to finish, then try again."
 msgstr "Wait for this response to finish, then try again."
 
+#: src/features/chat/ThreadStatusLabel.tsx
+msgid "Waiting"
+msgstr "Waiting"
+
+#: src/features/chat/UserTurn.tsx
+msgid "Waiting for response"
+msgstr "Waiting for response"
+
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."
 msgstr "We couldn’t confirm this purchase yet. Check your balance before trying again."
@@ -4137,9 +4270,12 @@ msgid "Wrote file"
 msgstr "Wrote file"
 
 #: src/features/project/RecencyGroupedList.tsx
-#: src/lib/date-groups.ts
 msgid "Yesterday"
 msgstr "Yesterday"
+
+#: src/features/chat/PendingInboxTray.tsx
+#~ msgid "You"
+#~ msgstr "You"
 
 #: src/features/chat/ChoiceBlock.tsx
 #: src/features/chat/FormBlock.tsx

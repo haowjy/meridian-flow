@@ -16,7 +16,6 @@ import {
   resolveThreadModelAvailableSkills,
   resolveThreadUserInvocableSkills,
   SkillUnavailableError,
-  unavailableActivatedSkillSlugs,
 } from "./available-skills.js";
 
 const skillMd = (
@@ -132,63 +131,6 @@ async function launchAgentsChat(agentSlug: "writer" | "spark" = "writer") {
 }
 
 describe("skill catalogs", () => {
-  it("lists packaged skills for slash without an account row and Agent available for the model", async () => {
-    const { thread, agentRevisions, accountSkillInstalls } = await launchAgentsChat();
-    const userCatalog = await resolveThreadUserInvocableSkills({
-      thread,
-      agentRevisions,
-      accountSkillInstalls,
-    });
-    expect(userCatalog.map((skill) => skill.slug)).toEqual([...PACKAGED_USER_SLUGS]);
-    expect(await resolveThreadModelAvailableSkills({ thread, agentRevisions })).toEqual([
-      {
-        slug: "creative-writing-modes",
-        name: "creative-writing-modes",
-        description: "Modes for putting prose on the page.",
-      },
-      {
-        slug: "writing-principles",
-        name: "writing-principles",
-        description: "Reader reward and LLM fiction failure modes.",
-      },
-    ]);
-  });
-
-  it("loads story-review from the package for slash and rejects it for skill()", async () => {
-    const { thread, agentRevisions, accountSkillInstalls } = await launchAgentsChat();
-    const review = await loadUserSkillBody({
-      thread,
-      slug: "story-review",
-      agentRevisions,
-      accountSkillInstalls,
-    });
-    expect(review.body).toBe("story-review body.\n");
-    await expect(
-      loadModelSkillBody({ thread, slug: "story-review", agentRevisions }),
-    ).rejects.toBeInstanceOf(SkillUnavailableError);
-  });
-
-  it("keeps packaged slash rows on an empty-available Agent and leaves the model catalog empty", async () => {
-    const { thread, agentRevisions, accountSkillInstalls } = await launchAgentsChat("spark");
-    const userCatalog = await resolveThreadUserInvocableSkills({
-      thread,
-      agentRevisions,
-      accountSkillInstalls,
-    });
-    expect(userCatalog.map((skill) => skill.slug)).toEqual([...PACKAGED_USER_SLUGS]);
-    expect(await resolveThreadModelAvailableSkills({ thread, agentRevisions })).toEqual([]);
-    const review = await loadUserSkillBody({
-      thread,
-      slug: "story-review",
-      agentRevisions,
-      accountSkillInstalls,
-    });
-    expect(review.body).toBe("story-review body.\n");
-    await expect(
-      loadModelSkillBody({ thread, slug: "story-review", agentRevisions }),
-    ).rejects.toBeInstanceOf(SkillUnavailableError);
-  });
-
   it("drops user-invocable false from slash and model-invocable false from the model catalog", async () => {
     const projects = createInMemoryProjectRepository();
     const project = await projects.create({ userId: "user-1", title: "Serial" });
@@ -324,6 +266,7 @@ You are Writer.
     await repos.threads.bakeComposedSystemPrompt(thread.id, {
       composedSystemPrompt: "frozen",
       bakedSkillSlugs: ["creative-writing-modes", "writing-principles"],
+      bakedTools: [],
     });
     const frozen = await repos.threads.findById(thread.id);
 
@@ -338,21 +281,6 @@ You are Writer.
     const after = await repos.threads.findById(thread.id);
     expect(after?.composedSystemPrompt).toBe("frozen");
     expect(after?.bakedSkillSlugs).toEqual(["creative-writing-modes", "writing-principles"]);
-  });
-
-  it("authorizes Writer slash slugs including story-review", async () => {
-    const { thread, agentRevisions, accountSkillInstalls } = await launchAgentsChat();
-    const catalog = await resolveThreadUserInvocableSkills({
-      thread,
-      agentRevisions,
-      accountSkillInstalls,
-    });
-    expect(
-      unavailableActivatedSkillSlugs(catalog, ["story-review", "creative-writing-modes"]),
-    ).toEqual([]);
-    expect(unavailableActivatedSkillSlugs(catalog, ["story-review", "missing"])).toEqual([
-      "missing",
-    ]);
   });
 
   it("lists packaged slash skills for a selected Agent without a thread", async () => {

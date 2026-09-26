@@ -3,6 +3,7 @@ import { serializeTransport, type UpdateProjectRequest } from "@meridian/contrac
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireProjectOwner } from "../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
+import { projectDto } from "../../../../lib/project-dto.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
@@ -22,5 +23,5 @@ export default defineEventHandler(async (event) => {
     description: body.description,
   });
 
-  return serializeTransport(project);
+  return serializeTransport(projectDto(project));
 });

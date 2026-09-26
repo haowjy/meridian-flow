@@ -38,6 +38,31 @@ never a bare `Date` in a template. Canonical patterns:
   [`context-fs/drizzle-store.ts`](../../../apps/server/server/domains/context/adapters/context-fs/drizzle-store.ts)
   (`documentRevisionWhere` + the `updatedAt::text` selects).
 
+### Thread inbox kinds
+
+Inbox provenance and body kinds live only in their JSON values. CHECK constraints
+use `IS TRUE` so absent, JSON-null and invalid kinds are rejected rather than
+passing SQL CHECK's three-valued logic.
+
+### Thread-domain execution reports
+
+`thread_execution_reports` stores one immutable terminal result per child
+assistant turn (`assistant_turn_id`), not a mutable latest-result slot. The
+composite child-thread/turn foreign key prevents assigning a report to a turn
+owned by another thread. Child/assistant-turn ownership cascades; nullable
+caller thread/turn/card references use `SET NULL` so deleting the invocation
+does not erase the child's output. Soft deletion is enforced by live
+repository reads, not destructive report mutation. Migration history remains
+additive; the initial table has no backfill or compatibility path.
+
+The public `payload` is an exact optional `JsonValue`: omitted content is SQL
+`NULL`, while JSON `null` remains a present value. The Drizzle report adapter
+reads `payload::text` and parses that database representation once; do not use
+the driver-decoded JSONB string with Drizzle's second JSON parse, which changes
+JSON-looking scalar strings into their parsed values. The capture codec also uses
+`::text`: SQL NULL is absent, while every present JSON value must validate as a
+ReturnResultCapture object (including rejecting JSON null).
+
 ### Thread-domain rollup columns
 
 The `threads`, `turns`, `model_responses`, and `turn_blocks` tables persist the
@@ -53,7 +78,16 @@ exactly one writer (the read-model projector), any future writer that moves
 `threads.active_leaf_turn_id` (branch switching, for example) must not be able
 to leave this projection stale, so Postgres triggers own it instead. See
 [`domains/threads/.context/CONTEXT.md`](../../../apps/server/server/domains/threads/.context/CONTEXT.md#chat-activity-projection-single-owner)
-and migration `0106_thread_chat_activity_trigger.sql`.
+and migration `0000_baseline.sql` (the `recompute_thread_chat_activity` function and its triggers).
+
+`turns.origin` (`text NOT NULL`, `turns_origin_valid` check, migration
+`0005_turn_origin.sql`) has no column default: every insert states it, so a
+caller that forgets fails loudly rather than silently defaulting. An existing
+dev database backfills it from `role` (`assistant` → `assistant`, `user` →
+`writer`, else `system`) in the same migration, before the column is locked
+to `NOT NULL`. See
+[`domains/threads/.context/CONTEXT.md`](../../../apps/server/server/domains/threads/.context/CONTEXT.md#turn-authorship-turnsorigin)
+for what it means and its current (logging-only) scope.
 
 ### Yjs document heads and checkpoints
 
@@ -99,7 +133,7 @@ Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
 4. `pnpm db:migration-lint` — runs `tools/dev/migration-lint.ts --all`.
    Errors always block. Warnings block only under `--strict`, which CI uses for
    PRs targeting `main`/`staging`; feature-branch PRs lint only migrations changed
-   since the base ref. The squashed `0000_` baseline is exempt from warning rules
+   since the base ref. The squashed `0000_` baseline is exempt from all lint rules
    except `DELETE_WITHOUT_WHERE`.
 5. `pnpm db:migrate` — apply pending migrations.
 6. If PL/pgSQL functions/triggers changed: update
@@ -113,9 +147,17 @@ after the remaining chain runs. Cull the fixture once the migration is
 superseded and frozen: pre-launch schema freedom means old migration history is
 not a live contract.
 
-The journal is a squashed baseline (`0000_thankful_tarantula`) plus additive
-migrations (`0001_serious_red_skull`, …); prefer additive migrations over
-re-squashing.
+The journal starts at `0000_baseline`; future schema changes append migrations.
+Existing databases that ran the pre-relaunch chain must be reset with
+`pnpm db:reset` (local data is destroyed), not incrementally migrated.
+
+The baseline includes `pg_trgm`, all Drizzle-declared CHECKs, and the two
+change-trail lifecycle functions/triggers on `branch_write_journal`. The six
+functions in `src/functions/` remain a separate post-migration install. Fresh
+installs seed no users, Projects, or Works: the historical No Work and thread
+binding backfills had no rows to transform. Application project bootstrap
+creates locked No Work; thread admission establishes the primary binding.
+Legacy user imports belong in a separate ETL, not universal schema migrations.
 
 ### Merge renumbering
 
@@ -124,9 +166,9 @@ whose ordinals collide with newly deployed ones, renumber only the branch
 migrations behind the deployed tail and regenerate their snapshots. The
 journal tail must maintain strictly monotonic `when` timestamps; renumbering
 ordinals without advancing timestamps can make an incremental database skip
-the renumbered entries while a fresh database applies them normally. A
-monotonic-order regression test (`fresh-migrations.db.test.ts`) covers the
-changed tail after any renumber.
+the renumbered entries while a fresh database applies them normally.
+`fresh-migrations.db.test.ts` checks strict journal ordering and the installed
+baseline hash without preventing future additive migrations.
 
 ### Works columns that must not return
 
@@ -177,6 +219,19 @@ independent, non-nested scope.
 The schema stays ordinary Postgres with no provider-specific auth coupling
 (identity is app-owned `public.users` keyed by WorkOS `external_id`). The Date
 vs string `mode` split is a known inconsistency, not a pattern to extend.
+
+### Frozen thread prompts
+
+The `threads_frozen_prompt` trigger rejects changes to any of the three bake
+fields (`composed_system_prompt`, `baked_skill_slugs`, `baked_tools`) once
+`baked_skill_slugs` is non-null (including `[]`). `baked_tools` (migration
+`0002_freeze_thread_tools.sql`) is untyped `jsonb`: the
+runtime domain (not this package) owns its shape (`Tool[]`). First bake
+remains a CAS across all three fields together; identical-value writes and
+unrelated updates remain legal. No compaction rebake exists. A future
+compaction feature must introduce one named thread-repository operation and
+its narrowly scoped database authorization together; never disable the
+trigger for ordinary thread updates.
 
 ### Retained Agent definitions
 

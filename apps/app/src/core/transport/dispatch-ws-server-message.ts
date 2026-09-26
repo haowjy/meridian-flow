@@ -28,19 +28,6 @@ export type WsServerMessageDispatchDeps = {
   onGlobalError: (error: Error) => void;
 };
 
-/**
- * Lift the WS error frame's structured `MeridianError` into a `MeridianApiError`,
- * preserving `code`/`retryable`/`source`/`details` on the wire — earlier this
- * collapsed to `new Error("text (code)")` and dropped every structured field.
- * Consumers receive an `Error` (back-compat) but may downcast via
- * `isMeridianApiError` to read the envelope.
- */
-function wsErrorToMeridianApiError(
-  message: Extract<WsServerMessage, { type: "error" }>,
-): MeridianApiError {
-  return new MeridianApiError(message.error);
-}
-
 function isNonFatalInterruptResponseError(
   message: Extract<WsServerMessage, { type: "error" }>,
 ): boolean {
@@ -79,7 +66,12 @@ export function dispatchWsServerMessage(
         );
       }
 
-      // Do NOT advance lastSeq from nextSeq — it's "head + 1", not a delivered event seq.
+      // After catch-up: a replayed frame is frozen at emit time, so the
+      // server-computed live state wins over any stale replayed value.
+      for (const handler of subscription.handlers) {
+        handler.onLiveState?.(message.state);
+      }
+
       return;
     }
 
@@ -100,7 +92,7 @@ export function dispatchWsServerMessage(
     }
 
     case "error": {
-      const error = wsErrorToMeridianApiError(message);
+      const error = new MeridianApiError(message.error);
       if (isNonFatalInterruptResponseError(message)) {
         if (message.threadId) deps.onInterruptResponseError(message.threadId, error);
         return;

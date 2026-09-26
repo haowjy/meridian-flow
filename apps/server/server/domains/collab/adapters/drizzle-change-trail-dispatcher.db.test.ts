@@ -1,6 +1,5 @@
 /** Real-Postgres crash-window proofs for durable change-trail event delivery. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -62,12 +61,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         title: "Crash proof thread",
         kind: "primary",
-        status: "active",
+        status: "idle",
       });
       await db.insert(schema.turns).values({
         id: TURN_ID,
         threadId: THREAD_ID,
         role: "assistant",
+        origin: "assistant",
         status: "complete",
       });
       await db.insert(schema.changeTrailShells).values({
@@ -90,6 +90,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.$client.end();
     });
 
+    it("bounds each drain and resumes the remaining durable outbox on the next pass", async () => {
+      await seedOutbox(
+        Array.from({ length: 101 }, (_, index) => ({
+          eventId: crypto.randomUUID(),
+          eventKind: "updated" as const,
+          version: index + 1,
+        })),
+      );
+      const dispatcher = createDrizzleChangeTrailDispatcher({
+        db,
+        journalWriter,
+        eventHub: { invalidateCommittedJournal() {} },
+      });
+      await expect(dispatcher.drain()).resolves.toBe(100);
+      await expect(dispatcher.drain()).resolves.toBe(1);
+      await expect(dispatcher.drain()).resolves.toBe(0);
+      expect(await db.select().from(schema.eventJournal)).toHaveLength(101);
+    });
+
     it("retries exactly once after a crash between claim and journal append", async () => {
       await seedOutbox([{ eventId: UPDATED_EVENT_ID, eventKind: "updated", version: 1 }]);
       const crashingWriter = {
@@ -100,7 +119,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const firstDispatcher = createDrizzleChangeTrailDispatcher({
         db,
         journalWriter: crashingWriter,
-        eventHub: { publishPersistedEvent: vi.fn() },
+        eventHub: { invalidateCommittedJournal: vi.fn() },
       });
 
       await expect(firstDispatcher.drain()).rejects.toThrow("injected crash before journal append");
@@ -108,11 +127,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(outboxDelivery(UPDATED_EVENT_ID)).resolves.toBeNull();
       await expect(journalEvents(UPDATED_EVENT_ID)).resolves.toEqual([]);
 
-      const publishPersistedEvent = vi.fn();
+      const invalidateCommittedJournal = vi.fn();
       const retryDispatcher = createDrizzleChangeTrailDispatcher({
         db,
         journalWriter,
-        eventHub: { publishPersistedEvent },
+        eventHub: { invalidateCommittedJournal },
       });
       await expect(retryDispatcher.drain()).resolves.toBe(1);
 
@@ -120,13 +139,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const events = await journalEvents(UPDATED_EVENT_ID);
       expect(events).toHaveLength(1);
       expect(events[0]?.payload).toMatchObject({ eventId: UPDATED_EVENT_ID, version: 1 });
-      expect(publishPersistedEvent).toHaveBeenCalledOnce();
+      expect(invalidateCommittedJournal).toHaveBeenCalledOnce();
     });
 
     it("replays a committed event after a crash before process-local publish", async () => {
       await seedOutbox([{ eventId: UPDATED_EVENT_ID, eventKind: "updated", version: 1 }]);
       const crashingHub = {
-        publishPersistedEvent: vi.fn(() => {
+        invalidateCommittedJournal: vi.fn(() => {
           throw new Error("injected crash before process-local publish");
         }),
       };
@@ -183,18 +202,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           return journalWriter.appendEvent(threadId, event);
         },
       };
-      const published: Array<{ eventId: string; version: number }> = [];
-      const eventHub = {
-        publishPersistedEvent: (_threadId: ThreadId, _seq: bigint, event: OrchestratorEvent) => {
-          if (
-            event.type !== "turn.change_trail_updated" &&
-            event.type !== "turn.change_trail_settled"
-          ) {
-            throw new Error(`Unexpected event type: ${event.type}`);
-          }
-          published.push({ eventId: event.eventId, version: event.version });
-        },
-      };
+      const invalidateCommittedJournal = vi.fn();
+      const eventHub = { invalidateCommittedJournal };
       const firstDispatcher = createDrizzleChangeTrailDispatcher({
         db,
         journalWriter: blockingWriter,
@@ -228,10 +237,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       ]);
       expect(rows.map((row) => row.seq)).toEqual([1n, 2n]);
-      expect(published).toEqual([
-        { eventId: UPDATED_EVENT_ID, version: 1 },
-        { eventId: SETTLED_EVENT_ID, version: 2 },
-      ]);
+      expect(invalidateCommittedJournal).toHaveBeenCalledTimes(2);
     });
 
     it("delivers the settled version snapshot after the trail shell changes", async () => {
@@ -252,7 +258,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const dispatcher = createDrizzleChangeTrailDispatcher({
         db,
         journalWriter,
-        eventHub: { publishPersistedEvent: vi.fn() },
+        eventHub: { invalidateCommittedJournal: vi.fn() },
       });
 
       await expect(dispatcher.drain()).resolves.toBe(1);

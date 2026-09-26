@@ -8,16 +8,11 @@ import {
   type UpdateProjectPreferencesRequest,
 } from "@meridian/contracts/preferences";
 
-const DEFAULT_AUTO_RESUME = {
-  enabled: DEFAULT_PROJECT_PREFERENCES.autoResume?.enabled ?? true,
-  timeoutMs: DEFAULT_PROJECT_PREFERENCES.autoResume?.timeoutMs ?? 270_000,
-};
-
 export function defaultProjectPreferences(): ProjectPreferences {
   return {
     threadGroupBy: DEFAULT_PROJECT_PREFERENCES.threadGroupBy,
     pinnedThreadIds: [...DEFAULT_PROJECT_PREFERENCES.pinnedThreadIds],
-    autoResume: { ...DEFAULT_AUTO_RESUME },
+    autoResume: { ...DEFAULT_PROJECT_PREFERENCES.autoResume },
   };
 }
 
@@ -25,7 +20,7 @@ export function copyProjectPreferences(preferences: ProjectPreferences): Project
   return {
     threadGroupBy: preferences.threadGroupBy,
     pinnedThreadIds: [...preferences.pinnedThreadIds],
-    autoResume: preferences.autoResume ? { ...preferences.autoResume } : undefined,
+    autoResume: { ...preferences.autoResume },
   };
 }
 
@@ -38,11 +33,6 @@ export function mergeProjectPreferences(
     threadGroupBy: patch.threadGroupBy ?? base.threadGroupBy,
     pinnedThreadIds:
       patch.pinnedThreadIds !== undefined ? [...patch.pinnedThreadIds] : base.pinnedThreadIds,
-    autoResume:
-      patch.autoResume !== undefined
-        ? { ...patch.autoResume }
-        : base.autoResume
-          ? { ...base.autoResume }
-          : undefined,
+    autoResume: patch.autoResume ? { ...patch.autoResume } : { ...base.autoResume },
   };
 }

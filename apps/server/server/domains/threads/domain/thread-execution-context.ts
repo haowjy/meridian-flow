@@ -5,7 +5,11 @@ import type { ThreadExecutionContext, Work } from "@meridian/contracts/works";
 export class WorkRequiredError extends Error {
   readonly code = "work_required" as const;
   constructor(readonly operation: string) {
-    super(`Work required for ${operation}`);
+    super(
+      operation === "write.diff"
+        ? "A Work in draft write mode is required to inspect the diff."
+        : `Work required for ${operation}`,
+    );
     this.name = "WorkRequiredError";
   }
 }
