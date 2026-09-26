@@ -15,7 +15,8 @@ keeps TanStack Virtual's geometry accurate. Within an assistant turn, a process
 fold uses an 8px bottom gap before following prose, report, or artifact content.
 
 Settled assistant turns have a quiet action row below all turn content. Copy
-includes visible assistant text only. The information popover summarizes
+includes visible assistant text and report summary/payload content only, not
+thinking, tool rows, or delivery events. The information popover summarizes
 `Turn.responses`: input/output tokens are summed, cache hit is summed
 `cacheReadTokens / inputTokens` (cache writes are misses), TTFT is the first
 call's first-token time, and output speed sums output tokens and

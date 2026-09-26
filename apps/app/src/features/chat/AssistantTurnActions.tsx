@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { DEBUG_FEATURE_ALLOWED, useDebugEnabled } from "@/features/debug/use-debug-enabled";
+import { partitionTurn } from "./partition-turn";
+import { payloadText } from "./ReportContent";
 import { compactCount, turnStats } from "./turn-stats";
 
 const actionClass = "size-6 text-muted-foreground";
@@ -15,9 +17,16 @@ export function AssistantTurnActions({ threadId, turn }: { threadId: string; tur
   const { i18n } = useLingui();
   const { enabled } = useDebugEnabled();
   const stats = turnStats(turn);
-  const answer = turn.blocks
-    .filter((block) => block.blockType === "text")
-    .map((block) => block.textContent ?? "")
+  const answer = partitionTurn([...turn.blocks].sort((a, b) => a.sequence - b.sequence))
+    .flatMap((item) => {
+      if (item.kind === "text") return [item.block.textContent ?? ""];
+      if (item.kind === "report") {
+        return [item.report.summary, payloadText(item.report.payload)].filter((part) =>
+          part.trim(),
+        );
+      }
+      return [];
+    })
     .filter((text) => text.trim().length > 0)
     .join("\n\n");
 
