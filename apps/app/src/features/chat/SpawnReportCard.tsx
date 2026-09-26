@@ -11,6 +11,7 @@ import type { DirectInvocationResult } from "./invocation-direct-result";
 import { ReportContent } from "./ReportContent";
 import { payloadText } from "./report-payload";
 import { SubagentMark } from "./SubagentMark";
+import { formatSubagentElapsed, subagentStatus, useSubagentClock } from "./subagent-display";
 
 type Props = {
   agentName: string;
@@ -43,17 +44,17 @@ export function SpawnReportCard({
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const openThread = useOpenChatThread();
+  const now = useSubagentClock();
   const resolvedOutcome = directResult?.outcome ?? outcome;
   const running = status === "running" && resolvedOutcome == null;
-  const stopped = resolvedOutcome === "cancelled";
-  const markStatus = running
-    ? "running"
-    : stopped || resolvedOutcome === "failed"
-      ? "stopped"
-      : "done";
-  const duration = elapsed(
+  const markStatus = subagentStatus(
+    resolvedOutcome ?? (status === "failed" ? "failed" : undefined),
+    running,
+  );
+  const duration = formatSubagentElapsed(
     startedAt,
-    running ? new Date().toISOString() : (terminalAt ?? startedAt),
+    running ? null : (terminalAt ?? startedAt),
+    now,
   );
   const firstLine = (
     directResult?.summary || (directResult ? payloadText(directResult.payload) : "")
@@ -90,11 +91,6 @@ export function SpawnReportCard({
         )}
         {duration ? (
           <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{duration}</span>
-        ) : null}
-        {!running && foreground ? (
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {stopped ? <Trans>Stopped</Trans> : <Trans>Finished</Trans>}
-          </span>
         ) : null}
         {openButton}
         {foreground && !running && directResult ? (
@@ -142,15 +138,4 @@ export function SpawnReportCard({
       ) : null}
     </div>
   );
-}
-
-function elapsed(startedAt?: string, endedAt?: string): string {
-  if (!startedAt) return "";
-  const start = Date.parse(startedAt);
-  const end = endedAt ? Date.parse(endedAt) : Date.now();
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return "";
-  const seconds = Math.max(0, Math.floor((end - start) / 1000));
-  return seconds < 60
-    ? `${seconds}s`
-    : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }

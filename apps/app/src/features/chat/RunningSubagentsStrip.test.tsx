@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * The strip is one per-thread surface over the viewed thread's own subtree:
- * recursive rows, live status labels, and a door into each child. Empty
+ * The strip is one per-thread surface over the viewed thread's direct children:
+ * expandable live rows and a door into each child. Empty
  * subtree renders nothing.
  */
 import type { ReactNode } from "react";
@@ -51,12 +51,6 @@ function node(overrides: Partial<ThreadActivityNode> & { threadId: string }): Th
   };
 }
 
-function buttonContaining(text: string): HTMLButtonElement | undefined {
-  return [...document.querySelectorAll("button")].find((button) =>
-    button.textContent?.includes(text),
-  ) as HTMLButtonElement | undefined;
-}
-
 describe("RunningSubagentsStrip", () => {
   let host: HTMLDivElement;
   let root: Root;
@@ -76,7 +70,7 @@ describe("RunningSubagentsStrip", () => {
     expect(host.textContent?.trim()).toBe("");
   });
 
-  it("renders recursive rows with live status and opens the clicked child", async () => {
+  it("renders direct-child rows and opens the clicked child", async () => {
     const openThread = vi.fn();
     await act(async () =>
       root.render(
@@ -85,11 +79,13 @@ describe("RunningSubagentsStrip", () => {
             descendants={[
               node({ threadId: "child-a", agentName: "Critic", title: "Review the chapter" }),
               node({
-                threadId: "grandchild",
-                parentThreadId: "child-a",
-                depth: 2,
+                threadId: "child-b",
                 agentName: "Reader",
-                status: { kind: "awake", phase: "waiting", cancelRequested: false },
+                currentTool: {
+                  toolCallId: "tool-1",
+                  toolName: "spawn",
+                  input: { agent: "Researcher" },
+                },
               }),
             ]}
           />
@@ -105,11 +101,14 @@ describe("RunningSubagentsStrip", () => {
     );
     expect(host.textContent).toContain("Critic");
     expect(host.textContent).toContain("Reader");
-    // Parent status stays out of the child panel; the nested run reports its current phase.
-    expect(host.textContent).toContain("Waiting");
+    expect(host.textContent).toContain("Waiting on Researcher");
 
-    await act(async () => buttonContaining("Reader")?.click());
-    expect(openThread).toHaveBeenCalledWith("grandchild");
+    await act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Open subagent chat"]')]
+        .at(-1)
+        ?.click(),
+    );
+    expect(openThread).toHaveBeenCalledWith("child-b");
   });
 
   it("omits the door outside a navigation provider", async () => {

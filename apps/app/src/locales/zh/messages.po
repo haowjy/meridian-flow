@@ -14,6 +14,17 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. js-lingui-explicit-id
+#: src/features/chat/subagent-display.ts
+msgid "Subagent"
+msgstr ""
+
+#. js-lingui-explicit-id
+#. placeholder {0}: agent || i18n._("Subagent")
+#: src/features/chat/subagent-display.ts
+msgid "Waiting on {0}"
+msgstr ""
+
+#. js-lingui-explicit-id
 #: src/core/editor/change-mark-labels.ts
 msgid "Added a passage"
 msgstr "新增了一段内容"
@@ -129,8 +140,8 @@ msgstr ""
 
 #. placeholder {0}: names.join(", ")
 #: src/features/chat/AssistantTurn.tsx
-msgid "{0} completed"
-msgstr ""
+#~ msgid "{0} completed"
+#~ msgstr ""
 
 #. placeholder {0}: dock.serverActiveCount
 #: src/features/chat/DraftDock.tsx
@@ -230,8 +241,8 @@ msgstr ""
 
 #. placeholder {0}: names.length
 #: src/features/chat/AssistantTurn.tsx
-msgid "{0} subagents completed"
-msgstr ""
+#~ msgid "{0} subagents completed"
+#~ msgstr ""
 
 #. placeholder {0}: names.length
 #: src/features/chat/AssistantTurn.tsx
@@ -302,9 +313,14 @@ msgstr ""
 msgid "{minutes}m"
 msgstr "{minutes}分钟"
 
+#. placeholder {0}: status === "running" ? t`running` : status === "done" ? t`finished` : t`stopped`
 #: src/features/chat/SubagentMark.tsx
-msgid "{name} {status}"
+msgid "{name} {0}"
 msgstr ""
+
+#: src/features/chat/SubagentMark.tsx
+#~ msgid "{name} {status}"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{name} source"
@@ -1835,7 +1851,7 @@ msgstr ""
 msgid "Files"
 msgstr ""
 
-#: src/features/chat/ChatView.tsx
+#: src/features/chat/SubagentHeader.tsx
 msgid "Filter subagents"
 msgstr ""
 
@@ -1853,7 +1869,11 @@ msgstr ""
 #~ msgid "Finish the current chat attempt"
 #~ msgstr ""
 
-#: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/SubagentMark.tsx
+msgid "finished"
+msgstr ""
+
+#: src/features/chat/SubagentHeader.tsx
 msgid "Finished"
 msgstr ""
 
@@ -2686,7 +2706,7 @@ msgstr ""
 msgid "Only part of this change could be reversed."
 msgstr ""
 
-#: src/features/chat/ChatView.tsx
+#: src/features/chat/SubagentHeader.tsx
 msgid "Open"
 msgstr ""
 
@@ -2788,7 +2808,6 @@ msgid "Open results"
 msgstr ""
 
 #: src/features/chat/AssistantTurn.tsx
-#: src/features/chat/RunningSubagentsStrip.tsx
 #: src/features/chat/SpawnReportCard.tsx
 msgid "Open subagent chat"
 msgstr ""
@@ -3307,9 +3326,13 @@ msgstr ""
 msgid "rule"
 msgstr ""
 
-#: src/features/chat/SpawnReportCard.tsx
-#~ msgid "Running"
-#~ msgstr ""
+#: src/features/chat/SubagentMark.tsx
+msgid "running"
+msgstr ""
+
+#: src/features/chat/SubagentHeader.tsx
+msgid "Running"
+msgstr ""
 
 #. placeholder {0}: fieldLabel(field).toLowerCase()
 #: src/features/project/work/WorkMetadata.tsx
@@ -3468,7 +3491,7 @@ msgstr ""
 msgid "Settings sections"
 msgstr ""
 
-#: src/features/chat/ChatView.tsx
+#: src/features/chat/SubagentHeader.tsx
 msgid "Show"
 msgstr ""
 
@@ -3580,7 +3603,10 @@ msgstr "停止"
 msgid "Stop run"
 msgstr ""
 
-#: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/SubagentMark.tsx
+msgid "stopped"
+msgstr ""
+
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Stopped"
 msgstr "已取消"
@@ -3599,8 +3625,8 @@ msgstr ""
 
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/RunningSubagentsStrip.tsx
-msgid "Subagent"
-msgstr ""
+#~ msgid "Subagent"
+#~ msgstr ""
 
 #: src/features/project/chat/SubagentPathRow.tsx
 msgid "Subagent chat path"
@@ -3610,7 +3636,7 @@ msgstr ""
 #~ msgid "Subagent:"
 #~ msgstr ""
 
-#: src/features/chat/ChatView.tsx
+#: src/features/chat/SubagentHeader.tsx
 msgid "Subagents"
 msgstr ""
 
@@ -4351,8 +4377,8 @@ msgstr ""
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/HelperResultBlock.tsx
 #: src/features/chat/RunningSubagentsStrip.tsx
-msgid "Waiting on {0}"
-msgstr ""
+#~ msgid "Waiting on {0}"
+#~ msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."

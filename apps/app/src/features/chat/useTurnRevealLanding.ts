@@ -12,6 +12,16 @@
 import { type RefObject, useEffect, useRef } from "react";
 import { useTurnReveal } from "./conversation-reveal";
 
+/** The last matching block in a landed turn is the child's latest transcript point. */
+export function latestSubagentBlockRevealTarget(
+  row: ParentNode,
+  subagentThreadId: string,
+): HTMLElement | undefined {
+  return [...row.querySelectorAll<HTMLElement>("[data-subagent-thread-id]")]
+    .filter((element) => element.dataset.subagentThreadId === subagentThreadId)
+    .at(-1);
+}
+
 export function useTurnRevealLanding({
   threadId,
   turns,
@@ -46,6 +56,30 @@ export function useTurnRevealLanding({
     const land = () => {
       scroll.current(index);
       request.landed();
+      const subagentThreadId = request.subagentThreadId;
+      if (subagentThreadId) {
+        let attempts = 0;
+        const revealBlock = () => {
+          const row = viewport.querySelector<HTMLElement>(
+            `[data-turn-id="${CSS.escape(request.turnId)}"]`,
+          );
+          const target = row ? latestSubagentBlockRevealTarget(row, subagentThreadId) : undefined;
+          if (!target && attempts++ < 12) {
+            requestAnimationFrame(revealBlock);
+            return;
+          }
+          if (!target) return;
+          target.scrollIntoView({
+            behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+              ? "auto"
+              : "smooth",
+            block: "center",
+          });
+          target.classList.add("subagent-reveal-flash");
+          window.setTimeout(() => target.classList.remove("subagent-reveal-flash"), 900);
+        };
+        requestAnimationFrame(revealBlock);
+      }
     };
 
     // A reveal reaches a transcript that is still parked: revealing a docked

@@ -28,3 +28,7 @@ export function useSubagentActivityByRef(
   const nodes = useContext(SubagentActivityContext);
   return ref ? nodes.find((node) => node.ref === ref) : undefined;
 }
+
+export function useSubagentActivityNodes(): ThreadActivityNode[] {
+  return useContext(SubagentActivityContext);
+}

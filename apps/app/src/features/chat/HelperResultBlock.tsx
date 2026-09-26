@@ -1,8 +1,7 @@
-/** Retained invocation card adapter for current run activity and direct results. */
-import { t } from "@lingui/core/macro";
 import type { ComponentBlockProps } from "./component-registry";
 import { SpawnReportCard } from "./SpawnReportCard";
 import { useSubagentActivity } from "./SubagentActivityContext";
+import { resolveSubagentName, subagentCurrentToolLabel } from "./subagent-display";
 
 export function HelperResultBlock({ content, invocationResult }: ComponentBlockProps) {
   const props = content.props as {
@@ -17,13 +16,12 @@ export function HelperResultBlock({ content, invocationResult }: ComponentBlockP
     terminalAt: string | null;
   };
   const live = useSubagentActivity(props.childThreadId ?? null);
-  const liveTool =
-    live?.currentTool?.toolName === "spawn"
-      ? t`Waiting on ${inputAgent(live.currentTool.input)}`
-      : (live?.currentTool?.toolName.replaceAll("_", " ") ?? null);
+  const liveTool = live?.currentTool
+    ? subagentCurrentToolLabel(live.currentTool.toolName, live.currentTool.input)
+    : null;
   return (
     <SpawnReportCard
-      agentName={props.agentName}
+      agentName={resolveSubagentName({ agentName: props.agentName, title: props.title ?? null })}
       title={props.title ?? null}
       status={props.status}
       outcome={props.outcome}
@@ -37,12 +35,4 @@ export function HelperResultBlock({ content, invocationResult }: ComponentBlockP
       reportError={false}
     />
   );
-}
-
-function inputAgent(input: unknown): string {
-  if (input && typeof input === "object" && !Array.isArray(input)) {
-    const value = (input as Record<string, unknown>).agent;
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  return "Subagent";
 }

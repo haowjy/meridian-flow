@@ -57,7 +57,7 @@ export function useThreadActivity(input: {
   }, [seed, threadId]);
 
   useEffect(() => {
-    if (isPendingCreation) return;
+    if (!threadId || isPendingCreation) return;
     return transport.subscribe(threadId, {
       onEvent: ({ event }) => {
         if (event.type !== EventType.CUSTOM || event.name !== "meridian.subagent.activity") return;

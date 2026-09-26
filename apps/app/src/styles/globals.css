@@ -938,3 +938,22 @@
     padding-top: env(safe-area-inset-top);
   }
 }
+
+@keyframes subagent-block-reveal {
+  0%, 100% { outline-color: transparent; background-color: transparent; }
+  20%, 70% { outline-color: color-mix(in srgb, var(--color-primary) 58%, transparent); background-color: color-mix(in srgb, var(--color-primary) 9%, transparent); }
+}
+
+.subagent-reveal-flash {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  animation: subagent-block-reveal 900ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subagent-reveal-flash {
+    outline-color: var(--color-primary);
+    background-color: color-mix(in srgb, var(--color-primary) 9%, transparent);
+    animation: none;
+  }
+}

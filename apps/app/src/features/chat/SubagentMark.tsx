@@ -24,7 +24,7 @@ export function SubagentMark({
           "after:absolute after:inset-[-2px] after:rounded-full after:border after:border-transparent after:border-t-primary motion-safe:after:animate-spin",
         className,
       )}
-      aria-label={t`${name} ${status}`}
+      aria-label={t`${name} ${status === "running" ? t`running` : status === "done" ? t`finished` : t`stopped`}`}
     >
       {initial}
       {status !== "running" ? (

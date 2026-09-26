@@ -3,6 +3,7 @@ import { Trans } from "@lingui/react/macro";
 import type { Thread, ThreadSnapshotAncestor } from "@meridian/contracts/protocol";
 import { ChevronLeft } from "lucide-react";
 import { SubagentMark } from "@/features/chat/SubagentMark";
+import { resolveSubagentName } from "@/features/chat/subagent-display";
 
 export function SubagentPathRow({
   subagent,
@@ -15,11 +16,11 @@ export function SubagentPathRow({
   runStatus: "running" | "done";
   onOpenParent: (threadId: string) => void;
 }) {
-  const name = subagent.agentName?.trim() || subagent.title?.trim() || "Subagent";
+  const name = resolveSubagentName(subagent);
   return (
     <nav
       aria-label={t`Subagent chat path`}
-      className="flex min-h-9 shrink-0 items-center gap-2 overflow-x-auto border-b border-border-subtle bg-background px-3 text-xs"
+      className="flex min-h-9 shrink-0 items-center gap-2 overflow-x-auto border-b border-border-subtle bg-background px-3 pr-5 text-xs"
     >
       <button
         type="button"

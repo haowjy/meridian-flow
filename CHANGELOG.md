@@ -16,6 +16,16 @@
 - Gateway owns provider retries; honor retry-after hints and retry vetoes.
 - Show subagent lifecycle in chat: background launch, running panel, finished and report lines, foreground card, and a Subagents popover.
 - Disable ask_user until its rework (#601).
+- Fix subagent identity, outcome, live activity, popover placement, and transcript reveal behavior.
+
+- Disable ask_user until its rework (#601); no agent is offered the tool.
+
+- Apply one chat-thread spacing scale across turns, cards, prose, and composer controls; omit unavailable output speed and first-token rows from turn info.
+- Fix assistant-turn Copy to write the final answer as rich HTML and Markdown.
+- Tighten chat turn rhythm and add settled assistant copy, usage, and debug actions.
+- Record each model call's time to first streamed output and request-to-end latency.
+
+- Keep the writer's own messages in the chat after the reply starts; only machine-delivered inbox messages fold into activity rows.
 
 - Freeze thread prompts at the database boundary.
 - Keep the same Agent and prompt when forking by default.

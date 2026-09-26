@@ -259,3 +259,20 @@ export function toolActivityPhrase(
 export function toolActivityAnnouncement(phrase: ToolActivityPhrase): string {
   return phrase.parameter ? `${phrase.verb} ${phrase.parameter}` : phrase.verb;
 }
+
+/** Shared writer-facing label for a live tool dispatch (same vocabulary as ToolRow). */
+export function liveToolActivityLabel(toolName: string, input: unknown): string {
+  const tool: ToolView = {
+    toolCallId: null,
+    toolName,
+    input: (input ?? null) as ToolView["input"],
+    output: null,
+    status: "partial",
+    isError: false,
+    message: null,
+    streamedOutput: null,
+    metadata: null,
+    keyBlock: {} as ToolView["keyBlock"],
+  };
+  return toolActivityAnnouncement(toolActivityPhrase(tool));
+}

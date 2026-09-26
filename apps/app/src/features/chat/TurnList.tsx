@@ -9,6 +9,7 @@ import { AssistantTurn } from "./AssistantTurn";
 import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
+import { readSubagentUpdateMetadata } from "./subagent-update";
 import { UserTurn, type UserTurnRecovery } from "./UserTurn";
 import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
@@ -225,8 +226,18 @@ export function TurnList({
 function deliveryEventsAfter(
   turn: Turn,
   turns: Turn[],
-): Array<{ turn: Turn; childThreadId?: string; title?: string }> {
-  const events: Array<{ turn: Turn; childThreadId?: string; title?: string }> = [];
+): Array<{
+  turn: Turn;
+  childThreadId?: string;
+  title?: string;
+  subagentUpdate: ReturnType<typeof readSubagentUpdateMetadata>;
+}> {
+  const events: Array<{
+    turn: Turn;
+    childThreadId?: string;
+    title?: string;
+    subagentUpdate: ReturnType<typeof readSubagentUpdateMetadata>;
+  }> = [];
   let precedingId = turn.id;
   for (;;) {
     const next = turns.find((candidate) => candidate.prevTurnId === precedingId);
@@ -236,13 +247,13 @@ function deliveryEventsAfter(
       precedingId = next.id;
       continue;
     }
-    const metadata = next.metadata as Record<string, unknown>;
-    const invocation =
-      metadata.kind === "subagent_update"
-        ? findInvocation(turns, String(metadata.execution))
-        : null;
+    const subagentUpdate = readSubagentUpdateMetadata(next.metadata);
+    const invocation = subagentUpdate?.execution
+      ? findInvocation(turns, subagentUpdate.execution)
+      : null;
     events.push({
       turn: next,
+      subagentUpdate,
       ...(invocation?.threadId ? { childThreadId: invocation.threadId } : {}),
       ...(invocation?.title ? { title: invocation.title } : {}),
     });

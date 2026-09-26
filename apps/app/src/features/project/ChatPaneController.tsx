@@ -6,6 +6,8 @@
  * sidebar/context rail reopen controls reachable above that surface.
  */
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
+import { SubagentHeader } from "@/features/chat/SubagentHeader";
+import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { ChatIndexChip } from "./chat-index/ChatIndexButton";
 import { useChatNavigation } from "./routing/chat-navigation";
 
@@ -24,7 +26,12 @@ export function ChatPaneController({
   sidebarToggle,
   contextToggle,
 }: ChatPaneControllerProps) {
-  const { openChatIndex } = useChatNavigation();
+  const { openChatIndex, openChat } = useChatNavigation();
+  const activity = useThreadActivity({
+    threadId: threadId ?? "",
+    rootThreadId: threadId ?? "",
+    seed: null,
+  });
   return (
     <PaneHeader
       leading={<ChatIndexChip active={false} onClick={() => void openChatIndex()} />}
@@ -39,6 +46,15 @@ export function ChatPaneController({
       }
       left={sidebarToggle}
       right={contextToggle}
+      actions={
+        threadId ? (
+          <SubagentHeader
+            threadId={threadId}
+            nodes={activity.activity.descendants.filter((node) => node.parentThreadId === threadId)}
+            openThread={openChat}
+          />
+        ) : null
+      }
     />
   );
 }

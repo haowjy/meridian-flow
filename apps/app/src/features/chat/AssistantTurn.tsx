@@ -33,10 +33,12 @@ import {
   type Run,
 } from "./partition-turn";
 import { ReportContent } from "./ReportContent";
-import { payloadText } from "./report-payload";
 import { StreamingText } from "./StreamingText";
-import { useSubagentActivityByRef } from "./SubagentActivityContext";
+import { useSubagentActivityByRef, useSubagentActivityNodes } from "./SubagentActivityContext";
 import { SubagentMark } from "./SubagentMark";
+import { resolveSubagentName, subagentStatus } from "./subagent-display";
+import type { SubagentUpdateMetadata } from "./subagent-update";
+import { groupAdjacentSubagentUpdates } from "./subagent-update";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
 import { hasTurnEditsReceiptContent, TurnEditsReceipt } from "./TurnEditsReceipt";
@@ -57,7 +59,12 @@ export type AssistantTurnProps = {
     outputTokens: number;
     cacheResets: number;
   } | null;
-  deliveryEvents?: Array<{ turn: Turn; childThreadId?: string; title?: string }>;
+  deliveryEvents?: Array<{
+    turn: Turn;
+    childThreadId?: string;
+    title?: string;
+    subagentUpdate: SubagentUpdateMetadata | null;
+  }>;
   isLatestAssistant?: boolean;
   onRetry?: () => void;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
@@ -188,17 +195,7 @@ function AssistantTurnComponent({
 type DeliveryEvent = NonNullable<AssistantTurnProps["deliveryEvents"]>[number];
 
 function DeliveryEventRows({ events }: { events: DeliveryEvent[] }) {
-  const groups: DeliveryEvent[][] = [];
-  for (const event of events) {
-    const metadata = event.turn.metadata as Record<string, unknown> | null;
-    const isUpdate = metadata?.kind === "subagent_update";
-    const previous = groups.at(-1)?.[0]?.turn.metadata as
-      | Record<string, unknown>
-      | null
-      | undefined;
-    if (isUpdate && previous?.kind === "subagent_update") groups.at(-1)?.push(event);
-    else groups.push([event]);
-  }
+  const groups = groupAdjacentSubagentUpdates(events);
   return (
     <>
       {groups.map((group) => {
@@ -218,56 +215,59 @@ function DeliveryEventRows({ events }: { events: DeliveryEvent[] }) {
 }
 
 function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
-  const names = events.map(({ turn }) =>
-    String((turn.metadata as Record<string, unknown>).handle ?? "Subagent"),
-  );
+  const nodes = useSubagentActivityNodes();
+  const entries = events.map((event) => {
+    const update = event.subagentUpdate;
+    const node = nodes.find((candidate) => candidate.ref === update?.handle);
+    return {
+      event,
+      update,
+      name: resolveSubagentName(node ?? { agentName: null, title: event.title ?? null }),
+    };
+  });
+  const names = entries.map(({ name }) => name);
   const allSucceeded = events.every(
-    ({ turn }) => (turn.metadata as Record<string, unknown>).outcome === "succeeded",
-  );
-  const allCancelled = events.every(
-    ({ turn }) => (turn.metadata as Record<string, unknown>).outcome === "cancelled",
+    ({ subagentUpdate }) => subagentUpdate?.outcome === "succeeded",
   );
   return (
     <details className="group min-w-0 text-sm text-muted-foreground" data-subagent-finished>
       <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm py-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <span className="flex -space-x-2">
+        <span className="flex -space-x-1.5">
           {names.slice(0, 3).map((name, index) => (
-            <SubagentMark
-              key={`${name}-${index}`}
-              name={name}
-              status={allSucceeded ? "done" : "stopped"}
-              className="size-5 border-background text-[10px]"
-            />
+            <span key={`${name}-${index}`} className="rounded-full bg-background p-[2px]">
+              <SubagentMark
+                name={name}
+                status={allSucceeded ? "done" : "stopped"}
+                className="size-5 border-background text-[10px]"
+              />
+            </span>
           ))}
         </span>
         <span className="truncate font-medium text-foreground">
           {names.length > 3 ? (
             allSucceeded ? (
               <Trans>{names.length} subagents finished</Trans>
-            ) : allCancelled ? (
-              <Trans>{names.length} subagents stopped</Trans>
             ) : (
-              <Trans>{names.length} subagents completed</Trans>
+              <Trans>{names.length} subagents stopped</Trans>
             )
           ) : allSucceeded ? (
             <Trans>{names.join(", ")} finished</Trans>
-          ) : allCancelled ? (
-            <Trans>{names.join(", ")} stopped</Trans>
           ) : (
-            <Trans>{names.join(", ")} completed</Trans>
+            <Trans>{names.join(", ")} stopped</Trans>
           )}
         </span>
-        <span className="ml-auto text-xs">+</span>
       </summary>
       <div className="ml-7 space-y-2 border-l border-border-subtle py-1 pl-3 text-xs text-muted-foreground">
-        {events.map(({ turn, title }) => {
+        {entries.map(({ event: { turn, title }, name }) => {
           const text = turn.blocks
             .filter((block) => block.blockType === "text")
             .map((block) => block.textContent ?? "")
             .join("");
           return (
             <div key={turn.id}>
-              {title ? <p className="font-medium text-foreground">{title}</p> : null}
+              {title && title !== name ? (
+                <p className="font-medium text-foreground">{title}</p>
+              ) : null}
               {text ? <p className="whitespace-pre-wrap">{text}</p> : null}
             </div>
           );
@@ -277,15 +277,14 @@ function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
   );
 }
 
-function DeliveryEventRow({ turn, childThreadId, title }: DeliveryEvent) {
-  const metadata =
-    turn.metadata && typeof turn.metadata === "object" && !Array.isArray(turn.metadata)
-      ? (turn.metadata as Record<string, unknown>)
-      : {};
-  if (metadata.kind === "subagent_update") {
-    const outcome = String(metadata.outcome);
-    const label =
-      outcome === "succeeded" ? "finished" : outcome === "failed" ? "failed" : "stopped";
+function DeliveryEventRow({ turn, childThreadId, title, subagentUpdate }: DeliveryEvent) {
+  const nodes = useSubagentActivityNodes();
+  const openThread = useOpenChatThread();
+  if (subagentUpdate) {
+    const node = nodes.find((candidate) => candidate.ref === subagentUpdate.handle);
+    const name = resolveSubagentName(node ?? { agentName: null, title: title ?? null });
+    const outcome = subagentUpdate.outcome;
+    const label = outcome === "succeeded" ? "finished" : "stopped";
     const body = turn.blocks
       .filter((block) => block.blockType === "text")
       .map((block) => block.textContent ?? "")
@@ -294,29 +293,29 @@ function DeliveryEventRow({ turn, childThreadId, title }: DeliveryEvent) {
       <details
         className="group min-w-0 text-sm text-muted-foreground"
         data-subagent-finished
-        data-subagent-thread-id={childThreadId ?? undefined}
+        data-subagent-thread-id={node?.threadId ?? childThreadId ?? undefined}
       >
         <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm py-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <SubagentMark
-            name={String(metadata.handle)}
-            status={outcome === "succeeded" ? "done" : "stopped"}
+            name={name}
+            status={subagentStatus(outcome)}
             className="size-5 text-[10px]"
           />
           <span className="truncate">
-            <span className="font-medium text-foreground">{String(metadata.handle)}</span> {label}
+            <span className="font-medium text-foreground">{name}</span> {label}
           </span>
-          <span className="ml-auto text-xs">+</span>
         </summary>
         <div className="ml-7 border-l border-border-subtle py-1 pl-3 text-xs text-muted-foreground">
-          {title ? <p className="mb-1 text-foreground">{title}</p> : null}
+          {title && title !== name ? <p className="mb-1 text-foreground">{title}</p> : null}
           {body ? <p className="whitespace-pre-wrap">{body}</p> : null}
-          {childThreadId ? (
-            <a
+          {childThreadId && openThread ? (
+            <button
+              type="button"
+              onClick={() => openThread(childThreadId)}
               className="mt-1 inline-block rounded-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              href={`/chat/${childThreadId}`}
             >
               <Trans>Open chat</Trans>
-            </a>
+            </button>
           ) : null}
         </div>
       </details>
@@ -451,9 +450,8 @@ function ThreadReportArtifact({
   const [expanded, setExpanded] = useState(false);
   const subagent = useSubagentActivityByRef(refName);
   const openThread = useOpenChatThread();
-  const agentName = subagent?.agentName?.trim() || refName || "Subagent";
-  const preview =
-    report.summary || (report.payload === undefined ? "" : payloadText(report.payload));
+  const agentName = resolveSubagentName(subagent);
+  const taskTitle = subagent?.title?.trim();
   return (
     <div
       className="rounded-lg border border-border bg-background px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] shadow-sm"
@@ -461,14 +459,16 @@ function ThreadReportArtifact({
       data-subagent-thread-id={subagent?.threadId}
     >
       <div className="flex min-w-0 items-center gap-[var(--chat-space-row)]">
-        <SubagentMark name={agentName} status="done" />
+        <SubagentMark name={agentName} status={subagentStatus(subagent?.spawnStatus)} />
         <span className="shrink-0 text-sm font-medium text-foreground">{agentName}</span>
         <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
           <Trans>Report</Trans>
         </span>
-        <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-          {subagent?.title || preview.split(/\r?\n/, 1)[0]}
-        </span>
+        {taskTitle && taskTitle !== agentName ? (
+          <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{taskTitle}</span>
+        ) : (
+          <span className="min-w-0 flex-1" />
+        )}
         {subagent && openThread ? (
           <button
             type="button"
