@@ -1,4 +1,11 @@
-/** Internal primary-thread derivation for handoff and fork agent swaps. */
+/**
+ * Internal primary-thread derivation for handoff and fork agent swaps. A
+ * derivation is a SIBLING of its source, never the source's child: it takes
+ * the source's `parentThreadId`, `rootThreadId`, and `spawnDepth` as its own,
+ * so it shares the source's lineage instead of extending it. The fork-source
+ * relationship itself is carried by `originTurnId` (the anchor turn lives on
+ * the source thread), never by `parentThreadId`.
+ */
 import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Thread, ThreadOriginType } from "@meridian/contracts/threads";
 import { toIsoString } from "./contract-serialization.js";
@@ -8,7 +15,8 @@ export interface CreateDerivedPrimaryThreadInput {
   userId: UserId;
   projectId: ProjectId;
   workId: WorkId | null;
-  parentThreadId: ThreadId;
+  /** The source thread's own lineage, inherited byte-for-byte (see file header). */
+  source: Pick<Thread, "parentThreadId" | "rootThreadId" | "spawnDepth">;
   originType: Extract<ThreadOriginType, "handoff" | "fork">;
   originTurnId?: TurnId | null;
   title?: string | null;
@@ -35,11 +43,11 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     agentName: null,
     nextSeq: "0",
     activeLeafTurnId: null,
-    parentThreadId: input.parentThreadId,
+    parentThreadId: input.source.parentThreadId,
     originType: input.originType,
     originTurnId: input.originTurnId ?? null,
-    rootThreadId: id,
-    spawnDepth: 0,
+    rootThreadId: input.source.rootThreadId,
+    spawnDepth: input.source.spawnDepth,
     spawnStatus: null,
     totalCostUsd: "0",
     turnCount: 0,

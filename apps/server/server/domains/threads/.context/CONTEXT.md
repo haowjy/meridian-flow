@@ -225,8 +225,15 @@ Entity types (`Thread`, `Turn`, `Block`, `ModelResponse`) and event unions
   and `rootThreadId`: background authority) and `isInSubtree` (caller is the
   target itself or a spawn ancestor, walking `parentThreadId`: foreground
   authority). Both are pure over thread rows. `rootThreadId` is authoritative on
-  every create path — a primary roots itself, a subagent its spawn root — so the
-  column is never NULL; the `?? id` mapper fallback is a read guard only.
+  every create path — an organic root roots itself, a subagent takes its spawn
+  parent's root, and a fork/handoff takes its SOURCE's root — so the column is
+  never NULL; the `?? id` mapper fallback is a read guard only. A fork/handoff
+  is a sibling of its source, never the source's child: `buildDerivedPrimaryThreadRow`
+  gives it the source's `parentThreadId` too (null when the source is itself a
+  root) and `spawnDepth`, so `sameLineage` holds between them but `isInSubtree`
+  does not — the fork cannot foreground-drive the source's subtree, or vice
+  versa. The fork-source edge is not a `threads` column; it is recovered by
+  resolving `originTurnId`'s owning thread.
 - **ThreadEventHub sequencing** — journal `seq` is multiplied by 1000
   (`EVENT_SEQ_FACTOR`) to leave room for multiple AG-UI events projected from
   a single journal entry. Cursor arithmetic uses this factor.
@@ -247,7 +254,7 @@ Meridian Flow's Postgres schema. Key column mappings:
 | `threads.projectId` | `threads.projectId` | Foreign key into Meridian `projects` |
 | `threads.createdBy` | `threads.createdByUserId` | Explicit user-ID column name |
 | `threads.agentName` | **binding join** (`thread_agent_bindings` → `agent_definition_revisions`) | Display name (`metadata.name` or slug), or `Subagent` when the binding has no revision; never a threads column |
-| `threads.rootThreadId` | `threads.rootThreadId` | Persisted spawn-tree root; primary threads use their own ID |
+| `threads.rootThreadId` | `threads.rootThreadId` | Persisted spawn-tree root; an organic root uses its own id, a fork/handoff takes its source's root |
 | `threads.totalCostUsd` | `threads.totalCostUsd` | Persisted aggregate maintained by repository/projector recompute |
 | `threads.bakedSkillSlugs` | `threads.bakedSkillSlugs` | `null` means not baked; array means first-attempt bake won |
 | `threads.historySummary` | — | Not a column; hardcoded `null` |

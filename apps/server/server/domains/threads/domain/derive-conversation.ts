@@ -56,7 +56,7 @@ export async function handoffThreadAgent(
         userId: source.userId,
         projectId: source.projectId,
         workId: sourceWorkId,
-        parentThreadId: source.id as ThreadId,
+        source: lockedSource,
         inheritedPrompt:
           (binding.revision?.id ?? null) === lockedSource.agentDefinitionRevisionId
             ? lockedSource
@@ -109,7 +109,7 @@ export async function forkThreadAgent(
         userId: source.userId,
         projectId: source.projectId,
         workId: sourceWorkId,
-        parentThreadId: source.id as ThreadId,
+        source: lockedSource,
         inheritedPrompt:
           (binding.revision?.id ?? null) === lockedSource.agentDefinitionRevisionId
             ? lockedSource

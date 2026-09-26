@@ -102,7 +102,7 @@ else
         userId: ids.userId,
         projectId: ids.projectId,
         workId: ids.noWorkId,
-        parentThreadId: ids.threadId,
+        source: { parentThreadId: null, rootThreadId: ids.threadId, spawnDepth: 0 },
         originType: "handoff",
       } as never);
       const subagent = await repos.threads.createSubagent({

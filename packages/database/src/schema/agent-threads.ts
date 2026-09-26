@@ -121,13 +121,13 @@ export const threads = pgTable(
       "threads_handoff_fork_primary",
       sql`${table.originType} NOT IN ('handoff', 'fork') OR ${table.kind} = 'primary'`,
     ),
+    // A fork/handoff is a SIBLING of its source (shares its parentThreadId,
+    // which is null when the source is itself a root), never the source's
+    // child, so `parentThreadId` is not required here. `threads_handoff_fork_primary`
+    // already requires kind='primary' for both; handoff has no other required field.
     check(
       "threads_fork_origin_required_fields",
-      sql`${table.originType} != 'fork' OR (${table.kind} = 'primary' AND ${table.parentThreadId} IS NOT NULL AND ${table.originTurnId} IS NOT NULL)`,
-    ),
-    check(
-      "threads_handoff_origin_required_fields",
-      sql`${table.originType} != 'handoff' OR (${table.kind} = 'primary' AND ${table.parentThreadId} IS NOT NULL)`,
+      sql`${table.originType} != 'fork' OR ${table.originTurnId} IS NOT NULL`,
     ),
     check(
       "threads_organic_origin_fields_empty",

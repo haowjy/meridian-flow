@@ -222,11 +222,11 @@ export function createDrizzleThreadRepository(
         composedSystemPrompt: thread.composedSystemPrompt,
         bakedSkillSlugs: thread.bakedSkillSlugs,
         bakedTools: thread.bakedTools,
-        parentThreadId: input.parentThreadId,
+        parentThreadId: thread.parentThreadId,
         rootThreadId: thread.rootThreadId,
-        originTurnId: input.originTurnId ?? null,
-        originType: input.originType,
-        spawnDepth: 0,
+        originTurnId: thread.originTurnId,
+        originType: thread.originType,
+        spawnDepth: thread.spawnDepth,
         status: thread.status,
       });
       if (!row) throw new Error("Failed to create derived primary thread");

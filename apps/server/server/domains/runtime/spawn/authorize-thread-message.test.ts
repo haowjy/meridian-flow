@@ -113,6 +113,54 @@ describe("authorizeThreadMessage", () => {
     expect(outcome.error.code).toBe("thread_message_not_authorized");
   });
 
+  it("allows background thread_message between a fork and its source", async () => {
+    // Mirrors buildDerivedPrimaryThreadRow: a fork of a root shares its root
+    // and has no parent (fork.parentThreadId = source.parentThreadId = null).
+    const source = thread({ id: CALLER, rootThreadId: CALLER, kind: "primary", ref: "c1" });
+    const fork = thread({ id: SIBLING, rootThreadId: CALLER, kind: "primary", ref: "c2" });
+
+    const fromSource = await authorize({
+      caller: source,
+      targetRef: "c2",
+      mode: "background",
+      threads: [source, fork],
+    });
+    expect(fromSource).toMatchObject({ ok: true, target: { id: SIBLING } });
+
+    const fromFork = await authorize({
+      caller: fork,
+      targetRef: "c1",
+      mode: "background",
+      threads: [source, fork],
+    });
+    expect(fromFork).toMatchObject({ ok: true, target: { id: CALLER } });
+  });
+
+  it("rejects foreground thread_message between a fork and its source: siblings grant no subtree authority", async () => {
+    const source = thread({ id: CALLER, rootThreadId: CALLER, kind: "primary", ref: "c1" });
+    const fork = thread({ id: SIBLING, rootThreadId: CALLER, kind: "primary", ref: "c2" });
+
+    const fromSource = await authorize({
+      caller: source,
+      targetRef: "c2",
+      mode: "foreground",
+      threads: [source, fork],
+    });
+    expect(fromSource.ok).toBe(false);
+    if (fromSource.ok) return;
+    expect(fromSource.error.code).toBe("thread_message_not_authorized");
+
+    const fromFork = await authorize({
+      caller: fork,
+      targetRef: "c1",
+      mode: "foreground",
+      threads: [source, fork],
+    });
+    expect(fromFork.ok).toBe(false);
+    if (fromFork.ok) return;
+    expect(fromFork.error.code).toBe("thread_message_not_authorized");
+  });
+
   it("returns not-found for a malformed or unknown ref", async () => {
     const caller = thread({ id: CALLER, rootThreadId: CALLER, kind: "primary" });
     const malformed = await authorize({
