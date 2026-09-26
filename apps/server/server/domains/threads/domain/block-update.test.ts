@@ -11,7 +11,11 @@ describe("block.updated", () => {
       userId: crypto.randomUUID() as UserId,
       projectId: crypto.randomUUID() as ProjectId,
     });
-    const turn = await repos.turns.create({ threadId: thread.id, role: "assistant" });
+    const turn = await repos.turns.create({
+      threadId: thread.id,
+      role: "assistant",
+      origin: "assistant",
+    });
     const card = await repos.blocks.create({
       turnId: turn.id,
       blockType: "custom",

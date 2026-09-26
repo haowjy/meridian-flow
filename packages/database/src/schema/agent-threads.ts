@@ -266,6 +266,8 @@ export const turns = pgTable(
     parentTurnId: uuid("parent_turn_id").$type<TurnId>(),
     compactionModel: text("compaction_model"),
     role: text("role").notNull(),
+    /** Who authored the turn; independent of `role`. No default: every insert states it. */
+    origin: text("origin").notNull(),
     aiWriteMode: text("ai_write_mode"),
     status: text("status").notNull().default("pending"),
     finishReason: text("finish_reason"),
@@ -300,6 +302,7 @@ export const turns = pgTable(
       sql`${table.parentTurnId} IS NULL OR ${table.parentTurnId} != ${table.id}`,
     ),
     check("turns_role_valid", sql`${table.role} IN ('user', 'assistant', 'system', 'compaction')`),
+    check("turns_origin_valid", sql`${table.origin} IN ('writer', 'assistant', 'system')`),
     check(
       "turns_ai_write_mode_valid",
       sql`${table.aiWriteMode} IS NULL OR ${table.aiWriteMode} IN ('direct', 'draft')`,

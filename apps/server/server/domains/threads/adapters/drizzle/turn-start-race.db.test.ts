@@ -70,12 +70,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: FIRST_ROOT_ID,
           threadId: THREAD_ID,
           role: "user",
+          origin: "writer",
           status: "complete",
         }),
         secondInstance.turns.create({
           id: SECOND_ROOT_ID,
           threadId: THREAD_ID,
           role: "user",
+          origin: "writer",
           status: "complete",
         }),
       ]);
@@ -104,6 +106,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             id: userTurnId,
             threadId: THREAD_ID,
             role: "user",
+            origin: "writer",
             status: "complete",
           });
           return instance.turns.create({
@@ -111,6 +114,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadId: THREAD_ID,
             prevTurnId: userTurnId,
             role: "assistant",
+            origin: "assistant",
             status: "streaming",
           });
         });

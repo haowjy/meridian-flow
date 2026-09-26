@@ -32,6 +32,7 @@ import type {
   ThreadPendingInbox,
   ThreadStatus,
   Turn,
+  TurnOrigin,
   TurnRole,
   TurnStatus,
   UpdateThreadUserStateResponse,
@@ -348,6 +349,8 @@ export interface CreateTurnInput {
   createdAt?: string;
   prevTurnId?: TurnId | null;
   role: TurnRole;
+  /** No default: every creation path must state who authored the turn. */
+  origin: TurnOrigin;
   writeMode?: AiWriteMode | null;
   status?: TurnStatus;
   requestParams?: JsonValue | null;

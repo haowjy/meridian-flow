@@ -90,12 +90,15 @@ else
           id: ids.otherProjectRootTurn,
           threadId: ids.otherProjectRoot,
           role: "assistant",
+          origin: "assistant",
           status: "complete",
         },
         {
           id: ids.otherProjectChildUserTurn,
           threadId: ids.otherProjectChild,
           role: "user",
+          // The child's seed turn is the spawning caller's prompt, not a writer send.
+          origin: "system",
           status: "complete",
         },
       ]);
@@ -105,6 +108,7 @@ else
           threadId: ids.child,
           parentTurnId: ids.childUserTurn,
           role: "assistant",
+          origin: "assistant",
           status: "streaming",
         },
       ]);
@@ -113,6 +117,7 @@ else
         threadId: ids.otherProjectChild,
         parentTurnId: ids.otherProjectChildUserTurn,
         role: "assistant",
+        origin: "assistant",
         status: "complete",
       });
       await repos.executionReports.admit({
@@ -277,6 +282,7 @@ else
           id: foreignTurn,
           threadId: foreignCaller,
           role: "assistant",
+          origin: "assistant",
           status: "complete",
         });
         await expect(
@@ -320,12 +326,19 @@ else
           spawnStatus: "running",
         });
         await db.insert(schema.turns).values([
-          { id: siblingTurn, threadId: sibling, role: "assistant", status: "complete" },
+          {
+            id: siblingTurn,
+            threadId: sibling,
+            role: "assistant",
+            origin: "assistant",
+            status: "complete",
+          },
           {
             id: third,
             threadId: ids.child,
             parentTurnId: ids.childUserTurn,
             role: "assistant",
+            origin: "assistant",
             status: "complete",
           },
         ]);

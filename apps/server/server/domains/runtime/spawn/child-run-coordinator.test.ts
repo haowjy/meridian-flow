@@ -62,6 +62,8 @@ function stubOrchestrator(
       const userTurn = await repos.turns.create({
         threadId: input.threadId,
         role: "user",
+        // The child's seed turn is the spawning caller's prompt, not a writer send.
+        origin: "system",
         status: "complete",
         prevTurnId: (await repos.threads.findById(input.threadId))?.activeLeafTurnId ?? null,
       });
@@ -69,6 +71,7 @@ function stubOrchestrator(
         id: assistantTurnId,
         threadId: input.threadId,
         role: "assistant",
+        origin: "assistant",
         status: "streaming",
         prevTurnId: userTurn.id,
       });
@@ -269,6 +272,7 @@ async function fixture(
           id: request.parentTurnId,
           threadId: request.parentThread.id,
           role: "assistant",
+          origin: "assistant",
           status: "complete",
           prevTurnId: thread?.activeLeafTurnId ?? null,
         });

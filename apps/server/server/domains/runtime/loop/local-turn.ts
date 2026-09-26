@@ -14,6 +14,8 @@ export function createLocalTurn(input: {
   threadId: ThreadId;
   prevTurnId: TurnId | null;
   role: Turn["role"];
+  /** Who authored the turn; no default, so every caller must decide. */
+  origin: Turn["origin"];
   status: Turn["status"];
   writeMode?: Turn["writeMode"];
   metadata?: Turn["metadata"];
@@ -26,6 +28,7 @@ export function createLocalTurn(input: {
     prevTurnId: input.prevTurnId,
     parentTurnId: input.prevTurnId,
     role: input.role,
+    origin: input.origin,
     writeMode: input.writeMode ?? null,
     status: input.status,
     finishReason: null,

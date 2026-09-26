@@ -120,6 +120,7 @@ describe("branch-push durable projection", () => {
       id: turnId,
       threadId,
       role: "assistant",
+      origin: "assistant",
       status: "complete",
     });
     await db.insert(threadWorks).values({ threadId, workId, projectId, isPrimary: true });
@@ -330,6 +331,7 @@ describe("branch-push durable projection", () => {
       id: turnId,
       threadId,
       role: "assistant",
+      origin: "assistant",
       status: "complete",
     });
     await db.insert(threadWorks).values({ threadId, workId, projectId, isPrimary: true });
@@ -529,6 +531,7 @@ describe("branch-push durable projection", () => {
       id: turnId,
       threadId,
       role: "assistant",
+      origin: "assistant",
       status: "complete",
     });
     await db.insert(threadWorks).values({ threadId, workId, projectId, isPrimary: true });

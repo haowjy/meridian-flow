@@ -241,6 +241,7 @@ async function seedSystemTurn(deps: ThreadAgentSwapDeps, thread: Thread, text: s
   const turn = await deps.turns.create({
     threadId: thread.id as ThreadId,
     role: "system",
+    origin: "system",
     status: "complete",
   });
   await deps.blocks.create({

@@ -40,9 +40,13 @@ export async function executionScenario(db?: Database, ids = executionIds()) {
       await db
         .insert(schema.threads)
         .values({ id: ids.root, projectId: ids.project, createdByUserId: ids.user, ref: "c1" });
-      await db
-        .insert(schema.turns)
-        .values({ id: ids.rootTurn, threadId: ids.root, role: "assistant", status: "complete" });
+      await db.insert(schema.turns).values({
+        id: ids.rootTurn,
+        threadId: ids.root,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
     }
     await db.insert(schema.threads).values([
       {
@@ -91,12 +95,15 @@ export async function executionScenario(db?: Database, ids = executionIds()) {
     id: ids.callerTurn,
     threadId: ids.caller,
     role: "assistant",
+    origin: "assistant",
     status: "complete",
   });
   await repos.turns.create({
     id: ids.childUserTurn,
     threadId: ids.child,
     role: "user",
+    // The child's seed turn is the spawning caller's prompt, not a writer send.
+    origin: "system",
     status: "complete",
   });
   await repos.turns.create({
@@ -104,6 +111,7 @@ export async function executionScenario(db?: Database, ids = executionIds()) {
     threadId: ids.child,
     prevTurnId: ids.childUserTurn,
     role: "assistant",
+    origin: "assistant",
     status: "streaming",
   });
   if (ids.card)

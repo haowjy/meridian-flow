@@ -393,6 +393,22 @@ exactly one writer (the read-model projector); this projection's defining risk
 is a *future* writer bypassing recompute (branch switching), which only a
 database-level trigger closes.
 
+### Turn authorship (`turns.origin`)
+
+`turns.origin` (`"writer" | "assistant" | "system"`) records who authored a
+turn, independent of `role`: `writer` is a human send (idle send or mid-run
+steer, always via `writer-enqueue.ts`'s `createLocalTurn` call or an adopted
+inbox `message` whose `provenance.kind` is `"writer"`); `assistant` is model
+output; `system` is everything else the platform or an agent injected — a
+child's seed prompt (`orchestrator.ts` sets `origin: input.child ? "system" :
+"writer"` on the run's first user turn), a background `thread_message` send
+(`agent` provenance), a child completion notice, a Work-context refresh, or a
+request-only notice. `domain/read-model-projector.ts`'s `turnToCreateInput`
+and every direct `turns.create` caller must set it; there is no column
+default. **Logging/bookkeeping only today** — the chat-activity trigger above
+and `visible-conversation-policy.ts` still key off `role`/`metadata`, not this
+column.
+
 - Project chat pages use the strict shared keyset codec over
   `(lastActivityAt DESC, threadId DESC)` (`domain/project-chat-cursor.ts`).
   `domain/chat-feed-page.ts` owns the shared decode/fetch-one-past-limit/encode

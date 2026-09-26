@@ -80,6 +80,15 @@ to leave this projection stale, so Postgres triggers own it instead. See
 [`domains/threads/.context/CONTEXT.md`](../../../apps/server/server/domains/threads/.context/CONTEXT.md#chat-activity-projection-single-owner)
 and migration `0106_thread_chat_activity_trigger.sql`.
 
+`turns.origin` (`text NOT NULL`, `turns_origin_valid` check, migration
+`0004_turn_origin.sql`) has no column default: every insert states it, so a
+caller that forgets fails loudly rather than silently defaulting. An existing
+dev database backfills it from `role` (`assistant` → `assistant`, `user` →
+`writer`, else `system`) in the same migration, before the column is locked
+to `NOT NULL`. See
+[`domains/threads/.context/CONTEXT.md`](../../../apps/server/server/domains/threads/.context/CONTEXT.md#turn-authorship-turnsorigin)
+for what it means and its current (logging-only) scope.
+
 ### Yjs document heads and checkpoints
 
 `document_yjs_heads.latest_checkpoint_id` is declared in the Drizzle schema as an

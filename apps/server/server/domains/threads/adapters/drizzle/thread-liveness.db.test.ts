@@ -51,6 +51,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: TURN_ID,
         threadId: THREAD_ID,
         role: "assistant",
+        origin: "assistant",
         status: "streaming",
       });
     });

@@ -120,6 +120,7 @@ export function createDrizzleTurnRepository(
             threadId: input.threadId,
             parentTurnId: input.prevTurnId ?? null,
             role: input.role,
+            origin: input.origin,
             aiWriteMode: input.writeMode ?? null,
             status: input.status ?? "pending",
             totalInputTokens: 0,

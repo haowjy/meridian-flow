@@ -381,6 +381,9 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
           threadId: input.threadId,
           prevTurnId: workPlan.leafTurnId,
           role: "user",
+          // A child run's first turn is the spawning parent's prompt, not the
+          // writer's; every other caller mints this from an actual writer send.
+          origin: input.child ? "system" : "writer",
           status: "complete",
           metadata: input.userTurnMetadata ?? null,
         });
@@ -393,6 +396,7 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
           threadId: input.threadId,
           prevTurnId: userTurn.id,
           role: "assistant",
+          origin: "assistant",
           status: "streaming",
           writeMode,
         });
@@ -498,6 +502,7 @@ async function runDrainTurn(
           threadId: input.threadId,
           prevTurnId: plan.leafTurnId,
           role: "assistant",
+          origin: "assistant",
           status: "streaming",
           writeMode,
         });

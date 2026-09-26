@@ -15,6 +15,7 @@ export function goldenAssistantTurn(
     threadId,
     parentTurnId: null,
     role: "assistant",
+    origin: "assistant",
     writeMode: null,
     status,
     finishReason: null,

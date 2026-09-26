@@ -24,6 +24,7 @@ async function setup() {
   const turn = await repos.turns.create({
     threadId: child.id,
     role: "assistant",
+    origin: "assistant",
     status: "streaming",
     prevTurnId: null,
   });
