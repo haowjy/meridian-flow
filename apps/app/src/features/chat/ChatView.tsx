@@ -87,9 +87,11 @@ function SubagentHeader({
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const openThread = useOpenChatThread();
-  const ordered = [...all].sort(
-    (a, b) => Number(b.status.kind === "awake") - Number(a.status.kind === "awake"),
-  );
+  const ordered = [...all].sort((a, b) => {
+    const runningOrder = Number(b.status.kind === "awake") - Number(a.status.kind === "awake");
+    if (runningOrder) return runningOrder;
+    return Date.parse(b.runEndedAt ?? "") - Date.parse(a.runEndedAt ?? "");
+  });
   const visible = ordered.filter((node) =>
     `${node.agentName ?? ""} ${node.title ?? ""}`
       .toLocaleLowerCase()
