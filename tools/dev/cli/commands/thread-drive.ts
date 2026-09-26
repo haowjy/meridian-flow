@@ -30,6 +30,7 @@ import {
   resolveThreadId,
   resolveWorkId,
   stringOption,
+  THREAD_TARGET_OPTIONS,
 } from "../command";
 import { resolveDocumentId, resolveUri } from "../context-uri";
 import type { Output } from "../output";
@@ -331,6 +332,7 @@ export const threadSendCommand: CommandSpec = {
   args: "<thread> <text>",
   route: "POST /api/threads/:threadId/messages + WS subscribe",
   options: {
+    ...THREAD_TARGET_OPTIONS,
     ref: { type: "string", multiple: true, description: "Attach a document reference (URI)" },
     skill: { type: "string", multiple: true, description: "Activate a skill by slug" },
     mock: {
@@ -360,7 +362,7 @@ export const threadSendCommand: CommandSpec = {
       full: flag(ctx, "full"),
     };
     const session = await ctx.session();
-    const threadId = await resolveThreadId(session, rawThread);
+    const threadId = await resolveThreadId(session, rawThread, stringOption(ctx, "project"));
 
     if (flag(ctx, "no-wait")) {
       const { submissionId, admitted } = await admitMessage(session, { threadId, ...input });
@@ -387,6 +389,7 @@ export const threadTailCommand: CommandSpec = {
   args: "<thread>",
   route: "WS /api/threads/ws subscribe",
   options: {
+    ...THREAD_TARGET_OPTIONS,
     since: { type: "string", description: "Replay strictly after this seq (default: live only)" },
     "until-idle": { type: "boolean", description: "Stop after the next run finishes or fails" },
     timeout: { type: "string", description: "Stop after this long (default 10m)" },
@@ -395,7 +398,11 @@ export const threadTailCommand: CommandSpec = {
   examples: ["./mf thread tail <id>", "./mf thread tail <id> --until-idle --json"],
   async run(ctx) {
     const session = await ctx.session();
-    const threadId = await resolveThreadId(session, requirePositional(ctx, 0, "<thread>"));
+    const threadId = await resolveThreadId(
+      session,
+      requirePositional(ctx, 0, "<thread>"),
+      stringOption(ctx, "project"),
+    );
     let since = stringOption(ctx, "since");
     if (since !== undefined && !/^\d+$/.test(since)) throw usageError("--since must be a seq");
     if (since === undefined) {
@@ -432,11 +439,18 @@ export const threadCancelCommand: CommandSpec = {
   summary: "Cancel the running turn (or a given turn)",
   args: "<thread>",
   route: "POST /api/threads/:threadId/turns/:turnId/cancel",
-  options: { turn: { type: "string", description: "Turn id (default: the running turn)" } },
+  options: {
+    ...THREAD_TARGET_OPTIONS,
+    turn: { type: "string", description: "Turn id (default: the running turn)" },
+  },
   examples: ["./mf thread cancel <id>"],
   async run(ctx) {
     const session = await ctx.session();
-    const threadId = await resolveThreadId(session, requirePositional(ctx, 0, "<thread>"));
+    const threadId = await resolveThreadId(
+      session,
+      requirePositional(ctx, 0, "<thread>"),
+      stringOption(ctx, "project"),
+    );
     let turnId = stringOption(ctx, "turn");
     if (!turnId) {
       const snapshot = await session.request<ThreadSnapshotResponse>(
@@ -461,6 +475,7 @@ export const threadRespondCommand: CommandSpec = {
   args: "<thread>",
   route: "WS /api/threads/ws interrupt.respond",
   options: {
+    ...THREAD_TARGET_OPTIONS,
     turn: { type: "string", description: "Turn id that raised the interrupt" },
     interrupt: { type: "string", description: "Interrupt id" },
     value: { type: "string", description: "Answer as JSON (literal, @file, or -)" },
@@ -477,7 +492,11 @@ export const threadRespondCommand: CommandSpec = {
     }
     const value = readJsonArg(rawValue, "--value");
     const session = await ctx.session();
-    const threadId = await resolveThreadId(session, requirePositional(ctx, 0, "<thread>"));
+    const threadId = await resolveThreadId(
+      session,
+      requirePositional(ctx, 0, "<thread>"),
+      stringOption(ctx, "project"),
+    );
     const socket = await openThreadSocket(session);
     try {
       socket.send({ type: "interrupt.respond", threadId, turnId, interruptId, value });

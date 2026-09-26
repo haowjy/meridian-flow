@@ -52,7 +52,7 @@ Use it instead of the browser for anything that is not visual.
 ./mf seed tools/dev/cli/fixtures/basic.json        # docs + thread + an opening message
 ./mf thread send <id> "Tighten the opening" --ref manuscript://mf-chapter-1.md
 ./mf thread send <id> "go" --mock @tools/dev/cli/fixtures/mock-write.json --json | tail -1
-./mf thread view <id>                              # transcript with tool calls
+./mf thread view c3                                # transcript (ref, id, or id prefix)
 ./mf thread tail <id> --until-idle                 # follow a run started elsewhere
 ./mf doc read manuscript://mf-scene.md
 ./mf api GET /api/threads/<id>/skills              # any route without a dedicated command
@@ -69,9 +69,10 @@ Contract:
   1 failed, 5 cancelled, 8 waiting on an interrupt (answer with
   `./mf thread respond`), 124 timeout. 2 is usage, 3 not found, 4 the stack is
   not running or dev login failed. Every wait is bounded by `--timeout`.
-- `<thread>` accepts a full id, an app URL containing one, or a unique id
-  prefix. `cN`/`pN` refs are per-project display handles, so they are not
-  accepted.
+- `<thread>` accepts a `cN`/`pN` ref, a full id, an app URL containing one, or
+  a unique id prefix. Refs are per project: they resolve through
+  `GET /api/projects/:projectId/threads/by-ref/:ref` in the default project,
+  or in `--project <id>`.
 - `MF_SERVER_URL` plus `MF_COOKIE` (or `MF_APP_URL` for dev login) target a
   stack other than this worktree's Portless routes.
 

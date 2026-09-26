@@ -25,6 +25,7 @@ import {
   resolveThreadId,
   resolveWorkId,
   stringOption,
+  THREAD_TARGET_OPTIONS,
 } from "../command";
 import { followThread } from "../thread-stream";
 import {
@@ -87,18 +88,25 @@ export const threadViewCommand: CommandSpec = {
   args: "<thread>",
   route: "GET /api/threads/:threadId/snapshot",
   options: {
+    ...THREAD_TARGET_OPTIONS,
     turn: { type: "string", description: "Only this turn (id or id prefix)" },
     last: { type: "string", description: "Show the last N turns (default 20)" },
     full: { type: "boolean", description: "No truncation, all turns" },
   },
   examples: [
+    "./mf thread view c3   # ref in the default project",
+    "./mf thread view p7 --project <projectId>",
     "./mf thread view 3f9a1c   # unique id prefix",
     "./mf thread view <id> --turn <turnId> --full",
     "./mf thread view <id> --json --fields turns",
   ],
   async run(ctx) {
     const session = await ctx.session();
-    const threadId = await resolveThreadId(session, requirePositional(ctx, 0, "<thread>"));
+    const threadId = await resolveThreadId(
+      session,
+      requirePositional(ctx, 0, "<thread>"),
+      stringOption(ctx, "project"),
+    );
     const snapshot = await session.request<ThreadSnapshotResponse>(
       "GET",
       apiThreadSnapshotPath(threadId),
@@ -130,6 +138,7 @@ export const threadContextCommand: CommandSpec = {
   args: "<thread>",
   route: "GET /api/threads/:threadId/debug/model-requests",
   options: {
+    ...THREAD_TARGET_OPTIONS,
     turn: { type: "string", description: "Only requests for this turn" },
     iteration: { type: "string", description: "Only this loop iteration" },
     call: { type: "string", description: "Only this gateway call id" },
@@ -147,7 +156,11 @@ export const threadContextCommand: CommandSpec = {
     const gatewayCallId = stringOption(ctx, "call");
     const all = flag(ctx, "all");
     const session = await ctx.session();
-    const threadId = await resolveThreadId(session, requirePositional(ctx, 0, "<thread>"));
+    const threadId = await resolveThreadId(
+      session,
+      requirePositional(ctx, 0, "<thread>"),
+      stringOption(ctx, "project"),
+    );
     const narrowed = all || iteration !== undefined || gatewayCallId !== undefined;
     const response = await session.request<ModelRequestDebugListResponse>(
       "GET",
@@ -192,6 +205,7 @@ export const threadEventsCommand: CommandSpec = {
   args: "<thread>",
   route: "WS /api/threads/ws subscribe {lastSeq} catch-up",
   options: {
+    ...THREAD_TARGET_OPTIONS,
     since: { type: "string", description: "Replay strictly after this seq (default 0)" },
     full: { type: "boolean", description: "Do not truncate tool payloads" },
     timeout: { type: "string", description: "Give up after this long (default 15s)" },
@@ -201,7 +215,11 @@ export const threadEventsCommand: CommandSpec = {
     const since = stringOption(ctx, "since") ?? "0";
     if (!/^\d+$/.test(since)) throw usageError("--since must be a non-negative integer seq");
     const session = await ctx.session();
-    const threadId = await resolveThreadId(session, requirePositional(ctx, 0, "<thread>"));
+    const threadId = await resolveThreadId(
+      session,
+      requirePositional(ctx, 0, "<thread>"),
+      stringOption(ctx, "project"),
+    );
     const result = await followThread({
       session,
       threadId,

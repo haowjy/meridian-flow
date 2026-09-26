@@ -143,6 +143,7 @@ the handlers: Nitro treats test modules under `routes/` as production routes.
 | `work-attachment.ts` | Determines a new thread's Work: root omission/null binds No Work; children inherit the parent's primary. |
 | `project-preferences-route.ts` | Unit-testable handlers for project preferences GET/PUT. |
 | `project-results-route.ts` | Ownership-gated project result listing and signed artifact URL refresh. |
+| `thread-ref-route.ts` | Owner-gated `cN`/`pN` handle lookup for `GET /api/projects/:projectId/threads/by-ref/:ref`; malformed or unknown refs are 404. |
 | `mock-model-script-route.ts` | `/api/debug/mock-model/script` queue/list/clear; 404 when no scriptable mock is composed. |
 | `context-read-route.ts` | Ownership-gated context path resolution. Tracked files return content/schema; binary refs resolve signed object-store URLs. |
 | `document-access.ts` | `DocumentAccessPort` interface plus allow-all and Drizzle adapters for Yjs document authorization. |

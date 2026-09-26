@@ -2,8 +2,8 @@
 
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ThreadReportResult } from "@meridian/contracts/spawn";
+import { parseThreadRef } from "@meridian/contracts/threads";
 import { sameLineage } from "../../threads/domain/lineage.js";
-import { parseThreadRef } from "../../threads/domain/thread-ref.js";
 import type { ThreadRepositories } from "../../threads/ports/repositories.js";
 
 export async function readThreadReport(input: {

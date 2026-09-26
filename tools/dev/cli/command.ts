@@ -3,10 +3,12 @@ import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import {
   API_THREADS_PATH,
+  apiProjectThreadByRefPath,
   apiProjectWorksPath,
   type ListThreadsResponse,
   type ListWorksResponse,
 } from "@meridian/contracts/protocol";
+import { parseThreadRef, type Thread } from "@meridian/contracts/threads";
 import { CliError, type ExitCode, usageError } from "./cli-error";
 import type { Output } from "./output";
 import type { Session } from "./session";
@@ -145,16 +147,41 @@ export function readJsonArg(raw: string, name: string): unknown {
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
-const THREAD_REF = /^[cp]\d+$/i;
+/** `--project` for commands taking `<thread>`: the project a `cN`/`pN` ref lives in. */
+export const THREAD_TARGET_OPTIONS: Record<string, OptionSpec> = {
+  project: {
+    type: "string",
+    description: "Project for a cN/pN ref (default: the default project)",
+  },
+};
 
-/** Accepts a full id, an app URL containing one, or a unique id prefix (like git). */
-export async function resolveThreadId(session: Session, raw: string): Promise<string> {
+/**
+ * Accepts a full id, an app URL containing one, a `cN`/`pN` ref (resolved by the
+ * server in `project`, else the default project), or a unique id prefix (like git).
+ */
+export async function resolveThreadId(
+  session: Session,
+  raw: string,
+  project?: string,
+): Promise<string> {
   const embedded = raw.match(UUID)?.[0];
   if (embedded) return embedded.toLowerCase();
-  if (THREAD_REF.test(raw)) {
-    throw new CliError("not_found", `"${raw}" is a thread ref, not an id`, {
-      hint: "Refs are per-project display handles; use the thread id (`./mf thread list`).",
-    });
+  if (parseThreadRef(raw)) {
+    const projectId = await resolveProjectId(session, project);
+    try {
+      const thread = await session.request<Thread>(
+        "GET",
+        apiProjectThreadByRefPath(projectId, raw),
+      );
+      return thread.id;
+    } catch (error) {
+      if (error instanceof CliError && error.code === "not_found") {
+        throw new CliError("not_found", `No live thread ${raw} in project ${projectId}`, {
+          hint: "Refs are per project: pass --project <id>, or use the thread id (`./mf thread list`).",
+        });
+      }
+      throw error;
+    }
   }
   const { threads } = await session.request<ListThreadsResponse>("GET", API_THREADS_PATH);
   const matches = threads.filter((thread) => thread.id.startsWith(raw.toLowerCase()));

@@ -188,6 +188,12 @@ function createFake() {
         nextCursor: null,
       });
     }
+    const byRef = url.pathname.match(/^\/api\/projects\/([^/]+)\/threads\/by-ref\/([^/]+)$/);
+    if (req.method === "GET" && byRef) {
+      return byRef[1] === PROJECT_ID && byRef[2] === "c1"
+        ? send(200, threadDto())
+        : send(404, { message: "No live thread" });
+    }
     if (route === "POST /api/threads") {
       const body = (await readBody(req)) as { agentSelection?: unknown };
       if (!body?.agentSelection) return send(400, { message: "agentSelection required" });
@@ -305,17 +311,23 @@ describe("./mf", () => {
     expect((await mf(["thread", "list"], { MF_COOKIE: "wrong" })).code).toBe(EXIT.unavailable);
   });
 
-  it("addresses threads by id or unique id prefix, never by per-project ref", async () => {
-    const byPrefix = await mf(["thread", "view", "1111", "--json", "--fields", "thread"]);
-    expect(byPrefix.code).toBe(EXIT.ok);
-    expect(JSON.parse(byPrefix.stdout)).toEqual({
+  it("resolves cN refs through the by-ref route in the default or given project", async () => {
+    const byRef = await mf(["thread", "view", "c1", "--json", "--fields", "thread"]);
+    expect(byRef.code).toBe(EXIT.ok);
+    expect(JSON.parse(byRef.stdout)).toEqual({
       thread: expect.objectContaining({ id: THREAD_ID, ref: "c1" }),
     });
-    expect((await mf(["thread", "view", `https://app.x/threads/${THREAD_ID}`])).code).toBe(EXIT.ok);
+    expect((await mf(["thread", "view", "c1", "--project", PROJECT_ID])).code).toBe(EXIT.ok);
+    const elsewhere = await mf(["thread", "view", "c1", "--project", "other-project"]);
+    expect(elsewhere.code).toBe(EXIT.notFound);
+    expect(elsewhere.stderr).toContain("--project");
+    expect((await mf(["thread", "view", "c9"])).code).toBe(EXIT.notFound);
+  });
+
+  it("also accepts full ids, app URLs, and unique id prefixes", async () => {
+    expect((await mf(["thread", "view", "1111"])).code).toBe(EXIT.ok);
+    expect((await mf(["thread", "view", `https://app.x/chat/${THREAD_ID}`])).code).toBe(EXIT.ok);
     expect((await mf(["thread", "view", "9999"])).code).toBe(EXIT.notFound);
-    const byRef = await mf(["thread", "view", "c1"]);
-    expect(byRef.code).toBe(EXIT.notFound);
-    expect(byRef.stderr).toContain("use the thread id");
   });
 
   it("creates a thread with the default agent", async () => {
