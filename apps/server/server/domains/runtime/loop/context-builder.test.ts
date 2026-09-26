@@ -44,6 +44,7 @@ function turn(role: Turn["role"], id = TURN_ID): Turn {
     prevTurnId: null,
     parentTurnId: null,
     role,
+    origin: role === "assistant" ? "assistant" : role === "user" ? "writer" : "system",
     writeMode: null,
     status: "complete",
     finishReason: "end_turn",

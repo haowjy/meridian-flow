@@ -138,6 +138,7 @@ describe("frozen prompt provider requests", () => {
     const execution = await rig.repos.turns.create({
       threadId: child.id,
       role: "assistant",
+      origin: "assistant",
       status: "complete",
     });
     await rig.repos.executionReports.admit({
@@ -280,7 +281,12 @@ describe("frozen prompt provider requests", () => {
       },
       null,
     );
-    await rig.repos.turns.create({ threadId: child.id, role: "user", status: "complete" });
+    await rig.repos.turns.create({
+      threadId: child.id,
+      role: "user",
+      origin: "system",
+      status: "complete",
+    });
     for (const agentSelection of [undefined, agent.selection]) {
       await expect(
         forkThreadAgent(rig.derive, {
@@ -303,7 +309,12 @@ describe("frozen prompt provider requests", () => {
 
   it("leaves a default fork unfrozen when its parent has not made a request", async () => {
     const rig = await fixture();
-    await rig.repos.turns.create({ threadId: rig.thread.id, role: "user", status: "complete" });
+    await rig.repos.turns.create({
+      threadId: rig.thread.id,
+      role: "user",
+      origin: "writer",
+      status: "complete",
+    });
     const fork = await forkThreadAgent(rig.derive, {
       threadId: rig.thread.id,
       userId: rig.thread.userId,

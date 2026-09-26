@@ -187,6 +187,7 @@ function createAssistantTurn(
     threadId,
     prevTurnId,
     role: "assistant",
+    origin: "assistant",
     writeMode: opts?.writeMode ?? null,
     status: "streaming",
     finishReason: null,

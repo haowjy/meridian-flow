@@ -62,6 +62,27 @@ async function fixture(configure?: (deps: OrchestratorDeps) => void) {
 }
 
 describe("RunSession", () => {
+  it("origins a writer-started run's user turn as writer, and a child run's as system", async () => {
+    const f = await fixture();
+    await f.prepare();
+    const [userTurn] = await f.repos.turns.listByThread(f.thread.id);
+    expect(userTurn?.role).toBe("user");
+    expect(userTurn?.origin).toBe("writer");
+
+    const child = await f.repos.threads.create({
+      userId: f.thread.userId,
+      projectId: f.thread.projectId,
+    });
+    await f.runtime.prepare({
+      threadId: child.id,
+      userText: "spawned prompt",
+      child: { parentThreadId: f.thread.id, background: false },
+    });
+    const [childUserTurn] = await f.repos.turns.listByThread(child.id);
+    expect(childUserTurn?.role).toBe("user");
+    expect(childUserTurn?.origin).toBe("system");
+  });
+
   it("commits setup and captures the cursor before one-shot execution", async () => {
     const f = await fixture();
     const run = await f.prepare();
@@ -187,6 +208,7 @@ describe("RunSession", () => {
     const parentTurn = await f.deps.repos.turns.create({
       threadId: f.thread.id,
       role: "assistant",
+      origin: "assistant",
       status: "complete",
       prevTurnId: null,
     });
@@ -295,6 +317,7 @@ describe("RunSession", () => {
     const other = await f.repos.turns.create({
       threadId: f.thread.id,
       role: "assistant",
+      origin: "assistant",
       status: "streaming",
       prevTurnId: run.assistantTurnId,
     });

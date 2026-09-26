@@ -62,6 +62,15 @@ export type ThreadLeaseState = {
   runningTurnId: string | null;
 };
 export type TurnRole = "user" | "assistant" | "system" | "compaction";
+/**
+ * Who authored a turn, independent of `role`: `writer` is any human send
+ * (idle send or mid-run steer), `assistant` is model output, `system` is
+ * everything else the platform or an agent injected (child completions,
+ * Work-context updates, notices, non-writer inbox provenance). Logging/
+ * bookkeeping only today — chat-activity and rendering still key off
+ * `role`/`metadata`, not this field.
+ */
+export type TurnOrigin = "writer" | "assistant" | "system";
 export type BlockType =
   | "text"
   | "image"
@@ -236,15 +245,27 @@ export interface Thread {
   nextSeq?: string;
   /** Canonical logical head of the active conversation branch. */
   activeLeafTurnId: string | null;
+  /**
+   * Spawn-tree parent: null for a root, the spawning thread for a subagent.
+   * A fork/handoff derivation is a SIBLING of its source, not the source's
+   * child, so it takes the source's own `parentThreadId` (null when the
+   * source is itself a root) rather than pointing at the source.
+   */
   parentThreadId: string | null;
   /** Set when this thread was derived via handoff or fork. */
   originType?: ThreadOriginType | null;
-  /** Fork/handoff anchor turn on the parent thread. */
+  /**
+   * Fork/handoff anchor turn on the SOURCE thread (not necessarily
+   * `parentThreadId`); resolving its owning thread recovers the fork-source
+   * edge, since `parentThreadId` never carries it.
+   */
   originTurnId?: string | null;
   /**
-   * Identifies the run tree this thread belongs to. For primary threads this equals
-   * the thread's own id; subagent threads (P2b) will point at the spawning root.
-   * Used for run-scoped project workspace paths such as `runs/<rootThreadId>/input/…`.
+   * Identifies the run tree this thread belongs to. An organic root equals its
+   * own id; a subagent takes its spawning parent's root; a fork/handoff
+   * derivation takes its SOURCE's root (sharing lineage with it instead of
+   * starting a new tree). Used for run-scoped project workspace paths such as
+   * `runs/<rootThreadId>/input/…`.
    */
   rootThreadId: string;
   spawnDepth: number;
@@ -275,6 +296,8 @@ export interface Turn {
   prevTurnId?: string | null;
   parentTurnId?: string | null;
   role: TurnRole;
+  /** Who authored this turn; see {@link TurnOrigin}. */
+  origin: TurnOrigin;
   /** Write policy frozen when this turn began; null identifies pre-contract turns. */
   writeMode: AiWriteMode | null;
   status: TurnStatus;

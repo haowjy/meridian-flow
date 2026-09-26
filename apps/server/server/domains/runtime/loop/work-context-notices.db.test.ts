@@ -189,6 +189,7 @@ else
         threadId: ids.threadId,
         prevTurnId: null,
         role: "assistant",
+        origin: "assistant",
         status: "streaming",
       });
       try {
@@ -316,6 +317,7 @@ else
         threadId: ids.threadId,
         prevTurnId: null,
         role: "assistant",
+        origin: "assistant",
         status: "streaming",
       });
       try {

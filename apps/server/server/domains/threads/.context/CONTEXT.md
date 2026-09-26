@@ -226,8 +226,15 @@ Entity types (`Thread`, `Turn`, `Block`, `ModelResponse`) and event unions
   and `rootThreadId`: background authority) and `isInSubtree` (caller is the
   target itself or a spawn ancestor, walking `parentThreadId`: foreground
   authority). Both are pure over thread rows. `rootThreadId` is authoritative on
-  every create path — a primary roots itself, a subagent its spawn root — so the
-  column is never NULL; the `?? id` mapper fallback is a read guard only.
+  every create path — an organic root roots itself, a subagent takes its spawn
+  parent's root, and a fork/handoff takes its SOURCE's root — so the column is
+  never NULL; the `?? id` mapper fallback is a read guard only. A fork/handoff
+  is a sibling of its source, never the source's child: `buildDerivedPrimaryThreadRow`
+  gives it the source's `parentThreadId` too (null when the source is itself a
+  root) and `spawnDepth`, so `sameLineage` holds between them but `isInSubtree`
+  does not — the fork cannot foreground-drive the source's subtree, or vice
+  versa. The fork-source edge is not a `threads` column; it is recovered by
+  resolving `originTurnId`'s owning thread.
 - **ThreadEventHub sequencing** — journal `seq` is multiplied by 1000
   (`EVENT_SEQ_FACTOR`) to leave room for multiple AG-UI events projected from
   a single journal entry. Cursor arithmetic uses this factor.
@@ -248,7 +255,7 @@ Meridian Flow's Postgres schema. Key column mappings:
 | `threads.projectId` | `threads.projectId` | Foreign key into Meridian `projects` |
 | `threads.createdBy` | `threads.createdByUserId` | Explicit user-ID column name |
 | `threads.agentName` | **binding join** (`thread_agent_bindings` → `agent_definition_revisions`) | Display name (`metadata.name` or slug), or `Subagent` when the binding has no revision; never a threads column |
-| `threads.rootThreadId` | `threads.rootThreadId` | Persisted spawn-tree root; primary threads use their own ID |
+| `threads.rootThreadId` | `threads.rootThreadId` | Persisted spawn-tree root; an organic root uses its own id, a fork/handoff takes its source's root |
 | `threads.totalCostUsd` | `threads.totalCostUsd` | Persisted aggregate maintained by repository/projector recompute |
 | `threads.bakedSkillSlugs` | `threads.bakedSkillSlugs` | `null` means not baked; array means first-attempt bake won |
 | `threads.historySummary` | — | Not a column; hardcoded `null` |
@@ -386,6 +393,22 @@ no-triggers rule for thread rollup columns: that rule protects columns with
 exactly one writer (the read-model projector); this projection's defining risk
 is a *future* writer bypassing recompute (branch switching), which only a
 database-level trigger closes.
+
+### Turn authorship (`turns.origin`)
+
+`turns.origin` (`"writer" | "assistant" | "system"`) records who authored a
+turn, independent of `role`: `writer` is a human send (idle send or mid-run
+steer, always via `writer-enqueue.ts`'s `createLocalTurn` call or an adopted
+inbox `message` whose `provenance.kind` is `"writer"`); `assistant` is model
+output; `system` is everything else the platform or an agent injected — a
+child's seed prompt (`orchestrator.ts` sets `origin: input.child ? "system" :
+"writer"` on the run's first user turn), a background `thread_message` send
+(`agent` provenance), a child completion notice, a Work-context refresh, a
+request-only notice, or an invoked skill's baked body. `domain/read-model-
+projector.ts`'s `turnToCreateInput` and every direct `turns.create` caller
+must set it; there is no column default. **Logging/bookkeeping only today**
+— the chat-activity trigger above and `visible-conversation-policy.ts` still
+key off `role`/`metadata`, not this column.
 
 - Project chat pages use the strict shared keyset codec over
   `(lastActivityAt DESC, threadId DESC)` (`domain/project-chat-cursor.ts`).

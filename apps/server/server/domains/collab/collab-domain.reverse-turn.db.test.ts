@@ -156,6 +156,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: TURN_ID as never,
           threadId: THREAD_ID as never,
           role: "assistant",
+          origin: "assistant",
           status: "complete",
         },
         {
@@ -163,6 +164,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadId: THREAD_ID as never,
           parentTurnId: TURN_ID as never,
           role: "assistant",
+          origin: "assistant",
           status: "complete",
         },
         {
@@ -170,6 +172,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadId: THREAD_ID as never,
           parentTurnId: TURN_2_ID as never,
           role: "assistant",
+          origin: "assistant",
           status: "complete",
         },
       ]);

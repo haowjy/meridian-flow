@@ -289,6 +289,9 @@ export function messageTurnFor(
     threadId: message.threadId,
     prevTurnId,
     role: isChildNotification ? "system" : "user",
+    // Writer provenance is the only human send; every other provenance
+    // (agent/child/system) is a machine injection.
+    origin: message.provenance.kind === "writer" ? "writer" : "system",
     status: "complete",
     metadata:
       message.provenance.kind === "child"
@@ -335,6 +338,8 @@ function noticesTurnFor(
     threadId,
     prevTurnId,
     role: "system",
+    // The platform injects this, never the writer.
+    origin: "system",
     status: "complete",
     metadata: { kind: "system_update", section: "notices" },
   });

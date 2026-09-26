@@ -72,6 +72,7 @@ export async function persistWriterEnqueue<T>(input: {
                 threadId: input.threadId,
                 prevTurnId: current.activeLeafTurnId,
                 role: "user",
+                origin: "writer",
                 status: "complete",
                 metadata: writerInboxMetadata(input.userTurnMetadata),
               });

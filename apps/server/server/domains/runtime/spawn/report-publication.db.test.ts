@@ -189,6 +189,7 @@ else
         threadId: ids.child,
         parentTurnId: ids.childUserTurn,
         role: "assistant",
+        origin: "assistant",
         status: "streaming",
       });
       const objectPayload = { nested: [1, true, null, "text"] };
@@ -231,6 +232,7 @@ else
         threadId: ids.child,
         parentTurnId: ids.childUserTurn,
         role: "assistant",
+        origin: "assistant",
         status: "streaming",
       });
       await repos.executionReports.admit({
@@ -294,6 +296,7 @@ else
           threadId: ids.child,
           parentTurnId: ids.childUserTurn,
           role: "assistant",
+          origin: "assistant",
           status: "complete",
         });
         await repos.executionReports.admit({
@@ -498,6 +501,7 @@ else
         threadId: ids.child,
         parentTurnId: ids.execution,
         role: "assistant",
+        origin: "assistant",
         status: "streaming",
       });
       await repos.executionReports.admit({

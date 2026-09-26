@@ -211,6 +211,7 @@ export function createDeliveryAdapter(
         threadId,
         prevTurnId: leaf,
         role: "assistant",
+        origin: "assistant",
         status: "streaming",
         writeMode: currentTurn.writeMode,
       });

@@ -118,6 +118,7 @@ describe("createWriterTurnProducer", () => {
     const turns = await repos.turns.listByThread(thread.id);
     expect(turns).toHaveLength(1);
     expect(turns[0]?.role).toBe("user");
+    expect(turns[0]?.origin).toBe("writer");
 
     const pending = await inbox.selectPending(thread.id);
     expect(pending).toHaveLength(1);
@@ -151,6 +152,7 @@ describe("createWriterTurnProducer", () => {
       threadId: thread.id,
       prevTurnId: null,
       role: "assistant",
+      origin: "assistant",
       status: "streaming",
     });
     runner.set({ assistantTurnId: running.id, startedAt: new Date(0) });
@@ -170,6 +172,7 @@ describe("createWriterTurnProducer", () => {
       threadId: thread.id,
       prevTurnId: null,
       role: "assistant",
+      origin: "assistant",
       status: "streaming",
     });
 
@@ -187,6 +190,7 @@ describe("createWriterTurnProducer", () => {
       threadId: thread.id,
       prevTurnId: null,
       role: "assistant",
+      origin: "assistant",
       status: "waiting_interrupt",
     });
 
@@ -204,6 +208,7 @@ describe("createWriterTurnProducer", () => {
       threadId: thread.id,
       prevTurnId: null,
       role: "assistant",
+      origin: "assistant",
       status: "streaming",
     });
 

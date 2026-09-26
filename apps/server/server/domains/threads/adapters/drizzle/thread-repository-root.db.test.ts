@@ -78,16 +78,39 @@ else
       expect(await persistedRoot(created.id)).toBe(created.id);
     });
 
-    it("roots a derived primary at itself, not its parent", async () => {
+    it("a fork/handoff of an organic root shares that root and has no parent", async () => {
+      // The source (`ids.threadId`) is itself a root: null parent, self root.
       const derived = await repos.threads.createDerivedPrimary({
         userId: ids.userId,
         projectId: ids.projectId,
         workId: ids.noWorkId,
-        parentThreadId: ids.threadId,
+        source: { parentThreadId: null, rootThreadId: ids.threadId, spawnDepth: 0 },
         originType: "handoff",
       });
-      expect(derived.parentThreadId).toBe(ids.threadId);
-      expect(await persistedRoot(derived.id)).toBe(derived.id);
+      expect(derived.parentThreadId).toBeNull();
+      expect(await persistedRoot(derived.id)).toBe(ids.threadId);
+    });
+
+    it("a fork of a subagent becomes its sibling: same parent and root, same depth", async () => {
+      const subagent = await repos.threads.createSubagent({
+        userId: ids.userId,
+        projectId: ids.projectId,
+        workId: ids.noWorkId,
+        parentThreadId: ids.threadId,
+        rootThreadId: ids.threadId,
+        spawnDepth: 2,
+      });
+      const fork = await repos.threads.createDerivedPrimary({
+        userId: ids.userId,
+        projectId: ids.projectId,
+        workId: ids.noWorkId,
+        source: subagent,
+        originType: "fork",
+        originTurnId: crypto.randomUUID(),
+      });
+      expect(fork.parentThreadId).toBe(subagent.parentThreadId);
+      expect(fork.spawnDepth).toBe(subagent.spawnDepth);
+      expect(await persistedRoot(fork.id)).toBe(ids.threadId);
     });
 
     it("roots a subagent at the spawning root", async () => {

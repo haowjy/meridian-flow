@@ -100,6 +100,7 @@ export async function runCrossWorkProbe(
     id: TURN_B_ID,
     threadId: THREAD_B_ID,
     role: "assistant",
+    origin: "assistant",
     status: "complete",
   });
   await db.insert(schema.threadWorks).values({

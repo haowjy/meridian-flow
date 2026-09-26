@@ -119,6 +119,7 @@ function defaultTurn(input: CreateTurnInput): Turn {
     threadId: input.threadId,
     prevTurnId: input.prevTurnId ?? null,
     role: input.role,
+    origin: input.origin,
     writeMode: input.writeMode ?? null,
     status: input.status ?? "pending",
     parentTurnId: input.prevTurnId ?? null,

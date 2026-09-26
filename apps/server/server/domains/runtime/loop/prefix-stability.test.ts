@@ -69,6 +69,7 @@ function userTurn(id: string, text: string): { turn: Turn; block: Block } {
       prevTurnId: null,
       parentTurnId: null,
       role: "user",
+      origin: "writer",
       writeMode: null,
       status: "complete",
       finishReason: null,
@@ -99,7 +100,7 @@ function userTurn(id: string, text: string): { turn: Turn; block: Block } {
 
 function systemNoticeTurn(id: string, text: string): { turn: Turn; block: Block } {
   const built = userTurn(id, text);
-  return { turn: { ...built.turn, role: "system" }, block: built.block };
+  return { turn: { ...built.turn, role: "system", origin: "system" }, block: built.block };
 }
 
 function assistantToolExchangeTurn(
@@ -112,6 +113,7 @@ function assistantToolExchangeTurn(
     prevTurnId: null,
     parentTurnId: null,
     role: "assistant",
+    origin: "assistant",
     writeMode: null,
     status: "complete",
     finishReason: "tool_use",

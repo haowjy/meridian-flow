@@ -66,6 +66,7 @@ describe("change trail aggregate projections (postgres)", () => {
         threadId: THREAD_ID,
         parentTurnId: TURN_ID,
         role: "assistant" as const,
+        origin: "assistant" as const,
         status: "complete" as const,
       })),
     );
@@ -100,6 +101,7 @@ describe("change trail aggregate projections (postgres)", () => {
         threadId: THREAD_ID,
         parentTurnId: TURN_ID,
         role: "assistant" as const,
+        origin: "assistant" as const,
         status: "complete" as const,
       })),
     );

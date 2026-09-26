@@ -339,6 +339,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: ASSISTANT_TURN,
         threadId: THREAD_A,
         role: "assistant",
+        origin: "assistant",
         status: "streaming",
       });
       await createTestDrizzleDelivery(db, { runClaim: authority }).adoptBatch(lease, async () => ({
@@ -410,6 +411,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           turn: await repos.turns.create({
             threadId: THREAD_A,
             role: "assistant",
+            origin: "assistant",
             status: "streaming",
           }),
         };

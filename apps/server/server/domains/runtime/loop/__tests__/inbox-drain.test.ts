@@ -599,6 +599,7 @@ describe("drain-only start", () => {
     const callerTurn = await repos.turns.create({
       threadId: thread.id,
       role: "assistant",
+      origin: "assistant",
       status: "complete",
       prevTurnId: null,
     });
@@ -612,6 +613,7 @@ describe("drain-only start", () => {
     const execution = await repos.turns.create({
       threadId: child.id,
       role: "assistant",
+      origin: "assistant",
       status: "complete",
       prevTurnId: null,
     });
