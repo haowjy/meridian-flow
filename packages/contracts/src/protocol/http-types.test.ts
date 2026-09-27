@@ -1,6 +1,25 @@
 /** Working-set route parsing protects the scheme/work authority wire invariant. */
 import { describe, expect, it } from "vitest";
-import { parseWorkingSetRoute, parseWorkingSetRouteList } from "./http-types.js";
+import {
+  forkThreadRequestSchema,
+  parseWorkingSetRoute,
+  parseWorkingSetRouteList,
+} from "./http-types.js";
+
+describe("fork request schema", () => {
+  it("requires a client id and rejects removed Agent selection input", () => {
+    expect(forkThreadRequestSchema.safeParse({ id: crypto.randomUUID() }).success).toBe(true);
+    expect(
+      forkThreadRequestSchema.safeParse({
+        id: crypto.randomUUID(),
+        agentSelection: {
+          catalogEntryId: crypto.randomUUID(),
+          definitionRevisionId: crypto.randomUUID(),
+        },
+      }).success,
+    ).toBe(false);
+  });
+});
 
 describe("working-set route parser", () => {
   it("accepts each valid union arm", () => {

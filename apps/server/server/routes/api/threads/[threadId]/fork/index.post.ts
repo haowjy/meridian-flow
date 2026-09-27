@@ -1,22 +1,22 @@
 /** POST /api/threads/[threadId]/fork: create a new primary thread from a fork point. */
 
-import { type ForkThreadRequest, serializeTransport } from "@meridian/contracts/protocol";
+import { forkThreadRequestSchema, serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
-import { AgentSelectionError } from "../../../../../domains/packages/index.js";
 import { forkThreadAgent, type ThreadAgentSwapDeps } from "../../../../../domains/threads/index.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
-import {
-  parseNullableRequestId,
-  requireAgentSelection,
-  requireRequestId,
-} from "../../../../../lib/request-id.js";
+import { deriveConversationErrorStatus } from "../../../../../lib/derive-conversation-route-errors.js";
+import { parseNullableRequestId, requireRequestId } from "../../../../../lib/request-id.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const threadId = requireRequestId(getRouterParam(event, "threadId"), "threadId");
-  const body = (await readBody<ForkThreadRequest>(event)) ?? {};
+  const parsed = forkThreadRequestSchema.safeParse(await readBody(event));
+  if (!parsed.success) {
+    throw createError({ statusCode: 400, message: "Invalid fork request" });
+  }
+  const body = parsed.data;
   try {
-    const thread = await forkThreadAgent(
+    const result = await forkThreadAgent(
       {
         threads: app.repos.threads as ThreadAgentSwapDeps["threads"],
         threadWorks: app.repos.threadWorks,
@@ -29,23 +29,22 @@ export default defineEventHandler(async (event) => {
         workContextNotices: app.workContextNotices,
         agentCatalog: app.agentCatalog,
         agentRevisions: app.agentRevisions,
+        eventReader: app.journalReader,
         eventWriter: app.journalWriter,
       },
       {
+        id: requireRequestId(body.id, "id"),
         threadId,
         userId: user.userId,
-        agentSelection:
-          body.agentSelection === undefined
-            ? undefined
-            : requireAgentSelection(body.agentSelection),
         originTurnId: parseNullableRequestId(body.originTurnId, "originTurnId"),
       },
     );
-    event.res.status = 201;
-    return serializeTransport(thread);
+    event.res.status = result.created ? 201 : 200;
+    return serializeTransport(result.thread);
   } catch (error) {
-    if (error instanceof AgentSelectionError)
-      throw createError({ statusCode: 400, message: error.message });
+    const statusCode = deriveConversationErrorStatus(error);
+    if (statusCode !== null && error instanceof Error)
+      throw createError({ statusCode, message: error.message });
     throw error;
   }
 });

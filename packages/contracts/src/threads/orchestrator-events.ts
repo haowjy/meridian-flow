@@ -173,10 +173,14 @@ export type OrchestratorEvent =
     }
   | {
       type: "agent.fork";
+      /** Thread the writer forked, which may differ from the cutoff's owner. */
       sourceThreadId: string;
       targetThreadId: string;
       targetAgentSlug: string | null;
+      /** Normalized complete cutoff retained by the fork. */
       originTurnId: string;
+      /** Original request selection, null when the server chose the latest turn. */
+      requestedOriginTurnId: string | null;
     }
   | { type: "turn.completed"; turn: Turn }
   | { type: "turn.cancelled"; turn: Turn }

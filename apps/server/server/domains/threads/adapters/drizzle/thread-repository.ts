@@ -201,7 +201,7 @@ export function createDrizzleThreadRepository(
         bakedTools: thread.bakedTools,
         parentThreadId: thread.parentThreadId,
         rootThreadId: thread.rootThreadId,
-        originTurnId: input.originTurnId ?? thread.id,
+        originTurnId: input.originTurnId,
         originType: "spawn",
         spawnStatus: thread.spawnStatus,
         spawnDepth: thread.spawnDepth,
@@ -230,6 +230,47 @@ export function createDrizzleThreadRepository(
       });
       if (!row) throw new Error("Failed to create derived primary thread");
       return mapThread({ ...row, workId: thread.workId });
+    },
+    async createDerivedPrimaryIfAbsent(input) {
+      const thread = buildDerivedPrimaryThreadRow(input);
+      const row = await runInDrizzleTransaction(db, async () => {
+        const activeDb = currentDrizzleDb(db);
+        const [counter] = await activeDb
+          .insert(schema.projectThreadCounters)
+          .values({ projectId: thread.projectId as ProjectId, n: 1 })
+          .onConflictDoUpdate({
+            target: schema.projectThreadCounters.projectId,
+            set: { n: sql`${schema.projectThreadCounters.n} + 1` },
+          })
+          .returning({ n: schema.projectThreadCounters.n });
+        if (!counter) throw new Error("Failed to allocate thread ref");
+        const [created] = await activeDb
+          .insert(schema.threads)
+          .values({
+            id: thread.id,
+            projectId: thread.projectId as ProjectId,
+            createdByUserId: thread.userId,
+            kind: "primary",
+            title: thread.title ?? "",
+            composedSystemPrompt: thread.composedSystemPrompt,
+            bakedSkillSlugs: thread.bakedSkillSlugs,
+            bakedTools: thread.bakedTools,
+            parentThreadId: thread.parentThreadId,
+            rootThreadId: thread.rootThreadId,
+            originTurnId: thread.originTurnId,
+            originType: thread.originType,
+            spawnDepth: thread.spawnDepth,
+            status: thread.status,
+            ref: formatThreadRef("primary", counter.n),
+          })
+          .onConflictDoNothing({ target: schema.threads.id })
+          .returning(threadColumns);
+        return created;
+      });
+      if (row) return { thread: mapThread({ ...row, workId: thread.workId }), created: true };
+      const existing = await this.findByIdIncludingDeleted(input.id);
+      if (!existing) throw new Error("Derived thread ID conflict disappeared");
+      return { thread: existing, created: false };
     },
     async updateSpawnLifecycle(id, input: UpdateSpawnLifecycleInput) {
       const [row] = await currentDrizzleDb(db)

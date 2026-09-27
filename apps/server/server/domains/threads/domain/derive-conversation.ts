@@ -14,9 +14,10 @@ import {
   type WorkContextNotices,
   type WorkRepository,
 } from "../../projects/index.js";
-import type { EventJournalWriter } from "../ports/event-journal.js";
+import type { EventJournalReader, EventJournalWriter } from "../ports/event-journal.js";
 import type { InternalThreadRepositories } from "../ports/repositories.js";
 import { createBoundConversation } from "./bound-conversation.js";
+import { loadThreadConversationContext } from "./thread-conversation-context.js";
 
 export interface ThreadAgentSwapDeps {
   threads: InternalThreadRepositories["threads"];
@@ -25,12 +26,46 @@ export interface ThreadAgentSwapDeps {
   blocks: InternalThreadRepositories["blocks"];
   threadDocuments: InternalThreadRepositories["threadDocuments"];
   transaction: InternalThreadRepositories["transaction"];
-  projects: ProjectRepository;
+  projects: Pick<ProjectRepository, "findById">;
   works: Pick<WorkRepository, "findNoWork">;
   workContextNotices: Pick<WorkContextNotices, "threadChanged">;
   agentCatalog: BoundAgentCatalog;
   agentRevisions: AgentRevisionStore;
+  eventReader: Pick<EventJournalReader, "listByType">;
   eventWriter: EventJournalWriter;
+}
+
+export class SubagentDerivationError extends Error {
+  constructor(
+    readonly threadId: string,
+    readonly derivation: "fork" | "handoff",
+  ) {
+    super(`A subagent thread cannot be ${derivation}ed`);
+    this.name = "SubagentDerivationError";
+  }
+}
+
+export class ForkThreadConflictError extends Error {
+  constructor() {
+    super("The requested fork ID is already in use");
+    this.name = "ForkThreadConflictError";
+  }
+}
+
+export type ForkCutoffErrorCode = "turn_not_in_transcript" | "no_complete_turn";
+
+export class ForkCutoffError extends Error {
+  constructor(
+    readonly code: ForkCutoffErrorCode,
+    readonly turnId: string | null,
+  ) {
+    super(
+      code === "turn_not_in_transcript"
+        ? `Fork cutoff turn ${turnId} is not in the source's effective transcript`
+        : "The source has no complete turn at or before the requested cutoff",
+    );
+    this.name = "ForkCutoffError";
+  }
 }
 
 export async function handoffThreadAgent(
@@ -43,6 +78,7 @@ export async function handoffThreadAgent(
   },
 ): Promise<Thread> {
   const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
+  if (source.kind === "subagent") throw new SubagentDerivationError(source.id, "handoff");
   const sourceWorkId = await requirePrimaryWorkId(deps, source.id, source.projectId);
   const binding = await resolveDerivedBinding(deps, source, input.userId, input.agentSelection);
   const summary = input.summary?.trim() || (await programmaticSummary(deps, source.id));
@@ -84,53 +120,64 @@ export async function handoffThreadAgent(
 export async function forkThreadAgent(
   deps: ThreadAgentSwapDeps,
   input: {
+    id: string;
     threadId: string;
     userId: string;
-    agentSelection?: AgentSelection;
     originTurnId?: string | null;
   },
-): Promise<Thread> {
+): Promise<{ thread: Thread; created: boolean }> {
   const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
-  const sourceWorkId = await requirePrimaryWorkId(deps, source.id, source.projectId);
-  const binding = await resolveDerivedBinding(deps, source, input.userId, input.agentSelection);
-  const originTurnId = input.originTurnId ?? (await latestTurnId(deps, source.id));
-  if (!originTurnId) throw new Error("Cannot fork a thread without an origin turn");
-  const originTurn = await deps.turns.findById(originTurnId as TurnId);
-  if (!originTurn || originTurn.threadId !== source.id) {
-    throw new Error("Fork origin turn must belong to the source thread");
-  }
+  if (source.kind === "subagent") throw new SubagentDerivationError(source.id, "fork");
   return deps.transaction(async () => {
     // The source journal is mutated after the new thread acquires its Work membership.
     const lockedSource = await deps.threads.lockByIdIncludingDeleted(source.id as ThreadId);
     if (!lockedSource || lockedSource.deletedAt) throw new Error("Source thread no longer exists");
-    const target = await createDerivedPrimaryWithMembership(
+
+    const existing = await findIdempotentFork(deps, lockedSource, input);
+    if (existing) return { thread: existing, created: false };
+
+    const cutoff = await normalizeForkCutoff(deps, lockedSource, input.originTurnId);
+    if (!(await deps.threads.findByIdIncludingDeleted(cutoff.turn.threadId as ThreadId))) {
+      throw new ForkCutoffError("turn_not_in_transcript", cutoff.turn.id);
+    }
+    const sourceWorkId = await requirePrimaryWorkId(deps, lockedSource.id, lockedSource.projectId);
+    const binding = await resolveRetainedForkBinding(deps, lockedSource);
+    const result = await deps.threads.createDerivedPrimaryIfAbsent({
+      id: input.id as ThreadId,
+      userId: lockedSource.userId,
+      projectId: lockedSource.projectId,
+      workId: sourceWorkId,
+      source: lockedSource,
+      originType: "fork",
+      originTurnId: cutoff.turn.id as TurnId,
+      title: `Fork from ${lockedSource.title ?? "thread"}`,
+      inheritedPrompt:
+        (binding.revision?.id ?? null) === lockedSource.agentDefinitionRevisionId
+          ? lockedSource
+          : undefined,
+    });
+    if (!result.created) {
+      const raced = await findIdempotentFork(deps, lockedSource, input);
+      if (raced) return { thread: raced, created: false };
+      throw new ForkThreadConflictError();
+    }
+    const target = await bindDerivedPrimaryWithMembership(
       deps,
-      {
-        userId: source.userId,
-        projectId: source.projectId,
-        workId: sourceWorkId,
-        source: lockedSource,
-        inheritedPrompt:
-          (binding.revision?.id ?? null) === lockedSource.agentDefinitionRevisionId
-            ? lockedSource
-            : undefined,
-        originType: "fork",
-        originTurnId: originTurnId as TurnId,
-        title: `Fork from ${source.title ?? "thread"}`,
-      },
+      async () => result.thread,
       sourceWorkId,
       binding,
     );
-    await inheritEditingDocuments(deps, source, target);
-    await seedSystemTurn(deps, target, `Forked conversation through turn ${originTurnId}.`);
+    await inheritEditingDocuments(deps, lockedSource, target);
+    await seedSystemTurn(deps, target, `Forked conversation through turn ${cutoff.turn.id}.`);
     await deps.eventWriter.appendEvent(source.id as ThreadId, {
       type: "agent.fork",
       sourceThreadId: source.id,
       targetThreadId: target.id,
       targetAgentSlug: binding.revision?.slug ?? null,
-      originTurnId,
+      originTurnId: cutoff.turn.id,
+      requestedOriginTurnId: input.originTurnId ?? null,
     });
-    return target;
+    return { thread: target, created: true };
   });
 }
 
@@ -158,9 +205,90 @@ async function resolveDerivedBinding(
   };
 }
 
+/** Forks keep the exact retained binding and cannot resolve a catalog selection. */
+async function resolveRetainedForkBinding(
+  deps: ThreadAgentSwapDeps,
+  source: Thread,
+): Promise<AgentRevisionBinding> {
+  const retained = await deps.agentRevisions.readThreadBinding(source.id);
+  if (!retained) throw new Error("Source thread has no Agent binding");
+  if (!retained.revision || retained.revision.definition.metadata.mode === "subagent") {
+    throw new AgentSelectionError(retained.revision?.id ?? "generic subagent");
+  }
+  return retained;
+}
+
+async function normalizeForkCutoff(
+  deps: ThreadAgentSwapDeps,
+  source: Thread,
+  requestedTurnId: string | null | undefined,
+): Promise<{ turn: Awaited<ReturnType<typeof loadThreadConversationContext>>["turns"][number] }> {
+  const context = await loadThreadConversationContext(
+    { threads: deps.threads, turns: deps.turns, blocks: deps.blocks },
+    source,
+  );
+  const selectedTurnId = requestedTurnId ?? context.turns.at(-1)?.id;
+  const selectedIndex = context.turns.findIndex((turn) => turn.id === selectedTurnId);
+  if (!selectedTurnId || selectedIndex < 0) {
+    throw new ForkCutoffError("turn_not_in_transcript", selectedTurnId ?? null);
+  }
+
+  let completeTurn: (typeof context.turns)[number] | undefined;
+  for (const turn of context.turns.slice(0, selectedIndex + 1)) {
+    if (turn.status === "complete") completeTurn = turn;
+  }
+  if (!completeTurn) throw new ForkCutoffError("no_complete_turn", selectedTurnId);
+  return { turn: completeTurn };
+}
+
+async function findIdempotentFork(
+  deps: ThreadAgentSwapDeps,
+  source: Thread,
+  input: { id: string; userId: string; originTurnId?: string | null },
+): Promise<Thread | null> {
+  const existing = await deps.threads.findByIdIncludingDeleted(input.id as ThreadId);
+  if (!existing) return null;
+  if (
+    existing.userId !== input.userId ||
+    existing.projectId !== source.projectId ||
+    existing.originType !== "fork" ||
+    existing.kind !== "primary"
+  ) {
+    throw new ForkThreadConflictError();
+  }
+
+  const events = await deps.eventReader.listByType(source.id as ThreadId, "agent.fork");
+  const matchingEvent = events.find((entry) => {
+    const event = entry.payload;
+    return (
+      event.type === "agent.fork" &&
+      event.sourceThreadId === source.id &&
+      event.targetThreadId === existing.id &&
+      event.originTurnId === existing.originTurnId &&
+      event.requestedOriginTurnId === (input.originTurnId ?? null)
+    );
+  });
+  if (!matchingEvent) throw new ForkThreadConflictError();
+  return existing;
+}
+
 async function createDerivedPrimaryWithMembership(
   deps: ThreadAgentSwapDeps,
   input: Parameters<InternalThreadRepositories["threads"]["createDerivedPrimary"]>[0],
+  membershipWorkId: WorkId,
+  binding: AgentRevisionBinding,
+): Promise<Thread> {
+  return bindDerivedPrimaryWithMembership(
+    deps,
+    () => deps.threads.createDerivedPrimary(input),
+    membershipWorkId,
+    binding,
+  );
+}
+
+async function bindDerivedPrimaryWithMembership(
+  deps: ThreadAgentSwapDeps,
+  createThread: () => Promise<Thread>,
   membershipWorkId: WorkId,
   binding: AgentRevisionBinding,
 ): Promise<Thread> {
@@ -168,7 +296,7 @@ async function createDerivedPrimaryWithMembership(
     transaction: deps.transaction,
     agentRevisions: deps.agentRevisions,
     ...binding,
-    createThread: () => deps.threads.createDerivedPrimary(input),
+    createThread,
     resolveWork: async (target) => {
       await deps.threadWorks.addMembership(target.id as ThreadId, membershipWorkId, true);
       return membershipWorkId;

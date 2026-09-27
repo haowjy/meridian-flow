@@ -3,12 +3,12 @@
 import type { AgentSelection } from "@meridian/contracts/agents";
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
-import { AgentSelectionError } from "../../../../../domains/packages/index.js";
 import {
   handoffThreadAgent,
   type ThreadAgentSwapDeps,
 } from "../../../../../domains/threads/index.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
+import { deriveConversationErrorStatus } from "../../../../../lib/derive-conversation-route-errors.js";
 import { requireAgentSelection, requireRequestId } from "../../../../../lib/request-id.js";
 
 export default defineEventHandler(async (event) => {
@@ -30,6 +30,7 @@ export default defineEventHandler(async (event) => {
         workContextNotices: app.workContextNotices,
         agentCatalog: app.agentCatalog,
         agentRevisions: app.agentRevisions,
+        eventReader: app.journalReader,
         eventWriter: app.journalWriter,
       },
       {
@@ -42,8 +43,9 @@ export default defineEventHandler(async (event) => {
     event.res.status = 201;
     return serializeTransport(thread);
   } catch (error) {
-    if (error instanceof AgentSelectionError)
-      throw createError({ statusCode: 400, message: error.message });
+    const statusCode = deriveConversationErrorStatus(error);
+    if (statusCode !== null && error instanceof Error)
+      throw createError({ statusCode, message: error.message });
     throw error;
   }
 });

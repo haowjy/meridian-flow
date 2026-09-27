@@ -326,6 +326,10 @@ export interface SubagentThreadFactory {
 
 export interface DerivedPrimaryThreadFactory {
   createDerivedPrimary(input: CreateDerivedPrimaryThreadInput): Promise<Thread>;
+  /** Inserts once by client-minted ID; an existing row is returned without mutation. */
+  createDerivedPrimaryIfAbsent(
+    input: CreateDerivedPrimaryThreadInput & { id: ThreadId },
+  ): Promise<{ thread: Thread; created: boolean }>;
 }
 
 export interface CreateTurnInput {

@@ -6,11 +6,18 @@ describe("in-memory ThreadRepository.listChildren", () => {
   it("excludes derived primary threads even when they share a subagent parent", async () => {
     const repos = createInMemoryRepositories();
     const root = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+    const originTurn = await repos.turns.create({
+      threadId: root.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
     const subagent = await repos.threads.createSubagent({
       userId: "user-1",
       projectId: "project-1",
       parentThreadId: root.id,
       rootThreadId: root.id,
+      originTurnId: originTurn.id,
       spawnDepth: 1,
     });
     const sourceTurn = await repos.turns.create({

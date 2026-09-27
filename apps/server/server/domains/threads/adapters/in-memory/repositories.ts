@@ -256,6 +256,12 @@ export function createInMemoryRepositories(
     async createDerivedPrimary(input) {
       return insertThread(buildDerivedPrimaryThreadRow(input));
     },
+    async createDerivedPrimaryIfAbsent(input) {
+      const existing = threads.get(input.id);
+      if (existing) return { thread: projectThread(existing), created: false };
+      const thread = await insertThread(buildDerivedPrimaryThreadRow(input));
+      return { thread, created: true };
+    },
     async updateSpawnLifecycle(id, input: UpdateSpawnLifecycleInput) {
       const thread = threads.get(id);
       if (!thread) throw new Error(`Thread not found: ${id}`);

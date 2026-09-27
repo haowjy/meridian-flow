@@ -4,6 +4,7 @@
  * MULTIPLE PURPOSES: thread/project/work DTOs, context-tree DTOs, and figure asset DTOs.
  */
 
+import { z } from "zod";
 import type { AgentSelection } from "../agents/index.js";
 import {
   CONTEXT_URI_SCHEMES,
@@ -361,11 +362,15 @@ export type CreateThreadRequest = {
 
 export type CreateThreadResponse = Thread;
 
-/** Omission or the parent's revision retains its frozen prompt and Agent configuration. */
-export type ForkThreadRequest = {
-  agentSelection?: AgentSelection;
-  originTurnId?: string | null;
-};
+export const forkThreadRequestSchema = z
+  .object({
+    /** Client-minted id makes a navigate-first fork retryable. */
+    id: z.string(),
+    originTurnId: z.string().nullable().optional(),
+  })
+  .strict();
+
+export type ForkThreadRequest = z.infer<typeof forkThreadRequestSchema>;
 
 export type UpdateWorkWriteModeRequest = {
   aiWriteMode: AiWriteMode;

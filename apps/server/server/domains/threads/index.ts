@@ -14,8 +14,12 @@ export {
 } from "./domain/active-document-resolver.js";
 export { createBoundConversation } from "./domain/bound-conversation.js";
 export {
+  ForkCutoffError,
+  type ForkCutoffErrorCode,
+  ForkThreadConflictError,
   forkThreadAgent,
   handoffThreadAgent,
+  SubagentDerivationError,
   type ThreadAgentSwapDeps,
 } from "./domain/derive-conversation.js";
 export { ExecutionReportConflictError } from "./domain/execution-report-conflict.js";
