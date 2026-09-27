@@ -40,10 +40,20 @@ export class Output {
     if (text) this.io.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
   }
 
-  /** One stream record: an NDJSON line with --json, otherwise a text line (null skips). */
+  /**
+   * One stream record: an NDJSON line with --json, otherwise a text line (null skips).
+   * `--fields` keeps `type` plus whichever requested keys each record has, since
+   * stream records differ in shape and a missing key is not a usage error there.
+   */
   record(value: Record<string, unknown>, textLine: string | null, textStream: "out" | "err"): void {
     if (this.mode.json) {
-      this.io.stdout.write(`${JSON.stringify(value)}\n`);
+      const fields = this.mode.fields;
+      const line = fields?.length
+        ? Object.fromEntries(
+            Object.entries(value).filter(([key]) => key === "type" || fields.includes(key)),
+          )
+        : value;
+      this.io.stdout.write(`${JSON.stringify(line)}\n`);
       return;
     }
     if (textLine === null) return;

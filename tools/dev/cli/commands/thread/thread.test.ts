@@ -74,6 +74,25 @@ describe("thread", () => {
     expect(result.stderr).toBe("");
   });
 
+  it("send --json --fields trims every stream line but keeps its type", async () => {
+    const result = await mf([
+      "thread",
+      "send",
+      THREAD_ID,
+      "trim me",
+      "--json",
+      "--fields",
+      "status,finalText",
+    ]);
+    expect(result.code).toBe(EXIT.ok);
+    const lines = result.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(lines.at(-1)).toEqual({ type: "result", status: "complete", finalText: "Hello there" });
+    expect(lines[0]).toEqual({ type: "turn.started" });
+  });
+
   it("send exits 1 on a failed run and 8 on a pending interrupt", async () => {
     const failed = await mf(["thread", "send", THREAD_ID, "please fail", "--json"]);
     expect(failed.code).toBe(EXIT.failed);

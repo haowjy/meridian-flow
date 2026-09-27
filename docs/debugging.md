@@ -63,7 +63,8 @@ Contract:
 - Compact text by default; `--json` prints exactly one object, or NDJSON for
   streams (`send`, `tail`, `events`, `log --follow`) whose last `send` line is
   the terminal `{type: "result" | "error", status, finalText, ...}` envelope.
-  `--fields a,b` trims JSON. Errors go to stderr (`{error, code, hint}` under
+  `--fields a,b` trims JSON (each stream line keeps `type` plus the requested
+  keys it has). Errors go to stderr (`{error, code, hint}` under
   `--json`).
 - `send` waits by default and its exit code is the outcome: 0 complete,
   1 failed, 5 cancelled, 8 waiting on an interrupt (answer with
@@ -88,6 +89,20 @@ script to that message, so concurrent threads cannot consume it, and removes
 it once the run settles; `./mf mock script|list|clear [--id]` manage the queue
 directly. Unscripted calls keep the mock's canned behavior. The gateway is the
 only retry layer: provider SDK clients run with `maxRetries: 0`.
+
+Capture a run for later inspection. `--json` output is never truncated (only
+text mode shortens tool payloads), so redirect it and query with `jq`:
+
+```bash
+./mf thread send <id> "…" --json > run.ndjson                     # every event, result last; exit code = outcome
+./mf thread tail <id> --json > live.ndjson &                       # record a run started in the browser
+./mf thread context <id> --all --view raw --json > context.json   # what the model received: system, tools, messages, params
+./mf thread view <id> --json > snapshot.json                      # persisted transcript
+jq -c 'select(.type | startswith("tool."))' run.ndjson             # tool calls with args and results
+```
+
+Replays joined mid-message (`events --since`, `tail --since`) mark that
+message `partial: true`, since its text is only the tail after the cursor.
 
 ## Debug Gate
 

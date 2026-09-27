@@ -68,6 +68,16 @@ describe("RunEventMapper", () => {
     ]);
   });
 
+  it("marks a message joined mid-stream as partial instead of passing a fragment off as whole", () => {
+    const events = mapAll([
+      { type: "TEXT_MESSAGE_CONTENT", messageId: "m1", delta: " there" } as AGUIEvent,
+      { type: "TEXT_MESSAGE_END", messageId: "m1" } as AGUIEvent,
+    ]);
+    const completed = events.at(-1);
+    expect(completed).toMatchObject({ type: "message.completed", text: " there", partial: true });
+    expect(completed && renderEventLine(completed, false)).toBe("assistant (partial): there");
+  });
+
   it("hides deltas and unknown custom events from text output", () => {
     expect(
       renderEventLine({ type: "message.delta", seq: "1", messageId: "m", text: "x" }, false),

@@ -8,7 +8,14 @@ import { oneLine, truncate } from "../../core/output";
 export type CliEvent =
   | { type: "turn.started"; seq: string; turnId: string }
   | { type: "message.delta"; seq: string; messageId: string; text: string }
-  | { type: "message.completed"; seq: string; messageId: string; text: string }
+  | {
+      type: "message.completed";
+      seq: string;
+      messageId: string;
+      text: string;
+      /** The stream was joined mid-message (e.g. `--since`), so `text` is only the tail. */
+      partial?: true;
+    }
   | { type: "reasoning.completed"; seq: string; messageId: string; text: string }
   | { type: "tool.started"; seq: string; toolCallId: string; name: string }
   | {
@@ -34,7 +41,10 @@ type ToolCallState = { name: string; args: string };
 
 /** Stateful mapper: one instance per followed stream. */
 export class RunEventMapper {
-  private readonly messages = new Map<string, { kind: "text" | "reasoning"; text: string }>();
+  private readonly messages = new Map<
+    string,
+    { kind: "text" | "reasoning"; text: string; partial?: true }
+  >();
   private readonly tools = new Map<string, ToolCallState>();
 
   map(sequenced: SequencedEvent): CliEvent[] {
@@ -68,6 +78,7 @@ export class RunEventMapper {
         const message = this.messages.get(messageId) ?? {
           kind: e.type === "TEXT_MESSAGE_CONTENT" ? "text" : "reasoning",
           text: "",
+          partial: true as const,
         };
         message.text += delta;
         this.messages.set(messageId, message);
@@ -87,6 +98,7 @@ export class RunEventMapper {
             seq,
             messageId,
             text: message.text,
+            ...(message.partial ? { partial: true as const } : {}),
           },
         ];
       }
@@ -163,7 +175,7 @@ export function renderEventLine(event: CliEvent, full: boolean): string | null {
     case "event":
       return null;
     case "message.completed":
-      return `assistant: ${truncate(event.text.trim(), full ? Number.POSITIVE_INFINITY : 2_000)}`;
+      return `assistant${event.partial ? " (partial)" : ""}: ${truncate(event.text.trim(), full ? Number.POSITIVE_INFINITY : 2_000)}`;
     case "tool.started":
       return `tool.started ${event.name} (${event.toolCallId})`;
     case "tool.completed":
