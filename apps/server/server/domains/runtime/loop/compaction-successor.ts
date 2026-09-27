@@ -25,6 +25,7 @@ export type PreparedCompaction =
       summaryBlock: ReturnType<typeof contentForBlockInput>;
       tokensAfter: number;
       model: string;
+      summarizer: SummaryOutcome["summarizer"];
       decision: Decision;
       assemble: (turns: Turn[], blocks: Block[]) => ReturnType<typeof prepareRequestContext>;
     };
@@ -135,6 +136,7 @@ export async function prepareCompactionSuccessor(args: {
       summaryBlock,
       tokensAfter,
       model: outcome.model,
+      summarizer: outcome.summarizer,
       decision,
       assemble,
     };
@@ -187,7 +189,10 @@ export async function completeCompactionCurrent(input: {
       completion: {
         blocks: [prepared.summaryBlock],
         compactionModel: prepared.model,
-        metadata: placeholder.metadata,
+        metadata: {
+          ...promptEpochMetadata(placeholder.metadata, "compaction"),
+          summarizer: prepared.summarizer,
+        },
         events: (bakeId) => [
           {
             type: "context.compacted",

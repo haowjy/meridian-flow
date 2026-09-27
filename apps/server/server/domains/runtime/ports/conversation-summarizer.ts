@@ -8,14 +8,13 @@ import type { ProjectedActiveHistory } from "../loop/compaction/index.js";
 export type SummaryResponse = ModelResponseReceivedRow & { providerData?: unknown };
 export type SummaryOutcome = {
   modelResponses: SummaryResponse[];
+  summarizer: { path: "warm" | "cold"; segments: number };
 } & (
   | { kind: "complete"; text: string; model: string }
   | { kind: "failed"; error: unknown }
   | { kind: "cancelled" }
 );
 export interface ConversationSummarizer {
-  /** Production remains disabled until a real summarizer is configured. */
-  readonly enabled: boolean;
   readonly maxOutputTokens: number;
   /** Never throws after a paid call: every attempted call returns its response row,
    * on success or failure. A throw is an adapter bug. cancelled is legal only
@@ -26,6 +25,7 @@ export interface ConversationSummarizer {
     turnId: TurnId;
     instruction: "compaction" | "handoff_brief";
     requestInHand: GenerateRequest | null;
+    forceCold?: boolean;
     projection: ProjectedActiveHistory;
     signal: AbortSignal;
   }): Promise<SummaryOutcome>;

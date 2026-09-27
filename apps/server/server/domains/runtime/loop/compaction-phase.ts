@@ -34,7 +34,7 @@ export async function executeCompaction({
   allBlocks: Block[];
   boundary: DeliveryBoundary;
   decision: Extract<CompactionDecision, { kind: "compact" }>;
-  recordResponses: (rows: SummaryResponse[]) => void;
+  recordResponses: (rows: SummaryResponse[], summarizer: SummaryOutcome["summarizer"]) => void;
   settleResponses: (rows: SummaryResponse[]) => Promise<void>;
 }) {
   const projection = projectActiveHistory(allTurns, allBlocks, thread.ref);
@@ -58,9 +58,14 @@ export async function executeCompaction({
         correlation: { threadId: input.threadId, turnId: currentTurn.id },
         payload: unknownToEventPayload(error),
       });
-    summary = { kind: input.signal?.aborted ? "cancelled" : "failed", error, modelResponses: [] };
+    summary = {
+      kind: input.signal?.aborted ? "cancelled" : "failed",
+      error,
+      modelResponses: [],
+      summarizer: { path: "cold", segments: 0 },
+    };
   }
-  recordResponses(summary.modelResponses);
+  recordResponses(summary.modelResponses, summary.summarizer);
   input.signal?.throwIfAborted();
   const outcome = summary;
   const complete = (prepared: PreparedCompaction | undefined, failure: unknown) =>

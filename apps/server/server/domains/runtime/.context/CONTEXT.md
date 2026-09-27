@@ -557,8 +557,18 @@ the Yjs gateway and flushing observability. Still-running lanes emit
 `loop/request-preparation.ts` measures the assembled request and plans against raw
 history. The token baseline comes from the cache service's reusable-prefix
 selection with TTL ignored; missing/zero usage estimates the whole request.
-The production summarizer advertises `enabled: false` until C4d, so even explicit
-retained Agent thresholds cannot reach the unavailable adapter.
+Without an explicit Agent limit, the trigger uses the model's input-pricing tier
+(if any), usable window and 400,000-token ceiling. Mars defines no off switch.
+`summary/conversation-summarizer.ts` implements the port in production. It queries
+prefix warmth after reservation; warm sends the request in hand with only an
+appended instruction. Tool use discards that response and runs cold once.
+Cold uses `COMPACTION_SUMMARIZER_MODEL` (default DeepSeek Flash), or the retained
+thread model when that provider is disabled, and rolls turn-bounded segments
+within its usable window while carrying prior context forward. Oversized turns,
+empty output and output-limit truncation fail without activating an epoch.
+Every attempted call returns its row, prediction and message count, even when a
+later segment fails or Stop aborts it. Settlement records path/segment metadata
+and charges those rows only in the transaction ending C.
 
 Compaction is two delivery transitions around an unlocked `ConversationSummarizer`
 call. The first reserves pending C instead of an assistant. `compaction-phase.ts`

@@ -1445,6 +1445,7 @@ async function executeLoop(
   let currentTurn: Turn = reservedTurn;
   let preparedContext: AssembledNextTurnContext | undefined = initialContext;
   let pendingSummaryResponses: import("../ports/conversation-summarizer.js").SummaryResponse[] = [];
+  let pendingSummary: Parameters<typeof settleSummaryResponses>[0]["summary"];
   let responseScope: ReturnType<typeof createResponseScope> | undefined;
   const allTurns: Turn[] = [...initialTurns, reservedTurn];
   const allBlocks: Block[] = [
@@ -1566,12 +1567,21 @@ async function executeLoop(
       boundary: boundaryInput(),
       decision,
       settleResponses: (rows) =>
-        settleSummaryResponses({ deps, thread, rows, accounting: turnAccounting, treeBudget }),
-      recordResponses: (rows) => {
+        settleSummaryResponses({
+          deps,
+          thread,
+          rows,
+          summary: pendingSummary,
+          accounting: turnAccounting,
+          treeBudget,
+        }),
+      recordResponses: (rows, summarizer) => {
         pendingSummaryResponses = rows;
+        pendingSummary = { turnId: currentTurn.id, summarizer };
       },
     });
     pendingSummaryResponses = [];
+    pendingSummary = undefined;
     preparedContext = result.preparedContext;
     if (result.summaryBlock) allBlocks.push(localBlockFromEvent(result.summaryBlock));
     return acceptBoundary(result.successor);
@@ -1593,6 +1603,7 @@ async function executeLoop(
           deps,
           thread,
           rows: pendingSummaryResponses,
+          summary: pendingSummary,
           accounting: turnAccounting,
           treeBudget,
         }),
@@ -2088,6 +2099,7 @@ async function executeLoop(
               deps,
               thread,
               rows: pendingSummaryResponses,
+              summary: pendingSummary,
               accounting: turnAccounting,
               treeBudget,
             }),
@@ -2102,6 +2114,7 @@ async function executeLoop(
         throw failure;
       }
       pendingSummaryResponses = [];
+      pendingSummary = undefined;
       await acceptBoundary(failed);
     } else if (
       err instanceof RequestPreparationError ||
