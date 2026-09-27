@@ -44,7 +44,9 @@ unified pipeline that strips presentation properties on the HAST tree (never
 by regex on serialized HTML, which corrupts code text). Stripping `className`
 leaves copied KaTeX unstyled by design. Report payloads stay in a fenced JSON
 block in both clipboard formats. The information popover summarizes
-`Turn.responses`: input/output tokens are summed, cache hit is summed
+the whole writer-facing reply: all assistant parts joined by
+`continuesResponse`, excluding any writer steer turns. Input/output tokens are
+summed across those parts, cache hit is summed
 `cacheReadTokens / inputTokens` (input includes cache tokens, so cache writes
 are misses), TTFT is the first call's first-token time, and output speed sums
 output tokens and `generationMs` across calls whose generation time the server
@@ -53,9 +55,10 @@ nulls `generationMs` when backpressure made the measurement unreliable.
 Speed and TTFT are omitted when they cannot be computed; cache hit is omitted
 for zero input. No row ever reads "Unavailable". No Info button is rendered
 until a turn has model responses.
-Debug is gated by the shared debug store. Opening from a turn always sets the
-LLM Calls scope; the pill always opens unscoped, and the viewer's Show all
-control clears an active scope. Settled actions use the shared enabled boolean,
+Debug is gated by the shared debug store. Opening from a settled reply's action
+row scopes LLM Calls to every assistant part in that reply; the pill always
+opens unscoped, and the viewer's Show all control clears an active scope.
+Settled actions use the shared enabled boolean,
 so they cannot remain visible after debug is disabled. The latest settled turn
 keeps its row visible; older rows reveal actions on hover/focus and touch keeps
 them visible. An open popover keeps its anchored row visible.

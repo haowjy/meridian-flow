@@ -4274,6 +4274,11 @@ msgstr "Turn information"
 msgid "Turn into"
 msgstr "Turn into"
 
+#. placeholder {0}: filter.turnIds.join(", ")
+#: src/features/debug/llm-calls/LlmCallsViewer.tsx
+msgid "Turns {0}"
+msgstr "Turns {0}"
+
 #: src/features/editor/surfaces/link/WikilinkMenu.tsx
 msgid "two documents share this name"
 msgstr "two documents share this name"

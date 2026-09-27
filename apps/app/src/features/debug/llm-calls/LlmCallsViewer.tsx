@@ -1,4 +1,7 @@
 /** Pop-out dashboard joining gateway lifecycle events with canonical model requests. */
+
+import { t } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react";
 import type { EventRecord } from "@meridian/contracts/observability";
 import type { ModelRequestDebugListResponse } from "@meridian/contracts/protocol";
 import type { ModelResponse } from "@meridian/contracts/threads";
@@ -12,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { DebugPopout, type DebugPopoutTarget, openDebugPopoutWindow } from "../DebugPopout";
 import { JsonTree } from "../JsonTree";
 import { ModelRequestInspector } from "../model-requests/ModelRequestInspector";
+import type { LlmCallsScope } from "../use-debug-enabled";
 import { deriveLlmCalls, type LlmCallOutcome, type LlmCallSummary } from "./derive-llm-calls";
 
 const EVENTS_PATH = "/api/debug/events?source=gateway&excludeName=stream.chunk&limit=500";
@@ -52,7 +56,7 @@ export function LlmCallsViewer({
 }: {
   target: LlmCallsViewerTarget | null;
   onClose: (target: LlmCallsViewerTarget) => void;
-  filter?: { threadId: string; turnId: string } | null;
+  filter?: LlmCallsScope;
   onShowAll?: () => void;
 }) {
   return (
@@ -66,9 +70,10 @@ function LlmCallsContent({
   filter,
   onShowAll,
 }: {
-  filter?: { threadId: string; turnId: string } | null;
+  filter?: LlmCallsScope;
   onShowAll?: () => void;
 }) {
+  const { i18n } = useLingui();
   const [state, setState] = useState<CallsState>({ status: "loading" });
   const [responsesByTurn, setResponsesByTurn] = useState<Record<string, ModelResponse[]>>({});
 
@@ -141,7 +146,11 @@ function LlmCallsContent({
     () =>
       filter
         ? allCalls.filter(
-            (call) => call.threadId === filter.threadId && call.turnId === filter.turnId,
+            (call) =>
+              call.threadId === filter.threadId &&
+              ("turnId" in filter
+                ? call.turnId === filter.turnId
+                : filter.turnIds.includes(call.turnId ?? "")),
           )
         : allCalls,
     [allCalls, filter],
@@ -184,7 +193,10 @@ function LlmCallsContent({
           {filter ? (
             <div className="mt-1 flex items-center gap-3">
               <p className="font-mono text-meta text-muted-foreground">
-                Thread {filter.threadId}, turn {filter.turnId}
+                Thread {filter.threadId},{" "}
+                {"turnId" in filter
+                  ? `turn ${filter.turnId}`
+                  : i18n._(t`Turns ${filter.turnIds.join(", ")}`)}
               </p>
               <button
                 type="button"

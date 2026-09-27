@@ -1,8 +1,8 @@
-/** Per-assistant-turn usage summary for the turn info popover. */
+/** Per-response usage summary for the final turn info popover. */
 import type { Turn } from "@meridian/contracts/protocol";
 
 export type TurnStats = {
-  model: string | null;
+  models: string[];
   callCount: number;
   outputTokens: number;
   inputTokens: number;
@@ -19,9 +19,11 @@ export function cacheHitPercent(read: number, input: number): number | null {
   return input > 0 ? (read / input) * 100 : null;
 }
 
-/** Summary of the model calls that produced one assistant turn. */
-export function turnStats(turn: Turn): TurnStats {
-  const responses = [...turn.responses].sort((a, b) => a.sequence - b.sequence);
+/** Summary of the model calls that produced one or more assistant turns. */
+export function turnStats(turns: readonly Turn[]): TurnStats {
+  const responses = turns.flatMap((turn) =>
+    [...turn.responses].sort((a, b) => a.sequence - b.sequence),
+  );
   const inputTokens = responses.reduce((sum, response) => sum + response.inputTokens, 0);
   const outputTokens = responses.reduce((sum, response) => sum + response.outputTokens, 0);
   const cacheReadTokens = responses.reduce(
@@ -44,8 +46,15 @@ export function turnStats(turn: Turn): TurnStats {
     generationOutputTokens += response.outputTokens;
   }
   const firstTtft = responses[0]?.timeToFirstTokenMs ?? null;
+  const models = [
+    ...new Set(responses.flatMap((response) => (response.model ? [response.model] : []))),
+  ];
+  if (models.length === 0) {
+    const fallbackModel = turns.at(-1)?.model;
+    if (fallbackModel) models.push(fallbackModel);
+  }
   return {
-    model: responses[0]?.model ?? turn.model ?? null,
+    models,
     callCount: responses.length,
     inputTokens,
     cacheReportedInputTokens,

@@ -3,7 +3,10 @@ import { useEffect, useSyncExternalStore } from "react";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 
 export { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
-export type LlmCallsScope = { threadId: string; turnId: string } | null;
+export type LlmCallsScope =
+  | { threadId: string; turnId: string }
+  | { threadId: string; turnIds: string[] }
+  | null;
 type DebugState = { enabled: boolean; viewerOpen: boolean; filter: LlmCallsScope };
 const STORAGE_KEY = "meridian:debug-overlay";
 const INITIAL_STATE: DebugState = { enabled: false, viewerOpen: false, filter: null };

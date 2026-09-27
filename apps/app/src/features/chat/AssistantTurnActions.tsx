@@ -3,7 +3,7 @@ import { useLingui } from "@lingui/react";
 import type { Turn } from "@meridian/contracts/protocol";
 import { Bug, Check, Copy, Info } from "lucide-react";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { CopyTextButton } from "@/components/app/CopyTextButton";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -93,11 +93,13 @@ function formatFixed(value: number, locale: string): string {
 export function AssistantTurnActions({
   threadId,
   turn,
+  responseParts,
   threadUsage,
   markdown,
 }: {
   threadId: string;
   turn: Turn;
+  responseParts: readonly Turn[];
   threadUsage: {
     inputTokens: number;
     cacheReadTokens: number;
@@ -112,7 +114,7 @@ export function AssistantTurnActions({
   const { i18n } = useLingui();
   const { enabled } = useDebugEnabled();
   const [copied, setCopied] = useState(false);
-  const stats = turnStats(turn);
+  const stats = useMemo(() => turnStats(responseParts), [responseParts]);
   const threadHitPercent = threadUsage
     ? cacheHitPercent(threadUsage.cacheReadTokens, threadUsage.cacheReportedInputTokens)
     : null;
@@ -146,9 +148,9 @@ export function AssistantTurnActions({
         <>
           <StatRow
             label={i18n._(t`Model`)}
-            value={stats.model ?? i18n._(t`Unknown`)}
+            value={stats.models.length ? stats.models.join(", ") : i18n._(t`Unknown`)}
             valueClassName="max-w-36 truncate font-medium"
-            title={stats.model ?? undefined}
+            title={stats.models.join(", ") || undefined}
           />
           <StatRow
             label={i18n._(t`Calls`)}
@@ -258,7 +260,13 @@ export function AssistantTurnActions({
               size="icon-xs"
               className={actionClass}
               aria-label="Inspect model calls"
-              onClick={() => openLlmCalls({ threadId, turnId: turn.id })}
+              onClick={() =>
+                openLlmCalls(
+                  responseParts.length > 1
+                    ? { threadId, turnIds: responseParts.map((part) => part.id) }
+                    : { threadId, turnId: turn.id },
+                )
+              }
             >
               <Bug aria-hidden />
             </Button>

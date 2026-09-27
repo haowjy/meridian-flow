@@ -10,6 +10,10 @@ import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { readSubagentUpdateMetadata } from "./subagent-update";
+import { responsePartsByFinalTurnId } from "./turn-response-groups";
+
+export { continuesResponse } from "./turn-response-groups";
+
 import { UserTurn, type UserTurnRecovery } from "./UserTurn";
 import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
@@ -69,8 +73,8 @@ export function TurnList({
   const bottomInset = useChatSurfaceBottomInset();
   const visibleTurns = useMemo(() => filterVisibleTurns(turns), [turns]);
   const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
-  const continuing = useMemo(
-    () => visibleTurns.map((_, index) => continuesResponse(visibleTurns, index, awaitingSubagents)),
+  const { continuing, partsByFinalTurnId } = useMemo(
+    () => responsePartsByFinalTurnId(visibleTurns, awaitingSubagents),
     [visibleTurns, awaitingSubagents],
   );
   const byTurnId = useMemo(() => {
@@ -151,6 +155,7 @@ export function TurnList({
         <AssistantTurn
           threadId={threadId}
           turn={turn}
+          responseParts={partsByFinalTurnId.get(turn.id)}
           threadUsage={threadUsage}
           deliveryEvents={deliveryEventsAfter(turn, turns)}
           isLatestAssistant={idx === lastAssistantIdx}
@@ -173,6 +178,7 @@ export function TurnList({
       threadId,
       turns,
       continuing,
+      partsByFinalTurnId,
     ],
   );
 
@@ -288,30 +294,6 @@ export function resolveSubagentRevealTurnId(
       return turn.id;
   }
   return originTurnId;
-}
-
-/**
- * Whether the reply keeps going past this assistant turn, so it is not a
- * finished turn and gets no settled action row. Only a turn the model ended
- * with nothing to pick it back up is finished. The next visible turn decides:
- * another assistant turn means a subagent notification woke the model; a
- * writer message sent before this turn completed is a mid-run steer. The
- * latest turn also continues while background subagents are still running.
- */
-export function continuesResponse(
-  turns: readonly Turn[],
-  index: number,
-  awaitingSubagents: boolean,
-): boolean {
-  const turn = turns[index];
-  if (turn?.role !== "assistant" || turn.status !== "complete") return false;
-  const next = turns[index + 1];
-  if (!next) return awaitingSubagents;
-  if (next.role === "assistant") return true;
-  return (
-    next.role === "user" &&
-    (!turn.completedAt || Date.parse(next.createdAt) < Date.parse(turn.completedAt))
-  );
 }
 
 function isHiddenContextTurn(turn: Turn): boolean {

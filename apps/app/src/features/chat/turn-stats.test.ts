@@ -13,10 +13,12 @@ function turn(responses: Array<Record<string, unknown>>): Turn {
   return { model: "fallback", responses } as unknown as Turn;
 }
 
+const parts = (responses: Array<Record<string, unknown>>): Turn[] => [turn(responses)];
+
 describe("turnStats", () => {
   it("sums calls and computes cache hit from inclusive input", () => {
     const stats = turnStats(
-      turn([
+      parts([
         {
           sequence: 1,
           model: "m1",
@@ -42,7 +44,7 @@ describe("turnStats", () => {
       ]),
     );
     expect(stats).toMatchObject({
-      model: "m1",
+      models: ["m1", "m2"],
       callCount: 2,
       inputTokens: 400,
       outputTokens: 60,
@@ -57,7 +59,7 @@ describe("turnStats", () => {
 
   it("omits speed and TTFT without measured generation and cache rate for zero input", () => {
     const stats = turnStats(
-      turn([{ sequence: 1, model: "m", inputTokens: 0, outputTokens: 12, latencyMs: 1_000 }]),
+      parts([{ sequence: 1, model: "m", inputTokens: 0, outputTokens: 12, latencyMs: 1_000 }]),
     );
     expect(stats).toMatchObject({
       cacheHitPercent: null,
@@ -68,7 +70,7 @@ describe("turnStats", () => {
 
   it("excludes calls whose providers omit cache counters from cache-rate input", () => {
     const stats = turnStats(
-      turn([
+      parts([
         { sequence: 1, inputTokens: 100, outputTokens: 1, cacheReadTokens: 50 },
         { sequence: 2, inputTokens: 900, outputTokens: 1, cacheReadTokens: null },
       ]),
@@ -80,7 +82,7 @@ describe("turnStats", () => {
 
   it("excludes calls without timing from both sides of the speed calculation", () => {
     const stats = turnStats(
-      turn([
+      parts([
         {
           sequence: 1,
           model: "m",
@@ -94,5 +96,49 @@ describe("turnStats", () => {
       ]),
     );
     expect(stats.outputTokensPerSecond).toBe(40);
+  });
+
+  it("aggregates response parts in order and deduplicates models", () => {
+    const first = turn([
+      {
+        sequence: 2,
+        model: "model-b",
+        inputTokens: 100,
+        outputTokens: 20,
+        cacheReadTokens: 25,
+        timeToFirstTokenMs: 200,
+        generationMs: 500,
+      },
+      {
+        sequence: 1,
+        model: "model-a",
+        inputTokens: 100,
+        outputTokens: 10,
+        cacheReadTokens: 50,
+        timeToFirstTokenMs: 100,
+        generationMs: 500,
+      },
+    ]);
+    const second = turn([
+      {
+        sequence: 1,
+        model: "model-b",
+        inputTokens: 200,
+        outputTokens: 30,
+        cacheReadTokens: 100,
+        timeToFirstTokenMs: 900,
+        generationMs: 1_000,
+      },
+    ]);
+    const stats = turnStats([first, second]);
+    expect(stats).toMatchObject({
+      models: ["model-a", "model-b"],
+      callCount: 3,
+      inputTokens: 400,
+      outputTokens: 60,
+      cacheHitPercent: 43.75,
+      ttftMs: 100,
+    });
+    expect(stats.outputTokensPerSecond).toBe(60_000 / 2_000);
   });
 });

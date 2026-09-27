@@ -47,6 +47,8 @@ import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 export type AssistantTurnProps = {
   threadId?: string;
   turn: Turn;
+  /** Assistant turns in the same writer-facing reply, supplied on its final part. */
+  responseParts?: readonly Turn[];
   threadUsage?: {
     inputTokens: number;
     cacheReadTokens: number;
@@ -78,6 +80,7 @@ export type AssistantTurnProps = {
 function AssistantTurnComponent({
   threadId,
   turn,
+  responseParts,
   threadUsage,
   deliveryEvents = [],
   isLatestAssistant = false,
@@ -187,6 +190,7 @@ function AssistantTurnComponent({
         <AssistantTurnActions
           threadId={resolvedThreadId}
           turn={turn}
+          responseParts={responseParts ?? [turn]}
           markdown={copyMarkdown}
           threadUsage={threadUsage ?? null}
         />
