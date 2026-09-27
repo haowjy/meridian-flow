@@ -3722,7 +3722,7 @@ msgstr ""
 #~ msgid "Subagents"
 #~ msgstr ""
 
-#. placeholder {0}: nodes.length
+#. placeholder {0}: directNodes.length
 #: src/features/chat/SubagentHeader.tsx
 msgid "Subagents, {0}"
 msgstr "子代理，{0}"

@@ -3726,7 +3726,7 @@ msgstr "Subagent chat path"
 #~ msgid "Subagents"
 #~ msgstr "Subagents"
 
-#. placeholder {0}: nodes.length
+#. placeholder {0}: directNodes.length
 #: src/features/chat/SubagentHeader.tsx
 msgid "Subagents, {0}"
 msgstr "Subagents, {0}"
