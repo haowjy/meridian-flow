@@ -68,6 +68,8 @@
 /* Every virtual row owns a gap; user rows receive the larger user-to-reply spacing. */
 [data-chat-turn-row] { padding-bottom: var(--chat-space-exchange); }
 [data-chat-turn-row][data-chat-turn-role="user"] { padding-bottom: var(--chat-space-turn); }
+/* A response woken by a subagent notification continues without a turn break. */
+[data-chat-turn-row][data-chat-turn-continues] { padding-bottom: var(--chat-space-block); }
 
 :root[data-text-size="sm"] {
   /* Small anchors near the old chat body (14.5px): 0.875rem ≈ 14px at browser default. */

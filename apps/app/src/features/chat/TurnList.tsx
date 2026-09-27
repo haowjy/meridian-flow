@@ -147,6 +147,7 @@ export function TurnList({
           threadUsage={threadUsage}
           deliveryEvents={deliveryEventsAfter(turn, turns)}
           isLatestAssistant={idx === lastAssistantIdx}
+          continuesResponse={visibleTurns[idx + 1]?.role === "assistant"}
           onRetry={turn.id === failedSendRetry?.turnId ? failedSendRetry.retry : undefined}
           onRespondToInterrupt={onRespondToInterrupt}
           changeTrail={byTurnId.get(turn.id)}
@@ -164,6 +165,7 @@ export function TurnList({
       queuedWriterTurnIds,
       threadId,
       turns,
+      visibleTurns,
     ],
   );
 
@@ -202,6 +204,12 @@ export function TurnList({
                   data-index={virtualItem.index}
                   data-chat-turn-row="settled"
                   data-chat-turn-role={turn.role}
+                  data-chat-turn-continues={
+                    turn.role === "assistant" &&
+                    visibleTurns[virtualItem.index + 1]?.role === "assistant"
+                      ? ""
+                      : undefined
+                  }
                   ref={virtualizer.measureElement}
                   className="absolute inset-x-0 top-0"
                   style={{ transform: `translateY(${virtualItem.start}px)` }}

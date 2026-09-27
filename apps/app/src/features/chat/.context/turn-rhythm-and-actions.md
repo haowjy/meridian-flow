@@ -19,7 +19,10 @@ their component-size geometry. The writer bubble pads 16px by 12px.
 
 Every boundary has exactly one spacing owner. In particular, `TurnList`'s
 measured `<li>` owns space between turns using padding inside the row: 12px
-after a writer turn and 6px after the assistant's reserved action row. The
+after a writer turn and 6px after the assistant's reserved action row. An
+assistant turn whose next visible turn is also an assistant turn (a subagent
+notification woke the model, with no writer message between) is one continuing
+response: it renders no action row and its row pads only the 8px block gap. The
 hidden action row still reserves its compact height to prevent hover layout
 shift. Do not add vertical margins to `UserTurn` or the `AssistantTurn` root;
 keeping the turn gap inside the measured row keeps TanStack Virtual's geometry

@@ -63,6 +63,12 @@ export type AssistantTurnProps = {
     subagentUpdate: SubagentUpdateMetadata | null;
   }>;
   isLatestAssistant?: boolean;
+  /**
+   * The next visible turn continues this response (a subagent notification
+   * woke the model, with no writer message between), so this part has no
+   * settled action row of its own.
+   */
+  continuesResponse?: boolean;
   onRetry?: () => void;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   changeTrail?: ChangeTrailShell;
@@ -75,6 +81,7 @@ function AssistantTurnComponent({
   threadUsage,
   deliveryEvents = [],
   isLatestAssistant = false,
+  continuesResponse = false,
   onRetry,
   onRespondToInterrupt,
   changeTrail,
@@ -176,7 +183,7 @@ function AssistantTurnComponent({
           />
         ) : null}
       </div>
-      {isSettled ? (
+      {isSettled && !continuesResponse ? (
         <AssistantTurnActions
           threadId={resolvedThreadId}
           turn={turn}
