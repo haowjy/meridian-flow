@@ -1083,6 +1083,7 @@ async function buildGenerateRequest(input: {
       input.deps.repos.threads,
     ),
     workContext: input.deps.workContext,
+    eventSink: input.deps.eventSink,
   });
 
   return {

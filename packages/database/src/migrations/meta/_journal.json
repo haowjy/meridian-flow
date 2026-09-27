@@ -64,6 +64,13 @@
       "when": 1790453017315,
       "tag": "0008_model_response_cache_reset",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790486750643,
+      "tag": "0009_repair_saved_subagent_contracts",
+      "breakpoints": true
     }
   ]
 }

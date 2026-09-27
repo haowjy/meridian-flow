@@ -1,6 +1,7 @@
 /** One indexed interpretation of visibility, response boundaries, delivery rows, and reveal targets. */
 import { parseInvocationCard } from "@meridian/contracts/components";
 import type { Turn } from "@meridian/contracts/protocol";
+import { reportPersistedContractFailure } from "./persisted-contract-debug";
 import { readSubagentUpdateMetadata } from "./subagent/update";
 
 export type TurnClass = "bubble" | "delivery" | "context" | "plumbing";
@@ -35,20 +36,48 @@ export function buildTranscriptModel(turns: Turn[], awaitingSubagents: boolean) 
   const visibleTurns = turns.filter((turn) => classifyTurn(turn) === "bubble");
   const nextByPrev = new Map<string, Turn>();
   for (const turn of turns) if (turn.prevTurnId) nextByPrev.set(turn.prevTurnId, turn);
+  const subagentUpdateByTurnId = new Map<string, ReturnType<typeof readSubagentUpdateMetadata>>();
   const invocationByExecution = new Map<
     string,
     { threadId?: string; agentName: string; title?: string }
   >();
-  for (const turn of turns)
+  for (const turn of turns) {
+    const metadata =
+      turn.metadata && typeof turn.metadata === "object" && !Array.isArray(turn.metadata)
+        ? (turn.metadata as Record<string, unknown>)
+        : null;
+    if (metadata?.kind === "subagent_update") {
+      const update = readSubagentUpdateMetadata(metadata);
+      subagentUpdateByTurnId.set(turn.id, update);
+      if (!update) {
+        reportPersistedContractFailure({
+          contract: "subagent_update",
+          turnId: turn.id,
+        });
+      }
+    }
     for (const block of turn.blocks ?? []) {
+      const content =
+        block.content && typeof block.content === "object" && !Array.isArray(block.content)
+          ? (block.content as Record<string, unknown>)
+          : null;
+      if (content?.kind !== "helper-result") continue;
       const card = parseInvocationCard(block.content);
-      if (card?.execution)
+      if (!card) {
+        reportPersistedContractFailure({
+          contract: "invocation_card",
+          turnId: turn.id,
+          blockId: block.id,
+        });
+      } else if (card.execution) {
         invocationByExecution.set(card.execution, {
           ...(card.childThreadId ? { threadId: card.childThreadId } : {}),
           agentName: card.agentName,
           ...(card.title ? { title: card.title } : {}),
         });
+      }
     }
+  }
 
   const deliveryEventsByAssistantTurnId = new Map<string, DeliveryEvent[]>();
   const latestRevealTurnByChildThreadId = new Map<string, string>();
@@ -63,7 +92,7 @@ export function buildTranscriptModel(turns: Turn[], awaitingSubagents: boolean) 
       seen.add(next.id);
       const kind = classifyTurn(next);
       if (kind === "delivery" && next.role === "system") {
-        const update = readSubagentUpdateMetadata(next.metadata);
+        const update = subagentUpdateByTurnId.get(next.id) ?? null;
         const invocation = update?.execution
           ? invocationByExecution.get(update.execution)
           : undefined;

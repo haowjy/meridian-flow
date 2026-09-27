@@ -2,8 +2,10 @@
 
 import { type ComponentBlockContent, parseInvocationCard } from "@meridian/contracts/components";
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
+import { parseSubagentUpdateMetadata } from "@meridian/contracts/spawn";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
 import { formatWorkSwitchedNotice, type Notice } from "../../notices/index.js";
+import { type EventSink, emitEvent } from "../../observability/index.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
 import { assembleComposedSystemPrompt, isThreadPromptFrozen } from "./composed-system-prompt.js";
@@ -31,12 +33,15 @@ export interface BuildContextInput {
   workContext?: string;
   /** Subagent closing instruction; pre-freeze only, owns the prompt's last layer. */
   subagentGuidance?: string | null;
+  /** Dev observability for invalid persisted chat contracts. */
+  eventSink?: EventSink;
 }
 
 export function buildContext(input: BuildContextInput): {
   messages: Message[];
   tools?: Tool[];
 } {
+  reportPersistedContractFailures(input);
   const messages: Message[] = [];
   const sourceTurnStatusByMessage = new Map<Message, Turn["status"]>();
 
@@ -140,6 +145,51 @@ export function buildContext(input: BuildContextInput): {
     ),
     tools: input.tools?.length ? input.tools : undefined,
   };
+}
+
+function reportPersistedContractFailures(input: BuildContextInput): void {
+  if (!input.eventSink) return;
+  const threadId = input.thread.id as string;
+  for (const turn of input.turns) {
+    const metadata = turn.metadata;
+    if (
+      metadata &&
+      typeof metadata === "object" &&
+      !Array.isArray(metadata) &&
+      metadata.kind === "subagent_update" &&
+      !parseSubagentUpdateMetadata(metadata)
+    ) {
+      emitEvent(input.eventSink, {
+        level: "warn",
+        source: "runtime.context_builder",
+        name: "chat.persisted_contract.invalid",
+        correlation: { threadId, turnId: turn.id as string },
+        sensitivity: "safe",
+        payload: { field: "subagent_update" },
+      });
+    }
+  }
+  for (const block of input.blocks) {
+    if (block.pruned || block.blockType !== "custom") continue;
+    const content = block.content;
+    if (
+      !content ||
+      typeof content !== "object" ||
+      Array.isArray(content) ||
+      content.kind !== "helper-result" ||
+      parseInvocationCard(content)
+    ) {
+      continue;
+    }
+    emitEvent(input.eventSink, {
+      level: "warn",
+      source: "runtime.context_builder",
+      name: "chat.persisted_contract.invalid",
+      correlation: { threadId, turnId: block.turnId as string },
+      sensitivity: "safe",
+      payload: { field: "invocation_card" },
+    });
+  }
 }
 
 /** Inbox turns retain durable graph identity but travel to the model as one delivery. */

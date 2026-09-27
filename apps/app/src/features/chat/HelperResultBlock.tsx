@@ -2,11 +2,15 @@
 
 import { parseInvocationCard } from "@meridian/contracts/components";
 import type { ComponentBlockProps } from "./component-registry";
+import { reportPersistedContractFailure } from "./persisted-contract-debug";
 import { SpawnReportCard } from "./SpawnReportCard";
 import { useSubagentRun } from "./subagent/ActivityContext";
 
 export function HelperResultBlock({ content, invocationResult, threadId }: ComponentBlockProps) {
   const props = parseInvocationCard(content);
+  if (!props) {
+    reportPersistedContractFailure({ contract: "invocation_card", threadId });
+  }
   const run = useSubagentRun({ threadId: props?.childThreadId ?? "" });
   if (!props) return null;
   const liveTool = run?.liveTool ?? null;

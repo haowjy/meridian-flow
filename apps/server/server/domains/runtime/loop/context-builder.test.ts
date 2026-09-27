@@ -8,6 +8,7 @@ import {
 } from "@meridian/contracts/components";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { createInMemoryEventSink } from "../../observability/index.js";
 import { invocationCardProps, unadmittedInvocationFailureProps } from "../spawn/spawn-output.js";
 import { buildContext } from "./context-builder.js";
 
@@ -181,6 +182,30 @@ describe("buildContext system-turn history projection", () => {
 
     expect(messages.some((message) => message.role === "assistant")).toBe(false);
     expect(systemMessageTexts(messages)).toEqual(["system prompt"]);
+  });
+
+  it("reports invalid persisted invocation and notification contracts", () => {
+    const sink = createInMemoryEventSink();
+    const invalidNotification = {
+      ...turn("system", "notice-1"),
+      metadata: { kind: "subagent_update", handle: "p1", outcome: "succeeded", execution: null },
+    } as Turn;
+    const invalidCard = customBlock({ kind: "helper-result", props: { status: "completed" } });
+
+    buildContext({
+      thread: thread(),
+      turns: [invalidNotification],
+      blocks: [invalidCard],
+      eventSink: sink,
+    });
+
+    expect(sink.events.map((event) => event.payload.field).sort()).toEqual([
+      "invocation_card",
+      "subagent_update",
+    ]);
+    expect(sink.events.every((event) => event.name === "chat.persisted_contract.invalid")).toBe(
+      true,
+    );
   });
 
   it("keeps adopted inbox parts after a tool result in one user message without changing the prompt", () => {
