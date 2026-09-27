@@ -4,19 +4,24 @@ import { Plural, Trans } from "@lingui/react/macro";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { Work } from "@meridian/contracts/works";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
   ArchiveRestore,
   ChevronLeft,
   FileText,
   Folder,
-  NotebookPen,
+  Pencil,
   Search,
+  Trash2,
   Upload,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CatalogContextView } from "@/client/query/context-catalog-projection";
+import { deleteContextEntry } from "@/client/api/projects-api";
+import { uploadIntakePort } from "@/client/api/upload-intake-api";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
+import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { useWorkMutations } from "@/client/query/useWorks";
@@ -38,6 +43,8 @@ import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { ChatIndexList, type ChatIndexRowProps } from "../chat-index/ChatIndexList";
 import { ChatIndexLoading } from "../chat-index/ChatIndexLoading";
 import { useChatRowCommands } from "../chat-list/useChatRowCommands";
+import { useRenameEntryForm } from "../context/use-rename-entry-form";
+import { useDockViewStore, useOpenFileInDock } from "../dock/dock-view-store";
 import { usePostApplyDraftGroupProjections } from "../draft-apply-recovery/DraftApplyRecoveryProvider";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { useProjectLeaveGuard } from "../routing/ProjectNavigationContext";
@@ -355,44 +362,302 @@ function FilesView({
   commands: ProjectRouteCommands;
   search: string;
 }) {
+  const scratch = useContextCatalogView(projectId, "scratch", { workId: work.id });
+  const uploads = useContextCatalogView(projectId, "uploads", { workId: work.id });
+  const create = useCreateContextEntry(projectId);
+  const queryClient = useQueryClient();
+  const openFile = useOpenFileInDock(work.id);
+  const openDockFile = useDockViewStore((state) => state.workFile);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
+  const [rename, setRename] = useState<{ path: string; name: string } | null>(null);
+  const [uploading, setUploading] = useState<
+    { name: string; state: "uploading" | "failed"; error?: string }[]
+  >([]);
+  const picker = useRef<HTMLInputElement>(null);
+  const workId = parseRequestId(work.id);
+  const matches = (name: string) =>
+    !search.trim() || name.toLowerCase().includes(search.trim().toLowerCase());
+  const submitFiles = async (files: FileList | File[]) => {
+    const candidates = Array.from(files);
+    for (const file of candidates) {
+      const intakeId = crypto.randomUUID();
+      setUploading((items) => [...items, { name: file.name, state: "uploading" }]);
+      try {
+        await uploadIntakePort.intake({
+          file,
+          intakeId,
+          scope: { kind: "work", projectId, workId: work.id },
+        });
+        setUploading((items) => items.filter((item) => item.name !== file.name));
+        void queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.contextCatalogView(projectId, "uploads", work.id),
+        });
+      } catch (cause) {
+        setUploading((items) =>
+          items.map((item) =>
+            item.name === file.name
+              ? {
+                  ...item,
+                  state: "failed",
+                  error: cause instanceof Error ? cause.message : String(cause),
+                }
+              : item,
+          ),
+        );
+      }
+    }
+  };
+  const createScratch = async () => {
+    const name = `Scratch note ${new Date().toLocaleDateString().replaceAll("/", "-")}.md`;
+    try {
+      await create.mutateAsync({
+        scheme: "scratch",
+        type: "file",
+        path: name,
+        content: "",
+        workId: work.id,
+      });
+      setRename({ path: name, name });
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.contextCatalogView(projectId, "scratch", work.id),
+      });
+    } catch {
+      /* the catalog query exposes the failed create on refresh */
+    }
+  };
+  const scratchFiles =
+    scratch.catalog
+      ?.files()
+      .filter(
+        (file) =>
+          matches(file.name) &&
+          (file.parentId === scratch.catalog?.root.entryId ||
+            [...expandedFolders].some((path) => file.path.startsWith(`${path}/`))),
+      ) ?? [];
+  const scratchFolders =
+    scratch.catalog
+      ?.children(scratch.catalog.root.entryId)
+      .filter((node) => node.kind === "dir" && matches(node.name)) ?? [];
+  const uploadFiles = uploads.catalog?.files().filter((file) => matches(file.name)) ?? [];
   return (
-    <>
-      <Drafts projectId={projectId} work={work} commands={commands} />
-      <div className="grid min-w-0 gap-5 pt-5 @2xl/project-screen:grid-cols-2">
-        <TreeSummary
-          projectId={projectId}
-          work={work}
-          scheme="scratch"
-          icon={NotebookPen}
-          search={search}
+    <div className="min-w-0 space-y-5 pt-1">
+      <Drafts projectId={projectId} work={work} commands={commands} search={search} />
+      <ResourceSection title={t`Scratch`}>
+        {scratch.isError ? (
+          <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />
+        ) : !scratch.catalog ? (
+          <Loading />
+        ) : scratchFiles.length || scratchFolders.length ? (
+          <ul className="min-w-0">
+            {scratchFolders.map((folder) => (
+              <li key={folder.entryId}>
+                <button
+                  type="button"
+                  className="focus-ring flex h-7 w-full items-center gap-2 rounded-sm px-1 text-left text-sm hover:bg-muted/50"
+                  aria-expanded={expandedFolders.has(folder.path)}
+                  onClick={() =>
+                    setExpandedFolders((current) => {
+                      const next = new Set(current);
+                      if (next.has(folder.path)) next.delete(folder.path);
+                      else next.add(folder.path);
+                      return next;
+                    })
+                  }
+                >
+                  <Folder className="size-3.5 text-muted-foreground" aria-hidden />
+                  <span className="truncate">{folder.name}</span>
+                </button>
+              </li>
+            ))}
+            {scratchFiles.map((file) => (
+              <li key={file.entryId}>
+                {rename?.path === file.path || rename?.name === file.name ? (
+                  <InlineRename
+                    projectId={projectId}
+                    workId={work.id}
+                    scheme="scratch"
+                    file={file}
+                    siblingNames={scratchFiles.map((item) => item.name)}
+                    onDone={() => setRename(null)}
+                  />
+                ) : (
+                  <div className="group flex h-7 min-w-0 items-center gap-1 rounded-sm hover:bg-muted/50">
+                    <button
+                      type="button"
+                      className="focus-ring flex h-7 min-w-0 flex-1 items-center gap-2 rounded-sm px-1 text-left text-sm"
+                      onClick={() =>
+                        workId &&
+                        void commands.openWorkContext(
+                          { kind: "work-context", workId, scheme: "scratch", path: file.path },
+                          { replace: false },
+                        )
+                      }
+                    >
+                      <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                      <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {file.filetype}
+                      </span>
+                    </button>
+                    <OverflowMenu
+                      label={t`File actions`}
+                      triggerClassName="size-6 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                    >
+                      <DropdownMenuItem
+                        onSelect={() => setRename({ path: file.path, name: file.name })}
+                      >
+                        <Pencil className="size-4" />
+                        <Trans>Rename</Trans>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={() =>
+                          void removeCatalogFile(projectId, work.id, "scratch", file, queryClient)
+                        }
+                      >
+                        <Trash2 className="size-4" />
+                        <Trans>Delete</Trans>
+                      </DropdownMenuItem>
+                    </OverflowMenu>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <Empty>
+            <Trans>No scratch notes yet</Trans>
+          </Empty>
+        )}
+        <button
+          type="button"
+          className="text-button min-h-7 text-sm"
+          disabled={create.isPending}
+          onClick={() => void createScratch()}
+        >
+          <Trans>New scratch note</Trans>
+        </button>
+      </ResourceSection>
+      <ResourceSection title={t`Uploads`}>
+        {uploads.isError ? (
+          <InlineErrorRow message={t`Uploads couldn’t load`} onRetry={uploads.refetch} />
+        ) : !uploads.catalog ? (
+          <Loading />
+        ) : uploadFiles.length ? (
+          <ul className="min-w-0">
+            {uploadFiles.map((file) => (
+              <li key={file.entryId}>
+                <div className="group flex h-7 min-w-0 items-center gap-1 rounded-sm hover:bg-muted/50">
+                  <button
+                    type="button"
+                    className={`focus-ring flex h-7 min-w-0 flex-1 items-center gap-2 rounded-sm px-1 text-left text-sm ${openDockFile?.workId === work.id && openDockFile.tab.path === file.path ? "bg-muted" : ""}`}
+                    onClick={() => {
+                      if (file.kind === "file" && !file.editable)
+                        openFile({
+                          kind: "viewer",
+                          documentId: file.documentId,
+                          scheme: "uploads",
+                          path: file.path,
+                          name: file.name,
+                          workId: work.id,
+                          editable: false,
+                          fileType: file.fileType,
+                          mimeType: file.mimeType,
+                        });
+                    }}
+                  >
+                    <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                    <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {file.kind === "file" && !file.editable
+                        ? file.fileType
+                        : file.kind === "file"
+                          ? file.filetype
+                          : ""}
+                    </span>
+                  </button>
+                  <OverflowMenu
+                    label={t`File actions`}
+                    triggerClassName="size-6 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                  >
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onSelect={() =>
+                        void removeCatalogFile(projectId, work.id, "uploads", file, queryClient)
+                      }
+                    >
+                      <Trash2 className="size-4" />
+                      <Trans>Delete</Trans>
+                    </DropdownMenuItem>
+                  </OverflowMenu>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <Empty>
+            <Trans>No uploads yet</Trans>
+          </Empty>
+        )}
+        <input
+          ref={picker}
+          type="file"
+          multiple
+          className="sr-only"
+          onChange={(event) => {
+            if (event.target.files) void submitFiles(event.target.files);
+            event.target.value = "";
+          }}
         />
-        <TreeSummary
-          projectId={projectId}
-          work={work}
-          scheme="uploads"
-          icon={Upload}
-          search={search}
-        />
-      </div>
-    </>
+        <button
+          type="button"
+          className="flex min-h-8 w-full items-center gap-2 rounded-md border border-dashed px-2 text-left text-xs text-muted-foreground hover:border-border hover:text-foreground"
+          onClick={() => picker.current?.click()}
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault();
+            void submitFiles(event.dataTransfer.files);
+          }}
+        >
+          <Upload className="size-3.5" aria-hidden />
+          <Trans>Drop files here or choose from your device</Trans>
+        </button>
+        {uploading.map((item, index) => (
+          <p
+            key={`${item.name}-${index}`}
+            className={`text-xs ${item.state === "failed" ? "text-destructive" : "text-muted-foreground"}`}
+          >
+            {item.state === "uploading"
+              ? t`Uploading ${item.name}…`
+              : t`${item.name}: ${item.error ?? "Upload failed"}`}
+          </p>
+        ))}
+      </ResourceSection>
+    </div>
   );
 }
 function Drafts({
   projectId,
   work,
   commands,
+  search,
 }: {
   projectId: string;
   work: Work;
   commands: ProjectRouteCommands;
+  search: string;
 }) {
   const query = useWorkDrafts(projectId, work.id);
   const groups = activeWorkDraftGroups(
     usePostApplyDraftGroupProjections(query.groups, projectId, work.id).commandEligibleGroups,
   );
   const workId = parseRequestId(work.id);
+  const visibleGroups = groups.filter((group) =>
+    matchesFileSearch(group.documentName || group.contextPath || "", search),
+  );
+  if (query.groups !== null && visibleGroups.length === 0) return null;
   return (
-    <ResourceSection title={t`Pending drafts`}>
+    <ResourceSection title={t`Drafts to review`}>
       {query.status === "loading" ? (
         <Loading />
       ) : query.status === "error" ? (
@@ -401,13 +666,13 @@ function Drafts({
           onRetry={query.refetch}
           actionLabel={t`Retry Pending drafts`}
         />
-      ) : groups.length ? (
+      ) : visibleGroups.length ? (
         <ul className="min-w-0 divide-y divide-border-subtle rounded-lg border">
-          {groups.map((group) => (
+          {visibleGroups.map((group) => (
             <li key={group.documentId}>
               <button
                 type="button"
-                className="focus-ring flex min-h-11 min-w-0 w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm"
+                className="focus-ring flex h-7 min-w-0 w-full items-center justify-between gap-3 rounded-sm px-1 text-left text-sm hover:bg-muted/50"
                 disabled={!group.contextPath || !workId}
                 onClick={() => {
                   if (group.contextPath && workId)
@@ -436,71 +701,81 @@ function Drafts({
             </li>
           ))}
         </ul>
-      ) : (
-        <Empty>
-          <Trans>No pending drafts.</Trans>
-        </Empty>
-      )}
+      ) : null}
     </ResourceSection>
   );
 }
-function TreeSummary({
+function matchesFileSearch(name: string, search: string) {
+  return !search.trim() || name.toLowerCase().includes(search.trim().toLowerCase());
+}
+async function removeCatalogFile(
+  projectId: string,
+  workId: string,
+  scheme: "scratch" | "uploads",
+  file: import("@/client/query/context-catalog-projection").CatalogFile,
+  client: ReturnType<typeof useQueryClient>,
+) {
+  if (!window.confirm(t`Delete ${file.name}?`)) return;
+  try {
+    await deleteContextEntry(
+      projectId,
+      scheme,
+      {
+        operationId: crypto.randomUUID(),
+        path: file.path,
+        expected: { kind: "file", documentId: file.documentId },
+      },
+      { workId },
+    );
+    void client.invalidateQueries({
+      queryKey: projectQueryKeys.contextCatalogView(projectId, scheme, workId),
+    });
+  } catch {
+    /* preserve the row when the delete does not commit */
+  }
+}
+function InlineRename({
   projectId,
-  work,
+  workId,
   scheme,
-  icon: Icon,
-  search,
+  file,
+  siblingNames,
+  onDone,
 }: {
   projectId: string;
-  work: Work;
+  workId: string;
   scheme: "scratch" | "uploads";
-  icon: typeof NotebookPen;
-  search: string;
+  file: import("@/client/query/context-catalog-projection").CatalogFile;
+  siblingNames: string[];
+  onDone: () => void;
 }) {
-  const query = useContextCatalogView(projectId, scheme, { workId: work.id });
-  const files =
-    query.catalog
-      ?.files()
-      .filter((file) => !search || file.name.toLowerCase().includes(search.toLowerCase())) ?? [];
-  const label = scheme === "scratch" ? t`Scratch` : t`Uploads`;
+  const form = useRenameEntryForm({
+    projectId,
+    entryId: file.entryId,
+    workId,
+    scheme,
+    path: file.path,
+    currentName: file.name,
+    siblingNames,
+    kind: "file",
+    onDone,
+  });
   return (
-    <ResourceSection title={label}>
-      {query.isError ? (
-        <InlineErrorRow
-          message={t`${label} couldn’t load`}
-          onRetry={query.refetch}
-          actionLabel={t`Retry ${label}`}
-        />
-      ) : !query.catalog ? (
-        <Loading />
-      ) : (
-        <div className="min-w-0 space-y-2">
-          <div className="flex min-h-16 min-w-0 w-full items-center gap-3 rounded-lg border px-4">
-            <Icon className="size-4 shrink-0" />
-            <span className="min-w-0">
-              <span className="block text-sm font-medium">{label}</span>
-              <span className="text-meta text-muted-foreground">
-                {files.length ? (
-                  <Plural value={files.length} one="# item" other="# items" />
-                ) : (
-                  <Trans>Nothing here yet</Trans>
-                )}
-              </span>
-            </span>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            <Trans>Viewing chat resources is not available yet.</Trans>
-          </p>
-          <CatalogPreview catalog={query.catalog} search={search} />
-        </div>
-      )}
-    </ResourceSection>
+    <Input
+      ref={form.inputRef}
+      value={form.name}
+      onChange={form.onChange}
+      onKeyDown={form.onKeyDown}
+      onBlur={form.onBlur}
+      aria-label={t`File name`}
+      className="h-7 text-sm"
+    />
   );
 }
 function ResourceSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="min-w-0 space-y-3">
-      <h2 className="text-base font-semibold">{title}</h2>
+      <h2 className="text-xs font-medium text-muted-foreground">{title}</h2>
       {children}
     </section>
   );
@@ -515,36 +790,6 @@ function Loading() {
 function Empty({ children }: { children: React.ReactNode }) {
   return <p className="text-sm text-muted-foreground">{children}</p>;
 }
-function CatalogPreview({ catalog, search }: { catalog: CatalogContextView; search: string }) {
-  const children = catalog
-    .children(catalog.root.entryId)
-    .filter((node) => !search || node.name.toLowerCase().includes(search.toLowerCase()));
-  const visible = children.slice(0, 3);
-  if (!visible.length) return null;
-  return (
-    <ul className="space-y-1 px-1" aria-label={t`Contents preview`}>
-      {visible.map((node) => (
-        <li
-          key={node.path}
-          className="flex min-w-0 items-center gap-2 text-meta text-muted-foreground"
-        >
-          {node.kind === "dir" ? (
-            <Folder className="size-3.5 shrink-0" aria-hidden />
-          ) : (
-            <FileText className="size-3.5 shrink-0" aria-hidden />
-          )}
-          <span className="min-w-0 truncate">{node.name}</span>
-        </li>
-      ))}
-      {children.length > visible.length ? (
-        <li className="text-meta text-muted-foreground">
-          <Plural value={children.length - visible.length} one="# more item" other="# more items" />
-        </li>
-      ) : null}
-    </ul>
-  );
-}
-
 function DirtyDecision({ controller }: { controller: WorkMetadataController }) {
   return (
     <Dialog open={Boolean(controller.held)} onOpenChange={() => undefined}>
