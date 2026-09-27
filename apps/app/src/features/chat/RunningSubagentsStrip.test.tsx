@@ -107,9 +107,7 @@ describe("RunningSubagentsStrip", () => {
     expect(host.textContent).toContain("Waiting on Researcher");
 
     await act(async () =>
-      [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Open subagent chat"]')]
-        .at(-1)
-        ?.click(),
+      [...host.querySelectorAll<HTMLButtonElement>("button[aria-label^=Open]")].at(-1)?.click(),
     );
     expect(openThread).toHaveBeenCalledWith("child-b");
   });
@@ -141,7 +139,7 @@ describe("RunningSubagentsStrip", () => {
     await act(async () =>
       host.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')?.click(),
     );
-    expect(host.querySelector('[aria-label="Open subagent chat"]')).toBeNull();
+    expect(host.querySelector("button[aria-label^=Open]")).toBeNull();
     expect(host.textContent).toContain("Critic");
   });
 });

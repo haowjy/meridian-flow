@@ -106,7 +106,7 @@ export function SpawnReportCard({
             {identity}
           </div>
         )}
-        <OpenSubagentChatButton threadId={childThreadId} />
+        <OpenSubagentChatButton threadId={childThreadId} agentName={agentName} />
       </div>
       {running ? (
         <div

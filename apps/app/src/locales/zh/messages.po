@@ -2743,6 +2743,10 @@ msgstr ""
 #~ msgid "Open"
 #~ msgstr ""
 
+#: src/features/chat/OpenSubagentChatButton.tsx
+msgid "Open \"{name}\""
+msgstr "打开“{name}”"
+
 #. placeholder {0}: work.name
 #: src/features/project/work/WorkCard.tsx
 msgid "Open {0}"
@@ -2755,8 +2759,8 @@ msgid "Open {0} at this passage. {1}"
 msgstr ""
 
 #: src/features/chat/SubagentHeader.tsx
-msgid "Open {name}"
-msgstr "打开{name}"
+#~ msgid "Open {name}"
+#~ msgstr "打开{name}"
 
 #: src/features/chat/DocumentName.tsx
 #: src/features/home/ProjectLibrary.tsx
@@ -2844,8 +2848,8 @@ msgid "Open results"
 msgstr ""
 
 #: src/features/chat/OpenSubagentChatButton.tsx
-msgid "Open subagent chat"
-msgstr "打开子代理聊天"
+#~ msgid "Open subagent chat"
+#~ msgstr "打开子代理聊天"
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Open this document in a project to upload figures."

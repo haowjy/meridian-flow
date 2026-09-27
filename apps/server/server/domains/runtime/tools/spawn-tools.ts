@@ -182,7 +182,11 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
                 "Named subagent from your subagents roster. Omit or pass an empty string for the generic subagent.",
             },
             prompt: { type: "string", description: "Task prompt for the child agent." },
-            description: { type: "string", description: "Short label for the subagent thread." },
+            description: {
+              type: "string",
+              description:
+                "The writer sees this as the subagent's name in chat and in its thread title, so always set it. Use 2 to 5 words naming the task or its deliverable in the writer's terms, such as \"Chapter 12 continuity check\" or \"Lantern festival research\". Make parallel subagents distinguishable. Don't use a sentence, the agent's name, or a pN handle.",
+            },
             mode: {
               type: "string",
               enum: ["foreground", "background"],
@@ -196,7 +200,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
             overrides: {
               type: "object",
               description:
-                "Per-invocation execution patch: model, effort, tools, disallowed-tools, subagents, skills. Omitted fields inherit the child's saved configuration.",
+                "Per-invocation execution patch: model, effort, tools, disallowed-tools, subagents, skills. Omitted fields inherit the child's saved configuration. Override model or effort only when this run needs it, such as when the saved model keeps getting this task wrong or the task briefly needs more capability; the writer sees the override on the subagent's card.",
             },
           },
           required: ["prompt"],

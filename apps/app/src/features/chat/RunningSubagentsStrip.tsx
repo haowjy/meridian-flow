@@ -40,7 +40,7 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
                 <RunIdentity node={single} />
                 {disclosure}
               </button>
-              <OpenSubagentChatButton threadId={single.threadId} />
+              <OpenSubagentChatButton threadId={single.threadId} agentName={single.agentName} />
             </div>
             {expanded ? <ToolLine node={single} /> : null}
           </>
@@ -82,7 +82,7 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
                       <span className="flex min-w-0 flex-1 items-center gap-2">
                         <RunIdentity node={node} />
                       </span>
-                      <OpenSubagentChatButton threadId={node.threadId} />
+                      <OpenSubagentChatButton threadId={node.threadId} agentName={node.agentName} />
                     </div>
                     <ToolLine node={node} />
                   </li>

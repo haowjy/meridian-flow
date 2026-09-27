@@ -2747,6 +2747,10 @@ msgstr "Only part of this change could be reversed."
 #~ msgid "Open"
 #~ msgstr "Open"
 
+#: src/features/chat/OpenSubagentChatButton.tsx
+msgid "Open \"{name}\""
+msgstr "Open \"{name}\""
+
 #. placeholder {0}: work.name
 #: src/features/project/work/WorkCard.tsx
 msgid "Open {0}"
@@ -2759,8 +2763,8 @@ msgid "Open {0} at this passage. {1}"
 msgstr "Open {0} at this passage. {1}"
 
 #: src/features/chat/SubagentHeader.tsx
-msgid "Open {name}"
-msgstr "Open {name}"
+#~ msgid "Open {name}"
+#~ msgstr "Open {name}"
 
 #: src/features/chat/DocumentName.tsx
 #: src/features/home/ProjectLibrary.tsx
@@ -2848,8 +2852,8 @@ msgid "Open results"
 msgstr "Open results"
 
 #: src/features/chat/OpenSubagentChatButton.tsx
-msgid "Open subagent chat"
-msgstr "Open subagent chat"
+#~ msgid "Open subagent chat"
+#~ msgstr "Open subagent chat"
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Open this document in a project to upload figures."

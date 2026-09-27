@@ -2,12 +2,12 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadActivityNode } from "@meridian/contracts/threads";
-import { ChevronRight, LocateFixed, Network } from "lucide-react";
+import { Network } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { requestConversationReveal } from "./conversation-reveal";
+import { OpenSubagentChatButton } from "./OpenSubagentChatButton";
 import { SubagentMark } from "./SubagentMark";
 import {
   Elapsed,
@@ -143,60 +143,55 @@ function SubagentPopoverRow({
 }) {
   const name = resolveSubagentName(node);
   const running = node.status.kind === "awake";
+  const content = (
+    <>
+      <SubagentMark
+        agentName={node.agentName}
+        status={subagentStatus(node.spawnStatus, running)}
+        className="size-5 shrink-0 text-[10px]"
+      />
+      <span className={cn("min-w-0 flex-1 truncate", !running && "text-foreground/75")}>
+        {name}
+        {node.title && node.title !== name ? (
+          <span className="ml-1 text-muted-foreground">{node.title}</span>
+        ) : null}
+        {running && node.currentTool ? (
+          <span className="block truncate text-xs text-muted-foreground">
+            {subagentCurrentToolLabel(node.currentTool.toolName, node.currentTool.input)}
+          </span>
+        ) : null}
+      </span>
+      <span className="shrink-0 self-start pt-0.5 text-xs tabular-nums text-muted-foreground">
+        {running ? (
+          <Elapsed startedAt={node.runStartedAt} />
+        ) : (
+          formatSubagentElapsed(node.runStartedAt, node.runEndedAt)
+        )}
+      </span>
+    </>
+  );
+  const rowClassName = "flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-2 text-left";
   return (
     <li className="flex items-center gap-1 rounded text-sm">
-      <button
-        type="button"
-        aria-label={t`Open ${name}`}
-        onClick={() => {
-          openThread(node.threadId);
-          onOpen();
-        }}
-        className="focus-ring flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-2 text-left transition-colors hover:bg-muted"
-      >
-        <SubagentMark
-          agentName={node.agentName}
-          status={subagentStatus(node.spawnStatus, running)}
-          className="size-5 shrink-0 text-[10px]"
-        />
-        <span className={cn("min-w-0 flex-1 truncate", !running && "text-foreground/75")}>
-          {name}
-          {node.title && node.title !== name ? (
-            <span className="ml-1 text-muted-foreground">{node.title}</span>
-          ) : null}
-          {running && node.currentTool ? (
-            <span className="block truncate text-xs text-muted-foreground">
-              {subagentCurrentToolLabel(node.currentTool.toolName, node.currentTool.input)}
-            </span>
-          ) : null}
-        </span>
-        <span className="shrink-0 self-start pt-0.5 text-xs tabular-nums text-muted-foreground">
-          {running ? (
-            <Elapsed startedAt={node.runStartedAt} />
-          ) : (
-            formatSubagentElapsed(node.runStartedAt, node.runEndedAt)
-          )}
-        </span>
-        <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-      </button>
       {node.originTurnId ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              aria-label={t`Jump to in chat`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onShow(node);
-              }}
-              className="focus-ring grid size-7 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <LocateFixed className="size-3.5" aria-hidden />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>{t`Jump to in chat`}</TooltipContent>
-        </Tooltip>
-      ) : null}
+        // The row finds the subagent in this chat; only the chat icon leaves it.
+        <button
+          type="button"
+          title={t`Jump to in chat`}
+          onClick={() => onShow(node)}
+          className={cn("focus-ring transition-colors hover:bg-muted", rowClassName)}
+        >
+          {content}
+        </button>
+      ) : (
+        <div className={rowClassName}>{content}</div>
+      )}
+      <OpenSubagentChatButton
+        threadId={node.threadId}
+        agentName={node.agentName}
+        openThread={openThread}
+        onOpened={onOpen}
+      />
     </li>
   );
 }

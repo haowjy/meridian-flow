@@ -64,7 +64,7 @@ describe("SubagentHeader", () => {
     document.body.innerHTML = "";
   });
 
-  it("opens a child from the whole row and closes the popover", async () => {
+  it("opens a child from its chat icon and closes the popover", async () => {
     const openThread = vi.fn();
     await act(async () =>
       root.render(
@@ -79,17 +79,16 @@ describe("SubagentHeader", () => {
     );
     await act(async () => host.querySelector<HTMLButtonElement>("button")?.click());
 
-    const row = document.body.querySelector<HTMLButtonElement>('[aria-label="Open Critic"]');
-    expect(row).not.toBeNull();
-    expect(row?.querySelector("svg.lucide-chevron-right")).not.toBeNull();
-    expect(row?.querySelector("svg.lucide-external-link")).toBeNull();
-    await act(async () => row?.click());
+    const open = document.body.querySelector<HTMLButtonElement>("[aria-label='Open \"Critic\"']");
+    expect(open?.querySelector("svg.lucide-message-square-share")).not.toBeNull();
+    expect(document.body.querySelector("svg.lucide-locate-fixed")).toBeNull();
+    await act(async () => open?.click());
 
     expect(openThread).toHaveBeenCalledWith("child");
-    expect(document.body.querySelector('[aria-label="Open Critic"]')).toBeNull();
+    expect(document.body.querySelector("[aria-label='Open \"Critic\"']")).toBeNull();
   });
 
-  it("keeps Jump separate and available only for rows with a reveal target", async () => {
+  it("jumps to the subagent in chat from the row when it has a reveal target", async () => {
     const openThread = vi.fn();
     await act(async () =>
       root.render(
@@ -112,16 +111,14 @@ describe("SubagentHeader", () => {
     );
     await act(async () => host.querySelector<HTMLButtonElement>("button")?.click());
 
-    const row = document.body.querySelector<HTMLButtonElement>('[aria-label="Open Researcher"]');
-    const jump = document.body.querySelector<HTMLButtonElement>('[aria-label="Jump to in chat"]');
-    expect(row).not.toBeNull();
-    expect(jump).not.toBeNull();
-    expect(row?.closest("li")).toBe(jump?.closest("li"));
-    expect(row?.parentElement?.querySelectorAll("button")).toHaveLength(2);
-    expect(document.body.querySelector('[aria-label="Open Editor"]')).not.toBeNull();
-    expect(document.body.querySelectorAll('[aria-label="Jump to in chat"]')).toHaveLength(1);
+    const rows = document.body.querySelectorAll<HTMLButtonElement>(
+      'button[title="Jump to in chat"]',
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.textContent).toContain("Researcher");
+    expect(document.body.querySelector("[aria-label='Open \"Editor\"']")).not.toBeNull();
 
-    await act(async () => jump?.click());
+    await act(async () => rows[0]?.click());
     expect(openThread).not.toHaveBeenCalled();
     expect(requestConversationReveal).toHaveBeenCalledWith({
       kind: "turn",

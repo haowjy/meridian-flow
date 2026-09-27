@@ -72,7 +72,7 @@ describe("SpawnReportCard", () => {
       ),
     );
 
-    await act(async () => findButton("Open subagent chat")?.click());
+    await act(async () => findButton('Open "Critic"')?.click());
     expect(openThread).toHaveBeenCalledWith("child-1");
   });
 
