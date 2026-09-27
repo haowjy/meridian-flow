@@ -341,8 +341,10 @@ release so the strip reads awake for the whole run and asleep after. While a
 subagent response streams, the first `tool_call.delta` records its call name
 and best-effort partial input on the lease (`thread_run_leases.current_tool`,
 via `RunClaim.setCurrentTool`); one further refresh records the target once a
-document path/URI, search pattern, or spawn agent arrives. Other deltas do not
-write activity. Tool dispatch still records the full input and appends the same
+document path/URI, search pattern, or spawn agent arrives. A `write` skips the
+first-delta record and waits for its command as well as its path, because the
+same tool reads, diffs, and edits; labeled early, every read would flash as a
+write. Other deltas do not write activity. Tool dispatch still records the full input and appends the same
 activity fact only when the call changed. The
 create-side append is strict (a failure fails the spawn), while terminal and
 wake appends are best-effort: a read-model failure is reported to the

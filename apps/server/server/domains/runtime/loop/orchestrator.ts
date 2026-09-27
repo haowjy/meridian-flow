@@ -112,6 +112,7 @@ import { modelResponseTimingFields } from "./model-response-timing.js";
 import {
   hasPartialToolActivityTarget,
   parsePartialToolActivityInput,
+  showsPartialToolActivityBeforeTarget,
 } from "./partial-tool-activity.js";
 import { type PermissionGate, permissionGateFromToolPolicy } from "./permissions/index.js";
 import {
@@ -1557,7 +1558,10 @@ async function executeLoop(
               partialCall.arguments,
             );
             const hasTarget = hasPartialToolActivityTarget(partialCall.toolName, partialInput);
-            if (firstDelta || hasTarget) {
+            if (
+              (firstDelta && showsPartialToolActivityBeforeTarget(partialCall.toolName)) ||
+              hasTarget
+            ) {
               const currentTool = {
                 toolCallId: event.id,
                 toolName: partialCall.toolName,

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   hasPartialToolActivityTarget,
   parsePartialToolActivityInput,
+  showsPartialToolActivityBeforeTarget,
 } from "./partial-tool-activity.js";
 
 describe("partial tool activity input", () => {
@@ -47,5 +48,18 @@ describe("partial tool activity input", () => {
     });
     expect(hasPartialToolActivityTarget("write", null)).toBe(false);
     expect(parsePartialToolActivityInput("unknown", '{"path":"chapter.md"}')).toBeNull();
+  });
+
+  it("waits for a write's command before naming its target", () => {
+    const pathOnly = parsePartialToolActivityInput("write", '{"path":"scratch://notes.md","comm');
+    const read = parsePartialToolActivityInput(
+      "write",
+      '{"path":"scratch://notes.md","command":"read"',
+    );
+
+    expect(hasPartialToolActivityTarget("write", pathOnly)).toBe(false);
+    expect(hasPartialToolActivityTarget("write", read)).toBe(true);
+    expect(showsPartialToolActivityBeforeTarget("write")).toBe(false);
+    expect(showsPartialToolActivityBeforeTarget("search")).toBe(true);
   });
 });

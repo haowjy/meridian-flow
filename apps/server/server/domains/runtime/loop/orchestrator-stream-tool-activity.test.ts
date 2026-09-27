@@ -92,7 +92,7 @@ async function fixture(kind: "primary" | "subagent") {
 }
 
 describe("orchestrator subagent tool activity while streaming", () => {
-  it("records the first delta and target once, without writing on later deltas", async () => {
+  it("records a write once its command and target arrive, without writing on later deltas", async () => {
     const rig = await fixture("subagent");
     const setCurrentTool = vi.spyOn(rig.harness.runClaim, "setCurrentTool");
     const execution = rig.run.execute();
@@ -100,11 +100,6 @@ describe("orchestrator subagent tool activity while streaming", () => {
     await rig.ready;
     const records = setCurrentTool.mock.calls.map(([, currentTool]) => currentTool);
     expect(records).toEqual([
-      {
-        toolCallId: "call-write",
-        toolName: "write",
-        input: { command: "create" },
-      },
       {
         toolCallId: "call-write",
         toolName: "write",

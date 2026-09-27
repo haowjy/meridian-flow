@@ -122,6 +122,8 @@ export function hasPartialToolActivityTarget(
 
   switch (toolName) {
     case "write":
+      // `write` also reads and diffs; its verb comes from the command.
+      return hasText("command") && hasText("path", "uri");
     case "edit":
     case "read":
       return hasText("path", "uri");
@@ -132,4 +134,13 @@ export function hasPartialToolActivityTarget(
     default:
       return false;
   }
+}
+
+/**
+ * Whether a call's first streamed chunk may show before its target. A `write`
+ * waits for its command instead: labeled early, every read would flash as a
+ * write. Its command and path arrive in the first few dozen characters.
+ */
+export function showsPartialToolActivityBeforeTarget(toolName: string): boolean {
+  return toolName !== "write";
 }
