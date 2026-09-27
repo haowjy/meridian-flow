@@ -562,21 +562,39 @@ retained Agent thresholds cannot reach the unavailable adapter.
 
 Compaction is two delivery transitions around an unlocked `ConversationSummarizer`
 call. The first reserves pending C instead of an assistant. `compaction-phase.ts`
-then prepares a live rebake over provisional completed C before late arrivals; its
-successor commit joins `beginPromptEpoch`, adoption, notice consumption and B's
+then prepares a live rebake over provisional completed C before late arrivals.
+compaction-successor.ts returns one retry-local usable/failed value; the delivery
+adoption carries that value into its explicit placeholder completion mode. The
+complete summary block is immutable, and its fit limit comes from the decision,
+independently of the automatic trigger. A usable value's token count describes
+the compacted base before late arrivals. Its successor commit joins `beginPromptEpoch`, adoption, notice consumption and B's
 reservation. A moved leaf repeats only successor preparation, never summarization.
 An impossible tail reserves no C. A failed summary errors C and replies below the
-latest message. A usable epoch still commits when a late arrival fails context
+latest message. A live unexpected error while C is current uses a fresh failure
+transaction: C error, settled summary rows, failed B below the latest arrivals,
+and receipt acknowledgment. Notices remain queued. If that transaction also
+fails, orphan recovery owns C; this is not a resummarization retry. A usable epoch still commits when a late arrival fails context
 preparation (including an oversized late paste); only B fails. `composeLivePromptBake` serves initial bakes and rebakes
 alike. Reference reads during this prepare belong to current C; B does not exist
 until commit. Summary responses never supply the conversation token baseline.
 
-Current-turn identity carries `assistant` or `compaction` in the lease and run
-session. Writer admission returns an assistant ID only for the former. Stop
+The lease stores only the current turn ID; currentTurnKind(turn) derives
+assistant or compaction from its role. Both reservation sites use
+reservationTurn, including the decision's trigger. The run session retains
+its run ID and earlier current-turn IDs, so Stop on a predecessor resolves the
+lease's current turn under its update lock, even before the successor callback.
+A finished run cannot cancel a newer lease. Writer admission returns an assistant ID only for the former. Stop
 aborts the summary, and terminal close settles its response rows on cancelled C
-with the receipt acknowledgment. Late arrivals are not part of C's receipt and
+with the receipt acknowledgment. settleSummaryResponses writes predictions,
+request sizes and debits through TurnAccounting.computeAndDebit inside whichever
+transaction ends C. Retrying settlement does not count the paid call twice in
+the shared tree budget. Late arrivals are not part of C's receipt and
 remain queued for the cancel wake. Remote cancellation reaches the local signal
-through the lease heartbeat as well as boundary checks.
+through the lease heartbeat as well as boundary checks. Only the run signal or
+durable cancel request authorizes cancellation: a returned cancelled summary
+on a live signal is failed, and an internal AbortError alone is not Stop.
+Summarizer adapters return every attempted paid response in their outcome and
+never throw after a paid call; unexpected throws are error-level events.
 
 Not built yet: crash repair of a pending C (C4c; run start, the placeholder scan,
 and `spawn/orphan-report-repair.ts`, whose walk still stops only at assistant

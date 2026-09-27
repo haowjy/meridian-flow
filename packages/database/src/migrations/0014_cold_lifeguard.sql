@@ -12,7 +12,6 @@ DROP INDEX "thread_execution_reports_pending";--> statement-breakpoint
 ALTER TABLE "model_responses" ADD COLUMN "request_message_count" integer NOT NULL DEFAULT 0;--> statement-breakpoint
 -- Historical calls did not save request lengths. Zero conservatively estimates the entire next request.
 ALTER TABLE "model_responses" ALTER COLUMN "request_message_count" DROP DEFAULT;--> statement-breakpoint
-ALTER TABLE "thread_run_leases" ADD COLUMN "turn_kind" text;--> statement-breakpoint
 ALTER TABLE "thread_execution_reports" ADD CONSTRAINT "thread_execution_reports_execution_turn_id_turns_id_fk" FOREIGN KEY ("execution_turn_id") REFERENCES "public"."turns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "thread_execution_reports" ADD CONSTRAINT "thread_execution_reports_terminal_turn_id_turns_id_fk" FOREIGN KEY ("terminal_turn_id") REFERENCES "public"."turns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "thread_execution_reports" ADD CONSTRAINT "thread_execution_reports_child_turn_fk" FOREIGN KEY ("child_thread_id","execution_turn_id") REFERENCES "public"."turns"("thread_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

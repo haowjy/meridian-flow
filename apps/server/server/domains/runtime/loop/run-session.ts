@@ -18,6 +18,8 @@ import type { RuntimeDelivery } from "./runtime-delivery.js";
 type RunSession = {
   controller: AbortController;
   currentTurn: CurrentTurn | null;
+  turnIds: Set<TurnId>;
+  runId?: string;
   startedAt: Date;
   child?: RunTurnInput["child"];
   completion: Promise<void>;
@@ -68,6 +70,7 @@ export function createRunSessions(deps: {
     const session: RunSession = {
       controller,
       currentTurn: null,
+      turnIds: new Set(),
       startedAt: new Date(),
       child: input.child,
       completion: new Promise<void>((resolve) => {
@@ -123,6 +126,7 @@ export function createRunSessions(deps: {
       lease = await authority.startExecution(threadId, crypto.randomUUID());
       if (!lease) throw new TurnStartConflictError(threadId, "already_running");
       const heldLease = lease;
+      session.runId = lease.runId;
       heartbeat = setInterval(
         () => {
           void authority
@@ -149,10 +153,12 @@ export function createRunSessions(deps: {
         lease,
         onCurrentTurnChanged(turn) {
           session.currentTurn = turn;
+          session.turnIds.add(turn.id);
           input.onCurrentTurnChanged?.(turn);
         },
       });
       session.currentTurn = loop.currentTurn;
+      session.turnIds.add(loop.currentTurn.id);
       const snapshotFloorNextSeq = ((await deps.headSeq(threadId)) + 1n).toString();
       try {
         deps.onRunStarted?.(threadId);
@@ -239,8 +245,9 @@ export function createRunSessions(deps: {
       turnId: TurnId,
     ): Promise<"cancelled" | "already_finished" | "not_found"> {
       const active = running.get(threadId);
-      if (active?.currentTurn?.id === turnId) {
-        if (!(await authority.cancelExecution(threadId, turnId))) return "already_finished";
+      if (active?.turnIds.has(turnId)) {
+        if (!(await authority.cancelExecution(threadId, turnId, active.runId)))
+          return "already_finished";
         abortChildrenOf(threadId, true);
         active.controller.abort();
         void active.completion

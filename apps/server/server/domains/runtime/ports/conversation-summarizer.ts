@@ -4,8 +4,10 @@ import type { ModelResponseReceivedRow } from "@meridian/contracts/threads";
 import type { GenerateRequest } from "../gateway/index.js";
 import type { ProjectedActiveHistory } from "../loop/compaction/index.js";
 
+/** Provider metering data is passed to the shared debit path, not persisted in the row. */
+export type SummaryResponse = ModelResponseReceivedRow & { providerData?: unknown };
 export type SummaryOutcome = {
-  modelResponses: ModelResponseReceivedRow[];
+  modelResponses: SummaryResponse[];
 } & (
   | { kind: "complete"; text: string; model: string }
   | { kind: "failed"; error: unknown }
@@ -15,6 +17,10 @@ export interface ConversationSummarizer {
   /** Production remains disabled until a real summarizer is configured. */
   readonly enabled: boolean;
   readonly maxOutputTokens: number;
+  /** Never throws after a paid call: every attempted call returns its response row,
+   * on success or failure. A throw is an adapter bug. cancelled is legal only
+   * when the supplied signal is aborted; provider timeouts are failed.
+   */
   summarize(input: {
     threadId: ThreadId;
     turnId: TurnId;

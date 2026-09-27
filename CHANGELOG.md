@@ -14,6 +14,9 @@
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
 
 ### Fixed
+- Failed compaction lands a failed reply and retires its messages instead of paying for repeated summaries.
+- Stop follows the same run across a committed reply split. Internal aborts stay errors.
+- Bill summary responses on success, failure and cancellation, once per paid call.
 - Cache TTL starts at the provider attempt, not response persistence.
 - Saved-report repair preserves fork cutoffs and cross-thread history.
 - Dev CLI unwraps API transport responses. Thread creation and inspection work against the live stack.

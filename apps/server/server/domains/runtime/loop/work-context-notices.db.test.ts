@@ -234,6 +234,7 @@ else
         const boundary = await notices.splitAndContinue({
           lease,
           currentTurn: assistant,
+          current: { kind: "assistant" },
           knownTurnIds: new Set([assistant.id]),
           expectedLeafTurnId: assistant.id,
           prepareNextContext: async () => ({
@@ -260,6 +261,7 @@ else
         const noticeOnly = await notices.splitAndContinue({
           lease,
           currentTurn: boundary.next,
+          current: { kind: "assistant" },
           knownTurnIds: new Set([
             assistant.id,
             ...boundary.drain.turns.map((turn) => turn.id),
@@ -398,6 +400,7 @@ else
         const boundary = await notices.splitAndContinue({
           lease,
           currentTurn: assistant,
+          current: { kind: "assistant" },
           knownTurnIds: new Set([assistant.id]),
           expectedLeafTurnId: assistant.id,
           prepareNextContext: async () => ({

@@ -1,4 +1,5 @@
 /** Compaction's two commits exercise real inbox, lease, epoch, and journal transactions. */
+import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
@@ -77,7 +78,9 @@ else
       };
       const gateway = options.gateway ?? scriptedGateway();
       const summarizer = options.summarizer ?? scriptedSummarizer();
+      const { createDrizzleCreditLedger } = await import("../../billing/index.js");
       const rig = createRuntimeHarness({
+        creditLedger: createDrizzleCreditLedger(db),
         repos,
         eventWriter,
         runClaim: claim,
@@ -208,6 +211,94 @@ else
       ]);
     });
 
+    it("lands a summarizer cancellation on a live signal as a failed reply", async () => {
+      const summarizer = scriptedSummarizer(async ({ signal }) => {
+        expect(signal.aborted).toBe(false);
+        return { kind: "cancelled", modelResponses: [] };
+      });
+      const rig = await fixture({ summarizer });
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      expect((await run.execute()).status).toBe("error");
+      expect(
+        (await rig.repos.turns.listByThread(rig.threadId)).slice(-2).map((t) => [t.role, t.status]),
+      ).toEqual([
+        ["compaction", "error"],
+        ["assistant", "error"],
+      ]);
+      expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
+    });
+
+    it.each([
+      true,
+      false,
+    ])("stops the current run across a committed successor window (compaction=%s)", async (compaction) => {
+      const rig = await fixture({ history: compaction ? undefined : "brief history" });
+      const split = rig.delivery.splitAndContinue;
+      let cancelled = false;
+      rig.delivery.splitAndContinue = async (input) => {
+        const result = await split(input);
+        if (result.split && !cancelled) {
+          cancelled = true;
+          expect(await rig.runClaim.readRunningTurnId(rig.threadId)).toBe(result.next.id);
+          expect(await rig.orchestrator.cancel(rig.threadId, input.currentTurn.id)).toBe(
+            "cancelled",
+          );
+        }
+        return result;
+      };
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      if (!compaction) await rig.send(rig.threadId, "Split now.");
+      expect((await run.execute()).status).toBe("cancelled");
+      expect(cancelled).toBe(true);
+      expect((await rig.repos.turns.listByThread(rig.threadId)).at(-1)?.status).toBe("cancelled");
+      expect(await rig.orchestrator.cancel(rig.threadId, run.executionTurnId)).toBe(
+        "already_finished",
+      );
+    });
+
+    it("does not mistake an internal tool AbortError for a requested stop", async () => {
+      const gateway = scriptedGateway({
+        results: [
+          {
+            content: [
+              { type: "tool_use", toolCallId: "internal-abort", toolName: "ls", input: {} },
+            ],
+            toolCalls: [],
+            finishReason: "tool_use",
+            usage: { inputTokens: 10, outputTokens: 10 },
+            model: "gpt-4.1-mini",
+            provider: "openai",
+          },
+        ],
+      });
+      const rig = await fixture({ history: "brief history", gateway });
+      rig.deps.toolExecutor.executeTool = async () => {
+        throw new DOMException("internal timeout", "AbortError");
+      };
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [
+          {
+            type: "function",
+            name: "ls",
+            description: "List",
+            inputSchema: { type: "object", properties: {} },
+          },
+        ],
+        userText: "Continue.",
+      });
+      expect((await run.execute()).status).toBe("error");
+      expect((await rig.repos.turns.findById(run.executionTurnId))?.status).toBe("error");
+    });
+
     it("lands an impossible pinned request as a failed reply without C and acknowledges it", async () => {
       const rig = await fixture();
       const run = await rig.orchestrator.prepare({
@@ -266,8 +357,8 @@ else
             id: crypto.randomUUID(),
             turnId,
             sequence: 0,
-            provider: "test",
-            model: "summary-model",
+            provider: "openai",
+            model: "gpt-4.1-mini",
             inputTokens: 100,
             outputTokens: 10,
             requestMessageCount: 7,
@@ -303,6 +394,10 @@ else
           predictedCacheReason: "no_response",
         },
       ]);
+      const rows = await rig.repos.modelResponses.listByTurn(tail[0].id);
+      expect(BigInt(rows[0].millicredits ?? "0")).toBeGreaterThan(0n);
+      const debits = await db.select().from(schema.creditTransactions);
+      expect(debits.some((row) => row.usageEventId === rows[0].id)).toBe(true);
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
       const before = rig.summarizer.calls[0].requestInHand;
       if (!before) throw new Error("Missing request in hand");
@@ -317,7 +412,36 @@ else
         expectStablePrefix(before, rig.gateway.requests[0]);
       } else {
         expect(rig.gateway.requests[0].messages[0]).toEqual(before.messages[0]);
-        expect(rig.gateway.requests[0].messages[1]).not.toEqual(before.messages[1]);
+        const text = JSON.stringify(rig.gateway.requests[0].messages);
+        expect(text).toContain("Earlier context.");
+        expect(text).not.toContain("old history");
+        expect(text.indexOf("Continue.")).toBeLessThan(text.indexOf("late writer"));
+        expect(text.indexOf("late writer")).toBeLessThan(text.indexOf("late agent"));
+        for (const message of ["Continue.", "late writer", "late agent"]) {
+          expect(text.split(message)).toHaveLength(2);
+        }
+        expect(tail.map((turn) => [turn.role, turn.status])).toEqual([
+          ["compaction", "complete"],
+          ["user", "complete"],
+          ["user", "complete"],
+          ["assistant", "complete"],
+        ]);
+        const thread = await rig.repos.threads.findById(rig.threadId);
+        if (!thread) throw new Error("Missing thread");
+        const rebuilt = await assembleNextTurnContext({
+          thread,
+          turns: (await rig.repos.turns.listByThread(rig.threadId)).slice(0, -1),
+          blocks: (await rig.repos.blocks.listByThread(rig.threadId)).filter(
+            (block) => block.turnId !== tail[3].id,
+          ),
+          agentRevisions: rig.deps.agentRevisions,
+          toolRegistry: rig.deps.toolRegistry,
+          baseTools: [],
+          gateway: rig.deps.gateway,
+          promptBakes: rig.repos.promptBakes,
+          workContext: rig.deps.workContext,
+        });
+        expect(promptBytes(rig.gateway.requests[0])).toBe(promptBytes(rebuilt.generateRequest));
       }
     });
 
@@ -484,6 +608,17 @@ else
       expect(attempts).toBe(3);
       expect(locked).toEqual([false, false, true]);
       expect(rig.summarizer.calls).toHaveLength(1);
+      const tail = (await rig.repos.turns.listByThread(rig.threadId)).slice(-4);
+      expect(tail.map((turn) => turn.role)).toEqual(["compaction", "user", "user", "assistant"]);
+      const blocks = await rig.repos.blocks.listByThread(rig.threadId);
+      expect(
+        tail.slice(1, 3).map((turn) => blocks.find((block) => block.turnId === turn.id)?.content),
+      ).toEqual(["moved leaf 1", "moved leaf 2"]);
+      const request = JSON.stringify(rig.gateway.requests[0].messages);
+      expect(request.indexOf("moved leaf 1")).toBeLessThan(request.indexOf("moved leaf 2"));
+      for (const text of ["moved leaf 1", "moved leaf 2"])
+        expect(request.split(text)).toHaveLength(2);
+      expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
     });
     it.each([
       false,
@@ -509,8 +644,10 @@ else
               id: crypto.randomUUID(),
               turnId,
               sequence: 0,
-              provider: "test",
-              model: "summary-model",
+              provider: "openai",
+              model: "gpt-4.1-mini",
+              inputTokens: 100,
+              outputTokens: 10,
               requestMessageCount: 7,
               priceSource: "unknown",
               predictedCacheState: "cold",
@@ -531,6 +668,10 @@ else
       expect(await rig.repos.modelResponses.listByTurn(run.executionTurnId)).toMatchObject([
         { requestMessageCount: 7 },
       ]);
+      const rows = await rig.repos.modelResponses.listByTurn(run.executionTurnId);
+      expect(BigInt(rows[0].millicredits ?? "0")).toBeGreaterThan(0n);
+      const debits = await db.select().from(schema.creditTransactions);
+      expect(debits.some((row) => row.usageEventId === rows[0].id)).toBe(true);
       if (child)
         expect(
           await rig.repos.executionReports.findByExecution(rig.threadId, run.executionTurnId),
@@ -620,6 +761,10 @@ else
         results: [
           result("first-tool", "Earlier scene. ".repeat(1000)),
           result("last-tool", "Latest group."),
+          {
+            ...result("successor-tool", "Next group."),
+            usage: { inputTokens: 100, outputTokens: 10 },
+          },
         ],
         onStream: async (call) => {
           if (call === 1) rig.setThreshold(undefined);
@@ -650,6 +795,12 @@ else
       });
       expect(rig.summarizer.calls).toHaveLength(1);
       const request = rig.gateway.requests[2];
+      expect(rig.gateway.requests).toHaveLength(4);
+      const later = rig.gateway.requests[3];
+      expect(later.tools).toEqual(request.tools);
+      expect(JSON.stringify(later.messages.slice(0, request.messages.length))).toBe(
+        JSON.stringify(request.messages),
+      );
       expect(promptBytes({ ...request, promptCacheKey: "<thread-id>" })).toMatchSnapshot(
         "compacted request bytes",
       );
@@ -689,6 +840,7 @@ else
           message: "Refresh context.",
           data: { documentIds: ["chapter-1"], documentNames: ["chapter-1.md"] },
         });
+        await rig.send(rig.threadId, "late writer before commit failure");
         armed = true;
         return {
           kind: "complete",
@@ -699,8 +851,10 @@ else
               id: crypto.randomUUID(),
               turnId,
               sequence: 0,
-              provider: "test",
-              model: "summary-model",
+              provider: "openai",
+              model: "gpt-4.1-mini",
+              inputTokens: 100,
+              outputTokens: 10,
               requestMessageCount: 7,
               priceSource: "unknown",
               predictedCacheState: "cold",
@@ -710,7 +864,9 @@ else
         };
       });
       rig = await fixture({ summarizer, notices });
+      const treeBudget = createDefaultTreeBudget();
       const run = await rig.orchestrator.prepare({
+        treeBudget,
         threadId: rig.threadId,
         tools: [],
         userText: "Continue.",
@@ -722,8 +878,18 @@ else
       expect(await rig.repos.modelResponses.listByTurn(run.executionTurnId)).toMatchObject([
         { requestMessageCount: 7 },
       ]);
-      expect((await rig.repos.turns.listByThread(rig.threadId)).at(-1)?.id).toBe(
-        run.executionTurnId,
-      );
+      const tail = (await rig.repos.turns.listByThread(rig.threadId)).slice(-3);
+      expect(tail.map((turn) => [turn.role, turn.status])).toEqual([
+        ["compaction", "error"],
+        ["user", "complete"],
+        ["assistant", "error"],
+      ]);
+      expect(tail[2].error).toBe("This conversation couldn't be compacted. Try again.");
+      expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
+      expect(rig.summarizer.calls).toHaveLength(1);
+      const rows = await rig.repos.modelResponses.listByTurn(run.executionTurnId);
+      const debits = await db.select().from(schema.creditTransactions);
+      expect(debits.filter((row) => row.usageEventId === rows[0].id)).toHaveLength(1);
+      expect(treeBudget.spent.costMillicredits).toBe(Number(rows[0].millicredits));
     });
   });

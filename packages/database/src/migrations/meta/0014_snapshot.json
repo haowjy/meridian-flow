@@ -2109,12 +2109,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "turn_kind": {
-          "name": "turn_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "holder_id": {
           "name": "holder_id",
           "type": "text",

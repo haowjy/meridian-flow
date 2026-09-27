@@ -7,6 +7,9 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
+import { compactionTurnMetadata } from "../../threads/index.js";
+import type { CompactionDecision } from "./compaction/decision.js";
+import type { CurrentTurn } from "./ports.js";
 
 export function createLocalTurn(input: {
   /** Deterministic identity for idempotent persistence; minted when omitted. */
@@ -67,4 +70,31 @@ function emptyTurnUsage(): NonNullable<Turn["usage"]> {
     totalMillicredits: "0",
     responseCount: 0,
   };
+}
+
+/** The role-to-kind rule for run-owned turns; SQL bindTurn mirrors this rule. */
+export function currentTurnKind(turn: Pick<Turn, "role">): CurrentTurn["kind"] {
+  if (turn.role === "assistant" || turn.role === "compaction") return turn.role;
+  throw new Error(`Not a current execution turn: ${turn.role}`);
+}
+
+/** Both run-start and split reservation use the boundary's decision unchanged. */
+export function reservationTurn(
+  input: Omit<Parameters<typeof createLocalTurn>[0], "role" | "origin" | "status" | "metadata">,
+  decision: CompactionDecision = { kind: "generate" },
+): Turn {
+  return createLocalTurn({
+    ...input,
+    role: decision.kind === "compact" ? "compaction" : "assistant",
+    origin: decision.kind === "compact" ? "system" : "assistant",
+    status: decision.kind === "compact" ? "pending" : "streaming",
+    metadata:
+      decision.kind === "compact"
+        ? compactionTurnMetadata({
+            trigger: decision.trigger,
+            compactedThrough: decision.plan.compactedThrough,
+            pinnedRequestTurnId: decision.plan.pinnedRequest.id,
+          })
+        : null,
+  });
 }

@@ -99,8 +99,11 @@ export interface RunClaim {
    * {@link read}, never from the turns table.
    */
   readRunningTurnId(threadId: ThreadId): Promise<TurnId | null>;
-  /** Cancels only the live lease bound to this turn; false means no matching execution. */
-  cancelExecution(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
+  /** Cancel the current lease turn. A session's known run id survives successor
+   * commits; without it only an exact current-turn match can identify the run.
+   * The adapter resolves the current turn under the lease row lock.
+   */
+  cancelExecution(threadId: ThreadId, turnId: TurnId, runId?: RunId): Promise<boolean>;
   /**
    * Releases the held lease. Guarded: an already-released or superseded lease is
    * a no-op and must never free a newer run's lock. Delivery close releases under

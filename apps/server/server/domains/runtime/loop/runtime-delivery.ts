@@ -1,11 +1,6 @@
 /** Atomic inbox transitions; journal publication is part of every committed mutation. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type {
-  Block,
-  ModelResponseReceivedRow,
-  OrchestratorEvent,
-  Turn,
-} from "@meridian/contracts/threads";
+import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
 import type { Notice } from "../../notices/index.js";
 import type { WorkContextNotices } from "../../projects/index.js";
 import type { CompactionDecision } from "./compaction/decision.js";
@@ -19,7 +14,7 @@ export type DeliveryTransaction = {
   materializePrefix(): Promise<void>;
 };
 export type DeliveryProducer = Pick<RuntimeDelivery, "enqueue" | "withThreadLock">;
-export type DeliveryBoundary = Pick<
+export type DeliveryBoundary<TCurrent = undefined> = Pick<
   Parameters<typeof drainInbox>[0],
   "knownTurnIds" | "expectedLeafTurnId" | "prepareAdoptedTurn"
 > & {
@@ -27,16 +22,25 @@ export type DeliveryBoundary = Pick<
   currentTurn: Turn;
   signal?: AbortSignal;
   /** Prepare the current placeholder before late arrivals; retried with the same selection. */
-  prepareCurrent?: () => Promise<void>;
+  prepareCurrent?: () => Promise<TCurrent>;
   /** Completes a placeholder in the same transaction as late adoption and reservation. */
-  completeCurrent?: (preparationFailure: unknown | undefined) => Promise<Turn>;
+  current:
+    | { kind: "assistant" }
+    | {
+        kind: "placeholder";
+        complete: (prepared: TCurrent | undefined, failure: unknown | undefined) => Promise<Turn>;
+      };
   /** Prepare image decisions/breaks before the next assistant turn is reserved. */
-  prepareNextContext: (drain: InboxDrain) => Promise<{
+  prepareNextContext: (
+    drain: InboxDrain,
+    current: TCurrent | undefined,
+  ) => Promise<{
     events: OrchestratorEvent[];
     turns: Turn[];
     blocks: Block[];
     requiresSplit: boolean;
     compaction?: CompactionDecision;
+    context?: import("./turn-context-assembly.js").AssembledNextTurnContext;
   }>;
 };
 export type DeliverySelection = {
@@ -45,13 +49,15 @@ export type DeliverySelection = {
   notices: Notice[];
   activeLeafTurnId: TurnId | null;
 };
-export type AdoptedBatch = {
+export type AdoptedBatch<TCurrent = undefined> = {
   drain: InboxDrain;
   next: Turn;
   split: boolean;
   completed?: Turn;
   compaction?: Extract<CompactionDecision, { kind: "compact" }>;
   preparationFailure?: unknown;
+  preparedCurrent?: TCurrent;
+  context?: import("./turn-context-assembly.js").AssembledNextTurnContext;
 };
 export interface RuntimeDelivery
   extends WorkContextNotices,
@@ -81,12 +87,14 @@ export interface RuntimeDelivery
     options?: { signal?: AbortSignal },
   ): Promise<T>;
   ackWithResponse<T>(lease: Lease, ids: string[], persist: () => Promise<T>): Promise<T>;
-  splitAndContinue(input: DeliveryBoundary): Promise<AdoptedBatch>;
+  splitAndContinue<TCurrent = undefined>(
+    input: DeliveryBoundary<TCurrent>,
+  ): Promise<AdoptedBatch<TCurrent>>;
   close(input: {
     lease: Lease;
     turnId: TurnId;
     cause: TerminalCause;
-    modelResponses?: ModelResponseReceivedRow[];
+    settleSummaryResponses?: () => Promise<void>;
     continueWith?: DeliveryBoundary;
   }): Promise<
     { kind: "split"; adopted: AdoptedBatch } | { kind: "completed"; completion: FinalizedExecution }

@@ -103,14 +103,11 @@ function functionToolsFromAdvertised(tools: Tool[] | undefined): FunctionTool[] 
   return (tools ?? []).filter((tool): tool is FunctionTool => tool.type === "function");
 }
 
-export async function composeLivePromptBake(input: AssembleNextTurnContextInput) {
+export async function composeLivePromptBake(
+  input: AssembleNextTurnContextInput,
+  agentContext: Awaited<ReturnType<typeof resolveAgentThreadTurnContext>>,
+) {
   const thread = input.thread;
-  const agentContext = await resolveAgentThreadTurnContext({
-    thread,
-    agentRevisions: input.agentRevisions,
-    toolRegistry: input.toolRegistry,
-    baseTools: input.baseTools,
-  });
   const availableSkills = await resolveThreadModelAvailableSkills({
     thread,
     agentRevisions: input.agentRevisions,
@@ -179,7 +176,7 @@ export async function assembleNextTurnContext(
     tools = toolsFromBakedJson(bake.bakedTools) ?? tools;
   } else {
     const { bakeContent, bakedPrompt, availableSkills, namedSubagents, workContext } =
-      await composeLivePromptBake(input);
+      await composeLivePromptBake(input, agentContext);
     if (input.persistBake && input.bakeInitialPrompt) {
       const result = await input.bakeInitialPrompt(thread.id as ThreadId, {
         ...bakeContent,

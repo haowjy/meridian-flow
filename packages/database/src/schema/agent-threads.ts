@@ -249,7 +249,6 @@ export const threadRunLeases = pgTable(
     runId: text("run_id").notNull(),
     adoptedMessageIds: uuid("adopted_message_ids").array().notNull().default(sql`'{}'::uuid[]`),
     turnId: uuid("turn_id").$type<TurnId>(),
-    turnKind: text("turn_kind").$type<"assistant" | "compaction">(),
     holderId: text("holder_id").notNull(),
     phase: text("phase").notNull().default("generating"),
     cancelRequested: boolean("cancel_requested").notNull().default(false),

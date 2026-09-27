@@ -23,10 +23,11 @@ export function createDrizzleRuntimeDelivery(
       eq(schema.threadRunLeases.holderId, lease.holderId),
     );
   const leaseStore: DeliveryLeaseStore = {
+    // Role guard mirrors currentTurnKind; compaction additionally requires a pending placeholder.
     async bindTurn(lease, turnId, messageIds, kind) {
       const [bound] = await db_()
         .update(schema.threadRunLeases)
-        .set({ turnId, turnKind: kind, adoptedMessageIds: [...messageIds] })
+        .set({ turnId, adoptedMessageIds: [...messageIds] })
         .where(
           and(
             eq(schema.threadRunLeases.cancelRequested, false),

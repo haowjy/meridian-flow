@@ -530,3 +530,11 @@ sets its write-once bake pointer through `beginPromptEpoch` and reserves the rep
 Child report selectors use `executionTurnId` and terminals use `terminalTurnId`;
 the first reservation can be a compaction rather than an assistant. Model response
 rows include the request message count alongside usage and cache predictions.
+
+
+Compaction success, failure and cancellation settle response rows and debits in
+their ending transaction. A live failure also creates a terminal failed reply
+under the newest adopted message and acknowledges the receipt atomically;
+only a failed failure-landing transaction is left for orphan repair.
+The run lease has no role/kind copy: runtime derives kind from the referenced
+turn. Initial and rebaked prompts share one resolved Agent context per composition.

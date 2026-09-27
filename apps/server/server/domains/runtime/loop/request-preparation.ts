@@ -21,8 +21,8 @@ export async function prepareRequestContext(input: {
   deps: OrchestratorDeps;
   thread: Thread;
   threadId: ThreadId;
-  referenceUserTurnId: TurnId;
-  assistantTurnId: TurnId;
+  referenceTurnId: TurnId;
+  currentTurnId: TurnId;
   turns: Turn[];
   blocks: Block[];
   baseTools?: Tool[];
@@ -40,9 +40,9 @@ export async function prepareRequestContext(input: {
       ? []
       : await loadReferenceReads({
           blocks: input.blocks,
-          userTurnId: input.referenceUserTurnId,
+          userTurnId: input.referenceTurnId,
           threadId: input.threadId,
-          assistantTurnId: input.assistantTurnId,
+          assistantTurnId: input.currentTurnId,
           reader: input.deps.referenceReader,
           signal: input.signal,
         });

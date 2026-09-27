@@ -83,7 +83,6 @@ import type {
 } from "../../threads/index.js";
 import {
   agentRequestMetadata,
-  compactionTurnMetadata,
   loadThreadConversationContext,
   readThreadActivity,
   ThreadConversationContextError,
@@ -110,6 +109,7 @@ import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import { type CompactionDecision, CompactionPreparationError } from "./compaction/decision.js";
 import { executeCompaction } from "./compaction-phase.js";
+import { failCompactionSuccessor } from "./compaction-successor.js";
 import type { TerminalCause } from "./execution-finalizer.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
@@ -118,7 +118,7 @@ import {
   type InterruptAutoResumePolicy,
   type InterruptRegistry,
 } from "./interrupts.js";
-import { createLocalTurn } from "./local-turn.js";
+import { createLocalTurn, currentTurnKind, reservationTurn } from "./local-turn.js";
 import { modelResponseTimingFields } from "./model-response-timing.js";
 import {
   hasPartialToolActivityTarget,
@@ -133,6 +133,7 @@ import {
 } from "./persistence.js";
 import type { RunClaim, ThreadPhase } from "./ports.js";
 import { createPrefixCacheStateService, type PrefixCacheState } from "./prefix-cache-state.js";
+import { writerFacingPreparationError } from "./preparation-failure.js";
 import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
 import { prepareRequestContext } from "./request-preparation.js";
 import { createRunSessions } from "./run-session.js";
@@ -144,6 +145,7 @@ import {
   type RunLoopInput,
 } from "./run-turn-port.js";
 import type { AdoptedBatch, DeliveryBoundary, RuntimeDelivery } from "./runtime-delivery.js";
+import { settleSummaryResponses } from "./settle-summary-responses.js";
 import {
   collectToolCalls,
   contentPartToBlockInput,
@@ -166,27 +168,6 @@ class RequestPreparationError extends Error {
     super(original instanceof Error ? original.message : String(original), { cause: original });
     this.name = "RequestPreparationError";
   }
-}
-
-function writerFacingPreparationError(error: Error): ReturnType<typeof meridianErrorFromSystem> {
-  if (error instanceof CompactionPreparationError)
-    return meridianErrorFromSystem(error.reason, error.message);
-  if (error instanceof ThreadConversationContextError) {
-    return meridianErrorFromSystem(
-      "thread_context_error",
-      "This chat's fork history couldn't be loaded.",
-    );
-  }
-  if (error instanceof ImageAssetResolutionError) {
-    return meridianErrorFromSystem(
-      "image_resolution_failed",
-      "An image in this message couldn't be loaded. Try again.",
-    );
-  }
-  return meridianErrorFromSystem(
-    "request_preparation_failed",
-    "This message couldn't be prepared. Try again.",
-  );
 }
 
 function asError(error: unknown): Error {
@@ -502,7 +483,7 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
 async function runDrainTurn(
   deps: OrchestratorDeps,
   input: DrainRunLoopInput,
-  reservedTurnId?: TurnId,
+  reservedTurnId: TurnId = crypto.randomUUID(),
 ): Promise<PreparedLoop> {
   let preparationError: Error | null = null;
   const setup = await deps.delivery.adoptBatch(
@@ -569,15 +550,6 @@ async function runDrainTurn(
         [...priorTurns, ...inheritedTurns].reverse().find((turn) => turn.role === "user")?.id ??
         prevTurnId;
       if (!referenceUserTurnId) throw new Error("Drained inbox has no user turn to prepare");
-      const reservedTurn = createLocalTurn({
-        id: reservedTurnId,
-        threadId: input.threadId,
-        position: nextTurnPosition(plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn),
-        prevTurnId: plan.leafTurnId ?? skillBody?.turn.id ?? prevTurnId,
-        role: "assistant",
-        origin: "assistant",
-        status: "streaming",
-      });
       let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
       if (!preparationError) {
         try {
@@ -586,8 +558,8 @@ async function runDrainTurn(
             deps,
             thread: setupThread,
             threadId: input.threadId,
-            referenceUserTurnId,
-            assistantTurnId: reservedTurn.id,
+            referenceTurnId: referenceUserTurnId,
+            currentTurnId: reservedTurnId,
             turns: [
               ...inheritedTurns,
               ...priorTurns,
@@ -612,27 +584,20 @@ async function runDrainTurn(
         preflight = null;
         skillBody = null;
         plan = makePlan([]);
-        reservedTurn.prevTurnId = plan.leafTurnId ?? prevTurnId;
-        reservedTurn.parentTurnId = reservedTurn.prevTurnId;
-        reservedTurn.position = nextTurnPosition(plan.turns.at(-1) ?? previousTurn);
       }
       const imageUpdateTurn = preflight?.assembled.imageContextUpdates.turns.at(-1);
-      reservedTurn.prevTurnId =
-        imageUpdateTurn?.id ?? plan.leafTurnId ?? skillBody?.turn.id ?? referenceUserTurnId;
-      reservedTurn.parentTurnId = reservedTurn.prevTurnId;
-      reservedTurn.position = nextTurnPosition(
-        imageUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
+      const reservedTurn = reservationTurn(
+        {
+          id: reservedTurnId,
+          threadId: input.threadId,
+          prevTurnId:
+            imageUpdateTurn?.id ?? plan.leafTurnId ?? skillBody?.turn.id ?? referenceUserTurnId,
+          position: nextTurnPosition(
+            imageUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
+          ),
+        },
+        preflight?.compaction,
       );
-      if (preflight?.compaction.kind === "compact") {
-        reservedTurn.role = "compaction";
-        reservedTurn.origin = "system";
-        reservedTurn.status = "pending";
-        reservedTurn.metadata = compactionTurnMetadata({
-          trigger: "auto",
-          compactedThrough: preflight.compaction.plan.compactedThrough,
-          pinnedRequestTurnId: preflight.compaction.plan.pinnedRequest.id,
-        });
-      }
       const value = {
         reservedTurn,
         skillBody,
@@ -657,7 +622,7 @@ async function runDrainTurn(
       return {
         value,
         turnId: reservedTurn.id,
-        turnKind: reservedTurn.role === "compaction" ? "compaction" : "assistant",
+        turnKind: currentTurnKind(reservedTurn),
         messageIds: batch.map(({ id }) => id),
         ...(preparationError === null ? {} : { preparationFailure: preparationError }),
         persist: async () => {
@@ -701,7 +666,7 @@ async function runDrainTurn(
     userTurnId: referenceUserTurnId,
     currentTurn: {
       id: reservedTurn.id,
-      kind: reservedTurn.role === "compaction" ? "compaction" : "assistant",
+      kind: currentTurnKind(reservedTurn),
     },
     execute: async () => {
       if (preparationError) throw new RequestPreparationError(preparationError);
@@ -1479,7 +1444,7 @@ async function executeLoop(
 
   let currentTurn: Turn = reservedTurn;
   let preparedContext: AssembledNextTurnContext | undefined = initialContext;
-  let pendingSummaryResponses: ModelResponseReceivedRow[] = [];
+  let pendingSummaryResponses: import("../ports/conversation-summarizer.js").SummaryResponse[] = [];
   let responseScope: ReturnType<typeof createResponseScope> | undefined;
   const allTurns: Turn[] = [...initialTurns, reservedTurn];
   const allBlocks: Block[] = [
@@ -1493,6 +1458,7 @@ async function executeLoop(
     return {
       lease: input.lease,
       currentTurn: currentTurn,
+      current: { kind: "assistant" },
       signal: input.signal,
       knownTurnIds: new Set(allTurns.map((turn) => turn.id)),
       expectedLeafTurnId: allTurns.at(-1)?.id ?? null,
@@ -1538,8 +1504,8 @@ async function executeLoop(
           deps,
           thread,
           threadId: input.threadId,
-          referenceUserTurnId: latestUserTurn?.id ?? currentTurn.id,
-          assistantTurnId: currentTurn.id,
+          referenceTurnId: latestUserTurn?.id ?? currentTurn.id,
+          currentTurnId: currentTurn.id,
           turns: [...allTurns, ...drain.turns],
           blocks: [...allBlocks, ...drain.blocks],
           baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
@@ -1559,7 +1525,7 @@ async function executeLoop(
     };
   }
   async function acceptBoundary(
-    result: AdoptedBatch,
+    result: AdoptedBatch<unknown>,
   ): Promise<Awaited<ReturnType<typeof drainInbox>>> {
     if (result.completed) {
       const index = allTurns.findIndex((turn) => turn.id === result.completed?.id);
@@ -1578,7 +1544,7 @@ async function executeLoop(
       endTurnRequested = false;
       input.onCurrentTurnChanged?.({
         id: next.id,
-        kind: next.role === "compaction" ? "compaction" : "assistant",
+        kind: currentTurnKind(next),
       });
     }
     if (result.preparationFailure !== undefined) {
@@ -1599,6 +1565,8 @@ async function executeLoop(
       allBlocks,
       boundary: boundaryInput(),
       decision,
+      settleResponses: (rows) =>
+        settleSummaryResponses({ deps, thread, rows, accounting: turnAccounting, treeBudget }),
       recordResponses: (rows) => {
         pendingSummaryResponses = rows;
       },
@@ -1620,7 +1588,14 @@ async function executeLoop(
       lease: input.lease,
       turnId: currentTurn.id,
       cause,
-      modelResponses: pendingSummaryResponses,
+      settleSummaryResponses: () =>
+        settleSummaryResponses({
+          deps,
+          thread,
+          rows: pendingSummaryResponses,
+          accounting: turnAccounting,
+          treeBudget,
+        }),
       ...(continueOnPending ? { continueWith: boundaryInput() } : {}),
     });
     if (outcome.kind === "split") {
@@ -2091,12 +2066,32 @@ async function executeLoop(
       // here should not hide the error that broke the response.
     }
     const state = await deps.runClaim.read(input.threadId);
-    if (
-      input.signal?.aborted ||
-      (err instanceof DOMException && err.name === "AbortError") ||
-      (state?.kind === "awake" && state.cancelRequested)
-    ) {
+    if (input.signal?.aborted || (state?.kind === "awake" && state.cancelRequested)) {
       await exitRun(false, cancelTerminal);
+    } else if (currentTurnKind(currentTurn) === "compaction") {
+      emitEvent(eventSink, {
+        level: "error",
+        source: "runtime.compaction",
+        name: "successor.failed",
+        correlation: { threadId: input.threadId, turnId: currentTurn.id },
+        payload: unknownToEventPayload(err),
+      });
+      const failed = await failCompactionSuccessor({
+        deps,
+        threadId: input.threadId,
+        placeholder: currentTurn,
+        boundary: boundaryInput(),
+        settleResponses: () =>
+          settleSummaryResponses({
+            deps,
+            thread,
+            rows: pendingSummaryResponses,
+            accounting: turnAccounting,
+            treeBudget,
+          }),
+      });
+      pendingSummaryResponses = [];
+      await acceptBoundary(failed);
     } else if (
       err instanceof RequestPreparationError ||
       err instanceof ImageAssetResolutionError ||
@@ -2106,14 +2101,7 @@ async function executeLoop(
     } else {
       await exitRun(
         false,
-        errorTerminal(
-          currentTurn.role === "compaction"
-            ? "This conversation couldn't be compacted. Try again."
-            : err instanceof Error
-              ? err.message
-              : String(err),
-          currentTurn.role === "compaction" ? "compaction_failed" : "execution_error",
-        ),
+        errorTerminal(err instanceof Error ? err.message : String(err), "execution_error"),
       );
     }
   } finally {

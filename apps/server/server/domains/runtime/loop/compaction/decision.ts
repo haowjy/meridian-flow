@@ -10,7 +10,8 @@ export type CompactionDecision =
       kind: "compact";
       plan: Extract<CompactionPlan, { outcome: "planned" }>;
       requestInHand: GenerateRequest;
-      triggerTokens: number;
+      trigger: "auto" | "manual";
+      fitLimitTokens: number;
       tokensBefore: number;
     }
   | { kind: "too_large"; plan: CompactionPlan };
@@ -54,7 +55,8 @@ export function decideCompaction(input: {
         kind: "compact",
         plan,
         requestInHand: input.request,
-        triggerTokens: input.thresholdTokens,
+        trigger: "auto",
+        fitLimitTokens: input.thresholdTokens,
         tokensBefore,
       }
     : { kind: "too_large", plan };

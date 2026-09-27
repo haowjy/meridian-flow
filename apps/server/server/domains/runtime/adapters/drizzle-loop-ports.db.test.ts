@@ -615,6 +615,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             continueWith: {
               lease,
               currentTurn: turn,
+              current: { kind: "assistant" },
               knownTurnIds: new Set([turn.id]),
               expectedLeafTurnId: turn.id,
               prepareNextContext: async () => ({

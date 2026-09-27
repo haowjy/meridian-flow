@@ -1,11 +1,11 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
 import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { NoticePort } from "../../notices/index.js";
-import { compactionTurnMetadata, SystemUpdateMetadataCodec } from "../../threads/index.js";
+import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
-import { createLocalTurn } from "../loop/local-turn.js";
+import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
 import { readPendingInbox } from "../loop/pending-inbox.js";
 import {
   type PersistenceDeps,
@@ -20,6 +20,7 @@ import type {
   RunClaim,
   RunStarter,
 } from "../loop/ports.js";
+import { writerFacingPreparationError } from "../loop/preparation-failure.js";
 import type {
   AdoptedBatch,
   DeliveryBoundary,
@@ -229,7 +230,7 @@ export function createDeliveryAdapter(
       idempotencyKey: `work-context:${mutationId}`,
     });
   }
-  type PreparedAdoption = {
+  type PreparedAdoption<TCurrent> = {
     batch: InboxMessage[];
     work: Awaited<ReturnType<typeof workBatch>>;
     committedWorkIds: string[];
@@ -239,13 +240,14 @@ export function createDeliveryAdapter(
     prepared: Awaited<ReturnType<DeliveryBoundary["prepareNextContext"]>>;
     split: boolean;
     preparationFailure?: unknown;
+    preparedCurrent?: TCurrent;
   };
 
-  async function prepareAdoption(
-    input: DeliveryBoundary,
+  async function prepareAdoption<TCurrent>(
+    input: DeliveryBoundary<TCurrent>,
     selection: DeliverySelection,
     work: Awaited<ReturnType<typeof workBatch>>,
-  ): Promise<PreparedAdoption> {
+  ): Promise<PreparedAdoption<TCurrent>> {
     const { lease } = input;
     const batch = selection.batch;
     const threadId = lease.threadId;
@@ -302,8 +304,9 @@ export function createDeliveryAdapter(
     let drain: Awaited<ReturnType<typeof drainInbox>>;
     let prepared: Awaited<ReturnType<DeliveryBoundary["prepareNextContext"]>>;
     let preparationFailure: unknown;
+    let preparedCurrent: TCurrent | undefined;
     try {
-      await input.prepareCurrent?.();
+      preparedCurrent = await input.prepareCurrent?.();
       drain = await drainInbox({
         ...input,
         persistence: deps,
@@ -312,7 +315,7 @@ export function createDeliveryAdapter(
         batch: orderedBatch,
         workContext: work.workContext,
       });
-      prepared = await input.prepareNextContext(drain);
+      prepared = await input.prepareNextContext(drain, preparedCurrent);
     } catch (error) {
       if (input.signal?.aborted) throw error;
       preparationFailure = error;
@@ -331,6 +334,7 @@ export function createDeliveryAdapter(
     }
     return {
       batch: orderedBatch,
+      preparedCurrent,
       work,
       committedWorkIds,
       expectedLeaf,
@@ -338,7 +342,7 @@ export function createDeliveryAdapter(
       drain,
       prepared,
       split:
-        !!input.completeCurrent ||
+        input.current.kind === "placeholder" ||
         prepared.compaction?.kind === "compact" ||
         !!preparationFailure ||
         split ||
@@ -348,10 +352,10 @@ export function createDeliveryAdapter(
     };
   }
 
-  async function commitAdoption(
-    input: DeliveryBoundary,
-    adoption: PreparedAdoption,
-  ): Promise<AdoptedBatch> {
+  async function commitAdoption<TCurrent>(
+    input: DeliveryBoundary<TCurrent>,
+    adoption: PreparedAdoption<TCurrent>,
+  ): Promise<AdoptedBatch<TCurrent>> {
     const { lease, currentTurn } = input;
     const threadId = lease.threadId;
     const {
@@ -373,36 +377,28 @@ export function createDeliveryAdapter(
     const compaction = prepared.compaction?.kind === "compact" ? prepared.compaction : undefined;
 
     if (split) {
-      completed = input.completeCurrent
-        ? await input.completeCurrent(preparationFailure)
-        : {
-            ...currentTurn,
-            status: "complete" as const,
-            finishReason: "end_turn" as const,
-            completedAt: new Date().toISOString(),
-          };
+      completed =
+        input.current.kind === "placeholder"
+          ? await input.current.complete(adoption.preparedCurrent, preparationFailure)
+          : {
+              ...currentTurn,
+              status: "complete" as const,
+              finishReason: "end_turn" as const,
+              completedAt: new Date().toISOString(),
+            };
       const leaf = turns.at(-1)?.id ?? expectedLeaf ?? currentTurn.id;
-      next = createLocalTurn({
-        threadId,
-        position: nextTurnPosition(
-          turns.at(-1) ??
-            (expectedLeafPosition === null ? null : { position: expectedLeafPosition }),
-        ),
-        prevTurnId: leaf,
-        role: compaction ? "compaction" : "assistant",
-        origin: compaction ? "system" : "assistant",
-        status: compaction ? "pending" : "streaming",
-        ...(compaction
-          ? {
-              metadata: compactionTurnMetadata({
-                trigger: "auto",
-                compactedThrough: compaction.plan.compactedThrough,
-                pinnedRequestTurnId: compaction.plan.pinnedRequest.id,
-              }),
-            }
-          : {}),
-        writeMode: currentTurn.writeMode,
-      });
+      next = reservationTurn(
+        {
+          threadId,
+          position: nextTurnPosition(
+            turns.at(-1) ??
+              (expectedLeafPosition === null ? null : { position: expectedLeafPosition }),
+          ),
+          prevTurnId: leaf,
+          writeMode: currentTurn.writeMode,
+        },
+        compaction,
+      );
       const completedTurn = completed;
       const receipt = await leaseStore.lockReceipt(lease);
       drain.ackIds = [...new Set([...(receipt?.ids ?? []), ...drain.ackIds])];
@@ -413,7 +409,7 @@ export function createDeliveryAdapter(
         async () => ({
           result: undefined,
           events: [
-            ...(!input.completeCurrent
+            ...(input.current.kind === "assistant"
               ? [{ type: "turn.completed" as const, turn: completedTurn }]
               : []),
             ...events,
@@ -422,15 +418,10 @@ export function createDeliveryAdapter(
         }),
         {
           afterEvents: () =>
-            leaseStore.bindTurn(
-              lease,
-              next.id,
-              drain.ackIds,
-              compaction ? "compaction" : "assistant",
-            ),
+            leaseStore.bindTurn(lease, next.id, drain.ackIds, currentTurnKind(next)),
         },
       );
-      if (currentTurn.role === "assistant") await deps.repos.threads.updateCost(threadId, "0", 1);
+      if (input.current.kind === "assistant") await deps.repos.threads.updateCost(threadId, "0", 1);
     } else if (events.length > 0) {
       await persistAndAppendEvents(deps, threadId, async () => ({ result: undefined, events }));
     }
@@ -446,11 +437,27 @@ export function createDeliveryAdapter(
     ) {
       throw new Error("Cannot adopt inbox batch after losing live run lease");
     }
+    if (input.current.kind === "placeholder" && preparationFailure !== undefined) {
+      const error = writerFacingPreparationError(
+        preparationFailure instanceof Error
+          ? preparationFailure
+          : new Error(String(preparationFailure)),
+      );
+      const completion = await finalizeExecution(deps, {
+        threadId,
+        turnId: next.id,
+        cause: { kind: "failed", reason: error.code, error, acknowledgeInbox: true },
+      });
+      next = completion.turn;
+      await inbox.ack(threadId, drain.ackIds);
+    }
     if (batch.length > 0) await appendPending(threadId);
     drain.turns = turns;
     drain.blocks = blocks;
     return {
       drain,
+      preparedCurrent: adoption.preparedCurrent,
+      context: prepared.context,
       next,
       split,
       completed,
@@ -459,7 +466,9 @@ export function createDeliveryAdapter(
     };
   }
 
-  async function adopt(input: DeliveryBoundary): Promise<AdoptedBatch> {
+  async function adopt<TCurrent>(
+    input: DeliveryBoundary<TCurrent>,
+  ): Promise<AdoptedBatch<TCurrent>> {
     return prepareAndCommit({
       threadId: input.lease.threadId,
       signal: input.signal,
@@ -565,15 +574,7 @@ export function createDeliveryAdapter(
             return { kind: "prepare_split" as const };
           }
         }
-        const terminalResponses = input.modelResponses ?? [];
-        if (terminalResponses.length)
-          await persistAndAppendEvents(deps, threadId, async () => ({
-            result: undefined,
-            events: terminalResponses.map((response) => ({
-              type: "model.response_received" as const,
-              response,
-            })),
-          }));
+        await input.settleSummaryResponses?.();
         const completion = await finalizeExecution(deps, {
           threadId,
           turnId: input.turnId,
