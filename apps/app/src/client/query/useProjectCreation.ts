@@ -1,9 +1,9 @@
 /** Navigate-first project creation and destination-owned recovery state. */
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { CreateProjectRequest } from "@meridian/contracts/protocol";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { QueryClientContext, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
-import { useCallback, useEffect } from "react";
+import { useCallback, useContext, useEffect, useSyncExternalStore } from "react";
 
 import { createProject, getProject } from "@/client/api/projects-api";
 import { useProjectActions } from "@/client/stores";
@@ -163,13 +163,29 @@ export function useProjectCreationState(
 
 /** Dependent project reads pause for unresolved or failed creates. */
 export function useIsProjectPendingCreation(projectId: string | null | undefined): boolean {
-  const query = useQuery<ProjectCreationRecord | null>({
-    queryKey: projectQueryKeys.projectCreation(projectId ?? ""),
-    queryFn: async () => null,
-    enabled: false,
-  });
+  const client = useContext(QueryClientContext);
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      if (!client || !projectId) return () => {};
+      return client.getQueryCache().subscribe((event) => {
+        const key = event.query.queryKey;
+        if (
+          key.length === 3 &&
+          key[0] === "projects" &&
+          key[1] === "creation" &&
+          key[2] === projectId
+        )
+          listener();
+      });
+    },
+    [client, projectId],
+  );
+  const getSnapshot = useCallback(
+    () => (client && projectId ? (readProjectCreation(client, projectId) ?? null) : null),
+    [client, projectId],
+  );
+  const record = useSyncExternalStore(subscribe, getSnapshot, () => null);
   return (
-    !query.data?.accountSignal.aborted &&
-    (query.data?.status === "pending" || query.data?.status === "failed")
+    !record?.accountSignal.aborted && (record?.status === "pending" || record?.status === "failed")
   );
 }
