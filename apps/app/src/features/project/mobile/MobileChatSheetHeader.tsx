@@ -23,6 +23,8 @@ export function MobileChatSheetHeader({
   view,
   views,
   onSelectView,
+  fileTab,
+  onCloseFile,
   onClose,
   threadSelect,
 }: MobileChatSheetHeaderProps) {
@@ -37,7 +39,13 @@ export function MobileChatSheetHeader({
       <div className="flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
         {view === "chat" ? threadSelect : null}
       </div>
-      <DockViewSwitch view={view} views={views} onSelectView={onSelectView} />
+      <DockViewSwitch
+        view={view}
+        views={views}
+        onSelectView={onSelectView}
+        fileTab={fileTab}
+        onCloseFile={onCloseFile}
+      />
       {onClose ? (
         <div
           className="flex shrink-0 items-center pl-1"

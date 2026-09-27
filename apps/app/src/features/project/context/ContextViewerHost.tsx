@@ -19,16 +19,21 @@ import { BinaryFallbackViewer } from "./viewers/BinaryFallbackViewer";
 import { ImageViewer, imageViewerFooter } from "./viewers/ImageViewer";
 import { PdfViewer } from "./viewers/PdfViewer";
 import { ReadOnlyViewerFrame, type ReadOnlyViewerHeader } from "./viewers/ReadOnlyViewerFrame";
+import { TextViewer } from "./viewers/TextViewer";
 
 export type ContextViewerHostProps = {
   projectId: string;
   editorWorkId: string | null;
   tab: Extract<ContextTab, { kind: "viewer" }>;
+  header?: ReadOnlyViewerHeader;
 };
 
 export function ContextViewerHost(props: ContextViewerHostProps) {
   return (
-    <ContextViewerContent {...props} header={{ name: props.tab.name, path: props.tab.path }} />
+    <ContextViewerContent
+      {...props}
+      header={props.header ?? { name: props.tab.name, path: props.tab.path }}
+    />
   );
 }
 
@@ -69,13 +74,13 @@ function ContextViewerContent({
   }
 
   // The tab's stored classification owns routing. A tracked read response here
-  // means the tab metadata and server stat result diverged.
+  // is rendered as text for the dock's explicitly read-only Scratch/Uploads
+  // preview. Editor routes still use their collaborative surface.
   if (read.data.kind === "tracked") {
     return (
-      <ViewerError>
-        <AlertCircle className="size-4" aria-hidden />
-        <Trans>This file should be opened in the collaborative editor.</Trans>
-      </ViewerError>
+      <ReadOnlyViewerFrame header={header}>
+        <TextViewer name={tab.name} content={read.data.content} />
+      </ReadOnlyViewerFrame>
     );
   }
 
@@ -93,6 +98,13 @@ function ContextViewerContent({
     return (
       <ReadOnlyViewerFrame header={header}>
         <PdfViewer url={read.data.url} name={tab.name} />
+      </ReadOnlyViewerFrame>
+    );
+  }
+  if (read.data.mimeType.startsWith("text/") || /(?:json|xml|yaml)/i.test(read.data.mimeType)) {
+    return (
+      <ReadOnlyViewerFrame header={header}>
+        <TextViewer url={read.data.url} name={tab.name} />
       </ReadOnlyViewerFrame>
     );
   }

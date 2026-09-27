@@ -63,7 +63,7 @@ draft owner.
 Incoming authoritative Work revisions update the clean baseline without replacing the
 active draft. One-shot focus intents bridge detail close/delete to the collection;
 they are route continuity, not Work selection or persistent state.
-Detail composes identity and lifecycle, Goal, Description, pending drafts, Scratch,
+Detail composes identity and lifecycle, Goal, pending drafts, Scratch,
 Uploads, and associated chats. Associated chats use bounded cursor pages and the
 same virtualized, borderless project chat row as the Chat index without adding a nested
 scroll owner. The external-scroll hook measures the list in that owner's
@@ -74,6 +74,16 @@ unarchive preserve the detail route; delete replaces to collection and restores 
 to an adjacent row. Both shells share this route-owned module. At phone geometry, text
 must wrap without horizontal overflow and product controls retain coarse-pointer touch
 targets.
+
+The Work dock has one transient read-only file slot for Scratch and Uploads. Its
+session-only `workFile` state carries `{ workId, tab }`; opening a second file
+replaces the first. `DockShell` keeps the Chat occupant mounted and inert behind
+the viewer, and the contained dock switch can return to Chat or close the file.
+Work detail clears the slot when its Work changes or the Work destination leaves.
+The viewer uses `ContextViewerBareHost` because dock header chrome names the file
+and provides Open in Editor; text content, images, and PDFs stay constrained to
+the dock body. Open in Editor clears the slot before routing through
+`openWorkContext`.
 
 The chat index is the project root (`/p/<project>`). It reads a flat,
 cursor-paginated primary-chat feed ordered by last activity. Favorites is a

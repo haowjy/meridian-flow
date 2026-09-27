@@ -1,6 +1,7 @@
 /** Renders the mobile project workspace. */
 
 import { t } from "@lingui/core/macro";
+import { parseRequestId } from "@meridian/contracts/request-id";
 import { MessageSquare, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ContextTab, useContextTabs } from "@/client/stores";
@@ -48,11 +49,11 @@ export function MobileProject(props: MobileProjectProps) {
   const [chatOpen, setChatOpen] = useState(
     () => props.activeScreen !== "chat" && recoveringFirstSend,
   );
-  const openChatSheet = () => {
-    setDockView(props.activeScreen, "chat");
+  const openChatSheet = (view: "chat" | "file" = "chat") => {
+    setDockView(props.activeScreen, view);
     setChatOpen(true);
   };
-  useDockReveal(openChatSheet);
+  useDockReveal((view) => openChatSheet(view));
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { tabs } = useContextTabs(props.projectId);
   const selectedLocal = tabs.find((tab) => tab.documentId === props.activeLocalDocumentId);
@@ -89,7 +90,7 @@ export function MobileProject(props: MobileProjectProps) {
         }
         chatAction={
           props.activeScreen !== "chat" ? (
-            <PhoneIconButton aria-label={t`Open chat`} onClick={openChatSheet}>
+            <PhoneIconButton aria-label={t`Open chat`} onClick={() => openChatSheet()}>
               <MessageSquare className="size-5" aria-hidden />
             </PhoneIconButton>
           ) : undefined
@@ -145,6 +146,15 @@ export function MobileProject(props: MobileProjectProps) {
                 visible
                 onCloseDock={() => setChatOpen(false)}
                 onOpenContextTarget={props.onOpenContextTarget}
+                onOpenFileInEditor={(tab) => {
+                  if (tab.scheme !== "scratch" && tab.scheme !== "uploads") return;
+                  const workId = parseRequestId(tab.workId);
+                  if (!workId) return;
+                  void props.routeCommands.openWorkContext(
+                    { kind: "work-context", workId, scheme: tab.scheme, path: tab.path },
+                    { replace: false },
+                  );
+                }}
               />
             </MobileKeyboardAware>
           </DraftReviewBoundary>

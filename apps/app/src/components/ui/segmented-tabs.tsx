@@ -11,7 +11,11 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-export type SegmentedTabOption<T extends string> = { value: T; label: ReactNode };
+export type SegmentedTabOption<T extends string> = {
+  value: T;
+  label: ReactNode;
+  trailingAction?: ReactNode;
+};
 
 export function SegmentedTabs<T extends string>({
   label,
@@ -39,21 +43,23 @@ export function SegmentedTabs<T extends string>({
       {options.map((option) => {
         const active = option.value === value;
         return (
-          <button
-            key={option.value}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onChange(option.value)}
-            className={cn(
-              "focus-ring h-6 shrink-0 rounded-[calc(var(--radius-lg)-2px)] px-2.5 text-xs transition-colors [@media(pointer:coarse)]:h-10 [@media(pointer:coarse)]:px-3.5 [@media(pointer:coarse)]:text-sm",
-              active
-                ? "bg-background font-medium text-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {option.label}
-          </button>
+          <div key={option.value} className="flex shrink-0 items-center">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => onChange(option.value)}
+              className={cn(
+                "focus-ring h-6 shrink-0 rounded-[calc(var(--radius-lg)-2px)] px-2.5 text-xs transition-colors [@media(pointer:coarse)]:h-10 [@media(pointer:coarse)]:px-3.5 [@media(pointer:coarse)]:text-sm",
+                active
+                  ? "bg-background font-medium text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {option.label}
+            </button>
+            {option.trailingAction}
+          </div>
         );
       })}
     </div>

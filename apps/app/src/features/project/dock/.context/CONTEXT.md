@@ -39,6 +39,13 @@ is a pure function:
 This is deliberately separated from the React hook (`useDockView`) so the
 fallback logic is unit-testable. The hook only adds the Zustand binding.
 
+On Work, `workFile` is a separate transient `{ workId, tab }` slot in the same
+session-only store. While populated, `file` joins the Chat/Changes segments.
+Chat remains mounted and inert underneath the viewer. Selecting Chat only
+switches the visible body; the close action clears the file slot and returns to
+Chat. Work detail owns its lifetime and clears the slot on Work change or when
+leaving the Work destination. No file view is persisted across reloads.
+
 `useAiDraftLauncher` takes `screen` from the route-owned
 `ProjectNavigationContext`, supplied by `ReadableProjectRoute`. It must not
 recreate the removed project query grammar to choose a dock view.
@@ -110,7 +117,8 @@ flowchart LR
     Grid[SlotGrid] -->|dock grid-area| DockShell
     DockShell -->|center: passthrough| Occupant[ChatSurface / ContextSidebar]
     DockShell -->|dock: header + overlay| Occupant
-    DockShell -->|dock: view=changes| Changes[DockChangesView]
+DockShell -->|dock: view=changes| Changes[DockChangesView]
+DockShell -->|Work view=file| File[ContextViewerBareHost]
     Occupant -->|dock placement, renderHeader slot| Header[DockHeader / MobileChatSheetHeader]
     Changes --> DocGroup[ChangesDocumentGroup per doc]
     DocGroup --> Card[ReviewOperationCard per Discard class]

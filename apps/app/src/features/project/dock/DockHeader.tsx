@@ -21,13 +21,12 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { PanelRightClose } from "lucide-react";
+import { PanelRightClose, X } from "lucide-react";
 import type { ReactNode } from "react";
-
+import type { ContextTab } from "@/client/stores";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
-
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import type { DockView } from "./dock-view-store";
 
@@ -35,6 +34,8 @@ export type DockHeaderSlotArgs = {
   view: DockView;
   views: readonly DockView[];
   onSelectView: (view: DockView) => void;
+  fileTab?: Extract<ContextTab, { kind: "viewer" }> | null;
+  onCloseFile?: () => void;
 };
 
 export type DockHeaderProps = DockHeaderSlotArgs & {
@@ -50,6 +51,8 @@ export function DockHeader({
   onClose,
   threadSelect,
   threadId,
+  fileTab,
+  onCloseFile,
 }: DockHeaderProps) {
   const activity = useThreadActivity({
     threadId: threadId ?? "",
@@ -67,7 +70,13 @@ export function DockHeader({
           <SubagentHeader threadId={threadId} nodes={activity.activity.descendants} />
         ) : null}
       </div>
-      <DockViewSwitch view={view} views={views} onSelectView={onSelectView} />
+      <DockViewSwitch
+        view={view}
+        views={views}
+        onSelectView={onSelectView}
+        fileTab={fileTab}
+        onCloseFile={onCloseFile}
+      />
       {onClose ? (
         // px-2 matches ContextTabBar's trailing zone so the collapse toggle
         // sits exactly where the expand toggle appears when the dock closes —
@@ -81,7 +90,13 @@ export function DockHeader({
 }
 
 /** The segmented view switch, shared by the desktop header and the phone chat sheet header. */
-export function DockViewSwitch({ view, views, onSelectView }: DockHeaderSlotArgs) {
+export function DockViewSwitch({
+  view,
+  views,
+  onSelectView,
+  fileTab,
+  onCloseFile,
+}: DockHeaderSlotArgs) {
   if (views.length <= 1) return null;
   return (
     <SegmentedTabs
@@ -90,7 +105,26 @@ export function DockViewSwitch({ view, views, onSelectView }: DockHeaderSlotArgs
       onChange={onSelectView}
       options={views.map((segment) => ({
         value: segment,
-        label: <DockViewLabel view={segment} />,
+        label:
+          segment === "file" && fileTab ? (
+            <span className="block max-w-36 truncate">{fileTab.name}</span>
+          ) : (
+            <DockViewLabel view={segment} />
+          ),
+        trailingAction:
+          segment === "file" && fileTab && onCloseFile ? (
+            <button
+              type="button"
+              aria-label={t`Close ${fileTab.name}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onCloseFile();
+              }}
+              className="focus-ring mr-1 grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground [@media(pointer:coarse)]:size-8"
+            >
+              <X className="size-3.5" aria-hidden />
+            </button>
+          ) : null,
       }))}
     />
   );
@@ -104,5 +138,7 @@ function DockViewLabel({ view }: { view: DockView }) {
       return <Trans>Context</Trans>;
     case "changes":
       return <Trans>Changes</Trans>;
+    case "file":
+      return null;
   }
 }

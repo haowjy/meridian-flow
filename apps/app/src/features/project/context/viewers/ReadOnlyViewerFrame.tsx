@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 export type ReadOnlyViewerHeader = {
   name: string;
   path: string;
+  action?: ReactNode;
 };
 
 export type ReadOnlyViewerFrameProps = {
@@ -34,10 +35,11 @@ export function ReadOnlyViewerFrame({ header, children, footer }: ReadOnlyViewer
             paddingRight: "calc(1rem + env(safe-area-inset-right))",
           }}
         >
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold text-foreground">{header.name}</div>
             <div className="truncate font-mono text-meta text-ink-subtle">{header.path}</div>
           </div>
+          {header.action}
         </header>
       ) : null}
       <div

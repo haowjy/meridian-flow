@@ -13,7 +13,7 @@ import {
   NotebookPen,
   Upload,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
@@ -28,6 +28,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { contextTabFromFile } from "../context/context-tab-from-file";
+import { useDockViewStore, useOpenFileInDock } from "../dock/dock-view-store";
 import { usePostApplyDraftGroupProjections } from "../draft-apply-recovery/DraftApplyRecoveryProvider";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { useProjectLeaveGuard } from "../routing/ProjectNavigationContext";
@@ -55,6 +57,7 @@ export function WorkDetailScreen({
   catalogWorks = [work],
 }: WorkDetailScreenProps) {
   const { openChat } = useChatNavigation();
+  const openFileInDock = useOpenFileInDock(work.id);
   const mutations = useWorkMutations(projectId);
   const controller = useWorkMetadataController(work, (data) =>
     mutations.update.mutateAsync({ workId: work.id, data }),
@@ -63,6 +66,11 @@ export function WorkDetailScreen({
   const [activeCommand, setActiveCommand] = useState<WorkDialogAction["type"] | null>(null);
   const manageButton = useRef<HTMLButtonElement>(null);
   const scrollOwner = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const { enterWork, leaveWork } = useDockViewStore.getState();
+    enterWork(work.id);
+    return () => leaveWork(work.id);
+  }, [work.id]);
   useProjectLeaveGuard({
     request: (intent) => controller.request({ ...intent, label: t`Continue navigation` }),
     dirty: () => controller.dirty,
@@ -130,12 +138,14 @@ export function WorkDetailScreen({
             work={controller.work}
             scheme="scratch"
             icon={NotebookPen}
+            onOpenFile={openFileInDock}
           />
           <TreeSummary
             projectId={projectId}
             work={controller.work}
             scheme="uploads"
             icon={Upload}
+            onOpenFile={openFileInDock}
           />
         </div>
         <ResourceSection title={t`Associated chats`}>
@@ -253,11 +263,13 @@ function TreeSummary({
   work,
   scheme,
   icon: Icon,
+  onOpenFile,
 }: {
   projectId: string;
   work: Work;
   scheme: "scratch" | "uploads";
   icon: typeof NotebookPen;
+  onOpenFile: (tab: Extract<import("@/client/stores").ContextTab, { kind: "viewer" }>) => void;
 }) {
   const query = useContextCatalogView(projectId, scheme, { workId: work.id });
   const count = query.catalog?.files().length ?? 0;
@@ -287,10 +299,12 @@ function TreeSummary({
               </span>
             </span>
           </div>
-          <p className="text-sm text-muted-foreground">
-            <Trans>Viewing chat resources is not available yet.</Trans>
-          </p>
-          <CatalogPreview catalog={query.catalog} />
+          <CatalogPreview
+            catalog={query.catalog}
+            scheme={scheme}
+            workId={work.id}
+            onOpenFile={onOpenFile}
+          />
         </div>
       )}
     </ResourceSection>
@@ -314,23 +328,60 @@ function Loading() {
 function Empty({ children }: { children: React.ReactNode }) {
   return <p className="text-sm text-muted-foreground">{children}</p>;
 }
-function CatalogPreview({ catalog }: { catalog: CatalogContextView }) {
+function CatalogPreview({
+  catalog,
+  scheme,
+  workId,
+  onOpenFile,
+}: {
+  catalog: CatalogContextView;
+  scheme: "scratch" | "uploads";
+  workId: string;
+  onOpenFile: (tab: Extract<import("@/client/stores").ContextTab, { kind: "viewer" }>) => void;
+}) {
   const children = catalog.children(catalog.root.entryId);
   const visible = children.slice(0, 3);
   if (!visible.length) return null;
   return (
     <ul className="space-y-1 px-1" aria-label={t`Contents preview`}>
       {visible.map((node) => (
-        <li
-          key={node.path}
-          className="flex min-w-0 items-center gap-2 text-meta text-muted-foreground"
-        >
-          {node.kind === "dir" ? (
-            <Folder className="size-3.5 shrink-0" aria-hidden />
+        <li key={node.path} className="min-w-0 text-meta text-muted-foreground">
+          {node.kind === "file" ? (
+            <button
+              type="button"
+              className="focus-ring flex min-h-9 w-full min-w-0 items-center gap-2 rounded px-1 text-left hover:bg-sidebar-accent/40 hover:text-foreground"
+              onClick={() => {
+                const tab = node.editable
+                  ? node.filetype === "markdown"
+                    ? {
+                        kind: "viewer" as const,
+                        documentId: node.documentId,
+                        scheme,
+                        path: node.path,
+                        name: node.name,
+                        workId,
+                        editable: false as const,
+                        fileType: "binary" as const,
+                        mimeType: "text/markdown",
+                      }
+                    : null
+                  : contextTabFromFile(scheme, node, workId);
+                if (tab?.kind === "viewer") onOpenFile(tab);
+              }}
+            >
+              <FileText className="size-3.5 shrink-0" aria-hidden />
+              <span className="min-w-0 truncate">{node.name}</span>
+            </button>
           ) : (
-            <FileText className="size-3.5 shrink-0" aria-hidden />
+            <span className="flex min-h-9 min-w-0 items-center gap-2 px-1">
+              {node.kind === "dir" ? (
+                <Folder className="size-3.5 shrink-0" aria-hidden />
+              ) : (
+                <FileText className="size-3.5 shrink-0" aria-hidden />
+              )}
+              <span className="min-w-0 truncate">{node.name}</span>
+            </span>
           )}
-          <span className="min-w-0 truncate">{node.name}</span>
         </li>
       ))}
       {children.length > visible.length ? (

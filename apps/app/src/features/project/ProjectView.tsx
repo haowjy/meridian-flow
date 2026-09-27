@@ -19,6 +19,7 @@ import {
   type ProjectContextTreeScheme,
   type Work,
 } from "@meridian/contracts/protocol";
+import { parseRequestId } from "@meridian/contracts/request-id";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { updateProject } from "@/client/api/projects-api";
@@ -606,9 +607,9 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   useCompactDesktopAutoCollapse(setDockCollapsed, setSurfaceCollapsed);
   const setDockView = useDockViewStore((state) => state.setDockView);
 
-  useDockReveal(() => {
+  useDockReveal((view) => {
     setDockCollapsed(false);
-    setDockView(props.activeScreen, "chat");
+    setDockView(props.activeScreen, view);
   });
 
   const isOpen = (surfaceId: SurfaceId) => !layout[surfaceId].collapsed;
@@ -761,6 +762,15 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                     visible={!chatIndexShowing && (chatPlacement === "center" || isOpen("chat"))}
                     onCloseDock={close("chat")}
                     onOpenContextTarget={props.onOpenContextTarget}
+                    onOpenFileInEditor={(tab) => {
+                      if (tab.scheme !== "scratch" && tab.scheme !== "uploads") return;
+                      const workId = parseRequestId(tab.workId);
+                      if (!workId) return;
+                      void props.routeCommands.openWorkContext(
+                        { kind: "work-context", workId, scheme: tab.scheme, path: tab.path },
+                        { replace: false },
+                      );
+                    }}
                   />
                 </DraftReviewBoundary>
               </div>
