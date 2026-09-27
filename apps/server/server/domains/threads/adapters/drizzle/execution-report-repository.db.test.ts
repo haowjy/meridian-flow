@@ -60,6 +60,15 @@ else
           createdByUserId: ids.otherUser,
           ref: "c1",
         },
+      ]);
+      await db.insert(schema.turns).values({
+        id: ids.otherProjectRootTurn,
+        threadId: ids.otherProjectRoot,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      await db.insert(schema.threads).values([
         {
           id: ids.otherChild,
           projectId: ids.project,
@@ -86,13 +95,6 @@ else
         },
       ]);
       await db.insert(schema.turns).values([
-        {
-          id: ids.otherProjectRootTurn,
-          threadId: ids.otherProjectRoot,
-          role: "assistant",
-          origin: "assistant",
-          status: "complete",
-        },
         {
           id: ids.otherProjectChildUserTurn,
           threadId: ids.otherProjectChild,

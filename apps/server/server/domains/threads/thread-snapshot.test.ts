@@ -26,19 +26,33 @@ describe("buildThreadSnapshot parent", () => {
       projectId: "project-1",
       title: "Muse chat",
     });
+    const parentTurn = await repos.turns.create({
+      threadId: parent.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
     const child = await repos.threads.createSubagent({
       userId: "user-1",
       projectId: "project-1",
       parentThreadId: parent.id as ThreadId,
       rootThreadId: parent.id as ThreadId,
+      originTurnId: parentTurn.id,
       spawnDepth: 1,
       title: "Critic",
+    });
+    const childTurn = await repos.turns.create({
+      threadId: child.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
     });
     const nested = await repos.threads.createSubagent({
       userId: "user-1",
       projectId: "project-1",
       parentThreadId: child.id as ThreadId,
       rootThreadId: parent.id as ThreadId,
+      originTurnId: childTurn.id,
       spawnDepth: 2,
       title: "Helper",
     });
@@ -61,19 +75,33 @@ describe("buildThreadSnapshot parent", () => {
   it("snapshots direct children without grandchildren or lineage-only fields", async () => {
     const repos = createInMemoryRepositories();
     const parent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+    const parentTurn = await repos.turns.create({
+      threadId: parent.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
     const child = await repos.threads.createSubagent({
       userId: "user-1",
       projectId: "project-1",
       parentThreadId: parent.id as ThreadId,
       rootThreadId: parent.id as ThreadId,
+      originTurnId: parentTurn.id,
       spawnDepth: 1,
       title: "Critic",
+    });
+    const childTurn = await repos.turns.create({
+      threadId: child.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
     });
     await repos.threads.createSubagent({
       userId: "user-1",
       projectId: "project-1",
       parentThreadId: child.id as ThreadId,
       rootThreadId: parent.id as ThreadId,
+      originTurnId: childTurn.id,
       spawnDepth: 2,
       title: "Helper",
     });
@@ -99,7 +127,7 @@ describe("buildThreadSnapshot parent", () => {
         agentName: child.agentName,
         spawnStatus: "running",
         status: { kind: "asleep" },
-        originTurnId: null,
+        originTurnId: parentTurn.id,
       },
     ]);
   });

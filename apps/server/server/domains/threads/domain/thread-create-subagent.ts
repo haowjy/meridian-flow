@@ -13,7 +13,7 @@ export interface CreateSubagentThreadInput {
   workId?: WorkId | null;
   parentThreadId: ThreadId;
   rootThreadId: ThreadId;
-  originTurnId?: TurnId;
+  originTurnId: TurnId;
   spawnDepth: number;
   title?: string | null;
   spawnStatus?: SpawnStatus;
@@ -41,7 +41,7 @@ export function buildSubagentThreadRow(input: CreateSubagentThreadInput): Thread
     activeLeafTurnId: null,
     parentThreadId: input.parentThreadId,
     rootThreadId: input.rootThreadId,
-    originTurnId: input.originTurnId ?? null,
+    originTurnId: input.originTurnId,
     spawnDepth: input.spawnDepth,
     spawnStatus: input.spawnStatus ?? "running",
     totalCostUsd: "0",

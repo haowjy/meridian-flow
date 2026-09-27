@@ -66,6 +66,7 @@ const expectedSuites = [
   "apps/server/server/domains/threads/adapters/drizzle/thread-work-membership-races.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/execution-report-repository.db.test.ts",
   "apps/server/server/domains/threads/domain/rebind-thread-work.db.test.ts",
+  "apps/server/server/domains/threads/domain/derive-conversation.db.test.ts",
   "apps/server/server/lib/thread-work-rebind-route.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/turn-start-race.db.test.ts",
   "apps/server/server/lib/compose.runtime-settlement.db.test.ts",

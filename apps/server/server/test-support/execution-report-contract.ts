@@ -14,6 +14,7 @@ export function executionReportContract(create: () => Promise<ExecutionScenario>
         projectId: ids.project,
         parentThreadId: ids.caller,
         rootThreadId: ids.caller,
+        originTurnId: ids.callerTurn,
         spawnDepth: 1,
       });
       await expect(s.admit({ childThreadId: other.id, handle: other.ref ?? "" })).rejects.toThrow();

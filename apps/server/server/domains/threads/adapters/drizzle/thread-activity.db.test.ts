@@ -32,19 +32,33 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: ids.projectId,
         title: "Activity root",
       });
+      const rootTurn = await repos.turns.create({
+        threadId: root.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
       const childA = await repos.threads.createSubagent({
         userId: ids.userId,
         projectId: ids.projectId,
         parentThreadId: root.id,
         rootThreadId: root.id,
+        originTurnId: rootTurn.id,
         spawnDepth: 1,
         title: "Child A",
+      });
+      const childTurn = await repos.turns.create({
+        threadId: childA.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
       });
       const childB = await repos.threads.createSubagent({
         userId: ids.userId,
         projectId: ids.projectId,
         parentThreadId: root.id,
         rootThreadId: root.id,
+        originTurnId: rootTurn.id,
         spawnDepth: 1,
         title: "Child B",
       });
@@ -53,6 +67,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: ids.projectId,
         parentThreadId: childA.id,
         rootThreadId: root.id,
+        originTurnId: childTurn.id,
         spawnDepth: 2,
         title: "Grandchild",
       });
@@ -61,6 +76,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         role: "user",
         origin: "writer",
         status: "complete",
+        prevTurnId: childTurn.id,
       });
       const derivedPrimary = await repos.threads.createDerivedPrimary({
         userId: ids.userId,

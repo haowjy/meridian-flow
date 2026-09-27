@@ -48,39 +48,53 @@ export async function executionScenario(db?: Database, ids = executionIds()) {
         status: "complete",
       });
     }
-    await db.insert(schema.threads).values([
-      {
-        id: ids.caller,
-        projectId: ids.project,
-        createdByUserId: ids.user,
-        ref: ids.root ? "p0" : "c1",
-        ...(ids.root
-          ? {
-              kind: "subagent",
-              parentThreadId: ids.root,
-              rootThreadId: ids.root,
-              originTurnId: ids.rootTurn,
-              originType: "spawn",
-              spawnStatus: "succeeded",
-            }
-          : {}),
-      },
-      {
-        id: ids.child,
-        projectId: ids.project,
-        createdByUserId: ids.user,
-        ref: "p1",
-        kind: "subagent",
-        parentThreadId: ids.caller,
-        rootThreadId: ids.root ?? ids.caller,
-        originTurnId: ids.callerTurn,
-        originType: "spawn",
-        spawnStatus: "running",
-      },
-    ]);
+    await db.insert(schema.threads).values({
+      id: ids.caller,
+      projectId: ids.project,
+      createdByUserId: ids.user,
+      ref: ids.root ? "p0" : "c1",
+      ...(ids.root
+        ? {
+            kind: "subagent",
+            parentThreadId: ids.root,
+            rootThreadId: ids.root,
+            originTurnId: ids.rootTurn,
+            originType: "spawn",
+            spawnStatus: "succeeded",
+          }
+        : {}),
+    });
+    await db.insert(schema.turns).values({
+      id: ids.callerTurn,
+      threadId: ids.caller,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
+    await db.insert(schema.threads).values({
+      id: ids.child,
+      projectId: ids.project,
+      createdByUserId: ids.user,
+      ref: "p1",
+      kind: "subagent",
+      parentThreadId: ids.caller,
+      rootThreadId: ids.root ?? ids.caller,
+      originTurnId: ids.callerTurn,
+      originType: "spawn",
+      spawnStatus: "running",
+    });
     await db.insert(schema.projectThreadCounters).values({ projectId: ids.project, n: 1 });
   } else {
     await repos.threads.create({ id: ids.caller, userId: ids.user, projectId: ids.project });
+  }
+  if (!db) {
+    await repos.turns.create({
+      id: ids.callerTurn,
+      threadId: ids.caller,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
     await repos.threads.createSubagent({
       id: ids.child,
       userId: ids.user,
@@ -91,13 +105,6 @@ export async function executionScenario(db?: Database, ids = executionIds()) {
       spawnDepth: 1,
     });
   }
-  await repos.turns.create({
-    id: ids.callerTurn,
-    threadId: ids.caller,
-    role: "assistant",
-    origin: "assistant",
-    status: "complete",
-  });
   await repos.turns.create({
     id: ids.childUserTurn,
     threadId: ids.child,

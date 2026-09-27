@@ -10,7 +10,7 @@ import { persistAndAppendEvents } from "../loop/persistence.js";
 import type { DeliveryProducer } from "../loop/runtime-delivery.js";
 import { invocationCardProps } from "./spawn-output.js";
 
-export type PublicationOutcome = "published" | "skipped" | "parked" | "already";
+export type PublicationOutcome = "published" | "parked" | "already";
 
 export interface ReportPublisher {
   publish(childThreadId: ThreadId, assistantTurnId: TurnId): Promise<PublicationOutcome>;
@@ -25,49 +25,28 @@ export function createReportPublisher(deps: {
 }): ReportPublisher {
   let cursor: TurnId | undefined;
 
-  async function markSkipped(childThreadId: ThreadId, assistantTurnId: TurnId) {
-    return deps.repos.transaction(async () => {
-      const report = await deps.repos.executionReports.lockPendingPublication(
-        childThreadId,
-        assistantTurnId,
-      );
-      if (!report) return "already" as const;
-      if (report.callerThreadId !== null) return "parked" as const;
-      await deps.repos.executionReports.markPublished(childThreadId, assistantTurnId, "skipped");
-      return "skipped" as const;
-    });
-  }
-
   async function publish(childThreadId: ThreadId, assistantTurnId: TurnId) {
     const selected = await deps.repos.executionReports.findByExecution(
       childThreadId,
       assistantTurnId,
     );
     if (selected?.publication !== "pending") return "already";
-    const callerThreadId = selected.callerThreadId;
-    if (!callerThreadId) return markSkipped(childThreadId, assistantTurnId);
+    // A pending publication can only be admitted for an invocation with a caller.
+    const callerThreadId = selected.callerThreadId as ThreadId;
 
     // DeliveryProducer owns the parent lock, and its scoped producer never takes it
     // again. No child lock or lease wait is reachable from this callback.
     return deps.delivery.withThreadLock(callerThreadId, async (producer) =>
       deps.repos.transaction(async (): Promise<PublicationOutcome> => {
         const callerRow = await deps.repos.threads.lockByIdIncludingDeleted(callerThreadId);
+        if (!callerRow) {
+          throw new Error("Pending publication caller is missing despite its origin-turn reference");
+        }
         const report = await deps.repos.executionReports.lockPendingPublication(
           childThreadId,
           assistantTurnId,
         );
         if (!report) return "already";
-        if (report.callerThreadId === null || !callerRow) {
-          await deps.repos.executionReports.markPublished(
-            childThreadId,
-            assistantTurnId,
-            "skipped",
-          );
-          return "skipped";
-        }
-        if (report.callerThreadId !== callerThreadId) {
-          throw new Error("Execution report caller changed during publication");
-        }
         // Soft deletion of the caller or its project parks the obligation.
         // Restoration will make it eligible to the bounded sweep again.
         if (callerRow.deletedAt || !(await deps.repos.threads.findById(callerThreadId))) {

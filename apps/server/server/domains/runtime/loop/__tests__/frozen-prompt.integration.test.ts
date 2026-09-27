@@ -15,6 +15,7 @@ import {
   forkThreadAgent,
   handoffThreadAgent,
   rebindThreadWork,
+  SubagentDerivationError,
   type ThreadAgentSwapDeps,
 } from "../../../threads/index.js";
 import type { Message } from "../../gateway/index.js";
@@ -50,10 +51,6 @@ async function fixture(onStream?: (call: number) => Promise<void>) {
     slug: "writer",
     content: "---\nname: Writer\nmode: primary\n---\n\nOriginal writer.",
   });
-  const alternate = await agentCatalog.save("user-1", {
-    slug: "editor",
-    content: "---\nname: Editor\nmode: primary\n---\n\nDifferent editor.",
-  });
   const project = await projects.create({ userId: "user-1", title: "Serial" });
   const noWork = await works.ensureNoWork(project.id);
   const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
@@ -83,6 +80,7 @@ async function fixture(onStream?: (call: number) => Promise<void>) {
     works,
     agentRevisions,
     agentCatalog,
+    eventReader: rig.journalReader,
     eventWriter: rig.deps.eventWriter,
     workContextNotices: rig.delivery,
   };
@@ -98,7 +96,6 @@ async function fixture(onStream?: (call: number) => Promise<void>) {
     thread,
     works,
     original,
-    alternate,
     derive,
     run,
     requests: gateway.requests,
@@ -133,6 +130,7 @@ describe("frozen prompt provider requests", () => {
       projectId: rig.thread.projectId,
       parentThreadId: rig.thread.id,
       rootThreadId: rig.thread.id,
+      originTurnId: first.assistantTurnId,
       spawnDepth: 1,
     });
     const execution = await rig.repos.turns.create({
@@ -187,41 +185,41 @@ describe("frozen prompt provider requests", () => {
     expect(new Set(rig.requests.map((request) => systemHash(request.messages))).size).toBe(1);
   });
 
-  it("inherits a frozen prompt on default and same-Agent forks and handoff; only a different Agent rebakes", async () => {
+  it("keeps the source Agent and frozen prompt on forks and same-Agent handoff", async () => {
     const rig = await fixture();
     await rig.run();
     const parent = await rig.repos.threads.findById(rig.thread.id);
     // The source's current Work differs from the Work captured by its first bake.
     const work = await rig.works.create({ projectId: rig.thread.projectId, name: "Later Work" });
     await rig.repos.threadWorks.rebindPrimary(rig.thread.id, work.id);
-    for (const agentSelection of [undefined, rig.original.selection, rig.alternate.selection]) {
-      const fork = await forkThreadAgent(rig.derive, {
+    await rig.derive.agentCatalog.save(rig.thread.userId, {
+      slug: "writer",
+      content: "---\nname: Writer\nmode: primary\n---\n\nAdvanced writer.",
+      expectedRevisionId: rig.original.selection.definitionRevisionId,
+    });
+    for (let index = 0; index < 2; index += 1) {
+      const { thread: fork } = await forkThreadAgent(rig.derive, {
+        id: crypto.randomUUID(),
         threadId: rig.thread.id,
         userId: rig.thread.userId,
-        agentSelection,
       });
-      const inherited = agentSelection !== rig.alternate.selection;
-      expect(fork.bakedSkillSlugs).toEqual(inherited ? parent?.bakedSkillSlugs : null);
-      expect(fork.bakedTools).toEqual(inherited ? parent?.bakedTools : null);
-      expect(fork.agentDefinitionRevisionId).toBe(
-        inherited
-          ? rig.original.selection.definitionRevisionId
-          : rig.alternate.selection.definitionRevisionId,
-      );
-      expect(fork.agentName).toBe(inherited ? "Writer" : "Editor");
+      expect(fork.bakedSkillSlugs).toEqual(parent?.bakedSkillSlugs);
+      expect(fork.bakedTools).toEqual(parent?.bakedTools);
+      expect(fork.agentDefinitionRevisionId).toBe(rig.original.selection.definitionRevisionId);
+      expect(fork.agentName).toBe("Writer");
       await rig.run(fork.id);
       const request = rig.requests[rig.requests.length - 1];
       expect(
         request.messages.some(
           (message) =>
-            message.role === (inherited ? "user" : "system") &&
+            message.role === "user" &&
             message.content.some(
               (part) =>
                 part.type === "text" && part.text.includes('current: later-work: "Later Work"'),
             ),
         ),
       ).toBe(true);
-      expect(systemHash(request.messages) === systemHash(rig.requests[0].messages)).toBe(inherited);
+      expect(systemHash(request.messages)).toBe(systemHash(rig.requests[0].messages));
       expect(
         request.messages.some(
           (message) =>
@@ -258,17 +256,24 @@ describe("frozen prompt provider requests", () => {
     ).toBe(true);
   });
 
-  it("does not promote a subagent-only binding into a primary fork", async () => {
+  it("refuses forking or handing off a subagent thread", async () => {
     const rig = await fixture();
     const agent = await rig.derive.agentCatalog.save(rig.thread.userId, {
       slug: "helper",
       content: "---\nname: Helper\nmode: subagent\n---\n\nHelper.",
+    });
+    const parentTurn = await rig.repos.turns.create({
+      threadId: rig.thread.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
     });
     const child = await rig.repos.threads.createSubagent({
       userId: rig.thread.userId,
       projectId: rig.thread.projectId,
       parentThreadId: rig.thread.id,
       rootThreadId: rig.thread.id,
+      originTurnId: parentTurn.id,
       spawnDepth: 1,
     });
     await rig.derive.agentRevisions.bindThread(
@@ -281,30 +286,20 @@ describe("frozen prompt provider requests", () => {
       },
       null,
     );
-    await rig.repos.turns.create({
-      threadId: child.id,
-      role: "user",
-      origin: "system",
-      status: "complete",
-    });
-    for (const agentSelection of [undefined, agent.selection]) {
-      await expect(
-        forkThreadAgent(rig.derive, {
-          threadId: child.id,
-          userId: child.userId,
-          agentSelection,
-        }),
-      ).rejects.toMatchObject({
-        name: "AgentSelectionError",
-        agentRef: agent.selection.definitionRevisionId,
-      });
-    }
-    const fork = await forkThreadAgent(rig.derive, {
-      threadId: child.id,
-      userId: child.userId,
-      agentSelection: rig.original.selection,
-    });
-    expect(fork.agentName).toBe("Writer");
+    await expect(
+      forkThreadAgent(rig.derive, {
+        id: crypto.randomUUID(),
+        threadId: child.id,
+        userId: child.userId,
+      }),
+    ).rejects.toBeInstanceOf(SubagentDerivationError);
+    await expect(
+      handoffThreadAgent(rig.derive, {
+        threadId: child.id,
+        userId: child.userId,
+        agentSelection: rig.original.selection,
+      }),
+    ).rejects.toBeInstanceOf(SubagentDerivationError);
   });
 
   it("leaves a default fork unfrozen when its parent has not made a request", async () => {
@@ -315,7 +310,8 @@ describe("frozen prompt provider requests", () => {
       origin: "writer",
       status: "complete",
     });
-    const fork = await forkThreadAgent(rig.derive, {
+    const { thread: fork } = await forkThreadAgent(rig.derive, {
+      id: crypto.randomUUID(),
       threadId: rig.thread.id,
       userId: rig.thread.userId,
     });

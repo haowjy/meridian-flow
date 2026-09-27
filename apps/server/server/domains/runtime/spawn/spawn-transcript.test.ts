@@ -14,11 +14,18 @@ async function setup() {
   const repos = createInMemoryRepositories({ projects });
   const project = await projects.create({ userId: "writer", title: "Return" });
   const parent = await repos.threads.create({ userId: "writer", projectId: project.id });
+  const originTurn = await repos.turns.create({
+    threadId: parent.id,
+    role: "assistant",
+    origin: "assistant",
+    status: "complete",
+  });
   const child = await repos.threads.createSubagent({
     userId: "writer",
     projectId: project.id,
     parentThreadId: parent.id,
     rootThreadId: parent.id,
+    originTurnId: originTurn.id,
     spawnDepth: 1,
   });
   const turn = await repos.turns.create({

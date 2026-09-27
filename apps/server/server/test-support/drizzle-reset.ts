@@ -13,6 +13,7 @@ type CatalogTableRow = {
   schema_name: string;
   table_name: string;
   parent_oid: string | null;
+  condeferrable: boolean | null;
 };
 
 type TableNode = {
@@ -51,7 +52,11 @@ function childFirstTableOrder(rows: CatalogTableRow[]): TableNode[] {
       qualifiedName: quoteTable(row.schema_name, row.table_name),
       parentOids: new Set<string>(),
     };
-    if (row.parent_oid) node.parentOids.add(row.parent_oid);
+    // Deferrable edges still pull dependent tables into the reset, but do not
+    // constrain child-first ordering because the transaction defers their checks.
+    if (row.parent_oid && !row.condeferrable) {
+      node.parentOids.add(row.parent_oid);
+    }
     nodes.set(row.table_oid, node);
   }
 
@@ -166,7 +171,8 @@ export async function deleteDrizzleRows(db: Database, tables: unknown[]): Promis
         relation.oid::text AS table_oid,
         namespace.nspname AS schema_name,
         relation.relname AS table_name,
-        foreign_key.confrelid::text AS parent_oid
+        foreign_key.confrelid::text AS parent_oid,
+        foreign_key.condeferrable
       FROM tables_to_clear
       INNER JOIN pg_catalog.pg_class AS relation
         ON relation.oid = tables_to_clear.oid
@@ -194,6 +200,7 @@ export async function deleteDrizzleRows(db: Database, tables: unknown[]): Promis
     await transaction.execute(
       sql.raw(`LOCK TABLE ${lockOrder.join(", ")} IN ACCESS EXCLUSIVE MODE`),
     );
+    await transaction.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
     for (const table of tableOrder) {
       await transaction.execute(sql.raw(`DELETE FROM ${table.qualifiedName}`));
     }

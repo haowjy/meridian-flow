@@ -148,15 +148,31 @@ async function createFixtureDocument(
 
 export async function cleanupProjectFixture(db: Db, fixture: ProjectFixture): Promise<void> {
   await db.begin(async (tx) => {
+    await tx`SET CONSTRAINTS ALL DEFERRED`;
     await tx`
       DELETE FROM turn_blocks
-      WHERE turn_id IN (SELECT id FROM turns WHERE thread_id = ${fixture.threadId})
+      WHERE turn_id IN (
+        SELECT id FROM turns
+        WHERE thread_id IN (SELECT id FROM threads WHERE project_id = ${fixture.projectId})
+      )
     `;
-    await tx`DELETE FROM event_journal WHERE thread_id = ${fixture.threadId}`;
-    await tx`DELETE FROM thread_documents WHERE thread_id = ${fixture.threadId}`;
-    await tx`DELETE FROM turn_document_touches WHERE thread_id = ${fixture.threadId}`;
-    await tx`DELETE FROM turns WHERE thread_id = ${fixture.threadId}`;
-    await tx`DELETE FROM threads WHERE id = ${fixture.threadId}`;
+    await tx`
+      DELETE FROM event_journal
+      WHERE thread_id IN (SELECT id FROM threads WHERE project_id = ${fixture.projectId})
+    `;
+    await tx`
+      DELETE FROM thread_documents
+      WHERE thread_id IN (SELECT id FROM threads WHERE project_id = ${fixture.projectId})
+    `;
+    await tx`
+      DELETE FROM turn_document_touches
+      WHERE thread_id IN (SELECT id FROM threads WHERE project_id = ${fixture.projectId})
+    `;
+    await tx`
+      DELETE FROM turns
+      WHERE thread_id IN (SELECT id FROM threads WHERE project_id = ${fixture.projectId})
+    `;
+    await tx`DELETE FROM threads WHERE project_id = ${fixture.projectId}`;
     await tx`
       DELETE FROM context_sources
       WHERE project_id = ${fixture.projectId}
@@ -169,6 +185,7 @@ export async function cleanupProjectFixture(db: Db, fixture: ProjectFixture): Pr
 
 export async function resetUserProjects(db: Db, userId: string): Promise<void> {
   await db.begin(async (tx) => {
+    await tx`SET CONSTRAINTS ALL DEFERRED`;
     await tx`
       DELETE FROM event_journal
       WHERE thread_id IN (
@@ -196,16 +213,6 @@ export async function resetUserProjects(db: Db, userId: string): Promise<void> {
           SELECT id FROM threads WHERE project_id IN (SELECT id FROM projects WHERE user_id = ${userId}::uuid)
         )
       )
-    `;
-    await tx`
-      UPDATE threads
-      SET
-        parent_thread_id = NULL,
-        origin_turn_id = NULL,
-        origin_type = NULL,
-        spawn_status = NULL,
-        active_leaf_turn_id = NULL
-      WHERE project_id IN (SELECT id FROM projects WHERE user_id = ${userId}::uuid)
     `;
     await tx`
       DELETE FROM turns

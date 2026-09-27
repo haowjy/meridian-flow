@@ -38,11 +38,18 @@ describe("appendSubagentActivity", () => {
   it("journals the same activity as the live read and thread snapshot", async () => {
     const repos = createInMemoryRepositories();
     const parent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+    const originTurn = await repos.turns.create({
+      threadId: parent.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
     const child = await repos.threads.createSubagent({
       userId: "user-1",
       projectId: "project-1",
       parentThreadId: parent.id,
       rootThreadId: parent.id,
+      originTurnId: originTurn.id,
       spawnDepth: 1,
       title: "Critic",
     });
@@ -135,18 +142,32 @@ describe("emitRunActivityBestEffort", () => {
   it("refreshes a drain-woken nested subagent on its direct parent's journal", async () => {
     const repos = createInMemoryRepositories();
     const root = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+    const rootTurn = await repos.turns.create({
+      threadId: root.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
     const parent = await repos.threads.createSubagent({
       userId: "user-1",
       projectId: "project-1",
       parentThreadId: root.id,
       rootThreadId: root.id,
+      originTurnId: rootTurn.id,
       spawnDepth: 1,
+    });
+    const parentTurn = await repos.turns.create({
+      threadId: parent.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
     });
     const nested = await repos.threads.createSubagent({
       userId: "user-1",
       projectId: "project-1",
       parentThreadId: parent.id,
       rootThreadId: root.id,
+      originTurnId: parentTurn.id,
       spawnDepth: 2,
     });
     const { appended, eventWriter } = recordingWriter();

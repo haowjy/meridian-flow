@@ -128,13 +128,22 @@ async function setup(
     agentRevisions: createTestAgentBinding("gpt-4.1-mini", "", () => [thread.id]),
   });
   const thread = options.child
-    ? await rig.repos.threads.createSubagent({
-        userId: USER_ID,
-        projectId: rig.project.id,
-        parentThreadId: rig.thread.id,
-        rootThreadId: rig.thread.id,
-        spawnDepth: 1,
-      })
+    ? await (async () => {
+        const originTurn = await rig.repos.turns.create({
+          threadId: rig.thread.id,
+          role: "assistant",
+          origin: "assistant",
+          status: "complete",
+        });
+        return rig.repos.threads.createSubagent({
+          userId: USER_ID,
+          projectId: rig.project.id,
+          parentThreadId: rig.thread.id,
+          rootThreadId: rig.thread.id,
+          originTurnId: originTurn.id,
+          spawnDepth: 1,
+        });
+      })()
     : rig.thread;
   return { ...rig, thread, requests };
 }
@@ -608,6 +617,7 @@ describe("drain-only start", () => {
       projectId: thread.projectId,
       parentThreadId: thread.id,
       rootThreadId: thread.id,
+      originTurnId: callerTurn.id,
       spawnDepth: 1,
     });
     const execution = await repos.turns.create({

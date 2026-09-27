@@ -17,9 +17,18 @@ else
     const db = createDb(DATABASE_URL, { max: 4 });
     const repos = createDrizzleRepositoriesForTest(db);
     const ids = THREAD_WORK_RACE;
+    let originTurnId = "";
 
     beforeEach(async () => {
       await resetThreadWorkRaceFixture(db);
+      originTurnId = (
+        await repos.turns.create({
+          threadId: ids.threadId,
+          role: "assistant",
+          origin: "assistant",
+          status: "complete",
+        })
+      ).id;
     });
     afterAll(() => db.close());
 
@@ -91,14 +100,21 @@ else
       expect(await persistedRoot(derived.id)).toBe(ids.threadId);
     });
 
-    it("a fork of a subagent becomes its sibling: same parent and root, same depth", async () => {
+    it("persists a derived primary with the source's sibling lineage", async () => {
       const subagent = await repos.threads.createSubagent({
         userId: ids.userId,
         projectId: ids.projectId,
         workId: ids.noWorkId,
         parentThreadId: ids.threadId,
         rootThreadId: ids.threadId,
+        originTurnId: originTurnId as never,
         spawnDepth: 2,
+      });
+      const sourceTurn = await repos.turns.create({
+        threadId: subagent.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
       });
       const fork = await repos.threads.createDerivedPrimary({
         userId: ids.userId,
@@ -106,7 +122,7 @@ else
         workId: ids.noWorkId,
         source: subagent,
         originType: "fork",
-        originTurnId: crypto.randomUUID(),
+        originTurnId: sourceTurn.id,
       });
       expect(fork.parentThreadId).toBe(subagent.parentThreadId);
       expect(fork.spawnDepth).toBe(subagent.spawnDepth);
@@ -120,6 +136,7 @@ else
         workId: ids.noWorkId,
         parentThreadId: ids.threadId,
         rootThreadId: ids.threadId,
+        originTurnId: originTurnId as never,
         spawnDepth: 1,
       });
       expect(await persistedRoot(subagent.id)).toBe(ids.threadId);

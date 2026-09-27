@@ -32,6 +32,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const unrelated = testSchema.table("unrelated", { id: integer("id").primaryKey() });
     const cycleA = testSchema.table("cycle_a", { id: integer("id").primaryKey() });
     const cycleB = testSchema.table("cycle_b", { id: integer("id").primaryKey() });
+    const deferredA = testSchema.table("deferred_a", { id: integer("id").primaryKey() });
+    const deferredB = testSchema.table("deferred_b", { id: integer("id").primaryKey() });
     const missing = testSchema.table("missing", { id: integer("id").primaryKey() });
     const quotedSchema = pgSchema("reset schema");
     const quotedRoot = quotedSchema.table('root "table"', { id: integer("id").primaryKey() });
@@ -83,6 +85,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       await db.execute(
         sql.raw(
+          'CREATE TABLE "drizzle_reset_test"."deferred_a" (id integer PRIMARY KEY, deferred_b_id integer)',
+        ),
+      );
+      await db.execute(
+        sql.raw(
+          'CREATE TABLE "drizzle_reset_test"."deferred_b" (id integer PRIMARY KEY, deferred_a_id integer)',
+        ),
+      );
+      await db.execute(
+        sql.raw(
+          'ALTER TABLE "drizzle_reset_test"."deferred_a" ADD CONSTRAINT deferred_a_b_fk FOREIGN KEY (deferred_b_id) REFERENCES "drizzle_reset_test"."deferred_b"(id) DEFERRABLE INITIALLY IMMEDIATE',
+        ),
+      );
+      await db.execute(
+        sql.raw(
+          'ALTER TABLE "drizzle_reset_test"."deferred_b" ADD CONSTRAINT deferred_b_a_fk FOREIGN KEY (deferred_a_id) REFERENCES "drizzle_reset_test"."deferred_a"(id) DEFERRABLE INITIALLY IMMEDIATE',
+        ),
+      );
+      await db.execute(
+        sql.raw(
           `CREATE FUNCTION "drizzle_reset_test".reject_parent_delete() RETURNS trigger LANGUAGE plpgsql AS $$
           BEGIN
             RAISE EXCEPTION 'parent delete rejected';
@@ -107,6 +129,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           'TRUNCATE "drizzle_reset_test"."parent", "drizzle_reset_test"."self_reference", "drizzle_reset_test"."unrelated" CASCADE',
         ),
       );
+      await db.execute(
+        sql.raw(
+          'TRUNCATE "drizzle_reset_test"."deferred_a", "drizzle_reset_test"."deferred_b" CASCADE',
+        ),
+      );
       await db.execute(sql.raw('TRUNCATE "reset schema"."root ""table""" CASCADE'));
       await db.execute(
         sql.raw('DROP TRIGGER IF EXISTS reject_delete ON "drizzle_reset_test"."parent"'),
@@ -119,11 +146,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.$client.end();
     });
 
-    it("derives event_journal from turns and preserves its parent thread", async () => {
+    it("derives event_journal and threads from turns and clears the deferrable cycle", async () => {
       await truncateDrizzleTables(db, [users]);
       const userId = randomUUID();
       const projectId = randomUUID();
       const threadId = randomUUID();
+      const forkThreadId = randomUUID();
       const turnId = randomUUID();
       try {
         await db.insert(users).values(conformanceUserValues(userId, "reset-graph"));
@@ -146,6 +174,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           origin: "assistant",
           status: "complete",
         });
+        await db.insert(threads).values({
+          id: forkThreadId,
+          projectId,
+          createdByUserId: userId,
+          title: "Reset fork",
+          kind: "primary",
+          rootThreadId: threadId,
+          originType: "fork",
+          originTurnId: turnId,
+        });
         await db.insert(eventJournal).values({
           threadId,
           turnId,
@@ -158,9 +196,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
         await expect(db.select().from(eventJournal)).resolves.toEqual([]);
         await expect(db.select().from(turns)).resolves.toEqual([]);
-        await expect(db.select({ id: threads.id }).from(threads)).resolves.toEqual([
-          { id: threadId },
-        ]);
+        await expect(db.select({ id: threads.id }).from(threads)).resolves.toEqual([]);
       } finally {
         await truncateDrizzleTables(db, [users]);
       }
@@ -211,6 +247,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(deleteDrizzleRows(db, [cycleA, cycleB])).rejects.toThrow(
         "foreign keys form a cycle",
       );
+    });
+
+    it("clears a deferrable FK cycle without weakening non-deferrable cycle checks", async () => {
+      await db.transaction(async (transaction) => {
+        await transaction.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
+        await transaction.execute(
+          sql.raw('INSERT INTO "drizzle_reset_test"."deferred_a" VALUES (1, 2)'),
+        );
+        await transaction.execute(
+          sql.raw('INSERT INTO "drizzle_reset_test"."deferred_b" VALUES (2, 1)'),
+        );
+      });
+
+      await deleteDrizzleRows(db, [deferredA]);
+
+      await expect(db.select().from(deferredA)).resolves.toEqual([]);
+      await expect(db.select().from(deferredB)).resolves.toEqual([]);
+      await expect(deleteDrizzleRows(db, [cycleA])).rejects.toThrow("foreign keys form a cycle");
     });
 
     it("rolls back child deletes when a later parent delete fails", async () => {

@@ -28,8 +28,17 @@ else
       projectionMutation: createTestWorkProjectionMutation(db),
     });
     const ids = THREAD_WORK_RACE;
+    let originTurnId = "";
     beforeEach(async () => {
       await resetThreadWorkRaceFixture(db);
+      originTurnId = (
+        await repos.turns.create({
+          threadId: ids.threadId,
+          role: "assistant",
+          origin: "assistant",
+          status: "complete",
+        })
+      ).id;
       await db
         .update(schema.works)
         .set({ status: "active", archivedAt: null })
@@ -111,6 +120,7 @@ else
         workId: ids.noWorkId,
         parentThreadId: ids.threadId,
         rootThreadId: ids.threadId,
+        originTurnId: originTurnId as never,
         spawnDepth: 1,
       } as never);
       await repos.threadWorks.addMembership(derived.id, ids.noWorkId, true);
@@ -142,6 +152,7 @@ else
             projectId: ids.projectId,
             parentThreadId: ids.threadId,
             rootThreadId: ids.threadId,
+            originTurnId: originTurnId as never,
             spawnDepth: 1,
           });
           childId = child.id;

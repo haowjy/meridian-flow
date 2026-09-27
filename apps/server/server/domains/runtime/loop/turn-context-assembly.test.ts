@@ -237,11 +237,18 @@ describe("assembleNextTurnContext agentless overlay freeze", () => {
       threadExists: async (id) => Boolean(await repos.threads.findById(id)),
     });
     const parent = await repos.threads.create({ userId: "user-1", projectId: project.id });
+    const parentTurn = await repos.turns.create({
+      threadId: parent.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
     const child = await repos.threads.createSubagent({
       userId: "user-1",
       projectId: project.id,
       parentThreadId: parent.id,
       rootThreadId: parent.id,
+      originTurnId: parentTurn.id,
       spawnDepth: 1,
       title: "Child",
     });

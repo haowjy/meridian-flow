@@ -914,6 +914,7 @@ describe("ChildRunCoordinator thread_message", () => {
       projectId: parent.projectId,
       parentThreadId: parent.id as ThreadId,
       rootThreadId: parent.id as ThreadId,
+      originTurnId: "turn-2" as TurnId,
       spawnDepth: 1,
     });
     expect(await revisions.readThreadBinding(child.id)).toBeUndefined();

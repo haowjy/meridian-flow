@@ -21,6 +21,7 @@ import {
   integer,
   jsonb,
   numeric,
+  type PgColumn,
   pgTable,
   primaryKey,
   text,
@@ -56,7 +57,9 @@ export const threads = pgTable(
     systemPromptHash: text("system_prompt_hash"),
     parentThreadId: uuid("parent_thread_id").$type<ThreadId>(),
     rootThreadId: uuid("root_thread_id").$type<ThreadId>(),
-    originTurnId: uuid("origin_turn_id").$type<TurnId>(),
+    originTurnId: uuid("origin_turn_id")
+      .$type<TurnId>()
+      .references((): PgColumn => turns.id),
     originType: text("origin_type"),
     spawnStatus: text("spawn_status"),
     spawnDepth: integer("spawn_depth").notNull().default(0),
@@ -261,7 +264,7 @@ export const turns = pgTable(
     threadId: uuid("thread_id")
       .$type<ThreadId>()
       .notNull()
-      .references(() => threads.id, { onDelete: "restrict" }),
+      .references((): PgColumn => threads.id, { onDelete: "restrict" }),
     parentTurnId: uuid("parent_turn_id").$type<TurnId>(),
     compactionModel: text("compaction_model"),
     role: text("role").notNull(),
@@ -584,5 +587,5 @@ export const userTurnAdmissions = pgTable(
   ],
 );
 
-// Deferred FKs in migration SQL: threads.parent_thread_id, threads.origin_turn_id,
-// threads.active_leaf_turn_id, turns.parent_turn_id.
+// Deleting a source turn clears only the provenance pointer, preserving the
+// derived thread's own transcript and output after an explicit hard purge.

@@ -182,11 +182,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await chats.findLiveByProjectRef(project.id, "c1")).toMatchObject({
         id: first.id,
       });
+      const spawnTurn = await db
+        .insert(schema.turns)
+        .values({
+          threadId: first.id,
+          role: "assistant",
+          origin: "assistant",
+          status: "complete",
+        })
+        .returning({ id: schema.turns.id });
       const child = await chats.createSubagent({
         userId,
         projectId: project.id,
         parentThreadId: first.id,
         rootThreadId: first.id,
+        originTurnId: spawnTurn[0].id,
         spawnDepth: 1,
       });
       expect(child.ref).toBe("p4");

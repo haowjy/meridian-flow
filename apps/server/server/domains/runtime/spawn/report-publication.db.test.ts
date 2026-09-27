@@ -546,24 +546,6 @@ else
       ).toBe("published");
     });
 
-    it("abandons publication after hard deletion without deleting retained child output", async () => {
-      await terminal();
-      await db.delete(schema.turnBlocks).where(eq(schema.turnBlocks.id, ids.card));
-      await db.delete(schema.turns).where(eq(schema.turns.id, ids.callerTurn));
-      await db.delete(schema.threads).where(eq(schema.threads.id, ids.caller));
-      expect(
-        (await repos.executionReports.findByExecution(ids.child, ids.execution))?.callerThreadId,
-      ).toBeNull();
-      expect(await publisher.publish(ids.child, ids.execution)).toBe("skipped");
-      expect(
-        (await repos.executionReports.findByExecution(ids.child, ids.execution))?.publication,
-      ).toBe("skipped");
-      expect(
-        (await repos.executionReports.findByExecution(ids.child, ids.execution))?.summary,
-      ).toBe("secret report body");
-      expect(await repos.threads.findById(ids.child)).not.toBeNull();
-    });
-
     it("parks a deleted caller, resumes on restoration, and repairs only after real run ownership is free", async () => {
       await db
         .update(schema.threads)
