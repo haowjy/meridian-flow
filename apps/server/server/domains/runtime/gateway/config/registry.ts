@@ -269,7 +269,7 @@ const GPT_4O_MODEL = {
 const DEEPSEEK_V4_FLASH_MODEL = {
   id: "deepseek-v4-flash",
   displayName: "DeepSeek V4 Flash",
-  contextWindow: 128_000,
+  contextWindow: 1_048_576,
   maxOutputTokens: 16_384,
   promptCache: DEEPSEEK_CACHE_ESTIMATE,
   capabilities: ["streaming", "tool_calling", "structured_output", "reasoning"],

@@ -29,6 +29,7 @@ import {
   IMAGE_PART_TOKEN_ESTIMATE,
   planCompaction,
   projectActiveHistory,
+  projectCompactedHistory,
   resolveCompactionTrigger,
 } from "./compaction/index.js";
 import { buildContext } from "./context-builder.js";
@@ -1067,4 +1068,37 @@ describe("projectActiveHistory", () => {
         .success,
     ).toBe(false);
   });
+});
+
+it("summarizes only the cut blocks plus the prior summary, not the lifted pin or tail", () => {
+  const prior = turn("prior", 0, "user", {
+    metadata: { kind: "system_update", section: "compaction_summary" },
+  });
+  const pin = turn("pin", 1, "user");
+  const assistant = turn("reply", 2, "assistant");
+  const tail = turn("tail", 3, "assistant");
+  const blocks = [
+    block("prior-text", prior.id, 0, "text", "Earlier facts", "Earlier facts"),
+    block("pin-text", pin.id, 0, "text", "Latest request", "Latest request"),
+    block("cut", assistant.id, 0, "text", "Done", "Done"),
+    block("retained", assistant.id, 1, "text", "Recent", "Recent"),
+    block("tail-text", tail.id, 0, "text", "Tail", "Tail"),
+  ];
+  const plan = {
+    outcome: "planned" as const,
+    pinnedRequest: pin,
+    compactedThrough: { turnId: assistant.id, blockSequence: 0 },
+    retainedSuffix: [
+      { turn: pin, blocks: [blocks[1]] },
+      { turn: assistant, blocks: [blocks[3]] },
+      { turn: tail, blocks: [blocks[4]] },
+    ],
+    minimalTailFits: true,
+    tailBudgetTokens: 100,
+    minimalTailTokens: 100,
+    retainedSuffixTokens: 100,
+  };
+  const projected = projectCompactedHistory({ turns: [prior, pin, assistant, tail], blocks }, plan);
+  expect(projected.turns.map((turn) => turn.id)).toEqual(["prior", "reply"]);
+  expect(projected.blocks.map((block) => block.id)).toEqual(["prior-text", "cut"]);
 });

@@ -26,6 +26,7 @@ export interface ConversationSummarizer {
     instruction: "compaction" | "handoff_brief";
     requestInHand: GenerateRequest | null;
     forceCold?: boolean;
+    /** Cold source: only the cut (excluding the retained pin/tail), plus prior summary context. */
     projection: ProjectedActiveHistory;
     signal: AbortSignal;
   }): Promise<SummaryOutcome>;

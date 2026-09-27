@@ -557,19 +557,39 @@ the Yjs gateway and flushing observability. Still-running lanes emit
 `loop/request-preparation.ts` measures the assembled request and plans against raw
 history. The token baseline comes from the cache service's reusable-prefix
 selection with TTL ignored; missing/zero usage estimates the whole request.
-Without an explicit Agent limit, the trigger uses the model's input-pricing tier
-(if any) or usable window: floor(90% × min(tier ?? usable, usable)), capped at 400,000. Explicit Agent token and percentage limits are not scaled. Mars defines no off switch.
-`summary/conversation-summarizer.ts` implements the port in production. It queries
-prefix warmth after reservation; warm sends the request in hand with only an
-appended instruction. Tool use discards that response and runs cold once.
-Cold uses `COMPACTION_SUMMARIZER_MODEL` (default DeepSeek Flash, validated against
-the registry at startup), or the retained
-thread model when that provider is disabled, and rolls turn-bounded segments
-within its usable window while carrying labeled prior context forward. Cold
-transcripts omit opaque reasoning; per-turn estimates are accumulated once.
+Without an explicit Agent limit, the trigger is floor(90% × min(input pricing
+tier ?? usable window, usable window)), capped at 400,000 tokens. Explicit Agent
+token and percentage limits are not scaled. Mars defines no off switch.
+
+| Models | Default trigger tokens |
+|---|---:|
+| Sonnet 4 (direct and OpenRouter) | 165,254 |
+| Sonnet 4.6, GPT-4.1, GPT-4.1 mini, Gemini 2.5 Flash, DeepSeek V4 Flash | 400,000 |
+| Haiku 4.5 | 122,400 |
+| Haiku 3.5 | 172,627 |
+| GPT-4o (direct and OpenRouter), GPT-4o mini | 100,454 |
+
+`summary/conversation-summarizer.ts` implements the port in production. Warm
+sends the request in hand with an appended system-origin instruction and a lower
+output cap (summary reserve plus thinking budget), never increases its cap or
+changes its other fields. Any unusable warm response or provider failure runs
+cold once; Stop does not. Both attempts return their rows for settlement.
+Cold uses `COMPACTION_SUMMARIZER_MODEL` (default DeepSeek Flash), or the retained
+thread model when that provider is disabled. Its prediction is always
+`cold/summary_transcript`, not the thread prefix's prediction.
+
+Cold receives only the cut blocks and prior summary, excluding the retained pin
+and tail. It renders model-visible custom content, omits opaque reasoning and
+thinking, and labels prior context. Before any cold call, all turns are measured.
+Oversized turns replace re-readable tool bodies with a URI and short excerpt,
+then split at block boundaries if needed. An oversized indivisible block fails
+before any cold call. Rolling segments carry the running summary forward and
+recheck each assembled request against the usable window. Prompts preserve exact
+story terminology, quoted writer wording and per-document done/pending edits;
+they forbid invented facts.
+
 Output-limit failure uses the provider finish reason, not an input-token estimate;
-the successor fit check still measures the full assembled request. Oversized turns,
-empty output and output-limit truncation fail without activating an epoch.
+the successor fit check still measures the full assembled request.
 Every attempted call returns its row, prediction and message count, even when a
 later segment fails or Stop aborts it. Settlement records path/segment metadata
 and charges those rows only in the transaction ending C.

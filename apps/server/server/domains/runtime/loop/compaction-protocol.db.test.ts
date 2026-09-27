@@ -161,6 +161,72 @@ else
       };
     }
 
+    it("settles both rows when a warm overflow falls back cold", async () => {
+      const gateway = scriptedGateway();
+      const original = gateway.stream;
+      let summaries = 0;
+      gateway.stream = async function* (request) {
+        const isSummary = request.messages.some((message) =>
+          message.content.some(
+            (part) => part.type === "text" && part.text.includes("Summarize this conversation"),
+          ),
+        );
+        if (!isSummary) {
+          yield* original(request);
+          return;
+        }
+        summaries++;
+        if (summaries === 1) {
+          yield { type: "usage", usage: { inputTokens: 100, outputTokens: 1 } };
+          yield {
+            type: "error",
+            code: "context_overflow",
+            message: "input length and max_tokens exceed context limit",
+            retryable: false,
+          };
+          return;
+        }
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "text", text: "The earlier work is complete." }],
+            toolCalls: [],
+            finishReason: "end_turn",
+            usage: { inputTokens: 100, outputTokens: 10 },
+            model: "gpt-4.1-mini",
+            provider: "openai",
+          },
+        };
+      };
+      const rig = await fixture({ gateway });
+      rig.deps.summarizer = createConversationSummarizer({
+        gateway: rig.deps.gateway,
+        agentRevisions: rig.deps.agentRevisions,
+        prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
+        config: { model: "gpt-4.1-mini", maxOutputTokens: 100 },
+      });
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      expect((await run.execute()).status).toBe("complete");
+      expect(summaries).toBe(2);
+      const rows = await rig.repos.modelResponses.listByTurn(run.executionTurnId);
+      expect(rows).toHaveLength(2);
+      expect(
+        rows.map((row) => [row.finishReason, row.predictedCacheState, row.predictedCacheReason]),
+      ).toEqual([
+        ["error", "warm", "reusable_prefix"],
+        ["end_turn", "cold", "summary_transcript"],
+      ]);
+      const debits = await db.select().from(schema.creditTransactions);
+      for (const row of rows) {
+        expect(BigInt(row.millicredits ?? "0")).toBeGreaterThan(0n);
+        expect(debits.filter((debit) => debit.usageEventId === row.id)).toHaveLength(1);
+      }
+    });
+
     it.each([
       "recovered",
       "second_overflow",
@@ -243,6 +309,9 @@ else
       expect(calls).toBe(scenario === "new_reply" ? 4 : 2);
       expect(summaries).toBe(scenario === "new_reply" ? 2 : 1);
       expect(inputs[0].forceCold).toBe(true);
+      expect(inputs[0].projection.blocks.some((block) => block.textContent === "Continue.")).toBe(
+        false,
+      );
       const turns = await rig.repos.turns.listByThread(rig.threadId);
       const [a, c, b] = turns.slice(-3);
       expect([a.role, c.role, b.role]).toEqual(["assistant", "compaction", "assistant"]);
@@ -332,7 +401,7 @@ else
         outputTokens: 10,
         requestMessageCount: 2,
         predictedCacheState: "cold",
-        predictedCacheReason: "no_response",
+        predictedCacheReason: "summary_transcript",
       });
       expect(BigInt(rows[0].millicredits ?? "0")).toBeGreaterThan(0n);
       const debits = (await db.select().from(schema.creditTransactions)).filter(
@@ -594,7 +663,7 @@ else
             requestMessageCount: 7,
             priceSource: "unknown" as const,
             predictedCacheState: "cold" as const,
-            predictedCacheReason: "no_response" as const,
+            predictedCacheReason: "summary_transcript" as const,
           },
         ];
         return failure
@@ -621,7 +690,7 @@ else
         {
           requestMessageCount: 7,
           predictedCacheState: "cold",
-          predictedCacheReason: "no_response",
+          predictedCacheReason: "summary_transcript",
         },
       ]);
       const rows = await rig.repos.modelResponses.listByTurn(tail[0].id);
@@ -864,7 +933,7 @@ else
               requestMessageCount: 7,
               priceSource: "unknown",
               predictedCacheState: "cold",
-              predictedCacheReason: "no_response",
+              predictedCacheReason: "summary_transcript",
             },
           ],
         };
@@ -1051,7 +1120,7 @@ else
             outputTokens: 10,
             requestMessageCount: 7,
             predictedCacheState: "cold",
-            predictedCacheReason: "no_response",
+            predictedCacheReason: "summary_transcript",
           },
         ],
       }));
@@ -1103,7 +1172,7 @@ else
             outputTokens: 10,
             requestMessageCount: 7,
             predictedCacheState: "cold",
-            predictedCacheReason: "no_response",
+            predictedCacheReason: "summary_transcript",
           },
         ],
       }));
@@ -1172,7 +1241,7 @@ else
               requestMessageCount: 7,
               priceSource: "unknown",
               predictedCacheState: "cold",
-              predictedCacheReason: "no_response",
+              predictedCacheReason: "summary_transcript",
             },
           ],
         };

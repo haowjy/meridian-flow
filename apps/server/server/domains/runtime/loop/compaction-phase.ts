@@ -3,7 +3,7 @@ import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { SummaryOutcome, SummaryResponse } from "../ports/conversation-summarizer.js";
 import type { CompactionDecision } from "./compaction/decision.js";
-import { projectActiveHistory } from "./compaction/index.js";
+import { projectActiveHistory, projectCompactedHistory } from "./compaction/index.js";
 import {
   completeCompactionCurrent,
   type PreparedCompaction,
@@ -47,7 +47,7 @@ export async function executeCompaction({
       instruction: "compaction",
       requestInHand: decision.requestInHand,
       forceCold: decision.path === "cold",
-      projection,
+      projection: projectCompactedHistory(projection, decision.plan),
       signal: input.signal ?? new AbortController().signal,
     });
   } catch (error) {

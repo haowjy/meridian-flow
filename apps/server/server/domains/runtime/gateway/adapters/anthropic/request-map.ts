@@ -30,7 +30,6 @@
  *   messages, so the system-message breakpoint already covers them.
  */
 import type Anthropic from "@anthropic-ai/sdk";
-
 import type {
   ContentPart,
   FunctionTool,
@@ -38,6 +37,7 @@ import type {
   Message,
   Tool,
 } from "../../domain/index.js";
+import { thinkingBudgetTokens } from "../../domain/thinking-budget.js";
 import { safeToolOutput } from "../../helpers/serialize.js";
 
 type CacheControl = Anthropic.Messages.CacheControlEphemeral;
@@ -376,37 +376,6 @@ function mapToolChoice(
   return undefined;
 }
 
-// ── Thinking / reasoning config ───────────────────────────────────
-//
-// Canonical reasoning → Anthropic thinking config.
-// Budget is computed as a percentage of max_tokens (low=25%, medium=50%,
-// high=75%, max=100%) with floor values to ensure useful thinking space.
-// `adaptive` uses medium budget.
-//
-
-function mapThinking(
-  reasoning: GenerateRequest["reasoning"],
-  maxTokens: number,
-): Anthropic.Messages.ThinkingConfigParam | undefined {
-  if (!reasoning || reasoning === "disabled") return undefined;
-
-  // Budget tokens for thinking — give a generous allocation
-  const budgetMap: Record<string, number> = {
-    low: Math.max(1024, Math.floor(maxTokens * 0.25)),
-    medium: Math.max(2048, Math.floor(maxTokens * 0.5)),
-    high: Math.max(4096, Math.floor(maxTokens * 0.75)),
-    max: maxTokens,
-  };
-
-  if (reasoning === "adaptive") {
-    return { type: "enabled", budget_tokens: Math.max(2048, Math.floor(maxTokens * 0.5)) };
-  }
-
-  const effort = typeof reasoning === "object" ? reasoning.effort : "medium";
-  const budget = budgetMap[effort] ?? Math.max(2048, Math.floor(maxTokens * 0.5));
-  return { type: "enabled", budget_tokens: budget };
-}
-
 // ── Public: build Anthropic params ────────────────────────────────
 //
 // Assembles the full MessageCreateParamsStreaming from a canonical
@@ -432,7 +401,9 @@ export function toAnthropicMessageParams(
       .filter((m): m is Anthropic.Messages.MessageParam => m !== null),
   );
 
-  const thinking = mapThinking(request.reasoning, maxTokens);
+  // Effort is model-relative: capping output must not change the cached thinking prefix.
+  const budget = thinkingBudgetTokens(request, maxOutputTokens);
+  const thinking = budget ? { type: "enabled" as const, budget_tokens: budget } : undefined;
   const repaired =
     thinking || providerId === "deepseek" ? ensureThinkingBeforeToolUse(messages) : messages;
 

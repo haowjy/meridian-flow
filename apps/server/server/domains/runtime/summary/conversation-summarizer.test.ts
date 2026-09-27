@@ -25,7 +25,7 @@ const cheapModel = {
   ...threadModel,
   id: "cheap-model",
   provider: "cheap-provider",
-  contextWindow: 2400,
+  contextWindow: 3400,
 };
 function reply(text = "Kept facts", changes: Partial<GenerateResult> = {}): GenerateResult {
   return {
@@ -141,15 +141,18 @@ describe("conversation summarizer", () => {
       ],
       tools: [{ type: "function", name: "read", description: "Read", inputSchema: {} }],
       toolChoice: "required",
-      reasoning: { effort: "high" },
+      reasoning: "disabled",
       promptCacheKey: "owner",
       maxTokens: 500,
-      providerOptions: { anthropic: { thinking: { type: "enabled" } } },
+      providerOptions: { anthropic: { thinking: { type: "disabled" } } },
     };
     const before = JSON.stringify(rig.input.requestInHand);
     const result = await rig.service.summarize(rig.input);
     const { signal: _signal, correlation: _correlation, ...sent } = rig.requests[0];
-    expect(JSON.stringify({ ...sent, messages: sent.messages.slice(0, -1) })).toBe(before);
+    expect(sent.maxTokens).toBe(300);
+    expect(JSON.stringify({ ...sent, maxTokens: 500, messages: sent.messages.slice(0, -1) })).toBe(
+      before,
+    );
     expect(JSON.stringify(rig.input.requestInHand)).toBe(before);
     expect(sent.messages.at(-1)?.content).toMatchObject([
       { type: "text", text: expect.stringContaining("style directions") },
@@ -167,6 +170,220 @@ describe("conversation summarizer", () => {
         },
       ],
     });
+  });
+
+  it.each([
+    "overflow",
+    "timeout",
+    "empty",
+  ])("falls back once after warm %s and keeps both rows", async (failure) => {
+    const rig = setup({
+      warm: true,
+      async *events(_request, call) {
+        if (call === 1) {
+          yield { type: "usage", usage: { inputTokens: 42, outputTokens: 0 } };
+          if (failure === "overflow") {
+            yield {
+              type: "error",
+              code: "context_overflow",
+              message: "input length and max_tokens exceed context limit",
+              retryable: false,
+            };
+            return;
+          }
+          if (failure === "timeout") throw new Error("Timeout");
+          yield { type: "end", result: reply("") };
+        } else yield { type: "end", result: reply() };
+      },
+    });
+    const outcome = await rig.service.summarize(rig.input);
+    expect(outcome).toMatchObject({ kind: "complete", summarizer: { path: "cold", segments: 1 } });
+    expect(outcome.modelResponses).toHaveLength(2);
+    expect(outcome.modelResponses[1]).toMatchObject({
+      predictedCacheState: "cold",
+      predictedCacheReason: "summary_transcript",
+    });
+    expect(rig.requests).toHaveLength(2);
+  });
+
+  it("compacts a Sonnet 4.6 assistant turn with four 100 KB document results on a 128k summarizer", async () => {
+    const sonnet = { ...threadModel, id: "claude-sonnet-4-6", contextWindow: 1_000_000 };
+    const rig = setup({ models: [sonnet, { ...cheapModel, contextWindow: 128_000 }] });
+    rig.input.requestInHand = { model: sonnet.id, messages: [] };
+    rig.input.projection = projection(["Check continuity", ""]);
+    rig.input.projection.turns[1].role = "assistant";
+    rig.input.projection.blocks = [
+      rig.input.projection.blocks[0],
+      ...Array.from({ length: 4 }, (_, i): Block[] => [
+        {
+          id: `call-${i}`,
+          responseId: null,
+          createdAt: new Date(0).toISOString(),
+          turnId: "t1",
+          blockType: "tool_use",
+          sequence: i * 2,
+          content: {
+            toolCallId: `read${i}`,
+            toolName: "write",
+            input: { command: "read", path: `manuscript://chapter-${i}.md` },
+          },
+        },
+        {
+          id: `result-${i}`,
+          responseId: null,
+          createdAt: new Date(0).toISOString(),
+          turnId: "t1",
+          blockType: "tool_result",
+          sequence: i * 2 + 1,
+          content: {
+            toolCallId: `read${i}`,
+            output: {
+              schema: "meridian.agent-edit.v1",
+              command: "read",
+              status: "success",
+              phase: "committed",
+              read: { format: "full" },
+              blocks: [
+                {
+                  extent: "full",
+                  relation: "document",
+                  items: [{ hash: "abc", body: "jade ".repeat(20_000) }],
+                },
+              ],
+            },
+          },
+        },
+      ]).flat(),
+    ];
+    expect(await rig.service.summarize(rig.input)).toMatchObject({ kind: "complete" });
+    for (let i = 0; i < 4; i++)
+      expect(JSON.stringify(rig.requests)).toContain(`manuscript://chapter-${i}.md`);
+    expect(JSON.stringify(rig.requests).length).toBeLessThan(20_000);
+  });
+
+  it("splits oversized turns at block boundaries when they have no reducible results", async () => {
+    const rig = setup();
+    rig.input.projection = projection([""]);
+    rig.input.projection.blocks = Array.from(
+      { length: 4 },
+      (_, i) =>
+        ({
+          turnId: "t0",
+          blockType: "text",
+          sequence: i,
+          textContent: `block${i} `.repeat(300),
+        }) as Block,
+    );
+    expect(await rig.service.summarize(rig.input)).toMatchObject({ kind: "complete" });
+    expect(rig.requests.length).toBeGreaterThan(1);
+    for (let i = 0; i < 4; i++) expect(JSON.stringify(rig.requests)).toContain(`block${i}`);
+  });
+
+  it("splits a large system update at its source block boundaries", async () => {
+    const rig = setup();
+    rig.input.projection = projection(["system ".repeat(400)]);
+    rig.input.projection.turns[0].role = "system";
+    rig.input.projection.blocks.push({ ...rig.input.projection.blocks[0], sequence: 1 });
+    expect(await rig.service.summarize(rig.input)).toMatchObject({ kind: "complete" });
+    expect(rig.requests).toHaveLength(2);
+  });
+
+  it("preflights block splits with room for a CJK running summary", async () => {
+    const rig = setup({
+      models: [threadModel, { ...cheapModel, contextWindow: 2400 }],
+      async *events() {
+        yield { type: "end", result: reply("漢".repeat(300)) };
+      },
+    });
+    rig.input.projection = projection(["start ".repeat(225), "facts ".repeat(250)]);
+    rig.input.projection.blocks.push(
+      ...rig.input.projection.blocks.map((block) => ({ ...block, sequence: 1 })),
+    );
+    expect(await rig.service.summarize(rig.input)).toMatchObject({ kind: "complete" });
+    expect(rig.requests.length).toBeGreaterThan(1);
+  });
+
+  it("does not expose custom card internals or thinking blocks", async () => {
+    const rig = setup();
+    rig.input.projection.blocks.push(
+      ...["custom", "thinking"].map(
+        (blockType, sequence) =>
+          ({
+            id: blockType,
+            responseId: null,
+            createdAt: new Date(0).toISOString(),
+            turnId: "t0",
+            blockType,
+            sequence: sequence + 1,
+            content: { kind: "helper-result", props: { threadId: "secret-internal-id" } },
+            textContent: "private-thinking",
+          }) as Block,
+      ),
+    );
+    expect(await rig.service.summarize(rig.input)).toMatchObject({ kind: "complete" });
+    expect(JSON.stringify(rig.requests)).not.toContain("secret-internal-id");
+    expect(JSON.stringify(rig.requests)).not.toContain("private-thinking");
+  });
+
+  it.each([
+    [undefined, undefined, 300],
+    [200, undefined, 200],
+    [5000, { type: "enabled", budget_tokens: 1024 }, 1324],
+    [1000, { type: "enabled", budget_tokens: 900 }, 1000],
+  ] as const)("caps warm output only when lower (%s, %s)", async (maxTokens, thinking, expected) => {
+    const rig = setup({ warm: true });
+    const request: GenerateRequest = {
+      model: threadModel.id,
+      messages: [],
+      ...(maxTokens === undefined ? {} : { maxTokens }),
+      ...(thinking ? { providerOptions: { anthropic: { thinking } } } : {}),
+    };
+    rig.input.requestInHand = request;
+    await rig.service.summarize(rig.input);
+    const { signal: _signal, correlation: _correlation, ...sent } = rig.requests[0];
+    expect(sent).toEqual({ ...request, maxTokens: expected, messages: sent.messages });
+    expect(sent.messages).toHaveLength(1);
+    const prompt = JSON.stringify(sent.messages);
+    for (const phrase of [
+      "system instruction",
+      "not a new request from the writer",
+      "edits already made",
+      "edits still pending",
+      "cultivation realms",
+      "quoted wording exactly",
+      "Add no fact",
+    ])
+      expect(prompt).toContain(phrase);
+  });
+
+  it("does not retry the cold fallback if both calls fail", async () => {
+    const rig = setup({
+      warm: true,
+      async *events() {
+        yield { type: "usage", usage: { inputTokens: 0, outputTokens: 0 } };
+        throw new Error("Unavailable");
+      },
+    });
+    const outcome = await rig.service.summarize(rig.input);
+    expect(outcome.kind).toBe("failed");
+    expect(outcome.modelResponses).toHaveLength(2);
+    expect(rig.requests).toHaveLength(2);
+  });
+
+  it("does not take the cold fallback after Stop during the warm call", async () => {
+    const controller = new AbortController();
+    const rig = setup({
+      warm: true,
+      async *events() {
+        yield { type: "usage", usage: { inputTokens: 42, outputTokens: 3 } };
+        controller.abort();
+      },
+    });
+    rig.input.signal = controller.signal;
+    const outcome = await rig.service.summarize(rig.input);
+    expect(outcome.kind).toBe("cancelled");
+    expect(outcome.modelResponses).toHaveLength(1);
+    expect(rig.requests).toHaveLength(1);
   });
 
   it("discards warm tool use and falls back to cold exactly once", async () => {
@@ -232,12 +449,12 @@ describe("conversation summarizer", () => {
     expect(rig.requests).toHaveLength(0);
   });
 
-  it("retains a paid segment when the following turn cannot fit", async () => {
+  it("preflights every turn before any paid segment", async () => {
     const rig = setup();
     rig.input.projection = projection(["Small turn", "huge ".repeat(5000)]);
     const outcome = await rig.service.summarize(rig.input);
     expect(outcome.kind).toBe("failed");
-    expect(outcome.modelResponses).toHaveLength(1);
+    expect(outcome.modelResponses).toHaveLength(0);
   });
 
   it("falls back to the thread model when the configured provider is disabled, including idle callers", async () => {
@@ -262,7 +479,7 @@ describe("conversation summarizer", () => {
       turnId: "t0",
       blockType: "image",
       sequence: 1,
-      content: { uri: "upload://map.png", data: "BASE64" },
+      content: { type: "image", uri: "upload://map.png", data: "BASE64" },
     } as Block);
     await rig.service.summarize(rig.input);
     expect(rig.requests[0].model).toBe(cheapModel.id);

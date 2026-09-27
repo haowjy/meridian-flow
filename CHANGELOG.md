@@ -16,6 +16,10 @@
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
 
 ### Fixed
+- Retry failed warm summaries cold once. Bound summary output without changing cached thinking.
+- Preflight cold transcripts before paid calls. Excerpt large document reads and split large turns at blocks.
+- Summarize only compacted history. Preserve exact story terms and completed versus pending edits.
+- Label cold summarizer calls independently of the chat cache. Correct DeepSeek Flash's context window to 1M.
 - Leave 10% headroom in default compaction triggers. Recover older Claude context-limit errors.
 - Keep complete summaries without confusing estimated input size with provider output tokens. Skip opaque reasoning in summaries.
 - Propagate context-window errors when provider fallback is enabled.

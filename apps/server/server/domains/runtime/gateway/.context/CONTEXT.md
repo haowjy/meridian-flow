@@ -24,3 +24,17 @@ Every adapter normalizes a provider's context-window rejection to the one provid
 ## DeepSeek cache evidence
 
 DeepSeek evidence for the automatic classification: its [context-caching guide](https://api-docs.deepseek.com/guides/kv_cache/) says caching is enabled by default and reports cache-hit counters; its [Anthropic compatibility guide](https://api-docs.deepseek.com/guides/anthropic_api/) documents the configured `/anthropic` endpoint and says `cache_control` is ignored. In the dev database, `model_responses` had 31 `deepseek-v4-flash` rows, 29 with positive `cache_read_tokens` (188,416 total). The Anthropic adapter's `mapUsage` reads `cache_read_input_tokens`; those persisted counters confirm the deployed compatibility path exposes cache reads through our existing mapping.
+
+## Summary output caps
+
+The adapters do not use `max_tokens` / `max_output_tokens` as cache keys.
+Anthropic's thinking budget does affect the cache, so implicit effort budgets
+are resolved against the model's output budget, independently of the per-call
+output cap. The summarizer uses that same resolution, including explicit
+`providerOptions.anthropic.thinking.budget_tokens`, to reserve thinking plus
+summary output without changing the thinking configuration.
+
+DeepSeek V4 Flash declares a 1,048,576-token window. A live Anthropic-compatible
+call accepted 150,013 input tokens (253 uncached plus 149,760 cached) on
+2026-09-27; a separate 300,013-token call also succeeded. Prices remain tracked
+separately in issue #613.
