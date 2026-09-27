@@ -1,4 +1,4 @@
-/** Writer-facing subagent launch or foreground lifecycle card. */
+/** Writer-facing subagent launch or foreground lifecycle card; both show the live tool call while running. */
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -152,7 +152,7 @@ export function SpawnReportCard({
           ) : null}
         </div>
       )}
-      {foreground && running ? (
+      {running ? (
         <div className="mt-[var(--chat-space-row)] pl-[calc(1.5rem+var(--chat-space-row))] text-xs text-muted-foreground">
           {liveTool || <Trans>Working</Trans>}
         </div>

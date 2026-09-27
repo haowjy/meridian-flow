@@ -124,6 +124,26 @@ describe("SpawnReportCard", () => {
     expect(host.textContent).toContain("Read the document 21 times. All reads matched.");
   });
 
+  it("shows the live tool call on a running background launch, then drops it when done", async () => {
+    const base = {
+      deliveryMode: "background_notification" as const,
+      agentName: "Writer",
+      title: "Short story B",
+      childThreadId: "child-live",
+    };
+    await act(async () =>
+      root.render(<SpawnReportCard {...base} status="running" liveTool="Writing story-b.md" />),
+    );
+    expect(host.textContent).toContain("Writing story-b.md");
+    await act(async () =>
+      root.render(
+        <SpawnReportCard {...base} status="completed" outcome="succeeded" liveTool={null} />,
+      ),
+    );
+    expect(host.textContent).not.toContain("Writing story-b.md");
+    expect(host.textContent).not.toContain("Working");
+  });
+
   it("degrades Open to inert text outside a provider", async () => {
     await act(async () =>
       root.render(

@@ -47,8 +47,9 @@ Run liveness is never a turn block. Each admitted spawn invocation has one
 durable retained card on the parent turn. At settlement, the card's status is
 the child execution outcome, not parent protocol admission. Foreground cards join the durable direct `spawn` or `thread_message` result
 by parent turn, tool call, child execution and direct delivery mode. Cards
-branch on `deliveryMode`: background cards are one-line launches while direct
-cards combine launch, live current tool, and expandable result. Branch on the
+branch on `deliveryMode`: background cards are one-line launches with the live
+current tool under them while running; direct cards combine launch, live current
+tool, and expandable result. Branch on the
 run's `deliveryMode`, never on which blocks happen to exist. Server activity
 (snapshot plus `meridian.subagent.activity`) is still the viewed thread's whole
 subtree. The shared `useThreadActivity` store owns the cached live view and a

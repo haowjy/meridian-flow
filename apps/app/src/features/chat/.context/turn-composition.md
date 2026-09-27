@@ -110,7 +110,8 @@ without a second output store or per-card store subscription. A settled direct
 error without saved terminal evidence shows its error without claiming a child
 outcome; a later terminal card patch remains authoritative. Invocation cards
 branch on the required `deliveryMode`: background cards stay as one-line launch
-artifacts while the running strip carries live tool activity; direct cards stay
+artifacts with the current tool line under them while running (the running
+strip carries it too); direct cards stay
 in place and combine launch, live edge, and expandable result. Background
 completion notices are quiet expandable step rows. `thread_report` of a
 background run is a report artifact outside the process fold, with a collapsed
