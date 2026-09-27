@@ -169,9 +169,6 @@ export function WorkMetadata({
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
   useLayoutEffect(() => {
-    c.displayRefs.current.get("name")?.focus();
-  }, [c.work.id, c.displayRefs]);
-  useLayoutEffect(() => {
     if (!c.field) return;
     const editor = c.editorRef.current;
     editor?.focus();
@@ -232,7 +229,7 @@ export function WorkMetadata({
                     c.activate("name");
                   }
                 }}
-                className="focus-ring rounded-sm text-left"
+                className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring rounded-sm text-left"
               >
                 {c.work.name}
               </button>
@@ -244,15 +241,24 @@ export function WorkMetadata({
             <div className="mt-1 max-w-3xl">
               <div
                 ref={description}
-                className={`relative overflow-hidden whitespace-pre-line text-base leading-6 text-foreground ${expanded ? "max-h-none" : "max-h-[4.5rem]"} ${overflows && !expanded ? "[mask-image:linear-gradient(to_bottom,#000_70%,transparent)]" : ""}`}
+                className={`relative overflow-hidden text-base leading-6 text-foreground ${expanded ? "max-h-none" : "max-h-[4.5rem]"} ${overflows && !expanded ? "[mask-image:linear-gradient(to_bottom,#000_55%,transparent)]" : ""}`}
               >
                 <button
                   type="button"
                   ref={displayRef("goal")}
                   onClick={() => c.activate("goal")}
-                  className={`focus-ring min-h-6 w-full rounded-sm text-left [@media(pointer:coarse)]:min-h-11 ${c.work.goal ? "" : "text-muted-foreground"}`}
+                  className={`focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring min-h-6 w-full rounded-sm text-left [@media(pointer:coarse)]:min-h-11 ${c.work.goal ? "" : "text-muted-foreground"}`}
                 >
-                  {c.work.goal || t`Add a description of what this Work is for`}
+                  {c.work.goal
+                    ? c.work.goal.split(/\n\s*\n/).map((paragraph, index) => (
+                        <span
+                          className="block [&+span]:mt-[0.45em]"
+                          key={`${index}-${paragraph.slice(0, 16)}`}
+                        >
+                          {paragraph}
+                        </span>
+                      ))
+                    : t`Add a description of what this Work is for`}
                 </button>
               </div>
               {overflows ? (
@@ -306,7 +312,7 @@ function Editor({
           ref={c.editorRef as React.Ref<HTMLTextAreaElement>}
           {...common}
           aria-label={t`Description`}
-          className="min-h-28 resize-none text-base leading-6"
+          className="min-h-28 resize-none p-0 text-base leading-6"
           onInput={(event) => {
             event.currentTarget.style.height = "auto";
             event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`;

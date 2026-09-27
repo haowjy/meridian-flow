@@ -56,6 +56,7 @@ export function WorkScreen(props: WorkScreenProps) {
     return (
       <WorkCreationDestination
         name={creation.name}
+        goal={creation.goal}
         failed={creation.status === "failed"}
         onRetry={creation.retry}
         onDiscard={creation.discard}
@@ -404,39 +405,59 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
 
 function WorkCreationDestination({
   name,
+  goal,
   failed,
   onRetry,
   onDiscard,
 }: {
   name: string;
+  goal: string | null;
   failed: boolean;
   onRetry: () => void;
   onDiscard: () => void;
 }) {
   return (
     <div className="app-scroll">
-      <section className="project-screen-column gap-3">
-        <h1 className="text-xl font-semibold">{name}</h1>
+      <article className="project-screen-column min-w-0 gap-5 pb-12">
+        <h1 className="w-fit max-w-full text-xl font-semibold [overflow-wrap:anywhere]">{name}</h1>
+        {goal ? <p className="max-w-3xl whitespace-pre-line text-base leading-6">{goal}</p> : null}
+        <div className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
+          <span className="size-2 animate-pulse rounded-full bg-jade-text" aria-hidden />
+          <Trans>Creating</Trans>
+        </div>
+        <div className="flex items-center gap-2 border-b pb-3">
+          <span className="rounded-md bg-muted px-3 py-1.5 text-sm">
+            <Trans>Chats</Trans>
+          </span>
+          <span className="rounded-md px-3 py-1.5 text-sm text-muted-foreground">
+            <Trans>Files</Trans>
+          </span>
+        </div>
         {failed ? (
-          <div className="flex flex-col items-start gap-3" role="alert">
+          <div
+            className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/30 px-3 py-2"
+            role="alert"
+          >
             <p className="text-sm text-destructive">
-              <Trans>Work creation failed.</Trans>
+              <Trans>Couldn’t create this Work.</Trans>
             </p>
-            <div className="flex gap-2">
-              <Button size="sm" onClick={onRetry}>
-                <Trans>Retry</Trans>
-              </Button>
-              <Button size="sm" variant="outline" onClick={onDiscard}>
-                <Trans>Discard</Trans>
-              </Button>
-            </div>
+            <Button size="sm" onClick={onRetry}>
+              <Trans>Retry</Trans>
+            </Button>
+            <Button size="sm" variant="outline" onClick={onDiscard}>
+              <Trans>Discard</Trans>
+            </Button>
           </div>
-        ) : (
-          <p className="text-sm text-muted-foreground" role="status">
-            <Trans>Creating Work…</Trans>
+        ) : null}
+        <div className="py-2">
+          <p className="text-sm font-medium">
+            <Trans>Start a chat in this Work</Trans>
           </p>
-        )}
-      </section>
+          <p className="mt-1 text-sm text-muted-foreground">
+            <Trans>Chats you start here stay with this Work.</Trans>
+          </p>
+        </div>
+      </article>
     </div>
   );
 }
@@ -479,14 +500,12 @@ function NewWorkPage({
         />
       </div>
       <div className="grid gap-1.5">
-        <div className="flex items-baseline justify-between gap-3">
-          <label htmlFor="work-description" className="text-sm font-medium">
-            <Trans>What is this Work for?</Trans>
-          </label>
-          <span className="text-xs text-muted-foreground">
+        <label htmlFor="work-description" className="text-sm font-medium">
+          <Trans>What is this Work for?</Trans>{" "}
+          <span className="font-normal text-muted-foreground">
             <Trans>Optional</Trans>
           </span>
-        </div>
+        </label>
         <Textarea
           ref={descriptionRef}
           id="work-description"

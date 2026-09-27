@@ -38,7 +38,7 @@ export function CreationPage({
 
   return (
     <main className="app-scroll h-full bg-background text-foreground">
-      <div className="mx-auto w-full max-w-[520px] px-5 pb-12 pt-6 sm:px-8 sm:pt-8">
+      <div className="project-screen-column min-h-full !max-w-project-screen gap-0">
         <Link
           to={backTo}
           className="focus-ring inline-flex min-h-8 items-center gap-1.5 rounded-sm text-sm text-jade-text hover:underline"

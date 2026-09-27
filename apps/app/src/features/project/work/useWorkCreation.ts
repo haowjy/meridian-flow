@@ -133,6 +133,7 @@ export type WorkCreationState = {
   status: "none" | "pending" | "failed" | "confirmed";
   isPending: boolean;
   name: string | null;
+  goal: string | null;
   error: Error | null;
   retry: () => void;
   discard: () => void;
@@ -184,6 +185,7 @@ export function useWorkCreationState(
     status: record?.status ?? "none",
     isPending: record?.status === "pending",
     name: record?.request.name ?? null,
+    goal: record?.request.goal ?? null,
     error: record?.error ? new Error(record.error) : null,
     retry,
     discard,
