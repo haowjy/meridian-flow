@@ -31,5 +31,5 @@ order:
    resolved skills, and tool provenance.
 
 The contracts package owns the Markdown projection and prefix summary used by
-both this UI and `pnpm --silent debug:model-context`. Keep presentation logic
+both this UI and `./mf thread context`. Keep presentation logic
 there when the UI and CLI need the same answer.

@@ -42,9 +42,10 @@ export function createOpenAICompatibleAdapter(config: ProviderConfig): ProviderA
   const apiKey = resolveApiKey(config.auth) ?? "not-needed";
   const client = new OpenAI({
     apiKey,
-    maxRetries: 0,
     baseURL: config.baseUrl,
     defaultHeaders: config.auth?.headers,
+    // The gateway owns retries (streamWithRetry + retry.maxAttempts); SDK retries would multiply them.
+    maxRetries: 0,
   });
 
   const providerId = config.id;

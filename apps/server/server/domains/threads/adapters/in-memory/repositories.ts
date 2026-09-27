@@ -7,6 +7,7 @@
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Block, ModelResponse, Thread, Turn, TurnUsage } from "@meridian/contracts/threads";
+import { formatThreadRef } from "@meridian/contracts/threads";
 import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { toIsoString } from "../../domain/contract-serialization.js";
@@ -14,7 +15,6 @@ import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
 import { toThreadListItem } from "../../domain/thread-list-projection.js";
-import { formatThreadRef } from "../../domain/thread-ref.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type {
   BlockRepository,

@@ -40,7 +40,6 @@ export {
   threadExecutionContext,
   WorkRequiredError,
 } from "./domain/thread-execution-context.js";
-export { formatThreadRef, parseThreadRef } from "./domain/thread-ref.js";
 export {
   type ThreadTrashState,
   type ThreadTrashTransition,

@@ -8,8 +8,14 @@
  *   `[[write <uri>]]` — target `<uri>` instead of `manuscript://chapter-1.md`
  *   `[[write <uri> overwrite]]` — same with `overwrite: true` on create
  * A user message must include the mock's write trigger before these directives apply.
+ *
+ * Scripted replies (dev CLI `./mf mock script` / `send --mock`): when a
+ * `MockScriptQueue` is supplied, a queued step answers the call before any of
+ * the trigger-phrase behaviors below.
  */
 import { createServer, type Server } from "node:http";
+import type { MockModelStep } from "@meridian/contracts/protocol";
+import type { MockScriptQueue } from "./script-queue.js";
 import { parseWriteDirective } from "./write-directive.js";
 
 /** OpenAI Chat Completions request body (subset). */
@@ -511,11 +517,115 @@ function buildToolCallStreamChunks(id: string, model: string): string[] {
   ];
 }
 
+function scriptedToolCalls(step: MockModelStep, requestCount: number) {
+  return (step.toolCalls ?? []).map((call, index) => ({
+    id: `call_mock_script_${requestCount}_${index}`,
+    type: "function" as const,
+    function: { name: call.name, arguments: JSON.stringify(call.args ?? {}) },
+  }));
+}
+
+function buildScriptedStreamChunks(
+  id: string,
+  model: string,
+  step: MockModelStep,
+  requestCount: number,
+): string[] {
+  const chunk = (delta: unknown, finishReason: string | null, usage?: unknown) =>
+    sseLine({
+      id,
+      object: "chat.completion.chunk",
+      model,
+      choices: [{ index: 0, delta, finish_reason: finishReason }],
+      ...(usage ? { usage } : {}),
+    });
+  const chunks: string[] = [];
+  const words = step.text ? step.text.split(" ") : [];
+  words.forEach((word, index) => {
+    chunks.push(chunk({ content: index === 0 ? word : ` ${word}` }, null));
+  });
+  const toolCalls = scriptedToolCalls(step, requestCount);
+  toolCalls.forEach((call, index) => {
+    chunks.push(
+      chunk(
+        {
+          tool_calls: [
+            {
+              index,
+              id: call.id,
+              type: "function",
+              function: { name: call.function.name, arguments: "" },
+            },
+          ],
+        },
+        null,
+      ),
+    );
+    chunks.push(
+      chunk({ tool_calls: [{ index, function: { arguments: call.function.arguments } }] }, null),
+    );
+  });
+  chunks.push(
+    chunk({}, toolCalls.length ? "tool_calls" : "stop", {
+      prompt_tokens: 10,
+      completion_tokens: Math.max(1, words.length),
+      total_tokens: 10 + Math.max(1, words.length),
+    }),
+  );
+  return chunks;
+}
+
+function writeScriptedResponse(
+  res: import("node:http").ServerResponse,
+  input: { id: string; model: string; stream: boolean; step: MockModelStep; requestCount: number },
+): void {
+  const { step } = input;
+  const respond = () => {
+    if (res.destroyed) return;
+    if (step.error) {
+      res.writeHead(step.error.status, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({ error: { message: step.error.message, type: "mock_script_error" } }),
+      );
+      return;
+    }
+    if (input.stream) {
+      writeSse(res, buildScriptedStreamChunks(input.id, input.model, step, input.requestCount));
+      return;
+    }
+    const toolCalls = scriptedToolCalls(step, input.requestCount);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        id: input.id,
+        object: "chat.completion",
+        model: input.model,
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: step.text ?? null,
+              ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
+            },
+            finish_reason: toolCalls.length ? "tool_calls" : "stop",
+          },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      }),
+    );
+  };
+  if (step.delayMs) setTimeout(respond, step.delayMs).unref();
+  else respond();
+}
+
 /**
  * In-process OpenAI-compatible mock for `/v1/chat/completions` (SSE).
  * Exercises the real openai-compatible adapter pipeline in dev and tests.
  */
-export function createMockOpenAICompatibleServer(): Promise<MockOpenAIServer> {
+export function createMockOpenAICompatibleServer(options?: {
+  script?: MockScriptQueue;
+}): Promise<MockOpenAIServer> {
   return new Promise((resolve, reject) => {
     let requestCount = 0;
     const server: Server = createServer(async (req, res) => {
@@ -538,6 +648,17 @@ export function createMockOpenAICompatibleServer(): Promise<MockOpenAIServer> {
         const id = `chatcmpl-mock-${requestCount}`;
         const model = body.model ?? "mock-llm-v1";
         const writeCallId = mockToolCallId("write", requestCount);
+        const scripted = options?.script?.take(lastUserMessageText(body.messages));
+        if (scripted) {
+          writeScriptedResponse(res, {
+            id,
+            model,
+            stream: body.stream === true,
+            step: scripted,
+            requestCount,
+          });
+          return;
+        }
 
         if (!body.stream) {
           const text =

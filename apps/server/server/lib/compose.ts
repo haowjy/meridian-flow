@@ -102,7 +102,7 @@ import {
   agentExecutionUnavailableReasons,
   agentModelUnavailableReasons,
 } from "../domains/runtime/agent-definition-support.js";
-import { MODEL_REGISTRY } from "../domains/runtime/gateway/index.js";
+import { MODEL_REGISTRY, type MockScriptQueue } from "../domains/runtime/gateway/index.js";
 import {
   createChildRunCoordinator,
   createChildRunDriver,
@@ -158,7 +158,7 @@ import {
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import {
   createInMemoryModelRequestDebugStore,
-  createModelRequestDebugStoreFromEnv,
+  createModelRequestDebugStore,
 } from "../domains/runtime/model-request-debug/index.js";
 import type { LocalObjectStoreAdapter, ObjectStorePort } from "../domains/storage/index.js";
 import { createDrizzleEventJournalReader } from "../domains/threads/adapters/drizzle/event-reader.js";
@@ -191,7 +191,7 @@ import {
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
-import { resolveObsVerbose } from "./env.js";
+import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { readThreadContextDocument } from "./thread-context-route.js";
 import {
@@ -250,6 +250,8 @@ export type AppServices = {
   toolRegistry: ToolRegistry;
   toolExecutor: ToolExecutor;
   modelRequestDebug: ModelRequestDebugStore;
+  /** Dev-only scripted replies for the in-process mock model; null with real providers. */
+  mockModelScript: MockScriptQueue | null;
   objectStore: ObjectStorePort;
   localObjectStore: LocalObjectStoreAdapter | null;
   uploadIntake: UploadIntake;
@@ -297,6 +299,7 @@ export type ProductionAppPorts = {
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
   modelRequestDebug: ModelRequestDebugStore;
+  mockModelScript: MockScriptQueue | null;
   objectStore: ObjectStorePort;
   localObjectStore: LocalObjectStoreAdapter | null;
   uploadIntake: UploadIntake;
@@ -344,7 +347,16 @@ export async function createProductionAppPorts(input: {
 }): Promise<ProductionAppPorts> {
   const environment = input.environment ?? process.env;
   const eventSink = input.eventSink;
-  const { gateway: rawGateway, defaultModel } = await createGatewayFromEnv(environment, {
+  const debugPaths = resolveDebugPathsEnabled({
+    rawNodeEnv: environment.NODE_ENV,
+    rawAppEnv: environment.APP_ENV,
+    debugFlag: environment.APP_DEBUG,
+  });
+  const {
+    gateway: rawGateway,
+    defaultModel,
+    mockScript,
+  } = await createGatewayFromEnv(environment, {
     onInfo: (info) => {
       emitEvent(eventSink, {
         level: "info",
@@ -540,7 +552,8 @@ export async function createProductionAppPorts(input: {
     preferences,
     workingSet,
     recentDocuments,
-    modelRequestDebug: createModelRequestDebugStoreFromEnv(eventSink),
+    modelRequestDebug: createModelRequestDebugStore({ enabled: debugPaths, eventSink }),
+    mockModelScript: debugPaths ? (mockScript ?? null) : null,
     objectStore,
     localObjectStore,
     uploadIntake,
@@ -868,6 +881,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     toolRegistry,
     toolExecutor,
     modelRequestDebug: ports.modelRequestDebug,
+    mockModelScript: ports.mockModelScript,
     objectStore: ports.objectStore,
     localObjectStore: ports.localObjectStore,
     uploadIntake: ports.uploadIntake,
@@ -1378,6 +1392,7 @@ export function createInMemoryAppServices(): AppServices {
     },
     notices,
     modelRequestDebug,
+    mockModelScript: null,
     changeTrails: {
       async listShells() {
         return [];

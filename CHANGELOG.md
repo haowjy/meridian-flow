@@ -16,6 +16,11 @@
 - Gateway owns provider retries; honor retry-after hints and retry vetoes.
 - Show subagent lifecycle in chat by delivery mode: background runs get a launch line, a running panel with each child's current tool, a quiet finished line, and a report line; foreground runs get one live card that expands to the result. A tab-row Subagents pop-up lists every run with Show (jumps to its latest point) and Open, and child chats show their full path.
 - Disable ask_user until its rework (#601); no agent is offered the tool.
+- `server`: `GET /api/projects/:projectId/threads/by-ref/:ref` resolves a live `cN`/`pN` thread handle for the project owner; the ref grammar moved to `@meridian/contracts/threads`. `./mf` accepts refs wherever it takes a thread (default project, or `--project`).
+
+- `server`: one explicit debug gate. Model-request capture, `/api/debug/*`, and mock-model scripting now require `APP_DEBUG=1` (set by `pnpm dev`) and never turn on in production; staging can opt in. `MODEL_REQUEST_DEBUG_CAPTURE` is removed.
+
+- `tools`: added `./mf`, a local CLI that drives this worktree's stack through its own API. It creates threads, sends and waits (exit code = run outcome), tails and replays events, prints transcripts and model context, seeds docs and scenarios, and scripts the dev mock model (`/api/debug/mock-model/script`). It replaces `pnpm debug:events` (now `./mf log`) and `pnpm debug:model-context` (now `./mf thread context`).
 
 - Freeze thread prompts at the database boundary.
 - Keep the same Agent and prompt when forking by default.

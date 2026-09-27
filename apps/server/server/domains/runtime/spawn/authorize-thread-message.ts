@@ -8,8 +8,9 @@
 import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
+import { parseThreadRef } from "@meridian/contracts/threads";
 import { isInSubtree, sameLineage } from "../../threads/domain/lineage.js";
-import { parseThreadRef, type ThreadRepository } from "../../threads/index.js";
+import type { ThreadRepository } from "../../threads/index.js";
 import type { ThreadMessageMode } from "../tools/spawn-tools.js";
 
 export type ThreadMessageTargetOutcome =
