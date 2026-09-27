@@ -22,6 +22,8 @@ export type TurnListProps = {
   /** Settled history with the live turn merged in by id, oldest first. */
   turns: Turn[];
   historySettled: boolean;
+  /** Background subagents are still running; their notification will wake the latest reply. */
+  awaitingSubagents?: boolean;
   /** Monotonic submit signal: new local messages intentionally reacquire tail-follow. */
   tailFollowRevision: number;
   /** Accessible label for the scroll log region. */
@@ -52,6 +54,7 @@ export function TurnList({
   threadId,
   turns,
   historySettled,
+  awaitingSubagents = false,
   tailFollowRevision,
   ariaLabel,
   onRespondToInterrupt,
@@ -66,6 +69,10 @@ export function TurnList({
   const bottomInset = useChatSurfaceBottomInset();
   const visibleTurns = useMemo(() => filterVisibleTurns(turns), [turns]);
   const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
+  const continuing = useMemo(
+    () => visibleTurns.map((_, index) => continuesResponse(visibleTurns, index, awaitingSubagents)),
+    [visibleTurns, awaitingSubagents],
+  );
   const byTurnId = useMemo(() => {
     const byTurnId = new Map<string, ChangeTrailShell>();
     for (const shell of Object.values(changeTrails)) {
@@ -147,7 +154,7 @@ export function TurnList({
           threadUsage={threadUsage}
           deliveryEvents={deliveryEventsAfter(turn, turns)}
           isLatestAssistant={idx === lastAssistantIdx}
-          continuesResponse={visibleTurns[idx + 1]?.role === "assistant"}
+          continuesResponse={continuing[idx] ?? false}
           onRetry={turn.id === failedSendRetry?.turnId ? failedSendRetry.retry : undefined}
           onRespondToInterrupt={onRespondToInterrupt}
           changeTrail={byTurnId.get(turn.id)}
@@ -165,7 +172,7 @@ export function TurnList({
       queuedWriterTurnIds,
       threadId,
       turns,
-      visibleTurns,
+      continuing,
     ],
   );
 
@@ -204,12 +211,7 @@ export function TurnList({
                   data-index={virtualItem.index}
                   data-chat-turn-row="settled"
                   data-chat-turn-role={turn.role}
-                  data-chat-turn-continues={
-                    turn.role === "assistant" &&
-                    visibleTurns[virtualItem.index + 1]?.role === "assistant"
-                      ? ""
-                      : undefined
-                  }
+                  data-chat-turn-continues={continuing[virtualItem.index] ? "" : undefined}
                   ref={virtualizer.measureElement}
                   className="absolute inset-x-0 top-0"
                   style={{ transform: `translateY(${virtualItem.start}px)` }}
@@ -286,6 +288,30 @@ export function resolveSubagentRevealTurnId(
       return turn.id;
   }
   return originTurnId;
+}
+
+/**
+ * Whether the reply keeps going past this assistant turn, so it is not a
+ * finished turn and gets no settled action row. Only a turn the model ended
+ * with nothing to pick it back up is finished. The next visible turn decides:
+ * another assistant turn means a subagent notification woke the model; a
+ * writer message sent before this turn completed is a mid-run steer. The
+ * latest turn also continues while background subagents are still running.
+ */
+export function continuesResponse(
+  turns: readonly Turn[],
+  index: number,
+  awaitingSubagents: boolean,
+): boolean {
+  const turn = turns[index];
+  if (turn?.role !== "assistant" || turn.status !== "complete") return false;
+  const next = turns[index + 1];
+  if (!next) return awaitingSubagents;
+  if (next.role === "assistant") return true;
+  return (
+    next.role === "user" &&
+    (!turn.completedAt || Date.parse(next.createdAt) < Date.parse(turn.completedAt))
+  );
 }
 
 function isHiddenContextTurn(turn: Turn): boolean {

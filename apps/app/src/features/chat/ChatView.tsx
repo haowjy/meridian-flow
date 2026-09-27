@@ -406,6 +406,7 @@ export function ChatView({
             <TurnList
               threadId={threadId}
               turns={turns}
+              awaitingSubagents={runningBackgroundSubagents.length > 0}
               historySettled={historySettled}
               tailFollowRevision={tailFollowRevision}
               ariaLabel={t`Chat`}
