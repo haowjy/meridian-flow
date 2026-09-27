@@ -1,9 +1,28 @@
-/** Quiet request-time projection of durable image occurrences into gateway bytes. */
+/** Stable request-time projection of durable image occurrences into gateway bytes. */
 import type { Block, Thread } from "@meridian/contracts/threads";
 import type { ImageAssetPort, PersistedImageReference } from "../ports/image-asset.js";
 
+type ResolvedImage = NonNullable<Awaited<ReturnType<ImageAssetPort["resolve"]>>>;
+
 export const MAX_MODEL_IMAGE_BYTES = 10 * 1024 * 1024;
 export const MAX_MODEL_IMAGE_CONTEXT_BYTES = 20 * 1024 * 1024;
+
+export interface ImageInclusionDecision {
+  block: Block;
+  included: boolean;
+}
+
+export interface ImageContextBreak {
+  blockId: string;
+  uri: string;
+  reason: "asset_unavailable" | "budget_eviction";
+}
+
+export interface ImageContextProjection {
+  blocks: Block[];
+  decisions: ImageInclusionDecision[];
+  breaks: ImageContextBreak[];
+}
 
 function reference(content: Block["content"]): PersistedImageReference | null {
   if (!content || typeof content !== "object" || Array.isArray(content)) return null;
@@ -14,30 +33,58 @@ function reference(content: Block["content"]): PersistedImageReference | null {
     : null;
 }
 
+/**
+ * Project included images, deciding each undecided occurrence once and explicitly naming breaks.
+ * Compaction rebalancing stays outside this per-request projection.
+ */
 export async function projectImageBlocksForModel(input: {
   thread: Pick<Thread, "id" | "projectId" | "userId">;
   blocks: readonly Block[];
   supportsImageInput: boolean;
   imageAssets: ImageAssetPort;
-}): Promise<Block[]> {
+}): Promise<ImageContextProjection> {
+  const imageBlocks = input.blocks.filter((block) => block.blockType === "image");
   if (!input.supportsImageInput) {
-    if (input.blocks.some((block) => block.blockType === "image")) {
+    if (imageBlocks.length > 0) {
       input.imageAssets.diagnose?.({
         threadId: input.thread.id,
         projectId: input.thread.projectId,
         reason: "model_unsupported",
       });
     }
-    return input.blocks.filter((block) => block.blockType !== "image");
+    return {
+      blocks: input.blocks.filter((block) => block.blockType !== "image"),
+      decisions: [],
+      breaks: [],
+    };
   }
+
   const reads = new Map<string, Awaited<ReturnType<ImageAssetPort["resolve"]>>>();
-  const projected = new Map<number, Block>();
-  let remaining = MAX_MODEL_IMAGE_CONTEXT_BYTES;
-  for (let index = input.blocks.length - 1; index >= 0 && remaining > 0; index -= 1) {
-    const block = input.blocks[index];
-    if (block?.blockType !== "image" || block.pruned) continue;
+  const entries: Array<{
+    index: number;
+    block: Block;
+    uri: string;
+    image: ResolvedImage;
+    included: boolean;
+  }> = [];
+  const decisionById = new Map<string, ImageInclusionDecision>();
+  const breaks: ImageContextBreak[] = [];
+  let diagnosedOmission = false;
+
+  for (const [index, block] of input.blocks.entries()) {
+    if (block.blockType !== "image" || block.pruned || block.imageIncluded === false) continue;
     const identity = reference(block.content);
-    if (!identity) continue;
+    if (!identity) {
+      if (block.imageIncluded === true) {
+        decisionById.set(block.id, { block, included: false });
+        breaks.push({ blockId: block.id, uri: block.id, reason: "asset_unavailable" });
+      } else {
+        decisionById.set(block.id, { block, included: false });
+      }
+      diagnosedOmission = true;
+      continue;
+    }
+
     const key = `${identity.documentId}\0${identity.uri}`;
     let image = reads.get(key);
     if (image === undefined) {
@@ -48,31 +95,105 @@ export async function projectImageBlocksForModel(input: {
           actorUserId: input.thread.userId,
         },
         identity,
-        { maxBytes: Math.min(MAX_MODEL_IMAGE_BYTES, remaining) },
+        { maxBytes: MAX_MODEL_IMAGE_BYTES },
       );
       reads.set(key, image);
     }
-    if (!image || image.sizeBytes > remaining) continue;
-    remaining -= image.sizeBytes;
-    projected.set(index, {
-      ...block,
+
+    if (!image || !Number.isFinite(image.sizeBytes) || image.sizeBytes < 0) {
+      if (block.imageIncluded === true) {
+        decisionById.set(block.id, { block, included: false });
+        breaks.push({ blockId: block.id, uri: identity.uri, reason: "asset_unavailable" });
+      } else if (block.imageIncluded == null) {
+        decisionById.set(block.id, { block, included: false });
+      }
+      diagnosedOmission = true;
+      continue;
+    }
+    const resolvedImage = image;
+
+    entries.push({
+      index,
+      block,
+      uri: identity.uri,
+      image: resolvedImage,
+      included: block.imageIncluded === true,
+    });
+  }
+
+  // Previously included bytes own the current prefix. Only a newly carried image may evict them.
+  let usedBytes = entries.reduce(
+    (sum, entry) => sum + (entry.included ? entry.image.sizeBytes : 0),
+    0,
+  );
+  for (const entry of entries) {
+    if (entry.included && entry.image.sizeBytes > MAX_MODEL_IMAGE_BYTES) {
+      entry.included = false;
+      usedBytes -= entry.image.sizeBytes;
+      decisionById.set(entry.block.id, { block: entry.block, included: false });
+      breaks.push({ blockId: entry.block.id, uri: entry.uri, reason: "budget_eviction" });
+    }
+  }
+
+  for (const entry of entries) {
+    if (entry.block.imageIncluded !== true) {
+      if (entry.image.sizeBytes > MAX_MODEL_IMAGE_BYTES) {
+        decisionById.set(entry.block.id, { block: entry.block, included: false });
+        diagnosedOmission = true;
+        continue;
+      }
+      let canInclude = true;
+      while (usedBytes + entry.image.sizeBytes > MAX_MODEL_IMAGE_CONTEXT_BYTES) {
+        const oldest = entries.find(
+          (candidate) => candidate.included && candidate.index < entry.index,
+        );
+        if (!oldest) {
+          decisionById.set(entry.block.id, { block: entry.block, included: false });
+          diagnosedOmission = true;
+          canInclude = false;
+          break;
+        }
+        oldest.included = false;
+        usedBytes -= oldest.image.sizeBytes;
+        decisionById.set(oldest.block.id, { block: oldest.block, included: false });
+        breaks.push({ blockId: oldest.block.id, uri: oldest.uri, reason: "budget_eviction" });
+      }
+      if (!canInclude) continue;
+      entry.included = true;
+      usedBytes += entry.image.sizeBytes;
+      decisionById.set(entry.block.id, { block: entry.block, included: true });
+    }
+  }
+
+  const projected = new Map<number, Block>();
+  for (const entry of entries) {
+    if (!entry.included) continue;
+    projected.set(entry.index, {
+      ...entry.block,
+      imageIncluded: true,
       content: {
         type: "image",
-        mediaType: image.mediaType,
-        data: image.data instanceof URL ? image.data.href : image.data,
+        mediaType: entry.image.mediaType,
+        data: entry.image.data instanceof URL ? entry.image.data.href : entry.image.data,
       },
     });
   }
-  if (input.blocks.some((block, index) => block.blockType === "image" && !projected.has(index))) {
+
+  if (diagnosedOmission) {
     input.imageAssets.diagnose?.({
       threadId: input.thread.id,
       projectId: input.thread.projectId,
       reason: "unavailable_or_over_budget",
     });
   }
-  return input.blocks.flatMap((block, index) => {
-    if (block.blockType !== "image") return [block];
-    const modelBlock = projected.get(index);
-    return modelBlock ? [modelBlock] : [];
-  });
+
+  return {
+    blocks: input.blocks.flatMap((block, index) => {
+      if (block.blockType !== "image") return [block];
+      const modelBlock = projected.get(index);
+      return modelBlock ? [modelBlock] : [];
+    }),
+    decisions: [...decisionById.values()],
+    breaks,
+  };
 }

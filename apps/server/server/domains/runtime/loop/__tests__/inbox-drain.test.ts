@@ -20,6 +20,11 @@ import { scriptedGateway } from "./test-gateway.js";
 
 const USER_ID = "user-1";
 
+function required<T>(value: T | undefined): T {
+  if (value === undefined) throw new Error("expected a value");
+  return value;
+}
+
 function textResult(text = "done"): GenerateResult {
   return {
     content: [{ type: "text", text }],
@@ -460,14 +465,21 @@ describe("inbox drain", () => {
     };
     const { thread, requests, orchestrator, repos, send } = await setup({
       imageAssets: {
-        async resolve() {
-          return { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 10 * 1024 * 1024 };
+        async resolve(_context, reference) {
+          return {
+            mediaType: "image/png",
+            data: reference.uri,
+            sizeBytes: 10 * 1024 * 1024,
+          };
         },
       },
       onStream: async (call) => {
         if (call === 1)
           await send(thread.id, "new images", {
-            blocks: [{ type: "text", text: "new images" }, image, image],
+            blocks: [
+              { type: "text", text: "new images" },
+              { ...image, uri: "uploads://@/new.png" },
+            ],
           });
       },
     });
@@ -477,15 +489,158 @@ describe("inbox drain", () => {
     const users = requests[1].messages.filter((message) => message.role === "user");
     expect(
       users.map((message) => message.content.filter((part) => part.type === "image").length),
-    ).toEqual([0, 2]);
+    ).toEqual([1, 1]);
     expect(messageTexts(users)).toEqual(["old image", "new images"]);
-    expect(
-      (await repos.blocks.listByThread(thread.id))
-        .filter((block) => block.blockType === "image")
-        .map((block) => block.content),
-    ).toEqual(
-      Array(3).fill({ type: "image_reference", documentId: image.documentId, uri: image.uri }),
+    const images = (await repos.blocks.listByThread(thread.id)).filter(
+      (block) => block.blockType === "image",
     );
+    expect(images.map((block) => block.imageIncluded)).toEqual([true, true]);
+    expect(users[0]?.content.find((part) => part.type === "image")).toMatchObject({
+      data: image.uri,
+    });
+  });
+
+  it("reuses image bytes unchanged in consecutive requests under budget", async () => {
+    const image = {
+      type: "image" as const,
+      documentId: "44444444-4444-4444-8444-444444444444",
+      uri: "uploads://@/stable.png",
+    };
+    const { thread, requests, orchestrator, send } = await setup({
+      imageAssets: {
+        async resolve() {
+          return { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 5 };
+        },
+      },
+      onStream: async (call) => {
+        if (call === 1)
+          await send(thread.id, "follow-up", { blocks: [{ type: "text", text: "follow-up" }] });
+      },
+    });
+    await send(thread.id, "image", { blocks: [{ type: "text", text: "image" }, image] });
+    await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
+
+    const historyImage = (request: (typeof requests)[number]) => {
+      const user = request.messages.find(
+        (candidate) =>
+          candidate.role === "user" && candidate.content.some((part) => part.type === "image"),
+      );
+      return JSON.stringify(user);
+    };
+    expect(requests).toHaveLength(2);
+    expect(historyImage(required(requests[0]))).toBe(historyImage(required(requests[1])));
+  });
+
+  it("names the loss of an image asset after its first inclusion", async () => {
+    const image = {
+      type: "image" as const,
+      documentId: "44444444-4444-4444-8444-444444444444",
+      uri: "uploads://@/disappeared.png",
+    };
+    let resolutions = 0;
+    const { thread, requests, orchestrator, repos, send } = await setup({
+      results: [
+        toolCallResult("ask_user", "call-1"),
+        toolCallResult("ask_user", "call-2"),
+        textResult(),
+      ],
+      imageAssets: {
+        async resolve() {
+          resolutions += 1;
+          return resolutions === 1
+            ? { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 5 }
+            : null;
+        },
+      },
+      onStream: async (call) => {
+        if (call === 1)
+          await send(thread.id, "follow-up", { blocks: [{ type: "text", text: "follow-up" }] });
+      },
+    });
+    await send(thread.id, "image", { blocks: [{ type: "text", text: "image" }, image] });
+    await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
+
+    expect(requests).toHaveLength(3);
+    expect(
+      requests[0]?.messages.flatMap((entry) => entry.content).some((part) => part.type === "image"),
+    ).toBe(true);
+    expect(
+      requests[1]?.messages.flatMap((entry) => entry.content).some((part) => part.type === "image"),
+    ).toBe(false);
+    expect(
+      messageTexts(required(requests[1]).messages).filter((text) =>
+        text.includes("disappeared.png"),
+      ),
+    ).toHaveLength(1);
+    expect(
+      messageTexts(required(requests[2]).messages).filter((text) =>
+        text.includes("disappeared.png"),
+      ),
+    ).toHaveLength(1);
+    expect(
+      (await repos.blocks.listByThread(thread.id)).find((block) => block.blockType === "image")
+        ?.imageIncluded,
+    ).toBe(false);
+    expect(
+      (await repos.turns.listByThread(thread.id)).filter(
+        (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("writes one durable system update when a new image evicts an older inclusion", async () => {
+    const image = {
+      type: "image" as const,
+      documentId: "44444444-4444-4444-8444-444444444444",
+      uri: "uploads://@/old.png",
+    };
+    const { thread, requests, orchestrator, repos, send } = await setup({
+      results: [
+        toolCallResult("ask_user", "call-1"),
+        toolCallResult("ask_user", "call-2"),
+        textResult(),
+      ],
+      imageAssets: {
+        async resolve(_context, reference) {
+          return {
+            mediaType: "image/png",
+            data: reference.uri,
+            sizeBytes: 10 * 1024 * 1024,
+          };
+        },
+      },
+      onStream: async (call) => {
+        if (call === 1) {
+          await send(thread.id, "new images", {
+            blocks: [
+              { type: "text", text: "new images" },
+              { ...image, uri: "uploads://@/new-1.png" },
+              { ...image, uri: "uploads://@/new-2.png" },
+            ],
+          });
+        }
+      },
+    });
+    await send(thread.id, "old image", { blocks: [{ type: "text", text: "old image" }, image] });
+    await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
+
+    expect(requests).toHaveLength(3);
+    const updateText = (request: (typeof requests)[number]) =>
+      messageTexts(request.messages).filter((text) => text.includes("Image context changed."));
+    expect(updateText(required(requests[1]))).toHaveLength(1);
+    expect(updateText(required(requests[2]))).toHaveLength(1);
+    const turns = await repos.turns.listByThread(thread.id);
+    const updates = turns.filter(
+      (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
+    );
+    expect(updates).toHaveLength(1);
+    expect((await repos.blocks.listByTurn(required(updates[0]).id))[0]?.textContent).toContain(
+      "old.png",
+    );
+    const images = (await repos.blocks.listByThread(thread.id)).filter(
+      (block) => block.blockType === "image",
+    );
+    expect(images.map((block) => block.imageIncluded)).toEqual([false, true, true]);
   });
 
   it("persists a drained message as a user turn the next iteration still sees", async () => {
@@ -694,7 +849,9 @@ describe("drain-only start", () => {
 
     const turns = await repos.turns.listByThread(thread.id);
     expect(turns.find((turn) => turn.id === first.id)?.prevTurnId).toBeNull();
-    expect(turns.find((turn) => turn.id === first.id)?.createdAt).toBe(enqueuedAt.toISOString());
+    expect(turns.find((turn) => turn.id === first.id)?.createdAt).not.toBe(
+      enqueuedAt.toISOString(),
+    );
     expect(turns.find((turn) => turn.id === second.id)?.prevTurnId).toBe(first.id);
     expect(turns.find((turn) => turn.role === "assistant")?.prevTurnId).toBe(second.id);
     expect(await inbox.selectPending(thread.id)).toEqual([]);

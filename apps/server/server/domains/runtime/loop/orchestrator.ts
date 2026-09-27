@@ -100,6 +100,7 @@ import {
 import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import type { TerminalCause } from "./execution-finalizer.js";
+import type { ImageContextBreak, ImageInclusionDecision } from "./image-context.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
@@ -1098,6 +1099,7 @@ async function buildGenerateRequest(input: {
   agentSlug: string | null;
   thread: Thread;
   permissionGate: PermissionGate;
+  imageContextUpdates: { turns: Turn[]; blocks: Block[] };
 }> {
   const assembled = await assembleNextTurnContext({
     thread: input.thread,
@@ -1107,6 +1109,12 @@ async function buildGenerateRequest(input: {
     toolRegistry: input.deps.toolRegistry,
     gateway: input.deps.gateway,
     imageAssets: input.deps.imageAssets,
+    persistImageProjection: (projection) =>
+      persistImageProjection({
+        deps: input.deps,
+        threadId: input.runInput.threadId,
+        ...projection,
+      }),
     baseTools: input.runInput.tools ?? input.deps.toolExecutor.getDefinitions?.(),
     promptBakes: input.deps.repos.promptBakes,
     persistBake: true,
@@ -1121,11 +1129,86 @@ async function buildGenerateRequest(input: {
       assembled.policy,
       assembled.thread.kind === "subagent" ? ["return_result"] : [],
     ),
+    imageContextUpdates: assembled.imageContextUpdates,
     request: {
       ...assembled.generateRequest,
       signal: input.gatewaySignal ?? input.runInput.signal,
     },
   };
+}
+
+async function persistImageProjection(input: {
+  deps: OrchestratorDeps;
+  threadId: ThreadId;
+  afterTurnId: TurnId | null;
+  decisions: readonly ImageInclusionDecision[];
+  breaks: readonly ImageContextBreak[];
+}): Promise<{ turns: Turn[]; blocks: Block[] }> {
+  const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
+    const events: OrchestratorEvent[] = input.decisions.map(({ block, included }) => ({
+      type: "block.upserted",
+      block: contentForBlockInput({
+        id: block.id,
+        turnId: block.turnId as TurnId,
+        blockType: block.blockType,
+        sequence: block.sequence,
+        content: block.content,
+        textContent: block.textContent,
+        status: block.status,
+        imageIncluded: included,
+      }),
+    }));
+    const turns: Turn[] = [];
+    const blocks: Block[] = input.decisions.map(({ block, included }) => ({
+      ...block,
+      imageIncluded: included,
+    }));
+
+    if (input.breaks.length > 0) {
+      const turn = createLocalTurn({
+        threadId: input.threadId,
+        prevTurnId: input.afterTurnId,
+        role: "system",
+        origin: "system",
+        status: "complete",
+        metadata: {
+          kind: "system_update",
+          section: "image_inclusion",
+          breaks: input.breaks.map((entry) => ({
+            blockId: entry.blockId,
+            uri: entry.uri,
+            reason: entry.reason,
+          })),
+        },
+      });
+      const block = contentForBlockInput({
+        id: turn.id,
+        turnId: turn.id,
+        blockType: "text",
+        sequence: 0,
+        textContent: imageContextBreakText(input.breaks),
+        status: "complete",
+      });
+      turns.push(turn);
+      blocks.push(localBlockFromEvent(block));
+      events.push({ type: "turn.created", turn }, { type: "block.upserted", block });
+    }
+
+    return { result: { turns, blocks }, events };
+  });
+  return persisted.result;
+}
+
+function imageContextBreakText(breaks: readonly ImageContextBreak[]): string {
+  const lines = [
+    "Image context changed. Previously included images were removed from the model request:",
+    ...breaks.map((entry) =>
+      entry.reason === "budget_eviction"
+        ? `Removed ${entry.uri} to fit the image context budget.`
+        : `Removed ${entry.uri} because its asset is no longer available.`,
+    ),
+  ];
+  return `<system_update>\n${lines.join("\n")}\n</system_update>`;
 }
 
 /** Staged edits belong to a response scope, which rotates at a Work switch. */
@@ -1508,6 +1591,14 @@ async function executeLoop(
         gatewaySignal: gatewayAbort.signal,
       });
       thread = built.thread;
+      for (const turn of built.imageContextUpdates.turns) {
+        if (!allTurns.some((existing) => existing.id === turn.id)) allTurns.push(turn);
+      }
+      for (const block of built.imageContextUpdates.blocks) {
+        const index = allBlocks.findIndex((existing) => existing.id === block.id);
+        if (index < 0) allBlocks.push(block);
+        else allBlocks[index] = block;
+      }
       const request = built.request;
       const gatewayCallId = crypto.randomUUID();
       request.correlation = {

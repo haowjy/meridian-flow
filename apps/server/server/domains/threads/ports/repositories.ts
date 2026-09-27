@@ -62,6 +62,7 @@ export interface CreateBlockInput {
   executionSide?: ExecutionSide | null;
   status?: BlockStatus;
   collapsedContent?: string | null;
+  imageIncluded?: boolean | null;
 }
 
 export interface UpsertBlockInput extends CreateBlockInput {

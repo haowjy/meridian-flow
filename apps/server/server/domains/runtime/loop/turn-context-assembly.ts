@@ -13,7 +13,7 @@
  *   send then fails or is cancelled.
  */
 
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, PromptBake, Thread, Turn } from "@meridian/contracts/threads";
 import type { AgentRevisionStore } from "../../packages/index.js";
 import { hashPromptBakeContent } from "../../threads/index.js";
@@ -31,7 +31,11 @@ import {
   type PromptInventoryListing,
 } from "./composed-system-prompt.js";
 import { buildContext } from "./context-builder.js";
-import { projectImageBlocksForModel } from "./image-context.js";
+import {
+  type ImageContextBreak,
+  type ImageInclusionDecision,
+  projectImageBlocksForModel,
+} from "./image-context.js";
 import type { EffectiveToolPolicy } from "./permissions/project-tool-policy.js";
 import { applyPromptCacheMarks } from "./prompt-cache-marks.js";
 import type { WorkContextReader } from "./work-context.js";
@@ -49,6 +53,11 @@ export interface AssembleNextTurnContextInput {
   toolRegistry: Parameters<typeof resolveAgentThreadTurnContext>[0]["toolRegistry"];
   gateway?: Pick<Gateway, "getDefaultModel" | "listModels">;
   imageAssets?: ImageAssetPort;
+  persistImageProjection?: (input: {
+    afterTurnId: TurnId | null;
+    decisions: readonly ImageInclusionDecision[];
+    breaks: readonly ImageContextBreak[];
+  }) => Promise<{ turns: Turn[]; blocks: Block[] }>;
   baseTools?: Tool[];
   /** When true, first-attempt bake is persisted; preview callers pass false. */
   persistBake?: boolean;
@@ -72,6 +81,7 @@ export interface AssembledNextTurnContext {
     GenerateRequest,
     "messages" | "tools" | "model" | "reasoning" | "promptCacheKey"
   >;
+  imageContextUpdates: { turns: Turn[]; blocks: Block[] };
 }
 
 function functionToolsFromAdvertised(tools: Tool[] | undefined): FunctionTool[] {
@@ -156,7 +166,7 @@ export async function assembleNextTurnContext(
   const resolvedModel = input.gateway?.listModels?.().find((model) => model.id === modelId);
   const supportsImageInput = resolvedModel?.capabilities.has("image_input") ?? false;
   const supportsPromptCaching = resolvedModel?.capabilities.has("caching") ?? false;
-  const blocks = await projectImageBlocksForModel({
+  const imageProjection = await projectImageBlocksForModel({
     thread,
     blocks: input.blocks,
     supportsImageInput,
@@ -166,10 +176,23 @@ export async function assembleNextTurnContext(
       },
     },
   });
+  const imageContextUpdates =
+    input.persistImageProjection &&
+    (imageProjection.decisions.length > 0 || imageProjection.breaks.length > 0)
+      ? await input.persistImageProjection({
+          afterTurnId: (input.turns.at(-1)?.id as TurnId | undefined) ?? null,
+          decisions: imageProjection.decisions,
+          breaks: imageProjection.breaks,
+        })
+      : { turns: [], blocks: [] };
+  const imageTurnIds = new Set(imageContextUpdates.turns.map((turn) => turn.id));
   const built = buildContext({
     thread,
-    turns: input.turns,
-    blocks,
+    turns: [...input.turns, ...imageContextUpdates.turns],
+    blocks: [
+      ...imageProjection.blocks,
+      ...imageContextUpdates.blocks.filter((block) => imageTurnIds.has(block.turnId)),
+    ],
     frozenSystemPrompt: isThreadPromptFrozen(thread) ? systemPrompt : undefined,
     tools,
     unfrozenBasePrompt,
@@ -200,6 +223,7 @@ export async function assembleNextTurnContext(
       promptCacheKey: thread.id,
       ...gatewayParams,
     },
+    imageContextUpdates,
   };
 }
 
