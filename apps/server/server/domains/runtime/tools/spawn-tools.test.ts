@@ -98,24 +98,26 @@ describe("return_result tool contract", () => {
     (entry) => entry.definition.name === "return_result",
   );
 
-  it("advertises artifact items and normalizes URI strings before capture", async () => {
+  it("advertises URI string artifact items and resolves them to object refs", async () => {
     const returnResult = vi.fn(async () => ({ ok: true as const }));
     if (registration?.execution.type !== "server") throw new Error("missing return_result");
 
     const properties = registration.definition.inputSchema.properties as
       | Record<string, unknown>
       | undefined;
-    expect(properties?.artifacts).toMatchObject({
+    expect(properties?.artifacts).toEqual({
       type: "array",
-      items: expect.any(Object),
+      description: "Meridian document URIs produced by this child.",
+      items: {
+        type: "string",
+        description:
+          "Meridian URI of a document this subagent produced, such as scratch://… or manuscript://…",
+      },
     });
     await registration.execution.handler(
       {
         summary: "done",
-        artifacts: [
-          "scratch://the-lamplighters-arithmetic.md",
-          { type: "image", url: "https://example.test/cover.png" },
-        ],
+        artifacts: ["scratch://the-lamplighters-arithmetic.md"],
       },
       { returnResult } as never,
     );
@@ -123,20 +125,22 @@ describe("return_result tool contract", () => {
     expect(returnResult).toHaveBeenCalledWith({
       summary: "done",
       payload: undefined,
-      artifacts: [
-        { type: "object", uri: "scratch://the-lamplighters-arithmetic.md" },
-        { type: "image", url: "https://example.test/cover.png" },
-      ],
+      artifacts: [{ type: "object", uri: "scratch://the-lamplighters-arithmetic.md" }],
     });
   });
 
-  it("returns a tool error for malformed artifacts without invoking capture", async () => {
+  it.each([
+    ["HTTP URL", "https://example.test/cover.png"],
+    ["non-URI string", "not a Meridian URI"],
+    ["typed artifact object", { type: "object", uri: "scratch://draft.md" }],
+  ])("returns a tool error for a %s without invoking capture", async (_label, artifact) => {
     const returnResult = vi.fn(async () => ({ ok: true as const }));
     if (registration?.execution.type !== "server") throw new Error("missing return_result");
 
-    const result = await registration.execution.handler({ summary: "done", artifacts: [42] }, {
-      returnResult,
-    } as never);
+    const result = await registration.execution.handler(
+      { summary: "done", artifacts: [artifact] },
+      { returnResult } as never,
+    );
 
     expect(result).toMatchObject({
       isError: true,
@@ -145,6 +149,9 @@ describe("return_result tool contract", () => {
         message: expect.stringContaining("artifacts[0]"),
       },
     });
+    if (typeof artifact === "string") {
+      expect(result).toMatchObject({ output: { message: expect.stringContaining(artifact) } });
+    }
     expect(returnResult).not.toHaveBeenCalled();
   });
 });

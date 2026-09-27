@@ -43,16 +43,6 @@ export const artifactRefSchema = z.discriminatedUnion("type", [
 
 export type ArtifactRef = z.infer<typeof artifactRefSchema>;
 
-/** A model may return an artifact URI directly; store it as an object ref. */
-export function normalizeArtifactRef(value: string | ArtifactRef): ArtifactRef {
-  return typeof value === "string" ? { type: "object", uri: value } : value;
-}
-
-/** Input form for tools that accept canonical artifact refs or shorthand URIs. */
-export const artifactRefInputSchema = z
-  .union([z.string(), artifactRefSchema])
-  .transform(normalizeArtifactRef);
-
 export interface AskRequest {
   interruptId: string;
   prompt: string;

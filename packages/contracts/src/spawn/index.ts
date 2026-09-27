@@ -6,8 +6,8 @@
  */
 
 import { z } from "zod";
+import { parseContextUri } from "../context-uri.js";
 import type { ArtifactRef, MeridianError } from "../interrupt/index.js";
-import { artifactRefInputSchema } from "../interrupt/index.js";
 import type { ThreadId, TurnBlockId, TurnId } from "../runtime/index.js";
 import type { JsonValue } from "../threads/index.js";
 
@@ -22,6 +22,19 @@ const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   ]),
 );
 
+const artifactUriSchema = z
+  .string()
+  .superRefine((uri, context) => {
+    const parsed = parseContextUri(uri);
+    if (!uri.includes("://") || !parsed.ok || !parsed.value.path) {
+      context.addIssue({
+        code: "custom",
+        message: `Expected a Meridian document URI, received ${JSON.stringify(uri)}.`,
+      });
+    }
+  })
+  .transform((uri): ArtifactRef => ({ type: "object", uri }));
+
 /** Candidate content supplied by return_result, before terminal cause is known. */
 export type ReturnResultCapture = {
   summary: string;
@@ -29,11 +42,11 @@ export type ReturnResultCapture = {
   artifacts?: AgentReport["artifacts"];
 };
 
-/** Canonical return_result input; artifact URI strings normalize to object refs. */
+/** Canonical return_result input; artifact URI strings resolve to object refs. */
 export const returnResultCaptureSchema = z.strictObject({
   summary: z.string(),
   payload: jsonValueSchema.optional(),
-  artifacts: z.array(artifactRefInputSchema).optional(),
+  artifacts: z.array(artifactUriSchema).optional(),
 });
 
 /** A run accepts one report; a second return_result is refused, not thrown. */

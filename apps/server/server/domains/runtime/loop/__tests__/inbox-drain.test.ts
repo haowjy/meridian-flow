@@ -182,14 +182,17 @@ describe("inbox drain", () => {
     expect(toolResults[0]?.content).toMatchObject({ output: { ok: true }, isError: false });
   });
 
-  it("returns malformed return_result artifacts as a tool error and continues the child run", async () => {
+  it.each([
+    ["HTTP URL", "https://example.test/cover.png"],
+    ["non-URI string", "not a Meridian URI"],
+  ])("returns a tool error for a %s artifact and continues the child run", async (_label, artifact) => {
     const { thread, orchestrator, requests, repos } = await setup({
       child: true,
       realSpawnTools: true,
       results: [
         toolCallResult("return_result", "rr-bad", {
           summary: "malformed report",
-          artifacts: [42],
+          artifacts: [artifact],
         }),
         textResult("recovered report"),
       ],
@@ -215,6 +218,7 @@ describe("inbox drain", () => {
         message: expect.stringContaining("artifacts[0]"),
       },
     });
+    expect(JSON.stringify(toolResult?.content)).toContain(artifact);
   });
 
   it("saves only the final response's public text and per-execution response cost", async () => {

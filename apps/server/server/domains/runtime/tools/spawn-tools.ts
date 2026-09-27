@@ -87,7 +87,7 @@ function returnResultInputError(error: ZodError): string {
       )
     : "input";
   if (issue?.path[0] === "artifacts") {
-    return `Invalid return_result input at ${field}: expected a URI string or an ArtifactRef object with type "object" and uri, type "image" and url, or type "liveView" and url.`;
+    return `Invalid return_result input at ${field}: expected a Meridian document URI string. ${issue.message}`;
   }
   if (issue?.path[0] === "summary") {
     return `Invalid return_result input at ${field}: expected a string.`;
@@ -95,7 +95,7 @@ function returnResultInputError(error: ZodError): string {
   if (issue?.path[0] === "payload") {
     return `Invalid return_result input at ${field}: expected a JSON value.`;
   }
-  return `Invalid return_result input at ${field}: expected an object with a string summary, optional JSON payload, and optional artifacts array of URI strings or ArtifactRef objects.`;
+  return `Invalid return_result input at ${field}: expected an object with a string summary, optional JSON payload, and optional artifacts array of Meridian document URI strings.`;
 }
 
 const THREAD_MESSAGE_DESCRIPTION =
@@ -270,51 +270,11 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
             payload: { description: "Package-defined structured result." },
             artifacts: {
               type: "array",
-              description:
-                "Promoted artifact references produced by this child. Each item is an artifact URI string or a typed ArtifactRef object.",
+              description: "Meridian document URIs produced by this child.",
               items: {
-                anyOf: [
-                  {
-                    type: "string",
-                    description:
-                      "Artifact URI such as scratch://… or manuscript://…. It is saved as an object reference.",
-                  },
-                  {
-                    type: "object",
-                    properties: {
-                      type: { const: "object" },
-                      uri: { type: "string" },
-                      label: { type: "string" },
-                      mimeType: { type: "string" },
-                    },
-                    required: ["type", "uri"],
-                    additionalProperties: false,
-                  },
-                  {
-                    type: "object",
-                    properties: {
-                      type: { const: "image" },
-                      url: {
-                        type: "string",
-                        description: "HTTP(S) image URL.",
-                      },
-                      label: { type: "string" },
-                      mimeType: { type: "string" },
-                    },
-                    required: ["type", "url"],
-                    additionalProperties: false,
-                  },
-                  {
-                    type: "object",
-                    properties: {
-                      type: { const: "liveView" },
-                      url: { type: "string" },
-                      expiresAt: { type: "string" },
-                    },
-                    required: ["type", "url"],
-                    additionalProperties: false,
-                  },
-                ],
+                type: "string",
+                description:
+                  "Meridian URI of a document this subagent produced, such as scratch://… or manuscript://…",
               },
             },
           },
