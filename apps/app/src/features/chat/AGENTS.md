@@ -59,7 +59,9 @@ single transport subscription per thread; `ChatView` filters direct running
 background children for the live panel, while the pane and dock headers filter
 direct children for the Subagents pop-up. `thread_report` is always a process
 step ("Read report from ..."), in either mode: the launch or combined card is
-the one card per run and holds the report. Background `subagent_update` notices
+the one card per run and holds the report. The step still expands to the
+report, and its subagent name links to the launch card (a `subagentBlock:
+"card"` reveal). Background `subagent_update` notices
 render as quiet rows: a single completion reads "<name> <description>
 finished", while adjacent completions merge into a compact disclosure. Notice
 text is intentionally not repeated there. Every surface names a child through

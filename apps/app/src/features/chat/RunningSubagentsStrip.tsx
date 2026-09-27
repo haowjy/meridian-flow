@@ -40,7 +40,7 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
                 type="button"
                 aria-expanded={expanded}
                 onClick={() => setExpanded(!expanded)}
-                className="focus-ring flex min-w-0 flex-1 items-center gap-2 rounded-sm py-1 text-left text-caption text-ink-muted"
+                className="focus-ring flex min-w-0 items-center gap-2 rounded-sm py-1 text-left text-caption text-ink-muted"
               >
                 <RunIdentity node={single} />
                 {disclosure}
@@ -74,7 +74,7 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
               <span className="truncate font-medium text-foreground">
                 <Trans>{descendants.length} subagents</Trans>
               </span>
-              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+              <span className="min-w-0 truncate text-xs text-muted-foreground">
                 {!expanded ? <Trans>{descendants.length} running</Trans> : null}
               </span>
               {disclosure}
@@ -84,7 +84,7 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
                 {descendants.map((node) => (
                   <li key={node.threadId} className="text-caption text-ink-muted">
                     <div className="flex min-w-0 items-center gap-1 py-1">
-                      <span className="flex min-w-0 flex-1 items-center gap-2">
+                      <span className="flex min-w-0 items-center gap-2">
                         <RunIdentity node={node} />
                       </span>
                       <OpenSubagentChatButton threadId={node.threadId} agentName={node.agentName} />
@@ -107,7 +107,7 @@ function RunIdentity({ node }: { node: ThreadActivityNode }) {
   return (
     <>
       <SubagentMark agentName={node.agentName} status="running" className="size-5 text-[10px]" />
-      <span className="min-w-0 flex-1 truncate">
+      <span className="min-w-0 truncate">
         <span className="font-medium text-foreground">{name}</span>
         {description ? <span className="ml-1.5 text-muted-foreground">{description}</span> : null}
       </span>

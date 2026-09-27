@@ -70,7 +70,7 @@ export function SpawnReportCard({
     <>
       <SubagentMark agentName={agentName} status={markStatus} />
       <span className="shrink-0 text-sm font-medium text-foreground">{displayName}</span>
-      <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{description}</span>
+      <span className="min-w-0 truncate text-sm text-muted-foreground">{description}</span>
       <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
         {running ? <Elapsed startedAt={startedAt} /> : formatSubagentElapsed(startedAt, terminalAt)}
       </span>
@@ -90,7 +90,7 @@ export function SpawnReportCard({
             type="button"
             aria-expanded={expanded}
             onClick={() => setExpanded((value) => !value)}
-            className="focus-ring flex min-w-0 flex-1 items-center gap-[var(--chat-space-row)] rounded-sm text-left"
+            className="focus-ring flex min-w-0 items-center gap-[var(--chat-space-row)] rounded-sm text-left"
           >
             {identity}
             <ChevronDown
@@ -102,9 +102,7 @@ export function SpawnReportCard({
             />
           </button>
         ) : (
-          <div className="flex min-w-0 flex-1 items-center gap-[var(--chat-space-row)]">
-            {identity}
-          </div>
+          <div className="flex min-w-0 items-center gap-[var(--chat-space-row)]">{identity}</div>
         )}
         <OpenSubagentChatButton threadId={childThreadId} agentName={agentName} />
       </div>

@@ -115,8 +115,11 @@ export function TurnList({
   useTurnRevealLanding({
     threadId,
     turns: visibleTurns,
-    resolveTurnId: (turnId, subagentThreadId) =>
-      subagentThreadId ? resolveSubagentRevealTurnId(turns, subagentThreadId, turnId) : turnId,
+    // The launch card lives in the origin turn; only "latest" follows the child forward.
+    resolveTurnId: (turnId, subagentThreadId, subagentBlock) =>
+      subagentThreadId && subagentBlock !== "card"
+        ? resolveSubagentRevealTurnId(turns, subagentThreadId, turnId)
+        : turnId,
     historySettled,
     viewportRef,
     scrollToIndex: (index) => virtualizer.scrollToIndex(index, { align: "center" }),

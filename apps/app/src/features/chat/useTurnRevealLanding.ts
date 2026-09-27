@@ -11,13 +11,19 @@
  */
 import { type RefObject, useEffect, useRef } from "react";
 import { useTurnReveal } from "./conversation-reveal";
+import type { SubagentRevealBlock } from "./conversation-reveal-controller";
 
-/** The last matching block in a landed turn is the child's latest transcript point. */
-export function latestSubagentBlockRevealTarget(
+/**
+ * The subagent block to flash in a landed turn: its launch card, or by default
+ * the last matching block, which is the child's latest transcript point.
+ */
+export function subagentBlockRevealTarget(
   row: ParentNode,
   subagentThreadId: string,
+  block: SubagentRevealBlock = "latest",
 ): HTMLElement | undefined {
-  return [...row.querySelectorAll<HTMLElement>("[data-subagent-thread-id]")]
+  const selector = block === "card" ? "[data-subagent-card]" : "[data-subagent-thread-id]";
+  return [...row.querySelectorAll<HTMLElement>(selector)]
     .filter((element) => element.dataset.subagentThreadId === subagentThreadId)
     .at(-1);
 }
@@ -34,7 +40,11 @@ export function useTurnRevealLanding({
   /** Rows in render order — the turns this transcript can actually land on. */
   turns: readonly { id: string }[];
   /** Transcript data can redirect a block-level reveal beyond its origin turn. */
-  resolveTurnId?: (turnId: string, subagentThreadId?: string) => string;
+  resolveTurnId?: (
+    turnId: string,
+    subagentThreadId?: string,
+    subagentBlock?: SubagentRevealBlock,
+  ) => string;
   /** Whether the thread's history request has resolved. */
   historySettled: boolean;
   viewportRef: RefObject<HTMLElement | null>;
@@ -49,7 +59,8 @@ export function useTurnRevealLanding({
   useEffect(() => {
     if (!request) return;
     const targetTurnId =
-      resolve.current?.(request.turnId, request.subagentThreadId) ?? request.turnId;
+      resolve.current?.(request.turnId, request.subagentThreadId, request.subagentBlock) ??
+      request.turnId;
     const index = turns.findIndex((turn) => turn.id === targetTurnId);
     if (index < 0) {
       // Absent from a settled transcript means absent from this conversation.
@@ -74,7 +85,9 @@ export function useTurnRevealLanding({
           const row = viewport.querySelector<HTMLElement>(
             `[data-turn-id="${CSS.escape(targetTurnId)}"]`,
           );
-          const target = row ? latestSubagentBlockRevealTarget(row, subagentThreadId) : undefined;
+          const target = row
+            ? subagentBlockRevealTarget(row, subagentThreadId, request.subagentBlock)
+            : undefined;
           if ((!target || !row?.getBoundingClientRect().height) && performance.now() < deadline) {
             raf = requestAnimationFrame(revealBlock);
             return;

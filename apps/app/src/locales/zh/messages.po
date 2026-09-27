@@ -2158,6 +2158,7 @@ msgid "Italic"
 msgstr ""
 
 #: src/features/chat/SubagentHeader.tsx
+#: src/features/chat/thread-report-renderer.tsx
 msgid "Jump to in chat"
 msgstr "跳转到聊天中的位置"
 

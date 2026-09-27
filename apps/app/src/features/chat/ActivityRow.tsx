@@ -121,8 +121,9 @@ export function ActivityRow({
       {title ? (
         // No `overflow-hidden` here: a door inside grows past the line box to
         // reach a touch target, and clipping it would shrink that back down.
-        // Each title renderer truncates its own content.
-        <span id={titleId} className="min-w-0 flex-1 text-compact font-medium text-foreground">
+        // Each title renderer truncates its own content. The title sizes to its
+        // text so the status dot and chevron sit beside it, not at the far edge.
+        <span id={titleId} className="min-w-0 text-compact font-medium text-foreground">
           {title}
         </span>
       ) : null}

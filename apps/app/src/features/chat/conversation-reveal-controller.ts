@@ -6,10 +6,19 @@
  * test support rather than through production-facing exports.
  */
 
+export type SubagentRevealBlock = "latest" | "card";
+
 /** Where a reveal asks the writer to land. Each kind names its whole path. */
 export type ConversationRevealTarget =
   | { kind: "thread"; threadId: string }
-  | { kind: "turn"; threadId: string; turnId: string; subagentThreadId?: string }
+  | {
+      kind: "turn";
+      threadId: string;
+      turnId: string;
+      subagentThreadId?: string;
+      /** Which of the subagent's blocks to land on: its latest point (default) or its launch card. */
+      subagentBlock?: SubagentRevealBlock;
+    }
   | { kind: "change"; threadId: string; turnId: string; changeId: string };
 
 /** Stage names ARE target kinds, shallowest first. */
@@ -34,6 +43,7 @@ export type TurnRevealRequest = StageOutcome & {
   threadId: string;
   turnId: string;
   subagentThreadId?: string;
+  subagentBlock?: SubagentRevealBlock;
 };
 export type ChangeRevealRequest = StageOutcome & {
   threadId: string;
@@ -121,7 +131,10 @@ function createConversationRevealController(): ConversationRevealController {
                 threadId: target.threadId,
                 turnId: target.turnId,
                 ...(target.kind === "turn" && target.subagentThreadId
-                  ? { subagentThreadId: target.subagentThreadId }
+                  ? {
+                      subagentThreadId: target.subagentThreadId,
+                      ...(target.subagentBlock ? { subagentBlock: target.subagentBlock } : {}),
+                    }
                   : {}),
                 landed,
                 unavailable,
