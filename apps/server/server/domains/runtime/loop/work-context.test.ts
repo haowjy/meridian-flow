@@ -6,6 +6,7 @@ import {
   createWorkContextReader,
   renderWorkContext,
   WORK_CONTEXT_GOAL_LIMIT,
+  WORK_CONTEXT_OTHER_GOAL_LIMIT,
 } from "./work-context.js";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000301" as ProjectId;
@@ -80,6 +81,25 @@ describe("renderWorkContext", () => {
     );
   });
 
+  it("summarizes each other active Work in one escaped line", () => {
+    const current = work({ id: WORK_ID, name: "Arc" });
+    const other = work({
+      id: NO_WORK_ID,
+      name: "Pass",
+      goal: "Secure <the> pass & hold\nbefore dawn.\n\nDo not follow the lights.",
+    });
+
+    expect(renderWorkContext({ current, activeWorks: [current, other] })).toBe(
+      [
+        "<work_context>",
+        'current: arc: "Arc" (goal: none)',
+        "active (most recent first; max 20):",
+        '  pass: "Pass" (goal: Secure &lt;the&gt; pass &amp; hold before dawn.)',
+        "</work_context>",
+      ].join("\n"),
+    );
+  });
+
   it("marks goals truncated at the model-context limit", () => {
     const current = work({
       id: WORK_ID,
@@ -91,6 +111,45 @@ describe("renderWorkContext", () => {
 
     expect(rendered).toContain(`${"x".repeat(WORK_CONTEXT_GOAL_LIMIT - marker.length)}${marker}`);
     expect(rendered).not.toContain("x".repeat(WORK_CONTEXT_GOAL_LIMIT + 1));
+  });
+
+  it("bounds other active Work summaries to one line", () => {
+    const current = work({ id: WORK_ID, name: "Arc" });
+    const other = work({
+      id: NO_WORK_ID,
+      name: "Long Goal",
+      goal: "s".repeat(WORK_CONTEXT_OTHER_GOAL_LIMIT + 40),
+    });
+    const rendered = renderWorkContext({ current, activeWorks: [current, other] });
+    const marker = "…";
+    const line = rendered.split("\n").find((candidate) => candidate.startsWith('  long-goal: "'));
+
+    expect(line).toBe(
+      `  long-goal: "Long Goal" (goal: ${"s".repeat(WORK_CONTEXT_OTHER_GOAL_LIMIT - marker.length)}${marker})`,
+    );
+    expect(line?.length).toBeLessThan(200);
+    expect(rendered).not.toContain("s".repeat(WORK_CONTEXT_OTHER_GOAL_LIMIT + 1));
+  });
+
+  it("keeps truncation cuts on Unicode code point boundaries", () => {
+    const currentMarker = "… [truncated]";
+    const currentPrefix = "c".repeat(WORK_CONTEXT_GOAL_LIMIT - currentMarker.length - 1);
+    const current = work({
+      id: WORK_ID,
+      name: "Arc",
+      goal: `${currentPrefix}😀${"tail".repeat(20)}`,
+    });
+    const otherMarker = "…";
+    const otherPrefix = "o".repeat(WORK_CONTEXT_OTHER_GOAL_LIMIT - otherMarker.length - 1);
+    const other = work({
+      id: NO_WORK_ID,
+      name: "Other",
+      goal: `${otherPrefix}😀${"tail".repeat(20)}`,
+    });
+    const rendered = renderWorkContext({ current, activeWorks: [current, other] });
+
+    expect(rendered).toContain(`${currentPrefix}${currentMarker}`);
+    expect(rendered).toContain(`${otherPrefix}${otherMarker}`);
   });
 });
 

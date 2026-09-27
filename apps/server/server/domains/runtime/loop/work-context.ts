@@ -10,7 +10,9 @@ import {
 
 export const WORK_CONTEXT_ACTIVE_LIMIT = 20;
 export const WORK_CONTEXT_GOAL_LIMIT = 2_000;
+export const WORK_CONTEXT_OTHER_GOAL_LIMIT = 140;
 const GOAL_TRUNCATION_MARKER = "… [truncated]";
+const OTHER_GOAL_TRUNCATION_MARKER = "…";
 
 export interface RenderedWorkContext {
   text: string;
@@ -25,33 +27,57 @@ function promptText(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
-function boundedGoal(value: string | null): string | null {
-  const escaped = promptText((value ?? "").replace(/\r\n?/g, "\n").trim());
-  if (!escaped) return null;
-  if (escaped.length <= WORK_CONTEXT_GOAL_LIMIT) return escaped;
+function boundedPromptText(value: string, limit: number, marker: string): string {
+  const escaped = promptText(value);
+  if (escaped.length <= limit) return escaped;
 
-  const contentLimit = WORK_CONTEXT_GOAL_LIMIT - GOAL_TRUNCATION_MARKER.length;
+  const contentLimit = limit - marker.length;
   let end = contentLimit;
   if (end > 0 && /[\uD800-\uDBFF]/.test(escaped[end - 1] ?? "")) end -= 1;
-  return `${escaped.slice(0, end).trimEnd()}${GOAL_TRUNCATION_MARKER}`;
+  return `${escaped.slice(0, end).trimEnd()}${marker}`;
 }
 
-function workLines(work: Pick<Work, "slug" | "name" | "goal">, indent = ""): string[] {
-  const identity = `${indent}${promptText(work.slug ?? "none")}: ${JSON.stringify(promptText(work.name))}`;
+function normalizedGoal(value: string | null): string | null {
+  const normalized = (value ?? "").replace(/\r\n?/g, "\n").trim();
+  return normalized || null;
+}
+
+function boundedGoal(value: string | null): string | null {
+  const normalized = normalizedGoal(value);
+  return normalized
+    ? boundedPromptText(normalized, WORK_CONTEXT_GOAL_LIMIT, GOAL_TRUNCATION_MARKER)
+    : null;
+}
+
+function boundedGoalSummary(value: string | null): string | null {
+  const normalized = normalizedGoal(value);
+  if (!normalized) return null;
+  const firstParagraph = normalized.split(/\n\s*\n/, 1)[0] ?? "";
+  const flattened = firstParagraph.replace(/\s+/g, " ");
+  return boundedPromptText(flattened, WORK_CONTEXT_OTHER_GOAL_LIMIT, OTHER_GOAL_TRUNCATION_MARKER);
+}
+
+function workIdentity(work: Pick<Work, "slug" | "name">, indent = ""): string {
+  return `${indent}${promptText(work.slug ?? "none")}: ${JSON.stringify(promptText(work.name))}`;
+}
+
+function currentWorkLines(work: Pick<Work, "slug" | "name" | "goal">): string[] {
+  const identity = workIdentity(work);
   const goal = boundedGoal(work.goal);
   if (goal === null) return [`${identity} (goal: none)`];
-  return [
-    identity,
-    `${indent}  goal: |`,
-    ...goal.split("\n").map((line) => `${indent}    ${line}`),
-  ];
+  return [identity, "  goal: |", ...goal.split("\n").map((line) => `    ${line}`)];
+}
+
+function otherWorkLine(work: Pick<Work, "slug" | "name" | "goal">): string {
+  const goal = boundedGoalSummary(work.goal);
+  return `${workIdentity(work, "  ")} (goal: ${goal ?? "none"})`;
 }
 
 function currentLines(
   work: Pick<Work, "slug" | "name" | "goal" | "aiWriteMode" | "isNoWork">,
 ): string[] {
   if (work.isNoWork) return [`current: none (${work.aiWriteMode} writes)`];
-  const [identity, ...goalLines] = workLines(work);
+  const [identity, ...goalLines] = currentWorkLines(work);
   return [`current: ${identity}`, ...goalLines];
 }
 
@@ -72,7 +98,7 @@ export function renderWorkContext(input: {
     "<work_context>",
     ...currentLines(input.current),
     `active (most recent first; max ${WORK_CONTEXT_ACTIVE_LIMIT}):`,
-    ...visible.flatMap((work) => workLines(work, "  ")),
+    ...visible.map(otherWorkLine),
   ];
   if (visible.length === 0) lines.push("  none");
   if (elided > 0) lines.push(`elided: ${elided} more active Works; use work list to see them.`);
