@@ -18,12 +18,13 @@ async function fixture(configure?: (deps: OrchestratorDeps) => void) {
   let calls = 0;
   const repos = createInMemoryRepositories();
   const thread = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+  const boundThreadIds = new Set([thread.id]);
   const harness = createRuntimeHarness({
     repos,
     eventWriter: journal,
     eventSink: sink,
     headSeq: (id) => journal.headSeq(id),
-    boundThreads: () => [thread.id],
+    boundThreads: () => [...boundThreadIds],
   });
   const deps = harness.deps;
 
@@ -57,6 +58,7 @@ async function fixture(configure?: (deps: OrchestratorDeps) => void) {
     repos,
     deps,
     thread,
+    boundThreadIds,
     journal,
     sink,
     calls: () => calls,
@@ -76,6 +78,9 @@ describe("RunSession", () => {
       userId: f.thread.userId,
       projectId: f.thread.projectId,
     });
+    // The provider context is assembled during setup, so every prepared run
+    // needs the retained binding that real child creation installs.
+    f.boundThreadIds.add(child.id);
     await f.runtime.prepare({
       threadId: child.id,
       userText: "spawned prompt",

@@ -407,7 +407,6 @@ export const turnBlocks = pgTable(
     compact: text("compact"),
     pruned: boolean("pruned").notNull().default(false),
     executionSide: text("execution_side"),
-    imageIncluded: boolean("image_included"),
     createdAt: createdAt(),
   },
   (table) => [
@@ -418,11 +417,25 @@ export const turnBlocks = pgTable(
       "turn_blocks_block_type_valid",
       sql`${table.blockType} IN ('text', 'image', 'file', 'thinking', 'reasoning', 'tool_use', 'tool_result', 'custom')`,
     ),
-    check(
-      "turn_blocks_image_inclusion_only",
-      sql`${table.blockType} = 'image' OR ${table.imageIncluded} IS NULL`,
-    ),
   ],
+);
+
+/** Per-thread decisions keep a fork's request history independent from its source. */
+export const threadImageInclusions = pgTable(
+  "thread_image_inclusions",
+  {
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    blockId: uuid("block_id")
+      .$type<TurnBlockId>()
+      .notNull()
+      .references(() => turnBlocks.id, { onDelete: "cascade" }),
+    included: boolean("included").notNull(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.threadId, table.blockId] })],
 );
 
 export const threadExecutionReports = pgTable(

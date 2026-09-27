@@ -167,7 +167,7 @@ export function createDeliveryAdapter(
     // split/persist decision as the batch so it lands in the same durable
     // `system_update` turn `drainInbox` builds below (never spliced request-only).
     const notices = await deps.notices.drainForModelContext(threadId);
-    const split =
+    let split =
       !!work.workContext ||
       committedWorkIds.length > 0 ||
       notices.length > 0 ||
@@ -176,7 +176,9 @@ export function createDeliveryAdapter(
           (message.intent === "message" && !input.knownTurnIds.has(message.id)) ||
           (message.intent === "notice" && message.body.kind !== "work_context_refresh"),
       );
-    if (split) {
+    let currentTurnCompleted = false;
+    const completeCurrentTurn = async () => {
+      if (currentTurnCompleted) return;
       const completed = {
         ...currentTurn,
         status: "complete" as const,
@@ -188,7 +190,9 @@ export function createDeliveryAdapter(
         events: [{ type: "turn.completed", turn: completed }],
       }));
       await deps.repos.threads.updateCost(threadId, "0", 1);
-    }
+      currentTurnCompleted = true;
+    };
+    if (split) await completeCurrentTurn();
     const drain = await drainInbox({
       ...input,
       persistence: deps,
@@ -197,6 +201,21 @@ export function createDeliveryAdapter(
       batch,
       workContext: work.workContext,
     });
+    const prepared = await input.prepareNextContext(drain);
+    if (prepared.requiresSplit && !split) {
+      split = true;
+      await completeCurrentTurn();
+    }
+    if (prepared.events.length) {
+      const expectedLeaf =
+        (await deps.repos.threads.findById(threadId))?.activeLeafTurnId ?? currentTurn.id;
+      await persistAndAppendTurnStartEvents(deps, threadId, expectedLeaf, async () => ({
+        result: undefined,
+        events: prepared.events,
+      }));
+      drain.turns.push(...prepared.turns);
+      drain.blocks.push(...prepared.blocks);
+    }
     await inbox.ack(threadId, work.ids);
     drain.ackIds = drain.ackIds.filter(
       (id) => !work.ids.includes(id) && !committedWorkIds.includes(id),

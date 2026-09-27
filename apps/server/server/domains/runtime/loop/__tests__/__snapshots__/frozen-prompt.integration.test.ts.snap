@@ -80,15 +80,6 @@ Context file URI rules: bare file paths resolve as \`manuscript://\` -- the writ
     ],
     "model": "gpt-4.1-mini",
     "promptCacheKey": "00000000-0000-4000-8000-000000000010",
-    "signal": AbortSignal {
-      Symbol(kEvents): Map {},
-      Symbol(events.maxEventTargetListeners): 0,
-      Symbol(events.maxEventTargetListenersWarned): false,
-      Symbol(kHandlers): Map {},
-      Symbol(kAborted): false,
-      Symbol(kReason): undefined,
-      Symbol(kComposite): false,
-    },
     "tools": [
       {
         "description": "Search the story notes.",
@@ -226,15 +217,6 @@ active (most recent first; max 20):
     ],
     "model": "gpt-4.1-mini",
     "promptCacheKey": "00000000-0000-4000-8000-000000000020",
-    "signal": AbortSignal {
-      Symbol(kEvents): Map {},
-      Symbol(events.maxEventTargetListeners): 0,
-      Symbol(events.maxEventTargetListenersWarned): false,
-      Symbol(kHandlers): Map {},
-      Symbol(kAborted): false,
-      Symbol(kReason): undefined,
-      Symbol(kComposite): false,
-    },
     "tools": [
       {
         "description": "Search the story notes.",
@@ -372,15 +354,6 @@ active (most recent first; max 20):
     ],
     "model": "gpt-4.1-mini",
     "promptCacheKey": "00000000-0000-4000-8000-000000000030",
-    "signal": AbortSignal {
-      Symbol(kEvents): Map {},
-      Symbol(events.maxEventTargetListeners): 0,
-      Symbol(events.maxEventTargetListenersWarned): false,
-      Symbol(kHandlers): Map {},
-      Symbol(kAborted): false,
-      Symbol(kReason): undefined,
-      Symbol(kComposite): false,
-    },
     "tools": [
       {
         "description": "Search the story notes.",

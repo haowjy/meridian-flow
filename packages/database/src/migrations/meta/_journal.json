@@ -62,7 +62,14 @@
       "idx": 8,
       "version": "7",
       "when": 1790494099626,
-      "tag": "0008_steep_legion",
+      "tag": "0008_durable_turn_positions",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790496982077,
+      "tag": "0009_thread_image_inclusions",
       "breakpoints": true
     }
   ]

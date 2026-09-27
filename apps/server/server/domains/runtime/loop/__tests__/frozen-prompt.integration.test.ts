@@ -19,6 +19,7 @@ import {
   type ThreadAgentSwapDeps,
 } from "../../../threads/index.js";
 import type { Gateway, Message, ModelInfo, Tool } from "../../gateway/index.js";
+import type { ImageAssetPort } from "../../ports/image-asset.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
 import { createWorkContextReader } from "../work-context.js";
 import { createRuntimeHarness } from "./runtime-harness.js";
@@ -35,6 +36,7 @@ async function fixture(
   onStream?: (call: number) => Promise<void>,
   threadId?: string,
   gatewayOverride?: ReturnType<typeof scriptedGateway> & Pick<Gateway, "listModels">,
+  imageAssets?: ImageAssetPort,
 ) {
   const projects = createInMemoryProjectRepository();
   const works = createInMemoryWorkRepository();
@@ -75,6 +77,7 @@ async function fixture(
     gateway,
     workContext,
     accountSkillInstalls,
+    ...(imageAssets ? { imageAssets } : {}),
   });
   await rig.creditLedger.grant({
     userId: thread.userId,
@@ -165,12 +168,138 @@ describe("frozen prompt provider requests", () => {
       // Correlation is observability-only metadata, not provider request bytes;
       // storage IDs added by later implementation steps must not move this gate.
       const providerRequests = gateway.requests.map(
-        ({ correlation: _correlation, ...request }) => request,
+        ({ correlation: _correlation, signal: _signal, ...request }) => request,
       );
       expect(providerRequests).toMatchSnapshot();
     } finally {
       vi.restoreAllMocks();
     }
+  });
+
+  it("isolates image inclusion and eviction decisions between fork and source", async () => {
+    const model: ModelInfo = {
+      id: "gpt-4.1-mini",
+      provider: "openai",
+      displayName: "Fixture",
+      contextWindow: 100_000,
+      maxOutputTokens: 4_096,
+      capabilities: new Set(["image_input"]),
+    };
+    const gateway = Object.assign(scriptedGateway(), { listModels: () => [model] });
+    const rig = await fixture(undefined, undefined, gateway, {
+      async resolve(_context, reference) {
+        return {
+          mediaType: "image/png",
+          data: reference.uri,
+          sizeBytes: reference.uri.includes("large") ? 10 * 1024 * 1024 : 5,
+        };
+      },
+    });
+    let imageId = 1;
+    function image(uri: string) {
+      return {
+        type: "image" as const,
+        documentId: `44444444-4444-4444-8444-${String(imageId++).padStart(12, "0")}`,
+        uri,
+      };
+    }
+    async function sendAndRun(threadId: string, text: string, images: ReturnType<typeof image>[]) {
+      await rig.send(threadId, text, {
+        blocks: [{ type: "text", text }, ...images],
+      });
+      const run = await rig.orchestrator.prepare({ threadId, drain: true });
+      await run.execute();
+      return run;
+    }
+    const originalImage = image("uploads://@/original.png");
+    const original = await sendAndRun(rig.thread.id, "original", [originalImage]);
+    const originalImageBlock = (await rig.repos.blocks.listByThread(rig.thread.id)).find(
+      (block) => block.blockType === "image",
+    );
+    expect(originalImageBlock).toBeDefined();
+    expect(
+      (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
+        (decision) => decision.blockId === originalImageBlock?.id,
+      )?.included,
+    ).toBe(true);
+    const { thread: firstFork } = await forkThreadAgent(rig.derive, {
+      id: crypto.randomUUID(),
+      threadId: rig.thread.id,
+      userId: rig.thread.userId,
+      originTurnId: original.assistantTurnId,
+    });
+    const { thread: secondFork } = await forkThreadAgent(rig.derive, {
+      id: crypto.randomUUID(),
+      threadId: rig.thread.id,
+      userId: rig.thread.userId,
+      originTurnId: original.assistantTurnId,
+    });
+
+    await sendAndRun(rig.thread.id, "source eviction", [
+      image("uploads://@/source-large-1.png"),
+      image("uploads://@/source-large-2.png"),
+    ]);
+    const sourceImages = (await rig.repos.blocks.listByThread(rig.thread.id)).filter(
+      (block) => block.blockType === "image",
+    );
+    const sourceDecisions = await rig.repos.imageInclusions.findByThread(rig.thread.id);
+    expect(
+      sourceDecisions.find((decision) => decision.blockId === sourceImages[0]?.id)?.included,
+    ).toBe(false);
+    expect(
+      (await rig.repos.turns.listByThread(rig.thread.id)).filter(
+        (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
+      ),
+    ).toHaveLength(1);
+
+    await sendAndRun(firstFork.id, "first fork retains source image", []);
+    expect(
+      (await rig.repos.imageInclusions.findByThread(firstFork.id)).find(
+        (decision) => decision.blockId === originalImageBlock?.id,
+      )?.included,
+    ).toBe(true);
+    const firstForkRequest = gateway.requests.at(-1);
+    expect(
+      firstForkRequest?.messages
+        .flatMap((message) => message.content)
+        .some((part) => part.type === "image"),
+    ).toBe(true);
+    expect(
+      firstForkRequest?.messages
+        .flatMap((message) => message.content)
+        .flatMap((part) => (part.type === "text" ? [part.text] : []))
+        .join("\n"),
+    ).not.toContain("Image context changed.");
+
+    await sendAndRun(firstFork.id, "first fork eviction", [
+      image("uploads://@/fork-large-1.png"),
+      image("uploads://@/fork-large-2.png"),
+    ]);
+    const firstForkDecisions = await rig.repos.imageInclusions.findByThread(firstFork.id);
+    expect(
+      firstForkDecisions.find((decision) => decision.blockId === originalImageBlock?.id)?.included,
+    ).toBe(false);
+    expect(
+      (await rig.repos.turns.listByThread(firstFork.id)).filter(
+        (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
+      ),
+    ).toHaveLength(1);
+
+    expect(
+      (await rig.repos.imageInclusions.findByThread(secondFork.id)).find(
+        (decision) => decision.blockId === originalImageBlock?.id,
+      )?.included,
+    ).toBe(true);
+    expect(
+      (await rig.repos.turns.listByThread(secondFork.id)).filter(
+        (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
+      ),
+    ).toHaveLength(0);
+    expect(
+      (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
+        (decision) => decision.blockId === sourceImages[0]?.id,
+      )?.included,
+    ).toBe(false);
   });
 
   it("keeps one hash through steer, child notice, request-only notice, skill and Work switch across runs", async () => {

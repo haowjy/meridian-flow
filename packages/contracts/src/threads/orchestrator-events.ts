@@ -48,7 +48,6 @@ export interface BlockUpsertedRow {
   content: JsonValue;
   provider?: string | null;
   status: BlockStatus;
-  imageIncluded?: boolean | null;
 }
 
 /** Produced orchestrator events persisted as event_journal payloads and replayed to live projections. */
@@ -88,6 +87,12 @@ export type OrchestratorEvent =
   | { type: "model.response_received"; response: ModelResponseReceivedRow }
   | { type: "block.upserted"; block: BlockUpsertedRow }
   | { type: "block.updated"; block: BlockUpsertedRow }
+  | {
+      type: "image.inclusion_decided";
+      threadId: string;
+      blockId: string;
+      included: boolean;
+    }
   | { type: "block.pruned"; blockId: string }
   | {
       type: "context.compacted";

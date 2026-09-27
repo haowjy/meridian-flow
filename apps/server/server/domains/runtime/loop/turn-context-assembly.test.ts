@@ -1,4 +1,6 @@
 /** First bake persists Agent available; later account adds do not rebake. */
+
+import type { Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { testWorkSlug } from "../../../test-support/work-slug.js";
 import {
@@ -7,7 +9,7 @@ import {
   resolveAgentConfiguration,
 } from "../../packages/index.js";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
-import { createInMemoryRepositories } from "../../threads/index.js";
+import { createInMemoryRepositories, hashPromptBakeContent } from "../../threads/index.js";
 import { createToolRegistry } from "../tools/index.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
 import type { WorkContextReader } from "./work-context.js";
@@ -89,12 +91,12 @@ async function writerChat() {
     await agentRevisions.bindThread(thread.id, writerId, configuration, null);
     return thread;
   }
-  async function assemble(threadId: string) {
+  async function assemble(threadId: string, turns: Turn[] = []) {
     const thread = await repos.threads.findById(threadId);
     if (!thread) throw new Error("Thread missing");
     return assembleNextTurnContext({
       thread,
-      turns: [],
+      turns,
       blocks: [],
       agentRevisions,
       toolRegistry: createToolRegistry(),
@@ -161,6 +163,38 @@ describe("assembleNextTurnContext skill freeze", () => {
     ]);
     expect(nextFirst.systemPrompt).not.toContain("story-review");
     expect(first.systemPrompt).not.toContain("Named subagents");
+  });
+});
+
+describe("assembleNextTurnContext prompt epochs", () => {
+  it("uses the bake introduced by the latest completed epoch boundary", async () => {
+    const { createBoundThread, assemble, repos } = await writerChat();
+    const thread = await createBoundThread();
+    await assemble(thread.id);
+
+    const boundary = await repos.turns.create({
+      threadId: thread.id as never,
+      role: "system",
+      origin: "system",
+      status: "complete",
+    });
+    const content = {
+      composedSystemPrompt: "New prompt after compaction.",
+      bakedSkillSlugs: [],
+      bakedTools: [],
+    };
+    const bake = await repos.promptBakes.create({
+      ownerThreadId: thread.id as never,
+      ...content,
+      contentHash: hashPromptBakeContent(content),
+    });
+    await repos.turns.updateStatus(boundary.id, {
+      status: "complete",
+      promptBakeId: bake.id,
+    });
+
+    const request = await assemble(thread.id, await repos.turns.listByThread(thread.id as never));
+    expect(request.systemPrompt).toBe(content.composedSystemPrompt);
   });
 });
 

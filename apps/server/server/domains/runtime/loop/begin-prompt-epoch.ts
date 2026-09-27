@@ -61,6 +61,8 @@ export async function beginPromptEpoch(
 
     const bake = await resolveBake(deps, input, thread);
     const completedAt = input.completion.completedAt ?? new Date().toISOString();
+    const completionMetadata =
+      input.completion.metadata === undefined ? boundary.metadata : input.completion.metadata;
     const completedTurn: Turn = {
       ...boundary,
       status: "complete",
@@ -68,8 +70,7 @@ export async function beginPromptEpoch(
       completedAt,
       error: null,
       promptBakeId: bake.id,
-      metadata:
-        input.completion.metadata === undefined ? boundary.metadata : input.completion.metadata,
+      metadata: withPromptEpochCause(completionMetadata, input.cause),
     };
     const events: OrchestratorEvent[] = [
       ...input.completion.blocks.map(
@@ -84,6 +85,16 @@ export async function beginPromptEpoch(
     return { result: { bakeId: bake.id }, events };
   });
   return result;
+}
+
+function withPromptEpochCause(
+  metadata: Turn["metadata"] | JsonValue | undefined,
+  cause: BeginPromptEpochInput["cause"],
+): JsonValue {
+  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+    return { ...metadata, promptEpoch: { cause } } as JsonValue;
+  }
+  return { kind: "prompt_epoch_boundary", cause, previousMetadata: metadata ?? null };
 }
 
 async function resolveBake(

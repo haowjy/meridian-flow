@@ -35,10 +35,13 @@ export class PromptBakeTurnNotFoundError extends Error {
 export async function bakeAt(
   deps: PromptEpochReader,
   turn: Pick<Turn, "id" | "threadId">,
+  knownLocalTurns?: readonly Turn[],
 ): Promise<PromptBake | null> {
   const owner = await deps.threads.findByIdIncludingDeleted(turn.threadId as ThreadId);
   if (!owner) throw new Error(`Prompt bake owner thread not found: ${turn.threadId}`);
-  const localTurns = await deps.turns.listByThread(owner.id as ThreadId);
+  const localTurns = knownLocalTurns
+    ? [...knownLocalTurns]
+    : await deps.turns.listByThread(owner.id as ThreadId);
   const cutoffIndex = localTurns.findIndex((candidate) => candidate.id === turn.id);
   if (cutoffIndex < 0) throw new PromptBakeTurnNotFoundError(turn.id, owner.id);
 
@@ -53,11 +56,14 @@ export async function bakeAt(
 export async function bakeInEffect(
   deps: PromptEpochReader,
   thread: Pick<Thread, "id" | "initialPromptBakeId">,
+  knownLocalTurns?: readonly Turn[],
 ): Promise<PromptBake | null> {
-  const localTurns = await deps.turns.listByThread(thread.id as ThreadId);
+  const localTurns = knownLocalTurns
+    ? [...knownLocalTurns]
+    : await deps.turns.listByThread(thread.id as ThreadId);
   const latestLocalTurn = localTurns.at(-1);
   return latestLocalTurn
-    ? bakeAt(deps, latestLocalTurn)
+    ? bakeAt(deps, latestLocalTurn, localTurns)
     : bakeById(deps, thread.initialPromptBakeId ?? null);
 }
 

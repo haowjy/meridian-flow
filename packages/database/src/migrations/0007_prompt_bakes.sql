@@ -54,7 +54,8 @@ FOR EACH ROW EXECUTE FUNCTION enforce_prompt_bake_write_once('prompt_bake_id', '
 CREATE FUNCTION enforce_prompt_bake_insert_only() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
-  IF TG_OP = 'DELETE' AND pg_trigger_depth() > 1 THEN
+  IF TG_OP = 'DELETE' AND pg_trigger_depth() > 1
+    AND NOT EXISTS (SELECT 1 FROM threads WHERE id = OLD.owner_thread_id) THEN
     RETURN OLD;
   END IF;
   RAISE EXCEPTION 'Prompt bakes are insert-only'

@@ -8,7 +8,7 @@ export const MAX_MODEL_IMAGE_BYTES = 10 * 1024 * 1024;
 export const MAX_MODEL_IMAGE_CONTEXT_BYTES = 20 * 1024 * 1024;
 
 export interface ImageInclusionDecision {
-  block: Block;
+  blockId: string;
   included: boolean;
 }
 
@@ -40,6 +40,7 @@ function reference(content: Block["content"]): PersistedImageReference | null {
 export async function projectImageBlocksForModel(input: {
   thread: Pick<Thread, "id" | "projectId" | "userId">;
   blocks: readonly Block[];
+  inclusions?: ReadonlyMap<string, boolean>;
   supportsImageInput: boolean;
   imageAssets: ImageAssetPort;
 }): Promise<ImageContextProjection> {
@@ -72,14 +73,15 @@ export async function projectImageBlocksForModel(input: {
   let diagnosedOmission = false;
 
   for (const [index, block] of input.blocks.entries()) {
-    if (block.blockType !== "image" || block.pruned || block.imageIncluded === false) continue;
+    const includedDecision = input.inclusions?.get(block.id);
+    if (block.blockType !== "image" || block.pruned || includedDecision === false) continue;
     const identity = reference(block.content);
     if (!identity) {
-      if (block.imageIncluded === true) {
-        decisionById.set(block.id, { block, included: false });
+      if (includedDecision === true) {
+        decisionById.set(block.id, { blockId: block.id, included: false });
         breaks.push({ blockId: block.id, uri: block.id, reason: "asset_unavailable" });
       } else {
-        decisionById.set(block.id, { block, included: false });
+        decisionById.set(block.id, { blockId: block.id, included: false });
       }
       diagnosedOmission = true;
       continue;
@@ -101,11 +103,11 @@ export async function projectImageBlocksForModel(input: {
     }
 
     if (!image || !Number.isFinite(image.sizeBytes) || image.sizeBytes < 0) {
-      if (block.imageIncluded === true) {
-        decisionById.set(block.id, { block, included: false });
+      if (includedDecision === true) {
+        decisionById.set(block.id, { blockId: block.id, included: false });
         breaks.push({ blockId: block.id, uri: identity.uri, reason: "asset_unavailable" });
-      } else if (block.imageIncluded == null) {
-        decisionById.set(block.id, { block, included: false });
+      } else if (includedDecision == null) {
+        decisionById.set(block.id, { blockId: block.id, included: false });
       }
       diagnosedOmission = true;
       continue;
@@ -117,7 +119,7 @@ export async function projectImageBlocksForModel(input: {
       block,
       uri: identity.uri,
       image: resolvedImage,
-      included: block.imageIncluded === true,
+      included: includedDecision === true,
     });
   }
 
@@ -130,15 +132,15 @@ export async function projectImageBlocksForModel(input: {
     if (entry.included && entry.image.sizeBytes > MAX_MODEL_IMAGE_BYTES) {
       entry.included = false;
       usedBytes -= entry.image.sizeBytes;
-      decisionById.set(entry.block.id, { block: entry.block, included: false });
+      decisionById.set(entry.block.id, { blockId: entry.block.id, included: false });
       breaks.push({ blockId: entry.block.id, uri: entry.uri, reason: "budget_eviction" });
     }
   }
 
   for (const entry of entries) {
-    if (entry.block.imageIncluded !== true) {
+    if (input.inclusions?.get(entry.block.id) !== true) {
       if (entry.image.sizeBytes > MAX_MODEL_IMAGE_BYTES) {
-        decisionById.set(entry.block.id, { block: entry.block, included: false });
+        decisionById.set(entry.block.id, { blockId: entry.block.id, included: false });
         diagnosedOmission = true;
         continue;
       }
@@ -148,20 +150,20 @@ export async function projectImageBlocksForModel(input: {
           (candidate) => candidate.included && candidate.index < entry.index,
         );
         if (!oldest) {
-          decisionById.set(entry.block.id, { block: entry.block, included: false });
+          decisionById.set(entry.block.id, { blockId: entry.block.id, included: false });
           diagnosedOmission = true;
           canInclude = false;
           break;
         }
         oldest.included = false;
         usedBytes -= oldest.image.sizeBytes;
-        decisionById.set(oldest.block.id, { block: oldest.block, included: false });
+        decisionById.set(oldest.block.id, { blockId: oldest.block.id, included: false });
         breaks.push({ blockId: oldest.block.id, uri: oldest.uri, reason: "budget_eviction" });
       }
       if (!canInclude) continue;
       entry.included = true;
       usedBytes += entry.image.sizeBytes;
-      decisionById.set(entry.block.id, { block: entry.block, included: true });
+      decisionById.set(entry.block.id, { blockId: entry.block.id, included: true });
     }
   }
 
@@ -170,7 +172,6 @@ export async function projectImageBlocksForModel(input: {
     if (!entry.included) continue;
     projected.set(entry.index, {
       ...entry.block,
-      imageIncluded: true,
       content: {
         type: "image",
         mediaType: entry.image.mediaType,

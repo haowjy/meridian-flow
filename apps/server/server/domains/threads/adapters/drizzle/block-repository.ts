@@ -34,7 +34,6 @@ function blockValues(input: CreateBlockInput) {
     compact: input.collapsedContent ?? "",
     executionSide: input.executionSide ?? null,
     status: input.status ?? "complete",
-    imageIncluded: input.imageIncluded ?? null,
   };
 }
 
@@ -67,7 +66,6 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
             compact: values.compact,
             executionSide: values.executionSide,
             status: values.status,
-            ...(input.imageIncluded !== undefined ? { imageIncluded: values.imageIncluded } : {}),
           },
         })
         .returning();
@@ -80,7 +78,6 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
         .set({
           content: input.content ?? null,
           status: input.status ?? "complete",
-          ...(input.imageIncluded !== undefined ? { imageIncluded: input.imageIncluded } : {}),
         })
         .where(
           and(

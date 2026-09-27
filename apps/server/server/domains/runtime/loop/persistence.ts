@@ -38,7 +38,13 @@ import {
 export type PersistenceDeps = {
   repos: Pick<
     ThreadRepositories,
-    "blocks" | "modelResponses" | "runTurnStartTransition" | "threads" | "transaction" | "turns"
+    | "blocks"
+    | "imageInclusions"
+    | "modelResponses"
+    | "runTurnStartTransition"
+    | "threads"
+    | "transaction"
+    | "turns"
   >;
   eventWriter: EventJournalWriter;
   /** Real nested transaction boundary when caller already owns a transaction. */

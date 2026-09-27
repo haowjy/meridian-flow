@@ -16,8 +16,12 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, PromptBake, Thread, Turn } from "@meridian/contracts/threads";
 import type { AgentRevisionStore } from "../../packages/index.js";
-import { hashPromptBakeContent } from "../../threads/index.js";
-import type { PromptBakeContent, PromptBakeRepository } from "../../threads/ports/repositories.js";
+import { bakeInEffect, hashPromptBakeContent } from "../../threads/index.js";
+import type {
+  PromptBakeContent,
+  PromptBakeRepository,
+  ThreadImageInclusionRepository,
+} from "../../threads/ports/repositories.js";
 import type { FunctionTool, Gateway, GenerateRequest, Tool } from "../gateway/index.js";
 import type { ImageAssetPort } from "../ports/image-asset.js";
 import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
@@ -53,6 +57,7 @@ export interface AssembleNextTurnContextInput {
   toolRegistry: Parameters<typeof resolveAgentThreadTurnContext>[0]["toolRegistry"];
   gateway?: Pick<Gateway, "getDefaultModel" | "listModels">;
   imageAssets?: ImageAssetPort;
+  imageInclusions?: Pick<ThreadImageInclusionRepository, "findByThread">;
   persistImageProjection?: (input: {
     afterTurnId: TurnId | null;
     decisions: readonly ImageInclusionDecision[];
@@ -111,7 +116,15 @@ export async function assembleNextTurnContext(
   const baked = thread.initialPromptBakeId != null;
 
   if (isThreadPromptFrozen(thread)) {
-    const bake = await input.promptBakes.findById(thread.initialPromptBakeId as string);
+    const bake = await bakeInEffect(
+      {
+        threads: { findByIdIncludingDeleted: async () => thread },
+        turns: { listByThread: async () => input.turns },
+        promptBakes: input.promptBakes,
+      },
+      thread,
+      input.turns.filter((turn) => turn.threadId === thread.id),
+    );
     if (!bake) throw new Error(`Prompt bake not found: ${thread.initialPromptBakeId}`);
     systemPrompt = bake.composedSystemPrompt;
     tools = toolsFromBakedJson(bake.bakedTools) ?? tools;
@@ -166,9 +179,11 @@ export async function assembleNextTurnContext(
   const resolvedModel = input.gateway?.listModels?.().find((model) => model.id === modelId);
   const supportsImageInput = resolvedModel?.capabilities.has("image_input") ?? false;
   const supportsPromptCaching = resolvedModel?.capabilities.has("caching") ?? false;
+  const savedInclusions = (await input.imageInclusions?.findByThread(thread.id as ThreadId)) ?? [];
   const imageProjection = await projectImageBlocksForModel({
     thread,
     blocks: input.blocks,
+    inclusions: new Map(savedInclusions.map(({ blockId, included }) => [blockId, included])),
     supportsImageInput,
     imageAssets: input.imageAssets ?? {
       async resolve() {

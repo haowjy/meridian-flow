@@ -588,6 +588,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               currentTurn: turn,
               knownTurnIds: new Set([turn.id]),
               expectedLeafTurnId: turn.id,
+              prepareNextContext: async () => ({
+                events: [],
+                turns: [],
+                blocks: [],
+                requiresSplit: false,
+              }),
             },
           });
           expect(closed.kind).toBe("completed");

@@ -176,6 +176,7 @@ export type JournalEventType =
   /** DEFERRED — reserved vocabulary, payload typed when its producer lands. */
   | "block.created"
   | "block.upserted"
+  | "image.inclusion_decided"
   | "block.updated"
   | "block.delta"
   | "tool.invoked"
@@ -280,8 +281,8 @@ export type TurnUsage = {
 export interface Turn {
   id: string;
   threadId: string;
-  /** Write-once insertion order within its thread; 0 is only a pre-insert local value. */
-  position: number;
+  /** Write-once insertion order within its thread; absent only before persistence. */
+  position?: number;
   prevTurnId?: string | null;
   parentTurnId?: string | null;
   role: TurnRole;
@@ -342,8 +343,6 @@ export interface Block {
   executionSide?: ExecutionSide | null;
   status?: BlockStatus;
   collapsedContent?: string | null;
-  /** Current inclusion decision for an image occurrence; null until first projected. */
-  imageIncluded?: boolean | null;
   createdAt: string;
 }
 

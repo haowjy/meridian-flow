@@ -24,6 +24,7 @@ export default defineEventHandler(async (event) => {
         turns: app.repos.turns,
         promptBakes: app.repos.promptBakes,
         blocks: app.repos.blocks,
+        imageInclusions: app.repos.imageInclusions,
         threadDocuments: app.repos.threadDocuments,
         transaction: app.repos.transaction,
         projects: app.projectRepo,

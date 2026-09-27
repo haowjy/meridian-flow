@@ -33,7 +33,6 @@ export function contentForBlockInput(
     content: input.content ?? input.textContent ?? null,
     provider: input.provider ?? null,
     status: input.status ?? "complete",
-    ...(input.imageIncluded !== undefined ? { imageIncluded: input.imageIncluded } : {}),
   };
 }
 
@@ -51,7 +50,6 @@ export function localBlockFromEvent(block: BlockUpsertedRow): Block {
     provider: block.provider ?? null,
     status: block.status,
     pruned: false,
-    imageIncluded: block.imageIncluded ?? null,
     createdAt: toIsoString(new Date()),
   };
 }

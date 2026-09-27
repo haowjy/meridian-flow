@@ -134,7 +134,6 @@ export function mapBlock(row: typeof schema.turnBlocks.$inferSelect): Block {
     executionSide: row.executionSide as Block["executionSide"],
     status: row.status as Block["status"],
     collapsedContent: row.compact,
-    imageIncluded: row.imageIncluded,
     createdAt: toIsoString(row.createdAt),
   };
 }

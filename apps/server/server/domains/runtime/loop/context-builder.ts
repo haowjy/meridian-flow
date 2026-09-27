@@ -73,7 +73,7 @@ export function buildContext(input: BuildContextInput): {
     list.sort((a, b) => a.sequence - b.sequence);
   }
 
-  for (const turn of [...input.turns].sort((a, b) => a.position - b.position)) {
+  for (const turn of orderTurnsForRequest(input.turns)) {
     const turnBlocks = blocksByTurn.get(turn.id as string) ?? [];
     if (turn.role === "user") {
       const parts = userTurnContentParts(turnBlocks);
@@ -142,6 +142,20 @@ export function buildContext(input: BuildContextInput): {
     ),
     tools: input.tools?.length ? input.tools : undefined,
   };
+}
+
+function orderTurnsForRequest(turns: readonly Turn[]): Turn[] {
+  return turns
+    .map((turn, index) => ({ turn, index }))
+    .sort((a, b) => {
+      const left = a.turn.position;
+      const right = b.turn.position;
+      if (left == null && right == null) return a.index - b.index;
+      if (left == null) return 1;
+      if (right == null) return -1;
+      return left - right || a.index - b.index;
+    })
+    .map(({ turn }) => turn);
 }
 
 /** Inbox turns retain durable graph identity but travel to the model as one delivery. */

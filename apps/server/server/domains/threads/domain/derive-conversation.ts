@@ -26,6 +26,7 @@ export interface ThreadAgentSwapDeps {
   turns: InternalThreadRepositories["turns"];
   promptBakes: InternalThreadRepositories["promptBakes"];
   blocks: InternalThreadRepositories["blocks"];
+  imageInclusions: InternalThreadRepositories["imageInclusions"];
   threadDocuments: InternalThreadRepositories["threadDocuments"];
   transaction: InternalThreadRepositories["transaction"];
   projects: Pick<ProjectRepository, "findById">;
@@ -167,6 +168,12 @@ export async function forkThreadAgent(
       };
     }
     const target = await bindDerivedPrimary(deps, result.thread, sourceWorkId, binding);
+    const inheritedBlockIds = new Set(cutoff.blocks.map((block) => block.id));
+    for (const decision of await deps.imageInclusions.findByThread(lockedSource.id as ThreadId)) {
+      if (inheritedBlockIds.has(decision.blockId)) {
+        await deps.imageInclusions.set({ ...decision, threadId: target.id as ThreadId });
+      }
+    }
     await inheritEditingDocuments(deps, lockedSource, target);
     await seedSystemTurn(deps, target, `Forked conversation through turn ${cutoff.turn.id}.`);
     await deps.eventWriter.appendEvent(source.id as ThreadId, {
@@ -208,7 +215,10 @@ async function normalizeForkCutoff(
   deps: ThreadAgentSwapDeps,
   source: Thread,
   requestedTurnId: string | null | undefined,
-): Promise<{ turn: Awaited<ReturnType<typeof loadThreadConversationContext>>["turns"][number] }> {
+): Promise<{
+  turn: Awaited<ReturnType<typeof loadThreadConversationContext>>["turns"][number];
+  blocks: Awaited<ReturnType<typeof loadThreadConversationContext>>["blocks"];
+}> {
   const context = await loadThreadConversationContext(
     { threads: deps.threads, turns: deps.turns, blocks: deps.blocks },
     source,
@@ -236,7 +246,12 @@ async function normalizeForkCutoff(
     }
   }
   if (!settledTurn) throw new ForkCutoffError("no_settled_turn", selectedTurnId);
-  return { turn: settledTurn };
+  const cutoffIndex = context.turns.findIndex((turn) => turn.id === settledTurn?.id);
+  const inheritedTurnIds = new Set(context.turns.slice(0, cutoffIndex + 1).map((turn) => turn.id));
+  return {
+    turn: settledTurn,
+    blocks: context.blocks.filter((block) => inheritedTurnIds.has(block.turnId)),
+  };
 }
 
 async function findIdempotentFork(

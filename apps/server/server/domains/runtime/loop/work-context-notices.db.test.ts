@@ -225,6 +225,12 @@ else
           currentTurn: assistant,
           knownTurnIds: new Set([assistant.id]),
           expectedLeafTurnId: assistant.id,
+          prepareNextContext: async () => ({
+            events: [],
+            turns: [],
+            blocks: [],
+            requiresSplit: false,
+          }),
         });
         expect(boundary.split).toBe(true);
         expect(
@@ -248,6 +254,12 @@ else
             boundary.next.id,
           ]),
           expectedLeafTurnId: boundary.next.id,
+          prepareNextContext: async () => ({
+            events: [],
+            turns: [],
+            blocks: [],
+            requiresSplit: false,
+          }),
         });
         expect(noticeOnly.split).toBe(true);
         expect(noticeOnly.drain.turns[0]?.prevTurnId).toBe(boundary.next.id);
@@ -370,6 +382,12 @@ else
           currentTurn: assistant,
           knownTurnIds: new Set([assistant.id]),
           expectedLeafTurnId: assistant.id,
+          prepareNextContext: async () => ({
+            events: [],
+            turns: [],
+            blocks: [],
+            requiresSplit: false,
+          }),
         });
         expect(boundary.split).toBe(true);
         const [work] = await updates();

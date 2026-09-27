@@ -284,7 +284,7 @@ Meridian Flow's Postgres schema. Key column mappings:
 | `turns.model` / `turns.provider` | `turns.model` / `turns.provider` | Latest model response for the turn |
 | `turns.requestParams` | `turns.requestParams` | Request params captured when the turn row is created |
 | `turns.responseMetadata` | `turns.responseMetadata` | Latest response metadata projected onto the turn |
-| `turnBlocks.imageIncluded` | `turn_blocks.image_included` | Stable inclusion decision for an image occurrence; null until its first image-capable request |
+| `threadImageInclusions` | `thread_image_inclusions` | Per-thread image decision keyed by `(thread_id, block_id)`; forks copy only inherited transcript decisions, and source/fork decisions never mutate each other |
 | `turnBlocks.provider` / `turnBlocks.providerData` | `turnBlocks.provider` / `turnBlocks.providerData` | Provider metadata for projected block rows |
 | `modelResponses.rawUsage` | `modelResponses.usageBreakdown` | Column renamed |
 | `modelResponses.finishReason` | `modelResponses.stopReason` | Column renamed |

@@ -24,7 +24,6 @@ export function createLocalTurn(input: {
     id: input.id ?? crypto.randomUUID(),
     threadId: input.threadId,
     // The repository assigns the serialized position when this event is projected.
-    position: 0,
     prevTurnId: input.prevTurnId,
     parentTurnId: input.prevTurnId,
     role: input.role,

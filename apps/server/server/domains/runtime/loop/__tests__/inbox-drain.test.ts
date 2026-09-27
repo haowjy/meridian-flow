@@ -333,11 +333,10 @@ describe("inbox drain", () => {
 
     expect(requests).toHaveLength(3);
     for (const request of requests.slice(1)) {
-      const adopted = request.messages.find((message) =>
-        messageText(message).includes("also tighten the dialogue"),
-      );
-      expect(messageText(adopted as Message)).toContain("skill invoked: writing-principles");
-      expect(messageText(adopted as Message)).toContain("Show, do not tell.");
+      const renderedHistory = messageTexts(request.messages).join("\n");
+      expect(renderedHistory).toContain("also tighten the dialogue");
+      expect(renderedHistory).toContain("skill invoked: writing-principles");
+      expect(renderedHistory).toContain("Show, do not tell.");
     }
 
     // The model still sees the body merged into the steer's own message, but
@@ -494,7 +493,10 @@ describe("inbox drain", () => {
     const images = (await repos.blocks.listByThread(thread.id)).filter(
       (block) => block.blockType === "image",
     );
-    expect(images.map((block) => block.imageIncluded)).toEqual([true, true]);
+    const decisions = await repos.imageInclusions.findByThread(thread.id);
+    expect(
+      images.map((block) => decisions.find((decision) => decision.blockId === block.id)?.included),
+    ).toEqual([true, true]);
     expect(users[0]?.content.find((part) => part.type === "image")).toMatchObject({
       data: image.uri,
     });
@@ -521,14 +523,61 @@ describe("inbox drain", () => {
     await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
 
     const historyImage = (request: (typeof requests)[number]) => {
-      const user = request.messages.find(
-        (candidate) =>
-          candidate.role === "user" && candidate.content.some((part) => part.type === "image"),
-      );
-      return JSON.stringify(user);
+      const imagePart = request.messages
+        .flatMap((message) => message.content)
+        .find((part) => part.type === "image");
+      return JSON.stringify(imagePart);
     };
     expect(requests).toHaveLength(2);
     expect(historyImage(required(requests[0]))).toBe(historyImage(required(requests[1])));
+  });
+
+  it("fails retryably on a transient image resolve error without deciding the image", async () => {
+    const image = {
+      type: "image" as const,
+      documentId: "44444444-4444-4444-8444-000000000004",
+      uri: "uploads://@/temporary-failure.png",
+    };
+    let resolutions = 0;
+    const { thread, requests, orchestrator, repos } = await setup({
+      imageAssets: {
+        async resolve() {
+          resolutions += 1;
+          if (resolutions === 1) throw new Error("temporary object-store timeout");
+          return { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 5 };
+        },
+      },
+    });
+    const input = {
+      threadId: thread.id,
+      userText: "retry this image",
+      userBlocks: [{ type: "text" as const, text: "retry this image" }, image],
+    };
+
+    await expect(orchestrator.prepare(input)).rejects.toThrow("temporary object-store timeout");
+    expect(await repos.imageInclusions.findByThread(thread.id)).toEqual([]);
+    expect(
+      (await repos.turns.listByThread(thread.id)).filter(
+        (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
+      ),
+    ).toHaveLength(0);
+
+    const retry = await orchestrator.prepare(input);
+    await retry.execute();
+    expect(requests).toHaveLength(1);
+    expect(
+      required(requests[0])
+        .messages.flatMap((message) => message.content)
+        .some((part) => part.type === "image"),
+    ).toBe(true);
+    const imageBlock = (await repos.blocks.listByThread(thread.id)).find(
+      (block) => block.blockType === "image",
+    );
+    expect(
+      (await repos.imageInclusions.findByThread(thread.id)).find(
+        (decision) => decision.blockId === imageBlock?.id,
+      )?.included,
+    ).toBe(true);
   });
 
   it("names the loss of an image asset after its first inclusion", async () => {
@@ -577,9 +626,14 @@ describe("inbox drain", () => {
         text.includes("disappeared.png"),
       ),
     ).toHaveLength(1);
+    const imageBlock = (await repos.blocks.listByThread(thread.id)).find(
+      (block) => block.blockType === "image",
+    );
+    expect(imageBlock).toBeDefined();
     expect(
-      (await repos.blocks.listByThread(thread.id)).find((block) => block.blockType === "image")
-        ?.imageIncluded,
+      (await repos.imageInclusions.findByThread(thread.id)).find(
+        (decision) => decision.blockId === imageBlock?.id,
+      )?.included,
     ).toBe(false);
     expect(
       (await repos.turns.listByThread(thread.id)).filter(
@@ -640,7 +694,138 @@ describe("inbox drain", () => {
     const images = (await repos.blocks.listByThread(thread.id)).filter(
       (block) => block.blockType === "image",
     );
-    expect(images.map((block) => block.imageIncluded)).toEqual([false, true, true]);
+    const decisions = await repos.imageInclusions.findByThread(thread.id);
+    expect(
+      images.map((block) => decisions.find((decision) => decision.blockId === block.id)?.included),
+    ).toEqual([false, true, true]);
+  });
+
+  it("keeps multi-turn history prefix-stable through tools, skill, image eviction, and inbox adoption", async () => {
+    const image = (documentId: string, uri: string) => ({
+      type: "image" as const,
+      documentId,
+      uri,
+    });
+    const originalImage = image(
+      "44444444-4444-4444-8444-000000000001",
+      "uploads://@/prefix-original.png",
+    );
+    const { thread, requests, orchestrator, repos, send } = await setup({
+      results: [
+        toolCallResult("unknown", "prefix-call-1"),
+        toolCallResult("unknown", "prefix-call-2"),
+        textResult("finished"),
+      ],
+      skill: {
+        slug: "writing-principles",
+        name: "Writing Principles",
+        description: "Craft rules for revision",
+        body: "Show, do not tell.",
+      },
+      imageAssets: {
+        async resolve(_context, reference) {
+          return {
+            mediaType: "image/png",
+            data: reference.uri,
+            sizeBytes: 10 * 1024 * 1024,
+          };
+        },
+      },
+      onStream: async (call) => {
+        if (call === 2) {
+          await send(thread.id, "follow-up with /skill", {
+            activatedSkillSlugs: ["writing-principles"],
+            blocks: [
+              { type: "text", text: "follow-up with /skill" },
+              image("44444444-4444-4444-8444-000000000002", "uploads://@/prefix-new-1.png"),
+              image("44444444-4444-4444-8444-000000000003", "uploads://@/prefix-new-2.png"),
+            ],
+          });
+        }
+      },
+    });
+    await execute(
+      await orchestrator.prepare({
+        threadId: thread.id,
+        userText: "first image with /skill",
+        userBlocks: [{ type: "text", text: "first image with /skill" }, originalImage],
+        activatedSkillSlugs: ["writing-principles"],
+      }),
+    );
+
+    expect(requests).toHaveLength(3);
+    const messageBytes = (request: (typeof requests)[number]) =>
+      request.messages.map((message) => JSON.stringify(message));
+    const startsWith = (history: string[], prefix: string[]) =>
+      prefix.every((message, index) => history[index] === message);
+    expect(
+      startsWith(messageBytes(required(requests[1])), messageBytes(required(requests[0]))),
+    ).toBe(true);
+
+    // The named eviction may remove exactly the old image being evicted; every
+    // other already-rendered message must remain byte-identical and in place.
+    const beforeEviction = required(requests[1]).messages;
+    const afterEviction = required(requests[2]).messages;
+    expect(afterEviction.length).toBeGreaterThanOrEqual(beforeEviction.length);
+    const changedExistingMessages: number[] = [];
+    for (const [index, message] of beforeEviction.entries()) {
+      const nextMessage = afterEviction[index];
+      if (JSON.stringify(message) === JSON.stringify(nextMessage)) continue;
+
+      const evictedParts = message.content.filter(
+        (part) => part.type === "image" && part.data === originalImage.uri,
+      );
+      expect(evictedParts).toHaveLength(1);
+      expect(nextMessage).toEqual({
+        ...message,
+        content: message.content.filter(
+          (part) => !(part.type === "image" && part.data === originalImage.uri),
+        ),
+      });
+      changedExistingMessages.push(index);
+    }
+    expect(changedExistingMessages).toHaveLength(1);
+    const finalMessage = required(requests[2]).messages.find((message) =>
+      messageText(message).includes("Image context changed."),
+    );
+    expect(finalMessage).toBeDefined();
+    const finalPartsText = (finalMessage?.content ?? []).flatMap((part) =>
+      part.type === "text" ? [part.text] : [],
+    );
+    const adoptedTextIndex = finalPartsText.findIndex((text) =>
+      text.includes("follow-up with /skill"),
+    );
+    const adoptedSkillIndex = finalPartsText.findIndex((text) =>
+      text.includes("skill invoked: writing-principles"),
+    );
+    const evictionIndex = finalPartsText.findIndex((text) =>
+      text.includes("Image context changed."),
+    );
+    expect(adoptedTextIndex).toBeGreaterThanOrEqual(0);
+    expect(adoptedSkillIndex).toBeGreaterThan(adoptedTextIndex);
+    expect(evictionIndex).toBeGreaterThan(adoptedSkillIndex);
+
+    const oldImageBlock = (await repos.blocks.listByThread(thread.id)).find((block) => {
+      const content = block.content as { uri?: string } | null;
+      return block.blockType === "image" && content?.uri === originalImage.uri;
+    });
+    const imageBreak = (await repos.turns.listByThread(thread.id)).find(
+      (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
+    );
+    expect(imageBreak).toBeDefined();
+    const adoptedSkillBody = (await repos.turns.listByThread(thread.id))
+      .filter((turn) => (turn.metadata as { section?: string } | null)?.section === "skill_body")
+      .at(-1);
+    expect(imageBreak?.prevTurnId).toBe(adoptedSkillBody?.id);
+    expect(
+      (await repos.imageInclusions.findByThread(thread.id)).find(
+        (decision) => decision.blockId === oldImageBlock?.id,
+      )?.included,
+    ).toBe(false);
+    const nextAssistant = await repos.turns.findById(
+      required(requests[2]).correlation?.turnId as TurnId,
+    );
+    expect(nextAssistant?.prevTurnId).toBe(imageBreak?.id);
   });
 
   it("persists a drained message as a user turn the next iteration still sees", async () => {
@@ -914,7 +1099,12 @@ describe("drain-only start", () => {
     const fresh = await inbox.enqueue(message("fresh after saved writer", thread.id));
     const run = await orchestrator.prepare({ threadId: thread.id, drain: true });
     await run.execute();
-    expect((await repos.turns.findById(fresh.id))?.prevTurnId).toBe(sent.userTurnId);
+    const turns = await repos.turns.listByThread(thread.id);
+    const skillBodyTurn = turns.find(
+      (turn) => (turn.metadata as { section?: string } | null)?.section === "skill_body",
+    );
+    expect(skillBodyTurn?.prevTurnId).toBe(sent.userTurnId);
+    expect((await repos.turns.findById(fresh.id))?.prevTurnId).toBe(skillBodyTurn?.id);
     expect((await repos.turns.findById(run.assistantTurnId))?.prevTurnId).toBe(fresh.id);
 
     expect(requests).toHaveLength(1);

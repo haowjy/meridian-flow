@@ -144,7 +144,11 @@ else {
       expect(await repos.turns.findById(boundary.id)).toMatchObject({
         status: "complete",
         promptBakeId: first.bake.id,
-        metadata: { kind: "compaction", compactedThrough: boundary.id },
+        metadata: {
+          kind: "compaction",
+          compactedThrough: boundary.id,
+          promptEpoch: { cause: "compaction" },
+        },
       });
       expect(await reader.listByType(ids.threadId as never, "context.compacted")).toHaveLength(1);
       const ownedRows = await db

@@ -38,6 +38,7 @@ import type {
   ThreadChild,
   ThreadDocument,
   ThreadDocumentRepository,
+  ThreadImageInclusionRepository,
   ThreadRepository,
   ThreadWorksRepository,
   TurnDocumentTouch,
@@ -123,7 +124,6 @@ function defaultTurn(input: CreateTurnInput): Turn {
   return {
     id: input.id ?? crypto.randomUUID(),
     threadId: input.threadId,
-    position: 0,
     prevTurnId: input.prevTurnId ?? null,
     role: input.role,
     origin: input.origin,
@@ -182,6 +182,10 @@ export function createInMemoryRepositories(
   const threads = transactionOwner.map<string, Thread>();
   const turns = transactionOwner.map<string, Turn>();
   const blocks = transactionOwner.map<string, Block>();
+  const imageInclusions = transactionOwner.map<
+    string,
+    { threadId: string; blockId: string; included: boolean }
+  >();
   const modelResponses = transactionOwner.map<string, ModelResponse>();
   const promptBakes = transactionOwner.map<PromptBakeId, PromptBake>();
   const threadDocuments = transactionOwner.map<string, ThreadDocument>();
@@ -541,7 +545,7 @@ export function createInMemoryRepositories(
         (candidate) => candidate.threadId === turn.threadId,
       );
       const latestPosition = localTurns.reduce(
-        (latest, candidate) => Math.max(latest, candidate.position),
+        (latest, candidate) => Math.max(latest, candidate.position ?? 0),
         0,
       );
       const thread = threads.get(turn.threadId);
@@ -562,7 +566,7 @@ export function createInMemoryRepositories(
     async listByThread(threadId) {
       return [...turns.values()]
         .filter((t) => t.threadId === threadId)
-        .sort((a, b) => a.position - b.position);
+        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
     },
     async getLatestByThread(threadId) {
       const threadTurns = await this.listByThread(threadId);
@@ -678,7 +682,6 @@ export function createInMemoryRepositories(
         executionSide: input.executionSide ?? null,
         status: input.status ?? "complete",
         collapsedContent: input.collapsedContent ?? null,
-        imageIncluded: input.imageIncluded ?? null,
         pruned: false,
         createdAt: toIsoString(new Date()),
       };
@@ -702,10 +705,6 @@ export function createInMemoryRepositories(
         executionSide: input.executionSide ?? null,
         status: input.status ?? "complete",
         collapsedContent: input.collapsedContent ?? null,
-        imageIncluded:
-          input.imageIncluded !== undefined
-            ? input.imageIncluded
-            : (existing?.imageIncluded ?? null),
         pruned: existing?.pruned ?? false,
         createdAt: existing?.createdAt ?? toIsoString(new Date()),
       };
@@ -725,7 +724,6 @@ export function createInMemoryRepositories(
         ...existing,
         content: input.content ?? null,
         status: input.status ?? "complete",
-        ...(input.imageIncluded !== undefined ? { imageIncluded: input.imageIncluded } : {}),
       } as Block;
       blocks.set(input.id, updated);
       return updated;
@@ -741,7 +739,7 @@ export function createInMemoryRepositories(
     async listByThread(threadId: ThreadId) {
       const orderedTurns = [...turns.values()]
         .filter((t) => t.threadId === threadId)
-        .sort((a, b) => a.position - b.position);
+        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
       const turnOrder = new Map(orderedTurns.map((turn, index) => [turn.id as string, index]));
       return [...blocks.values()]
         .filter((b) => turnOrder.has(b.turnId as string))
@@ -909,6 +907,17 @@ export function createInMemoryRepositories(
       userStateByThreadUser,
     );
 
+  const imageInclusionsRepo: ThreadImageInclusionRepository = {
+    async findByThread(threadId) {
+      return [...imageInclusions.values()]
+        .filter((row) => row.threadId === threadId)
+        .map((row) => ({ ...row }));
+    },
+    async set(input) {
+      imageInclusions.set(`${input.threadId}\0${input.blockId}`, { ...input });
+    },
+  };
+
   return {
     threads: threadRepo,
     chatFeed,
@@ -918,6 +927,7 @@ export function createInMemoryRepositories(
     turns: turnRepo,
     promptBakes: promptBakeRepo,
     blocks: blockRepo,
+    imageInclusions: imageInclusionsRepo,
     modelResponses: modelResponseRepo,
     executionReports: createInMemoryExecutionReportRepository(transactionOwner, {
       threads,

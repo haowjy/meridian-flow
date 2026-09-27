@@ -62,7 +62,6 @@ export interface CreateBlockInput {
   executionSide?: ExecutionSide | null;
   status?: BlockStatus;
   collapsedContent?: string | null;
-  imageIncluded?: boolean | null;
 }
 
 export interface UpsertBlockInput extends CreateBlockInput {
@@ -80,6 +79,18 @@ export interface BlockRepository {
   listByThread(threadId: ThreadId): Promise<Block[]>;
   /** Sets the prune flag. A missing row is a no-op (`null`), not an error. */
   updatePruned(id: string, pruned: boolean): Promise<Block | null>;
+}
+
+export interface ThreadImageInclusion {
+  threadId: ThreadId;
+  blockId: string;
+  included: boolean;
+}
+
+export interface ThreadImageInclusionRepository {
+  findByThread(threadId: ThreadId): Promise<ThreadImageInclusion[]>;
+  /** Narrow update of the requesting thread's decision for one inherited/local block. */
+  set(input: ThreadImageInclusion): Promise<void>;
 }
 
 export interface CreateModelResponseInput {
@@ -471,6 +482,7 @@ export type ThreadRepositories = {
   threadWorks: ThreadWorksRepository;
   turns: TurnRepository;
   blocks: BlockRepository;
+  imageInclusions: ThreadImageInclusionRepository;
   modelResponses: ModelResponseRepository;
   executionReports: ExecutionReportRepository;
   /** One repeatable-read snapshot for authorization-sensitive multi-repository reads. */

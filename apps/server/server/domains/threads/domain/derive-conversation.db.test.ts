@@ -91,6 +91,7 @@ else
         threadWorks: repos.threadWorks,
         turns: repos.turns,
         promptBakes: repos.promptBakes,
+        imageInclusions: repos.imageInclusions,
         blocks: repos.blocks,
         threadDocuments: repos.threadDocuments,
         transaction: repos.transaction,
@@ -314,6 +315,10 @@ else
         ...initialContent,
         contentHash: hashPromptBakeContent(initialContent),
       });
+      const firstTurnFork = await createFork(fixture.source, fixture.deps, {
+        originTurnId: fixture.firstTurn.id,
+      });
+      expect(firstTurnFork.thread.initialPromptBakeId).toBe(initialBake.bake.id);
       const secondTurn = await repos.turns.create({
         threadId: fixture.source.id,
         role: "assistant",
