@@ -289,7 +289,7 @@ describe("resolveCompactionTrigger", () => {
       for (const model of provider.models) {
         expect(resolveCompactionTrigger(model)).toEqual({
           thresholdTokens: Math.min(
-            model.contextWindow - model.maxOutputTokens,
+            Math.floor(0.9 * (model.contextWindow - model.maxOutputTokens)),
             FLOW_ABSOLUTE_CEILING,
           ),
           usableWindowTokens: model.contextWindow - model.maxOutputTokens,
@@ -324,15 +324,15 @@ describe("resolveCompactionTrigger", () => {
     expect(
       resolveCompactionTrigger({ contextWindow: 100_000, maxOutputTokens: 10_000 }),
     ).toMatchObject({
-      thresholdTokens: 90_000,
+      thresholdTokens: 81_000,
       source: "config_default",
     });
   });
 
   it("defaults to the pricing tier, with usable-window and ceiling clamps", () => {
     for (const [inputTierTokens, contextWindow, expected] of [
-      [60_000, 100_000, 60_000],
-      [95_000, 100_000, 90_000],
+      [60_000, 100_000, 54_000],
+      [95_000, 100_000, 81_000],
       [800_000, 1_000_000, 400_000],
     ]) {
       expect(

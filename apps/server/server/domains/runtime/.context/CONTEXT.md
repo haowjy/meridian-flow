@@ -558,7 +558,7 @@ the Yjs gateway and flushing observability. Still-running lanes emit
 history. The token baseline comes from the cache service's reusable-prefix
 selection with TTL ignored; missing/zero usage estimates the whole request.
 Without an explicit Agent limit, the trigger uses the model's input-pricing tier
-(if any), usable window and 400,000-token ceiling. Mars defines no off switch.
+(if any) or usable window: floor(90% × min(tier ?? usable, usable)), capped at 400,000. Explicit Agent token and percentage limits are not scaled. Mars defines no off switch.
 `summary/conversation-summarizer.ts` implements the port in production. It queries
 prefix warmth after reservation; warm sends the request in hand with only an
 appended instruction. Tool use discards that response and runs cold once.

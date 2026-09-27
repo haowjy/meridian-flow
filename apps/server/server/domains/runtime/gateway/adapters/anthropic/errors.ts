@@ -27,7 +27,7 @@ export function mapAnthropicError(err: unknown): {
     if (err instanceof Anthropic.BadRequestError) {
       const lower = message.toLowerCase();
       if (
-        /context[_ ](?:length|window)|prompt is too long|maximum context length|too many (?:input )?tokens|input.*exceeds.*token/.test(
+        /context[_ ](?:length|window)|exceeds? context limit|prompt is too long|maximum context length|too many (?:input )?tokens|input.*exceeds.*token/.test(
           lower,
         )
       ) {

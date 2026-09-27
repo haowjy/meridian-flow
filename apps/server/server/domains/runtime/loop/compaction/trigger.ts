@@ -40,7 +40,9 @@ export function resolveCompactionTrigger(input: ResolveCompactionTriggerInput): 
     agentTokens ??
     (percent != null
       ? Math.floor((Math.max(0, percent) / 100) * usableWindowTokens)
-      : (input.inputTierTokens ?? Number.POSITIVE_INFINITY));
+      : Math.floor(
+          0.9 * Math.min(input.inputTierTokens ?? usableWindowTokens, usableWindowTokens),
+        ));
   return {
     thresholdTokens: Math.max(0, Math.min(configured, usableWindowTokens, FLOW_ABSOLUTE_CEILING)),
     usableWindowTokens,
