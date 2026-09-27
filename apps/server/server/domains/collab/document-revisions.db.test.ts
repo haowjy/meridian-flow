@@ -5,8 +5,13 @@ import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { createDrizzleDocumentAccess } from "../../lib/document-access.js";
+import {
+  runInDrizzleTransaction,
+  runOutsideDrizzleTransaction,
+} from "../../shared/drizzle-transaction.js";
+import { requireLockedActiveWork } from "../../shared/work-lifecycle-lock.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
+import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
 import { createDocumentRevisions } from "../context/index.js";
 import { createDrizzleProjectWorkRepository } from "../projects/index.js";
 import { createDrizzleThreadLock } from "../runtime/adapters/drizzle-thread-lock.js";
@@ -48,6 +53,7 @@ async function fixture(mode: "direct" | "draft") {
       seq: 0,
     });
   });
+  await f.branchStore.reconcileProjectManifest(PROJECT_ID);
   const effective = createEffectiveDocumentReader({
     branches: f.branchStore,
     branchCoordinator: f.branchCoordinator,
@@ -61,7 +67,7 @@ async function fixture(mode: "direct" | "draft") {
   });
   const revisions = createDocumentRevisions({
     threads: createDrizzleThreadRepository(db),
-    canAccessDocument: createDrizzleDocumentAccess(db).canAccessDocument,
+    availability: createDrizzleProjectContextAvailability(db),
     documents: effective,
     works: createDrizzleProjectWorkRepository({
       db,
@@ -258,11 +264,244 @@ describe("document revisions (postgres and collab)", () => {
     expect(missing.get(binary)).toBeNull();
   });
 
-  it("can pull and read under the thread mutation lock (third successor attempt)", async () => {
+  for (const source of ["search-only", "other-thread", "rebind"] as const) {
+    it(`PROBE1: refreshes a ${source} Work draft without a current thread peer`, async () => {
+      const f = await fixture("draft");
+      let workId = WORK_ID;
+      if (source === "rebind") {
+        await f.read();
+        workId = "00000000-0000-4000-8000-000000000890" as WorkId;
+        await db.insert(schema.works).values({
+          id: workId,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          name: "Other draft",
+          slug: "other-draft",
+          aiWriteMode: "draft",
+        });
+      }
+      await f.liveCoordinator.withDocument(ALPHA_ID, async (liveDoc) => {
+        if (source === "other-thread") {
+          const other = "00000000-0000-4000-8000-000000000889" as ThreadId;
+          await db.insert(schema.threads).values({
+            id: other,
+            projectId: PROJECT_ID,
+            createdByUserId: USER_ID,
+          });
+          await db
+            .insert(schema.threadWorks)
+            .values({ threadId: other, workId, projectId: PROJECT_ID, isPrimary: true });
+          await f.branchStore.ensureThreadPeerBranch({
+            documentId: ALPHA_ID,
+            threadId: other,
+            liveDoc,
+          });
+        } else {
+          await f.branchStore.ensureWorkDraftBranch({ documentId: ALPHA_ID, workId, liveDoc });
+        }
+      });
+      if (source === "rebind")
+        await createDrizzleThreadWorksRepository(db).rebindPrimary(THREAD_ID, workId);
+      const hit = await f.effective.readEffectiveHashlines({
+        documentId: ALPHA_ID,
+        threadId: THREAD_ID,
+      });
+      if (!hit.ok) throw new Error("Search failed");
+      await f.writerDelete();
+      f.branchPulls.scheduleLivePull(ALPHA_ID);
+      const current = await f.current();
+      // Drain before asserting so a failing test cannot leak its timer to another fixture.
+      await f.branchPulls.flushLivePull(ALPHA_ID);
+      expect(current).not.toBe(hit.value.revision);
+      expect(current).toBe((await f.read()).revision);
+    });
+  }
+
+  it("PROBE2: a joined pull is committed even when its initiating transaction rolls back", async () => {
     const f = await fixture("draft");
-    const read = await f.read();
-    await createDrizzleThreadLock(db).withThreadLock(THREAD_ID as ThreadId, async () => {
-      expect(await f.current()).toBe(read.revision);
+    await f.read();
+    await f.writerDelete();
+    f.branchPulls.scheduleLivePull(ALPHA_ID);
+    const entered = deferred();
+    const release = deferred();
+    const original = f.branchCoordinator.pullFromDoc.bind(f.branchCoordinator);
+    let pause = true;
+    f.branchCoordinator.pullFromDoc = async (...args) => {
+      const result = await original(...args);
+      if (pause) {
+        pause = false;
+        entered.resolve();
+        await release.promise;
+      }
+      return result;
+    };
+    const rollback = deferred();
+    const caller = createDrizzleThreadLock(db).withThreadLock(THREAD_ID, async () => {
+      await f.branchPulls.flushLivePull(ALPHA_ID);
+      await rollback.promise;
+      throw new Error("caller rollback");
+    });
+    const rolledBack = expect(caller).rejects.toThrow("caller rollback");
+    await entered.promise;
+    const join = f.branchPulls.flushLivePull(ALPHA_ID);
+    release.resolve();
+    await join;
+    const draft = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    const observed = f.model.getBlocks(toDocHandle(draft.doc)).length;
+    draft.doc.destroy();
+    rollback.resolve();
+    await rolledBack;
+    await f.branchPulls.flushLivePull(ALPHA_ID);
+    expect(observed).toBe(1);
+    expect((await f.read()).text).not.toContain("Opening paragraph");
+  });
+
+  it("PROBE3: current under the thread lock completes with a contending debounced pull", async () => {
+    const f = await fixture("draft");
+    await f.read();
+    await f.writerDelete();
+    const originalPull = f.branchCoordinator.pullFromDoc.bind(f.branchCoordinator);
+    const originalRead = f.branchCoordinator.readBranch.bind(f.branchCoordinator);
+    const draft = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    const workBranchId = draft.branchId;
+    draft.doc.destroy();
+    const contending = deferred();
+    let scheduled = false;
+    f.branchCoordinator.pullFromDoc = async (...args) => {
+      if (scheduled && args[0] === workBranchId) contending.resolve();
+      return originalPull(...args);
+    };
+    f.branchCoordinator.readBranch = async (id, callback) => {
+      if (!scheduled && id === workBranchId) {
+        scheduled = true;
+        await f.writerDelete();
+        runOutsideDrizzleTransaction(() => f.branchPulls.scheduleLivePull(ALPHA_ID));
+        await contending.promise;
+      }
+      return originalRead(id, callback);
+    };
+    await createDrizzleThreadLock(db).withThreadLock(THREAD_ID, async () => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const revision = await Promise.race([
+          f.current(),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error("contended pull timed out")), 5000);
+          }),
+        ]);
+        expect(revision).toMatch(/^y1:/);
+      } finally {
+        clearTimeout(timer);
+      }
+    });
+    await f.branchPulls.flushLivePull(ALPHA_ID);
+  }, 10000);
+
+  for (const existing of [false, true]) {
+    it(`pulls under a Work lifecycle lock with ${existing ? "existing" : "new"} peers`, async () => {
+      const f = await fixture("draft");
+      if (existing) {
+        await f.read();
+        await f.writerDelete();
+      }
+      await runInDrizzleTransaction(db, async () => {
+        await requireLockedActiveWork(db, WORK_ID);
+        await bounded(async () => {
+          await f.effective.resolveManifestMembership({
+            projectId: PROJECT_ID,
+            threadId: THREAD_ID,
+          });
+          await f.branchPulls.pullThreadPeer({ documentId: ALPHA_ID, threadId: THREAD_ID });
+        });
+      });
+      const peer = await f.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID);
+      expect(f.model.getBlocks(toDocHandle(peer.doc))).toHaveLength(existing ? 1 : 2);
+      peer.doc.destroy();
+    });
+  }
+
+  it("current under the thread lock handles a cold manifest", async () => {
+    const f = await fixture("draft");
+    const manifest = await f.branchStore.ensureProjectManifest({ projectId: PROJECT_ID });
+    manifest.doc.destroy();
+    await db
+      .update(schema.documents)
+      .set({ deletedAt: new Date() })
+      .where(eq(schema.documents.id, manifest.documentId));
+    await createDrizzleThreadLock(db).withThreadLock(THREAD_ID, async () => {
+      expect(await bounded(() => f.current())).toBeNull();
     });
   });
+
+  it("a flush joining an older snapshot waits for a fresh committed pull", async () => {
+    const f = await fixture("draft");
+    await f.liveCoordinator.withDocument(ALPHA_ID, async (liveDoc) => {
+      await f.branchStore.ensureWorkDraftBranch({ documentId: ALPHA_ID, workId: WORK_ID, liveDoc });
+    });
+    const before = await f.current();
+    const captured = deferred();
+    const release = deferred();
+    const original = f.branchCoordinator.pullFromDoc.bind(f.branchCoordinator);
+    let pause = true;
+    f.branchCoordinator.pullFromDoc = async (...args) => {
+      if (pause) {
+        pause = false;
+        captured.resolve();
+        await release.promise;
+      }
+      return original(...args);
+    };
+    const older = f.branchPulls.flushLivePull(ALPHA_ID);
+    await captured.promise;
+    await f.writerDelete();
+    f.branchPulls.scheduleLivePull(ALPHA_ID);
+    const joined = f.branchPulls.flushLivePull(ALPHA_ID);
+    release.resolve();
+    await Promise.all([older, joined]);
+    const draft = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    const blocks = f.model.getBlocks(toDocHandle(draft.doc)).length;
+    draft.doc.destroy();
+    await f.branchPulls.flushLivePull(ALPHA_ID);
+    expect(blocks).toBe(1);
+    expect(await f.current()).not.toBe(before);
+  });
+
+  it("returns null when a document is removed from the Work manifest", async () => {
+    const f = await fixture("draft");
+    const before = await f.read();
+    await f.effective.recordManifestDocumentDeleted(ALPHA_ID, {
+      projectId: PROJECT_ID,
+      threadId: THREAD_ID,
+      workId: WORK_ID,
+    });
+    const membership = await f.effective.resolveManifestMembership({
+      projectId: PROJECT_ID,
+      threadId: THREAD_ID,
+    });
+    expect(membership.members).not.toContain(ALPHA_ID);
+    expect(before.revision).toMatch(/^y1:/);
+    expect(await f.current()).toBeNull();
+  });
 });
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+async function bounded<T>(operation: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("pull timed out")), 3000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}

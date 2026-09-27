@@ -823,7 +823,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     referenceReader: createReferenceReader(coreToolDeps),
     documentRevisions: createDocumentRevisions({
       threads: ports.threadRepos.threads,
-      canAccessDocument: ports.documentAccess.canAccessDocument,
+      availability: ports.projectContextAvailability,
       documents: ports.documentSync,
       threadWorks: coreToolDeps.threadWorks,
       works: coreToolDeps.works,

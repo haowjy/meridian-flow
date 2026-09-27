@@ -18,6 +18,8 @@
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
 
 ### Fixed
+- Refresh search-only Work drafts before revision checks. Ignore documents removed from a Work.
+- Commit shared document pulls independently of chat transactions; preserve retries after failed pulls.
 - Settle direct-write tool results after their document commit instead of leaving successful edits marked staged.
 - Keep pending-placeholder roles and predicates in contracts, SQL in the database package, and interruption copy in the threads domain.
 - Retry failed warm summaries cold once. Bound summary output without changing cached thinking.

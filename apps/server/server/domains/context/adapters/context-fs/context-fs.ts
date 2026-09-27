@@ -61,7 +61,11 @@ import { matchDocument } from "./match.js";
 export interface ContextFSDeps {
   store: ContextDocumentStore;
   mutationStore: ContextTreeMutationStore;
-  documentSync: MarkdownDocumentStore;
+  documentSync: MarkdownDocumentStore &
+    Pick<
+      BranchPeerShadowAccess,
+      "readEffectiveHashlines" | "readEffectiveMarkdown" | "resolveManifestMembership"
+    >;
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
   /** Scheme name used by the router for this filesystem instance. */
@@ -164,7 +168,7 @@ export class ContextFS implements ContextSchemeAdapter {
 
   private readonly store: ContextDocumentStore;
   private readonly mutationStore: ContextTreeMutationStore;
-  private readonly documentSync: MarkdownDocumentStore;
+  private readonly documentSync: ContextFSDeps["documentSync"];
   private readonly documentCreation: DocumentCreationAggregate;
   private readonly commandExecutor: ResultAwareCommandExecutor<AdapterFault>;
   private readonly manifestView?: ContextFSDeps["manifestView"];
@@ -836,14 +840,8 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   private async readVisibleMarkdown(documentId: string): Promise<Result<string, SyncError>> {
-    const effective = this.documentSync as MarkdownDocumentStore &
-      Pick<BranchPeerShadowAccess, "readEffectiveMarkdown">;
-    if (
-      this.name === "manuscript" &&
-      this.manifestView?.threadId &&
-      effective.readEffectiveMarkdown
-    ) {
-      const read = await effective.readEffectiveMarkdown({
+    if (this.name === "manuscript" && this.manifestView?.threadId) {
+      const read = await this.documentSync.readEffectiveMarkdown({
         documentId: documentId as never,
         threadId: this.manifestView.threadId as never,
         responseId: this.manifestView.responseId,
@@ -865,14 +863,8 @@ export class ContextFS implements ContextSchemeAdapter {
   ): Promise<
     Result<{ entries: string[]; hashlines: boolean; revision: string | null }, SyncError>
   > {
-    const effective = this.documentSync as MarkdownDocumentStore &
-      Pick<BranchPeerShadowAccess, "readEffectiveHashlines">;
-    if (
-      this.name === "manuscript" &&
-      this.manifestView?.threadId &&
-      effective.readEffectiveHashlines
-    ) {
-      const hashlines = await effective.readEffectiveHashlines({
+    if (this.name === "manuscript" && this.manifestView?.threadId) {
+      const hashlines = await this.documentSync.readEffectiveHashlines({
         documentId: documentId as never,
         threadId: this.manifestView.threadId as never,
         responseId: this.manifestView.responseId,
@@ -902,11 +894,8 @@ export class ContextFS implements ContextSchemeAdapter {
 
   private async resolveVisibleMembership(): Promise<Set<string> | null> {
     if (this.name !== "manuscript" || !this.manifestView) return null;
-    const resolver = this.documentSync as MarkdownDocumentStore &
-      Pick<BranchPeerShadowAccess, "resolveManifestMembership">;
-    if (!resolver.resolveManifestMembership) return null;
     try {
-      const membership = await resolver.resolveManifestMembership({
+      const membership = await this.documentSync.resolveManifestMembership({
         projectId: this.manifestView.projectId as never,
         workId: this.manifestView.workId as never,
         threadId: this.manifestView.threadId as never,

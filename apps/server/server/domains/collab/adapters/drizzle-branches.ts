@@ -35,6 +35,7 @@ import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
   runInDrizzleTransaction,
+  runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import { lockThreadForMutation } from "../../../shared/thread-work-lock.js";
 import { runWithActiveWorkDrafts } from "../../../shared/work-draft-lifecycle.js";
@@ -328,39 +329,46 @@ export function createDrizzleBranchStore(
   }): Promise<BranchSnapshot> {
     return runInDrizzleTransaction(db, async () => {
       await lockThreadForMutation(db, input.threadId);
-      const workId = await findPrimaryWork(input.threadId);
-      const existing = await findActiveThreadPeer(input.documentId, input.threadId);
-      if (existing?.workId === workId) return existing;
-      if (existing) {
-        await currentDrizzleDb(db)
-          .update(documentBranches)
-          .set({ status: "closed", updatedAt: new Date() })
-          .where(
-            and(eq(documentBranches.id, existing.branchId), eq(documentBranches.status, "active")),
-          );
-      }
-      const workDraft = await ensureWorkDraftBranch({
-        documentId: input.documentId,
-        workId,
-        liveDoc: input.liveDoc,
-      });
-      const upstreamDoc = materializeBranch(workDraft, input.threadId);
-      try {
-        return await insertBranch({
-          id: `branch_${randomUUID()}`,
+      // Keep authority stable with the caller's thread lock. The branch writes
+      // commit independently; reacquiring this row in the root would self-deadlock.
+      return runInRootDrizzleTransaction(db, async () => {
+        const workId = await findPrimaryWork(input.threadId);
+        const existing = await findActiveThreadPeer(input.documentId, input.threadId);
+        if (existing?.workId === workId) return existing;
+        if (existing) {
+          await currentDrizzleDb(db)
+            .update(documentBranches)
+            .set({ status: "closed", updatedAt: new Date() })
+            .where(
+              and(
+                eq(documentBranches.id, existing.branchId),
+                eq(documentBranches.status, "active"),
+              ),
+            );
+        }
+        const workDraft = await ensureWorkDraftBranch({
           documentId: input.documentId,
-          kind: "thread_peer",
-          upstreamBranchId: workDraft.branchId,
           workId,
-          threadId: input.threadId,
-          pushPolicy: workDraft.pushPolicy,
-          status: "active",
-          ...(await replicatedSnapshotFrom(upstreamDoc)),
-          schemaVersion: workDraft.schemaVersion,
+          liveDoc: input.liveDoc,
         });
-      } finally {
-        upstreamDoc.destroy();
-      }
+        const upstreamDoc = materializeBranch(workDraft, input.threadId);
+        try {
+          return await insertBranch({
+            id: `branch_${randomUUID()}`,
+            documentId: input.documentId,
+            kind: "thread_peer",
+            upstreamBranchId: workDraft.branchId,
+            workId,
+            threadId: input.threadId,
+            pushPolicy: workDraft.pushPolicy,
+            status: "active",
+            ...(await replicatedSnapshotFrom(upstreamDoc)),
+            schemaVersion: workDraft.schemaVersion,
+          });
+        } finally {
+          upstreamDoc.destroy();
+        }
+      });
     });
   }
 
@@ -414,30 +422,32 @@ export function createDrizzleBranchStore(
     projectId: ProjectId;
     contextSourceId?: string;
   }): Promise<{ documentId: DocumentId; doc: Y.Doc }> {
-    const txDb = currentDrizzleDb(db);
-    const [existing] = await txDb
-      .select({ id: documents.id })
-      .from(documents)
-      .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
-      .where(
-        and(
-          eq(contextSources.projectId, input.projectId),
-          eq(documents.kind, "manifest"),
-          isNull(documents.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (existing?.id) {
+    return runInRootDrizzleTransaction(db, async () => {
+      const txDb = currentDrizzleDb(db);
+      const [existing] = await txDb
+        .select({ id: documents.id })
+        .from(documents)
+        .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+        .where(
+          and(
+            eq(contextSources.projectId, input.projectId),
+            eq(documents.kind, "manifest"),
+            isNull(documents.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (existing?.id) {
+        return {
+          documentId: existing.id as DocumentId,
+          doc: await ensureLiveManifestDocument(existing.id as DocumentId),
+        };
+      }
+      const documentId = await createManifestIdentity(input.projectId, input.contextSourceId);
       return {
-        documentId: existing.id as DocumentId,
-        doc: await ensureLiveManifestDocument(existing.id as DocumentId),
+        documentId,
+        doc: await ensureLiveManifestDocument(documentId),
       };
-    }
-    const documentId = await createManifestIdentity(input.projectId, input.contextSourceId);
-    return {
-      documentId,
-      doc: await ensureLiveManifestDocument(documentId),
-    };
+    });
   }
 
   async function createManifestIdentity(

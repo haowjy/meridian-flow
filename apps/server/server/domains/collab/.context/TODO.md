@@ -59,15 +59,6 @@ A unified generation scheme or tiered invalidation API is the long-term shape.
 Tree-level membership operations (recursive `ls`, `grep`) perform N+1 manifest
 resolution lookups. Memoized per walk; the cursor-based root cause is unfixed.
 
-## Compaction revision pulls and concurrent transactions
-
-Before C5b calls `readEffectiveRevision` during locked successor preparation,
-probe `domain/branch-pulls.ts` shared `run()` promises across callers with
-different ambient transactions. A debounced pull and a compaction pull may
-share the first caller's transaction; prove that another thread cannot consume
-an uncommitted pull after that transaction rolls back. C5a only exposes the
-revision port and does not yet invoke it during compaction.
-
 ## Live settlement receipt recovery
 
 `domain/response-write-finalizer.ts` commits the live agent-edit journal before

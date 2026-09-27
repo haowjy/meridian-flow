@@ -16,7 +16,7 @@ import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { BranchPullService } from "./branch-pulls.js";
 import type { AutoBranchPushPort } from "./branch-push-contracts.js";
 import { BranchNotFoundError } from "./branch-resolver.js";
-import { documentRevision } from "./document-revision.js";
+import { documentRevision, versioned } from "./document-revision.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 
@@ -103,6 +103,7 @@ export function createEffectiveDocumentReader(input: {
       } catch (cause) {
         if (!(cause instanceof BranchNotFoundError)) throw cause;
       }
+      await input.branchPulls.flushLivePull(command.documentId);
       try {
         const workDraft = await input.branches.resolveWorkDraftBranchForThread(
           command.documentId,
@@ -178,16 +179,17 @@ export function createEffectiveDocumentReader(input: {
     readEffectiveHashlines(command) {
       return readEffective(
         command,
-        async (doc) => ({
-          content: input.model.serializeBlockLines(doc, input.codec),
-          revision: documentRevision(unwrapDoc(doc)),
-        }),
+        async (doc) =>
+          versioned(unwrapDoc(doc), (doc) =>
+            input.model.serializeBlockLines(toDocHandle(doc), input.codec),
+          ),
         () =>
           input.liveCoordinator.withDocument(command.documentId, async (doc) =>
-            Ok({
-              content: input.model.serializeBlockLines(toDocHandle(doc), input.codec),
-              revision: documentRevision(doc),
-            }),
+            Ok(
+              versioned(doc, (doc) =>
+                input.model.serializeBlockLines(toDocHandle(doc), input.codec),
+              ),
+            ),
           ),
       ) as Promise<Result<{ content: string[]; revision: string | null }, SyncError>>;
     },

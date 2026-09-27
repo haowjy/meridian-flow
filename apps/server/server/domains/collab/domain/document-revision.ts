@@ -7,3 +7,11 @@ export function documentRevision(doc: Y.Doc): string {
     .update(Y.encodeSnapshot(Y.snapshot(doc)))
     .digest("base64url")}`;
 }
+
+/** Render and identify one synchronous view of a document. */
+export function versioned<T>(
+  doc: Y.Doc,
+  serialize: (doc: Y.Doc) => T,
+): { content: T; revision: string } {
+  return { content: serialize(doc), revision: documentRevision(doc) };
+}

@@ -34,7 +34,7 @@ import type {
   UpdateOrigin,
 } from "../contracts.js";
 import { type AuthorshipSource, admitFreshAuthorship } from "./document-mutation-policy.js";
-import { documentRevision } from "./document-revision.js";
+import { versioned } from "./document-revision.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
 
 export type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
@@ -342,10 +342,7 @@ export function createMarkdownDocumentEngine(
     async serializeVersionedDocument(documentId, doc) {
       const format = await documentFormat(documentId);
       if (!format.ok) throwSyncError(format.error);
-      return {
-        content: serializeForSchema(documentId, doc, format.value.schemaType),
-        revision: documentRevision(doc),
-      };
+      return versioned(doc, (doc) => serializeForSchema(documentId, doc, format.value.schemaType));
     },
 
     async restoreFromYDoc(documentId, snapshot, origin) {
@@ -367,10 +364,11 @@ export function createMarkdownDocumentEngine(
       try {
         const format = await documentFormat(documentId as DocumentId);
         if (!format.ok) return format;
-        const markdown = await deps.coordinator.withDocument(documentId, async (doc) => ({
-          content: serializeForSchema(documentId as DocumentId, doc, format.value.schemaType),
-          revision: documentRevision(doc),
-        }));
+        const markdown = await deps.coordinator.withDocument(documentId, async (doc) =>
+          versioned(doc, (doc) =>
+            serializeForSchema(documentId as DocumentId, doc, format.value.schemaType),
+          ),
+        );
         return Ok(markdown);
       } catch (cause) {
         if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });

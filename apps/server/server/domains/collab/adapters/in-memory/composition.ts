@@ -27,7 +27,7 @@ import {
   createDocumentProjectionRefresher,
   createDocumentWriteHookRunner,
 } from "../../domain/document-projection-refresher.js";
-import { documentRevision } from "../../domain/document-revision.js";
+import { versioned } from "../../domain/document-revision.js";
 import type { DocumentAuthorityHead } from "../../domain/ports/document-authority-heads.js";
 import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
 import { createResponseWriteFinalizer } from "../../domain/response-write-finalizer.js";
@@ -242,10 +242,7 @@ function createInMemoryBranchPeerStub(
     readEffectiveMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
     readEffectiveHashlines: (input) =>
       coordinator.withDocument(input.documentId, async (doc) =>
-        Ok({
-          content: model.serializeBlockLines(toDocHandle(doc), codec),
-          revision: documentRevision(doc),
-        }),
+        Ok(versioned(doc, (doc) => model.serializeBlockLines(toDocHandle(doc), codec))),
       ),
     async resolveManifestMembership() {
       return { documentId: "" as DocumentId, members: [] };

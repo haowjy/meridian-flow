@@ -635,11 +635,11 @@ export function createWriteCommands(deps: {
   ): void {
     validateSemanticEditIRV1(ir, {
       expectedDocumentId: documentId,
-      expectedInputRevision: revisionOf(doc),
+      expectedInputRevision: inputStateVectorOf(doc),
     });
   }
 
-  function revisionOf(doc: Y.Doc): string {
+  function inputStateVectorOf(doc: Y.Doc): string {
     return [...options.model.encodeStateVector(toDocHandle(doc))]
       .map((byte) => byte.toString(16).padStart(2, "0"))
       .join("");

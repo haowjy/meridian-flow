@@ -339,7 +339,7 @@ export type BranchPeerShadowAccess = {
     threadId?: ThreadId | null;
     responseId?: string | null;
   }): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
-  readEffectiveHashlines?(input: {
+  readEffectiveHashlines(input: {
     documentId: DocumentId;
     threadId?: ThreadId | null;
     responseId?: string | null;

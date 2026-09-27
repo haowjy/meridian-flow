@@ -37,10 +37,12 @@ export type BranchPullService = {
 };
 
 export type BranchPullDiagnostics = {
-  rerunFailed(input: { documentId: DocumentId; cause: unknown }): void;
+  backgroundFailed(input: { documentId: DocumentId; cause: unknown }): void;
 };
 
 export function createBranchPullService(input: {
+  outsideTransaction<T>(operation: () => T): T;
+  rootTransaction<T>(operation: () => Promise<T>): Promise<T>;
   liveCoordinator: DocumentCoordinator;
   branchCoordinator: BranchCoordinator;
   branches: WorkDraftLookup;
@@ -54,16 +56,13 @@ export function createBranchPullService(input: {
   const maxDebounceMs = input.maxDebounceMs ?? 10000;
   const timers = new Map<
     string,
-    { debounce?: NodeJS.Timeout; max?: NodeJS.Timeout; running?: Promise<void>; rerun?: boolean }
+    {
+      debounce?: NodeJS.Timeout;
+      max?: NodeJS.Timeout;
+      running?: Promise<void>;
+      queued?: Promise<void>;
+    }
   >();
-
-  function clear(documentId: string): void {
-    const entry = timers.get(documentId);
-    if (!entry) return;
-    if (entry.debounce) clearTimeout(entry.debounce);
-    if (entry.max) clearTimeout(entry.max);
-    timers.delete(documentId);
-  }
 
   async function liveSnapshot(documentId: DocumentId): Promise<Y.Doc> {
     const state = await input.liveCoordinator
@@ -81,42 +80,68 @@ export function createBranchPullService(input: {
   async function run(documentId: DocumentId): Promise<void> {
     const current = timers.get(documentId);
     if (current?.running) {
-      current.rerun = true;
-      return current.running;
+      // A joiner needs a snapshot captured after its call, not the in-flight
+      // snapshot that may predate a writer edit. Coalesce joins into one rerun.
+      const running = current.running;
+      current.queued ??= input.outsideTransaction(() => {
+        const rerun = () => {
+          current.queued = undefined;
+          return run(documentId);
+        };
+        return running.then(rerun, rerun);
+      });
+      return current.queued;
     }
-    const running = (async () => {
-      clear(documentId);
-      const liveDoc = await liveSnapshot(documentId);
-      try {
-        for (const branchId of await input.branches.listActiveWorkDraftBranchIds(documentId)) {
-          await input.branchCoordinator.pullFromDoc(branchId, liveDoc);
-        }
-      } finally {
-        liveDoc.destroy();
-      }
-    })().finally(() => {
-      const entry = timers.get(documentId);
-      if (entry?.running !== running) return;
-      if (entry.rerun) {
-        entry.running = undefined;
-        entry.rerun = false;
-        void run(documentId).catch((cause: unknown) => {
-          input.diagnostics?.rerunFailed({ documentId, cause });
-        });
-      } else {
-        timers.delete(documentId);
-      }
-    });
-    timers.set(documentId, { running });
+    const entry = current ?? {};
+    const running = input.outsideTransaction(() =>
+      input
+        .rootTransaction(async () => {
+          const liveDoc = await liveSnapshot(documentId);
+          try {
+            for (const branchId of await input.branches.listActiveWorkDraftBranchIds(documentId)) {
+              await input.branchCoordinator.pullFromDoc(branchId, liveDoc);
+            }
+          } finally {
+            liveDoc.destroy();
+          }
+        })
+        .then(() => {
+          if (entry.debounce) clearTimeout(entry.debounce);
+          if (entry.max) clearTimeout(entry.max);
+          entry.debounce = undefined;
+          entry.max = undefined;
+        })
+        .finally(() =>
+          input.outsideTransaction(() => {
+            entry.running = undefined;
+            if (!entry.queued && !entry.debounce && !entry.max) timers.delete(documentId);
+          }),
+        ),
+    );
+    entry.running = running;
+    timers.set(documentId, entry);
     return running;
+  }
+
+  function backgroundPull(documentId: DocumentId): void {
+    void run(documentId).catch((cause: unknown) => {
+      input.diagnostics?.backgroundFailed({ documentId, cause });
+    });
   }
 
   return {
     scheduleLivePull(documentId) {
       const entry = timers.get(documentId) ?? {};
+      if (entry.running) backgroundPull(documentId);
       if (entry.debounce) clearTimeout(entry.debounce);
-      entry.debounce = setTimeout(() => void run(documentId), debounceMs);
-      entry.max ??= setTimeout(() => void run(documentId), maxDebounceMs);
+      entry.debounce = setTimeout(() => {
+        entry.debounce = undefined;
+        backgroundPull(documentId);
+      }, debounceMs);
+      entry.max ??= setTimeout(() => {
+        entry.max = undefined;
+        backgroundPull(documentId);
+      }, maxDebounceMs);
       timers.set(documentId, entry);
     },
 
@@ -167,8 +192,10 @@ export function createBranchPullService(input: {
               }),
             )
           : undefined;
-        if (upstream) await pullPeerFromCapturedUpstream(peer.branchId, upstream.state);
-        else await input.branchCoordinator.pullFromBranch(peer.branchId);
+        await input.rootTransaction(async () => {
+          if (upstream) await pullPeerFromCapturedUpstream(peer.branchId, upstream.state);
+          else await input.branchCoordinator.pullFromBranch(peer.branchId);
+        });
         const branchGeneration = upstream?.generation ?? captured.peerGeneration;
         return { branchGeneration, afterJournalId, liveJournalSeq, attributionBaseline };
       } finally {

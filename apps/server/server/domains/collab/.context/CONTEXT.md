@@ -27,10 +27,17 @@ callback. `readEffectiveRevision` uses their synchronous pull/fallback chain.
 Context selects live authority for direct mode and the thread view for draft
 mode. A thread rebind is resolved anew on each query.
 
-Lock order: `ensureThreadPeerBranch` takes the thread row lock, but its callers
-release live/branch access before calling it (they pass a detached snapshot).
-Branch pull and agent-edit coordinator callbacks never acquire the thread lock.
-The revision query can therefore run inside the successor's thread transaction.
+Live pulls and peer content pulls commit in root transactions, never in a
+caller's ambient transaction. Shared pull promises represent committed state;
+caller rollback cannot undo them. Debounce timers clear only after commit.
+Reruns leave the initiating transaction context.
+
+Peer provisioning retains the canonical thread authority lock in the caller's
+transaction, then commits branch infrastructure in a separate root transaction.
+The root must not reacquire the thread row: a caller may already hold it.
+Callers release live/branch access before taking that authority lock (they pass
+detached snapshots). Pull callbacks never acquire it. Reads without a thread
+peer flush live into the shared Work draft without creating a peer.
 
 Direct response finalization invokes the receipt callback after the live core's
 durable commit; the thread-peer core invokes it inside its host transaction.
@@ -67,3 +74,16 @@ without collapsing their distinct caller contracts.
 - [Push settlement and change trail](settlement-and-trail.md)
 - [WebSocket concurrency boundary](websocket-concurrency.md)
 - [Draft/live visual model](draft-live-model.html)
+
+Manifest identity and its durable live head are root-committed infrastructure
+before any peer can reference them. Root provisioning resolves committed Work
+membership, not a caller's speculative rebind. Work lifecycle locks use NO KEY
+UPDATE so independent branch FK references can be installed while a caller
+holds that lock. Authored branch mutations still take the Work lifecycle lock;
+parent replication uses the existing snapshot CAS without taking it again,
+because replication creates no reviewable edit. This distinction is necessary
+for effective reads within Work-scoped context commands.
+
+A caller joining an in-flight live pull waits for the coalesced next pull: the
+old snapshot may precede its call. Failed background pulls are reported; expired
+timer handles are removed so future updates re-arm the maximum debounce.
