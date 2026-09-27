@@ -1,6 +1,6 @@
 /** Provider-request contract: dynamic context and same-Agent derivation preserve prompt bytes. */
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createBoundAgentCatalog,
   createInMemoryAccountSkillInstallStore,
@@ -18,7 +18,7 @@ import {
   SubagentDerivationError,
   type ThreadAgentSwapDeps,
 } from "../../../threads/index.js";
-import type { Message } from "../../gateway/index.js";
+import type { Gateway, Message, ModelInfo, Tool } from "../../gateway/index.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
 import { createWorkContextReader } from "../work-context.js";
 import { createRuntimeHarness } from "./runtime-harness.js";
@@ -31,7 +31,11 @@ function systemHash(messages: Message[]) {
   return createHash("sha256").update(text).digest("hex");
 }
 
-async function fixture(onStream?: (call: number) => Promise<void>) {
+async function fixture(
+  onStream?: (call: number) => Promise<void>,
+  threadId?: string,
+  gatewayOverride?: ReturnType<typeof scriptedGateway> & Pick<Gateway, "listModels">,
+) {
   const projects = createInMemoryProjectRepository();
   const works = createInMemoryWorkRepository();
   const repos = createInMemoryRepositories({
@@ -53,12 +57,16 @@ async function fixture(onStream?: (call: number) => Promise<void>) {
   });
   const project = await projects.create({ userId: "user-1", title: "Serial" });
   const noWork = await works.ensureNoWork(project.id);
-  const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+  const thread = await repos.threads.create({
+    id: threadId,
+    userId: "user-1",
+    projectId: project.id,
+  });
   await repos.threadWorks.addMembership(thread.id, noWork.id, true);
   const binding = await agentCatalog.resolvePrimary(thread.userId, original.selection);
   if (!binding.ok) throw new Error("Fixture binding unavailable");
   await agentRevisions.bindThread(thread.id, binding.revision.id, binding.configuration, null);
-  const gateway = scriptedGateway({ onStream });
+  const gateway = gatewayOverride ?? scriptedGateway({ onStream });
   const workContext = createWorkContextReader({ ...repos, works });
   const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
   const rig = createRuntimeHarness({
@@ -83,8 +91,8 @@ async function fixture(onStream?: (call: number) => Promise<void>) {
     eventWriter: rig.deps.eventWriter,
     workContextNotices: rig.delivery,
   };
-  async function run(threadId = thread.id) {
-    const run = await rig.orchestrator.prepare({ threadId, userText: "Continue." });
+  async function run(threadId = thread.id, tools?: Tool[]) {
+    const run = await rig.orchestrator.prepare({ threadId, userText: "Continue.", tools });
     expect((await run.execute()).status).toBe("complete");
     return run;
   }
@@ -102,6 +110,68 @@ async function fixture(onStream?: (call: number) => Promise<void>) {
 }
 
 describe("frozen prompt provider requests", () => {
+  it("pins complete requests for a plain thread, fork, and fork cut at an inherited turn", async () => {
+    let nextId = 1;
+    vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(
+      () =>
+        `00000000-0000-4000-8000-${String(nextId++).padStart(12, "0")}` as ReturnType<
+          Crypto["randomUUID"]
+        >,
+    );
+    const model: ModelInfo = {
+      id: "gpt-4.1-mini",
+      provider: "openai",
+      displayName: "Fixture",
+      contextWindow: 100_000,
+      maxOutputTokens: 4_096,
+      capabilities: new Set(["caching"]),
+    };
+    const tools: Tool[] = [
+      {
+        type: "function",
+        name: "search",
+        description: "Search the story notes.",
+        inputSchema: {
+          type: "object",
+          properties: { query: { type: "string" } },
+          required: ["query"],
+          additionalProperties: false,
+        },
+      },
+    ];
+    const gateway = Object.assign(scriptedGateway(), { listModels: () => [model] });
+    try {
+      // Use the exact same runtime path as production, with a cache-capable
+      // model so the snapshot also captures canonical cacheBreakpoint marks.
+      const rig = await fixture(undefined, "00000000-0000-4000-8000-000000000010", gateway);
+      const plain = await rig.run(rig.thread.id, tools);
+      const { thread: fork } = await forkThreadAgent(rig.derive, {
+        id: "00000000-0000-4000-8000-000000000020",
+        threadId: rig.thread.id,
+        userId: rig.thread.userId,
+        originTurnId: plain.assistantTurnId,
+      });
+      await rig.run(fork.id, tools);
+      const { thread: nestedFork } = await forkThreadAgent(rig.derive, {
+        id: "00000000-0000-4000-8000-000000000030",
+        threadId: fork.id,
+        userId: fork.userId,
+        originTurnId: plain.assistantTurnId,
+      });
+      await rig.run(nestedFork.id, tools);
+
+      expect(gateway.requests).toHaveLength(3);
+      expect(gateway.requests[0]?.tools).toEqual(tools);
+      // Correlation is observability-only metadata, not provider request bytes.
+      const providerRequests = gateway.requests.map(
+        ({ correlation: _correlation, ...request }) => request,
+      );
+      expect(providerRequests).toMatchSnapshot();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
   it("keeps one hash through steer, child notice, request-only notice, skill and Work switch across runs", async () => {
     const rig = await fixture(async (call) => {
       if (call === 1) {
