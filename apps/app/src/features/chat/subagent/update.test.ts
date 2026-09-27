@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupAdjacentSubagentUpdates, readSubagentUpdateMetadata } from "./subagent-update";
+import { groupAdjacentSubagentUpdates, readSubagentUpdateMetadata } from "./update";
 
 describe("subagent update events", () => {
   it("validates the wire metadata once into a typed outcome", () => {

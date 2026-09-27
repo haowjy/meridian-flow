@@ -5,7 +5,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { type Block, isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import { ChevronDown, MessageSquareText } from "lucide-react";
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { cn } from "@/lib/utils";
@@ -24,18 +24,17 @@ import { OpenSubagentChatButton } from "./OpenSubagentChatButton";
 import { ProcessDisclosure } from "./ProcessDisclosure";
 import {
   hasVisibleReasoningText,
-  lastProcessIndex,
   partitionTurn,
   type RenderItem,
   type Run,
 } from "./partition-turn";
 import { ReportContent } from "./ReportContent";
 import { StreamingText } from "./StreamingText";
-import { useSubagentActivityNodes } from "./SubagentActivityContext";
-import { SubagentMark } from "./SubagentMark";
-import { resolveSubagentName, subagentDescription, subagentStatus } from "./subagent-display";
-import type { SubagentUpdateMetadata } from "./subagent-update";
-import { groupAdjacentSubagentUpdates } from "./subagent-update";
+import { useSubagentDisclosure } from "./subagent/DisclosureStore";
+import { resolveSubagentName, subagentStatus } from "./subagent/display";
+import { SubagentMark } from "./subagent/SubagentMark";
+import type { SubagentUpdateMetadata } from "./subagent/update";
+import { groupAdjacentSubagentUpdates } from "./subagent/update";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
 import { hasTurnEditsReceiptContent, TurnEditsReceipt } from "./TurnEditsReceipt";
@@ -115,7 +114,6 @@ function AssistantTurnComponent({
     }
     return result;
   }, [items]);
-  const finalProcessIndex = lastProcessIndex(items);
   const isErrored = turn.status === "error";
   const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
   const isLive = !isSettled;
@@ -143,7 +141,7 @@ function AssistantTurnComponent({
       data-turn-status={turn.status}
     >
       <div className="flex flex-col gap-[var(--chat-space-block)]">
-        {rows.map(({ item, processOrdinal, processCount }, rowIndex) => (
+        {rows.map(({ item, processOrdinal, processCount }) => (
           <TurnItemView
             key={itemRenderKey(item)}
             item={item}
@@ -156,14 +154,12 @@ function AssistantTurnComponent({
             directResult={
               item.kind === "artifact" ? (directResults.get(item.block.id) ?? null) : null
             }
-            deliveryEvents={
-              item.kind === "process" && rowIndex === finalProcessIndex ? deliveryEvents : []
-            }
           />
         ))}
-
-        {rows.every(({ item }) => item.kind !== "process") ? (
-          <DeliveryEventRows events={deliveryEvents} />
+        {deliveryEvents.length ? (
+          <div data-turn-item-kind="delivery">
+            <DeliveryEventRows events={deliveryEvents} />
+          </div>
         ) : null}
 
         {hasTurnEditsReceiptContent(liveLineageDocuments, changeTrail, workReceipts) ? (
@@ -223,31 +219,34 @@ function DeliveryEventRows({ events }: { events: DeliveryEvent[] }) {
 }
 
 function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
-  const nodes = useSubagentActivityNodes();
   const entries = events.map((event) => {
     const update = event.subagentUpdate;
-    const node = nodes.find((candidate) => candidate.ref === update?.handle);
     return {
       event,
       update,
-      agentName: node?.agentName,
-      name: resolveSubagentName(node),
-      description: subagentDescription(node ?? { title: event.title ?? null }),
-      threadId: node?.threadId ?? event.childThreadId,
+      agentName: update?.agentName,
+      name: resolveSubagentName({ agentName: update?.agentName }),
+      description: event.title ?? null,
+      threadId: update?.childThreadId ?? event.childThreadId,
       outcome: update?.outcome,
     };
   });
   const names = entries.map(({ name }) => name);
-  const stopped = entries.filter(({ outcome }) => outcome !== "succeeded");
+  const stopped = entries.filter(({ outcome }) => outcome === "failed" || outcome === "cancelled");
   const list = (values: string[]) =>
     new Intl.ListFormat(i18n.locale, { style: "long", type: "conjunction" }).format(values);
-  const [expanded, setExpanded] = useState(false);
+  const childIds = entries.flatMap(({ threadId }) => (threadId ? [threadId] : []));
+  const [expanded, setExpanded] = useSubagentDisclosure(
+    `merged:${events.map((event) => event.turn.id).join(":")}`,
+  );
   return (
     <div className="min-w-0 text-sm text-muted-foreground" data-subagent-finished>
       <button
         type="button"
         aria-expanded={expanded}
         onClick={() => setExpanded((v) => !v)}
+        data-subagent-thread-ids={childIds.join(" ")}
+        data-subagent-disclosure-key={`merged:${events.map((event) => event.turn.id).join(":")}`}
         className="focus-ring flex w-full items-center gap-2 rounded-sm py-[var(--chat-space-row)] text-left hover:text-foreground"
       >
         <span className="flex -space-x-1.5">
@@ -316,14 +315,12 @@ function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
 }
 
 function DeliveryEventRow({ turn, childThreadId, title, subagentUpdate }: DeliveryEvent) {
-  const nodes = useSubagentActivityNodes();
   if (subagentUpdate) {
-    const node = nodes.find((candidate) => candidate.ref === subagentUpdate.handle);
-    const agentName = node?.agentName;
-    const name = resolveSubagentName(node);
-    const description = subagentDescription(node ?? { title: title ?? null });
+    const agentName = subagentUpdate.agentName;
+    const name = resolveSubagentName({ agentName });
+    const description = title ?? null;
     const outcome = subagentUpdate.outcome;
-    const threadId = node?.threadId ?? childThreadId;
+    const threadId = subagentUpdate.childThreadId ?? childThreadId;
     return (
       <div
         className="min-w-0 text-sm text-muted-foreground"
@@ -391,7 +388,6 @@ const TurnItemView = memo(function TurnItemView({
   onRespondToInterrupt,
   writeMode,
   directResult,
-  deliveryEvents,
 }: {
   item: RenderItem;
   processOrdinal: number;
@@ -401,7 +397,6 @@ const TurnItemView = memo(function TurnItemView({
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   writeMode: "direct" | "draft";
   directResult: DirectInvocationResult | null;
-  deliveryEvents: AssistantTurnProps["deliveryEvents"];
 }) {
   const runs = item.kind === "process" ? item.runs : null;
   const digest = useMemo(
@@ -428,7 +423,6 @@ const TurnItemView = memo(function TurnItemView({
             />
           ))}
         </ProcessDisclosure>
-        {deliveryEvents?.length ? <DeliveryEventRows events={deliveryEvents} /> : null}
       </div>
     );
   }

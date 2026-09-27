@@ -64,8 +64,8 @@ report, and its subagent name links to the launch card (a `subagentBlock:
 "card"` reveal). Background `subagent_update` notices
 render as quiet rows: a single completion reads "<name> <description>
 finished", while adjacent completions merge into a compact disclosure. Notice
-text is intentionally not repeated there. Every surface names a child through
-`subagent-display.ts`: the agent name leads (generic runs read "Subagent"),
+text is intentionally not repeated there. Every surface uses the normalized
+`subagent/SubagentRun` view and shared `subagent/SubagentRow` anatomy: the agent name leads (generic runs read "Subagent"),
 followed by the run's description in muted text, separated only by spacing;
 never a raw ref. Outcome maps to mark status there. Row clicks expand or find;
 only the chat icon (`OpenSubagentChatButton`, labeled Open "<agent>") opens a
@@ -73,6 +73,11 @@ child chat. All open-subagent actions use the project chat navigation route;
 the app does not yet model multiple chat tabs. A pop-up row jumps to the child
 through a block-level conversation reveal that lands on its latest point: the
 finished row once it completed, else its launch card.
+
+`subagent/ActivityContext.tsx` indexes activity, invocation cards, and completion
+notices by child thread, ref, and execution. A saved running card with no live
+lease is `unknown`, not running. `transcript-model.ts` classifies turns and
+derives response parts, delivery rows, and reveal targets in one pass.
 
 Child completion is a separate durable transcript event: system turns with
 `metadata.kind === "subagent_update"` render as a quiet inline row at their

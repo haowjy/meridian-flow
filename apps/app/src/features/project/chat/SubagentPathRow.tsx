@@ -1,14 +1,14 @@
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadSnapshotAncestor } from "@meridian/contracts/protocol";
 import { ChevronLeft } from "lucide-react";
-import { SubagentMark } from "@/features/chat/SubagentMark";
 import {
   Elapsed,
   formatSubagentElapsed,
   resolveSubagentName,
   subagentDescription,
   subagentStatus,
-} from "@/features/chat/subagent-display";
+} from "@/features/chat/subagent/display";
+import { SubagentMark } from "@/features/chat/subagent/SubagentMark";
 
 export function SubagentPathRow({
   subagent,

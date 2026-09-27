@@ -10,49 +10,52 @@ import { parseThreadReportResult, toReportContentValue } from "@meridian/contrac
 import { requestConversationReveal } from "./conversation-reveal";
 import type { ToolView } from "./group-delivery-segments";
 import { ReportContent, type ReportContentValue } from "./ReportContent";
-import { useSubagentActivityByRef } from "./SubagentActivityContext";
-import { resolveSubagentName, subagentDescription } from "./subagent-display";
+import { useSubagentRun } from "./subagent/ActivityContext";
+import { resolveSubagentName } from "./subagent/display";
 import { stringInput, toolInputObject } from "./tool-command";
 import type { ToolExpand, ToolRenderer } from "./tool-renderers";
 
 function ThreadReportTitle({ tool }: { tool: ToolView }) {
   const ref = stringInput(toolInputObject(tool), "ref") ?? "";
-  const subagent = useSubagentActivityByRef(ref);
-  const name = resolveSubagentName(subagent);
-  const description = subagentDescription(subagent);
-  const identity = (
-    <>
-      <span className="font-medium text-foreground">{name}</span>
-      {description ? <> {description}</> : null}
-    </>
-  );
+  const subagent = useSubagentRun({ ref });
+  const name = resolveSubagentName({ agentName: subagent?.agentName });
+  const description = subagent?.description;
+  const originTurnId = subagent?.originTurnId;
+  const parentThreadId = subagent?.parentThreadId;
+  const childThreadId = subagent?.threadId;
   // The name is a door to the launch card, which holds the same report.
   const who =
-    subagent?.originTurnId && subagent.parentThreadId ? (
+    originTurnId && parentThreadId && childThreadId ? (
       <button
         type="button"
         title={t`Jump to in chat`}
         onClick={() =>
           requestConversationReveal({
             kind: "turn",
-            threadId: subagent.parentThreadId as string,
-            turnId: subagent.originTurnId as string,
-            subagentThreadId: subagent.threadId,
+            threadId: parentThreadId,
+            turnId: originTurnId,
+            subagentThreadId: childThreadId,
             subagentBlock: "card",
           })
         }
         className="focus-ring relative z-10 rounded-sm text-left underline decoration-border decoration-1 underline-offset-[3px] transition-colors hover:text-jade-text hover:decoration-jade-text"
       >
-        {identity}
+        <span className="font-medium text-foreground">{name}</span>
       </button>
     ) : (
-      identity
+      <span className="font-medium text-foreground">{name}</span>
     );
-  if (tool.status === "partial") return <Trans>Reading report from {who}</Trans>;
+  const line = (
+    <>
+      {who}
+      {description ? <span className="ml-1.5 text-muted-foreground">{description}</span> : null}
+    </>
+  );
+  if (tool.status === "partial") return <Trans>Reading report from {line}</Trans>;
   if (tool.isError || !threadReportContent(tool.output)) {
-    return <Trans>Couldn't read report from {who}</Trans>;
+    return <Trans>Couldn't read report from {line}</Trans>;
   }
-  return <Trans>Read report from {who}</Trans>;
+  return <Trans>Read report from {line}</Trans>;
 }
 
 function threadReportExpand(tool: ToolView): ToolExpand | null {

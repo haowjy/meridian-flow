@@ -24,13 +24,13 @@ msgid "stopped"
 msgstr "stopped"
 
 #. js-lingui-explicit-id
-#: src/features/chat/subagent-display.ts
+#: src/features/chat/subagent/display.ts
 msgid "Subagent"
 msgstr "Subagent"
 
 #. js-lingui-explicit-id
 #. placeholder {0}: agent || i18n._("Subagent")
-#: src/features/chat/subagent-display.ts
+#: src/features/chat/subagent/display.ts
 msgid "Waiting on {0}"
 msgstr "Waiting on {0}"
 
@@ -1331,8 +1331,12 @@ msgid "Couldn't read"
 msgstr "Couldn't read"
 
 #: src/features/chat/thread-report-renderer.tsx
-msgid "Couldn't read report from {who}"
-msgstr "Couldn't read report from {who}"
+msgid "Couldn't read report from {line}"
+msgstr "Couldn't read report from {line}"
+
+#: src/features/chat/thread-report-renderer.tsx
+#~ msgid "Couldn't read report from {who}"
+#~ msgstr "Couldn't read report from {who}"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't redo"
@@ -1905,8 +1909,8 @@ msgstr "Finish reopening"
 msgid "finished"
 msgstr "finished"
 
+#: src/features/chat/subagent/SubagentMark.tsx
 #: src/features/chat/SubagentHeader.tsx
-#: src/features/chat/SubagentMark.tsx
 msgid "Finished"
 msgstr "Finished"
 
@@ -3044,8 +3048,12 @@ msgid "Read file"
 msgstr "Read file"
 
 #: src/features/chat/thread-report-renderer.tsx
-msgid "Read report from {who}"
-msgstr "Read report from {who}"
+msgid "Read report from {line}"
+msgstr "Read report from {line}"
+
+#: src/features/chat/thread-report-renderer.tsx
+#~ msgid "Read report from {who}"
+#~ msgstr "Read report from {who}"
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Read-only live document"
@@ -3060,8 +3068,12 @@ msgid "Reading"
 msgstr "Reading"
 
 #: src/features/chat/thread-report-renderer.tsx
-msgid "Reading report from {who}"
-msgstr "Reading report from {who}"
+msgid "Reading report from {line}"
+msgstr "Reading report from {line}"
+
+#: src/features/chat/thread-report-renderer.tsx
+#~ msgid "Reading report from {who}"
+#~ msgstr "Reading report from {who}"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Reading text size"
@@ -3390,8 +3402,8 @@ msgstr "rule"
 #~ msgid "running"
 #~ msgstr "running"
 
+#: src/features/chat/subagent/SubagentMark.tsx
 #: src/features/chat/SubagentHeader.tsx
-#: src/features/chat/SubagentMark.tsx
 msgid "Running"
 msgstr "Running"
 
@@ -3662,6 +3674,10 @@ msgstr "stat block"
 msgid "status"
 msgstr "status"
 
+#: src/features/chat/subagent/SubagentMark.tsx
+msgid "Status unknown"
+msgstr "Status unknown"
+
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
@@ -3676,7 +3692,7 @@ msgstr "Stop run"
 msgid "stopped"
 msgstr "stopped"
 
-#: src/features/chat/SubagentMark.tsx
+#: src/features/chat/subagent/SubagentMark.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Stopped"
 msgstr "Stopped"

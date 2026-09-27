@@ -2,7 +2,7 @@
 
 import { t } from "@lingui/core/macro";
 import { cn } from "@/lib/utils";
-import { subagentMarkName } from "./subagent-display";
+import { subagentMarkName } from "./display";
 
 export function SubagentMark({
   agentName,
@@ -11,7 +11,7 @@ export function SubagentMark({
   decorative = false,
 }: {
   agentName?: string | null;
-  status: "running" | "done" | "stopped";
+  status: "running" | "done" | "stopped" | "unknown";
   className?: string;
   /** Hide from assistive tech where adjacent text already states the outcome. */
   decorative?: boolean;
@@ -26,21 +26,28 @@ export function SubagentMark({
       "border-border after:absolute after:inset-[-1.5px] after:rounded-full after:border-[1.5px] after:border-transparent after:border-t-primary motion-safe:after:animate-spin",
     status === "done" && "border-primary",
     status === "stopped" && "border-destructive",
+    status === "unknown" && "border-border",
     className,
   );
-  const glyph = initial;
   if (decorative) {
     return (
       <span aria-hidden className={markClassName}>
-        {glyph}
+        {initial}
       </span>
     );
   }
   // The name is always printed beside the mark; the label adds only status.
-  const label = status === "running" ? t`Running` : status === "done" ? t`Finished` : t`Stopped`;
+  const label =
+    status === "running"
+      ? t`Running`
+      : status === "done"
+        ? t`Finished`
+        : status === "stopped"
+          ? t`Stopped`
+          : t`Status unknown`;
   return (
     <span role="img" aria-label={label} className={markClassName}>
-      {glyph}
+      {initial}
     </span>
   );
 }

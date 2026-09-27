@@ -48,7 +48,8 @@ import { DraftDock, useDraftDock } from "./DraftDock";
 import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
-import { SubagentActivityProvider } from "./SubagentActivityContext";
+import { SubagentActivityProvider } from "./subagent/ActivityContext";
+import { SubagentDisclosureProvider } from "./subagent/DisclosureStore";
 import { TurnList } from "./TurnList";
 import { activeDescendants } from "./thread-activity";
 import type { UserTurnRecovery } from "./UserTurn";
@@ -400,25 +401,27 @@ export function ChatView({
           </div>
         }
       >
-        <SubagentActivityProvider nodes={activity.activity.descendants}>
-          <div className="relative flex min-h-0 flex-1 flex-col">
-            <RunningSubagentsStrip descendants={runningBackgroundSubagents} />
-            <TurnList
-              threadId={threadId}
-              turns={turns}
-              awaitingSubagents={runningBackgroundSubagents.length > 0}
-              historySettled={historySettled}
-              tailFollowRevision={tailFollowRevision}
-              ariaLabel={t`Chat`}
-              onRespondToInterrupt={handleRespondToInterrupt}
-              failedSendRetry={failedSendRetry}
-              changeTrails={changeTrails.byId}
-              submissionRecoveryByTurnId={submissionRecoveryByTurnId}
-              queuedWriterTurnIds={queuedWriterTurnIds}
-              threadUsage={snapshotThreadUsage}
-            />
-          </div>
-        </SubagentActivityProvider>
+        <SubagentDisclosureProvider>
+          <SubagentActivityProvider nodes={activity.activity.descendants} turns={turns}>
+            <div className="relative flex min-h-0 flex-1 flex-col">
+              <RunningSubagentsStrip descendants={runningBackgroundSubagents} />
+              <TurnList
+                threadId={threadId}
+                turns={turns}
+                awaitingSubagents={runningBackgroundSubagents.length > 0}
+                historySettled={historySettled}
+                tailFollowRevision={tailFollowRevision}
+                ariaLabel={t`Chat`}
+                onRespondToInterrupt={handleRespondToInterrupt}
+                failedSendRetry={failedSendRetry}
+                changeTrails={changeTrails.byId}
+                submissionRecoveryByTurnId={submissionRecoveryByTurnId}
+                queuedWriterTurnIds={queuedWriterTurnIds}
+                threadUsage={snapshotThreadUsage}
+              />
+            </div>
+          </SubagentActivityProvider>
+        </SubagentDisclosureProvider>
       </ChatSurface>
     </TranscriptLinkNavigationContext.Provider>
   );

@@ -127,9 +127,10 @@ expanding to that report.
 
 Child completion delivery persists one system turn with `subagent_update`
 metadata validated by the shared contracts parser; it carries `childThreadId`
-and `agentName` as well as execution/outcome correlation. `visible-chat-turns.ts` and the server visible-conversation policy
-keep delivery turns out of the top-level bubble list; `AssistantTurn` renders
-them as quiet child-chat navigation rows inside the preceding assistant's steps.
+and `agentName` as well as execution/outcome correlation. `transcript-model.ts`
+classifies turns and indexes delivery events alongside the server visible-
+conversation policy; `AssistantTurn` renders completion events as their own
+quiet render item after the turn's block items.
 The row shows the child's resolved name and outcome (never the raw handle) and
 correlates the internal execution id to its invocation card for navigation.
 Adjacent completions disclose compact child rows. Neither form repeats task
@@ -268,6 +269,8 @@ Key files:
 | File | Role |
 |---|---|
 | `AssistantTurn.tsx` | Top-level turn render; drives partition + item mounting |
+| `transcript-model.ts` | Shared turn classifier, delivery/invocation indexes, response grouping, and reveal targets |
+| `subagent/` | Normalized `SubagentRun`, activity index, disclosure state, and shared row anatomy |
 | `partition-turn.ts` | Ordered walk from `Block[]` to `RenderItem[]` (process/text/artifact) |
 | `tool-kind.ts` | `artifact` vs `process` tool kinds |
 | `group-delivery-segments.ts` | Pairs adjacent tool protocol blocks into ToolViews, then emits single-tool or tool-run segments |

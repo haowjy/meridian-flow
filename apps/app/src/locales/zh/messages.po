@@ -24,13 +24,13 @@ msgid "stopped"
 msgstr "已停止"
 
 #. js-lingui-explicit-id
-#: src/features/chat/subagent-display.ts
+#: src/features/chat/subagent/display.ts
 msgid "Subagent"
 msgstr ""
 
 #. js-lingui-explicit-id
 #. placeholder {0}: agent || i18n._("Subagent")
-#: src/features/chat/subagent-display.ts
+#: src/features/chat/subagent/display.ts
 msgid "Waiting on {0}"
 msgstr ""
 
@@ -1331,8 +1331,12 @@ msgid "Couldn't read"
 msgstr ""
 
 #: src/features/chat/thread-report-renderer.tsx
-msgid "Couldn't read report from {who}"
-msgstr "无法读取{who}的报告"
+msgid "Couldn't read report from {line}"
+msgstr ""
+
+#: src/features/chat/thread-report-renderer.tsx
+#~ msgid "Couldn't read report from {who}"
+#~ msgstr "无法读取{who}的报告"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't redo"
@@ -1905,8 +1909,8 @@ msgstr ""
 msgid "finished"
 msgstr "已完成"
 
+#: src/features/chat/subagent/SubagentMark.tsx
 #: src/features/chat/SubagentHeader.tsx
-#: src/features/chat/SubagentMark.tsx
 msgid "Finished"
 msgstr "已完成"
 
@@ -3040,8 +3044,12 @@ msgid "Read file"
 msgstr ""
 
 #: src/features/chat/thread-report-renderer.tsx
-msgid "Read report from {who}"
-msgstr "已读取{who}的报告"
+msgid "Read report from {line}"
+msgstr ""
+
+#: src/features/chat/thread-report-renderer.tsx
+#~ msgid "Read report from {who}"
+#~ msgstr "已读取{who}的报告"
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Read-only live document"
@@ -3056,8 +3064,12 @@ msgid "Reading"
 msgstr ""
 
 #: src/features/chat/thread-report-renderer.tsx
-msgid "Reading report from {who}"
-msgstr "正在读取{who}的报告"
+msgid "Reading report from {line}"
+msgstr ""
+
+#: src/features/chat/thread-report-renderer.tsx
+#~ msgid "Reading report from {who}"
+#~ msgstr "正在读取{who}的报告"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Reading text size"
@@ -3386,8 +3398,8 @@ msgstr ""
 #~ msgid "running"
 #~ msgstr ""
 
+#: src/features/chat/subagent/SubagentMark.tsx
 #: src/features/chat/SubagentHeader.tsx
-#: src/features/chat/SubagentMark.tsx
 msgid "Running"
 msgstr "运行中"
 
@@ -3658,6 +3670,10 @@ msgstr ""
 msgid "status"
 msgstr ""
 
+#: src/features/chat/subagent/SubagentMark.tsx
+msgid "Status unknown"
+msgstr ""
+
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
@@ -3672,7 +3688,7 @@ msgstr ""
 msgid "stopped"
 msgstr "已停止"
 
-#: src/features/chat/SubagentMark.tsx
+#: src/features/chat/subagent/SubagentMark.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Stopped"
 msgstr "已取消"

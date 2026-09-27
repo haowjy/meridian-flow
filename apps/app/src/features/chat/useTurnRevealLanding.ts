@@ -12,6 +12,7 @@
 import { type RefObject, useEffect, useRef } from "react";
 import { useTurnReveal } from "./conversation-reveal";
 import type { SubagentRevealBlock } from "./conversation-reveal-controller";
+import { revealSubagentDisclosure } from "./subagent/DisclosureStore";
 
 /**
  * The subagent block to flash in a landed turn: its launch card, or by default
@@ -22,9 +23,16 @@ export function subagentBlockRevealTarget(
   subagentThreadId: string,
   block: SubagentRevealBlock = "latest",
 ): HTMLElement | undefined {
-  const selector = block === "card" ? "[data-subagent-card]" : "[data-subagent-thread-id]";
+  const selector =
+    block === "card"
+      ? "[data-subagent-card]"
+      : "[data-subagent-thread-id], [data-subagent-thread-ids]";
   return [...row.querySelectorAll<HTMLElement>(selector)]
-    .filter((element) => element.dataset.subagentThreadId === subagentThreadId)
+    .filter(
+      (element) =>
+        element.dataset.subagentThreadId === subagentThreadId ||
+        element.dataset.subagentThreadIds?.split(" ").includes(subagentThreadId),
+    )
     .at(-1);
 }
 
@@ -93,6 +101,10 @@ export function useTurnRevealLanding({
             return;
           }
           if (!target) return;
+          const disclosureKey = target.dataset.subagentDisclosureKey;
+          if (request.subagentBlock !== "card" && disclosureKey) {
+            revealSubagentDisclosure(disclosureKey);
+          }
           target.scrollIntoView({
             behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
               ? "auto"

@@ -4,7 +4,7 @@ import { t } from "@lingui/core/macro";
 import { MessageSquareShare } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useOpenChatThread } from "./ChatThreadNavigation";
-import { subagentMarkName } from "./subagent-display";
+import { subagentMarkName } from "./subagent/display";
 
 export function OpenSubagentChatButton({
   threadId,

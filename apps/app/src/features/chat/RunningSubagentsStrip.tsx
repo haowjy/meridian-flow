@@ -2,31 +2,17 @@
 
 import { Trans } from "@lingui/react/macro";
 import type { ThreadActivityNode } from "@meridian/contracts/threads";
-import { ChevronDown } from "lucide-react";
-import { useState } from "react";
-import { cn } from "@/lib/utils";
-import { OpenSubagentChatButton } from "./OpenSubagentChatButton";
-import { SubagentMark } from "./SubagentMark";
-import {
-  Elapsed,
-  resolveSubagentName,
-  subagentCurrentToolLabel,
-  subagentDescription,
-} from "./subagent-display";
-
-// Tool lines sit under the name: mark (size-5) plus the row gap (gap-2).
-const TOOL_LINE_INDENT = "pl-7";
+import { useSubagentDisclosure } from "./subagent/DisclosureStore";
+import { runFromActivity } from "./subagent/run-model";
+import { SubagentMark } from "./subagent/SubagentMark";
+import { DisclosureChevron, SubagentRow, SubagentToolLine } from "./subagent/SubagentRow";
 
 export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActivityNode[] }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useSubagentDisclosure(
+    `panel:${descendants[0]?.rootThreadId ?? "chat"}`,
+  );
   if (!descendants.length) return null;
   const single = descendants.length === 1 ? descendants[0] : undefined;
-  const disclosure = (
-    <ChevronDown
-      className={cn("size-3.5 shrink-0 transition-transform", expanded && "rotate-180")}
-      aria-hidden
-    />
-  );
   return (
     <section
       className="relative z-10 border-b border-border-subtle bg-background"
@@ -34,21 +20,15 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
     >
       <div className="mx-auto w-full max-w-chat-column px-6 md:px-8">
         {single ? (
-          <>
-            <div className="flex min-w-0 items-center gap-1">
-              <button
-                type="button"
-                aria-expanded={expanded}
-                onClick={() => setExpanded(!expanded)}
-                className="focus-ring flex min-w-0 items-center gap-2 rounded-sm py-1 text-left text-caption text-ink-muted"
-              >
-                <RunIdentity node={single} />
-                {disclosure}
-              </button>
-              <OpenSubagentChatButton threadId={single.threadId} agentName={single.agentName} />
-            </div>
-            {expanded ? <ToolLine node={single} /> : null}
-          </>
+          <SubagentRow
+            run={runFromActivity(single)}
+            expanded={expanded}
+            onToggle={() => setExpanded(!expanded)}
+            expandable
+            className="py-1 text-caption text-ink-muted"
+          >
+            <SubagentToolLine run={runFromActivity(single)} />
+          </SubagentRow>
         ) : (
           <>
             <button
@@ -77,19 +57,14 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
               <span className="min-w-0 truncate text-xs text-muted-foreground">
                 {!expanded ? <Trans>{descendants.length} running</Trans> : null}
               </span>
-              {disclosure}
+              <DisclosureChevron expanded={expanded} />
             </button>
             {expanded ? (
               <ul className="pb-1">
                 {descendants.map((node) => (
-                  <li key={node.threadId} className="text-caption text-ink-muted">
-                    <div className="flex min-w-0 items-center gap-1 py-1">
-                      <span className="flex min-w-0 items-center gap-2">
-                        <RunIdentity node={node} />
-                      </span>
-                      <OpenSubagentChatButton threadId={node.threadId} agentName={node.agentName} />
-                    </div>
-                    <ToolLine node={node} />
+                  <li key={node.threadId} className="text-caption text-ink-muted py-1">
+                    <SubagentRow run={runFromActivity(node)} door />
+                    <SubagentToolLine run={runFromActivity(node)} className="pb-1 pl-7" />
                   </li>
                 ))}
               </ul>
@@ -98,31 +73,5 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
         )}
       </div>
     </section>
-  );
-}
-
-function RunIdentity({ node }: { node: ThreadActivityNode }) {
-  const name = resolveSubagentName(node);
-  const description = subagentDescription(node);
-  return (
-    <>
-      <SubagentMark agentName={node.agentName} status="running" className="size-5 text-[10px]" />
-      <span className="min-w-0 truncate">
-        <span className="font-medium text-foreground">{name}</span>
-        {description ? <span className="ml-1.5 text-muted-foreground">{description}</span> : null}
-      </span>
-      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-        <Elapsed startedAt={node.runStartedAt} />
-      </span>
-    </>
-  );
-}
-
-function ToolLine({ node }: { node: ThreadActivityNode }) {
-  if (!node.currentTool) return null;
-  return (
-    <p className={cn("truncate pb-1 text-xs text-muted-foreground", TOOL_LINE_INDENT)}>
-      {subagentCurrentToolLabel(node.currentTool.toolName, node.currentTool.input)}
-    </p>
   );
 }

@@ -9,40 +9,10 @@
  * Other system turns with custom blocks remain visible as UI content.
  */
 import type { Turn } from "@meridian/contracts/protocol";
+import { classifyTurn } from "./transcript-model";
 
 export function isVisibleChatTurn(turn: Turn): boolean {
-  if (turn.role === "user") {
-    const metadata = turn.metadata;
-    if (
-      metadata &&
-      typeof metadata === "object" &&
-      !Array.isArray(metadata) &&
-      metadata.kind === "system_update" &&
-      metadata.section === "work_context"
-    ) {
-      return false;
-    }
-    if (
-      metadata &&
-      typeof metadata === "object" &&
-      !Array.isArray(metadata) &&
-      metadata.kind === "inbox_message"
-    )
-      return false;
-    return true;
-  }
-  if (turn.role === "assistant") return true;
-  if (turn.role === "compaction") return false;
-  const metadata = turn.metadata;
-  if (
-    metadata &&
-    typeof metadata === "object" &&
-    !Array.isArray(metadata) &&
-    metadata.kind === "subagent_update"
-  )
-    return false;
-  // other system turns are visible only if they carry at least one custom block
-  return turn.blocks.some((block) => block.blockType === "custom");
+  return classifyTurn(turn) === "bubble";
 }
 
 export function filterVisibleTurns(turns: Turn[]): Turn[] {

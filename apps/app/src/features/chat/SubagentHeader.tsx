@@ -8,15 +8,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 import { requestConversationReveal } from "./conversation-reveal";
 import { OpenSubagentChatButton } from "./OpenSubagentChatButton";
-import { SubagentMark } from "./SubagentMark";
-import {
-  Elapsed,
-  formatSubagentElapsed,
-  resolveSubagentName,
-  subagentCurrentToolLabel,
-  subagentDescription,
-  subagentStatus,
-} from "./subagent-display";
+import { resolveSubagentName, subagentStatus } from "./subagent/display";
+import { runFromActivity } from "./subagent/run-model";
+import { SubagentIdentity, SubagentToolLine } from "./subagent/SubagentRow";
 
 export function SubagentHeader({
   threadId,
@@ -30,22 +24,26 @@ export function SubagentHeader({
   const [filter, setFilter] = useState("");
   const filterId = useId();
   const [open, setOpen] = useState(false);
+  const directNodes = useMemo(
+    () => nodes.filter((node) => node.parentThreadId === threadId),
+    [nodes, threadId],
+  );
   const ordered = useMemo(
     () =>
-      [...nodes].sort(
+      [...directNodes].sort(
         (a, b) =>
           Number(b.status.kind === "awake") - Number(a.status.kind === "awake") ||
           Date.parse(b.runEndedAt ?? "") - Date.parse(a.runEndedAt ?? ""),
       ),
-    [nodes],
+    [directNodes],
   );
   const visible = ordered.filter((node) =>
     `${resolveSubagentName(node)} ${node.title ?? ""}`
       .toLocaleLowerCase()
       .includes(filter.toLocaleLowerCase()),
   );
-  if (!nodes.length) return null;
-  const running = nodes.filter((node) => node.status.kind === "awake");
+  if (!directNodes.length) return null;
+  const running = directNodes.filter((node) => node.status.kind === "awake");
   const finished = visible.filter((node) => node.status.kind !== "awake");
   const active = visible.filter((node) => node.status.kind === "awake");
   const show = (node: ThreadActivityNode) => {
@@ -64,13 +62,13 @@ export function SubagentHeader({
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label={t`Subagents, ${nodes.length}`}
+          aria-label={t`Subagents, ${directNodes.length}`}
           aria-expanded={open}
           aria-haspopup="dialog"
           className="focus-ring inline-flex items-center gap-1.5 whitespace-nowrap rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <Network className="size-3.5" aria-hidden />
-          <span aria-hidden="true">{nodes.length}</span>
+          <span aria-hidden="true">{directNodes.length}</span>
           {running.length ? (
             <span className="size-1.5 animate-pulse rounded-full bg-primary" aria-hidden="true" />
           ) : null}
@@ -142,31 +140,20 @@ function SubagentPopoverRow({
   openThread: (threadId: string) => void;
   onOpen: () => void;
 }) {
-  const name = resolveSubagentName(node);
-  const description = subagentDescription(node);
   const running = node.status.kind === "awake";
+  const run = runFromActivity(node);
   const content = (
     <>
-      <SubagentMark
-        agentName={node.agentName}
-        status={subagentStatus(node.spawnStatus, running)}
-        className="size-5 shrink-0 text-[10px]"
-      />
-      <span className={cn("min-w-0 flex-1 truncate", !running && "text-foreground/75")}>
-        {name}
-        {description ? <span className="ml-1.5 text-muted-foreground">{description}</span> : null}
-        {running && node.currentTool ? (
-          <span className="block truncate text-xs text-muted-foreground">
-            {subagentCurrentToolLabel(node.currentTool.toolName, node.currentTool.input)}
-          </span>
-        ) : null}
-      </span>
-      <span className="shrink-0 self-start pt-0.5 text-xs tabular-nums text-muted-foreground">
-        {running ? (
-          <Elapsed startedAt={node.runStartedAt} />
-        ) : (
-          formatSubagentElapsed(node.runStartedAt, node.runEndedAt)
-        )}
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span
+          className={cn(
+            "flex min-w-0 items-center gap-[var(--chat-space-row)]",
+            !running && "text-foreground/75",
+          )}
+        >
+          <SubagentIdentity run={{ ...run, status: subagentStatus(node.spawnStatus, running) }} />
+        </span>
+        {running && node.currentTool ? <SubagentToolLine run={run} /> : null}
       </span>
     </>
   );

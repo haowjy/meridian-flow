@@ -3,16 +3,13 @@
 import { parseInvocationCard } from "@meridian/contracts/components";
 import type { ComponentBlockProps } from "./component-registry";
 import { SpawnReportCard } from "./SpawnReportCard";
-import { useSubagentActivity } from "./SubagentActivityContext";
-import { subagentCurrentToolLabel } from "./subagent-display";
+import { useSubagentRun } from "./subagent/ActivityContext";
 
 export function HelperResultBlock({ content, invocationResult, threadId }: ComponentBlockProps) {
   const props = parseInvocationCard(content);
+  const run = useSubagentRun({ threadId: props?.childThreadId ?? "" });
   if (!props) return null;
-  const live = useSubagentActivity(props.childThreadId ?? null);
-  const liveTool = live?.currentTool
-    ? subagentCurrentToolLabel(live.currentTool.toolName, live.currentTool.input)
-    : null;
+  const liveTool = run?.liveTool ?? null;
   const savedReport =
     props.deliveryMode === "background_notification" &&
     threadId &&
@@ -20,8 +17,21 @@ export function HelperResultBlock({ content, invocationResult, threadId }: Compo
     props.execution
       ? { threadId, childThreadId: props.childThreadId, execution: props.execution }
       : null;
-  const status =
-    props.terminalAt === null ? "running" : props.outcome === "succeeded" ? "completed" : "failed";
+  const status = run
+    ? run.status === "running"
+      ? "running"
+      : run.status === "done"
+        ? "completed"
+        : run.status === "stopped"
+          ? "failed"
+          : "completed"
+    : props.terminalAt === null
+      ? "running"
+      : props.outcome === "succeeded"
+        ? "completed"
+        : props.outcome
+          ? "failed"
+          : "completed";
   return (
     <SpawnReportCard
       agentName={props.agentName}
@@ -36,6 +46,7 @@ export function HelperResultBlock({ content, invocationResult, threadId }: Compo
       reason={props.reason ?? null}
       directResult={invocationResult}
       savedReport={savedReport}
+      run={run}
     />
   );
 }

@@ -12,7 +12,7 @@ import {
   subagentDescription,
   subagentMarkName,
   subagentStatus,
-} from "./subagent-display";
+} from "./display";
 
 describe("subagent display", () => {
   it("leads with the agent name and keeps the description separate", () => {
@@ -35,6 +35,7 @@ describe("subagent display", () => {
     expect(subagentStatus("cancelled")).toBe("stopped");
     expect(subagentStatus("failed")).toBe("stopped");
     expect(subagentStatus(undefined, true)).toBe("running");
+    expect(subagentStatus(undefined)).toBe("unknown");
   });
 
   it("formats a deterministic elapsed duration", () => {
