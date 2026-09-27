@@ -5,37 +5,35 @@ the event journal that bridges orchestrator writes to AG-UI client streams.
 Threads now use an M:N membership model with Works (`thread_works` join table)
 instead of the N:1 `threads.workId` column.
 
-`domain/bound-conversation.ts` owns atomic thread creation, retained Agent configuration and optional Work membership. Root and child creation and the `derive-conversation.ts` handoff/fork operations use it. A fork has no Agent selection: it keeps the source's retained revision, resolved configuration, invocation overlay, and frozen prompt, independent of catalog changes. Its client-minted id is create-or-get by the row alone: the same owner and project plus `originType = fork` and `kind = primary` returns the existing row; any other existing row conflicts. Handoff may select a different Agent revision and then starts unfrozen. Each derivation includes required history and provenance writes in its outer transaction. Spawn execution begins only after commit.
+`domain/bound-conversation.ts` owns atomic thread creation, retained Agent configuration and optional Work membership. Root and child creation and the `derive-conversation.ts` handoff/fork operations use it. A fork has no Agent selection: it keeps the source's retained revision, resolved configuration, invocation overlay, and bake in effect at its cutoff, independent of catalog changes. Its client-minted id is create-or-get by the row alone: the same owner and project plus `originType = fork` and `kind = primary` returns the existing row; any other existing row conflicts. Same-revision handoff points to the acted-on thread's current bake; a different Agent and a spawned child start unbaked. Each derivation includes required history and provenance writes in its outer transaction. Spawn execution begins only after commit.
 
 ## Prompt lifetime
 
 A thread's system prompt **and its advertised tool list** are frozen together
 at first context assembly, including failed or cancelled provider attempts.
-The database rejects later changes to `composed_system_prompt`,
-`baked_skill_slugs`, or `baked_tools` (migration `0002_freeze_thread_tools.sql`
-extends the `threads_frozen_prompt` trigger from migration
-`0001_freeze_thread_prompt.sql` to also watch `baked_tools`). `baked_tools` is
-untyped `jsonb`: the runtime domain owns its exact shape (the gateway's
-`Tool[]`), not this domain. Forks copy that bake (prompt +
-tools together) under the parent row lock; an unfrozen parent yields an
-unfrozen fork. Inherited bakes receive a current-Work refresh through
-conversation content so a historical fork point or summary-only handoff
-cannot leave stale Work authority. A subagent-only or generic binding cannot
-become a primary thread without selecting a primary Agent. Work changes,
-notices, child results, and skills are in-place conversation
-content, never system-prompt or tool-list edits. Fork/handoff seed turns
-render as user-role `<system_update>` content. Only an Agent-changing
-derivation gets a new prompt and tool bake.
+The immutable bytes live in `prompt_bakes`; `threads.initial_prompt_bake_id`
+is the write-once initial pointer and `turns.prompt_bake_id` marks later epoch
+boundaries. Database triggers reject bake updates/deletes (except owner-thread
+cascades) and pointer changes after their first non-null value. Advertised
+tools are untyped `jsonb`: the runtime domain owns their exact shape (the
+gateway's `Tool[]`). Forks reference `bakeAt(originTurnId)` on the thread that
+owns the cutoff, so a fork of a fork can inherit a grandsource boundary.
+Same-revision handoff references the acted-on thread's current bake; an
+unfrozen source or a different Agent yields an unbaked target. A subagent-only
+or generic binding cannot become a primary thread without selecting a primary
+Agent. Work changes, notices, child results, and skills are in-place
+conversation content, never system-prompt or tool-list edits. Fork/handoff
+seed turns render as user-role `<system_update>` content.
 
 **There is no refresh path today.** A thread's whole cached request prefix —
 prompt, tools, and history — stays fixed for the thread's life; a code
 deploy that changes the tool registry, an Agent revision update, a model
 change, or an idle/cache-TTL timer must never rebake a live thread. Compaction
-is the only planned in-thread exception, and it is the *only* sanctioned
-trigger once built; no compaction path exists yet. Its eventual implementation
-must own one named repository operation and the corresponding narrow DB
-authorization (see the
-[database contract](../../../../../../packages/database/.context/CONTEXT.md)).
+is the only planned in-thread exception. The `beginPromptEpoch` operation now
+hashes or reuses a bake and completes the reserved boundary through
+`persistAndAppendEvents`; it has no production caller until C4. `bakeAt` and
+`bakeInEffect` resolve owner-local completed boundaries; until C2b adds causal
+turn positions they use repository turn order.
 When the model needs to learn about a change mid-thread, that is a system
 notification folded into conversation (the existing inbox/notice path), never
 a prompt or tool-list change — see the
@@ -275,8 +273,8 @@ Meridian Flow's Postgres schema. Key column mappings:
 | `threads.agentName` | **binding join** (`thread_agent_bindings` → `agent_definition_revisions`) | Display name (`metadata.name` or slug), or `Subagent` when the binding has no revision; never a threads column |
 | `threads.rootThreadId` | `threads.rootThreadId` | Persisted spawn-tree root; an organic root uses its own id, a fork/handoff takes its source's root |
 | `threads.totalCostUsd` | `threads.totalCostUsd` | Persisted aggregate maintained by repository/projector recompute |
-| `threads.bakedSkillSlugs` | `threads.bakedSkillSlugs` | `null` means not baked; array means first-attempt bake won |
-| `threads.historySummary` | — | Not a column; hardcoded `null` |
+| `threads.initialPromptBakeId` | `threads.initialPromptBakeId` | null means not baked; points to the first immutable bake |
+| `turns.promptBakeId` | `turns.promptBakeId` | null except on completed epoch-boundary turns |
 | `turns.model` / `turns.provider` | `turns.model` / `turns.provider` | Latest model response for the turn |
 | `turns.requestParams` | `turns.requestParams` | Request params captured when the turn row is created |
 | `turns.responseMetadata` | `turns.responseMetadata` | Latest response metadata projected onto the turn |
@@ -309,10 +307,10 @@ contract shapes.
 
 ## Invariants
 
-- **Child creation starts unfrozen.** `SubagentThreadFactory` initializes prompt,
-  skill-freeze state, and prompt hash to null. The coordinator commits the retained
-  Agent binding and Work membership with creation; shared runtime preparation
-  owns the first bake.
+- **Child creation starts unbaked.** `SubagentThreadFactory` initializes
+  `initialPromptBakeId` to null. The coordinator commits the retained Agent
+  binding and Work membership with creation; shared runtime preparation owns
+  the first bake.
 
 - **Read-model projection before journal append.** The persistence helper
   (`runtime/loop/persistence.ts`) runs `projectReadModelEvent` before
@@ -341,10 +339,10 @@ contract shapes.
   `reasoningTokens`, cache tokens, `responseCount`, latest `model`/`provider`)
   are recomputed atomically from `model_responses` by the read-model projector as
   `model.response_received` events are appended, so journal replay is idempotent.
-- **Freeze sentinel**: a thread's system prompt is considered "baked" (frozen)
-  when `bakedSkillSlugs` is non-null. The first-attempt CAS returns the complete
-  winning prompt and skill set to every contender. The retained Agent definition
-  supplies preparation identity; `agentName` is the bound revision display name from that join.
+- **Freeze sentinel**: a thread is frozen when `initialPromptBakeId` is
+  non-null. The first-attempt row-lock CAS returns the complete winning bake to
+  every contender. The retained Agent definition supplies preparation
+  identity; `agentName` is the bound revision display name from that join.
 - The owner-aware trash command is the sole thread soft-delete/restore boundary.
   It locks the including-deleted thread row, then revalidates thread and live
   project ownership before deciding either desired state. Missing and concealed

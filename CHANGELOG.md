@@ -11,7 +11,7 @@
 - Show subagent progress live in the chat that spawned it, including forks and subagent views. List direct subagents only.
 - Keep forks of trashed chats working. Show a failed reply instead of a stuck message when a fork's history can't load.
 
-- Freeze thread prompts at the database boundary.
+- Store immutable prompt/tool bakes behind write-once pointers; resolve fork prefixes at their cutoff and journal named epoch boundaries atomically.
 - Keep the same Agent and prompt when forking by default.
 
 - Open new chats immediately; subscribe once after first-send acceptance, without missing-thread errors.
