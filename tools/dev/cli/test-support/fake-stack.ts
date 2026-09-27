@@ -11,6 +11,7 @@ import { runCli } from "../main";
 export const COOKIE = "wos-session=test";
 export const THREAD_ID = "11111111-1111-4111-8111-111111111111";
 export const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
+export const CHILD_ID = "33333333-3333-4333-8333-333333333333";
 
 type Journal = { seq: string; event: AGUIEvent }[];
 
@@ -20,6 +21,8 @@ type FakeTurn = {
   status: string;
   error: string | null;
   text: string;
+  /** Extra persisted blocks ahead of the text block, with their own createdAt. */
+  blocks?: { blockType: string; content: unknown; createdAt: string }[];
 };
 
 function threadDto() {
@@ -64,18 +67,18 @@ function turnDto(turn: FakeTurn) {
     error: turn.error,
     createdAt: "2026-01-01T00:00:00.000Z",
     completedAt: null,
-    blocks: turn.text
-      ? [
-          {
-            id: `${turn.id}-b0`,
-            turnId: turn.id,
-            responseId: null,
-            blockType: "text",
-            sequence: 0,
-            content: turn.text,
-          },
-        ]
-      : [],
+    blocks: [
+      ...(turn.blocks ?? []),
+      ...(turn.text
+        ? [{ blockType: "text", content: turn.text, createdAt: "2026-01-01T00:00:03.000Z" }]
+        : []),
+    ].map((block, sequence) => ({
+      id: `${turn.id}-b${sequence}`,
+      turnId: turn.id,
+      responseId: null,
+      sequence,
+      ...block,
+    })),
     siblingIds: [],
     responses: [],
   };
@@ -89,6 +92,22 @@ function liveState(seq: string) {
     activity: { descendants: [] },
     pending: { items: [] },
     resumeAfterSeq: seq,
+  };
+}
+
+function childNode(status: unknown, spawnStatus: string, currentTool: unknown) {
+  return {
+    threadId: CHILD_ID,
+    parentThreadId: THREAD_ID,
+    rootThreadId: THREAD_ID,
+    depth: 1,
+    ref: "p2",
+    title: "Research",
+    agentName: "Researcher",
+    spawnStatus,
+    status,
+    originTurnId: null,
+    currentTool,
   };
 }
 
@@ -138,6 +157,50 @@ function createFake() {
         return;
       }
       if (text.includes("hang")) return;
+      if (text.includes("delegate")) {
+        const activity = (value: unknown) =>
+          publish({ type: "CUSTOM", name: "meridian.subagent.activity", value } as AGUIEvent);
+        publish({
+          type: "TOOL_CALL_START",
+          toolCallId: "call-1",
+          toolCallName: "spawn",
+        } as AGUIEvent);
+        publish({
+          type: "TOOL_CALL_ARGS",
+          toolCallId: "call-1",
+          delta: '{"agent":"r"}',
+        } as AGUIEvent);
+        publish({ type: "TOOL_CALL_END", toolCallId: "call-1" } as AGUIEvent);
+        activity({ descendants: [] });
+        activity({
+          descendants: [
+            childNode({ kind: "awake", phase: "generating", cancelRequested: false }, "running", {
+              toolCallId: "c-1",
+              toolName: "doc_read",
+              input: { uri: "manuscript://ch1.md" },
+            }),
+          ],
+        });
+        activity({ descendants: [childNode({ kind: "asleep" }, "succeeded", null)] });
+        publish({
+          type: "TOOL_CALL_RESULT",
+          messageId: "call-1-result",
+          toolCallId: "call-1",
+          content: "p2 done",
+        } as AGUIEvent);
+        assistant.blocks = [
+          {
+            blockType: "tool_use",
+            content: { toolCallId: "call-1", toolName: "spawn", input: { agent: "r" } },
+            createdAt: "2026-01-01T00:00:00.500Z",
+          },
+          {
+            blockType: "tool_result",
+            content: { toolCallId: "call-1", output: "p2 done" },
+            createdAt: "2026-01-01T00:00:02.000Z",
+          },
+        ];
+      }
       const messageId = `${runId}::0`;
       publish({ type: "TEXT_MESSAGE_START", messageId, role: "assistant" } as AGUIEvent);
       publish({ type: "TEXT_MESSAGE_CONTENT", messageId, delta: "Hello" } as AGUIEvent);

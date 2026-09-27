@@ -54,6 +54,9 @@ Use it instead of the browser for anything that is not visual.
 ./mf thread send <id> "go" --mock @tools/dev/cli/fixtures/mock-write.json --json | tail -1
 ./mf thread view c3                                # transcript (ref, id, or id prefix)
 ./mf thread tail <id> --until-idle                 # follow a run started elsewhere
+./mf thread events <id> --name tool.started,tool.completed   # one kind of event (dotted type or custom name)
+./mf thread events <id> --child p2                 # one subagent's status, phase, tool, and target per activity frame
+./mf thread blocks <id>                            # persisted blocks with created time, gaps, tool name, size
 ./mf doc read manuscript://mf-scene.md
 ./mf api GET /api/threads/<id>/skills              # any route without a dedicated command
 ```

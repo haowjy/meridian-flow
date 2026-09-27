@@ -142,6 +142,67 @@ describe("thread", () => {
     expect(types).toContain("turn.finished");
   });
 
+  it("thread events --name keeps only those events and gives custom ones a line", async () => {
+    expect((await mf(["thread", "send", THREAD_ID, "delegate"])).code).toBe(EXIT.ok);
+    const json = await mf([
+      "thread",
+      "events",
+      THREAD_ID,
+      "--name",
+      "tool.completed,meridian.subagent.activity",
+      "--json",
+    ]);
+    expect(json.code).toBe(EXIT.ok);
+    const lines = json.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(new Set(lines.map((line) => (line.type === "event" ? line.name : line.type)))).toEqual(
+      new Set(["tool.completed", "meridian.subagent.activity"]),
+    );
+    const text = await mf(["thread", "events", THREAD_ID, "--name", "meridian.subagent.activity"]);
+    expect(text.stdout.trim().split("\n")).toHaveLength(3);
+    expect(text.stdout).toMatch(/^\d+ meridian\.subagent\.activity \{"descendants":\[\]\}/);
+  });
+
+  it("thread events --child follows one descendant's status and current tool", async () => {
+    const byRef = await mf(["thread", "events", THREAD_ID, "--child", "p2"]);
+    expect(byRef.code).toBe(EXIT.ok);
+    expect(byRef.stdout.trim().split("\n")).toEqual([
+      expect.stringMatching(
+        /^\d+ p2 awake\/generating \(running\) doc_read manuscript:\/\/ch1\.md$/,
+      ),
+      expect.stringMatching(/^\d+ p2 asleep \(succeeded\)$/),
+    ]);
+    const byId = await mf(["thread", "events", THREAD_ID, "--child", "33333333", "--json"]);
+    expect(JSON.parse(byId.stdout.trim().split("\n")[0])).toMatchObject({
+      type: "child.activity",
+      threadId: THREAD_ID,
+      childThreadId: "33333333-3333-4333-8333-333333333333",
+      status: "awake",
+      phase: "generating",
+      tool: "doc_read",
+      target: "manuscript://ch1.md",
+    });
+    const conflict = await mf(["thread", "events", THREAD_ID, "--child", "p2", "--name", "x"]);
+    expect(conflict.code).toBe(EXIT.usage);
+  });
+
+  it("thread blocks lists persisted blocks with timing and tool names", async () => {
+    const json = await mf(["thread", "blocks", THREAD_ID, "--last", "1", "--json"]);
+    expect(json.code).toBe(EXIT.ok);
+    const { blocks } = JSON.parse(json.stdout);
+    expect(blocks).toEqual([
+      expect.objectContaining({ sequence: 0, type: "tool_use", tool: "spawn", offsetMs: 500 }),
+      expect.objectContaining({ sequence: 1, type: "tool_result", tool: "spawn", gapMs: 1500 }),
+      expect.objectContaining({ sequence: 2, type: "text", tool: null, offsetMs: 3000 }),
+    ]);
+    const text = await mf(["thread", "blocks", THREAD_ID, "--last", "1"]);
+    expect(text.stdout).toContain(
+      "#1 2026-01-01T00:00:02.000Z +2.00s (gap 1.50s) tool_result spawn",
+    );
+  });
+
   it("thread view renders the transcript", async () => {
     const result = await mf(["thread", "view", THREAD_ID]);
     expect(result.code).toBe(EXIT.ok);
