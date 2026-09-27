@@ -1,6 +1,5 @@
 DROP INDEX "turns_thread_created";--> statement-breakpoint
 DROP INDEX "turns_parent_created";--> statement-breakpoint
-ALTER TABLE "turn_blocks" ADD COLUMN "image_included" boolean;--> statement-breakpoint
 ALTER TABLE "turns" ADD COLUMN "position" integer;--> statement-breakpoint
 DO $$
 DECLARE
@@ -78,7 +77,6 @@ $$;--> statement-breakpoint
 ALTER TABLE "turns" ALTER COLUMN "position" SET NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "turns_thread_position_unique" ON "turns" USING btree ("thread_id","position");--> statement-breakpoint
 CREATE INDEX "turns_parent_position" ON "turns" USING btree ("parent_turn_id","position" DESC NULLS LAST) WHERE "turns"."parent_turn_id" IS NOT NULL;--> statement-breakpoint
-ALTER TABLE "turn_blocks" ADD CONSTRAINT "turn_blocks_image_inclusion_only" CHECK ("turn_blocks"."block_type" = 'image' OR "turn_blocks"."image_included" IS NULL);--> statement-breakpoint
 ALTER TABLE "turns" ADD CONSTRAINT "turns_position_positive" CHECK ("turns"."position" > 0);--> statement-breakpoint
 CREATE FUNCTION enforce_turn_position_write_once() RETURNS trigger
 LANGUAGE plpgsql AS $$
@@ -93,3 +91,16 @@ $$;--> statement-breakpoint
 CREATE TRIGGER turns_position_write_once
 BEFORE UPDATE OF position ON turns
 FOR EACH ROW EXECUTE FUNCTION enforce_turn_position_write_once();
+--> statement-breakpoint
+CREATE TABLE "thread_image_inclusions" (
+	"thread_id" uuid NOT NULL,
+	"block_id" uuid NOT NULL,
+	"decision_turn_id" uuid NOT NULL,
+	"included" boolean NOT NULL,
+	"decided_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "thread_image_inclusions_thread_id_block_id_pk" PRIMARY KEY("thread_id","block_id")
+);
+--> statement-breakpoint
+ALTER TABLE "thread_image_inclusions" ADD CONSTRAINT "thread_image_inclusions_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "thread_image_inclusions" ADD CONSTRAINT "thread_image_inclusions_block_id_turn_blocks_id_fk" FOREIGN KEY ("block_id") REFERENCES "public"."turn_blocks"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "thread_image_inclusions" ADD CONSTRAINT "thread_image_inclusions_decision_turn_id_turns_id_fk" FOREIGN KEY ("decision_turn_id") REFERENCES "public"."turns"("id") ON DELETE cascade ON UPDATE no action;

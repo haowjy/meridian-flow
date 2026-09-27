@@ -12,6 +12,7 @@ export function createLocalTurn(input: {
   /** Deterministic identity for idempotent persistence; minted when omitted. */
   id?: TurnId;
   threadId: ThreadId;
+  position: number;
   prevTurnId: TurnId | null;
   role: Turn["role"];
   /** Who authored the turn; no default, so every caller must decide. */
@@ -23,7 +24,7 @@ export function createLocalTurn(input: {
   return {
     id: input.id ?? crypto.randomUUID(),
     threadId: input.threadId,
-    // The repository assigns the serialized position when this event is projected.
+    position: input.position,
     prevTurnId: input.prevTurnId,
     parentTurnId: input.prevTurnId,
     role: input.role,

@@ -18,6 +18,7 @@ import type { EventJournalWriter } from "../ports/event-journal.js";
 import type { InternalThreadRepositories } from "../ports/repositories.js";
 import { createBoundConversation } from "./bound-conversation.js";
 import { bakeAt, bakeInEffect } from "./prompt-epochs.js";
+import { projectImageInclusionDecision } from "./read-model-projector.js";
 import { loadThreadConversationContext } from "./thread-conversation-context.js";
 
 export interface ThreadAgentSwapDeps {
@@ -169,10 +170,22 @@ export async function forkThreadAgent(
     }
     const target = await bindDerivedPrimary(deps, result.thread, sourceWorkId, binding);
     const inheritedBlockIds = new Set(cutoff.blocks.map((block) => block.id));
+    const inheritedTurnIds = new Set(cutoff.turns.map((turn) => turn.id));
     for (const decision of await deps.imageInclusions.findByThread(lockedSource.id as ThreadId)) {
-      if (inheritedBlockIds.has(decision.blockId)) {
-        await deps.imageInclusions.set({ ...decision, threadId: target.id as ThreadId });
-      }
+      if (
+        !inheritedBlockIds.has(decision.blockId) ||
+        !inheritedTurnIds.has(decision.decisionTurnId)
+      )
+        continue;
+      const event = {
+        type: "image.inclusion_decided" as const,
+        threadId: target.id,
+        blockId: decision.blockId,
+        decisionTurnId: decision.decisionTurnId,
+        included: decision.included,
+      };
+      await projectImageInclusionDecision(deps, event);
+      await deps.eventWriter.appendEvent(target.id as ThreadId, event);
     }
     await inheritEditingDocuments(deps, lockedSource, target);
     await seedSystemTurn(deps, target, `Forked conversation through turn ${cutoff.turn.id}.`);
@@ -217,6 +230,7 @@ async function normalizeForkCutoff(
   requestedTurnId: string | null | undefined,
 ): Promise<{
   turn: Awaited<ReturnType<typeof loadThreadConversationContext>>["turns"][number];
+  turns: Awaited<ReturnType<typeof loadThreadConversationContext>>["turns"];
   blocks: Awaited<ReturnType<typeof loadThreadConversationContext>>["blocks"];
 }> {
   const context = await loadThreadConversationContext(
@@ -250,6 +264,7 @@ async function normalizeForkCutoff(
   const inheritedTurnIds = new Set(context.turns.slice(0, cutoffIndex + 1).map((turn) => turn.id));
   return {
     turn: settledTurn,
+    turns: context.turns.slice(0, cutoffIndex + 1),
     blocks: context.blocks.filter((block) => inheritedTurnIds.has(block.turnId)),
   };
 }

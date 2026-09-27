@@ -1,5 +1,5 @@
 {
-  "id": "6197ceed-f488-47bf-a6c6-547f79635c68",
+  "id": "3014172e-2a1a-4185-a5e2-9f0b9e1b71fa",
   "prevId": "8ebc098e-830e-40b0-be6e-9cffed6dd43a",
   "version": "7",
   "dialect": "postgresql",
@@ -1808,6 +1808,98 @@
       },
       "isRLSEnabled": false
     },
+    "public.thread_image_inclusions": {
+      "name": "thread_image_inclusions",
+      "schema": "",
+      "columns": {
+        "thread_id": {
+          "name": "thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "block_id": {
+          "name": "block_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decision_turn_id": {
+          "name": "decision_turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "included": {
+          "name": "included",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "thread_image_inclusions_thread_id_threads_id_fk": {
+          "name": "thread_image_inclusions_thread_id_threads_id_fk",
+          "tableFrom": "thread_image_inclusions",
+          "tableTo": "threads",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "thread_image_inclusions_block_id_turn_blocks_id_fk": {
+          "name": "thread_image_inclusions_block_id_turn_blocks_id_fk",
+          "tableFrom": "thread_image_inclusions",
+          "tableTo": "turn_blocks",
+          "columnsFrom": [
+            "block_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "thread_image_inclusions_decision_turn_id_turns_id_fk": {
+          "name": "thread_image_inclusions_decision_turn_id_turns_id_fk",
+          "tableFrom": "thread_image_inclusions",
+          "tableTo": "turns",
+          "columnsFrom": [
+            "decision_turn_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "thread_image_inclusions_thread_id_block_id_pk": {
+          "name": "thread_image_inclusions_thread_id_block_id_pk",
+          "columns": [
+            "thread_id",
+            "block_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.thread_inbox_messages": {
       "name": "thread_inbox_messages",
       "schema": "",
@@ -2739,12 +2831,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "image_included": {
-          "name": "image_included",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2836,10 +2922,6 @@
         "turn_blocks_block_type_valid": {
           "name": "turn_blocks_block_type_valid",
           "value": "\"turn_blocks\".\"block_type\" IN ('text', 'image', 'file', 'thinking', 'reasoning', 'tool_use', 'tool_result', 'custom')"
-        },
-        "turn_blocks_image_inclusion_only": {
-          "name": "turn_blocks_image_inclusion_only",
-          "value": "\"turn_blocks\".\"block_type\" = 'image' OR \"turn_blocks\".\"image_included\" IS NULL"
         }
       },
       "isRLSEnabled": false

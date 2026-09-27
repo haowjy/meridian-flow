@@ -60,6 +60,7 @@ export interface AssembleNextTurnContextInput {
   imageInclusions?: Pick<ThreadImageInclusionRepository, "findByThread">;
   persistImageProjection?: (input: {
     afterTurnId: TurnId | null;
+    afterTurnPosition: number | null;
     decisions: readonly ImageInclusionDecision[];
     breaks: readonly ImageContextBreak[];
   }) => Promise<{ turns: Turn[]; blocks: Block[] }>;
@@ -196,6 +197,7 @@ export async function assembleNextTurnContext(
     (imageProjection.decisions.length > 0 || imageProjection.breaks.length > 0)
       ? await input.persistImageProjection({
           afterTurnId: (input.turns.at(-1)?.id as TurnId | undefined) ?? null,
+          afterTurnPosition: input.turns.at(-1)?.position ?? null,
           decisions: imageProjection.decisions,
           breaks: imageProjection.breaks,
         })

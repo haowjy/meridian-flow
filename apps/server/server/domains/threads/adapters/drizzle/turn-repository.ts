@@ -124,7 +124,7 @@ export function createDrizzleTurnRepository(
           .select({ position: sql<number | null>`MAX(${schema.turns.position})::int` })
           .from(schema.turns)
           .where(eq(schema.turns.threadId, input.threadId));
-        let position = (latest?.position ?? 0) + 1;
+        let position = latest?.position == null ? 1 : latest.position + 1;
         if (latest?.position == null && threadContext?.originType === "fork") {
           if (!threadContext.originTurnId) {
             throw new Error(`Fork thread ${input.threadId} has no cutoff turn`);

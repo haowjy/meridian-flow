@@ -16,23 +16,26 @@
  *
  * A message whose turn is already durable (a writer send persisted at enqueue,
  * then claimed mid-run) is adopted, not re-persisted. `prepareAdoptedTurn`
- * persists its missing text-reference reads (and any activated skill bodies).
+ * loads missing text-reference reads and activated skill bodies outside the
+ * thread lock, returning their events for the adoption transaction.
  * The shared context assembler owns all rendering, including image projection
  * across the complete request's occurrence budget.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, BlockUpsertedRow, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
 import type { Notice } from "../../notices/index.js";
+import { nextTurnPosition } from "../../threads/order-turns.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import { formatNotices } from "./context-builder.js";
 import { createLocalTurn } from "./local-turn.js";
-import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
+import type { PersistenceDeps } from "./persistence.js";
 import type { InboxMessage } from "./ports.js";
 import type { RenderedWorkContext } from "./work-context.js";
 
 /** The rich blocks (and any hidden sibling turns) an adopted turn's preparation resolved. */
 export interface AdoptedTurnPreparation {
   blocks: Block[];
+  events?: OrchestratorEvent[];
   /**
    * Hidden turns (with their own blocks) to render immediately after the
    * adopted turn -- for example, a skill-body turn. Never a block on the
@@ -48,6 +51,8 @@ export interface InboxDrain {
   /** Persisted message/notice/subagent-update turns, in batch order plus a trailing notices turn. */
   turns: Turn[];
   blocks: Block[];
+  /** Prepared durable changes; callers commit these after all context reads finish. */
+  events: OrchestratorEvent[];
   /** Ids of the whole claimed batch, acked with the response that carries it. */
   ackIds: string[];
 }
@@ -75,7 +80,7 @@ export async function drainInbox(input: {
   /**
    * Resolves an adopted turn's rich model-facing blocks before it renders (for
    * example, reads text-reference occurrences that lack a persisted result, or
-   * persists a mid-run steer's activated skill bodies), returning the updated
+   * loads a mid-run steer's activated skill bodies), returning the updated
    * blocks. A writer send persisted at enqueue has no run yet to resolve these
    * at first iteration, so adoption is where they land.
    */
@@ -84,9 +89,10 @@ export async function drainInbox(input: {
   const batch = input.batch;
   const fresh: InboxMessage[] = [];
   // Keyed by message id, in final render order per message: the adopted turn
-  // itself plus any hidden sibling turns its preparation persisted.
+  // itself plus any hidden sibling turns prepared for it.
   const adoptedTurnsByMessageId = new Map<string, Turn[]>();
   const adoptedBlocks: Block[] = [];
+  const adoptedEventsByMessageId = new Map<string, OrchestratorEvent[]>();
   for (const message of batch) {
     if (message.intent !== "message" && message.body.kind !== "work_context_refresh") {
       fresh.push(message);
@@ -106,9 +112,25 @@ export async function drainInbox(input: {
       if (input.prepareAdoptedTurn) {
         const prepared = await input.prepareAdoptedTurn(existing, blocks);
         blocks = prepared.blocks;
+        adoptedEventsByMessageId.set(message.id, [...(prepared.events ?? [])]);
         for (const extra of prepared.extraTurns ?? []) {
           extraTurns.push(extra.turn);
           adoptedBlocks.push(...extra.blocks);
+          adoptedEventsByMessageId.get(message.id)?.push(
+            { type: "turn.created", turn: extra.turn },
+            ...extra.blocks.map((block) => ({
+              type: "block.upserted" as const,
+              block: contentForBlockInput({
+                id: block.id,
+                turnId: block.turnId as TurnId,
+                responseId: block.responseId,
+                blockType: block.blockType,
+                sequence: block.sequence,
+                content: block.content,
+                status: "complete",
+              }),
+            })),
+          );
         }
       }
       adoptedTurnsByMessageId.set(message.id, [existing, ...extraTurns]);
@@ -130,33 +152,69 @@ export async function drainInbox(input: {
   ];
   // Chain fresh messages (and the notices turn) from the durable leaf so a
   // pre-persisted writer turn (adopted above) is not forked past.
-  const persistLeafTurnId =
+  const needsAppend =
     fresh.some(
       (message) => message.intent === "message" || message.body.kind === "work_context_refresh",
-    ) || notices.length > 0
-      ? ((await input.persistence.repos.threads.findById(input.threadId))?.activeLeafTurnId ??
-        input.expectedLeafTurnId)
-      : input.expectedLeafTurnId;
-  const persisted = await persistInboxMessages({
-    deps: input.persistence,
+    ) || notices.length > 0;
+  const activeLeaf = needsAppend
+    ? ((await input.persistence.repos.threads.findById(input.threadId))?.activeLeafTurnId ?? null)
+    : input.expectedLeafTurnId;
+  const activeLeafTurn = activeLeaf
+    ? await input.persistence.repos.turns.findById(activeLeaf)
+    : null;
+  if (activeLeaf && !activeLeafTurn) throw new Error(`Missing causal turn: ${activeLeaf}`);
+  const plan = planMessageTurns({
     threadId: input.threadId,
-    expectedLeafTurnId: persistLeafTurnId,
     batch: fresh,
     workContext: input.workContext,
     notices,
+    prevTurnId: activeLeaf,
+    prevTurnPosition: activeLeafTurn?.position ?? null,
+    knownTurnIds: new Set(),
   });
-  // Each fresh message maps to exactly the one turn `planMessageTurns` built for
-  // it (the trailing notices turn has no owning message and is appended below).
-  const turnsByMessageId = new Map<string, Turn[]>(adoptedTurnsByMessageId);
-  for (const turn of persisted.turns) {
-    if (turn.id === persisted.noticesTurnId) continue;
-    turnsByMessageId.set(turn.id, [turn]);
+  const planEventsByTurnId = new Map<TurnId, OrchestratorEvent[]>();
+  for (const event of plan.events) {
+    const turnId =
+      event.type === "turn.created"
+        ? event.turn.id
+        : event.type === "block.upserted"
+          ? (event.block.turnId as TurnId)
+          : event.type === "work_context.changed"
+            ? (event.turnId as TurnId)
+            : null;
+    if (!turnId) continue;
+    const events = planEventsByTurnId.get(turnId) ?? [];
+    events.push(event);
+    planEventsByTurnId.set(turnId, events);
   }
-  const orderedTurns = batch.flatMap((message) => turnsByMessageId.get(message.id) ?? []);
-  const noticesTurn = persisted.turns.find((turn) => turn.id === persisted.noticesTurnId);
+  const freshTurnsById = new Map(plan.turns.map((turn) => [turn.id, turn]));
+  const orderedTurns: Turn[] = [];
+  const events: OrchestratorEvent[] = [];
+  for (const message of batch) {
+    const adopted = adoptedTurnsByMessageId.get(message.id);
+    if (adopted) {
+      orderedTurns.push(...adopted);
+      events.push(...(adoptedEventsByMessageId.get(message.id) ?? []));
+      continue;
+    }
+    const freshTurn = freshTurnsById.get(message.id as TurnId);
+    if (freshTurn) {
+      orderedTurns.push(freshTurn);
+      events.push(...(planEventsByTurnId.get(freshTurn.id) ?? []));
+    }
+  }
+  const noticesTurn = plan.turns.find((turn) => turn.id === plan.noticesTurnId);
+  if (noticesTurn) {
+    orderedTurns.push(noticesTurn);
+    events.push(...(planEventsByTurnId.get(noticesTurn.id) ?? []));
+  }
+  const plannedBlocks = plan.blocks.map(localBlockFromEvent);
+  // Each fresh message maps to exactly the one turn built for it; notices have
+  // no owning message and are appended after the batch.
   return {
-    turns: noticesTurn ? [...orderedTurns, noticesTurn] : orderedTurns,
-    blocks: [...adoptedBlocks, ...persisted.blocks],
+    turns: orderedTurns,
+    blocks: [...adoptedBlocks, ...plannedBlocks],
+    events,
     ackIds: batch.map((message) => message.id),
   };
 }
@@ -166,8 +224,8 @@ export async function drainInbox(input: {
  * turns": filters `knownTurnIds`, chains each fresh `message` from the previous
  * turn, appends a trailing `system_update` turn for `notices` when present, and
  * emits the `turn.created` + `block.upserted` pairs that advance the leaf. Pure,
- * so both the drain start (`runDrainTurn`) and the mid-run drain
- * (`persistInboxMessages`) share one home for chain and idempotency semantics.
+ * so run-start and mid-run preparation share one home for chain and idempotency
+ * semantics before the delivery boundary opens its transaction.
  */
 export function planMessageTurns(input: {
   threadId: ThreadId;
@@ -175,6 +233,7 @@ export function planMessageTurns(input: {
   workContext?: RenderedWorkContext;
   notices?: readonly Notice[];
   prevTurnId: TurnId | null;
+  prevTurnPosition: number | null;
   knownTurnIds: ReadonlySet<TurnId>;
 }): {
   turns: Turn[];
@@ -188,6 +247,7 @@ export function planMessageTurns(input: {
   const blocks: BlockUpsertedRow[] = [];
   const events: OrchestratorEvent[] = [];
   let leafTurnId = input.prevTurnId;
+  let leafPosition = input.prevTurnPosition;
   for (const message of input.batch) {
     if (
       message.intent !== "message" &&
@@ -195,7 +255,12 @@ export function planMessageTurns(input: {
     )
       continue;
     if (input.knownTurnIds.has(message.id)) continue;
-    const { turn, block } = messageTurnFor(message, leafTurnId, input.workContext);
+    const { turn, block } = messageTurnFor(
+      message,
+      leafTurnId,
+      nextTurnPosition(leafPosition === null ? null : { position: leafPosition }),
+      input.workContext,
+    );
     turns.push(turn);
     blocks.push(block);
     events.push({ type: "turn.created", turn }, { type: "block.upserted", block });
@@ -211,66 +276,24 @@ export function planMessageTurns(input: {
       });
     }
     leafTurnId = turn.id;
+    leafPosition = turn.position;
   }
   let noticesTurnId: TurnId | null = null;
   if (input.notices?.length) {
-    const { turn, block } = noticesTurnFor(input.threadId, input.notices, leafTurnId);
+    const { turn, block } = noticesTurnFor(
+      input.threadId,
+      input.notices,
+      leafTurnId,
+      nextTurnPosition(leafPosition === null ? null : { position: leafPosition }),
+    );
     turns.push(turn);
     blocks.push(block);
     events.push({ type: "turn.created", turn }, { type: "block.upserted", block });
     leafTurnId = turn.id;
+    leafPosition = turn.position;
     noticesTurnId = turn.id;
   }
   return { turns, blocks, events, leafTurnId, noticesTurnId };
-}
-
-/**
- * Persists each directed `message` in a claimed batch as a user-role turn at the
- * thread tail, plus a trailing `system_update` turn for `notices` when present.
- * Returns the appended turns/blocks for the loop's in-memory accumulator.
- */
-export async function persistInboxMessages(input: {
-  deps: PersistenceDeps;
-  threadId: ThreadId;
-  /** The turn the first `message` follows; each later one follows the previous. */
-  expectedLeafTurnId: TurnId | null;
-  batch: readonly InboxMessage[];
-  workContext?: RenderedWorkContext;
-  notices?: readonly Notice[];
-}): Promise<{ turns: Turn[]; blocks: Block[]; noticesTurnId: TurnId | null }> {
-  const hasMessageContent = input.batch.some(
-    (message) => message.intent === "message" || message.body.kind === "work_context_refresh",
-  );
-  if (!hasMessageContent && !input.notices?.length) {
-    return { turns: [], blocks: [], noticesTurnId: null };
-  }
-  // One transition for the whole batch: a mid-batch failure cannot leave a
-  // half-persisted batch, and the chain links each message (and the notices
-  // turn) to the previous within the same transaction.
-  const persisted = await persistAndAppendTurnStartEvents(
-    input.deps,
-    input.threadId,
-    input.expectedLeafTurnId,
-    async () => {
-      const plan = planMessageTurns({
-        threadId: input.threadId,
-        batch: input.batch,
-        workContext: input.workContext,
-        notices: input.notices,
-        prevTurnId: input.expectedLeafTurnId,
-        knownTurnIds: new Set(),
-      });
-      return {
-        result: {
-          turns: plan.turns,
-          blocks: plan.blocks.map(localBlockFromEvent),
-          noticesTurnId: plan.noticesTurnId,
-        },
-        events: plan.events,
-      };
-    },
-  );
-  return persisted.result;
 }
 
 /**
@@ -281,12 +304,14 @@ export async function persistInboxMessages(input: {
 export function messageTurnFor(
   message: InboxMessage,
   prevTurnId: TurnId | null,
+  position: number,
   workContext?: RenderedWorkContext,
 ): { turn: Turn; block: BlockUpsertedRow } {
   const isChildNotification = message.provenance.kind === "child";
   const turn = createLocalTurn({
     id: message.id,
     threadId: message.threadId,
+    position,
     prevTurnId,
     role: isChildNotification ? "system" : "user",
     // Writer provenance is the only human send; every other provenance
@@ -332,9 +357,11 @@ function noticesTurnFor(
   threadId: ThreadId,
   notices: readonly Notice[],
   prevTurnId: TurnId | null,
+  position: number,
 ): { turn: Turn; block: BlockUpsertedRow } {
   const turn = createLocalTurn({
     threadId,
+    position,
     prevTurnId,
     role: "system",
     // The platform injects this, never the writer.

@@ -271,7 +271,7 @@ describe("prefix stability across a growing thread", () => {
 
     // 4. Skill invocation: the activated skill's body is a durable hidden
     // `system`-role turn chained right after the activating turn (baked once
-    // by `persistSkillBodies`, never a block on the writer's own turn and
+    // by `prepareSkillBodies`, never a block on the writer's own turn and
     // never a request-only rendering), so it is byte-identical on every later
     // request. It renders adjacent to turn-1 in the model's history exactly
     // like a Work-switch or subagent notice, merged into the same message by

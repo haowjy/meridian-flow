@@ -84,6 +84,7 @@ export interface BlockRepository {
 export interface ThreadImageInclusion {
   threadId: ThreadId;
   blockId: string;
+  decisionTurnId: TurnId;
   included: boolean;
 }
 

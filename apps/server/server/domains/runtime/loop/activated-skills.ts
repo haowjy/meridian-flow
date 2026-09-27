@@ -5,7 +5,8 @@
  * A `/skill` activation stamps the slugs at enqueue; whichever drain first
  * adopts the turn reads them back, loads each body, and persists it as a
  * hidden `system`-role turn chained immediately after the invoking turn
- * (`persistSkillBodies` in orchestrator.ts) -- once, so a later request
+ * (`prepareSkillBodies` in orchestrator.ts), then persists it with the
+ * surrounding turn-start transition so a later request
  * reproduces the exact bytes an earlier request saw even if the skill's live
  * content changes afterward. The body is never kept request-only: a
  * request-only rendering here would vanish on the next request and break the

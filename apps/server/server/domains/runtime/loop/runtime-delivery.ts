@@ -43,7 +43,13 @@ export interface RuntimeDelivery
     prepare: (
       batch: InboxMessage[],
       workContext?: import("./work-context.js").RenderedWorkContext,
-    ) => Promise<{ value: T; turnId: TurnId; messageIds: readonly string[] }>,
+    ) => Promise<{
+      value: T;
+      turnId: TurnId;
+      messageIds: readonly string[];
+      /** Turn-start writes run under the lock, after external context is prepared. */
+      persist?: () => Promise<void>;
+    }>,
   ): Promise<T>;
   ackWithResponse<T>(lease: Lease, ids: string[], persist: () => Promise<T>): Promise<T>;
   splitAndContinue(input: DeliveryBoundary): Promise<AdoptedBatch>;

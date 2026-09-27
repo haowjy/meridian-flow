@@ -29,6 +29,11 @@ export function createInMemoryExecutionReportRepository(
     const row = rows.get(execution);
     return row?.childThreadId === child ? row : null;
   };
+  const positionForReport = (assistantTurnId: string) => {
+    const turn = deps.turns.get(assistantTurnId);
+    if (!turn) throw new Error(`Execution report turn not found: ${assistantTurnId}`);
+    return turn.position;
+  };
   return {
     async findByTurn(child, turnId) {
       let turn = deps.turns.get(turnId);
@@ -112,8 +117,7 @@ export function createInMemoryExecutionReportRepository(
         .filter((row) => row.childThreadId === child && row.outcome !== null)
         .sort(
           (a, b) =>
-            (deps.turns.get(a.assistantTurnId)?.position ?? 0) -
-              (deps.turns.get(b.assistantTurnId)?.position ?? 0) ||
+            positionForReport(a.assistantTurnId) - positionForReport(b.assistantTurnId) ||
             a.assistantTurnId.localeCompare(b.assistantTurnId),
         );
     },

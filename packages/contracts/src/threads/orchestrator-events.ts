@@ -91,6 +91,7 @@ export type OrchestratorEvent =
       type: "image.inclusion_decided";
       threadId: string;
       blockId: string;
+      decisionTurnId: TurnId;
       included: boolean;
     }
   | { type: "block.pruned"; blockId: string }

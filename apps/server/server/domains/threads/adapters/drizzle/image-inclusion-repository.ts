@@ -13,6 +13,7 @@ export function createDrizzleThreadImageInclusionRepository(
         .select({
           threadId: schema.threadImageInclusions.threadId,
           blockId: schema.threadImageInclusions.blockId,
+          decisionTurnId: schema.threadImageInclusions.decisionTurnId,
           included: schema.threadImageInclusions.included,
         })
         .from(schema.threadImageInclusions)
@@ -25,7 +26,7 @@ export function createDrizzleThreadImageInclusionRepository(
         .values(input)
         .onConflictDoUpdate({
           target: [schema.threadImageInclusions.threadId, schema.threadImageInclusions.blockId],
-          set: { included: input.included },
+          set: { included: input.included, decisionTurnId: input.decisionTurnId },
         });
     },
   };

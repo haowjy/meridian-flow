@@ -126,46 +126,55 @@ async function clearPreviousAssistantErrorIfUserTurn(
 export async function projectReadModelEvent(
   repos: ReadModelProjectorRepositories,
   event: OrchestratorEvent,
-): Promise<void> {
+): Promise<Turn | null> {
   switch (event.type) {
-    case "turn.created":
-      await repos.turns.create(turnToCreateInput(event.turn));
+    case "turn.created": {
+      const created = await repos.turns.create(turnToCreateInput(event.turn));
       await clearPreviousAssistantErrorIfUserTurn(repos, event.turn);
-      return;
+      return created;
+    }
     case "turn.completed":
     case "turn.cancelled":
     case "turn.error":
       await repos.turns.updateStatus(event.turn.id, turnToLifecycleStatusUpdate(event.turn));
-      return;
+      return null;
     case "interrupt.created":
       await updateInterruptTurnStatus(repos, event.turnId, "waiting_interrupt");
-      return;
+      return null;
     case "interrupt.resolved":
     case "interrupt.expired":
       await updateInterruptTurnStatus(repos, event.turnId, "streaming");
-      return;
+      return null;
     case "model.response_received": {
       const response = responseToCreateInput(event.response);
       const result = await repos.modelResponses.create(response);
-      if (!result.inserted) return;
+      if (!result.inserted) return null;
       const turn = await repos.turns.recomputeRollups(event.response.turnId);
       await repos.threads.recomputeCostFromModelResponses(turn.threadId);
-      return;
+      return null;
     }
     case "block.upserted":
       await repos.blocks.upsert(blockToUpsertInput(event.block));
-      return;
+      return null;
     case "block.updated":
       if (!(await repos.blocks.replaceExisting(blockToUpsertInput(event.block))))
         throw new Error(`Cannot replace missing block ${event.block.id}`);
-      return;
+      return null;
     case "block.pruned":
       await repos.blocks.updatePruned(event.blockId, true);
-      return;
+      return null;
     case "image.inclusion_decided":
-      await repos.imageInclusions.set(event);
-      return;
+      await projectImageInclusionDecision(repos, event);
+      return null;
     default:
-      return;
+      return null;
   }
+}
+
+/** Shared repository write used by both journal projection and fork inheritance. */
+export async function projectImageInclusionDecision(
+  repos: Pick<ThreadRepositories, "imageInclusions">,
+  event: Extract<OrchestratorEvent, { type: "image.inclusion_decided" }>,
+): Promise<void> {
+  await repos.imageInclusions.set(event);
 }

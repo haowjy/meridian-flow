@@ -281,8 +281,8 @@ export type TurnUsage = {
 export interface Turn {
   id: string;
   threadId: string;
-  /** Write-once insertion order within its thread; absent only before persistence. */
-  position?: number;
+  /** Write-once insertion order within its thread, assigned by persistence. */
+  position: number;
   prevTurnId?: string | null;
   parentTurnId?: string | null;
   role: TurnRole;

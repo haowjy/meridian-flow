@@ -432,6 +432,10 @@ export const threadImageInclusions = pgTable(
       .$type<TurnBlockId>()
       .notNull()
       .references(() => turnBlocks.id, { onDelete: "cascade" }),
+    decisionTurnId: uuid("decision_turn_id")
+      .$type<TurnId>()
+      .notNull()
+      .references(() => turns.id, { onDelete: "cascade" }),
     included: boolean("included").notNull(),
     decidedAt: timestamp("decided_at", { withTimezone: true }).defaultNow().notNull(),
   },

@@ -23,6 +23,7 @@ import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
 import { toThreadListItem } from "../../domain/thread-list-projection.js";
 import { formatThreadRef } from "../../domain/thread-ref.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
+import { orderTurnsByPosition } from "../../order-turns.js";
 import type {
   BlockRepository,
   CreateBlockInput,
@@ -38,6 +39,7 @@ import type {
   ThreadChild,
   ThreadDocument,
   ThreadDocumentRepository,
+  ThreadImageInclusion,
   ThreadImageInclusionRepository,
   ThreadRepository,
   ThreadWorksRepository,
@@ -119,7 +121,7 @@ function defaultThread(input: CreateThreadInput): Thread {
   };
 }
 
-function defaultTurn(input: CreateTurnInput): Turn {
+function defaultTurn(input: CreateTurnInput): Omit<Turn, "position"> {
   const now = input.createdAt ?? toIsoString(new Date());
   return {
     id: input.id ?? crypto.randomUUID(),
@@ -182,10 +184,7 @@ export function createInMemoryRepositories(
   const threads = transactionOwner.map<string, Thread>();
   const turns = transactionOwner.map<string, Turn>();
   const blocks = transactionOwner.map<string, Block>();
-  const imageInclusions = transactionOwner.map<
-    string,
-    { threadId: string; blockId: string; included: boolean }
-  >();
+  const imageInclusions = transactionOwner.map<string, ThreadImageInclusion>();
   const modelResponses = transactionOwner.map<string, ModelResponse>();
   const promptBakes = transactionOwner.map<PromptBakeId, PromptBake>();
   const threadDocuments = transactionOwner.map<string, ThreadDocument>();
@@ -530,30 +529,33 @@ export function createInMemoryRepositories(
 
   const turnRepo: TurnRepository = {
     async create(input) {
-      const turn = defaultTurn(input);
-      const existing = turns.get(turn.id);
+      const turnDraft = defaultTurn(input);
+      const existing = turns.get(turnDraft.id);
       if (existing) return existing;
       if (
-        !turn.prevTurnId &&
+        !turnDraft.prevTurnId &&
         [...turns.values()].some(
-          (candidate) => candidate.threadId === turn.threadId && !candidate.prevTurnId,
+          (candidate) => candidate.threadId === turnDraft.threadId && !candidate.prevTurnId,
         )
       ) {
-        throw new TurnStartConflictError(turn.threadId, "already_exists");
+        throw new TurnStartConflictError(turnDraft.threadId, "already_exists");
       }
       const localTurns = [...turns.values()].filter(
-        (candidate) => candidate.threadId === turn.threadId,
+        (candidate) => candidate.threadId === turnDraft.threadId,
       );
       const latestPosition = localTurns.reduce(
-        (latest, candidate) => Math.max(latest, candidate.position ?? 0),
+        (latest, candidate) => Math.max(latest, candidate.position),
         0,
       );
-      const thread = threads.get(turn.threadId);
-      const forkCutoff =
-        localTurns.length === 0 && thread?.originType === "fork" && thread.originTurnId
-          ? turns.get(thread.originTurnId)
-          : null;
-      turn.position = latestPosition > 0 ? latestPosition + 1 : (forkCutoff?.position ?? 0) + 1;
+      const thread = threads.get(turnDraft.threadId);
+      let position = latestPosition + 1;
+      if (localTurns.length === 0 && thread?.originType === "fork") {
+        if (!thread.originTurnId) throw new Error(`Fork thread ${thread.id} has no cutoff turn`);
+        const forkCutoff = turns.get(thread.originTurnId);
+        if (!forkCutoff) throw new Error(`Fork cutoff turn not found: ${thread.originTurnId}`);
+        position = forkCutoff.position + 1;
+      }
+      const turn: Turn = { ...turnDraft, position };
       turns.set(turn.id, turn);
       if (thread) {
         threads.set(turn.threadId, { ...thread, activeLeafTurnId: turn.id });
@@ -564,9 +566,7 @@ export function createInMemoryRepositories(
       return turns.get(id) ?? null;
     },
     async listByThread(threadId) {
-      return [...turns.values()]
-        .filter((t) => t.threadId === threadId)
-        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+      return orderTurnsByPosition([...turns.values()].filter((t) => t.threadId === threadId));
     },
     async getLatestByThread(threadId) {
       const threadTurns = await this.listByThread(threadId);
@@ -737,9 +737,9 @@ export function createInMemoryRepositories(
         .sort((a, b) => a.sequence - b.sequence);
     },
     async listByThread(threadId: ThreadId) {
-      const orderedTurns = [...turns.values()]
-        .filter((t) => t.threadId === threadId)
-        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+      const orderedTurns = orderTurnsByPosition(
+        [...turns.values()].filter((t) => t.threadId === threadId),
+      );
       const turnOrder = new Map(orderedTurns.map((turn, index) => [turn.id as string, index]));
       return [...blocks.values()]
         .filter((b) => turnOrder.has(b.turnId as string))

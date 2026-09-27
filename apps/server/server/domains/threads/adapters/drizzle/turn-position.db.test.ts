@@ -22,7 +22,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
-    const { persistInboxMessages } = await import("../../../runtime/loop/inbox-context.js");
+    const { planMessageTurns } = await import("../../../runtime/loop/inbox-context.js");
+    const { persistAndAppendTurnStartEvents } = await import(
+      "../../../runtime/loop/persistence.js"
+    );
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 6 });
@@ -67,8 +70,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const queuedAt = new Date(Date.now() - 60_000).toISOString();
       const inboxId = "00000000-0000-4000-8000-0000000006a7";
 
-      await persistInboxMessages({
-        deps: {
+      const batch = [
+        {
+          id: inboxId,
+          threadId: SOURCE_THREAD_ID,
+          intent: "message" as const,
+          provenance: { kind: "writer" as const, actorId: USER_ID },
+          body: { kind: "text" as const, text: "queued earlier" },
+          idempotencyKey: inboxId,
+          seq: 1,
+          enqueuedAt: queuedAt,
+          deliveredAt: null,
+        },
+      ];
+      const plan = planMessageTurns({
+        threadId: SOURCE_THREAD_ID,
+        prevTurnId: newerWriterTurn.id,
+        prevTurnPosition: newerWriterTurn.position,
+        knownTurnIds: new Set(),
+        batch,
+      });
+      const persisted = await persistAndAppendTurnStartEvents(
+        {
           repos,
           eventWriter: {
             async appendEvent() {
@@ -76,22 +99,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             },
           },
         },
-        threadId: SOURCE_THREAD_ID,
-        expectedLeafTurnId: newerWriterTurn.id,
-        batch: [
-          {
-            id: inboxId,
-            threadId: SOURCE_THREAD_ID,
-            intent: "message",
-            provenance: { kind: "writer", actorId: USER_ID },
-            body: { kind: "text", text: "queued earlier" },
-            idempotencyKey: inboxId,
-            seq: 1,
-            enqueuedAt: queuedAt,
-            deliveredAt: null,
-          },
-        ],
-      });
+        SOURCE_THREAD_ID,
+        newerWriterTurn.id,
+        async () => ({ result: undefined, events: plan.events }),
+      );
+      expect(persisted.createdTurns.map((turn) => turn.position)).toEqual([3]);
 
       const turns = await repos.turns.listByThread(SOURCE_THREAD_ID);
       expect(turns.map((turn) => turn.id)).toEqual([first.id, newerWriterTurn.id, inboxId]);

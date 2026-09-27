@@ -1,6 +1,7 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
 import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { NoticePort } from "../../notices/index.js";
+import { nextTurnPosition } from "../../threads/order-turns.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
 import { createLocalTurn } from "../loop/local-turn.js";
@@ -20,6 +21,7 @@ import type {
 } from "../loop/ports.js";
 import type { AdoptedBatch, DeliveryBoundary, RuntimeDelivery } from "../loop/runtime-delivery.js";
 import type { ThreadLock } from "../loop/thread-lock.js";
+import { ImageAssetResolutionError } from "../ports/image-asset.js";
 
 /** Adapter-private storage primitives; never injected into the model loop or producers. */
 export interface DeliveryStore extends InboxReader {
@@ -89,11 +91,14 @@ export function createDeliveryAdapter(
       work.batch.map((message) => deps.repos.turns.findById(message.id)),
     );
     const leaf = (await deps.repos.threads.findById(threadId))?.activeLeafTurnId ?? null;
+    const leafTurn = leaf ? await deps.repos.turns.findById(leaf) : null;
+    if (leaf && !leafTurn) throw new Error(`Missing causal turn: ${leaf}`);
     const plan = planMessageTurns({
       threadId,
       batch: work.batch,
       workContext: work.workContext,
       prevTurnId: leaf,
+      prevTurnPosition: leafTurn?.position ?? null,
       knownTurnIds: new Set(turns.flatMap((turn) => (turn ? [turn.id] : []))),
     });
     if (plan.events.length === 0) return;
@@ -128,16 +133,36 @@ export function createDeliveryAdapter(
       idempotencyKey: `work-context:${mutationId}`,
     });
   }
-  async function adopt(input: DeliveryBoundary, batch: InboxMessage[]): Promise<AdoptedBatch> {
-    const { lease, currentTurn } = input;
-    const work = await workBatch(lease.threadId, batch);
-    batch = work.batch;
+  type PreparedAdoption = {
+    batch: InboxMessage[];
+    work: Awaited<ReturnType<typeof workBatch>>;
+    committedWorkIds: string[];
+    expectedLeaf: TurnId | null;
+    expectedLeafPosition: number | null;
+    drain: Awaited<ReturnType<typeof drainInbox>>;
+    prepared: Awaited<ReturnType<DeliveryBoundary["prepareNextContext"]>>;
+    split: boolean;
+  };
+
+  async function prepareAdoption(
+    input: DeliveryBoundary,
+    selectedBatch: InboxMessage[],
+  ): Promise<PreparedAdoption> {
+    const { lease } = input;
+    const work = await workBatch(lease.threadId, selectedBatch);
+    const batch = work.batch;
     const threadId = lease.threadId;
     // Writer enqueue can have persisted and acked an earlier Work prefix while
     // this run's provider request was in flight. Adopt that committed history too.
     const committed: InboxMessage[] = [];
     const committedWorkIds: string[] = [];
-    let leaf = (await deps.repos.threads.findById(threadId))?.activeLeafTurnId;
+    const thread = await deps.repos.threads.findById(threadId);
+    const expectedLeaf = (thread?.activeLeafTurnId ??
+      input.currentTurn.id ??
+      null) as TurnId | null;
+    const expectedLeafTurn = expectedLeaf ? await deps.repos.turns.findById(expectedLeaf) : null;
+    if (expectedLeaf && !expectedLeafTurn) throw new Error(`Missing causal turn: ${expectedLeaf}`);
+    let leaf: TurnId | null = expectedLeaf;
     while (leaf && !input.knownTurnIds.has(leaf)) {
       const turn = await deps.repos.turns.findById(leaf);
       if (!turn) throw new Error(`Missing causal turn: ${leaf}`);
@@ -159,75 +184,99 @@ export function createDeliveryAdapter(
           deliveredAt: turn.createdAt,
         });
       }
-      leaf = turn.prevTurnId;
+      leaf = (turn.prevTurnId as TurnId | null | undefined) ?? null;
     }
     const committedIds = new Set(committed.map((message) => message.id));
-    batch = [...committed, ...batch.filter((message) => !committedIds.has(message.id))];
-    // Destructive: drained at most once per adopt, and folded into the same
-    // split/persist decision as the batch so it lands in the same durable
-    // `system_update` turn `drainInbox` builds below (never spliced request-only).
+    const orderedBatch = [
+      ...committed,
+      ...batch.filter((message) => !committedIds.has(message.id)),
+    ];
+    // Notices are folded into the prepared history; no turn is completed or
+    // reserved until all external context reads have finished.
     const notices = await deps.notices.drainForModelContext(threadId);
-    let split =
+    const split =
       !!work.workContext ||
       committedWorkIds.length > 0 ||
       notices.length > 0 ||
-      batch.some(
+      orderedBatch.some(
         (message) =>
           (message.intent === "message" && !input.knownTurnIds.has(message.id)) ||
           (message.intent === "notice" && message.body.kind !== "work_context_refresh"),
       );
-    let currentTurnCompleted = false;
-    const completeCurrentTurn = async () => {
-      if (currentTurnCompleted) return;
+    const drain = await drainInbox({
+      ...input,
+      persistence: deps,
+      notices,
+      threadId,
+      batch: orderedBatch,
+      workContext: work.workContext,
+    });
+    let prepared: Awaited<ReturnType<DeliveryBoundary["prepareNextContext"]>>;
+    try {
+      prepared = await input.prepareNextContext(drain);
+    } catch (error) {
+      if (error instanceof ImageAssetResolutionError && drain.ackIds.length > 0) {
+        const recorded = await threadLock.withThreadLock(threadId, () =>
+          leaseStore.setAdoptedMessageIds(lease, drain.ackIds),
+        );
+        if (!recorded) {
+          throw new Error(
+            "Cannot acknowledge failed context preparation after losing live run lease",
+            {
+              cause: error,
+            },
+          );
+        }
+      }
+      throw error;
+    }
+    return {
+      batch: orderedBatch,
+      work,
+      committedWorkIds,
+      expectedLeaf,
+      expectedLeafPosition: expectedLeafTurn?.position ?? null,
+      drain,
+      prepared,
+      split: split || drain.events.length > 0 || prepared.requiresSplit,
+    };
+  }
+
+  async function commitAdoption(
+    input: DeliveryBoundary,
+    adoption: PreparedAdoption,
+  ): Promise<AdoptedBatch> {
+    const { lease, currentTurn } = input;
+    const threadId = lease.threadId;
+    const {
+      work,
+      committedWorkIds,
+      expectedLeaf,
+      expectedLeafPosition,
+      drain,
+      prepared,
+      split,
+      batch,
+    } = adoption;
+    const turns = [...drain.turns, ...prepared.turns];
+    const blocks = [...drain.blocks, ...prepared.blocks];
+    const events = [...drain.events, ...prepared.events];
+    let next = currentTurn;
+
+    if (split) {
       const completed = {
         ...currentTurn,
         status: "complete" as const,
         finishReason: "end_turn" as const,
         completedAt: new Date().toISOString(),
       };
-      await persistAndAppendEvents(deps, threadId, async () => ({
-        result: completed,
-        events: [{ type: "turn.completed", turn: completed }],
-      }));
-      await deps.repos.threads.updateCost(threadId, "0", 1);
-      currentTurnCompleted = true;
-    };
-    if (split) await completeCurrentTurn();
-    const drain = await drainInbox({
-      ...input,
-      persistence: deps,
-      notices,
-      threadId,
-      batch,
-      workContext: work.workContext,
-    });
-    const prepared = await input.prepareNextContext(drain);
-    if (prepared.requiresSplit && !split) {
-      split = true;
-      await completeCurrentTurn();
-    }
-    if (prepared.events.length) {
-      const expectedLeaf =
-        (await deps.repos.threads.findById(threadId))?.activeLeafTurnId ?? currentTurn.id;
-      await persistAndAppendTurnStartEvents(deps, threadId, expectedLeaf, async () => ({
-        result: undefined,
-        events: prepared.events,
-      }));
-      drain.turns.push(...prepared.turns);
-      drain.blocks.push(...prepared.blocks);
-    }
-    await inbox.ack(threadId, work.ids);
-    drain.ackIds = drain.ackIds.filter(
-      (id) => !work.ids.includes(id) && !committedWorkIds.includes(id),
-    );
-    let next = currentTurn;
-    if (split) {
-      const leaf =
-        (await deps.repos.threads.findById(threadId))?.activeLeafTurnId ??
-        drain.turns.at(-1)?.id ??
-        currentTurn.id;
+      const leaf = turns.at(-1)?.id ?? expectedLeaf ?? currentTurn.id;
       next = createLocalTurn({
         threadId,
+        position: nextTurnPosition(
+          turns.at(-1) ??
+            (expectedLeafPosition === null ? null : { position: expectedLeafPosition }),
+        ),
         prevTurnId: leaf,
         role: "assistant",
         origin: "assistant",
@@ -237,16 +286,44 @@ export function createDeliveryAdapter(
       await persistAndAppendTurnStartEvents(
         deps,
         threadId,
-        leaf,
-        async () => ({ result: next, events: [{ type: "turn.created", turn: next }] }),
+        expectedLeaf,
+        async () => ({
+          result: undefined,
+          events: [
+            { type: "turn.completed", turn: completed },
+            ...events,
+            { type: "turn.created", turn: next },
+          ],
+        }),
         { afterEvents: () => leaseStore.bindTurn(lease, next.id, drain.ackIds) },
       );
-    } else if (batch.length > 0 && !(await leaseStore.setAdoptedMessageIds(lease, drain.ackIds))) {
+      await deps.repos.threads.updateCost(threadId, "0", 1);
+    } else if (events.length > 0) {
+      await persistAndAppendEvents(deps, threadId, async () => ({ result: undefined, events }));
+    }
+
+    await inbox.ack(threadId, work.ids);
+    drain.ackIds = drain.ackIds.filter(
+      (id) => !work.ids.includes(id) && !committedWorkIds.includes(id),
+    );
+    if (
+      !split &&
+      batch.length > 0 &&
+      !(await leaseStore.setAdoptedMessageIds(lease, drain.ackIds))
+    ) {
       throw new Error("Cannot adopt inbox batch after losing live run lease");
     }
     if (batch.length > 0) await appendPending(threadId);
+    drain.turns = turns;
+    drain.blocks = blocks;
     return { drain, next, split };
   }
+
+  async function adopt(input: DeliveryBoundary, batch: InboxMessage[]): Promise<AdoptedBatch> {
+    const prepared = await prepareAdoption(input, batch);
+    return threadLock.withThreadLock(input.lease.threadId, () => commitAdoption(input, prepared));
+  }
+
   return {
     threadChanged,
     async projectChanged(projectId) {
@@ -282,10 +359,14 @@ export function createDeliveryAdapter(
           },
         }),
       ),
-    adoptBatch: (lease, prepare) =>
-      threadLock.withThreadLock(lease.threadId, async () => {
-        const work = await workBatch(lease.threadId, await inbox.selectPending(lease.threadId));
-        const prepared = await prepare(work.batch, work.workContext);
+    adoptBatch: async (lease, prepare) => {
+      const pending = await threadLock.withThreadLock(lease.threadId, () =>
+        inbox.selectPending(lease.threadId),
+      );
+      const work = await workBatch(lease.threadId, pending);
+      const prepared = await prepare(work.batch, work.workContext);
+      return threadLock.withThreadLock(lease.threadId, async () => {
+        await prepared.persist?.();
         await inbox.ack(lease.threadId, work.ids);
         await leaseStore.bindTurn(
           lease,
@@ -294,7 +375,8 @@ export function createDeliveryAdapter(
         );
         await appendPending(lease.threadId);
         return prepared.value;
-      }),
+      });
+    },
     ackWithResponse: (lease, ids, persist) =>
       threadLock.withThreadLock(lease.threadId, async () => {
         const result = await persist();
@@ -306,13 +388,15 @@ export function createDeliveryAdapter(
         }
         return result;
       }),
-    splitAndContinue: (input) =>
-      threadLock.withThreadLock(input.lease.threadId, async () =>
-        adopt(input, await inbox.selectPending(input.lease.threadId)),
-      ),
-    close: (input) =>
-      threadLock.withThreadLock(input.lease.threadId, async () => {
-        const threadId = input.lease.threadId;
+    splitAndContinue: async (input) => {
+      const batch = await threadLock.withThreadLock(input.lease.threadId, () =>
+        inbox.selectPending(input.lease.threadId),
+      );
+      return adopt(input, batch);
+    },
+    close: async (input) => {
+      const threadId = input.lease.threadId;
+      const disposition = await threadLock.withThreadLock(threadId, async () => {
         // Serialize the terminal decision with remote cancellation, not only the loop's cached flag.
         const receipt = await leaseStore.lockReceipt(input.lease);
         const cause = receipt?.cancelRequested
@@ -324,8 +408,9 @@ export function createDeliveryAdapter(
             batch.some((message) => message.intent === "message") ||
             (batch.some((message) => message.body.kind === "work_context_refresh") &&
               (await inbox.canMaterializeWork(threadId)))
-          )
-            return { kind: "split", adopted: await adopt(input.continueWith, batch) };
+          ) {
+            return { kind: "prepare_split" as const, batch };
+          }
         }
         const completion = await finalizeExecution(deps, {
           threadId,
@@ -340,7 +425,30 @@ export function createDeliveryAdapter(
         }
         await deps.runClaim.release(input.lease);
         await appendPending(threadId);
-        return { kind: "completed", completion };
-      }),
+        return { kind: "completed" as const, completion };
+      });
+      if (disposition.kind === "completed") return disposition;
+
+      const prepared = await prepareAdoption(
+        input.continueWith as DeliveryBoundary,
+        disposition.batch,
+      );
+      return threadLock.withThreadLock(threadId, async () => {
+        const receipt = await leaseStore.lockReceipt(input.lease);
+        if (receipt?.cancelRequested) {
+          const completion = await finalizeExecution(deps, {
+            threadId,
+            assistantTurnId: input.assistantTurnId,
+            cause: { kind: "cancelled", reason: "cancelled" },
+          });
+          await inbox.ack(threadId, receipt.ids);
+          await deps.runClaim.release(input.lease);
+          await appendPending(threadId);
+          return { kind: "completed" as const, completion };
+        }
+        const adopted = await commitAdoption(input.continueWith as DeliveryBoundary, prepared);
+        return { kind: "split" as const, adopted };
+      });
+    },
   };
 }

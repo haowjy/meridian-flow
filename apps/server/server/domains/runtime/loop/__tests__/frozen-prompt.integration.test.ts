@@ -82,7 +82,7 @@ async function fixture(
   await rig.creditLedger.grant({
     userId: thread.userId,
     source: "manual",
-    amountMillicredits: "1000000",
+    amountMillicredits: "10000000",
     reason: "fixture",
   });
   const derive: ThreadAgentSwapDeps = {
@@ -252,6 +252,25 @@ describe("frozen prompt provider requests", () => {
       ),
     ).toHaveLength(1);
 
+    const forkAfterSourceEviction = await forkThreadAgent(rig.derive, {
+      id: crypto.randomUUID(),
+      threadId: rig.thread.id,
+      userId: rig.thread.userId,
+      originTurnId: original.assistantTurnId,
+    });
+    await sendAndRun(forkAfterSourceEviction.thread.id, "cutoff still includes image", []);
+    expect(
+      (await rig.repos.imageInclusions.findByThread(forkAfterSourceEviction.thread.id)).find(
+        (decision) => decision.blockId === originalImageBlock?.id,
+      ),
+    ).toMatchObject({ included: true, decisionTurnId: expect.any(String) });
+    expect(
+      gateway.requests
+        .at(-1)
+        ?.messages.flatMap((message) => message.content)
+        .some((part) => part.type === "image"),
+    ).toBe(true);
+
     await sendAndRun(firstFork.id, "first fork retains source image", []);
     expect(
       (await rig.repos.imageInclusions.findByThread(firstFork.id)).find(
@@ -300,6 +319,34 @@ describe("frozen prompt provider requests", () => {
         (decision) => decision.blockId === sourceImages[0]?.id,
       )?.included,
     ).toBe(false);
+
+    const reverseImage = image("uploads://@/reverse-source.png");
+    const reverseSourceRun = await sendAndRun(rig.thread.id, "fresh source image", [reverseImage]);
+    const reverseImageBlock = (await rig.repos.blocks.listByThread(rig.thread.id)).find((block) => {
+      const content = block.content as { uri?: string } | null;
+      return block.blockType === "image" && content?.uri === reverseImage.uri;
+    });
+    if (!reverseImageBlock) throw new Error("Missing reverse-direction source image block");
+    const reverseFork = await forkThreadAgent(rig.derive, {
+      id: crypto.randomUUID(),
+      threadId: rig.thread.id,
+      userId: rig.thread.userId,
+      originTurnId: reverseSourceRun.assistantTurnId,
+    });
+    await sendAndRun(reverseFork.thread.id, "fork evicts image", [
+      image("uploads://@/reverse-fork-large-1.png"),
+      image("uploads://@/reverse-fork-large-2.png"),
+    ]);
+    expect(
+      (await rig.repos.imageInclusions.findByThread(reverseFork.thread.id)).find(
+        (decision) => decision.blockId === reverseImageBlock.id,
+      )?.included,
+    ).toBe(false);
+    expect(
+      (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
+        (decision) => decision.blockId === reverseImageBlock.id,
+      )?.included,
+    ).toBe(true);
   });
 
   it("keeps one hash through steer, child notice, request-only notice, skill and Work switch across runs", async () => {

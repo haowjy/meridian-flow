@@ -31,6 +31,7 @@ describe("messageTurnFor", () => {
     const { turn } = messageTurnFor(
       message({ provenance: { kind: "writer", actorId: "user-1" } }),
       null,
+      1,
     );
     expect(turn.origin).toBe("writer");
     expect(turn.role).toBe("user");
@@ -40,6 +41,7 @@ describe("messageTurnFor", () => {
     const { turn } = messageTurnFor(
       message({ provenance: { kind: "agent", threadId: "other-thread" as ThreadId } }),
       null,
+      1,
     );
     expect(turn.origin).toBe("system");
     expect(turn.role).toBe("user");
@@ -57,6 +59,7 @@ describe("messageTurnFor", () => {
         },
       }),
       null,
+      1,
     );
     expect(turn.origin).toBe("system");
     expect(turn.role).toBe("system");
@@ -66,6 +69,7 @@ describe("messageTurnFor", () => {
     const { turn } = messageTurnFor(
       message({ provenance: { kind: "system", source: "probe" } }),
       null,
+      1,
     );
     expect(turn.origin).toBe("system");
     expect(turn.role).toBe("user");
@@ -78,6 +82,7 @@ describe("messageTurnFor", () => {
         body: { kind: "work_context_refresh" },
       }),
       null,
+      1,
     );
     expect(turn.origin).toBe("system");
     expect(turn.metadata).toEqual({ kind: "system_update", section: "work_context" });

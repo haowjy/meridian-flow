@@ -5,6 +5,7 @@ import type { Turn } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryAccountSkillInstallStore } from "../../../packages/index.js";
 import type { Gateway, GenerateResult, Message } from "../../gateway/index.js";
+import { ImageAssetResolutionError } from "../../ports/image-asset.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
 import {
   createSpawnToolRegistrations,
@@ -539,30 +540,39 @@ describe("inbox drain", () => {
       uri: "uploads://@/temporary-failure.png",
     };
     let resolutions = 0;
-    const { thread, requests, orchestrator, repos } = await setup({
+    const { thread, requests, orchestrator, repos, send, inbox } = await setup({
       imageAssets: {
         async resolve() {
           resolutions += 1;
-          if (resolutions === 1) throw new Error("temporary object-store timeout");
+          if (resolutions === 1)
+            throw new ImageAssetResolutionError("temporary object-store timeout");
           return { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 5 };
         },
       },
     });
-    const input = {
-      threadId: thread.id,
-      userText: "retry this image",
-      userBlocks: [{ type: "text" as const, text: "retry this image" }, image],
-    };
+    await send(thread.id, "retry this image", {
+      blocks: [{ type: "text", text: "retry this image" }, image],
+    });
 
-    await expect(orchestrator.prepare(input)).rejects.toThrow("temporary object-store timeout");
+    const first = await orchestrator.prepare({ threadId: thread.id, drain: true });
+    await expect(first.execute()).resolves.toMatchObject({
+      status: "error",
+      turn: { status: "error", error: expect.stringContaining("temporary object-store timeout") },
+    });
+    expect(await repos.turns.findById(first.assistantTurnId)).toMatchObject({
+      role: "assistant",
+      status: "error",
+      finishReason: "error",
+    });
     expect(await repos.imageInclusions.findByThread(thread.id)).toEqual([]);
     expect(
       (await repos.turns.listByThread(thread.id)).filter(
         (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
       ),
     ).toHaveLength(0);
+    expect(await inbox.selectPending(thread.id)).toEqual([]);
 
-    const retry = await orchestrator.prepare(input);
+    const retry = await orchestrator.prepare({ threadId: thread.id, userText: "try again" });
     await retry.execute();
     expect(requests).toHaveLength(1);
     expect(
@@ -578,6 +588,54 @@ describe("inbox drain", () => {
         (decision) => decision.blockId === imageBlock?.id,
       )?.included,
     ).toBe(true);
+  });
+
+  it("fails mid-run preparation on the still-running assistant and acknowledges the steer", async () => {
+    const original = {
+      type: "image" as const,
+      documentId: "44444444-4444-4444-8444-000000000004",
+      uri: "uploads://@/original.png",
+    };
+    const steered = {
+      type: "image" as const,
+      documentId: "44444444-4444-4444-8444-000000000005",
+      uri: "uploads://@/steered.png",
+    };
+    let resolutions = 0;
+    const { thread, requests, orchestrator, repos, send, inbox } = await setup({
+      results: [toolCallResult("unknown", "boundary-call")],
+      imageAssets: {
+        async resolve(_context, reference) {
+          resolutions += 1;
+          if (resolutions === 2)
+            throw new ImageAssetResolutionError("temporary object-store timeout");
+          return { mediaType: "image/png", data: reference.uri, sizeBytes: 5 };
+        },
+      },
+      onStream: async (call) => {
+        if (call === 1)
+          await send(thread.id, "steer with image", {
+            blocks: [{ type: "text", text: "steer with image" }, steered],
+          });
+      },
+    });
+    await send(thread.id, "start with image", {
+      blocks: [{ type: "text", text: "start with image" }, original],
+    });
+
+    const run = await orchestrator.prepare({ threadId: thread.id, drain: true });
+    await expect(run.execute()).resolves.toMatchObject({
+      status: "error",
+      turn: { status: "error", error: expect.stringContaining("temporary object-store timeout") },
+    });
+
+    expect(requests).toHaveLength(1);
+    expect(await repos.turns.findById(run.assistantTurnId)).toMatchObject({
+      role: "assistant",
+      status: "error",
+      finishReason: "error",
+    });
+    expect(await inbox.selectPending(thread.id)).toEqual([]);
   });
 
   it("names the loss of an image asset after its first inclusion", async () => {
@@ -715,6 +773,9 @@ describe("inbox drain", () => {
         toolCallResult("unknown", "prefix-call-1"),
         toolCallResult("unknown", "prefix-call-2"),
         textResult("finished"),
+        textResult("between runs"),
+        toolCallResult("unknown", "run-start-eviction-call"),
+        textResult("after run-start eviction"),
       ],
       skill: {
         slug: "writing-principles",
@@ -826,6 +887,41 @@ describe("inbox drain", () => {
       required(requests[2]).correlation?.turnId as TurnId,
     );
     expect(nextAssistant?.prevTurnId).toBe(imageBreak?.id);
+
+    // A later run begins with the previous run's exact provider-visible history.
+    await execute(await orchestrator.prepare({ threadId: thread.id, userText: "across runs" }));
+    expect(requests).toHaveLength(4);
+    expect(
+      startsWith(messageBytes(required(requests[3])), messageBytes(required(requests[2]))),
+    ).toBe(true);
+
+    const previouslyIncluded = (await repos.imageInclusions.findByThread(thread.id)).filter(
+      (decision) => decision.included,
+    );
+    await send(thread.id, "more image context", {
+      blocks: [
+        { type: "text", text: "more image context" },
+        image("44444444-4444-4444-8444-000000000004", "uploads://@/prefix-run-start-1.png"),
+        image("44444444-4444-4444-8444-000000000005", "uploads://@/prefix-run-start-2.png"),
+      ],
+    });
+    await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
+    expect(requests).toHaveLength(6);
+    const runStartRequest = required(requests[4]);
+    const toolRoundRequest = required(requests[5]);
+    expect(
+      messageTexts(runStartRequest.messages).some((text) =>
+        text.includes("Image context changed."),
+      ),
+    ).toBe(true);
+    expect(
+      (await repos.imageInclusions.findByThread(thread.id)).some(
+        (decision) =>
+          !decision.included &&
+          previouslyIncluded.some((before) => before.blockId === decision.blockId),
+      ),
+    ).toBe(true);
+    expect(startsWith(messageBytes(toolRoundRequest), messageBytes(runStartRequest))).toBe(true);
   });
 
   it("persists a drained message as a user turn the next iteration still sees", async () => {

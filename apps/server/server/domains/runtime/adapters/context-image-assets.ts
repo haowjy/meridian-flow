@@ -3,14 +3,7 @@ import type { ProjectContextAvailabilityPort, UploadIdentityPort } from "../../c
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import type { ObjectStorePort } from "../../storage/index.js";
 import { objectStoreKeyFromStorageUrl } from "../../storage/index.js";
-import type { ImageAssetPort } from "../ports/image-asset.js";
-
-export class ImageAssetResolutionError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
-    this.name = "ImageAssetResolutionError";
-  }
-}
+import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
 
 export function createContextImageAssetPort(deps: {
   identities: UploadIdentityPort;
@@ -38,11 +31,11 @@ export function createContextImageAssetPort(deps: {
         { userId: context.actorUserId },
       );
       const available = resolution.resolutions[0];
-      if (available?.kind === "deleted") return null;
-      if (available?.kind !== "available" || available.entry.uri !== reference.uri)
+      if (available?.kind === "indeterminate")
         throw new ImageAssetResolutionError(
-          `Image asset is not currently resolvable: ${reference.uri}`,
+          `Image asset resolution is indeterminate: ${reference.uri}`,
         );
+      if (available?.kind !== "available" || available.entry.uri !== reference.uri) return null;
       const identity = await deps.identities.lookupDocument(reference.documentId);
       if (!identity) return null;
       const mediaType = identity?.mimeType?.split(";")[0]?.trim().toLowerCase() ?? "";
@@ -51,11 +44,10 @@ export function createContextImageAssetPort(deps: {
         !identity.storageUrl ||
         (identity.sizeBytes ?? 0) > options.maxBytes
       ) {
-        if ((identity.sizeBytes ?? 0) > options.maxBytes) return null;
-        throw new ImageAssetResolutionError(`Image asset identity is invalid: ${reference.uri}`);
+        return null;
       }
       const key = objectStoreKeyFromStorageUrl(identity.storageUrl);
-      if (!key) throw new ImageAssetResolutionError(`Image asset key is invalid: ${reference.uri}`);
+      if (!key) return null;
       const object = await deps.objects.get(key);
       if (!object.ok) {
         if (object.error.code === "not_found") return null;
@@ -65,8 +57,7 @@ export function createContextImageAssetPort(deps: {
       }
       if (object.value.bytes.byteLength > options.maxBytes) return null;
       const actualType = object.value.mimeType.split(";")[0]?.trim().toLowerCase();
-      if (actualType !== mediaType)
-        throw new ImageAssetResolutionError(`Image asset type changed: ${reference.uri}`);
+      if (actualType !== mediaType || !actualType.startsWith("image/")) return null;
       return {
         mediaType,
         data: Buffer.from(object.value.bytes).toString("base64"),

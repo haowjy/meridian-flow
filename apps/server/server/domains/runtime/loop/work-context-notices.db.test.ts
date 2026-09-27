@@ -196,6 +196,7 @@ else
       if (!lease) throw new Error("Missing lease");
       const assistant = createLocalTurn({
         threadId: ids.threadId,
+        position: 1,
         prevTurnId: null,
         role: "assistant",
         origin: "assistant",
@@ -334,6 +335,7 @@ else
       if (!lease) throw new Error("Missing lease");
       const assistant = createLocalTurn({
         threadId: ids.threadId,
+        position: 1,
         prevTurnId: null,
         role: "assistant",
         origin: "assistant",
