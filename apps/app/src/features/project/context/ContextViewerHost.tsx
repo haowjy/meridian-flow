@@ -79,7 +79,11 @@ function ContextViewerContent({
   if (read.data.kind === "tracked") {
     return (
       <ReadOnlyViewerFrame header={header}>
-        <TextViewer name={tab.name} content={read.data.content} />
+        <TextViewer
+          name={tab.name}
+          content={read.data.content}
+          markdown={tab.name.toLowerCase().endsWith(".md")}
+        />
       </ReadOnlyViewerFrame>
     );
   }
@@ -91,6 +95,13 @@ function ContextViewerContent({
         footer={imageViewerFooter({ url: read.data.url, name: tab.name })}
       >
         <ImageViewer url={read.data.url} name={tab.name} />
+      </ReadOnlyViewerFrame>
+    );
+  }
+  if (tab.name.toLowerCase().endsWith(".md")) {
+    return (
+      <ReadOnlyViewerFrame header={header}>
+        <TextViewer url={read.data.url} name={tab.name} markdown />
       </ReadOnlyViewerFrame>
     );
   }

@@ -1,15 +1,18 @@
 /** TextViewer — constrained read-only text preview for text and Markdown files. */
 import { Trans } from "@lingui/react/macro";
 import { useEffect, useState } from "react";
+import { Markdown } from "@/rich-content/Markdown";
 
 export function TextViewer({
   url,
   name,
   content,
+  markdown,
 }: {
   url?: string;
   name: string;
   content?: string;
+  markdown?: boolean;
 }) {
   const [text, setText] = useState<string | null>(content ?? null);
   const [failed, setFailed] = useState(false);
@@ -45,6 +48,10 @@ export function TextViewer({
         <p role="status" className="text-sm text-muted-foreground">
           <Trans>Loading preview…</Trans>
         </p>
+      ) : markdown ? (
+        <section aria-label={name}>
+          <Markdown>{text}</Markdown>
+        </section>
       ) : (
         <section aria-label={name}>
           <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-6 text-foreground">

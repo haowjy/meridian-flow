@@ -98,8 +98,14 @@ export function DockShell({
               editorWorkId={file.workId}
               tab={file.tab}
               header={{
-                name: file.tab.name,
-                path: file.tab.path,
+                location: {
+                  name: file.tab.scheme === "scratch" ? "Scratch" : "Uploads",
+                  ...(file.tab.path.split("/").filter(Boolean).length > 1
+                    ? {
+                        folder: file.tab.path.split("/").filter(Boolean).slice(0, -1).join(", "),
+                      }
+                    : {}),
+                },
                 action: onOpenFileInEditor ? (
                   <Button
                     variant="outline"

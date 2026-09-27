@@ -2,20 +2,26 @@
  * ReadOnlyViewerFrame — shared chrome for non-tracked file viewers.
  *
  * Hosts compose this frame around viewer bodies and optional viewer-owned
- * footers. Header ownership is explicit: pass a `header` object when the
- * surrounding chrome does not already name the file; omit it for phone document
- * screens whose top-bar breadcrumb is the filename chrome.
+ * footers. Header ownership is explicit: pass a file header when the surrounding
+ * chrome does not name the file, or a location header when it already does.
+ * Phone document screens omit the header because their top bar owns the file.
  */
 import type { ReactNode } from "react";
 
 export type ReadOnlyViewerHeader = {
-  name: string;
-  path: string;
   action?: ReactNode;
-};
+} & (
+  | {
+      /** Writer-facing location label for hosts whose chrome already names the file. */
+      location: { name: string; folder?: string };
+      name?: never;
+      path?: never;
+    }
+  | { location?: never; name: string; path: string }
+);
 
 export type ReadOnlyViewerFrameProps = {
-  /** Name/path header. Omitted when host chrome already names the file. */
+  /** File identity or writer-facing location, depending on the host's chrome. */
   header?: ReadOnlyViewerHeader;
   /** Inline viewer surface (image, PDF object, etc). */
   children: ReactNode;
@@ -36,8 +42,23 @@ export function ReadOnlyViewerFrame({ header, children, footer }: ReadOnlyViewer
           }}
         >
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold text-foreground">{header.name}</div>
-            <div className="truncate font-mono text-meta text-ink-subtle">{header.path}</div>
+            {"location" in header && header.location ? (
+              <>
+                <div className="truncate text-sm font-semibold text-foreground">
+                  {header.location.name}
+                </div>
+                {header.location.folder ? (
+                  <div className="truncate text-meta text-muted-foreground">
+                    {header.location.folder}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <div className="truncate text-sm font-semibold text-foreground">{header.name}</div>
+                <div className="truncate font-mono text-meta text-ink-subtle">{header.path}</div>
+              </>
+            )}
           </div>
           {header.action}
         </header>
