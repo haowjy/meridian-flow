@@ -2,9 +2,10 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadActivityNode } from "@meridian/contracts/threads";
-import { Users } from "lucide-react";
+import { ExternalLink, LocateFixed, Network } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { requestConversationReveal } from "./conversation-reveal";
 import { SubagentMark } from "./SubagentMark";
 import { resolveSubagentName, subagentCurrentToolLabel, subagentStatus } from "./subagent-display";
@@ -60,7 +61,7 @@ export function SubagentHeader({
           aria-haspopup="dialog"
           className="focus-ring inline-flex items-center gap-1.5 whitespace-nowrap rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
-          <Users className="size-3.5" aria-hidden />
+          <Network className="size-3.5" aria-hidden />
           <span aria-hidden="true">{nodes.length}</span>
           {running.length ? (
             <span className="size-1.5 animate-pulse rounded-full bg-primary" aria-hidden="true" />
@@ -150,21 +151,33 @@ function SubagentPopoverRow({
         ) : null}
       </span>
       {node.originTurnId ? (
-        <button
-          type="button"
-          onClick={() => onShow(node)}
-          className="focus-ring rounded px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground"
-        >
-          <Trans>Show</Trans>
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={t`Jump to in chat`}
+              onClick={() => onShow(node)}
+              className="focus-ring grid size-7 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <LocateFixed className="size-3.5" aria-hidden />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{t`Jump to in chat`}</TooltipContent>
+        </Tooltip>
       ) : null}
-      <button
-        type="button"
-        onClick={() => openThread(node.threadId)}
-        className="focus-ring rounded px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground"
-      >
-        <Trans>Open</Trans>
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={t`Open subagent chat`}
+            onClick={() => openThread(node.threadId)}
+            className="focus-ring grid size-7 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <ExternalLink className="size-3.5" aria-hidden />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{t`Open subagent chat`}</TooltipContent>
+      </Tooltip>
     </li>
   );
 }

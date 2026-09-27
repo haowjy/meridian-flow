@@ -2146,6 +2146,10 @@ msgstr "Invoking the {skill} skill…"
 msgid "Italic"
 msgstr "Italic"
 
+#: src/features/chat/SubagentHeader.tsx
+msgid "Jump to in chat"
+msgstr "Jump to in chat"
+
 #: src/features/chat/DraftDock.tsx
 msgid "Keep"
 msgstr "Keep"
@@ -2733,8 +2737,8 @@ msgid "Only part of this change could be reversed."
 msgstr "Only part of this change could be reversed."
 
 #: src/features/chat/SubagentHeader.tsx
-msgid "Open"
-msgstr "Open"
+#~ msgid "Open"
+#~ msgstr "Open"
 
 #. placeholder {0}: work.name
 #: src/features/project/work/WorkCard.tsx
@@ -2836,6 +2840,7 @@ msgstr "Open results"
 #: src/features/chat/AssistantTurn.tsx
 #: src/features/chat/RunningSubagentsStrip.tsx
 #: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/SubagentHeader.tsx
 msgid "Open subagent chat"
 msgstr "Open subagent chat"
 
@@ -3527,8 +3532,8 @@ msgid "Shared an attachment"
 msgstr "Shared an attachment"
 
 #: src/features/chat/SubagentHeader.tsx
-msgid "Show"
-msgstr "Show"
+#~ msgid "Show"
+#~ msgstr "Show"
 
 #: src/features/project/chat-index/ChatIndex.tsx
 msgid "Show chats"

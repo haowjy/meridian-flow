@@ -2146,6 +2146,10 @@ msgstr ""
 msgid "Italic"
 msgstr ""
 
+#: src/features/chat/SubagentHeader.tsx
+msgid "Jump to in chat"
+msgstr "跳转到聊天中的位置"
+
 #: src/features/chat/DraftDock.tsx
 msgid "Keep"
 msgstr ""
@@ -2729,8 +2733,8 @@ msgid "Only part of this change could be reversed."
 msgstr ""
 
 #: src/features/chat/SubagentHeader.tsx
-msgid "Open"
-msgstr ""
+#~ msgid "Open"
+#~ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/project/work/WorkCard.tsx
@@ -2832,8 +2836,9 @@ msgstr ""
 #: src/features/chat/AssistantTurn.tsx
 #: src/features/chat/RunningSubagentsStrip.tsx
 #: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/SubagentHeader.tsx
 msgid "Open subagent chat"
-msgstr ""
+msgstr "打开子代理聊天"
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Open this document in a project to upload figures."
@@ -3523,8 +3528,8 @@ msgid "Shared an attachment"
 msgstr "分享了附件"
 
 #: src/features/chat/SubagentHeader.tsx
-msgid "Show"
-msgstr ""
+#~ msgid "Show"
+#~ msgstr ""
 
 #: src/features/project/chat-index/ChatIndex.tsx
 msgid "Show chats"
