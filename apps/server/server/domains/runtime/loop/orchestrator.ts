@@ -83,21 +83,16 @@ import type {
 } from "../../threads/index.js";
 import {
   agentRequestMetadata,
-  encodeImageInclusionMetadata,
-  type ImageContextBreak,
+  compactionTurnMetadata,
   loadThreadConversationContext,
   readThreadActivity,
   ThreadConversationContextError,
   writerSendMetadata,
 } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
-import type {
-  GenerateRequest,
-  GenerateResult,
-  Gateway as LlmGateway,
-  Tool,
-} from "../gateway/index.js";
+import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
+import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
 import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
@@ -113,8 +108,9 @@ import {
 } from "./activated-skills.js";
 import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
+import { type CompactionDecision, CompactionPreparationError } from "./compaction/decision.js";
+import { executeCompaction } from "./compaction-phase.js";
 import type { TerminalCause } from "./execution-finalizer.js";
-import type { ImageInclusionDecision } from "./image-context.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
@@ -138,6 +134,7 @@ import {
 import type { RunClaim, ThreadPhase } from "./ports.js";
 import { createPrefixCacheStateService, type PrefixCacheState } from "./prefix-cache-state.js";
 import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
+import { prepareRequestContext } from "./request-preparation.js";
 import { createRunSessions } from "./run-session.js";
 import {
   type DrainRunLoopInput,
@@ -157,7 +154,6 @@ import { dispatchToolCall } from "./tool-dispatch.js";
 import { createTurnAccounting, type TurnAccounting } from "./turn-accounting.js";
 import {
   type AssembledNextTurnContext,
-  assembleNextTurnContext,
   persistPreparedPromptBake,
 } from "./turn-context-assembly.js";
 import type { WorkContextReader } from "./work-context.js";
@@ -173,6 +169,8 @@ class RequestPreparationError extends Error {
 }
 
 function writerFacingPreparationError(error: Error): ReturnType<typeof meridianErrorFromSystem> {
+  if (error instanceof CompactionPreparationError)
+    return meridianErrorFromSystem(error.reason, error.message);
   if (error instanceof ThreadConversationContextError) {
     return meridianErrorFromSystem(
       "thread_context_error",
@@ -213,6 +211,7 @@ export interface OrchestratorRepositories {
 }
 
 export interface OrchestratorDeps {
+  summarizer: ConversationSummarizer;
   gateway: LlmGateway;
   toolExecutor: ToolExecutor;
   referenceReader: ReferenceReader;
@@ -293,7 +292,10 @@ export function createOrchestrator(deps: OrchestratorDeps) {
         input.error instanceof RequestPreparationError ? input.error.original : input.error;
       const contextError = error instanceof ThreadConversationContextError ? error : null;
       const imageResolutionError = error instanceof ImageAssetResolutionError ? error : null;
-      const preparationFailure = contextError ?? imageResolutionError;
+      const preparationFailure =
+        contextError ??
+        imageResolutionError ??
+        (error instanceof CompactionPreparationError ? error : null);
       const requestPreparationFailed = input.error instanceof RequestPreparationError;
       const outcome = await deps.delivery.close({
         lease: input.lease,
@@ -303,7 +305,7 @@ export function createOrchestrator(deps: OrchestratorDeps) {
           : {
               kind: "failed",
               reason:
-                contextError?.code ??
+                (error instanceof CompactionPreparationError ? error.reason : contextError?.code) ??
                 (imageResolutionError
                   ? "image_resolution_failed"
                   : requestPreparationFailed
@@ -313,10 +315,7 @@ export function createOrchestrator(deps: OrchestratorDeps) {
               error: preparationFailure
                 ? writerFacingPreparationError(preparationFailure)
                 : requestPreparationFailed
-                  ? meridianErrorFromSystem(
-                      "request_preparation_failed",
-                      "This message couldn't be prepared. Try again.",
-                    )
+                  ? writerFacingPreparationError(asError(error))
                   : error instanceof Error
                     ? error.message
                     : String(error),
@@ -610,6 +609,7 @@ async function runDrainTurn(
         }
       }
       if (preparationError) {
+        preflight = null;
         skillBody = null;
         plan = makePlan([]);
         assistantTurn.prevTurnId = plan.leafTurnId ?? prevTurnId;
@@ -623,6 +623,16 @@ async function runDrainTurn(
       assistantTurn.position = nextTurnPosition(
         imageUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
       );
+      if (preflight?.compaction.kind === "compact") {
+        assistantTurn.role = "compaction";
+        assistantTurn.origin = "system";
+        assistantTurn.status = "pending";
+        assistantTurn.metadata = compactionTurnMetadata({
+          trigger: "auto",
+          compactedThrough: preflight.compaction.plan.compactedThrough,
+          pinnedRequestTurnId: preflight.compaction.plan.pinnedRequest.id,
+        });
+      }
       const value = {
         assistantTurn,
         skillBody,
@@ -690,7 +700,7 @@ async function runDrainTurn(
     userTurnId: referenceUserTurnId,
     assistantTurnId: assistantTurn.id,
     execute: async () => {
-      if (preparationError) throw preparationError;
+      if (preparationError) throw new RequestPreparationError(preparationError);
       if (!preflight) throw new Error("Request context is unavailable after preparation failed");
       return executeLoop(
         deps,
@@ -706,6 +716,7 @@ async function runDrainTurn(
         ],
         inheritedBlocks,
         preflight.assembled,
+        preflight.compaction,
         input.treeBudget ??
           createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
       );
@@ -1295,141 +1306,6 @@ function buildGenerateRequestFromAssembled(input: {
   };
 }
 
-async function prepareRequestContext(input: {
-  deps: OrchestratorDeps;
-  thread: Thread;
-  threadId: ThreadId;
-  referenceUserTurnId: TurnId;
-  assistantTurnId: TurnId;
-  turns: Turn[];
-  blocks: Block[];
-  baseTools?: Tool[];
-  readReferences?: boolean;
-  signal?: AbortSignal;
-}): Promise<{
-  assembled: AssembledNextTurnContext;
-  events: OrchestratorEvent[];
-}> {
-  const referenceUpdates =
-    input.readReferences === false
-      ? []
-      : await loadReferenceReads({
-          blocks: input.blocks,
-          userTurnId: input.referenceUserTurnId,
-          threadId: input.threadId,
-          assistantTurnId: input.assistantTurnId,
-          reader: input.deps.referenceReader,
-          signal: input.signal,
-        });
-  const referencesById = new Map(referenceUpdates.map((block) => [block.id, block]));
-  const blocks = input.blocks.map((block) => referencesById.get(block.id) ?? block);
-  const events: OrchestratorEvent[] = referenceUpdates.map((block) => ({
-    type: "block.upserted",
-    block: contentForBlockInput({
-      id: block.id,
-      turnId: block.turnId as TurnId,
-      responseId: block.responseId,
-      blockType: block.blockType,
-      sequence: block.sequence,
-      content: block.content,
-      status: "complete",
-    }),
-  }));
-  const assembled = await assembleNextTurnContext({
-    thread: input.thread,
-    turns: input.turns,
-    blocks,
-    agentRevisions: input.deps.agentRevisions,
-    toolRegistry: input.deps.toolRegistry,
-    gateway: input.deps.gateway,
-    imageAssets: input.deps.imageAssets,
-    imageInclusions: input.deps.repos.imageInclusions,
-    baseTools: input.baseTools ?? input.deps.toolExecutor.getDefinitions?.(),
-    promptBakes: input.deps.repos.promptBakes,
-    persistBake: false,
-    bakeInitialPrompt: input.deps.repos.threads.bakeInitialPrompt.bind(input.deps.repos.threads),
-    workContext: input.deps.workContext,
-    eventSink: input.deps.eventSink,
-    persistImageProjection: async (projection) => {
-      const updates = buildImageProjectionEvents({
-        threadId: input.threadId,
-        afterTurnId: projection.afterTurnId,
-        afterTurnPosition: projection.afterTurnPosition,
-        decisions: projection.decisions,
-        breaks: projection.breaks,
-      });
-      events.push(...updates.events);
-      return { turns: updates.turns, blocks: updates.blocks };
-    },
-  });
-  return { assembled, events };
-}
-
-function buildImageProjectionEvents(input: {
-  threadId: ThreadId;
-  afterTurnId: TurnId | null;
-  afterTurnPosition: number | null;
-  decisions: readonly ImageInclusionDecision[];
-  breaks: readonly ImageContextBreak[];
-}): { turns: Turn[]; blocks: Block[]; events: OrchestratorEvent[] } {
-  const turns: Turn[] = [];
-  const blocks: Block[] = [];
-  const events: OrchestratorEvent[] = [];
-  let decisionTurnId = input.afterTurnId;
-  if (input.breaks.length > 0) {
-    if (input.afterTurnPosition === null)
-      throw new Error("Image context break has no prior position");
-    const turn = createLocalTurn({
-      threadId: input.threadId,
-      position: nextTurnPosition({ position: input.afterTurnPosition }),
-      prevTurnId: input.afterTurnId,
-      role: "system",
-      origin: "system",
-      status: "complete",
-      metadata: encodeImageInclusionMetadata(input.breaks),
-    });
-    const block = contentForBlockInput({
-      id: turn.id,
-      turnId: turn.id,
-      blockType: "text",
-      sequence: 0,
-      textContent: imageContextBreakText(input.breaks),
-      status: "complete",
-    });
-    turns.push(turn);
-    blocks.push(localBlockFromEvent(block));
-    decisionTurnId = turn.id;
-    events.push({ type: "turn.created", turn }, { type: "block.upserted", block });
-  }
-  if (input.decisions.length > 0 && !decisionTurnId) {
-    throw new Error("Image inclusion decisions require a deciding turn");
-  }
-  events.push(
-    ...input.decisions.map(({ blockId, included }) => ({
-      type: "image.inclusion_decided" as const,
-      threadId: input.threadId,
-      blockId,
-      decisionTurnId: decisionTurnId as TurnId,
-      included,
-    })),
-  );
-  return { turns, blocks, events };
-}
-
-function imageContextBreakText(breaks: readonly ImageContextBreak[]): string {
-  const lines = [
-    "Image context changed.",
-    ...breaks.map((entry) =>
-      entry.reason === "budget_eviction"
-        ? `Removed ${entry.uri} to fit the image context budget.`
-        : entry.reason === "asset_unavailable"
-          ? `The model request no longer includes ${entry.uri} because its asset is unavailable.`
-          : `The model could not include ${entry.uri} because its asset is unavailable.`,
-    ),
-  ];
-  return `<system_update>\n${lines.join("\n")}\n</system_update>`;
-}
-
 /** Staged edits belong to a response scope, which rotates at a Work switch. */
 function createResponseScope(input: {
   deps: OrchestratorDeps;
@@ -1572,6 +1448,7 @@ async function executeLoop(
   initialTurns: Turn[],
   inheritedBlocks: Block[],
   initialContext: AssembledNextTurnContext,
+  initialCompaction: CompactionDecision,
   treeBudget: TreeBudget,
 ): Promise<Turn> {
   const { gateway, repos, eventWriter } = deps;
@@ -1599,6 +1476,7 @@ async function executeLoop(
 
   let currentAssistantTurn: Turn = assistantTurn;
   let preparedContext: AssembledNextTurnContext | undefined = initialContext;
+  let pendingSummaryResponses: ModelResponseReceivedRow[] = [];
   let responseScope: ReturnType<typeof createResponseScope> | undefined;
   const allTurns: Turn[] = [...initialTurns, assistantTurn];
   const allBlocks: Block[] = [
@@ -1672,11 +1550,18 @@ async function executeLoop(
           turns: prepared.assembled.imageContextUpdates.turns,
           blocks: prepared.assembled.imageContextUpdates.blocks,
           requiresSplit: prepared.events.length > 0,
+          compaction: prepared.compaction,
         };
       },
     };
   }
-  async function acceptBoundary(result: AdoptedBatch) {
+  async function acceptBoundary(
+    result: AdoptedBatch,
+  ): Promise<Awaited<ReturnType<typeof drainInbox>>> {
+    if (result.completed) {
+      const index = allTurns.findIndex((turn) => turn.id === result.completed?.id);
+      allTurns[index] = result.completed;
+    }
     allTurns.push(...result.drain.turns);
     for (const block of result.drain.blocks) {
       const index = allBlocks.findIndex((existing) => existing.id === block.id);
@@ -1693,7 +1578,29 @@ async function executeLoop(
     if (result.preparationFailure !== undefined) {
       throw new RequestPreparationError(result.preparationFailure);
     }
+    if (result.compaction) return compact(result.compaction);
     return result.drain;
+  }
+
+  async function compact(decision: Extract<CompactionDecision, { kind: "compact" }>) {
+    await publishPhase("compacting");
+    const result = await executeCompaction({
+      deps,
+      input,
+      thread,
+      currentTurn: currentAssistantTurn,
+      allTurns,
+      allBlocks,
+      boundary: boundaryInput(),
+      decision,
+      recordResponses: (rows) => {
+        pendingSummaryResponses = rows;
+      },
+    });
+    pendingSummaryResponses = [];
+    preparedContext = result.preparedContext;
+    if (result.summaryBlock) allBlocks.push(localBlockFromEvent(result.summaryBlock));
+    return acceptBoundary(result.successor);
   }
 
   async function rollbackActiveResponse(): Promise<void> {
@@ -1707,6 +1614,7 @@ async function executeLoop(
       lease: input.lease,
       assistantTurnId: currentAssistantTurn.id,
       cause,
+      modelResponses: pendingSummaryResponses,
       ...(continueOnPending ? { continueWith: boundaryInput() } : {}),
     });
     if (outcome.kind === "split") {
@@ -1751,6 +1659,14 @@ async function executeLoop(
     );
 
   try {
+    if (initialCompaction.kind === "compact") {
+      queuedDrain = await acceptBoundary({
+        next: currentAssistantTurn,
+        split: false,
+        drain: { turns: [], blocks: [], events: [], ackIds: [] },
+        compaction: initialCompaction,
+      });
+    }
     let iteration = 0;
     // The in-process abort is the fast cancel path; the durable lease flag is the
     // cross-process one, read at each iteration's safe boundary. Either set means
@@ -2170,7 +2086,11 @@ async function executeLoop(
       // here should not hide the error that broke the response.
     }
     const state = await deps.runClaim.read(input.threadId);
-    if (input.signal?.aborted || (state?.kind === "awake" && state.cancelRequested)) {
+    if (
+      input.signal?.aborted ||
+      (err instanceof DOMException && err.name === "AbortError") ||
+      (state?.kind === "awake" && state.cancelRequested)
+    ) {
       await exitRun(false, cancelTerminal);
     } else if (
       err instanceof RequestPreparationError ||

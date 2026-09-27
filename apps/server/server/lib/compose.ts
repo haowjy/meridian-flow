@@ -142,6 +142,7 @@ import {
   type ToolRegistry,
   type TurnRunner,
   type UserTurnAdmission,
+  unavailableConversationSummarizer,
   type WorkContextNotices,
   type WorkContextReader,
 } from "../domains/runtime/index.js";
@@ -782,6 +783,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
   });
   const orchestrator = createOrchestrator({
+    summarizer: unavailableConversationSummarizer,
     headSeq: (id) => threadEventHub.headSeq(id),
     onRunStarted: refreshSubagentActivity,
     onRunSettled(threadId) {

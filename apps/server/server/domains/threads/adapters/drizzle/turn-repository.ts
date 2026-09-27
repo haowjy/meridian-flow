@@ -145,6 +145,7 @@ export function createDrizzleTurnRepository(
             parentTurnId: input.prevTurnId ?? null,
             position,
             promptBakeId: input.promptBakeId ?? null,
+            compactionModel: input.compactionModel ?? null,
             role: input.role,
             origin: input.origin,
             aiWriteMode: input.writeMode ?? null,
@@ -251,6 +252,7 @@ export function createDrizzleTurnRepository(
         completedAt?: Date | null;
         error?: string | null;
         promptBakeId?: Turn["promptBakeId"];
+        compactionModel?: string | null;
         metadata?: Turn["metadata"];
       } = { status: input.status };
       if (input.finishReason !== undefined) patch.finishReason = input.finishReason;
@@ -258,6 +260,7 @@ export function createDrizzleTurnRepository(
         patch.completedAt = input.completedAt === null ? null : toDate(input.completedAt);
       }
       if (input.error !== undefined) patch.error = input.error;
+      if (input.compactionModel !== undefined) patch.compactionModel = input.compactionModel;
       if (input.promptBakeId !== undefined) patch.promptBakeId = input.promptBakeId;
       if (input.metadata !== undefined) patch.metadata = input.metadata;
       const [row] = await currentDrizzleDb(db)

@@ -29,6 +29,7 @@ import {
   createInMemoryRuntimeDelivery,
   createInMemoryThreadLock,
 } from "../../adapters/in-memory/loop-ports.js";
+import { unavailableConversationSummarizer } from "../../adapters/unavailable-conversation-summarizer.js";
 import { createWriterTurnProducer } from "../../admission/writer-turn-producer.js";
 import type { Gateway, StreamEvent } from "../../gateway/index.js";
 import { createInMemoryModelRequestDebugStore } from "../../model-request-debug/index.js";
@@ -120,6 +121,7 @@ export function createRuntimeHarness(
   };
   const deps: OrchestratorDeps & { creditLedger: CreditLedger } = {
     creditLedger,
+    summarizer: unavailableConversationSummarizer,
     gateway,
     toolExecutor: overrides.toolExecutor ?? createToolExecutor(toolRegistry),
     referenceReader: {

@@ -1,8 +1,14 @@
 /** Atomic inbox transitions; journal publication is part of every committed mutation. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
+import type {
+  Block,
+  ModelResponseReceivedRow,
+  OrchestratorEvent,
+  Turn,
+} from "@meridian/contracts/threads";
 import type { Notice } from "../../notices/index.js";
 import type { WorkContextNotices } from "../../projects/index.js";
+import type { CompactionDecision } from "./compaction/decision.js";
 import type { FinalizedExecution, TerminalCause } from "./execution-finalizer.js";
 import type { drainInbox, InboxDrain } from "./inbox-context.js";
 import type { InboxMessage, InboxReader, Lease, MessageDraft } from "./ports.js";
@@ -20,12 +26,15 @@ export type DeliveryBoundary = Pick<
   lease: Lease;
   currentTurn: Turn;
   signal?: AbortSignal;
+  /** Completes a placeholder in the same transaction as late adoption and reservation. */
+  completeCurrent?: (preparationFailure: unknown | undefined) => Promise<Turn>;
   /** Prepare image decisions/breaks before the next assistant turn is reserved. */
   prepareNextContext: (drain: InboxDrain) => Promise<{
     events: OrchestratorEvent[];
     turns: Turn[];
     blocks: Block[];
     requiresSplit: boolean;
+    compaction?: CompactionDecision;
   }>;
 };
 export type DeliverySelection = {
@@ -38,6 +47,8 @@ export type AdoptedBatch = {
   drain: InboxDrain;
   next: Turn;
   split: boolean;
+  completed?: Turn;
+  compaction?: Extract<CompactionDecision, { kind: "compact" }>;
   preparationFailure?: unknown;
 };
 export interface RuntimeDelivery
@@ -72,6 +83,7 @@ export interface RuntimeDelivery
     lease: Lease;
     assistantTurnId: TurnId;
     cause: TerminalCause;
+    modelResponses?: ModelResponseReceivedRow[];
     continueWith?: DeliveryBoundary;
   }): Promise<
     { kind: "split"; adopted: AdoptedBatch } | { kind: "completed"; completion: FinalizedExecution }

@@ -320,6 +320,7 @@ export interface Turn {
   status: TurnStatus;
   /** Set once on a completed prompt-epoch boundary. */
   promptBakeId: PromptBakeId | null;
+  compactionModel?: string | null;
   finishReason: FinishReason | null;
   model?: string | null;
   provider?: string | null;

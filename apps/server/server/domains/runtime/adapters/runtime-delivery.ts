@@ -1,7 +1,7 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
 import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { NoticePort } from "../../notices/index.js";
-import { SystemUpdateMetadataCodec } from "../../threads/index.js";
+import { compactionTurnMetadata, SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
@@ -255,6 +255,8 @@ export function createDeliveryAdapter(
     while (leaf && !input.knownTurnIds.has(leaf)) {
       const turn = await deps.repos.turns.findById(leaf);
       if (!turn) throw new Error(`Missing causal turn: ${leaf}`);
+      if (turn.role === "compaction" && turn.status === "pending")
+        throw new Error("Unexpected pending placeholder in adoption tail");
       const message = batch.find((entry) => entry.id === turn.id);
       const systemUpdate = SystemUpdateMetadataCodec.safeParse(turn.metadata);
       if (message) committed.unshift(message);
@@ -329,7 +331,13 @@ export function createDeliveryAdapter(
       expectedLeafPosition: expectedLeafTurn?.position ?? null,
       drain,
       prepared,
-      split: !!preparationFailure || split || drain.events.length > 0 || prepared.requiresSplit,
+      split:
+        !!input.completeCurrent ||
+        prepared.compaction?.kind === "compact" ||
+        !!preparationFailure ||
+        split ||
+        drain.events.length > 0 ||
+        prepared.requiresSplit,
       ...(preparationFailure === undefined ? {} : { preparationFailure }),
     };
   }
@@ -355,14 +363,18 @@ export function createDeliveryAdapter(
     const blocks = [...drain.blocks, ...prepared.blocks];
     const events = [...drain.events, ...prepared.events];
     let next = currentTurn;
+    let completed: typeof currentTurn | undefined;
+    const compaction = prepared.compaction?.kind === "compact" ? prepared.compaction : undefined;
 
     if (split) {
-      const completed = {
-        ...currentTurn,
-        status: "complete" as const,
-        finishReason: "end_turn" as const,
-        completedAt: new Date().toISOString(),
-      };
+      completed = input.completeCurrent
+        ? await input.completeCurrent(preparationFailure)
+        : {
+            ...currentTurn,
+            status: "complete" as const,
+            finishReason: "end_turn" as const,
+            completedAt: new Date().toISOString(),
+          };
       const leaf = turns.at(-1)?.id ?? expectedLeaf ?? currentTurn.id;
       next = createLocalTurn({
         threadId,
@@ -371,11 +383,23 @@ export function createDeliveryAdapter(
             (expectedLeafPosition === null ? null : { position: expectedLeafPosition }),
         ),
         prevTurnId: leaf,
-        role: "assistant",
-        origin: "assistant",
-        status: "streaming",
+        role: compaction ? "compaction" : "assistant",
+        origin: compaction ? "system" : "assistant",
+        status: compaction ? "pending" : "streaming",
+        ...(compaction
+          ? {
+              metadata: compactionTurnMetadata({
+                trigger: "auto",
+                compactedThrough: compaction.plan.compactedThrough,
+                pinnedRequestTurnId: compaction.plan.pinnedRequest.id,
+              }),
+            }
+          : {}),
         writeMode: currentTurn.writeMode,
       });
+      const completedTurn = completed;
+      const receipt = await leaseStore.lockReceipt(lease);
+      drain.ackIds = [...new Set([...(receipt?.ids ?? []), ...drain.ackIds])];
       await persistAndAppendTurnStartEvents(
         deps,
         threadId,
@@ -383,14 +407,16 @@ export function createDeliveryAdapter(
         async () => ({
           result: undefined,
           events: [
-            { type: "turn.completed", turn: completed },
+            ...(!input.completeCurrent
+              ? [{ type: "turn.completed" as const, turn: completedTurn }]
+              : []),
             ...events,
             { type: "turn.created", turn: next },
           ],
         }),
         { afterEvents: () => leaseStore.bindTurn(lease, next.id, drain.ackIds) },
       );
-      await deps.repos.threads.updateCost(threadId, "0", 1);
+      if (currentTurn.role === "assistant") await deps.repos.threads.updateCost(threadId, "0", 1);
     } else if (events.length > 0) {
       await persistAndAppendEvents(deps, threadId, async () => ({ result: undefined, events }));
     }
@@ -413,6 +439,8 @@ export function createDeliveryAdapter(
       drain,
       next,
       split,
+      completed,
+      compaction,
       ...(preparationFailure === undefined ? {} : { preparationFailure }),
     };
   }
@@ -522,6 +550,14 @@ export function createDeliveryAdapter(
             return { kind: "prepare_split" as const };
           }
         }
+        if (input.modelResponses?.length)
+          await persistAndAppendEvents(deps, threadId, async () => ({
+            result: undefined,
+            events: input.modelResponses!.map((response) => ({
+              type: "model.response_received" as const,
+              response,
+            })),
+          }));
         const completion = await finalizeExecution(deps, {
           threadId,
           assistantTurnId: input.assistantTurnId,

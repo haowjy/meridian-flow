@@ -22,6 +22,7 @@ export {
   type InMemoryRunClaimOptions,
   type InMemoryRunStarter,
 } from "./adapters/in-memory/loop-ports.js";
+export { unavailableConversationSummarizer } from "./adapters/unavailable-conversation-summarizer.js";
 export {
   type AdmissionPersistencePort,
   createDrizzleAdmissionRecords,
@@ -119,7 +120,6 @@ export {
   type RunTurnPort,
   type WriterRunTurnInput,
 } from "./loop/run-turn-port.js";
-
 export type { DeliveryProducer, RuntimeDelivery } from "./loop/runtime-delivery.js";
 export { sweepWakes } from "./loop/sweep-wakes.js";
 export {
@@ -133,6 +133,7 @@ export {
   WORK_CONTEXT_ACTIVE_LIMIT,
   type WorkContextReader,
 } from "./loop/work-context.js";
+export type { ConversationSummarizer, SummaryOutcome } from "./ports/conversation-summarizer.js";
 export type { ImageAssetPort } from "./ports/image-asset.js";
 export { unavailableImageAssetPort } from "./ports/image-asset.js";
 export {

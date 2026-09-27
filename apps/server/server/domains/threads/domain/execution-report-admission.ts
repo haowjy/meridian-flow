@@ -28,9 +28,9 @@ export function assertExecutionReportAdmission(
     child?.kind !== "subagent" ||
     child.ref !== input.handle ||
     assistant?.threadId !== child.id ||
-    assistant.role !== "assistant"
+    (assistant.role !== "assistant" && assistant.role !== "compaction")
   )
-    throw new Error("Execution report requires the admitted child assistant turn and handle");
+    throw new Error("Execution report requires the admitted child execution turn and handle");
 
   if (input.origin === "thread_run") {
     if (

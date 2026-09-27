@@ -79,6 +79,7 @@ export function mapTurn(row: typeof schema.turns.$inferSelect): Turn {
     writeMode: row.aiWriteMode as Turn["writeMode"],
     status: row.status as Turn["status"],
     promptBakeId: row.promptBakeId,
+    compactionModel: row.compactionModel,
     finishReason: row.finishReason as Turn["finishReason"],
     model: row.model,
     provider: row.provider,

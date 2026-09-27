@@ -36,7 +36,7 @@ import {
   type AvailableSkillListing,
   resolveThreadModelAvailableSkills,
 } from "./available-skills.js";
-import { projectActiveHistory } from "./compaction/index.js";
+import { projectActiveHistory, resolveCompactionTrigger } from "./compaction/index.js";
 import {
   assembleComposedSystemPrompt,
   isThreadPromptFrozen,
@@ -89,6 +89,7 @@ export interface AssembledNextTurnContext {
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
   resolvedModel: ModelInfo | null;
   baked: boolean;
+  compactionTriggerTokens: number | null;
   /** First-attempt prompt freeze staged for the delivery commit, if still needed. */
   pendingBake?: PromptBakeContent;
   generateRequest: Pick<
@@ -100,6 +101,44 @@ export interface AssembledNextTurnContext {
 
 function functionToolsFromAdvertised(tools: Tool[] | undefined): FunctionTool[] {
   return (tools ?? []).filter((tool): tool is FunctionTool => tool.type === "function");
+}
+
+export async function composeLivePromptBake(input: AssembleNextTurnContextInput) {
+  const thread = input.thread;
+  const agentContext = await resolveAgentThreadTurnContext({
+    thread,
+    agentRevisions: input.agentRevisions,
+    toolRegistry: input.toolRegistry,
+    baseTools: input.baseTools,
+  });
+  const availableSkills = await resolveThreadModelAvailableSkills({
+    thread,
+    agentRevisions: input.agentRevisions,
+  });
+  const namedSubagents = await resolveNamedSubagentListings({
+    thread,
+    agentRevisions: input.agentRevisions,
+  });
+  const workContext = (await input.workContext.renderForThread(thread.id as ThreadId)).text;
+  const bakedPrompt = assembleComposedSystemPrompt({
+    basePrompt: agentContext.agentBody,
+    appendPrompt: agentContext.appendPrompt,
+    workContext,
+    availableSkills,
+    namedSubagents,
+    subagentGuidance: agentContext.subagentGuidance,
+  });
+
+  const content = {
+    composedSystemPrompt: bakedPrompt,
+    bakedSkillSlugs: availableSkills.map((skill) => skill.slug),
+    bakedTools: agentContext.tools as unknown as PromptBake["bakedTools"],
+  };
+  const bakeContent = {
+    ...content,
+    contentHash: hashPromptBakeContent(content),
+  };
+  return { bakeContent, bakedPrompt, availableSkills, namedSubagents, workContext, agentContext };
 }
 
 /** Assemble the next model request context — shared by orchestrator and debug preview. */
@@ -139,33 +178,8 @@ export async function assembleNextTurnContext(
     systemPrompt = bake.composedSystemPrompt;
     tools = toolsFromBakedJson(bake.bakedTools) ?? tools;
   } else {
-    const availableSkills = await resolveThreadModelAvailableSkills({
-      thread,
-      agentRevisions: input.agentRevisions,
-    });
-    const namedSubagents = await resolveNamedSubagentListings({
-      thread,
-      agentRevisions: input.agentRevisions,
-    });
-    const workContext = (await input.workContext.renderForThread(thread.id as ThreadId)).text;
-    const bakedPrompt = assembleComposedSystemPrompt({
-      basePrompt: agentContext.agentBody,
-      appendPrompt: agentContext.appendPrompt,
-      workContext,
-      availableSkills,
-      namedSubagents,
-      subagentGuidance: agentContext.subagentGuidance,
-    });
-
-    const content = {
-      composedSystemPrompt: bakedPrompt,
-      bakedSkillSlugs: availableSkills.map((skill) => skill.slug),
-      bakedTools: tools as unknown as PromptBake["bakedTools"],
-    };
-    const bakeContent = {
-      ...content,
-      contentHash: hashPromptBakeContent(content),
-    };
+    const { bakeContent, bakedPrompt, availableSkills, namedSubagents, workContext } =
+      await composeLivePromptBake(input);
     if (input.persistBake && input.bakeInitialPrompt) {
       const result = await input.bakeInitialPrompt(thread.id as ThreadId, {
         ...bakeContent,
@@ -250,6 +264,13 @@ export async function assembleNextTurnContext(
     gatewayParams,
     resolvedModel: resolvedModel ?? null,
     baked,
+    compactionTriggerTokens: resolvedModel
+      ? resolveCompactionTrigger({
+          ...agentContext.compaction,
+          contextWindow: resolvedModel.contextWindow,
+          maxOutputTokens: resolvedModel.maxOutputTokens,
+        }).thresholdTokens
+      : null,
     ...(pendingBake ? { pendingBake } : {}),
     generateRequest: {
       messages,

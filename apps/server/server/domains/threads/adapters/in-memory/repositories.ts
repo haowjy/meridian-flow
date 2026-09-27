@@ -132,6 +132,7 @@ function defaultTurn(input: CreateTurnInput): Omit<Turn, "position"> {
     writeMode: input.writeMode ?? null,
     status: input.status ?? "pending",
     promptBakeId: input.promptBakeId ?? null,
+    compactionModel: input.compactionModel ?? null,
     parentTurnId: input.prevTurnId ?? null,
     finishReason: null,
     model: null,
@@ -605,6 +606,7 @@ export function createInMemoryRepositories(
               : toIsoString(input.completedAt)
             : turn.completedAt,
         error: input.error !== undefined ? input.error : turn.error,
+        compactionModel: input.compactionModel ?? turn.compactionModel ?? null,
         promptBakeId:
           input.promptBakeId !== undefined ? input.promptBakeId : (turn.promptBakeId ?? null),
         metadata: input.metadata !== undefined ? input.metadata : (turn.metadata ?? null),

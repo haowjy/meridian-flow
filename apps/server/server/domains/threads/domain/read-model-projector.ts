@@ -79,6 +79,7 @@ function turnToCreateInput(turn: Turn): CreateTurnInput {
     createdAt: turn.createdAt,
     prevTurnId: turn.prevTurnId ?? turn.parentTurnId ?? null,
     promptBakeId: turn.promptBakeId ?? null,
+    compactionModel: turn.compactionModel ?? null,
     role: turn.role,
     origin: turn.origin,
     writeMode: turn.writeMode,
@@ -95,6 +96,7 @@ function turnToLifecycleStatusUpdate(turn: Turn): UpdateTurnStatusInput {
     completedAt: turn.completedAt,
     error: turn.error,
     promptBakeId: turn.promptBakeId ?? null,
+    compactionModel: turn.compactionModel ?? null,
     metadata: turn.metadata ?? null,
   };
 }

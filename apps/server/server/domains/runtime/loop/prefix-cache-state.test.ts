@@ -11,6 +11,7 @@ import {
   createPrefixCacheStateService,
   derivePrefixCacheState,
   type PrefixCacheHistory,
+  selectReusablePrefixResponse,
 } from "./prefix-cache-state.js";
 
 const TTL_MS = 60_000;
@@ -447,4 +448,21 @@ describe("derivePrefixCacheState", () => {
       reason: "uncached",
     });
   });
+});
+
+// TTL is a billing/cache fact; it must not discard a reusable token-count baseline.
+it("retains an expired response baseline but rejects model and completed-boundary changes", () => {
+  const input = { model: MODEL, promptCache: CACHE, nowMs: NOW_MS + TTL_MS, history: history() };
+  expect(derivePrefixCacheState(input)).toEqual({ state: "cold", reason: "ttl_expired" });
+  expect(selectReusablePrefixResponse(input).response).toMatchObject({
+    inputTokens: 100,
+    requestMessageCount: 2,
+  });
+  expect(selectReusablePrefixResponse({ ...input, model: "other" }).response).toBeNull();
+  expect(
+    selectReusablePrefixResponse({
+      ...input,
+      history: history({ turns: [turn("turn-1", 1), turn("cut", 2, { role: "compaction" })] }),
+    }).response,
+  ).toBeNull();
 });

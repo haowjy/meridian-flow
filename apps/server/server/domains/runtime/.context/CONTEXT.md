@@ -551,3 +551,18 @@ candidate/delivery count. Domains retain their own claims, transactions and
 paging cursors. Shutdown stops timers and awaits passes for up to five seconds before draining
 the Yjs gateway and flushing observability. Still-running lanes emit
 `shutdown.abandoned`; their promises retain observed rejection handlers.
+
+## Compaction request boundaries
+
+`loop/request-preparation.ts` measures the assembled request and plans against raw
+history. The token baseline comes from the cache service's reusable-prefix
+selection with TTL ignored. Default triggers remain off until the real summarizer
+ships; explicit retained Agent thresholds opt in.
+
+Compaction is two delivery transitions around an unlocked `ConversationSummarizer`
+call. The first reserves pending C instead of an assistant. `compaction-phase.ts`
+then prepares late arrivals and a live rebake over provisional completed C; its
+successor commit joins `beginPromptEpoch`, adoption, notice consumption and B's
+reservation. A moved leaf repeats only successor preparation, never summarization.
+An impossible tail reserves no C. A failed summary errors C and replies below the
+latest message. `composeLivePromptBake` serves initial bakes and rebakes alike.

@@ -521,3 +521,12 @@ key off `role`/`metadata`, not this column.
   AG-UI event schemas.
 - **Depends on `@meridian/database/schema`** — Drizzle table definitions for
   the Meridian Flow Postgres schema.
+
+## Compaction persistence
+
+Pending compaction turns reserve their position without a model or bake pointer.
+Only a completed compaction requires `compaction_model`. The successor transaction
+sets its write-once bake pointer through `beginPromptEpoch` and reserves the reply.
+Child report selectors use `executionTurnId` and terminals use `terminalTurnId`;
+the first reservation can be a compaction rather than an assistant. Model response
+rows include the request message count alongside usage and cache predictions.

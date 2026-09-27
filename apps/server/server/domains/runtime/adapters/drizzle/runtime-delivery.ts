@@ -31,12 +31,12 @@ export function createDrizzleRuntimeDelivery(
           and(
             eq(schema.threadRunLeases.cancelRequested, false),
             sql`EXISTS (SELECT 1 FROM ${schema.turns} WHERE ${schema.turns.id} = ${turnId}
-                AND ${schema.turns.threadId} = ${lease.threadId} AND ${schema.turns.role} = 'assistant')`,
+                AND ${schema.turns.threadId} = ${lease.threadId} AND (${schema.turns.role} = 'assistant' OR (${schema.turns.role} = 'compaction' AND ${schema.turns.status} = 'pending')))`,
             ownedLease(lease),
           ),
         )
         .returning({ turnId: schema.threadRunLeases.turnId });
-      if (!bound) throw new Error("Cannot bind assistant turn after losing live run lease");
+      if (!bound) throw new Error("Cannot bind current turn after losing live run lease");
     },
 
     async setAdoptedMessageIds(lease, messageIds) {

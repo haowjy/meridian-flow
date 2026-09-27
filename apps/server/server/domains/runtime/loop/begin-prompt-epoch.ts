@@ -23,6 +23,7 @@ type ComposePromptBake = Omit<PromptBakeContent, "contentHash">;
 
 export interface BoundaryCompletion {
   blocks: BlockUpsertedRow[];
+  compactionModel?: string;
   metadata?: JsonValue | null;
   modelResponses?: ModelResponseReceivedRow[];
   completedAt?: string;
@@ -71,6 +72,7 @@ export async function beginPromptEpoch(
       completedAt,
       error: null,
       promptBakeId: bake.id,
+      compactionModel: input.completion.compactionModel ?? null,
       metadata: promptEpochMetadata(completionMetadata, input.cause),
     };
     const events: OrchestratorEvent[] = [

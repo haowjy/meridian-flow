@@ -409,6 +409,7 @@ export interface CreateTurnInput {
   createdAt?: string;
   prevTurnId?: TurnId | null;
   promptBakeId?: PromptBakeId | null;
+  compactionModel?: string | null;
   role: TurnRole;
   /** No default: every creation path must state who authored the turn. */
   origin: TurnOrigin;
@@ -424,6 +425,7 @@ export interface UpdateTurnStatusInput {
   completedAt?: string | null;
   error?: string | null;
   promptBakeId?: PromptBakeId | null;
+  compactionModel?: string | null;
   metadata?: JsonValue | null;
 }
 

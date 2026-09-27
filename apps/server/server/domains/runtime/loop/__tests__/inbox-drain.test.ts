@@ -359,7 +359,7 @@ describe("inbox drain", () => {
     expect(
       await repos.executionReports.findByExecution(thread.id, writer.assistantTurnId),
     ).toMatchObject({
-      assistantTurnId: writer.assistantTurnId,
+      executionTurnId: writer.assistantTurnId,
       deliveryMode: "none",
       origin: "thread_run",
       outcome: null,
@@ -371,7 +371,7 @@ describe("inbox drain", () => {
     expect(
       await repos.executionReports.findByExecution(thread.id, queued.assistantTurnId),
     ).toMatchObject({
-      assistantTurnId: queued.assistantTurnId,
+      executionTurnId: queued.assistantTurnId,
       deliveryMode: "none",
       origin: "thread_run",
       outcome: null,
