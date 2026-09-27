@@ -1,7 +1,7 @@
 /** Normalized identity and lifecycle for every writer-facing subagent surface. */
 
 import { parseInvocationCard } from "@meridian/contracts/components";
-import type { Turn } from "@meridian/contracts/protocol";
+import type { Thread, Turn } from "@meridian/contracts/protocol";
 import type { ThreadActivityNode } from "@meridian/contracts/threads";
 import { subagentCurrentToolLabel } from "./display";
 import { readSubagentUpdateMetadata } from "./update";
@@ -65,6 +65,38 @@ export function runFromActivity(node: ThreadActivityNode): SubagentRun {
     originTurnId: node.originTurnId ?? null,
     parentThreadId: node.parentThreadId ?? null,
     deliveryMode: node.deliveryMode ?? null,
+  };
+}
+
+export function runFromThread(
+  thread: Thread,
+  savedStatus: "running" | "succeeded" | "failed" | "cancelled" | null,
+  startedAt?: string | null,
+  endedAt?: string | null,
+): SubagentRun {
+  return {
+    threadId: thread.id,
+    ref: null,
+    execution: null,
+    agentName: thread.agentName?.trim() || "Subagent",
+    description: thread.title?.trim() || null,
+    status: statusFromSources({
+      savedRunning: savedStatus === "running",
+      outcome:
+        savedStatus === "succeeded"
+          ? savedStatus
+          : savedStatus === "failed" || savedStatus === "cancelled"
+            ? savedStatus
+            : undefined,
+      live: savedStatus === "running" && !endedAt,
+      endedAt,
+    }),
+    startedAt: startedAt ?? null,
+    endedAt: endedAt ?? null,
+    liveTool: null,
+    originTurnId: null,
+    parentThreadId: thread.parentThreadId ?? null,
+    deliveryMode: null,
   };
 }
 

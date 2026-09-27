@@ -68,7 +68,7 @@ export function DockHeader({
         {view === "chat" && threadId ? (
           <SubagentHeader
             threadId={threadId}
-            nodes={activity.activity.descendants.filter((node) => node.parentThreadId === threadId)}
+            nodes={activity.activity.descendants}
             openThread={openChat}
           />
         ) : null}

@@ -1,14 +1,9 @@
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadSnapshotAncestor } from "@meridian/contracts/protocol";
 import { ChevronLeft } from "lucide-react";
-import {
-  Elapsed,
-  formatSubagentElapsed,
-  resolveSubagentName,
-  subagentDescription,
-  subagentStatus,
-} from "@/features/chat/subagent/display";
-import { SubagentMark } from "@/features/chat/subagent/SubagentMark";
+import { resolveSubagentName } from "@/features/chat/subagent/display";
+import { runFromThread } from "@/features/chat/subagent/run-model";
+import { SubagentIdentity } from "@/features/chat/subagent/SubagentRow";
 
 export function SubagentPathRow({
   subagent,
@@ -25,8 +20,7 @@ export function SubagentPathRow({
   endedAt?: string | null;
   onOpenParent: (threadId: string) => void;
 }) {
-  const name = resolveSubagentName(subagent);
-  const description = subagentDescription(subagent);
+  const run = runFromThread(subagent, runStatus, startedAt, endedAt);
   return (
     <nav
       aria-label={t`Subagent chat path`}
@@ -53,26 +47,7 @@ export function SubagentPathRow({
         ))}
         {ancestors.length ? <li className="text-muted-foreground">/</li> : null}
         <li className="flex shrink-0 items-center gap-1.5 font-medium text-foreground">
-          <SubagentMark
-            agentName={subagent.agentName}
-            status={subagentStatus(runStatus, runStatus === "running")}
-            className="size-5 text-[10px]"
-          />
-          {name}
-          {description ? (
-            <span className="max-w-60 truncate font-normal text-muted-foreground">
-              {description}
-            </span>
-          ) : null}
-          {startedAt ? (
-            <span className="font-normal tabular-nums text-muted-foreground">
-              {runStatus === "running" ? (
-                <Elapsed startedAt={startedAt} />
-              ) : (
-                formatSubagentElapsed(startedAt, endedAt)
-              )}
-            </span>
-          ) : null}
+          <SubagentIdentity run={run} />
         </li>
       </ol>
     </nav>
