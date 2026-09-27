@@ -566,10 +566,6 @@ msgstr "Back to {title}"
 msgid "Back to chat"
 msgstr "Back to chat"
 
-#: src/features/chat/IndependentChatView.tsx
-#~ msgid "Back to home"
-#~ msgstr "Back to home"
-
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Back to live"
@@ -741,10 +737,6 @@ msgstr "Chat away"
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Chat context"
 msgstr "Chat context"
-
-#: src/features/chat/IndependentChatView.tsx
-msgid "Chat couldn’t load"
-msgstr "Chat couldn’t load"
 
 #: src/features/chat/CreationComposer.tsx
 #~ msgid "Chat creation is still being reconciled."
@@ -1296,7 +1288,6 @@ msgstr "Create file or folder"
 msgid "Create it now and the link starts working. Nothing about the link changes."
 msgstr "Create it now and the link starts working. Nothing about the link changes."
 
-#: src/features/chat/IndependentChatView.tsx
 #: src/features/home/NewProjectView.tsx
 #: src/features/home/ProjectLibrary.tsx
 msgid "Create project"
@@ -2083,10 +2074,6 @@ msgstr "Loading {0}"
 msgid "Loading agents…"
 msgstr "Loading agents…"
 
-#: src/features/chat/IndependentChatView.tsx
-msgid "Loading chat…"
-msgstr "Loading chat…"
-
 #: src/features/project/chat-index/ChatIndexLoading.tsx
 msgid "Loading chats"
 msgstr "Loading chats"
@@ -2331,7 +2318,6 @@ msgstr "New"
 
 #: src/features/chat/ChatThreadHeader.tsx
 #: src/features/chat/ChatView.tsx
-#: src/features/chat/IndependentChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/features/project/chat/ChatScreen.tsx
@@ -2759,10 +2745,6 @@ msgstr "Profile"
 #: src/features/home/NewProjectView.tsx
 #~ msgid "Project couldn’t be created. Try again."
 #~ msgstr "Project couldn’t be created. Try again."
-
-#: src/features/chat/IndependentChatView.tsx
-msgid "Project couldn’t load"
-msgstr "Project couldn’t load"
 
 #: src/features/home/NewProjectView.tsx
 msgid "Project created, but it couldn’t open. Try again."
@@ -4124,7 +4106,6 @@ msgstr "Usage"
 msgid "User"
 msgstr "User"
 
-#: src/features/chat/IndependentChatView.tsx
 #: src/features/home/NewProjectView.tsx
 #: src/features/project/shell/WorkspaceNavBody.tsx
 msgid "View projects"

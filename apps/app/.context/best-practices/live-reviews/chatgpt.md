@@ -2,7 +2,7 @@
 
 Date: 2026-06-05
 
-Live browser sampling at `chatgpt.com` (desktop ~960–1440px and mobile ~390px) with side-by-side snapshots of Meridian Flow at `https://phase-1.app.meridian.localhost/` (home, independent `/chat/:id`, project workspace chat). Patterns only — not a visual clone. Warm Paper stays distinct.
+Live browser sampling at `chatgpt.com` (desktop ~960–1440px and mobile ~390px) with side-by-side snapshots of Meridian Flow at `https://phase-1.app.meridian.localhost/` (home and project workspace chat). Patterns only — not a visual clone. Warm Paper stays distinct.
 
 **Sampling limits:** No existing conversation history in the test account; sending a live message was blocked by automation policy. Streaming, stop, regenerate, and active-thread layout transitions are **not observed** in this session — noted under blockers.
 
@@ -108,7 +108,7 @@ Meridian Flow already matches several structural choices (viewport-locked shell,
 1. **Keep 16px minimum on composer inputs** — ChatGPT aligns with Meridian Flow AGENTS.md iOS baseline; verify `Composer` textarea meets this.
 2. **Cap answer column width** — ChatGPT ~632px vs Meridian Flow `--container-chat-column: 48rem` (768px); Meridian Flow is wider — acceptable for research prose, but consider tightening assistant answer measure separately.
 3. **Sidebar row density can be slightly tighter than home** — ChatGPT packs more threads per viewport than Meridian Flow’s padded thread list; tune `--sidebar` spacing without losing 44px touch targets on mobile drawer.
-4. **Low chrome on independent chat** — ChatGPT mobile minimizes header to hamburger + model; Meridian Flow `/chat/:id` TopBar (back + Create project) is appropriate research chrome — keep it, don’t add ChatGPT’s upgrade funnel.
+4. **Low chrome on mobile chat** — ChatGPT minimizes its header to hamburger + model; compare this against Meridian Flow's project workspace navigation without copying its upgrade funnel.
 5. **Pill composer shape is not required** — adopt spacing and affordance density, not ChatGPT’s exact border-radius / monochrome palette.
 
 ---

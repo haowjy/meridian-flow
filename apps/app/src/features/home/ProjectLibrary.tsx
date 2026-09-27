@@ -4,7 +4,7 @@ import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { useProjectListStatus } from "@/client/query/useProjectList";
-import { useIndependentProjectIds, useProjectStore } from "@/client/stores";
+import { useProjectStore } from "@/client/stores";
 import { MeridianMark } from "@/components/app/MeridianMark";
 import { Button } from "@/components/ui/button";
 import { AccountMenu } from "@/features/account/AccountMenu";
@@ -13,9 +13,7 @@ import { displayProjectTitle } from "@/lib/project-title";
 
 export function ProjectLibrary() {
   const { projects, isError, refetch } = useProjectListStatus();
-  const independentIds = useIndependentProjectIds();
   const now = useProjectStore((state) => state.now);
-  const visible = projects?.filter((project) => !independentIds.has(project.id)) ?? null;
 
   return (
     <main className="app-scroll h-full bg-background text-foreground">
@@ -45,7 +43,7 @@ export function ProjectLibrary() {
             </Button>
           </div>
 
-          {isError && !visible?.length ? (
+          {isError && !projects?.length ? (
             <div className="mt-10" role="alert">
               <p className="text-sm">
                 <Trans>Projects couldn’t load.</Trans>
@@ -54,11 +52,11 @@ export function ProjectLibrary() {
                 <Trans>Retry loading</Trans>
               </Button>
             </div>
-          ) : visible === null ? (
+          ) : projects === null ? (
             <p className="mt-10 text-sm text-ink-muted" role="status">
               <Trans>Loading projects…</Trans>
             </p>
-          ) : visible.length === 0 ? (
+          ) : projects.length === 0 ? (
             <div className="mt-10 border-t border-border py-9">
               <h2 className="text-xl font-semibold">
                 <Trans>No projects yet</Trans>
@@ -80,7 +78,7 @@ export function ProjectLibrary() {
                 </div>
               )}
               <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                {visible.map((project) => {
+                {projects.map((project) => {
                   const title = displayProjectTitle(project.title);
                   return (
                     <li key={project.id} className="min-w-0">

@@ -11,6 +11,7 @@ import { Markdown } from "@/rich-content/Markdown";
 import { ActivityRow } from "./ActivityRow";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
+import { useOpenChatThread } from "./ChatThreadNavigation";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
 import { ErrorBlock } from "./ErrorBlock";
 import { groupDeliverySegments } from "./group-delivery-segments";
@@ -168,6 +169,7 @@ function DeliveryEventRow({
   childThreadId?: string;
   title?: string;
 }) {
+  const openThread = useOpenChatThread();
   const metadata =
     turn.metadata && typeof turn.metadata === "object" && !Array.isArray(turn.metadata)
       ? (turn.metadata as Record<string, unknown>)
@@ -187,12 +189,17 @@ function DeliveryEventRow({
         {childThreadId ? (
           <>
             {" "}
-            <a
-              className="rounded-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              href={`/chat/${childThreadId}`}
-            >
-              Open
-            </a>
+            {openThread ? (
+              <button
+                type="button"
+                className="rounded-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => openThread(childThreadId)}
+              >
+                Open
+              </button>
+            ) : (
+              <span>Open</span>
+            )}
           </>
         ) : null}
       </ActivityRow>

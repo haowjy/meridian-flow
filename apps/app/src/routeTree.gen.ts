@@ -19,7 +19,6 @@ import { Route as ApiAuthDevLoginRouteImport } from './routes/api/auth/dev-login
 import { Route as ApiAuthCallbackRouteImport } from './routes/api/auth/callback'
 import { Route as AuthenticatedProjectsNewRouteImport } from './routes/_authenticated/projects/new'
 import { Route as AuthenticatedPProjectIdRouteImport } from './routes/_authenticated/p/$projectId'
-import { Route as AuthenticatedChatThreadIdRouteImport } from './routes/_authenticated/chat/$threadId'
 import { Route as AuthenticatedPProjectIdSplatRouteImport } from './routes/_authenticated/p/$projectId/$'
 
 const LogoutRoute = LogoutRouteImport.update({
@@ -82,12 +81,6 @@ const AuthenticatedPProjectIdRoute = AuthenticatedPProjectIdRouteImport.update({
   path: '/p/$projectId',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedChatThreadIdRoute =
-  AuthenticatedChatThreadIdRouteImport.update({
-    id: '/chat/$threadId',
-    path: '/chat/$threadId',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 const AuthenticatedPProjectIdSplatRoute =
   AuthenticatedPProjectIdSplatRouteImport.update({
     id: '/$',
@@ -103,7 +96,6 @@ export interface FileRoutesByFullPath {
   '/logout': typeof LogoutRoute
   '/auth-check': typeof AuthenticatedAuthCheckRoute
   '/billing': typeof AuthenticatedBillingRoute
-  '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/p/$projectId': typeof AuthenticatedPProjectIdRouteWithChildren
   '/projects/new': typeof AuthenticatedProjectsNewRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
@@ -118,7 +110,6 @@ export interface FileRoutesByTo {
   '/auth-check': typeof AuthenticatedAuthCheckRoute
   '/billing': typeof AuthenticatedBillingRoute
   '/': typeof AuthenticatedIndexRoute
-  '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/p/$projectId': typeof AuthenticatedPProjectIdRouteWithChildren
   '/projects/new': typeof AuthenticatedProjectsNewRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
@@ -135,7 +126,6 @@ export interface FileRoutesById {
   '/_authenticated/auth-check': typeof AuthenticatedAuthCheckRoute
   '/_authenticated/billing': typeof AuthenticatedBillingRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
-  '/_authenticated/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/_authenticated/p/$projectId': typeof AuthenticatedPProjectIdRouteWithChildren
   '/_authenticated/projects/new': typeof AuthenticatedProjectsNewRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
@@ -152,7 +142,6 @@ export interface FileRouteTypes {
     | '/logout'
     | '/auth-check'
     | '/billing'
-    | '/chat/$threadId'
     | '/p/$projectId'
     | '/projects/new'
     | '/api/auth/callback'
@@ -167,7 +156,6 @@ export interface FileRouteTypes {
     | '/auth-check'
     | '/billing'
     | '/'
-    | '/chat/$threadId'
     | '/p/$projectId'
     | '/projects/new'
     | '/api/auth/callback'
@@ -183,7 +171,6 @@ export interface FileRouteTypes {
     | '/_authenticated/auth-check'
     | '/_authenticated/billing'
     | '/_authenticated/'
-    | '/_authenticated/chat/$threadId'
     | '/_authenticated/p/$projectId'
     | '/_authenticated/projects/new'
     | '/api/auth/callback'
@@ -287,13 +274,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPProjectIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/chat/$threadId': {
-      id: '/_authenticated/chat/$threadId'
-      path: '/chat/$threadId'
-      fullPath: '/chat/$threadId'
-      preLoaderRoute: typeof AuthenticatedChatThreadIdRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
     '/_authenticated/p/$projectId/$': {
       id: '/_authenticated/p/$projectId/$'
       path: '/$'
@@ -322,7 +302,6 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAuthCheckRoute: typeof AuthenticatedAuthCheckRoute
   AuthenticatedBillingRoute: typeof AuthenticatedBillingRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
-  AuthenticatedChatThreadIdRoute: typeof AuthenticatedChatThreadIdRoute
   AuthenticatedPProjectIdRoute: typeof AuthenticatedPProjectIdRouteWithChildren
   AuthenticatedProjectsNewRoute: typeof AuthenticatedProjectsNewRoute
 }
@@ -331,7 +310,6 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAuthCheckRoute: AuthenticatedAuthCheckRoute,
   AuthenticatedBillingRoute: AuthenticatedBillingRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
-  AuthenticatedChatThreadIdRoute: AuthenticatedChatThreadIdRoute,
   AuthenticatedPProjectIdRoute: AuthenticatedPProjectIdRouteWithChildren,
   AuthenticatedProjectsNewRoute: AuthenticatedProjectsNewRoute,
 }
