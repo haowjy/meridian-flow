@@ -1549,7 +1549,11 @@ async function executeLoop(
     // the compaction successor itself do not grant another emergency retry.
     if (
       result.split &&
-      result.drain.turns.some((turn) => !allTurns.some((existing) => existing.id === turn.id))
+      result.drain.turns.some(
+        (turn) =>
+          result.drain.ackIds.includes(turn.id) &&
+          !allTurns.some((existing) => existing.id === turn.id),
+      )
     )
       retriedContextOverflow = false;
     allTurns.push(...result.drain.turns);
