@@ -36,6 +36,11 @@ export function subagentBlockRevealTarget(
     .at(-1);
 }
 
+/** A smooth scroll to the block settles within this window before it flashes. */
+const REVEAL_SCROLL_SETTLE_MS = 450;
+/** Matches `subagent-block-reveal` in globals.css. */
+const REVEAL_FLASH_MS = 1600;
+
 export function useTurnRevealLanding({
   threadId,
   turns,
@@ -61,6 +66,7 @@ export function useTurnRevealLanding({
   const request = useTurnReveal(threadId);
   const scroll = useRef(scrollToIndex);
   const resolve = useRef(resolveTurnId);
+  const blockReveal = useRef<(() => void) | null>(null);
   resolve.current = resolveTurnId;
   scroll.current = scrollToIndex;
 
@@ -78,46 +84,20 @@ export function useTurnRevealLanding({
     }
     const viewport = viewportRef.current;
     if (!viewport) return;
-    let raf = 0;
-    let flashTimer = 0;
-    let cancelled = false;
 
     const land = () => {
       scroll.current(index);
+      // Landing settles the request, which re-runs this effect; the block
+      // flash therefore runs outside the effect so that cleanup can't cancel it.
       request.landed();
-      const subagentThreadId = request.subagentThreadId;
-      if (subagentThreadId) {
-        const deadline = performance.now() + 5000;
-        const revealBlock = () => {
-          if (cancelled) return;
-          const row = viewport.querySelector<HTMLElement>(
-            `[data-turn-id="${CSS.escape(targetTurnId)}"]`,
-          );
-          const target = row
-            ? subagentBlockRevealTarget(row, subagentThreadId, request.subagentBlock)
-            : undefined;
-          if ((!target || !row?.getBoundingClientRect().height) && performance.now() < deadline) {
-            raf = requestAnimationFrame(revealBlock);
-            return;
-          }
-          if (!target) return;
-          const disclosureKey = target.dataset.subagentDisclosureKey;
-          if (request.subagentBlock !== "card" && disclosureKey) {
-            revealSubagentDisclosure(disclosureKey);
-          }
-          target.scrollIntoView({
-            behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-              ? "auto"
-              : "smooth",
-            block: "center",
-          });
-          target.classList.add("subagent-reveal-flash");
-          flashTimer = window.setTimeout(
-            () => target.classList.remove("subagent-reveal-flash"),
-            900,
-          );
-        };
-        raf = requestAnimationFrame(revealBlock);
+      if (request.subagentThreadId) {
+        blockReveal.current?.();
+        blockReveal.current = revealSubagentBlock({
+          viewport,
+          turnId: targetTurnId,
+          subagentThreadId: request.subagentThreadId,
+          block: request.subagentBlock,
+        });
       }
     };
 
@@ -136,11 +116,61 @@ export function useTurnRevealLanding({
       });
       observer.observe(viewport);
     }
-    return () => {
-      cancelled = true;
-      observer?.disconnect();
-      cancelAnimationFrame(raf);
-      window.clearTimeout(flashTimer);
-    };
+    return () => observer?.disconnect();
   }, [historySettled, request, turns, viewportRef]);
+
+  useEffect(() => () => blockReveal.current?.(), []);
+}
+
+/**
+ * Finds the subagent block once its turn has rendered, opens its disclosure,
+ * scrolls it into view, and flashes it after the scroll settles. Returns a
+ * cancel for a newer reveal or unmount.
+ */
+function revealSubagentBlock({
+  viewport,
+  turnId,
+  subagentThreadId,
+  block,
+}: {
+  viewport: HTMLElement;
+  turnId: string;
+  subagentThreadId: string;
+  block?: SubagentRevealBlock;
+}): () => void {
+  let raf = 0;
+  let timer = 0;
+  let flashed: HTMLElement | null = null;
+  const deadline = performance.now() + 5000;
+  const find = () => {
+    const row = viewport.querySelector<HTMLElement>(`[data-turn-id="${CSS.escape(turnId)}"]`);
+    const target = row ? subagentBlockRevealTarget(row, subagentThreadId, block) : undefined;
+    if ((!target || !row?.getBoundingClientRect().height) && performance.now() < deadline) {
+      raf = requestAnimationFrame(find);
+      return;
+    }
+    if (!target) return;
+    const disclosureKey = target.dataset.subagentDisclosureKey;
+    if (block !== "card" && disclosureKey) revealSubagentDisclosure(disclosureKey);
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    target.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
+    // Flash once the block has arrived: started during a smooth scroll, most
+    // of the flash would play while the block is still sliding in.
+    const flash = () => {
+      flashed = target;
+      target.classList.add("subagent-reveal-flash");
+      timer = window.setTimeout(() => {
+        target.classList.remove("subagent-reveal-flash");
+        flashed = null;
+      }, REVEAL_FLASH_MS);
+    };
+    if (reducedMotion) flash();
+    else timer = window.setTimeout(flash, REVEAL_SCROLL_SETTLE_MS);
+  };
+  raf = requestAnimationFrame(find);
+  return () => {
+    cancelAnimationFrame(raf);
+    window.clearTimeout(timer);
+    flashed?.classList.remove("subagent-reveal-flash");
+  };
 }

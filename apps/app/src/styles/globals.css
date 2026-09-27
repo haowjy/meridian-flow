@@ -949,7 +949,7 @@
 .subagent-reveal-flash {
   outline: 2px solid transparent;
   outline-offset: 2px;
-  animation: subagent-block-reveal 900ms ease-out;
+  animation: subagent-block-reveal 1600ms ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
