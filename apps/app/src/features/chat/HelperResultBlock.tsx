@@ -1,7 +1,7 @@
 import type { ComponentBlockProps } from "./component-registry";
 import { SpawnReportCard } from "./SpawnReportCard";
 import { useSubagentActivity } from "./SubagentActivityContext";
-import { resolveSubagentName, subagentCurrentToolLabel } from "./subagent-display";
+import { subagentCurrentToolLabel } from "./subagent-display";
 
 export function HelperResultBlock({ content, invocationResult }: ComponentBlockProps) {
   const props = content.props as {
@@ -21,7 +21,7 @@ export function HelperResultBlock({ content, invocationResult }: ComponentBlockP
     : null;
   return (
     <SpawnReportCard
-      agentName={resolveSubagentName({ agentName: props.agentName, title: props.title ?? null })}
+      agentName={props.agentName}
       title={props.title ?? null}
       status={props.status}
       outcome={props.outcome}

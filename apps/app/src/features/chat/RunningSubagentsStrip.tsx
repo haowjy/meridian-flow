@@ -29,7 +29,7 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
               className="focus-ring flex min-w-0 flex-1 items-center gap-2 rounded-sm py-1 text-left text-caption text-ink-muted"
             >
               <SubagentMark
-                name={resolveSubagentName(single)}
+                agentName={single.agentName}
                 status="running"
                 className="size-5 text-[10px]"
               />
@@ -70,7 +70,7 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
                 {descendants.slice(0, 3).map((node) => (
                   <span key={node.threadId} className="rounded-full bg-background p-[2px]">
                     <SubagentMark
-                      name={resolveSubagentName(node)}
+                      agentName={node.agentName}
                       status="running"
                       className="size-5 text-[10px] after:!animate-none"
                     />
@@ -99,7 +99,11 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
             return (
               <li key={node.threadId} className="py-1 text-sm">
                 <div className="flex min-w-0 items-center gap-2">
-                  <SubagentMark name={name} status="running" className="size-5 text-[10px]" />
+                  <SubagentMark
+                    agentName={node.agentName}
+                    status="running"
+                    className="size-5 text-[10px]"
+                  />
                   <span className="min-w-0 flex-1 truncate">
                     <span className="font-medium">{name}</span>
                     {node.title && node.title !== name ? (

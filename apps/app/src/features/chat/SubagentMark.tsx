@@ -3,17 +3,19 @@
 import { t } from "@lingui/core/macro";
 import { Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { subagentMarkName } from "./subagent-display";
 
 export function SubagentMark({
-  name,
+  agentName,
   status,
   className,
 }: {
-  name: string;
+  agentName?: string | null;
   status: "running" | "done" | "stopped";
   className?: string;
 }) {
-  const initial = name.trim().charAt(0).toLocaleUpperCase() || "?";
+  const name = subagentMarkName(agentName);
+  const initial = name.charAt(0).toLocaleUpperCase();
   return (
     <span
       role="img"

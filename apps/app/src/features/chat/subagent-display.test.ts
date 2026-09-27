@@ -9,6 +9,7 @@ import {
   formatSubagentElapsed,
   resolveSubagentName,
   subagentCurrentToolLabel,
+  subagentMarkName,
   subagentStatus,
 } from "./subagent-display";
 
@@ -17,6 +18,13 @@ describe("subagent display", () => {
     expect(resolveSubagentName({ agentName: "  Scout  ", title: "Long task" })).toBe("Scout");
     expect(resolveSubagentName({ agentName: null, title: "Long task" })).toBe("Long task");
     expect(resolveSubagentName({ agentName: null, title: null })).toBe("Subagent");
+  });
+
+  it("uses agent identity for marks instead of falling back to the task title", () => {
+    expect(subagentMarkName("  Scout  ")).toBe("Scout");
+    expect(subagentMarkName(null)).toBe("Subagent");
+    expect(subagentMarkName("   ")).toBe("Subagent");
+    expect(subagentMarkName("Subagent")).toBe("Subagent");
   });
 
   it("maps every terminal result through the shared status vocabulary", () => {

@@ -38,7 +38,7 @@ import { ReportContent } from "./ReportContent";
 import { StreamingText } from "./StreamingText";
 import { useSubagentActivityByRef, useSubagentActivityNodes } from "./SubagentActivityContext";
 import { SubagentMark } from "./SubagentMark";
-import { resolveSubagentName, subagentStatus } from "./subagent-display";
+import { resolveSubagentName, subagentMarkName, subagentStatus } from "./subagent-display";
 import type { SubagentUpdateMetadata } from "./subagent-update";
 import { groupAdjacentSubagentUpdates } from "./subagent-update";
 import { ToolRow } from "./ToolRow";
@@ -225,6 +225,7 @@ function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
     return {
       event,
       update,
+      agentName: node?.agentName,
       name: resolveSubagentName(node ?? { agentName: null, title: event.title ?? null }),
       threadId: node?.threadId ?? event.childThreadId,
       outcome: update?.outcome,
@@ -241,7 +242,7 @@ function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
           {names.slice(0, 3).map((name, index) => (
             <span key={`${name}-${index}`} className="rounded-full bg-background p-[2px]">
               <SubagentMark
-                name={name}
+                agentName={entries[index]?.agentName}
                 status={subagentStatus(entries[index]?.outcome)}
                 className="size-5 border-background text-[10px]"
               />
@@ -306,6 +307,7 @@ function DeliveryEventRow({ turn, childThreadId, title, subagentUpdate }: Delive
   const openThread = useOpenChatThread();
   if (subagentUpdate) {
     const node = nodes.find((candidate) => candidate.ref === subagentUpdate.handle);
+    const agentName = node?.agentName;
     const name = resolveSubagentName(node ?? { agentName: null, title: title ?? null });
     const outcome = subagentUpdate.outcome;
     const body = turn.blocks
@@ -320,7 +322,7 @@ function DeliveryEventRow({ turn, childThreadId, title, subagentUpdate }: Delive
       >
         <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm py-[var(--chat-space-row)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <SubagentMark
-            name={name}
+            agentName={agentName}
             status={subagentStatus(outcome)}
             className="size-5 text-[10px]"
           />
@@ -478,7 +480,8 @@ function ThreadReportArtifact({
   const [expanded, setExpanded] = useState(false);
   const subagent = useSubagentActivityByRef(refName);
   const openThread = useOpenChatThread();
-  const agentName = resolveSubagentName(subagent);
+  const agentName = subagent?.agentName;
+  const displayName = resolveSubagentName(subagent);
   const taskTitle = subagent?.title?.trim();
   return (
     <div
@@ -489,7 +492,7 @@ function ThreadReportArtifact({
       <div className="flex min-w-0 items-center gap-[var(--chat-space-row)]">
         {report.outcome || report.partial ? (
           <SubagentMark
-            name={agentName}
+            agentName={agentName}
             status={subagentStatus(report.outcome ?? (report.partial ? "failed" : null))}
           />
         ) : (
@@ -497,14 +500,14 @@ function ThreadReportArtifact({
             aria-hidden
             className="grid size-7 shrink-0 place-items-center rounded-full border border-border text-[10px] font-medium text-muted-foreground"
           >
-            {agentName.trim().slice(0, 2).toLocaleUpperCase()}
+            {subagentMarkName(agentName).trim().slice(0, 2).toLocaleUpperCase()}
           </span>
         )}
-        <span className="shrink-0 text-sm font-medium text-foreground">{agentName}</span>
+        <span className="shrink-0 text-sm font-medium text-foreground">{displayName}</span>
         <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
           <Trans>Report</Trans>
         </span>
-        {taskTitle && taskTitle !== agentName ? (
+        {taskTitle && taskTitle !== displayName ? (
           <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{taskTitle}</span>
         ) : (
           <span className="min-w-0 flex-1" />

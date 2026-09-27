@@ -59,8 +59,9 @@ is a report artifact outside the process fold; a direct run's stays a process
 row, since its combined card already holds the result. Background `subagent_update` notices render
 as quiet expandable completion rows; adjacent completions merge at their
 transcript boundary. Every surface names a child through `subagent-display.ts`
-(agent name, else thread title; never a raw ref) and maps outcome to mark
-status there. The pop-up's Show uses a block-level conversation reveal that
+(agent name, else thread title; never a raw ref); the mark letter comes from
+the agent name, not the display name. Outcome maps to mark status there. The
+pop-up's Show uses a block-level conversation reveal that
 lands on the child's latest point: launch while running, the finished row until
 its report is read, then the latest report line.
 

@@ -111,6 +111,21 @@ describe("RunningSubagentsStrip", () => {
     expect(openThread).toHaveBeenCalledWith("child-b");
   });
 
+  it("marks an agent-less child as Subagent while showing its task title", async () => {
+    await act(async () =>
+      root.render(
+        <RunningSubagentsStrip
+          descendants={[node({ threadId: "child-a", title: "Codex scan" })]}
+        />,
+      ),
+    );
+
+    const mark = host.querySelector<HTMLElement>('[role="img"]');
+    expect(mark?.textContent).toBe("S");
+    expect(mark?.getAttribute("aria-label")).toBe("Subagent running");
+    expect(host.textContent).toContain("Codex scan");
+  });
+
   it("omits the door outside a navigation provider", async () => {
     await act(async () =>
       root.render(

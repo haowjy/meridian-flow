@@ -134,7 +134,7 @@ function SubagentPopoverRow({
   return (
     <li className="flex items-center gap-2 rounded px-2 py-2 text-sm hover:bg-muted">
       <SubagentMark
-        name={name}
+        agentName={node.agentName}
         status={subagentStatus(node.spawnStatus, running)}
         className="size-5 text-[10px]"
       />

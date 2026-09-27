@@ -51,7 +51,7 @@ export function SubagentPathRow({
         {ancestors.length ? <li className="text-muted-foreground">/</li> : null}
         <li className="flex shrink-0 items-center gap-1.5 font-medium text-foreground">
           <SubagentMark
-            name={name}
+            agentName={subagent.agentName}
             status={subagentStatus(runStatus, runStatus === "running")}
             className="size-5 text-[10px]"
           />

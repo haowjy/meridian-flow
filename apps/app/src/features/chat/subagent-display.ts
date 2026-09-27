@@ -20,6 +20,12 @@ export function resolveSubagentName(
   );
 }
 
+/** Marks identify the agent, while the adjacent display name may be a task title. */
+export function subagentMarkName(agentName?: string | null): string {
+  const name = agentName?.trim();
+  return name && name !== "Subagent" ? name : i18n._("Subagent");
+}
+
 export function subagentStatus(outcome: unknown, running = false): SubagentVisualStatus {
   if (running) return "running";
   return outcome === "succeeded" ? "done" : "stopped";

@@ -9,7 +9,12 @@ import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { DirectInvocationResult } from "./invocation-direct-result";
 import { ReportContent } from "./ReportContent";
 import { SubagentMark } from "./SubagentMark";
-import { Elapsed, formatSubagentElapsed, subagentStatus } from "./subagent-display";
+import {
+  Elapsed,
+  formatSubagentElapsed,
+  resolveSubagentName,
+  subagentStatus,
+} from "./subagent-display";
 
 type Props = {
   agentName: string;
@@ -43,6 +48,7 @@ export function SpawnReportCard({
   const [expanded, setExpanded] = useState(false);
   const openThread = useOpenChatThread();
   const resolvedOutcome = directResult?.outcome ?? outcome;
+  const displayName = resolveSubagentName({ agentName, title });
   const running = status === "running" && resolvedOutcome == null;
   const markStatus = subagentStatus(
     resolvedOutcome ?? (status === "failed" ? "failed" : undefined),
@@ -69,9 +75,9 @@ export function SpawnReportCard({
       data-delivery-mode={deliveryMode}
     >
       <div className="flex min-w-0 items-center gap-[var(--chat-space-row)]">
-        <SubagentMark name={agentName} status={markStatus} />
-        <span className="shrink-0 text-sm font-medium text-foreground">{agentName}</span>
-        {title && title !== agentName ? (
+        <SubagentMark agentName={agentName} status={markStatus} />
+        <span className="shrink-0 text-sm font-medium text-foreground">{displayName}</span>
+        {title && title !== displayName ? (
           <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{title}</span>
         ) : (
           <span className="min-w-0 flex-1" />
