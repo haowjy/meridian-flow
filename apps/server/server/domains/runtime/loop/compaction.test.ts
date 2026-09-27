@@ -359,6 +359,31 @@ describe("estimateRequestTokens", () => {
     expect(CJK_CODE_POINT_TOKEN_MULTIPLIER).toBe(3);
     expect(estimated).toBeGreaterThanOrEqual(text.length * CJK_CODE_POINT_TOKEN_MULTIPLIER);
   });
+
+  it("applies the CJK multiplier to reasoning and nested tool input/output strings", () => {
+    const text = "中".repeat(100);
+    const estimated = estimateRequestTokens({
+      request: {
+        messages: [
+          {
+            role: "assistant",
+            content: [
+              { type: "reasoning", text },
+              {
+                type: "tool_use",
+                toolCallId: "call-1",
+                toolName: "read",
+                input: { chapter: text },
+              },
+              { type: "tool_result", toolCallId: "call-1", output: { chapter: text } },
+            ],
+          },
+        ],
+      },
+      baseline: null,
+    });
+    expect(estimated).toBeGreaterThanOrEqual(3 * text.length * CJK_CODE_POINT_TOKEN_MULTIPLIER);
+  });
 });
 
 describe("planCompaction", () => {
@@ -562,9 +587,180 @@ describe("planCompaction", () => {
     expect(plan.pinnedRequest?.id).toBe("turn-1998");
     expect(performance.now() - startedAt).toBeLessThan(1_500);
   });
+
+  it.each([
+    { name: "Chinese-heavy turns", characters: 260, images: 0, toolGroups: false },
+    { name: "several images", characters: 80, images: 4, toolGroups: false },
+    {
+      name: "tool groups with Chinese input and results",
+      characters: 100,
+      images: 0,
+      toolGroups: true,
+    },
+  ])("keeps projected request estimates within the trigger for $name", ({
+    characters,
+    images,
+    toolGroups,
+  }) => {
+    const turns: Turn[] = [];
+    const blocks: Block[] = [];
+    const chinese = "中".repeat(characters);
+    for (let exchange = 0; exchange < 32; exchange++) {
+      const request = turn(`request-${exchange}`, exchange * 2 + 1, "user");
+      const answer = turn(`answer-${exchange}`, exchange * 2 + 2, "assistant");
+      turns.push(request, answer);
+      blocks.push(
+        block(`request-text-${exchange}`, request.id, 0, "text", { text: chinese }, chinese),
+      );
+      if (toolGroups) {
+        blocks.push(
+          signedReasoning(`reasoning-${exchange}`, answer.id, 0, chinese),
+          block(`tool-use-${exchange}`, answer.id, 1, "tool_use", {
+            toolCallId: `call-${exchange}`,
+            toolName: "read_chapter",
+            input: { chapter: chinese },
+          }),
+          block(`tool-result-${exchange}`, answer.id, 2, "tool_result", {
+            toolCallId: `call-${exchange}`,
+            output: { chapter: chinese },
+          }),
+          block(`answer-text-${exchange}`, answer.id, 3, "text", { text: chinese }, chinese),
+        );
+      } else {
+        blocks.push(
+          block(`answer-text-${exchange}`, answer.id, 0, "text", { text: chinese }, chinese),
+        );
+      }
+      if (exchange === 31) {
+        for (let imageIndex = 0; imageIndex < images; imageIndex++) {
+          blocks.push(
+            block(`image-${imageIndex}`, request.id, imageIndex + 1, "image", {
+              data: "x".repeat(10_000),
+              mediaType: "image/png",
+            }),
+          );
+        }
+      }
+    }
+
+    const triggerTokens = 80_000;
+    const fixedOverheadTokens = 2_000;
+    const summaryReserveTokens = 1_500;
+    const plan = planCompaction({
+      turns,
+      blocks,
+      triggerTokens,
+      summaryReserveTokens,
+      fixedOverheadTokens,
+    });
+    expect(plan.minimalTailFits).toBe(true);
+    expect(plan.outcome).toBe("planned");
+    if (plan.outcome !== "planned") return;
+
+    const compaction = compactionTurn(
+      "planned-compaction",
+      turns.length + 1,
+      plan.compactedThrough.turnId,
+      plan.pinnedRequest.id,
+    );
+    const projected = projectActiveHistory(
+      [...turns, compaction],
+      [...blocks, compactionBlock("planned-summary", compaction.id)],
+      "c99",
+    );
+    const modelMessages = buildContext({ thread: thread("c99"), ...projected }).messages.filter(
+      (message) => message.role !== "system",
+    );
+    const projectedEstimate = estimateRequestTokens({
+      request: { messages: modelMessages, tools: [] },
+      baseline: null,
+    });
+    expect(projectedEstimate + fixedOverheadTokens + summaryReserveTokens).toBeLessThanOrEqual(
+      triggerTokens,
+    );
+  });
+
+  it("returns no compaction rather than a persistable plan when there is no pinned request", () => {
+    const onlyAssistant = turn("assistant", 1, "assistant");
+    const plan = planCompaction({
+      turns: [onlyAssistant],
+      blocks: [],
+      triggerTokens: 100,
+      summaryReserveTokens: 10,
+      fixedOverheadTokens: 10,
+    });
+    expect(plan).toMatchObject({
+      outcome: "no_compaction",
+      pinnedRequest: null,
+      compactedThrough: null,
+      minimalTailFits: false,
+    });
+  });
+
+  it("plans a second compaction only after the active compaction cut", () => {
+    const firstRequest = turn("first-request", 1, "user");
+    const firstAnswer = turn("first-answer", 2, "assistant");
+    const secondRequest = turn("second-request", 3, "user");
+    const secondAnswer = turn("second-answer", 4, "assistant");
+    const firstCompaction = compactionTurn("first-compaction", 5, firstAnswer.id, secondRequest.id);
+    const turns = [firstRequest, firstAnswer, secondRequest, secondAnswer, firstCompaction];
+    const blocks = [
+      block("first-request-text", firstRequest.id, 0, "text", { text: "first" }, "first"),
+      block("first-answer-text", firstAnswer.id, 0, "text", { text: "answer" }, "answer"),
+      block("second-request-text", secondRequest.id, 0, "text", { text: "second" }, "second"),
+      block("second-answer-text", secondAnswer.id, 0, "text", { text: "reply" }, "reply"),
+      compactionBlock("first-summary", firstCompaction.id),
+    ];
+    const plan = planCompaction({
+      turns,
+      blocks,
+      triggerTokens: 10_000,
+      summaryReserveTokens: 100,
+      fixedOverheadTokens: 100,
+    });
+    expect(plan.outcome).toBe("planned");
+    if (plan.outcome !== "planned") return;
+    expect(plan.compactedThrough.turnId).not.toBe(firstAnswer.id);
+    expect(plan.retainedSuffix.map(({ turn: retained }) => retained.id)).not.toContain(
+      firstRequest.id,
+    );
+    expect(plan.retainedSuffix.map(({ turn: retained }) => retained.id)).not.toContain(
+      firstAnswer.id,
+    );
+
+    const secondCompaction = compactionTurn(
+      "second-compaction",
+      6,
+      plan.compactedThrough.turnId,
+      plan.pinnedRequest.id,
+    );
+    expect(() =>
+      projectActiveHistory(
+        [...turns, secondCompaction],
+        [...blocks, compactionBlock("second-summary", secondCompaction.id)],
+        "c100",
+      ),
+    ).not.toThrow();
+  });
 });
 
 describe("projectActiveHistory", () => {
+  it("projects 2,000 compaction-free turns by identity without decoding their metadata", () => {
+    const turns = Array.from({ length: 2_000 }, (_, index) =>
+      turn(`identity-${index}`, index + 1, index % 2 === 0 ? "user" : "assistant", {
+        metadata: { unrelated: { deeply: { nested: "metadata" } } },
+      }),
+    );
+    const blocks = turns.map((entry, index) =>
+      block(`identity-block-${index}`, entry.id, 0, "text", { text: "content" }, "content"),
+    );
+    const startedAt = performance.now();
+    const projected = projectActiveHistory(turns, blocks, "c12");
+    expect(performance.now() - startedAt).toBeLessThan(50);
+    expect(projected.turns).toEqual(turns);
+    expect(projected.blocks).toEqual(blocks);
+  });
+
   it("keeps a pinned request in place when it already follows the cut", () => {
     const r1 = turn("r1", 1, "user");
     const a1 = turn("a1", 2, "assistant");
@@ -783,6 +979,19 @@ describe("projectActiveHistory", () => {
       props: { summary: "missing fields" },
     });
     expect(() => projectActiveHistory([validMetadata], [badProps], "c12")).toThrow();
+  });
+
+  it("throws when a complete compaction's pinned request is missing", () => {
+    const request = turn("request", 1, "user");
+    const answer = turn("answer", 2, "assistant");
+    const compaction = compactionTurn("c", 3, request.id, "deleted-request");
+    expect(() =>
+      projectActiveHistory(
+        [request, answer, compaction],
+        [compactionBlock("summary", compaction.id)],
+        "c12",
+      ),
+    ).toThrow(/missing pinned request deleted-request/);
   });
 
   it("decodes only well-shaped compaction props and block envelopes", () => {

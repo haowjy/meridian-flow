@@ -1,5 +1,6 @@
-/** Conservative, provider-neutral input-token estimate for a request and its incremental messages. */
+/** Shared per-part and request-level token estimates for planning and delivery checks. */
 
+import type { Block, Turn } from "@meridian/contracts/threads";
 import type { GenerateRequest } from "../../gateway/index.js";
 
 const TOKEN_BYTES_PER_TOKEN = 3;
@@ -42,31 +43,97 @@ function textTokens(text: string): number {
   return tokensForBytes(bytes - cjkBytes) + cjkCodePoints * CJK_CODE_POINT_TOKEN_MULTIPLIER;
 }
 
+function blankStrings(value: unknown): unknown {
+  if (typeof value === "string") return "";
+  if (Array.isArray(value)) return value.map(blankStrings);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, blankStrings(entry)]),
+    );
+  }
+  return value;
+}
+
+function stringTokens(value: unknown): number {
+  if (typeof value === "string") return textTokens(value);
+  if (Array.isArray(value)) return value.reduce((sum, entry) => sum + stringTokens(entry), 0);
+  if (value !== null && typeof value === "object") {
+    return Object.values(value).reduce((sum, entry) => sum + stringTokens(entry), 0);
+  }
+  return 0;
+}
+
+/** Estimates JSON-visible strings with the shared CJK policy plus their structural bytes. */
+export function estimateModelJsonTokens(value: unknown): number {
+  return stringTokens(value) + tokensForBytes(encodedBytes(blankStrings(value)));
+}
+
+/** Estimates one model content part; image/file payload bytes are replaced by fixed costs. */
+export function estimateModelPartTokens(part: unknown): number {
+  if (part === null || typeof part !== "object" || Array.isArray(part))
+    return estimateModelJsonTokens(part);
+
+  const record = part as Record<string, unknown>;
+  if (record.type === "image" || record.type === "file") {
+    const { data: _payload, ...withoutPayload } = record;
+    return (
+      (record.type === "image" ? IMAGE_PART_TOKEN_ESTIMATE : FILE_PART_TOKEN_ESTIMATE) +
+      estimateModelJsonTokens(withoutPayload)
+    );
+  }
+  return estimateModelJsonTokens(record);
+}
+
+function blockModelPart(block: Block): unknown {
+  const content =
+    block.content !== null && typeof block.content === "object" && !Array.isArray(block.content)
+      ? (block.content as Record<string, unknown>)
+      : {};
+  switch (block.blockType) {
+    case "text":
+      return {
+        type: "text",
+        text:
+          block.textContent ??
+          (typeof content.text === "string"
+            ? content.text
+            : typeof block.content === "string"
+              ? block.content
+              : ""),
+      };
+    case "reasoning":
+      return {
+        type: "reasoning",
+        ...content,
+        text: typeof content.text === "string" ? content.text : (block.textContent ?? ""),
+      };
+    case "image":
+    case "file":
+    case "tool_use":
+    case "tool_result":
+      return { type: block.blockType, ...content };
+    default:
+      return { type: block.blockType, content: block.content };
+  }
+}
+
+/** Default planner estimate for durable turn/block rows, using request per-part rules. */
+export function estimateTurnTokens(turn: Turn, blocks: readonly Block[]): number {
+  const headerTokens = estimateModelJsonTokens({ role: turn.role, metadata: turn.metadata });
+  return (
+    headerTokens +
+    blocks
+      .filter((block) => !block.pruned)
+      .reduce((sum, block) => sum + estimateModelPartTokens(blockModelPart(block)), 0)
+  );
+}
+
 function messageTokens(message: GenerateRequest["messages"][number]): number {
-  let contentTokens = 0;
-  const structure = {
-    ...message,
-    content: message.content.map((part) => {
-      switch (part.type) {
-        case "text":
-          contentTokens += textTokens(part.text);
-          return { ...part, text: "" };
-        case "image": {
-          contentTokens += IMAGE_PART_TOKEN_ESTIMATE;
-          const { data: _data, ...withoutData } = part;
-          return withoutData;
-        }
-        case "file": {
-          contentTokens += FILE_PART_TOKEN_ESTIMATE;
-          const { data: _data, ...withoutData } = part;
-          return withoutData;
-        }
-        default:
-          return part;
-      }
-    }),
-  };
-  return contentTokens + tokensForBytes(encodedBytes(structure));
+  const { content, ...envelope } = message;
+  return (
+    estimateModelJsonTokens(envelope) +
+    content.reduce((sum, part) => sum + estimateModelPartTokens(part), 0)
+  );
 }
 
 function messagesTokens(messages: GenerateRequest["messages"]): number {
@@ -75,7 +142,7 @@ function messagesTokens(messages: GenerateRequest["messages"]): number {
 
 /**
  * Estimates full input, or a baseline plus only messages appended after its messageCount.
- * Image and file payload bytes are never measured; each part uses its per-type estimate.
+ * Both this check and compaction planning use estimateModelPartTokens for content parts.
  */
 export function estimateRequestTokens(input: {
   request: Pick<GenerateRequest, "messages"> &
@@ -92,11 +159,9 @@ export function estimateRequestTokens(input: {
 
   return (
     messagesTokens(input.request.messages) +
-    tokensForBytes(
-      encodedBytes({
-        tools: input.request.tools ?? [],
-        responseFormat: input.request.responseFormat ?? null,
-      }),
-    )
+    estimateModelJsonTokens({
+      tools: input.request.tools ?? [],
+      responseFormat: input.request.responseFormat ?? null,
+    })
   );
 }

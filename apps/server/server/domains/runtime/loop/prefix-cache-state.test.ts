@@ -93,6 +93,22 @@ describe("derivePrefixCacheState", () => {
     });
   });
 
+  it("recognizes a prompt epoch carried alongside existing typed metadata", () => {
+    const epoch = turn("epoch", 2, {
+      role: "system",
+      origin: "system",
+      metadata: {
+        kind: "system_update",
+        section: "notices",
+        promptEpoch: { cause: "compaction" },
+      },
+    });
+    expect(derive({ history: history({ turns: [turn("turn-1", 1), epoch] }) })).toEqual({
+      state: "cold",
+      reason: "prompt_epoch",
+    });
+  });
+
   it("breaks warmth at a named image eviction or asset-loss turn", () => {
     const imageLoss = turn("image-loss", 2, {
       role: "system",

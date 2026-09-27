@@ -1,6 +1,7 @@
 /** Pure read model for whether a stored conversation prefix is likely cached. */
 
 import type { ModelResponse, Thread, Turn } from "@meridian/contracts/threads";
+import { isPromptEpochMetadata } from "../../threads/index.js";
 import type { PromptCacheDescriptor } from "../gateway/index.js";
 
 type CacheHistoryThread = Pick<
@@ -71,14 +72,9 @@ function objectValue(value: unknown): Record<string, unknown> | null {
 function boundaryReason(turn: Turn): PrefixCacheStateReason | null {
   if (turn.role === "compaction") return "compaction";
 
-  const metadata = objectValue(turn.metadata);
-  if (
-    metadata?.kind === "prompt_epoch_boundary" ||
-    (metadata && objectValue(metadata.promptEpoch))
-  ) {
-    return "prompt_epoch";
-  }
+  if (isPromptEpochMetadata(turn.metadata)) return "prompt_epoch";
 
+  const metadata = objectValue(turn.metadata);
   const imageUpdate = metadata?.kind === "system_update" && metadata.section === "image_inclusion";
   const breaks = imageUpdate && Array.isArray(metadata.breaks) ? metadata.breaks : [];
   if (

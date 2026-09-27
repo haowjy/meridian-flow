@@ -3,6 +3,7 @@
 import type { Block, JsonObject, Turn } from "@meridian/contracts/threads";
 import { z } from "zod";
 import {
+  CompactionUndoMetadataCodec,
   classifyHistoryItem,
   compactionSummaryMetadata,
   isSystemUpdateMetadata,
@@ -65,18 +66,19 @@ function revertedCompactionIds(turns: readonly Turn[]): Set<string> {
   const reverted = new Set<string>();
   for (const turn of turns) {
     if (turn.status !== "complete") continue;
-    const classification = classifyHistoryItem(turn);
-    if (classification.kind === "undo_marker") reverted.add(classification.compactionTurnId);
+    const metadata = turn.metadata;
+    if (
+      metadata === null ||
+      typeof metadata !== "object" ||
+      Array.isArray(metadata) ||
+      metadata.kind !== "compaction_undo"
+    ) {
+      continue;
+    }
+    const undo = CompactionUndoMetadataCodec.parse(metadata);
+    reverted.add(undo.revertsCompactionTurnId);
   }
   return reverted;
-}
-
-function latestPinnedRequest(turns: readonly Turn[]): Turn | null {
-  for (let index = turns.length - 1; index >= 0; index--) {
-    const turn = turns[index];
-    if (turn?.role === "user" && !isSystemUpdateMetadata(turn.metadata)) return turn;
-  }
-  return null;
 }
 
 function summaryTurn(
@@ -138,6 +140,10 @@ export function projectActiveHistory(
   effectiveBlocks: readonly Block[],
   threadRef: string | null,
 ): ProjectedActiveHistory {
+  if (!effectiveTurns.some((turn) => turn.role === "compaction")) {
+    return { turns: [...effectiveTurns], blocks: [...effectiveBlocks] };
+  }
+
   const turns = orderTurnsByPosition(effectiveTurns);
   const reverted = revertedCompactionIds(turns);
   const blocksByTurn = new Map<string, Block[]>();
@@ -165,9 +171,17 @@ export function projectActiveHistory(
 
   const { turn: compaction, metadata, props } = activeCompaction;
   const beforeCompaction = turns.filter((turn) => turn.position < compaction.position);
-  const pinnedRequest =
-    beforeCompaction.find((turn) => turn.id === metadata.pinnedRequestTurnId) ??
-    latestPinnedRequest(beforeCompaction);
+  const pinnedRequest = beforeCompaction.find(
+    (turn) =>
+      turn.id === metadata.pinnedRequestTurnId &&
+      turn.role === "user" &&
+      !isSystemUpdateMetadata(turn.metadata),
+  );
+  if (!pinnedRequest) {
+    throw new Error(
+      `Complete compaction ${compaction.id} has a missing pinned request ${metadata.pinnedRequestTurnId}`,
+    );
+  }
   const cutTurn = turns.find((turn) => turn.id === metadata.compactedThrough.turnId);
   if (!cutTurn || cutTurn.position >= compaction.position) {
     throw new Error(`Complete compaction ${compaction.id} has an invalid cut turn`);

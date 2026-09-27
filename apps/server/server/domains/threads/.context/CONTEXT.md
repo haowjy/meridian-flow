@@ -49,8 +49,10 @@ for the tool-freeze mechanics.
 `classifyHistoryItem`. Runtime producers use its constructors for inbox and
 child turns, Work and notice updates, skill bodies, and derivation seeds. The
 runtime compaction planner and history projector consume the same classifier;
-image inclusion remains classified by its `section` because its payload codec
-belongs to image projection.
+visible-conversation and runtime-delivery readers use the relevant metadata
+codecs, and prompt-epoch boundaries use their codec too. Image inclusion
+remains classified by its `section` because its payload codec belongs to image
+projection.
 
 ## What it owns
 

@@ -32,6 +32,16 @@ export const CompactionUndoMetadataCodec = z.object({
   revertsCompactionTurnId: z.string().min(1),
 });
 
+export const PromptEpochMetadataCodec = z.union([
+  z.object({
+    kind: z.literal("prompt_epoch_boundary"),
+    cause: z.enum(["compaction", "compaction_undo"]),
+  }),
+  z.object({
+    promptEpoch: z.object({ cause: z.enum(["compaction", "compaction_undo"]) }),
+  }),
+]);
+
 export type AgentRequestOrigin = "spawn" | "message";
 export type AgentRequestSource = "inbox_message" | "child_seed" | "foreground_message";
 
@@ -106,6 +116,10 @@ export function compactionUndoMetadata(revertsCompactionTurnId: string): JsonObj
 
 export function isSystemUpdateMetadata(metadata: Turn["metadata"]): boolean {
   return SystemUpdateMetadataCodec.safeParse(metadata).success;
+}
+
+export function isPromptEpochMetadata(metadata: Turn["metadata"]): boolean {
+  return PromptEpochMetadataCodec.safeParse(metadata).success;
 }
 
 /** Classifies stored turns once so compaction and history inspection share the same rules. */

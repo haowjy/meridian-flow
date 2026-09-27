@@ -3,16 +3,18 @@
 import type { Block, Turn } from "@meridian/contracts/threads";
 import { classifyHistoryItem, isSystemUpdateMetadata } from "../../../threads/index.js";
 import { orderTurnsByPosition } from "../../../threads/order-turns.js";
+import { estimateTurnTokens } from "./estimate.js";
+import { CompactionMetadataCodec } from "./project.js";
 import { type CompactionCut, type RetainedTurnSlice, retainedTail } from "./tail.js";
 
 export type { RetainedTurnSlice } from "./tail.js";
 
 export const DEFAULT_COMPACTION_TAIL_FRACTION = 0.25;
-const encoder = new TextEncoder();
 
 export interface CompactedThrough extends CompactionCut {}
 
 export interface PlanCompactionInput {
+  /** Raw effective transcript, not a projected history containing a synthetic summary turn. */
   turns: readonly Turn[];
   blocks: readonly Block[];
   triggerTokens: number;
@@ -23,17 +25,28 @@ export interface PlanCompactionInput {
   estimateTurnTokens?: (turn: Turn, blocks: readonly Block[]) => number;
 }
 
-export interface CompactionPlan {
+interface CompactionPlanBase {
+  /** A null pin is legal only on a no-compaction result and is never persisted. */
   pinnedRequest: Turn | null;
   /** The ordered retained tail after the summary; it contains the pin at its original or lifted place. */
   retainedSuffix: RetainedTurnSlice[];
-  compactedThrough: CompactedThrough | null;
   minimalTailFits: boolean;
   tailBudgetTokens: number;
   minimalTailTokens: number;
   /** Retained-suffix estimate excludes the separately reserved pinned-request cost. */
   retainedSuffixTokens: number;
 }
+
+export type CompactionPlan =
+  | (CompactionPlanBase & {
+      outcome: "planned";
+      pinnedRequest: Turn;
+      compactedThrough: CompactedThrough;
+    })
+  | (CompactionPlanBase & {
+      outcome: "no_compaction";
+      compactedThrough: null;
+    });
 
 interface ToolGroup {
   startSequence: number;
@@ -43,6 +56,7 @@ interface ToolGroup {
 interface ClassifiedTurn {
   turn: Turn;
   kind: ReturnType<typeof classifyHistoryItem>["kind"];
+  revertsCompactionTurnId: string | null;
   retainable: boolean;
   isPinnedRequest: boolean;
 }
@@ -90,30 +104,14 @@ function toolGroupsIn(turnBlocks: readonly Block[]): ToolGroup[] {
   return groups;
 }
 
-function encodedBytes(value: unknown): number {
-  return encoder.encode(JSON.stringify(value) ?? "").byteLength;
-}
-
-function tokensForBytes(bytes: number): number {
-  return Math.ceil(bytes / 3);
-}
-
-function defaultTurnTokens(turn: Turn, blocks: readonly Block[]): number {
-  const turnCost = tokensForBytes(encodedBytes({ role: turn.role, metadata: turn.metadata }));
-  const blockCosts = blocks
-    .filter((block) => !block.pruned)
-    .map(({ blockType, sequence, textContent, content }) =>
-      tokensForBytes(encodedBytes({ blockType, sequence, textContent, content })),
-    );
-  return turnCost + blockCosts.reduce((sum, cost) => sum + cost, 0);
-}
-
 function classifyTurns(turns: readonly Turn[]): ClassifiedTurn[] {
   return turns.map((turn) => {
     const classification = classifyHistoryItem(turn);
     return {
       turn,
       kind: classification.kind,
+      revertsCompactionTurnId:
+        classification.kind === "undo_marker" ? classification.compactionTurnId : null,
       retainable:
         classification.kind !== "fork_or_handoff_seed" &&
         classification.kind !== "compaction" &&
@@ -155,6 +153,47 @@ function candidatesFor(
     candidates.push({ turnId: turn.id, turnIndex });
   });
   return candidates;
+}
+
+function activeCompactionCut(turns: readonly ClassifiedTurn[]): CompactionCut | null {
+  const revertedIds = new Set(
+    turns.flatMap(({ turn, revertsCompactionTurnId }) =>
+      turn.status === "complete" && revertsCompactionTurnId ? [revertsCompactionTurnId] : [],
+    ),
+  );
+  const active = [...turns]
+    .reverse()
+    .find(
+      ({ turn, kind }) =>
+        kind === "compaction" && turn.status === "complete" && !revertedIds.has(turn.id),
+    );
+  if (!active) return null;
+
+  const metadata = CompactionMetadataCodec.parse(active.turn.metadata);
+  const cutTurn = turns.find(({ turn }) => turn.id === metadata.compactedThrough.turnId)?.turn;
+  if (!cutTurn || cutTurn.position >= active.turn.position) {
+    throw new Error(`Complete compaction ${active.turn.id} has an invalid cut turn`);
+  }
+  return {
+    turnId: cutTurn.id,
+    ...(metadata.compactedThrough.blockSequence !== undefined
+      ? { blockSequence: metadata.compactedThrough.blockSequence }
+      : {}),
+  };
+}
+
+function candidatesAfterCut(
+  candidates: readonly CutCandidate[],
+  turns: readonly ClassifiedTurn[],
+  cut: CompactionCut | null,
+): CutCandidate[] {
+  if (!cut) return [...candidates];
+  const cutIndex = turns.findIndex(({ turn }) => turn.id === cut.turnId);
+  return candidates.filter((candidate) => {
+    if (candidate.turnIndex > cutIndex) return true;
+    if (candidate.turnIndex < cutIndex || cut.blockSequence === undefined) return false;
+    return candidate.blockSequence === undefined || candidate.blockSequence > cut.blockSequence;
+  });
 }
 
 function turnCostsFor(
@@ -313,7 +352,24 @@ function retainedSlicesCost(
   }, 0);
 }
 
-/** Plans one ordered retained tail with fixed prompt/schema cost reserved outside it. */
+function noCompactionPlan(input: {
+  pinnedRequest: Turn | null;
+  minimalTailTokens: number;
+  tailBudgetTokens: number;
+}): CompactionPlan {
+  return {
+    outcome: "no_compaction",
+    pinnedRequest: input.pinnedRequest,
+    retainedSuffix: [],
+    compactedThrough: null,
+    minimalTailFits: false,
+    tailBudgetTokens: input.tailBudgetTokens,
+    minimalTailTokens: input.minimalTailTokens,
+    retainedSuffixTokens: 0,
+  };
+}
+
+/** Plans one raw effective transcript's retained tail with fixed prompt/schema cost reserved. */
 export function planCompaction(input: PlanCompactionInput): CompactionPlan {
   const turns = orderTurnsByPosition(input.turns);
   const classifiedTurns = classifyTurns(turns);
@@ -328,7 +384,7 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
 
   const pinnedRequest =
     [...classifiedTurns].reverse().find((entry) => entry.isPinnedRequest)?.turn ?? null;
-  const estimate = input.estimateTurnTokens ?? defaultTurnTokens;
+  const estimate = input.estimateTurnTokens ?? estimateTurnTokens;
   const costs = turnCostsFor(classifiedTurns, blocksByTurn, estimate);
   const pinnedIndex = pinnedRequest ? turns.findIndex((turn) => turn.id === pinnedRequest.id) : -1;
   const pinnedCost = pinnedIndex >= 0 ? (costs[pinnedIndex]?.full ?? 0) : 0;
@@ -345,19 +401,27 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
     ),
   );
 
+  if (!pinnedRequest) {
+    return noCompactionPlan({
+      pinnedRequest: null,
+      minimalTailTokens: summaryReserveTokens + fixedOverheadTokens,
+      tailBudgetTokens,
+    });
+  }
+
   const groupsByIndex = toolGroupsByTurn(classifiedTurns, blocksByTurn);
-  const candidates = candidatesFor(classifiedTurns, groupsByIndex, blocksByTurn);
+  const candidates = candidatesAfterCut(
+    candidatesFor(classifiedTurns, groupsByIndex, blocksByTurn),
+    classifiedTurns,
+    activeCompactionCut(classifiedTurns),
+  );
   if (candidates.length === 0) {
     const minimalTailTokens = summaryReserveTokens + fixedOverheadTokens + pinnedCost;
-    return {
+    return noCompactionPlan({
       pinnedRequest,
-      retainedSuffix: [],
-      compactedThrough: null,
-      minimalTailFits: minimalTailTokens < triggerTokens,
-      tailBudgetTokens,
       minimalTailTokens,
-      retainedSuffixTokens: 0,
-    };
+      tailBudgetTokens,
+    });
   }
 
   const suffixCosts = suffixCostsExcludingPin(classifiedTurns, costs, pinnedRequest);
@@ -418,6 +482,7 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
   };
 
   return {
+    outcome: "planned",
     pinnedRequest,
     retainedSuffix,
     compactedThrough,
