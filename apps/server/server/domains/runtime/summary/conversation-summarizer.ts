@@ -1,6 +1,8 @@
 /** Warm prefix reuse and rolling cold summaries, with every attempted call returned for settlement. */
+
 import type { Usage } from "@meridian/contracts/runtime";
 import type { AgentRevisionStore } from "../../packages/index.js";
+import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import type { Gateway, GenerateRequest, GenerateResult, ModelInfo } from "../gateway/index.js";
 import { estimateModelJsonTokens } from "../loop/compaction/estimate.js";
 import { estimateRequestTokens, type ProjectedActiveHistory } from "../loop/compaction/index.js";
@@ -35,11 +37,16 @@ function instructionText(instruction: "compaction" | "handoff_brief", maxTokens:
 
 /** Turn boundaries remain segment boundaries; images are references, never payload bytes. */
 function transcriptTurns(projection: ProjectedActiveHistory): string[] {
+  const byTurn = new Map<string, ProjectedActiveHistory["blocks"]>();
+  for (const block of projection.blocks) {
+    if (block.pruned || block.blockType === "reasoning") continue;
+    const blocks = byTurn.get(block.turnId) ?? [];
+    blocks.push(block);
+    byTurn.set(block.turnId, blocks);
+  }
   return projection.turns.flatMap((turn) => {
     if (turn.role === "compaction") return [];
-    const blocks = projection.blocks
-      .filter((block) => block.turnId === turn.id && !block.pruned)
-      .sort((a, b) => a.sequence - b.sequence);
+    const blocks = (byTurn.get(turn.id) ?? []).sort((a, b) => a.sequence - b.sequence);
     const text = blocks
       .map((block) => {
         if (block.blockType === "image" || block.blockType === "file") {
@@ -52,11 +59,16 @@ function transcriptTurns(projection: ProjectedActiveHistory): string[] {
         );
       })
       .join("\n");
-    return text ? [`[${turn.role}]\n${text}`] : [];
+    const metadata = SystemUpdateMetadataCodec.safeParse(turn.metadata);
+    const label =
+      metadata.success && metadata.data.section === "compaction_summary"
+        ? "Prior context (previous conversation summary)"
+        : turn.role;
+    return text ? [`[${label}]\n${text}`] : [];
   });
 }
 
-function summaryText(result: GenerateResult, reserve: number): string {
+function summaryText(result: GenerateResult): string {
   if (result.finishReason === "max_tokens") throw new Error("Summary exhausted its output limit");
   if (result.finishReason === "error") throw new Error("Summary provider failed");
   if (result.toolCalls.length || result.content.some((part) => part.type === "tool_use")) {
@@ -68,8 +80,6 @@ function summaryText(result: GenerateResult, reserve: number): string {
     .join("\n")
     .trim();
   if (!text) throw new Error("Summary returned no text");
-  if (estimateModelJsonTokens(text) > reserve)
-    throw new Error("Summary exceeded its reserved size");
   return text;
 }
 
@@ -208,7 +218,7 @@ export function createConversationSummarizer(
             return {
               ...outcome,
               kind: "complete",
-              text: summaryText(result, config.maxOutputTokens),
+              text: summaryText(result),
               model: result.model,
             };
           }
@@ -220,6 +230,9 @@ export function createConversationSummarizer(
         const usableWindow =
           model.contextWindow - Math.min(config.maxOutputTokens, model.maxOutputTokens);
         const turns = transcriptTurns(input.projection);
+        // Additive estimates deliberately overcount the tiny per-string rounding overhead.
+        // Each turn is scanned once, not once for every growing candidate segment.
+        const turnTokens = turns.map((turn) => estimateModelJsonTokens(`\n\n${turn}`));
         let running = "";
         let offset = 0;
         let keptModel = model.id;
@@ -246,14 +259,11 @@ export function createConversationSummarizer(
         });
         do {
           let end = offset;
-          while (
-            end < turns.length &&
-            estimateRequestTokens({
-              request: requestFor(turns.slice(offset, end + 1)),
-              baseline: null,
-            }) < usableWindow
-          )
+          let segmentTokens = estimateRequestTokens({ request: requestFor([]), baseline: null });
+          while (end < turns.length && segmentTokens + turnTokens[end] < usableWindow) {
+            segmentTokens += turnTokens[end];
             end++;
+          }
           if (end === offset && turns.length)
             throw new Error("A single conversation turn exceeds the summarizer's usable window");
           const request = requestFor(turns.slice(offset, end));
@@ -266,7 +276,7 @@ export function createConversationSummarizer(
           });
           summarizer.segments++;
           const result = await call(request, model, coldPrediction);
-          running = summaryText(result, config.maxOutputTokens);
+          running = summaryText(result);
           keptModel = result.model;
           offset = end;
         } while (offset < turns.length);

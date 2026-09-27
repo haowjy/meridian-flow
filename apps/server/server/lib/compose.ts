@@ -513,6 +513,14 @@ export async function createProductionAppPorts(input: {
         webhookSecret: environment.STRIPE_WEBHOOK_SECRET as string,
       })
     : null;
+  const summarizerModel = environment.COMPACTION_SUMMARIZER_MODEL ?? "deepseek-v4-flash";
+  if (
+    !MODEL_REGISTRY.providers.some((provider) =>
+      provider.models.some((model) => model.id === summarizerModel),
+    )
+  ) {
+    throw new Error(`Unknown compaction summarizer model: ${summarizerModel}`);
+  }
   const getOrCreateStripeCustomer = createStripeCustomerProvisioner({ db, stripeGateway });
   const billingDomain = createBillingDomain({
     ledger: creditLedger,
@@ -526,7 +534,7 @@ export async function createProductionAppPorts(input: {
     runClaim,
     gateway,
     summarizerConfig: {
-      model: environment.COMPACTION_SUMMARIZER_MODEL ?? "deepseek-v4-flash",
+      model: summarizerModel,
       maxOutputTokens: 4096,
     },
     threadRepos,

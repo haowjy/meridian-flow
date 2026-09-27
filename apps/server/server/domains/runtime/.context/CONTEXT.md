@@ -562,9 +562,13 @@ Without an explicit Agent limit, the trigger uses the model's input-pricing tier
 `summary/conversation-summarizer.ts` implements the port in production. It queries
 prefix warmth after reservation; warm sends the request in hand with only an
 appended instruction. Tool use discards that response and runs cold once.
-Cold uses `COMPACTION_SUMMARIZER_MODEL` (default DeepSeek Flash), or the retained
+Cold uses `COMPACTION_SUMMARIZER_MODEL` (default DeepSeek Flash, validated against
+the registry at startup), or the retained
 thread model when that provider is disabled, and rolls turn-bounded segments
-within its usable window while carrying prior context forward. Oversized turns,
+within its usable window while carrying labeled prior context forward. Cold
+transcripts omit opaque reasoning; per-turn estimates are accumulated once.
+Output-limit failure uses the provider finish reason, not an input-token estimate;
+the successor fit check still measures the full assembled request. Oversized turns,
 empty output and output-limit truncation fail without activating an epoch.
 Every attempted call returns its row, prediction and message count, even when a
 later segment fails or Stop aborts it. Settlement records path/segment metadata
@@ -573,7 +577,9 @@ and charges those rows only in the transaction ending C.
 The gateway normalizes provider context-window failures to `context_overflow`.
 The loop completes A at its last persisted tool group (empty is legal), then
 prepares a forced `compact` decision with a cold path and an independent usable
-window fit limit. It retries generation once; a second overflow fails with
+window fit limit from the resolved usable window. It retries generation once per
+reply (not once per tool iteration); a split adopting new input renews that
+budget, while the compaction successor preserves it. A second overflow fails with
 `context_window_exceeded` and acknowledges the receipt rather than re-sweeping
 the same request. Metered output from an overflow is billed without retaining
 the incomplete response's blocks. The WebSocket live-state codec accepts

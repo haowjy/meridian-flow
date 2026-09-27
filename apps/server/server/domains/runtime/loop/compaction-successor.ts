@@ -25,7 +25,6 @@ export type PreparedCompaction =
       summaryBlock: ReturnType<typeof contentForBlockInput>;
       tokensAfter: number;
       model: string;
-      summarizer: SummaryOutcome["summarizer"];
       decision: Decision;
       assemble: (turns: Turn[], blocks: Block[]) => ReturnType<typeof prepareRequestContext>;
     };
@@ -136,7 +135,6 @@ export async function prepareCompactionSuccessor(args: {
       summaryBlock,
       tokensAfter,
       model: outcome.model,
-      summarizer: outcome.summarizer,
       decision,
       assemble,
     };
@@ -180,6 +178,8 @@ export async function completeCompactionCurrent(input: {
 }): Promise<Turn> {
   const { deps, threadId, placeholder, prepared } = input;
   await input.settleResponses();
+  const settled = await deps.repos.turns.findById(placeholder.id);
+  if (!settled) throw new Error("Compaction placeholder disappeared");
   if (prepared?.kind === "usable") {
     await beginPromptEpoch(deps, {
       threadId,
@@ -189,10 +189,7 @@ export async function completeCompactionCurrent(input: {
       completion: {
         blocks: [prepared.summaryBlock],
         compactionModel: prepared.model,
-        metadata: {
-          ...promptEpochMetadata(placeholder.metadata, "compaction"),
-          summarizer: prepared.summarizer,
-        },
+        metadata: promptEpochMetadata(settled.metadata, "compaction"),
         events: (bakeId) => [
           {
             type: "context.compacted",
@@ -207,8 +204,6 @@ export async function completeCompactionCurrent(input: {
       },
     });
   } else {
-    const settled = await deps.repos.turns.findById(placeholder.id);
-    if (!settled) throw new Error("Compaction placeholder disappeared");
     const failed = {
       ...settled,
       status: "error" as const,

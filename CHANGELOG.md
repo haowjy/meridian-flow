@@ -16,6 +16,8 @@
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
 
 ### Fixed
+- Keep complete summaries without confusing estimated input size with provider output tokens. Skip opaque reasoning in summaries.
+- Propagate context-window errors when provider fallback is enabled.
 - Compact cold and retry once after a provider context-window failure. Fail oversized retries without redelivery.
 - Allow clients to join chats while compaction is running.
 - Failed compaction lands a failed reply and retires its messages instead of paying for repeated summaries.

@@ -162,9 +162,12 @@ else
     }
 
     it.each([
-      false,
-      true,
-    ])("forces cold after provider overflow and retries once (second overflow=%s)", async (secondOverflow) => {
+      "recovered",
+      "second_overflow",
+      "new_reply",
+    ])("forces cold after provider overflow and retries once (%s)", async (scenario) => {
+      const secondOverflow = scenario === "second_overflow";
+      let rig: Awaited<ReturnType<typeof fixture>>;
       const gateway = scriptedGateway();
       let calls = 0;
       let summaries = 0;
@@ -192,7 +195,7 @@ else
           return;
         }
         calls++;
-        if (calls === 1 || secondOverflow) {
+        if (calls === 1 || secondOverflow || (scenario === "new_reply" && calls === 3)) {
           yield {
             type: "error",
             code: "context_overflow",
@@ -201,6 +204,8 @@ else
           };
           return;
         }
+        if (scenario === "new_reply" && calls === 2)
+          await rig.send(rig.threadId, "A new writer request.");
         yield {
           type: "end",
           result: {
@@ -213,7 +218,7 @@ else
           },
         };
       };
-      const rig = await fixture({ gateway });
+      rig = await fixture({ gateway });
       rig.setThreshold(undefined);
       const real = createConversationSummarizer({
         gateway: rig.deps.gateway,
@@ -235,8 +240,8 @@ else
         userText: "Continue.",
       });
       const result = await run.execute();
-      expect(calls).toBe(2);
-      expect(summaries).toBe(1);
+      expect(calls).toBe(scenario === "new_reply" ? 4 : 2);
+      expect(summaries).toBe(scenario === "new_reply" ? 2 : 1);
       expect(inputs[0].forceCold).toBe(true);
       const turns = await rig.repos.turns.listByThread(rig.threadId);
       const [a, c, b] = turns.slice(-3);

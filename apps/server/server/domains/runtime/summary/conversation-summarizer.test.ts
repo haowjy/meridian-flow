@@ -93,6 +93,44 @@ function setup(
 }
 
 describe("conversation summarizer", () => {
+  it.each([
+    "established facts ".repeat(65),
+    "故事".repeat(60),
+  ])("accepts complete output without treating conservative input estimates as provider tokens", async (text) => {
+    const rig = setup({
+      async *events() {
+        yield {
+          type: "end",
+          result: reply(text, { usage: { inputTokens: 100, outputTokens: 280 } }),
+        };
+      },
+    });
+    expect(await rig.service.summarize(rig.input)).toMatchObject({
+      kind: "complete",
+      text: text.trim(),
+    });
+  });
+
+  it("labels prior context and omits opaque reasoning from the cold transcript", async () => {
+    const rig = setup();
+    rig.input.projection.turns[0].metadata = {
+      kind: "system_update",
+      section: "compaction_summary",
+    };
+    rig.input.projection.blocks.push({
+      id: "reasoning",
+      responseId: null,
+      createdAt: new Date(0).toISOString(),
+      turnId: "t0",
+      blockType: "reasoning",
+      sequence: 1,
+      content: { signature: "opaque".repeat(10000) },
+    });
+    expect(await rig.service.summarize(rig.input)).toMatchObject({ kind: "complete" });
+    expect(JSON.stringify(rig.requests)).not.toContain("opaque");
+    expect(JSON.stringify(rig.requests)).toContain("Prior context (previous conversation summary)");
+  });
+
   it("sends the serialized request in hand unchanged plus one instruction", async () => {
     const rig = setup({ warm: true });
     rig.input.requestInHand = {

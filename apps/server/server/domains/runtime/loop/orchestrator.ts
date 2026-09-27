@@ -1459,6 +1459,8 @@ async function executeLoop(
   ];
   let queuedDrain: Awaited<ReturnType<typeof drainInbox>> | undefined;
   let endTurnRequested = false;
+  // One emergency retry per reply, even across tool iterations and compaction splits.
+  let retriedContextOverflow = false;
 
   function boundaryInput(forcedDecision?: ForcedCompactionDecision): DeliveryBoundary {
     return {
@@ -1543,6 +1545,13 @@ async function executeLoop(
       const index = allTurns.findIndex((turn) => turn.id === result.completed?.id);
       allTurns[index] = result.completed;
     }
+    // A genuinely new input starts a new reply budget. Rebased context rows and
+    // the compaction successor itself do not grant another emergency retry.
+    if (
+      result.split &&
+      result.drain.turns.some((turn) => !allTurns.some((existing) => existing.id === turn.id))
+    )
+      retriedContextOverflow = false;
     allTurns.push(...result.drain.turns);
     for (const block of result.drain.blocks) {
       const index = allBlocks.findIndex((existing) => existing.id === block.id);
@@ -1671,7 +1680,6 @@ async function executeLoop(
       });
     }
     let iteration = 0;
-    let retriedContextOverflow = false;
     // The in-process abort is the fast cancel path; the durable lease flag is the
     // cross-process one, read at each iteration's safe boundary. Either set means
     // the run exits, so no suppression state is needed.
@@ -1729,6 +1737,7 @@ async function executeLoop(
         runInput: input,
         gatewaySignal: gatewayAbort.signal,
       });
+      const usableWindowTokens = preparedContext.compactionUsableWindowTokens;
       preparedContext = undefined;
       thread = built.thread;
       const request = built.request;
@@ -1899,18 +1908,15 @@ async function executeLoop(
               });
             }
             retriedContextOverflow = true;
-            const model = built.resolvedModel;
-            if (!model) throw new Error("Context overflow requires a resolved model");
+            if (usableWindowTokens === null)
+              throw new Error("Context overflow requires a resolved model");
             queuedDrain = await acceptBoundary(
               await deps.delivery.splitAndContinue(
                 boundaryInput({
                   kind: "compact",
                   trigger: "auto",
                   path: "cold",
-                  fitLimitTokens: Math.min(
-                    model.contextWindow - model.maxOutputTokens,
-                    FLOW_ABSOLUTE_CEILING,
-                  ),
+                  fitLimitTokens: Math.min(usableWindowTokens, FLOW_ABSOLUTE_CEILING),
                 }),
               ),
             );
