@@ -30,7 +30,10 @@ DeepSeek evidence for the automatic classification: its [context-caching guide](
 The adapters do not use `max_tokens` / `max_output_tokens` as cache keys.
 Anthropic's thinking budget does affect the cache, so implicit effort budgets
 are resolved against the model's output budget, independently of the per-call
-output cap. The summarizer uses that same resolution, including explicit
+output cap. The one exception is Anthropic's `budget_tokens < max_tokens` rule:
+an implicit budget is clamped to one below the call's `maxTokens`. The warm
+summary cap is reserve plus budget, so the clamp never changes its thinking
+configuration. The summarizer uses that same resolution, including explicit
 `providerOptions.anthropic.thinking.budget_tokens`, to reserve thinking plus
 summary output without changing the thinking configuration.
 
