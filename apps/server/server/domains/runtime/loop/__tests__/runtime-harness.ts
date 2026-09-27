@@ -165,6 +165,7 @@ export function createRuntimeHarness(
         inbox,
         threadLock,
         runStarter: runStarter ?? { async start() {} },
+        async publishFinalizedReports() {},
         schedulePostCommit:
           schedulePostCommit ??
           ((task) => {

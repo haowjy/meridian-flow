@@ -4,7 +4,7 @@
  * chooses concrete server adapters and assembles domain services behind ports.
  */
 
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
 import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
@@ -596,6 +596,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     { startDrain: (id) => runner.startDrain(id) },
     ports.eventSink,
   );
+  let publishReport:
+    | ((childThreadId: ThreadId, executionTurnId: TurnId) => Promise<unknown>)
+    | undefined;
   const delivery = createDrizzleRuntimeDelivery(ports.db, {
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
@@ -603,6 +606,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     notices: ports.notices,
     runStarter,
     workContext,
+    async publishFinalizedReports(reports) {
+      if (!publishReport) throw new Error("Report publisher is not initialized");
+      for (const report of reports)
+        await publishReport(report.childThreadId, report.executionTurnId);
+    },
   });
   const workContextNotices = delivery;
   const responseWrites = createAgentEditResponseWriteLifecycle({
@@ -672,6 +680,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     delivery,
     eventSink: ports.eventSink,
   });
+  publishReport = reportPublisher.publish;
   const orphanRepair = createOrphanReportRepair({
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
@@ -934,6 +943,7 @@ export function createInMemoryAppServices(): AppServices {
     inbox: createInMemoryInbox(),
     threadLock: createInMemoryThreadLock(),
     runStarter,
+    async publishFinalizedReports() {},
     schedulePostCommit: (task) => {
       void task();
     },

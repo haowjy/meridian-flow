@@ -5,6 +5,7 @@ export * from "./billing";
 export * from "./content";
 export * from "./context-catalog";
 export * from "./context-operation-receipts";
+export * from "./pending-placeholder";
 export * from "./preferences";
 export * from "./provenance";
 export * from "./recent-documents";

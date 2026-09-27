@@ -1,13 +1,12 @@
 /** Bounded crash repair for admitted child turns without terminal truth. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
+import type { SavedExecutionReport } from "@meridian/contracts/spawn";
+import { isTerminalTurnStatus } from "@meridian/contracts/threads";
+import { isPlaceholderRole } from "@meridian/database/schema/pending-placeholder";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { EventJournalWriter, ThreadRepositories } from "../../threads/index.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
-import {
-  COMPACTION_PLACEHOLDER_KINDS,
-  finalizeOrphanedPlaceholder,
-} from "../loop/orphaned-placeholder.js";
+import { finalizeOrphanedPlaceholder } from "../loop/orphaned-placeholder.js";
 import type { RunClaim } from "../loop/ports.js";
 import type { ThreadLock } from "../loop/thread-lock.js";
 import type { ReportPublisher } from "./report-publisher.js";
@@ -19,15 +18,12 @@ export function createOrphanReportRepair(deps: {
   threadLock: ThreadLock;
   publisher: Pick<ReportPublisher, "publish">;
   eventSink: EventSink;
-  placeholderKinds?: readonly Turn["role"][];
 }) {
-  const placeholderKinds = deps.placeholderKinds ?? COMPACTION_PLACEHOLDER_KINDS;
-  const placeholderKindSet = new Set(placeholderKinds);
   let reportCursor: TurnId | undefined;
   let placeholderCursor: TurnId | undefined;
 
   async function repairReport(childThreadId: ThreadId, executionTurnId: TurnId): Promise<void> {
-    let finalized = false;
+    const reportsToPublish = new Map<TurnId, SavedExecutionReport>();
     await deps.authority.withExclusiveThread(childThreadId, async () => {
       await deps.threadLock.withThreadLock(childThreadId, async () => {
         const report = await deps.repos.executionReports.findByExecution(
@@ -36,18 +32,12 @@ export function createOrphanReportRepair(deps: {
         );
         if (!report || report.outcome !== null) return;
 
-        await finalizeOrphanedPlaceholder(deps, {
+        const placeholderReports = await finalizeOrphanedPlaceholder(deps, {
           threadId: childThreadId,
-          placeholderKinds,
         });
-        const afterPlaceholderRepair = await deps.repos.executionReports.findByExecution(
-          childThreadId,
-          executionTurnId,
-        );
-        if (!afterPlaceholderRepair || afterPlaceholderRepair.outcome !== null) {
-          finalized = true;
-          return;
-        }
+        for (const report of placeholderReports)
+          reportsToPublish.set(report.executionTurnId, report);
+        if (placeholderReports.some((report) => report.executionTurnId === executionTurnId)) return;
 
         const turns = await deps.repos.turns.listByThread(childThreadId);
         let terminal = turns.find((candidate) => candidate.id === executionTurnId);
@@ -58,41 +48,40 @@ export function createOrphanReportRepair(deps: {
           // Every admitted selector begins a separate execution, regardless of turn role.
           if (await deps.repos.executionReports.findByExecution(childThreadId, next.id)) break;
           leaf = next;
-          if (next.role === "assistant" || placeholderKindSet.has(next.role)) terminal = next;
+          if (next.role === "assistant" || isPlaceholderRole(next.role)) terminal = next;
         }
         if (
           !terminal ||
-          (terminal.role !== "assistant" && !placeholderKindSet.has(terminal.role)) ||
+          (terminal.role !== "assistant" && !isPlaceholderRole(terminal.role)) ||
           isTerminalTurnStatus(terminal.status)
         )
           return;
 
-        await finalizeExecution(deps, {
+        const completion = await finalizeExecution(deps, {
           threadId: childThreadId,
           turnId: terminal.id,
-          executionTurnId,
-          placeholderKinds,
           cause: {
             kind: "failed",
             reason: "orphaned",
             error: "Child execution stopped before terminal completion",
           },
         });
-        finalized = true;
+        if (completion.report)
+          reportsToPublish.set(completion.report.executionTurnId, completion.report);
       });
     });
-    if (finalized) await deps.publisher.publish(childThreadId, executionTurnId);
+    for (const report of reportsToPublish.values())
+      await deps.publisher.publish(report.childThreadId, report.executionTurnId);
   }
 
   async function repairPlaceholder(candidate: { threadId: ThreadId; id: TurnId }): Promise<void> {
-    await deps.authority.withExclusiveThread(candidate.threadId, () =>
+    const reports = await deps.authority.withExclusiveThread(candidate.threadId, () =>
       deps.threadLock.withThreadLock(candidate.threadId, () =>
-        finalizeOrphanedPlaceholder(deps, {
-          threadId: candidate.threadId,
-          placeholderKinds,
-        }),
+        finalizeOrphanedPlaceholder(deps, { threadId: candidate.threadId }),
       ),
     );
+    for (const report of reports ?? [])
+      await deps.publisher.publish(report.childThreadId, report.executionTurnId);
   }
 
   async function sweep(limit: number): Promise<number> {
@@ -105,7 +94,6 @@ export function createOrphanReportRepair(deps: {
     }
     for (const candidate of placeholders) {
       placeholderCursor = candidate.id;
-      if (!placeholderKindSet.has(candidate.role)) continue;
       try {
         await repairPlaceholder({ threadId: candidate.threadId, id: candidate.id });
       } catch (error) {

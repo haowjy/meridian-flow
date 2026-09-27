@@ -12,6 +12,7 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
+import { pendingPlaceholderPredicate } from "@meridian/database/schema/pending-placeholder";
 import { and, asc, desc, eq, gt, gte, inArray, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
@@ -220,6 +221,19 @@ export function createDrizzleTurnRepository(
         .orderBy(asc(schema.turns.position));
       return rows.map(mapTurn);
     },
+    async listPendingPlaceholdersForThread(threadId) {
+      const rows = await currentDrizzleDb(db)
+        .select()
+        .from(schema.turns)
+        .where(
+          and(
+            eq(schema.turns.threadId, threadId),
+            pendingPlaceholderPredicate({ status: schema.turns.status, role: schema.turns.role }),
+          ),
+        )
+        .orderBy(asc(schema.turns.position));
+      return rows.map(mapTurn);
+    },
     async listPendingPlaceholders(limit, afterTurnId) {
       if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limit must be positive");
       const rows = await currentDrizzleDb(db)
@@ -227,8 +241,7 @@ export function createDrizzleTurnRepository(
         .from(schema.turns)
         .where(
           and(
-            sql`${schema.turns.status} = 'pending'`,
-            sql`${schema.turns.role} NOT IN ('user', 'assistant')`,
+            pendingPlaceholderPredicate({ status: schema.turns.status, role: schema.turns.role }),
             ...(afterTurnId ? [gt(schema.turns.id, afterTurnId)] : []),
           ),
         )

@@ -75,10 +75,7 @@ export {
   EXPIRED_INTERRUPT_VALUE,
 } from "./loop/interrupts.js";
 export { createOrchestrator } from "./loop/orchestrator.js";
-export {
-  COMPACTION_PLACEHOLDER_KINDS,
-  finalizeOrphanedPlaceholder,
-} from "./loop/orphaned-placeholder.js";
+export { finalizeOrphanedPlaceholder } from "./loop/orphaned-placeholder.js";
 export {
   projectPendingInbox,
   readPendingInbox,

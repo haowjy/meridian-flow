@@ -20,6 +20,7 @@ export function createTestDrizzleDelivery(
     notices: createTestNoticePort(),
     runClaim: createDrizzleRunClaim(db),
     runStarter: { async start() {} },
+    async publishFinalizedReports() {},
     ...overrides,
   });
 }

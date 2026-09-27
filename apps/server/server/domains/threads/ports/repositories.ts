@@ -434,7 +434,9 @@ export interface TurnRepository {
   create(input: CreateTurnInput): Promise<Turn>;
   findById(id: TurnId): Promise<Turn | null>;
   listByThread(threadId: ThreadId): Promise<Turn[]>;
-  /** Keyset page for pending non-user/non-assistant turns, which can be execution placeholders. */
+  /** Targeted run-start and under-lock re-read for one thread's pending placeholders. */
+  listPendingPlaceholdersForThread(threadId: ThreadId): Promise<Turn[]>;
+  /** Keyset page of pending placeholders for bounded orphan recovery. */
   listPendingPlaceholders(
     limit: number,
     afterTurnId?: TurnId,

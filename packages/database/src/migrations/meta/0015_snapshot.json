@@ -1,5 +1,5 @@
 {
-  "id": "c6f7ae88-d2e0-405b-aa2a-7e2bae4eb94b",
+  "id": "2ecd4765-6a0b-41ad-a898-a54a4801ca7e",
   "prevId": "c4007a9b-c2a6-4fef-8a4e-c37456cab0a0",
   "version": "7",
   "dialect": "postgresql",
@@ -2096,6 +2096,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "bound_turn_ids": {
+          "name": "bound_turn_ids",
+          "type": "uuid[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::uuid[]"
+        },
         "adopted_message_ids": {
           "name": "adopted_message_ids",
           "type": "uuid[]",
@@ -2106,12 +2113,6 @@
         "turn_id": {
           "name": "turn_id",
           "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "turn_kind": {
-          "name": "turn_kind",
-          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -3219,7 +3220,7 @@
             }
           ],
           "isUnique": false,
-          "where": "\"turns\".\"status\" = 'pending' AND \"turns\".\"role\" NOT IN ('user', 'assistant')",
+          "where": "\"turns\".\"status\" = 'pending' AND \"turns\".\"role\" IN ('compaction')",
           "concurrently": false,
           "method": "btree",
           "with": {}

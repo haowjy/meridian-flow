@@ -11,6 +11,7 @@ import {
   type OrchestratorEvent,
   type Turn,
 } from "@meridian/contracts/threads";
+import { isPendingPlaceholder } from "@meridian/database/schema/pending-placeholder";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
 import type { EventJournalWriter, ThreadRepositories } from "../../threads/index.js";
 import { persistAndAppendEvents } from "./persistence.js";
@@ -39,6 +40,32 @@ function publicText(blocks: Block[], responseId: string | null): string {
     )
     .map((block) => blockPlainText(block.blockType, block.content) ?? "")
     .join("");
+}
+
+async function resolveReportContent(
+  input: {
+    turnId: TurnId;
+    responseId: string | null;
+    capture: SavedExecutionReport["capture"];
+    empty: boolean;
+  },
+  deps: Pick<ThreadRepositories, "blocks">,
+) {
+  if (input.empty) return { source: "empty" as const, summary: "", artifacts: null };
+
+  const text = input.capture
+    ? ""
+    : publicText(await deps.blocks.listByTurn(input.turnId), input.responseId);
+  return {
+    source: input.capture
+      ? ("return_result" as const)
+      : text
+        ? ("final_assistant" as const)
+        : ("empty" as const),
+    summary: input.capture?.summary ?? text,
+    ...(input.capture?.payload === undefined ? {} : { payload: input.capture.payload }),
+    artifacts: input.capture?.artifacts ?? null,
+  };
 }
 
 function turnEvent(turn: Turn, cause: TerminalCause): OrchestratorEvent {
@@ -70,17 +97,12 @@ export async function finalizeExecution(
   input: {
     threadId: ThreadId;
     turnId: TurnId;
-    /** The execution selector when it differs from the terminal turn. */
-    executionTurnId?: TurnId;
-    /** Additional pending placeholder roles accepted as failed/cancelled terminals. */
-    placeholderKinds?: readonly Turn["role"][];
     /** A crash on a placeholder has no report content, even if a candidate was captured earlier. */
     reportContent?: "empty";
     cause: TerminalCause;
   },
 ): Promise<FinalizedExecution> {
   let report: SavedExecutionReport | null = null;
-  const placeholderKinds = new Set(input.placeholderKinds ?? ["compaction"]);
   const persisted = await persistAndAppendEvents(
     deps,
     input.threadId,
@@ -90,17 +112,14 @@ export async function finalizeExecution(
         !turn ||
         turn.threadId !== input.threadId ||
         (turn.role !== "assistant" &&
-          !(
-            placeholderKinds.has(turn.role) &&
-            turn.status !== "complete" &&
-            input.cause.kind !== "success"
-          ))
+          !(isPendingPlaceholder(turn) && input.cause.kind !== "success"))
       ) {
         throw new Error("Terminal turn is unavailable");
       }
-      const existingReport = input.executionTurnId
-        ? await deps.repos.executionReports.findByExecution(input.threadId, input.executionTurnId)
-        : await deps.repos.executionReports.findByTurn(input.threadId, input.turnId);
+      const existingReport = await deps.repos.executionReports.findByTurn(
+        input.threadId,
+        input.turnId,
+      );
       const thread = await deps.repos.threads.lockByIdIncludingDeleted(input.threadId);
       if (thread?.kind === "subagent" && !existingReport) {
         throw new Error("Subagent execution was not admitted");
@@ -142,9 +161,7 @@ export async function finalizeExecution(
     },
     {
       async afterEvents(turn) {
-        const admitted = input.executionTurnId
-          ? await deps.repos.executionReports.findByExecution(input.threadId, input.executionTurnId)
-          : await deps.repos.executionReports.findByTurn(input.threadId, input.turnId);
+        const admitted = await deps.repos.executionReports.findByTurn(input.threadId, input.turnId);
         if (!admitted) return;
         if (admitted.outcome !== null) {
           report = admitted;
@@ -159,18 +176,15 @@ export async function finalizeExecution(
               : "failed";
         const responses = await deps.repos.modelResponses.listByTurn(turn.id);
         const finalResponseId = responses.at(-1)?.id ?? null;
-        const text =
-          capture || input.reportContent === "empty"
-            ? ""
-            : publicText(await deps.repos.blocks.listByTurn(turn.id), finalResponseId);
-        const source =
-          input.reportContent === "empty"
-            ? "empty"
-            : capture
-              ? "return_result"
-              : text
-                ? "final_assistant"
-                : "empty";
+        const content = await resolveReportContent(
+          {
+            turnId: turn.id,
+            responseId: finalResponseId,
+            capture,
+            empty: input.reportContent === "empty",
+          },
+          deps.repos,
+        );
         let cost = responses.reduce((sum, row) => sum + BigInt(row.millicredits ?? "0"), 0n);
         let ancestor = turn;
         while (ancestor.id !== admitted.executionTurnId) {
@@ -194,12 +208,7 @@ export async function finalizeExecution(
           terminalTurnId: turn.id as TurnId,
           outcome,
           reason: input.cause.kind === "success" ? null : input.cause.reason,
-          source,
-          summary: input.reportContent === "empty" ? "" : (capture?.summary ?? text),
-          ...(input.reportContent !== "empty" && capture?.payload !== undefined
-            ? { payload: capture.payload }
-            : {}),
-          artifacts: input.reportContent === "empty" ? null : (capture?.artifacts ?? null),
+          ...content,
           costMillicredits: Number(cost),
         });
         if (admitted.origin === "spawn") {

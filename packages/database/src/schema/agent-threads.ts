@@ -39,6 +39,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
 import { documents, projects, works } from "./content";
+import { pendingPlaceholderPredicate } from "./pending-placeholder";
 import { users } from "./users";
 
 export const threads = pgTable(
@@ -312,7 +313,7 @@ export const turns = pgTable(
       .where(sql`${table.parentTurnId} IS NOT NULL`),
     index("turns_pending_placeholders")
       .on(table.id)
-      .where(sql`${table.status} = 'pending' AND ${table.role} NOT IN ('user', 'assistant')`),
+      .where(pendingPlaceholderPredicate({ status: table.status, role: table.role })),
     uniqueIndex("turns_thread_single_root")
       .on(table.threadId)
       .where(sql`${table.parentTurnId} IS NULL`),

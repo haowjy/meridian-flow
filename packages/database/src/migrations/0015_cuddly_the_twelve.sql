@@ -1,0 +1,1 @@
+CREATE INDEX "turns_pending_placeholders" ON "turns" USING btree ("id") WHERE "turns"."status" = 'pending' AND "turns"."role" IN ('compaction');

@@ -15,6 +15,7 @@ import type {
   TurnUsage,
 } from "@meridian/contracts/threads";
 import { formatThreadRef } from "@meridian/contracts/threads";
+import { isPendingPlaceholder } from "@meridian/database/schema/pending-placeholder";
 import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { toIsoString } from "../../domain/contract-serialization.js";
@@ -566,16 +567,17 @@ export function createInMemoryRepositories(
     async listByThread(threadId) {
       return orderTurnsByPosition([...turns.values()].filter((t) => t.threadId === threadId));
     },
+    async listPendingPlaceholdersForThread(threadId) {
+      return orderTurnsByPosition(
+        [...turns.values()].filter(
+          (turn) => turn.threadId === threadId && isPendingPlaceholder(turn),
+        ),
+      );
+    },
     async listPendingPlaceholders(limit, afterTurnId) {
       if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limit must be positive");
       return [...turns.values()]
-        .filter(
-          (turn) =>
-            turn.status === "pending" &&
-            turn.role !== "user" &&
-            turn.role !== "assistant" &&
-            (!afterTurnId || turn.id > afterTurnId),
-        )
+        .filter((turn) => isPendingPlaceholder(turn) && (!afterTurnId || turn.id > afterTurnId))
         .sort((left, right) => left.id.localeCompare(right.id))
         .slice(0, limit)
         .map(({ id, threadId: ownerThreadId, role }) => ({

@@ -1,16 +1,14 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
 import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { Turn } from "@meridian/contracts/threads";
+import type { SavedExecutionReport } from "@meridian/contracts/spawn";
+import { isPendingPlaceholder } from "@meridian/database/schema/pending-placeholder";
 import type { NoticePort } from "../../notices/index.js";
 import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
-import { createLocalTurn, currentTurnKind, reservationTurn } from "../loop/local-turn.js";
-import {
-  COMPACTION_PLACEHOLDER_KINDS,
-  finalizeOrphanedPlaceholder,
-} from "../loop/orphaned-placeholder.js";
+import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
+import { finalizeOrphanedPlaceholder } from "../loop/orphaned-placeholder.js";
 import { readPendingInbox } from "../loop/pending-inbox.js";
 import {
   type PersistenceDeps,
@@ -63,7 +61,7 @@ export function createDeliveryAdapter(
     inbox: DeliveryStore;
     leaseStore: DeliveryLeaseStore;
     runClaim: Pick<RunClaim, "release" | "withExclusiveThread">;
-    orphanedPlaceholderKinds?: readonly Turn["role"][];
+    publishFinalizedReports(reports: readonly SavedExecutionReport[]): Promise<void>;
     workContext: import("../loop/work-context.js").WorkContextReader;
     threadLock: ThreadLock;
     notices: NoticePort;
@@ -72,7 +70,6 @@ export function createDeliveryAdapter(
   },
 ): RuntimeDelivery {
   const { inbox, leaseStore, threadLock } = deps;
-  const orphanedPlaceholderKinds = deps.orphanedPlaceholderKinds ?? COMPACTION_PLACEHOLDER_KINDS;
   const appendPending = async (threadId: ThreadId) => {
     await deps.eventWriter.appendEvent(threadId, {
       type: "inbox.changed",
@@ -269,7 +266,7 @@ export function createDeliveryAdapter(
     while (leaf && !input.knownTurnIds.has(leaf)) {
       const turn = await deps.repos.turns.findById(leaf);
       if (!turn) throw new Error(`Missing causal turn: ${leaf}`);
-      if (turn.role === "compaction" && turn.status === "pending")
+      if (isPendingPlaceholder(turn))
         throw new Error("Unexpected pending placeholder in adoption tail");
       const message = batch.find((entry) => entry.id === turn.id);
       const systemUpdate = SystemUpdateMetadataCodec.safeParse(turn.metadata);
@@ -531,12 +528,10 @@ export function createDeliveryAdapter(
     adoptBatch: async (lease, prepare, options) => {
       // startExecution already owns the non-reentrant session claim. Repair its
       // stale predecessor before selection so the new batch cannot pass C.
-      await threadLock.withThreadLock(lease.threadId, () =>
-        finalizeOrphanedPlaceholder(deps, {
-          threadId: lease.threadId,
-          placeholderKinds: orphanedPlaceholderKinds,
-        }),
+      const reports = await threadLock.withThreadLock(lease.threadId, () =>
+        finalizeOrphanedPlaceholder(deps, { threadId: lease.threadId }),
       );
+      await deps.publishFinalizedReports(reports);
       return prepareAndCommit({
         threadId: lease.threadId,
         signal: options?.signal,
