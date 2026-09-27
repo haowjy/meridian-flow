@@ -119,7 +119,7 @@ export function buildSubagentRuns(
 ): SubagentRun[] {
   const byThread = new Map(nodes.map((node) => [node.threadId, runFromActivity(node)]));
   const runs = new Map<string, SubagentRun>();
-  for (const turn of turns)
+  for (const turn of turns) {
     for (const block of turn.blocks) {
       const card = parseInvocationCard(block.content);
       if (card) {
@@ -149,28 +149,31 @@ export function buildSubagentRuns(
         if (run.threadId) runs.set(`thread:${run.threadId}`, run);
         if (run.ref) runs.set(`ref:${run.ref}`, run);
       }
-      const update = readSubagentUpdateMetadata(turn.metadata);
-      if (update) {
-        const live = byThread.get(update.childThreadId);
-        const run: SubagentRun = {
-          threadId: update.childThreadId,
-          ref: update.handle,
-          execution: update.execution,
-          agentName: update.agentName || live?.agentName || "Subagent",
-          description: live?.description ?? null,
-          status: statusFromSources({ outcome: update.outcome }),
-          startedAt: live?.startedAt ?? null,
-          endedAt: turn.completedAt ?? live?.endedAt ?? null,
-          liveTool: null,
-          originTurnId: live?.originTurnId ?? null,
-          parentThreadId: turn.threadId,
-          deliveryMode: live?.deliveryMode ?? null,
-        };
-        runs.set(`thread:${run.threadId}`, run);
-        runs.set(`ref:${run.ref}`, run);
-        if (run.execution) runs.set(`execution:${run.execution}`, run);
-      }
     }
+    const update = readSubagentUpdateMetadata(turn.metadata);
+    if (update) {
+      const live = byThread.get(update.childThreadId);
+      // The launch card came first; it keeps identity when activity is empty.
+      const card = runs.get(`thread:${update.childThreadId}`);
+      const run: SubagentRun = {
+        threadId: update.childThreadId,
+        ref: update.handle,
+        execution: update.execution,
+        agentName: update.agentName || live?.agentName || card?.agentName || "Subagent",
+        description: live?.description ?? card?.description ?? null,
+        status: statusFromSources({ outcome: update.outcome }),
+        startedAt: live?.startedAt ?? card?.startedAt ?? null,
+        endedAt: turn.completedAt ?? live?.endedAt ?? null,
+        liveTool: null,
+        originTurnId: live?.originTurnId ?? card?.originTurnId ?? null,
+        parentThreadId: turn.threadId,
+        deliveryMode: live?.deliveryMode ?? card?.deliveryMode ?? null,
+      };
+      runs.set(`thread:${run.threadId}`, run);
+      runs.set(`ref:${run.ref}`, run);
+      if (run.execution) runs.set(`execution:${run.execution}`, run);
+    }
+  }
   for (const [threadId, live] of byThread)
     if (!runs.has(`thread:${threadId}`)) runs.set(`thread:${threadId}`, live);
   return [...new Set(runs.values())];
