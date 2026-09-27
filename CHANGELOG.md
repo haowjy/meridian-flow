@@ -7,6 +7,9 @@
 
 ## [Unreleased]
 
+### Added
+- Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
+
 ### Fixed
 - Cache TTL starts at the provider attempt, not response persistence.
 - Saved-report repair preserves fork cutoffs and cross-thread history.
