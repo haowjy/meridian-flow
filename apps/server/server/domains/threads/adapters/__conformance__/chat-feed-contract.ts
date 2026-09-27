@@ -169,6 +169,72 @@ export async function expectChatFeedCursorAcrossFilterContract(
   expect(secondPage.map((item) => item.id)).toEqual(expectedOrder.slice(2));
 }
 
+/** Work membership composes with the Project feed's search, favorite, and cursor filters. */
+export async function expectChatFeedWorkFilterContract(
+  h: ChatFeedConformanceHarness,
+): Promise<void> {
+  const inWorkFavorite = "00000000-0000-4000-8000-00000000f001";
+  const inWorkOther = "00000000-0000-4000-8000-00000000f002";
+  const inOtherWork = "00000000-0000-4000-8000-00000000f003";
+  await createTitledThread(h, inWorkFavorite, "Sect favorite");
+  await createTitledThread(h, inWorkOther, "Sect other");
+  await createTitledThread(h, inOtherWork, "Sect other Work");
+  const workId = await h.createWork();
+  const otherWorkId = await h.createWork();
+  await h.repos.threadWorks.addMembership(inWorkFavorite as ThreadId, workId as WorkId, true);
+  await h.repos.threadWorks.addMembership(inWorkOther as ThreadId, workId as WorkId, true);
+  await h.repos.threadWorks.addMembership(inOtherWork as ThreadId, otherWorkId as WorkId, true);
+  await h.repos.threadUserState.update({
+    threadId: inWorkFavorite as ThreadId,
+    userId: h.userId as UserId,
+    isFavorite: true,
+  });
+  await h.repos.threadUserState.update({
+    threadId: inOtherWork as ThreadId,
+    userId: h.userId as UserId,
+    isFavorite: true,
+  });
+
+  const page = (options: { favorite?: boolean; search?: string | null } = {}) =>
+    h.repos.chatFeed.queryPage({
+      projectId: h.projectId,
+      userId: h.userId,
+      after: null,
+      limit: 50,
+      favorite: options.favorite ?? false,
+      search: options.search ?? null,
+      workId: workId as WorkId,
+    });
+  expect((await page()).map((item) => item.id).sort()).toEqual(
+    [inWorkFavorite, inWorkOther].sort(),
+  );
+  expect((await page({ favorite: true, search: "sect" })).map((item) => item.id)).toEqual([
+    inWorkFavorite,
+  ]);
+
+  const first = await h.repos.chatFeed.queryPage({
+    projectId: h.projectId,
+    userId: h.userId,
+    after: null,
+    limit: 1,
+    favorite: true,
+    search: "sect",
+    workId: workId as WorkId,
+  });
+  const firstItem = first[0];
+  if (!firstItem) throw new Error("Expected one Work-filtered favorite");
+  const rest = await h.repos.chatFeed.queryPage({
+    projectId: h.projectId,
+    userId: h.userId,
+    after: { sortAt: firstItem.lastActivityAt, threadId: firstItem.id as ThreadId },
+    limit: 50,
+    favorite: true,
+    search: "sect",
+    workId: workId as WorkId,
+  });
+  expect([...first, ...rest].map((item) => item.id)).toEqual([inWorkFavorite]);
+}
+
 /** The Work feed shares the Project feed's row shape and activity order, scoped to membership. */
 export async function expectWorkChatFeedContract(h: ChatFeedConformanceHarness): Promise<void> {
   const memberA = "00000000-0000-4000-8000-00000000e001";

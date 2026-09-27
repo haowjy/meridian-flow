@@ -215,7 +215,7 @@ transactions. See the [runtime contract](../../runtime/.context/CONTEXT.md).
 | Port | Surface |
 |---|---|
 | `ThreadRepository` | Thread lifecycle plus writer-facing project lists (`kind: "primary"` only) and the hard-bounded `listRecentByWork` model summary. It does not expose an unbounded Work list. Get-by-id still returns subagents. |
-| `ProjectChatFeedRepository` | Flat primary-chat pages ranked by latest visible activity, with an optional Favorite filter before pagination. |
+| `ProjectChatFeedRepository` | Flat primary-chat pages ranked by latest visible activity, with optional Favorite, title-search, and Work-association filters before pagination. |
 | `WorkChatFeedRepository` | Bounded historical-Work association pages over the same primary Project-chat projection, ordered by `(threads.last_activity_at DESC, threads.id DESC)` — the same stored activity sort as `ProjectChatFeedRepository`, and the same `ProjectChatItem` row shape (`chatFeedRowsSql`). |
 | `ThreadUserStateRepository` | Per-writer favorite authority. |
 | `TurnRepository` | `create / findById / listByThread / getLatestByThread / updateStatus / recomputeRollups` |

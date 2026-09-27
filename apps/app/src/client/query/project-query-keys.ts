@@ -56,6 +56,7 @@ export const projectQueryKeys = {
   renamePrefix: ["projects", "rename"] as const,
   rename: (projectId: string) => ["projects", "rename", projectId] as const,
   detail: (projectId: string) => ["projects", "detail", projectId] as const,
+  projectCreation: (projectId: string) => ["projects", "creation", projectId] as const,
   documentAddresses: (projectId: string) => ["projects", projectId, "document-addresses"] as const,
   threads: (projectId: string) => ["projects", projectId, "threads"] as const,
   workThreads: (projectId: string, workId?: string) =>
@@ -63,10 +64,13 @@ export const projectQueryKeys = {
       ? (["projects", projectId, "work-threads", workId] as const)
       : (["projects", projectId, "work-threads"] as const),
   works: (projectId: string) => ["projects", projectId, "works"] as const,
+  workCreations: (projectId: string) => ["projects", projectId, "work-creations"] as const,
   chatFeed: (projectId: string) => ["projects", projectId, "chat-feed"] as const,
   /** One filtered chat feed; a partial filter (`{ favorite: true }`) matches every variant. */
-  chatFeedFilter: (projectId: string, filter: { favorite?: boolean; search?: string | null }) =>
-    [...projectQueryKeys.chatFeed(projectId), filter] as const,
+  chatFeedFilter: (
+    projectId: string,
+    filter: { favorite?: boolean; search?: string | null; workId?: string | null },
+  ) => [...projectQueryKeys.chatFeed(projectId), filter] as const,
   threadUserState: (projectId: string, threadId: string) =>
     ["projects", projectId, "thread-user-state", threadId] as const,
   threadRename: (projectId: string, threadId: string) =>

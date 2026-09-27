@@ -66,6 +66,7 @@ export type ProjectChatFeedRequestOptions = {
   cursor?: string | null;
   favorite?: boolean;
   search?: string | null;
+  workId?: string | null;
 };
 
 export function apiProjectChatFeedPath(
@@ -76,6 +77,7 @@ export function apiProjectChatFeedPath(
   if (opts?.cursor) query.set("cursor", opts.cursor);
   if (opts?.favorite) query.set("favorite", "true");
   if (opts?.search) query.set("q", opts.search);
+  if (opts?.workId) query.set("workId", opts.workId);
   const queryString = query.toString();
   return `${apiProjectPath(projectId)}/chat-feed${queryString ? `?${queryString}` : ""}`;
 }

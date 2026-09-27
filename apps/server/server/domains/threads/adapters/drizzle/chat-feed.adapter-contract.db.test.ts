@@ -22,6 +22,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expectChatFeedFavoriteFilterContract,
       expectChatFeedSearchSemanticsContract,
       expectChatFeedTiesContract,
+      expectChatFeedWorkFilterContract,
       expectWorkChatFeedContract,
     } = await import("../__conformance__/chat-feed-contract.js");
 
@@ -80,6 +81,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("pages a cursor minted under a filter using that same filter", async () => {
       await expectChatFeedCursorAcrossFilterContract(harness());
+    });
+
+    it("composes Work membership with search, Favorites, and cursor pagination", async () => {
+      await expectChatFeedWorkFilterContract(harness());
     });
 
     it("scopes the Work feed to membership and shares the Project feed's row shape", async () => {

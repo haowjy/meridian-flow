@@ -29,6 +29,10 @@ export function createDrizzleProjectChatFeedRepository(
           AND t.kind = 'primary'
           AND t.deleted_at IS NULL AND t.status <> 'archived'
           AND (NOT ${input.favorite} OR COALESCE(tus.is_favorite, false))
+          AND (${input.workId ?? null}::uuid IS NULL OR EXISTS (
+            SELECT 1 FROM thread_works matched_tw
+            WHERE matched_tw.thread_id = t.id AND matched_tw.work_id = ${input.workId ?? null}::uuid
+          ))
           AND (${searchPattern}::text IS NULL OR t.title ILIKE ${searchPattern} ESCAPE '\\')
           AND (${cursorActivity}::text IS NULL OR
             (t.last_activity_at, t.id) <

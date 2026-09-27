@@ -23,13 +23,14 @@ export function projectChatFeedQueryOptions(
   projectId: string,
   favorite = false,
   search: string | null = null,
+  workId: string | null = null,
 ) {
   return infiniteQueryOptions({
-    queryKey: projectQueryKeys.chatFeedFilter(projectId, { favorite, search }),
+    queryKey: projectQueryKeys.chatFeedFilter(projectId, { favorite, search, workId }),
     initialPageParam: null as string | null,
     queryFn: async ({ pageParam, signal }) => {
       const requestGeneration = beginThreadUserStateFeedRequest(client, projectId);
-      const page = await getProjectChatFeed(projectId, pageParam, signal, favorite, search);
+      const page = await getProjectChatFeed(projectId, pageParam, signal, favorite, search, workId);
       admitThreadUserStateItems(client, projectId, page.items, requestGeneration);
       return projectChatFeedPage(page, (item) =>
         projectThreadUserState(item, getThreadUserStateRecord(client, projectId, item)),
@@ -48,9 +49,12 @@ export function useProjectChatFeed(
   projectId: string,
   favorite = false,
   search: string | null = null,
+  workId: string | null = null,
 ) {
   const client = useQueryClient();
-  const query = useInfiniteQuery(projectChatFeedQueryOptions(client, projectId, favorite, search));
+  const query = useInfiniteQuery(
+    projectChatFeedQueryOptions(client, projectId, favorite, search, workId),
+  );
   // Stable across renders that don't change `query.data`, so a keystroke
   // elsewhere in the tree does not invalidate every row's memo.
   const items = useMemo(

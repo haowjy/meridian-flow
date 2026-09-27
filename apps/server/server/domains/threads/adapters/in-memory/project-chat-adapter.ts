@@ -125,6 +125,9 @@ export function createInMemoryProjectChatAdapter(
       return eligible
         .filter((item) => !input.favorite || item.isFavorite)
         .filter(
+          (item) => !input.workId || source.hasWorkMembership(item.id as ThreadId, input.workId),
+        )
+        .filter(
           (item) => !input.search || item.title.toLowerCase().includes(input.search.toLowerCase()),
         )
         .filter(
