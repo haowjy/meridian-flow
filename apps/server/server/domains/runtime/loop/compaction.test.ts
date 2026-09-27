@@ -387,24 +387,36 @@ describe("estimateRequestTokens", () => {
     ).toBe(400);
   });
 
-  it("counts image and file parts by type, never by their base64 payload size", () => {
+  it("counts images by type and file text from the payload providers actually receive", () => {
     const image = (data: string) => ({
       role: "user" as const,
-      content: [
-        { type: "image" as const, data, mediaType: "image/png" },
-        { type: "file" as const, data, mediaType: "application/pdf", filename: "chapter.pdf" },
-      ],
+      content: [{ type: "image" as const, data, mediaType: "image/png" }],
     });
-    const request = { messages: [image("x".repeat(1_400_000))] };
-    const samePartsSmallPayload = { messages: [image("x")] };
-    const largeEstimate = estimateRequestTokens({ request, baseline: null });
-    expect(largeEstimate).toBe(
-      estimateRequestTokens({ request: samePartsSmallPayload, baseline: null }),
-    );
-    expect(largeEstimate).toBeGreaterThanOrEqual(
-      IMAGE_PART_TOKEN_ESTIMATE + FILE_PART_TOKEN_ESTIMATE,
-    );
-    expect(largeEstimate).toBeLessThan(IMAGE_PART_TOKEN_ESTIMATE + FILE_PART_TOKEN_ESTIMATE + 100);
+    const largeImage = estimateRequestTokens({
+      request: { messages: [image("x".repeat(1_400_000))] },
+      baseline: null,
+    });
+    const smallImage = estimateRequestTokens({
+      request: { messages: [image("x")] },
+      baseline: null,
+    });
+    expect(largeImage).toBe(smallImage);
+    expect(largeImage).toBeGreaterThanOrEqual(IMAGE_PART_TOKEN_ESTIMATE);
+
+    const file = (data: string) => ({
+      role: "user" as const,
+      content: [{ type: "file" as const, data, mediaType: "text/plain", filename: "chapter.txt" }],
+    });
+    const longFile = estimateRequestTokens({
+      request: { messages: [file("中".repeat(20_000))] },
+      baseline: null,
+    });
+    const shortFile = estimateRequestTokens({
+      request: { messages: [file("中")] },
+      baseline: null,
+    });
+    expect(shortFile).toBeGreaterThanOrEqual(FILE_PART_TOKEN_ESTIMATE);
+    expect(longFile).toBeGreaterThan(shortFile);
   });
 
   it("uses a conservative CJK code-point multiplier", () => {
@@ -413,7 +425,6 @@ describe("estimateRequestTokens", () => {
       request: { messages: [requestMessage(text)] },
       baseline: null,
     });
-    expect(CJK_CODE_POINT_TOKEN_MULTIPLIER).toBe(3);
     expect(estimated).toBeGreaterThanOrEqual(text.length * CJK_CODE_POINT_TOKEN_MULTIPLIER);
   });
 

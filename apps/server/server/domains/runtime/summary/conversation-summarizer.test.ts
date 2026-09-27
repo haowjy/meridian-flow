@@ -280,7 +280,7 @@ describe("conversation summarizer", () => {
   });
 
   it("splits a large system update at its source block boundaries", async () => {
-    const rig = setup();
+    const rig = setup({ models: [threadModel, { ...cheapModel, contextWindow: 2_800 }] });
     rig.input.projection = projection(["system ".repeat(400)]);
     rig.input.projection.turns[0].role = "system";
     rig.input.projection.blocks.push({ ...rig.input.projection.blocks[0], sequence: 1 });
@@ -414,6 +414,7 @@ describe("conversation summarizer", () => {
 
   it("segments only at turns and carries the running summary into each bounded request", async () => {
     const rig = setup({
+      models: [threadModel, { ...cheapModel, contextWindow: 2_400 }],
       async *events(_request, call) {
         yield { type: "end", result: reply(`Summary ${call}`) };
       },

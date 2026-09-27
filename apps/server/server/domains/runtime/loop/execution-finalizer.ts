@@ -194,7 +194,7 @@ export async function finalizeExecution(
           if (!parent || parent.threadId !== input.threadId)
             throw new Error("Execution terminal is outside its admitted turn chain");
           ancestor = parent;
-          if (ancestor.role === "assistant") {
+          if (ancestor.role === "assistant" || ancestor.role === "compaction") {
             const priorResponses = await deps.repos.modelResponses.listByTurn(ancestor.id);
             cost += priorResponses.reduce((sum, row) => sum + BigInt(row.millicredits ?? "0"), 0n);
           }

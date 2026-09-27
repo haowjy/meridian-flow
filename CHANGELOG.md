@@ -32,6 +32,7 @@
 - Leave a compaction pending for recovery when its live failure transaction cannot commit.
 - Development: reset worktree databases that already applied the earlier unreleased 0014 with `pnpm db:reset`.
 - Bill summary responses on success, failure and cancellation, once per paid call.
+- Include compaction-call costs in child reports, debit them against the shared tree budget, and probe CJK, image, and file estimates against live provider usage.
 - Cache TTL starts at the provider attempt, not response persistence.
 - Saved-report repair preserves fork cutoffs and cross-thread history.
 - Dev CLI unwraps API transport responses. Thread creation and inspection work against the live stack.

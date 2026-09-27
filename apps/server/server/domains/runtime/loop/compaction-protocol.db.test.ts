@@ -410,6 +410,162 @@ else
       expect(debits).toHaveLength(1);
     });
 
+    it("includes discarded warm and every cold segment response in a child report's cost", async () => {
+      const rig = await fixture({ child: true, history: "short history ".repeat(100) });
+      const model = {
+        id: "gpt-4.1-mini",
+        provider: "openai",
+        displayName: "Fixture",
+        contextWindow: 6_000,
+        maxOutputTokens: 100,
+        promptCache: { kind: "automatic" as const, ttlMs: 60_000 },
+        capabilities: new Set<import("../gateway/index.js").Capability>(["tool_calling"]),
+      };
+      rig.deps.gateway.listModels = () => [model];
+      const originalStream = rig.deps.gateway.stream.bind(rig.deps.gateway);
+      const requests: import("../gateway/index.js").GenerateRequest[] = [];
+      let summaryCalls = 0;
+      rig.deps.gateway.stream = async function* (request) {
+        requests.push(request);
+        const isSummary = request.messages.some((message) =>
+          message.content.some(
+            (part) => part.type === "text" && part.text.includes("Summarize this conversation"),
+          ),
+        );
+        if (!isSummary) {
+          yield* originalStream(request);
+          return;
+        }
+        summaryCalls++;
+        yield {
+          type: "end",
+          result: {
+            content:
+              summaryCalls === 1
+                ? [{ type: "tool_use", toolCallId: "discarded-warm", toolName: "read", input: {} }]
+                : [{ type: "text", text: `Cold segment ${summaryCalls - 1} summary.` }],
+            toolCalls:
+              summaryCalls === 1 ? [{ id: "discarded-warm", name: "read", arguments: {} }] : [],
+            finishReason: summaryCalls === 1 ? "tool_use" : "end_turn",
+            usage: { inputTokens: 100, outputTokens: 10 },
+            model: model.id,
+            provider: model.provider,
+          },
+        };
+      };
+      rig.deps.summarizer = createConversationSummarizer({
+        gateway: rig.deps.gateway,
+        agentRevisions: rig.deps.agentRevisions,
+        prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
+        config: { model: model.id, maxOutputTokens: 100 },
+      });
+
+      let previousTurnId = (await rig.repos.turns.listByThread(rig.threadId)).at(-1)?.id;
+      for (let index = 0; index < 6; index++) {
+        const turn = await rig.repos.turns.create({
+          threadId: rig.threadId,
+          prevTurnId: previousTurnId,
+          role: index % 2 === 0 ? "user" : "assistant",
+          origin: index % 2 === 0 ? "writer" : "assistant",
+          status: "complete",
+        });
+        await rig.repos.blocks.create({
+          turnId: turn.id,
+          blockType: "text",
+          sequence: 0,
+          content: `Chapter clue ${index}. ${"distinctive lore ".repeat(500)}`,
+          textContent: `Chapter clue ${index}. ${"distinctive lore ".repeat(500)}`,
+          status: "complete",
+        });
+        previousTurnId = turn.id;
+      }
+
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      const outcome = await run.execute();
+      expect(outcome.status).toBe("complete");
+      expect(summaryCalls).toBeGreaterThanOrEqual(3);
+
+      const compaction = (await rig.repos.turns.listByThread(rig.threadId)).find(
+        (turn) => turn.role === "compaction",
+      );
+      expect(compaction).toBeDefined();
+      if (!compaction) throw new Error("Missing compaction turn");
+      const summaryRows = await rig.repos.modelResponses.listByTurn(compaction.id);
+      expect(summaryRows).toHaveLength(summaryCalls);
+      expect(summaryRows[0]).toMatchObject({
+        predictedCacheState: "warm",
+        predictedCacheReason: "reusable_prefix",
+        finishReason: "tool_use",
+      });
+      expect(
+        summaryRows.slice(1).every((row) => row.predictedCacheReason === "summary_transcript"),
+      ).toBe(true);
+
+      const report = await rig.repos.executionReports.findByExecution(
+        rig.threadId,
+        run.executionTurnId,
+      );
+      const allRows = await rig.repos.modelResponses.listByThread(rig.threadId);
+      expect(report?.costMillicredits).toBe(
+        allRows.reduce((sum, row) => sum + Number(row.millicredits ?? "0"), 0),
+      );
+      const debits = await db.select().from(schema.creditTransactions);
+      for (const row of summaryRows) {
+        expect(BigInt(row.millicredits ?? "0")).toBeGreaterThan(0n);
+        expect(debits.filter((debit) => debit.usageEventId === row.id)).toHaveLength(1);
+      }
+      expect(requests.length).toBeGreaterThan(summaryCalls);
+    });
+
+    it("stops the successor iteration when settled compaction cost exhausts the tree budget", async () => {
+      const summarizer = scriptedSummarizer(async ({ turnId }) => ({
+        kind: "complete",
+        text: "Earlier facts.",
+        model: "gpt-4.1-mini",
+        modelResponses: [
+          {
+            id: crypto.randomUUID(),
+            turnId,
+            sequence: 0,
+            provider: "openai",
+            model: "gpt-4.1-mini",
+            inputTokens: 100_000,
+            outputTokens: 20,
+            requestMessageCount: 7,
+            priceSource: "unknown",
+            predictedCacheState: "cold",
+            predictedCacheReason: "summary_transcript",
+          },
+        ],
+      }));
+      const rig = await fixture({ summarizer });
+      const treeBudget = createDefaultTreeBudget({ maxCostMillicredits: 1 });
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        treeBudget,
+        tools: [],
+        userText: "Continue.",
+      });
+
+      expect((await run.execute()).status).toBe("error");
+      const compaction = await rig.repos.turns.findById(run.executionTurnId);
+      expect(compaction).toMatchObject({ role: "compaction", status: "complete" });
+      const summaryRows = await rig.repos.modelResponses.listByTurn(run.executionTurnId);
+      expect(summaryRows).toHaveLength(1);
+      expect(Number(summaryRows[0]?.millicredits)).toBeGreaterThan(treeBudget.maxCostMillicredits);
+      expect(treeBudget.spent.costMillicredits).toBe(Number(summaryRows[0]?.millicredits));
+      expect(treeBudget.spent.totalTurns).toBe(0);
+      expect(rig.gateway.requests).toEqual([]);
+
+      const terminal = (await rig.repos.turns.listByThread(rig.threadId)).at(-1);
+      expect(terminal).toMatchObject({ role: "assistant", status: "error" });
+      expect(terminal?.error).toContain("Cost budget exhausted (1 millicredits)");
+    });
+
     it.each([
       false,
       true,

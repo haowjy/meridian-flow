@@ -7,8 +7,9 @@ const TOKEN_BYTES_PER_TOKEN = 3;
 const encoder = new TextEncoder();
 export const IMAGE_PART_TOKEN_ESTIMATE = 1_600;
 export const FILE_PART_TOKEN_ESTIMATE = 10_000;
-// Budget three tokens per CJK code point: a deliberate 3x margin over bytes/3 until C4e probes it.
-export const CJK_CODE_POINT_TOKEN_MULTIPLIER = 3;
+// DeepSeek V4 Flash's repeatable C4e probe supports 0.8 with 10% headroom.
+// Refresh the evidence with apps/server/scripts/probe-compaction-estimates.ts.
+export const CJK_CODE_POINT_TOKEN_MULTIPLIER = 0.8;
 
 function encodedBytes(value: unknown): number {
   return encoder.encode(JSON.stringify(value) ?? "").byteLength;
@@ -65,7 +66,7 @@ function stringTokens(value: unknown): number {
 
 /** Estimates JSON-visible strings with the shared CJK policy plus their structural bytes. */
 export function estimateModelJsonTokens(value: unknown): number {
-  return stringTokens(value) + tokensForBytes(encodedBytes(blankStrings(value)));
+  return Math.ceil(stringTokens(value) + tokensForBytes(encodedBytes(blankStrings(value))));
 }
 
 /** Estimates one model content part; image/file payload bytes are replaced by fixed costs. */
@@ -74,11 +75,20 @@ export function estimateModelPartTokens(part: unknown): number {
     return estimateModelJsonTokens(part);
 
   const record = part as Record<string, unknown>;
-  if (record.type === "image" || record.type === "file") {
+  if (record.type === "image") {
     const { data: _payload, ...withoutPayload } = record;
+    return IMAGE_PART_TOKEN_ESTIMATE + estimateModelJsonTokens(withoutPayload);
+  }
+  if (record.type === "file") {
+    const { data: _payload, ...withoutPayload } = record;
+    const fileTextTokens =
+      typeof record.data === "string"
+        ? estimateModelJsonTokens(record.data)
+        : record.data instanceof URL
+          ? estimateModelJsonTokens(record.data.href)
+          : 0;
     return (
-      (record.type === "image" ? IMAGE_PART_TOKEN_ESTIMATE : FILE_PART_TOKEN_ESTIMATE) +
-      estimateModelJsonTokens(withoutPayload)
+      Math.max(FILE_PART_TOKEN_ESTIMATE, fileTextTokens) + estimateModelJsonTokens(withoutPayload)
     );
   }
   return estimateModelJsonTokens(record);

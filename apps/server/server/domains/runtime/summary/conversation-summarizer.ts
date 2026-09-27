@@ -11,10 +11,7 @@ import {
   thinkingBudgetTokens,
 } from "../gateway/index.js";
 import { estimateModelJsonTokens } from "../loop/compaction/estimate.js";
-import {
-  CJK_CODE_POINT_TOKEN_MULTIPLIER,
-  estimateRequestTokens,
-} from "../loop/compaction/index.js";
+import { estimateRequestTokens } from "../loop/compaction/index.js";
 import { modelResponseTimingFields } from "../loop/model-response-timing.js";
 import type { PrefixCacheState, PrefixCacheStateRequest } from "../loop/prefix-cache-state.js";
 import type {
@@ -246,9 +243,9 @@ export function createConversationSummarizer(
         // Leave input-estimate headroom for the running summary before any paid segment.
         // Recheck each assembled call against the actual running summary as it arrives.
         const overhead = estimateRequestTokens({ request: requestFor([]), baseline: null });
+        // The configured output cap is already in provider token units, regardless of language.
         const runningReserve =
-          estimateModelJsonTokens("Prior context (running summary):") +
-          config.maxOutputTokens * CJK_CODE_POINT_TOKEN_MULTIPLIER;
+          estimateModelJsonTokens("Prior context (running summary):") + config.maxOutputTokens;
         const segmentBudget = usableWindow - overhead - runningReserve;
         const turns = transcriptSegments(input.projection, segmentBudget);
         const turnTokens = turns.map((turn) => estimateModelJsonTokens(`\n\n${turn}`));
