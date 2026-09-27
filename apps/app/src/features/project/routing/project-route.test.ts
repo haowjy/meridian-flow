@@ -1,5 +1,34 @@
+import { parseRequestId } from "@meridian/contracts/request-id";
+import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it } from "vitest";
-import { applyContextRepairIfCurrent, openContextRouteSearch } from "./project-route";
+import type { RouteWorkResolution } from "./project-route";
+import {
+  applyContextRepairIfCurrent,
+  openContextRouteSearch,
+  workDockDestinationId,
+} from "./project-route";
+
+describe("Work dock route scope", () => {
+  it("uses the resolved or pending Work id and clears for collection and other screens", () => {
+    const workId = parseRequestId("f41144a6-1035-460b-9272-6c4712f3a8b6");
+    if (!workId) throw new Error("Invalid test Work ID");
+    const present: RouteWorkResolution = {
+      status: "present",
+      workId,
+      work: {} as Work,
+    };
+    expect(workDockDestinationId("work", present)).toBe("f41144a6-1035-460b-9272-6c4712f3a8b6");
+    expect(
+      workDockDestinationId("work", {
+        status: "unresolved",
+        reason: "loading",
+        slug: "pending-id",
+      }),
+    ).toBe("pending-id");
+    expect(workDockDestinationId("work", { status: "none" })).toBeNull();
+    expect(workDockDestinationId("chat", present)).toBeNull();
+  });
+});
 
 describe("guarded context route repair", () => {
   const repair = {

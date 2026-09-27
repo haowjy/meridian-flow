@@ -18,7 +18,7 @@ import { CreationPage } from "@/features/creation/CreationPage";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
 import { useCreateWork, useWorkCreationRecords, useWorkCreationState } from "./useWorkCreation";
 import { WorkCard } from "./WorkCard";
-import { WorkDetailScreen } from "./WorkDetailScreen";
+import { WorkDetailScreen, WorkScreenHeader } from "./WorkDetailScreen";
 import { WorkDialog, type WorkDialogAction } from "./WorkDialog";
 import {
   emptyWorkDeleteState,
@@ -103,9 +103,11 @@ export function WorkScreen(props: WorkScreenProps) {
   ) {
     return (
       <WorkCreationDestination
+        projectId={props.projectId}
         name={creation.name}
         goal={creation.goal}
         failed={creation.status === "failed"}
+        routeCommands={props.routeCommands}
         onRetry={creation.retry}
         onDiscard={creation.discard}
       />
@@ -533,50 +535,85 @@ export function WorkCollectionScreen({
 }
 
 export function WorkCreationDestination({
+  projectId,
   name,
   goal,
   failed,
+  routeCommands,
   onRetry,
   onDiscard,
 }: {
+  projectId: string;
   name: string;
   goal: string | null;
   failed: boolean;
+  routeCommands: ProjectRouteCommands;
   onRetry: () => void;
   onDiscard: () => void;
 }) {
   return (
     <div className="app-scroll">
       <article className="project-screen-column min-w-0 gap-5 pb-12">
-        <h1 className="w-fit max-w-full text-xl font-semibold [overflow-wrap:anywhere]">{name}</h1>
-        {goal ? <p className="max-w-3xl whitespace-pre-line text-base leading-6">{goal}</p> : null}
-        <div className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
-          <span className="size-2 animate-pulse rounded-full bg-jade-text" aria-hidden />
-          <Trans>Creating</Trans>
-        </div>
-        <div className="flex items-center gap-2 border-b pb-3">
-          <span className="rounded-md bg-muted px-3 py-1.5 text-sm">
-            <Trans>Chats</Trans>
-          </span>
-          <span className="rounded-md px-3 py-1.5 text-sm text-muted-foreground">
-            <Trans>Files</Trans>
-          </span>
-        </div>
+        <WorkScreenHeader
+          onBack={() => {
+            holdWorkCollectionFocus(projectId, { kind: "heading" });
+            void routeCommands.closeWork({ replace: true });
+          }}
+          identity={
+            <section className="min-w-0" aria-label={t`Work identity`}>
+              <h1 className="w-fit max-w-full text-xl font-semibold [overflow-wrap:anywhere]">
+                {name}
+              </h1>
+              {goal ? (
+                <p className="mt-2 max-w-3xl whitespace-pre-line text-base leading-6">{goal}</p>
+              ) : null}
+            </section>
+          }
+          status={
+            <div
+              className={`flex items-center gap-2 text-xs ${failed ? "text-destructive" : "text-muted-foreground"}`}
+              role="status"
+            >
+              {!failed ? (
+                <span className="size-2 animate-pulse rounded-full bg-jade-text" aria-hidden />
+              ) : null}
+              {failed ? <Trans>Not created</Trans> : <Trans>Creating</Trans>}
+            </div>
+          }
+          view="chats"
+          onViewChange={() => {}}
+          pending
+          tools={
+            <>
+              <div className="relative min-w-0 flex-1 basis-40 sm:max-w-[260px]">
+                <Input
+                  type="search"
+                  aria-label={t`Search chats`}
+                  placeholder={t`Search chats`}
+                  disabled
+                  className="h-8 [@media(pointer:coarse)]:h-11"
+                />
+              </div>
+              <Button size="sm" disabled className="[@media(pointer:coarse)]:min-h-11">
+                <Trans>New chat</Trans>
+              </Button>
+            </>
+          }
+        />
         {failed ? (
-          <div
-            className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/30 px-3 py-2"
-            role="alert"
-          >
-            <p className="text-sm text-destructive">
+          <>
+            <p className="text-sm text-destructive" role="alert">
               <Trans>Couldn’t create this Work.</Trans>
             </p>
-            <Button size="sm" onClick={onRetry}>
-              <Trans>Retry</Trans>
-            </Button>
-            <Button size="sm" variant="outline" onClick={onDiscard}>
-              <Trans>Discard</Trans>
-            </Button>
-          </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={onRetry}>
+                <Trans>Retry</Trans>
+              </Button>
+              <Button size="sm" variant="outline" onClick={onDiscard}>
+                <Trans>Discard</Trans>
+              </Button>
+            </div>
+          </>
         ) : null}
         <div className="py-2">
           <p className="text-sm font-medium">

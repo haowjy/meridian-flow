@@ -35,6 +35,17 @@ export type RouteWorkResolution =
   | { status: "none" }
   | { status: "present"; workId: ParsedRequestId; work: Work };
 
+/** Identity used to scope transient Work-dock content to its current route. */
+export function workDockDestinationId(
+  screen: ScreenKey,
+  routeWork: RouteWorkResolution,
+): string | null {
+  if (screen !== "work") return null;
+  if (routeWork.status === "present") return routeWork.workId;
+  if (routeWork.status === "unresolved") return routeWork.slug;
+  return null;
+}
+
 export type NavigationOptions = { replace: boolean };
 
 export type WorkDetailTarget = {

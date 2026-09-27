@@ -31,14 +31,22 @@ describe("Work dock file view", () => {
     expect(useDockViewStore.getState().byScreen.work).toBe("chat");
   });
 
-  it("clears when the Work changes or the Work screen is left", () => {
+  it("clears when navigating to another Work, the collection, or another screen", () => {
     useDockViewStore.getState().openWorkFile({ workId: "work-a", tab: tab("first.md") });
-    useDockViewStore.getState().enterWork("work-b");
+    useDockViewStore.getState().syncWorkDestination("work", "work-b");
     expect(useDockViewStore.getState().workFile).toBeNull();
+    expect(useDockViewStore.getState().byScreen.work).toBe("chat");
     useDockViewStore
       .getState()
       .openWorkFile({ workId: "work-b", tab: { ...tab("second.md"), workId: "work-b" } });
-    useDockViewStore.getState().leaveWork("work-b");
+    useDockViewStore.getState().syncWorkDestination("work", null);
+    expect(useDockViewStore.getState().workFile).toBeNull();
+    expect(useDockViewStore.getState().byScreen.work).toBe("chat");
+
+    useDockViewStore
+      .getState()
+      .openWorkFile({ workId: "work-b", tab: { ...tab("third.md"), workId: "work-b" } });
+    useDockViewStore.getState().syncWorkDestination("chat", null);
     expect(useDockViewStore.getState().workFile).toBeNull();
     expect(useDockViewStore.getState().byScreen.work).toBe("chat");
   });

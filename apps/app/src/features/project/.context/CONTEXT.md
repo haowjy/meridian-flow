@@ -79,7 +79,10 @@ The Work dock has one transient read-only file slot for Scratch and Uploads. Its
 session-only `workFile` state carries `{ workId, tab }`; opening a second file
 replaces the first. `DockShell` keeps the Chat occupant mounted and inert behind
 the viewer, and the contained dock switch can return to Chat or close the file.
-Work detail clears the slot when its Work changes or the Work destination leaves.
+`ProjectView` clears the slot when its Work changes or the Work destination
+leaves. It reconciles against the route screen and Work identity, including
+unresolved client-addressed creation routes, so the collection and other screens
+cannot inherit a prior Work's file.
 The viewer uses `ContextViewerBareHost` because dock header chrome names the file
 and provides Open in Editor; text content, images, and PDFs stay constrained to
 the dock body. Open in Editor clears the slot before routing through

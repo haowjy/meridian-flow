@@ -35,8 +35,7 @@ type DockViewState = {
   setDockView: (screen: ScreenKey, view: DockView) => void;
   openWorkFile: (file: DockFileView) => void;
   closeWorkFile: () => void;
-  enterWork: (workId: string) => void;
-  leaveWork: (workId: string) => void;
+  syncWorkDestination: (screen: ScreenKey, workId: string | null) => void;
 };
 
 export const useDockViewStore = create<DockViewState>((set) => ({
@@ -54,16 +53,17 @@ export const useDockViewStore = create<DockViewState>((set) => ({
       workFile: null,
       byScreen: { ...state.byScreen, work: "chat" },
     })),
-  enterWork: (workId) =>
-    set((state) => ({
-      workFile: state.workFile?.workId === workId ? state.workFile : null,
-    })),
-  leaveWork: (workId) =>
-    set((state) =>
-      state.workFile?.workId === workId
-        ? { workFile: null, byScreen: { ...state.byScreen, work: "chat" } }
-        : state,
-    ),
+  syncWorkDestination: (screen, workId) =>
+    set((state) => {
+      if (screen === "work" && state.workFile && state.workFile.workId === workId) {
+        return state;
+      }
+      if (!state.workFile) return state;
+      return {
+        workFile: null,
+        byScreen: { ...state.byScreen, work: "chat" },
+      };
+    }),
 }));
 
 /** Open one read-only Scratch/Uploads file in the Work dock slot. */

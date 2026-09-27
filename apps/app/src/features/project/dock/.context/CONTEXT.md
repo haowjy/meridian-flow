@@ -43,8 +43,10 @@ On Work, `workFile` is a separate transient `{ workId, tab }` slot in the same
 session-only store. While populated, `file` joins the Chat/Changes segments.
 Chat remains mounted and inert underneath the viewer. Selecting Chat only
 switches the visible body; the close action clears the file slot and returns to
-Chat. Work detail owns its lifetime and clears the slot on Work change or when
-leaving the Work destination. No file view is persisted across reloads.
+Chat. `ProjectView` owns route reconciliation and clears the slot on Work
+change, on the Work collection, or when leaving the Work destination. Pending
+creation routes use their client Work identity too. No file view is persisted
+across reloads.
 
 `useAiDraftLauncher` takes `screen` from the route-owned
 `ProjectNavigationContext`, supplied by `ReadableProjectRoute`. It must not

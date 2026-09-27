@@ -8,11 +8,13 @@ export function TextViewer({
   name,
   content,
   markdown,
+  emptyMessage,
 }: {
   url?: string;
   name: string;
   content?: string;
   markdown?: boolean;
+  emptyMessage?: React.ReactNode;
 }) {
   const [text, setText] = useState<string | null>(content ?? null);
   const [failed, setFailed] = useState(false);
@@ -48,6 +50,8 @@ export function TextViewer({
         <p role="status" className="text-sm text-muted-foreground">
           <Trans>Loading preview…</Trans>
         </p>
+      ) : text.length === 0 && emptyMessage ? (
+        <p className="text-sm leading-6 text-muted-foreground">{emptyMessage}</p>
       ) : markdown ? (
         <section aria-label={name}>
           <Markdown>{text}</Markdown>

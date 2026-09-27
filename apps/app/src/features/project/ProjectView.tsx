@@ -101,6 +101,7 @@ import {
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import { ProjectRouteBoundary, type ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
 import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
+import { workDockDestinationId } from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
 import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
 import { LeftSidebar } from "./shell/LeftSidebar";
@@ -172,6 +173,13 @@ export type ProjectViewProps = {
 };
 
 export function ProjectView(props: ProjectViewProps) {
+  const syncWorkDestination = useDockViewStore((state) => state.syncWorkDestination);
+  useLayoutEffect(() => {
+    syncWorkDestination(
+      props.activeScreen,
+      workDockDestinationId(props.activeScreen, props.routeWork),
+    );
+  }, [props.activeScreen, props.routeWork, syncWorkDestination]);
   const queryClient = useQueryClient();
   const cachedProject = useProject(props.projectId);
   const projectTitle = cachedProject?.title ?? props.project.title;

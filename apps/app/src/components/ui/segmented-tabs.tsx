@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 export type SegmentedTabOption<T extends string> = {
   value: T;
   label: ReactNode;
+  disabled?: boolean;
   trailingAction?: ReactNode;
 };
 
@@ -48,12 +49,14 @@ export function SegmentedTabs<T extends string>({
               type="button"
               role="tab"
               aria-selected={active}
+              disabled={option.disabled}
               onClick={() => onChange(option.value)}
               className={cn(
                 "focus-ring h-6 shrink-0 rounded-[calc(var(--radius-lg)-2px)] px-2.5 text-xs transition-colors [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:px-3.5 [@media(pointer:coarse)]:text-sm",
                 active
                   ? "bg-background font-medium text-foreground"
                   : "text-muted-foreground hover:text-foreground",
+                option.disabled && "cursor-not-allowed opacity-50 hover:text-muted-foreground",
               )}
             >
               {option.label}

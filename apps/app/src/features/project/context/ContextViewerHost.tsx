@@ -83,6 +83,11 @@ function ContextViewerContent({
           name={tab.name}
           content={read.data.content}
           markdown={tab.name.toLowerCase().endsWith(".md")}
+          emptyMessage={
+            tab.scheme === "scratch" ? (
+              <Trans>This note is empty. Open it in the Editor to write.</Trans>
+            ) : undefined
+          }
         />
       </ReadOnlyViewerFrame>
     );
@@ -101,7 +106,16 @@ function ContextViewerContent({
   if (tab.name.toLowerCase().endsWith(".md")) {
     return (
       <ReadOnlyViewerFrame header={header}>
-        <TextViewer url={read.data.url} name={tab.name} markdown />
+        <TextViewer
+          url={read.data.url}
+          name={tab.name}
+          markdown
+          emptyMessage={
+            tab.scheme === "scratch" ? (
+              <Trans>This note is empty. Open it in the Editor to write.</Trans>
+            ) : undefined
+          }
+        />
       </ReadOnlyViewerFrame>
     );
   }
@@ -115,7 +129,15 @@ function ContextViewerContent({
   if (read.data.mimeType.startsWith("text/") || /(?:json|xml|yaml)/i.test(read.data.mimeType)) {
     return (
       <ReadOnlyViewerFrame header={header}>
-        <TextViewer url={read.data.url} name={tab.name} />
+        <TextViewer
+          url={read.data.url}
+          name={tab.name}
+          emptyMessage={
+            tab.scheme === "scratch" ? (
+              <Trans>This note is empty. Open it in the Editor to write.</Trans>
+            ) : undefined
+          }
+        />
       </ReadOnlyViewerFrame>
     );
   }

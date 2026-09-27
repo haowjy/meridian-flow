@@ -65,6 +65,52 @@ export type WorkDetailScreenProps = {
   onDeleteWork?: (work: Work) => void;
 };
 
+export function WorkScreenHeader({
+  onBack,
+  identity,
+  status,
+  view,
+  onViewChange,
+  tools,
+  pending = false,
+}: {
+  onBack: () => void;
+  identity: React.ReactNode;
+  status: React.ReactNode;
+  view: "chats" | "files";
+  onViewChange: (view: "chats" | "files") => void;
+  tools: React.ReactNode;
+  pending?: boolean;
+}) {
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onBack}
+        className="-ml-2 w-fit [@media(pointer:coarse)]:min-h-11"
+      >
+        <ChevronLeft className="size-4" />
+        <Trans>All Work</Trans>
+      </Button>
+      {identity}
+      {status}
+      <div className="flex min-w-0 flex-wrap items-center gap-3 border-b pb-3">
+        <SegmentedTabs
+          label={t`Work view`}
+          value={view}
+          onChange={onViewChange}
+          options={[
+            { value: "chats", label: <Trans>Chats</Trans>, disabled: pending },
+            { value: "files", label: <Trans>Files</Trans>, disabled: pending },
+          ]}
+        />
+        {tools}
+      </div>
+    </>
+  );
+}
+
 function useWorkView(): ["chats" | "files", (view: "chats" | "files") => void] {
   const [view, setCurrentView] = useState<"chats" | "files">(() =>
     new URLSearchParams(window.location.search).get("view") === "files" ? "files" : "chats",
@@ -122,106 +168,99 @@ export function WorkDetailScreen({
   return (
     <div ref={scrollOwner} className="app-scroll">
       <article className="project-screen-column min-w-0 gap-5 pb-12">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
+        <WorkScreenHeader
+          onBack={() => {
             holdWorkCollectionFocus(projectId, { kind: "heading" });
             void routeCommands.closeWork({ replace: true });
           }}
-          className="-ml-2 w-fit [@media(pointer:coarse)]:min-h-11"
-        >
-          <ChevronLeft className="size-4" />
-          <Trans>All Work</Trans>
-        </Button>
-        <WorkMetadata
-          controller={controller}
-          identityChrome={
-            <OverflowMenu
-              label={t`Work actions`}
-              triggerClassName="[@media(pointer:coarse)]:size-11"
-            >
-              <DropdownMenuItem
-                disabled={mutations.isPending}
-                onSelect={() =>
-                  (controller.work.status === "archived"
-                    ? mutations.unarchive
-                    : mutations.archive
-                  ).mutate(controller.work.id)
-                }
-              >
+          identity={
+            <WorkMetadata
+              controller={controller}
+              identityChrome={
+                <OverflowMenu
+                  label={t`Work actions`}
+                  triggerClassName="[@media(pointer:coarse)]:size-11"
+                >
+                  <DropdownMenuItem
+                    disabled={mutations.isPending}
+                    onSelect={() =>
+                      (controller.work.status === "archived"
+                        ? mutations.unarchive
+                        : mutations.archive
+                      ).mutate(controller.work.id)
+                    }
+                  >
+                    {controller.work.status === "archived" ? (
+                      <ArchiveRestore className="size-4" />
+                    ) : (
+                      <Archive className="size-4" />
+                    )}
+                    {controller.work.status === "archived" ? (
+                      <Trans>Unarchive</Trans>
+                    ) : (
+                      <Trans>Archive</Trans>
+                    )}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    disabled={mutations.isPending}
+                    onSelect={() => onDeleteWork?.(controller.work)}
+                  >
+                    <Trans>Delete Work</Trans>
+                  </DropdownMenuItem>
+                </OverflowMenu>
+              }
+            />
+          }
+          status={
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Badge>
                 {controller.work.status === "archived" ? (
-                  <ArchiveRestore className="size-4" />
+                  <Trans>Archived</Trans>
                 ) : (
-                  <Archive className="size-4" />
+                  <Trans>Active</Trans>
                 )}
-                {controller.work.status === "archived" ? (
-                  <Trans>Unarchive</Trans>
-                ) : (
-                  <Trans>Archive</Trans>
-                )}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                variant="destructive"
-                disabled={mutations.isPending}
-                onSelect={() => onDeleteWork?.(controller.work)}
-              >
-                <Trans>Delete Work</Trans>
-              </DropdownMenuItem>
-            </OverflowMenu>
+              </Badge>
+              <span>
+                <Trans>Updated</Trans> {relativeUpdated(controller.work.updatedAt)}
+              </span>
+            </div>
+          }
+          view={view}
+          onViewChange={setView}
+          tools={
+            <>
+              <div className="relative min-w-0 flex-1 basis-40 sm:max-w-[260px]">
+                <Search
+                  className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden
+                />
+                <Input
+                  type="search"
+                  aria-label={view === "chats" ? t`Search chats` : t`Search files`}
+                  placeholder={view === "chats" ? t`Search chats` : t`Search files`}
+                  value={view === "chats" ? searchText : filesSearch}
+                  onChange={(event) =>
+                    view === "chats"
+                      ? setSearchText(event.target.value)
+                      : setFilesSearch(event.target.value)
+                  }
+                  className="h-8 pl-8 [@media(pointer:coarse)]:h-11"
+                />
+              </div>
+              {view === "chats" ? (
+                <Button
+                  size="sm"
+                  onClick={() => void openNewChat(work.id)}
+                  className="[@media(pointer:coarse)]:min-h-11"
+                >
+                  <Trans>New chat</Trans>
+                </Button>
+              ) : null}
+            </>
           }
         />
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Badge>
-            {controller.work.status === "archived" ? (
-              <Trans>Archived</Trans>
-            ) : (
-              <Trans>Active</Trans>
-            )}
-          </Badge>
-          <span>
-            <Trans>Updated</Trans> {relativeUpdated(controller.work.updatedAt)}
-          </span>
-        </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-3 border-b pb-3">
-          <SegmentedTabs
-            label={t`Work view`}
-            value={view}
-            onChange={setView}
-            options={[
-              { value: "chats", label: <Trans>Chats</Trans> },
-              { value: "files", label: <Trans>Files</Trans> },
-            ]}
-          />
-          <div className="relative min-w-0 flex-1 basis-40 sm:max-w-[260px]">
-            <Search
-              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden
-            />
-            <Input
-              type="search"
-              aria-label={view === "chats" ? t`Search chats` : t`Search files`}
-              placeholder={view === "chats" ? t`Search chats` : t`Search files`}
-              value={view === "chats" ? searchText : filesSearch}
-              onChange={(event) =>
-                view === "chats"
-                  ? setSearchText(event.target.value)
-                  : setFilesSearch(event.target.value)
-              }
-              className="h-8 pl-8 [@media(pointer:coarse)]:h-11"
-            />
-          </div>
-          {view === "chats" ? (
-            <Button
-              size="sm"
-              onClick={() => void openNewChat(work.id)}
-              className="[@media(pointer:coarse)]:min-h-11"
-            >
-              <Trans>New chat</Trans>
-            </Button>
-          ) : null}
-        </div>
         {view === "chats" ? (
           <WorkChatList
             projectId={projectId}

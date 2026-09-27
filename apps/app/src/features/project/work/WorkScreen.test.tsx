@@ -16,15 +16,21 @@ describe("pending Work destination", () => {
   it("renders the pending header and retry surface after creation failure", () => {
     const html = renderToStaticMarkup(
       <WorkCreationDestination
+        projectId="project-a"
         name="Revise arc 3"
         goal="Tighten the midpoint."
         failed
+        routeCommands={{ closeWork: vi.fn() } as never}
         onRetry={vi.fn()}
         onDiscard={vi.fn()}
       />,
     );
     expect(html).toContain("Revise arc 3");
-    expect(html).toContain("Creating");
+    expect(html).toContain("Not created");
+    expect(html).not.toContain("Creating");
+    expect(html).toContain("Couldn’t create this Work.");
+    expect(html).toContain("All Work");
+    expect(html).toContain('role="tablist"');
     expect(html).toContain("Chats");
     expect(html).toContain("Files");
     expect(html).toContain("Retry");
