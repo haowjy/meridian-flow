@@ -39,8 +39,6 @@
     "smoke:app-dev-transform": "tsx tools/dev/smoke-app-dev-transform.ts",
     "smoke:prod-boot": "tsx tools/dev/smoke-app-prod-boot.ts",
     "dev:gc-dbs": "tsx tools/dev/gc-dbs.ts",
-    "debug:events": "tsx tools/dev/debug-events.ts",
-    "debug:model-context": "tsx tools/dev/debug-model-context.ts",
     "dev:prune-worktrees": "tsx tools/dev/prune-worktrees.ts",
     "test:db": "tsx tools/dev/run-db-tests.ts"
   },
@@ -50,6 +48,7 @@
     "@meridian/database": "workspace:*",
     "@playwright/test": "^1.61.1",
     "@types/node": "catalog:",
+    "@types/ws": "^8.18.1",
     "ajv": "^8.20.0",
     "drizzle-orm": "catalog:",
     "lefthook": "^2.1.9",
@@ -58,6 +57,7 @@
     "postgres": "catalog:",
     "tsx": "^4.22.4",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "ws": "^8.21.0"
   }
 }

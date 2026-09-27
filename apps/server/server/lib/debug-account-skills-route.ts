@@ -9,10 +9,10 @@ import {
   installPackagedAccountSkill,
   PackagedSkillNotFoundError,
 } from "../domains/packages/index.js";
-import { resolveRecentEventsEnabled } from "./env.js";
+import { debugPathsEnabled } from "./env.js";
 
 export function assertDebugAccountSkillsEnabled(): void {
-  if (!resolveRecentEventsEnabled({ rawNodeEnv: process.env.NODE_ENV })) {
+  if (!debugPathsEnabled) {
     throw createError({ statusCode: 404, message: "Account skill debug is not enabled" });
   }
 }

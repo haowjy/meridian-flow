@@ -10,7 +10,7 @@ import {
   type EventSink,
   RecentEventsBuffer,
 } from "../domains/observability/index.js";
-import { resolveRecentEventsEnabled } from "./env.js";
+import { debugPathsEnabled } from "./env.js";
 
 const DEFAULT_LOG_RETENTION_DAYS = 14;
 const DEFAULT_LOG_MAX_BYTES = 128 * 1_024 * 1_024;
@@ -50,7 +50,7 @@ export function createEventSinkFromEnv(): EventSinkComposition {
       retentionDays: dir ? localLogRetentionDays() : undefined,
       maxBytes: dir ? localLogMaxBytes() : undefined,
     });
-    if (!resolveRecentEventsEnabled({ rawNodeEnv: process.env.NODE_ENV })) {
+    if (!debugPathsEnabled) {
       return { sink: local };
     }
     const eventQuery = new RecentEventsBuffer();

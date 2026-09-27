@@ -341,10 +341,14 @@ contract shapes.
 - A thread receives a project-scoped `ref` in the create transaction:
   primaries take `c1`, `c2`, … and subagents take `p1`, `p2`, … from one
   shared per-project counter, so every live handle is project-unique. The
-  handle grammar (`cN`/`pN`) lives in `domain/thread-ref.ts`
-  (`formatThreadRef`/`parseThreadRef`); allocation stays with the repository
-  adapters. Title is not an identifier and is not unique. Chat URLs use the
-  client-minted thread `id`, not `ref`.
+  handle grammar (`cN`/`pN`) lives in `@meridian/contracts/threads`
+  (`formatThreadRef`/`parseThreadRef`) so clients parse the same handles;
+  allocation stays with the repository adapters. The model addresses threads
+  by ref, and `GET /api/projects/:projectId/threads/by-ref/:ref` resolves a
+  live ref for the project owner (`./mf` wraps it). Title is not an identifier
+  and is not unique. Chat URLs use the client-minted thread `id`, not `ref`.
+  Refs are model-facing (tool currency) and dev-facing (`./mf`, the by-ref
+  route); they are not meant for writers.
   Create-or-get matches ownership only. A same-user same-project retry of a
   deleted thread conflicts; persist must not resurrect the tombstone.
 - **Work membership mutation is serialized.** Additions and rebinds follow the
