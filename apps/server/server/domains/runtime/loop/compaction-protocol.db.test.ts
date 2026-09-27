@@ -162,6 +162,104 @@ else
     }
 
     it.each([
+      false,
+      true,
+    ])("forces cold after provider overflow and retries once (second overflow=%s)", async (secondOverflow) => {
+      const gateway = scriptedGateway();
+      let calls = 0;
+      let summaries = 0;
+      const requests: import("../gateway/index.js").GenerateRequest[] = [];
+      gateway.stream = async function* (request) {
+        requests.push(request);
+        const summary = request.messages.some((message) =>
+          message.content.some(
+            (part) => part.type === "text" && part.text.includes("Summarize this conversation"),
+          ),
+        );
+        if (summary) {
+          summaries++;
+          yield {
+            type: "end",
+            result: {
+              content: [{ type: "text", text: "The earlier work is complete." }],
+              toolCalls: [],
+              finishReason: "end_turn",
+              usage: { inputTokens: 100, outputTokens: 10 },
+              model: "gpt-4.1-mini",
+              provider: "openai",
+            },
+          };
+          return;
+        }
+        calls++;
+        if (calls === 1 || secondOverflow) {
+          yield {
+            type: "error",
+            code: "context_overflow",
+            message: "Provider window exceeded",
+            retryable: false,
+          };
+          return;
+        }
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "text", text: "Continued after compaction." }],
+            toolCalls: [],
+            finishReason: "end_turn",
+            usage: { inputTokens: 100, outputTokens: 10 },
+            model: "gpt-4.1-mini",
+            provider: "openai",
+          },
+        };
+      };
+      const rig = await fixture({ gateway });
+      rig.setThreshold(undefined);
+      const real = createConversationSummarizer({
+        gateway: rig.deps.gateway,
+        agentRevisions: rig.deps.agentRevisions,
+        prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
+        config: { model: "gpt-4.1-mini", maxOutputTokens: 100 },
+      });
+      const inputs: Parameters<typeof real.summarize>[0][] = [];
+      rig.deps.summarizer = {
+        ...real,
+        async summarize(input) {
+          inputs.push(input);
+          return real.summarize(input);
+        },
+      };
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      const result = await run.execute();
+      expect(calls).toBe(2);
+      expect(summaries).toBe(1);
+      expect(inputs[0].forceCold).toBe(true);
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
+      const [a, c, b] = turns.slice(-3);
+      expect([a.role, c.role, b.role]).toEqual(["assistant", "compaction", "assistant"]);
+      expect(a.status).toBe("complete");
+      expect(await rig.repos.blocks.listByTurn(a.id)).toEqual([]);
+      expect(c).toMatchObject({
+        status: "complete",
+        metadata: { summarizer: { path: "cold", segments: 1 } },
+      });
+      expect(result.status).toBe(secondOverflow ? "error" : "complete");
+      if (secondOverflow) {
+        expect(b.error).toContain("context window after compaction");
+        const events = await db
+          .select({ payload: schema.eventJournal.payload })
+          .from(schema.eventJournal);
+        expect(JSON.stringify(events)).toContain("context_window_exceeded");
+      }
+      expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
+      expect(JSON.stringify(requests.at(-1))).toContain("The earlier work is complete.");
+    });
+
+    it.each([
       "complete",
       "failed",
       "cancelled",

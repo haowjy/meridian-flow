@@ -142,6 +142,10 @@ export function createConversationSummarizer(
                 usage = result.usage;
               }
               if (event.type === "error") {
+                if (event.result) {
+                  result = event.result;
+                  usage = result.usage;
+                }
                 failure = new Error(event.message);
                 break;
               }

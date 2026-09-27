@@ -46,6 +46,7 @@ export async function executeCompaction({
       turnId: currentTurn.id,
       instruction: "compaction",
       requestInHand: decision.requestInHand,
+      forceCold: decision.path === "cold",
       projection,
       signal: input.signal ?? new AbortController().signal,
     });

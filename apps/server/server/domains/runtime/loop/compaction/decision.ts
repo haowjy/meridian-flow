@@ -4,6 +4,13 @@ import type { GenerateRequest } from "../../gateway/index.js";
 import { estimateRequestTokens } from "./estimate.js";
 import { type CompactionPlan, planCompaction } from "./plan.js";
 
+/** A boundary-owned forced preparation, never a replacement for its prepare callback. */
+export interface ForcedCompactionDecision {
+  kind: "compact";
+  trigger: "auto" | "manual";
+  fitLimitTokens: number;
+  path: "cold";
+}
 export type CompactionDecision =
   | { kind: "generate" }
   | {
@@ -13,15 +20,20 @@ export type CompactionDecision =
       trigger: "auto" | "manual";
       fitLimitTokens: number;
       tokensBefore: number;
+      path?: "cold";
     }
   | { kind: "too_large"; plan: CompactionPlan };
 
 export class CompactionPreparationError extends Error {
-  constructor(readonly reason: "context_too_large" | "compaction_failed") {
+  constructor(
+    readonly reason: "context_too_large" | "compaction_failed" | "context_window_exceeded",
+  ) {
     super(
       reason === "context_too_large"
         ? "This message is too long for this chat's model."
-        : "This conversation couldn't be compacted. Try again.",
+        : reason === "context_window_exceeded"
+          ? "This conversation still exceeds the model's context window after compaction. Try a smaller request."
+          : "This conversation couldn't be compacted. Try again.",
     );
   }
 }
@@ -31,16 +43,18 @@ export function decideCompaction(input: {
   turns: Turn[];
   blocks: Block[];
   thresholdTokens: number | null;
+  forcedDecision?: ForcedCompactionDecision;
   summaryReserveTokens: number;
   baseline: { inputTokens: number; messageCount: number } | null;
 }): CompactionDecision {
-  if (input.thresholdTokens === null) return { kind: "generate" };
+  const fitLimitTokens = input.forcedDecision?.fitLimitTokens ?? input.thresholdTokens;
+  if (fitLimitTokens === null) return { kind: "generate" };
   const tokensBefore = estimateRequestTokens(input);
-  if (tokensBefore < input.thresholdTokens) return { kind: "generate" };
+  if (!input.forcedDecision && tokensBefore < fitLimitTokens) return { kind: "generate" };
   const plan = planCompaction({
     turns: input.turns,
     blocks: input.blocks,
-    triggerTokens: input.thresholdTokens,
+    triggerTokens: fitLimitTokens,
     summaryReserveTokens: input.summaryReserveTokens,
     fixedOverheadTokens: estimateRequestTokens({
       request: {
@@ -55,8 +69,9 @@ export function decideCompaction(input: {
         kind: "compact",
         plan,
         requestInHand: input.request,
-        trigger: "auto",
-        fitLimitTokens: input.thresholdTokens,
+        trigger: input.forcedDecision?.trigger ?? "auto",
+        fitLimitTokens,
+        ...(input.forcedDecision ? { path: input.forcedDecision.path } : {}),
         tokensBefore,
       }
     : { kind: "too_large", plan };

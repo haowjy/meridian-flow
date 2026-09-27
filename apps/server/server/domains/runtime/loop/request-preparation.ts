@@ -9,6 +9,7 @@ import {
   type CompactionDecision,
   CompactionPreparationError,
   decideCompaction,
+  type ForcedCompactionDecision,
 } from "./compaction/decision.js";
 import type { ImageInclusionDecision } from "./image-context.js";
 import { createLocalTurn } from "./local-turn.js";
@@ -28,6 +29,7 @@ export async function prepareRequestContext(input: {
   baseTools?: Tool[];
   readReferences?: boolean;
   skipCompaction?: boolean;
+  forcedDecision?: ForcedCompactionDecision;
   promptBakes?: OrchestratorRepositories["promptBakes"];
   signal?: AbortSignal;
 }): Promise<{
@@ -102,6 +104,7 @@ export async function prepareRequestContext(input: {
         turns: [...input.turns, ...assembled.imageContextUpdates.turns],
         blocks: [...blocks, ...assembled.imageContextUpdates.blocks],
         thresholdTokens: assembled.compactionTriggerTokens,
+        forcedDecision: input.forcedDecision,
         summaryReserveTokens: input.deps.summarizer.maxOutputTokens,
         baseline,
       });

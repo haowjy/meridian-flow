@@ -26,7 +26,11 @@ export function mapAnthropicError(err: unknown): {
 
     if (err instanceof Anthropic.BadRequestError) {
       const lower = message.toLowerCase();
-      if (lower.includes("context") || lower.includes("token") || lower.includes("too long")) {
+      if (
+        /context[_ ](?:length|window)|prompt is too long|maximum context length|too many (?:input )?tokens|input.*exceeds.*token/.test(
+          lower,
+        )
+      ) {
         return { code: "context_overflow" as const, message, retryable: false };
       }
       if (lower.includes("content") && (lower.includes("filter") || lower.includes("block"))) {

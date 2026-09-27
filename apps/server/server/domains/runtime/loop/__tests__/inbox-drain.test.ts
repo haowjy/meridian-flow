@@ -39,7 +39,7 @@ function textResult(text = "done"): GenerateResult {
     content: [{ type: "text", text }],
     toolCalls: [],
     finishReason: "end_turn",
-    usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+    usage: { inputTokens: 1000, outputTokens: 100 },
     model: "gpt-4.1-mini",
     provider: "openai",
   };
@@ -54,7 +54,7 @@ function toolCallResult(
     content: [{ type: "tool_use", toolCallId, toolName, input }],
     toolCalls: [],
     finishReason: "tool_use",
-    usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+    usage: { inputTokens: 1000, outputTokens: 100 },
     model: "gpt-4.1-mini",
     provider: "openai",
   };
@@ -155,7 +155,7 @@ async function setup(
 ) {
   const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
   if (options.skill) await accountSkillInstalls.insert({ ownerUserId: USER_ID, ...options.skill });
-  const gateway = scriptedGateway(options);
+  const gateway = scriptedGateway({ usage: { inputTokens: 1000, outputTokens: 100 }, ...options });
   const { requests } = gateway;
   const toolRegistry = createToolRegistry();
   if (options.realSpawnTools) {

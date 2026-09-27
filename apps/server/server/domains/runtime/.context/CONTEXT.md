@@ -570,6 +570,15 @@ Every attempted call returns its row, prediction and message count, even when a
 later segment fails or Stop aborts it. Settlement records path/segment metadata
 and charges those rows only in the transaction ending C.
 
+The gateway normalizes provider context-window failures to `context_overflow`.
+The loop completes A at its last persisted tool group (empty is legal), then
+prepares a forced `compact` decision with a cold path and an independent usable
+window fit limit. It retries generation once; a second overflow fails with
+`context_window_exceeded` and acknowledges the receipt rather than re-sweeping
+the same request. Metered output from an overflow is billed without retaining
+the incomplete response's blocks. The WebSocket live-state codec accepts
+`compacting` so a client can join while C is pending.
+
 Compaction is two delivery transitions around an unlocked `ConversationSummarizer`
 call. The first reserves pending C instead of an assistant. `compaction-phase.ts`
 then prepares a live rebake over provisional completed C before late arrivals.

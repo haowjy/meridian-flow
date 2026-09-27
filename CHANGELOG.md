@@ -16,6 +16,8 @@
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
 
 ### Fixed
+- Compact cold and retry once after a provider context-window failure. Fail oversized retries without redelivery.
+- Allow clients to join chats while compaction is running.
 - Failed compaction lands a failed reply and retires its messages instead of paying for repeated summaries.
 - Stop follows the same run across a committed reply split, including remote cancellation. Internal aborts stay errors.
 - Leave a compaction pending for recovery when its live failure transaction cannot commit.

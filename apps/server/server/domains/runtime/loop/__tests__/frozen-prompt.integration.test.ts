@@ -69,7 +69,9 @@ async function fixture(
   const binding = await agentCatalog.resolvePrimary(thread.userId, original.selection);
   if (!binding.ok) throw new Error("Fixture binding unavailable");
   await agentRevisions.bindThread(thread.id, binding.revision.id, binding.configuration, null);
-  const gateway = gatewayOverride ?? scriptedGateway({ onStream });
+  const gateway =
+    gatewayOverride ??
+    scriptedGateway({ onStream, usage: { inputTokens: 1000, outputTokens: 100 } });
   const workContext = createWorkContextReader({ ...repos, works });
   const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
   const rig = createRuntimeHarness({
@@ -144,7 +146,10 @@ describe("frozen prompt provider requests", () => {
         },
       },
     ];
-    const gateway = Object.assign(scriptedGateway(), { listModels: () => [model] });
+    const gateway = Object.assign(
+      scriptedGateway({ usage: { inputTokens: 1000, outputTokens: 100 } }),
+      { listModels: () => [model] },
+    );
     try {
       // Use the exact same runtime path as production, with a cache-capable
       // model so the snapshot also captures canonical cacheBreakpoint marks.
@@ -183,19 +188,22 @@ describe("frozen prompt provider requests", () => {
   });
 
   it("forks the latest image decision at the cutoff after the source loses its asset", async () => {
-    const gateway = Object.assign(scriptedGateway(), {
-      listModels: () => [
-        {
-          id: "gpt-4.1-mini",
-          provider: "openai" as const,
-          displayName: "Fixture",
-          contextWindow: 100_000,
-          maxOutputTokens: 4_096,
-          promptCache: { kind: "none" as const, ttlMs: null },
-          capabilities: new Set(["image_input" as const]),
-        },
-      ],
-    });
+    const gateway = Object.assign(
+      scriptedGateway({ usage: { inputTokens: 1000, outputTokens: 100 } }),
+      {
+        listModels: () => [
+          {
+            id: "gpt-4.1-mini",
+            provider: "openai" as const,
+            displayName: "Fixture",
+            contextWindow: 100_000,
+            maxOutputTokens: 4_096,
+            promptCache: { kind: "none" as const, ttlMs: null },
+            capabilities: new Set(["image_input" as const]),
+          },
+        ],
+      },
+    );
     let assetAvailable = true;
     const rig = await fixture(undefined, undefined, gateway, {
       async resolve() {
@@ -250,19 +258,22 @@ describe("frozen prompt provider requests", () => {
   });
 
   it("names a first-sight unavailable image and assigns its decision to the break turn", async () => {
-    const gateway = Object.assign(scriptedGateway(), {
-      listModels: () => [
-        {
-          id: "gpt-4.1-mini",
-          provider: "openai" as const,
-          displayName: "Fixture",
-          contextWindow: 100_000,
-          maxOutputTokens: 4_096,
-          promptCache: { kind: "none" as const, ttlMs: null },
-          capabilities: new Set(["image_input" as const]),
-        },
-      ],
-    });
+    const gateway = Object.assign(
+      scriptedGateway({ usage: { inputTokens: 1000, outputTokens: 100 } }),
+      {
+        listModels: () => [
+          {
+            id: "gpt-4.1-mini",
+            provider: "openai" as const,
+            displayName: "Fixture",
+            contextWindow: 100_000,
+            maxOutputTokens: 4_096,
+            promptCache: { kind: "none" as const, ttlMs: null },
+            capabilities: new Set(["image_input" as const]),
+          },
+        ],
+      },
+    );
     const rig = await fixture(undefined, undefined, gateway, {
       async resolve() {
         return null;
@@ -430,7 +441,10 @@ describe("frozen prompt provider requests", () => {
       promptCache: { kind: "none", ttlMs: null },
       capabilities: new Set(["image_input"]),
     };
-    const gateway = Object.assign(scriptedGateway(), { listModels: () => [model] });
+    const gateway = Object.assign(
+      scriptedGateway({ usage: { inputTokens: 1000, outputTokens: 100 } }),
+      { listModels: () => [model] },
+    );
     const rig = await fixture(undefined, undefined, gateway, {
       async resolve(_context, reference) {
         return {
