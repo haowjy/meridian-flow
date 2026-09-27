@@ -56,6 +56,7 @@ interface TurnCost {
   full: number;
   blockCosts: Map<number, number>;
   trailingBlockCosts: Map<number, number>;
+  trailingBlockCounts: Map<number, number>;
 }
 
 const toolCallIdCodec = (value: unknown): { toolCallId: string } | null => {
@@ -165,6 +166,7 @@ function turnCostsFor(
     const blocks = (blocksByTurn.get(turn.id) ?? []).filter((block) => !block.pruned);
     const base = Math.max(0, estimate(turn, []));
     const trailingBlockCosts = new Map<number, number>();
+    const trailingBlockCounts = new Map<number, number>();
     let full = base;
     const blockCosts = new Map<number, number>();
     for (const block of blocks) {
@@ -173,13 +175,16 @@ function turnCostsFor(
       full += cost;
     }
     let trailing = 0;
+    let trailingCount = 0;
     for (let index = blocks.length - 1; index >= 0; index--) {
       const block = blocks[index];
       if (!block) continue;
       trailingBlockCosts.set(block.sequence, trailing);
+      trailingBlockCounts.set(block.sequence, trailingCount);
       trailing += blockCosts.get(block.sequence) ?? 0;
+      trailingCount++;
     }
-    return { base, full, blockCosts, trailingBlockCosts };
+    return { base, full, blockCosts, trailingBlockCosts, trailingBlockCounts };
   });
 }
 
@@ -209,7 +214,9 @@ function candidateTailCost(
   const cost = costs[candidate.turnIndex];
   if (!cost) return followingTurnsCost;
   const trailingBlocksCost = cost.trailingBlockCosts.get(candidate.blockSequence) ?? 0;
-  return (trailingBlocksCost > 0 ? cost.base : 0) + trailingBlocksCost + followingTurnsCost;
+  const turnHeaderCost =
+    (cost.trailingBlockCounts.get(candidate.blockSequence) ?? 0) > 0 ? cost.base : 0;
+  return turnHeaderCost + trailingBlocksCost + followingTurnsCost;
 }
 
 function minimumCutIndex(input: {

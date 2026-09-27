@@ -10,11 +10,10 @@ export const SystemUpdateMetadataCodec = z.object({
 
 export const InboxMessageMetadataCodec = z
   .object({
-    kind: z.literal("inbox_message").optional(),
+    kind: z.literal("inbox_message"),
     agentRequestKind: z.enum(["child_seed", "foreground_message"]).optional(),
   })
-  .passthrough()
-  .refine((metadata) => metadata.kind === "inbox_message" || metadata.agentRequestKind != null);
+  .passthrough();
 
 export const ChildCompletionMetadataCodec = z.object({
   kind: z.literal("subagent_update"),
@@ -50,6 +49,8 @@ export type HistoryItemClass =
   | { kind: "system_update" }
   | { kind: "assistant_response" }
   | { kind: "other" };
+
+const metadataSectionCodec = z.object({ section: z.string().min(1) });
 
 export function inboxMessageMetadata(extra: JsonObject = {}): JsonObject {
   return { ...extra, kind: "inbox_message" };
@@ -124,7 +125,7 @@ export function classifyHistoryItem(
   }
 
   // Image-update metadata is owned by the image domain; its section is the classifier contract.
-  const section = z.object({ section: z.string().min(1) }).safeParse(turn.metadata);
+  const section = metadataSectionCodec.safeParse(turn.metadata);
   if (section.success && section.data.section === "image_inclusion") {
     return { kind: "image_update" };
   }
@@ -146,7 +147,6 @@ export function classifyHistoryItem(
     if (turn.origin === "system" && inbox.success) {
       return { kind: "agent_request", source: inbox.data.agentRequestKind ?? "inbox_message" };
     }
-    if (turn.origin === "system") return { kind: "agent_request", source: "foreground_message" };
   }
 
   if (turn.role === "assistant" && turn.origin === "assistant") {
