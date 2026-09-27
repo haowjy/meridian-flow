@@ -404,7 +404,7 @@ export function ChatView({
         <SubagentDisclosureProvider>
           <SubagentActivityProvider nodes={activity.activity.descendants} turns={turns}>
             <div className="relative flex min-h-0 flex-1 flex-col">
-              <RunningSubagentsStrip descendants={runningBackgroundSubagents} />
+              <RunningSubagentsStrip threadId={threadId} />
               <TurnList
                 threadId={threadId}
                 turns={turns}

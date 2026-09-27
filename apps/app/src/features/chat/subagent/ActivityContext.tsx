@@ -5,8 +5,6 @@ import { buildSubagentRuns, indexSubagentRuns, type SubagentRunKey } from "./run
 
 const SubagentActivityContext = createContext({
   nodes: [] as ThreadActivityNode[],
-  byThreadId: new Map<string, ThreadActivityNode>(),
-  byRef: new Map<string, ThreadActivityNode>(),
   runs: indexSubagentRuns([]),
 });
 
@@ -22,8 +20,6 @@ export function SubagentActivityProvider({
   const indexed = useMemo(
     () => ({
       nodes,
-      byThreadId: new Map(nodes.map((node) => [node.threadId, node])),
-      byRef: new Map(nodes.flatMap((node) => (node.ref ? [[node.ref, node] as const] : []))),
       runs: indexSubagentRuns(buildSubagentRuns(nodes, turns)),
     }),
     [nodes, turns],
@@ -31,24 +27,6 @@ export function SubagentActivityProvider({
   return (
     <SubagentActivityContext.Provider value={indexed}>{children}</SubagentActivityContext.Provider>
   );
-}
-
-export function useSubagentActivity(
-  threadId: string | null | undefined,
-): ThreadActivityNode | undefined {
-  const { byThreadId } = useContext(SubagentActivityContext);
-  return threadId ? byThreadId.get(threadId) : undefined;
-}
-
-export function useSubagentActivityByRef(
-  ref: string | null | undefined,
-): ThreadActivityNode | undefined {
-  const { byRef } = useContext(SubagentActivityContext);
-  return ref ? byRef.get(ref) : undefined;
-}
-
-export function useSubagentActivityNodes(): ThreadActivityNode[] {
-  return useContext(SubagentActivityContext).nodes;
 }
 
 export function useSubagentRun(key: SubagentRunKey) {

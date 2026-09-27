@@ -1,16 +1,16 @@
 /** In-flow summary of direct background runs, with current work on expansion. */
 
 import { Trans } from "@lingui/react/macro";
-import type { ThreadActivityNode } from "@meridian/contracts/threads";
+import { useSubagentRuns } from "./subagent/ActivityContext";
 import { useSubagentDisclosure } from "./subagent/DisclosureStore";
-import { runFromActivity } from "./subagent/run-model";
 import { SubagentMark } from "./subagent/SubagentMark";
 import { DisclosureChevron, SubagentRow, SubagentToolLine } from "./subagent/SubagentRow";
 
-export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActivityNode[] }) {
-  const [expanded, setExpanded] = useSubagentDisclosure(
-    `panel:${descendants[0]?.rootThreadId ?? "chat"}`,
+export function RunningSubagentsStrip({ threadId }: { threadId: string }) {
+  const descendants = useSubagentRuns(threadId, { directOnly: true }).filter(
+    (run) => run.deliveryMode === "background_notification" && run.status === "running",
   );
+  const [expanded, setExpanded] = useSubagentDisclosure(`panel:${threadId}`);
   if (!descendants.length) return null;
   const single = descendants.length === 1 ? descendants[0] : undefined;
   return (
@@ -21,13 +21,13 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
       <div className="mx-auto w-full max-w-chat-column px-6 md:px-8">
         {single ? (
           <SubagentRow
-            run={runFromActivity(single)}
+            run={single}
             expanded={expanded}
             onToggle={() => setExpanded(!expanded)}
             expandable
             className="py-1 text-caption text-ink-muted"
           >
-            <SubagentToolLine run={runFromActivity(single)} />
+            <SubagentToolLine run={single} />
           </SubagentRow>
         ) : (
           <>
@@ -39,10 +39,10 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
             >
               {!expanded ? (
                 <span className="flex -space-x-1.5">
-                  {descendants.slice(0, 3).map((node) => (
-                    <span key={node.threadId} className="rounded-full bg-background p-[2px]">
+                  {descendants.slice(0, 3).map((run) => (
+                    <span key={run.threadId} className="rounded-full bg-background p-[2px]">
                       <SubagentMark
-                        agentName={node.agentName}
+                        agentName={run.agentName}
                         status="running"
                         className="size-5 text-[10px] after:!animate-none"
                         decorative
@@ -61,10 +61,10 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
             </button>
             {expanded ? (
               <ul className="pb-1">
-                {descendants.map((node) => (
-                  <li key={node.threadId} className="text-caption text-ink-muted py-1">
-                    <SubagentRow run={runFromActivity(node)} door />
-                    <SubagentToolLine run={runFromActivity(node)} className="pb-1 pl-7" />
+                {descendants.map((run) => (
+                  <li key={run.threadId} className="text-caption text-ink-muted py-1">
+                    <SubagentRow run={run} door />
+                    <SubagentToolLine run={run} className="pb-1 pl-7" />
                   </li>
                 ))}
               </ul>
