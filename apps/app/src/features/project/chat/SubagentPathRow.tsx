@@ -1,40 +1,35 @@
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import type { Thread, ThreadSnapshotAncestor } from "@meridian/contracts/protocol";
 import { ChevronLeft } from "lucide-react";
 import { SubagentMark } from "@/features/chat/SubagentMark";
-import { Elapsed, resolveSubagentName, subagentStatus } from "@/features/chat/subagent-display";
+import {
+  Elapsed,
+  formatSubagentElapsed,
+  resolveSubagentName,
+  subagentStatus,
+} from "@/features/chat/subagent-display";
 
 export function SubagentPathRow({
   subagent,
   ancestors,
   runStatus,
   startedAt,
+  endedAt,
   onOpenParent,
 }: {
   subagent: Thread;
   ancestors: ThreadSnapshotAncestor[];
   runStatus: "running" | "succeeded" | "failed" | "cancelled" | null;
   startedAt?: string | null;
+  endedAt?: string | null;
   onOpenParent: (threadId: string) => void;
 }) {
   const name = resolveSubagentName(subagent);
   return (
     <nav
       aria-label={t`Subagent chat path`}
-      className="flex min-h-9 shrink-0 items-center gap-2 overflow-x-auto border-b border-border-subtle bg-background px-3 pr-5 text-xs"
+      className="flex min-h-9 shrink-0 items-center gap-2 overflow-x-auto border-b border-border-subtle bg-background px-3 pr-5 text-caption"
     >
-      <button
-        type="button"
-        onClick={() => {
-          const parent = ancestors.at(-1);
-          if (parent) onOpenParent(parent.id);
-        }}
-        className="focus-ring inline-flex shrink-0 items-center gap-1 rounded px-1 py-1 text-muted-foreground hover:text-foreground"
-      >
-        <ChevronLeft className="size-3.5" aria-hidden />
-        <Trans>Back</Trans>
-      </button>
       <ol className="flex min-w-0 items-center gap-1 whitespace-nowrap">
         {ancestors.map((ancestor, index) => (
           <li key={ancestor.id} className="flex items-center gap-1">
@@ -42,9 +37,15 @@ export function SubagentPathRow({
             <button
               type="button"
               onClick={() => onOpenParent(ancestor.id)}
-              className="focus-ring max-w-36 truncate rounded px-1 py-1 text-muted-foreground hover:text-foreground"
+              className="focus-ring inline-flex max-w-44 items-center gap-1 rounded px-1 py-1 text-muted-foreground hover:text-foreground"
             >
-              {resolveSubagentName(ancestor)}
+              {index === 0 ? <ChevronLeft className="size-3.5 shrink-0" aria-hidden /> : null}
+              <span className="truncate">
+                {/* The root is the writer's own chat, named by its title, not its agent. */}
+                {index === 0
+                  ? ancestor.title?.trim() || resolveSubagentName(ancestor)
+                  : resolveSubagentName(ancestor)}
+              </span>
             </button>
           </li>
         ))}
@@ -56,9 +57,13 @@ export function SubagentPathRow({
             className="size-5 text-[10px]"
           />
           {name}
-          {runStatus === "running" && startedAt ? (
-            <span className="text-muted-foreground">
-              <Elapsed startedAt={startedAt} />
+          {startedAt ? (
+            <span className="font-normal tabular-nums text-muted-foreground">
+              {runStatus === "running" ? (
+                <Elapsed startedAt={startedAt} />
+              ) : (
+                formatSubagentElapsed(startedAt, endedAt)
+              )}
             </span>
           ) : null}
         </li>

@@ -120,6 +120,7 @@ function ChatScreenLoaded({
             thread.spawnStatus ?? (snapshotLiveState?.status.kind === "awake" ? "running" : null)
           }
           startedAt={currentRun?.runStartedAt}
+          endedAt={currentRun?.runEndedAt}
           onOpenParent={onSelectThread}
         />
       ) : null}

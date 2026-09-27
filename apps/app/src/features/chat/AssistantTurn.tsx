@@ -38,7 +38,7 @@ import { ReportContent } from "./ReportContent";
 import { StreamingText } from "./StreamingText";
 import { useSubagentActivityByRef, useSubagentActivityNodes } from "./SubagentActivityContext";
 import { SubagentMark } from "./SubagentMark";
-import { resolveSubagentName, subagentMarkName, subagentStatus } from "./subagent-display";
+import { resolveSubagentName, subagentStatus } from "./subagent-display";
 import type { SubagentUpdateMetadata } from "./subagent-update";
 import { groupAdjacentSubagentUpdates } from "./subagent-update";
 import { ToolRow } from "./ToolRow";
@@ -513,19 +513,13 @@ function ThreadReportArtifact({
       data-subagent-thread-id={subagent?.threadId}
     >
       <div className="flex min-w-0 items-center gap-[var(--chat-space-row)]">
-        {report.outcome || report.partial ? (
-          <SubagentMark
-            agentName={agentName}
-            status={subagentStatus(report.outcome ?? (report.partial ? "failed" : null))}
-          />
-        ) : (
-          <span
-            aria-hidden
-            className="grid size-7 shrink-0 place-items-center rounded-full border border-border text-[10px] font-medium text-muted-foreground"
-          >
-            {subagentMarkName(agentName).trim().slice(0, 2).toLocaleUpperCase()}
-          </span>
-        )}
+        <SubagentMark
+          agentName={agentName}
+          status={subagentStatus(
+            report.outcome ?? subagent?.spawnStatus ?? (report.partial ? "failed" : null),
+            !report.outcome && subagent?.status.kind === "awake",
+          )}
+        />
         <span className="shrink-0 text-sm font-medium text-foreground">{displayName}</span>
         <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
           <Trans>Report</Trans>

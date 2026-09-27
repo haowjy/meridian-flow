@@ -6,9 +6,16 @@ import { ChevronRight, LocateFixed, Network } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import { requestConversationReveal } from "./conversation-reveal";
 import { SubagentMark } from "./SubagentMark";
-import { resolveSubagentName, subagentCurrentToolLabel, subagentStatus } from "./subagent-display";
+import {
+  Elapsed,
+  formatSubagentElapsed,
+  resolveSubagentName,
+  subagentCurrentToolLabel,
+  subagentStatus,
+} from "./subagent-display";
 
 export function SubagentHeader({
   threadId,
@@ -152,7 +159,7 @@ function SubagentPopoverRow({
           status={subagentStatus(node.spawnStatus, running)}
           className="size-5 shrink-0 text-[10px]"
         />
-        <span className="min-w-0 flex-1 truncate">
+        <span className={cn("min-w-0 flex-1 truncate", !running && "text-foreground/75")}>
           {name}
           {node.title && node.title !== name ? (
             <span className="ml-1 text-muted-foreground">{node.title}</span>
@@ -162,6 +169,13 @@ function SubagentPopoverRow({
               {subagentCurrentToolLabel(node.currentTool.toolName, node.currentTool.input)}
             </span>
           ) : null}
+        </span>
+        <span className="shrink-0 self-start pt-0.5 text-xs tabular-nums text-muted-foreground">
+          {running ? (
+            <Elapsed startedAt={node.runStartedAt} />
+          ) : (
+            formatSubagentElapsed(node.runStartedAt, node.runEndedAt)
+          )}
         </span>
         <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
       </button>
