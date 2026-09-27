@@ -17,7 +17,7 @@ import { TurnStartConflictError } from "../../threads/index.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { InboxReader, MessageDraft } from "./ports.js";
-import type { DeliveryProducer } from "./runtime-delivery.js";
+import type { DeliveryProducer, DeliveryTransaction } from "./runtime-delivery.js";
 import { writerUserTurnBlocks } from "./user-turn-blocks.js";
 
 export interface WriterEnqueueSettlement {
@@ -37,6 +37,59 @@ export class WriterEnqueueRollback<T> extends Error {
     super("writer enqueue aborted by an admission winner");
     this.name = "WriterEnqueueRollback";
   }
+}
+
+/** Persist the writer turn and its inbox message under the caller's thread lock. */
+export async function persistWriterTurn(input: {
+  persistence: PersistenceDeps;
+  threadId: ThreadId;
+  userTurnId: TurnId;
+  userBlocks: readonly UserMessageBlock[];
+  userTurnMetadata?: JsonValue | null;
+  origin: "system" | "writer";
+  producer: DeliveryTransaction;
+  draft: MessageDraft;
+  afterEnqueue?: (userTurnId: TurnId) => Promise<void>;
+  afterTurnCreated?: (userTurnId: TurnId) => void;
+}): Promise<ReturnType<typeof createLocalTurn>> {
+  await input.producer.materializePrefix();
+  const current = await input.persistence.repos.threads.findById(input.threadId);
+  if (!current) throw new Error(`Thread not found: ${input.threadId}`);
+
+  const persisted = await persistAndAppendTurnStartEvents(
+    input.persistence,
+    input.threadId,
+    current.activeLeafTurnId,
+    async () => {
+      const userTurn = createLocalTurn({
+        id: input.userTurnId,
+        threadId: input.threadId,
+        // The event contract needs a number here; projection replaces this placeholder.
+        position: 1,
+        prevTurnId: current.activeLeafTurnId,
+        role: "user",
+        origin: input.origin,
+        status: "complete",
+        metadata: writerInboxMetadata(input.userTurnMetadata),
+      });
+      const blocks = writerUserTurnBlocks(userTurn.id, input.userBlocks);
+      input.afterTurnCreated?.(userTurn.id);
+      return {
+        result: { userTurn },
+        events: [
+          { type: "turn.created" as const, turn: userTurn },
+          ...blocks.map((block) => ({ type: "block.upserted" as const, block })),
+        ],
+      };
+    },
+    {
+      afterEvents: async ({ userTurn }) => {
+        await input.producer.enqueue(input.draft);
+        await input.afterEnqueue?.(userTurn.id);
+      },
+    },
+  );
+  return persisted.result.userTurn;
 }
 
 export async function persistWriterEnqueue<T>(input: {
@@ -59,45 +112,23 @@ export async function persistWriterEnqueue<T>(input: {
       return await input.delivery.withThreadLock(input.threadId, async (producer) => {
         let settled: T | undefined;
         const persistAttempt = async () => {
-          await producer.materializePrefix();
-          const current = await input.persistence.repos.threads.findById(input.threadId);
-          if (!current) throw new Error(`Thread not found: ${input.threadId}`);
-          return persistAndAppendTurnStartEvents(
-            input.persistence,
-            input.threadId,
-            current.activeLeafTurnId,
-            async () => {
-              const userTurn = createLocalTurn({
-                id: input.userTurnId,
-                threadId: input.threadId,
-                // The event contract needs a number here; projection replaces this placeholder.
-                position: 1,
-                prevTurnId: current.activeLeafTurnId,
-                role: "user",
-                origin: "writer",
-                status: "complete",
-                metadata: writerInboxMetadata(input.userTurnMetadata),
+          await persistWriterTurn({
+            persistence: input.persistence,
+            threadId: input.threadId,
+            userTurnId: input.userTurnId,
+            userBlocks: input.userBlocks,
+            userTurnMetadata: input.userTurnMetadata,
+            origin: "writer",
+            producer,
+            draft: input.draft,
+            afterEnqueue: async (userTurnId) => {
+              settled = await input.settle({
+                userTurnId,
+                resumeAfterSeq,
+                snapshotFloorNextSeq: ((await input.hub.headSeq(input.threadId)) + 1n).toString(),
               });
-              const blocks = writerUserTurnBlocks(userTurn.id, input.userBlocks);
-              return {
-                result: { userTurn },
-                events: [
-                  { type: "turn.created" as const, turn: userTurn },
-                  ...blocks.map((block) => ({ type: "block.upserted" as const, block })),
-                ],
-              };
             },
-            {
-              afterEvents: async ({ userTurn }) => {
-                await producer.enqueue(input.draft);
-                settled = await input.settle({
-                  userTurnId: userTurn.id,
-                  resumeAfterSeq,
-                  snapshotFloorNextSeq: ((await input.hub.headSeq(input.threadId)) + 1n).toString(),
-                });
-              },
-            },
-          );
+          });
         };
         await (input.persistence.savepoint
           ? input.persistence.savepoint(persistAttempt)

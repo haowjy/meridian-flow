@@ -116,10 +116,32 @@ describe("RunSession", () => {
   });
 
   it("restarts after cleanup when a writer message arrived after terminal close", async () => {
-    const f = await fixture();
+    let onRunSettled = false;
+    const f = await fixture((deps) => {
+      deps.onRunSettled = () => {
+        onRunSettled = true;
+      };
+    });
     const delivery = f.deps.delivery;
-    const refreshPending = delivery.refreshPending.bind(delivery);
+    const workContext = f.deps.workContext;
+    const renderForThread = workContext.renderForThread.bind(workContext);
     let injected = false;
+    let releasePreparation!: () => void;
+    const preparationReleased = new Promise<void>((resolve) => {
+      releasePreparation = resolve;
+    });
+    let preparationStarted!: () => void;
+    const preparationStartedPromise = new Promise<void>((resolve) => {
+      preparationStarted = resolve;
+    });
+    workContext.renderForThread = async (threadId) => {
+      if (injected) {
+        preparationStarted();
+        await preparationReleased;
+      }
+      return renderForThread(threadId);
+    };
+    const refreshPending = delivery.refreshPending.bind(delivery);
     delivery.refreshPending = async (threadId) => {
       await refreshPending(threadId);
       if (injected) return;
@@ -131,10 +153,38 @@ describe("RunSession", () => {
         body: { kind: "text", text: "arrived during cleanup" },
         idempotencyKey: "arrived-during-cleanup",
       });
+      await delivery.threadChanged(threadId);
     };
 
     const run = await f.prepare();
-    await expect(run.execute()).resolves.toMatchObject({ status: "complete" });
+    const execution = run.execute();
+    const restartPreparationStarted = await new Promise<boolean>((resolve) => {
+      const timeout = setTimeout(() => resolve(false), 1_000);
+      void preparationStartedPromise.then(() => {
+        clearTimeout(timeout);
+        resolve(true);
+      });
+    });
+    const completedBeforePreparation =
+      restartPreparationStarted &&
+      (await new Promise<boolean>((resolve) => {
+        const timeout = setTimeout(() => resolve(false), 1_000);
+        void execution.then(
+          () => {
+            clearTimeout(timeout);
+            resolve(true);
+          },
+          () => {
+            clearTimeout(timeout);
+            resolve(false);
+          },
+        );
+      }));
+    releasePreparation();
+    await expect(execution).resolves.toMatchObject({ status: "complete" });
+    expect(restartPreparationStarted).toBe(true);
+    expect(onRunSettled).toBe(true);
+    expect(completedBeforePreparation).toBe(true);
 
     await expect.poll(() => f.calls()).toBe(2);
     await expect.poll(() => f.deps.runClaim.holder(f.thread.id)).toBeNull();

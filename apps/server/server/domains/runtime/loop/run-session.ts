@@ -81,6 +81,7 @@ export function createRunSessions(deps: {
     else parentSignal?.addEventListener("abort", abort, { once: true });
     let lease: Lease | null = null;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let restartPendingAfterCompletion = false;
     async function cleanup(restartPending = false) {
       clearInterval(heartbeat);
       parentSignal?.removeEventListener("abort", abort);
@@ -99,7 +100,7 @@ export function createRunSessions(deps: {
               (message) => message.intent === "message",
             )
           ) {
-            await createRunStarter({ startDrain }, deps.eventSink).start(threadId);
+            restartPendingAfterCompletion = true;
           }
         }
       } catch (error) {
@@ -110,6 +111,11 @@ export function createRunSessions(deps: {
           if (session.assistantTurnId) deps.onRunSettled?.(threadId);
         } catch (error) {
           observe(threadId, "settled.failed", error);
+        }
+        if (restartPendingAfterCompletion) {
+          void session.completion
+            .then(() => createRunStarter({ startDrain }, deps.eventSink).start(threadId))
+            .catch((error) => observe(threadId, "cleanup_wake.failed", error));
         }
       }
     }

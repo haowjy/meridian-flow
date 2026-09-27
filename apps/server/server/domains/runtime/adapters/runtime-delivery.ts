@@ -457,6 +457,10 @@ export function createDeliveryAdapter(
       threadLock.withThreadLock(threadId, () =>
         operation({
           materializePrefix: () => materializePrefix(threadId),
+          async acknowledge(ids) {
+            await inbox.ack(threadId, [...ids]);
+            await appendPending(threadId);
+          },
           enqueue(draft) {
             if (draft.threadId !== threadId)
               throw new Error("Scoped delivery cannot enqueue another thread");

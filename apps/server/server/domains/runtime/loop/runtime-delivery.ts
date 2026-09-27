@@ -9,6 +9,7 @@ import type { InboxMessage, InboxReader, Lease, MessageDraft } from "./ports.js"
 
 export type DeliveryTransaction = {
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
+  acknowledge(ids: readonly string[]): Promise<void>;
   materializePrefix(): Promise<void>;
 };
 export type DeliveryProducer = Pick<RuntimeDelivery, "enqueue" | "withThreadLock">;

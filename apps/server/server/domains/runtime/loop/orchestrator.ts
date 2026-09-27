@@ -131,7 +131,6 @@ import {
   NoPendingWakeError,
   type PreparedLoop,
   type RunLoopInput,
-  type WriterRunTurnInput,
 } from "./run-turn-port.js";
 import type { AdoptedBatch, DeliveryBoundary, RuntimeDelivery } from "./runtime-delivery.js";
 import {
@@ -147,9 +146,8 @@ import {
   assembleNextTurnContext,
   persistPreparedPromptBake,
 } from "./turn-context-assembly.js";
-import { writerUserTurnBlocks } from "./user-turn-blocks.js";
 import type { WorkContextReader } from "./work-context.js";
-import { writerInboxMetadata } from "./writer-enqueue.js";
+import { persistWriterTurn } from "./writer-enqueue.js";
 
 const MAX_TURN_ITERATIONS = 32;
 
@@ -427,74 +425,55 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
   if (isDrainRun(input)) {
     return runDrainTurn(deps, input);
   }
-  const assistantTurnId = await persistDirectWriterTurn(deps, input);
-  return runDrainTurn(deps, { ...input, drain: true }, assistantTurnId);
-}
-
-/** Direct run callers use the same enqueue-first durable writer turn as the HTTP path. */
-async function persistDirectWriterTurn(
-  deps: OrchestratorDeps,
-  input: RunLoopInput & WriterRunTurnInput,
-): Promise<TurnId> {
   const userTurnId = crypto.randomUUID() as TurnId;
-  return deps.delivery.withThreadLock(input.threadId, async (producer) => {
-    await producer.materializePrefix();
+  const userMetadata = input.userTurnMetadata;
+  const skillMetadata = activatedSkillMetadata(input.activatedSkillSlugs ?? []);
+  const metadata = {
+    ...(userMetadata && typeof userMetadata === "object" && !Array.isArray(userMetadata)
+      ? userMetadata
+      : {}),
+    ...(skillMetadata && typeof skillMetadata === "object" && !Array.isArray(skillMetadata)
+      ? skillMetadata
+      : {}),
+  };
+  let assistantTurnId: TurnId | undefined;
+  const userTurn = await deps.delivery.withThreadLock(input.threadId, async (producer) => {
     const thread = await deps.repos.threads.findById(input.threadId);
     if (!thread) throw new Error(`Thread not found: ${input.threadId}`);
-    const userMetadata = input.userTurnMetadata;
-    const skillMetadata = activatedSkillMetadata(input.activatedSkillSlugs ?? []);
-    const mergedMetadata = {
-      ...(userMetadata && typeof userMetadata === "object" && !Array.isArray(userMetadata)
-        ? userMetadata
-        : {}),
-      ...(skillMetadata && typeof skillMetadata === "object" && !Array.isArray(skillMetadata)
-        ? skillMetadata
-        : {}),
-    };
-    const turn = createLocalTurn({
-      id: userTurnId,
+    return persistWriterTurn({
+      persistence: deps,
       threadId: input.threadId,
-      // The event contract needs a number here; projection replaces this placeholder.
-      position: 1,
-      prevTurnId: thread.activeLeafTurnId,
-      role: "user",
+      userTurnId,
+      userBlocks: input.userBlocks ?? [{ type: "text", text: input.userText }],
+      userTurnMetadata: metadata,
       origin: input.child ? "system" : "writer",
-      status: "complete",
-      metadata: writerInboxMetadata(mergedMetadata),
-    });
-    const blocks = writerUserTurnBlocks(
-      turn.id,
-      input.userBlocks ?? [{ type: "text", text: input.userText }],
-    );
-    const assistantTurnId = crypto.randomUUID() as TurnId;
-    await persistAndAppendTurnStartEvents(
-      deps,
-      input.threadId,
-      thread.activeLeafTurnId,
-      async () => ({
-        result: undefined,
-        events: [
-          { type: "turn.created", turn },
-          ...blocks.map((block) => ({ type: "block.upserted" as const, block })),
-        ],
-      }),
-      {
-        afterEvents: async () => {
-          await producer.enqueue({
-            id: userTurnId,
-            threadId: input.threadId,
-            intent: "message",
-            provenance: input.child
-              ? { kind: "agent", threadId: input.threadId }
-              : { kind: "writer", actorId: thread.userId },
-            body: { kind: "text", text: input.userText },
-            idempotencyKey: userTurnId,
-          });
-        },
+      producer,
+      afterTurnCreated: () => {
+        assistantTurnId = crypto.randomUUID() as TurnId;
       },
-    );
-    return assistantTurnId;
+      draft: {
+        id: userTurnId,
+        threadId: input.threadId,
+        intent: "message",
+        provenance: input.child
+          ? { kind: "agent", threadId: input.threadId }
+          : { kind: "writer", actorId: thread.userId },
+        body: { kind: "text", text: input.userText },
+        idempotencyKey: userTurnId,
+      },
+    });
   });
+  try {
+    if (!assistantTurnId) throw new Error("Direct writer turn did not reserve an assistant turn");
+    return await runDrainTurn(deps, { ...input, drain: true }, assistantTurnId);
+  } catch (error) {
+    if (input.signal?.aborted) {
+      await deps.delivery.withThreadLock(input.threadId, (producer) =>
+        producer.acknowledge([userTurn.id]),
+      );
+    }
+    throw error;
+  }
 }
 
 /**

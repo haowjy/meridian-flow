@@ -943,7 +943,17 @@ describe("inbox drain", () => {
       await expect(execution).resolves.toMatchObject({ status: "cancelled" });
     }
 
-    expect(await rig.inbox.selectPending(rig.thread.id)).toHaveLength(1);
+    if (boundary === "direct start") {
+      expect(await rig.inbox.selectPending(rig.thread.id)).toEqual([]);
+      expect(await messageTurnTexts(rig.repos, rig.thread.id)).toEqual([
+        "writer message survives cancellation",
+      ]);
+      await expect(
+        rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true }),
+      ).rejects.toBeInstanceOf(NoPendingWakeError);
+    } else {
+      expect(await rig.inbox.selectPending(rig.thread.id)).toHaveLength(1);
+    }
     expect(await notices.peek(rig.thread.id)).toHaveLength(1);
     if (boundary !== "mid-run")
       expect((await rig.repos.threads.findById(rig.thread.id))?.initialPromptBakeId).toBeNull();
