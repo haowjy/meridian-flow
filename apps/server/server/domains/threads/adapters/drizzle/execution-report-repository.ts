@@ -3,7 +3,7 @@
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import * as schema from "@meridian/database/schema";
-import { and, asc, eq, getTableColumns, gt, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, gt, isNull, sql } from "drizzle-orm";
 import { assertExecutionReportAdmission } from "../../domain/execution-report-admission.js";
 import {
   assertReportCapture,
@@ -253,19 +253,17 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
         .select({
           childThreadId: table.childThreadId,
           assistantTurnId: table.assistantTurnId,
-          callerThreadId: table.callerThreadId,
+          callerThreadId: caller.id,
         })
         .from(table)
-        .leftJoin(caller, eq(caller.id, table.callerThreadId))
-        .leftJoin(schema.projects, eq(schema.projects.id, caller.projectId))
+        .innerJoin(caller, eq(caller.id, table.callerThreadId))
+        .innerJoin(schema.projects, eq(schema.projects.id, caller.projectId))
         .where(
           and(
             eq(table.publication, "pending"),
             ...(afterExecutionId ? [gt(table.assistantTurnId, afterExecutionId)] : []),
-            or(
-              isNull(table.callerThreadId),
-              and(isNull(caller.deletedAt), isNull(schema.projects.deletedAt)),
-            ),
+            isNull(caller.deletedAt),
+            isNull(schema.projects.deletedAt),
           ),
         )
         .orderBy(asc(table.assistantTurnId))

@@ -304,12 +304,12 @@ else
         expect(await repos.executionReports.findByExecution(ids.child, ids.execution)).toBeNull();
       });
 
-      it("discovers live obligations beyond parked callers and retains child output after caller deletion", async () => {
+      it("discovers live obligations and prevents deleting a pending caller", async () => {
         const { eq } = await import("drizzle-orm");
         await repos.executionReports.markPublished(
           ids.otherProjectChild,
           ids.otherProjectExecution,
-          "skipped",
+          "published",
         );
         const sibling = "00000000-0000-4000-8000-0000000009d1" as ThreadId;
         const siblingTurn = "00000000-0000-4000-8000-0000000009d2" as TurnId;
@@ -408,16 +408,20 @@ else
           ),
         ).toEqual(expect.arrayContaining([ids.execution, ids.execution2, third]));
         await db.delete(schema.turns).where(eq(schema.turns.id, siblingTurn));
-        await db.delete(schema.threads).where(eq(schema.threads.id, sibling));
+        await expect(
+          db.delete(schema.threads).where(eq(schema.threads.id, sibling)),
+        ).rejects.toMatchObject({
+          cause: { constraint_name: "thread_execution_reports_pending_has_caller" },
+        });
         expect(
           await repos.executionReports.findByExecution(ids.child, ids.execution),
         ).toMatchObject({
-          callerThreadId: null,
+          callerThreadId: sibling,
           callerTurnId: null,
           cardBlockId: null,
           summary: `saved-${ids.execution}`,
         });
-        expect(await repos.executionReports.listPendingPublication(1)).toHaveLength(1);
+        expect(await repos.executionReports.listPendingPublication(3)).toHaveLength(3);
       });
 
       it("does not reveal an authorized sibling's report through a mismatched ref or another owner", async () => {
@@ -585,7 +589,6 @@ else
         releaseFirst();
         const [, losingLock] = await Promise.all([publisherA, publisherB]);
         expect(losingLock).toBeNull();
-        await repos.executionReports.markPublished(ids.child, ids.execution, "skipped");
         expect(
           (await repos.executionReports.findByExecution(ids.child, ids.execution))?.publication,
         ).toBe("published");

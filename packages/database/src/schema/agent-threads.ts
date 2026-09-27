@@ -477,7 +477,11 @@ export const threadExecutionReports = pgTable(
     ),
     check(
       "thread_execution_reports_publication_valid",
-      sql`${table.publication} IN ('none','pending','published','skipped')`,
+      sql`${table.publication} IN ('none','pending','published')`,
+    ),
+    check(
+      "thread_execution_reports_pending_has_caller",
+      sql`${table.publication} <> 'pending' OR ${table.callerThreadId} IS NOT NULL`,
     ),
     check(
       "thread_execution_reports_terminal_coherent",
@@ -485,7 +489,7 @@ export const threadExecutionReports = pgTable(
     ),
     check(
       "thread_execution_reports_publication_timestamp_coherent",
-      sql`(${table.publication} IN ('none','pending') AND ${table.publishedAt} IS NULL) OR (${table.publication} IN ('published','skipped') AND ${table.publishedAt} IS NOT NULL)`,
+      sql`(${table.publication} IN ('none','pending') AND ${table.publishedAt} IS NULL) OR (${table.publication} = 'published' AND ${table.publishedAt} IS NOT NULL)`,
     ),
   ],
 );
@@ -587,5 +591,5 @@ export const userTurnAdmissions = pgTable(
   ],
 );
 
-// Deleting a source turn clears only the provenance pointer, preserving the
-// derived thread's own transcript and output after an explicit hard purge.
+// The origin-turn FK is NO ACTION DEFERRABLE INITIALLY IMMEDIATE in migration
+// 0006; deleting a referenced turn fails unless a coordinated delete defers it.

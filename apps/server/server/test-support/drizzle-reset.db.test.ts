@@ -34,6 +34,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const cycleB = testSchema.table("cycle_b", { id: integer("id").primaryKey() });
     const deferredA = testSchema.table("deferred_a", { id: integer("id").primaryKey() });
     const deferredB = testSchema.table("deferred_b", { id: integer("id").primaryKey() });
+    const deferredRestrictA = testSchema.table("deferred_restrict_a", {
+      id: integer("id").primaryKey(),
+    });
     const missing = testSchema.table("missing", { id: integer("id").primaryKey() });
     const quotedSchema = pgSchema("reset schema");
     const quotedRoot = quotedSchema.table('root "table"', { id: integer("id").primaryKey() });
@@ -101,6 +104,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.execute(
         sql.raw(
           'ALTER TABLE "drizzle_reset_test"."deferred_b" ADD CONSTRAINT deferred_b_a_fk FOREIGN KEY (deferred_a_id) REFERENCES "drizzle_reset_test"."deferred_a"(id) DEFERRABLE INITIALLY IMMEDIATE',
+        ),
+      );
+      await db.execute(
+        sql.raw(
+          'CREATE TABLE "drizzle_reset_test"."deferred_restrict_a" (id integer PRIMARY KEY, deferred_restrict_b_id integer)',
+        ),
+      );
+      await db.execute(
+        sql.raw(
+          'CREATE TABLE "drizzle_reset_test"."deferred_restrict_b" (id integer PRIMARY KEY, deferred_restrict_a_id integer)',
+        ),
+      );
+      await db.execute(
+        sql.raw(
+          'ALTER TABLE "drizzle_reset_test"."deferred_restrict_a" ADD CONSTRAINT deferred_restrict_a_b_fk FOREIGN KEY (deferred_restrict_b_id) REFERENCES "drizzle_reset_test"."deferred_restrict_b"(id) ON DELETE RESTRICT DEFERRABLE INITIALLY IMMEDIATE',
+        ),
+      );
+      await db.execute(
+        sql.raw(
+          'ALTER TABLE "drizzle_reset_test"."deferred_restrict_b" ADD CONSTRAINT deferred_restrict_b_a_fk FOREIGN KEY (deferred_restrict_a_id) REFERENCES "drizzle_reset_test"."deferred_restrict_a"(id) ON DELETE RESTRICT DEFERRABLE INITIALLY IMMEDIATE',
         ),
       );
       await db.execute(
@@ -265,6 +288,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(db.select().from(deferredA)).resolves.toEqual([]);
       await expect(db.select().from(deferredB)).resolves.toEqual([]);
       await expect(deleteDrizzleRows(db, [cycleA])).rejects.toThrow("foreign keys form a cycle");
+      await expect(deleteDrizzleRows(db, [deferredRestrictA])).rejects.toThrow(
+        "foreign keys form a cycle",
+      );
     });
 
     it("rolls back child deletes when a later parent delete fails", async () => {

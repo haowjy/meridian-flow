@@ -14,6 +14,7 @@ type CatalogTableRow = {
   table_name: string;
   parent_oid: string | null;
   condeferrable: boolean | null;
+  confdeltype: string | null;
 };
 
 type TableNode = {
@@ -52,9 +53,8 @@ function childFirstTableOrder(rows: CatalogTableRow[]): TableNode[] {
       qualifiedName: quoteTable(row.schema_name, row.table_name),
       parentOids: new Set<string>(),
     };
-    // Deferrable edges still pull dependent tables into the reset, but do not
-    // constrain child-first ordering because the transaction defers their checks.
-    if (row.parent_oid && !row.condeferrable) {
+    // Only deferrable NO ACTION edges can be postponed by SET CONSTRAINTS.
+    if (row.parent_oid && !(row.condeferrable && row.confdeltype === "a")) {
       node.parentOids.add(row.parent_oid);
     }
     nodes.set(row.table_oid, node);
@@ -172,7 +172,8 @@ export async function deleteDrizzleRows(db: Database, tables: unknown[]): Promis
         namespace.nspname AS schema_name,
         relation.relname AS table_name,
         foreign_key.confrelid::text AS parent_oid,
-        foreign_key.condeferrable
+        foreign_key.condeferrable,
+        foreign_key.confdeltype
       FROM tables_to_clear
       INNER JOIN pg_catalog.pg_class AS relation
         ON relation.oid = tables_to_clear.oid

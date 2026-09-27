@@ -14,6 +14,7 @@ export {
 } from "./domain/active-document-resolver.js";
 export { createBoundConversation } from "./domain/bound-conversation.js";
 export {
+  DerivedSourceNotFoundError,
   ForkCutoffError,
   type ForkCutoffErrorCode,
   ForkThreadConflictError,

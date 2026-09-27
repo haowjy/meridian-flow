@@ -21,7 +21,9 @@ else
       "../index.js"
     );
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
-    const { forkThreadAgent } = await import("./derive-conversation.js");
+    const { DerivedSourceNotFoundError, forkThreadAgent } = await import(
+      "./derive-conversation.js"
+    );
     const db = createDb(DATABASE_URL, { max: 6 });
     const repos = (
       await import("../adapters/drizzle/repositories.js")
@@ -132,6 +134,24 @@ else
         originTurnId: input.originTurnId,
       });
     }
+
+    it("hides missing and unowned source threads as not found", async () => {
+      const fixture = await setupSource();
+      await expect(
+        forkThreadAgent(fixture.deps, {
+          id: crypto.randomUUID(),
+          threadId: crypto.randomUUID(),
+          userId: ids.userId,
+        }),
+      ).rejects.toBeInstanceOf(DerivedSourceNotFoundError);
+      await expect(
+        forkThreadAgent(fixture.deps, {
+          id: crypto.randomUUID(),
+          threadId: fixture.source.id,
+          userId: crypto.randomUUID(),
+        }),
+      ).rejects.toBeInstanceOf(DerivedSourceNotFoundError);
+    });
 
     it("keeps the source's retained binding after its catalog advances", async () => {
       const fixture = await setupSource();
@@ -432,7 +452,9 @@ else
         db.transaction((tx) =>
           tx.delete(schema.turns).where(eq(schema.turns.id, fixture.firstTurn.id)),
         ),
-      ).rejects.toThrow();
+      ).rejects.toMatchObject({
+        cause: { constraint_name: "threads_origin_turn_id_turns_id_fk" },
+      });
       expect(await repos.turns.findById(fixture.firstTurn.id)).not.toBeNull();
 
       await deleteDrizzleRows(db, [schema.turns]);

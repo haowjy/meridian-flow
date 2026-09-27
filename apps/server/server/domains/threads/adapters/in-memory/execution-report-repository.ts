@@ -133,16 +133,22 @@ export function createInMemoryExecutionReportRepository(
       for (const row of rows.values()) {
         if (row.publication !== "pending") continue;
         if (afterExecutionId && row.assistantTurnId <= afterExecutionId) continue;
-        const caller = row.callerThreadId ? deps.threads.get(row.callerThreadId) : null;
-        if (caller?.deletedAt) continue;
-        if (caller && deps.projects) {
+        if (!row.callerThreadId) {
+          throw new Error("Pending publication violates caller-thread invariant");
+        }
+        const caller = deps.threads.get(row.callerThreadId);
+        if (!caller) {
+          throw new Error("Pending publication violates caller-thread invariant");
+        }
+        if (caller.deletedAt) continue;
+        if (deps.projects) {
           const project = await deps.projects.findById(caller.projectId);
           if (project?.deletedAt) continue;
         }
         eligible.push({
           childThreadId: row.childThreadId,
           assistantTurnId: row.assistantTurnId,
-          callerThreadId: caller?.id ?? null,
+          callerThreadId: caller.id,
         });
       }
       eligible.sort((a, b) => a.assistantTurnId.localeCompare(b.assistantTurnId));

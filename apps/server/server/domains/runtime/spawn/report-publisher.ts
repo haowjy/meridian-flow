@@ -32,7 +32,10 @@ export function createReportPublisher(deps: {
     );
     if (selected?.publication !== "pending") return "already";
     // A pending publication can only be admitted for an invocation with a caller.
-    const callerThreadId = selected.callerThreadId as ThreadId;
+    const callerThreadId = selected.callerThreadId;
+    if (!callerThreadId) {
+      throw new Error("Pending publication violates caller-thread invariant");
+    }
 
     // DeliveryProducer owns the parent lock, and its scoped producer never takes it
     // again. No child lock or lease wait is reachable from this callback.
@@ -40,9 +43,7 @@ export function createReportPublisher(deps: {
       deps.repos.transaction(async (): Promise<PublicationOutcome> => {
         const callerRow = await deps.repos.threads.lockByIdIncludingDeleted(callerThreadId);
         if (!callerRow) {
-          throw new Error(
-            "Pending publication caller is missing despite its origin-turn reference",
-          );
+          throw new Error("Pending publication violates caller-thread invariant");
         }
         const report = await deps.repos.executionReports.lockPendingPublication(
           childThreadId,

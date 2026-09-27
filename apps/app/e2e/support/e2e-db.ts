@@ -168,6 +168,7 @@ export async function cleanupProjectFixture(db: Db, fixture: ProjectFixture): Pr
       DELETE FROM turn_document_touches
       WHERE thread_id IN (SELECT id FROM threads WHERE project_id = ${fixture.projectId})
     `;
+    await tx`DELETE FROM project_results WHERE project_id = ${fixture.projectId}`;
     await tx`
       DELETE FROM turns
       WHERE thread_id IN (SELECT id FROM threads WHERE project_id = ${fixture.projectId})

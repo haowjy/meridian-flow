@@ -52,7 +52,7 @@ export type SavedExecutionReport = {
   payload?: JsonValue;
   artifacts: ArtifactRef[] | null;
   costMillicredits: number | null;
-  publication: "none" | "pending" | "published" | "skipped";
+  publication: "none" | "pending" | "published";
   publishedAt: string | null;
 } & (
   | { outcome: null; source: null; summary: null; terminalAt: null }

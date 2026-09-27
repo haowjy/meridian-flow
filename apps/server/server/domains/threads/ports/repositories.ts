@@ -152,7 +152,11 @@ export interface ExecutionReportRepository {
     limit: number,
     afterExecutionId?: TurnId,
   ): Promise<
-    Array<Pick<SavedExecutionReport, "childThreadId" | "assistantTurnId" | "callerThreadId">>
+    Array<
+      Pick<SavedExecutionReport, "childThreadId" | "assistantTurnId"> & {
+        callerThreadId: ThreadId;
+      }
+    >
   >;
   lockPendingPublication(
     childThreadId: ThreadId,
@@ -161,7 +165,7 @@ export interface ExecutionReportRepository {
   markPublished(
     childThreadId: ThreadId,
     assistantTurnId: TurnId,
-    publication: "published" | "skipped",
+    publication: "published",
   ): Promise<void>;
 }
 

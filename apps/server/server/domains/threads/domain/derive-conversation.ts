@@ -52,6 +52,13 @@ export class ForkThreadConflictError extends Error {
   }
 }
 
+export class DerivedSourceNotFoundError extends Error {
+  constructor() {
+    super("Source thread not found");
+    this.name = "DerivedSourceNotFoundError";
+  }
+}
+
 export type ForkCutoffErrorCode = "turn_not_in_transcript" | "no_settled_turn";
 
 export class ForkCutoffError extends Error {
@@ -309,8 +316,11 @@ async function requireOwnedSourceThread(
   userId: string,
 ): Promise<Thread> {
   const thread = await deps.threads.findById(threadId as ThreadId);
-  if (!thread) throw new Error(`Thread not found: ${threadId}`);
-  await requireProjectOwner({ projects: deps.projects }, thread.projectId, userId);
+  if (!thread) throw new DerivedSourceNotFoundError();
+  const project = await deps.projects.findById(thread.projectId);
+  if (!project || project.userId !== userId || project.deletedAt) {
+    throw new DerivedSourceNotFoundError();
+  }
   return thread;
 }
 
