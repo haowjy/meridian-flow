@@ -21,7 +21,13 @@ import { WorkCard } from "./WorkCard";
 import { WorkDetailScreen } from "./WorkDetailScreen";
 import { WorkDialog, type WorkDialogAction } from "./WorkDialog";
 import {
+  emptyWorkDeleteState,
+  type WorkDeleteState,
+  workDeleteTransition,
+} from "./work-delete-state";
+import {
   focusAfterDelete,
+  holdWorkCollectionFocus,
   takeWorkCollectionFocus,
   type WorkCollectionFocusIntent,
 } from "./work-focus-intent";
@@ -35,12 +41,54 @@ export type WorkScreenProps = {
 export function WorkScreen(props: WorkScreenProps) {
   const createWork = useCreateWork(props.projectId, props.routeCommands);
   const catalog = useWorks(props.projectId);
+  const mutations = useWorkMutations(props.projectId);
+  const [deleteState, setDeleteState] = useState<WorkDeleteState>(emptyWorkDeleteState);
+  const deleteWork = (work: Work) => {
+    setDeleteState((state) => workDeleteTransition(state, { type: "delete", work }));
+    holdWorkCollectionFocus(props.projectId, { kind: "heading" });
+    void props.routeCommands.closeWork({ replace: true });
+    mutations.delete.mutate(work.id, {
+      onError: () =>
+        setDeleteState((state) => workDeleteTransition(state, { type: "delete-failed" })),
+    });
+  };
+  const retryDelete = () => {
+    const work = deleteState.failed;
+    if (!work) return;
+    setDeleteState((state) => workDeleteTransition(state, { type: "retry" }));
+    mutations.delete.mutate(work.id, {
+      onError: () =>
+        setDeleteState((state) => workDeleteTransition(state, { type: "delete-failed" })),
+    });
+  };
+  const undoDelete = () => {
+    const work = deleteState.deleted;
+    if (!work) return;
+    setDeleteState((state) => workDeleteTransition(state, { type: "undo" }));
+    mutations.restore.mutate(work.id, {
+      onSuccess: () => setDeleteState(emptyWorkDeleteState()),
+      onError: () =>
+        setDeleteState((state) => workDeleteTransition(state, { type: "restore-failed" })),
+    });
+  };
   const routeWorkId =
     props.routeWork.status === "present"
       ? props.routeWork.workId
       : props.routeWork.status === "unresolved"
         ? parseRequestId(props.routeWork.slug)
         : null;
+  useEffect(() => {
+    if (props.routeWork.status === "new") {
+      setDeleteState(emptyWorkDeleteState());
+      return;
+    }
+    if (
+      props.routeWork.status === "present" &&
+      (deleteState.failed || (deleteState.deleted && routeWorkId !== deleteState.deleted.id))
+    ) {
+      setDeleteState(emptyWorkDeleteState());
+    }
+  }, [deleteState.deleted, deleteState.failed, props.routeWork.status, routeWorkId]);
   const creation = useWorkCreationState(props.projectId, routeWorkId, props.routeCommands);
   if (props.routeWork.status === "new") {
     return (
@@ -64,9 +112,7 @@ export function WorkScreen(props: WorkScreenProps) {
     );
   }
   if (props.routeWork.status === "present") {
-    return (
-      <WorkDetailScreen {...props} work={props.routeWork.work} catalogWorks={catalog.works ?? []} />
-    );
+    return <WorkDetailScreen {...props} work={props.routeWork.work} onDeleteWork={deleteWork} />;
   }
   if (props.routeWork.status === "unresolved" && props.routeWork.reason === "error") {
     return (
@@ -92,10 +138,30 @@ export function WorkScreen(props: WorkScreenProps) {
       </div>
     );
   }
-  return <WorkCollectionScreen {...props} />;
+  return (
+    <WorkCollectionScreen
+      {...props}
+      deleteState={deleteState}
+      onUndoDelete={undoDelete}
+      onDismissDelete={() => setDeleteState(emptyWorkDeleteState())}
+      onRetryDelete={retryDelete}
+    />
+  );
 }
 
-export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenProps) {
+export function WorkCollectionScreen({
+  projectId,
+  routeCommands,
+  deleteState = emptyWorkDeleteState(),
+  onUndoDelete,
+  onDismissDelete,
+  onRetryDelete,
+}: WorkScreenProps & {
+  deleteState?: WorkDeleteState;
+  onUndoDelete?: () => void;
+  onDismissDelete?: () => void;
+  onRetryDelete?: () => void;
+}) {
   const { works, isError, isFetching, refetch } = useWorks(projectId);
   const mutation = useWorkMutations(projectId);
   const creations = useWorkCreationRecords(projectId);
@@ -157,9 +223,16 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
   );
   const unfinishedIds = new Set(unfinishedCreations.map((creation) => creation.workId));
   const active =
-    works?.filter((work) => work.status === "active" && !unfinishedIds.has(work.id)) ?? [];
+    works?.filter(
+      (work) =>
+        work.status === "active" &&
+        !unfinishedIds.has(work.id) &&
+        deleteState.failed?.id !== work.id &&
+        !(deleteState.deleted?.id === work.id && !deleteState.restorePending),
+    ) ?? [];
   const archived =
     works?.filter((work) => work.status === "archived" && !unfinishedIds.has(work.id)) ?? [];
+  const failedWork = deleteState.failed;
   const headingId = useId();
   const openWorkId = (id: string) => {
     const workId = parseRequestId(id);
@@ -245,12 +318,68 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
           <LoadingCards />
         ) : (
           <>
+            {deleteState.deleted ? (
+              <div
+                className="flex min-h-10 items-center gap-3 rounded-md border border-border-subtle px-3 text-sm"
+                role="status"
+              >
+                <span className="min-w-0 flex-1 truncate">
+                  <Trans>Deleted {deleteState.deleted.name}</Trans>
+                </span>
+                {deleteState.restorePending ? (
+                  <span className="text-xs text-muted-foreground">
+                    <Trans>Restoring…</Trans>
+                  </span>
+                ) : (
+                  <button type="button" className="text-button" onClick={onUndoDelete}>
+                    <Trans>Undo</Trans>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="focus-ring rounded-sm text-muted-foreground hover:text-foreground"
+                  aria-label={t`Dismiss deleted Work`}
+                  onClick={onDismissDelete}
+                >
+                  ×
+                </button>
+              </div>
+            ) : null}
             <section aria-labelledby="active-work-heading">
               <h2 id="active-work-heading" className="mb-3 text-sm font-medium">
                 <Trans>Active Work</Trans>
               </h2>
-              {active.length ? (
+              {active.length || deleteState.failed ? (
                 <ul className="grid gap-4 @2xl/project-screen:grid-cols-2">
+                  {failedWork ? (
+                    <li key={`failed-${failedWork.id}`}>
+                      <WorkCard
+                        work={failedWork}
+                        href={hrefFor(failedWork)}
+                        pending={mutation.isPending}
+                        onOpen={(event) => {
+                          if (
+                            event.button ||
+                            event.metaKey ||
+                            event.ctrlKey ||
+                            event.shiftKey ||
+                            event.altKey
+                          )
+                            return;
+                          event.preventDefault();
+                          openWork(failedWork);
+                        }}
+                        onLifecycle={() => openDialog(failedWork)}
+                        registerOpenFocus={() => undefined}
+                        registerLifecycleFocus={() => undefined}
+                      />
+                      <InlineErrorRow
+                        message={t`Work couldn’t be deleted`}
+                        onRetry={onRetryDelete}
+                        actionLabel={t`Retry`}
+                      />
+                    </li>
+                  ) : null}
                   {active.map((work) => (
                     <li key={work.id}>
                       <WorkCard
@@ -403,7 +532,7 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
   );
 }
 
-function WorkCreationDestination({
+export function WorkCreationDestination({
   name,
   goal,
   failed,
