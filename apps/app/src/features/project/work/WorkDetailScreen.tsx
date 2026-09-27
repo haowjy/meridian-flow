@@ -19,6 +19,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { deleteContextEntry } from "@/client/api/projects-api";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
+import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
@@ -54,13 +55,14 @@ import {
   WorkMetadata,
   type WorkMetadataController,
 } from "./WorkMetadata";
-import { focusAfterDelete, holdWorkCollectionFocus } from "./work-focus-intent";
+import { filterWorkFileGroups } from "./work-files-model";
+import { holdWorkCollectionFocus } from "./work-focus-intent";
 
 export type WorkDetailScreenProps = {
   projectId: string;
   work: Work;
   routeCommands: ProjectRouteCommands;
-  catalogWorks?: Work[];
+  onDeleteWork?: (work: Work) => void;
 };
 
 function useWorkView(): ["chats" | "files", (view: "chats" | "files") => void] {
@@ -81,7 +83,7 @@ export function WorkDetailScreen({
   projectId,
   work,
   routeCommands,
-  catalogWorks = [work],
+  onDeleteWork,
 }: WorkDetailScreenProps) {
   const mutations = useWorkMutations(projectId);
   const controller = useWorkMetadataController(work, (data) =>
@@ -163,17 +165,7 @@ export function WorkDetailScreen({
               <DropdownMenuItem
                 variant="destructive"
                 disabled={mutations.isPending}
-                onSelect={() =>
-                  mutations.delete.mutate(controller.work.id, {
-                    onSuccess: () => {
-                      holdWorkCollectionFocus(
-                        projectId,
-                        focusAfterDelete(catalogWorks, controller.work.id),
-                      );
-                      void routeCommands.closeWork({ replace: true });
-                    },
-                  })
-                }
+                onSelect={() => onDeleteWork?.(controller.work)}
               >
                 <Trans>Delete Work</Trans>
               </DropdownMenuItem>
@@ -375,8 +367,6 @@ function FilesView({
   >([]);
   const picker = useRef<HTMLInputElement>(null);
   const workId = parseRequestId(work.id);
-  const matches = (name: string) =>
-    !search.trim() || name.toLowerCase().includes(search.trim().toLowerCase());
   const submitFiles = async (files: FileList | File[]) => {
     const candidates = Array.from(files);
     for (const file of candidates) {
@@ -430,15 +420,25 @@ function FilesView({
       ?.files()
       .filter(
         (file) =>
-          matches(file.name) &&
-          (file.parentId === scratch.catalog?.root.entryId ||
-            [...expandedFolders].some((path) => file.path.startsWith(`${path}/`))),
+          file.parentId === scratch.catalog?.root.entryId ||
+          [...expandedFolders].some((path) => file.path.startsWith(`${path}/`)),
       ) ?? [];
   const scratchFolders =
-    scratch.catalog
-      ?.children(scratch.catalog.root.entryId)
-      .filter((node) => node.kind === "dir" && matches(node.name)) ?? [];
-  const uploadFiles = uploads.catalog?.files().filter((file) => matches(file.name)) ?? [];
+    scratch.catalog?.children(scratch.catalog.root.entryId).filter((node) => node.kind === "dir") ??
+    [];
+  const visibleFiles = filterWorkFileGroups(
+    {
+      drafts: [],
+      scratch: [...scratchFolders, ...scratchFiles],
+      uploads: uploads.catalog?.files() ?? [],
+    },
+    search,
+  );
+  const visibleScratchFiles = visibleFiles.scratch.filter(
+    (node): node is CatalogFile => node.kind === "file",
+  );
+  const visibleScratchFolders = visibleFiles.scratch.filter((node) => node.kind === "dir");
+  const uploadFiles = visibleFiles.uploads;
   return (
     <div className="min-w-0 space-y-5 pt-1">
       <Drafts projectId={projectId} work={work} commands={commands} search={search} />
@@ -447,9 +447,9 @@ function FilesView({
           <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />
         ) : !scratch.catalog ? (
           <Loading />
-        ) : scratchFiles.length || scratchFolders.length ? (
+        ) : visibleScratchFiles.length || visibleScratchFolders.length ? (
           <ul className="min-w-0">
-            {scratchFolders.map((folder) => (
+            {visibleScratchFolders.map((folder) => (
               <li key={folder.entryId}>
                 <button
                   type="button"
@@ -469,7 +469,7 @@ function FilesView({
                 </button>
               </li>
             ))}
-            {scratchFiles.map((file) => (
+            {visibleScratchFiles.map((file) => (
               <li key={file.entryId}>
                 {rename?.path === file.path || rename?.name === file.name ? (
                   <InlineRename
@@ -485,23 +485,27 @@ function FilesView({
                     <button
                       type="button"
                       className="focus-ring flex h-7 min-w-0 flex-1 items-center gap-2 rounded-sm px-1 text-left text-sm"
-                      onClick={() =>
-                        workId &&
-                        void commands.openWorkContext(
-                          { kind: "work-context", workId, scheme: "scratch", path: file.path },
-                          { replace: false },
-                        )
-                      }
+                      onClick={() => {
+                        if (workId)
+                          openFile({
+                            kind: "viewer",
+                            documentId: file.documentId,
+                            scheme: "scratch",
+                            path: file.path,
+                            name: file.name,
+                            workId: work.id,
+                            editable: false,
+                            fileType: "binary",
+                            mimeType: "text/markdown",
+                          });
+                      }}
                     >
                       <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
                       <span className="min-w-0 flex-1 truncate">{file.name}</span>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {file.filetype}
-                      </span>
                     </button>
                     <OverflowMenu
                       label={t`File actions`}
-                      triggerClassName="size-6 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                      triggerClassName="size-6 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(pointer:coarse)]:opacity-100"
                     >
                       <DropdownMenuItem
                         onSelect={() => setRename({ path: file.path, name: file.name })}
@@ -568,17 +572,10 @@ function FilesView({
                   >
                     <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
                     <span className="min-w-0 flex-1 truncate">{file.name}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {file.kind === "file" && !file.editable
-                        ? file.fileType
-                        : file.kind === "file"
-                          ? file.filetype
-                          : ""}
-                    </span>
                   </button>
                   <OverflowMenu
                     label={t`File actions`}
-                    triggerClassName="size-6 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                    triggerClassName="size-6 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(pointer:coarse)]:opacity-100"
                   >
                     <DropdownMenuItem
                       variant="destructive"
