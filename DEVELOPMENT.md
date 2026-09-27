@@ -57,6 +57,7 @@ pnpm dev
 | `pnpm dev:infra` | Shared — start once if Postgres is not already running |
 | Git hooks | `lefthook install --reset-hooks-path` once per worktree (see below) |
 | Commits | Run `git` from the worktree directory you edited in |
+| Nx task cache | Shared with the main checkout. A cache hit replays output that can name another worktree's paths; the hit still means identical inputs. `NX_SKIP_NX_CACHE=true pnpm typecheck` forces a fresh run |
 
 **First browser load after `pnpm install`** in a fresh worktree can hit a
 stale-Vite-deps crash: Vite's pre-bundled dependency cache may hold a
