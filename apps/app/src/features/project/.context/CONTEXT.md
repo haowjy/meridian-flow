@@ -311,6 +311,16 @@ push/replace behavior. The legacy slug project routes and `?screen`/`?thread`
 grammar are gone. `project-route.ts` retains stable-ID command types and the
 context-removal CAS snapshot only; it is not a second address grammar.
 
+Work creation is addressable before the catalog knows its slug through
+`/works/<work-id>`. Confirmation replaces that path with `/work/@<slug>`.
+`useWorks` keeps server Works and client creation records
+separate; a confirmed record bridges the snapshot until the next catalog read,
+then history retains the canonical address.
+Project creation similarly seeds the detail cache and carries its title in
+entry-local route state so the project shell can render before its POST settles.
+The pending-create signal disables project-scoped Works, threads, context
+catalogs, Results, and Agent catalog reads until the create is confirmed.
+
 Empty Editor Work selections are stored in href-scoped browser history state.
 Only Editor-related destinations carry this marker; other screens must not
 write state their address parser discards. Actual Work selections remain

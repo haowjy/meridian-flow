@@ -63,7 +63,10 @@ export function WorkDetailScreen({
     mutations.update.mutateAsync({ workId: work.id, data }),
   );
   const [manage, setManage] = useState(false);
-  const [activeCommand, setActiveCommand] = useState<WorkDialogAction["type"] | null>(null);
+  const [activeCommand, setActiveCommand] = useState<Exclude<
+    WorkDialogAction["type"],
+    "create"
+  > | null>(null);
   const manageButton = useRef<HTMLButtonElement>(null);
   const scrollOwner = useRef<HTMLDivElement>(null);
   useEffect(() => {

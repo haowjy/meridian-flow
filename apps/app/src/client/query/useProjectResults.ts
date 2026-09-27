@@ -17,6 +17,7 @@ import { listProjectResults, type ProjectResultItem } from "@/client/api/project
 
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
+import { useIsProjectPendingCreation } from "./useProjectCreation";
 
 export type ProjectResultsStatus = ListQueryStatus<ProjectResultItem> & {
   results: ProjectResultItem[] | null;
@@ -27,7 +28,8 @@ export function useProjectResults(
   options?: { enabled?: boolean },
 ): ProjectResultsStatus {
   const callerEnabled = options?.enabled ?? true;
-  const enabled = callerEnabled && Boolean(projectId);
+  const isProjectPending = useIsProjectPendingCreation(projectId);
+  const enabled = callerEnabled && Boolean(projectId) && !isProjectPending;
 
   const result = unwrapListQuery(
     useQuery({

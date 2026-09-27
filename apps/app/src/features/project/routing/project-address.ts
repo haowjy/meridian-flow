@@ -5,6 +5,7 @@ import {
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
+import { type ParsedRequestId, parseRequestId } from "@meridian/contracts/request-id";
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
 
 export type AddressSelection =
@@ -17,6 +18,7 @@ export type ProjectDestination =
   | { kind: "chat-index" | "works" | "editor" }
   | { kind: "chat"; chatId: string }
   | { kind: "work"; workSlug: string }
+  | { kind: "work-id"; workId: ParsedRequestId }
   | {
       kind: "browse";
       scheme: ProjectContextTreeScheme | null;
@@ -45,6 +47,10 @@ function handle(value: string | undefined): string | null {
   return normalized && HANDLE.test(normalized) ? normalized : null;
 }
 
+function workHandle(value: string | undefined): string | null {
+  return value?.startsWith("@") ? handle(value.slice(1)) : null;
+}
+
 function uuid(value: string | undefined): string | null {
   const normalized = value?.toLowerCase();
   return normalized && UUID.test(normalized) ? normalized : null;
@@ -63,13 +69,17 @@ function parseDestination(parts: string[]): ProjectDestination | null {
     if (parts[0] === "works" || parts[0] === "editor") return { kind: parts[0] };
     if (parts[0] === "browse") return { kind: "browse", scheme: null, path: "", workSlug: null };
   }
+  if (parts.length === 2 && parts[0] === "works") {
+    const workId = parseRequestId(parts[1]);
+    return workId ? { kind: "work-id", workId } : null;
+  }
   if (parts.length === 2 && parts[0] === "chat") {
     const chatId = uuid(parts[1]);
     return chatId ? { kind: "chat", chatId } : null;
   }
   let workSlug: string | null = null;
   if (parts[0] === "work") {
-    workSlug = handle(parts[1]);
+    workSlug = workHandle(parts[1]);
     if (!workSlug) return null;
     if (parts.length === 2) return { kind: "work", workSlug };
     parts = parts.slice(2);
@@ -172,7 +182,10 @@ export function projectAddressHref(address: ProjectAddress): string {
       parts.push("chat", d.chatId);
       break;
     case "work":
-      parts.push("work", d.workSlug);
+      parts.push("work", `@${d.workSlug}`);
+      break;
+    case "work-id":
+      parts.push("works", d.workId);
       break;
     case "works":
     case "editor":
@@ -180,7 +193,7 @@ export function projectAddressHref(address: ProjectAddress): string {
       break;
     case "browse":
     case "document":
-      if (d.workSlug) parts.push("work", d.workSlug);
+      if (d.workSlug) parts.push("work", `@${d.workSlug}`);
       if (d.kind === "browse") parts.push("browse");
       if (d.scheme) parts.push(d.scheme);
       if (d.path) parts.push(...d.path.split("/"));
@@ -196,7 +209,25 @@ export function projectAddressHref(address: ProjectAddress): string {
   if ((context || d.kind === "chat") && address.results) query.set("results", "");
   if (address.settings) query.set("settings", address.settings);
   const search = query.toString();
-  return `/${parts.map(encodeURIComponent).join("/")}${search ? `?${search}` : ""}`;
+  const path = parts
+    .map((part, index) =>
+      index > 0 && parts[index - 1] === "work" && part.startsWith("@")
+        ? part
+        : encodeURIComponent(part),
+    )
+    .join("/");
+  return `/${path}${search ? `?${search}` : ""}`;
+}
+
+/** A confirmed id-addressed Work adopts its server slug without changing projects. */
+export function confirmedWorkAddress(
+  address: ProjectAddress,
+  workId: string,
+  slug: string,
+): ProjectAddress {
+  return address.destination.kind === "work-id" && address.destination.workId === workId
+    ? { ...address, destination: { kind: "work", workSlug: slug } }
+    : address;
 }
 
 /** Entry-local no-selection intent; actual selections remain in the public address. */

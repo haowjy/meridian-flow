@@ -4,7 +4,7 @@ import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { WorksSnapshot } from "@meridian/contracts/works";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getProjectDocumentAddress } from "@/client/api/projects-api";
@@ -13,6 +13,7 @@ import { type ProjectRouteData, seedProjectRouteData } from "@/client/query/proj
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
+import type { WorkCreationMap, WorkCreationRecord } from "@/client/query/work-creation-cache";
 import {
   type ContextTab,
   getContextTabs,
@@ -38,12 +39,14 @@ import { type OpenContextOptions, ProjectNavigationProvider } from "./ProjectNav
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import {
   type AddressSelection,
+  confirmedWorkAddress,
   type ProjectAddress,
   type ProjectDestination,
   parseProjectAddress,
   projectAddressHref,
 } from "./project-address";
 import {
+  type AddressCatalog,
   type AddressResolution,
   addressWorkSelection,
   resolveAddressSelection,
@@ -95,10 +98,47 @@ function routeWork(resolution: AddressResolution<Work>): RouteWorkResolution {
     };
   return { status: "none" };
 }
+
+function resolveWorkId(
+  workId: string,
+  catalog: AddressCatalog<Work>,
+  creations: readonly WorkCreationRecord[],
+): AddressResolution<Work> {
+  const catalogWork =
+    catalog.status === "ready" ? catalog.entries.find((entry) => entry.id === workId) : null;
+  const confirmedWork = creations.find(
+    (creation) => creation.workId === workId && creation.status === "confirmed",
+  )?.work;
+  const work = catalogWork ?? confirmedWork;
+  if (work) return { status: "resolved", value: work };
+  if (catalog.status === "loading" || catalog.status === "error") {
+    return { status: catalog.status, slug: workId };
+  }
+  return { status: "unavailable", slug: workId };
+}
+
 function screen(destination: ProjectDestination): ScreenKey {
-  if (destination.kind === "work" || destination.kind === "works") return "work";
+  if (destination.kind === "work" || destination.kind === "work-id" || destination.kind === "works")
+    return "work";
   if (destination.kind === "chat" || destination.kind === "chat-index") return "chat";
   return "context";
+}
+
+function workDestination(
+  workId: string,
+  queryClient: QueryClient,
+  projectId: string,
+): ProjectDestination {
+  const snapshot = queryClient.getQueryData<WorksSnapshot>(projectQueryKeys.works(projectId));
+  const created = queryClient.getQueryData<WorkCreationMap>(
+    projectQueryKeys.workCreations(projectId),
+  );
+  const work =
+    snapshot?.works.find((entry) => entry.id === workId) ?? created?.[workId]?.work ?? null;
+  if (work?.slug) return { kind: "work", workSlug: work.slug };
+  const parsed = parseRequestId(workId);
+  if (!parsed) throw new Error("Invalid Work identity");
+  return { kind: "work-id", workId: parsed };
 }
 
 export function ReadableProjectRoute({
@@ -140,9 +180,21 @@ export function ReadableProjectRoute({
   const activeScreen = screen(destination);
   const threads = useProjectThreads(projectId);
   const works = useWorks(projectId);
+  const pendingWorkCreation =
+    destination.kind === "work-id"
+      ? works.creations.find((creation) => creation.workId === destination.workId)
+      : undefined;
   const workCatalog =
     works.status === "ready" || works.status === "empty"
-      ? { status: "ready" as const, entries: works.works ?? [] }
+      ? {
+          status: "ready" as const,
+          entries: [
+            ...(works.works ?? []),
+            ...works.creations.flatMap((creation) =>
+              creation.status === "confirmed" && creation.work ? [creation.work] : [],
+            ),
+          ],
+        }
       : { status: works.status === "error" ? ("error" as const) : ("loading" as const) };
   const chat = useProjectChatNavigation({
     accountId: user.userId,
@@ -155,7 +207,10 @@ export function ReadableProjectRoute({
   const displayedChat = threads.threads?.find((thread) => thread.id === chatThreadId) ?? null;
   const rememberedEditor = useRef<string | null | undefined>(undefined);
   const requestedWork = addressWorkSelection(address);
-  const work = resolveAddressSelection(requestedWork, workCatalog);
+  const work =
+    destination.kind === "work-id"
+      ? resolveWorkId(destination.workId, workCatalog, works.creations)
+      : resolveAddressSelection(requestedWork, workCatalog);
   // Chat may seed a genuinely absent Editor context once, never rebind it after navigation.
   const editorSelection =
     activeScreen === "context" && requestedWork.kind !== "absent"
@@ -324,9 +379,12 @@ export function ReadableProjectRoute({
   const mainIssue =
     parsed.kind === "invalid"
       ? "unavailable"
-      : destination.kind === "work"
-        ? issue(work)
-        : undefined;
+      : destination.kind === "work-id" &&
+          (pendingWorkCreation?.status === "pending" || pendingWorkCreation?.status === "failed")
+        ? undefined
+        : destination.kind === "work" || destination.kind === "work-id"
+          ? issue(work)
+          : undefined;
   const editorIssue = resourceDestination
     ? "resource-viewing"
     : ((localDocument.kind === "loading" || localDocument.kind === "unavailable"
@@ -481,11 +539,23 @@ export function ReadableProjectRoute({
     [contextDestination],
   );
 
+  const canonicalizeWork = useCallback(
+    async (workId: string, slug: string) => {
+      const current = latest.current;
+      if (!navigation || current.navigation !== navigation) return;
+      const next = confirmedWorkAddress(current.address, workId, slug);
+      if (next === current.address) return;
+      await navigation.navigate(next, { replace: true });
+    },
+    [navigation],
+  );
+
   const routeCommands: ProjectRouteCommands = {
     openWork: (target, options) =>
-      go(toDestination({ kind: "work", workSlug: workSlug(target.workId) }), options),
+      go(toDestination(workDestination(target.workId, queryClient, projectId)), options),
     workHref: (target) =>
-      projectAddressHref(toDestination({ kind: "work", workSlug: workSlug(target.workId) })),
+      projectAddressHref(toDestination(workDestination(target.workId, queryClient, projectId))),
+    canonicalizeWork,
     closeWork: (options) => go(toDestination({ kind: "works" }), options),
     // Selecting no document keeps every open tab. Already on the chooser is a
     // no-op. A local draft is also `/editor`; its history pointer is the
@@ -519,6 +589,17 @@ export function ReadableProjectRoute({
             options,
           ),
   };
+  const canonicalWorkId =
+    destination.kind === "work-id" && work.status === "resolved" && work.value.slug
+      ? work.value.id
+      : null;
+  const canonicalWorkSlug =
+    destination.kind === "work-id" && work.status === "resolved" ? work.value.slug : null;
+  useEffect(() => {
+    if (canonicalWorkId && canonicalWorkSlug) {
+      void canonicalizeWork(canonicalWorkId, canonicalWorkSlug);
+    }
+  }, [canonicalizeWork, canonicalWorkId, canonicalWorkSlug]);
   const search: ProjectSearch = {
     screen: activeScreen,
     work: workId ?? "none",

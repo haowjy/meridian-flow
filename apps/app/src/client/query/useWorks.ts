@@ -1,4 +1,4 @@
-import type { CreateWorkRequest, UpdateWorkRequest, Work } from "@meridian/contracts/works";
+import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
 import {
   type QueryClient,
   type UseMutateAsyncFunction,
@@ -7,20 +7,24 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 
 import {
   archiveWork,
-  createProjectWork,
   deleteWork,
   restoreWork,
   unarchiveWork,
   updateWork,
   updateWorkWriteMode,
 } from "@/client/api/projects-api";
-import { useIsProjectPendingCreation } from "@/client/stores";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
+import { useIsProjectPendingCreation } from "./useProjectCreation";
+import {
+  confirmedWorkIdsInSnapshot,
+  removeWorkCreation,
+  workCreationMapForQuery,
+} from "./work-creation-cache";
 import { convergeWorkProjection } from "./work-projection-cache";
 import {
   acquireWorksSnapshot,
@@ -39,6 +43,21 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
     staleTime: 30_000,
     enabled,
   });
+  const creations = useQuery({
+    queryKey: projectQueryKeys.workCreations(projectId),
+    queryFn: async () => ({}),
+    enabled: false,
+  });
+  const creationMap = workCreationMapForQuery(creations.data);
+  const confirmedIds = confirmedWorkIdsInSnapshot(list.data);
+  useEffect(() => {
+    if (confirmedIds.size === 0) return;
+    for (const record of Object.values(creationMap)) {
+      if (record.status === "confirmed" && confirmedIds.has(record.workId)) {
+        removeWorkCreation(listClient, projectId, record.workId);
+      }
+    }
+  }, [creationMap, confirmedIds, listClient, projectId]);
   const works =
     list.data?.works.filter((work) => work.deletedAt === null) ?? (list.isError ? [] : null);
   const noWork = list.data?.noWork ?? null;
@@ -59,6 +78,7 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
     isFetching: list.isFetching,
     status: status as "disabled" | "error" | "loading" | "empty" | "ready",
     refetch,
+    creations: Object.values(creationMap),
   };
 }
 
@@ -70,7 +90,6 @@ export interface WorkCommand<TResult, TVariables> {
 }
 
 export interface WorkMutations {
-  create: WorkCommand<Work, CreateWorkRequest>;
   update: WorkCommand<Work, { workId: string; data: UpdateWorkRequest }>;
   archive: WorkCommand<Work, string>;
   unarchive: WorkCommand<Work, string>;
@@ -82,9 +101,6 @@ export interface WorkMutations {
 export function useWorkMutations(projectId: string): WorkMutations {
   const client = useQueryClient();
   const lifecycleScope = { id: `work-lifecycle:${projectId}` };
-  const create = useWorkCommand(client, projectId, "create", (data: CreateWorkRequest) =>
-    createProjectWork(projectId, data),
-  );
   const update = useWorkCommand(
     client,
     projectId,
@@ -103,9 +119,8 @@ export function useWorkMutations(projectId: string): WorkMutations {
   const restore = useWorkCommand(client, projectId, "restore", restoreWork, {
     scope: lifecycleScope,
   });
-  const commands = [create, update, archive, unarchive, remove, restore] as const;
+  const commands = [update, archive, unarchive, remove, restore] as const;
   return {
-    create,
     update,
     archive,
     unarchive,
@@ -115,7 +130,7 @@ export function useWorkMutations(projectId: string): WorkMutations {
   };
 }
 
-type WorkOperation = "create" | "update" | "archive" | "unarchive" | "delete" | "restore";
+type WorkOperation = "update" | "archive" | "unarchive" | "delete" | "restore";
 
 function useWorkCommand<TResult, TVariables>(
   client: QueryClient,

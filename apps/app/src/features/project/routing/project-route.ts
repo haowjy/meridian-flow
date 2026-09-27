@@ -112,6 +112,8 @@ export type WorkContextTarget = {
 export type ProjectRouteCommands = {
   openWork: (target: WorkDetailTarget, options: NavigationOptions) => Promise<void>;
   workHref: (target: WorkDetailTarget) => string;
+  /** Replace an id-addressed creation route with its server-assigned Work slug. */
+  canonicalizeWork: (workId: string, slug: string) => Promise<void>;
   closeWork: (options: NavigationOptions) => Promise<void>;
   openWorkContext: (target: WorkContextTarget, options: NavigationOptions) => Promise<void>;
   /** Editor destination with no document and no local history pointer. */

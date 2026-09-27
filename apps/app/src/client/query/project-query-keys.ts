@@ -65,6 +65,7 @@ export const projectQueryKeys = {
       : (["projects", projectId, "work-threads"] as const),
   works: (projectId: string) => ["projects", projectId, "works"] as const,
   workCreations: (projectId: string) => ["projects", projectId, "work-creations"] as const,
+  workCreate: (projectId: string) => ["projects", projectId, "work-create"] as const,
   chatFeed: (projectId: string) => ["projects", projectId, "chat-feed"] as const,
   /** One filtered chat feed; a partial filter (`{ favorite: true }`) matches every variant. */
   chatFeedFilter: (

@@ -3,6 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { Work } from "@meridian/contracts/works";
+import { Link } from "@tanstack/react-router";
 import { ChevronDown, Plus } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
@@ -12,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
+import { useCreateWork, useWorkCreationRecords, useWorkCreationState } from "./useWorkCreation";
 import { WorkCard } from "./WorkCard";
 import { WorkDetailScreen } from "./WorkDetailScreen";
 import { WorkDialog, type WorkDialogAction } from "./WorkDialog";
@@ -29,6 +31,28 @@ export type WorkScreenProps = {
 
 export function WorkScreen(props: WorkScreenProps) {
   const catalog = useWorks(props.projectId);
+  const routeWorkId =
+    props.routeWork.status === "present"
+      ? props.routeWork.workId
+      : props.routeWork.status === "unresolved"
+        ? parseRequestId(props.routeWork.slug)
+        : null;
+  const creation = useWorkCreationState(props.projectId, routeWorkId, props.routeCommands);
+  if (
+    creation.status !== "none" &&
+    creation.status !== "confirmed" &&
+    routeWorkId &&
+    creation.name
+  ) {
+    return (
+      <WorkCreationDestination
+        name={creation.name}
+        failed={creation.status === "failed"}
+        onRetry={creation.retry}
+        onDiscard={creation.discard}
+      />
+    );
+  }
   if (props.routeWork.status === "present") {
     return (
       <WorkDetailScreen {...props} work={props.routeWork.work} catalogWorks={catalog.works ?? []} />
@@ -64,8 +88,13 @@ export function WorkScreen(props: WorkScreenProps) {
 export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenProps) {
   const { works, isError, isFetching, refetch } = useWorks(projectId);
   const mutation = useWorkMutations(projectId);
+  const createWork = useCreateWork(projectId, routeCommands);
+  const creations = useWorkCreationRecords(projectId);
   const [dialog, setDialog] = useState<"new" | Work | null>(null);
-  const [activeCommand, setActiveCommand] = useState<WorkDialogAction["type"] | null>(null);
+  const [activeCommand, setActiveCommand] = useState<Exclude<
+    WorkDialogAction["type"],
+    "create"
+  > | null>(null);
   const [archivedOpen, setArchivedOpen] = useState(false);
   const collectionHeading = useRef<HTMLHeadingElement>(null);
   const newWorkButton = useRef<HTMLButtonElement>(null);
@@ -114,19 +143,31 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
     target.focus();
     lifecycleFocus.current = null;
   }, [archivedOpen, works]);
-  const active = works?.filter((work) => work.status === "active") ?? [];
-  const archived = works?.filter((work) => work.status === "archived") ?? [];
+  const unfinishedCreations = creations.filter(
+    (creation) => creation.status === "pending" || creation.status === "failed",
+  );
+  const unfinishedIds = new Set(unfinishedCreations.map((creation) => creation.workId));
+  const active =
+    works?.filter((work) => work.status === "active" && !unfinishedIds.has(work.id)) ?? [];
+  const archived =
+    works?.filter((work) => work.status === "archived" && !unfinishedIds.has(work.id)) ?? [];
   const headingId = useId();
-  const openWork = (work: Work) => {
-    const workId = parseRequestId(work.id);
+  const openWorkId = (id: string) => {
+    const workId = parseRequestId(id);
     if (workId) void routeCommands.openWork({ kind: "work-detail", workId }, { replace: false });
+  };
+  const openWork = (work: Work) => {
+    openWorkId(work.id);
   };
   const openDialog = (work: "new" | Work) => {
     setActiveCommand(null);
     setDialog(work);
   };
   const hrefFor = (work: Work) => {
-    const workId = parseRequestId(work.id);
+    return hrefForId(work.id);
+  };
+  const hrefForId = (id: string) => {
+    const workId = parseRequestId(id);
     if (!workId) throw new Error("Invalid persisted Work identity");
     return routeCommands.workHref({ kind: "work-detail", workId });
   };
@@ -147,6 +188,42 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
             <Trans>New Work</Trans>
           </Button>
         </div>
+        {unfinishedCreations.length ? (
+          <ul className="grid gap-2" aria-label={t`Work creation`}>
+            {unfinishedCreations.map((creation) => (
+              <li key={creation.workId} className="flex items-center justify-between gap-3">
+                <Link
+                  to={hrefForId(creation.workId)}
+                  onClick={(event) => {
+                    if (
+                      event.button ||
+                      event.metaKey ||
+                      event.ctrlKey ||
+                      event.shiftKey ||
+                      event.altKey
+                    )
+                      return;
+                    event.preventDefault();
+                    openWorkId(creation.workId);
+                  }}
+                  className="focus-ring min-w-0 truncate rounded-sm text-sm font-medium hover:underline"
+                >
+                  {creation.request.name}
+                </Link>
+                <span
+                  className="shrink-0 text-sm text-muted-foreground"
+                  role={creation.status === "failed" ? "alert" : "status"}
+                >
+                  {creation.status === "failed" ? (
+                    <Trans>Creation failed</Trans>
+                  ) : (
+                    <Trans>Creating</Trans>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {isError ? (
           <InlineErrorRow
             message={t`Work couldn’t load`}
@@ -267,6 +344,11 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
               setDialog(null);
             }}
             onAction={(action) => {
+              if (action.type === "create") {
+                createWork.create(action.data);
+                setDialog(null);
+                return;
+              }
               setActiveCommand(action.type);
               const deletionFocus =
                 action.type === "delete" ? focusAfterDelete(works ?? [], action.workId) : null;
@@ -287,15 +369,6 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
                 lifecycleFocus.current = null;
               };
               switch (action.type) {
-                case "create":
-                  mutation.create.mutate(action.data, {
-                    onSuccess: (result) => {
-                      setDialog(null);
-                      openWork(result);
-                    },
-                    onError,
-                  });
-                  break;
                 case "archive":
                   mutation.archive.mutate(action.workId, {
                     onSuccess: onLifecycleSuccess,
@@ -318,6 +391,45 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
             }}
           />
         ) : null}
+      </section>
+    </div>
+  );
+}
+
+function WorkCreationDestination({
+  name,
+  failed,
+  onRetry,
+  onDiscard,
+}: {
+  name: string;
+  failed: boolean;
+  onRetry: () => void;
+  onDiscard: () => void;
+}) {
+  return (
+    <div className="app-scroll">
+      <section className="project-screen-column gap-3">
+        <h1 className="text-xl font-semibold">{name}</h1>
+        {failed ? (
+          <div className="flex flex-col items-start gap-3" role="alert">
+            <p className="text-sm text-destructive">
+              <Trans>Work creation failed.</Trans>
+            </p>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={onRetry}>
+                <Trans>Retry</Trans>
+              </Button>
+              <Button size="sm" variant="outline" onClick={onDiscard}>
+                <Trans>Discard</Trans>
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground" role="status">
+            <Trans>Creating Work…</Trans>
+          </p>
+        )}
       </section>
     </div>
   );

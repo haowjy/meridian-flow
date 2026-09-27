@@ -1,6 +1,6 @@
 /** Deterministic browser adapters for the Work detail component fixture. */
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
-import type { CreateWorkRequest, UpdateWorkRequest, Work } from "@meridian/contracts/works";
+import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
 import { useState } from "react";
 import type { WorkCommand, WorkMutations } from "../../src/client/query/useWorks";
 export const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -69,7 +69,6 @@ function browserWorkCommand<TResult, TVariables>(
 }
 
 export const useWorkMutations = (): WorkMutations => ({
-  create: browserWorkCommand<Work, CreateWorkRequest>(async () => state().work),
   update: browserWorkCommand<Work, { workId: string; data: UpdateWorkRequest }>(
     async () => state().work,
   ),

@@ -1,18 +1,39 @@
 /** Authorized project identity and persistent shell lifetime for readable child destinations. */
 import { Trans } from "@lingui/react/macro";
+import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useRouter, useRouterState } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { getProject } from "@/client/api/projects-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
+import {
+  pendingProject,
+  pendingProjectFromRouteState,
+  writeProjectCreation,
+} from "@/client/query/project-creation-cache";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { loadProjectRouteData } from "@/client/query/project-route-data";
+import { useProjectCreationState } from "@/client/query/useProjectCreation";
 import { Button } from "@/components/ui/button";
+import { useAccountEpochSignal } from "@/features/project/context/account-feature-context";
 import { ReadableProjectRoute } from "@/features/project/routing/ReadableProjectRoute";
 import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
 import { Route as AuthenticatedRoute } from "../../_authenticated";
 
 export const Route = createFileRoute("/_authenticated/p/$projectId")({
   ...PERSISTENT_SHELL_OPTIONS,
-  loader: async ({ params }) => {
+  loader: async ({ params, location }) => {
+    const pending = pendingProjectFromRouteState(location.state, params.projectId);
+    if (pending) {
+      return {
+        project: pendingProject(pending.id, pending.title, pending.userId),
+        data: {
+          threads: null,
+          works: null,
+          worksStarted: 0,
+          workingSet: { status: "unavailable" as const },
+        },
+      };
+    }
     const project = await getProject(params.projectId, ssrApiRequestInit());
     return { project, data: await loadProjectRouteData(project.id) };
   },
@@ -53,10 +74,83 @@ function ProjectLoadError() {
 function ProjectRoute() {
   const { project, data } = Route.useLoaderData();
   const { user } = AuthenticatedRoute.useLoaderData();
+  const router = useRouter();
+  const client = useQueryClient();
+  const location = useRouterState({ select: (state) => state.location });
+  const accountSignal = useAccountEpochSignal();
+  const pendingRoute = pendingProjectFromRouteState(location.state, project.id);
+  const creation = useProjectCreationState(project.id, accountSignal);
+  const restoringCreationRecord = !!pendingRoute && creation.status === "none";
+
+  useEffect(() => {
+    if (!pendingRoute || creation.status !== "none") return;
+    const interruptedProject = pendingProject(
+      pendingRoute.id,
+      pendingRoute.title,
+      pendingRoute.userId,
+    );
+    writeProjectCreation(client, {
+      id: pendingRoute.id,
+      title: pendingRoute.title,
+      project: interruptedProject,
+      accountSignal,
+      status: "failed",
+      error: "Creation may not have finished.",
+    });
+    client.setQueryData(projectQueryKeys.detail(pendingRoute.id), interruptedProject);
+  }, [accountSignal, client, creation.status, pendingRoute]);
+
+  if (restoringCreationRecord) return <PendingProject />;
+
   return (
     <ProjectIdentityBoundary projectId={project.id}>
-      <ReadableProjectRoute key={project.id} project={project} data={data} user={user} />
+      <div className="flex h-full min-h-0 flex-col">
+        {creation.status === "pending" || creation.status === "failed" ? (
+          <ProjectCreationNotice
+            failed={creation.status === "failed"}
+            onRetry={creation.retry}
+            onDiscard={() => {
+              creation.discard();
+              void router.navigate({ to: "/" });
+            }}
+          />
+        ) : null}
+        <div className="min-h-0 flex-1">
+          <ReadableProjectRoute key={project.id} project={project} data={data} user={user} />
+        </div>
+      </div>
     </ProjectIdentityBoundary>
+  );
+}
+
+function ProjectCreationNotice({
+  failed,
+  onRetry,
+  onDiscard,
+}: {
+  failed: boolean;
+  onRetry: () => void;
+  onDiscard: () => void;
+}) {
+  return (
+    <div
+      className="flex shrink-0 items-center justify-between gap-3 border-b border-border-subtle px-4 py-2"
+      role={failed ? "alert" : "status"}
+    >
+      <p className={failed ? "text-sm text-destructive" : "text-sm text-muted-foreground"}>
+        {failed ? <Trans>Project creation failed.</Trans> : <Trans>Creating project…</Trans>}
+      </p>
+      {failed ? (
+        <div className="flex shrink-0 gap-2">
+          <Button size="sm" variant="outline" onClick={onRetry}>
+            <Trans>Retry</Trans>
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onDiscard}>
+            <Trans>Discard</Trans>
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
