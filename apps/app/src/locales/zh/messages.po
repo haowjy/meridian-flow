@@ -14,12 +14,12 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. js-lingui-explicit-id
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "finished"
 msgstr "已完成"
 
 #. js-lingui-explicit-id
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "stopped"
 msgstr "已停止"
 
@@ -129,7 +129,7 @@ msgid "{0, plural, one {read # document} other {read # documents}}"
 msgstr ""
 
 #. placeholder {0}: list( entries.map( ({ name, outcome }) => `${name} ${outcome === "succeeded" ? i18n._("finished") : i18n._("stopped")}`, ), )
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "{0}"
 msgstr ""
 
@@ -169,7 +169,7 @@ msgid "{0} edit canceled"
 msgstr ""
 
 #. placeholder {0}: list(names)
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "{0} finished"
 msgstr ""
 
@@ -245,7 +245,7 @@ msgid "{0} source copied"
 msgstr ""
 
 #. placeholder {0}: list(names)
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "{0} stopped"
 msgstr ""
 
@@ -260,13 +260,13 @@ msgstr ""
 #~ msgstr ""
 
 #. placeholder {0}: names.length
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "{0} subagents finished"
 msgstr ""
 
 #. placeholder {0}: names.length
 #. placeholder {1}: stopped.length
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "{0} subagents finished ({1} stopped)"
 msgstr "{0} 个子代理已完成（{1} 个已停止）"
 
@@ -1905,7 +1905,7 @@ msgstr ""
 #~ msgid "Finish the current chat attempt"
 #~ msgstr ""
 
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "finished"
 msgstr "已完成"
 
@@ -3560,7 +3560,7 @@ msgstr ""
 msgid "Settings sections"
 msgstr ""
 
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "Shared an attachment"
 msgstr "分享了附件"
 
@@ -3684,7 +3684,7 @@ msgstr "停止"
 msgid "Stop run"
 msgstr ""
 
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "stopped"
 msgstr "已停止"
 

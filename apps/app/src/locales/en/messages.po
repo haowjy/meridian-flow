@@ -14,12 +14,12 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. js-lingui-explicit-id
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "finished"
 msgstr "finished"
 
 #. js-lingui-explicit-id
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "stopped"
 msgstr "stopped"
 
@@ -129,7 +129,7 @@ msgid "{0, plural, one {read # document} other {read # documents}}"
 msgstr "{0, plural, one {read # document} other {read # documents}}"
 
 #. placeholder {0}: list( entries.map( ({ name, outcome }) => `${name} ${outcome === "succeeded" ? i18n._("finished") : i18n._("stopped")}`, ), )
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "{0}"
 msgstr "{0}"
 
@@ -169,7 +169,7 @@ msgid "{0} edit canceled"
 msgstr "{0} edit canceled"
 
 #. placeholder {0}: list(names)
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "{0} finished"
 msgstr "{0} finished"
 
@@ -245,7 +245,7 @@ msgid "{0} source copied"
 msgstr "{0} source copied"
 
 #. placeholder {0}: list(names)
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "{0} stopped"
 msgstr "{0} stopped"
 
@@ -260,13 +260,13 @@ msgstr "{0} subagents"
 #~ msgstr "{0} subagents completed"
 
 #. placeholder {0}: names.length
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "{0} subagents finished"
 msgstr "{0} subagents finished"
 
 #. placeholder {0}: names.length
 #. placeholder {1}: stopped.length
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "{0} subagents finished ({1} stopped)"
 msgstr "{0} subagents finished ({1} stopped)"
 
@@ -1905,7 +1905,7 @@ msgstr "Finish reopening"
 #~ msgid "Finish the current chat attempt"
 #~ msgstr "Finish the current chat attempt"
 
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "finished"
 msgstr "finished"
 
@@ -3564,7 +3564,7 @@ msgstr "Settings"
 msgid "Settings sections"
 msgstr "Settings sections"
 
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "Shared an attachment"
 msgstr "Shared an attachment"
 
@@ -3688,7 +3688,7 @@ msgstr "Stop"
 msgid "Stop run"
 msgstr "Stop run"
 
-#: src/features/chat/AssistantTurn.tsx
+#: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "stopped"
 msgstr "stopped"
 
