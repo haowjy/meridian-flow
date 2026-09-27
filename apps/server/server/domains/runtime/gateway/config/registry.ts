@@ -15,6 +15,8 @@ import type {
 } from "../domain/index.js";
 
 export interface ModelPricing {
+  /** Input size above which the provider reprices the whole request. */
+  inputTierTokens?: number;
   /** USD per 1,000,000 uncached input tokens. */
   inputUsdPerMillionTokens: string;
   /** USD per 1,000,000 output tokens. */
@@ -384,6 +386,15 @@ const ONE_HOUR_MS = 60 * 60 * 1_000;
 /** Reject invalid explicit cache TTLs as soon as a registry is loaded. */
 export function validateModelRegistry(registry: ModelRegistry): void {
   for (const model of registry.providers.flatMap((provider) => provider.models)) {
+    const tier = model.pricing.inputTierTokens;
+    if (
+      tier !== undefined &&
+      (!Number.isFinite(tier) || tier <= 0 || tier >= model.contextWindow)
+    ) {
+      throw new Error(
+        `Input pricing tier for ${model.id} must be positive and below its context window`,
+      );
+    }
     if (
       model.promptCache.kind === "explicit" &&
       model.promptCache.ttlMs !== FIVE_MINUTES_MS &&
@@ -407,6 +418,7 @@ function toModelInfo(provider: RegisteredProvider, model: RegisteredModel): Mode
     provider: provider.id,
     displayName: model.displayName,
     contextWindow: model.contextWindow,
+    inputTierTokens: model.pricing.inputTierTokens,
     maxOutputTokens: model.maxOutputTokens,
     promptCache: model.promptCache,
     capabilities: new Set(model.capabilities),

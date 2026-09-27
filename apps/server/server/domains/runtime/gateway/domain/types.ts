@@ -57,6 +57,8 @@ export interface PromptCacheDescriptor {
  * etc.) that the provider executes without Meridian involvement.
  */
 export interface ModelInfo {
+  /** Whole-request input repricing threshold, if the model has one. */
+  inputTierTokens?: number;
   id: string;
   provider: string;
   displayName: string;

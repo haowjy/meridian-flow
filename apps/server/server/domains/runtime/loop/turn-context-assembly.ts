@@ -265,6 +265,7 @@ export async function assembleNextTurnContext(
       ? resolveCompactionTrigger({
           ...agentContext.compaction,
           contextWindow: resolvedModel.contextWindow,
+          inputTierTokens: resolvedModel.inputTierTokens,
           maxOutputTokens: resolvedModel.maxOutputTokens,
         }).thresholdTokens
       : null,

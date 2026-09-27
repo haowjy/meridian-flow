@@ -86,3 +86,43 @@ describe("model prompt-cache descriptors", () => {
     }
   });
 });
+
+describe("input pricing tiers", () => {
+  it.each([
+    0,
+    -1,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    200_000,
+    300_000,
+  ])("rejects invalid tier %s", (inputTierTokens) => {
+    const model = registeredModel("claude-sonnet-4-20250514");
+    expect(() =>
+      validateModelRegistry({
+        defaultModel: model.id,
+        providers: [
+          {
+            ...MODEL_REGISTRY.providers[0],
+            models: [{ ...model, pricing: { ...model.pricing, inputTierTokens } }],
+          },
+        ],
+      }),
+    ).toThrow("must be positive and below its context window");
+  });
+  it("carries the tier to the resolved model", () => {
+    const model = registeredModel("claude-sonnet-4-20250514");
+    const built = buildFromRegistry(
+      {
+        defaultModel: model.id,
+        providers: [
+          {
+            ...MODEL_REGISTRY.providers[0],
+            models: [{ ...model, pricing: { ...model.pricing, inputTierTokens: 100_000 } }],
+          },
+        ],
+      },
+      { ANTHROPIC_API_KEY: "real-key" },
+    );
+    expect(built.providers[0]?.models[0]?.inputTierTokens).toBe(100_000);
+  });
+});

@@ -1,3 +1,4 @@
+import { MODEL_REGISTRY } from "../gateway/index.js";
 /** Pure fixtures for compaction classification, triggering, planning, and projection. */
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -283,6 +284,21 @@ describe("classifyHistoryItem", () => {
 });
 
 describe("resolveCompactionTrigger", () => {
+  it("defaults every registered flat-priced model to its usable window or ceiling", () => {
+    for (const provider of MODEL_REGISTRY.providers) {
+      for (const model of provider.models) {
+        expect(resolveCompactionTrigger(model)).toEqual({
+          thresholdTokens: Math.min(
+            model.contextWindow - model.maxOutputTokens,
+            FLOW_ABSOLUTE_CEILING,
+          ),
+          usableWindowTokens: model.contextWindow - model.maxOutputTokens,
+          source: "config_default",
+        });
+      }
+    }
+  });
+
   it("normalizes explicit token and percent triggers to the usable window", () => {
     expect(
       resolveCompactionTrigger({
@@ -304,13 +320,26 @@ describe("resolveCompactionTrigger", () => {
     ).toEqual({ thresholdTokens: 40_000, usableWindowTokens: 80_000, source: "agent_percent" });
   });
 
-  it("keeps the config default off until C4d", () => {
+  it("defaults flat-priced models to their usable window", () => {
     expect(
       resolveCompactionTrigger({ contextWindow: 100_000, maxOutputTokens: 10_000 }),
     ).toMatchObject({
-      thresholdTokens: null,
-      source: "off",
+      thresholdTokens: 90_000,
+      source: "config_default",
     });
+  });
+
+  it("defaults to the pricing tier, with usable-window and ceiling clamps", () => {
+    for (const [inputTierTokens, contextWindow, expected] of [
+      [60_000, 100_000, 60_000],
+      [95_000, 100_000, 90_000],
+      [800_000, 1_000_000, 400_000],
+    ]) {
+      expect(
+        resolveCompactionTrigger({ inputTierTokens, contextWindow, maxOutputTokens: 10_000 })
+          .thresholdTokens,
+      ).toBe(expected);
+    }
   });
 
   it("clamps at the usable window, the absolute ceiling, and zero", () => {

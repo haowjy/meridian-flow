@@ -5,21 +5,22 @@ export const FLOW_ABSOLUTE_CEILING = 400_000;
 export interface ResolveCompactionTriggerInput {
   autocompact?: number | null;
   autocompact_pct?: number | null;
+  inputTierTokens?: number;
   contextWindow: number;
   maxOutputTokens: number;
   responseReserveTokens?: number;
   concurrentRenderSafetyTokens?: number;
 }
 
-export type CompactionTriggerSource = "agent_tokens" | "agent_percent" | "off";
+export type CompactionTriggerSource = "agent_tokens" | "agent_percent" | "config_default";
 
 export interface CompactionTrigger {
-  thresholdTokens: number | null;
+  thresholdTokens: number;
   usableWindowTokens: number;
   source: CompactionTriggerSource;
 }
 
-/** Resolves the Agent's trigger to a usable token threshold; no config default is active yet. */
+/** Resolves the Agent's trigger to a usable token threshold; defaults avoid input repricing and respect the usable window. */
 export function resolveCompactionTrigger(input: ResolveCompactionTriggerInput): CompactionTrigger {
   const usableWindowTokens = Math.max(
     0,
@@ -33,17 +34,15 @@ export function resolveCompactionTrigger(input: ResolveCompactionTriggerInput): 
   const agentTokens = input.autocompact;
   const percent = input.autocompact_pct;
   const source: CompactionTriggerSource =
-    agentTokens != null ? "agent_tokens" : percent != null ? "agent_percent" : "off";
-  if (source === "off") return { thresholdTokens: null, usableWindowTokens, source };
+    agentTokens != null ? "agent_tokens" : percent != null ? "agent_percent" : "config_default";
 
   const configured =
     agentTokens ??
-    (percent != null ? Math.floor((Math.max(0, percent) / 100) * usableWindowTokens) : null);
+    (percent != null
+      ? Math.floor((Math.max(0, percent) / 100) * usableWindowTokens)
+      : (input.inputTierTokens ?? Number.POSITIVE_INFINITY));
   return {
-    thresholdTokens: Math.max(
-      0,
-      Math.min(configured ?? 0, usableWindowTokens, FLOW_ABSOLUTE_CEILING),
-    ),
+    thresholdTokens: Math.max(0, Math.min(configured, usableWindowTokens, FLOW_ABSOLUTE_CEILING)),
     usableWindowTokens,
     source,
   };
