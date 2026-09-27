@@ -9,7 +9,7 @@ with tool use, persists side effects through thread repositories, and emits
 Document reads, search hits, and settled writes persist
 `tool_result.content.metadata.documentRevisions` entries. Writer-reference reads
 persist `read.revision` beside `read.result`. The model projection consumes only
-the result, never these tokens. Entries use the shared `DocumentRevision` contract:
+the result, never these tokens. Entries use the shared `DocumentRevisionEvidence` contract:
 URI is canonical at observation time, or null for ID-only folded diffs. Null
 revision means unverifiable (including diff, binary
 references, failed writes, and unverified recovery).
