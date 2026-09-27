@@ -33,7 +33,7 @@ export function createRunSessions(deps: {
     lease: Lease;
   }): Promise<Turn>;
   runClaim: RunClaim;
-  delivery: Pick<RuntimeDelivery, "refreshPending">;
+  delivery: Pick<RuntimeDelivery, "refreshPending" | "selectPending">;
   repos: { turns: TurnRepository };
   headSeq(threadId: ThreadId): Promise<bigint>;
   eventSink: EventSink;
@@ -81,7 +81,7 @@ export function createRunSessions(deps: {
     else parentSignal?.addEventListener("abort", abort, { once: true });
     let lease: Lease | null = null;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
-    async function cleanup() {
+    async function cleanup(restartPending = false) {
       clearInterval(heartbeat);
       parentSignal?.removeEventListener("abort", abort);
       running.delete(threadId);
@@ -89,7 +89,19 @@ export function createRunSessions(deps: {
       abortChildrenOf(threadId, !!input.child);
       try {
         if (lease) await authority.release(lease);
-        if (lease) await deps.delivery.refreshPending(threadId);
+        if (lease) {
+          await deps.delivery.refreshPending(threadId);
+          if (
+            session.assistantTurnId &&
+            restartPending &&
+            !session.controller.signal.aborted &&
+            (await deps.delivery.selectPending(threadId)).some(
+              (message) => message.intent === "message",
+            )
+          ) {
+            await createRunStarter({ startDrain }, deps.eventSink).start(threadId);
+          }
+        }
       } catch (error) {
         observe(threadId, "lease_release.failed", error);
       } finally {
@@ -160,7 +172,7 @@ export function createRunSessions(deps: {
           observe(threadId, "terminal_fallback.failed", error);
           outcome = { status: "failed", error };
         }
-        await cleanup();
+        await cleanup(outcome.status === "complete");
         return outcome;
       }
       return {

@@ -107,10 +107,25 @@ async function recordNotice(notices: ReturnType<typeof createTestNoticePort>, th
   });
 }
 
-function messageTurns(turns: readonly { role: string; metadata?: unknown }[]) {
+function messageTurns(turns: readonly { id: TurnId; role: string; metadata?: unknown }[]) {
   return turns.filter(
     (turn) =>
       turn.role === "user" && (turn.metadata as { kind?: string } | null)?.kind === "inbox_message",
+  );
+}
+
+async function messageTurnTexts(
+  repos: Awaited<ReturnType<typeof setup>>["repos"],
+  threadId: ThreadId,
+): Promise<string[]> {
+  const turns = messageTurns(await repos.turns.listByThread(threadId));
+  return Promise.all(
+    turns.map(async (turn) =>
+      (await repos.blocks.listByTurn(turn.id))
+        .filter((block) => block.blockType === "text")
+        .map((block) => block.textContent ?? "")
+        .join("\n"),
+    ),
   );
 }
 
@@ -757,6 +772,13 @@ describe("inbox drain", () => {
       expect(messageTexts(newestRequest.messages)).toContain("second writer message");
       expect(messageTexts(newestRequest.messages)).toContain("first writer message");
     }
+    expect(await messageTurnTexts(rig.repos, rig.thread.id)).toEqual(
+      boundary === "drain start"
+        ? ["first writer message", "second writer message"]
+        : boundary === "direct start"
+          ? ["first direct writer message", "second writer message"]
+          : ["begin", "first steer", "second steer"],
+    );
     expect(await rig.inbox.selectPending(rig.thread.id)).toEqual([]);
   });
 
@@ -921,9 +943,7 @@ describe("inbox drain", () => {
       await expect(execution).resolves.toMatchObject({ status: "cancelled" });
     }
 
-    expect(await rig.inbox.selectPending(rig.thread.id)).toHaveLength(
-      boundary === "direct start" ? 0 : 1,
-    );
+    expect(await rig.inbox.selectPending(rig.thread.id)).toHaveLength(1);
     expect(await notices.peek(rig.thread.id)).toHaveLength(1);
     if (boundary !== "mid-run")
       expect((await rig.repos.threads.findById(rig.thread.id))?.initialPromptBakeId).toBeNull();
@@ -1046,6 +1066,69 @@ describe("inbox drain", () => {
         (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
       ),
     ).toHaveLength(1);
+  });
+
+  it("does not re-prepare history at close after a transient image resolver error", async () => {
+    const image = {
+      type: "image" as const,
+      documentId: "44444444-4444-4444-8444-000000000044",
+      uri: "uploads://@/close-transient.png",
+    };
+    let resolutions = 0;
+    const { thread, requests, orchestrator, repos, send } = await setup({
+      imageAssets: {
+        async resolve() {
+          resolutions += 1;
+          if (resolutions > 1) throw new ImageAssetResolutionError("transient close timeout");
+          return { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 5 };
+        },
+      },
+    });
+    await send(thread.id, "answer this image", {
+      blocks: [{ type: "text", text: "answer this image" }, image],
+    });
+
+    const run = await orchestrator.prepare({ threadId: thread.id, drain: true });
+    await expect(run.execute()).resolves.toMatchObject({ status: "complete" });
+
+    expect(requests).toHaveLength(1);
+    expect(resolutions).toBe(1);
+    expect(await repos.turns.listByThread(thread.id)).toHaveLength(2);
+  });
+
+  it("does not send another request or add a break turn when an asset disappears after the reply", async () => {
+    const image = {
+      type: "image" as const,
+      documentId: "44444444-4444-4444-8444-000000000045",
+      uri: "uploads://@/close-disappeared.png",
+    };
+    let resolutions = 0;
+    const { thread, requests, orchestrator, repos, send } = await setup({
+      imageAssets: {
+        async resolve() {
+          resolutions += 1;
+          return resolutions === 1
+            ? { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 5 }
+            : null;
+        },
+      },
+    });
+    await send(thread.id, "answer this image", {
+      blocks: [{ type: "text", text: "answer this image" }, image],
+    });
+
+    const run = await orchestrator.prepare({ threadId: thread.id, drain: true });
+    await expect(run.execute()).resolves.toMatchObject({ status: "complete" });
+
+    expect(requests).toHaveLength(1);
+    expect(resolutions).toBe(1);
+    const turns = await repos.turns.listByThread(thread.id);
+    expect(turns).toHaveLength(2);
+    expect(
+      turns.some(
+        (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
+      ),
+    ).toBe(false);
   });
 
   it("writes one durable system update when a new image evicts an older inclusion", async () => {
@@ -1302,16 +1385,14 @@ describe("inbox drain", () => {
     const { thread, inbox, requests, orchestrator, repos } = await setup({ errorAtCall: 1 });
     await inbox.enqueue(message("crash safe", thread.id));
 
-    // First run drains and persists the message, then fails before the response
-    // acks it, so the message stays pending for the next run.
-    await execute(await orchestrator.prepare({ threadId: thread.id, userText: "first" }));
+    // First drain persists the message, then fails before the response acks it.
+    await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
     expect(await inbox.selectPending(thread.id)).toHaveLength(1);
     let turns = await repos.turns.listByThread(thread.id);
     expect(messageTurns(turns)).toHaveLength(1);
 
-    // Second run re-claims the same message; the known-turn filter suppresses a
-    // re-render and a re-append, and the successful response acks it.
-    await execute(await orchestrator.prepare({ threadId: thread.id, userText: "second" }));
+    // A later drain re-claims the same message and reuses its durable turn.
+    await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
 
     turns = await repos.turns.listByThread(thread.id);
     expect(messageTurns(turns)).toHaveLength(1);
@@ -1341,7 +1422,8 @@ describe("inbox drain", () => {
 
     expect(outcome.status).toBe("complete");
     const turns = await repos.turns.listByThread(thread.id);
-    expect(messageTurns(turns)).toHaveLength(1);
+    expect(messageTurns(turns)).toHaveLength(3);
+    expect(await messageTurnTexts(repos, thread.id)).toEqual(["first", "baked steer", "second"]);
     expect(await inbox.selectPending(thread.id)).toEqual([]);
   });
 
@@ -1518,8 +1600,7 @@ describe("drain-only start", () => {
     await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
     expect(await inbox.selectPending(thread.id)).toHaveLength(1);
 
-    // Second drain re-claims the same message, sees the known turn, continues from
-    // it, and acks it without a duplicate turn.
+    // The later drain re-claims the same message and reuses its known turn.
     await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
 
     const turns = await repos.turns.listByThread(thread.id);

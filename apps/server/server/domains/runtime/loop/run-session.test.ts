@@ -115,6 +115,37 @@ describe("RunSession", () => {
     expect(f.runtime.isThreadRunning(f.thread.id)).toBe(false);
   });
 
+  it("restarts after cleanup when a writer message arrived after terminal close", async () => {
+    const f = await fixture();
+    const delivery = f.deps.delivery;
+    const refreshPending = delivery.refreshPending.bind(delivery);
+    let injected = false;
+    delivery.refreshPending = async (threadId) => {
+      await refreshPending(threadId);
+      if (injected) return;
+      injected = true;
+      await delivery.enqueue({
+        threadId,
+        intent: "message",
+        provenance: { kind: "writer", actorId: f.thread.userId },
+        body: { kind: "text", text: "arrived during cleanup" },
+        idempotencyKey: "arrived-during-cleanup",
+      });
+    };
+
+    const run = await f.prepare();
+    await expect(run.execute()).resolves.toMatchObject({ status: "complete" });
+
+    await expect.poll(() => f.calls()).toBe(2);
+    await expect.poll(() => f.deps.runClaim.holder(f.thread.id)).toBeNull();
+    expect(await f.deps.delivery.selectPending(f.thread.id)).toEqual([]);
+    expect(
+      (await f.repos.blocks.listByThread(f.thread.id)).some(
+        (block) => block.textContent === "arrived during cleanup",
+      ),
+    ).toBe(true);
+  });
+
   it("cancels a prepared run without invoking the model", async () => {
     const f = await fixture();
     const run = await f.prepare();

@@ -25,7 +25,7 @@ interface RunTurnBase {
   onAssistantTurnChanged?: (turnId: TurnId) => void;
 }
 
-/** A run born from a new writer message: the setup mints the writer's user turn. */
+/** A run born from a direct writer message: setup persists the user turn before preparation. */
 export interface WriterRunTurnInput extends RunTurnBase {
   userText: string;
   userBlocks?: readonly UserMessageBlock[];

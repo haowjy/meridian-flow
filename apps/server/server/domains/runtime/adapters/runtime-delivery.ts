@@ -506,8 +506,16 @@ export function createDeliveryAdapter(
         const cause = receipt?.cancelRequested
           ? { kind: "cancelled" as const, reason: "cancelled" }
           : input.cause;
-        if (input.continueWith && cause.kind === "success")
-          return { kind: "prepare_split" as const };
+        if (input.continueWith && cause.kind === "success") {
+          const pending = await inbox.selectPending(threadId);
+          if (
+            pending.some((message) => message.intent === "message") ||
+            (pending.some((message) => message.body.kind === "work_context_refresh") &&
+              (await inbox.canMaterializeWork(threadId)))
+          ) {
+            return { kind: "prepare_split" as const };
+          }
+        }
         const completion = await finalizeExecution(deps, {
           threadId,
           assistantTurnId: input.assistantTurnId,

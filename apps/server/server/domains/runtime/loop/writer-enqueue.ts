@@ -112,7 +112,7 @@ export async function persistWriterEnqueue<T>(input: {
   }
 }
 
-function writerInboxMetadata(metadata: JsonValue | null | undefined): JsonValue {
+export function writerInboxMetadata(metadata: JsonValue | null | undefined): JsonValue {
   if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
     return { ...metadata, kind: "inbox_message" };
   }
