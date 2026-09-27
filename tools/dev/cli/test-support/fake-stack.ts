@@ -1,6 +1,10 @@
 /** In-process fake of the app API + thread socket, speaking the real contracts, for ./mf command tests. */
 import { createServer, type IncomingMessage, type Server } from "node:http";
-import type { AGUIEvent, WsServerMessage } from "@meridian/contracts/protocol";
+import {
+  type AGUIEvent,
+  serializeTransport,
+  type WsServerMessage,
+} from "@meridian/contracts/protocol";
 import { type WebSocket, WebSocketServer } from "ws";
 import { runCli } from "../main";
 
@@ -161,14 +165,16 @@ function createFake() {
       res.writeHead(status, { "content-type": "application/json" });
       res.end(JSON.stringify(body));
     };
+    // Mirrors the real routes that answer through serializeTransport.
+    const sendEnveloped = (status: number, body: unknown) => send(status, serializeTransport(body));
     if (req.headers.cookie !== COOKIE) return send(401, { message: "unauthenticated" });
     const url = new URL(req.url ?? "/", "http://fake");
     const route = `${req.method} ${url.pathname}`;
-    if (route === "GET /api/threads") return send(200, { threads: [threadDto()] });
+    if (route === "GET /api/threads") return sendEnveloped(200, { threads: [threadDto()] });
     if (route === "POST /api/projects/bootstrap-default")
       return send(201, { projectId: PROJECT_ID });
     if (route === "GET /api/agents") {
-      return send(200, {
+      return sendEnveloped(200, {
         agents: [
           {
             slug: "general",
@@ -186,13 +192,13 @@ function createFake() {
     const byRef = url.pathname.match(/^\/api\/projects\/([^/]+)\/threads\/by-ref\/([^/]+)$/);
     if (req.method === "GET" && byRef) {
       return byRef[1] === PROJECT_ID && byRef[2] === "c1"
-        ? send(200, threadDto())
+        ? sendEnveloped(200, threadDto())
         : send(404, { message: "No live thread" });
     }
     if (route === "POST /api/threads") {
       const body = (await readBody(req)) as { agentSelection?: unknown };
       if (!body?.agentSelection) return send(400, { message: "agentSelection required" });
-      return send(201, threadDto());
+      return sendEnveloped(201, threadDto());
     }
     if (route === `POST /api/threads/${THREAD_ID}/messages`) {
       const body = (await readBody(req)) as { text: string; blocks: { text?: string }[] };
@@ -210,7 +216,7 @@ function createFake() {
       });
     }
     if (route === `GET /api/threads/${THREAD_ID}/snapshot`) {
-      return send(200, {
+      return sendEnveloped(200, {
         threadId: THREAD_ID,
         thread: threadDto(),
         turns: turns.map(turnDto),

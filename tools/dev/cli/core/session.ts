@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import http, { type IncomingHttpHeaders } from "node:http";
 import https from "node:https";
 import path from "node:path";
+import { deserializeTransport } from "@meridian/contracts/protocol";
 import { portlessCa } from "../../dev-readiness";
 import { branchToPortlessPrefix } from "../../portless-prefix";
 import { resolveExpectedRouteUrls } from "../../portless-routes";
@@ -168,11 +169,14 @@ export function createSession(input: {
         throw httpError(method, requestPath, response);
       }
       if (!response.body) return undefined as T;
+      let parsed: unknown;
       try {
-        return JSON.parse(response.body) as T;
+        parsed = JSON.parse(response.body);
       } catch {
         return response.body as T;
       }
+      // Many routes answer through serializeTransport; callers always see the bare value.
+      return deserializeTransport(parsed) as T;
     },
   };
 }
