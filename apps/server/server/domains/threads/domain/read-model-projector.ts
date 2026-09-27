@@ -48,6 +48,7 @@ function responseToCreateInput(response: ModelResponseReceivedRow): CreateModelR
     pricingSnapshot: response.pricingSnapshot ?? null,
     finishReason: response.finishReason ?? null,
     latencyMs: response.latencyMs ?? null,
+    requestMessageCount: response.requestMessageCount,
     requestStartedAt: response.requestStartedAt ?? null,
     timeToFirstTokenMs: response.timeToFirstTokenMs ?? null,
     generationMs: response.generationMs ?? null,

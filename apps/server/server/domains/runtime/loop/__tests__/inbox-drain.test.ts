@@ -243,7 +243,7 @@ describe("inbox drain", () => {
       payload: { answer: 42 },
       artifacts: [{ type: "object", uri: "scratch://the-lamplighters-arithmetic.md" }],
       captureToolCallId: "rr-1",
-      terminalAssistantTurnId: terminal?.id,
+      terminalTurnId: terminal?.id,
     });
     const toolResults = (await repos.blocks.listByTurn(run.assistantTurnId)).filter(
       (block) => block.blockType === "tool_result",
@@ -1548,7 +1548,7 @@ describe("drain-only start", () => {
     });
     await repos.executionReports.admit({
       childThreadId: child.id,
-      assistantTurnId: execution.id,
+      executionTurnId: execution.id,
       handle: child.ref ?? "",
       origin: "spawn",
       deliveryMode: "background_notification",
@@ -1560,7 +1560,7 @@ describe("drain-only start", () => {
     const secret = "DISTINCTIVE_CHAPTER_BODY_omega_17";
     await repos.executionReports.finalizeOnce({
       childThreadId: child.id,
-      assistantTurnId: execution.id,
+      executionTurnId: execution.id,
       outcome: "succeeded",
       reason: null,
       source: "return_result",

@@ -780,6 +780,7 @@ export function createInMemoryRepositories(
         pricingSnapshot: input.pricingSnapshot ?? null,
         finishReason: input.finishReason ?? null,
         latencyMs: input.latencyMs ?? null,
+        requestMessageCount: input.requestMessageCount,
         requestStartedAt: input.requestStartedAt ?? null,
         timeToFirstTokenMs: input.timeToFirstTokenMs ?? null,
         generationMs: input.generationMs ?? null,
@@ -816,6 +817,8 @@ export function createInMemoryRepositories(
             sequence: latest.sequence,
             model: latest.model,
             requestStartedAt: latest.requestStartedAt,
+            inputTokens: latest.inputTokens,
+            requestMessageCount: latest.requestMessageCount,
           }
         : null;
     },

@@ -92,9 +92,9 @@ export type ExecutionReportCorrelation = {
 };
 
 export type SavedExecutionReport = {
-  terminalAssistantTurnId: TurnId | null;
+  terminalTurnId: TurnId | null;
   childThreadId: ThreadId;
-  assistantTurnId: TurnId;
+  executionTurnId: TurnId;
   /** Durable report-row creation time, which commits with run admission. */
   admittedAt: string;
   handle: string;

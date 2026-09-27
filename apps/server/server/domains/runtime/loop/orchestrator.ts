@@ -410,7 +410,7 @@ async function admitRunExecution(
     };
     await deps.repos.executionReports.admit({
       childThreadId: input.threadId,
-      assistantTurnId,
+      executionTurnId: assistantTurnId,
       handle: thread.ref,
       ...correlation,
       agentSlug: input.executionReport?.agentSlug ?? null,
@@ -798,6 +798,7 @@ async function persistModelResponse(input: {
   thread: Thread;
   currentAssistantTurn: Turn;
   result: GenerateResult;
+  requestMessageCount: number;
   predictedCacheState: PrefixCacheState;
   treeBudget: TreeBudget;
   turnAccounting: TurnAccounting;
@@ -857,6 +858,7 @@ async function persistModelResponse(input: {
           finishReason: result.finishReason,
           ...modelResponseTimingFields(result),
           rawUsage: toJsonValue(result.usage),
+          requestMessageCount: input.requestMessageCount,
           predictedCacheState: input.predictedCacheState.state,
           predictedCacheReason: input.predictedCacheState.reason,
         };
@@ -947,6 +949,7 @@ async function settleCancelledResponse(input: {
   allBlocks: Block[];
   result: GenerateResult | undefined;
   model: string;
+  requestMessageCount: number;
   predictedCacheState: PrefixCacheState;
 }): Promise<Turn> {
   const settlement = await input.deps.gateway.settleCancelledResult?.({
@@ -965,6 +968,7 @@ async function settleCancelledResponse(input: {
       thread: input.thread,
       currentAssistantTurn,
       result: settlement.result,
+      requestMessageCount: input.requestMessageCount,
       predictedCacheState: input.predictedCacheState,
       treeBudget: input.treeBudget,
       turnAccounting: input.turnAccounting,
@@ -1966,6 +1970,7 @@ async function executeLoop(
           allBlocks,
           result,
           model: result?.model ?? streamModel,
+          requestMessageCount: request.messages.length,
           predictedCacheState,
         });
 
@@ -1989,6 +1994,7 @@ async function executeLoop(
         thread,
         currentAssistantTurn,
         result,
+        requestMessageCount: request.messages.length,
         predictedCacheState,
         treeBudget,
         turnAccounting,

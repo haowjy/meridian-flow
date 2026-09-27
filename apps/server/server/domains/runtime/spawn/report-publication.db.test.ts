@@ -171,7 +171,7 @@ else
       ).toMatchObject({ payload, summary: "captured scalar", outcome: "succeeded" });
       const terminal = {
         childThreadId: ids.child,
-        assistantTurnId: ids.execution,
+        executionTurnId: ids.execution,
         outcome: "succeeded" as const,
         reason: null,
         source: "return_result" as const,
@@ -201,7 +201,7 @@ else
       const objectPayload = { nested: [1, true, null, "text"] };
       await repos.executionReports.admit({
         childThreadId: ids.child,
-        assistantTurnId: ids.nextExecution,
+        executionTurnId: ids.nextExecution,
         handle: "p1",
         origin: "thread_run",
         deliveryMode: "none",
@@ -244,7 +244,7 @@ else
       });
       await repos.executionReports.admit({
         childThreadId: ids.child,
-        assistantTurnId: ids.repairExecution,
+        executionTurnId: ids.repairExecution,
         handle: "p1",
         origin: "spawn",
         deliveryMode: "background_notification",
@@ -309,7 +309,7 @@ else
         });
         await repos.executionReports.admit({
           childThreadId: ids.child,
-          assistantTurnId: execution,
+          executionTurnId: execution,
           handle: "p1",
           origin: "thread_run",
           deliveryMode: "none",
@@ -320,7 +320,7 @@ else
         });
         const terminal = {
           childThreadId: ids.child,
-          assistantTurnId: execution,
+          executionTurnId: execution,
           outcome: "succeeded" as const,
           reason: null,
           source: "return_result" as const,
@@ -479,7 +479,7 @@ else
         // A publisher that locked the report before waiting on its parent would make NOWAIT fail.
         await db.transaction((tx) =>
           tx.execute(
-            sql`select assistant_turn_id from thread_execution_reports where assistant_turn_id=${ids.execution} for update nowait`,
+            sql`select execution_turn_id from thread_execution_reports where execution_turn_id=${ids.execution} for update nowait`,
           ),
         );
       } finally {
@@ -519,7 +519,7 @@ else
       });
       await repos.executionReports.admit({
         childThreadId: ids.child,
-        assistantTurnId: ids.nextExecution,
+        executionTurnId: ids.nextExecution,
         handle: "p1",
         origin: "foreground_message",
         deliveryMode: "direct",

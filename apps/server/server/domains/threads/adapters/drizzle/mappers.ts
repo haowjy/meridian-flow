@@ -162,6 +162,7 @@ export function mapModelResponse(row: typeof schema.modelResponses.$inferSelect)
     requestParams: row.requestParams as ModelResponse["requestParams"],
     responseMetadata: row.responseMetadata as ModelResponse["responseMetadata"],
     latencyMs: row.latencyMs != null ? Number(row.latencyMs) : null,
+    requestMessageCount: row.requestMessageCount,
     requestStartedAt: row.requestStartedAt?.toISOString() ?? null,
     timeToFirstTokenMs: row.timeToFirstTokenMs != null ? Number(row.timeToFirstTokenMs) : null,
     generationMs: row.generationMs != null ? Number(row.generationMs) : null,

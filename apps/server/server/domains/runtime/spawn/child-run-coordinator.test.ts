@@ -79,7 +79,7 @@ function stubOrchestrator(
       if (!child?.ref) throw new Error("missing child handle");
       await repos.executionReports.admit({
         childThreadId: input.threadId,
-        assistantTurnId,
+        executionTurnId: assistantTurnId,
         handle: child.ref,
         ...(input.executionReport?.correlation ?? {
           origin: "thread_run" as const,
@@ -104,7 +104,7 @@ function stubOrchestrator(
           });
           await repos.executionReports.finalizeOnce({
             childThreadId: input.threadId,
-            assistantTurnId,
+            executionTurnId: assistantTurnId,
             outcome: "succeeded",
             reason: null,
             source: "return_result",

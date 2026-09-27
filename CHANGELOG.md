@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 ### Added
+- Persist request sizes and turn-neutral child execution selectors for compaction.
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
 
 ### Fixed

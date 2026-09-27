@@ -255,7 +255,7 @@ else
           expect(terminal).toBeNull();
           expect((await repos.turns.findById(selector))?.status).toBe("error");
           expect(await repos.executionReports.findByExecution(ids.child, selector)).toMatchObject({
-            terminalAssistantTurnId: selector,
+            terminalTurnId: selector,
             outcome: "failed",
             summary: "before steer",
           });
@@ -275,8 +275,8 @@ else
         expect((await repos.turns.findById(selector))?.status).toBe("complete");
         const report = await repos.executionReports.findByExecution(ids.child, selector);
         expect(report).toMatchObject({
-          assistantTurnId: selector,
-          terminalAssistantTurnId: terminal,
+          executionTurnId: selector,
+          terminalTurnId: terminal,
           outcome: boundary === "cancel" ? "cancelled" : "succeeded",
           summary: boundary === "cancel" ? "" : "after steer",
         });
@@ -296,7 +296,7 @@ else
           expect(splitState).toMatchObject({
             run: run.runId,
             oldCancel: false,
-            report: { outcome: null, terminalAssistantTurnId: null },
+            report: { outcome: null, terminalTurnId: null },
             lookup: { status: "unavailable" },
             pending: {
               items: [{ deliveryState: "awaiting_run" }, { deliveryState: "awaiting_run" }],
@@ -368,6 +368,7 @@ else
         model: "test-model",
         priceSource: "unknown",
         millicredits: "3",
+        requestMessageCount: 1,
         predictedCacheState: "cold",
         predictedCacheReason: "facts_unavailable",
       });
@@ -378,6 +379,7 @@ else
         model: "test-model",
         priceSource: "unknown",
         millicredits: "4",
+        requestMessageCount: 1,
         predictedCacheState: "cold",
         predictedCacheReason: "facts_unavailable",
       });

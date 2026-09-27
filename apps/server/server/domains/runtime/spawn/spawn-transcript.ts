@@ -175,7 +175,7 @@ export async function persistReturnResult(
           if (!report) throw new Error("Execution report was not admitted");
           await input.executionReports.captureOnce(
             transcript.threadId,
-            report.assistantTurnId,
+            report.executionTurnId,
             input.toolCallId,
             input.capture,
           );

@@ -42,6 +42,7 @@ export interface ModelResponseReceivedRow {
   pricingSnapshot?: JsonValue | null;
   finishReason?: FinishReason | null;
   latencyMs?: number | null;
+  requestMessageCount: number;
   requestStartedAt?: string | null;
   timeToFirstTokenMs?: number | null;
   generationMs?: number | null;

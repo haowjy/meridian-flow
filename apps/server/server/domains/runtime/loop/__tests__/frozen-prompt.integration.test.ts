@@ -632,7 +632,7 @@ describe("frozen prompt provider requests", () => {
     });
     await rig.repos.executionReports.admit({
       childThreadId: child.id,
-      assistantTurnId: execution.id,
+      executionTurnId: execution.id,
       handle: child.ref ?? "",
       origin: "spawn",
       deliveryMode: "background_notification",
@@ -643,7 +643,7 @@ describe("frozen prompt provider requests", () => {
     });
     await rig.repos.executionReports.finalizeOnce({
       childThreadId: child.id,
-      assistantTurnId: execution.id,
+      executionTurnId: execution.id,
       outcome: "succeeded",
       reason: null,
       source: "return_result",

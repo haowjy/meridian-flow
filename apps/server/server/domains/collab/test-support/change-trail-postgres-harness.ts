@@ -746,6 +746,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         sequence: 1,
         provider: "fixture",
         model: "fixture",
+        requestMessageCount: 1,
         predictedCacheState: "cold",
         predictedCacheReason: "facts_unavailable",
       });

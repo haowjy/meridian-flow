@@ -147,7 +147,7 @@ export async function executionScenario(db?: Database, ids = executionIds()) {
     });
   const input: AdmitExecutionReportInput = {
     childThreadId: ids.child,
-    assistantTurnId: ids.execution,
+    executionTurnId: ids.execution,
     handle: (await repos.threads.findById(ids.child))?.ref ?? "",
     origin: "spawn",
     deliveryMode: "background_notification",
@@ -168,7 +168,7 @@ export async function executionScenario(db?: Database, ids = executionIds()) {
     finalize: (changes: Partial<FinalizeExecutionReportInput> = {}) =>
       repos.executionReports.finalizeOnce({
         childThreadId: ids.child,
-        assistantTurnId: ids.execution,
+        executionTurnId: ids.execution,
         outcome: "succeeded",
         reason: null,
         source: "return_result",

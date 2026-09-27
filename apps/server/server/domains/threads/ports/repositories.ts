@@ -117,6 +117,7 @@ export interface CreateModelResponseInput {
   pricingSnapshot?: JsonValue | null;
   finishReason?: FinishReason | null;
   latencyMs?: number | null;
+  requestMessageCount: number;
   requestStartedAt?: string | null;
   timeToFirstTokenMs?: number | null;
   generationMs?: number | null;
@@ -127,7 +128,7 @@ export interface CreateModelResponseInput {
 
 export type LatestModelResponse = Pick<
   ModelResponse,
-  "turnId" | "sequence" | "model" | "requestStartedAt"
+  "turnId" | "sequence" | "model" | "requestStartedAt" | "inputTokens" | "requestMessageCount"
 >;
 
 export interface CreateModelResponseResult {
@@ -159,15 +160,15 @@ export interface ModelResponseRepository {
 
 export interface AdmitExecutionReportInput extends ExecutionReportCorrelation {
   childThreadId: ThreadId;
-  assistantTurnId: TurnId;
+  executionTurnId: TurnId;
   handle: string;
   agentSlug?: string | null;
   description?: string | null;
 }
 export interface FinalizeExecutionReportInput {
-  terminalAssistantTurnId?: TurnId;
+  terminalTurnId?: TurnId;
   childThreadId: ThreadId;
-  assistantTurnId: TurnId;
+  executionTurnId: TurnId;
   outcome: SavedOutcome;
   reason: string | null;
   source: ExecutionReportSource;
@@ -182,14 +183,14 @@ export interface ExecutionReportRepository {
   admit(input: AdmitExecutionReportInput): Promise<SavedExecutionReport>;
   captureOnce(
     childThreadId: ThreadId,
-    assistantTurnId: TurnId,
+    executionTurnId: TurnId,
     toolCallId: string,
     capture: import("@meridian/contracts/spawn").ReturnResultCapture,
   ): Promise<SavedExecutionReport>;
   finalizeOnce(input: FinalizeExecutionReportInput): Promise<SavedExecutionReport>;
   findByExecution(
     childThreadId: ThreadId,
-    assistantTurnId: TurnId,
+    executionTurnId: TurnId,
   ): Promise<SavedExecutionReport | null>;
   /** Latest admitted execution per child, ordered from report admission truth. */
   listLatestByChildren(childThreadIds: readonly ThreadId[]): Promise<LatestChildExecution[]>;
@@ -198,25 +199,25 @@ export interface ExecutionReportRepository {
   listUnfinalized(
     limit: number,
     afterExecutionId?: TurnId,
-  ): Promise<Array<Pick<SavedExecutionReport, "childThreadId" | "assistantTurnId">>>;
+  ): Promise<Array<Pick<SavedExecutionReport, "childThreadId" | "executionTurnId">>>;
   /** Bounded, deliverable discovery. Soft-deleted callers stay pending until restoration. */
   listPendingPublication(
     limit: number,
     afterExecutionId?: TurnId,
   ): Promise<
     Array<
-      Pick<SavedExecutionReport, "childThreadId" | "assistantTurnId"> & {
+      Pick<SavedExecutionReport, "childThreadId" | "executionTurnId"> & {
         callerThreadId: ThreadId;
       }
     >
   >;
   lockPendingPublication(
     childThreadId: ThreadId,
-    assistantTurnId: TurnId,
+    executionTurnId: TurnId,
   ): Promise<SavedExecutionReport | null>;
   markPublished(
     childThreadId: ThreadId,
-    assistantTurnId: TurnId,
+    executionTurnId: TurnId,
     publication: "published",
   ): Promise<void>;
 }

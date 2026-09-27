@@ -15,7 +15,7 @@ import { invocationAgentName, invocationCardProps } from "./spawn-output.js";
 export type PublicationOutcome = "published" | "parked" | "already";
 
 export interface ReportPublisher {
-  publish(childThreadId: ThreadId, assistantTurnId: TurnId): Promise<PublicationOutcome>;
+  publish(childThreadId: ThreadId, executionTurnId: TurnId): Promise<PublicationOutcome>;
   sweep(limit: number): Promise<number>;
 }
 
@@ -27,10 +27,10 @@ export function createReportPublisher(deps: {
 }): ReportPublisher {
   let cursor: TurnId | undefined;
 
-  async function publish(childThreadId: ThreadId, assistantTurnId: TurnId) {
+  async function publish(childThreadId: ThreadId, executionTurnId: TurnId) {
     const selected = await deps.repos.executionReports.findByExecution(
       childThreadId,
-      assistantTurnId,
+      executionTurnId,
     );
     if (selected?.publication !== "pending") return "already";
     // A pending publication can only be admitted for an invocation with a caller.
@@ -49,7 +49,7 @@ export function createReportPublisher(deps: {
         }
         const report = await deps.repos.executionReports.lockPendingPublication(
           childThreadId,
-          assistantTurnId,
+          executionTurnId,
         );
         if (!report) return "already";
         // Soft deletion of the caller or its project parks the obligation.
@@ -94,7 +94,7 @@ export function createReportPublisher(deps: {
                       deliveryMode: report.deliveryMode,
                     },
                     childThreadId: report.childThreadId,
-                    execution: report.assistantTurnId,
+                    execution: report.executionTurnId,
                     startedAt: report.admittedAt,
                     terminalAt: report.terminalAt,
                     outcome: report.outcome,
@@ -110,7 +110,7 @@ export function createReportPublisher(deps: {
           parentThreadId: callerThreadId,
           parentTurnId: report.callerTurnId,
           childThreadId: report.childThreadId,
-          execution: report.assistantTurnId,
+          execution: report.executionTurnId,
           handle: report.handle,
           outcome: report.outcome,
         });
@@ -125,18 +125,18 @@ export function createReportPublisher(deps: {
             provenance: {
               kind: "child",
               threadId: report.childThreadId,
-              reportId: report.assistantTurnId,
+              reportId: report.executionTurnId,
               handle: report.handle,
               outcome: report.outcome,
               agentName,
             },
             body: { kind: "text", text: notificationText(report) },
-            idempotencyKey: `child-report:${report.assistantTurnId}`,
+            idempotencyKey: `child-report:${report.executionTurnId}`,
           });
         }
         await deps.repos.executionReports.markPublished(
           childThreadId,
-          assistantTurnId,
+          executionTurnId,
           "published",
         );
         return "published";
@@ -153,9 +153,9 @@ export function createReportPublisher(deps: {
       candidates = await deps.repos.executionReports.listPendingPublication(limit);
     }
     for (const candidate of candidates) {
-      cursor = candidate.assistantTurnId;
+      cursor = candidate.executionTurnId;
       try {
-        await publish(candidate.childThreadId, candidate.assistantTurnId);
+        await publish(candidate.childThreadId, candidate.executionTurnId);
       } catch (error) {
         emitEvent(deps.eventSink, {
           level: "warn",
@@ -163,7 +163,7 @@ export function createReportPublisher(deps: {
           name: "publication.failed",
           correlation: {
             threadId: candidate.childThreadId,
-            turnId: candidate.assistantTurnId,
+            turnId: candidate.executionTurnId,
           },
           payload: unknownToEventPayload(error),
         });

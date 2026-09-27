@@ -132,6 +132,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         sequence: 1,
         provider: "runtime-test",
         model: "runtime-test",
+        requestMessageCount: 1,
         predictedCacheState: "cold",
         predictedCacheReason: "facts_unavailable",
       });
@@ -220,6 +221,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         sequence: 1,
         provider: "runtime-test",
         model: "runtime-test",
+        requestMessageCount: 1,
         predictedCacheState: "cold",
         predictedCacheReason: "facts_unavailable",
       });

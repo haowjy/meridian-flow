@@ -37,7 +37,7 @@ async function setup() {
   });
   await repos.executionReports.admit({
     childThreadId: child.id,
-    assistantTurnId: turn.id,
+    executionTurnId: turn.id,
     handle: child.ref ?? "",
     origin: "thread_run",
     deliveryMode: "none",
@@ -193,6 +193,7 @@ async function appendPublicResponse(
     provider: "test",
     model: "test-model",
     priceSource: "unknown",
+    requestMessageCount: 1,
     predictedCacheState: "cold",
     predictedCacheReason: "facts_unavailable",
   });

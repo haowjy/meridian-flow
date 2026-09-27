@@ -39,6 +39,7 @@ else
         provider: "test-provider",
         model: "test-model",
         priceSource: "unknown" as const,
+        requestMessageCount: 1,
         predictedCacheState: "cold" as const,
         predictedCacheReason: "facts_unavailable" as const,
       };
@@ -50,6 +51,7 @@ else
         sequence: 2,
         inputTokens: 200,
         requestStartedAt: "2026-09-27T12:00:00.000Z",
+        requestMessageCount: 1,
         predictedCacheState: "warm",
         predictedCacheReason: "reusable_prefix",
       });
@@ -67,6 +69,7 @@ else
 
       await expect(repos.modelResponses.findById(newest.row.id)).resolves.toMatchObject({
         requestStartedAt: "2026-09-27T12:00:00.000Z",
+        requestMessageCount: 1,
         predictedCacheState: "warm",
         predictedCacheReason: "reusable_prefix",
       });
@@ -74,6 +77,8 @@ else
         {
           turnId: lastTurn.id,
           sequence: 2,
+          inputTokens: 200,
+          requestMessageCount: 1,
           model: "test-model",
           requestStartedAt: newest.row.requestStartedAt,
         },

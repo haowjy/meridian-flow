@@ -70,6 +70,7 @@ else
           priceSource: "unknown",
           inputTokens: 12,
           outputTokens: 3,
+          requestMessageCount: 1,
           predictedCacheState: "cold",
           predictedCacheReason: "facts_unavailable",
           ...modelResponseTimingFields(result),

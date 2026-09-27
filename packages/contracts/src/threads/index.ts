@@ -47,7 +47,7 @@ export type JsonObject = { [key: string]: JsonValue };
 export type ThreadLifecycleStatus = "idle" | "archived";
 
 /** Lease phase published by the running loop; `generating` around the model call, `waiting` between tool waits. */
-export type ThreadPhase = "generating" | "waiting";
+export type ThreadPhase = "generating" | "waiting" | "compacting";
 
 /**
  * Derived run status: awake iff a live lease exists, with the phase the holder
@@ -406,6 +406,7 @@ export interface ModelResponse {
   /** Adapter invocation to provider stream-end arrival; excludes consumer persistence time. */
   latencyMs: number | null;
   /** Wall-clock start of the successful provider attempt; null means unknown. */
+  requestMessageCount: number;
   requestStartedAt: string | null;
   /** Adapter invocation to first text, reasoning, or tool-argument delta arrival; null if none. */
   timeToFirstTokenMs: number | null;

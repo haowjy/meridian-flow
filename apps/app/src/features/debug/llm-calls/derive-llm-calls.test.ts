@@ -36,6 +36,7 @@ function response(sequence: number, values: Partial<ModelResponse> = {}): ModelR
     timeToFirstTokenMs: null,
     generationMs: null,
     createdAt: "2026-01-01T00:00:00.000Z",
+    requestMessageCount: 1,
     predictedCacheState: "cold",
     predictedCacheReason: "uncached",
     ...values,
@@ -49,12 +50,14 @@ describe("pairLlmCallResponses", () => {
       {
         "turn-1": [
           response(0, {
+            requestMessageCount: 1,
             predictedCacheState: "warm",
             predictedCacheReason: "reusable_prefix",
             cacheReadTokens: 100,
             cacheReset: true,
           }),
           response(1, {
+            requestMessageCount: 1,
             predictedCacheState: "cold",
             predictedCacheReason: "uncached",
             cacheReadTokens: 700,
@@ -83,6 +86,7 @@ describe("pairLlmCallResponses", () => {
       "turn-1": [
         response(0, {
           cacheReadTokens: null,
+          requestMessageCount: 1,
           predictedCacheState: "cold",
           predictedCacheReason: "uncached",
         }),

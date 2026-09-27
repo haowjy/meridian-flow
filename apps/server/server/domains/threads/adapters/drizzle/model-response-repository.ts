@@ -41,6 +41,7 @@ export async function writeModelResponse(
       requestParams: null,
       responseMetadata: null,
       latencyMs: input.latencyMs ?? null,
+      requestMessageCount: input.requestMessageCount,
       requestStartedAt: input.requestStartedAt ? new Date(input.requestStartedAt) : null,
       predictedCacheState: input.predictedCacheState,
       predictedCacheReason: input.predictedCacheReason,
@@ -80,13 +81,21 @@ export function createDrizzleModelResponseRepository(db: DrizzleDb): ModelRespon
           sequence: schema.modelResponses.sequence,
           model: schema.modelResponses.model,
           requestStartedAt: schema.modelResponses.requestStartedAt,
+          inputTokens: schema.modelResponses.inputTokens,
+          requestMessageCount: schema.modelResponses.requestMessageCount,
         })
         .from(schema.modelResponses)
         .innerJoin(schema.turns, eq(schema.turns.id, schema.modelResponses.turnId))
         .where(eq(schema.turns.threadId, threadId))
         .orderBy(desc(schema.turns.position), desc(schema.modelResponses.sequence))
         .limit(1);
-      return row ? { ...row, requestStartedAt: row.requestStartedAt?.toISOString() ?? null } : null;
+      return row
+        ? {
+            ...row,
+            inputTokens: row.inputTokens ?? 0,
+            requestStartedAt: row.requestStartedAt?.toISOString() ?? null,
+          }
+        : null;
     },
     async listByThread(threadId) {
       const rows = await currentDrizzleDb(db)

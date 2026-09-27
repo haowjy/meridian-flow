@@ -23,6 +23,7 @@ describe("in-memory model response repository", () => {
       provider: "test-provider",
       model: "test-model",
       priceSource: "unknown" as const,
+      requestMessageCount: 1,
       predictedCacheState: "cold" as const,
       predictedCacheReason: "facts_unavailable" as const,
     };
@@ -42,6 +43,7 @@ describe("in-memory model response repository", () => {
       sequence: 2,
       inputTokens: 200,
       requestStartedAt: "2026-09-27T12:00:00.000Z",
+      requestMessageCount: 1,
       predictedCacheState: "warm",
       predictedCacheReason: "reusable_prefix",
     });
@@ -60,10 +62,13 @@ describe("in-memory model response repository", () => {
     await expect(repos.modelResponses.findLatestByThread(thread.id)).resolves.toEqual({
       turnId: lastTurn.id,
       sequence: 2,
+      inputTokens: 200,
+      requestMessageCount: 1,
       model: "test-model",
       requestStartedAt: newest.row.requestStartedAt,
     });
     await expect(repos.modelResponses.findById(newest.row.id)).resolves.toMatchObject({
+      requestMessageCount: 1,
       predictedCacheState: "warm",
       predictedCacheReason: "reusable_prefix",
     });

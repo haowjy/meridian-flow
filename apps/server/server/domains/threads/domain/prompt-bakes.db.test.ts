@@ -137,6 +137,7 @@ else {
                 provider: "test-provider",
                 model: "summary-model",
                 priceSource: "unknown",
+                requestMessageCount: 1,
                 predictedCacheState: "warm",
                 predictedCacheReason: "reusable_prefix",
               },
@@ -159,6 +160,7 @@ else {
       expect(result.bakeId).toBe(first.bake.id);
       expect(await repos.promptBakes.findById(result.bakeId)).toEqual(first.bake);
       expect(await repos.modelResponses.findById(responseId)).toMatchObject({
+        requestMessageCount: 1,
         predictedCacheState: "warm",
         predictedCacheReason: "reusable_prefix",
       });

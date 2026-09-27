@@ -104,6 +104,7 @@ describe("request-only notice byte-stability across requests", () => {
     expect(requests).toHaveLength(2);
     expect(
       (await deps.repos.modelResponses.listByThread(thread.id)).map((response) => ({
+        requestMessageCount: 1,
         predictedCacheState: response.predictedCacheState,
         predictedCacheReason: response.predictedCacheReason,
       })),

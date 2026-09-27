@@ -249,6 +249,7 @@ export const threadRunLeases = pgTable(
     runId: text("run_id").notNull(),
     adoptedMessageIds: uuid("adopted_message_ids").array().notNull().default(sql`'{}'::uuid[]`),
     turnId: uuid("turn_id").$type<TurnId>(),
+    turnKind: text("turn_kind").$type<"assistant" | "compaction">(),
     holderId: text("holder_id").notNull(),
     phase: text("phase").notNull().default("generating"),
     cancelRequested: boolean("cancel_requested").notNull().default(false),
@@ -258,7 +259,10 @@ export const threadRunLeases = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
   (table) => [
-    check("thread_run_leases_phase_valid", sql`${table.phase} IN ('generating','waiting')`),
+    check(
+      "thread_run_leases_phase_valid",
+      sql`${table.phase} IN ('generating','waiting','compacting')`,
+    ),
     index("thread_run_leases_expiry").on(table.expiresAt),
   ],
 );
@@ -326,7 +330,7 @@ export const turns = pgTable(
     ),
     check(
       "turns_compaction_model_required",
-      sql`${table.role} != 'compaction' OR ${table.compactionModel} IS NOT NULL`,
+      sql`${table.role} != 'compaction' OR ${table.status} != 'complete' OR ${table.compactionModel} IS NOT NULL`,
     ),
   ],
 );
@@ -375,6 +379,7 @@ export const modelResponses = pgTable(
     requestParams: jsonb("request_params"),
     responseMetadata: jsonb("response_metadata"),
     latencyMs: bigint("latency_ms", { mode: "number" }),
+    requestMessageCount: integer("request_message_count").notNull(),
     requestStartedAt: timestamp("request_started_at", { withTimezone: true }),
     predictedCacheState: text("predicted_cache_state")
       .$type<PrefixCachePredictionState>()
@@ -470,11 +475,11 @@ export const threadImageInclusions = pgTable(
 export const threadExecutionReports = pgTable(
   "thread_execution_reports",
   {
-    assistantTurnId: uuid("assistant_turn_id")
+    executionTurnId: uuid("execution_turn_id")
       .$type<TurnId>()
       .primaryKey()
       .references(() => turns.id, { onDelete: "cascade" }),
-    terminalAssistantTurnId: uuid("terminal_assistant_turn_id")
+    terminalTurnId: uuid("terminal_turn_id")
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "cascade" }),
     childThreadId: uuid("child_thread_id")
@@ -512,12 +517,12 @@ export const threadExecutionReports = pgTable(
   },
   (table) => [
     foreignKey({
-      columns: [table.childThreadId, table.assistantTurnId],
+      columns: [table.childThreadId, table.executionTurnId],
       foreignColumns: [turns.threadId, turns.id],
       name: "thread_execution_reports_child_turn_fk",
     }).onDelete("cascade"),
     index("thread_execution_reports_pending")
-      .on(table.assistantTurnId)
+      .on(table.executionTurnId)
       .where(sql`${table.publication} = 'pending'`),
     check(
       "thread_execution_reports_origin_valid",

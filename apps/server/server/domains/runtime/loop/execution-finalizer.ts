@@ -147,7 +147,7 @@ export async function finalizeExecution(
         const source = capture ? "return_result" : text ? "final_assistant" : "empty";
         let cost = responses.reduce((sum, row) => sum + BigInt(row.millicredits ?? "0"), 0n);
         let ancestor = turn;
-        while (ancestor.id !== admitted.assistantTurnId) {
+        while (ancestor.id !== admitted.executionTurnId) {
           const parent = ancestor.parentTurnId
             ? await deps.repos.turns.findById(ancestor.parentTurnId)
             : null;
@@ -164,8 +164,8 @@ export async function finalizeExecution(
         }
         report = await deps.repos.executionReports.finalizeOnce({
           childThreadId: input.threadId,
-          assistantTurnId: admitted.assistantTurnId,
-          terminalAssistantTurnId: turn.id as TurnId,
+          executionTurnId: admitted.executionTurnId,
+          terminalTurnId: turn.id as TurnId,
           outcome,
           reason: input.cause.kind === "success" ? null : input.cause.reason,
           source,

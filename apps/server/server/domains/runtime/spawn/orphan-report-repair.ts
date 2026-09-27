@@ -76,15 +76,15 @@ export function createOrphanReportRepair(deps: {
       candidates = await deps.repos.executionReports.listUnfinalized(limit);
     }
     for (const candidate of candidates) {
-      cursor = candidate.assistantTurnId;
+      cursor = candidate.executionTurnId;
       try {
-        await repair(candidate.childThreadId, candidate.assistantTurnId);
+        await repair(candidate.childThreadId, candidate.executionTurnId);
       } catch (error) {
         emitEvent(deps.eventSink, {
           level: "warn",
           source: "runtime.report-repair",
           name: "repair.failed",
-          correlation: { threadId: candidate.childThreadId, turnId: candidate.assistantTurnId },
+          correlation: { threadId: candidate.childThreadId, turnId: candidate.executionTurnId },
           payload: unknownToEventPayload(error),
         });
       }

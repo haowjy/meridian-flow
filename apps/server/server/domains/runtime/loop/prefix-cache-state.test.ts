@@ -51,8 +51,18 @@ function response(
   turnId: string,
   model = MODEL,
   sequence = 0,
-): Pick<ModelResponse, "turnId" | "sequence" | "model" | "requestStartedAt"> {
-  return { turnId, sequence, model, requestStartedAt: RESPONSE_AT };
+): Pick<
+  ModelResponse,
+  "turnId" | "sequence" | "model" | "requestStartedAt" | "inputTokens" | "requestMessageCount"
+> {
+  return {
+    turnId,
+    sequence,
+    model,
+    inputTokens: 100,
+    requestMessageCount: 2,
+    requestStartedAt: RESPONSE_AT,
+  };
 }
 
 function history(values: Partial<PrefixCacheHistory> = {}): PrefixCacheHistory {
