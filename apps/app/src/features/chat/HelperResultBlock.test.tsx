@@ -16,9 +16,11 @@ vi.mock("@/rich-content/Markdown", () => ({
 }));
 vi.mock("@/client/api/execution-reports-api", () => ({
   getThreadExecutionReport: vi.fn(async () => ({
+    childThreadId: "child-1",
     ref: "p1",
-    execution: "run-1",
+    run: 1,
     outcome: "succeeded",
+    deliveryMode: "background_notification",
     source: "return_result",
     summary: "A lantern swims through night.\nThe river keeps its silver name.",
     payload: { stanza: 2 },
@@ -59,12 +61,16 @@ describe("HelperResultBlock saved report", () => {
             content={{
               kind: "helper-result",
               props: {
+                agentSlug: "poet",
                 agentName: "Poet",
-                status: "completed",
-                outcome: "succeeded",
+                parentTurnId: "parent-turn",
+                toolCallId: "spawn-1",
                 deliveryMode: "background_notification",
                 childThreadId: "child-1",
                 execution: "run-1",
+                startedAt: "2026-01-01T00:00:00.000Z",
+                terminalAt: "2026-01-01T00:01:00.000Z",
+                outcome: "succeeded",
               },
             }}
             threadId="parent-1"

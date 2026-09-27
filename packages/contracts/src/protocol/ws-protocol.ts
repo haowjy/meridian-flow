@@ -153,6 +153,7 @@ const messageProvenanceSchema: z.ZodType<import("../threads/index.js").MessagePr
       reportId: z.string().min(1),
       handle: z.string().min(1),
       outcome: z.enum(["succeeded", "failed", "cancelled"]),
+      agentName: z.string().min(1),
     }),
     z.object({ kind: z.literal("system"), source: z.string().min(1) }),
   ],

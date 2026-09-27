@@ -6,7 +6,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { JsonValue } from "@meridian/contracts/protocol";
-import { isArtifactRef } from "./ArtifactGrid";
+import { parseThreadReportResult, toReportContentValue } from "@meridian/contracts/spawn";
 import { requestConversationReveal } from "./conversation-reveal";
 import type { ToolView } from "./group-delivery-segments";
 import { ReportContent, type ReportContentValue } from "./ReportContent";
@@ -70,24 +70,7 @@ function threadReportExpand(tool: ToolView): ToolExpand | null {
 
 /** A saved report, or null for `not_ready` / `unavailable` and malformed output. */
 export function threadReportContent(output: JsonValue | null): ReportContentValue | null {
-  const record = asRecord(output);
-  const value = asRecord(record?.output) ?? record;
-  if (!value || typeof value.summary !== "string") return null;
-  const outcome = value.outcome;
-  return {
-    summary: value.summary,
-    ...(value.payload === undefined ? {} : { payload: value.payload }),
-    artifacts: Array.isArray(value.artifacts) ? value.artifacts.filter(isArtifactRef) : [],
-    partial: value.partial === true,
-    ...(outcome === "succeeded" || outcome === "failed" || outcome === "cancelled"
-      ? { outcome }
-      : {}),
-    ...(typeof value.reason === "string" ? { reason: value.reason } : {}),
-  };
-}
-
-function asRecord(value: JsonValue | null | undefined): Record<string, JsonValue> | null {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  return toReportContentValue(parseThreadReportResult(output));
 }
 
 export const THREAD_REPORT_RENDERER: ToolRenderer = {

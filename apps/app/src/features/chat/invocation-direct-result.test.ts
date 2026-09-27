@@ -7,12 +7,15 @@ function card(mode = "direct", execution: string | null = "execution-1") {
   return block("card", 0, "custom", {
     kind: "helper-result",
     props: {
+      agentSlug: "critic",
+      agentName: "Critic",
       parentTurnId: "parent-turn",
       toolCallId: "call-1",
       childThreadId: "child-1",
       deliveryMode: mode,
       execution,
-      status: "completed",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      terminalAt: "2026-01-01T00:01:00.000Z",
       outcome: "succeeded",
     },
   });
@@ -171,8 +174,9 @@ describe("direct invocation result join", () => {
     const invocation = block("p17-card", 2, "custom", {
       kind: "helper-result",
       props: {
+        agentSlug: "critic",
+        agentName: "Critic",
         title: "Repeat-read comparison",
-        status: "completed",
         outcome: "succeeded",
         execution,
         startedAt: "2026-09-26T21:13:52.043Z",

@@ -14,8 +14,9 @@ item is exactly one tier:
   `Thinking`. Default-collapsed.
 - **Text** — an assistant `text` block. Always rendered as prose. Never folded,
   never remounted.
-- **Artifact** — a writer-facing block: a custom card (interrupt, spawn
-  `helper-result`, child `child-report`), an image, or a file. Always rendered.
+- **Artifact** — a writer-facing block: a custom card (interrupt or spawn
+  `helper-result`), an image, or a file. `return_result` is a process tool whose
+  captured report becomes a `report` render item. Always rendered.
 
 The tiers are named in `tool-kind.ts`: an **artifact** result is writer-facing
 and never folds; a **process** tool is scaffolding (reads, searches, shell) and
@@ -84,10 +85,11 @@ reasoning run still shows `Thinking`. The accessible name remains `Thinking` /
 
 ## Cards are artifacts
 
-Writer-facing cards are custom blocks: an **interrupt** (`content.interrupt.id`,
-via `ask_user`), a **spawn helper-result card** (`kind: "helper-result"`), and a
-**child-report card** (`kind: "child-report"`, from `return_result`). The
-server does not advertise `ask_user` until its rework
+Writer-facing custom blocks are an **interrupt** (`content.interrupt.id`, via
+`ask_user`) and a **spawn invocation card** (`kind: "helper-result"`). The
+captured `return_result` is rendered as a `report` item from its process-tool
+input/result pair; it is not a custom `child-report` card. The server does not
+advertise `ask_user` until its rework
 ([#601](https://github.com/haowjy/meridian-flow/issues/601)); keep the
 interrupt card and its response path, they are not dead code.
 
@@ -95,8 +97,13 @@ Cards hide their tool_use/tool_result rows (`tool-view-visibility.ts`). The
 custom card is the surface. Spawn and `return_result` protocol remain model
 history; the writer does not see their duplicate rows.
 
-Each card-bearing admitted invocation has one retained helper-result card
-with the original parent-turn/tool-call/child/delivery/execution tuple.
+Each card-bearing admitted invocation has one retained helper-result card,
+parsed through the `InvocationCardProps` contract in `@meridian/contracts`.
+The card's `agentName` is the bound revision's `metadata.name`, falling back to
+its slug; publication B re-reads that same bound thread identity. A running card
+has `terminalAt: null`; a terminal card carries its `outcome` and `terminalAt`,
+so a second `status` field is not persisted. An unadmitted failure carries a
+writer-readable `reason` but deliberately has no `childThreadId` or execution.
 Background `thread_message` is queue-only and makes no card promise. Terminal
 status is child execution truth, not parent protocol admission. If B card
 publication lags, a settled direct terminal outcome supplies the visible status
@@ -119,18 +126,21 @@ row in the process fold in both modes, titled with the subagent it read and
 expanding to that report.
 
 Child completion delivery persists one system turn with `subagent_update`
-metadata. `visible-chat-turns.ts` and the server visible-conversation policy
+metadata validated by the shared contracts parser; it carries `childThreadId`
+and `agentName` as well as execution/outcome correlation. `visible-chat-turns.ts` and the server visible-conversation policy
 keep delivery turns out of the top-level bubble list; `AssistantTurn` renders
 them as quiet child-chat navigation rows inside the preceding assistant's steps.
 The row shows the child's resolved name and outcome (never the raw handle) and
-correlates the internal execution id to its invocation card for navigation. A
-single completion opens directly; adjacent completions disclose compact child
-rows. Neither form repeats task details or notice text. Machine
+correlates the internal execution id to its invocation card for navigation.
+Adjacent completions disclose compact child rows. Neither form repeats task
+details or notice text. Machine
 deliveries (`inbox_message` turns, such as an agent `thread_message`) use the
 same inline row chrome with the message text. Writer sends never become
 delivery rows; they stay bubbles.
 This is consistent whether a completion wakes an idle parent or is adopted at
-a mid-run steer split; do not infer events by parsing notice text.
+a mid-run steer split; do not infer events by parsing notice text. The writer
+enqueue stamps an adopted mid-run user turn with `metadata.delivery: "steer"`;
+response grouping reads this fact rather than comparing client/server times.
 
 Historical card replacement is sent over the existing
 `meridian.block.upserted` frame. Replace a loaded historical turn in place; if
@@ -227,7 +237,7 @@ keys must be real runtime tool names from
 through custom cards; `spawn` and `thread_message` tool rows are hidden because
 the retained invocation card owns their writer surface. `thread_report` is a
 process row with its own renderer (`thread-report-renderer.tsx`).
-`return_result` remains a child-report artifact. Card `artifacts[]` render through
+`return_result` remains a report render item, not a child-report artifact. Card `artifacts[]` render through
 the shared `ArtifactGrid` (`ArtifactGrid.tsx`), reused by `FormBlock`,
 `SpawnReportCard`, and `ChildReportBlock`.
 Process tools (`write`, `work`, `ls`, `search`) render as `ActivityRow`.

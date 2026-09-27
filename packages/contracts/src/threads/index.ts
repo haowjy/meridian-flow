@@ -139,7 +139,14 @@ export type MessageIntent = "message" | "notice";
 export type MessageProvenance =
   | { kind: "writer"; actorId: string }
   | { kind: "agent"; threadId: string }
-  | { kind: "child"; threadId: string; reportId: string; handle: string; outcome: string }
+  | {
+      kind: "child";
+      threadId: string;
+      reportId: string;
+      handle: string;
+      outcome: string;
+      agentName: string;
+    }
   | { kind: "system"; source: string };
 
 /**

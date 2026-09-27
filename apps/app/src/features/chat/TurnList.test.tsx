@@ -121,7 +121,19 @@ describe("subagent reveal turn resolution", () => {
     sequence: 0,
     content: {
       kind: "helper-result",
-      props: { execution: "execution-1", childThreadId: "child", title: "Task" },
+      props: {
+        agentSlug: "critic",
+        agentName: "Critic",
+        parentTurnId: "launch",
+        toolCallId: "call-1",
+        childThreadId: "child",
+        deliveryMode: "background_notification",
+        execution: "execution-1",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        terminalAt: "2026-01-01T00:01:00.000Z",
+        outcome: "succeeded",
+        title: "Task",
+      },
     },
   };
 
@@ -138,6 +150,8 @@ describe("subagent reveal turn resolution", () => {
           handle: "p3",
           execution: "execution-1",
           outcome: "succeeded",
+          childThreadId: "child",
+          agentName: "Critic",
         },
         blocks: [],
       },
@@ -159,8 +173,8 @@ describe("subagent reveal turn resolution", () => {
 describe("continuesResponse", () => {
   const assistant = (id: string, completedAt: string | null, status = "complete") =>
     ({ id, role: "assistant", status, completedAt }) as unknown as Turn;
-  const writer = (id: string, createdAt: string) =>
-    ({ id, role: "user", createdAt }) as unknown as Turn;
+  const writer = (id: string, delivery: "steer" | undefined) =>
+    ({ id, role: "user", metadata: delivery ? { delivery } : null }) as unknown as Turn;
 
   it("continues past a notification-woken assistant turn", () => {
     const turns = [assistant("a", "2026-01-01T00:01:00Z"), assistant("b", "2026-01-01T00:02:00Z")];
@@ -169,9 +183,9 @@ describe("continuesResponse", () => {
   });
 
   it("continues past a writer steer sent while the turn was generating", () => {
-    const steer = [assistant("a", "2026-01-01T00:01:00Z"), writer("s", "2026-01-01T00:00:30Z")];
+    const steer = [assistant("a", "2026-01-01T00:01:00Z"), writer("s", "steer")];
     expect(continuesResponse(steer, 0, false)).toBe(true);
-    const reply = [assistant("a", "2026-01-01T00:01:00Z"), writer("s", "2026-01-01T00:01:30Z")];
+    const reply = [assistant("a", "2026-01-01T00:01:00Z"), writer("s", undefined)];
     expect(continuesResponse(reply, 0, false)).toBe(false);
   });
 

@@ -1,20 +1,12 @@
 /** Shared report-body presentation for invocation cards and saved report rows. */
 import { Trans } from "@lingui/react/macro";
-import type { ArtifactRef } from "@meridian/contracts/interrupt";
-import type { JsonValue } from "@meridian/contracts/protocol";
+import type { SavedReportContentValue } from "@meridian/contracts/spawn";
 import type { ReactNode } from "react";
 import { Markdown } from "@/rich-content/Markdown";
 import { ArtifactGrid } from "./ArtifactGrid";
 import { payloadText } from "./report-payload";
 
-export type ReportContentValue = {
-  summary: string;
-  payload?: JsonValue;
-  artifacts: ArtifactRef[];
-  reason?: string | null;
-  partial?: boolean;
-  outcome?: "succeeded" | "failed" | "cancelled" | null;
-};
+export type ReportContentValue = SavedReportContentValue;
 
 type ReportContentProps = {
   report: ReportContentValue;

@@ -2,7 +2,8 @@
  * Purpose: Defines the shared custom component-block and interrupt-answer contracts used by server persistence and client renderers.
  * Key decisions: component block content stays JSON-natural and generic at the envelope, while invocation cards and `ask_user` props have explicit typed builders so server producers do not lose their required fields.
  */
-import type { ArtifactRef } from "../interrupt/index.js";
+
+import { z } from "zod";
 import type { ThreadId, TurnId } from "../runtime/index.js";
 import type { ExecutionReportDelivery, SavedOutcome } from "../spawn/index.js";
 import type { JsonObject, JsonValue } from "../threads/index.js";
@@ -31,55 +32,79 @@ export type ComponentBlockContent = {
   interrupt?: ComponentInterrupt;
 };
 
-export type HelperResultStatus = "running" | "completed" | "failed";
-
-export type HelperResultProps = JsonObject & {
-  agentSlug: string;
-  agentName: string;
-  status: HelperResultStatus;
-  summary?: string;
-  childThreadId?: string;
-  parentTurnId: string;
-  title?: string;
-  payload?: JsonValue;
-  artifacts?: ArtifactRef[];
-};
-
-export type HelperResultComponentContent = ComponentBlockContent & {
-  kind: "helper-result";
-  props: HelperResultProps;
-};
-
-export function buildHelperResultComponentContent(
-  input: HelperResultProps,
-): HelperResultComponentContent {
-  return {
-    kind: "helper-result",
-    props: input,
-  };
-}
-
-/** Exact parent invocation identity retained on a child run's historical card. */
-export type InvocationCardProps = {
+/** Identity and timing shared by every retained child invocation card. */
+type InvocationCardBase = {
   agentSlug: string;
   agentName: string;
   parentTurnId: TurnId;
   toolCallId: string;
-  childThreadId: ThreadId;
   deliveryMode: Extract<ExecutionReportDelivery, "direct" | "background_notification">;
   startedAt: string;
-  terminalAt: string | null;
   title?: string;
-} & (
-  | { status: "running"; execution: TurnId | null; outcome?: never; terminalAt: null }
-  | { status: "failed"; execution: null; outcome?: never; terminalAt: string }
-  | {
-      status: "completed" | "failed";
-      execution: TurnId;
-      outcome: SavedOutcome;
-      terminalAt: string;
-    }
-);
+};
+
+/** Exact parent invocation identity retained on a child run's historical card. */
+export type InvocationCardProps = InvocationCardBase &
+  (
+    | {
+        childThreadId: ThreadId;
+        execution: TurnId | null;
+        terminalAt: null;
+        outcome?: never;
+        reason?: never;
+      }
+    | {
+        childThreadId: ThreadId;
+        execution: TurnId;
+        terminalAt: string;
+        outcome: SavedOutcome;
+        reason?: never;
+      }
+    | {
+        childThreadId?: never;
+        execution?: never;
+        terminalAt: string;
+        outcome?: never;
+        reason: string;
+      }
+  );
+
+const invocationCardBaseSchema = z.strictObject({
+  agentSlug: z.string(),
+  agentName: z.string(),
+  parentTurnId: z.string(),
+  toolCallId: z.string(),
+  deliveryMode: z.enum(["direct", "background_notification"]),
+  startedAt: z.string(),
+  title: z.string().optional(),
+});
+
+export const invocationCardPropsSchema = z.union([
+  invocationCardBaseSchema.extend({
+    childThreadId: z.string(),
+    execution: z.string().nullable(),
+    terminalAt: z.null(),
+  }),
+  invocationCardBaseSchema.extend({
+    childThreadId: z.string(),
+    execution: z.string(),
+    terminalAt: z.string(),
+    outcome: z.enum(["succeeded", "failed", "cancelled"]),
+  }),
+  invocationCardBaseSchema.extend({
+    terminalAt: z.string(),
+    reason: z.string().min(1),
+  }),
+]);
+
+/** Parse the single persisted invocation-card shape; malformed cards are ignored. */
+export function parseInvocationCard(content: unknown): InvocationCardProps | null {
+  if (!content || typeof content !== "object" || Array.isArray(content)) return null;
+  const candidate = content as Record<string, unknown>;
+  if (candidate.kind !== "helper-result") return null;
+  const parsed = invocationCardPropsSchema.safeParse(candidate.props);
+  return parsed.success ? (parsed.data as InvocationCardProps) : null;
+}
 
 export function buildInvocationCardContent(input: InvocationCardProps): ComponentBlockContent {
   return { kind: "helper-result", props: input as unknown as JsonObject };

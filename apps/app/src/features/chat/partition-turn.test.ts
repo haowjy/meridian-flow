@@ -60,7 +60,18 @@ const spawnCard = (sequence: number) =>
     sequence,
     content: {
       kind: "helper-result",
-      props: { agentName: "Helper", status: "completed", summary: "2+2=4.", childThreadId: "c" },
+      props: {
+        agentSlug: "helper",
+        agentName: "Helper",
+        parentTurnId: "turn-1",
+        toolCallId: "spawn-1",
+        childThreadId: "c",
+        deliveryMode: "direct",
+        execution: "execution-1",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        terminalAt: "2026-01-01T00:01:00.000Z",
+        outcome: "succeeded",
+      },
     },
   });
 const threadMessageUse = (sequence: number) =>

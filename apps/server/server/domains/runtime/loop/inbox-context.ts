@@ -303,6 +303,8 @@ export function messageTurnFor(
             handle: message.provenance.handle,
             outcome: message.provenance.outcome,
             execution: message.provenance.reportId,
+            childThreadId: message.provenance.threadId,
+            agentName: message.provenance.agentName,
           }
         : message.body.kind === "work_context_refresh"
           ? { kind: "system_update", section: "work_context" }

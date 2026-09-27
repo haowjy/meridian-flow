@@ -88,12 +88,13 @@ describe("SpawnReportCard", () => {
     const card = block("p17-card", 2, "custom", {
       kind: "helper-result",
       props: {
+        agentSlug: "critic",
+        agentName: "Critic",
         parentTurnId: "parent-turn",
         toolCallId: callId,
         childThreadId: "dd343f46-16e9-44b5-8196-92c5c243d87d",
         deliveryMode: "direct",
         execution: "0e068ea5-aeb7-41e0-81bc-06ac27e5fde0",
-        status: "completed",
         outcome: "succeeded",
         startedAt: "2026-09-26T21:13:52.043Z",
         terminalAt: "2026-09-26T21:14:21.983Z",
@@ -179,13 +180,16 @@ describe("SpawnReportCard", () => {
     const card = block("card", 1, "custom", {
       kind: "helper-result",
       props: {
+        agentSlug: "subagent",
+        agentName: "Subagent",
         parentTurnId: "parent-turn",
         toolCallId: callId,
         childThreadId: "child-32",
         deliveryMode: "direct",
         execution,
-        status: "failed",
         outcome: "failed",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        terminalAt: "2026-01-01T00:00:30.000Z",
       },
     });
     const result = block("result", 2, "tool_result", {

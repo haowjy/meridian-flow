@@ -1,6 +1,6 @@
 /** Projects persisted turns and blocks into the canonical gateway message context. */
 
-import type { ComponentBlockContent, HelperResultProps } from "@meridian/contracts/components";
+import { type ComponentBlockContent, parseInvocationCard } from "@meridian/contracts/components";
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
 import { formatWorkSwitchedNotice, type Notice } from "../../notices/index.js";
@@ -227,20 +227,15 @@ function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
   return parts;
 }
 
-// The delivered report is model context; the UI card remains in the transcript.
+// Pre-admission failures are model context; saved run reports remain transcript UI.
 export function componentModelText(content: ComponentBlockContent): string | null {
   if (content.kind !== "helper-result") return null;
-  const props = content.props as HelperResultProps;
-  if (props.status === "running") return null;
-  const lines = [
-    `Background subagent "${props.agentName}" ${props.status === "failed" ? "failed" : "reported"}.`,
-    props.summary ?? "",
-    props.payload !== undefined ? JSON.stringify(props.payload) : "",
-    props.artifacts !== undefined && props.artifacts.length > 0
-      ? JSON.stringify(props.artifacts)
-      : "",
-  ].filter(Boolean);
-  return lines.join("\n");
+  const props = parseInvocationCard(content);
+  if (!props || props.terminalAt === null) return null;
+  if ("reason" in props) {
+    return `Subagent "${props.agentName}" could not start: ${props.reason}`;
+  }
+  return null;
 }
 
 // Unsupported or empty blocks have no gateway content part.

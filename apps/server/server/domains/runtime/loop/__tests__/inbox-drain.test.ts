@@ -689,6 +689,8 @@ describe("drain-only start", () => {
         handle: child.ref,
         outcome: "succeeded",
         execution: execution.id,
+        childThreadId: child.id,
+        agentName: child.agentName ?? "Subagent",
       },
     });
     const blocks = await repos.blocks.listByTurn(queued.id);

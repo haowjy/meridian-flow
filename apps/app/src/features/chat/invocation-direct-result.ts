@@ -1,16 +1,10 @@
 /** Turn-scoped protocol lookup for settled foreground invocation cards. */
+
+import { parseInvocationCard } from "@meridian/contracts/components";
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import { type Block, blockContentRecord, type JsonValue } from "@meridian/contracts/protocol";
 import { isArtifactRef } from "./ArtifactGrid";
 import { componentBlockContent } from "./component-block-content";
-
-type Invocation = {
-  parentTurnId?: string;
-  toolCallId?: string;
-  childThreadId?: string;
-  deliveryMode?: string;
-  execution?: string | null;
-};
 
 export type DirectInvocationResult = {
   execution: string;
@@ -53,9 +47,8 @@ export function directResultsForTurn(
   const direct = new Map<string, DirectInvocationResult>();
   for (const block of blocks) {
     if (block.blockType !== "custom") continue;
-    const content = componentBlockContent(block.content);
-    if (content?.kind !== "helper-result") continue;
-    const invocation = content.props as Invocation;
+    const invocation = parseInvocationCard(componentBlockContent(block.content));
+    if (!invocation) continue;
     if (
       invocation.parentTurnId !== block.turnId ||
       invocation.deliveryMode !== "direct" ||

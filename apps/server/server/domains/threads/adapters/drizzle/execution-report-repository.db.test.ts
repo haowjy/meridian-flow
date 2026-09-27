@@ -188,7 +188,7 @@ else
 
             repos,
           }),
-        ).toEqual({ ref: "p1", status: "unavailable" });
+        ).toEqual({ childThreadId: ids.child, ref: "p1", status: "unavailable" });
         expect(
           await readThreadReport({
             callerThreadId: ids.caller,

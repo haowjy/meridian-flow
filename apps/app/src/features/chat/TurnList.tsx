@@ -1,4 +1,6 @@
 /** Renders the transcript and owns its scroll viewport. */
+
+import { parseInvocationCard } from "@meridian/contracts/components";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
@@ -250,12 +252,14 @@ function deliveryEventsAfter(
 ): Array<{
   turn: Turn;
   childThreadId?: string;
+  agentName?: string;
   title?: string;
   subagentUpdate: ReturnType<typeof readSubagentUpdateMetadata>;
 }> {
   const events: Array<{
     turn: Turn;
     childThreadId?: string;
+    agentName?: string;
     title?: string;
     subagentUpdate: ReturnType<typeof readSubagentUpdateMetadata>;
   }> = [];
@@ -276,6 +280,7 @@ function deliveryEventsAfter(
       turn: next,
       subagentUpdate,
       ...(invocation?.threadId ? { childThreadId: invocation.threadId } : {}),
+      ...(invocation?.agentName ? { agentName: invocation.agentName } : {}),
       ...(invocation?.title ? { title: invocation.title } : {}),
     });
     precedingId = next.id;
@@ -325,28 +330,15 @@ function isDeliveryEvent(turn: Turn): boolean {
 function findInvocation(
   turns: Turn[],
   execution: string,
-): { threadId?: string; title?: string } | null {
+): { threadId?: string; agentName: string; title?: string } | null {
   for (const turn of turns)
     for (const block of turn.blocks) {
-      const content = block.content;
-      if (
-        !content ||
-        typeof content !== "object" ||
-        Array.isArray(content) ||
-        content.kind !== "helper-result"
-      )
-        continue;
-      const props = content.props;
-      if (
-        !props ||
-        typeof props !== "object" ||
-        Array.isArray(props) ||
-        props.execution !== execution
-      )
-        continue;
+      const props = parseInvocationCard(block.content);
+      if (!props || props.execution !== execution) continue;
       return {
-        threadId: typeof props.childThreadId === "string" ? props.childThreadId : undefined,
-        title: typeof props.title === "string" ? props.title : undefined,
+        ...(props.childThreadId ? { threadId: props.childThreadId } : {}),
+        agentName: props.agentName,
+        ...(props.title ? { title: props.title } : {}),
       };
     }
   return null;

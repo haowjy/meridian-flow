@@ -123,6 +123,7 @@ export async function executionScenario(db?: Database, ids = executionIds()) {
       content: buildInvocationCardContent(
         invocationCardProps({
           agent: "critic",
+          agentName: "critic",
           correlation: {
             parentTurnId: ids.callerTurn,
             toolCallId: "spawn-1",

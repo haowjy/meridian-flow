@@ -15,17 +15,26 @@ describe("thread_report presentation", () => {
   it("reads the saved report, or nothing when it isn't ready", () => {
     expect(
       threadReportContent({
+        childThreadId: "child-1",
+        ref: "p3",
+        run: 1,
         outcome: "succeeded",
+        deliveryMode: "background_notification",
+        source: "return_result",
         summary: "Done",
         artifacts: [{ type: "object", uri: "scratch://story.md" }],
         partial: false,
+        reason: null,
       }),
     ).toEqual({
       outcome: "succeeded",
       summary: "Done",
       artifacts: [{ type: "object", uri: "scratch://story.md" }],
       partial: false,
+      reason: null,
     });
-    expect(threadReportContent({ ref: "p3", status: "not_ready" })).toBeNull();
+    expect(
+      threadReportContent({ childThreadId: "child-1", ref: "p3", status: "not_ready" }),
+    ).toBeNull();
   });
 });

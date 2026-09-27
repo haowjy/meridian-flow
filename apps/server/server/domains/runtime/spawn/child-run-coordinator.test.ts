@@ -89,6 +89,8 @@ function stubOrchestrator(
           toolCallId: null,
           cardBlockId: null,
         }),
+        agentSlug: input.executionReport?.agentSlug ?? null,
+        description: input.executionReport?.description ?? null,
       });
       return {
         userTurnId: userTurn.id,
@@ -378,7 +380,8 @@ describe("ChildRunCoordinator spawn selection", () => {
   });
 
   it("spawns a rostered named target even when it is a primary", async () => {
-    const { coordinator, parent, revisions, critic } = await fixture();
+    const { coordinator, parent, revisions, critic, repos, eventWriter } = await fixture();
+    const transcript = transcriptFor(parent.id as ThreadId, { repos, eventWriter });
     const result = await coordinator.runChild(
       {
         kind: "spawn",
@@ -388,7 +391,7 @@ describe("ChildRunCoordinator spawn selection", () => {
         prompt,
         budget,
       },
-      { mode: "foreground" },
+      { mode: "foreground", transcript },
     );
     expect(result.status).toBe("completed");
     if (result.status !== "completed") return;
@@ -396,6 +399,12 @@ describe("ChildRunCoordinator spawn selection", () => {
     expect(binding?.revision?.id).toBe(critic.id);
     expect(binding?.revision?.definition.metadata.name).toBe("Critic");
     expect(binding?.configuration.model).toBe("critic-model");
+    expect((await repos.blocks.findById(transcript.allBlocks[0]?.id ?? ""))?.content).toMatchObject(
+      {
+        kind: "helper-result",
+        props: { agentSlug: "critic", agentName: "Critic", outcome: "succeeded" },
+      },
+    );
   });
 
   it("refuses a slug that is not on the roster without creating a child", async () => {
@@ -901,8 +910,11 @@ describe("ChildRunCoordinator thread_message", () => {
 
     expect(transcript.allBlocks).toHaveLength(1);
     expect((await repos.blocks.findById(transcript.allBlocks[0].id))?.content).toMatchObject({
-      props: { status: "failed", execution: null },
+      props: { reason: expect.any(String), terminalAt: expect.any(String) },
     });
+    expect((await repos.blocks.findById(transcript.allBlocks[0].id))?.content).not.toHaveProperty(
+      "props.childThreadId",
+    );
     const after = await repos.threads.findById(childId);
     expect(after?.spawnStatus).toBe(before?.spawnStatus);
     expect(journal.filter((event) => event.type === "agent.run_completed").length).toBe(
@@ -963,7 +975,7 @@ describe("ChildRunCoordinator thread_message", () => {
     expect(customBlocks[0]?.content).toMatchObject({
       kind: "helper-result",
       props: {
-        status: "running",
+        terminalAt: null,
         childThreadId: spawned.report.threadId,
         parentTurnId: "turn-1",
         toolCallId: "test-invocation-1",
@@ -983,7 +995,7 @@ describe("ChildRunCoordinator thread_message", () => {
         content: {
           kind: "helper-result",
           props: {
-            status: "running",
+            terminalAt: null,
             parentTurnId: "turn-1",
             toolCallId: "test-invocation-1",
             deliveryMode: "direct",
@@ -1000,7 +1012,7 @@ describe("ChildRunCoordinator thread_message", () => {
     expect((await repos.blocks.findById(customBlocks[0]?.id ?? ""))?.content).toMatchObject({
       kind: "helper-result",
       props: {
-        status: "completed",
+        outcome: "succeeded",
         childThreadId: spawned.report.threadId,
         parentTurnId: "turn-1",
         toolCallId: "test-invocation-1",
@@ -1036,12 +1048,11 @@ describe("ChildRunCoordinator thread_message", () => {
     expect(customBlocks[0]?.content).toMatchObject({
       kind: "helper-result",
       props: {
-        status: "running",
+        terminalAt: null,
         childThreadId: spawned.threadId,
         parentTurnId: "turn-1",
         toolCallId: "test-invocation-1",
         deliveryMode: "background_notification",
-        execution: null,
       },
     });
     const cardId = customBlocks[0]?.id;
@@ -1057,7 +1068,7 @@ describe("ChildRunCoordinator thread_message", () => {
       expect((await repos.blocks.findById(cardId))?.content).toMatchObject({
         kind: "helper-result",
         props: {
-          status: "completed",
+          outcome: "succeeded",
           parentTurnId: "turn-1",
           toolCallId: "test-invocation-1",
           deliveryMode: "background_notification",
@@ -1134,7 +1145,7 @@ describe("ChildRunCoordinator thread_message", () => {
     expect((await repos.blocks.findById(cardId ?? ""))?.content).toMatchObject({
       kind: "helper-result",
       props: {
-        status: "running",
+        terminalAt: null,
         parentTurnId: "turn-1",
         toolCallId: "test-invocation-1",
         deliveryMode: "background_notification",
@@ -1175,16 +1186,19 @@ describe("ChildRunCoordinator thread_message", () => {
       (event) => event.type === "block.upserted" && event.block.blockType === "custom",
     );
     if (card?.type !== "block.upserted") throw new Error("missing original card");
-    expect((await repos.blocks.findById(card.block.id))?.content).toMatchObject({
+    const failureContent = (await repos.blocks.findById(card.block.id))?.content;
+    expect(failureContent).toMatchObject({
       kind: "helper-result",
       props: {
-        status: "failed",
+        reason: "setup rolled back",
+        terminalAt: expect.any(String),
         parentTurnId: "turn-1",
         toolCallId: "test-invocation-1",
         deliveryMode: "background_notification",
-        execution: null,
       },
     });
+    expect(failureContent).not.toHaveProperty("props.childThreadId");
+    expect(failureContent).not.toHaveProperty("props.execution");
     const childId = journal.find((entry) => entry.type === "agent.spawn")?.childThreadId;
     if (!childId) throw new Error("missing created child");
     expect((await repos.threads.findById(childId as ThreadId))?.spawnStatus).toBe("failed");

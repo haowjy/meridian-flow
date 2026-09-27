@@ -32,6 +32,7 @@ describe("thread_message capability plumbing", () => {
 describe("thread_report capability plumbing", () => {
   it("injects the exact-report reader", async () => {
     const expected: ThreadReportResult = {
+      childThreadId: "child-1" as ThreadId,
       ref: "p1",
       status: "unavailable",
     };

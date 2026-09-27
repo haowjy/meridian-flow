@@ -29,8 +29,9 @@ export async function readThreadReport(input: {
     const run = input.run ?? reports.length;
     const record = reports[run - 1];
     if (!record || record.outcome === null || record.source === null || record.summary === null)
-      return { ref: input.ref, status: "unavailable" };
+      return { childThreadId: child.id as ThreadId, ref: input.ref, status: "unavailable" };
     return {
+      childThreadId: child.id as ThreadId,
       ref: input.ref,
       run,
       outcome: record.outcome,

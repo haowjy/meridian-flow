@@ -70,6 +70,7 @@ describe("queuedWriterTurnIds", () => {
         reportId: "execution",
         handle: "p1",
         outcome: "succeeded",
+        agentName: "Critic",
       },
       summary: "child report notification",
     };

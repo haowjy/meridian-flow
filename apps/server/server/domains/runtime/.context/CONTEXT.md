@@ -61,7 +61,7 @@ skeleton and delegates the moving parts.
 | `partial-tool-activity.ts` | Reads only the top-level string fields used by live labels from partial tool-call JSON; it tolerates an unfinished object and ignores nested arguments. |
 | `execution-finalizer.ts` | Terminal transaction projects the current assistant event and finalizes the one admitted report found on its ancestor chain. The selector stays the first assistant; `terminalAssistantTurnId` records the final assistant. Fallback text is from that terminal turn’s final persisted response; cost sums every assistant response from selector to terminal. Run-scoped capture keeps the existing partial-outcome policy. Intermediate splits never publish a report. |
 | `persistence.ts` | Transactional persist/project-then-emit helper. **Ordering**: `projectReadModelEvent` runs before `eventWriter.appendEvent` so the `event_journal.turn_id` FK can reference the turn row created by the projector. Both happen in the same repo transaction. |
-| `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata that whichever drain first adopts the turn reads back and bakes into a hidden `system`-role skill-body turn chained right after it (`persistSkillBodies`, orchestrator.ts), and appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status: a mid-run send yields the runner's live assistant turn id (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly), a fresh run yields null and the client learns the turn from `RUN_STARTED`. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission. `admission-turn-starter.ts` and `TurnRunner.startTurn` are gone. |
+| `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata that whichever drain first adopts the turn reads back and bakes into a hidden `system`-role skill-body turn chained right after it (`persistSkillBodies`, orchestrator.ts), and appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status: a mid-run send yields the runner's live assistant turn id (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly), a fresh run yields null and the client learns the turn from `RUN_STARTED`. When that live assistant binding exists, the persisted writer turn also gets `metadata.delivery: "steer"`; this enqueue-time snapshot is authoritative for client response grouping and avoids timestamp comparisons across client/server clocks. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission. `admission-turn-starter.ts` and `TurnRunner.startTurn` are gone. |
 | `reference-context.ts` | Before the first model call, loads admitted current-turn text references through the host-wired shared agent-edit read operation; a mid-run adopted writer turn's unread references load at adoption. Reads run outside admission/persistence transactions; results are persisted server-side at `reference.read.result` before gateway submission. Duplicate `(documentId, uri)` identities read once per turn; replay reuses the frozen result, while a later mention reads afresh. Images retain their separate projection, and client admission rejects `read` payloads. |
 | `image-context.ts` / `ports/image-asset.ts` | Late image bytes are identity-resolved after admission, read-deduplicated, and quietly omitted without losing writer text. `projectImageBlocksForModel` runs once per assembled request over history and adopted turns together, spending the occurrence budget newest-first. Projection is request-only: durable and accumulated blocks keep their `image_reference` identity, never bytes. |
 | `permissions/` | `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow tool names and command sets (`write`, `work`). `write` is always advertised with `read` and `diff`; existing `edit` policy adds or removes mutation commands. `advertiseTools` uses that same command set to narrow both the schema and `write` description, so denied-command instructions are not exposed. Retained historical `read` policy metadata is inert. `commandSetForTool` is the single command mapping. Advertise and the per-turn permission gate (name + command) use that policy. `invocation-authority` validates that an invocation patch never grants the child more than the caller holds, applied only to the patch delta. Dispatch does not apply policy. The core catalogue stays policy-free. |
@@ -90,7 +90,8 @@ What the model actually receives for five common deliveries, so "durable
    followed by the text block `"also tighten the dialogue"`.
 2. **Background subagent completion.** `spawn/report-publisher.ts` enqueues a
    child-provenance `message`; `messageTurnFor` persists it as a `system`-role
-   turn (`{ kind: "subagent_update", handle, outcome, execution }`) whose block
+   turn (`{ kind: "subagent_update", handle, outcome, execution,
+   childThreadId, agentName }`) whose block
    text, once wrapped by the render path, is exactly:
    ```
    <system_update>
@@ -310,11 +311,16 @@ claim/controller/registry, so a failed foreground message never writes the
 child's lifecycle; the caller owns the failure policy.
 
 Invocation helper-result cards persist through `spawn/spawn-transcript.ts`
-with the original parent turn, tool call, child thread, delivery mode, and a
-nullable execution until admission binds the committed assistant turn. The
-parent-lock-scoped admission replacement and publication B preserve that exact
-tuple and the original block id/turn/sequence; neither carries report body.
-An unadmitted failure keeps `execution: null`. A spawned background
+as one parsed `InvocationCardProps` contract. Their name is the bound Agent
+revision's `metadata.name`, falling back to its slug (the generic unbound
+subagent keeps its canonical display name). Running cards have `terminalAt: null`
+and keep the parent turn, tool call, child thread, delivery mode, and nullable
+execution until admission binds the committed assistant turn. Terminal cards
+carry `outcome` plus `terminalAt`, not a duplicate status. A pre-admission
+failure carries a writer-readable `reason` and intentionally has no child thread
+or execution link. The parent-lock-scoped admission replacement and publication
+B preserve the exact tuple and original block id/turn/sequence; neither carries
+report body. A spawned background
 execution returns only after assistant-turn admission commits, without waiting
 for terminal. Foreground spawn and message return the exact terminal report
 directly, preserving failure/cancellation and partial content. Background
@@ -379,7 +385,9 @@ carries only the caller/turn/tool/card and origin/delivery metadata; the actual
 child `assistantTurnId` is assigned only after turn admission. The runtime
 admits each child run once, finalizes its saved report with the terminal
 assistant turn, and publishes a parent card/notification from that durable
-row. Generic `ThreadPendingInbox` projects every provenance; the app's
+row. Tool and API responses share the `ThreadReportResult` contracts schema,
+including `childThreadId`; the app projects both through `toReportContentValue`.
+Generic `ThreadPendingInbox` projects every provenance; the app's
 `queuedWriterTurnIds` (`pending-inbox.ts`) is the client-side selector that
 keeps writer-provenance rows in `waiting` so only those bubbles show Queued.
 

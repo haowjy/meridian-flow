@@ -4,6 +4,7 @@
  */
 
 import { Trans } from "@lingui/react/macro";
+import { parseThreadReportResult, toReportContentValue } from "@meridian/contracts/spawn";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import { type ReactNode, useState } from "react";
@@ -33,6 +34,7 @@ type Props = {
   startedAt?: string;
   terminalAt?: string | null;
   childThreadId: string | null;
+  reason?: string | null;
   directResult?: DirectInvocationResult | null;
   savedReport?: SavedReportSource | null;
   liveTool?: string | null;
@@ -50,6 +52,7 @@ export function SpawnReportCard({
   startedAt,
   terminalAt,
   childThreadId,
+  reason = null,
   directResult = null,
   savedReport = null,
   liveTool,
@@ -116,6 +119,13 @@ export function SpawnReportCard({
           {liveTool || <Trans>Working</Trans>}
         </div>
       ) : null}
+      {reason ? (
+        <p
+          className={cn("mt-[var(--chat-space-row)] text-xs text-muted-foreground", DETAIL_INDENT)}
+        >
+          {reason}
+        </p>
+      ) : null}
       {expanded && expandable ? (
         <div className={cn("mt-[var(--chat-space-block)] text-sm", DETAIL_INDENT)}>
           {foreground && directResult ? (
@@ -155,20 +165,9 @@ function SavedReportBody({ source }: { source: SavedReportSource }) {
     staleTime: Number.POSITIVE_INFINITY,
   });
   if (saved.isPending) return <Note>{<Trans>Loading report…</Trans>}</Note>;
-  const data = saved.data;
-  if (!data || !("outcome" in data)) return <Note>{<Trans>Report is unavailable</Trans>}</Note>;
-  return (
-    <ReportBody
-      report={{
-        outcome: data.outcome,
-        summary: data.summary,
-        ...(data.payload === undefined ? {} : { payload: data.payload }),
-        artifacts: data.artifacts ?? [],
-        partial: data.partial,
-        reason: data.reason,
-      }}
-    />
-  );
+  const report = toReportContentValue(parseThreadReportResult(saved.data));
+  if (!report) return <Note>{<Trans>Report is unavailable</Trans>}</Note>;
+  return <ReportBody report={report} />;
 }
 
 function Note({ children }: { children: ReactNode }) {

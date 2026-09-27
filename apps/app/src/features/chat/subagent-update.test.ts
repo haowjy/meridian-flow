@@ -9,12 +9,16 @@ describe("subagent update events", () => {
         handle: "p5",
         execution: "x",
         outcome: "cancelled",
+        childThreadId: "child-1",
+        agentName: "Critic",
       }),
     ).toEqual({
       kind: "subagent_update",
       handle: "p5",
       execution: "x",
       outcome: "cancelled",
+      childThreadId: "child-1",
+      agentName: "Critic",
     });
     expect(
       readSubagentUpdateMetadata({ kind: "subagent_update", handle: "p5", outcome: "unknown" }),
@@ -26,6 +30,9 @@ describe("subagent update events", () => {
       kind: "subagent_update",
       handle: "p1",
       outcome: "succeeded",
+      execution: null,
+      childThreadId: "child-1",
+      agentName: "Critic",
     });
     const events = [
       { id: "a", subagentUpdate: update },

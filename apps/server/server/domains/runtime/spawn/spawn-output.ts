@@ -12,14 +12,18 @@
  * completion. The result says where the response lives instead of implying a
  * reply is coming.
  */
-import { GENERIC_SUBAGENT_SLUG } from "@meridian/contracts/agents";
-import type { HelperResultProps, InvocationCardProps } from "@meridian/contracts/components";
+import { GENERIC_SUBAGENT_NAME, GENERIC_SUBAGENT_SLUG } from "@meridian/contracts/agents";
+import type { InvocationCardProps } from "@meridian/contracts/components";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedOutcome } from "@meridian/contracts/spawn";
 import type { JsonValue } from "@meridian/contracts/threads";
 
 const QUEUED_NO_REPLY_NOTE =
   "Message queued. No reply is pushed back; the target's response is readable in its transcript.";
+
+export function invocationAgentName(slug: string, resolvedName?: string | null): string {
+  return resolvedName ?? (slug === GENERIC_SUBAGENT_SLUG ? GENERIC_SUBAGENT_NAME : slug);
+}
 
 export function spawnOutputForTranscript(
   output: JsonValue,
@@ -42,60 +46,35 @@ export function spawnOutputForTranscript(
   return output;
 }
 
-export function spawnHelperCardProps(input: {
+type InvocationCardInput = {
   agent?: string;
-  description?: string;
-  parentTurnId: string;
-  childThreadId?: string;
-  output?: JsonValue;
-}): HelperResultProps {
-  const slug = input.agent?.trim() || GENERIC_SUBAGENT_SLUG;
-  const base: HelperResultProps = {
-    agentSlug: slug,
-    agentName: helperAgentName(slug),
-    status: "running",
-    parentTurnId: input.parentTurnId,
-    ...(input.description !== undefined ? { title: input.description } : {}),
-    ...(input.childThreadId !== undefined ? { childThreadId: input.childThreadId } : {}),
-  };
-  const output = input.output;
-  if (!isRecord(output)) return base;
-  if (output.status === "completed") {
-    return {
-      ...base,
-      status: "completed",
-    };
-  }
-  if (output.status === "error") {
-    return {
-      ...base,
-      status: "failed",
-    };
-  }
-  return base;
-}
-
-function helperAgentName(slug: string): string {
-  return slug
-    .split("-")
-    .map((part) => (part ? `${part[0]?.toUpperCase()}${part.slice(1)}` : part))
-    .join(" ");
-}
-
-export function invocationCardProps(input: {
-  agent?: string;
+  agentName: string;
   description?: string;
   correlation: Pick<InvocationCardProps, "parentTurnId" | "toolCallId" | "deliveryMode">;
   childThreadId: ThreadId;
   execution: TurnId | null;
   startedAt: string;
   terminalAt: string | null;
-  outcome?: SavedOutcome;
-}): InvocationCardProps {
+};
+
+export function invocationCardProps(
+  input: InvocationCardInput & {
+    execution: TurnId;
+    terminalAt: string;
+    outcome: SavedOutcome;
+  },
+): Extract<InvocationCardProps, { outcome: SavedOutcome }>;
+export function invocationCardProps(
+  input: InvocationCardInput & { terminalAt: null; outcome?: undefined },
+): Extract<InvocationCardProps, { terminalAt: null }>;
+export function invocationCardProps(
+  input: InvocationCardInput & { outcome?: SavedOutcome },
+): InvocationCardProps;
+export function invocationCardProps(input: InvocationCardInput & { outcome?: SavedOutcome }) {
   const slug = input.agent?.trim() || GENERIC_SUBAGENT_SLUG;
   const base = {
     agentSlug: slug,
-    agentName: helperAgentName(slug),
+    agentName: input.agentName,
     parentTurnId: input.correlation.parentTurnId,
     toolCallId: input.correlation.toolCallId,
     deliveryMode: input.correlation.deliveryMode,
@@ -108,18 +87,53 @@ export function invocationCardProps(input: {
     if (!input.terminalAt) throw new Error("Terminal invocation card has no terminal time");
     return {
       ...base,
-      status: input.outcome === "succeeded" ? "completed" : "failed",
       execution: input.execution,
       outcome: input.outcome,
       terminalAt: input.terminalAt,
     };
   }
-  return { ...base, status: "running", execution: input.execution, terminalAt: null };
+  if (input.terminalAt !== null) {
+    throw new Error("Invocation card without an outcome cannot be terminal");
+  }
+  return { ...base, execution: input.execution, terminalAt: null };
 }
 
-export function unadmittedInvocationFailure(props: InvocationCardProps): InvocationCardProps {
-  const { status: _status, execution: _execution, outcome: _outcome, ...identity } = props;
-  return { ...identity, status: "failed", execution: null, terminalAt: new Date().toISOString() };
+export function unadmittedInvocationFailure(
+  props: InvocationCardProps,
+  reason: string,
+): InvocationCardProps {
+  const {
+    childThreadId: _childThreadId,
+    execution: _execution,
+    outcome: _outcome,
+    ...identity
+  } = props;
+  return {
+    ...identity,
+    terminalAt: new Date().toISOString(),
+    reason,
+  };
+}
+
+export function unadmittedInvocationFailureProps(input: {
+  agent?: string;
+  agentName?: string;
+  description?: string;
+  correlation: Pick<InvocationCardProps, "parentTurnId" | "toolCallId" | "deliveryMode">;
+  reason: string;
+}): InvocationCardProps {
+  const slug = input.agent?.trim() || GENERIC_SUBAGENT_SLUG;
+  return {
+    agentSlug: slug,
+    agentName: invocationAgentName(slug, input.agentName),
+    parentTurnId: input.correlation.parentTurnId,
+    toolCallId: input.correlation.toolCallId,
+    deliveryMode: input.correlation.deliveryMode,
+    startedAt: new Date().toISOString(),
+    terminalAt: new Date().toISOString(),
+    ...(input.description !== undefined ? { title: input.description } : {}),
+    reason: input.reason,
+  };
 }
 
 function isRecord(value: JsonValue | undefined): value is Record<string, JsonValue> {
