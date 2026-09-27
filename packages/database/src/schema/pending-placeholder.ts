@@ -1,28 +1,6 @@
-/** Shared pending-placeholder classification and SQL predicate. */
-import type { Turn, TurnRole } from "@meridian/contracts/threads";
+/** SQL predicate shared by pending-placeholder queries and the partial index. */
+import { PENDING_PLACEHOLDER_ROLES } from "@meridian/contracts/threads";
 import { type SQL, type SQLWrapper, sql } from "drizzle-orm";
-
-export const PENDING_PLACEHOLDER_ROLES = ["compaction"] as const satisfies readonly TurnRole[];
-
-export function isPlaceholderRole(role: TurnRole): boolean {
-  return (PENDING_PLACEHOLDER_ROLES as readonly string[]).includes(role);
-}
-
-export function isPendingPlaceholder(turn: Pick<Turn, "role" | "status">): boolean {
-  return turn.status === "pending" && isPlaceholderRole(turn.role);
-}
-
-export function interruptedPlaceholderError(turn: Turn): string {
-  const metadata = turn.metadata;
-  const trigger =
-    metadata && typeof metadata === "object" && !Array.isArray(metadata)
-      ? metadata.trigger
-      : undefined;
-  if (turn.role === "compaction" && trigger === "manual")
-    return "This manual compaction was interrupted.";
-  if (turn.role === "compaction") return "This compaction was interrupted.";
-  return `This ${turn.role.replaceAll("_", " ")} was interrupted.`;
-}
 
 export function pendingPlaceholderPredicate(columns: {
   role: SQLWrapper;

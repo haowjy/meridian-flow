@@ -97,6 +97,7 @@ export {
   ImageInclusionMetadataCodec,
   InboxMessageMetadataCodec,
   inboxMessageMetadata,
+  interruptedPlaceholderError,
   isPromptEpochMetadata,
   isSystemUpdateMetadata,
   noticesMetadata,

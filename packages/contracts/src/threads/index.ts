@@ -75,6 +75,21 @@ export type CurrentToolCall = {
   input: JsonValue;
 };
 export type TurnRole = "user" | "assistant" | "system" | "compaction";
+
+/** Roles that can reserve a pending placeholder turn before execution completes. */
+export const PENDING_PLACEHOLDER_ROLES = ["compaction"] as const satisfies readonly TurnRole[];
+export type PendingPlaceholderRole = (typeof PENDING_PLACEHOLDER_ROLES)[number];
+
+export function isPlaceholderRole(role: TurnRole): role is PendingPlaceholderRole {
+  return PENDING_PLACEHOLDER_ROLES.some((placeholderRole) => placeholderRole === role);
+}
+
+export function isPendingPlaceholder<T extends Pick<Turn, "role" | "status">>(
+  turn: T,
+): turn is T & { role: PendingPlaceholderRole; status: "pending" } {
+  return turn.status === "pending" && isPlaceholderRole(turn.role);
+}
+
 /**
  * Who authored a turn, independent of `role`: `writer` is any human send
  * (idle send or mid-run steer), `assistant` is model output, `system` is

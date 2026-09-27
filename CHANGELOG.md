@@ -15,6 +15,7 @@
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
 
 ### Fixed
+- Keep pending-placeholder roles and predicates in contracts, SQL in the database package, and interruption copy in the threads domain.
 - Failed compaction lands a failed reply and retires its messages instead of paying for repeated summaries.
 - Stop follows the same run across a committed reply split, including remote cancellation. Internal aborts stay errors.
 - Leave a compaction pending for recovery when its live failure transaction cannot commit.

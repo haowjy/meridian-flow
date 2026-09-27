@@ -1,8 +1,7 @@
 /** Bounded crash repair for admitted child turns without terminal truth. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
-import { isTerminalTurnStatus } from "@meridian/contracts/threads";
-import { isPlaceholderRole } from "@meridian/database/schema/pending-placeholder";
+import { isPlaceholderRole, isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { EventJournalWriter, ThreadRepositories } from "../../threads/index.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";

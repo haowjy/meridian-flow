@@ -1,10 +1,8 @@
 /** Finalizes placeholders whose owning run is known dead by the caller's held claim. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
-import {
-  interruptedPlaceholderError,
-  isPendingPlaceholder,
-} from "@meridian/database/schema/pending-placeholder";
+import { isPendingPlaceholder } from "@meridian/contracts/threads";
+import { interruptedPlaceholderError } from "../../threads/index.js";
 import { finalizeExecution } from "./execution-finalizer.js";
 
 /** Call under the thread lock and the caller's already-held session claim. */

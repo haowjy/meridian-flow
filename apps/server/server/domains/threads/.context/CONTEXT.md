@@ -49,13 +49,17 @@ a prompt or tool-list change — see the
 for the tool-freeze mechanics.
 
 `domain/turn-metadata.ts` is the single home for turn-metadata codecs,
-constructors, and `classifyHistoryItem`, including image-inclusion and
-compaction metadata. Runtime producers build inbox/child turns, writer sends
-and steers, Work/notice/skill/system updates, saved-report repairs, derivation
-seeds, image breaks, and compaction boundaries through its constructors.
-Compaction planning/projection, cache prediction, visible-conversation policy,
-and runtime delivery read those codecs or the shared classifier; there is no
-runtime-local codec copy.
+constructors, interrupted pending-placeholder copy, and `classifyHistoryItem`,
+including image-inclusion and compaction metadata. Interrupted compaction copy
+reads its trigger through `CompactionMetadataCodec` and exhaustively handles
+the pending-placeholder role set from `@meridian/contracts/threads`. Runtime
+producers build inbox/child turns, writer sends and steers, Work/notice/skill/system
+updates, saved-report repairs, derivation seeds, image breaks, and compaction
+boundaries through its constructors. Compaction planning/projection, cache
+prediction, visible-conversation policy, and runtime delivery read those codecs
+or the shared classifier; there is no runtime-local codec copy. The contracts
+package owns the pure pending-placeholder role set and predicates; the database
+owns only the SQL predicate beside its partial index.
 
 ## What it owns
 

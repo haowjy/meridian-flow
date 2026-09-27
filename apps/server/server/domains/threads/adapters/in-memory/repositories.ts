@@ -14,8 +14,7 @@ import type {
   Turn,
   TurnUsage,
 } from "@meridian/contracts/threads";
-import { formatThreadRef } from "@meridian/contracts/threads";
-import { isPendingPlaceholder } from "@meridian/database/schema/pending-placeholder";
+import { formatThreadRef, isPendingPlaceholder } from "@meridian/contracts/threads";
 import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { toIsoString } from "../../domain/contract-serialization.js";

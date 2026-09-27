@@ -7,11 +7,11 @@ import {
   type Block,
   blockPlainText,
   type FinishReason,
+  isPendingPlaceholder,
   isTerminalTurnStatus,
   type OrchestratorEvent,
   type Turn,
 } from "@meridian/contracts/threads";
-import { isPendingPlaceholder } from "@meridian/database/schema/pending-placeholder";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
 import type { EventJournalWriter, ThreadRepositories } from "../../threads/index.js";
 import { persistAndAppendEvents } from "./persistence.js";
