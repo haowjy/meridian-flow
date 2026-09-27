@@ -60,7 +60,9 @@ export function SubagentIdentity({
 
 export function SubagentIdentityName({ run }: { run: SubagentRun }) {
   return (
-    <span className="min-w-0 truncate text-sm font-medium text-foreground">
+    // The name is the identity: the description gives way first, and the name
+    // truncates only past half the row.
+    <span className="max-w-[50%] shrink-0 truncate text-sm font-medium text-foreground">
       {resolveSubagentName({ agentName: run.agentName })}
     </span>
   );
