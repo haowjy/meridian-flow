@@ -783,6 +783,8 @@ export function createInMemoryRepositories(
         finishReason: input.finishReason ?? null,
         latencyMs: input.latencyMs ?? null,
         rawUsage: input.rawUsage ?? null,
+        predictedCacheState: input.predictedCacheState ?? null,
+        predictedCacheReason: input.predictedCacheReason ?? null,
         createdAt: toIsoString(new Date()),
       };
       modelResponses.set(row.id, row);
@@ -790,6 +792,31 @@ export function createInMemoryRepositories(
     },
     async findById(id) {
       return modelResponses.get(id) ?? null;
+    },
+    async findLatestByThread(threadId) {
+      const turnById = new Map(
+        [...turns.values()]
+          .filter((turn) => turn.threadId === threadId)
+          .map((turn) => [turn.id, turn]),
+      );
+      const latest = [...modelResponses.values()]
+        .flatMap((response) => {
+          const turn = turnById.get(response.turnId);
+          return turn ? [{ response, turn }] : [];
+        })
+        .sort(
+          (left, right) =>
+            right.turn.position - left.turn.position ||
+            right.response.sequence - left.response.sequence,
+        )[0]?.response;
+      return latest
+        ? {
+            turnId: latest.turnId,
+            sequence: latest.sequence,
+            model: latest.model,
+            createdAt: latest.createdAt,
+          }
+        : null;
     },
     async listByThread(threadId) {
       const turnIds = new Set(

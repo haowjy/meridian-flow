@@ -28,6 +28,8 @@ import type {
   FinishReason,
   JsonValue,
   ModelResponse,
+  PrefixCachePredictionReason,
+  PrefixCachePredictionState,
   PriceSource,
   ProjectChatItem,
   PromptBake,
@@ -115,7 +117,14 @@ export interface CreateModelResponseInput {
   finishReason?: FinishReason | null;
   latencyMs?: number | null;
   rawUsage?: JsonValue | null;
+  predictedCacheState?: PrefixCachePredictionState | null;
+  predictedCacheReason?: PrefixCachePredictionReason | null;
 }
+
+export type LatestModelResponse = Pick<
+  ModelResponse,
+  "turnId" | "sequence" | "model" | "createdAt"
+>;
 
 export interface CreateModelResponseResult {
   row: ModelResponse;
@@ -126,6 +135,8 @@ export interface ModelResponseRepository {
   /** Inserts a response row, or returns the existing row plus `inserted:false` on response-id replay. */
   create(input: CreateModelResponseInput): Promise<CreateModelResponseResult>;
   findById(id: string): Promise<ModelResponse | null>;
+  /** Most recent response by turn position, then response sequence; returns only prediction facts. */
+  findLatestByThread(threadId: ThreadId): Promise<LatestModelResponse | null>;
   listByTurn(turnId: TurnId): Promise<ModelResponse[]>;
   listByThread(threadId: ThreadId): Promise<ModelResponse[]>;
 }

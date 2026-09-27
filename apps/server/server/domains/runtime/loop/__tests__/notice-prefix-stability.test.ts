@@ -91,10 +91,13 @@ describe("request-only notice byte-stability across requests", () => {
     await second.execute();
     expect(requests).toHaveLength(2);
     expect(
-      deps.modelRequestDebug.listByThread(thread.id).map((record) => record.predictedCacheState),
+      (await deps.repos.modelResponses.listByThread(thread.id)).map((response) => ({
+        predictedCacheState: response.predictedCacheState,
+        predictedCacheReason: response.predictedCacheReason,
+      })),
     ).toEqual([
-      { state: "cold", reason: "no_response" },
-      { state: "warm", reason: "reusable_prefix" },
+      { predictedCacheState: "cold", predictedCacheReason: "no_response" },
+      { predictedCacheState: "warm", predictedCacheReason: "reusable_prefix" },
     ]);
 
     const firstMessages = requests[0]?.messages ?? [];

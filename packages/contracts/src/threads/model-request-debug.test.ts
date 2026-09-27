@@ -29,10 +29,6 @@ function record(
     capture: request
       ? { status: "complete" }
       : { status: "omitted", reason: "request_too_large", maxRequestBytes: 10 },
-    predictedCacheState: {
-      state: iteration === 0 ? "cold" : "warm",
-      reason: iteration === 0 ? "no_response" : "reusable_prefix",
-    },
     request,
     skills: [],
     toolRegistrations: [],

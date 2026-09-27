@@ -162,6 +162,8 @@ export function mapModelResponse(row: typeof schema.modelResponses.$inferSelect)
     responseMetadata: row.responseMetadata as ModelResponse["responseMetadata"],
     latencyMs: row.latencyMs != null ? Number(row.latencyMs) : null,
     rawUsage: row.usageBreakdown as ModelResponse["rawUsage"],
+    predictedCacheState: row.predictedCacheState,
+    predictedCacheReason: row.predictedCacheReason as ModelResponse["predictedCacheReason"],
     createdAt: toIsoString(row.createdAt),
     completedAt: row.completedAt ? toIsoString(row.completedAt) : null,
   };

@@ -89,7 +89,6 @@ import type {
   GenerateRequest,
   GenerateResult,
   Gateway as LlmGateway,
-  ModelInfo,
   Tool,
 } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
@@ -108,7 +107,11 @@ import {
 import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import type { TerminalCause } from "./execution-finalizer.js";
-import type { ImageContextBreak, ImageInclusionDecision } from "./image-context.js";
+import {
+  encodeImageInclusionMetadata,
+  type ImageContextBreak,
+  type ImageInclusionDecision,
+} from "./image-context.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
@@ -124,11 +127,7 @@ import {
   persistAndAppendTurnStartEvents,
 } from "./persistence.js";
 import type { RunClaim, ThreadPhase } from "./ports.js";
-import {
-  derivePrefixCacheState,
-  type PrefixCacheHistory,
-  type PrefixCacheState,
-} from "./prefix-cache-state.js";
+import { createPrefixCacheStateService, type PrefixCacheState } from "./prefix-cache-state.js";
 import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
 import { createRunSessions } from "./run-session.js";
 import {
@@ -791,6 +790,7 @@ async function persistModelResponse(input: {
   thread: Thread;
   currentAssistantTurn: Turn;
   result: GenerateResult;
+  predictedCacheState: PrefixCacheState;
   treeBudget: TreeBudget;
   turnAccounting: TurnAccounting;
   blockSeq: number;
@@ -841,6 +841,8 @@ async function persistModelResponse(input: {
           pricingSnapshot: computedCost.pricingSnapshot,
           finishReason: result.finishReason,
           rawUsage: toJsonValue(result.usage),
+          predictedCacheState: input.predictedCacheState.state,
+          predictedCacheReason: input.predictedCacheState.reason,
         };
         const updatedTurn = applyResponseToTurnSnapshot(currentAssistantTurn, response);
 
@@ -929,6 +931,7 @@ async function settleCancelledResponse(input: {
   allBlocks: Block[];
   result: GenerateResult | undefined;
   model: string;
+  predictedCacheState: PrefixCacheState;
 }): Promise<Turn> {
   const settlement = await input.deps.gateway.settleCancelledResult?.({
     model: input.model,
@@ -946,6 +949,7 @@ async function settleCancelledResponse(input: {
       thread: input.thread,
       currentAssistantTurn,
       result: settlement.result,
+      predictedCacheState: input.predictedCacheState,
       treeBudget: input.treeBudget,
       turnAccounting: input.turnAccounting,
       blockSeq: input.blockSeq,
@@ -1246,6 +1250,7 @@ type BuiltGenerateRequest = {
   request: GenerateRequest;
   agentSlug: string | null;
   thread: Thread;
+  resolvedModel: AssembledNextTurnContext["resolvedModel"];
   permissionGate: PermissionGate;
 };
 
@@ -1258,6 +1263,7 @@ function buildGenerateRequestFromAssembled(input: {
   return {
     thread: assembled.thread,
     agentSlug: assembled.agentSlug,
+    resolvedModel: assembled.resolvedModel,
     permissionGate: permissionGateFromToolPolicy(
       assembled.policy,
       assembled.thread.kind === "subagent" ? ["return_result"] : [],
@@ -1267,49 +1273,6 @@ function buildGenerateRequestFromAssembled(input: {
       signal: input.gatewaySignal ?? input.runInput.signal,
     },
   };
-}
-
-async function predictPrefixCacheState(input: {
-  deps: OrchestratorDeps;
-  thread: Thread;
-  transcriptTurns: readonly Turn[];
-  model: string;
-}): Promise<PrefixCacheState> {
-  const { deps, thread, transcriptTurns, model } = input;
-  const localTurns = transcriptTurns.filter((turn) => turn.threadId === thread.id);
-  const localResponses = await deps.repos.modelResponses.listByThread(thread.id as ThreadId);
-  const history: PrefixCacheHistory = {
-    thread,
-    turns: localTurns,
-    responses: localResponses,
-  };
-
-  let forkOwner: PrefixCacheHistory | undefined;
-  if (thread.originType === "fork" && localResponses.length === 0 && thread.originTurnId) {
-    const cutoffTurn =
-      transcriptTurns.find((turn) => turn.id === thread.originTurnId) ??
-      (await deps.repos.turns.findById(thread.originTurnId as TurnId));
-    const owner = cutoffTurn
-      ? await deps.repos.threads.findByIdIncludingDeleted(cutoffTurn.threadId as ThreadId)
-      : null;
-    if (owner) {
-      forkOwner = {
-        thread: owner,
-        turns: await deps.repos.turns.listByThread(owner.id as ThreadId),
-        responses: await deps.repos.modelResponses.listByThread(owner.id as ThreadId),
-      };
-    }
-  }
-
-  const descriptor = deps.gateway.listModels?.().find((entry: ModelInfo) => entry.id === model)
-    ?.promptCache ?? { kind: "none", ttlMs: null };
-  return derivePrefixCacheState({
-    model,
-    promptCache: descriptor,
-    nowMs: Date.now(),
-    history,
-    ...(forkOwner ? { forkOwner } : {}),
-  });
 }
 
 async function prepareRequestContext(input: {
@@ -1402,15 +1365,7 @@ function buildImageProjectionEvents(input: {
       role: "system",
       origin: "system",
       status: "complete",
-      metadata: {
-        kind: "system_update",
-        section: "image_inclusion",
-        breaks: input.breaks.map((entry) => ({
-          blockId: entry.blockId,
-          uri: entry.uri,
-          reason: entry.reason,
-        })),
-      },
+      metadata: encodeImageInclusionMetadata(input.breaks),
     });
     const block = contentForBlockInput({
       id: turn.id,
@@ -1446,7 +1401,9 @@ function imageContextBreakText(breaks: readonly ImageContextBreak[]): string {
     ...breaks.map((entry) =>
       entry.reason === "budget_eviction"
         ? `Removed ${entry.uri} to fit the image context budget.`
-        : `The model request no longer includes ${entry.uri} because its asset is unavailable.`,
+        : entry.reason === "asset_unavailable"
+          ? `The model request no longer includes ${entry.uri} because its asset is unavailable.`
+          : `The model could not include ${entry.uri} because its asset is unavailable.`,
     ),
   ];
   return `<system_update>\n${lines.join("\n")}\n</system_update>`;
@@ -1599,6 +1556,7 @@ async function executeLoop(
   const { gateway, repos, eventWriter } = deps;
   const eventSink = deps.eventSink;
   const turnAccounting = createTurnAccounting({ billingUsage: deps.billingUsage });
+  const { prefixCacheStateFor } = createPrefixCacheStateService({ repos });
 
   // The loop is the only writer of the lease phase, so `authority.read` cannot
   // split-brain. Publishing is observational: a failure must not fail the turn,
@@ -1847,11 +1805,10 @@ async function executeLoop(
       const inboxAckIds = drain.ackIds;
       let predictedCacheState: PrefixCacheState;
       try {
-        predictedCacheState = await predictPrefixCacheState({
-          deps,
-          thread,
-          transcriptTurns: allTurns,
-          model: request.model ?? deps.gateway.getDefaultModel() ?? "unknown",
+        predictedCacheState = await prefixCacheStateFor({
+          threadId: input.threadId,
+          model: built.resolvedModel,
+          now: Date.now(),
         });
       } catch (cause) {
         predictedCacheState = { state: "cold", reason: "facts_unavailable" };
@@ -1872,7 +1829,6 @@ async function executeLoop(
           iteration: iteration - 1,
           agentSlug: built.agentSlug,
           request,
-          predictedCacheState,
           toolRegistry: deps.toolRegistry,
         });
       } catch (cause) {
@@ -1937,6 +1893,7 @@ async function executeLoop(
           allBlocks,
           result,
           model: result?.model ?? streamModel,
+          predictedCacheState,
         });
 
         currentAssistantTurn = settled;
@@ -1959,6 +1916,7 @@ async function executeLoop(
         thread,
         currentAssistantTurn,
         result,
+        predictedCacheState,
         treeBudget,
         turnAccounting,
         blockSeq,

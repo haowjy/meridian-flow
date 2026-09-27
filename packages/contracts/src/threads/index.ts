@@ -6,6 +6,10 @@
 
 import type { PromptBakeId, ThreadId } from "../runtime/ids.js";
 import type { AiWriteMode } from "../works/index.js";
+import type {
+  PrefixCachePredictionReason,
+  PrefixCachePredictionState,
+} from "./prefix-cache-prediction.js";
 import type { TurnStatus } from "./status.js";
 
 export type {
@@ -375,6 +379,8 @@ export interface ModelResponse {
   responseMetadata?: JsonValue | null;
   latencyMs: number | null;
   rawUsage?: JsonValue | null;
+  predictedCacheState?: PrefixCachePredictionState | null;
+  predictedCacheReason?: PrefixCachePredictionReason | null;
   createdAt: string;
   completedAt?: string | null;
 }
@@ -389,7 +395,6 @@ export type {
   ModelRequestDebugSummary,
   ModelRequestDebugView,
   ModelRequestPrefix,
-  PredictedCacheState,
 } from "./model-request-debug.js";
 export {
   deriveModelRequestDebugViews,
@@ -402,6 +407,10 @@ export type {
   OrchestratorEvent,
   WorkContextChangedEvent,
 } from "./orchestrator-events.js";
+export type {
+  PrefixCachePredictionReason,
+  PrefixCachePredictionState,
+} from "./prefix-cache-prediction.js";
 export * from "./project-chat-feed.js";
 export type { ThreadListItem, ThreadListWork } from "./projections.js";
 export type {

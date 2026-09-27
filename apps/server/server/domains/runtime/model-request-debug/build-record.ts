@@ -38,7 +38,6 @@ export type ModelRequestDebugCaptureInput = {
   iteration: number;
   agentSlug: string | null;
   request: GenerateRequest;
-  predictedCacheState: ModelRequestDebugRecord["predictedCacheState"];
   toolRegistry: ToolRegistry;
 };
 
@@ -67,7 +66,6 @@ export function buildModelRequestDebugRecord(
       request === null
         ? { status: "omitted", reason: "request_too_large", maxRequestBytes }
         : { status: "complete" },
-    predictedCacheState: input.predictedCacheState,
     request,
     skills: [],
     toolRegistrations: advertisedToolsMetadata(input.toolRegistry, input.request.tools),

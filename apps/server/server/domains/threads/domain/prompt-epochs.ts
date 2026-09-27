@@ -31,6 +31,24 @@ export class PromptBakeTurnNotFoundError extends Error {
   }
 }
 
+/** Returns the bake in effect through this local transcript turn. */
+export function bakeIdAt(
+  localTurns: readonly Turn[],
+  turnId: string,
+  initialBakeId: string | null,
+): string | null {
+  const turns = [...localTurns].sort((left, right) => left.position - right.position);
+  const cutoffIndex = turns.findIndex((turn) => turn.id === turnId);
+  if (cutoffIndex < 0) {
+    throw new PromptBakeTurnNotFoundError(turnId, turns[0]?.threadId ?? "unknown");
+  }
+
+  const boundary = [...turns.slice(0, cutoffIndex + 1)]
+    .reverse()
+    .find((turn) => turn.status === "complete" && turn.promptBakeId != null);
+  return boundary?.promptBakeId ?? initialBakeId;
+}
+
 /** Bake in effect at a local or inherited turn, using the cutoff turn's owner. */
 export async function bakeAt(
   deps: PromptEpochReader,
@@ -39,17 +57,9 @@ export async function bakeAt(
 ): Promise<PromptBake | null> {
   const owner = await deps.threads.findByIdIncludingDeleted(turn.threadId as ThreadId);
   if (!owner) throw new Error(`Prompt bake owner thread not found: ${turn.threadId}`);
-  const localTurns = knownLocalTurns
-    ? [...knownLocalTurns]
-    : await deps.turns.listByThread(owner.id as ThreadId);
-  const cutoffIndex = localTurns.findIndex((candidate) => candidate.id === turn.id);
-  if (cutoffIndex < 0) throw new PromptBakeTurnNotFoundError(turn.id, owner.id);
-
-  const boundary = [...localTurns.slice(0, cutoffIndex + 1)]
-    .reverse()
-    .find((candidate) => candidate.status === "complete" && candidate.promptBakeId != null);
-  if (boundary?.promptBakeId) return requireBake(deps, boundary.promptBakeId);
-  return bakeById(deps, owner.initialPromptBakeId ?? null);
+  const localTurns = knownLocalTurns ?? (await deps.turns.listByThread(owner.id as ThreadId));
+  const bakeId = bakeIdAt(localTurns, turn.id, owner.initialPromptBakeId ?? null);
+  return bakeById(deps, bakeId);
 }
 
 /** Bake currently governing this thread's latest local turn, or its first bake. */
@@ -58,13 +68,14 @@ export async function bakeInEffect(
   thread: Pick<Thread, "id" | "initialPromptBakeId">,
   knownLocalTurns?: readonly Turn[],
 ): Promise<PromptBake | null> {
-  const localTurns = knownLocalTurns
-    ? [...knownLocalTurns]
-    : await deps.turns.listByThread(thread.id as ThreadId);
-  const latestLocalTurn = localTurns.at(-1);
-  return latestLocalTurn
-    ? bakeAt(deps, latestLocalTurn, localTurns)
-    : bakeById(deps, thread.initialPromptBakeId ?? null);
+  const localTurns = knownLocalTurns ?? (await deps.turns.listByThread(thread.id as ThreadId));
+  const latestLocalTurn = [...localTurns]
+    .sort((left, right) => left.position - right.position)
+    .at(-1);
+  const bakeId = latestLocalTurn
+    ? bakeIdAt(localTurns, latestLocalTurn.id, thread.initialPromptBakeId ?? null)
+    : (thread.initialPromptBakeId ?? null);
+  return bakeById(deps, bakeId);
 }
 
 async function bakeById(deps: PromptEpochReader, id: string | null): Promise<PromptBake | null> {

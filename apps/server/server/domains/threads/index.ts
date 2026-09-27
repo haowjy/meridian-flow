@@ -13,6 +13,7 @@ export {
   createActiveDocumentResolver,
 } from "./domain/active-document-resolver.js";
 export { createBoundConversation } from "./domain/bound-conversation.js";
+export { ForkCutoffOwnerNotFoundError, findCutoffOwnerThreadId } from "./domain/cutoff-owner.js";
 export {
   DerivedSourceNotFoundError,
   ForkCutoffError,
@@ -32,6 +33,7 @@ export {
 export { hashPromptBakeContent } from "./domain/prompt-bake-hash.js";
 export {
   bakeAt,
+  bakeIdAt,
   bakeInEffect,
   PromptBakeNotFoundError,
   PromptBakeTurnNotFoundError,

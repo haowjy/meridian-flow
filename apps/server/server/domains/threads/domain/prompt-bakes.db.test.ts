@@ -113,6 +113,7 @@ else {
         origin: "system",
         status: "pending",
       });
+      const responseId = crypto.randomUUID();
 
       const result = await beginPromptEpoch(
         { repos, eventWriter: writer },
@@ -124,6 +125,18 @@ else {
           completion: {
             blocks: [],
             metadata: { kind: "compaction", compactedThrough: boundary.id },
+            modelResponses: [
+              {
+                id: responseId,
+                turnId: boundary.id,
+                sequence: 0,
+                provider: "test-provider",
+                model: "summary-model",
+                priceSource: "unknown",
+                predictedCacheState: "warm",
+                predictedCacheReason: "reusable_prefix",
+              },
+            ],
             events: [
               {
                 type: "context.compacted",
@@ -141,6 +154,10 @@ else {
 
       expect(result.bakeId).toBe(first.bake.id);
       expect(await repos.promptBakes.findById(result.bakeId)).toEqual(first.bake);
+      expect(await repos.modelResponses.findById(responseId)).toMatchObject({
+        predictedCacheState: "warm",
+        predictedCacheReason: "reusable_prefix",
+      });
       expect(await repos.turns.findById(boundary.id)).toMatchObject({
         status: "complete",
         promptBakeId: first.bake.id,

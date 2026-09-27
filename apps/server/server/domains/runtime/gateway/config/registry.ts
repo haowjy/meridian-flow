@@ -90,11 +90,8 @@ const DEEPSEEK_CACHE_ESTIMATE: PromptCacheDescriptor = {
 };
 const NO_PROMPT_CACHE: PromptCacheDescriptor = { kind: "none", ttlMs: null };
 
-// `cacheWriteUsdPerMillionTokens` is the 1h-ttl write rate (2x input), not the
-// 5m-ttl rate (1.25x): `loop/prompt-cache-marks.ts` + the Anthropic/OpenRouter
-// adapters always request `ttl: "1h"` (the owner-chosen default everywhere
-// Anthropic makes cache TTL configurable), so every cache-write token this
-// codebase produces bills at the 2x tier.
+// `cacheWriteUsdPerMillionTokens` matches the TTL on each model's prompt-cache
+// descriptor; the adapters translate that descriptor into provider wire format.
 const CLAUDE_SONNET_4_PRICING: ModelPricing = {
   inputUsdPerMillionTokens: "3.00",
   cachedInputUsdPerMillionTokens: "0.30",
@@ -381,6 +378,24 @@ export const MODEL_REGISTRY = {
   ],
 } as const satisfies ModelRegistry;
 
+const FIVE_MINUTES_MS = 5 * 60 * 1_000;
+const ONE_HOUR_MS = 60 * 60 * 1_000;
+
+/** Reject invalid explicit cache TTLs as soon as a registry is loaded. */
+export function validateModelRegistry(registry: ModelRegistry): void {
+  for (const model of registry.providers.flatMap((provider) => provider.models)) {
+    if (
+      model.promptCache.kind === "explicit" &&
+      model.promptCache.ttlMs !== FIVE_MINUTES_MS &&
+      model.promptCache.ttlMs !== ONE_HOUR_MS
+    ) {
+      throw new Error(`Explicit prompt cache TTL for ${model.id} must be 5 minutes or 1 hour`);
+    }
+  }
+}
+
+validateModelRegistry(MODEL_REGISTRY);
+
 /** Keys starting with "dev-" are mock/placeholder and do not enable live providers. */
 export function hasRealApiKey(key: string | undefined): boolean {
   return Boolean(key && key.length > 0 && !key.startsWith("dev-"));
@@ -405,6 +420,7 @@ export function buildFromRegistry(
   registry: ModelRegistry,
   env: Record<string, string | undefined>,
 ): Pick<GatewayConfig, "providers" | "defaultModel"> {
+  validateModelRegistry(registry);
   const providers: ProviderConfig[] = [];
 
   for (const entry of registry.providers) {

@@ -1,5 +1,5 @@
 /** Stable request-time projection of durable image occurrences into gateway bytes. */
-import type { Block, Thread } from "@meridian/contracts/threads";
+import type { Block, JsonValue, Thread } from "@meridian/contracts/threads";
 import type { ImageAssetPort, PersistedImageReference } from "../ports/image-asset.js";
 
 type ResolvedImage = NonNullable<Awaited<ReturnType<ImageAssetPort["resolve"]>>>;
@@ -15,7 +15,56 @@ export interface ImageInclusionDecision {
 export interface ImageContextBreak {
   blockId: string;
   uri: string;
-  reason: "asset_unavailable" | "budget_eviction";
+  reason: "asset_unavailable" | "asset_unavailable_first_sight" | "budget_eviction";
+}
+
+export interface ImageInclusionMetadata {
+  kind: "system_update";
+  section: "image_inclusion";
+  breaks: ImageContextBreak[];
+}
+
+/** Encode the one durable metadata shape used by image projection and cache readers. */
+export function encodeImageInclusionMetadata(breaks: readonly ImageContextBreak[]): JsonValue {
+  return {
+    kind: "system_update",
+    section: "image_inclusion",
+    breaks: breaks.map(({ blockId, uri, reason }) => ({ blockId, uri, reason })),
+  };
+}
+
+/** Decode image projection metadata without trusting old or malformed JSON. */
+export function decodeImageInclusionMetadata(value: unknown): ImageInclusionMetadata | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const metadata = value as Record<string, unknown>;
+  if (
+    metadata.kind !== "system_update" ||
+    metadata.section !== "image_inclusion" ||
+    !Array.isArray(metadata.breaks)
+  ) {
+    return null;
+  }
+
+  const breaks: ImageContextBreak[] = [];
+  for (const entry of metadata.breaks) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+    const candidate = entry as Record<string, unknown>;
+    if (
+      typeof candidate.blockId !== "string" ||
+      typeof candidate.uri !== "string" ||
+      (candidate.reason !== "asset_unavailable" &&
+        candidate.reason !== "asset_unavailable_first_sight" &&
+        candidate.reason !== "budget_eviction")
+    ) {
+      return null;
+    }
+    breaks.push({
+      blockId: candidate.blockId,
+      uri: candidate.uri,
+      reason: candidate.reason,
+    });
+  }
+  return { kind: "system_update", section: "image_inclusion", breaks };
 }
 
 export interface ImageContextProjection {
@@ -71,6 +120,8 @@ export async function projectImageBlocksForModel(input: {
   const decisionById = new Map<string, ImageInclusionDecision>();
   const breaks: ImageContextBreak[] = [];
   let diagnosedOmission = false;
+  const unavailableReason = (included: boolean | undefined) =>
+    included === true ? "asset_unavailable" : "asset_unavailable_first_sight";
 
   for (const [index, block] of input.blocks.entries()) {
     const includedDecision = input.inclusions?.get(block.id);
@@ -78,7 +129,11 @@ export async function projectImageBlocksForModel(input: {
     const identity = reference(block.content);
     if (!identity) {
       decisionById.set(block.id, { blockId: block.id, included: false });
-      breaks.push({ blockId: block.id, uri: block.id, reason: "asset_unavailable" });
+      breaks.push({
+        blockId: block.id,
+        uri: block.id,
+        reason: unavailableReason(includedDecision),
+      });
       diagnosedOmission = true;
       continue;
     }
@@ -100,7 +155,11 @@ export async function projectImageBlocksForModel(input: {
 
     if (!image || !Number.isFinite(image.sizeBytes) || image.sizeBytes < 0) {
       decisionById.set(block.id, { blockId: block.id, included: false });
-      breaks.push({ blockId: block.id, uri: identity.uri, reason: "asset_unavailable" });
+      breaks.push({
+        blockId: block.id,
+        uri: identity.uri,
+        reason: unavailableReason(includedDecision),
+      });
       diagnosedOmission = true;
       continue;
     }

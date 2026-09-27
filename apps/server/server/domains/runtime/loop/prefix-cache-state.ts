@@ -1,7 +1,23 @@
-/** Pure read model for whether a stored conversation prefix is likely cached. */
+/** Pure cache-warmth rule and repository-backed runtime service. */
 
-import type { ModelResponse, Thread, Turn } from "@meridian/contracts/threads";
-import type { PromptCacheDescriptor } from "../gateway/index.js";
+import type { ThreadId } from "@meridian/contracts/runtime";
+import type {
+  ModelResponse,
+  PrefixCachePredictionReason,
+  PrefixCachePredictionState,
+  Thread,
+  Turn,
+} from "@meridian/contracts/threads";
+import {
+  bakeIdAt,
+  ForkCutoffOwnerNotFoundError,
+  findCutoffOwnerThreadId,
+  type ModelResponseRepository,
+  type ThreadRepository,
+  type TurnRepository,
+} from "../../threads/index.js";
+import type { ModelInfo, PromptCacheDescriptor } from "../gateway/index.js";
+import { decodeImageInclusionMetadata } from "./image-context.js";
 
 type CacheHistoryThread = Pick<
   Thread,
@@ -14,22 +30,10 @@ export interface PrefixCacheHistory {
   responses: readonly Pick<ModelResponse, "turnId" | "sequence" | "model" | "createdAt">[];
 }
 
-export type PrefixCacheStateReason =
-  | "reusable_prefix"
-  | "uncached"
-  | "no_response"
-  | "model_changed"
-  | "prompt_epoch"
-  | "image_eviction"
-  | "compaction"
-  | "ttl_unknown"
-  | "ttl_expired"
-  | "fork_cutoff"
-  | "fork_bake_changed"
-  | "facts_unavailable";
+export type PrefixCacheStateReason = PrefixCachePredictionReason;
 
 export interface PrefixCacheState {
-  state: "warm" | "cold";
+  state: PrefixCachePredictionState;
   reason: PrefixCacheStateReason;
 }
 
@@ -62,66 +66,40 @@ function lastResponse(history: PrefixCacheHistory): LastResponse | null {
   return latest ? { model: latest.model, createdAt: latest.createdAt, turn: latest.turn } : null;
 }
 
-function objectValue(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+function imageBreaksPrefix(turn: Turn): boolean {
+  return (
+    decodeImageInclusionMetadata(turn.metadata)?.breaks.some(
+      (entry) => entry.reason === "budget_eviction" || entry.reason === "asset_unavailable",
+    ) ?? false
+  );
 }
 
-function boundaryReason(turn: Turn): PrefixCacheStateReason | null {
-  if (turn.role === "compaction") return "compaction";
-
-  const metadata = objectValue(turn.metadata);
-  if (
-    metadata?.kind === "prompt_epoch_boundary" ||
-    (metadata && objectValue(metadata.promptEpoch))
-  ) {
-    return "prompt_epoch";
-  }
-
-  const imageUpdate = metadata?.kind === "system_update" && metadata.section === "image_inclusion";
-  const breaks = imageUpdate && Array.isArray(metadata.breaks) ? metadata.breaks : [];
-  if (
-    breaks.some((entry) => {
-      const reason = objectValue(entry)?.reason;
-      return reason === "budget_eviction" || reason === "asset_unavailable";
-    })
-  ) {
-    return "image_eviction";
-  }
-  return null;
-}
-
-function boundaryAfterResponse(
+function boundaryAtOrAfterResponse(
   history: PrefixCacheHistory,
   response: LastResponse,
 ): PrefixCacheStateReason | null {
-  const turnsAfterResponse = [...history.turns]
-    .filter((turn) => turn.position > response.turn.position)
-    .sort((left, right) => left.position - right.position);
-  for (const turn of turnsAfterResponse) {
-    const reason = boundaryReason(turn);
-    if (reason) return reason;
+  const turns = [...history.turns].sort((left, right) => left.position - right.position);
+  for (const turn of turns) {
+    if (turn.status !== "complete") continue;
+    if (turn.role === "compaction" && turn.position >= response.turn.position) return "compaction";
+    if (turn.position > response.turn.position && imageBreaksPrefix(turn)) return "image_eviction";
   }
   return null;
 }
 
-function effectiveBakeIdAt(history: PrefixCacheHistory, turnId: string): string | null | undefined {
-  const turns = [...history.turns].sort((left, right) => left.position - right.position);
-  const cutoffIndex = turns.findIndex((turn) => turn.id === turnId);
-  if (cutoffIndex < 0) return undefined;
-  const boundary = [...turns.slice(0, cutoffIndex + 1)]
-    .reverse()
-    .find((turn) => turn.status === "complete" && turn.promptBakeId !== null);
-  return boundary?.promptBakeId ?? history.thread.initialPromptBakeId;
-}
-
-function currentBakeId(history: PrefixCacheHistory): string | null {
-  const boundary = [...history.turns]
+function responseBakeChanged(history: PrefixCacheHistory, response: LastResponse): boolean {
+  const latestTurn = [...history.turns]
     .sort((left, right) => left.position - right.position)
-    .reverse()
-    .find((turn) => turn.status === "complete" && turn.promptBakeId !== null);
-  return boundary?.promptBakeId ?? history.thread.initialPromptBakeId;
+    .at(-1);
+  const currentBake = latestTurn
+    ? bakeIdAt(history.turns, latestTurn.id, history.thread.initialPromptBakeId)
+    : history.thread.initialPromptBakeId;
+  const responseBake = bakeIdAt(
+    history.turns,
+    response.turn.id,
+    history.thread.initialPromptBakeId,
+  );
+  return responseBake !== currentBake;
 }
 
 function isForkCutoffCurrent(input: DerivePrefixCacheStateInput): boolean {
@@ -133,8 +111,17 @@ function isForkCutoffCurrent(input: DerivePrefixCacheStateInput): boolean {
   const sourceLatestTurn = [...forkOwner.turns]
     .sort((left, right) => left.position - right.position)
     .at(-1);
-  if (sourceLatestTurn?.id !== cutoffTurnId) return false;
-  return true;
+  return sourceLatestTurn?.id === cutoffTurnId;
+}
+
+function forkBoundary(history: PrefixCacheHistory): PrefixCacheStateReason | null {
+  const ordered = [...history.turns].sort((left, right) => left.position - right.position);
+  for (const turn of ordered) {
+    if (turn.status !== "complete") continue;
+    if (turn.role === "compaction") return "compaction";
+    if (imageBreaksPrefix(turn)) return "image_eviction";
+  }
+  return null;
 }
 
 function cold(reason: PrefixCacheStateReason): PrefixCacheState {
@@ -151,33 +138,103 @@ export function derivePrefixCacheState(input: DerivePrefixCacheStateInput): Pref
     if (!isForkCutoffCurrent(input)) return cold("fork_cutoff");
     const cutoffTurnId = history.thread.originTurnId;
     if (!cutoffTurnId || !input.forkOwner) return cold("fork_cutoff");
-    const forkBakeId = currentBakeId(history);
-    const sourceBakeId = effectiveBakeIdAt(input.forkOwner, cutoffTurnId);
-    if (sourceBakeId === undefined || sourceBakeId !== forkBakeId) {
+    const latestForkTurn = [...history.turns]
+      .sort((left, right) => left.position - right.position)
+      .at(-1);
+    const forkBakeId = latestForkTurn
+      ? bakeIdAt(history.turns, latestForkTurn.id, history.thread.initialPromptBakeId)
+      : history.thread.initialPromptBakeId;
+    if (
+      bakeIdAt(input.forkOwner.turns, cutoffTurnId, input.forkOwner.thread.initialPromptBakeId) !==
+      forkBakeId
+    ) {
       return cold("fork_bake_changed");
     }
+    const boundary = forkBoundary(history);
+    if (boundary) return cold(boundary);
     history = input.forkOwner;
     response = lastResponse(history);
-    const forkBoundary = [...input.history.turns]
-      .sort((left, right) => left.position - right.position)
-      .map(boundaryReason)
-      .find((reason) => reason !== null);
-    if (forkBoundary) return cold(forkBoundary);
   }
 
   if (!response) return cold("no_response");
   if (response.model !== input.model) return cold("model_changed");
 
-  const boundary = boundaryAfterResponse(history, response);
+  const boundary = boundaryAtOrAfterResponse(history, response);
   if (boundary) return cold(boundary);
+  if (responseBakeChanged(history, response)) return cold("prompt_epoch");
 
   const ttlMs = input.promptCache.ttlMs;
   if (ttlMs === null) return cold("ttl_unknown");
   const responseTimeMs = Date.parse(response.createdAt);
-  if (!Number.isFinite(responseTimeMs) || input.nowMs < responseTimeMs) {
-    return cold("ttl_expired");
+  if (!Number.isFinite(responseTimeMs) || !Number.isFinite(input.nowMs)) {
+    return cold("facts_unavailable");
   }
-  if (input.nowMs - responseTimeMs >= ttlMs) return cold("ttl_expired");
+  const ageMs = Math.max(0, input.nowMs - responseTimeMs);
+  if (ageMs >= ttlMs) return cold("ttl_expired");
 
   return { state: "warm", reason: "reusable_prefix" };
+}
+
+export interface PrefixCacheStateServiceDeps {
+  repos: {
+    threads: Pick<ThreadRepository, "findByIdIncludingDeleted">;
+    turns: Pick<TurnRepository, "findById" | "listByThread">;
+    modelResponses: Pick<ModelResponseRepository, "findLatestByThread">;
+  };
+}
+
+export interface PrefixCacheStateRequest {
+  threadId: ThreadId;
+  /** The model resolved during context assembly, including its cache descriptor. */
+  model: ModelInfo | null;
+  now?: Date | number;
+}
+
+/** Builds the repository-backed cache-state service for any runtime consumer. */
+export function createPrefixCacheStateService(deps: PrefixCacheStateServiceDeps) {
+  return {
+    async prefixCacheStateFor(input: PrefixCacheStateRequest): Promise<PrefixCacheState> {
+      const thread = await deps.repos.threads.findByIdIncludingDeleted(input.threadId);
+      if (!thread || !input.model) return cold("facts_unavailable");
+
+      const turns = await deps.repos.turns.listByThread(input.threadId);
+      const latestResponse = await deps.repos.modelResponses.findLatestByThread(input.threadId);
+      const history: PrefixCacheHistory = {
+        thread,
+        turns,
+        responses: latestResponse ? [latestResponse] : [],
+      };
+
+      let forkOwner: PrefixCacheHistory | undefined;
+      if (thread.originType === "fork" && !latestResponse) {
+        let ownerThreadId: ThreadId;
+        try {
+          ownerThreadId = await findCutoffOwnerThreadId(thread, (turnId) =>
+            deps.repos.turns.findById(turnId as Turn["id"]),
+          );
+        } catch (error) {
+          if (error instanceof ForkCutoffOwnerNotFoundError) return cold("fork_cutoff");
+          throw error;
+        }
+        const owner = await deps.repos.threads.findByIdIncludingDeleted(ownerThreadId);
+        if (!owner) return cold("facts_unavailable");
+        const ownerTurns = await deps.repos.turns.listByThread(ownerThreadId);
+        const ownerResponse = await deps.repos.modelResponses.findLatestByThread(ownerThreadId);
+        forkOwner = {
+          thread: owner,
+          turns: ownerTurns,
+          responses: ownerResponse ? [ownerResponse] : [],
+        };
+      }
+
+      const nowMs = input.now instanceof Date ? input.now.getTime() : (input.now ?? Date.now());
+      return derivePrefixCacheState({
+        model: input.model.id,
+        promptCache: input.model.promptCache,
+        nowMs,
+        history,
+        ...(forkOwner ? { forkOwner } : {}),
+      });
+    },
+  };
 }

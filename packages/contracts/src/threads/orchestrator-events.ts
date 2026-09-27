@@ -18,6 +18,10 @@ import type {
   ThreadPendingInbox,
   Turn,
 } from "./index.js";
+import type {
+  PrefixCachePredictionReason,
+  PrefixCachePredictionState,
+} from "./prefix-cache-prediction.js";
 
 export interface ModelResponseReceivedRow {
   id: string;
@@ -37,6 +41,8 @@ export interface ModelResponseReceivedRow {
   pricingSnapshot?: JsonValue | null;
   finishReason?: FinishReason | null;
   rawUsage?: JsonValue | null;
+  predictedCacheState?: PrefixCachePredictionState | null;
+  predictedCacheReason?: PrefixCachePredictionReason | null;
 }
 
 export interface BlockUpsertedRow {

@@ -17,13 +17,17 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, PromptBake, Thread, Turn } from "@meridian/contracts/threads";
 import type { AgentRevisionStore } from "../../packages/index.js";
-import { bakeInEffect, hashPromptBakeContent } from "../../threads/index.js";
+import {
+  bakeInEffect,
+  findCutoffOwnerThreadId,
+  hashPromptBakeContent,
+} from "../../threads/index.js";
 import type {
   PromptBakeContent,
   PromptBakeRepository,
   ThreadImageInclusionRepository,
 } from "../../threads/ports/repositories.js";
-import type { FunctionTool, Gateway, GenerateRequest, Tool } from "../gateway/index.js";
+import type { FunctionTool, Gateway, GenerateRequest, ModelInfo, Tool } from "../gateway/index.js";
 import type { ImageAssetPort } from "../ports/image-asset.js";
 import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
 import {
@@ -83,6 +87,7 @@ export interface AssembledNextTurnContext {
   tools: FunctionTool[];
   policy: EffectiveToolPolicy;
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
+  resolvedModel: ModelInfo | null;
   baked: boolean;
   /** First-attempt prompt freeze staged for the delivery commit, if still needed. */
   pendingBake?: PromptBakeContent;
@@ -229,13 +234,10 @@ export async function assembleNextTurnContext(
   });
   const contextTools = built.tools;
   const messages = usesExplicitPromptCache ? applyPromptCacheMarks(built.messages) : built.messages;
-  const cacheKeyOwner =
-    thread.originType === "fork"
-      ? input.turns.find((turn) => turn.id === thread.originTurnId)?.threadId
-      : thread.id;
-  if (!cacheKeyOwner) {
-    throw new Error(`Fork cutoff owner is missing for thread ${thread.id}`);
-  }
+  const cacheKeyOwner = await findCutoffOwnerThreadId(
+    thread,
+    async (turnId) => input.turns.find((turn) => turn.id === turnId) ?? null,
+  );
 
   return {
     thread,
@@ -244,6 +246,7 @@ export async function assembleNextTurnContext(
     tools: functionToolsFromAdvertised(contextTools),
     policy: agentContext.policy,
     gatewayParams,
+    resolvedModel: resolvedModel ?? null,
     baked,
     ...(pendingBake ? { pendingBake } : {}),
     generateRequest: {

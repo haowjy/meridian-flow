@@ -296,7 +296,7 @@ describe("frozen prompt provider requests", () => {
           {
             blockId: imageBlock.id,
             uri: image.uri,
-            reason: "asset_unavailable",
+            reason: "asset_unavailable_first_sight",
           },
         ],
       },
@@ -317,7 +317,7 @@ describe("frozen prompt provider requests", () => {
         .map((part) => part.text)
         .join("\n"),
     ).toContain(
-      "The model request no longer includes uploads://@/first-sight-loss.png because its asset is unavailable.",
+      "The model could not include uploads://@/first-sight-loss.png because its asset is unavailable.",
     );
   });
 

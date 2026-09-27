@@ -47,6 +47,8 @@ function responseToCreateInput(response: ModelResponseReceivedRow): CreateModelR
     pricingSnapshot: response.pricingSnapshot ?? null,
     finishReason: response.finishReason ?? null,
     rawUsage: response.rawUsage ?? null,
+    predictedCacheState: response.predictedCacheState ?? null,
+    predictedCacheReason: response.predictedCacheReason ?? null,
   };
 }
 

@@ -10,7 +10,12 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
-import type { JsonValue, PriceSource } from "@meridian/contracts/threads";
+import type {
+  JsonValue,
+  PrefixCachePredictionReason,
+  PrefixCachePredictionState,
+  PriceSource,
+} from "@meridian/contracts/threads";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -367,6 +372,8 @@ export const modelResponses = pgTable(
     requestParams: jsonb("request_params"),
     responseMetadata: jsonb("response_metadata"),
     latencyMs: bigint("latency_ms", { mode: "number" }),
+    predictedCacheState: text("predicted_cache_state").$type<PrefixCachePredictionState>(),
+    predictedCacheReason: text("predicted_cache_reason").$type<PrefixCachePredictionReason>(),
     createdAt: createdAt(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
@@ -380,6 +387,18 @@ export const modelResponses = pgTable(
     check(
       "model_responses_price_source_valid",
       sql`${table.priceSource} IN ('computed', 'provider_reported', 'configured_rate', 'unknown')`,
+    ),
+    check(
+      "model_responses_predicted_cache_state_valid",
+      sql`${table.predictedCacheState} IS NULL OR ${table.predictedCacheState} IN ('warm', 'cold')`,
+    ),
+    check(
+      "model_responses_predicted_cache_reason_valid",
+      sql`${table.predictedCacheReason} IS NULL OR ${table.predictedCacheReason} IN ('reusable_prefix', 'uncached', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'compaction', 'ttl_unknown', 'ttl_expired', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')`,
+    ),
+    check(
+      "model_responses_predicted_cache_pair_valid",
+      sql`(${table.predictedCacheState} IS NULL) = (${table.predictedCacheReason} IS NULL)`,
     ),
   ],
 );

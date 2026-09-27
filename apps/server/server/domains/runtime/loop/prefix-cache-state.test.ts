@@ -1,6 +1,12 @@
 import type { ModelResponse, Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
-import { derivePrefixCacheState, type PrefixCacheHistory } from "./prefix-cache-state.js";
+import { bakeIdAt, findCutoffOwnerThreadId } from "../../threads/index.js";
+import { encodeImageInclusionMetadata } from "./image-context.js";
+import {
+  createPrefixCacheStateService,
+  derivePrefixCacheState,
+  type PrefixCacheHistory,
+} from "./prefix-cache-state.js";
 
 const TTL_MS = 60_000;
 const NOW_MS = Date.parse("2026-09-27T12:00:00.000Z");
@@ -39,8 +45,9 @@ function turn(id: string, position: number, values: Partial<Turn> = {}): Turn {
 function response(
   turnId: string,
   model = MODEL,
+  sequence = 0,
 ): Pick<ModelResponse, "turnId" | "sequence" | "model" | "createdAt"> {
-  return { turnId, sequence: 0, model, createdAt: RESPONSE_AT };
+  return { turnId, sequence, model, createdAt: RESPONSE_AT };
 }
 
 function history(values: Partial<PrefixCacheHistory> = {}): PrefixCacheHistory {
@@ -68,9 +75,64 @@ function derive(input: Partial<Parameters<typeof derivePrefixCacheState>[0]> = {
   });
 }
 
+function imageNotice(
+  reason: "asset_unavailable" | "asset_unavailable_first_sight" | "budget_eviction",
+) {
+  return turn(`image-${reason}`, 2, {
+    role: "system",
+    origin: "system",
+    metadata: encodeImageInclusionMetadata([
+      { blockId: "image-1", uri: "scratch://image.png", reason },
+    ]),
+  });
+}
+
 describe("derivePrefixCacheState", () => {
   it("predicts warm when the model, prefix, and TTL still match", () => {
     expect(derive()).toEqual({ state: "warm", reason: "reusable_prefix" });
+  });
+
+  it("gathers the current thread's facts through the runtime service", async () => {
+    const threadHistory = history();
+    const latest = response("turn-1");
+    const { prefixCacheStateFor } = createPrefixCacheStateService({
+      repos: {
+        threads: {
+          async findByIdIncludingDeleted() {
+            return threadHistory.thread as Thread;
+          },
+        },
+        turns: {
+          async findById() {
+            return null;
+          },
+          async listByThread() {
+            return [...threadHistory.turns];
+          },
+        },
+        modelResponses: {
+          async findLatestByThread() {
+            return latest;
+          },
+        },
+      },
+    });
+
+    await expect(
+      prefixCacheStateFor({
+        threadId: "thread-1" as Thread["id"],
+        model: {
+          id: MODEL,
+          provider: "test-provider",
+          displayName: "Writer model",
+          contextWindow: 128_000,
+          maxOutputTokens: 4_096,
+          promptCache: CACHE,
+          capabilities: new Set(),
+        },
+        now: NOW_MS,
+      }),
+    ).resolves.toEqual({ state: "warm", reason: "reusable_prefix" });
   });
 
   it("is cold before any model response has warmed a prefix", () => {
@@ -80,12 +142,12 @@ describe("derivePrefixCacheState", () => {
     });
   });
 
-  it("breaks warmth at a prompt-epoch bake boundary", () => {
+  it("detects a bake change without relying on display metadata", () => {
     const epoch = turn("epoch", 2, {
       role: "system",
       origin: "system",
       promptBakeId: "bake-2" as Turn["promptBakeId"],
-      metadata: { kind: "prompt_epoch_boundary", cause: "compaction_undo" },
+      metadata: null,
     });
     expect(derive({ history: history({ turns: [turn("turn-1", 1), epoch] }) })).toEqual({
       state: "cold",
@@ -93,28 +155,88 @@ describe("derivePrefixCacheState", () => {
     });
   });
 
-  it("breaks warmth at a named image eviction or asset-loss turn", () => {
-    const imageLoss = turn("image-loss", 2, {
+  it("uses beginPromptEpoch-shaped turns for the shared bake rule", () => {
+    const boundary = turn("epoch", 2, {
       role: "system",
       origin: "system",
-      metadata: {
-        kind: "system_update",
-        section: "image_inclusion",
-        breaks: [{ blockId: "image-1", uri: "scratch://image.png", reason: "asset_unavailable" }],
-      },
+      promptBakeId: "bake-2" as Turn["promptBakeId"],
+      metadata: { promptEpoch: { cause: "compaction" } },
     });
-    expect(derive({ history: history({ turns: [turn("turn-1", 1), imageLoss] }) })).toEqual({
-      state: "cold",
-      reason: "image_eviction",
-    });
+    expect(bakeIdAt([boundary, turn("turn-1", 1)], "epoch", "bake-1")).toBe("bake-2");
   });
 
-  it("keeps compaction as a separate named boundary hook", () => {
-    const compaction = turn("compaction", 2, { role: "compaction", origin: "system" });
-    expect(derive({ history: history({ turns: [turn("turn-1", 1), compaction] }) })).toEqual({
-      state: "cold",
-      reason: "compaction",
+  it("breaks the prefix for eviction and loss of an already-sent image", () => {
+    for (const reason of ["budget_eviction", "asset_unavailable"] as const) {
+      expect(
+        derive({ history: history({ turns: [turn("turn-1", 1), imageNotice(reason)] }) }),
+      ).toEqual({
+        state: "cold",
+        reason: "image_eviction",
+      });
+    }
+  });
+
+  it("keeps a never-sent first-sight image notice warm", () => {
+    expect(
+      derive({
+        history: history({
+          turns: [turn("turn-1", 1), imageNotice("asset_unavailable_first_sight")],
+        }),
+      }),
+    ).toEqual({ state: "warm", reason: "reusable_prefix" });
+  });
+
+  it("does not let an unsettled compaction placeholder break warmth", () => {
+    for (const status of ["pending", "error", "cancelled"] as const) {
+      const compaction = turn("compaction", 2, {
+        role: "compaction",
+        origin: "system",
+        status,
+        completedAt: null,
+      });
+      expect(derive({ history: history({ turns: [turn("turn-1", 1), compaction] }) })).toEqual({
+        state: "warm",
+        reason: "reusable_prefix",
+      });
+    }
+  });
+
+  it("treats a response on a completed compaction boundary as cold, then warms again", () => {
+    const compaction = turn("compaction", 2, {
+      role: "compaction",
+      origin: "system",
+      promptBakeId: "bake-2" as Turn["promptBakeId"],
     });
+    expect(
+      derive({
+        history: history({
+          turns: [turn("turn-1", 1), compaction],
+          responses: [response("compaction")],
+        }),
+      }),
+    ).toEqual({ state: "cold", reason: "compaction" });
+
+    const nextTurn = turn("turn-3", 3, { role: "assistant", origin: "assistant" });
+    expect(
+      derive({
+        history: history({
+          turns: [turn("turn-1", 1), compaction, nextTurn],
+          responses: [response("turn-3")],
+        }),
+      }),
+    ).toEqual({ state: "warm", reason: "reusable_prefix" });
+  });
+
+  it("clamps a negative age to zero and classifies invalid timestamps as unavailable", () => {
+    expect(derive({ nowMs: Date.parse(RESPONSE_AT) - 1 })).toEqual({
+      state: "warm",
+      reason: "reusable_prefix",
+    });
+    expect(
+      derive({
+        history: history({ responses: [{ ...response("turn-1"), createdAt: "invalid" }] }),
+      }),
+    ).toEqual({ state: "cold", reason: "facts_unavailable" });
   });
 
   it("expires at the descriptor TTL", () => {
@@ -161,29 +283,35 @@ describe("derivePrefixCacheState", () => {
     });
   });
 
-  it("can reuse the source prefix for a fork cut at its latest turn with the same bake", () => {
+  it("routes and predicts warmth from the grandsource for a fork cut at an inherited turn", async () => {
+    const inheritedTurn = turn("grand-turn", 1, { threadId: "grand-source" });
     const forkHistory = history({
       thread: {
-        id: "fork-1",
+        id: "nested-fork",
         initialPromptBakeId: "bake-1" as Thread["initialPromptBakeId"],
         originType: "fork",
-        originTurnId: "source-turn-1",
+        originTurnId: "grand-turn",
       },
-      turns: [turn("fork-local", 2, { threadId: "fork-1" })],
+      turns: [turn("fork-local", 2, { threadId: "nested-fork" })],
       responses: [],
     });
-    const sourceHistory: PrefixCacheHistory = {
+    const grandSource: PrefixCacheHistory = {
       thread: {
-        id: "source-1",
+        id: "grand-source",
         initialPromptBakeId: "bake-1" as Thread["initialPromptBakeId"],
         originType: null,
         originTurnId: null,
       },
-      turns: [turn("source-turn-1", 1, { threadId: "source-1" })],
-      responses: [response("source-turn-1")],
+      turns: [inheritedTurn],
+      responses: [response("grand-turn")],
     };
 
-    expect(derive({ history: forkHistory, forkOwner: sourceHistory })).toEqual({
+    expect(
+      await findCutoffOwnerThreadId(forkHistory.thread as Thread, async (id) =>
+        id === inheritedTurn.id ? inheritedTurn : null,
+      ),
+    ).toBe("grand-source");
+    expect(derive({ history: forkHistory, forkOwner: grandSource })).toEqual({
       state: "warm",
       reason: "reusable_prefix",
     });

@@ -4,7 +4,7 @@
  * returns the existing row instead of clobbering or duplicating it.
  */
 import * as schema from "@meridian/database/schema";
-import { asc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import type {
   CreateModelResponseInput,
   CreateModelResponseResult,
@@ -40,6 +40,8 @@ export async function writeModelResponse(
       requestParams: null,
       responseMetadata: null,
       latencyMs: input.latencyMs ?? null,
+      predictedCacheState: input.predictedCacheState ?? null,
+      predictedCacheReason: input.predictedCacheReason ?? null,
     })
     .onConflictDoNothing({ target: schema.modelResponses.id })
     .returning();
@@ -66,6 +68,21 @@ export function createDrizzleModelResponseRepository(db: DrizzleDb): ModelRespon
         .from(schema.modelResponses)
         .where(eq(schema.modelResponses.id, id));
       return row ? mapModelResponse(row) : null;
+    },
+    async findLatestByThread(threadId) {
+      const [row] = await currentDrizzleDb(db)
+        .select({
+          turnId: schema.modelResponses.turnId,
+          sequence: schema.modelResponses.sequence,
+          model: schema.modelResponses.model,
+          createdAt: schema.modelResponses.createdAt,
+        })
+        .from(schema.modelResponses)
+        .innerJoin(schema.turns, eq(schema.turns.id, schema.modelResponses.turnId))
+        .where(eq(schema.turns.threadId, threadId))
+        .orderBy(desc(schema.turns.position), desc(schema.modelResponses.sequence))
+        .limit(1);
+      return row ? { ...row, createdAt: row.createdAt.toISOString() } : null;
     },
     async listByThread(threadId) {
       const rows = await currentDrizzleDb(db)
