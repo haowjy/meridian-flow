@@ -4,8 +4,8 @@ import { responsePartsByFinalTurnId } from "./turn-response-groups";
 
 const assistant = (id: string, status = "complete", completedAt = "2026-01-01T00:01:00Z") =>
   ({ id, role: "assistant", status, completedAt }) as unknown as Turn;
-const writer = (id: string, createdAt: string) =>
-  ({ id, role: "user", createdAt }) as unknown as Turn;
+const writer = (id: string, createdAt: string, delivery?: "steer") =>
+  ({ id, role: "user", createdAt, metadata: delivery ? { delivery } : null }) as unknown as Turn;
 const ids = (turns: readonly Turn[]) => turns.map((turn) => turn.id);
 
 describe("responsePartsByFinalTurnId", () => {
@@ -19,7 +19,7 @@ describe("responsePartsByFinalTurnId", () => {
   it("joins assistant parts across a writer steer without including the writer turn", () => {
     const turns = [
       assistant("first", "complete", "2026-01-01T00:01:00Z"),
-      writer("steer", "2026-01-01T00:00:30Z"),
+      writer("steer", "2026-01-01T00:00:30Z", "steer"),
       assistant("last", "complete", "2026-01-01T00:02:00Z"),
     ];
     const grouped = responsePartsByFinalTurnId(turns, false);
@@ -30,7 +30,7 @@ describe("responsePartsByFinalTurnId", () => {
   it("keeps a writer reply after completion in a separate response", () => {
     const turns = [
       assistant("first", "complete", "2026-01-01T00:01:00Z"),
-      writer("reply", "2026-01-01T00:01:30Z"),
+      writer("reply", "2026-01-01T00:00:30Z"),
       assistant("second", "complete", "2026-01-01T00:02:00Z"),
     ];
     const grouped = responsePartsByFinalTurnId(turns, false);

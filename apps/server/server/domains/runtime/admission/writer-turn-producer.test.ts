@@ -160,6 +160,7 @@ describe("createWriterTurnProducer", () => {
     expect(runStarter.started).toEqual([thread.id]);
     const turns = await repos.turns.listByThread(thread.id);
     expect(turns.filter((turn) => turn.role === "user")).toHaveLength(1);
+    expect(turns.find((turn) => turn.role === "user")?.metadata).toEqual({ delivery: "steer" });
   });
 
   it("treats a crash-orphaned streaming turn as no live run on the next send", async () => {

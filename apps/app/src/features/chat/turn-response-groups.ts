@@ -33,7 +33,7 @@ export function responsePartsByFinalTurnId(
     }
 
     // A writer turn is inside the reply only when the preceding assistant part
-    // said it was continuing (continuesResponse already verifies its timestamp).
+    // said it was continuing (continuesResponse reads its enqueue-time steer fact).
     if (turn.role !== "user" || parts.length === 0) finish();
   }
 
@@ -46,8 +46,8 @@ export function responsePartsByFinalTurnId(
  * finished turn and gets no settled action row. Only a turn the model ended
  * with nothing to pick it back up is finished. The next visible turn decides:
  * another assistant turn means a subagent notification woke the model; a
- * writer message sent before this turn completed is a mid-run steer. The
- * latest turn also continues while background subagents are still running.
+ * writer turn with the server-stamped steer delivery fact is a mid-run steer.
+ * The latest turn also continues while background subagents are still running.
  */
 export function continuesResponse(
   turns: readonly Turn[],
@@ -59,8 +59,6 @@ export function continuesResponse(
   const next = turns[index + 1];
   if (!next) return awaitingSubagents;
   if (next.role === "assistant") return true;
-  return (
-    next.role === "user" &&
-    (!turn.completedAt || Date.parse(next.createdAt) < Date.parse(turn.completedAt))
-  );
+  if (next.role !== "user" || !next.metadata || typeof next.metadata !== "object") return false;
+  return !Array.isArray(next.metadata) && next.metadata.delivery === "steer";
 }
