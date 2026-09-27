@@ -4,6 +4,23 @@ The agentic execution engine. It takes a user message, streams it through an LLM
 with tool use, persists side effects through thread repositories, and emits
 `OrchestratorEvent`s that the threads domain fans out to clients.
 
+## Document revision metadata
+
+Document reads, search hits, and settled writes persist
+`tool_result.content.metadata.documentRevisions` entries. Writer-reference reads
+persist `read.revision` beside `read.result`. The model projection consumes only
+the result, never these tokens. Entries use the shared `DocumentRevision` contract:
+URI is canonical at observation time, or null for ID-only folded diffs. Null
+revision means unverifiable (including diff, binary
+references, failed writes, and unverified recovery).
+
+Staged mutation results start with null. The response-settlement receipt supplies
+the token captured at apply; `persistCommittedWriteResult` copies it without a
+second document read. Re-reading here would misattribute a writer's intervening
+edit to the agent write. Future compaction queries current tokens through the
+context domain's `DocumentRevisions` port.
+
+
 ## gateway — multi-provider LLM abstraction
 
 Normalizes Anthropic, OpenAI, and OpenAI-compatible providers behind a single

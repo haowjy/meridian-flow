@@ -567,7 +567,11 @@ export function createWriteReversal(deps: {
               },
               applied.concurrent.detection,
             );
-            return sweptContent ? { ...summary, reconciled: true } : summary;
+            return {
+              ...summary,
+              revision: applied.revision,
+              ...(sweptContent ? { reconciled: true } : {}),
+            };
           };
 
           const deferred = deps.deferUntilCommit?.(async () => {

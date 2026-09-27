@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 ### Added
+- Record atomic document revisions on agent reads, searches, references, and settled writes without adding model-visible text.
 - Summarize long chats with cached requests or rolling cheap-model summaries. Keep story facts and writer preferences.
 - Default compaction to the model's usable window, pricing tier, or 400,000-token ceiling.
 - Stop a running compaction and deliver messages queued during its summary afterward.
@@ -17,6 +18,7 @@
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
 
 ### Fixed
+- Settle direct-write tool results after their document commit instead of leaving successful edits marked staged.
 - Keep pending-placeholder roles and predicates in contracts, SQL in the database package, and interruption copy in the threads domain.
 - Retry failed warm summaries cold once. Bound summary output without changing cached thinking.
 - Preflight cold transcripts before paid calls. Excerpt large document reads and split large turns at blocks.

@@ -45,6 +45,7 @@ export * from "./context-availability.js";
 export * from "./context-catalog.js";
 export * from "./context-operation.js";
 export * from "./document-links.js";
+export * from "./document-revision.js";
 export * from "./event-seq.js";
 export * from "./filetype.js";
 export * from "./http-types.js";

@@ -1699,6 +1699,9 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     seedCheckpointRestoredExplicitDelete,
     seedDiscardedDependencyPush,
     crossWorkProbeFixture: () => ({
+      runtime,
+      branchPulls,
+      branchPush,
       db,
       schema,
       persistence,

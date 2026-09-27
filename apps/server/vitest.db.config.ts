@@ -36,6 +36,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/collab-domain.reverse-turn.db.test.ts",
   "apps/server/server/domains/collab/cross-work-merge-probe.db.test.ts",
   "apps/server/server/domains/collab/response-transaction-atomicity.db.test.ts",
+  "apps/server/server/domains/collab/document-revisions.db.test.ts",
   "apps/server/server/domains/collab/writer-ingress.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/context-fs.create-untitled.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/drizzle-store.db.test.ts",

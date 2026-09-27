@@ -183,7 +183,12 @@ export type TurnReversalAccess = {
   reverseThreadContext(input: ReverseThreadContextInput): Promise<ReversalOutcome>;
 };
 
+export type VersionedDocumentRead<T> = { content: T; revision: string | null };
+
 export type MarkdownDocumentStore = {
+  readVersionedMarkdown(
+    documentId: string,
+  ): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
   ensureDocument(documentId: string): Promise<void>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
   seedFromMarkdown(
@@ -323,18 +328,22 @@ export type BranchPushAccess = {
 };
 
 export type BranchPeerShadowAccess = {
+  readEffectiveRevision(input: {
+    documentId: DocumentId;
+    threadId?: ThreadId | null;
+  }): Promise<string | null>;
   pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<unknown>;
   flushBranchLivePull(documentId: DocumentId): Promise<void>;
   readEffectiveMarkdown(input: {
     documentId: DocumentId;
     threadId?: ThreadId | null;
     responseId?: string | null;
-  }): Promise<Result<string, SyncError>>;
+  }): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
   readEffectiveHashlines?(input: {
     documentId: DocumentId;
     threadId?: ThreadId | null;
     responseId?: string | null;
-  }): Promise<Result<string[], SyncError>>;
+  }): Promise<Result<VersionedDocumentRead<string[]>, SyncError>>;
   resolveManifestMembership(input: {
     projectId: ProjectId;
     workId?: WorkId | null;

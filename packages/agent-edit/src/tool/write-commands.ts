@@ -36,7 +36,13 @@ import { scopedToolUseId } from "./write-idempotency.js";
 export function createWriteCommands(deps: {
   options: Pick<
     CreateWriteToolOptions,
-    "model" | "codec" | "lifecycle" | "createRuntimeDoc" | "coordinator" | "semanticProvenance"
+    | "model"
+    | "codec"
+    | "lifecycle"
+    | "createRuntimeDoc"
+    | "coordinator"
+    | "semanticProvenance"
+    | "documentRevision"
   >;
   threadOrigins: ThreadOriginRegistry;
   autoTurnCounter: { value: number };
@@ -92,14 +98,17 @@ export function createWriteCommands(deps: {
 
     const selection = renderer.selectReadBlocks(toDocHandle(runtime.doc), command, address);
     if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
-    return readSuccess(
-      renderer.renderRead(
-        toDocHandle(runtime.doc),
-        selection.blocks,
-        address.filePath,
-        command.format === "outline" ? "outline" : "full",
+    return {
+      ...readSuccess(
+        renderer.renderRead(
+          toDocHandle(runtime.doc),
+          selection.blocks,
+          address.filePath,
+          command.format === "outline" ? "outline" : "full",
+        ),
       ),
-    );
+      revision: options.documentRevision?.(runtime.doc) ?? null,
+    };
   }
 
   async function create(
@@ -353,6 +362,7 @@ export function createWriteCommands(deps: {
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
       phase: "committed",
+      revision: committed.ok ? committed.revision : null,
       writeId: writeIdentity.handle,
       echo:
         committed.ok && committed.summary.echo.length > 0
@@ -558,6 +568,7 @@ export function createWriteCommands(deps: {
       syncedMutation = {
         ok: true,
         journalCommitKind: "durable",
+        revision: null,
         ...(awarenessDegraded ? { awarenessDegraded: true } : {}),
         summary: mutationCommit.summarizeMutationEcho({
           runtime,
@@ -571,6 +582,7 @@ export function createWriteCommands(deps: {
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
       phase: "committed",
+      revision: syncedMutation.revision,
       writeId: writeIdentity.handle,
       echo: syncedMutation.summary.echo,
       concurrentEdits: syncedMutation.summary.concurrentEdits,

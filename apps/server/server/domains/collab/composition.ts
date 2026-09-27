@@ -440,6 +440,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     documents: {
       ensureDocument: persistence.lifecycle.ensureDocument,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
+      readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       writeDocument: runtime.markdownDocuments.writeDocument,
       editDocument: runtime.markdownDocuments.editDocument,

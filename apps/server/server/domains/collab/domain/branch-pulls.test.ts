@@ -16,8 +16,9 @@ function docWithText(value: string): Y.Doc {
 }
 
 describe("BranchPullService", () => {
-  it("does not hold the live coordinator lock while acquiring branch locks", async () => {
+  it("releases document and branch locks before the thread-peer thread lock", async () => {
     let liveLocked = false;
+    let branchLocked = false;
     const service = createBranchPullService({
       liveCoordinator: {
         withDocument: async (_documentId, fn) => {
@@ -39,13 +40,24 @@ describe("BranchPullService", () => {
           expect(liveLocked).toBe(false);
           return emptyYjsUpdate();
         },
-        readBranch: async (_branchId: string, fn: Parameters<BranchCoordinator["readBranch"]>[1]) =>
-          fn(docWithText("thread"), undefined as never),
+        readBranch: async (
+          _branchId: string,
+          fn: Parameters<BranchCoordinator["readBranch"]>[1],
+        ) => {
+          branchLocked = true;
+          try {
+            return await fn(docWithText("thread"), undefined as never);
+          } finally {
+            branchLocked = false;
+          }
+        },
       } as unknown as BranchCoordinator,
       branches: {
         listActiveWorkDraftBranchIds: async () => ["work"],
         ensureWorkDraftBranch: async () => ({ branchId: "work" }),
         ensureThreadPeerBranch: async () => {
+          // The Drizzle implementation acquires the thread mutation lock here.
+          expect(branchLocked).toBe(false);
           expect(liveLocked).toBe(false);
           return { branchId: "thread" };
         },

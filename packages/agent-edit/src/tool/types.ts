@@ -24,6 +24,8 @@ export type WriteOutcome = WriteOutcomeBase &
   ({ status: "success"; phase: WriteSuccessPhase } | { status: Exclude<WriteStatus, "success"> });
 
 interface WriteOutcomeBase {
+  /** Host-only identity; never included in the model result. */
+  revision: string | null;
   command: WriteCommandName;
   isError: boolean;
   /** Stable model-facing write handle for successful mutating writes, e.g. w3. */
@@ -209,6 +211,7 @@ export interface ResponseCommitDocumentResult {
 }
 
 export interface ResponseCommitWriteReceipt {
+  revision: string | null;
   writeId: string;
   settlementId: string;
   result: AgentEditResultV1;

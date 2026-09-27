@@ -52,6 +52,7 @@ export interface ContextWriteResult {
 }
 
 export interface ContextEnsureTrackedDocumentResult {
+  uri: string;
   documentId: string;
   created: boolean;
 }
@@ -156,6 +157,9 @@ export interface SearchMatch {
 
 /** Every passage one file contributed to a {@link ContextPort.search}. */
 export interface SearchResult {
+  /** Host-only source identity; tools strip it from model-facing output. */
+  documentId: string;
+  revision: string | null;
   /** Canonical `scheme://path` URI of the matched file. */
   uri: string;
   /** Matching passages in file order, capped by the adapter. Never empty. */

@@ -72,6 +72,7 @@ function documentSyncProbe() {
       ensured.push(documentId);
     },
     readAsMarkdown: async () => ({ ok: true, value: "" }),
+    readVersionedMarkdown: async () => ({ ok: true, value: { content: "", revision: null } }),
     seedFromMarkdown: async (documentId) => {
       seeded.push(documentId);
       return { ok: true, value: null };
@@ -256,6 +257,7 @@ describe("ContextFS createUntitledDocument", () => {
       ensureDocument: vi.fn(),
       writeDocument,
       readAsMarkdown: vi.fn(),
+      readVersionedMarkdown: vi.fn(),
       seedFromMarkdown: vi.fn().mockResolvedValue({ ok: true, value: null }),
       editDocument: vi.fn(),
     } satisfies MarkdownDocumentStore;
