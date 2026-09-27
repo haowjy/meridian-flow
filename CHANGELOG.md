@@ -11,10 +11,12 @@
 - Show only "Queued" under a writer message the model has not read yet.
 - Keep "needs your answer" on a chat when the writer sends while a question is parked.
 - One chat spacing scale across turns, cards, prose, and composer; non-chat prose keeps its spacing.
-- Settled assistant turns get Copy (rich HTML and Markdown), turn info (model, calls, output speed, first-token time, tokens, turn cache hit, running thread cache hit and cache reset counts), and debug-gated model-call inspection.
+- Finished assistant turns get Copy (rich HTML and Markdown), turn info (model, calls, output speed, first-token time, tokens, turn cache hit, running thread cache hit and cache reset counts), and debug-gated model-call inspection.
 - Record per-call latency, time to first output, and generation time at provider-event arrival; omit generation time after consumer backpressure.
 - Gateway owns provider retries; honor retry-after hints and retry vetoes.
-- Show subagent lifecycle in chat by delivery mode: background runs get a launch line, a running panel with each child's current tool, a quiet finished line, and a report line; foreground runs get one live card that expands to the result. A tab-row Subagents pop-up lists every run with Show (jumps to its latest point) and Open, and child chats show their full path.
+- Show subagents the same way everywhere: mark with a status ring, agent name, then description. Launch cards stream the child's current tool and expand to the report once finished; a running panel and a Subagents pop-up list every run; finished lines sit inline and merge when runs finish together; reading a report is a folded step that links back to its card; only the chat icon opens a child chat, and child chats show their full path.
+- Only a turn the model finished on its own ends a reply: notifications, mid-stream steers, and turns awaiting background subagents continue it, and Copy takes the final answer's text, reports, and images.
+- Remove the standalone project-less chat route; a chat always lives in a project.
 - Disable ask_user until its rework (#601); no agent is offered the tool.
 - `server`: `GET /api/projects/:projectId/threads/by-ref/:ref` resolves a live `cN`/`pN` thread handle for the project owner; the ref grammar moved to `@meridian/contracts/threads`. `./mf` accepts refs wherever it takes a thread (default project, or `--project`).
 
