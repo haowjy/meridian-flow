@@ -1,47 +1,28 @@
 /** Fail-safe environment gate tests for debug-only server surfaces. */
 import { describe, expect, it } from "vitest";
-import {
-  resolveModelRequestDebugCaptureEnabled,
-  resolveObsVerbose,
-  resolveRecentEventsEnabled,
-} from "./env.js";
+import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 
-describe("resolveModelRequestDebugCaptureEnabled", () => {
-  it.each(["development"])("enables capture in local %s", (rawNodeEnv) => {
-    expect(resolveModelRequestDebugCaptureEnabled({ rawNodeEnv, rawAppEnv: "dev" })).toBe(true);
-  });
-
-  it("allows the local override to disable capture", () => {
-    expect(
-      resolveModelRequestDebugCaptureEnabled({
-        rawNodeEnv: "development",
-        rawAppEnv: "dev",
-        debugCaptureOverride: "0",
-      }),
-    ).toBe(false);
+describe("resolveDebugPathsEnabled", () => {
+  it.each([
+    { rawNodeEnv: "development", rawAppEnv: "dev" },
+    { rawNodeEnv: "test", rawAppEnv: "dev" },
+    { rawNodeEnv: "development", rawAppEnv: undefined },
+    { rawNodeEnv: "production", rawAppEnv: "staging" },
+    { rawNodeEnv: "development", rawAppEnv: "staging" },
+  ])("is on only with the explicit flag outside production: %o", (environment) => {
+    expect(resolveDebugPathsEnabled({ ...environment, debugFlag: "1" })).toBe(true);
+    expect(resolveDebugPathsEnabled({ ...environment, debugFlag: "true" })).toBe(true);
+    expect(resolveDebugPathsEnabled(environment)).toBe(false);
+    expect(resolveDebugPathsEnabled({ ...environment, debugFlag: "0" })).toBe(false);
   });
 
   it.each([
     { rawNodeEnv: "production", rawAppEnv: "production" },
+    { rawNodeEnv: "development", rawAppEnv: "production" },
     { rawNodeEnv: "production", rawAppEnv: "dev" },
-    { rawNodeEnv: "development", rawAppEnv: "staging" },
-  ])("cannot be enabled outside local dev/test: %o", (environment) => {
-    expect(
-      resolveModelRequestDebugCaptureEnabled({
-        ...environment,
-        debugCaptureOverride: "1",
-      }),
-    ).toBe(false);
-  });
-});
-
-describe("resolveRecentEventsEnabled", () => {
-  it.each(["development"])("enables recent events in %s", (rawNodeEnv) => {
-    expect(resolveRecentEventsEnabled({ rawNodeEnv })).toBe(true);
-  });
-
-  it.each(["production", "staging", undefined])("fails closed for NODE_ENV=%s", (rawNodeEnv) => {
-    expect(resolveRecentEventsEnabled({ rawNodeEnv })).toBe(false);
+    { rawNodeEnv: "production", rawAppEnv: undefined },
+  ])("never turns on in production, even with the flag: %o", (environment) => {
+    expect(resolveDebugPathsEnabled({ ...environment, debugFlag: "1" })).toBe(false);
   });
 });
 

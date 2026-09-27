@@ -1,9 +1,9 @@
 /**
- * Canonical model-facing thread handle grammar: `cN` for primaries, `pN` for
- * subagents (spawn). Allocation stays with the repository adapters; this module
- * only formats and parses handles.
+ * Canonical thread handle grammar: `cN` for primaries, `pN` for subagents, from one
+ * per-project counter. The model addresses threads by ref, and the HTTP API resolves
+ * one within a project. Allocation stays with the server's repository adapters.
  */
-import type { Thread } from "@meridian/contracts/threads";
+import type { Thread } from "./index.js";
 
 const THREAD_REF_PATTERN = /^([pc])([1-9]\d*)$/;
 

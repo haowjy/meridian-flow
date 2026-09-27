@@ -103,6 +103,10 @@ noninteractive libpq authentication (`PGPASSWORD` or `-w`).
 Setup: [DEVELOPMENT.md](DEVELOPMENT.md). Dev tooling rules:
 [tools/dev/AGENTS.md](tools/dev/AGENTS.md).
 
+Driving or inspecting the running app (threads, docs, mock model, logs): use
+`./mf`, not the browser, unless it is visual. See
+[docs/debugging.md](docs/debugging.md#drive-the-app-from-the-cli).
+
 ## Build and test
 
 `pnpm check` is the full gate. `pnpm test:db` forces the DB suite.

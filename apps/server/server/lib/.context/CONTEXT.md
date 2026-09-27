@@ -12,7 +12,7 @@ collaboration. Concrete adapters are chosen in `compose.ts`; nothing in
 |---|---|
 | `env.ts` | Typed env schema via `@t3-oss/env-core` + zod. Single source of truth for server env vars. |
 | `db.ts` | Singleton Drizzle `PostgresJsDatabase` client, lazily created from `DATABASE_URL`. |
-| `event-sink-factory.ts` | Env-driven observability adapter factory (`local` stdout + optional JSONL, or no-op); local dev/test composition also exposes the recent-event query port. |
+| `event-sink-factory.ts` | Env-driven observability adapter factory (`local` stdout + optional JSONL, or no-op); composition also exposes the recent-event query port when the debug gate (`APP_DEBUG`) is open. |
 | `observability.ts` | Process-scoped deferred EventSink; startup binds the concrete sink before validation/logging. |
 | `object-store-factory.ts` | Env-driven object-store adapter factory. |
 | `compose.ts` | `AppServices` type, production adapter-port construction, pure runtime service wiring, and in-memory stub factory for tests/dev. |
@@ -67,13 +67,14 @@ represented as a fully-typed slot:
 | `accountSkillInstalls` | packages | Account-owned skill installs (unique per owner and slug) |
 | `interruptRegistry` | runtime | In-memory interrupt registry |
 | `eventSink` | observability | Process-scoped deferred sink bound to env-selected local/no-op adapter |
-| `eventQuery` | observability | Optional recent-event query port, present only for local dev/test composition |
+| `eventQuery` | observability | Optional recent-event query port, present only when the debug gate is open |
 | `preferences` | preferences | Drizzle project preferences repository |
 | `orchestrator` | runtime | `RunTurnPort` — the full orchestrator |
 | `runner` | runtime | `TurnRunner` with child-run registry |
 | `toolRegistry` | runtime | Name-keyed tool registration map |
 | `toolExecutor` | runtime | Dispatches tool calls to registered handlers |
-| `modelRequestDebug` | runtime | Env-selected model request debug store |
+| `modelRequestDebug` | runtime | In-memory capture when the debug gate is open, noop otherwise |
+| `mockModelScript` | runtime | Scripted replies for the in-process mock model; null with real providers or when the debug gate (`APP_DEBUG`, never production) is closed |
 | `runOwnership` | runtime | One PostgreSQL advisory-lock session per server process; owns live thread runs across replicas |
 
 ## Tool wiring
@@ -142,6 +143,8 @@ the handlers: Nitro treats test modules under `routes/` as production routes.
 | `work-attachment.ts` | Determines a new thread's Work: root omission/null binds No Work; children inherit the parent's primary. |
 | `project-preferences-route.ts` | Unit-testable handlers for project preferences GET/PUT. |
 | `project-results-route.ts` | Ownership-gated project result listing and signed artifact URL refresh. |
+| `thread-ref-route.ts` | Owner-gated `cN`/`pN` handle lookup for `GET /api/projects/:projectId/threads/by-ref/:ref`; malformed or unknown refs are 404. |
+| `mock-model-script-route.ts` | `/api/debug/mock-model/script` queue/list/clear; 404 when no scriptable mock is composed. |
 | `context-read-route.ts` | Ownership-gated context path resolution. Tracked files return content/schema; binary refs resolve signed object-store URLs. |
 | `document-access.ts` | `DocumentAccessPort` interface plus allow-all and Drizzle adapters for Yjs document authorization. |
 | `backend-policy.ts` | Small policy helpers for backend selection/guarding. |

@@ -79,6 +79,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.2
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       ajv:
         specifier: ^8.20.0
         version: 8.20.0
@@ -106,6 +109,9 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 4.1.9(@types/node@24.13.2)(jsdom@29.1.1)(vite@8.1.0(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+      ws:
+        specifier: ^8.21.0
+        version: 8.21.0
 
   apps/app:
     dependencies:

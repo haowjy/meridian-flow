@@ -8,8 +8,5 @@ export {
   createNoopModelRequestDebugStore,
   NoopModelRequestDebugStore,
 } from "./adapters/noop/noop-model-request-debug-store.js";
-export {
-  createModelRequestDebugStoreFromEnv,
-  isModelRequestDebugCaptureEnabled,
-} from "./create-model-request-debug-store.js";
+export { createModelRequestDebugStore } from "./create-model-request-debug-store.js";
 export type { ModelRequestDebugStore } from "./ports/model-request-debug-store.js";

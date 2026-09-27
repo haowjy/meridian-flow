@@ -15,10 +15,38 @@ Local-dev-only utilities. Not loaded by the application runtime.
 - **Readiness** — `dev-readiness.ts` (real HTTP probes before reporting started)
 - **Tailscale lifecycle** — `lib/tailscale-lifecycle.ts` (stale route pruning, verified external routes)
 - **Worktree cleanup** — `lib/worktree-cleanup.ts` + `prune-worktrees.ts` (merged-branch resource teardown)
-- **Diagnostic queries** — `debug-http-client.ts` owns current-worktree Portless
-  discovery, dev auth, response bounds, and the five-second deadline.
-  `debug-events.ts` reads safe event records; `debug-model-context.ts` reads the
-  content-bearing model-request seam through the app's shared projection.
+- **`./mf` dev CLI** — `cli/` is the agent-facing CLI behind the repo-root `./mf`
+  shim: a thin wrapper over the app's own HTTP routes and thread WebSocket. It
+  never reads Postgres and holds no business logic; when the API cannot answer a
+  question, add a server route behind the debug gate instead of a CLI-side query.
+  - `cli/core/` is the framework and knows no domain: `command.ts` (`CommandSpec`,
+    `CommandGroup`, strict flat-arg parsing, option helpers), `output.ts` (text /
+    `--json` / NDJSON), `cli-error.ts` (the exit-code contract), `session.ts`
+    (Portless discovery, in-memory dev-login cookie, bounded requests).
+  - `cli/commands/<group>/` holds one command group each (`thread`, `doc`,
+    `project`, `mock`, `log`, `seed`, `api`): one file per command, an `index.ts`
+    exporting the `CommandGroup`, and the group's own helpers (thread:
+    `socket.ts`, `stream.ts`, `events-map.ts`, `transcript.ts`, `resolve.ts`;
+    project: `resolve.ts`; doc: `uri.ts`; mock: `queue.ts`). Groups may import
+    another group's helper module (`thread/send` uses `mock/queue`, `doc/uri`),
+    never `main.ts`; `core/` imports no group.
+  - **Adding a group:** create `cli/commands/<group>/` with its commands and an
+    `index.ts` exporting a `CommandGroup`, then list it in `GROUPS` in
+    `cli/main.ts`. Help, parsing, output, and errors come from `core/`.
+  - **Output contract:** compact text by default; `--json` prints exactly one
+    object, or NDJSON for streams with the terminal envelope last; errors go to
+    stderr. `EXIT` in `cli/core/cli-error.ts` is the exit-code contract. Set
+    `process.exitCode`; never call `process.exit()` (it truncates piped output).
+  - **Missing data** means a new server route behind the debug gate
+    (`resolveDebugPathsEnabled`, `APP_DEBUG=1`, never production), which
+    `pnpm dev` opens by default.
+  - **Imports:** `cli/` may import `@meridian/contracts` (wire types, schemas,
+    path helpers) so it cannot drift from the API, and no other package. A group
+    that needs more (e.g. a live Yjs editor peer needing prosemirror-schema,
+    markup, agent-edit) is the trigger to move `./mf` into its own workspace
+    package rather than widening the tools/dev import rule.
+  - Tests share `cli/test-support/fake-stack.ts` (fake API + thread socket on the
+    real contracts); `cli/main.test.ts` also boots the real `./mf` shim.
 
 ## Directory layout
 
@@ -42,9 +70,7 @@ tools/dev/
 ├── docker-compose.yml
 ├── bootstrap.ts               pnpm bootstrap
 ├── check-db-gate.ts           Reachability-aware local `pnpm check` DB gate
-├── debug-http-client.ts       Authenticated bounded Portless HTTP client
-├── debug-events.ts            Authenticated current-worktree EventQuery client
-├── debug-model-context.ts     Canonical model-request JSON query client
+├── cli/                       ./mf: main.ts (GROUPS, help, dispatch), core/, commands/<group>/, test-support/, fixtures/
 ├── dev-tmux.ts                pnpm dev entry point (thin — see session plan, readiness, tailscale)
 ├── dev-session-plan.ts        Session command construction + redaction + internal API origin
 ├── dev-readiness.ts           HTTP readiness probes (server /readyz + app origin)

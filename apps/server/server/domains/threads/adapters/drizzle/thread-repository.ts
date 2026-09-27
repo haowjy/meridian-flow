@@ -12,6 +12,7 @@ import type {
   TurnRole,
   TurnStatus,
 } from "@meridian/contracts/threads";
+import { formatThreadRef } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, getTableColumns, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -21,7 +22,6 @@ import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
 import { toThreadListItem } from "../../domain/thread-list-projection.js";
-import { formatThreadRef } from "../../domain/thread-ref.js";
 import type {
   CreateThreadInput,
   DerivedPrimaryThreadFactory,
