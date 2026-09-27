@@ -251,6 +251,7 @@ function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
                 agentName={entries[index]?.agentName}
                 status={subagentStatus(entries[index]?.outcome)}
                 className="size-5 border-background text-[10px]"
+                decorative
               />
             </span>
           ))}
@@ -347,6 +348,7 @@ function DeliveryEventRow({ turn, childThreadId, title, subagentUpdate }: Delive
               agentName={agentName}
               status={subagentStatus(outcome)}
               className="size-5 text-[10px]"
+              decorative
             />
             <span className="min-w-0 flex-1 truncate">
               <span className="font-medium text-foreground">{name}</span>{" "}
@@ -360,6 +362,7 @@ function DeliveryEventRow({ turn, childThreadId, title, subagentUpdate }: Delive
               agentName={agentName}
               status={subagentStatus(outcome)}
               className="size-5 text-[10px]"
+              decorative
             />
             <span>
               {name} {outcome === "succeeded" ? <Trans>finished</Trans> : <Trans>stopped</Trans>}

@@ -211,7 +211,7 @@ describe("SpawnReportCard", () => {
         />,
       ),
     );
-    expect(document.querySelector('[aria-label="Critic stopped"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Stopped"]')).not.toBeNull();
   });
 
   it.each([
@@ -239,8 +239,8 @@ describe("SpawnReportCard", () => {
         />,
       ),
     );
-    const status = outcome === "succeeded" ? "finished" : "stopped";
-    expect(host.querySelector(`[aria-label="Critic ${status}"]`)).not.toBeNull();
+    const status = outcome === "succeeded" ? "Finished" : "Stopped";
+    expect(host.querySelector(`[aria-label="${status}"]`)).not.toBeNull();
     expect(host.textContent).not.toContain("Saved result");
     await act(async () => findButton("Show result")?.click());
     expect(host.textContent).toContain("Saved result");
@@ -279,7 +279,7 @@ describe("SpawnReportCard", () => {
         />,
       ),
     );
-    expect(host.querySelector('[aria-label="Critic finished"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="Finished"]')).not.toBeNull();
     expect(host.textContent).not.toContain("Child report is unavailable");
   });
 

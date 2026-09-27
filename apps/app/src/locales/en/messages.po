@@ -336,8 +336,8 @@ msgstr "{minutes}m"
 
 #. placeholder {0}: status === "running" ? t`running` : status === "done" ? t`finished` : t`stopped`
 #: src/features/chat/SubagentMark.tsx
-msgid "{name} {0}"
-msgstr "{name} {0}"
+#~ msgid "{name} {0}"
+#~ msgstr "{name} {0}"
 
 #: src/features/chat/SubagentMark.tsx
 #~ msgid "{name} {status}"
@@ -1891,11 +1891,11 @@ msgstr "Finish reopening"
 #~ msgstr "Finish the current chat attempt"
 
 #: src/features/chat/AssistantTurn.tsx
-#: src/features/chat/SubagentMark.tsx
 msgid "finished"
 msgstr "finished"
 
 #: src/features/chat/SubagentHeader.tsx
+#: src/features/chat/SubagentMark.tsx
 msgid "Finished"
 msgstr "Finished"
 
@@ -3365,10 +3365,11 @@ msgid "rule"
 msgstr "rule"
 
 #: src/features/chat/SubagentMark.tsx
-msgid "running"
-msgstr "running"
+#~ msgid "running"
+#~ msgstr "running"
 
 #: src/features/chat/SubagentHeader.tsx
+#: src/features/chat/SubagentMark.tsx
 msgid "Running"
 msgstr "Running"
 
@@ -3650,10 +3651,10 @@ msgid "Stop run"
 msgstr "Stop run"
 
 #: src/features/chat/AssistantTurn.tsx
-#: src/features/chat/SubagentMark.tsx
 msgid "stopped"
 msgstr "stopped"
 
+#: src/features/chat/SubagentMark.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Stopped"
 msgstr "Stopped"

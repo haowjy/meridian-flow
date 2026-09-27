@@ -336,8 +336,8 @@ msgstr "{minutes}分钟"
 
 #. placeholder {0}: status === "running" ? t`running` : status === "done" ? t`finished` : t`stopped`
 #: src/features/chat/SubagentMark.tsx
-msgid "{name} {0}"
-msgstr ""
+#~ msgid "{name} {0}"
+#~ msgstr ""
 
 #: src/features/chat/SubagentMark.tsx
 #~ msgid "{name} {status}"
@@ -1891,13 +1891,13 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/AssistantTurn.tsx
-#: src/features/chat/SubagentMark.tsx
 msgid "finished"
 msgstr "已完成"
 
 #: src/features/chat/SubagentHeader.tsx
+#: src/features/chat/SubagentMark.tsx
 msgid "Finished"
-msgstr ""
+msgstr "已完成"
 
 #: src/features/chat/DraftDock.tsx
 msgid "Finishing close"
@@ -3361,12 +3361,13 @@ msgid "rule"
 msgstr ""
 
 #: src/features/chat/SubagentMark.tsx
-msgid "running"
-msgstr ""
+#~ msgid "running"
+#~ msgstr ""
 
 #: src/features/chat/SubagentHeader.tsx
+#: src/features/chat/SubagentMark.tsx
 msgid "Running"
-msgstr ""
+msgstr "运行中"
 
 #. placeholder {0}: fieldLabel(field).toLowerCase()
 #: src/features/project/work/WorkMetadata.tsx
@@ -3646,10 +3647,10 @@ msgid "Stop run"
 msgstr ""
 
 #: src/features/chat/AssistantTurn.tsx
-#: src/features/chat/SubagentMark.tsx
 msgid "stopped"
 msgstr "已停止"
 
+#: src/features/chat/SubagentMark.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Stopped"
 msgstr "已取消"

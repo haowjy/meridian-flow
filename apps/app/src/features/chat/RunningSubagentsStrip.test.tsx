@@ -122,7 +122,7 @@ describe("RunningSubagentsStrip", () => {
 
     const mark = host.querySelector<HTMLElement>('[role="img"]');
     expect(mark?.textContent).toBe("S");
-    expect(mark?.getAttribute("aria-label")).toBe("Subagent running");
+    expect(mark?.getAttribute("aria-label")).toBe("Running");
     expect(host.textContent).toContain("Codex scan");
   });
 
