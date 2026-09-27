@@ -140,7 +140,7 @@ export function SubagentRow({
             aria-expanded={expanded}
             data-subagent-thread-ids={threadIds}
             onClick={onToggle}
-            className={cn("focus-ring flex w-full min-w-0 items-center rounded-sm text-left", gap)}
+            className={cn("focus-ring flex min-w-0 items-center rounded-sm text-left", gap)}
           >
             {identity}
             {<DisclosureChevron expanded={Boolean(expanded)} />}
