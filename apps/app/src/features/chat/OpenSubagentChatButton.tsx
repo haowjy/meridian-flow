@@ -9,18 +9,15 @@ import { subagentMarkName } from "./subagent/display";
 export function OpenSubagentChatButton({
   threadId,
   agentName,
-  openThread: openThreadOverride,
   onOpened,
 }: {
   threadId: string | null | undefined;
   /** The agent profile name, not the task title, so the label stays short. */
   agentName: string | null | undefined;
-  /** Surfaces outside the chat's navigation context (the tab-row pop-up) pass their own. */
-  openThread?: (threadId: string) => void;
   onOpened?: () => void;
 }) {
   const contextOpenThread = useOpenChatThread();
-  const openThread = openThreadOverride ?? contextOpenThread;
+  const openThread = contextOpenThread;
   if (!threadId || !openThread) return null;
   const name = subagentMarkName(agentName);
   const label = t`Open "${name}"`;

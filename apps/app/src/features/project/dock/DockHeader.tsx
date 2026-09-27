@@ -27,7 +27,6 @@ import type { ReactNode } from "react";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
-import { useChatNavigation } from "../routing/chat-navigation";
 
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import type { DockView } from "./dock-view-store";
@@ -57,7 +56,6 @@ export function DockHeader({
     rootThreadId: threadId ?? "",
     seed: null,
   });
-  const { openChat } = useChatNavigation();
   return (
     <header className="flex h-10 shrink-0 items-stretch pl-2">
       {/* No overflow-hidden: truncation is owned by the min-w-0/truncate chain
@@ -66,11 +64,7 @@ export function DockHeader({
       <div className="flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
         {view === "chat" ? threadSelect : null}
         {view === "chat" && threadId ? (
-          <SubagentHeader
-            threadId={threadId}
-            nodes={activity.activity.descendants}
-            openThread={openChat}
-          />
+          <SubagentHeader threadId={threadId} nodes={activity.activity.descendants} />
         ) : null}
       </div>
       <DockViewSwitch view={view} views={views} onSelectView={onSelectView} />

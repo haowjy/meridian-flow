@@ -11,14 +11,15 @@ import { requestConversationReveal } from "./conversation-reveal";
 import type { ToolView } from "./group-delivery-segments";
 import { ReportContent, type ReportContentValue } from "./ReportContent";
 import { useSubagentRun } from "./subagent/ActivityContext";
-import { resolveSubagentName } from "./subagent/display";
+import type { SubagentRun } from "./subagent/run-model";
+import { SubagentIdentityName } from "./subagent/SubagentRow";
 import { stringInput, toolInputObject } from "./tool-command";
 import type { ToolExpand, ToolRenderer } from "./tool-renderers";
 
 function ThreadReportTitle({ tool }: { tool: ToolView }) {
   const ref = stringInput(toolInputObject(tool), "ref") ?? "";
   const subagent = useSubagentRun({ ref });
-  const name = resolveSubagentName({ agentName: subagent?.agentName });
+  const run = subagent ?? fallbackSubagentRun;
   const description = subagent?.description;
   const originTurnId = subagent?.originTurnId;
   const parentThreadId = subagent?.parentThreadId;
@@ -40,10 +41,10 @@ function ThreadReportTitle({ tool }: { tool: ToolView }) {
         }
         className="focus-ring relative z-10 rounded-sm text-left underline decoration-border decoration-1 underline-offset-[3px] transition-colors hover:text-jade-text hover:decoration-jade-text"
       >
-        <span className="font-medium text-foreground">{name}</span>
+        <SubagentIdentityName run={run} />
       </button>
     ) : (
-      <span className="font-medium text-foreground">{name}</span>
+      <SubagentIdentityName run={run} />
     );
   const line = (
     <>
@@ -79,4 +80,19 @@ export function threadReportContent(output: JsonValue | null): ReportContentValu
 export const THREAD_REPORT_RENDERER: ToolRenderer = {
   title: (tool) => <ThreadReportTitle tool={tool} />,
   expand: threadReportExpand,
+};
+
+const fallbackSubagentRun: SubagentRun = {
+  threadId: null,
+  ref: null,
+  execution: null,
+  agentName: "Subagent",
+  description: null,
+  status: "unknown",
+  startedAt: null,
+  endedAt: null,
+  liveTool: null,
+  originTurnId: null,
+  parentThreadId: null,
+  deliveryMode: null,
 };

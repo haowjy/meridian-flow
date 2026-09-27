@@ -5,21 +5,17 @@ import type { ThreadActivityNode } from "@meridian/contracts/threads";
 import { Network } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
 import { requestConversationReveal } from "./conversation-reveal";
-import { OpenSubagentChatButton } from "./OpenSubagentChatButton";
-import { resolveSubagentName, subagentStatus } from "./subagent/display";
+import { subagentStatus } from "./subagent/display";
 import { runFromActivity } from "./subagent/run-model";
-import { SubagentIdentity, SubagentToolLine } from "./subagent/SubagentRow";
+import { matchesSubagentIdentity, SubagentRow, SubagentToolLine } from "./subagent/SubagentRow";
 
 export function SubagentHeader({
   threadId,
   nodes,
-  openThread,
 }: {
   threadId: string;
   nodes: ThreadActivityNode[];
-  openThread: (threadId: string) => void;
 }) {
   const [filter, setFilter] = useState("");
   const filterId = useId();
@@ -37,11 +33,7 @@ export function SubagentHeader({
       ),
     [directNodes],
   );
-  const visible = ordered.filter((node) =>
-    `${resolveSubagentName(node)} ${node.title ?? ""}`
-      .toLocaleLowerCase()
-      .includes(filter.toLocaleLowerCase()),
-  );
+  const visible = ordered.filter((node) => matchesSubagentIdentity(runFromActivity(node), filter));
   if (!directNodes.length) return null;
   const running = directNodes.filter((node) => node.status.kind === "awake");
   const finished = visible.filter((node) => node.status.kind !== "awake");
@@ -99,7 +91,6 @@ export function SubagentHeader({
                   key={node.threadId}
                   node={node}
                   onShow={show}
-                  openThread={openThread}
                   onOpen={() => setOpen(false)}
                 />
               ))}
@@ -117,7 +108,6 @@ export function SubagentHeader({
                   key={node.threadId}
                   node={node}
                   onShow={show}
-                  openThread={openThread}
                   onOpen={() => setOpen(false)}
                 />
               ))}
@@ -132,52 +122,22 @@ export function SubagentHeader({
 function SubagentPopoverRow({
   node,
   onShow,
-  openThread,
   onOpen,
 }: {
   node: ThreadActivityNode;
   onShow: (node: ThreadActivityNode) => void;
-  openThread: (threadId: string) => void;
   onOpen: () => void;
 }) {
   const running = node.status.kind === "awake";
-  const run = runFromActivity(node);
-  const content = (
-    <>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span
-          className={cn(
-            "flex min-w-0 items-center gap-[var(--chat-space-row)]",
-            !running && "text-foreground/75",
-          )}
-        >
-          <SubagentIdentity run={{ ...run, status: subagentStatus(node.spawnStatus, running) }} />
-        </span>
-        {running && node.currentTool ? <SubagentToolLine run={run} /> : null}
-      </span>
-    </>
-  );
-  const rowClassName = "flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-2 text-left";
+  const run = { ...runFromActivity(node), status: subagentStatus(node.spawnStatus, running) };
   return (
-    <li className="flex items-center gap-1 rounded text-sm">
-      {node.originTurnId ? (
-        // The row finds the subagent in this chat; only the chat icon leaves it.
-        <button
-          type="button"
-          title={t`Jump to in chat`}
-          onClick={() => onShow(node)}
-          className={cn("focus-ring transition-colors hover:bg-muted", rowClassName)}
-        >
-          {content}
-        </button>
-      ) : (
-        <div className={rowClassName}>{content}</div>
-      )}
-      <OpenSubagentChatButton
-        threadId={node.threadId}
-        agentName={node.agentName}
-        openThread={openThread}
+    <li className="py-1 text-sm">
+      <SubagentRow
+        run={run}
+        onActivate={node.originTurnId ? () => onShow(node) : undefined}
+        activateLabel={t`Jump to in chat`}
         onOpened={onOpen}
+        detail={running && node.currentTool ? <SubagentToolLine run={run} /> : undefined}
       />
     </li>
   );

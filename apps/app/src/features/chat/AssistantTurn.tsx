@@ -1,17 +1,13 @@
 /** AssistantTurn — single render path for assistant turns. */
 
-import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { type Block, isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
-import { ChevronDown, MessageSquareText } from "lucide-react";
 import { memo, useMemo } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
-import { cn } from "@/lib/utils";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
-import { ActivityRow } from "./ActivityRow";
 import { AssistantTurnActions } from "./AssistantTurnActions";
 import { assistantTurnCopyMarkdown } from "./assistant-turn-copy";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
@@ -20,7 +16,6 @@ import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlock
 import { ErrorBlock } from "./ErrorBlock";
 import { groupDeliverySegments } from "./group-delivery-segments";
 import { type DirectInvocationResult, directResultsForTurn } from "./invocation-direct-result";
-import { OpenSubagentChatButton } from "./OpenSubagentChatButton";
 import { ProcessDisclosure } from "./ProcessDisclosure";
 import {
   hasVisibleReasoningText,
@@ -30,11 +25,8 @@ import {
 } from "./partition-turn";
 import { ReportContent } from "./ReportContent";
 import { StreamingText } from "./StreamingText";
-import { useSubagentDisclosure } from "./subagent/DisclosureStore";
-import { resolveSubagentName, subagentStatus } from "./subagent/display";
-import { SubagentMark } from "./subagent/SubagentMark";
+import { DeliveryEventRows } from "./subagent/DeliveryEventRows";
 import type { SubagentUpdateMetadata } from "./subagent/update";
-import { groupAdjacentSubagentUpdates } from "./subagent/update";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
 import { hasTurnEditsReceiptContent, TurnEditsReceipt } from "./TurnEditsReceipt";
@@ -193,168 +185,6 @@ function AssistantTurnComponent({
       ) : null}
       {showsInkDrop ? <InkDrop /> : null}
     </div>
-  );
-}
-
-type DeliveryEvent = NonNullable<AssistantTurnProps["deliveryEvents"]>[number];
-
-function DeliveryEventRows({ events }: { events: DeliveryEvent[] }) {
-  const groups = groupAdjacentSubagentUpdates(events);
-  return (
-    <>
-      {groups.map((group) => {
-        if (group.length > 1) {
-          return (
-            <MergedCompletionRow
-              key={group.map((event) => event.turn.id).join(":")}
-              events={group}
-            />
-          );
-        }
-        const event = group[0];
-        return event ? <DeliveryEventRow key={event.turn.id} {...event} /> : null;
-      })}
-    </>
-  );
-}
-
-function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
-  const entries = events.map((event) => {
-    const update = event.subagentUpdate;
-    return {
-      event,
-      update,
-      agentName: update?.agentName,
-      name: resolveSubagentName({ agentName: update?.agentName }),
-      description: event.title ?? null,
-      threadId: update?.childThreadId ?? event.childThreadId,
-      outcome: update?.outcome,
-    };
-  });
-  const names = entries.map(({ name }) => name);
-  const stopped = entries.filter(({ outcome }) => outcome === "failed" || outcome === "cancelled");
-  const list = (values: string[]) =>
-    new Intl.ListFormat(i18n.locale, { style: "long", type: "conjunction" }).format(values);
-  const childIds = entries.flatMap(({ threadId }) => (threadId ? [threadId] : []));
-  const [expanded, setExpanded] = useSubagentDisclosure(
-    `merged:${events.map((event) => event.turn.id).join(":")}`,
-  );
-  return (
-    <div className="min-w-0 text-sm text-muted-foreground" data-subagent-finished>
-      <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((v) => !v)}
-        data-subagent-thread-ids={childIds.join(" ")}
-        data-subagent-disclosure-key={`merged:${events.map((event) => event.turn.id).join(":")}`}
-        className="focus-ring flex w-full items-center gap-2 rounded-sm py-[var(--chat-space-row)] text-left hover:text-foreground"
-      >
-        <span className="flex -space-x-1.5">
-          {names.slice(0, 3).map((name, index) => (
-            <span key={`${name}-${index}`} className="rounded-full bg-background p-[2px]">
-              <SubagentMark
-                agentName={entries[index]?.agentName}
-                status={subagentStatus(entries[index]?.outcome)}
-                className="size-5 text-[10px]"
-                decorative
-              />
-            </span>
-          ))}
-        </span>
-        <span className="truncate font-medium text-foreground">
-          {names.length > 3 || new Set(names).size < names.length ? (
-            stopped.length ? (
-              <Trans>
-                {names.length} subagents finished ({stopped.length} stopped)
-              </Trans>
-            ) : (
-              <Trans>{names.length} subagents finished</Trans>
-            )
-          ) : stopped.length === 0 ? (
-            <Trans>{list(names)} finished</Trans>
-          ) : stopped.length === entries.length ? (
-            <Trans>{list(names)} stopped</Trans>
-          ) : (
-            <Trans>
-              {list(
-                entries.map(
-                  ({ name, outcome }) =>
-                    `${name} ${outcome === "succeeded" ? i18n._("finished") : i18n._("stopped")}`,
-                ),
-              )}
-            </Trans>
-          )}
-        </span>
-        <ChevronDown
-          className={cn("size-4 shrink-0 transition-transform", expanded && "rotate-180")}
-          aria-hidden
-        />
-      </button>
-      {expanded ? (
-        <div className="ml-7 space-y-1 border-l border-border-subtle py-1 pl-3">
-          {entries.map(({ name, description, threadId, agentName, outcome }, index) => (
-            <div key={`${threadId ?? name}-${index}`} data-subagent-thread-id={threadId}>
-              <div className="flex items-center gap-2">
-                <SubagentMark
-                  agentName={agentName}
-                  status={subagentStatus(outcome)}
-                  className="size-5 text-[10px]"
-                />
-                <span className="min-w-0 truncate py-1">
-                  <span className="font-medium text-foreground">{name}</span>
-                  {description ? <span className="ml-1.5">{description}</span> : null}
-                </span>
-                <OpenSubagentChatButton threadId={threadId} agentName={agentName} />
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function DeliveryEventRow({ turn, childThreadId, title, subagentUpdate }: DeliveryEvent) {
-  if (subagentUpdate) {
-    const agentName = subagentUpdate.agentName;
-    const name = resolveSubagentName({ agentName });
-    const description = title ?? null;
-    const outcome = subagentUpdate.outcome;
-    const threadId = subagentUpdate.childThreadId ?? childThreadId;
-    return (
-      <div
-        className="min-w-0 text-sm text-muted-foreground"
-        data-subagent-finished
-        data-subagent-thread-id={threadId ?? undefined}
-      >
-        <div className="flex items-center gap-2">
-          <SubagentMark
-            agentName={agentName}
-            status={subagentStatus(outcome)}
-            className="size-5 text-[10px]"
-            decorative
-          />
-          <span className="min-w-0 truncate py-[var(--chat-space-row)]">
-            <span className="font-medium text-foreground">{name}</span>{" "}
-            {description ? <>{description} </> : null}
-            {outcome === "succeeded" ? <Trans>finished</Trans> : <Trans>stopped</Trans>}
-          </span>
-          {/* Beside the text, not at the far edge, so the door reads as part of the line. */}
-          <OpenSubagentChatButton threadId={threadId} agentName={agentName} />
-        </div>
-      </div>
-    );
-  }
-  const body = turn.blocks
-    .filter((block) => block.blockType === "text")
-    .map((block) => block.textContent ?? "")
-    .join("");
-  return (
-    <ActivityRow Icon={MessageSquareText}>
-      <span className="whitespace-pre-wrap text-foreground">
-        {body || <Trans>Shared an attachment</Trans>}
-      </span>
-    </ActivityRow>
   );
 }
 

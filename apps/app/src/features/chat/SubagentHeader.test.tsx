@@ -15,9 +15,9 @@ vi.mock("./conversation-reveal", () => ({ requestConversationReveal: vi.fn() }))
 import type { ThreadActivityNode, ThreadStatus } from "@meridian/contracts/threads";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { requestConversationReveal } from "./conversation-reveal";
 import { SubagentHeader } from "./SubagentHeader";
+import { renderChatSurface } from "./subagent/renderChatSurface";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 const previousActEnvironment = actGlobal.IS_REACT_ACT_ENVIRONMENT;
@@ -68,13 +68,13 @@ describe("SubagentHeader", () => {
     const openThread = vi.fn();
     await act(async () =>
       root.render(
-        <TooltipProvider>
+        renderChatSurface(
           <SubagentHeader
             threadId="parent"
             nodes={[node({ threadId: "child", agentName: "Critic" })]}
-            openThread={openThread}
-          />
-        </TooltipProvider>,
+          />,
+          openThread,
+        ),
       ),
     );
     await act(async () => host.querySelector<HTMLButtonElement>("button")?.click());
@@ -92,7 +92,7 @@ describe("SubagentHeader", () => {
     const openThread = vi.fn();
     await act(async () =>
       root.render(
-        <TooltipProvider>
+        renderChatSurface(
           <SubagentHeader
             threadId="parent"
             nodes={[
@@ -104,9 +104,9 @@ describe("SubagentHeader", () => {
                 spawnStatus: "succeeded",
               }),
             ]}
-            openThread={openThread}
-          />
-        </TooltipProvider>,
+          />,
+          openThread,
+        ),
       ),
     );
     await act(async () => host.querySelector<HTMLButtonElement>("button")?.click());

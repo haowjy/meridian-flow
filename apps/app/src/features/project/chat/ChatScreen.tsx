@@ -11,7 +11,6 @@ import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { QueryErrorRow } from "@/components/app/QueryErrorRow";
 import { ChatSurface as ChatFrame } from "@/features/chat/ChatSurface";
-import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import { ChatView } from "@/features/chat/ChatView";
 import { CreationComposer } from "@/features/chat/CreationComposer";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
@@ -134,29 +133,27 @@ function ChatScreenLoaded({
       ) : null}
 
       <div className="min-h-0 flex-1">
-        <ChatThreadNavigationProvider onOpenThread={onSelectThread}>
-          <ProjectChatContextNavigationProvider
+        <ProjectChatContextNavigationProvider
+          projectId={projectId}
+          activeWork={activeWork?.slug ? { id: activeWork.id, slug: activeWork.slug } : null}
+          availableWorks={availableWorks.flatMap((work) =>
+            work.slug ? [{ id: work.id, slug: work.slug }] : [],
+          )}
+          onOpenContextTarget={onOpenContextTarget}
+        >
+          <ChatView
+            threadId={threadId}
             projectId={projectId}
-            activeWork={activeWork?.slug ? { id: activeWork.id, slug: activeWork.slug } : null}
-            availableWorks={availableWorks.flatMap((work) =>
-              work.slug ? [{ id: work.id, slug: work.slug }] : [],
-            )}
-            onOpenContextTarget={onOpenContextTarget}
-          >
-            <ChatView
-              threadId={threadId}
-              projectId={projectId}
-              activeThread={thread}
-              activeWork={activeWork}
-              snapshotLiveState={snapshotLiveState}
-              snapshotNextSeq={snapshotNextSeq}
-              snapshotThreadUsage={snapshot?.threadUsage}
-              historySettled={historySettled}
-              activateProjection={activateProjection}
-              key={`${projectId}:${threadId}`}
-            />
-          </ProjectChatContextNavigationProvider>
-        </ChatThreadNavigationProvider>
+            activeThread={thread}
+            activeWork={activeWork}
+            snapshotLiveState={snapshotLiveState}
+            snapshotNextSeq={snapshotNextSeq}
+            snapshotThreadUsage={snapshot?.threadUsage}
+            historySettled={historySettled}
+            activateProjection={activateProjection}
+            key={`${projectId}:${threadId}`}
+          />
+        </ProjectChatContextNavigationProvider>
       </div>
     </div>
   );

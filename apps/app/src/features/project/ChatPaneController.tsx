@@ -26,7 +26,7 @@ export function ChatPaneController({
   sidebarToggle,
   contextToggle,
 }: ChatPaneControllerProps) {
-  const { openChatIndex, openChat } = useChatNavigation();
+  const { openChatIndex } = useChatNavigation();
   const activity = useThreadActivity({
     threadId: threadId ?? "",
     rootThreadId: threadId ?? "",
@@ -48,11 +48,7 @@ export function ChatPaneController({
       right={contextToggle}
       actions={
         threadId ? (
-          <SubagentHeader
-            threadId={threadId}
-            nodes={activity.activity.descendants}
-            openThread={openChat}
-          />
+          <SubagentHeader threadId={threadId} nodes={activity.activity.descendants} />
         ) : null
       }
     />
