@@ -71,6 +71,7 @@ export function mapTurn(row: typeof schema.turns.$inferSelect): Turn {
   return {
     id: row.id,
     threadId: row.threadId,
+    position: row.position,
     prevTurnId: row.parentTurnId,
     parentTurnId: row.parentTurnId,
     role: row.role as Turn["role"],
@@ -133,6 +134,7 @@ export function mapBlock(row: typeof schema.turnBlocks.$inferSelect): Block {
     executionSide: row.executionSide as Block["executionSide"],
     status: row.status as Block["status"],
     collapsedContent: row.compact,
+    imageIncluded: row.imageIncluded,
     createdAt: toIsoString(row.createdAt),
   };
 }

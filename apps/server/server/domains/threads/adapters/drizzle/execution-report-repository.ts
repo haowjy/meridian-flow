@@ -227,7 +227,7 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
         .where(
           and(eq(table.childThreadId, childThreadId as never), sql`${table.outcome} IS NOT NULL`),
         )
-        .orderBy(asc(schema.turns.createdAt), asc(table.assistantTurnId));
+        .orderBy(asc(schema.turns.position), asc(table.assistantTurnId));
       return rows.map(map);
     },
     async listUnfinalized(limit, afterExecutionId) {

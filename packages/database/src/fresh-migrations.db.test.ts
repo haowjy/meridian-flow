@@ -111,6 +111,7 @@ if (!enabled || !databaseUrl) {
           "consume_credit_lots_fifo",
           "enforce_prompt_bake_insert_only",
           "enforce_prompt_bake_write_once",
+          "enforce_turn_position_write_once",
           "enlist_turn_trail_work",
           "recompute_thread_chat_activity",
           "recompute_thread_chat_activity_from_block_insert",

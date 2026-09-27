@@ -43,6 +43,7 @@ export async function executionScenario(db?: Database, ids = executionIds()) {
       await db.insert(schema.turns).values({
         id: ids.rootTurn,
         threadId: ids.root,
+        position: 1,
         role: "assistant",
         origin: "assistant",
         status: "complete",
@@ -67,6 +68,7 @@ export async function executionScenario(db?: Database, ids = executionIds()) {
     await db.insert(schema.turns).values({
       id: ids.callerTurn,
       threadId: ids.caller,
+      position: 1,
       role: "assistant",
       origin: "assistant",
       status: "complete",

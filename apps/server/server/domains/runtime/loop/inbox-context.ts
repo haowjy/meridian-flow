@@ -275,8 +275,8 @@ export async function persistInboxMessages(input: {
 
 /**
  * Builds the durable user turn and text block for one drained `message`. The
- * inbox message id is reused as the turn/block id so a redelivery is idempotent,
- * and `enqueuedAt` (not persist time) stamps the chain order.
+ * inbox message id is reused as the turn/block id so a redelivery is idempotent;
+ * the repository assigns its position when the drain is serialized.
  */
 export function messageTurnFor(
   message: InboxMessage,
@@ -304,7 +304,6 @@ export function messageTurnFor(
         : message.body.kind === "work_context_refresh"
           ? { kind: "system_update", section: "work_context" }
           : { kind: "inbox_message" },
-    createdAt: message.enqueuedAt,
   });
   const text =
     message.body.kind === "work_context_refresh" && workContext

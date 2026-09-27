@@ -40,6 +40,7 @@ function turn(role: Turn["role"], id = TURN_ID): Turn {
   return {
     id,
     threadId: THREAD_ID,
+    position: 1,
     prevTurnId: null,
     parentTurnId: null,
     role,
@@ -91,6 +92,40 @@ function userMessageTexts(messages: ReturnType<typeof buildContext>["messages"])
 }
 
 describe("buildContext system-turn history projection", () => {
+  it("assembles user history in turn-position order", () => {
+    const newer = { ...turn("user", "newer"), position: 2 };
+    const older = { ...turn("user", "older"), position: 1 };
+    const { messages } = buildContext({
+      thread: thread(),
+      turns: [newer, older],
+      blocks: [
+        {
+          id: "newer-block",
+          turnId: "newer",
+          responseId: null,
+          blockType: "text",
+          sequence: 0,
+          content: { text: "second" },
+          textContent: "second",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "older-block",
+          turnId: "older",
+          responseId: null,
+          blockType: "text",
+          sequence: 0,
+          content: { text: "first" },
+          textContent: "first",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      frozenSystemPrompt: "system prompt",
+    });
+
+    expect(userMessageTexts(messages)).toEqual(["first", "second"]);
+  });
+
   it("projects a completed helper-result card in place as a system update", () => {
     const content = buildHelperResultComponentContent({
       agentSlug: "critic",

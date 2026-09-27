@@ -123,6 +123,7 @@ function defaultTurn(input: CreateTurnInput): Turn {
   return {
     id: input.id ?? crypto.randomUUID(),
     threadId: input.threadId,
+    position: 0,
     prevTurnId: input.prevTurnId ?? null,
     role: input.role,
     origin: input.origin,
@@ -536,8 +537,20 @@ export function createInMemoryRepositories(
       ) {
         throw new TurnStartConflictError(turn.threadId, "already_exists");
       }
-      turns.set(turn.id, turn);
+      const localTurns = [...turns.values()].filter(
+        (candidate) => candidate.threadId === turn.threadId,
+      );
+      const latestPosition = localTurns.reduce(
+        (latest, candidate) => Math.max(latest, candidate.position),
+        0,
+      );
       const thread = threads.get(turn.threadId);
+      const forkCutoff =
+        localTurns.length === 0 && thread?.originType === "fork" && thread.originTurnId
+          ? turns.get(thread.originTurnId)
+          : null;
+      turn.position = latestPosition > 0 ? latestPosition + 1 : (forkCutoff?.position ?? 0) + 1;
+      turns.set(turn.id, turn);
       if (thread) {
         threads.set(turn.threadId, { ...thread, activeLeafTurnId: turn.id });
       }
@@ -549,7 +562,7 @@ export function createInMemoryRepositories(
     async listByThread(threadId) {
       return [...turns.values()]
         .filter((t) => t.threadId === threadId)
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        .sort((a, b) => a.position - b.position);
     },
     async getLatestByThread(threadId) {
       const threadTurns = await this.listByThread(threadId);
@@ -665,6 +678,7 @@ export function createInMemoryRepositories(
         executionSide: input.executionSide ?? null,
         status: input.status ?? "complete",
         collapsedContent: input.collapsedContent ?? null,
+        imageIncluded: input.imageIncluded ?? null,
         pruned: false,
         createdAt: toIsoString(new Date()),
       };
@@ -688,6 +702,10 @@ export function createInMemoryRepositories(
         executionSide: input.executionSide ?? null,
         status: input.status ?? "complete",
         collapsedContent: input.collapsedContent ?? null,
+        imageIncluded:
+          input.imageIncluded !== undefined
+            ? input.imageIncluded
+            : (existing?.imageIncluded ?? null),
         pruned: existing?.pruned ?? false,
         createdAt: existing?.createdAt ?? toIsoString(new Date()),
       };
@@ -707,6 +725,7 @@ export function createInMemoryRepositories(
         ...existing,
         content: input.content ?? null,
         status: input.status ?? "complete",
+        ...(input.imageIncluded !== undefined ? { imageIncluded: input.imageIncluded } : {}),
       } as Block;
       blocks.set(input.id, updated);
       return updated;
@@ -722,7 +741,7 @@ export function createInMemoryRepositories(
     async listByThread(threadId: ThreadId) {
       const orderedTurns = [...turns.values()]
         .filter((t) => t.threadId === threadId)
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        .sort((a, b) => a.position - b.position);
       const turnOrder = new Map(orderedTurns.map((turn, index) => [turn.id as string, index]));
       return [...blocks.values()]
         .filter((b) => turnOrder.has(b.turnId as string))

@@ -265,6 +265,7 @@ export const turns = pgTable(
       .notNull()
       .references((): PgColumn => threads.id, { onDelete: "restrict" }),
     parentTurnId: uuid("parent_turn_id").$type<TurnId>(),
+    position: integer("position").notNull(),
     promptBakeId: uuid("prompt_bake_id")
       .$type<PromptBakeId>()
       .references((): PgColumn => promptBakes.id),
@@ -294,9 +295,9 @@ export const turns = pgTable(
   },
   (table) => [
     unique("turns_thread_id_id_unique").on(table.threadId, table.id),
-    index("turns_thread_created").on(table.threadId, table.createdAt.desc()),
-    index("turns_parent_created")
-      .on(table.parentTurnId, table.createdAt.desc())
+    uniqueIndex("turns_thread_position_unique").on(table.threadId, table.position),
+    index("turns_parent_position")
+      .on(table.parentTurnId, table.position.desc())
       .where(sql`${table.parentTurnId} IS NOT NULL`),
     uniqueIndex("turns_thread_single_root")
       .on(table.threadId)
@@ -305,6 +306,7 @@ export const turns = pgTable(
       "turns_no_self_parent",
       sql`${table.parentTurnId} IS NULL OR ${table.parentTurnId} != ${table.id}`,
     ),
+    check("turns_position_positive", sql`${table.position} > 0`),
     check("turns_role_valid", sql`${table.role} IN ('user', 'assistant', 'system', 'compaction')`),
     check("turns_origin_valid", sql`${table.origin} IN ('writer', 'assistant', 'system')`),
     check(
@@ -405,6 +407,7 @@ export const turnBlocks = pgTable(
     compact: text("compact"),
     pruned: boolean("pruned").notNull().default(false),
     executionSide: text("execution_side"),
+    imageIncluded: boolean("image_included"),
     createdAt: createdAt(),
   },
   (table) => [
@@ -414,6 +417,10 @@ export const turnBlocks = pgTable(
     check(
       "turn_blocks_block_type_valid",
       sql`${table.blockType} IN ('text', 'image', 'file', 'thinking', 'reasoning', 'tool_use', 'tool_result', 'custom')`,
+    ),
+    check(
+      "turn_blocks_image_inclusion_only",
+      sql`${table.blockType} = 'image' OR ${table.imageIncluded} IS NULL`,
     ),
   ],
 );

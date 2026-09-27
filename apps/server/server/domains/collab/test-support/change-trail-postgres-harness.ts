@@ -197,6 +197,7 @@ export async function resetDatabase(): Promise<void> {
   await db.insert(schema.turns).values({
     id: TURN_ID,
     threadId: THREAD_ID,
+    position: 1,
     role: "assistant",
     origin: "assistant",
     status: "complete",

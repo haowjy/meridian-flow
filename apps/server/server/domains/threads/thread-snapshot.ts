@@ -12,7 +12,7 @@ import {
   isThreadActionRequired,
   isVisibleConversationalTurn,
 } from "./domain/visible-conversation-policy.js";
-import { orderTurnsCausally } from "./order-turns.js";
+import { orderTurnsByPosition } from "./order-turns.js";
 import type {
   BlockRepository,
   ModelResponseRepository,
@@ -79,7 +79,7 @@ export async function buildThreadSnapshot(
     const runningTurnId = await statusReader.readRunningTurnId(threadId);
     const headSeq = await hub.headSeq(threadId);
 
-    const turns = orderTurnsCausally(await repos.turns.listByThread(threadId));
+    const turns = orderTurnsByPosition(await repos.turns.listByThread(threadId));
     const blocksByTurn = groupBy(
       (await repos.blocks.listByThread(threadId))
         .filter((block) => block.pruned !== true)

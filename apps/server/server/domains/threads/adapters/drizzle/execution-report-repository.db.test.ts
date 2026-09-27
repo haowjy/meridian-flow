@@ -64,6 +64,7 @@ else
       await db.insert(schema.turns).values({
         id: ids.otherProjectRootTurn,
         threadId: ids.otherProjectRoot,
+        position: 1,
         role: "assistant",
         origin: "assistant",
         status: "complete",
@@ -98,6 +99,7 @@ else
         {
           id: ids.otherProjectChildUserTurn,
           threadId: ids.otherProjectChild,
+          position: 1,
           role: "user",
           // The child's seed turn is the spawning caller's prompt, not a writer send.
           origin: "system",
@@ -108,6 +110,7 @@ else
         {
           id: ids.execution2,
           threadId: ids.child,
+          position: 3,
           parentTurnId: ids.childUserTurn,
           role: "assistant",
           origin: "assistant",
@@ -117,6 +120,7 @@ else
       await db.insert(schema.turns).values({
         id: ids.otherProjectExecution,
         threadId: ids.otherProjectChild,
+        position: 2,
         parentTurnId: ids.otherProjectChildUserTurn,
         role: "assistant",
         origin: "assistant",
@@ -283,6 +287,7 @@ else
         await db.insert(schema.turns).values({
           id: foreignTurn,
           threadId: foreignCaller,
+          position: 1,
           role: "assistant",
           origin: "assistant",
           status: "complete",
@@ -331,6 +336,7 @@ else
           {
             id: siblingTurn,
             threadId: sibling,
+            position: 1,
             role: "assistant",
             origin: "assistant",
             status: "complete",
@@ -338,6 +344,7 @@ else
           {
             id: third,
             threadId: ids.child,
+            position: 4,
             parentTurnId: ids.childUserTurn,
             role: "assistant",
             origin: "assistant",

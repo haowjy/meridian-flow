@@ -61,6 +61,7 @@ function blockToUpsertInput(block: BlockUpsertedRow): CreateBlockInput & { id: s
     textContent: blockPlainText(block.blockType, block.content),
     provider: block.provider ?? null,
     status: block.status,
+    ...(block.imageIncluded !== undefined ? { imageIncluded: block.imageIncluded } : {}),
   };
 }
 
@@ -129,7 +130,7 @@ export async function projectReadModelEvent(
 ): Promise<void> {
   switch (event.type) {
     case "turn.created":
-      await repos.turns.create(turnToCreateInput(event.turn));
+      event.turn.position = (await repos.turns.create(turnToCreateInput(event.turn))).position;
       await clearPreviousAssistantErrorIfUserTurn(repos, event.turn);
       return;
     case "turn.completed":

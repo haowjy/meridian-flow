@@ -13,6 +13,7 @@ export function goldenAssistantTurn(
   return {
     id,
     threadId,
+    position: 1,
     parentTurnId: null,
     role: "assistant",
     origin: "assistant",

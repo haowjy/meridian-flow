@@ -185,6 +185,7 @@ function createAssistantTurn(
   return {
     id: turnId,
     threadId,
+    position: 0,
     prevTurnId,
     role: "assistant",
     origin: "assistant",

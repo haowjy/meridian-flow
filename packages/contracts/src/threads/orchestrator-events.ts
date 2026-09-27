@@ -48,6 +48,7 @@ export interface BlockUpsertedRow {
   content: JsonValue;
   provider?: string | null;
   status: BlockStatus;
+  imageIncluded?: boolean | null;
 }
 
 /** Produced orchestrator events persisted as event_journal payloads and replayed to live projections. */

@@ -73,7 +73,7 @@ export function buildContext(input: BuildContextInput): {
     list.sort((a, b) => a.sequence - b.sequence);
   }
 
-  for (const turn of input.turns) {
+  for (const turn of [...input.turns].sort((a, b) => a.position - b.position)) {
     const turnBlocks = blocksByTurn.get(turn.id as string) ?? [];
     if (turn.role === "user") {
       const parts = userTurnContentParts(turnBlocks);

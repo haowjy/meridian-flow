@@ -113,12 +113,37 @@ export function createDrizzleTurnRepository(
           }
         }
 
+        const [threadContext] = await activeDb
+          .select({
+            originType: schema.threads.originType,
+            originTurnId: schema.threads.originTurnId,
+          })
+          .from(schema.threads)
+          .where(eq(schema.threads.id, input.threadId));
+        const [latest] = await activeDb
+          .select({ position: sql<number | null>`MAX(${schema.turns.position})::int` })
+          .from(schema.turns)
+          .where(eq(schema.turns.threadId, input.threadId));
+        let position = (latest?.position ?? 0) + 1;
+        if (latest?.position == null && threadContext?.originType === "fork") {
+          if (!threadContext.originTurnId) {
+            throw new Error(`Fork thread ${input.threadId} has no cutoff turn`);
+          }
+          const [cutoff] = await activeDb
+            .select({ position: schema.turns.position })
+            .from(schema.turns)
+            .where(eq(schema.turns.id, threadContext.originTurnId as TurnId));
+          if (!cutoff) throw new Error(`Fork cutoff turn not found: ${threadContext.originTurnId}`);
+          position = cutoff.position + 1;
+        }
+
         const [row] = await activeDb
           .insert(schema.turns)
           .values({
             id: input.id,
             threadId: input.threadId,
             parentTurnId: input.prevTurnId ?? null,
+            position,
             promptBakeId: input.promptBakeId ?? null,
             role: input.role,
             origin: input.origin,
@@ -191,7 +216,7 @@ export function createDrizzleTurnRepository(
         .select()
         .from(schema.turns)
         .where(eq(schema.turns.threadId, threadId))
-        .orderBy(asc(schema.turns.createdAt));
+        .orderBy(asc(schema.turns.position));
       return rows.map(mapTurn);
     },
     async getLatestByThread(threadId) {
@@ -199,7 +224,7 @@ export function createDrizzleTurnRepository(
         .select()
         .from(schema.turns)
         .where(eq(schema.turns.threadId, threadId))
-        .orderBy(desc(schema.turns.createdAt))
+        .orderBy(desc(schema.turns.position))
         .limit(1);
       return row ? mapTurn(row) : null;
     },
@@ -215,7 +240,7 @@ export function createDrizzleTurnRepository(
             ...(options?.createdAfter ? [gte(schema.turns.createdAt, options.createdAfter)] : []),
           ),
         )
-        .orderBy(desc(schema.turns.createdAt))
+        .orderBy(desc(schema.turns.position))
         .limit(1);
       return (row?.id as TurnId | undefined) ?? null;
     },

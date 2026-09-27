@@ -34,6 +34,7 @@ function blockValues(input: CreateBlockInput) {
     compact: input.collapsedContent ?? "",
     executionSide: input.executionSide ?? null,
     status: input.status ?? "complete",
+    imageIncluded: input.imageIncluded ?? null,
   };
 }
 
@@ -66,6 +67,7 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
             compact: values.compact,
             executionSide: values.executionSide,
             status: values.status,
+            ...(input.imageIncluded !== undefined ? { imageIncluded: values.imageIncluded } : {}),
           },
         })
         .returning();
@@ -75,7 +77,11 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
     async replaceExisting(input) {
       const [row] = await currentDrizzleDb(db)
         .update(schema.turnBlocks)
-        .set({ content: input.content ?? null, status: input.status ?? "complete" })
+        .set({
+          content: input.content ?? null,
+          status: input.status ?? "complete",
+          ...(input.imageIncluded !== undefined ? { imageIncluded: input.imageIncluded } : {}),
+        })
         .where(
           and(
             eq(schema.turnBlocks.id, input.id),
@@ -108,7 +114,7 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
         .from(schema.turnBlocks)
         .innerJoin(schema.turns, eq(schema.turnBlocks.turnId, schema.turns.id))
         .where(eq(schema.turns.threadId, threadId))
-        .orderBy(asc(schema.turns.createdAt), asc(schema.turnBlocks.sequence));
+        .orderBy(asc(schema.turns.position), asc(schema.turnBlocks.sequence));
       return rows.map((row) => mapBlock(row.block));
     },
     async updatePruned(id, pruned) {

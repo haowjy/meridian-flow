@@ -63,6 +63,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(turns).values({
         id: TURN_ID,
         threadId: THREAD_ID,
+        position: 1,
         role: "assistant",
         origin: "assistant",
       });

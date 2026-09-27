@@ -18,6 +18,7 @@ export function buildOptimisticUserTurn(input: {
   return {
     id: input.id,
     threadId: input.threadId,
+    position: 0,
     prevTurnId: input.prevTurnId ?? null,
     role: "user",
     origin: "writer",

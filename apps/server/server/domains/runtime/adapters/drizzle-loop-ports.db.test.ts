@@ -338,6 +338,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(schema.turns).values({
         id: ASSISTANT_TURN,
         threadId: THREAD_A,
+        position: 1,
         role: "assistant",
         origin: "assistant",
         status: "streaming",

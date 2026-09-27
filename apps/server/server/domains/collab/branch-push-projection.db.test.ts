@@ -119,6 +119,7 @@ describe("branch-push durable projection", () => {
     await db.insert(turns).values({
       id: turnId,
       threadId,
+      position: 1,
       role: "assistant",
       origin: "assistant",
       status: "complete",
@@ -330,6 +331,7 @@ describe("branch-push durable projection", () => {
     await db.insert(turns).values({
       id: turnId,
       threadId,
+      position: 1,
       role: "assistant",
       origin: "assistant",
       status: "complete",
@@ -530,6 +532,7 @@ describe("branch-push durable projection", () => {
     await db.insert(turns).values({
       id: turnId,
       threadId,
+      position: 1,
       role: "assistant",
       origin: "assistant",
       status: "complete",

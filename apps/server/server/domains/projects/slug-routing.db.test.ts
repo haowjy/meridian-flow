@@ -186,6 +186,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .insert(schema.turns)
         .values({
           threadId: first.id,
+          position: 1,
           role: "assistant",
           origin: "assistant",
           status: "complete",

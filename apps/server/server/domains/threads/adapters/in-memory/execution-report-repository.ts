@@ -112,9 +112,9 @@ export function createInMemoryExecutionReportRepository(
         .filter((row) => row.childThreadId === child && row.outcome !== null)
         .sort(
           (a, b) =>
-            (deps.turns.get(a.assistantTurnId)?.createdAt ?? "").localeCompare(
-              deps.turns.get(b.assistantTurnId)?.createdAt ?? "",
-            ) || a.assistantTurnId.localeCompare(b.assistantTurnId),
+            (deps.turns.get(a.assistantTurnId)?.position ?? 0) -
+              (deps.turns.get(b.assistantTurnId)?.position ?? 0) ||
+            a.assistantTurnId.localeCompare(b.assistantTurnId),
         );
     },
     async listUnfinalized(limit, afterExecutionId) {

@@ -119,6 +119,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: TURN_A,
           threadId: THREAD_ID,
+          position: 1,
           role: "assistant",
           origin: "assistant",
           status: "complete",
@@ -126,6 +127,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: TURN_B,
           threadId: THREAD_ID,
+          position: 2,
           parentTurnId: TURN_A,
           role: "assistant",
           origin: "assistant",
@@ -134,6 +136,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: TURN_C,
           threadId: THREAD_ID,
+          position: 3,
           parentTurnId: TURN_B,
           role: "assistant",
           origin: "assistant",
@@ -142,6 +145,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: TURN_D,
           threadId: THREAD_ID,
+          position: 4,
           parentTurnId: TURN_C,
           role: "assistant",
           origin: "assistant",
@@ -150,14 +154,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: TURN_E,
           threadId: THREAD_ID,
+          position: 5,
           parentTurnId: TURN_D,
           role: "assistant",
           origin: "assistant",
           status: "complete",
         },
-        ...CONCURRENT_TURNS.map((id) => ({
+        ...CONCURRENT_TURNS.map((id, index) => ({
           id,
           threadId: THREAD_ID,
+          position: index + 6,
           parentTurnId: TURN_E,
           role: "assistant" as const,
           origin: "assistant" as const,

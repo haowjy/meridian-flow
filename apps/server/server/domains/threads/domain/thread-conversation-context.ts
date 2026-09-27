@@ -1,6 +1,7 @@
 /** Load a thread's transcript, resolving fork prefixes through their owning thread rows. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
+import { orderTurnsByPosition } from "../order-turns.js";
 import type { BlockRepository, ThreadRepository, TurnRepository } from "../ports/index.js";
 
 export interface ThreadConversationContextDeps {
@@ -53,7 +54,7 @@ export async function loadThreadConversationContext(
 
   const nextVisiting = new Set(visiting);
   nextVisiting.add(threadId);
-  const localTurns = await deps.turns.listByThread(threadId);
+  const localTurns = orderTurnsByPosition(await deps.turns.listByThread(threadId));
   const localBlocks = await deps.blocks.listByThread(threadId);
 
   if (thread.originType !== "fork") return { turns: localTurns, blocks: localBlocks };
@@ -79,14 +80,14 @@ export async function loadThreadConversationContext(
     throw new ThreadConversationContextError("cutoff_not_in_transcript", thread.id, originTurnId);
   }
 
-  const inheritedTurns = sourceContext.turns.slice(0, originIndex + 1);
+  const inheritedTurns = orderTurnsByPosition(sourceContext.turns.slice(0, originIndex + 1));
   const inheritedTurnIds = new Set(inheritedTurns.map((turn) => turn.id));
   const inheritedBlocks = sourceContext.blocks.filter((block) =>
     inheritedTurnIds.has(block.turnId),
   );
 
   return {
-    turns: [...inheritedTurns, ...localTurns],
+    turns: orderTurnsByPosition([...inheritedTurns, ...localTurns]),
     blocks: [...inheritedBlocks, ...localBlocks],
   };
 }

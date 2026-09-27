@@ -10,8 +10,8 @@ import {
 function thread(id: string, extra: Partial<Thread> = {}): Thread {
   return { id, originType: null, originTurnId: null, parentThreadId: null, ...extra } as Thread;
 }
-function turn(id: string, threadId: string): Turn {
-  return { id, threadId } as Turn;
+function turn(id: string, threadId: string, position = 0, createdAt = id): Turn {
+  return { id, threadId, position, createdAt } as Turn;
 }
 function block(id: string, turnId: string): Block {
   return { id, turnId } as Block;
@@ -81,6 +81,21 @@ describe("loadThreadConversationContext", () => {
     );
 
     expect(context.turns.map((t) => t.id)).toEqual(["r1", "f1"]);
+  });
+
+  it("uses position rather than creation time to find a fork cutoff", async () => {
+    const root = thread("root");
+    const fork = thread("fork", { originType: "fork", originTurnId: "r2" });
+    const turns = [
+      turn("r2", "root", 2, "2026-01-01"),
+      turn("r1", "root", 1, "2026-01-02"),
+      turn("r3", "root", 3, "2026-01-03"),
+      turn("f1", "fork", 3, "2025-12-31"),
+    ];
+
+    const context = await loadThreadConversationContext(depsFor([root, fork], turns, []), fork);
+
+    expect(context.turns.map((entry) => entry.id)).toEqual(["r1", "r2", "f1"]);
   });
 
   it("throws a typed error when the cutoff is missing instead of returning local turns", async () => {

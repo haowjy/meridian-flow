@@ -187,6 +187,7 @@ else
       await db.insert(schema.turns).values({
         id: ids.nextExecution,
         threadId: ids.child,
+        position: 3,
         parentTurnId: ids.childUserTurn,
         role: "assistant",
         origin: "assistant",
@@ -230,6 +231,7 @@ else
       await db.insert(schema.turns).values({
         id: ids.repairExecution,
         threadId: ids.child,
+        position: 4,
         parentTurnId: ids.childUserTurn,
         role: "assistant",
         origin: "assistant",
@@ -294,6 +296,7 @@ else
         await db.insert(schema.turns).values({
           id: execution,
           threadId: ids.child,
+          position: index + 3,
           parentTurnId: ids.childUserTurn,
           role: "assistant",
           origin: "assistant",
@@ -499,6 +502,7 @@ else
       await db.insert(schema.turns).values({
         id: ids.nextExecution,
         threadId: ids.child,
+        position: 3,
         parentTurnId: ids.execution,
         role: "assistant",
         origin: "assistant",

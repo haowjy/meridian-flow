@@ -61,11 +61,12 @@ function noWorkContext(projectId: string): WorkContextReader {
   };
 }
 
-function userTurn(id: string, text: string): { turn: Turn; block: Block } {
+function userTurn(id: string, text: string, position = 1): { turn: Turn; block: Block } {
   return {
     turn: {
       id,
       threadId: "",
+      position,
       prevTurnId: null,
       parentTurnId: null,
       role: "user",
@@ -99,18 +100,20 @@ function userTurn(id: string, text: string): { turn: Turn; block: Block } {
   };
 }
 
-function systemNoticeTurn(id: string, text: string): { turn: Turn; block: Block } {
-  const built = userTurn(id, text);
+function systemNoticeTurn(id: string, text: string, position = 1): { turn: Turn; block: Block } {
+  const built = userTurn(id, text, position);
   return { turn: { ...built.turn, role: "system", origin: "system" }, block: built.block };
 }
 
 function assistantToolExchangeTurn(
   id: string,
   toolCallId: string,
+  position = 2,
 ): { turn: Turn; blocks: Block[] } {
   const turn: Turn = {
     id,
     threadId: "",
+    position,
     prevTurnId: null,
     parentTurnId: null,
     role: "assistant",
@@ -239,13 +242,13 @@ describe("prefix stability across a growing thread", () => {
     const r0 = await assemble([t1.turn], [t1.block]);
 
     // 1. Steer: an adopted message folds into the same pending trailing message.
-    const steer = userTurn("turn-2", "Also keep the pacing tight.");
+    const steer = userTurn("turn-2", "Also keep the pacing tight.", 3);
     const r1 = await assemble([t1.turn, steer.turn], [t1.block, steer.block]);
     assertIsStableExtension(r0.generateRequest, r1.generateRequest);
     expect(r1.generateRequest.messages.length).toBe(r0.generateRequest.messages.length);
 
     // 2. Work-switch notice: also folds in, still no new message.
-    const workSwitch = systemNoticeTurn("turn-3", "Work switched to Drafting.");
+    const workSwitch = systemNoticeTurn("turn-3", "Work switched to Drafting.", 4);
     const r2 = await assemble(
       [t1.turn, steer.turn, workSwitch.turn],
       [t1.block, steer.block, workSwitch.block],
@@ -257,6 +260,7 @@ describe("prefix stability across a growing thread", () => {
     const subagentDone = systemNoticeTurn(
       "turn-4",
       'Subagent p1 finished (success). Read its report with thread_report({"ref":"p1"}).',
+      5,
     );
     const r3 = await assemble(
       [t1.turn, steer.turn, workSwitch.turn, subagentDone.turn],
@@ -279,6 +283,7 @@ describe("prefix stability across a growing thread", () => {
       formatInvokedSkills([
         { slug: "story-review", description: "Review drafts.", body: "story-review body." },
       ]),
+      2,
     );
     const r4 = await assemble(
       [t1.turn, skillTurn.turn, steer.turn, workSwitch.turn, subagentDone.turn],
@@ -288,7 +293,7 @@ describe("prefix stability across a growing thread", () => {
     expect(r4.generateRequest.messages.length).toBe(r0.generateRequest.messages.length);
 
     // 5. Tool call/result: a genuine append. The merged user message freezes.
-    const toolExchange = assistantToolExchangeTurn("turn-5", "call_1");
+    const toolExchange = assistantToolExchangeTurn("turn-5", "call_1", 6);
     const r5 = await assemble(
       [t1.turn, skillTurn.turn, steer.turn, workSwitch.turn, subagentDone.turn, toolExchange.turn],
       [
@@ -307,7 +312,7 @@ describe("prefix stability across a growing thread", () => {
     // message is untouched — proving the step-5 freeze holds for history, not
     // just the immediately-prior request — and only the tool_result message
     // (final at step 5) may lose its cache mark now that it is no longer final.
-    const nextTurn = userTurn("turn-6", "Continue into the next scene.");
+    const nextTurn = userTurn("turn-6", "Continue into the next scene.", 7);
     const r6 = await assemble(
       [
         t1.turn,

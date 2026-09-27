@@ -19,12 +19,12 @@ export function createLocalTurn(input: {
   status: Turn["status"];
   writeMode?: Turn["writeMode"];
   metadata?: Turn["metadata"];
-  /** Durable origin time; a drained message passes its inbox `enqueuedAt`. */
-  createdAt?: string;
 }): Turn {
   return {
     id: input.id ?? crypto.randomUUID(),
     threadId: input.threadId,
+    // The repository assigns the serialized position when this event is projected.
+    position: 0,
     prevTurnId: input.prevTurnId,
     parentTurnId: input.prevTurnId,
     role: input.role,
@@ -48,7 +48,7 @@ export function createLocalTurn(input: {
     requestParams: null,
     responseMetadata: null,
     metadata: input.metadata ?? null,
-    createdAt: input.createdAt ?? toIsoString(new Date()),
+    createdAt: toIsoString(new Date()),
     completedAt: null,
     blocks: [],
     siblingIds: [],
