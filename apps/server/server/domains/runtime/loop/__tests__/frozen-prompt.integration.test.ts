@@ -80,7 +80,6 @@ async function fixture(onStream?: (call: number) => Promise<void>) {
     works,
     agentRevisions,
     agentCatalog,
-    eventReader: rig.journalReader,
     eventWriter: rig.deps.eventWriter,
     workContextNotices: rig.delivery,
   };

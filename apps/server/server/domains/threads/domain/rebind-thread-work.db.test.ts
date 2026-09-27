@@ -107,7 +107,8 @@ else
 
     it("derived and subagent inherit No Work membership", async () => {
       await repos.threadWorks.addMembership(ids.threadId, ids.noWorkId, true);
-      const derived = await repos.threads.createDerivedPrimary({
+      const { thread: derived } = await repos.threads.createDerivedPrimary({
+        id: crypto.randomUUID() as never,
         userId: ids.userId,
         projectId: ids.projectId,
         workId: ids.noWorkId,

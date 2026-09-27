@@ -89,7 +89,8 @@ else
 
     it("a fork/handoff of an organic root shares that root and has no parent", async () => {
       // The source (`ids.threadId`) is itself a root: null parent, self root.
-      const derived = await repos.threads.createDerivedPrimary({
+      const { thread: derived } = await repos.threads.createDerivedPrimary({
+        id: crypto.randomUUID() as never,
         userId: ids.userId,
         projectId: ids.projectId,
         workId: ids.noWorkId,
@@ -116,7 +117,8 @@ else
         origin: "assistant",
         status: "complete",
       });
-      const fork = await repos.threads.createDerivedPrimary({
+      const { thread: fork } = await repos.threads.createDerivedPrimary({
+        id: crypto.randomUUID() as never,
         userId: ids.userId,
         projectId: ids.projectId,
         workId: ids.noWorkId,

@@ -177,10 +177,8 @@ export type OrchestratorEvent =
       sourceThreadId: string;
       targetThreadId: string;
       targetAgentSlug: string | null;
-      /** Normalized complete cutoff retained by the fork. */
+      /** Normalized settled cutoff retained by the fork. */
       originTurnId: string;
-      /** Original request selection, null when the server chose the latest turn. */
-      requestedOriginTurnId: string | null;
     }
   | { type: "turn.completed"; turn: Turn }
   | { type: "turn.cancelled"; turn: Turn }

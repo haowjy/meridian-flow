@@ -40,7 +40,9 @@ export function createReportPublisher(deps: {
       deps.repos.transaction(async (): Promise<PublicationOutcome> => {
         const callerRow = await deps.repos.threads.lockByIdIncludingDeleted(callerThreadId);
         if (!callerRow) {
-          throw new Error("Pending publication caller is missing despite its origin-turn reference");
+          throw new Error(
+            "Pending publication caller is missing despite its origin-turn reference",
+          );
         }
         const report = await deps.repos.executionReports.lockPendingPublication(
           childThreadId,

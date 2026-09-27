@@ -29,7 +29,6 @@ export default defineEventHandler(async (event) => {
         workContextNotices: app.workContextNotices,
         agentCatalog: app.agentCatalog,
         agentRevisions: app.agentRevisions,
-        eventReader: app.journalReader,
         eventWriter: app.journalWriter,
       },
       {

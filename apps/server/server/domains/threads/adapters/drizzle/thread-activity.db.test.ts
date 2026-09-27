@@ -78,7 +78,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "complete",
         prevTurnId: childTurn.id,
       });
-      const derivedPrimary = await repos.threads.createDerivedPrimary({
+      const { thread: derivedPrimary } = await repos.threads.createDerivedPrimary({
+        id: crypto.randomUUID() as never,
         userId: ids.userId,
         projectId: ids.projectId,
         workId: ids.noWorkId,
@@ -113,7 +114,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: "writer",
         status: "complete",
       });
-      const fork = await repos.threads.createDerivedPrimary({
+      const { thread: fork } = await repos.threads.createDerivedPrimary({
+        id: crypto.randomUUID() as never,
         userId: ids.userId,
         projectId: ids.projectId,
         workId: ids.noWorkId,

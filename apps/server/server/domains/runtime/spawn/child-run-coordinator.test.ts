@@ -1283,7 +1283,8 @@ describe("ChildRunCoordinator direct-parent activity journal", () => {
     });
     const binding = await revisions.readThreadBinding(parent.id);
     if (!binding?.revision) throw new Error("parent binding missing");
-    const fork = await repos.threads.createDerivedPrimary({
+    const { thread: fork } = await repos.threads.createDerivedPrimary({
+      id: crypto.randomUUID() as ThreadId,
       userId: parent.userId,
       projectId: parent.projectId,
       workId: parent.workId,

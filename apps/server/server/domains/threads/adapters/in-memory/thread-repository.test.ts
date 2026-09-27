@@ -26,15 +26,21 @@ describe("in-memory ThreadRepository.listChildren", () => {
       origin: "writer",
       status: "complete",
     });
-    const derivedPrimary = await repos.threads.createDerivedPrimary({
+    const derivedInput = {
+      id: crypto.randomUUID() as never,
       userId: "user-1",
       projectId: "project-1",
       workId: null,
       source: subagent,
       originType: "fork",
       originTurnId: sourceTurn.id,
-    });
+    } as const;
+    const created = await repos.threads.createDerivedPrimary(derivedInput);
+    const derivedPrimary = created.thread;
+    const replay = await repos.threads.createDerivedPrimary(derivedInput);
 
+    expect(created.created).toBe(true);
+    expect(replay).toMatchObject({ created: false, thread: { id: derivedPrimary.id } });
     expect(derivedPrimary.kind).toBe("primary");
     expect(derivedPrimary.parentThreadId).toBe(root.id);
     expect(await repos.threads.listChildren(root.id)).toMatchObject([{ id: subagent.id }]);

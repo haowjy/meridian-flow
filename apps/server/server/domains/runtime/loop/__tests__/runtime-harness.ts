@@ -222,7 +222,6 @@ export function createRuntimeHarness(
     repos,
     creditLedger,
     eventWriter,
-    journalReader: journal,
     inbox: deps.delivery,
     runClaim,
     get orchestrator() {

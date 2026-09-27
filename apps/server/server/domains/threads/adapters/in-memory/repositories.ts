@@ -254,9 +254,6 @@ export function createInMemoryRepositories(
       return insertThread(buildSubagentThreadRow(input));
     },
     async createDerivedPrimary(input) {
-      return insertThread(buildDerivedPrimaryThreadRow(input));
-    },
-    async createDerivedPrimaryIfAbsent(input) {
       const existing = threads.get(input.id);
       if (existing) return { thread: projectThread(existing), created: false };
       const thread = await insertThread(buildDerivedPrimaryThreadRow(input));

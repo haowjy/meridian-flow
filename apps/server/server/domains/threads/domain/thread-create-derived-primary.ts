@@ -11,7 +11,7 @@ import type { Thread, ThreadOriginType } from "@meridian/contracts/threads";
 import { toIsoString } from "./contract-serialization.js";
 
 export interface CreateDerivedPrimaryThreadInput {
-  id?: ThreadId;
+  id: ThreadId;
   userId: UserId;
   projectId: ProjectId;
   workId: WorkId | null;
@@ -25,9 +25,8 @@ export interface CreateDerivedPrimaryThreadInput {
 
 export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadInput): Thread {
   const now = toIsoString(new Date());
-  const id = input.id ?? crypto.randomUUID();
   return {
-    id,
+    id: input.id,
     projectId: input.projectId,
     workId: input.workId,
     userId: input.userId,
