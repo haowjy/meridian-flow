@@ -34,9 +34,14 @@ export type ModelRequestDebugCapture =
   | { status: "complete" }
   | { status: "omitted"; reason: "request_too_large"; maxRequestBytes: number };
 
+export type PredictedCacheState = {
+  state: "warm" | "cold";
+  reason: string;
+};
+
 /** One canonical request captured immediately before Gateway.stream(). */
 export type ModelRequestDebugRecord = {
-  schema: "meridian.model-request-debug.v1";
+  schema: "meridian.model-request-debug.v2";
   gatewayCallId: string;
   threadId: string;
   /** Assistant turn the request belongs to. */
@@ -51,6 +56,7 @@ export type ModelRequestDebugRecord = {
   requestDigest: string;
   requestBytes: number;
   capture: ModelRequestDebugCapture;
+  predictedCacheState: PredictedCacheState;
   request: ModelRequestDebugRequest | null;
   skills: { slug: string; layer: string }[];
   toolRegistrations: { name: string; source: string; capability: string | null }[];

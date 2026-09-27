@@ -59,6 +59,7 @@ export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter 
           model.id,
           model.maxOutputTokens,
           providerId,
+          model.promptCache.ttlMs,
         );
         const stream = await client.messages.create(params, { signal: request.signal });
 

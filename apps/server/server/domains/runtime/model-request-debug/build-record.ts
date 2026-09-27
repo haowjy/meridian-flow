@@ -38,6 +38,7 @@ export type ModelRequestDebugCaptureInput = {
   iteration: number;
   agentSlug: string | null;
   request: GenerateRequest;
+  predictedCacheState: ModelRequestDebugRecord["predictedCacheState"];
   toolRegistry: ToolRegistry;
 };
 
@@ -53,7 +54,7 @@ export function buildModelRequestDebugRecord(
       : (JSON.parse(serializedRequest) as ModelRequestDebugRequest);
 
   return {
-    schema: "meridian.model-request-debug.v1",
+    schema: "meridian.model-request-debug.v2",
     gatewayCallId: input.gatewayCallId,
     threadId: input.threadId,
     turnId: input.turnId,
@@ -66,6 +67,7 @@ export function buildModelRequestDebugRecord(
       request === null
         ? { status: "omitted", reason: "request_too_large", maxRequestBytes }
         : { status: "complete" },
+    predictedCacheState: input.predictedCacheState,
     request,
     skills: [],
     toolRegistrations: advertisedToolsMetadata(input.toolRegistry, input.request.tools),

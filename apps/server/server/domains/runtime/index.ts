@@ -68,6 +68,13 @@ export type {
   ThreadStatus,
 } from "./loop/ports.js";
 export { DEFAULT_LEASE_TTL_MS } from "./loop/ports.js";
+export {
+  type DerivePrefixCacheStateInput,
+  derivePrefixCacheState,
+  type PrefixCacheHistory,
+  type PrefixCacheState,
+  type PrefixCacheStateReason,
+} from "./loop/prefix-cache-state.js";
 export type { ReferenceReader } from "./loop/reference-context.js";
 export {
   createRunSessions,

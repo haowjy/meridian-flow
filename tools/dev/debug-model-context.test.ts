@@ -10,7 +10,7 @@ import {
 function view(iteration: number): ModelRequestDebugView {
   return {
     record: {
-      schema: "meridian.model-request-debug.v1",
+      schema: "meridian.model-request-debug.v2",
       gatewayCallId: `call-${iteration}`,
       threadId: "thread-1",
       turnId: "turn-1",
@@ -20,6 +20,7 @@ function view(iteration: number): ModelRequestDebugView {
       requestDigest: `digest-${iteration}`,
       requestBytes: 10,
       capture: { status: "complete" },
+      predictedCacheState: { state: "warm", reason: "reusable_prefix" },
       request: { messages: [] },
       skills: [],
       toolRegistrations: [],

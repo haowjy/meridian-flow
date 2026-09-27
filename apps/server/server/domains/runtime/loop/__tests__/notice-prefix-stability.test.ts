@@ -60,7 +60,8 @@ async function setup() {
           displayName: "Test model",
           contextWindow: 128_000,
           maxOutputTokens: 16_384,
-          capabilities: new Set(["caching"]),
+          promptCache: { kind: "explicit", ttlMs: 60 * 60 * 1_000 },
+          capabilities: new Set(),
         },
       ],
     },
@@ -73,7 +74,7 @@ async function setup() {
 
 describe("request-only notice byte-stability across requests", () => {
   it("reproduces a drained undo notice identically on the next run's request", async () => {
-    const { thread, notices, orchestrator, requests } = await setup();
+    const { thread, notices, orchestrator, requests, deps } = await setup();
 
     await notices.record({
       kind: "awareness_degraded",
@@ -89,6 +90,12 @@ describe("request-only notice byte-stability across requests", () => {
     const second = await orchestrator.prepare({ threadId: thread.id, userText: "world" });
     await second.execute();
     expect(requests).toHaveLength(2);
+    expect(
+      deps.modelRequestDebug.listByThread(thread.id).map((record) => record.predictedCacheState),
+    ).toEqual([
+      { state: "cold", reason: "no_response" },
+      { state: "warm", reason: "reusable_prefix" },
+    ]);
 
     const firstMessages = requests[0]?.messages ?? [];
     const secondMessages = requests[1]?.messages ?? [];

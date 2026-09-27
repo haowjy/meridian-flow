@@ -389,6 +389,7 @@ export type {
   ModelRequestDebugSummary,
   ModelRequestDebugView,
   ModelRequestPrefix,
+  PredictedCacheState,
 } from "./model-request-debug.js";
 export {
   deriveModelRequestDebugViews,

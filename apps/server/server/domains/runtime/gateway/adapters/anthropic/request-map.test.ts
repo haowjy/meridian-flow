@@ -153,6 +153,8 @@ describe("Anthropic message alternation", () => {
       },
       "claude-sonnet-4-5",
       256,
+      "anthropic",
+      60 * 60 * 1_000,
     );
     expect(params.messages.map((message) => message.role)).toEqual(["assistant", "user"]);
     expect(params.messages[1]).toMatchObject({
@@ -201,6 +203,8 @@ describe("Anthropic prompt-cache breakpoints", () => {
       },
       "claude-sonnet-4-5",
       256,
+      "anthropic",
+      60 * 60 * 1_000,
     );
     expect(params.system).toEqual([
       { type: "text", text: "You are Writer.", cache_control: EPHEMERAL_1H },
@@ -225,6 +229,26 @@ describe("Anthropic prompt-cache breakpoints", () => {
       (block: { type: string }) => block.type === "tool_result",
     );
     expect(toolBlock).toMatchObject({ cache_control: EPHEMERAL_1H });
+  });
+
+  it("maps the descriptor's five-minute TTL into cache_control", () => {
+    const params = toAnthropicMessageParams(
+      {
+        messages: [
+          {
+            ...system("You are Writer."),
+            content: [{ type: "text", text: "You are Writer.", cacheBreakpoint: true }],
+          },
+        ],
+      },
+      "claude-sonnet-4",
+      256,
+      "anthropic",
+      5 * 60 * 1_000,
+    );
+    expect(params.system).toEqual([
+      { type: "text", text: "You are Writer.", cache_control: { type: "ephemeral", ttl: "5m" } },
+    ]);
   });
 
   it("never emits more than 4 cache_control breakpoints for the loop's 3-mark scheme", () => {
@@ -258,6 +282,8 @@ describe("Anthropic prompt-cache breakpoints", () => {
       },
       "claude-sonnet-4-5",
       256,
+      undefined,
+      60 * 60 * 1_000,
     );
     const wireJson = JSON.stringify(params);
     const breakpointCount = wireJson.split('"cache_control"').length - 1;

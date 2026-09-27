@@ -23,10 +23,9 @@
  *   effort level (low=25%, medium=50%, high=75%, max=100%).
  * - Prompt caching: a canonical `ContentPart.cacheBreakpoint` (set by
  *   `loop/prompt-cache-marks.ts`, at most three per request) becomes an
- *   explicit `cache_control: { type: "ephemeral", ttl: "1h" }` on that part.
- *   1h is the owner-chosen default TTL everywhere Anthropic makes it
- *   configurable; a 1h write costs 2x input tokens (vs 1.25x for 5m) — see
- *   the registry's `cacheWriteUsdPerMillionTokens` pinned rates. Tools are
+ *   explicit `cache_control` on that part. Its TTL comes from the registry
+ *   descriptor; a 1h write costs 2x input tokens (vs 1.25x for 5m) — see the
+ *   registry's `cacheWriteUsdPerMillionTokens` pinned rates. Tools are
  *   never marked directly: Anthropic renders tools before system before
  *   messages, so the system-message breakpoint already covers them.
  */
@@ -41,11 +40,18 @@ import type {
 } from "../../domain/index.js";
 import { safeToolOutput } from "../../helpers/serialize.js";
 
-/** Owner-chosen default: 1h everywhere Anthropic makes cache TTL configurable. */
-const CACHE_CONTROL_1H: Anthropic.Messages.CacheControlEphemeral = {
-  type: "ephemeral",
-  ttl: "1h",
-};
+type CacheControl = Anthropic.Messages.CacheControlEphemeral;
+
+function cacheControlForTtl(ttlMs: number | null | undefined): CacheControl | undefined {
+  switch (ttlMs) {
+    case 5 * 60 * 1_000:
+      return { type: "ephemeral", ttl: "5m" };
+    case 60 * 60 * 1_000:
+      return { type: "ephemeral", ttl: "1h" };
+    default:
+      return undefined;
+  }
+}
 
 // ── Content part mapping ──────────────────────────────────────────
 //
@@ -77,14 +83,18 @@ function mapContentPartToAnthropicBlock(
   part: ContentPart,
   targetProviderId: string,
   targetModelId: string,
+  cacheControl: CacheControl | undefined,
 ): AnthropicContentBlock | null {
+  if (part.cacheBreakpoint && !cacheControl) {
+    throw new Error("Prompt cache breakpoint requires a supported registry TTL");
+  }
   switch (part.type) {
     case "text":
       if (part.text.length === 0) return null;
       return {
         type: "text" as const,
         text: part.text,
-        ...(part.cacheBreakpoint ? { cache_control: CACHE_CONTROL_1H } : {}),
+        ...(part.cacheBreakpoint && cacheControl ? { cache_control: cacheControl } : {}),
       } as any;
     case "image": {
       const data = part.data instanceof URL ? part.data.href : part.data;
@@ -109,7 +119,7 @@ function mapContentPartToAnthropicBlock(
         id: part.toolCallId,
         name: part.toolName,
         input: part.input,
-        ...(part.cacheBreakpoint ? { cache_control: CACHE_CONTROL_1H } : {}),
+        ...(part.cacheBreakpoint && cacheControl ? { cache_control: cacheControl } : {}),
       } as any;
     case "tool_result":
       return {
@@ -117,7 +127,7 @@ function mapContentPartToAnthropicBlock(
         tool_use_id: part.toolCallId,
         content: safeToolOutput(part.output),
         is_error: part.isError ?? false,
-        ...(part.cacheBreakpoint ? { cache_control: CACHE_CONTROL_1H } : {}),
+        ...(part.cacheBreakpoint && cacheControl ? { cache_control: cacheControl } : {}),
       } as any;
     case "reasoning": {
       if (!matchesReasoningOrigin(part, targetProviderId, targetModelId)) return null;
@@ -180,6 +190,7 @@ function mapMessage(
   message: Message,
   targetProviderId: string,
   targetModelId: string,
+  cacheControl: CacheControl | undefined,
 ): Anthropic.Messages.MessageParam | null {
   // system messages are extracted separately
   if (message.role === "system") return null;
@@ -190,7 +201,7 @@ function mapMessage(
   if (message.role === "tool") {
     const blocks = message.content
       .filter((p) => p.type === "tool_result")
-      .map((p) => mapContentPartToAnthropicBlock(p, targetProviderId, targetModelId))
+      .map((p) => mapContentPartToAnthropicBlock(p, targetProviderId, targetModelId, cacheControl))
       .filter((p): p is AnthropicContentBlock => p !== null);
     return blocks.length > 0 ? { role: "user", content: blocks as any } : null;
   }
@@ -207,7 +218,9 @@ function mapMessage(
   }
 
   const blocks = message.content
-    .map((part) => mapContentPartToAnthropicBlock(part, targetProviderId, targetModelId))
+    .map((part) =>
+      mapContentPartToAnthropicBlock(part, targetProviderId, targetModelId, cacheControl),
+    )
     .filter((p): p is AnthropicContentBlock => p !== null);
   return blocks.length > 0 ? { role, content: orderedAnthropicBlocks(blocks) as any } : null;
 }
@@ -282,6 +295,7 @@ function mergeConsecutiveSameRole(
 
 function extractSystem(
   messages: Message[],
+  cacheControl: CacheControl | undefined,
 ): string | Anthropic.Messages.TextBlockParam[] | undefined {
   const systemMessages = messages.filter((m) => m.role === "system");
   if (systemMessages.length === 0) return undefined;
@@ -293,6 +307,7 @@ function extractSystem(
     const system = textFromParts(systemParts);
     return system.length > 0 ? system : undefined;
   }
+  if (!cacheControl) throw new Error("Prompt cache breakpoint requires a supported registry TTL");
 
   const systemBlocks = systemParts
     .filter((p): p is Extract<ContentPart, { type: "text" }> => p.type === "text")
@@ -300,7 +315,7 @@ function extractSystem(
     .map((p) => ({
       type: "text" as const,
       text: p.text,
-      ...(p.cacheBreakpoint ? { cache_control: CACHE_CONTROL_1H } : {}),
+      ...(p.cacheBreakpoint ? { cache_control: cacheControl } : {}),
     }));
 
   return systemBlocks.length > 0 ? systemBlocks : undefined;
@@ -406,12 +421,14 @@ export function toAnthropicMessageParams(
   modelId: string,
   maxOutputTokens: number,
   providerId = "anthropic",
+  promptCacheTtlMs?: number | null,
 ): Anthropic.Messages.MessageCreateParamsStreaming {
+  const cacheControl = cacheControlForTtl(promptCacheTtlMs);
   const maxTokens = request.maxTokens ?? maxOutputTokens;
-  const system = extractSystem(request.messages);
+  const system = extractSystem(request.messages, cacheControl);
   const messages = mergeConsecutiveSameRole(
     request.messages
-      .map((message) => mapMessage(message, providerId, modelId))
+      .map((message) => mapMessage(message, providerId, modelId, cacheControl))
       .filter((m): m is Anthropic.Messages.MessageParam => m !== null),
   );
 

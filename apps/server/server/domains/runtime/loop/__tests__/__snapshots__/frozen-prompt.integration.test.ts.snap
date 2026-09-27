@@ -216,7 +216,7 @@ active (most recent first; max 20):
       },
     ],
     "model": "gpt-4.1-mini",
-    "promptCacheKey": "00000000-0000-4000-8000-000000000020",
+    "promptCacheKey": "00000000-0000-4000-8000-000000000010",
     "tools": [
       {
         "description": "Search the story notes.",
@@ -353,7 +353,7 @@ active (most recent first; max 20):
       },
     ],
     "model": "gpt-4.1-mini",
-    "promptCacheKey": "00000000-0000-4000-8000-000000000030",
+    "promptCacheKey": "00000000-0000-4000-8000-000000000010",
     "tools": [
       {
         "description": "Search the story notes.",

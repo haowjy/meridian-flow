@@ -127,7 +127,8 @@ describe("frozen prompt provider requests", () => {
       displayName: "Fixture",
       contextWindow: 100_000,
       maxOutputTokens: 4_096,
-      capabilities: new Set(["caching"]),
+      promptCache: { kind: "explicit", ttlMs: 60 * 60 * 1_000 },
+      capabilities: new Set(),
     };
     const tools: Tool[] = [
       {
@@ -164,6 +165,10 @@ describe("frozen prompt provider requests", () => {
       await rig.run(nestedFork.id, tools);
 
       expect(gateway.requests).toHaveLength(3);
+      expect(gateway.requests[0]?.promptCacheKey).toBe(rig.thread.id);
+      expect(gateway.requests[1]?.promptCacheKey).toBe(rig.thread.id);
+      // The inherited cutoff is owned by the original source, not the first fork.
+      expect(gateway.requests[2]?.promptCacheKey).toBe(rig.thread.id);
       expect(gateway.requests[0]?.tools).toEqual(tools);
       // Correlation is observability-only metadata, not provider request bytes;
       // storage IDs added by later implementation steps must not move this gate.
@@ -185,6 +190,7 @@ describe("frozen prompt provider requests", () => {
           displayName: "Fixture",
           contextWindow: 100_000,
           maxOutputTokens: 4_096,
+          promptCache: { kind: "none" as const, ttlMs: null },
           capabilities: new Set(["image_input" as const]),
         },
       ],
@@ -278,6 +284,7 @@ describe("frozen prompt provider requests", () => {
             displayName: "Fixture",
             contextWindow: 100_000,
             maxOutputTokens: 4_096,
+            promptCache: { kind: "none" as const, ttlMs: null },
             capabilities: new Set(["image_input" as const]),
           },
         ],
@@ -349,6 +356,7 @@ describe("frozen prompt provider requests", () => {
       displayName: "Fixture",
       contextWindow: 100_000,
       maxOutputTokens: 4_096,
+      promptCache: { kind: "none", ttlMs: null },
       capabilities: new Set(["image_input"]),
     };
     const gateway = Object.assign(scriptedGateway(), { listModels: () => [model] });

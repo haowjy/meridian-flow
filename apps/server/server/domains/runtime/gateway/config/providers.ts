@@ -35,6 +35,7 @@ const MOCK_MODEL: ModelInfo = {
   displayName: "Mock LLM",
   contextWindow: 128_000,
   maxOutputTokens: 4096,
+  promptCache: { kind: "none", ttlMs: null },
   capabilities: new Set(["streaming", "tool_calling"]),
 };
 

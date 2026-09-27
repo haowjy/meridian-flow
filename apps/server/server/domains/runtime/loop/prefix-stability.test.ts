@@ -27,7 +27,7 @@ import type { WorkContextReader } from "./work-context.js";
 
 const MODEL_ID = "fixture-model";
 
-/** Declares "caching" so `assembleNextTurnContext` applies Anthropic cache marks. */
+/** Declares explicit caching so `assembleNextTurnContext` applies cache marks. */
 function cachingGateway(): Pick<Gateway, "getDefaultModel" | "listModels"> {
   const model: ModelInfo = {
     id: MODEL_ID,
@@ -35,7 +35,8 @@ function cachingGateway(): Pick<Gateway, "getDefaultModel" | "listModels"> {
     displayName: "Fixture",
     contextWindow: 100_000,
     maxOutputTokens: 4_096,
-    capabilities: new Set(["caching"]),
+    promptCache: { kind: "explicit", ttlMs: 60 * 60 * 1_000 },
+    capabilities: new Set(),
   };
   return {
     getDefaultModel: () => MODEL_ID,
@@ -377,7 +378,7 @@ describe("prefix stability across a growing thread", () => {
     }
   });
 
-  it("never marks tools or messages when the model lacks the caching capability", async () => {
+  it("never marks tools or messages when the model is not explicitly cacheable", async () => {
     const projects = createInMemoryProjectRepository();
     const project = await projects.create({ userId: "user-1", title: "Serial" });
     const repos = createInMemoryRepositories({ projects });
@@ -412,6 +413,7 @@ describe("prefix stability across a growing thread", () => {
             displayName: "No caching",
             contextWindow: 1000,
             maxOutputTokens: 100,
+            promptCache: { kind: "none", ttlMs: null },
             capabilities: new Set(),
           },
         ],

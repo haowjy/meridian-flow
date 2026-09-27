@@ -187,7 +187,7 @@ export async function assembleNextTurnContext(
   const modelId = gatewayParams.model ?? input.gateway?.getDefaultModel?.();
   const resolvedModel = input.gateway?.listModels?.().find((model) => model.id === modelId);
   const supportsImageInput = resolvedModel?.capabilities.has("image_input") ?? false;
-  const supportsPromptCaching = resolvedModel?.capabilities.has("caching") ?? false;
+  const usesExplicitPromptCache = resolvedModel?.promptCache.kind === "explicit";
   const savedInclusions = (await input.imageInclusions?.findByThread(thread.id as ThreadId)) ?? [];
   const imageProjection = await projectImageBlocksForModel({
     thread,
@@ -228,7 +228,14 @@ export async function assembleNextTurnContext(
     subagentGuidance: subagentGuidanceForUnfrozen,
   });
   const contextTools = built.tools;
-  const messages = supportsPromptCaching ? applyPromptCacheMarks(built.messages) : built.messages;
+  const messages = usesExplicitPromptCache ? applyPromptCacheMarks(built.messages) : built.messages;
+  const cacheKeyOwner =
+    thread.originType === "fork"
+      ? input.turns.find((turn) => turn.id === thread.originTurnId)?.threadId
+      : thread.id;
+  if (!cacheKeyOwner) {
+    throw new Error(`Fork cutoff owner is missing for thread ${thread.id}`);
+  }
 
   return {
     thread,
@@ -242,11 +249,12 @@ export async function assembleNextTurnContext(
     generateRequest: {
       messages,
       tools: contextTools,
-      // Unconditional (not gated on `supportsPromptCaching`): a stable
+      // Unconditional: a stable
       // per-thread routing hint is harmless for adapters that ignore it
       // (Anthropic has no such concept) and each adapter decides for itself
-      // whether to forward it (e.g. OpenAI Responses `prompt_cache_key`).
-      promptCacheKey: thread.id,
+      // whether to forward it (e.g. OpenAI Responses `prompt_cache_key`). A
+      // fork shares the cache route of the thread that owns its cutoff turn.
+      promptCacheKey: cacheKeyOwner,
       ...gatewayParams,
     },
     imageContextUpdates,

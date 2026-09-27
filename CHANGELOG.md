@@ -12,6 +12,7 @@
 - Keep forks of trashed chats working. Show a failed reply instead of a stuck message when a fork's history can't load.
 
 - Store immutable prompt/tool bakes behind write-once pointers; resolve fork prefixes at their cutoff and journal named epoch boundaries atomically.
+- Derive prefix-cache warmth from model descriptors and durable boundaries; record each captured request's prediction and route fork requests on the cutoff owner's cache key.
 - Keep the same Agent and prompt when forking by default.
 - Order turns by write-once per-thread positions, continuing fork-local order after the cutoff; inbox turns take their position when drained.
 - Persist image inclusion per block and keep request history stable; record asset loss and budget evictions as durable system updates.

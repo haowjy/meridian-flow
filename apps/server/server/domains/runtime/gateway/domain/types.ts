@@ -41,8 +41,14 @@ export type Capability =
   | "image_output"
   | "file_input"
   | "structured_output"
-  | "reasoning"
-  | "caching";
+  | "reasoning";
+
+/** Registry-declared provider cache behavior and its best-known retention window. */
+export interface PromptCacheDescriptor {
+  kind: "explicit" | "automatic" | "none";
+  /** Best-known TTL in milliseconds; null means the provider does not publish one. */
+  ttlMs: number | null;
+}
 
 /**
  * Static model metadata registered per provider. `provider` is filled in by
@@ -56,6 +62,7 @@ export interface ModelInfo {
   displayName: string;
   contextWindow: number;
   maxOutputTokens: number;
+  promptCache: PromptCacheDescriptor;
   capabilities: Set<Capability>;
   hostedTools?: Set<string>;
   /** Per-model inactivity window override. 0 disables the stall guard. */

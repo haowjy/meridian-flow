@@ -10,6 +10,7 @@ import type {
   Capability,
   GatewayConfig,
   ModelInfo,
+  PromptCacheDescriptor,
   ProviderConfig,
 } from "../domain/index.js";
 
@@ -33,6 +34,7 @@ export interface RegisteredModel {
   maxOutputTokens: number;
   /** JSON-natural capability list; converted to Set only at the gateway boundary. */
   capabilities: readonly Capability[];
+  promptCache: PromptCacheDescriptor;
   /** Provider-side tools that Meridian advertises but does not execute itself. */
   hostedTools?: readonly string[];
   /** Per-model inactivity window override in ms. 0 disables the stall guard. */
@@ -79,6 +81,14 @@ const ANTHROPIC_PRICING_SOURCE =
 const DEEPSEEK_PRICING_SOURCE =
   "https://api-docs.deepseek.com/quick_start/pricing (pinned 2026-06-10)";
 const OPENROUTER_PRICING_SOURCE = "https://openrouter.ai/docs/pricing (pinned fallback 2026-06-15)";
+
+const EXPLICIT_CACHE_1H: PromptCacheDescriptor = { kind: "explicit", ttlMs: 60 * 60 * 1_000 };
+const OPENAI_CACHE_ESTIMATE: PromptCacheDescriptor = { kind: "automatic", ttlMs: 5 * 60 * 1_000 };
+const DEEPSEEK_CACHE_ESTIMATE: PromptCacheDescriptor = {
+  kind: "automatic",
+  ttlMs: 60 * 60 * 1_000,
+};
+const NO_PROMPT_CACHE: PromptCacheDescriptor = { kind: "none", ttlMs: null };
 
 // `cacheWriteUsdPerMillionTokens` is the 1h-ttl write rate (2x input), not the
 // 5m-ttl rate (1.25x): `loop/prompt-cache-marks.ts` + the Anthropic/OpenRouter
@@ -149,14 +159,8 @@ const CLAUDE_SONNET_4_MODEL = {
   displayName: "Claude Sonnet 4",
   contextWindow: 200_000,
   maxOutputTokens: 16_384,
-  capabilities: [
-    "streaming",
-    "tool_calling",
-    "image_input",
-    "structured_output",
-    "reasoning",
-    "caching",
-  ],
+  promptCache: EXPLICIT_CACHE_1H,
+  capabilities: ["streaming", "tool_calling", "image_input", "structured_output", "reasoning"],
   hostedTools: ["web_search", "code_execution", "anthropic.text_editor", "anthropic.computer_use"],
   pricing: CLAUDE_SONNET_4_PRICING,
 } satisfies RegisteredModel;
@@ -166,14 +170,8 @@ const CLAUDE_SONNET_4_6_MODEL = {
   displayName: "Claude Sonnet 4.6",
   contextWindow: 1_000_000,
   maxOutputTokens: 64_000,
-  capabilities: [
-    "streaming",
-    "tool_calling",
-    "image_input",
-    "structured_output",
-    "reasoning",
-    "caching",
-  ],
+  promptCache: EXPLICIT_CACHE_1H,
+  capabilities: ["streaming", "tool_calling", "image_input", "structured_output", "reasoning"],
   hostedTools: ["web_search", "code_execution", "anthropic.text_editor", "anthropic.computer_use"],
   pricing: CLAUDE_SONNET_4_PRICING,
 } satisfies RegisteredModel;
@@ -183,14 +181,8 @@ const CLAUDE_HAIKU_4_5_MODEL = {
   displayName: "Claude Haiku 4.5",
   contextWindow: 200_000,
   maxOutputTokens: 64_000,
-  capabilities: [
-    "streaming",
-    "tool_calling",
-    "image_input",
-    "structured_output",
-    "reasoning",
-    "caching",
-  ],
+  promptCache: EXPLICIT_CACHE_1H,
+  capabilities: ["streaming", "tool_calling", "image_input", "structured_output", "reasoning"],
   hostedTools: ["web_search", "code_execution", "anthropic.text_editor", "anthropic.computer_use"],
   pricing: CLAUDE_HAIKU_4_5_PRICING,
 } satisfies RegisteredModel;
@@ -200,14 +192,8 @@ const CLAUDE_3_5_HAIKU_MODEL = {
   displayName: "Claude 3.5 Haiku",
   contextWindow: 200_000,
   maxOutputTokens: 8_192,
-  capabilities: [
-    "streaming",
-    "tool_calling",
-    "image_input",
-    "structured_output",
-    "reasoning",
-    "caching",
-  ],
+  promptCache: EXPLICIT_CACHE_1H,
+  capabilities: ["streaming", "tool_calling", "image_input", "structured_output", "reasoning"],
   hostedTools: ["web_search", "code_execution", "anthropic.text_editor", "anthropic.computer_use"],
   pricing: CLAUDE_3_5_HAIKU_PRICING,
 } satisfies RegisteredModel;
@@ -217,6 +203,7 @@ const GPT_4_1_MODEL = {
   displayName: "GPT-4.1",
   contextWindow: 1_047_576,
   maxOutputTokens: 32_768,
+  promptCache: OPENAI_CACHE_ESTIMATE,
   capabilities: [
     "streaming",
     "tool_calling",
@@ -233,6 +220,7 @@ const GPT_4_1_MINI_MODEL = {
   displayName: "GPT-4.1 mini",
   contextWindow: 1_047_576,
   maxOutputTokens: 32_768,
+  promptCache: OPENAI_CACHE_ESTIMATE,
   capabilities: [
     "streaming",
     "tool_calling",
@@ -249,6 +237,7 @@ const GPT_4O_MINI_MODEL = {
   displayName: "GPT-4o mini",
   contextWindow: 128_000,
   maxOutputTokens: 16_384,
+  promptCache: OPENAI_CACHE_ESTIMATE,
   capabilities: [
     "streaming",
     "tool_calling",
@@ -265,6 +254,7 @@ const GPT_4O_MODEL = {
   displayName: "GPT-4o",
   contextWindow: 128_000,
   maxOutputTokens: 16_384,
+  promptCache: OPENAI_CACHE_ESTIMATE,
   capabilities: [
     "streaming",
     "tool_calling",
@@ -282,6 +272,7 @@ const DEEPSEEK_V4_FLASH_MODEL = {
   displayName: "DeepSeek V4 Flash",
   contextWindow: 128_000,
   maxOutputTokens: 16_384,
+  promptCache: DEEPSEEK_CACHE_ESTIMATE,
   capabilities: ["streaming", "tool_calling", "structured_output", "reasoning"],
   pricing: DEEPSEEK_FLASH_PRICING,
 } satisfies RegisteredModel;
@@ -317,14 +308,8 @@ const OPENROUTER_CLAUDE_SONNET_4_MODEL = {
   displayName: "Claude Sonnet 4 (OpenRouter)",
   contextWindow: 200_000,
   maxOutputTokens: 16_384,
-  capabilities: [
-    "streaming",
-    "tool_calling",
-    "image_input",
-    "structured_output",
-    "reasoning",
-    "caching",
-  ],
+  promptCache: EXPLICIT_CACHE_1H,
+  capabilities: ["streaming", "tool_calling", "image_input", "structured_output", "reasoning"],
   pricing: OPENROUTER_CLAUDE_SONNET_4_PRICING,
 } satisfies RegisteredModel;
 
@@ -333,6 +318,7 @@ const OPENROUTER_GPT_4O_MODEL = {
   displayName: "GPT-4o (OpenRouter)",
   contextWindow: 128_000,
   maxOutputTokens: 16_384,
+  promptCache: NO_PROMPT_CACHE,
   capabilities: [
     "streaming",
     "tool_calling",
@@ -349,6 +335,7 @@ const OPENROUTER_GEMINI_FLASH_MODEL = {
   displayName: "Gemini 2.5 Flash (OpenRouter)",
   contextWindow: 1_048_576,
   maxOutputTokens: 65_536,
+  promptCache: NO_PROMPT_CACHE,
   capabilities: ["streaming", "tool_calling", "image_input", "structured_output", "reasoning"],
   pricing: OPENROUTER_GEMINI_FLASH_PRICING,
 } satisfies RegisteredModel;
@@ -406,6 +393,7 @@ function toModelInfo(provider: RegisteredProvider, model: RegisteredModel): Mode
     displayName: model.displayName,
     contextWindow: model.contextWindow,
     maxOutputTokens: model.maxOutputTokens,
+    promptCache: model.promptCache,
     capabilities: new Set(model.capabilities),
     hostedTools: model.hostedTools ? new Set(model.hostedTools) : undefined,
     stallTimeoutMs: model.stallTimeoutMs,
