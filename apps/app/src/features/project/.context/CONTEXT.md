@@ -54,7 +54,7 @@ Work is the dedicated collection/detail management destination. The collection r
 active and archived Work and owns creation and lifecycle entry points; it never selects
   a project-wide Work or rebinds a chat. Its response contains only named catalog
   Works and never lists No Work as a card. Route-owned detail and inline metadata consume
-the typed catalog, PATCH mutation, and associated-chat query seams.
+the typed catalog, PATCH mutation, and filtered chat-feed query seams.
 Work detail owns one page-scoped metadata controller. It coordinates the active field,
 authoritative returned Work, field-local failure, and an awaited Save/Discard/Keep
 editing decision with the route-owned navigation guard; leaves only submit intents through it.
@@ -95,7 +95,8 @@ with the same prospective Work and Agent choices, in the `ChatSurface` frame a
 live chat uses so the first Send never moves the composer. Only an explicit New
 chat focuses the pinned composer (a one-shot focus-request id in
 `chat-navigation`, consumed by whichever composer renders it), never a page
-load.
+load. A Work detail New chat request also carries that Work's id into the
+composer's prospective choices; it does not rebind an existing chat.
 
 The index door sits in each pane's 40px band after the sidebar toggle, on the
 same x as the Editor's Recently opened chip (`chat-index/ChatIndexButton.tsx`).

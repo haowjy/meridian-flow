@@ -50,7 +50,7 @@ export function SegmentedTabs<T extends string>({
               aria-selected={active}
               onClick={() => onChange(option.value)}
               className={cn(
-                "focus-ring h-6 shrink-0 rounded-[calc(var(--radius-lg)-2px)] px-2.5 text-xs transition-colors [@media(pointer:coarse)]:h-10 [@media(pointer:coarse)]:px-3.5 [@media(pointer:coarse)]:text-sm",
+                "focus-ring h-6 shrink-0 rounded-[calc(var(--radius-lg)-2px)] px-2.5 text-xs transition-colors [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:px-3.5 [@media(pointer:coarse)]:text-sm",
                 active
                   ? "bg-background font-medium text-foreground"
                   : "text-muted-foreground hover:text-foreground",

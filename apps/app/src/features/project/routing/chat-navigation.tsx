@@ -59,7 +59,7 @@ export type ChatNavigation = {
   /** The Chat screen: the current chat, or the index when there is none. */
   showChatScreen: () => Promise<void>;
   /** The Chat screen's index; in the dock, an empty composer. */
-  openNewChat: () => Promise<void>;
+  openNewChat: (workId?: string | null) => Promise<void>;
   openChatIndex: () => Promise<void>;
   /** Reveal the dock with the requested Work occupant view. */
   revealDock: (view: "chat" | "file") => void;
@@ -76,6 +76,8 @@ export type ChatNavigation = {
    * render, so mount timing never races a hold window.
    */
   newChatFocusRequestId: number | null;
+  /** Work explicitly selected by an in-context New chat action, if any. */
+  newChatWorkId: string | null | undefined;
   consumeNewChatFocusRequest: (id: number) => void;
 };
 
@@ -115,6 +117,7 @@ export function useProjectChatNavigation({
   );
   const [channels] = useState(createChannels);
   const [newChatFocusRequestId, setNewChatFocusRequestId] = useState<number | null>(null);
+  const [newChatWorkId, setNewChatWorkId] = useState<string | null | undefined>(undefined);
   const nextFocusRequestId = useRef(1);
   const latest = useRef({ accountId, projectId, activeScreen, urlChatId, currentThreadId, go });
   latest.current = { accountId, projectId, activeScreen, urlChatId, currentThreadId, go };
@@ -149,10 +152,11 @@ export function useProjectChatNavigation({
       openChatIndex,
       revealDock: (view: "chat" | "file") => channels.dockReveal.request(view),
       showChatScreen,
-      openNewChat: async () => {
+      openNewChat: async (workId?: string | null) => {
         if (onChatScreen()) return openChatIndex();
         remember(null);
         channels.dockReveal.request("chat");
+        setNewChatWorkId(workId);
         setNewChatFocusRequestId(nextFocusRequestId.current++);
       },
       acceptCreatedChat: (threadId: string) => {
@@ -165,7 +169,11 @@ export function useProjectChatNavigation({
       },
       registerDockReveal: channels.dockReveal.register,
       consumeNewChatFocusRequest: (id: number) => {
-        setNewChatFocusRequestId((current) => (current === id ? null : current));
+        setNewChatFocusRequestId((current) => {
+          if (current !== id) return current;
+          setNewChatWorkId(undefined);
+          return null;
+        });
       },
     };
     return { remember, commands };
@@ -185,8 +193,8 @@ export function useProjectChatNavigation({
   useConversationRevealRouting(commands.openChat);
 
   return useMemo(
-    () => ({ ...commands, display, recoveringFirstSend, newChatFocusRequestId }),
-    [commands, display, recoveringFirstSend, newChatFocusRequestId],
+    () => ({ ...commands, display, recoveringFirstSend, newChatFocusRequestId, newChatWorkId }),
+    [commands, display, recoveringFirstSend, newChatFocusRequestId, newChatWorkId],
   );
 }
 

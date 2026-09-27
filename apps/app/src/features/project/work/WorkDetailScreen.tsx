@@ -1,7 +1,7 @@
 /** Focused Work detail composition with independently resilient resources. */
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
-import type {} from "@meridian/contracts/protocol";
+import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { Work } from "@meridian/contracts/works";
 import {
@@ -11,11 +11,13 @@ import {
   FileText,
   Folder,
   NotebookPen,
+  Search,
   Upload,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
+import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { useWorkMutations } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -28,14 +30,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { contextTabFromFile } from "../context/context-tab-from-file";
-import { useDockViewStore, useOpenFileInDock } from "../dock/dock-view-store";
+import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { SegmentedTabs } from "@/components/ui/segmented-tabs";
+import { useMinuteClock } from "@/hooks/use-minute-clock";
+import { ChatIndexList, type ChatIndexRowProps } from "../chat-index/ChatIndexList";
+import { ChatIndexLoading } from "../chat-index/ChatIndexLoading";
+import { useChatRowCommands } from "../chat-list/useChatRowCommands";
 import { usePostApplyDraftGroupProjections } from "../draft-apply-recovery/DraftApplyRecoveryProvider";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { useProjectLeaveGuard } from "../routing/ProjectNavigationContext";
 import type { ProjectRouteCommands } from "../routing/project-route";
-import { WorkAssociatedChats } from "./WorkAssociatedChats";
-import { WorkDialog, type WorkDialogAction } from "./WorkDialog";
 import {
   useWorkMetadataController,
   WorkMetadata,
@@ -50,30 +56,55 @@ export type WorkDetailScreenProps = {
   catalogWorks?: Work[];
 };
 
+function useWorkView(): ["chats" | "files", (view: "chats" | "files") => void] {
+  const [view, setCurrentView] = useState<"chats" | "files">(() =>
+    new URLSearchParams(window.location.search).get("view") === "files" ? "files" : "chats",
+  );
+  const setView = useCallback((next: "chats" | "files") => {
+    setCurrentView(next);
+    const url = new URL(window.location.href);
+    if (next === "files") url.searchParams.set("view", "files");
+    else url.searchParams.delete("view");
+    window.history.replaceState(window.history.state, "", url);
+  }, []);
+  return [view, setView];
+}
+
 export function WorkDetailScreen({
   projectId,
   work,
   routeCommands,
   catalogWorks = [work],
 }: WorkDetailScreenProps) {
-  const { openChat } = useChatNavigation();
-  const openFileInDock = useOpenFileInDock(work.id);
   const mutations = useWorkMutations(projectId);
   const controller = useWorkMetadataController(work, (data) =>
     mutations.update.mutateAsync({ workId: work.id, data }),
   );
-  const [manage, setManage] = useState(false);
-  const [activeCommand, setActiveCommand] = useState<Exclude<
-    WorkDialogAction["type"],
-    "create"
-  > | null>(null);
-  const manageButton = useRef<HTMLButtonElement>(null);
+  const [view, setView] = useWorkView();
+  const [searchText, setSearchText] = useState("");
+  const [settledSearch, setSettledSearch] = useState<string | null>(null);
+  const [filesSearch, setFilesSearch] = useState("");
   const scrollOwner = useRef<HTMLDivElement>(null);
+  const feed = useProjectChatFeed(projectId, false, settledSearch, work.id);
+  const now = useMinuteClock();
+  const { openChat, openNewChat } = useChatNavigation();
+  const { onFavorite, onDelete, deleteFailure, retryDelete, deleteDialog } =
+    useChatRowCommands(projectId);
+  const onOpen = useCallback<ChatIndexRowProps["onOpen"]>(
+    (item) => void openChat(item.id),
+    [openChat],
+  );
+  const rowProps: ChatIndexRowProps = useMemo(
+    () => ({ onFavorite, onDelete, now, onOpen }),
+    [onFavorite, onDelete, now, onOpen],
+  );
   useEffect(() => {
-    const { enterWork, leaveWork } = useDockViewStore.getState();
-    enterWork(work.id);
-    return () => leaveWork(work.id);
-  }, [work.id]);
+    const timer = window.setTimeout(
+      () => setSettledSearch(searchText.trim() || null),
+      searchText.trim() ? 200 : 0,
+    );
+    return () => window.clearTimeout(timer);
+  }, [searchText]);
   useProjectLeaveGuard({
     request: (intent) => controller.request({ ...intent, label: t`Continue navigation` }),
     dirty: () => controller.dirty,
@@ -81,117 +112,269 @@ export function WorkDetailScreen({
   });
   return (
     <div ref={scrollOwner} className="app-scroll">
-      <article className="project-screen-column min-w-0 gap-10 pb-12">
+      <article className="project-screen-column min-w-0 gap-5 pb-12">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            holdWorkCollectionFocus(projectId, { kind: "heading" });
+            void routeCommands.closeWork({ replace: true });
+          }}
+          className="-ml-2 w-fit [@media(pointer:coarse)]:min-h-11"
+        >
+          <ChevronLeft className="size-4" />
+          <Trans>All Work</Trans>
+        </Button>
         <WorkMetadata
           controller={controller}
           identityChrome={
-            <div className="min-w-0 space-y-3">
-              <div className="flex items-center gap-2">
-                <Badge>
-                  {controller.work.status === "archived" ? (
-                    <Trans>Archived</Trans>
-                  ) : (
-                    <Trans>Active</Trans>
-                  )}
-                </Badge>
-              </div>
-              <div className="flex min-w-0 flex-wrap items-center gap-3 sm:justify-between">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    holdWorkCollectionFocus(projectId, { kind: "heading" });
-                    void routeCommands.closeWork({ replace: true });
-                  }}
-                  className="[@media(pointer:coarse)]:min-h-11"
-                >
-                  <ChevronLeft className="size-4" />
-                  <Trans>All Work</Trans>
-                </Button>
-                <Button
-                  ref={manageButton}
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    controller.request({
-                      label: t`Manage Work`,
-                      run: () => {
-                        setActiveCommand(null);
-                        setManage(true);
-                      },
-                    })
-                  }
-                  className="[@media(pointer:coarse)]:min-h-11"
-                >
-                  {controller.work.status === "archived" ? (
-                    <ArchiveRestore className="size-4" />
-                  ) : (
-                    <Archive className="size-4" />
-                  )}
-                  <Trans>Manage Work</Trans>
-                </Button>
-              </div>
-            </div>
+            <OverflowMenu
+              label={t`Work actions`}
+              triggerClassName="[@media(pointer:coarse)]:size-11"
+            >
+              <DropdownMenuItem
+                disabled={mutations.isPending}
+                onSelect={() =>
+                  (controller.work.status === "archived"
+                    ? mutations.unarchive
+                    : mutations.archive
+                  ).mutate(controller.work.id)
+                }
+              >
+                {controller.work.status === "archived" ? (
+                  <ArchiveRestore className="size-4" />
+                ) : (
+                  <Archive className="size-4" />
+                )}
+                {controller.work.status === "archived" ? (
+                  <Trans>Unarchive</Trans>
+                ) : (
+                  <Trans>Archive</Trans>
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={mutations.isPending}
+                onSelect={() =>
+                  mutations.delete.mutate(controller.work.id, {
+                    onSuccess: () => {
+                      holdWorkCollectionFocus(
+                        projectId,
+                        focusAfterDelete(catalogWorks, controller.work.id),
+                      );
+                      void routeCommands.closeWork({ replace: true });
+                    },
+                  })
+                }
+              >
+                <Trans>Delete Work</Trans>
+              </DropdownMenuItem>
+            </OverflowMenu>
           }
         />
-        <Drafts projectId={projectId} work={controller.work} commands={routeCommands} />
-        <div className="grid min-w-0 gap-6 @2xl/project-screen:grid-cols-2">
-          <TreeSummary
-            projectId={projectId}
-            work={controller.work}
-            scheme="scratch"
-            icon={NotebookPen}
-            onOpenFile={openFileInDock}
-          />
-          <TreeSummary
-            projectId={projectId}
-            work={controller.work}
-            scheme="uploads"
-            icon={Upload}
-            onOpenFile={openFileInDock}
-          />
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Badge>
+            {controller.work.status === "archived" ? (
+              <Trans>Archived</Trans>
+            ) : (
+              <Trans>Active</Trans>
+            )}
+          </Badge>
+          <span>
+            <Trans>Updated</Trans> {relativeUpdated(controller.work.updatedAt)}
+          </span>
         </div>
-        <ResourceSection title={t`Associated chats`}>
-          <WorkAssociatedChats
+        <div className="flex min-w-0 flex-wrap items-center gap-3 border-b pb-3">
+          <SegmentedTabs
+            label={t`Work view`}
+            value={view}
+            onChange={setView}
+            options={[
+              { value: "chats", label: <Trans>Chats</Trans> },
+              { value: "files", label: <Trans>Files</Trans> },
+            ]}
+          />
+          <div className="relative min-w-0 flex-1 basis-40 sm:max-w-[260px]">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              type="search"
+              aria-label={view === "chats" ? t`Search chats` : t`Search files`}
+              placeholder={view === "chats" ? t`Search chats` : t`Search files`}
+              value={view === "chats" ? searchText : filesSearch}
+              onChange={(event) =>
+                view === "chats"
+                  ? setSearchText(event.target.value)
+                  : setFilesSearch(event.target.value)
+              }
+              className="h-8 pl-8 [@media(pointer:coarse)]:h-11"
+            />
+          </div>
+          {view === "chats" ? (
+            <Button
+              size="sm"
+              onClick={() => void openNewChat(work.id)}
+              className="[@media(pointer:coarse)]:min-h-11"
+            >
+              <Trans>New chat</Trans>
+            </Button>
+          ) : null}
+        </div>
+        {view === "chats" ? (
+          <WorkChatList
+            projectId={projectId}
+            feed={feed}
+            search={settledSearch}
+            scrollOwner={scrollOwner}
+            rowProps={rowProps}
+            deleteFailure={deleteFailure}
+            retryDelete={retryDelete}
+          />
+        ) : (
+          <FilesView
             projectId={projectId}
             work={controller.work}
-            scrollOwner={scrollOwner}
-            requestOpen={(item) => void openChat(item.id)}
+            commands={routeCommands}
+            search={filesSearch}
           />
-        </ResourceSection>
-        {manage ? (
-          <WorkDialog
-            work={controller.work}
-            pending={mutations.isPending}
-            error={activeCommand ? mutations[activeCommand].error : null}
-            onClose={() => {
-              if (!mutations.isPending) {
-                setActiveCommand(null);
-                setManage(false);
-              }
-            }}
-            onAction={(action) => {
-              if (action.type === "create") return;
-              setActiveCommand(action.type);
-              const mutation = mutations[action.type];
-              mutation.mutate(action.workId, {
-                onSuccess: () => {
-                  setManage(false);
-                  if (action.type === "delete") {
-                    holdWorkCollectionFocus(
-                      projectId,
-                      focusAfterDelete(catalogWorks, action.workId),
-                    );
-                    void routeCommands.closeWork({ replace: true });
-                  } else requestAnimationFrame(() => manageButton.current?.focus());
-                },
-              });
-            }}
-          />
-        ) : null}
+        )}
+        {deleteDialog}
         <DirtyDecision controller={controller} />
       </article>
     </div>
+  );
+}
+function relativeUpdated(value: string) {
+  const elapsed = Math.max(0, Date.now() - new Date(value).getTime());
+  if (elapsed < 60_000) return t`just now`;
+  if (elapsed < 3_600_000) return t`${Math.floor(elapsed / 60_000)}m ago`;
+  if (elapsed < 86_400_000) return t`${Math.floor(elapsed / 3_600_000)}h ago`;
+  return t`${Math.floor(elapsed / 86_400_000)}d ago`;
+}
+function WorkChatList({
+  projectId,
+  feed,
+  search,
+  scrollOwner,
+  rowProps,
+  deleteFailure,
+  retryDelete,
+}: {
+  projectId: string;
+  feed: ReturnType<typeof useProjectChatFeed>;
+  search: string | null;
+  scrollOwner: React.RefObject<HTMLDivElement | null>;
+  rowProps: ChatIndexRowProps;
+  deleteFailure: ReturnType<typeof useChatRowCommands>["deleteFailure"];
+  retryDelete: () => void;
+}) {
+  if (feed.isPending) return <ChatIndexLoading />;
+  if (feed.isError && !feed.data)
+    return (
+      <InlineErrorRow
+        message={<Trans>Chats couldn’t load</Trans>}
+        onRetry={() => void feed.refetch()}
+      />
+    );
+  if (!feed.items.length && !feed.hasNextPage && !feed.isPlaceholderData)
+    return (
+      <div className="py-4">
+        {search ? (
+          <p className="text-sm text-muted-foreground">
+            <Trans>No chats match “{search}”.</Trans>
+          </p>
+        ) : (
+          <>
+            <p className="text-sm font-medium">
+              <Trans>Start a chat in this Work</Trans>
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              <Trans>Chats you start here stay with this Work.</Trans>
+            </p>
+          </>
+        )}
+      </div>
+    );
+  return (
+    <>
+      <ChatIndexList
+        projectId={projectId}
+        items={feed.items as readonly ProjectChatItem[]}
+        complete={!feed.hasNextPage}
+        busy={feed.isFetching}
+        scrollOwner={scrollOwner}
+        rowProps={rowProps}
+        deleteFailure={deleteFailure}
+        retryDelete={retryDelete}
+      />
+      <WorkChatNextPage feed={feed} />
+    </>
+  );
+}
+function WorkChatNextPage({ feed }: { feed: ReturnType<typeof useProjectChatFeed> }) {
+  const sentinel = useRef<HTMLDivElement>(null);
+  const pages = feed.data?.pages.length;
+  const { fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError } = feed;
+  useEffect(() => {
+    if (!sentinel.current || !hasNextPage || isFetchingNextPage || isFetchNextPageError) return;
+    let active = true;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!active || !entry?.isIntersecting) return;
+        active = false;
+        void fetchNextPage();
+      },
+      { rootMargin: "240px" },
+    );
+    observer.observe(sentinel.current);
+    return () => {
+      active = false;
+      observer.disconnect();
+    };
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError, pages]);
+  if (isFetchNextPageError)
+    return (
+      <InlineErrorRow
+        message={<Trans>More chats couldn’t load.</Trans>}
+        onRetry={() => void fetchNextPage()}
+      />
+    );
+  return <div ref={sentinel} aria-hidden className="h-px" />;
+}
+function FilesView({
+  projectId,
+  work,
+  commands,
+  search,
+}: {
+  projectId: string;
+  work: Work;
+  commands: ProjectRouteCommands;
+  search: string;
+}) {
+  return (
+    <>
+      <Drafts projectId={projectId} work={work} commands={commands} />
+      <div className="grid min-w-0 gap-5 pt-5 @2xl/project-screen:grid-cols-2">
+        <TreeSummary
+          projectId={projectId}
+          work={work}
+          scheme="scratch"
+          icon={NotebookPen}
+          search={search}
+        />
+        <TreeSummary
+          projectId={projectId}
+          work={work}
+          scheme="uploads"
+          icon={Upload}
+          search={search}
+        />
+      </div>
+    </>
   );
 }
 function Drafts({
@@ -266,16 +449,19 @@ function TreeSummary({
   work,
   scheme,
   icon: Icon,
-  onOpenFile,
+  search,
 }: {
   projectId: string;
   work: Work;
   scheme: "scratch" | "uploads";
   icon: typeof NotebookPen;
-  onOpenFile: (tab: Extract<import("@/client/stores").ContextTab, { kind: "viewer" }>) => void;
+  search: string;
 }) {
   const query = useContextCatalogView(projectId, scheme, { workId: work.id });
-  const count = query.catalog?.files().length ?? 0;
+  const files =
+    query.catalog
+      ?.files()
+      .filter((file) => !search || file.name.toLowerCase().includes(search.toLowerCase())) ?? [];
   const label = scheme === "scratch" ? t`Scratch` : t`Uploads`;
   return (
     <ResourceSection title={label}>
@@ -294,20 +480,18 @@ function TreeSummary({
             <span className="min-w-0">
               <span className="block text-sm font-medium">{label}</span>
               <span className="text-meta text-muted-foreground">
-                {count ? (
-                  <Plural value={count} one="# item" other="# items" />
+                {files.length ? (
+                  <Plural value={files.length} one="# item" other="# items" />
                 ) : (
                   <Trans>Nothing here yet</Trans>
                 )}
               </span>
             </span>
           </div>
-          <CatalogPreview
-            catalog={query.catalog}
-            scheme={scheme}
-            workId={work.id}
-            onOpenFile={onOpenFile}
-          />
+          <p className="text-sm text-muted-foreground">
+            <Trans>Viewing chat resources is not available yet.</Trans>
+          </p>
+          <CatalogPreview catalog={query.catalog} search={search} />
         </div>
       )}
     </ResourceSection>
@@ -331,60 +515,25 @@ function Loading() {
 function Empty({ children }: { children: React.ReactNode }) {
   return <p className="text-sm text-muted-foreground">{children}</p>;
 }
-function CatalogPreview({
-  catalog,
-  scheme,
-  workId,
-  onOpenFile,
-}: {
-  catalog: CatalogContextView;
-  scheme: "scratch" | "uploads";
-  workId: string;
-  onOpenFile: (tab: Extract<import("@/client/stores").ContextTab, { kind: "viewer" }>) => void;
-}) {
-  const children = catalog.children(catalog.root.entryId);
+function CatalogPreview({ catalog, search }: { catalog: CatalogContextView; search: string }) {
+  const children = catalog
+    .children(catalog.root.entryId)
+    .filter((node) => !search || node.name.toLowerCase().includes(search.toLowerCase()));
   const visible = children.slice(0, 3);
   if (!visible.length) return null;
   return (
     <ul className="space-y-1 px-1" aria-label={t`Contents preview`}>
       {visible.map((node) => (
-        <li key={node.path} className="min-w-0 text-meta text-muted-foreground">
-          {node.kind === "file" ? (
-            <button
-              type="button"
-              className="focus-ring flex min-h-9 w-full min-w-0 items-center gap-2 rounded px-1 text-left hover:bg-sidebar-accent/40 hover:text-foreground"
-              onClick={() => {
-                const tab = node.editable
-                  ? node.filetype === "markdown"
-                    ? {
-                        kind: "viewer" as const,
-                        documentId: node.documentId,
-                        scheme,
-                        path: node.path,
-                        name: node.name,
-                        workId,
-                        editable: false as const,
-                        fileType: "binary" as const,
-                        mimeType: "text/markdown",
-                      }
-                    : null
-                  : contextTabFromFile(scheme, node, workId);
-                if (tab?.kind === "viewer") onOpenFile(tab);
-              }}
-            >
-              <FileText className="size-3.5 shrink-0" aria-hidden />
-              <span className="min-w-0 truncate">{node.name}</span>
-            </button>
+        <li
+          key={node.path}
+          className="flex min-w-0 items-center gap-2 text-meta text-muted-foreground"
+        >
+          {node.kind === "dir" ? (
+            <Folder className="size-3.5 shrink-0" aria-hidden />
           ) : (
-            <span className="flex min-h-9 min-w-0 items-center gap-2 px-1">
-              {node.kind === "dir" ? (
-                <Folder className="size-3.5 shrink-0" aria-hidden />
-              ) : (
-                <FileText className="size-3.5 shrink-0" aria-hidden />
-              )}
-              <span className="min-w-0 truncate">{node.name}</span>
-            </span>
+            <FileText className="size-3.5 shrink-0" aria-hidden />
           )}
+          <span className="min-w-0 truncate">{node.name}</span>
         </li>
       ))}
       {children.length > visible.length ? (

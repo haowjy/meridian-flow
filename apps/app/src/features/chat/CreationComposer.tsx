@@ -18,6 +18,7 @@ export function CreationComposer({
   variant = "pinned",
   autoFocus = false,
   newChatFocusRequestId = null,
+  newChatWorkId,
   onNewChatFocusHandled,
 }: {
   projectId: string;
@@ -30,6 +31,8 @@ export function CreationComposer({
    * project routing beyond this prop).
    */
   newChatFocusRequestId?: number | null;
+  /** Explicit Work scope carried by a context-specific New chat action. */
+  newChatWorkId?: string | null;
   onNewChatFocusHandled?: (id: number) => void;
 }) {
   const creation = useCreationComposer(projectId);
@@ -44,6 +47,10 @@ export function CreationComposer({
     requestAnimationFrame(() => composerRef.current?.focus());
     onNewChatFocusHandled?.(newChatFocusRequestId);
   }, [newChatFocusRequestId, variant, onNewChatFocusHandled]);
+  useEffect(() => {
+    if (newChatFocusRequestId == null || newChatWorkId === undefined) return;
+    creation.updateChoices({ workId: newChatWorkId });
+  }, [creation.updateChoices, newChatFocusRequestId, newChatWorkId]);
   const works = useWorks(projectId);
   const agents = useAgentCatalog(true, projectId);
   const choices = creation.choices;

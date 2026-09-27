@@ -1,8 +1,7 @@
-/** Page-scoped metadata edit lifecycle and its display-first view. */
+/** Page-scoped Work name and description editing lifecycle. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
-import { Pencil } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,10 +49,8 @@ export function useWorkMetadataController(
     setWork(initial);
   }, [initial]);
   useEffect(() => {
-    if (saving || field || !held) return;
-    takeHeld()?.run();
+    if (!saving && !field && held) takeHeld()?.run();
   }, [field, held, saving, takeHeld]);
-
   const focusDisplay = useCallback(
     (target: MetadataField) =>
       requestAnimationFrame(() => displayRefs.current.get(target)?.focus()),
@@ -83,24 +80,25 @@ export function useWorkMetadataController(
       return true;
     }
     const target = field;
+    const previous = work;
+    setWork({ ...work, [target]: normalizedDraft, updatedAt: new Date().toISOString() });
     setSaving(true);
     setError(null);
     try {
-      const returned = await saveWork({
-        [target]: normalizedDraft,
-      });
+      const returned = await saveWork({ [target]: normalizedDraft });
       setWork(returned);
       setField(null);
       setAnnouncement(t`${fieldLabel(target)} saved`);
       focusDisplay(target);
       return true;
     } catch (cause) {
+      setWork(previous);
       setError(cause instanceof Error ? cause.message : t`Save failed`);
       return false;
     } finally {
       setSaving(false);
     }
-  }, [dirty, field, focusDisplay, normalizedDraft, saveWork, saving]);
+  }, [dirty, field, focusDisplay, normalizedDraft, saveWork, saving, work]);
   const request = useCallback(
     (intent: NonNullable<HeldIntent>) => {
       const previous = heldRef.current;
@@ -125,8 +123,7 @@ export function useWorkMetadataController(
   );
   const saveAndResume = useCallback(async () => {
     const intent = heldRef.current;
-    if (!intent) return;
-    if ((await save()) && heldRef.current === intent) takeHeld()?.run();
+    if (intent && (await save()) && heldRef.current === intent) takeHeld()?.run();
   }, [save, takeHeld]);
   const discardAndResume = useCallback(() => {
     if (!heldRef.current || saving) return;
@@ -162,23 +159,40 @@ export function useWorkMetadataController(
 export type WorkMetadataController = ReturnType<typeof useWorkMetadataController>;
 
 export function WorkMetadata({
-  controller,
+  controller: c,
   identityChrome,
 }: {
   controller: WorkMetadataController;
   identityChrome?: React.ReactNode;
 }) {
-  const c = controller;
-  const headingRef = useRef<HTMLHeadingElement>(null);
+  const description = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
   useLayoutEffect(() => {
-    headingRef.current?.focus();
-  }, [c.work.id]);
+    c.displayRefs.current.get("name")?.focus();
+  }, [c.work.id, c.displayRefs]);
   useLayoutEffect(() => {
     if (!c.field) return;
-    c.editorRef.current?.focus();
-    if (c.field === "name" && c.editorRef.current instanceof HTMLInputElement)
-      c.editorRef.current.select();
-  }, [c.editorRef, c.field]);
+    const editor = c.editorRef.current;
+    editor?.focus();
+    if (c.field === "name" && editor instanceof HTMLInputElement) editor.select();
+    if (c.field === "goal" && editor instanceof HTMLTextAreaElement) {
+      editor.style.height = "auto";
+      editor.style.height = `${editor.scrollHeight}px`;
+    }
+  }, [c.field, c.editorRef]);
+  useEffect(() => {
+    const node = description.current;
+    if (c.field || !node || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      if (!expanded) setOverflows(node.scrollHeight > node.clientHeight + 1);
+    };
+    if (expanded) setOverflows(true);
+    else measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [c.field, c.work.goal, expanded]);
   const keyDown = (event: React.KeyboardEvent) => {
     if (event.nativeEvent.isComposing) return;
     if (event.key === "Escape") {
@@ -187,92 +201,75 @@ export function WorkMetadata({
     }
     if (
       (c.field === "name" && event.key === "Enter") ||
-      (c.field !== "name" && event.key === "Enter" && (event.metaKey || event.ctrlKey))
+      (c.field === "goal" && event.key === "Enter" && (event.metaKey || event.ctrlKey))
     ) {
       event.preventDefault();
       void c.save();
     }
   };
-  const refFor = (field: MetadataField) => (node: HTMLElement | null) => {
+  const displayRef = (field: MetadataField) => (node: HTMLElement | null) => {
     if (node) c.displayRefs.current.set(field, node);
     else c.displayRefs.current.delete(field);
   };
   return (
-    <section className="min-w-0 space-y-7" aria-label={t`Work identity`}>
+    <section className="min-w-0" aria-label={t`Work identity`}>
       <p className="sr-only" aria-live="polite">
         {c.announcement}
       </p>
-      <div className="min-w-0">
-        {c.field === "name" ? (
-          <Editor field="name" controller={c} keyDown={keyDown} />
-        ) : (
-          <div className="flex min-w-0 items-start gap-2">
-            <h1
-              ref={(node) => {
-                headingRef.current = node;
-                refFor("name")(node);
-              }}
-              tabIndex={-1}
-              className="focus-ring min-h-11 min-w-0 cursor-text rounded-sm break-words text-2xl font-semibold [overflow-wrap:anywhere] [@media(pointer:coarse)]:min-h-11"
-              onClick={() => c.activate("name")}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") c.activate("name");
-              }}
-            >
-              {c.work.name}
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          {c.field === "name" ? (
+            <Editor field="name" controller={c} keyDown={keyDown} />
+          ) : (
+            <h1 className="w-fit max-w-full text-xl font-semibold [overflow-wrap:anywhere]">
+              <button
+                type="button"
+                ref={displayRef("name")}
+                onClick={() => c.activate("name")}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === "F2") {
+                    event.preventDefault();
+                    c.activate("name");
+                  }
+                }}
+                className="focus-ring rounded-sm text-left"
+              >
+                {c.work.name}
+              </button>
             </h1>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label={t`Edit Work name`}
-              onClick={() => c.activate("name")}
-              className="shrink-0 [@media(pointer:coarse)]:size-11"
-            >
-              <Pencil className="size-4" />
-            </Button>
-          </div>
-        )}
+          )}
+          {c.field === "goal" ? (
+            <Editor field="goal" controller={c} keyDown={keyDown} />
+          ) : (
+            <div className="mt-1 max-w-3xl">
+              <div
+                ref={description}
+                className={`relative overflow-hidden whitespace-pre-line text-base leading-6 text-foreground ${expanded ? "max-h-none" : "max-h-[4.5rem]"} ${overflows && !expanded ? "[mask-image:linear-gradient(to_bottom,#000_70%,transparent)]" : ""}`}
+              >
+                <button
+                  type="button"
+                  ref={displayRef("goal")}
+                  onClick={() => c.activate("goal")}
+                  className={`focus-ring min-h-6 w-full rounded-sm text-left [@media(pointer:coarse)]:min-h-11 ${c.work.goal ? "" : "text-muted-foreground"}`}
+                >
+                  {c.work.goal || t`Add a description of what this Work is for`}
+                </button>
+              </div>
+              {overflows ? (
+                <button
+                  type="button"
+                  className="text-button mt-1 min-h-6 text-sm [@media(pointer:coarse)]:min-h-11"
+                  onClick={() => setExpanded(!expanded)}
+                >
+                  {expanded ? <Trans>Show less</Trans> : <Trans>Show more</Trans>}
+                </button>
+              ) : null}
+            </div>
+          )}
+        </div>
+        {identityChrome}
       </div>
-      {identityChrome}
-      <Field
-        field="goal"
-        label={t`Goal`}
-        controller={c}
-        displayRef={refFor("goal")}
-        keyDown={keyDown}
-      />
     </section>
-  );
-}
-function Field({
-  field,
-  label,
-  controller: c,
-  displayRef,
-  keyDown,
-}: {
-  field: "goal";
-  label: string;
-  controller: WorkMetadataController;
-  displayRef: (node: HTMLElement | null) => void;
-  keyDown: (event: React.KeyboardEvent) => void;
-}) {
-  return (
-    <div className="min-w-0 space-y-2">
-      <h2 className="text-sm font-medium">{label}</h2>
-      {c.field === field ? (
-        <Editor field={field} controller={c} keyDown={keyDown} />
-      ) : (
-        <button
-          type="button"
-          ref={displayRef}
-          className="focus-ring min-h-11 min-w-0 w-full max-w-3xl rounded-sm break-words text-left text-base whitespace-pre-line [overflow-wrap:anywhere] [@media(pointer:coarse)]:min-h-11"
-          onClick={() => c.activate(field)}
-        >
-          {c.work[field] || t`Add a goal`}
-        </button>
-      )}
-    </div>
   );
 }
 function Editor({
@@ -295,27 +292,21 @@ function Editor({
     onKeyDown: keyDown,
   };
   return (
-    <div className="min-w-0 w-full max-w-3xl space-y-2">
+    <div className="min-w-0 w-full max-w-3xl">
       {field === "name" ? (
         <Input
           ref={c.editorRef as React.Ref<HTMLInputElement>}
           {...common}
-          className="min-w-0 w-full"
-          onBlur={(event) => {
-            if (
-              !(
-                event.relatedTarget instanceof HTMLElement &&
-                event.relatedTarget.closest("button,a")
-              )
-            )
-              void c.save();
-          }}
+          aria-label={t`Work name`}
+          className="h-9 text-xl font-semibold"
+          onBlur={() => void c.save()}
         />
       ) : (
         <Textarea
           ref={c.editorRef as React.Ref<HTMLTextAreaElement>}
           {...common}
-          className="min-h-24 min-w-0 w-full resize-none [overflow-wrap:anywhere]"
+          aria-label={t`Description`}
+          className="min-h-28 resize-none text-base leading-6"
           onInput={(event) => {
             event.currentTarget.style.height = "auto";
             event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`;
@@ -323,47 +314,38 @@ function Editor({
         />
       )}
       {c.error ? (
-        <p id={errorId} role="alert" className="text-sm text-destructive">
+        <p id={errorId} role="alert" className="mt-1 text-sm text-destructive">
           {c.error}
         </p>
       ) : null}
-      <div className="flex flex-wrap gap-2">
-        {c.saving ? (
-          <span role="status" className="text-sm text-muted-foreground">
-            <Trans>Saving…</Trans>
-          </span>
-        ) : (
-          <Button
-            size="sm"
-            onClick={() => void c.save()}
-            className="[@media(pointer:coarse)]:min-h-11"
-          >
-            {c.error ? <Trans>Retry save</Trans> : t`Save ${fieldLabel(field).toLowerCase()}`}
+      {field === "goal" ? (
+        <div className="mt-2 flex flex-wrap gap-2">
+          <Button size="sm" disabled={c.saving} onClick={() => void c.save()}>
+            {c.saving ? (
+              <Trans>Saving…</Trans>
+            ) : c.error ? (
+              <Trans>Retry save</Trans>
+            ) : (
+              <Trans>Save</Trans>
+            )}
           </Button>
-        )}
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={c.saving}
-          onClick={c.cancel}
-          className="[@media(pointer:coarse)]:min-h-11"
-        >
-          <Trans>Cancel</Trans>
-        </Button>
-      </div>
+          <Button size="sm" variant="ghost" disabled={c.saving} onClick={c.cancel}>
+            <Trans>Cancel</Trans>
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
-function fieldLabel(field: MetadataField): string {
-  if (field === "name") return t`Work name`;
-  return t`Goal`;
+function fieldLabel(field: MetadataField) {
+  return field === "name" ? t`Work name` : t`Description`;
 }
-function sameMetadata(left: Work, right: Work): boolean {
+function sameMetadata(a: Work, b: Work) {
   return (
-    left.id === right.id &&
-    left.name === right.name &&
-    left.goal === right.goal &&
-    left.status === right.status &&
-    left.updatedAt === right.updatedAt
+    a.id === b.id &&
+    a.name === b.name &&
+    a.goal === b.goal &&
+    a.status === b.status &&
+    a.updatedAt === b.updatedAt
   );
 }

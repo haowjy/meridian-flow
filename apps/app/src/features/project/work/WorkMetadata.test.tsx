@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Work metadata editing behavior for the retained name and goal fields. */
+/** Work metadata edit safety and clamped description behavior. */
 import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -21,7 +21,7 @@ const WORK: Work = {
   name: "Arc",
   slug: "arc" as Work["slug"],
   isNoWork: false,
-  goal: "Reach the mirror",
+  goal: "First paragraph.\n\nSecond paragraph.\n\nThird paragraph.",
   status: "active",
   archivedAt: null,
   aiWriteMode: "direct",
@@ -31,48 +31,108 @@ const WORK: Work = {
   lastActivityAt: "2026-09-01T00:00:00.000Z",
   deletedAt: null,
 };
-
-function WorkMetadataHarness({
-  saveWork,
-}: {
-  saveWork: (data: UpdateWorkRequest) => Promise<Work>;
-}) {
-  const controller = useWorkMetadataController(WORK, saveWork);
-  return <WorkMetadata controller={controller} />;
+function Harness({ saveWork }: { saveWork: (data: UpdateWorkRequest) => Promise<Work> }) {
+  return <WorkMetadata controller={useWorkMetadataController(WORK, saveWork)} />;
+}
+function setValue(node: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(node), "value")?.set;
+  setter?.call(node, value);
+  node.dispatchEvent(new Event("input", { bubbles: true }));
+}
+async function click(node: Element | null) {
+  await act(async () => {
+    node?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
 }
 
 describe("WorkMetadata", () => {
-  it("saves edited goal text without flattening its paragraphs", async () => {
-    const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({
-      ...WORK,
-      ...data,
-      updatedAt: "2026-09-02T00:00:00.000Z",
-    }));
-
-    await withReactRoot(<WorkMetadataHarness saveWork={saveWork} />, async () => {
-      const goalButton = [...document.querySelectorAll("button")].find(
-        (button) => button.textContent === WORK.goal,
-      );
-      await act(async () => goalButton?.click());
-
-      const editor = document.querySelector<HTMLTextAreaElement>("textarea");
-      expect(editor).not.toBeNull();
-      const valueSetter = Object.getOwnPropertyDescriptor(
-        HTMLTextAreaElement.prototype,
-        "value",
-      )?.set;
+  it("saves the name on blur and requires a non-empty value", async () => {
+    const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
+    await withReactRoot(<Harness saveWork={saveWork} />, async () => {
+      await click(document.querySelector("h1 button"));
+      const input = document.querySelector<HTMLInputElement>("input");
+      expect(input).not.toBeNull();
+      if (!input) throw new Error("Name editor did not open");
       await act(async () => {
-        valueSetter?.call(editor, "First paragraph.\n\nSecond paragraph.");
-        editor?.dispatchEvent(new Event("input", { bubbles: true }));
+        setValue(input, "Renamed arc");
+        input.blur();
       });
-
-      const saveButton = [...document.querySelectorAll("button")].find(
-        (button) => button.textContent === "Save goal",
-      );
-      await act(async () => saveButton?.click());
-
-      expect(saveWork).toHaveBeenCalledWith({ goal: "First paragraph.\n\nSecond paragraph." });
-      expect(document.body.textContent).toContain("First paragraph.\n\nSecond paragraph.");
+      expect(saveWork).toHaveBeenCalledWith({ name: "Renamed arc" });
     });
+  });
+
+  it("does not save the description on blur and cancels on Escape", async () => {
+    const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
+    await withReactRoot(<Harness saveWork={saveWork} />, async () => {
+      await click(
+        [...document.querySelectorAll("button")].find((button) =>
+          button.textContent?.startsWith("First paragraph"),
+        ) ?? null,
+      );
+      const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
+      expect(textarea).not.toBeNull();
+      if (!textarea) throw new Error("Description editor did not open");
+      await act(async () => {
+        setValue(textarea, "Unfinished draft");
+        textarea.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
+      });
+      expect(saveWork).not.toHaveBeenCalled();
+      await act(async () => {
+        textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      });
+      expect(document.querySelector("textarea")).toBeNull();
+      expect(document.body.textContent).toContain("First paragraph.");
+    });
+  });
+
+  it("keeps only one field in edit mode while guarding a dirty description", async () => {
+    const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
+    await withReactRoot(<Harness saveWork={saveWork} />, async () => {
+      await click(
+        [...document.querySelectorAll("button")].find((button) =>
+          button.textContent?.startsWith("First paragraph"),
+        ) ?? null,
+      );
+      const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
+      expect(textarea).not.toBeNull();
+      if (!textarea) throw new Error("Description editor did not open");
+      await act(async () => {
+        setValue(textarea, "A changed description");
+      });
+      await click(document.querySelector("h1 button"));
+      expect(document.querySelectorAll("textarea")).toHaveLength(1);
+      expect(document.querySelectorAll("input")).toHaveLength(0);
+      expect(document.querySelector("textarea")).not.toBeNull();
+    });
+  });
+
+  it("exposes the clamp toggle only for measured overflow", async () => {
+    const native = window.ResizeObserver;
+    window.ResizeObserver = class {
+      constructor(private callback: ResizeObserverCallback) {}
+      observe(target: Element) {
+        Object.defineProperty(target, "scrollHeight", { configurable: true, value: 120 });
+        Object.defineProperty(target, "clientHeight", { configurable: true, value: 72 });
+        this.callback([], this as unknown as ResizeObserver);
+      }
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
+    try {
+      await withReactRoot(
+        <Harness saveWork={vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }))} />,
+        async () => {
+          expect(document.body.textContent).toContain("Show more");
+          await click(
+            [...document.querySelectorAll("button")].find(
+              (button) => button.textContent === "Show more",
+            ) ?? null,
+          );
+          expect(document.body.textContent).toContain("Show less");
+        },
+      );
+    } finally {
+      window.ResizeObserver = native;
+    }
   });
 });

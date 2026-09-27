@@ -26,7 +26,6 @@ import {
   apiProjectWorkingSetPath,
   apiProjectWorksPath,
   apiProjectWorkWriteModePath,
-  apiWorkThreadsPath,
   type CatalogChanges,
   type CatalogLookupResult,
   type CatalogScope,
@@ -44,7 +43,6 @@ import {
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
   type ListWorksResponse,
-  type ListWorkThreadsResponse,
   type MoveContextEntryRequest,
   type MoveContextEntryResult,
   type ProjectContextIdentityLookupResult,
@@ -66,11 +64,6 @@ type RequestInitOptions = {
   origin?: string;
   headers?: HeadersInit;
   keepalive?: boolean;
-  signal?: AbortSignal;
-};
-
-type ListWorkThreadsOptions = RequestInitOptions & {
-  cursor?: string | null;
   signal?: AbortSignal;
 };
 
@@ -118,19 +111,6 @@ export async function listProjectThreads(
     { headers: init?.headers, signal: init?.signal },
   );
   return response.threads;
-}
-
-export async function listWorkThreads(
-  workId: string,
-  options?: ListWorkThreadsOptions,
-): Promise<ListWorkThreadsResponse> {
-  return getJson<ListWorkThreadsResponse>(
-    urlFor(apiWorkThreadsPath(workId, options?.cursor), options),
-    {
-      headers: options?.headers,
-      signal: options?.signal,
-    },
-  );
 }
 
 export async function listProjectWorks(

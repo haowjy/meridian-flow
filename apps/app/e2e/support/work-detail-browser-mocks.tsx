@@ -1,10 +1,10 @@
 /** Deterministic browser adapters for the Work detail component fixture. */
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
-import { useState } from "react";
 import type { WorkCommand, WorkMutations } from "../../src/client/query/useWorks";
 export const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
   parts.reduce((text, part, index) => text + part + (values[index] ?? ""), "");
+export const msg = t;
 export function Trans({ children }: { children: React.ReactNode }) {
   return children;
 }
@@ -33,19 +33,15 @@ export const useContextCatalogView = (_projectId: string, scheme: "scratch" | "u
   isError: false,
   refetch: () => undefined,
 });
-export const useWorkThreads = () => {
-  const [threads, setThreads] = useState(state().threads);
-  const [hasNextPage, setHasNextPage] = useState(Boolean(state().nextThreads?.length));
+export const useProjectChatFeed = () => {
+  const threads = state().threads;
   return {
-    threads,
+    items: threads,
+    data: { pages: [{ items: threads, nextCursor: null }] },
+    isPending: false,
     isError: false,
-    isFetchingNextPage: false,
-    nextPageIdentity: hasNextPage ? "next-page" : null,
-    fetchNextPageFor: () => {
-      setThreads((current) => [...current, ...(state().nextThreads ?? [])]);
-      setHasNextPage(false);
-    },
-    setFavorite: async () => true,
+    isPlaceholderData: false,
+    hasNextPage: false,
     refetch: () => undefined,
   };
 };
@@ -57,6 +53,20 @@ export const useAnnouncement = () => ({
   announce: () => undefined,
   announceError: () => undefined,
 });
+export const announceError = () => undefined;
+export const useIsThreadPendingCreation = () => false;
+export const useThreadActions = () => ({});
+export const commitContextAvailability = () => undefined;
+export const commitDraftApplyMetadata = () => undefined;
+export const commitPlannedContextRemoval = () => undefined;
+export const commitReviewOverlayClose = () => undefined;
+export const getContextTabs = () => [];
+export const previewReviewOverlayClose = () => ({ status: "unchanged" });
+export const useContextTabsActions = () => ({});
+export const accessibleResourceCatalogView = () => null;
+export const contextCatalogScope = () => null;
+export const projectCatalogFile = () => null;
+export const projectCatalogView = () => null;
 function browserWorkCommand<TResult, TVariables>(
   run: (variables: TVariables) => Promise<TResult>,
 ): WorkCommand<TResult, TVariables> {

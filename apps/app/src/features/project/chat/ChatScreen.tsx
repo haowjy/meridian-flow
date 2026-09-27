@@ -37,7 +37,8 @@ export function ChatScreen({
   onOpenContextTarget,
 }: ChatScreenProps) {
   const { threads: projectThreads } = useProjectThreads(projectId);
-  const { openChat, newChatFocusRequestId, consumeNewChatFocusRequest } = useChatNavigation();
+  const { openChat, newChatFocusRequestId, newChatWorkId, consumeNewChatFocusRequest } =
+    useChatNavigation();
 
   // New chat: the same frame a live chat uses, with nothing above the composer
   // yet, so the first Send grows a transcript without moving the composer.
@@ -49,6 +50,7 @@ export function ChatScreen({
           <CreationComposer
             projectId={projectId}
             newChatFocusRequestId={newChatFocusRequestId}
+            newChatWorkId={newChatWorkId}
             onNewChatFocusHandled={consumeNewChatFocusRequest}
           />
         }
