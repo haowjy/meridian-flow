@@ -1,0 +1,1 @@
+ALTER TABLE "works" DROP COLUMN "description";

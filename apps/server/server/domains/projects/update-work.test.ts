@@ -14,12 +14,12 @@ const PROJECT_ID = "00000000-0000-4000-8000-000000000801";
 describe("updateWork", () => {
   it.each([
     {
-      raw: { name: "  Revised  ", goal: "  Finish it  ", description: "  Private notes  " },
-      normalized: { name: "Revised", goal: "Finish it", description: "Private notes" },
+      raw: { name: "  Revised  ", goal: "  Finish it  " },
+      normalized: { name: "Revised", goal: "Finish it" },
     },
     {
-      raw: { goal: " \n\t ", description: "" },
-      normalized: { goal: null, description: null },
+      raw: { goal: " \n\t " },
+      normalized: { goal: null },
     },
   ])("normalizes shared metadata intent: $raw", ({ raw, normalized }) => {
     expect(normalizeWorkUpdateInput(raw)).toEqual(normalized);
@@ -56,7 +56,7 @@ describe("updateWork", () => {
     expect(changed).toEqual([PROJECT_ID]);
   });
 
-  it("does not refresh Work context for description-only changes", async () => {
+  it("refreshes Work context when the goal changes", async () => {
     const works = createInMemoryWorkRepository();
     const existing = await works.create({ projectId: PROJECT_ID, name: "Draft" });
     let refreshes = 0;
@@ -71,10 +71,10 @@ describe("updateWork", () => {
         },
       },
       existing.id,
-      { description: "Private UI detail" },
+      { goal: "Reach the gate" },
     );
 
-    expect(refreshes).toBe(0);
+    expect(refreshes).toBe(1);
   });
 
   it("returns the locked Work without writing when every requested field is identical", async () => {
@@ -83,7 +83,6 @@ describe("updateWork", () => {
       projectId: PROJECT_ID,
       name: "Draft",
       goal: "Finish it",
-      description: "Private notes",
     });
     const update = vi.spyOn(works, "update");
     const projectChanged = vi.fn(async () => {});
@@ -94,7 +93,6 @@ describe("updateWork", () => {
       {
         name: " Draft ",
         goal: "Finish it",
-        description: "Private notes",
         status: "active",
       },
     );
@@ -110,7 +108,6 @@ describe("updateWork", () => {
       projectId: PROJECT_ID,
       name: "Draft",
       goal: "Finish it",
-      description: "Private notes",
     });
     const update = vi.spyOn(works, "update");
 
@@ -125,11 +122,11 @@ describe("updateWork", () => {
     const cleared = await updateWorkTransition(
       { works, workContextNotices: { async projectChanged() {} } },
       existing.id,
-      { goal: null, description: null },
+      { goal: null },
     );
     expect(cleared).toMatchObject({
-      before: { goal: "Finish it", description: "Private notes" },
-      after: { goal: null, description: null },
+      before: { goal: "Finish it" },
+      after: { goal: null },
       changed: true,
     });
     expect(update).toHaveBeenCalledTimes(1);

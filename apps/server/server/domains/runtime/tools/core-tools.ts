@@ -30,14 +30,12 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
       command: z.literal("create"),
       name: z.string().min(1),
       goal: z.string().optional(),
-      description: z.string().optional(),
     })
     .strict(),
   WorkSelectorSchema.extend({
     command: z.literal("update"),
     name: z.string().optional(),
     goal: z.string().optional(),
-    description: z.string().optional(),
     status: WorkStatusSchema.optional(),
   }).strict(),
   WorkSelectorSchema.extend({ command: z.literal("delete") }).strict(),

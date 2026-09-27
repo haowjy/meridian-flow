@@ -82,7 +82,6 @@ export const works = pgTable(
     slug: text("slug"),
     isNoWork: boolean("is_no_work").notNull().default(false),
     goal: text("goal"),
-    description: text("description"),
     status: text("status").notNull().default("active"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     aiWriteMode: text("ai_write_mode").notNull().default("direct"),

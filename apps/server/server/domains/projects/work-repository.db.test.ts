@@ -260,7 +260,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         name: "Semantic state",
         goal: "Finish it",
-        description: "Private notes",
       });
       const deps = { works, workContextNotices: { async projectChanged() {} } };
       await control.unsafe(`
@@ -288,7 +287,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const identical = await updateWorkTransition(deps, work.id, {
           name: " Semantic state ",
           goal: "Finish it",
-          description: "Private notes",
           status: "active",
         });
         expect(identical).toEqual({ before: work, after: work, changed: false });
@@ -296,7 +294,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
         await expect(updateWorkTransition(deps, work.id, {})).resolves.toMatchObject({
           changed: false,
-          after: { goal: "Finish it", description: "Private notes" },
+          after: { goal: "Finish it" },
         });
         await expect(updateCount()).resolves.toBe(0);
 
@@ -318,7 +316,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           updateWorkTransition(deps, work.id, { name: "Semantic state", status: "active" }),
           updateWorkTransition(deps, work.id, {
             goal: "Finish it",
-            description: "Private notes",
           }),
         ];
         await waitForLock("transactionid");
@@ -330,13 +327,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ]);
         await expect(updateCount()).resolves.toBe(0);
 
-        const cleared = await updateWorkTransition(deps, work.id, {
-          goal: null,
-          description: null,
-        });
+        const cleared = await updateWorkTransition(deps, work.id, { goal: null });
         expect(cleared).toMatchObject({
-          before: { goal: "Finish it", description: "Private notes" },
-          after: { goal: null, description: null },
+          before: { goal: "Finish it" },
+          after: { goal: null },
           changed: true,
         });
         await expect(updateCount()).resolves.toBe(1);
@@ -361,18 +355,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const realChange = await updateWorkTransition(deps, work.id, {
           name: "Revised semantic state",
           goal: "New goal",
-          description: "New notes",
         });
         expect(realChange).toMatchObject({
           before: {
             name: beforeRealChange.name,
             goal: beforeRealChange.goal,
-            description: beforeRealChange.description,
           },
           after: {
             name: "Revised semantic state",
             goal: "New goal",
-            description: "New notes",
           },
           changed: true,
         });

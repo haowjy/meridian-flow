@@ -4,7 +4,7 @@ import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import type { MouseEvent } from "react";
 
-import { Card, CardAction, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardAction, CardHeader } from "@/components/ui/card";
 import { OverflowMenuTrigger } from "@/components/ui/overflow-menu";
 
 export function WorkCard({
@@ -51,11 +51,6 @@ export function WorkCard({
           />
         </CardAction>
       </CardHeader>
-      {work.description ? (
-        <CardContent className="line-clamp-2 px-5 text-meta text-muted-foreground">
-          {work.description}
-        </CardContent>
-      ) : null}
     </Card>
   );
 }

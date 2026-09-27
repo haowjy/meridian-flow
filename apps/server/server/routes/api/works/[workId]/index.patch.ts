@@ -24,9 +24,6 @@ export default defineEventHandler(async (event) => {
   if (body.goal !== undefined && typeof body.goal !== "string") {
     throw createError({ statusCode: 400, message: "goal must be a string" });
   }
-  if (body.description !== undefined && typeof body.description !== "string") {
-    throw createError({ statusCode: 400, message: "description must be a string" });
-  }
   if (body.status !== undefined) {
     throw createError({ statusCode: 400, message: "status is changed through archive actions" });
   }
@@ -38,7 +35,6 @@ export default defineEventHandler(async (event) => {
     {
       name: body.name as string | undefined,
       goal: body.goal as string | undefined,
-      description: body.description as string | undefined,
     },
   ).catch((error: unknown) => {
     if (error instanceof WorkNameRequiredError) {

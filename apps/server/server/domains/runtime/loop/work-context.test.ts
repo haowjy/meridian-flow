@@ -2,7 +2,11 @@ import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it } from "vitest";
 import { testWorkSlug } from "../../../test-support/work-slug.js";
-import { createWorkContextReader, renderWorkContext } from "./work-context.js";
+import {
+  createWorkContextReader,
+  renderWorkContext,
+  WORK_CONTEXT_GOAL_LIMIT,
+} from "./work-context.js";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000301" as ProjectId;
 const THREAD_ID = "00000000-0000-4000-8000-000000000302" as ThreadId;
@@ -17,7 +21,6 @@ function work(overrides: Partial<Work> & Pick<Work, "id" | "name">): Work {
     slug: testWorkSlug(overrides.name.toLowerCase().replaceAll(" ", "-")),
     isNoWork: false,
     goal: null,
-    description: null,
     status: "active",
     archivedAt: null,
     aiWriteMode: "direct",
@@ -53,6 +56,41 @@ describe("renderWorkContext", () => {
         "</work_context>",
       ].join("\n"),
     );
+  });
+
+  it("keeps goal paragraphs intact while escaping prompt markup", () => {
+    const current = work({
+      id: WORK_ID,
+      name: "Arc",
+      goal: "Reach the mirror.\n\nDo not trust <echoes> & whispers.",
+    });
+
+    expect(renderWorkContext({ current, activeWorks: [current] })).toBe(
+      [
+        "<work_context>",
+        'current: arc: "Arc"',
+        "  goal: |",
+        "    Reach the mirror.",
+        "    ",
+        "    Do not trust &lt;echoes&gt; &amp; whispers.",
+        "active (most recent first; max 20):",
+        "  none",
+        "</work_context>",
+      ].join("\n"),
+    );
+  });
+
+  it("marks goals truncated at the model-context limit", () => {
+    const current = work({
+      id: WORK_ID,
+      name: "Arc",
+      goal: "x".repeat(WORK_CONTEXT_GOAL_LIMIT + 40),
+    });
+    const rendered = renderWorkContext({ current, activeWorks: [current] });
+    const marker = "… [truncated]";
+
+    expect(rendered).toContain(`${"x".repeat(WORK_CONTEXT_GOAL_LIMIT - marker.length)}${marker}`);
+    expect(rendered).not.toContain("x".repeat(WORK_CONTEXT_GOAL_LIMIT + 1));
   });
 });
 

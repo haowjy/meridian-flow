@@ -19,10 +19,6 @@ export default defineEventHandler(async (event) => {
   if (body.goal !== undefined && typeof body.goal !== "string") {
     throw createError({ statusCode: 400, message: "goal must be a string" });
   }
-  if (body.description !== undefined && typeof body.description !== "string") {
-    throw createError({ statusCode: 400, message: "description must be a string" });
-  }
-
   await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
   const work = await createWork(
     {
@@ -35,7 +31,6 @@ export default defineEventHandler(async (event) => {
       createdByUserId: user.userId,
       name,
       goal: body.goal,
-      description: body.description,
     },
   ).catch((error: unknown) => {
     if (error instanceof WorkNameConflictError) {

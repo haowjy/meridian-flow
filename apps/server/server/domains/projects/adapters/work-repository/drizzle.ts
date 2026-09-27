@@ -65,7 +65,6 @@ function mapWork(row: WorkRow): Work {
     slug,
     isNoWork: row.isNoWork,
     goal: row.goal,
-    description: row.description,
     status: row.status as WorkStatus,
     archivedAt: row.archivedAt?.toISOString() ?? null,
     aiWriteMode: row.aiWriteMode as AiWriteMode,
@@ -169,7 +168,6 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
                 existingSlugs.map(({ slug }) => slug),
               ),
               goal: input.goal,
-              description: input.description,
             })
             .returning();
         } catch (cause) {
@@ -272,7 +270,6 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       const patch: Partial<typeof works.$inferInsert> = {};
       if (input.name !== undefined) patch.name = input.name.trim();
       if (input.goal !== undefined) patch.goal = input.goal;
-      if (input.description !== undefined) patch.description = input.description;
       if (input.status !== undefined) {
         patch.status = input.status;
         patch.archivedAt = input.status === "archived" ? new Date() : null;

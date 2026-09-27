@@ -48,7 +48,6 @@ function receiptState(work: Work): WorkBindingReceiptState {
     slug: work.slug,
     aiWriteMode: work.aiWriteMode,
     goal: work.goal,
-    description: work.description,
     status: work.status,
   };
 }

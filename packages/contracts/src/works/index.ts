@@ -16,7 +16,6 @@ export interface Work {
   slug: WorkSlug | null;
   isNoWork: boolean;
   goal: string | null;
-  description: string | null;
   status: WorkStatus;
   archivedAt: string | null;
   aiWriteMode: AiWriteMode;
@@ -51,13 +50,11 @@ export interface CreateWorkRequest {
   id?: WorkId;
   name: string;
   goal?: string;
-  description?: string;
 }
 
 export interface UpdateWorkRequest {
   name?: string;
   goal?: string;
-  description?: string;
 }
 
 /** Resolved execution scope. Null slug is No Work. */

@@ -120,7 +120,6 @@ type ModelWork = Pick<
   | "slug"
   | "name"
   | "goal"
-  | "description"
   | "status"
   | "aiWriteMode"
   | "createdAt"
@@ -243,7 +242,6 @@ function modelWork(work: Work): ModelWork {
     slug,
     name,
     goal,
-    description,
     status,
     aiWriteMode,
     createdAt,
@@ -255,7 +253,6 @@ function modelWork(work: Work): ModelWork {
     slug,
     name,
     goal,
-    description,
     status,
     aiWriteMode,
     createdAt,
@@ -373,7 +370,6 @@ function receiptState(work: Work): WorkReceiptState {
   return {
     name: work.name,
     goal: work.goal,
-    description: work.description,
     status: work.status,
   };
 }
@@ -788,7 +784,6 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
               createdByUserId: thread.userId,
               name: command.name,
               goal: command.goal,
-              description: command.description,
             },
           );
           return {
@@ -842,7 +837,6 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
               slug: rebound.after.slug,
               name: rebound.after.name,
               goal: rebound.after.goal,
-              description: rebound.after.description,
               status: rebound.after.status,
               aiWriteMode: rebound.after.aiWriteMode,
             },
@@ -879,7 +873,6 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             {
               name: command.name,
               goal: command.goal,
-              description: command.description,
               status: command.status,
             },
           );

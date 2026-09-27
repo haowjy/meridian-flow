@@ -125,15 +125,15 @@ describe("WorkPickerPanel", () => {
         expect(search?.parentElement?.className).toContain("mx-[var(--chat-space-block)]");
         expect(row?.getAttribute("aria-current")).toBe("true");
         expect(row?.hasAttribute("aria-label")).toBe(false);
-        const description = document.getElementById(row?.getAttribute("aria-describedby") ?? "");
+        const accessibleHelp = document.getElementById(row?.getAttribute("aria-describedby") ?? "");
         expect(row?.textContent).toContain("Ascend");
-        expect(description?.textContent).toContain("Current Work for this chat");
+        expect(accessibleHelp?.textContent).toContain("Current Work for this chat");
         expect(row?.textContent).not.toContain("Current for this chat");
       },
     );
   });
 
-  it("preserves archived and changing state in accessible descriptions", async () => {
+  it("preserves archived and changing state in accessible help", async () => {
     await withReactRoot(
       <WorkPickerPanel
         view={view({ status: "ready", works: [archived], refreshing: false }, "", true)}
@@ -143,8 +143,8 @@ describe("WorkPickerPanel", () => {
       />,
       () => {
         const row = document.querySelector<HTMLButtonElement>("[data-work-choice]");
-        const description = document.getElementById(row?.getAttribute("aria-describedby") ?? "");
-        expect(description?.textContent).toContain("Goal: Climb");
+        const accessibleHelp = document.getElementById(row?.getAttribute("aria-describedby") ?? "");
+        expect(accessibleHelp?.textContent).toContain("Goal: Climb");
         expect(row?.textContent).toContain("Archived");
         expect(row?.textContent).toContain("Changing work");
       },

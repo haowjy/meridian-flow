@@ -21,7 +21,6 @@ function work(id: WorkId, name: string, projectId = "project-1"): Work {
     slug: testWorkSlug(name.toLowerCase().replaceAll(" ", "-")),
     isNoWork: false,
     goal: null,
-    description: null,
     status: "active",
     archivedAt: null,
     aiWriteMode: "direct",

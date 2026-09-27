@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
-export type MetadataField = "name" | "goal" | "description";
+export type MetadataField = "name" | "goal";
 type HeldIntent = { run: () => void; cancel?: () => void; label: string } | null;
 const normalize = (field: MetadataField, value: string) =>
   field === "name" ? value.trim() : value.trim() || "";
@@ -241,13 +241,6 @@ export function WorkMetadata({
         displayRef={refFor("goal")}
         keyDown={keyDown}
       />
-      <Field
-        field="description"
-        label={t`Description`}
-        controller={c}
-        displayRef={refFor("description")}
-        keyDown={keyDown}
-      />
     </section>
   );
 }
@@ -258,7 +251,7 @@ function Field({
   displayRef,
   keyDown,
 }: {
-  field: "goal" | "description";
+  field: "goal";
   label: string;
   controller: WorkMetadataController;
   displayRef: (node: HTMLElement | null) => void;
@@ -273,10 +266,10 @@ function Field({
         <button
           type="button"
           ref={displayRef}
-          className={`focus-ring min-h-11 min-w-0 w-full max-w-3xl rounded-sm break-words text-left whitespace-pre-line [overflow-wrap:anywhere] [@media(pointer:coarse)]:min-h-11 ${field === "goal" ? "text-base" : "text-sm text-muted-foreground"}`}
+          className="focus-ring min-h-11 min-w-0 w-full max-w-3xl rounded-sm break-words text-left text-base whitespace-pre-line [overflow-wrap:anywhere] [@media(pointer:coarse)]:min-h-11"
           onClick={() => c.activate(field)}
         >
-          {c.work[field] || (field === "goal" ? t`Add a goal` : t`Add a description`)}
+          {c.work[field] || t`Add a goal`}
         </button>
       )}
     </div>
@@ -363,15 +356,13 @@ function Editor({
 }
 function fieldLabel(field: MetadataField): string {
   if (field === "name") return t`Work name`;
-  if (field === "goal") return t`Goal`;
-  return t`Description`;
+  return t`Goal`;
 }
 function sameMetadata(left: Work, right: Work): boolean {
   return (
     left.id === right.id &&
     left.name === right.name &&
     left.goal === right.goal &&
-    left.description === right.description &&
     left.status === right.status &&
     left.updatedAt === right.updatedAt
   );

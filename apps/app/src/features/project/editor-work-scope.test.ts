@@ -30,7 +30,6 @@ it.each(["active", "archived"] as const)("only admits active Work (%s)", (status
     slug: testWorkSlug("work"),
     isNoWork: false,
     goal: null,
-    description: null,
     archivedAt: null,
     aiWriteMode: "direct",
     entityRevision: "1",

@@ -6,7 +6,6 @@ import { decodeWorkSlug, type WorkSlug } from "./work-slug.js";
 export type WorkReceiptState = {
   name: string;
   goal: string | null;
-  description: string | null;
   status: WorkStatus;
 };
 
@@ -131,7 +130,6 @@ function parseState(value: unknown): WorkReceiptState | null {
   if (
     typeof state.name !== "string" ||
     (state.goal !== null && typeof state.goal !== "string") ||
-    (state.description !== null && typeof state.description !== "string") ||
     (state.status !== "active" && state.status !== "archived")
   ) {
     return null;
@@ -139,7 +137,6 @@ function parseState(value: unknown): WorkReceiptState | null {
   return {
     name: state.name,
     goal: state.goal,
-    description: state.description,
     status: state.status,
   };
 }

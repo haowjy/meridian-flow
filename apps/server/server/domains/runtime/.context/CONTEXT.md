@@ -53,7 +53,7 @@ skeleton and delegates the moving parts.
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; renders every persisted turn, including the durable notices/skill-body/subagent-update `system`-role turns and the `user`-role work-context turn that `inbox-context.ts` builds (via its own `formatNotices`). Child-provenance system text contains a compact exact `thread_report` call, never the report body; the parent model may fetch that report with the authorized tool. Assistant custom blocks stay UI-only to preserve tool_use→tool_result adjacency. |
 | `composed-system-prompt.ts` | Assembles the first gateway system prompt in a fixed layer order: immutable agent body (revision body or the host-owned empty default), the invocation overlay's additive `appendSystemPrompt`, frozen Work context, available skill slugs (name when it differs) and descriptions, named subagent slug/name/description from the bound roster, core document dialect, runtime URI instruction, and, for subagent threads only, the mandatory closing report instruction as the last layer. An empty or absent append adds nothing, and the guidance string is a module constant (`SUBAGENT_GUIDANCE`). Freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled. |
-| `work-context.ts` / delivery adapter | Renders authoritative Work state. Mutations enqueue immutable system-provenance refresh notices in the business transaction. The delivery boundary coalesces a batch into one durable system update and event and acknowledges its notice IDs atomically. Idle recovery uses a short run claim; notices never wake a model. |
+| `work-context.ts` / delivery adapter | Renders authoritative Work state; goals preserve paragraph breaks, escape prompt markup, and truncate at 2,000 characters with a visible marker. Mutations enqueue immutable system-provenance refresh notices in the business transaction. The delivery boundary coalesces a batch into one durable system update and event and acknowledges its notice IDs atomically. Idle recovery uses a short run claim; notices never wake a model. |
 | `ports.ts` / `adapters/drizzle-run-claim.ts` | `InboxReader` is read-only; `selectPending` does not claim or mutate. `RunClaim` shares one nonreentrant session advisory claim across `withExclusiveThread` (short admission/Work/recovery work without a lease) and `startExecution` (observable, heartbeating lease). Only delivery binds the current assistant and receipt. Receipt mutation is guarded by thread/run/holder and exact IDs when clearing; the held session claim, not heartbeat expiry, authorizes a paid response commit. Guarded `cancelExecution(threadId, currentTurnId)` cannot cancel a successor run or a steered segment through a stale turn ID. Session release deletes only its own lease and physically unlocks after commit; the session owner retains one failure-backstop release. |
 
 | `system-instructions/` | Model-facing prompt assets independent of any agent body. `document-dialect.ts` owns Meridian document language and its codec-backed spelling contract; `runtime-uris.ts` owns context namespace guidance. Tool descriptions continue to own mechanics. |
@@ -107,8 +107,12 @@ What the model actually receives for five common deliveries, so "durable
    ```
    <system_update>
    <work_context>
-   current: drafting: "Drafting" (goal: land the reveal in ch. 12)
-   active (most recent first; max 5):
+   current: drafting: "Drafting"
+     goal: |
+       Land the reveal in ch. 12.
+
+       End on the choice that changes their alliance.
+   active (most recent first; max 20):
      none
    </work_context>
    </system_update>

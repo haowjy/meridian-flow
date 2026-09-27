@@ -285,8 +285,8 @@ function WorkSection({
           const changing = work.id === operation.targetId && operation.pending;
           const error = work.id === operation.targetId ? operation.failure : null;
           const errorId = `${work.id}-work-error`;
-          const descriptionId = `${work.id}-work-description`;
-          const hasDescription = Boolean((changing && work.goal) || current);
+          const helpId = `${work.id}-work-help`;
+          const hasHelp = Boolean((changing && work.goal) || current);
           return (
             <div key={work.id}>
               <Button
@@ -303,9 +303,8 @@ function WorkSection({
                 disabled={!enabled}
                 aria-current={current ? "true" : undefined}
                 aria-describedby={
-                  [hasDescription ? descriptionId : null, error ? errorId : null]
-                    .filter(Boolean)
-                    .join(" ") || undefined
+                  [hasHelp ? helpId : null, error ? errorId : null].filter(Boolean).join(" ") ||
+                  undefined
                 }
                 onClick={() => onChoose(work)}
                 className={cn(
@@ -332,8 +331,8 @@ function WorkSection({
                 ) : current ? (
                   <Check className="size-4" aria-hidden />
                 ) : null}
-                {hasDescription ? (
-                  <span id={descriptionId} className="sr-only">
+                {hasHelp ? (
+                  <span id={helpId} className="sr-only">
                     {changing && work.goal ? t`Goal: ${work.goal}. ` : null}
                     {current ? <Trans>Current Work for this chat.</Trans> : null}
                   </span>

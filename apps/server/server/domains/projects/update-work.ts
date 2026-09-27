@@ -31,7 +31,6 @@ export function normalizeWorkUpdateInput(input: UpdateWorkCommandInput): UpdateW
   return {
     ...(name !== undefined ? { name } : {}),
     ...(input.goal !== undefined ? { goal: optionalText(input.goal) } : {}),
-    ...(input.description !== undefined ? { description: optionalText(input.description) } : {}),
     ...(input.status !== undefined ? { status: input.status } : {}),
   };
 }
@@ -63,7 +62,6 @@ export async function updateWorkTransition(
       before.isNoWork &&
       (normalized.name !== undefined ||
         normalized.goal !== undefined ||
-        normalized.description !== undefined ||
         normalized.status !== undefined)
     ) {
       throw new WorkLockedError();
@@ -71,14 +69,11 @@ export async function updateWorkTransition(
     const requested = {
       name: normalized.name === undefined ? before.name : normalized.name,
       goal: normalized.goal === undefined ? before.goal : normalized.goal,
-      description:
-        normalized.description === undefined ? before.description : normalized.description,
       status: normalized.status ?? before.status,
     };
     const changed =
       before.name !== requested.name ||
       before.goal !== requested.goal ||
-      before.description !== requested.description ||
       before.status !== requested.status;
     const work = changed ? await deps.works.update(workId, requested) : before;
     const result = {

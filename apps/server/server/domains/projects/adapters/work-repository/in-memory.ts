@@ -62,7 +62,6 @@ export function createInMemoryWorkRepository(
       ),
       isNoWork: false,
       goal: input.goal ?? null,
-      description: input.description ?? null,
       status: "active",
       archivedAt: null,
       aiWriteMode: "direct",
@@ -154,7 +153,6 @@ export function createInMemoryWorkRepository(
         slug: null,
         isNoWork: true,
         goal: null,
-        description: null,
         status: "active",
         archivedAt: null,
         aiWriteMode: "direct",
@@ -195,7 +193,6 @@ export function createInMemoryWorkRepository(
         row.name = input.name.trim();
       }
       if (input.goal !== undefined) row.goal = input.goal;
-      if (input.description !== undefined) row.description = input.description;
       const timestamp = now();
       if (input.status !== undefined) {
         row.status = input.status;

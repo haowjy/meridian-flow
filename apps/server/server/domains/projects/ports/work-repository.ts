@@ -13,13 +13,11 @@ export interface CreateWorkInput {
   createdByUserId?: import("@meridian/contracts/runtime").UserId;
   name: string;
   goal?: string;
-  description?: string;
 }
 
 export interface UpdateWorkInput {
   name?: string;
   goal?: string | null;
-  description?: string | null;
   /** Applies lifecycle state in the same write as metadata. */
   status?: WorkStatus;
 }

@@ -272,7 +272,6 @@ async function applyState(works: WorkRepository, workId: WorkId, state: WorkRece
   await works.update(workId, {
     name: state.name,
     goal: state.goal,
-    description: state.description,
     status: state.status,
   });
 }
@@ -309,16 +308,9 @@ function result(
   };
 }
 
-function sameState(
-  work: Pick<Work, "name" | "goal" | "description" | "status">,
-  state: WorkReceiptState | null,
-) {
+function sameState(work: Pick<Work, "name" | "goal" | "status">, state: WorkReceiptState | null) {
   return (
-    !!state &&
-    work.name === state.name &&
-    work.goal === state.goal &&
-    work.description === state.description &&
-    work.status === state.status
+    !!state && work.name === state.name && work.goal === state.goal && work.status === state.status
   );
 }
 

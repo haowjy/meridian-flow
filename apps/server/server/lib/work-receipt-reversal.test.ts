@@ -49,7 +49,7 @@ function harness(receipts: WorkReceipt[]) {
 }
 
 function state(name: string, status: "active" | "archived" = "active") {
-  return { name, goal: null, description: null, status } as const;
+  return { name, goal: null, status } as const;
 }
 
 describe("Work receipt reversal", () => {
