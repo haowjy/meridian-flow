@@ -33,6 +33,18 @@ Local-dev-only utilities. Not loaded by the application runtime.
   - **Adding a group:** create `cli/commands/<group>/` with its commands and an
     `index.ts` exporting a `CommandGroup`, then list it in `GROUPS` in
     `cli/main.ts`. Help, parsing, output, and errors come from `core/`.
+  - **Output contract:** compact text by default; `--json` prints exactly one
+    object, or NDJSON for streams with the terminal envelope last; errors go to
+    stderr. `EXIT` in `cli/core/cli-error.ts` is the exit-code contract. Set
+    `process.exitCode`; never call `process.exit()` (it truncates piped output).
+  - **Missing data** means a new server route behind the debug gate
+    (`resolveDebugPathsEnabled`, `APP_DEBUG=1`, never production), which
+    `pnpm dev` opens by default.
+  - **Imports:** `cli/` may import `@meridian/contracts` (wire types, schemas,
+    path helpers) so it cannot drift from the API, and no other package. A group
+    that needs more (e.g. a live Yjs editor peer needing prosemirror-schema,
+    markup, agent-edit) is the trigger to move `./mf` into its own workspace
+    package rather than widening the tools/dev import rule.
   - Tests share `cli/test-support/fake-stack.ts` (fake API + thread socket on the
     real contracts); `cli/main.test.ts` also boots the real `./mf` shim.
 
