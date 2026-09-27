@@ -1,14 +1,16 @@
 /**
  * ArtifactGrid — the shared renderer for a list of `ArtifactRef`s.
  *
- * Purpose: image and object arms render as thumbnails in a responsive grid;
- * the reserved `liveView` arm gets a full-width isolated iframe slot. Extracted
+ * Purpose: object arms render as compact document links through the chat's
+ * context navigation, image arms as thumbnails in a responsive grid, and the
+ * reserved `liveView` arm gets a full-width isolated iframe slot. Extracted
  * from `FormBlock` so ask_user interrupts and agent report cards render the same
  * artifacts identically. `isArtifactRef` admits untrusted artifact values.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
+import { FileText } from "lucide-react";
 
 import {
   Dialog,
@@ -17,6 +19,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { DocumentName } from "./DocumentName";
 
 export function isArtifactRef(value: unknown): value is ArtifactRef {
   if (!value || typeof value !== "object") return false;
@@ -40,21 +43,36 @@ export function isArtifactRef(value: unknown): value is ArtifactRef {
 }
 
 export function ArtifactGrid({ artifacts }: { artifacts: ArtifactRef[] }) {
-  // Live-view arms get a dedicated row spanning the grid; image + object
-  // thumbnails share the responsive grid.
+  // Documents read as compact links, images as thumbnails, and live views get
+  // their own full-width slot.
+  const documents = artifacts.filter(
+    (artifact): artifact is Extract<ArtifactRef, { type: "object" }> => artifact.type === "object",
+  );
+  const images = artifacts.filter(
+    (artifact): artifact is Extract<ArtifactRef, { type: "image" }> => artifact.type === "image",
+  );
   const liveViews = artifacts.filter(
     (artifact): artifact is Extract<ArtifactRef, { type: "liveView" }> =>
       artifact.type === "liveView",
   );
-  const thumbs = artifacts.filter((artifact) => artifact.type !== "liveView");
 
   return (
     <div className="flex flex-col gap-[var(--chat-space-block)]">
-      {thumbs.length > 0 ? (
+      {documents.length > 0 ? (
+        <ul className="flex flex-wrap gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-inline)] text-sm">
+          {documents.map((artifact, index) => (
+            <li key={artifactKey(artifact, index)} className="flex min-w-0 items-center gap-1.5">
+              <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              <DocumentName path={artifact.uri} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {images.length > 0 ? (
         <ul className="grid grid-cols-2 gap-[var(--chat-space-block)] sm:grid-cols-3 lg:grid-cols-4">
-          {thumbs.map((artifact, index) => (
+          {images.map((artifact, index) => (
             <li key={artifactKey(artifact, index)}>
-              <ArtifactThumb artifact={artifact} />
+              <ImageArtifact image={artifact} />
             </li>
           ))}
         </ul>
@@ -70,17 +88,6 @@ function artifactKey(artifact: ArtifactRef, index: number): string {
   if (artifact.type === "image") return `${artifact.type}:${artifact.url}:${index}`;
   if (artifact.type === "object") return `${artifact.type}:${artifact.uri}:${index}`;
   return `${artifact.type}:${index}`;
-}
-
-function ArtifactThumb({
-  artifact,
-}: {
-  artifact: Extract<ArtifactRef, { type: "image" | "object" }>;
-}) {
-  if (artifact.type === "image") {
-    return <ImageArtifact image={artifact} />;
-  }
-  return <ObjectArtifact object={artifact} />;
 }
 
 function ImageArtifact({ image }: { image: Extract<ArtifactRef, { type: "image" }> }) {
@@ -123,26 +130,6 @@ function ImageArtifact({ image }: { image: Extract<ArtifactRef, { type: "image" 
         ) : null}
       </DialogContent>
     </Dialog>
-  );
-}
-
-function ObjectArtifact({ object }: { object: Extract<ArtifactRef, { type: "object" }> }) {
-  const label = object.label ?? object.uri;
-  return (
-    <a
-      href={object.uri}
-      target="_blank"
-      rel="noreferrer"
-      className="focus-ring flex h-full min-h-20 flex-col justify-between rounded-md border border-border-subtle bg-muted px-3 py-2 transition-all hover:border-border-focus"
-    >
-      <span className="font-medium text-foreground text-xs uppercase tracking-wide">
-        <Trans>Object</Trans>
-      </span>
-      <span className="truncate text-foreground text-sm">{label}</span>
-      {object.mimeType ? (
-        <span className="text-muted-foreground text-xs">{object.mimeType}</span>
-      ) : null}
-    </a>
   );
 }
 

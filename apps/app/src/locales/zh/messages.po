@@ -2713,8 +2713,8 @@ msgid "Numbered list"
 msgstr ""
 
 #: src/features/chat/ArtifactGrid.tsx
-msgid "Object"
-msgstr ""
+#~ msgid "Object"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ol"
