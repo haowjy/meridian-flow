@@ -4,12 +4,14 @@ import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
 import type { NoticePort } from "../../notices/index.js";
+import { createInMemoryEventSink } from "../../observability/index.js";
 import { ImageAssetResolutionError } from "../ports/image-asset.js";
 import { createTestAgentBinding } from "./__tests__/runtime-fixtures.js";
 import { createRuntimeHarness } from "./__tests__/runtime-harness.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
+import { createOrchestrator } from "./orchestrator.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
 
 function promptBytes(request: import("../gateway/index.js").GenerateRequest) {
@@ -232,20 +234,65 @@ else
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
     });
 
+    it("logs a throwing summarizer as an adapter bug and lands a failed reply", async () => {
+      const summarizer = scriptedSummarizer(async () => {
+        throw new Error("summary adapter bug");
+      });
+      const rig = await fixture({ summarizer });
+      const sink = createInMemoryEventSink();
+      rig.deps.eventSink = sink;
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      expect((await run.execute()).status).toBe("error");
+      expect(sink.events).toContainEqual(
+        expect.objectContaining({
+          level: "error",
+          name: "summarizer.threw",
+        }),
+      );
+      expect(
+        (await rig.repos.turns.listByThread(rig.threadId))
+          .slice(-2)
+          .map((turn) => [turn.role, turn.status]),
+      ).toEqual([
+        ["compaction", "error"],
+        ["assistant", "error"],
+      ]);
+      expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
+    });
+
     it.each([
-      true,
-      false,
-    ])("stops the current run across a committed successor window (compaction=%s)", async (compaction) => {
+      { compaction: true, remote: false, successor: false },
+      { compaction: false, remote: false, successor: false },
+      { compaction: true, remote: false, successor: true },
+      { compaction: false, remote: false, successor: true },
+      { compaction: true, remote: true, successor: false },
+      { compaction: false, remote: true, successor: false },
+      { compaction: true, remote: true, successor: true },
+      { compaction: false, remote: true, successor: true },
+    ])("stops across a committed successor window ($compaction, $remote, $successor)", async ({
+      compaction,
+      remote,
+      successor,
+    }) => {
       const rig = await fixture({ history: compaction ? undefined : "brief history" });
+      const canceller = remote
+        ? createOrchestrator({ ...rig.deps, runClaim: createDrizzleRunClaim(db) })
+        : rig.orchestrator;
       const split = rig.delivery.splitAndContinue;
       let cancelled = false;
+      let cancelResult: string | undefined;
       rig.delivery.splitAndContinue = async (input) => {
         const result = await split(input);
         if (result.split && !cancelled) {
           cancelled = true;
           expect(await rig.runClaim.readRunningTurnId(rig.threadId)).toBe(result.next.id);
-          expect(await rig.orchestrator.cancel(rig.threadId, input.currentTurn.id)).toBe(
-            "cancelled",
+          cancelResult = await canceller.cancel(
+            rig.threadId,
+            successor ? result.next.id : input.currentTurn.id,
           );
         }
         return result;
@@ -258,6 +305,7 @@ else
       if (!compaction) await rig.send(rig.threadId, "Split now.");
       expect((await run.execute()).status).toBe("cancelled");
       expect(cancelled).toBe(true);
+      expect(cancelResult).toBe("cancelled");
       expect((await rig.repos.turns.listByThread(rig.threadId)).at(-1)?.status).toBe("cancelled");
       expect(await rig.orchestrator.cancel(rig.threadId, run.executionTurnId)).toBe(
         "already_finished",
@@ -820,6 +868,107 @@ else
         workContext: rig.deps.workContext,
       });
       expect(promptBytes(request)).toBe(promptBytes(rebuilt.generateRequest));
+    });
+
+    it("settles the paid summary when Stop races the live failure landing", async () => {
+      const summarizer = scriptedSummarizer(async ({ turnId }) => ({
+        kind: "complete",
+        text: "Summary.",
+        model: "gpt-4.1-mini",
+        modelResponses: [
+          {
+            id: crypto.randomUUID(),
+            turnId,
+            sequence: 0,
+            provider: "openai",
+            model: "gpt-4.1-mini",
+            inputTokens: 100,
+            outputTokens: 10,
+            requestMessageCount: 7,
+            predictedCacheState: "cold",
+            predictedCacheReason: "no_response",
+          },
+        ],
+      }));
+      const rig = await fixture({ summarizer });
+      const split = rig.delivery.splitAndContinue;
+      let first = true;
+      rig.delivery.splitAndContinue = async (input) => {
+        if (first) {
+          first = false;
+          throw new Error("successor commit failed");
+        }
+        await rig.orchestrator.cancel(rig.threadId, input.currentTurn.id);
+        return split(input);
+      };
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      expect((await run.execute()).status).toBe("cancelled");
+      expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
+        status: "cancelled",
+      });
+      const rows = await rig.repos.modelResponses.listByTurn(run.executionTurnId);
+      expect(rows).toHaveLength(1);
+      expect(BigInt(rows[0].millicredits ?? "0")).toBeGreaterThan(0n);
+      const debits = await db.select().from(schema.creditTransactions);
+      expect(debits.filter((row) => row.usageEventId === rows[0].id)).toHaveLength(1);
+      expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
+    });
+
+    it.each([
+      false,
+      true,
+    ])("leaves C pending without debiting uncommitted paid rows if failure landing fails (lease read fails=%s)", async (readFails) => {
+      const responseId = crypto.randomUUID();
+      const summarizer = scriptedSummarizer(async ({ turnId }) => ({
+        kind: "complete",
+        text: "Summary.",
+        model: "gpt-4.1-mini",
+        modelResponses: [
+          {
+            id: responseId,
+            turnId,
+            sequence: 0,
+            provider: "openai",
+            model: "gpt-4.1-mini",
+            inputTokens: 100,
+            outputTokens: 10,
+            requestMessageCount: 7,
+            predictedCacheState: "cold",
+            predictedCacheReason: "no_response",
+          },
+        ],
+      }));
+      const rig = await fixture({ summarizer });
+      let commits = 0;
+      rig.delivery.splitAndContinue = async () => {
+        commits++;
+        throw new Error("database unavailable");
+      };
+      const read = rig.runClaim.read;
+      rig.runClaim.read = async (threadId) => {
+        if (readFails && commits === 2) throw new Error("lease read unavailable");
+        return read(threadId);
+      };
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      expect((await run.execute()).status).toBe("failed");
+      expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
+        role: "compaction",
+        status: "pending",
+        promptBakeId: null,
+      });
+      expect(await rig.repos.modelResponses.listByTurn(run.executionTurnId)).toEqual([]);
+      const debits = await db.select().from(schema.creditTransactions);
+      expect(debits.some((row) => row.usageEventId === responseId)).toBe(false);
+      expect(await rig.inbox.selectPending(rig.threadId)).toHaveLength(1);
+      expect(rig.summarizer.calls).toHaveLength(1);
     });
 
     it("rolls back consumed notices with the successor, then settles the summary on failed C", async () => {

@@ -537,4 +537,6 @@ their ending transaction. A live failure also creates a terminal failed reply
 under the newest adopted message and acknowledges the receipt atomically;
 only a failed failure-landing transaction is left for orphan repair.
 The run lease has no role/kind copy: runtime derives kind from the referenced
-turn. Initial and rebaked prompts share one resolved Agent context per composition.
+turn. Its bound_turn_ids retain cancellation membership only for the live run,
+including committed predecessors; membership and current-turn binding are atomic.
+Initial and rebaked prompts share one resolved Agent context per composition.

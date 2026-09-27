@@ -103,6 +103,7 @@ export function createInMemoryInbox(): DeliveryStore {
 interface InMemoryLease {
   runId: RunId;
   turnId: TurnId | null;
+  boundTurnIds: Set<TurnId>;
   messageIds: string[];
   holderId: string;
   phase: ThreadPhase;
@@ -154,6 +155,7 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
       leases.set(threadId, {
         runId,
         turnId: null,
+        boundTurnIds: new Set(),
         messageIds: [],
         holderId,
         phase: "generating",
@@ -194,6 +196,7 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
       if (!row || row.runId !== lease.runId || row.cancelRequested)
         throw new Error("Cannot bind assistant turn after losing live run lease");
       row.turnId = turnId;
+      row.boundTurnIds.add(turnId);
       row.messageIds = [...messageIds];
     },
 
@@ -248,9 +251,9 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
       return liveLease(threadId)?.turnId ?? null;
     },
 
-    async cancelExecution(threadId, turnId, runId) {
+    async cancelExecution(threadId, turnId) {
       const row = liveLease(threadId);
-      if (!row || (runId === undefined ? row.turnId !== turnId : row.runId !== runId)) return false;
+      if (!row || !row.boundTurnIds.has(turnId)) return false;
       row.cancelRequested = true;
       return true;
     },

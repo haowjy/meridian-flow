@@ -15,7 +15,9 @@
 
 ### Fixed
 - Failed compaction lands a failed reply and retires its messages instead of paying for repeated summaries.
-- Stop follows the same run across a committed reply split. Internal aborts stay errors.
+- Stop follows the same run across a committed reply split, including remote cancellation. Internal aborts stay errors.
+- Leave a compaction pending for recovery when its live failure transaction cannot commit.
+- Development: reset worktree databases that already applied the earlier unreleased 0014 with `pnpm db:reset`.
 - Bill summary responses on success, failure and cancellation, once per paid call.
 - Cache TTL starts at the provider attempt, not response persistence.
 - Saved-report repair preserves fork cutoffs and cross-thread history.

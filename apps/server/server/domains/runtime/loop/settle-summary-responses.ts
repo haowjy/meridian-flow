@@ -12,6 +12,7 @@ export async function settleSummaryResponses(input: {
   accounting: TurnAccounting;
   treeBudget: TreeBudget;
 }): Promise<void> {
+  if (input.rows.length === 0) return;
   await persistAndAppendEvents(input.deps, input.thread.id, async () => {
     const events = [];
     for (const { providerData, ...row } of input.rows) {

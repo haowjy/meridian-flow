@@ -2076,20 +2076,31 @@ async function executeLoop(
         correlation: { threadId: input.threadId, turnId: currentTurn.id },
         payload: unknownToEventPayload(err),
       });
-      const failed = await failCompactionSuccessor({
-        deps,
-        threadId: input.threadId,
-        placeholder: currentTurn,
-        boundary: boundaryInput(),
-        settleResponses: () =>
-          settleSummaryResponses({
-            deps,
-            thread,
-            rows: pendingSummaryResponses,
-            accounting: turnAccounting,
-            treeBudget,
-          }),
-      });
+      let failed: Awaited<ReturnType<typeof failCompactionSuccessor>>;
+      try {
+        failed = await failCompactionSuccessor({
+          deps,
+          threadId: input.threadId,
+          placeholder: currentTurn,
+          boundary: boundaryInput(),
+          settleResponses: () =>
+            settleSummaryResponses({
+              deps,
+              thread,
+              rows: pendingSummaryResponses,
+              accounting: turnAccounting,
+              treeBudget,
+            }),
+        });
+      } catch (failure) {
+        // A failed status read must not replace the terminal-commit marker.
+        const latest = await deps.runClaim.read(input.threadId).catch(() => null);
+        if (input.signal?.aborted || (latest?.kind === "awake" && latest.cancelRequested)) {
+          await exitRun(false, cancelTerminal);
+          return currentTurn;
+        }
+        throw failure;
+      }
       pendingSummaryResponses = [];
       await acceptBoundary(failed);
     } else if (

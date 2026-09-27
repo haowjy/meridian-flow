@@ -15,6 +15,7 @@ import {
   hashPromptBakeContent,
 } from "../../threads/index.js";
 import { createToolRegistry } from "../tools/index.js";
+import { createTestAgentBinding } from "./__tests__/runtime-fixtures.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
 import type { WorkContextReader } from "./work-context.js";
 
@@ -433,4 +434,36 @@ describe("assembleNextTurnContext agentless overlay freeze", () => {
     expect(second.systemPrompt).toBe(first.systemPrompt);
     expect(second.systemPrompt).toContain("Overridden child prompt.");
   });
+});
+
+it("keeps the first-bake prompt and model from the same resolved Agent context", async () => {
+  const projects = createInMemoryProjectRepository();
+  const project = await projects.create({ userId: "user-1", title: "Serial" });
+  const repos = createInMemoryRepositories({ projects });
+  const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+  const source = createTestAgentBinding("first-model", "First retained Agent.", () => [thread.id]);
+  let changed = false;
+  const assembled = await assembleNextTurnContext({
+    thread,
+    turns: [],
+    blocks: [],
+    toolRegistry: createToolRegistry(),
+    promptBakes: repos.promptBakes,
+    workContext: emptyWorkContext(project.id),
+    agentRevisions: {
+      ...source,
+      async readThreadBinding(id) {
+        const binding = await source.readThreadBinding(id);
+        if (binding?.revision && changed) {
+          binding.revision.definition.systemPrompt = "Changed retained Agent.";
+          binding.configuration.model = "changed-model";
+        }
+        changed = true;
+        return binding;
+      },
+    },
+  });
+  expect(assembled.generateRequest.model).toBe("first-model");
+  expect(assembled.systemPrompt).toContain("First retained Agent.");
+  expect(assembled.systemPrompt).not.toContain("Changed retained Agent.");
 });

@@ -195,7 +195,6 @@ else
               terminal = await authority.readRunningTurnId(ids.child);
               splitState = {
                 run: await authority.holder(ids.child),
-                oldCancel: await authority.cancelExecution(ids.child, selector),
                 report: await repos.executionReports.findByExecution(ids.child, selector),
                 lookup: await readThreadReport({
                   callerThreadId: ids.caller,
@@ -295,7 +294,6 @@ else
         if (boundary !== "cancel") {
           expect(splitState).toMatchObject({
             run: run.runId,
-            oldCancel: false,
             report: { outcome: null, terminalTurnId: null },
             lookup: { status: "unavailable" },
             pending: {

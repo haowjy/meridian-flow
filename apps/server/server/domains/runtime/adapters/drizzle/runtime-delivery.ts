@@ -27,7 +27,11 @@ export function createDrizzleRuntimeDelivery(
     async bindTurn(lease, turnId, messageIds, kind) {
       const [bound] = await db_()
         .update(schema.threadRunLeases)
-        .set({ turnId, adoptedMessageIds: [...messageIds] })
+        .set({
+          turnId,
+          adoptedMessageIds: [...messageIds],
+          boundTurnIds: sql`array_append(${schema.threadRunLeases.boundTurnIds}, ${turnId}::uuid)`,
+        })
         .where(
           and(
             eq(schema.threadRunLeases.cancelRequested, false),

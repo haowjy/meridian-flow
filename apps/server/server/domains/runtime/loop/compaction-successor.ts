@@ -13,7 +13,7 @@ import type { InboxDrain } from "./inbox-context.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
 import { persistAndAppendEvents } from "./persistence.js";
 import { prepareRequestContext } from "./request-preparation.js";
-import type { RunLoopInput } from "./run-turn-port.js";
+import { type RunLoopInput, UnsettledPlaceholderError } from "./run-turn-port.js";
 import { type AssembledNextTurnContext, composeLivePromptBake } from "./turn-context-assembly.js";
 
 type Decision = Extract<CompactionDecision, { kind: "compact" }>;
@@ -25,7 +25,6 @@ export type PreparedCompaction =
       summaryBlock: ReturnType<typeof contentForBlockInput>;
       tokensAfter: number;
       model: string;
-      fitLimitTokens: number;
       decision: Decision;
       assemble: (turns: Turn[], blocks: Block[]) => ReturnType<typeof prepareRequestContext>;
     };
@@ -137,7 +136,6 @@ export async function prepareCompactionSuccessor(args: {
       tokensAfter,
       model: outcome.model,
       decision,
-      fitLimitTokens: decision.fitLimitTokens,
       assemble,
     };
   } catch (error) {
@@ -159,7 +157,7 @@ export async function prepareCompactionContext(
   if (!prepared) throw new Error("Missing prepared compaction");
   if (prepared.kind === "failed") throw prepared.reason;
   const next = await prepared.assemble(drain.turns, drain.blocks);
-  fittingTokens(next.assembled, prepared.fitLimitTokens);
+  fittingTokens(next.assembled, prepared.decision.fitLimitTokens);
   return {
     events: next.events,
     turns: next.assembled.imageContextUpdates.turns,
@@ -236,7 +234,7 @@ export async function completeCompactionCurrent(input: {
 }
 
 /** One live failure landing; caller can reuse it without running a summary phase. */
-export function failCompactionSuccessor(input: {
+export async function failCompactionSuccessor(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
   placeholder: Turn;
@@ -244,13 +242,17 @@ export function failCompactionSuccessor(input: {
   settleResponses: () => Promise<void>;
 }) {
   const reason = new CompactionPreparationError("compaction_failed");
-  return input.deps.delivery.splitAndContinue<PreparedCompaction>({
-    ...input.boundary,
-    prepareCurrent: async () => ({ kind: "failed", reason }),
-    prepareNextContext: prepareCompactionContext,
-    current: {
-      kind: "placeholder",
-      complete: (prepared, failure) => completeCompactionCurrent({ ...input, prepared, failure }),
-    },
-  });
+  try {
+    return await input.deps.delivery.splitAndContinue<PreparedCompaction>({
+      ...input.boundary,
+      prepareCurrent: async () => ({ kind: "failed", reason }),
+      prepareNextContext: prepareCompactionContext,
+      current: {
+        kind: "placeholder",
+        complete: (prepared, failure) => completeCompactionCurrent({ ...input, prepared, failure }),
+      },
+    });
+  } catch (error) {
+    throw new UnsettledPlaceholderError(error);
+  }
 }

@@ -17,4 +17,5 @@ ALTER TABLE "thread_execution_reports" ADD CONSTRAINT "thread_execution_reports_
 ALTER TABLE "thread_execution_reports" ADD CONSTRAINT "thread_execution_reports_child_turn_fk" FOREIGN KEY ("child_thread_id","execution_turn_id") REFERENCES "public"."turns"("thread_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "thread_execution_reports_pending" ON "thread_execution_reports" USING btree ("execution_turn_id") WHERE "thread_execution_reports"."publication" = 'pending';--> statement-breakpoint
 ALTER TABLE "thread_run_leases" ADD CONSTRAINT "thread_run_leases_phase_valid" CHECK ("thread_run_leases"."phase" IN ('generating','waiting','compacting'));--> statement-breakpoint
-ALTER TABLE "turns" ADD CONSTRAINT "turns_compaction_model_required" CHECK ("turns"."role" != 'compaction' OR "turns"."status" != 'complete' OR "turns"."compaction_model" IS NOT NULL);
+ALTER TABLE "turns" ADD CONSTRAINT "turns_compaction_model_required" CHECK ("turns"."role" != 'compaction' OR "turns"."status" != 'complete' OR "turns"."compaction_model" IS NOT NULL);--> statement-breakpoint
+ALTER TABLE "thread_run_leases" ADD COLUMN "bound_turn_ids" uuid[] DEFAULT '{}'::uuid[] NOT NULL;

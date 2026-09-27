@@ -173,6 +173,7 @@ export function createDrizzleRunClaim(
             threadId,
             runId,
             turnId: null,
+            boundTurnIds: [],
             adoptedMessageIds: [],
             holderId,
             phase: "generating",
@@ -187,6 +188,7 @@ export function createDrizzleRunClaim(
             set: {
               runId,
               turnId: null,
+              boundTurnIds: [],
               adoptedMessageIds: [],
               holderId,
               phase: "generating",
@@ -290,16 +292,14 @@ export function createDrizzleRunClaim(
       return row?.turnId ?? null;
     },
 
-    async cancelExecution(threadId, turnId, runId) {
+    async cancelExecution(threadId, turnId) {
       const rows = await db_()
         .update(schema.threadRunLeases)
         .set({ cancelRequested: true })
         .where(
           and(
             eq(schema.threadRunLeases.threadId, threadId),
-            runId === undefined
-              ? eq(schema.threadRunLeases.turnId, turnId)
-              : eq(schema.threadRunLeases.runId, runId),
+            sql`${turnId} = ANY(${schema.threadRunLeases.boundTurnIds})`,
             gt(schema.threadRunLeases.expiresAt, new Date()),
           ),
         )

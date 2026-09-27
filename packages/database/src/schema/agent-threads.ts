@@ -247,6 +247,7 @@ export const threadRunLeases = pgTable(
       .primaryKey()
       .references(() => threads.id, { onDelete: "cascade" }),
     runId: text("run_id").notNull(),
+    boundTurnIds: uuid("bound_turn_ids").array().notNull().default(sql`'{}'::uuid[]`),
     adoptedMessageIds: uuid("adopted_message_ids").array().notNull().default(sql`'{}'::uuid[]`),
     turnId: uuid("turn_id").$type<TurnId>(),
     holderId: text("holder_id").notNull(),

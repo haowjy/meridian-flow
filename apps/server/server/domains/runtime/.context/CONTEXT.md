@@ -57,7 +57,7 @@ skeleton and delegates the moving parts.
 | `turn-context-assembly.ts` | Resolves the retained Agent and bake, then projects active compaction history with `thread.ref` before stable image inclusion and `buildContext`; this keeps old pre-cut images out of the rebuilt model request while leaving un-compacted requests byte-identical. |
 | `composed-system-prompt.ts` | Assembles the first gateway system prompt in a fixed layer order: immutable agent body (revision body or the host-owned empty default), the invocation overlay's additive `appendSystemPrompt`, frozen Work context, available skill slugs (name when it differs) and descriptions, named subagent slug/name/description from the bound roster, core document dialect, runtime URI instruction, and, for subagent threads only, the mandatory closing report instruction as the last layer. An empty or absent append adds nothing, and the guidance string is a module constant (`SUBAGENT_GUIDANCE`). Freeze sentinel is `thread.initialPromptBakeId !== null`. The first bake commits with a successfully prepared run start before model execution; a later gateway failure or cancellation leaves it in place. |
 | `work-context.ts` / delivery adapter | Renders authoritative Work state. Mutations enqueue immutable system-provenance refresh notices in the business transaction. The delivery boundary coalesces a batch into one durable system update and event and acknowledges its notice IDs atomically. Idle recovery uses a short run claim; notices never wake a model. |
-| `ports.ts` / `adapters/drizzle-run-claim.ts` | `InboxReader` is read-only; `selectPending` does not claim or mutate. `RunClaim` shares one nonreentrant session advisory claim across `withExclusiveThread` (short admission/Work/recovery work without a lease) and `startExecution` (observable, heartbeating lease). Only delivery binds the current turn (assistant or pending compaction) and receipt. Receipt mutation is guarded by thread/run/holder and exact IDs when clearing; the held session claim, not heartbeat expiry, authorizes a paid response commit. Guarded `cancelExecution(threadId, currentTurnId)` cannot cancel a successor run or a steered segment through a stale turn ID. Session release deletes only its own lease and physically unlocks after commit; the session owner retains one failure-backstop release. |
+| `ports.ts` / `adapters/drizzle-run-claim.ts` | `InboxReader` is read-only; `selectPending` does not claim or mutate. `RunClaim` shares one nonreentrant session advisory claim across `withExclusiveThread` (short admission/Work/recovery work without a lease) and `startExecution` (observable, heartbeating lease). Only delivery binds the current turn (assistant or pending compaction) and receipt. Receipt mutation is guarded by thread/run/holder and exact IDs when clearing; the held session claim, not heartbeat expiry, authorizes a paid response commit. Guarded `cancelExecution(threadId, turnId)` matches any selector bound to the live run under the lease row lock: a prior segment can stop its current successor, but a selector from an ended run cannot stop a new run. Session release deletes only its own lease and physically unlocks after commit; the session owner retains one failure-backstop release. |
 
 | `system-instructions/` | Model-facing prompt assets independent of any agent body. `document-dialect.ts` owns Meridian document language and its codec-backed spelling contract; `runtime-uris.ts` owns context namespace guidance. Tool descriptions continue to own mechanics. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
@@ -573,17 +573,22 @@ An impossible tail reserves no C. A failed summary errors C and replies below th
 latest message. A live unexpected error while C is current uses a fresh failure
 transaction: C error, settled summary rows, failed B below the latest arrivals,
 and receipt acknowledgment. Notices remain queued. If that transaction also
-fails, orphan recovery owns C; this is not a resummarization retry. A usable epoch still commits when a late arrival fails context
+fails, orphan recovery owns C; this run makes no further settlement attempt.
+Paid rows still in memory are uncommitted and cannot be recovered by the orphan
+finalizer, exactly as at a process crash. They are not debited; a later delivery
+may need another provider call. A usable epoch still commits when a late arrival fails context
 preparation (including an oversized late paste); only B fails. `composeLivePromptBake` serves initial bakes and rebakes
 alike. Reference reads during this prepare belong to current C; B does not exist
 until commit. Summary responses never supply the conversation token baseline.
 
-The lease stores only the current turn ID; currentTurnKind(turn) derives
-assistant or compaction from its role. Both reservation sites use
-reservationTurn, including the decision's trigger. The run session retains
-its run ID and earlier current-turn IDs, so Stop on a predecessor resolves the
-lease's current turn under its update lock, even before the successor callback.
-A finished run cannot cancel a newer lease. Writer admission returns an assistant ID only for the former. Stop
+The lease does not copy current-turn kind; currentTurnKind(turn) derives
+assistant or compaction from the referenced turn's role. Both reservation sites use
+reservationTurn, including the decision's trigger. The lease retains bound_turn_ids for this live run, appended in the same
+transaction as each current-turn binding. Stop matches this membership under
+the lease update lock, whether it names a predecessor or the newly committed
+successor and whether it reaches the owning process or a remote process.
+Membership resets with the next run, so a finished run cannot cancel a newer
+lease. The process-local session does not keep a second membership map. Writer admission returns an assistant ID only for the former. Stop
 aborts the summary, and terminal close settles its response rows on cancelled C
 with the receipt acknowledgment. settleSummaryResponses writes predictions,
 request sizes and debits through TurnAccounting.computeAndDebit inside whichever

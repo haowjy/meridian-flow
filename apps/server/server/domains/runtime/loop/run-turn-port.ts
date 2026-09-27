@@ -65,6 +65,17 @@ export class NoPendingWakeError extends Error {
   }
 }
 
+/** A live placeholder's failure transaction did not commit. Orphan repair owns
+ * its terminal state; paid response rows still in memory are lost like a crash,
+ * not separately debited outside the transaction that ends the placeholder.
+ */
+export class UnsettledPlaceholderError extends Error {
+  constructor(cause: unknown) {
+    super("Placeholder failure landing did not commit", { cause });
+    this.name = "UnsettledPlaceholderError";
+  }
+}
+
 export interface PreparedLoop {
   userTurnId: TurnId;
   currentTurn: CurrentTurn;

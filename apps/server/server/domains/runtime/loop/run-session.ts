@@ -12,14 +12,13 @@ import {
   type RunLoopInput,
   type RunOutcome,
   type RunTurnInput,
+  UnsettledPlaceholderError,
 } from "./run-turn-port.js";
 import type { RuntimeDelivery } from "./runtime-delivery.js";
 
 type RunSession = {
   controller: AbortController;
   currentTurn: CurrentTurn | null;
-  turnIds: Set<TurnId>;
-  runId?: string;
   startedAt: Date;
   child?: RunTurnInput["child"];
   completion: Promise<void>;
@@ -70,7 +69,6 @@ export function createRunSessions(deps: {
     const session: RunSession = {
       controller,
       currentTurn: null,
-      turnIds: new Set(),
       startedAt: new Date(),
       child: input.child,
       completion: new Promise<void>((resolve) => {
@@ -126,7 +124,6 @@ export function createRunSessions(deps: {
       lease = await authority.startExecution(threadId, crypto.randomUUID());
       if (!lease) throw new TurnStartConflictError(threadId, "already_running");
       const heldLease = lease;
-      session.runId = lease.runId;
       heartbeat = setInterval(
         () => {
           void authority
@@ -153,12 +150,10 @@ export function createRunSessions(deps: {
         lease,
         onCurrentTurnChanged(turn) {
           session.currentTurn = turn;
-          session.turnIds.add(turn.id);
           input.onCurrentTurnChanged?.(turn);
         },
       });
       session.currentTurn = loop.currentTurn;
-      session.turnIds.add(loop.currentTurn.id);
       const snapshotFloorNextSeq = ((await deps.headSeq(threadId)) + 1n).toString();
       try {
         deps.onRunStarted?.(threadId);
@@ -174,6 +169,7 @@ export function createRunSessions(deps: {
             turn = await loop.execute();
           } catch (error) {
             observe(threadId, "execution.failed", error);
+            if (error instanceof UnsettledPlaceholderError) throw error;
             turn = await deps.finalizeFailure({
               threadId,
               turnId: session.currentTurn?.id ?? loop.currentTurn.id,
@@ -245,20 +241,18 @@ export function createRunSessions(deps: {
       turnId: TurnId,
     ): Promise<"cancelled" | "already_finished" | "not_found"> {
       const active = running.get(threadId);
-      if (active?.turnIds.has(turnId)) {
-        if (!(await authority.cancelExecution(threadId, turnId, active.runId)))
-          return "already_finished";
+      const turn = await deps.repos.turns.findById(turnId);
+      if (!turn || turn.threadId !== threadId) return "not_found";
+      if (!(await authority.cancelExecution(threadId, turnId)))
+        return isTerminalTurnStatus(turn.status) || active ? "already_finished" : "not_found";
+      if (active) {
         abortChildrenOf(threadId, true);
         active.controller.abort();
         void active.completion
           .then(() => createRunStarter({ startDrain }, deps.eventSink).start(threadId))
           .catch((error) => observe(threadId, "cancel_wake.failed", error));
-        return "cancelled";
       }
-      const turn = await deps.repos.turns.findById(turnId);
-      if (!turn || turn.threadId !== threadId) return "not_found";
-      if (isTerminalTurnStatus(turn.status) || active) return "already_finished";
-      return (await authority.cancelExecution(threadId, turnId)) ? "cancelled" : "not_found";
+      return "cancelled";
     },
   };
 }

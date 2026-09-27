@@ -2096,6 +2096,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "bound_turn_ids": {
+          "name": "bound_turn_ids",
+          "type": "uuid[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::uuid[]"
+        },
         "adopted_message_ids": {
           "name": "adopted_message_ids",
           "type": "uuid[]",
