@@ -90,5 +90,7 @@ export function subagentCurrentToolLabel(toolName: string, input: unknown): stri
     const agent = typeof values?.agent === "string" ? values.agent.trim() : "";
     return i18n._("Waiting on {0}", { 0: agent || i18n._("Subagent") });
   }
+  // The final report never renders as a tool row, so it has no row phrase.
+  if (toolName === "return_result") return i18n._("Reporting back…");
   return liveToolActivityLabel(toolName, input);
 }

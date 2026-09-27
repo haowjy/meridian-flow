@@ -14,6 +14,11 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. js-lingui-explicit-id
+#: src/features/chat/subagent/display.ts
+msgid "Reporting back…"
+msgstr "Reporting back…"
+
+#. js-lingui-explicit-id
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "finished"
 msgstr "finished"

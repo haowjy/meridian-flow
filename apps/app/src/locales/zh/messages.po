@@ -14,6 +14,11 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. js-lingui-explicit-id
+#: src/features/chat/subagent/display.ts
+msgid "Reporting back…"
+msgstr "正在汇报…"
+
+#. js-lingui-explicit-id
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "finished"
 msgstr "已完成"
@@ -32,7 +37,7 @@ msgstr ""
 #. placeholder {0}: agent || i18n._("Subagent")
 #: src/features/chat/subagent/display.ts
 msgid "Waiting on {0}"
-msgstr ""
+msgstr "正在等待 {0}"
 
 #. js-lingui-explicit-id
 #: src/core/editor/change-mark-labels.ts
@@ -91,7 +96,7 @@ msgstr ""
 #. placeholder {0}: stats.callCount
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0, plural, one {# call} other {# calls}}"
-msgstr ""
+msgstr "{0, plural, other {# 次调用}}"
 
 #. placeholder {0}: children.length - visible.length
 #: src/features/project/work/WorkDetailScreen.tsx
@@ -131,7 +136,7 @@ msgstr ""
 #. placeholder {0}: list( entries.map( ({ name, outcome }) => `${name} ${outcome === "succeeded" ? i18n._("finished") : i18n._("stopped")}`, ), )
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "{0}"
-msgstr ""
+msgstr "{0}"
 
 #. placeholder {0}: chat.title
 #: src/features/project/work/WorkAssociatedChats.tsx
@@ -171,7 +176,7 @@ msgstr ""
 #. placeholder {0}: list(names)
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "{0} finished"
-msgstr ""
+msgstr "{0} 已完成"
 
 #. placeholder {0}: entry.filename
 #: src/core/editor/images/image-imports.ts
@@ -226,12 +231,12 @@ msgstr ""
 #. placeholder {0}: descendants.length
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "{0} running"
-msgstr ""
+msgstr "{0} 运行中"
 
 #. placeholder {0}: formatFixed(stats.ttftMs / 1000, i18n.locale)
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0} s"
-msgstr ""
+msgstr "{0} 秒"
 
 #. placeholder {0}: fieldLabel(target)
 #: src/features/project/work/WorkMetadata.tsx
@@ -247,12 +252,12 @@ msgstr ""
 #. placeholder {0}: list(names)
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "{0} stopped"
-msgstr ""
+msgstr "{0} 已停止"
 
 #. placeholder {0}: descendants.length
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "{0} subagents"
-msgstr ""
+msgstr "{0} 个子代理"
 
 #. placeholder {0}: names.length
 #: src/features/chat/AssistantTurn.tsx
@@ -262,7 +267,7 @@ msgstr ""
 #. placeholder {0}: names.length
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "{0} subagents finished"
-msgstr ""
+msgstr "{0} 个子代理已完成"
 
 #. placeholder {0}: names.length
 #. placeholder {1}: stopped.length
@@ -283,7 +288,7 @@ msgstr "{0} 个子代理已完成（{1} 个已停止）"
 #. placeholder {0}: compactCount(stats.outputTokensPerSecond)
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0} tok/s"
-msgstr ""
+msgstr "{0} 词元/秒"
 
 #. placeholder {0}: work.name
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
@@ -373,7 +378,7 @@ msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "<0.1 s"
-msgstr ""
+msgstr "<0.1 秒"
 
 #. placeholder {0}: target.name
 #: src/features/project/context/ContextEntryActions.tsx
@@ -756,7 +761,7 @@ msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Cache hit"
-msgstr ""
+msgstr "缓存命中"
 
 #: src/features/chat/AssistantTurnActions.tsx
 #~ msgid "Cache reset"
@@ -764,11 +769,11 @@ msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Cache resets"
-msgstr ""
+msgstr "缓存重置"
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Calls"
-msgstr ""
+msgstr "调用"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Can't undo"
@@ -1332,7 +1337,7 @@ msgstr ""
 
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Couldn't read report from {line}"
-msgstr ""
+msgstr "无法读取来自 {line} 的报告"
 
 #: src/features/chat/thread-report-renderer.tsx
 #~ msgid "Couldn't read report from {who}"
@@ -1668,7 +1673,7 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Drafting"
-msgstr ""
+msgstr "起草中"
 
 #: src/features/chat/command-descriptor.ts
 #~ msgid "Drafting…"
@@ -1747,7 +1752,7 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Editing"
-msgstr ""
+msgstr "编辑中"
 
 #: src/features/chat/command-descriptor.ts
 #~ msgid "Editing…"
@@ -1889,7 +1894,7 @@ msgstr ""
 
 #: src/features/chat/SubagentHeader.tsx
 msgid "Filter subagents"
-msgstr ""
+msgstr "筛选子代理"
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
@@ -2098,7 +2103,7 @@ msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Input tokens"
-msgstr ""
+msgstr "输入词元"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Insert"
@@ -2413,7 +2418,7 @@ msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Model"
-msgstr ""
+msgstr "模型"
 
 #: src/features/billing/UsageCard.tsx
 msgid "Monthly usage"
@@ -2695,7 +2700,7 @@ msgstr "未找到"
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Not reported"
-msgstr ""
+msgstr "未报告"
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Nothing carries that name yet"
@@ -2887,11 +2892,11 @@ msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Output speed"
-msgstr ""
+msgstr "输出速度"
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Output tokens"
-msgstr ""
+msgstr "输出词元"
 
 #: src/features/billing/UsageCard.tsx
 msgid "Over your monthly usage"
@@ -3045,7 +3050,7 @@ msgstr ""
 
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Read report from {line}"
-msgstr ""
+msgstr "已读取来自 {line} 的报告"
 
 #: src/features/chat/thread-report-renderer.tsx
 #~ msgid "Read report from {who}"
@@ -3061,11 +3066,11 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Reading"
-msgstr ""
+msgstr "阅读中"
 
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Reading report from {line}"
-msgstr ""
+msgstr "正在读取来自 {line} 的报告"
 
 #: src/features/chat/thread-report-renderer.tsx
 #~ msgid "Reading report from {who}"
@@ -3610,7 +3615,7 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Skimming"
-msgstr ""
+msgstr "浏览中"
 
 #: src/features/chat/command-descriptor.ts
 #~ msgid "Skimming…"
@@ -3672,7 +3677,7 @@ msgstr ""
 
 #: src/features/chat/subagent/SubagentMark.tsx
 msgid "Status unknown"
-msgstr ""
+msgstr "状态未知"
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/DraftDock.tsx
@@ -3712,7 +3717,7 @@ msgstr ""
 
 #: src/features/project/chat/SubagentPathRow.tsx
 msgid "Subagent chat path"
-msgstr ""
+msgstr "子代理对话路径"
 
 #: src/features/project/chat/SubagentBanner.tsx
 #~ msgid "Subagent:"
@@ -4234,7 +4239,7 @@ msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Thread"
-msgstr ""
+msgstr "对话"
 
 #: src/features/chat/AssistantTurnActions.tsx
 #~ msgid "Thread cache hit"
@@ -4242,7 +4247,7 @@ msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Time to first token"
-msgstr ""
+msgstr "首个词元耗时"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "title"
@@ -4272,7 +4277,7 @@ msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Turn"
-msgstr ""
+msgstr "回合"
 
 #: src/features/chat/AssistantTurnActions.tsx
 #~ msgid "Turn cache hit"
@@ -4280,7 +4285,7 @@ msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Turn information"
-msgstr ""
+msgstr "回合信息"
 
 #: src/features/editor/surfaces/blocks/block-copy.ts
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
@@ -4357,7 +4362,7 @@ msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Unknown"
-msgstr ""
+msgstr "未知"
 
 #: src/features/chat/CustomBlockRenderer.tsx
 msgid "Unknown component: {kindLabel}"
@@ -4555,7 +4560,7 @@ msgstr ""
 
 #: src/features/chat/SpawnReportCard.tsx
 msgid "Working"
-msgstr ""
+msgstr "处理中"
 
 #: src/features/project/lifecycle.ts
 #~ msgid "Working…"
@@ -4584,7 +4589,7 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Writing"
-msgstr ""
+msgstr "写作中"
 
 #: src/features/chat/command-descriptor.ts
 #~ msgid "Writing…"

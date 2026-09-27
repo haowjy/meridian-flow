@@ -12,7 +12,7 @@ import type { DirectInvocationResult } from "./invocation-direct-result";
 import { ReportContent } from "./ReportContent";
 import { useSubagentDisclosure } from "./subagent/DisclosureStore";
 import type { SubagentRun } from "./subagent/run-model";
-import { SubagentRow } from "./subagent/SubagentRow";
+import { SubagentRow, SubagentToolLine } from "./subagent/SubagentRow";
 
 /** Where a background run's saved report lives; read only once the writer expands the card. */
 export type SavedReportSource = { threadId: string; childThreadId: string; execution: string };
@@ -90,7 +90,13 @@ export function SpawnReportCard({
         expanded={expanded}
         onToggle={() => setExpanded((value) => !value)}
         expandable={expandable}
-        detail={running ? liveTool || <Trans>Working</Trans> : reason || undefined}
+        detail={
+          running ? (
+            <SubagentToolLine run={run} fallback={<Trans>Working</Trans>} />
+          ) : reason ? (
+            <p className="text-xs text-muted-foreground">{reason}</p>
+          ) : undefined
+        }
       />
       {expanded && expandable ? (
         <div className="mt-[var(--chat-space-block)] pl-[calc(1.5rem+var(--chat-space-row))] text-sm">

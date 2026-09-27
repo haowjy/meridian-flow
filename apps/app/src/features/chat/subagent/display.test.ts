@@ -73,6 +73,7 @@ describe("subagent display", () => {
     );
     expect(subagentCurrentToolLabel("search", null)).toBe("Searching…");
     expect(subagentCurrentToolLabel("spawn", null)).toContain("Waiting on");
+    expect(subagentCurrentToolLabel("return_result", { summary: "Done" })).toBe("Reporting back…");
     expect(subagentCurrentToolLabel("write", null)).toBe("Writing…");
   });
 });
