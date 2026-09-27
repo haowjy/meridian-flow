@@ -559,15 +559,15 @@ export function WorkCreationDestination({
             holdWorkCollectionFocus(projectId, { kind: "heading" });
             void routeCommands.closeWork({ replace: true });
           }}
-          identity={
-            <section className="min-w-0" aria-label={t`Work identity`}>
-              <h1 className="w-fit max-w-full text-xl font-semibold [overflow-wrap:anywhere]">
-                {name}
-              </h1>
-              {goal ? (
-                <p className="mt-2 max-w-3xl whitespace-pre-line text-base leading-6">{goal}</p>
-              ) : null}
-            </section>
+          title={
+            <h1 className="min-w-0 max-w-full text-xl font-semibold [overflow-wrap:anywhere]">
+              {name}
+            </h1>
+          }
+          description={
+            goal ? (
+              <p className="max-w-3xl whitespace-pre-line text-base leading-6">{goal}</p>
+            ) : null
           }
           status={
             <div

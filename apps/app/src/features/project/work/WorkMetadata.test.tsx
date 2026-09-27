@@ -4,7 +4,7 @@ import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { useWorkMetadataController, WorkMetadata } from "./WorkMetadata";
+import { useWorkMetadataController, WorkDescription, WorkName } from "./WorkMetadata";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -32,7 +32,13 @@ const WORK: Work = {
   deletedAt: null,
 };
 function Harness({ saveWork }: { saveWork: (data: UpdateWorkRequest) => Promise<Work> }) {
-  return <WorkMetadata controller={useWorkMetadataController(WORK, saveWork)} />;
+  const controller = useWorkMetadataController(WORK, saveWork);
+  return (
+    <>
+      <WorkName controller={controller} />
+      <WorkDescription controller={controller} />
+    </>
+  );
 }
 function setValue(node: HTMLInputElement | HTMLTextAreaElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(node), "value")?.set;

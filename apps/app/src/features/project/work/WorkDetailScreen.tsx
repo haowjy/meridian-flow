@@ -52,8 +52,9 @@ import { useProjectLeaveGuard } from "../routing/ProjectNavigationContext";
 import type { ProjectRouteCommands } from "../routing/project-route";
 import {
   useWorkMetadataController,
-  WorkMetadata,
+  WorkDescription,
   type WorkMetadataController,
+  WorkName,
 } from "./WorkMetadata";
 import { filterWorkFileGroups } from "./work-files-model";
 import { holdWorkCollectionFocus } from "./work-focus-intent";
@@ -65,18 +66,26 @@ export type WorkDetailScreenProps = {
   onDeleteWork?: (work: Work) => void;
 };
 
+/**
+ * One compact header block: back link, name and status share the top row with
+ * the actions menu pinned right; the description sits directly beneath.
+ */
 export function WorkScreenHeader({
   onBack,
-  identity,
+  title,
   status,
+  actions,
+  description,
   view,
   onViewChange,
   tools,
   pending = false,
 }: {
   onBack: () => void;
-  identity: React.ReactNode;
+  title: React.ReactNode;
   status: React.ReactNode;
+  actions?: React.ReactNode;
+  description?: React.ReactNode;
   view: "chats" | "files";
   onViewChange: (view: "chats" | "files") => void;
   tools: React.ReactNode;
@@ -84,17 +93,28 @@ export function WorkScreenHeader({
 }) {
   return (
     <>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onBack}
-        className="-ml-2 w-fit [@media(pointer:coarse)]:min-h-11"
-      >
-        <ChevronLeft className="size-4" />
-        <Trans>All Work</Trans>
-      </Button>
-      {identity}
-      {status}
+      <header className="flex min-w-0 flex-col gap-1.5">
+        <div className="flex min-w-0 items-start gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onBack}
+              aria-label={t`All Work`}
+              className="-ml-2 w-fit [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+            >
+              <ChevronLeft className="size-4" />
+              <span className="max-sm:hidden" aria-hidden>
+                <Trans>All Work</Trans>
+              </span>
+            </Button>
+            {title}
+            {status}
+          </div>
+          {actions}
+        </div>
+        {description}
+      </header>
       <div className="flex min-w-0 flex-wrap items-center gap-3 border-b pb-3">
         <SegmentedTabs
           label={t`Work view`}
@@ -173,45 +193,42 @@ export function WorkDetailScreen({
             holdWorkCollectionFocus(projectId, { kind: "heading" });
             void routeCommands.closeWork({ replace: true });
           }}
-          identity={
-            <WorkMetadata
-              controller={controller}
-              identityChrome={
-                <OverflowMenu
-                  label={t`Work actions`}
-                  triggerClassName="[@media(pointer:coarse)]:size-11"
-                >
-                  <DropdownMenuItem
-                    disabled={mutations.isPending}
-                    onSelect={() =>
-                      (controller.work.status === "archived"
-                        ? mutations.unarchive
-                        : mutations.archive
-                      ).mutate(controller.work.id)
-                    }
-                  >
-                    {controller.work.status === "archived" ? (
-                      <ArchiveRestore className="size-4" />
-                    ) : (
-                      <Archive className="size-4" />
-                    )}
-                    {controller.work.status === "archived" ? (
-                      <Trans>Unarchive</Trans>
-                    ) : (
-                      <Trans>Archive</Trans>
-                    )}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    variant="destructive"
-                    disabled={mutations.isPending}
-                    onSelect={() => onDeleteWork?.(controller.work)}
-                  >
-                    <Trans>Delete Work</Trans>
-                  </DropdownMenuItem>
-                </OverflowMenu>
-              }
-            />
+          title={<WorkName controller={controller} />}
+          description={<WorkDescription controller={controller} />}
+          actions={
+            <OverflowMenu
+              label={t`Work actions`}
+              triggerClassName="[@media(pointer:coarse)]:size-11"
+            >
+              <DropdownMenuItem
+                disabled={mutations.isPending}
+                onSelect={() =>
+                  (controller.work.status === "archived"
+                    ? mutations.unarchive
+                    : mutations.archive
+                  ).mutate(controller.work.id)
+                }
+              >
+                {controller.work.status === "archived" ? (
+                  <ArchiveRestore className="size-4" />
+                ) : (
+                  <Archive className="size-4" />
+                )}
+                {controller.work.status === "archived" ? (
+                  <Trans>Unarchive</Trans>
+                ) : (
+                  <Trans>Archive</Trans>
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={mutations.isPending}
+                onSelect={() => onDeleteWork?.(controller.work)}
+              >
+                <Trans>Delete Work</Trans>
+              </DropdownMenuItem>
+            </OverflowMenu>
           }
           status={
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
