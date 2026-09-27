@@ -5,7 +5,7 @@
  * drives two consecutive writer runs through the real orchestrator/delivery
  * path (in-memory ports) and asserts the second request's history reproduces
  * the first request's messages exactly, including a request-only notice
- * (`NoticePort.drainForModelContext`) delivered during the first run.
+ * (a peeked `NoticePort` notice) delivered during the first run.
  *
  * Before the fix, `orchestrator.ts` spliced the drained notice onto the
  * request only (`attachNoticesToLatestUserMessage`) and never persisted it, so

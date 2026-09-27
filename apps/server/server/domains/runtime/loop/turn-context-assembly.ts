@@ -3,14 +3,15 @@
  * before gateway.stream(), callable without starting a turn or persisting a bake.
  *
  * Key decisions:
- * - Preview (`persistBake: false`) computes a would-be first-attempt bake in memory
- *   only; `baked` reflects whether the thread already has an initial bake pointer.
- * - Orchestrator (`persistBake: true`) atomically persists prompt, Agent
- *   `skills.available` slugs, and advertised tools on first attempt. Empty Agent
- *   available still writes `[]`. Concurrent attempts use the winning bake row.
- *   After first assembly, dynamic context never rewrites the thread's initial bake.
- * - Freeze happens at first turn attempt (context assembly), even if the gateway
- *   send then fails or is cancelled.
+ * - Preview (`persistBake: false`) computes a first-attempt bake in memory only
+ *   and returns it as `pendingBake`; the runtime persists it in the delivery commit.
+ *   `baked` reflects whether the thread already has an initial bake pointer.
+ * - Explicit commit-phase callers may pass `persistBake: true` to persist prompt,
+ *   Agent `skills.available` slugs, and advertised tools. Empty Agent available
+ *   still writes `[]`. Concurrent attempts use the winning bake row. After first
+ *   assembly, dynamic context never rewrites the thread's initial bake.
+ * - Runtime freeze commits with the first prepared run start, before model
+ *   execution. Later gateway failure or cancellation does not undo that bake.
  */
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -65,7 +66,7 @@ export interface AssembleNextTurnContextInput {
     breaks: readonly ImageContextBreak[];
   }) => Promise<{ turns: Turn[]; blocks: Block[] }>;
   baseTools?: Tool[];
-  /** When true, first-attempt bake is persisted; preview callers pass false. */
+  /** When true, first-attempt bake is persisted immediately; preview/runtime prep pass false. */
   persistBake?: boolean;
   promptBakes: Pick<PromptBakeRepository, "findById">;
   bakeInitialPrompt?: (
@@ -83,6 +84,8 @@ export interface AssembledNextTurnContext {
   policy: EffectiveToolPolicy;
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
   baked: boolean;
+  /** First-attempt prompt freeze staged for the delivery commit, if still needed. */
+  pendingBake?: PromptBakeContent;
   generateRequest: Pick<
     GenerateRequest,
     "messages" | "tools" | "model" | "reasoning" | "promptCacheKey"
@@ -114,6 +117,7 @@ export async function assembleNextTurnContext(
   let namedSubagentsForUnfrozen: PromptInventoryListing[] | undefined;
   let subagentGuidanceForUnfrozen: string | undefined;
   let systemPrompt: string;
+  let pendingBake: PromptBakeContent | undefined;
   const baked = thread.initialPromptBakeId != null;
 
   if (isThreadPromptFrozen(thread)) {
@@ -148,15 +152,18 @@ export async function assembleNextTurnContext(
       subagentGuidance: agentContext.subagentGuidance,
     });
 
+    const content = {
+      composedSystemPrompt: bakedPrompt,
+      bakedSkillSlugs: availableSkills.map((skill) => skill.slug),
+      bakedTools: tools as unknown as PromptBake["bakedTools"],
+    };
+    const bakeContent = {
+      ...content,
+      contentHash: hashPromptBakeContent(content),
+    };
     if (input.persistBake && input.bakeInitialPrompt) {
-      const content = {
-        composedSystemPrompt: bakedPrompt,
-        bakedSkillSlugs: availableSkills.map((skill) => skill.slug),
-        bakedTools: tools as unknown as PromptBake["bakedTools"],
-      };
       const result = await input.bakeInitialPrompt(thread.id as ThreadId, {
-        ...content,
-        contentHash: hashPromptBakeContent(content),
+        ...bakeContent,
       });
       thread = result.thread;
       if (!isThreadPromptFrozen(thread))
@@ -165,6 +172,7 @@ export async function assembleNextTurnContext(
       // A losing CAS refetches the winner's frozen tools, mirroring the prompt above.
       tools = toolsFromBakedJson(result.bake.bakedTools) ?? tools;
     } else {
+      pendingBake = bakeContent;
       systemPrompt = bakedPrompt;
       unfrozenBasePrompt = agentContext.agentBody;
       appendPromptForUnfrozen = agentContext.appendPrompt;
@@ -230,6 +238,7 @@ export async function assembleNextTurnContext(
     policy: agentContext.policy,
     gatewayParams,
     baked,
+    ...(pendingBake ? { pendingBake } : {}),
     generateRequest: {
       messages,
       tools: contextTools,
@@ -241,6 +250,36 @@ export async function assembleNextTurnContext(
       ...gatewayParams,
     },
     imageContextUpdates,
+  };
+}
+
+/** Persist a first-turn bake inside delivery commit and make its winner authoritative. */
+export async function persistPreparedPromptBake(
+  assembled: AssembledNextTurnContext,
+  bakeInitialPrompt: NonNullable<AssembleNextTurnContextInput["bakeInitialPrompt"]>,
+): Promise<void> {
+  const pendingBake = assembled.pendingBake;
+  if (!pendingBake) return;
+
+  const result = await bakeInitialPrompt(assembled.thread.id as ThreadId, pendingBake);
+  assembled.thread = result.thread;
+  assembled.baked = true;
+  assembled.pendingBake = undefined;
+  assembled.systemPrompt = result.bake.composedSystemPrompt;
+  const tools = toolsFromBakedJson(result.bake.bakedTools) ?? assembled.generateRequest.tools ?? [];
+  assembled.generateRequest.tools = tools;
+  assembled.tools = functionToolsFromAdvertised(tools);
+
+  const systemIndex = assembled.generateRequest.messages.findIndex(
+    (message) => message.role === "system",
+  );
+  const systemMessage = assembled.generateRequest.messages[systemIndex];
+  if (!systemMessage) throw new Error("Prepared request has no system prompt");
+  assembled.generateRequest.messages[systemIndex] = {
+    ...systemMessage,
+    content: systemMessage.content.map((part) =>
+      part.type === "text" ? { ...part, text: assembled.systemPrompt } : part,
+    ),
   };
 }
 

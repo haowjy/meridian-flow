@@ -15,7 +15,7 @@ import {
   type WorkRepository,
 } from "../../projects/index.js";
 import type { EventJournalWriter } from "../ports/event-journal.js";
-import type { InternalThreadRepositories } from "../ports/repositories.js";
+import type { InternalThreadRepositories, ThreadImageInclusion } from "../ports/repositories.js";
 import { createBoundConversation } from "./bound-conversation.js";
 import { bakeAt, bakeInEffect } from "./prompt-epochs.js";
 import { projectImageInclusionDecision } from "./read-model-projector.js";
@@ -170,13 +170,17 @@ export async function forkThreadAgent(
     }
     const target = await bindDerivedPrimary(deps, result.thread, sourceWorkId, binding);
     const inheritedBlockIds = new Set(cutoff.blocks.map((block) => block.id));
-    const inheritedTurnIds = new Set(cutoff.turns.map((turn) => turn.id));
-    for (const decision of await deps.imageInclusions.findByThread(lockedSource.id as ThreadId)) {
-      if (
-        !inheritedBlockIds.has(decision.blockId) ||
-        !inheritedTurnIds.has(decision.decisionTurnId)
-      )
-        continue;
+    const turnOrder = new Map(cutoff.turns.map((turn, index) => [turn.id, index]));
+    const decisionsAtCutoff = new Map<string, { decision: ThreadImageInclusion; rank: number }>();
+    for (const decision of await deps.imageInclusions.listByThread(lockedSource.id as ThreadId)) {
+      const rank = turnOrder.get(decision.decisionTurnId);
+      if (!inheritedBlockIds.has(decision.blockId) || rank === undefined) continue;
+      const previous = decisionsAtCutoff.get(decision.blockId);
+      if (!previous || rank > previous.rank) {
+        decisionsAtCutoff.set(decision.blockId, { decision, rank });
+      }
+    }
+    for (const { decision } of decisionsAtCutoff.values()) {
       const event = {
         type: "image.inclusion_decided" as const,
         threadId: target.id,

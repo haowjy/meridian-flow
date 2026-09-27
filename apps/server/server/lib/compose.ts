@@ -1394,16 +1394,14 @@ function createInMemoryNoticePort(): NoticePort {
       const notice: Notice = { ...input, id: nextId++, createdAt: new Date() };
       rows.push(notice);
     },
-    async drainForModelContext(threadId) {
-      const consumed: Notice[] = [];
+    async peek(threadId) {
+      return rows.filter((notice) => notice.scope.threadId === threadId);
+    },
+    async consume(ids) {
+      const consumed = new Set(ids);
       for (let index = rows.length - 1; index >= 0; index -= 1) {
-        const notice = rows[index];
-        if (!notice) continue;
-        if (notice.scope.threadId !== threadId) continue;
-        consumed.unshift(notice);
-        rows.splice(index, 1);
+        if (consumed.has(rows[index]?.id ?? -1)) rows.splice(index, 1);
       }
-      return consumed;
     },
   };
 }

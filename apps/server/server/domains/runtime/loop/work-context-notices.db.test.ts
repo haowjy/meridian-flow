@@ -203,15 +203,19 @@ else
         status: "streaming",
       });
       try {
-        await notices.adoptBatch(lease, async () => {
-          await persistAndAppendTurnStartEvents(
-            { repos, eventWriter },
-            ids.threadId,
-            null,
-            async () => ({ result: null, events: [{ type: "turn.created", turn: assistant }] }),
-          );
-          return { value: null, turnId: assistant.id, messageIds: [] };
-        });
+        await notices.adoptBatch(lease, async () => ({
+          value: null,
+          turnId: assistant.id,
+          messageIds: [],
+          persist: async () => {
+            await persistAndAppendTurnStartEvents(
+              { repos, eventWriter },
+              ids.threadId,
+              null,
+              async () => ({ result: null, events: [{ type: "turn.created", turn: assistant }] }),
+            );
+          },
+        }));
         await rebind(ids.targetWorkId, notices);
         await expect(notices.materializeIdle(ids.threadId)).resolves.toBe("pending");
         const message = await notices.enqueue({
@@ -342,15 +346,19 @@ else
         status: "streaming",
       });
       try {
-        await notices.adoptBatch(lease, async () => {
-          await persistAndAppendTurnStartEvents(
-            { repos, eventWriter },
-            ids.threadId,
-            null,
-            async () => ({ result: null, events: [{ type: "turn.created", turn: assistant }] }),
-          );
-          return { value: null, turnId: assistant.id, messageIds: [] };
-        });
+        await notices.adoptBatch(lease, async () => ({
+          value: null,
+          turnId: assistant.id,
+          messageIds: [],
+          persist: async () => {
+            await persistAndAppendTurnStartEvents(
+              { repos, eventWriter },
+              ids.threadId,
+              null,
+              async () => ({ result: null, events: [{ type: "turn.created", turn: assistant }] }),
+            );
+          },
+        }));
         const send = (writerId: string) =>
           persistWriterEnqueue({
             persistence: { repos, eventWriter },

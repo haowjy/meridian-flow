@@ -14,9 +14,10 @@ describe("collab model-context notices", () => {
     const port = createReversalNoticePort({
       notices: {
         record,
-        async drainForModelContext() {
+        async peek() {
           return [];
         },
+        async consume() {},
       },
       documentUriResolver: async () => "manuscript://chapter-one.md",
       diagnostics: SILENT_REVERSAL_NOTICE_DIAGNOSTICS,
@@ -46,9 +47,10 @@ describe("collab model-context notices", () => {
     await recordAwarenessDegradedNotice({
       notices: {
         record,
-        async drainForModelContext() {
+        async peek() {
           return [];
         },
+        async consume() {},
       },
       resolveDocumentUri: async (documentId) =>
         documentId === "document-1"
@@ -94,8 +96,9 @@ describe("collab model-context notices", () => {
 function noticePort(record: NoticePort["record"]): NoticePort {
   return {
     record,
-    async drainForModelContext() {
+    async peek() {
       return [];
     },
+    async consume() {},
   };
 }

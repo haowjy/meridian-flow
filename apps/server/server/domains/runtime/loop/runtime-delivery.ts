@@ -1,6 +1,7 @@
 /** Atomic inbox transitions; journal publication is part of every committed mutation. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
+import type { Notice } from "../../notices/index.js";
 import type { WorkContextNotices } from "../../projects/index.js";
 import type { FinalizedExecution, TerminalCause } from "./execution-finalizer.js";
 import type { drainInbox, InboxDrain } from "./inbox-context.js";
@@ -17,6 +18,7 @@ export type DeliveryBoundary = Pick<
 > & {
   lease: Lease;
   currentTurn: Turn;
+  signal?: AbortSignal;
   /** Prepare image decisions/breaks before the next assistant turn is reserved. */
   prepareNextContext: (drain: InboxDrain) => Promise<{
     events: OrchestratorEvent[];
@@ -25,7 +27,18 @@ export type DeliveryBoundary = Pick<
     requiresSplit: boolean;
   }>;
 };
-export type AdoptedBatch = { drain: InboxDrain; next: Turn; split: boolean };
+export type DeliverySelection = {
+  batch: InboxMessage[];
+  workContext?: import("./work-context.js").RenderedWorkContext;
+  notices: Notice[];
+  activeLeafTurnId: TurnId | null;
+};
+export type AdoptedBatch = {
+  drain: InboxDrain;
+  next: Turn;
+  split: boolean;
+  preparationFailure?: unknown;
+};
 export interface RuntimeDelivery
   extends WorkContextNotices,
     Pick<InboxReader, "selectPending" | "readPendingProjection" | "pendingMessageThreads"> {
@@ -40,16 +53,17 @@ export interface RuntimeDelivery
   /** Initial assistant setup and exact receipt commit before model execution. */
   adoptBatch<T>(
     lease: Lease,
-    prepare: (
-      batch: InboxMessage[],
-      workContext?: import("./work-context.js").RenderedWorkContext,
-    ) => Promise<{
+    /** Pure preparation over the selection; transactional writes belong in `persist`. */
+    prepare: (selection: DeliverySelection) => Promise<{
       value: T;
       turnId: TurnId;
       messageIds: readonly string[];
+      /** Preparation failures still adopt messages and reserve a failed assistant turn. */
+      preparationFailure?: unknown;
       /** Turn-start writes run under the lock, after external context is prepared. */
       persist?: () => Promise<void>;
     }>,
+    options?: { signal?: AbortSignal },
   ): Promise<T>;
   ackWithResponse<T>(lease: Lease, ids: string[], persist: () => Promise<T>): Promise<T>;
   splitAndContinue(input: DeliveryBoundary): Promise<AdoptedBatch>;

@@ -18,6 +18,7 @@ const reference = {
 
 function assetPort(input: {
   availability: { kind: string; entry?: { uri: string } };
+  failure?: "availability" | "identity" | "object";
   identity?: {
     mimeType: string | null;
     storageUrl: string | null;
@@ -32,11 +33,13 @@ function assetPort(input: {
 }) {
   const availability = {
     async lookup() {
+      if (input.failure === "availability") throw new Error("lookup failed");
       return { resolutions: [input.availability] };
     },
   } as unknown as ProjectContextAvailabilityPort;
   const identities = {
     async lookupDocument() {
+      if (input.failure === "identity") throw new Error("identity failed");
       return input.identity === undefined
         ? { mimeType: "image/png", storageUrl: "object://meridian/image", sizeBytes: 5 }
         : input.identity;
@@ -44,6 +47,7 @@ function assetPort(input: {
   } as unknown as UploadIdentityPort;
   const objects = {
     async get() {
+      if (input.failure === "object") throw new Error("object read failed");
       return (
         input.object ?? {
           ok: true as const,
@@ -111,6 +115,24 @@ describe("context image resolution", () => {
         maxBytes: 1024,
       }),
     ).rejects.toBeInstanceOf(ImageAssetResolutionError);
+  });
+
+  it.each([
+    "availability",
+    "identity",
+    "object",
+  ] as const)("maps unexpected %s lookup failures to image resolution errors", async (failure) => {
+    const error = await assetPort({
+      availability: { kind: "available", entry: { uri: reference.uri } },
+      failure,
+    })
+      .resolve(context, reference, { maxBytes: 1024 })
+      .catch((cause: unknown) => cause);
+
+    expect(error).toMatchObject({
+      name: "ImageAssetResolutionError",
+      cause: { message: expect.stringMatching(/lookup failed|identity failed|object read failed/) },
+    });
   });
 
   it("treats changed or non-image media types as definite loss", async () => {

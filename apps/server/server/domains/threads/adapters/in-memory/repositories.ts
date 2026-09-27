@@ -909,12 +909,26 @@ export function createInMemoryRepositories(
 
   const imageInclusionsRepo: ThreadImageInclusionRepository = {
     async findByThread(threadId) {
+      const latest = new Map<string, ThreadImageInclusion>();
+      const history = [...imageInclusions.values()]
+        .filter((row) => row.threadId === threadId)
+        .sort(
+          (left, right) =>
+            (turns.get(left.decisionTurnId)?.position ?? 0) -
+            (turns.get(right.decisionTurnId)?.position ?? 0),
+        );
+      for (const row of history) latest.set(row.blockId, row);
+      return [...latest.values()].map((row) => ({ ...row }));
+    },
+    async listByThread(threadId) {
       return [...imageInclusions.values()]
         .filter((row) => row.threadId === threadId)
         .map((row) => ({ ...row }));
     },
     async set(input) {
-      imageInclusions.set(`${input.threadId}\0${input.blockId}`, { ...input });
+      imageInclusions.set(`${input.threadId}\0${input.blockId}\0${input.decisionTurnId}`, {
+        ...input,
+      });
     },
   };
 

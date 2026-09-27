@@ -2,7 +2,8 @@
  * The inbox drain seam: materializes a claimed batch as durable history. A text
  * `message` becomes a persisted turn. Child-provenance messages become
  * structured subagent-update system turns; Work refreshes and every other
- * request-only notice (`NoticePort.drainForModelContext` plus non-message inbox
+ * request-only notice (the delivery boundary's peeked `NoticePort` rows plus
+ * non-message inbox
  * entries) become one durable `system_update` turn, so a rebuilt request always
  * reproduces exactly what an earlier request saw -- required for the frozen
  * prefix's Anthropic cache breakpoints (thread AGENTS.md / runtime CONTEXT.md).

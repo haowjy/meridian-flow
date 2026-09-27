@@ -15,7 +15,7 @@ import {
 import type { MessageDraft } from "../ports.js";
 import type { ReferenceReader } from "../reference-context.js";
 import { NoPendingWakeError } from "../run-turn-port.js";
-import { createTestAgentBinding } from "./runtime-fixtures.js";
+import { createTestAgentBinding, createTestNoticePort } from "./runtime-fixtures.js";
 import { runtimeScenario } from "./runtime-harness.js";
 import { scriptedGateway } from "./test-gateway.js";
 
@@ -82,6 +82,31 @@ function messageText(message: Message): string {
   return message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
 }
 
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+function imageReference(uri: string) {
+  return {
+    type: "image" as const,
+    documentId: "44444444-4444-4444-8444-000000000099",
+    uri,
+  };
+}
+
+async function recordNotice(notices: ReturnType<typeof createTestNoticePort>, threadId: string) {
+  await notices.record({
+    kind: "awareness_degraded",
+    scope: { kind: "thread", threadId },
+    message: "Awareness changed during preparation.",
+    data: { documentIds: [], documentNames: [] },
+  });
+}
+
 function messageTurns(turns: readonly { role: string; metadata?: unknown }[]) {
   return turns.filter(
     (turn) =>
@@ -101,6 +126,7 @@ async function setup(
     realSpawnTools?: boolean;
     supportsImageInput?: boolean;
     imageAssets?: import("../../ports/image-asset.js").ImageAssetPort;
+    notices?: ReturnType<typeof createTestNoticePort>;
   } = {},
 ) {
   const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
@@ -131,6 +157,7 @@ async function setup(
       : {}),
     ...(options.referenceReader ? { referenceReader: options.referenceReader } : {}),
     ...(options.imageAssets ? { imageAssets: options.imageAssets } : {}),
+    ...(options.notices ? { notices: options.notices } : {}),
     agentRevisions: createTestAgentBinding("gpt-4.1-mini", "", () => [thread.id]),
   });
   const thread = options.child
@@ -151,7 +178,7 @@ async function setup(
         });
       })()
     : rig.thread;
-  return { ...rig, thread, requests };
+  return { ...rig, thread, requests, notices: options.notices };
 }
 
 async function execute(run: import("../run-turn-port.js").PreparedRun) {
@@ -557,7 +584,10 @@ describe("inbox drain", () => {
     const first = await orchestrator.prepare({ threadId: thread.id, drain: true });
     await expect(first.execute()).resolves.toMatchObject({
       status: "error",
-      turn: { status: "error", error: expect.stringContaining("temporary object-store timeout") },
+      turn: {
+        status: "error",
+        error: "An image in this message couldn't be loaded. Try again.",
+      },
     });
     expect(await repos.turns.findById(first.assistantTurnId)).toMatchObject({
       role: "assistant",
@@ -590,7 +620,7 @@ describe("inbox drain", () => {
     ).toBe(true);
   });
 
-  it("fails mid-run preparation on the still-running assistant and acknowledges the steer", async () => {
+  it("fails the reply to a steer when mid-run preparation fails", async () => {
     const original = {
       type: "image" as const,
       documentId: "44444444-4444-4444-8444-000000000004",
@@ -626,16 +656,334 @@ describe("inbox drain", () => {
     const run = await orchestrator.prepare({ threadId: thread.id, drain: true });
     await expect(run.execute()).resolves.toMatchObject({
       status: "error",
-      turn: { status: "error", error: expect.stringContaining("temporary object-store timeout") },
+      turn: {
+        status: "error",
+        error: "An image in this message couldn't be loaded. Try again.",
+      },
     });
 
     expect(requests).toHaveLength(1);
     expect(await repos.turns.findById(run.assistantTurnId)).toMatchObject({
       role: "assistant",
+      status: "complete",
+      finishReason: "end_turn",
+    });
+    const newestAssistant = (await repos.turns.listByThread(thread.id))
+      .filter((turn) => turn.role === "assistant")
+      .at(-1);
+    expect(newestAssistant).toMatchObject({
       status: "error",
       finishReason: "error",
+      error: "An image in this message couldn't be loaded. Try again.",
     });
     expect(await inbox.selectPending(thread.id)).toEqual([]);
+  });
+
+  it.each([
+    "drain start",
+    "direct start",
+    "mid-run",
+  ] as const)("retries preparation when a second writer send arrives during %s", async (boundary) => {
+    const entered = deferred();
+    const release = deferred();
+    let blockFirstResolution = true;
+    let rig: Awaited<ReturnType<typeof setup>>;
+    rig = await setup({
+      imageAssets: {
+        async resolve(_context, reference) {
+          if (blockFirstResolution) {
+            blockFirstResolution = false;
+            entered.resolve();
+            await release.promise;
+          }
+          return { mediaType: "image/png", data: reference.uri, sizeBytes: 5 };
+        },
+      },
+      onStream: async (call) => {
+        if (boundary === "mid-run" && call === 1) {
+          await rig.send(rig.thread.id, "first steer", {
+            blocks: [
+              { type: "text", text: "first steer" },
+              imageReference("uploads://@/first.png"),
+            ],
+          });
+        }
+      },
+    });
+
+    let execution: Promise<import("../run-turn-port.js").RunOutcome>;
+    if (boundary === "drain start") {
+      await rig.send(rig.thread.id, "first writer message", {
+        blocks: [
+          { type: "text", text: "first writer message" },
+          imageReference("uploads://@/first.png"),
+        ],
+      });
+      const preparing = rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true });
+      await entered.promise;
+      await rig.send(rig.thread.id, "second writer message");
+      release.resolve();
+      execution = preparing.then((run) => run.execute());
+    } else if (boundary === "direct start") {
+      const preparing = rig.orchestrator.prepare({
+        threadId: rig.thread.id,
+        userText: "first direct writer message",
+        userBlocks: [
+          { type: "text", text: "first direct writer message" },
+          imageReference("uploads://@/direct-first.png"),
+        ],
+      });
+      await entered.promise;
+      await rig.send(rig.thread.id, "second writer message");
+      release.resolve();
+      execution = preparing.then((run) => run.execute());
+    } else {
+      const run = await rig.orchestrator.prepare({ threadId: rig.thread.id, userText: "begin" });
+      execution = run.execute();
+      await entered.promise;
+      await rig.send(rig.thread.id, "second steer");
+      release.resolve();
+    }
+
+    await expect(execution).resolves.toMatchObject({ status: "complete" });
+    const newestRequest = required(rig.requests.at(-1));
+    if (boundary === "mid-run") {
+      expect(messageTexts(newestRequest.messages)).toContain("first steer");
+      expect(messageTexts(newestRequest.messages)).toContain("second steer");
+    } else if (boundary === "direct start") {
+      expect(messageTexts(newestRequest.messages)).toContain("first direct writer message");
+      expect(messageTexts(newestRequest.messages)).toContain("second writer message");
+    } else {
+      expect(messageTexts(newestRequest.messages)).toContain("second writer message");
+      expect(messageTexts(newestRequest.messages)).toContain("first writer message");
+    }
+    expect(await rig.inbox.selectPending(rig.thread.id)).toEqual([]);
+  });
+
+  it.each([
+    "drain start",
+    "direct start",
+    "mid-run",
+  ] as const)("fails the newest writer action and preserves NoticePort rows after %s preparation failure", async (boundary) => {
+    const notices = createTestNoticePort();
+    let rig: Awaited<ReturnType<typeof setup>>;
+    let steerTurnId: string | undefined;
+    rig = await setup({
+      notices,
+      imageAssets: {
+        async resolve() {
+          throw new ImageAssetResolutionError("temporary object-store timeout");
+        },
+      },
+      onStream: async (call) => {
+        if (boundary !== "mid-run" || call !== 1) return;
+        await recordNotice(notices, rig.thread.id);
+        const sent = await rig.send(rig.thread.id, "steer with image", {
+          blocks: [
+            { type: "text", text: "steer with image" },
+            imageReference("uploads://@/steer-failure.png"),
+          ],
+        });
+        steerTurnId = sent.userTurnId;
+      },
+    });
+
+    if (boundary === "drain start") {
+      await recordNotice(notices, rig.thread.id);
+      await rig.send(rig.thread.id, "writer message with image", {
+        blocks: [
+          { type: "text", text: "writer message with image" },
+          imageReference("uploads://@/start-failure.png"),
+        ],
+      });
+      const run = await rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true });
+      await expect(run.execute()).resolves.toMatchObject({
+        status: "error",
+        turn: {
+          status: "error",
+          error: "An image in this message couldn't be loaded. Try again.",
+        },
+      });
+    } else if (boundary === "direct start") {
+      await recordNotice(notices, rig.thread.id);
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.thread.id,
+        userText: "writer message with image",
+        userBlocks: [
+          { type: "text", text: "writer message with image" },
+          imageReference("uploads://@/direct-failure.png"),
+        ],
+      });
+      await expect(run.execute()).resolves.toMatchObject({
+        status: "error",
+        turn: {
+          status: "error",
+          error: "An image in this message couldn't be loaded. Try again.",
+        },
+      });
+      const reply = await rig.repos.turns.findById(run.assistantTurnId);
+      expect(reply?.prevTurnId).toBe(run.userTurnId);
+    } else {
+      const run = await rig.orchestrator.prepare({ threadId: rig.thread.id, userText: "begin" });
+      await expect(run.execute()).resolves.toMatchObject({
+        status: "error",
+        turn: {
+          status: "error",
+          error: "An image in this message couldn't be loaded. Try again.",
+        },
+      });
+      const turns = await rig.repos.turns.listByThread(rig.thread.id);
+      const failedReply = turns.filter((turn) => turn.role === "assistant").at(-1);
+      expect(failedReply?.prevTurnId).toBe(steerTurnId);
+    }
+
+    expect(await rig.inbox.selectPending(rig.thread.id)).toEqual([]);
+    expect(await notices.peek(rig.thread.id)).toHaveLength(1);
+  });
+
+  it.each([
+    "drain start",
+    "direct start",
+    "mid-run",
+  ] as const)("discards preparation without consuming notices or pending messages when cancelled at %s", async (boundary) => {
+    const notices = createTestNoticePort();
+    const entered = deferred();
+    const release = deferred();
+    const controller = new AbortController();
+    let blockFirstResolution = true;
+    let rig: Awaited<ReturnType<typeof setup>>;
+    rig = await setup({
+      notices,
+      imageAssets: {
+        async resolve(_context, reference) {
+          if (blockFirstResolution) {
+            blockFirstResolution = false;
+            entered.resolve();
+            await release.promise;
+          }
+          return { mediaType: "image/png", data: reference.uri, sizeBytes: 5 };
+        },
+      },
+      onStream: async (call) => {
+        if (boundary !== "mid-run" || call !== 1) return;
+        await recordNotice(notices, rig.thread.id);
+        await rig.send(rig.thread.id, "steer survives cancellation", {
+          blocks: [
+            { type: "text", text: "steer survives cancellation" },
+            imageReference("uploads://@/cancel.png"),
+          ],
+        });
+      },
+    });
+
+    if (boundary === "drain start") {
+      await recordNotice(notices, rig.thread.id);
+      await rig.send(rig.thread.id, "writer message survives cancellation", {
+        blocks: [
+          { type: "text", text: "writer message survives cancellation" },
+          imageReference("uploads://@/cancel-start.png"),
+        ],
+      });
+      const preparing = rig.orchestrator.prepare({
+        threadId: rig.thread.id,
+        drain: true,
+        signal: controller.signal,
+      });
+      await entered.promise;
+      controller.abort();
+      release.resolve();
+      await expect(preparing).rejects.toMatchObject({ name: "AbortError" });
+    } else if (boundary === "direct start") {
+      await recordNotice(notices, rig.thread.id);
+      const preparing = rig.orchestrator.prepare({
+        threadId: rig.thread.id,
+        userText: "writer message survives cancellation",
+        userBlocks: [
+          { type: "text", text: "writer message survives cancellation" },
+          imageReference("uploads://@/cancel-direct.png"),
+        ],
+        signal: controller.signal,
+      });
+      await entered.promise;
+      controller.abort();
+      release.resolve();
+      await expect(preparing).rejects.toMatchObject({ name: "AbortError" });
+    } else {
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.thread.id,
+        userText: "begin",
+        signal: controller.signal,
+      });
+      const execution = run.execute();
+      await entered.promise;
+      controller.abort();
+      release.resolve();
+      await expect(execution).resolves.toMatchObject({ status: "cancelled" });
+    }
+
+    expect(await rig.inbox.selectPending(rig.thread.id)).toHaveLength(
+      boundary === "direct start" ? 0 : 1,
+    );
+    expect(await notices.peek(rig.thread.id)).toHaveLength(1);
+    if (boundary !== "mid-run")
+      expect((await rig.repos.threads.findById(rig.thread.id))?.initialPromptBakeId).toBeNull();
+  });
+
+  it.each([
+    "drain start",
+    "direct start",
+    "mid-run",
+  ] as const)("retains notices when the %s commit fails", async (boundary) => {
+    const notices = createTestNoticePort();
+    let rig: Awaited<ReturnType<typeof setup>>;
+    rig = await setup({
+      notices,
+      onStream: async (call) => {
+        if (boundary !== "mid-run" || call !== 1) return;
+        await recordNotice(notices, rig.thread.id);
+        await rig.inbox.enqueue(message("steer before failed commit", rig.thread.id));
+      },
+    });
+
+    if (boundary === "drain start") {
+      await recordNotice(notices, rig.thread.id);
+      await rig.inbox.enqueue(message("writer message before failed commit", rig.thread.id));
+    } else if (boundary === "direct start") {
+      await recordNotice(notices, rig.thread.id);
+    }
+    const injectCommitFailure = () => {
+      const append = rig.deps.eventWriter.appendEvent.bind(rig.deps.eventWriter);
+      vi.spyOn(rig.deps.eventWriter, "appendEvent").mockImplementation(async (threadId, event) => {
+        if (event.type === "turn.created") throw new Error("injected commit failure");
+        return append(threadId, event);
+      });
+    };
+
+    if (boundary === "drain start") {
+      injectCommitFailure();
+      await expect(
+        rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true }),
+      ).rejects.toThrow("injected commit failure");
+    } else if (boundary === "direct start") {
+      injectCommitFailure();
+      await expect(
+        rig.orchestrator.prepare({
+          threadId: rig.thread.id,
+          userText: "direct prompt before failed commit",
+        }),
+      ).rejects.toThrow("injected commit failure");
+    } else {
+      const run = await rig.orchestrator.prepare({ threadId: rig.thread.id, userText: "begin" });
+      injectCommitFailure();
+      await expect(run.execute()).resolves.toMatchObject({ status: "error" });
+    }
+    expect(await notices.peek(rig.thread.id)).toHaveLength(1);
+    expect(await rig.inbox.selectPending(rig.thread.id)).toHaveLength(
+      boundary === "direct start" ? 0 : 1,
+    );
+    if (boundary !== "mid-run")
+      expect((await rig.repos.threads.findById(rig.thread.id))?.initialPromptBakeId).toBeNull();
+    vi.restoreAllMocks();
   });
 
   it("names the loss of an image asset after its first inclusion", async () => {

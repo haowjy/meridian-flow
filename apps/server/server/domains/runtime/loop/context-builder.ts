@@ -4,6 +4,7 @@ import type { ComponentBlockContent, HelperResultProps } from "@meridian/contrac
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
 import { formatWorkSwitchedNotice, type Notice } from "../../notices/index.js";
+import { orderTurnsByPosition } from "../../threads/order-turns.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
 import { assembleComposedSystemPrompt, isThreadPromptFrozen } from "./composed-system-prompt.js";
@@ -73,7 +74,7 @@ export function buildContext(input: BuildContextInput): {
     list.sort((a, b) => a.sequence - b.sequence);
   }
 
-  for (const turn of orderTurnsForRequest(input.turns)) {
+  for (const turn of orderTurnsByPosition(input.turns)) {
     const turnBlocks = blocksByTurn.get(turn.id as string) ?? [];
     if (turn.role === "user") {
       const parts = userTurnContentParts(turnBlocks);
@@ -142,20 +143,6 @@ export function buildContext(input: BuildContextInput): {
     ),
     tools: input.tools?.length ? input.tools : undefined,
   };
-}
-
-function orderTurnsForRequest(turns: readonly Turn[]): Turn[] {
-  return turns
-    .map((turn, index) => ({ turn, index }))
-    .sort((a, b) => {
-      const left = a.turn.position;
-      const right = b.turn.position;
-      if (left == null && right == null) return a.index - b.index;
-      if (left == null) return 1;
-      if (right == null) return -1;
-      return left - right || a.index - b.index;
-    })
-    .map(({ turn }) => turn);
 }
 
 /** Inbox turns retain durable graph identity but travel to the model as one delivery. */

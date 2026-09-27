@@ -1,4 +1,4 @@
-/** Postgres coverage for model-context notice recording and destructive drains. */
+/** Postgres coverage for model-context notice recording and transactional consumption. */
 
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -60,7 +60,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
-    it("drains only the requested thread and deletes delivered notices", async () => {
+    it("peeks notices without consuming and deletes only committed IDs", async () => {
       const port = createDrizzleNoticePort(db);
       for (const threadId of [THREAD_ID, OTHER_THREAD_ID]) {
         await port.record({
@@ -71,11 +71,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
       }
 
-      await expect(port.drainForModelContext(THREAD_ID)).resolves.toMatchObject([
+      const notices = await port.peek(THREAD_ID);
+      expect(notices).toMatchObject([
         { kind: "awareness_degraded", scope: { kind: "thread", threadId: THREAD_ID } },
       ]);
-      await expect(port.drainForModelContext(THREAD_ID)).resolves.toEqual([]);
-      await expect(port.drainForModelContext(OTHER_THREAD_ID)).resolves.toHaveLength(1);
+      await expect(port.peek(THREAD_ID)).resolves.toHaveLength(1);
+      await port.consume(notices.map(({ id }) => id));
+      await expect(port.peek(THREAD_ID)).resolves.toEqual([]);
+      await expect(port.peek(OTHER_THREAD_ID)).resolves.toHaveLength(1);
     });
 
     it("records inside an ambient Drizzle transaction", async () => {
@@ -94,6 +97,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).rejects.toThrow("roll back response transaction");
 
       await expect(db.select().from(schema.pendingNotices)).resolves.toEqual([]);
+    });
+
+    it("rolls notice consumption back with its ambient commit", async () => {
+      const { runInDrizzleTransaction } = await import("../../../shared/drizzle-transaction.js");
+      const port = createDrizzleNoticePort(db);
+      await port.record({
+        kind: "awareness_degraded",
+        scope: { kind: "thread", threadId: THREAD_ID },
+        message: "Document awareness degraded",
+        data: { documentIds: [] },
+      });
+      const notices = await port.peek(THREAD_ID);
+
+      await expect(
+        runInDrizzleTransaction(db, async () => {
+          await port.consume(notices.map(({ id }) => id));
+          throw new Error("roll back delivery commit");
+        }),
+      ).rejects.toThrow("roll back delivery commit");
+
+      await expect(port.peek(THREAD_ID)).resolves.toHaveLength(1);
     });
   });
 }

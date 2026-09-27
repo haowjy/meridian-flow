@@ -1887,11 +1887,12 @@
         }
       },
       "compositePrimaryKeys": {
-        "thread_image_inclusions_thread_id_block_id_pk": {
-          "name": "thread_image_inclusions_thread_id_block_id_pk",
+        "thread_image_inclusions_thread_id_block_id_decision_turn_id_pk": {
+          "name": "thread_image_inclusions_thread_id_block_id_decision_turn_id_pk",
           "columns": [
             "thread_id",
-            "block_id"
+            "block_id",
+            "decision_turn_id"
           ]
         }
       },

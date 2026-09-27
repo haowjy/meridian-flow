@@ -19,9 +19,13 @@ import type {
   RunClaim,
   RunStarter,
 } from "../loop/ports.js";
-import type { AdoptedBatch, DeliveryBoundary, RuntimeDelivery } from "../loop/runtime-delivery.js";
+import type {
+  AdoptedBatch,
+  DeliveryBoundary,
+  DeliverySelection,
+  RuntimeDelivery,
+} from "../loop/runtime-delivery.js";
 import type { ThreadLock } from "../loop/thread-lock.js";
-import { ImageAssetResolutionError } from "../ports/image-asset.js";
 
 /** Adapter-private storage primitives; never injected into the model loop or producers. */
 export interface DeliveryStore extends InboxReader {
@@ -38,6 +42,8 @@ export interface DeliveryLeaseStore {
   clearReceipt(lease: Lease, expectedIds: readonly string[]): Promise<boolean>;
   lockReceipt(lease: Lease): Promise<{ ids: string[]; cancelRequested: boolean } | null>;
 }
+
+const PREPARATION_ATTEMPTS = 3;
 
 export function createDeliveryAdapter(
   deps: PersistenceDeps & {
@@ -60,6 +66,90 @@ export function createDeliveryAdapter(
       pending: await readPendingInbox(inbox, threadId),
     });
   };
+  async function selectForPreparation(threadId: ThreadId) {
+    const pendingBatch = await inbox.selectPending(threadId);
+    const work = await workBatch(threadId, pendingBatch);
+    const [notices, thread] = await Promise.all([
+      deps.notices.peek(threadId),
+      deps.repos.threads.findById(threadId),
+    ]);
+    if (!thread) throw new Error(`Thread not found: ${threadId}`);
+    const selection: DeliverySelection = {
+      batch: work.batch,
+      workContext: work.workContext,
+      notices,
+      activeLeafTurnId: thread.activeLeafTurnId,
+    };
+    return { selection, pendingBatch, work };
+  }
+  async function selectionStillCurrent(
+    threadId: ThreadId,
+    selected: Awaited<ReturnType<typeof selectForPreparation>>,
+  ) {
+    const [pendingBatch, thread] = await Promise.all([
+      inbox.selectPending(threadId),
+      deps.repos.threads.findById(threadId),
+    ]);
+    if (!thread) throw new Error(`Thread not found: ${threadId}`);
+    return (
+      thread.activeLeafTurnId === selected.selection.activeLeafTurnId &&
+      sameInboxBatch(pendingBatch, selected.pendingBatch)
+    );
+  }
+  async function prepareAndCommit<TPrepared, TResult>(input: {
+    threadId: ThreadId;
+    signal?: AbortSignal;
+    validate?: () => Promise<void>;
+    prepare: (
+      selection: DeliverySelection,
+      work: Awaited<ReturnType<typeof workBatch>>,
+    ) => Promise<TPrepared>;
+    hasPreparationFailure: (prepared: TPrepared) => boolean;
+    commit: (
+      selection: DeliverySelection,
+      work: Awaited<ReturnType<typeof workBatch>>,
+      prepared: TPrepared,
+    ) => Promise<TResult>;
+  }): Promise<TResult> {
+    for (let attempt = 0; attempt < PREPARATION_ATTEMPTS; attempt += 1) {
+      const lockedPreparation = attempt === PREPARATION_ATTEMPTS - 1;
+      if (lockedPreparation) {
+        return threadLock.withThreadLock(input.threadId, async () => {
+          const selected = await selectForPreparation(input.threadId);
+          input.signal?.throwIfAborted();
+          const prepared = await input.prepare(selected.selection, selected.work);
+          input.signal?.throwIfAborted();
+          await input.validate?.();
+          return commitSelected(selected, prepared);
+        });
+      }
+
+      const selected = await selectForPreparation(input.threadId);
+      input.signal?.throwIfAborted();
+      const prepared = await input.prepare(selected.selection, selected.work);
+      input.signal?.throwIfAborted();
+      const result = await threadLock.withThreadLock(input.threadId, async () => {
+        input.signal?.throwIfAborted();
+        if (!(await selectionStillCurrent(input.threadId, selected)))
+          return { retry: true as const };
+        await input.validate?.();
+        return { retry: false as const, value: await commitSelected(selected, prepared) };
+      });
+      if (!result.retry) return result.value;
+    }
+    throw new Error("Unreachable delivery preparation loop exit");
+
+    async function commitSelected(
+      selected: Awaited<ReturnType<typeof selectForPreparation>>,
+      prepared: TPrepared,
+    ): Promise<TResult> {
+      const result = await input.commit(selected.selection, selected.work, prepared);
+      if (!input.hasPreparationFailure(prepared)) {
+        await deps.notices.consume(selected.selection.notices.map(({ id }) => id));
+      }
+      return result;
+    }
+  }
   const enqueue = async (draft: MessageDraft) => {
     const message = await inbox.enqueue(draft);
     await appendPending(draft.threadId);
@@ -142,24 +232,22 @@ export function createDeliveryAdapter(
     drain: Awaited<ReturnType<typeof drainInbox>>;
     prepared: Awaited<ReturnType<DeliveryBoundary["prepareNextContext"]>>;
     split: boolean;
+    preparationFailure?: unknown;
   };
 
   async function prepareAdoption(
     input: DeliveryBoundary,
-    selectedBatch: InboxMessage[],
+    selection: DeliverySelection,
+    work: Awaited<ReturnType<typeof workBatch>>,
   ): Promise<PreparedAdoption> {
     const { lease } = input;
-    const work = await workBatch(lease.threadId, selectedBatch);
-    const batch = work.batch;
+    const batch = selection.batch;
     const threadId = lease.threadId;
     // Writer enqueue can have persisted and acked an earlier Work prefix while
     // this run's provider request was in flight. Adopt that committed history too.
     const committed: InboxMessage[] = [];
     const committedWorkIds: string[] = [];
-    const thread = await deps.repos.threads.findById(threadId);
-    const expectedLeaf = (thread?.activeLeafTurnId ??
-      input.currentTurn.id ??
-      null) as TurnId | null;
+    const expectedLeaf = selection.activeLeafTurnId as TurnId | null;
     const expectedLeafTurn = expectedLeaf ? await deps.repos.turns.findById(expectedLeaf) : null;
     if (expectedLeaf && !expectedLeafTurn) throw new Error(`Missing causal turn: ${expectedLeaf}`);
     let leaf: TurnId | null = expectedLeaf;
@@ -193,42 +281,43 @@ export function createDeliveryAdapter(
     ];
     // Notices are folded into the prepared history; no turn is completed or
     // reserved until all external context reads have finished.
-    const notices = await deps.notices.drainForModelContext(threadId);
     const split =
       !!work.workContext ||
       committedWorkIds.length > 0 ||
-      notices.length > 0 ||
+      selection.notices.length > 0 ||
       orderedBatch.some(
         (message) =>
           (message.intent === "message" && !input.knownTurnIds.has(message.id)) ||
           (message.intent === "notice" && message.body.kind !== "work_context_refresh"),
       );
-    const drain = await drainInbox({
-      ...input,
-      persistence: deps,
-      notices,
-      threadId,
-      batch: orderedBatch,
-      workContext: work.workContext,
-    });
+    let drain: Awaited<ReturnType<typeof drainInbox>>;
     let prepared: Awaited<ReturnType<DeliveryBoundary["prepareNextContext"]>>;
+    let preparationFailure: unknown;
     try {
+      drain = await drainInbox({
+        ...input,
+        persistence: deps,
+        notices: selection.notices,
+        threadId,
+        batch: orderedBatch,
+        workContext: work.workContext,
+      });
       prepared = await input.prepareNextContext(drain);
     } catch (error) {
-      if (error instanceof ImageAssetResolutionError && drain.ackIds.length > 0) {
-        const recorded = await threadLock.withThreadLock(threadId, () =>
-          leaseStore.setAdoptedMessageIds(lease, drain.ackIds),
-        );
-        if (!recorded) {
-          throw new Error(
-            "Cannot acknowledge failed context preparation after losing live run lease",
-            {
-              cause: error,
-            },
-          );
-        }
-      }
-      throw error;
+      if (input.signal?.aborted) throw error;
+      preparationFailure = error;
+      // Rebuild only the durable inbox turns. Reference/image/skill preparation
+      // is intentionally discarded, and NoticePort rows remain queued.
+      drain = await drainInbox({
+        persistence: deps,
+        notices: [],
+        threadId,
+        batch: orderedBatch,
+        workContext: work.workContext,
+        knownTurnIds: input.knownTurnIds,
+        expectedLeafTurnId: expectedLeaf,
+      });
+      prepared = { events: [], turns: [], blocks: [], requiresSplit: false };
     }
     return {
       batch: orderedBatch,
@@ -238,7 +327,8 @@ export function createDeliveryAdapter(
       expectedLeafPosition: expectedLeafTurn?.position ?? null,
       drain,
       prepared,
-      split: split || drain.events.length > 0 || prepared.requiresSplit,
+      split: !!preparationFailure || split || drain.events.length > 0 || prepared.requiresSplit,
+      ...(preparationFailure === undefined ? {} : { preparationFailure }),
     };
   }
 
@@ -257,6 +347,7 @@ export function createDeliveryAdapter(
       prepared,
       split,
       batch,
+      preparationFailure,
     } = adoption;
     const turns = [...drain.turns, ...prepared.turns];
     const blocks = [...drain.blocks, ...prepared.blocks];
@@ -316,12 +407,26 @@ export function createDeliveryAdapter(
     if (batch.length > 0) await appendPending(threadId);
     drain.turns = turns;
     drain.blocks = blocks;
-    return { drain, next, split };
+    return {
+      drain,
+      next,
+      split,
+      ...(preparationFailure === undefined ? {} : { preparationFailure }),
+    };
   }
 
-  async function adopt(input: DeliveryBoundary, batch: InboxMessage[]): Promise<AdoptedBatch> {
-    const prepared = await prepareAdoption(input, batch);
-    return threadLock.withThreadLock(input.lease.threadId, () => commitAdoption(input, prepared));
+  async function adopt(input: DeliveryBoundary): Promise<AdoptedBatch> {
+    return prepareAndCommit({
+      threadId: input.lease.threadId,
+      signal: input.signal,
+      validate: async () => {
+        if ((await leaseStore.lockReceipt(input.lease))?.cancelRequested)
+          throw new DOMException("The operation was aborted", "AbortError");
+      },
+      prepare: (selection, work) => prepareAdoption(input, selection, work),
+      hasPreparationFailure: (prepared) => prepared.preparationFailure !== undefined,
+      commit: async (_selection, _work, prepared) => commitAdoption(input, prepared),
+    });
   }
 
   return {
@@ -359,24 +464,28 @@ export function createDeliveryAdapter(
           },
         }),
       ),
-    adoptBatch: async (lease, prepare) => {
-      const pending = await threadLock.withThreadLock(lease.threadId, () =>
-        inbox.selectPending(lease.threadId),
-      );
-      const work = await workBatch(lease.threadId, pending);
-      const prepared = await prepare(work.batch, work.workContext);
-      return threadLock.withThreadLock(lease.threadId, async () => {
-        await prepared.persist?.();
-        await inbox.ack(lease.threadId, work.ids);
-        await leaseStore.bindTurn(
-          lease,
-          prepared.turnId,
-          prepared.messageIds.filter((id) => !work.ids.includes(id)),
-        );
-        await appendPending(lease.threadId);
-        return prepared.value;
-      });
-    },
+    adoptBatch: (lease, prepare, options) =>
+      prepareAndCommit({
+        threadId: lease.threadId,
+        signal: options?.signal,
+        validate: async () => {
+          if ((await leaseStore.lockReceipt(lease))?.cancelRequested)
+            throw new DOMException("The operation was aborted", "AbortError");
+        },
+        prepare: (selection) => prepare(selection),
+        hasPreparationFailure: (prepared) => prepared.preparationFailure !== undefined,
+        commit: async (_selection, work, prepared) => {
+          await prepared.persist?.();
+          await inbox.ack(lease.threadId, work.ids);
+          await leaseStore.bindTurn(
+            lease,
+            prepared.turnId,
+            prepared.messageIds.filter((id) => !work.ids.includes(id)),
+          );
+          await appendPending(lease.threadId);
+          return prepared.value;
+        },
+      }),
     ackWithResponse: (lease, ids, persist) =>
       threadLock.withThreadLock(lease.threadId, async () => {
         const result = await persist();
@@ -388,12 +497,7 @@ export function createDeliveryAdapter(
         }
         return result;
       }),
-    splitAndContinue: async (input) => {
-      const batch = await threadLock.withThreadLock(input.lease.threadId, () =>
-        inbox.selectPending(input.lease.threadId),
-      );
-      return adopt(input, batch);
-    },
+    splitAndContinue: (input) => adopt(input),
     close: async (input) => {
       const threadId = input.lease.threadId;
       const disposition = await threadLock.withThreadLock(threadId, async () => {
@@ -402,16 +506,8 @@ export function createDeliveryAdapter(
         const cause = receipt?.cancelRequested
           ? { kind: "cancelled" as const, reason: "cancelled" }
           : input.cause;
-        if (input.continueWith && cause.kind === "success") {
-          const batch = await inbox.selectPending(threadId);
-          if (
-            batch.some((message) => message.intent === "message") ||
-            (batch.some((message) => message.body.kind === "work_context_refresh") &&
-              (await inbox.canMaterializeWork(threadId)))
-          ) {
-            return { kind: "prepare_split" as const, batch };
-          }
-        }
+        if (input.continueWith && cause.kind === "success")
+          return { kind: "prepare_split" as const };
         const completion = await finalizeExecution(deps, {
           threadId,
           assistantTurnId: input.assistantTurnId,
@@ -429,26 +525,31 @@ export function createDeliveryAdapter(
       });
       if (disposition.kind === "completed") return disposition;
 
-      const prepared = await prepareAdoption(
-        input.continueWith as DeliveryBoundary,
-        disposition.batch,
-      );
-      return threadLock.withThreadLock(threadId, async () => {
+      const boundary = input.continueWith as DeliveryBoundary;
+      const adopted = await adopt(boundary);
+      if (adopted.split) return { kind: "split", adopted };
+      const completion = await threadLock.withThreadLock(threadId, async () => {
         const receipt = await leaseStore.lockReceipt(input.lease);
-        if (receipt?.cancelRequested) {
-          const completion = await finalizeExecution(deps, {
-            threadId,
-            assistantTurnId: input.assistantTurnId,
-            cause: { kind: "cancelled", reason: "cancelled" },
-          });
-          await inbox.ack(threadId, receipt.ids);
-          await deps.runClaim.release(input.lease);
-          await appendPending(threadId);
-          return { kind: "completed" as const, completion };
-        }
-        const adopted = await commitAdoption(input.continueWith as DeliveryBoundary, prepared);
-        return { kind: "split" as const, adopted };
+        const cause = receipt?.cancelRequested
+          ? { kind: "cancelled" as const, reason: "cancelled" }
+          : input.cause;
+        const result = await finalizeExecution(deps, {
+          threadId,
+          assistantTurnId: input.assistantTurnId,
+          cause,
+        });
+        if (result.turn.status === "cancelled") await inbox.ack(threadId, receipt?.ids ?? []);
+        await deps.runClaim.release(input.lease);
+        await appendPending(threadId);
+        return result;
       });
+      return { kind: "completed", completion };
     },
   };
+}
+
+function sameInboxBatch(left: readonly InboxMessage[], right: readonly InboxMessage[]): boolean {
+  return (
+    left.length === right.length && left.every((message, index) => message.id === right[index]?.id)
+  );
 }

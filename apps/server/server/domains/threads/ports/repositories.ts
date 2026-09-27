@@ -89,8 +89,10 @@ export interface ThreadImageInclusion {
 }
 
 export interface ThreadImageInclusionRepository {
+  /** Latest decision per block, ordered by the deciding turn's transcript position. */
   findByThread(threadId: ThreadId): Promise<ThreadImageInclusion[]>;
-  /** Narrow update of the requesting thread's decision for one inherited/local block. */
+  /** Append-only decision history, used to reconstruct forks at their cutoff. */
+  listByThread(threadId: ThreadId): Promise<ThreadImageInclusion[]>;
   set(input: ThreadImageInclusion): Promise<void>;
 }
 

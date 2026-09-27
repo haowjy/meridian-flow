@@ -140,11 +140,45 @@ import {
 } from "./streaming.js";
 import { dispatchToolCall } from "./tool-dispatch.js";
 import { createTurnAccounting, type TurnAccounting } from "./turn-accounting.js";
-import { type AssembledNextTurnContext, assembleNextTurnContext } from "./turn-context-assembly.js";
+import {
+  type AssembledNextTurnContext,
+  assembleNextTurnContext,
+  persistPreparedPromptBake,
+} from "./turn-context-assembly.js";
 import { writerUserTurnBlocks } from "./user-turn-blocks.js";
 import type { WorkContextReader } from "./work-context.js";
 
 const MAX_TURN_ITERATIONS = 32;
+
+class RequestPreparationError extends Error {
+  constructor(readonly original: unknown) {
+    super(original instanceof Error ? original.message : String(original), { cause: original });
+    this.name = "RequestPreparationError";
+  }
+}
+
+function writerFacingPreparationError(error: Error): ReturnType<typeof meridianErrorFromSystem> {
+  if (error instanceof ThreadConversationContextError) {
+    return meridianErrorFromSystem(
+      "thread_context_error",
+      "This chat's fork history couldn't be loaded.",
+    );
+  }
+  if (error instanceof ImageAssetResolutionError) {
+    return meridianErrorFromSystem(
+      "image_resolution_failed",
+      "An image in this message couldn't be loaded. Try again.",
+    );
+  }
+  return meridianErrorFromSystem(
+    "request_preparation_failed",
+    "This message couldn't be prepared. Try again.",
+  );
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error), { cause: error });
+}
 
 export interface OrchestratorRepositories {
   threads: ThreadRepository;
@@ -240,11 +274,12 @@ export function createOrchestrator(deps: OrchestratorDeps) {
     ...deps,
     setup: (input) => prepareLoop(deps, input),
     async finalizeFailure(input) {
-      const contextError =
-        input.error instanceof ThreadConversationContextError ? input.error : null;
-      const imageResolutionError =
-        input.error instanceof ImageAssetResolutionError ? input.error : null;
+      const error =
+        input.error instanceof RequestPreparationError ? input.error.original : input.error;
+      const contextError = error instanceof ThreadConversationContextError ? error : null;
+      const imageResolutionError = error instanceof ImageAssetResolutionError ? error : null;
       const preparationFailure = contextError ?? imageResolutionError;
+      const requestPreparationFailed = input.error instanceof RequestPreparationError;
       const outcome = await deps.delivery.close({
         lease: input.lease,
         assistantTurnId: input.assistantTurnId,
@@ -254,16 +289,22 @@ export function createOrchestrator(deps: OrchestratorDeps) {
               kind: "failed",
               reason:
                 contextError?.code ??
-                (imageResolutionError ? "image_resolution_failed" : "execution_error"),
-              ...(preparationFailure ? { acknowledgeInbox: true } : {}),
-              error: contextError
-                ? meridianErrorFromSystem(
-                    "thread_context_error",
-                    "This chat's fork history couldn't be loaded.",
-                  )
-                : input.error instanceof Error
-                  ? input.error.message
-                  : String(input.error),
+                (imageResolutionError
+                  ? "image_resolution_failed"
+                  : requestPreparationFailed
+                    ? "request_preparation_failed"
+                    : "execution_error"),
+              ...(preparationFailure || requestPreparationFailed ? { acknowledgeInbox: true } : {}),
+              error: preparationFailure
+                ? writerFacingPreparationError(preparationFailure)
+                : requestPreparationFailed
+                  ? meridianErrorFromSystem(
+                      "request_preparation_failed",
+                      "This message couldn't be prepared. Try again.",
+                    )
+                  : error instanceof Error
+                    ? error.message
+                    : String(error),
             },
       });
       if (outcome.kind !== "completed") throw new Error("Failure finalization cannot split");
@@ -382,133 +423,167 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
   }
 
   if (isDrainRun(input)) {
-    return runDrainTurn(deps, input, thread);
+    return runDrainTurn(deps, input);
   }
 
-  const setup = await deps.delivery.adoptBatch(input.lease, async (batch, workContext) => {
-    const ctx = await loadRunStartContext(deps, thread);
-    preparationError = ctx.contextError;
-    const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;
-    const existingTurns = [...inheritedTurns, ...priorTurns];
-    const previousTurn = prevTurnId
-      ? (existingTurns.find((turn) => turn.id === prevTurnId) ?? null)
-      : null;
-    if (prevTurnId && !previousTurn) throw new Error(`Missing causal turn: ${prevTurnId}`);
-    const workPlan = planMessageTurns({
-      threadId: input.threadId,
-      batch: batch.filter((message) => message.body.kind === "work_context_refresh"),
-      prevTurnId,
-      prevTurnPosition: previousTurn?.position ?? null,
-      knownTurnIds: new Set(priorTurns.map((turn) => turn.id)),
-      workContext,
-    });
-    const userTurn = createLocalTurn({
-      threadId: input.threadId,
-      position: nextTurnPosition(workPlan.turns.at(-1) ?? previousTurn),
-      prevTurnId: workPlan.leafTurnId,
-      role: "user",
-      origin: input.child ? "system" : "writer",
-      status: "complete",
-      metadata: input.userTurnMetadata ?? null,
-    });
-    const userBlocks = writerUserTurnBlocks(
-      userTurn.id,
-      input.userBlocks ?? [{ type: "text", text: input.userText }],
-    );
-    const skillBody = await createSkillBodyTurn({
-      deps,
-      thread,
-      threadId: input.threadId,
-      invokingTurnId: userTurn.id,
-      invokingTurnPosition: userTurn.position,
-      slugs: input.activatedSkillSlugs ?? [],
-    });
-    const assistantTurn = createLocalTurn({
-      threadId: input.threadId,
-      position: nextTurnPosition(skillBody?.turn ?? userTurn),
-      prevTurnId: skillBody?.turn.id ?? userTurn.id,
-      role: "assistant",
-      origin: "assistant",
-      status: "streaming",
-    });
-    const previousBlocks = await deps.repos.blocks.listByThread(input.threadId);
-    let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
-    try {
-      preflight = await prepareRequestContext({
-        deps,
-        thread,
+  const setup = await deps.delivery.adoptBatch(
+    input.lease,
+    async (selection) => {
+      const setupThread = await repos.threads.findById(input.threadId);
+      if (!setupThread) throw new Error(`Thread not found: ${input.threadId}`);
+      const ctx = await loadRunStartContext(deps, setupThread);
+      preparationError = ctx.contextError;
+      const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;
+      const existingTurns = [...inheritedTurns, ...priorTurns];
+      const previousTurn = prevTurnId
+        ? (existingTurns.find((turn) => turn.id === prevTurnId) ?? null)
+        : null;
+      if (prevTurnId && !previousTurn) throw new Error(`Missing causal turn: ${prevTurnId}`);
+      const makeWorkPlan = (notices: typeof selection.notices) =>
+        planMessageTurns({
+          threadId: input.threadId,
+          batch: selection.batch.filter((message) => message.body.kind === "work_context_refresh"),
+          prevTurnId,
+          prevTurnPosition: previousTurn?.position ?? null,
+          knownTurnIds: new Set(priorTurns.map((turn) => turn.id)),
+          workContext: selection.workContext,
+          notices,
+        });
+      let workPlan = makeWorkPlan(preparationError ? [] : selection.notices);
+      const userTurn = createLocalTurn({
         threadId: input.threadId,
-        referenceUserTurnId: userTurn.id,
-        assistantTurnId: assistantTurn.id,
-        turns: [
-          ...inheritedTurns,
-          ...priorTurns,
-          ...workPlan.turns,
-          userTurn,
-          ...(skillBody ? [skillBody.turn] : []),
-        ],
-        blocks: [
-          ...inheritedBlocks,
-          ...previousBlocks,
-          ...workPlan.blocks.map(localBlockFromEvent),
-          ...userBlocks.map(localBlockFromEvent),
-          ...(skillBody ? [localBlockFromEvent(skillBody.block)] : []),
-        ],
-        baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
-        signal: input.signal,
+        position: nextTurnPosition(workPlan.turns.at(-1) ?? previousTurn),
+        prevTurnId: workPlan.leafTurnId,
+        role: "user",
+        origin: input.child ? "system" : "writer",
+        status: "complete",
+        metadata: input.userTurnMetadata ?? null,
       });
-    } catch (error) {
-      if (!(error instanceof ImageAssetResolutionError)) throw error;
-      preparationError = error;
-    }
-    const imageUpdateTurn = preflight?.assembled.imageContextUpdates.turns.at(-1);
-    assistantTurn.prevTurnId = imageUpdateTurn?.id ?? skillBody?.turn.id ?? userTurn.id;
-    assistantTurn.parentTurnId = assistantTurn.prevTurnId;
-    assistantTurn.position = nextTurnPosition(imageUpdateTurn ?? skillBody?.turn ?? userTurn);
-    const value = {
-      userTurn,
-      skillBody,
-      preflight,
-      assistantTurn,
-      priorTurns: [...priorTurns, ...workPlan.turns],
-      inheritedTurns,
-      inheritedBlocks,
-    };
-    const events = [
-      ...workPlan.events,
-      { type: "turn.created" as const, turn: userTurn },
-      ...userBlocks.map((block) => ({ type: "block.upserted" as const, block })),
-      ...(skillBody
-        ? [
-            { type: "turn.created" as const, turn: skillBody.turn },
-            { type: "block.upserted" as const, block: skillBody.block },
-          ]
-        : []),
-      ...(preflight?.events ?? []),
-      { type: "turn.created" as const, turn: assistantTurn },
-    ];
-    return {
-      value,
-      turnId: assistantTurn.id,
-      messageIds: [],
-      persist: async () => {
-        await persistAndAppendTurnStartEvents(
-          deps,
-          input.threadId,
-          thread.activeLeafTurnId,
-          async () => {
-            assistantTurn.writeMode = thread.workId
-              ? await deps.workWriteMode.read(thread.workId)
-              : "direct";
-            return { result: undefined, events };
-          },
-          {
-            afterEvents: () => admitRunExecution(deps, input, thread, assistantTurn.id),
-          },
-        );
-      },
-    };
-  });
+      const userBlocks = writerUserTurnBlocks(
+        userTurn.id,
+        input.userBlocks ?? [{ type: "text", text: input.userText }],
+      );
+      let skillBody: Awaited<ReturnType<typeof createSkillBodyTurn>> = null;
+      let assistantTurn: Turn;
+      let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
+      if (!preparationError) {
+        try {
+          skillBody = await createSkillBodyTurn({
+            deps,
+            thread: setupThread,
+            threadId: input.threadId,
+            invokingTurnId: userTurn.id,
+            invokingTurnPosition: userTurn.position,
+            slugs: input.activatedSkillSlugs ?? [],
+          });
+        } catch (error) {
+          if (input.signal?.aborted) throw error;
+          preparationError = asError(error);
+        }
+      }
+      assistantTurn = createLocalTurn({
+        threadId: input.threadId,
+        position: nextTurnPosition(skillBody?.turn ?? userTurn),
+        prevTurnId: skillBody?.turn.id ?? userTurn.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "streaming",
+      });
+      if (!preparationError) {
+        try {
+          const previousBlocks = await deps.repos.blocks.listByThread(input.threadId);
+          preflight = await prepareRequestContext({
+            deps,
+            thread: setupThread,
+            threadId: input.threadId,
+            referenceUserTurnId: userTurn.id,
+            assistantTurnId: assistantTurn.id,
+            turns: [
+              ...inheritedTurns,
+              ...priorTurns,
+              ...workPlan.turns,
+              userTurn,
+              ...(skillBody ? [skillBody.turn] : []),
+            ],
+            blocks: [
+              ...inheritedBlocks,
+              ...previousBlocks,
+              ...workPlan.blocks.map(localBlockFromEvent),
+              ...userBlocks.map(localBlockFromEvent),
+              ...(skillBody ? [localBlockFromEvent(skillBody.block)] : []),
+            ],
+            baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
+            signal: input.signal,
+          });
+        } catch (error) {
+          if (input.signal?.aborted) throw error;
+          preparationError = asError(error);
+        }
+      }
+      if (preparationError && selection.notices.length > 0) {
+        workPlan = makeWorkPlan([]);
+        userTurn.prevTurnId = workPlan.leafTurnId;
+        userTurn.parentTurnId = workPlan.leafTurnId;
+        userTurn.position = nextTurnPosition(workPlan.turns.at(-1) ?? previousTurn);
+      }
+      if (preparationError) skillBody = null;
+      const imageUpdateTurn = preflight?.assembled.imageContextUpdates.turns.at(-1);
+      assistantTurn.prevTurnId = imageUpdateTurn?.id ?? skillBody?.turn.id ?? userTurn.id;
+      assistantTurn.parentTurnId = assistantTurn.prevTurnId;
+      assistantTurn.position = nextTurnPosition(imageUpdateTurn ?? skillBody?.turn ?? userTurn);
+      const value = {
+        userTurn,
+        skillBody,
+        preflight,
+        assistantTurn,
+        priorTurns: [...priorTurns, ...workPlan.turns],
+        inheritedTurns,
+        inheritedBlocks,
+      };
+      const events = [
+        ...workPlan.events,
+        { type: "turn.created" as const, turn: userTurn },
+        ...userBlocks.map((block) => ({ type: "block.upserted" as const, block })),
+        ...(skillBody
+          ? [
+              { type: "turn.created" as const, turn: skillBody.turn },
+              { type: "block.upserted" as const, block: skillBody.block },
+            ]
+          : []),
+        ...(preflight?.events ?? []),
+        { type: "turn.created" as const, turn: assistantTurn },
+      ];
+      return {
+        value,
+        turnId: assistantTurn.id,
+        messageIds: selection.batch.map(({ id }) => id),
+        ...(preparationError === null ? {} : { preparationFailure: preparationError }),
+        persist: async () => {
+          await persistAndAppendTurnStartEvents(
+            deps,
+            input.threadId,
+            selection.activeLeafTurnId,
+            async () => {
+              await reconcileOrphanedPendingWrites(deps, input.threadId);
+              if (preflight)
+                await persistPreparedPromptBake(
+                  preflight.assembled,
+                  repos.threads.bakeInitialPrompt.bind(repos.threads),
+                );
+              assistantTurn.writeMode = setupThread.workId
+                ? await deps.workWriteMode.read(setupThread.workId)
+                : "direct";
+              return { result: undefined, events };
+            },
+            {
+              afterEvents: () => admitRunExecution(deps, input, setupThread, assistantTurn.id),
+            },
+          );
+        },
+      };
+    },
+    { signal: input.signal },
+  );
 
   const {
     userTurn,
@@ -558,143 +633,176 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
 async function runDrainTurn(
   deps: OrchestratorDeps,
   input: DrainRunLoopInput,
-  thread: Thread,
 ): Promise<PreparedLoop> {
   let preparationError: Error | null = null;
-  const setup = await deps.delivery.adoptBatch(input.lease, async (batch, workContext) => {
-    const initialBatchIds = batch.map(({ id }) => id);
-    const ctx = await loadRunStartContext(deps, thread);
-    preparationError = ctx.contextError;
-    const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;
-    const existingTurns = [...inheritedTurns, ...priorTurns];
-    const previousTurn = prevTurnId
-      ? (existingTurns.find((turn) => turn.id === prevTurnId) ?? null)
-      : null;
-    if (prevTurnId && !previousTurn) throw new Error(`Missing causal turn: ${prevTurnId}`);
-    if (!batch.some((message) => message.intent === "message")) {
-      throw new NoPendingWakeError(input.threadId);
-    }
-    const turnById = new Map(
-      [...inheritedTurns, ...priorTurns].map((turn) => [turn.id as string, turn]),
-    );
-    const activatedSkillSlugs = [
-      ...new Set(
-        batch.flatMap((message) => {
-          const turn = turnById.get(message.id);
-          return turn ? readActivatedSkillSlugs(turn) : [];
-        }),
-      ),
-    ];
-    const skillBody = await createSkillBodyTurn({
-      deps,
-      thread,
-      threadId: input.threadId,
-      invokingTurnId: prevTurnId,
-      invokingTurnPosition: previousTurn?.position ?? null,
-      slugs: activatedSkillSlugs,
-    });
-    const plan = planMessageTurns({
-      threadId: input.threadId,
-      batch,
-      prevTurnId: skillBody?.turn.id ?? prevTurnId,
-      prevTurnPosition: skillBody?.turn.position ?? previousTurn?.position ?? null,
-      knownTurnIds: new Set([
+  const setup = await deps.delivery.adoptBatch(
+    input.lease,
+    async (selection) => {
+      const setupThread = await deps.repos.threads.findById(input.threadId);
+      if (!setupThread) throw new Error(`Thread not found: ${input.threadId}`);
+      const batch = selection.batch;
+      const ctx = await loadRunStartContext(deps, setupThread);
+      preparationError = ctx.contextError;
+      const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;
+      const existingTurns = [...inheritedTurns, ...priorTurns];
+      const previousTurn = prevTurnId
+        ? (existingTurns.find((turn) => turn.id === prevTurnId) ?? null)
+        : null;
+      if (prevTurnId && !previousTurn) throw new Error(`Missing causal turn: ${prevTurnId}`);
+      if (!batch.some((message) => message.intent === "message")) {
+        throw new NoPendingWakeError(input.threadId);
+      }
+      const turnById = new Map(
+        [...inheritedTurns, ...priorTurns].map((turn) => [turn.id as string, turn]),
+      );
+      const knownTurnIds = new Set([
         ...inheritedTurns.map((turn) => turn.id as TurnId),
         ...priorTurns.map((turn) => turn.id as TurnId),
-      ]),
-      workContext,
-    });
-    const referenceUserTurnId =
-      [...plan.turns].reverse().find((turn) => turn.role === "user")?.id ??
-      [...priorTurns, ...inheritedTurns].reverse().find((turn) => turn.role === "user")?.id ??
-      prevTurnId;
-    if (!referenceUserTurnId) throw new Error("Drained inbox has no user turn to prepare");
-    const assistantTurn = createLocalTurn({
-      threadId: input.threadId,
-      position: nextTurnPosition(plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn),
-      prevTurnId: plan.leafTurnId ?? skillBody?.turn.id ?? prevTurnId,
-      role: "assistant",
-      origin: "assistant",
-      status: "streaming",
-    });
-    const previousBlocks = await deps.repos.blocks.listByThread(input.threadId);
-    let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
-    try {
-      preflight = await prepareRequestContext({
-        deps,
-        thread,
+      ]);
+      let skillBody: Awaited<ReturnType<typeof createSkillBodyTurn>> = null;
+      const makePlan = (notices: typeof selection.notices) =>
+        planMessageTurns({
+          threadId: input.threadId,
+          batch,
+          prevTurnId: skillBody?.turn.id ?? prevTurnId,
+          prevTurnPosition: skillBody?.turn.position ?? previousTurn?.position ?? null,
+          knownTurnIds,
+          workContext: selection.workContext,
+          notices,
+        });
+      if (!preparationError) {
+        try {
+          const activatedSkillSlugs = [
+            ...new Set(
+              batch.flatMap((message) => {
+                const turn = turnById.get(message.id);
+                return turn ? readActivatedSkillSlugs(turn) : [];
+              }),
+            ),
+          ];
+          skillBody = await createSkillBodyTurn({
+            deps,
+            thread: setupThread,
+            threadId: input.threadId,
+            invokingTurnId: prevTurnId,
+            invokingTurnPosition: previousTurn?.position ?? null,
+            slugs: activatedSkillSlugs,
+          });
+        } catch (error) {
+          if (input.signal?.aborted) throw error;
+          preparationError = asError(error);
+        }
+      }
+      let plan = makePlan(preparationError ? [] : selection.notices);
+      const referenceUserTurnId =
+        [...plan.turns].reverse().find((turn) => turn.role === "user")?.id ??
+        [...priorTurns, ...inheritedTurns].reverse().find((turn) => turn.role === "user")?.id ??
+        prevTurnId;
+      if (!referenceUserTurnId) throw new Error("Drained inbox has no user turn to prepare");
+      const assistantTurn = createLocalTurn({
         threadId: input.threadId,
-        referenceUserTurnId,
-        assistantTurnId: assistantTurn.id,
-        turns: [
-          ...inheritedTurns,
-          ...priorTurns,
-          ...(skillBody ? [skillBody.turn] : []),
-          ...plan.turns,
-        ],
-        blocks: [
-          ...inheritedBlocks,
-          ...previousBlocks,
-          ...plan.blocks.map(localBlockFromEvent),
-          ...(skillBody ? [localBlockFromEvent(skillBody.block)] : []),
-        ],
-        baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
-        signal: input.signal,
+        position: nextTurnPosition(plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn),
+        prevTurnId: plan.leafTurnId ?? skillBody?.turn.id ?? prevTurnId,
+        role: "assistant",
+        origin: "assistant",
+        status: "streaming",
       });
-    } catch (error) {
-      if (!(error instanceof ImageAssetResolutionError)) throw error;
-      preparationError = error;
-    }
-    const imageUpdateTurn = preflight?.assembled.imageContextUpdates.turns.at(-1);
-    assistantTurn.prevTurnId =
-      imageUpdateTurn?.id ?? plan.leafTurnId ?? skillBody?.turn.id ?? referenceUserTurnId;
-    assistantTurn.parentTurnId = assistantTurn.prevTurnId;
-    assistantTurn.position = nextTurnPosition(
-      imageUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
-    );
-    const value = {
-      assistantTurn,
-      skillBody,
-      referenceUserTurnId,
-      preflight,
-      messageTurns: plan.turns,
-      priorTurns,
-      inheritedTurns,
-      inheritedBlocks,
-    };
-    const events = [
-      ...(skillBody
-        ? [
-            { type: "turn.created" as const, turn: skillBody.turn },
-            { type: "block.upserted" as const, block: skillBody.block },
-          ]
-        : []),
-      ...plan.events,
-      ...(preflight?.events ?? []),
-      { type: "turn.created" as const, turn: assistantTurn },
-    ];
-    return {
-      value,
-      turnId: assistantTurn.id,
-      messageIds: initialBatchIds,
-      persist: async () => {
-        await persistAndAppendTurnStartEvents(
-          deps,
-          input.threadId,
-          thread.activeLeafTurnId,
-          async () => {
-            assistantTurn.writeMode = thread.workId
-              ? await deps.workWriteMode.read(thread.workId)
-              : "direct";
-            return { result: undefined, events };
-          },
-          {
-            afterEvents: () => admitRunExecution(deps, input, thread, assistantTurn.id),
-          },
-        );
-      },
-    };
-  });
+      let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
+      if (!preparationError) {
+        try {
+          const previousBlocks = await deps.repos.blocks.listByThread(input.threadId);
+          preflight = await prepareRequestContext({
+            deps,
+            thread: setupThread,
+            threadId: input.threadId,
+            referenceUserTurnId,
+            assistantTurnId: assistantTurn.id,
+            turns: [
+              ...inheritedTurns,
+              ...priorTurns,
+              ...(skillBody ? [skillBody.turn] : []),
+              ...plan.turns,
+            ],
+            blocks: [
+              ...inheritedBlocks,
+              ...previousBlocks,
+              ...plan.blocks.map(localBlockFromEvent),
+              ...(skillBody ? [localBlockFromEvent(skillBody.block)] : []),
+            ],
+            baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
+            signal: input.signal,
+          });
+        } catch (error) {
+          if (input.signal?.aborted) throw error;
+          preparationError = asError(error);
+        }
+      }
+      if (preparationError) {
+        skillBody = null;
+        plan = makePlan([]);
+        assistantTurn.prevTurnId = plan.leafTurnId ?? prevTurnId;
+        assistantTurn.parentTurnId = assistantTurn.prevTurnId;
+        assistantTurn.position = nextTurnPosition(plan.turns.at(-1) ?? previousTurn);
+      }
+      const imageUpdateTurn = preflight?.assembled.imageContextUpdates.turns.at(-1);
+      assistantTurn.prevTurnId =
+        imageUpdateTurn?.id ?? plan.leafTurnId ?? skillBody?.turn.id ?? referenceUserTurnId;
+      assistantTurn.parentTurnId = assistantTurn.prevTurnId;
+      assistantTurn.position = nextTurnPosition(
+        imageUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
+      );
+      const value = {
+        assistantTurn,
+        skillBody,
+        referenceUserTurnId,
+        preflight,
+        messageTurns: plan.turns,
+        priorTurns,
+        inheritedTurns,
+        inheritedBlocks,
+      };
+      const events = [
+        ...(skillBody
+          ? [
+              { type: "turn.created" as const, turn: skillBody.turn },
+              { type: "block.upserted" as const, block: skillBody.block },
+            ]
+          : []),
+        ...plan.events,
+        ...(preflight?.events ?? []),
+        { type: "turn.created" as const, turn: assistantTurn },
+      ];
+      return {
+        value,
+        turnId: assistantTurn.id,
+        messageIds: batch.map(({ id }) => id),
+        ...(preparationError === null ? {} : { preparationFailure: preparationError }),
+        persist: async () => {
+          await persistAndAppendTurnStartEvents(
+            deps,
+            input.threadId,
+            selection.activeLeafTurnId,
+            async () => {
+              await reconcileOrphanedPendingWrites(deps, input.threadId);
+              if (preflight)
+                await persistPreparedPromptBake(
+                  preflight.assembled,
+                  deps.repos.threads.bakeInitialPrompt.bind(deps.repos.threads),
+                );
+              assistantTurn.writeMode = setupThread.workId
+                ? await deps.workWriteMode.read(setupThread.workId)
+                : "direct";
+              return { result: undefined, events };
+            },
+            {
+              afterEvents: () => admitRunExecution(deps, input, setupThread, assistantTurn.id),
+            },
+          );
+        },
+      };
+    },
+    { signal: input.signal },
+  );
 
   const {
     assistantTurn,
@@ -750,7 +858,6 @@ async function loadRunStartContext(
   contextError: ThreadConversationContextError | null;
 }> {
   const { repos } = deps;
-  await reconcileOrphanedPendingWrites(deps, thread.id);
   const priorTurns = await repos.turns.listByThread(thread.id);
   let conversation: Awaited<ReturnType<typeof loadThreadConversationContext>>;
   try {
@@ -1350,7 +1457,7 @@ async function prepareRequestContext(input: {
     imageInclusions: input.deps.repos.imageInclusions,
     baseTools: input.baseTools ?? input.deps.toolExecutor.getDefinitions?.(),
     promptBakes: input.deps.repos.promptBakes,
-    persistBake: true,
+    persistBake: false,
     bakeInitialPrompt: input.deps.repos.threads.bakeInitialPrompt.bind(input.deps.repos.threads),
     workContext: input.deps.workContext,
     persistImageProjection: async (projection) => {
@@ -1616,6 +1723,7 @@ async function executeLoop(
     return {
       lease: input.lease,
       currentTurn: currentAssistantTurn,
+      signal: input.signal,
       knownTurnIds: new Set(allTurns.map((turn) => turn.id)),
       expectedLeafTurnId: allTurns.at(-1)?.id ?? null,
       prepareAdoptedTurn: async (turn, blocks) => {
@@ -1692,6 +1800,9 @@ async function executeLoop(
       currentAssistantTurn = next;
       endTurnRequested = false;
       input.onAssistantTurnChanged?.(next.id);
+    }
+    if (result.preparationFailure !== undefined) {
+      throw new RequestPreparationError(result.preparationFailure);
     }
     return result.drain;
   }
@@ -2095,13 +2206,12 @@ async function executeLoop(
     const state = await deps.runClaim.read(input.threadId);
     if (input.signal?.aborted || (state?.kind === "awake" && state.cancelRequested)) {
       await exitRun(false, cancelTerminal);
-    } else if (err instanceof ImageAssetResolutionError) {
-      await exitRun(false, {
-        kind: "failed",
-        reason: "image_resolution_failed",
-        acknowledgeInbox: true,
-        error: err.message,
-      });
+    } else if (
+      err instanceof RequestPreparationError ||
+      err instanceof ImageAssetResolutionError ||
+      err instanceof ThreadConversationContextError
+    ) {
+      throw err instanceof RequestPreparationError ? err : new RequestPreparationError(err);
     } else {
       await exitRun(
         false,

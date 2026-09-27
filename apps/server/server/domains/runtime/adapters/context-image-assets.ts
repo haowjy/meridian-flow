@@ -26,43 +26,48 @@ export function createContextImageAssetPort(deps: {
       }
     },
     async resolve(context, reference, options) {
-      const resolution = await deps.availability.lookup(
-        { projectId: context.projectId as never, documentIds: [reference.documentId as never] },
-        { userId: context.actorUserId },
-      );
-      const available = resolution.resolutions[0];
-      if (available?.kind === "indeterminate")
-        throw new ImageAssetResolutionError(
-          `Image asset resolution is indeterminate: ${reference.uri}`,
+      try {
+        const resolution = await deps.availability.lookup(
+          { projectId: context.projectId as never, documentIds: [reference.documentId as never] },
+          { userId: context.actorUserId },
         );
-      if (available?.kind !== "available" || available.entry.uri !== reference.uri) return null;
-      const identity = await deps.identities.lookupDocument(reference.documentId);
-      if (!identity) return null;
-      const mediaType = identity?.mimeType?.split(";")[0]?.trim().toLowerCase() ?? "";
-      if (
-        !mediaType.startsWith("image/") ||
-        !identity.storageUrl ||
-        (identity.sizeBytes ?? 0) > options.maxBytes
-      ) {
-        return null;
+        const available = resolution.resolutions[0];
+        if (available?.kind === "indeterminate")
+          throw new ImageAssetResolutionError(
+            `Image asset resolution is indeterminate: ${reference.uri}`,
+          );
+        if (available?.kind !== "available" || available.entry.uri !== reference.uri) return null;
+        const identity = await deps.identities.lookupDocument(reference.documentId);
+        if (!identity) return null;
+        const mediaType = identity.mimeType?.split(";")[0]?.trim().toLowerCase() ?? "";
+        if (
+          !mediaType.startsWith("image/") ||
+          !identity.storageUrl ||
+          (identity.sizeBytes ?? 0) > options.maxBytes
+        ) {
+          return null;
+        }
+        const key = objectStoreKeyFromStorageUrl(identity.storageUrl);
+        if (!key) return null;
+        const object = await deps.objects.get(key);
+        if (!object.ok) {
+          if (object.error.code === "not_found") return null;
+          throw new ImageAssetResolutionError(
+            `Could not resolve image asset ${reference.uri}: ${object.error.message}`,
+          );
+        }
+        if (object.value.bytes.byteLength > options.maxBytes) return null;
+        const actualType = object.value.mimeType.split(";")[0]?.trim().toLowerCase();
+        if (actualType !== mediaType || !actualType.startsWith("image/")) return null;
+        return {
+          mediaType,
+          data: Buffer.from(object.value.bytes).toString("base64"),
+          sizeBytes: object.value.bytes.byteLength,
+        };
+      } catch (error) {
+        if (error instanceof ImageAssetResolutionError) throw error;
+        throw new ImageAssetResolutionError("Image asset resolution failed", { cause: error });
       }
-      const key = objectStoreKeyFromStorageUrl(identity.storageUrl);
-      if (!key) return null;
-      const object = await deps.objects.get(key);
-      if (!object.ok) {
-        if (object.error.code === "not_found") return null;
-        throw new ImageAssetResolutionError(
-          `Could not resolve image asset ${reference.uri}: ${object.error.message}`,
-        );
-      }
-      if (object.value.bytes.byteLength > options.maxBytes) return null;
-      const actualType = object.value.mimeType.split(";")[0]?.trim().toLowerCase();
-      if (actualType !== mediaType || !actualType.startsWith("image/")) return null;
-      return {
-        mediaType,
-        data: Buffer.from(object.value.bytes).toString("base64"),
-        sizeBytes: object.value.bytes.byteLength,
-      };
     },
   };
 }

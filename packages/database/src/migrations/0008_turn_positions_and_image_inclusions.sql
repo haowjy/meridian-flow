@@ -98,7 +98,7 @@ CREATE TABLE "thread_image_inclusions" (
 	"decision_turn_id" uuid NOT NULL,
 	"included" boolean NOT NULL,
 	"decided_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "thread_image_inclusions_thread_id_block_id_pk" PRIMARY KEY("thread_id","block_id")
+	CONSTRAINT "thread_image_inclusions_thread_id_block_id_decision_turn_id_pk" PRIMARY KEY("thread_id","block_id","decision_turn_id")
 );
 --> statement-breakpoint
 ALTER TABLE "thread_image_inclusions" ADD CONSTRAINT "thread_image_inclusions_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

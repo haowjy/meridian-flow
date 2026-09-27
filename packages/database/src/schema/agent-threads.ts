@@ -439,7 +439,7 @@ export const threadImageInclusions = pgTable(
     included: boolean("included").notNull(),
     decidedAt: timestamp("decided_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [primaryKey({ columns: [table.threadId, table.blockId] })],
+  (table) => [primaryKey({ columns: [table.threadId, table.blockId, table.decisionTurnId] })],
 );
 
 export const threadExecutionReports = pgTable(

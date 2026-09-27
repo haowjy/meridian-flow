@@ -14,7 +14,6 @@ import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import { TurnStartConflictError } from "../../threads/index.js";
-import { nextTurnPosition } from "../../threads/order-turns.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { InboxReader, MessageDraft } from "./ports.js";
@@ -68,16 +67,11 @@ export async function persistWriterEnqueue<T>(input: {
             input.threadId,
             current.activeLeafTurnId,
             async () => {
-              const previousTurn = current.activeLeafTurnId
-                ? await input.persistence.repos.turns.findById(current.activeLeafTurnId)
-                : null;
-              if (current.activeLeafTurnId && !previousTurn) {
-                throw new Error(`Missing causal turn: ${current.activeLeafTurnId}`);
-              }
               const userTurn = createLocalTurn({
                 id: input.userTurnId,
                 threadId: input.threadId,
-                position: nextTurnPosition(previousTurn),
+                // The event contract needs a number here; projection replaces this placeholder.
+                position: 1,
                 prevTurnId: current.activeLeafTurnId,
                 role: "user",
                 origin: "writer",

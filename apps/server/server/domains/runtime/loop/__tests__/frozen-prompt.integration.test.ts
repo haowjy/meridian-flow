@@ -176,6 +176,72 @@ describe("frozen prompt provider requests", () => {
     }
   });
 
+  it("forks the latest image decision at the cutoff after the source loses its asset", async () => {
+    const gateway = Object.assign(scriptedGateway(), {
+      listModels: () => [
+        {
+          id: "gpt-4.1-mini",
+          provider: "openai" as const,
+          displayName: "Fixture",
+          contextWindow: 100_000,
+          maxOutputTokens: 4_096,
+          capabilities: new Set(["image_input" as const]),
+        },
+      ],
+    });
+    let assetAvailable = true;
+    const rig = await fixture(undefined, undefined, gateway, {
+      async resolve() {
+        return assetAvailable ? { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 5 } : null;
+      },
+    });
+    const image = {
+      type: "image" as const,
+      documentId: "44444444-4444-4444-8444-000000000101",
+      uri: "uploads://@/asset-lost-before-fork.png",
+    };
+
+    await rig.send(rig.thread.id, "remember this image", {
+      blocks: [{ type: "text", text: "remember this image" }, image],
+    });
+    const original = await rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true });
+    await original.execute();
+    const originalImage = (await rig.repos.blocks.listByThread(rig.thread.id)).find(
+      (block) => block.blockType === "image",
+    );
+    if (!originalImage) throw new Error("Missing original image block");
+    expect(
+      (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
+        (decision) => decision.blockId === originalImage.id,
+      )?.included,
+    ).toBe(true);
+
+    assetAvailable = false;
+    await rig.run(rig.thread.id);
+    expect(
+      (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
+        (decision) => decision.blockId === originalImage.id,
+      )?.included,
+    ).toBe(false);
+    expect(
+      (await rig.repos.turns.listByThread(rig.thread.id)).filter(
+        (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
+      ),
+    ).toHaveLength(1);
+
+    const { thread: fork } = await forkThreadAgent(rig.derive, {
+      id: crypto.randomUUID(),
+      threadId: rig.thread.id,
+      userId: rig.thread.userId,
+      originTurnId: original.assistantTurnId,
+    });
+    expect(
+      (await rig.repos.imageInclusions.findByThread(fork.id)).find(
+        (decision) => decision.blockId === originalImage.id,
+      ),
+    ).toMatchObject({ included: true });
+  });
+
   it("isolates image inclusion and eviction decisions between fork and source", async () => {
     const model: ModelInfo = {
       id: "gpt-4.1-mini",
