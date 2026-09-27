@@ -2747,6 +2747,10 @@ msgstr ""
 msgid "Open {0} at this passage. {1}"
 msgstr ""
 
+#: src/features/chat/SubagentHeader.tsx
+msgid "Open {name}"
+msgstr "打开{name}"
+
 #: src/features/chat/DocumentName.tsx
 #: src/features/home/ProjectLibrary.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
@@ -2836,7 +2840,6 @@ msgstr ""
 #: src/features/chat/AssistantTurn.tsx
 #: src/features/chat/RunningSubagentsStrip.tsx
 #: src/features/chat/SpawnReportCard.tsx
-#: src/features/chat/SubagentHeader.tsx
 msgid "Open subagent chat"
 msgstr "打开子代理聊天"
 

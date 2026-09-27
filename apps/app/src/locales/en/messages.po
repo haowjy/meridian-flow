@@ -2751,6 +2751,10 @@ msgstr "Open {0}"
 msgid "Open {0} at this passage. {1}"
 msgstr "Open {0} at this passage. {1}"
 
+#: src/features/chat/SubagentHeader.tsx
+msgid "Open {name}"
+msgstr "Open {name}"
+
 #: src/features/chat/DocumentName.tsx
 #: src/features/home/ProjectLibrary.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
@@ -2840,7 +2844,6 @@ msgstr "Open results"
 #: src/features/chat/AssistantTurn.tsx
 #: src/features/chat/RunningSubagentsStrip.tsx
 #: src/features/chat/SpawnReportCard.tsx
-#: src/features/chat/SubagentHeader.tsx
 msgid "Open subagent chat"
 msgstr "Open subagent chat"
 

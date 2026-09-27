@@ -61,8 +61,9 @@ as quiet expandable completion rows; adjacent completions merge at their
 transcript boundary. Every surface names a child through `subagent-display.ts`
 (agent name, else thread title; never a raw ref); the mark letter comes from
 the agent name, not the display name. Outcome maps to mark status there. The
-pop-up's Jump to in chat action uses a block-level conversation reveal that
-lands on the child's latest point: launch while running, the finished row until
+Each pop-up row opens its child chat; the separate Jump to in chat action uses
+a block-level conversation reveal that lands on the child's latest point:
+launch while running, the finished row until
 its report is read, then the latest report line.
 
 Child completion is a separate durable transcript event: system turns with
