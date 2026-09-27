@@ -2004,12 +2004,12 @@ msgstr "Heading 3"
 #~ msgstr "Hide full result"
 
 #: src/features/chat/AssistantTurn.tsx
-msgid "Hide report"
-msgstr "Hide report"
+#~ msgid "Hide report"
+#~ msgstr "Hide report"
 
 #: src/features/chat/SpawnReportCard.tsx
-msgid "Hide result"
-msgstr "Hide result"
+#~ msgid "Hide result"
+#~ msgstr "Hide result"
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Hide source"
@@ -2847,9 +2847,7 @@ msgstr "Open result {name}"
 msgid "Open results"
 msgstr "Open results"
 
-#: src/features/chat/AssistantTurn.tsx
-#: src/features/chat/RunningSubagentsStrip.tsx
-#: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/OpenSubagentChatButton.tsx
 msgid "Open subagent chat"
 msgstr "Open subagent chat"
 
@@ -3554,12 +3552,12 @@ msgstr "Show chats"
 #~ msgstr "Show full result"
 
 #: src/features/chat/AssistantTurn.tsx
-msgid "Show report"
-msgstr "Show report"
+#~ msgid "Show report"
+#~ msgstr "Show report"
 
 #: src/features/chat/SpawnReportCard.tsx
-msgid "Show result"
-msgstr "Show result"
+#~ msgid "Show result"
+#~ msgstr "Show result"
 
 #: src/routes/dev-login.tsx
 msgid "Sign in as dev user"

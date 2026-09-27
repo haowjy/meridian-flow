@@ -1,9 +1,10 @@
+/** Invocation card block: joins live activity and the saved report source to the launch card. */
 import type { ComponentBlockProps } from "./component-registry";
 import { SpawnReportCard } from "./SpawnReportCard";
 import { useSubagentActivity } from "./SubagentActivityContext";
 import { subagentCurrentToolLabel } from "./subagent-display";
 
-export function HelperResultBlock({ content, invocationResult }: ComponentBlockProps) {
+export function HelperResultBlock({ content, invocationResult, threadId }: ComponentBlockProps) {
   const props = content.props as {
     agentName: string;
     title?: string;
@@ -19,6 +20,13 @@ export function HelperResultBlock({ content, invocationResult }: ComponentBlockP
   const liveTool = live?.currentTool
     ? subagentCurrentToolLabel(live.currentTool.toolName, live.currentTool.input)
     : null;
+  const savedReport =
+    props.deliveryMode === "background_notification" &&
+    threadId &&
+    props.childThreadId &&
+    props.execution
+      ? { threadId, childThreadId: props.childThreadId, execution: props.execution }
+      : null;
   return (
     <SpawnReportCard
       agentName={props.agentName}
@@ -31,8 +39,7 @@ export function HelperResultBlock({ content, invocationResult }: ComponentBlockP
       terminalAt={props.terminalAt}
       childThreadId={props.childThreadId ?? null}
       directResult={invocationResult}
-      loadingReport={false}
-      reportError={false}
+      savedReport={savedReport}
     />
   );
 }

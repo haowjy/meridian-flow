@@ -26,6 +26,7 @@ import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlock
 import { ErrorBlock } from "./ErrorBlock";
 import { groupDeliverySegments } from "./group-delivery-segments";
 import { type DirectInvocationResult, directResultsForTurn } from "./invocation-direct-result";
+import { OpenSubagentChatButton } from "./OpenSubagentChatButton";
 import { ProcessDisclosure } from "./ProcessDisclosure";
 import {
   hasVisibleReasoningText,
@@ -502,7 +503,6 @@ function ThreadReportArtifact({
 }) {
   const [expanded, setExpanded] = useState(false);
   const subagent = useSubagentActivityByRef(refName);
-  const openThread = useOpenChatThread();
   const agentName = subagent?.agentName;
   const displayName = resolveSubagentName(subagent);
   const taskTitle = subagent?.title?.trim();
@@ -512,45 +512,36 @@ function ThreadReportArtifact({
       data-thread-report={refName}
       data-subagent-thread-id={subagent?.threadId}
     >
-      <div className="flex min-w-0 items-center gap-[var(--chat-space-row)]">
-        <SubagentMark
-          agentName={agentName}
-          status={subagentStatus(
-            report.outcome ?? subagent?.spawnStatus ?? (report.partial ? "failed" : null),
-            !report.outcome && subagent?.status.kind === "awake",
-          )}
-        />
-        <span className="shrink-0 text-sm font-medium text-foreground">{displayName}</span>
-        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
-          <Trans>Report</Trans>
-        </span>
-        {taskTitle && taskTitle !== displayName ? (
-          <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{taskTitle}</span>
-        ) : (
-          <span className="min-w-0 flex-1" />
-        )}
-        {subagent && openThread ? (
-          <button
-            type="button"
-            aria-label={t`Open subagent chat`}
-            onClick={() => openThread(subagent.threadId)}
-            className="focus-ring grid size-7 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <ChevronRight className="size-4" aria-hidden />
-          </button>
-        ) : null}
+      <div className="flex min-w-0 items-center gap-1">
         <button
           type="button"
           aria-expanded={expanded}
-          aria-label={expanded ? t`Hide report` : t`Show report`}
           onClick={() => setExpanded((value) => !value)}
-          className="focus-ring grid size-7 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="focus-ring flex min-w-0 flex-1 items-center gap-[var(--chat-space-row)] rounded-sm text-left"
         >
+          <SubagentMark
+            agentName={agentName}
+            status={subagentStatus(
+              report.outcome ?? subagent?.spawnStatus ?? (report.partial ? "failed" : null),
+              !report.outcome && subagent?.status.kind === "awake",
+            )}
+          />
+          <span className="shrink-0 text-sm font-medium text-foreground">{displayName}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            <Trans>Report</Trans>
+          </span>
+          <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+            {taskTitle && taskTitle !== displayName ? taskTitle : null}
+          </span>
           <ChevronDown
-            className={cn("size-4 transition-transform", expanded && "rotate-180")}
+            className={cn(
+              "size-4 shrink-0 text-muted-foreground transition-transform",
+              expanded && "rotate-180",
+            )}
             aria-hidden
           />
         </button>
+        <OpenSubagentChatButton threadId={subagent?.threadId} />
       </div>
       {expanded ? (
         <ReportContent

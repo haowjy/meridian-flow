@@ -1,12 +1,16 @@
-/** Writer-facing subagent launch or foreground lifecycle card; both show the live tool call while running. */
+/**
+ * Writer-facing subagent launch card. Running, it shows the live tool call;
+ * finished, the row expands to the report. Only the chat icon opens the child.
+ */
 
-import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { ChevronDown, ChevronRight } from "lucide-react";
-import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { ChevronDown } from "lucide-react";
+import { type ReactNode, useState } from "react";
+import { getThreadExecutionReport } from "@/client/api/execution-reports-api";
 import { cn } from "@/lib/utils";
-import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { DirectInvocationResult } from "./invocation-direct-result";
+import { OpenSubagentChatButton } from "./OpenSubagentChatButton";
 import { ReportContent } from "./ReportContent";
 import { SubagentMark } from "./SubagentMark";
 import {
@@ -15,6 +19,9 @@ import {
   resolveSubagentName,
   subagentStatus,
 } from "./subagent-display";
+
+/** Where a background run's saved report lives; read only once the writer expands the card. */
+export type SavedReportSource = { threadId: string; childThreadId: string; execution: string };
 
 type Props = {
   agentName: string;
@@ -26,10 +33,12 @@ type Props = {
   terminalAt?: string | null;
   childThreadId: string | null;
   directResult?: DirectInvocationResult | null;
+  savedReport?: SavedReportSource | null;
   liveTool?: string | null;
-  loadingReport?: boolean;
-  reportError?: boolean;
 };
+
+// Detail lines sit under the name: mark (size-6) plus the row gap.
+const DETAIL_INDENT = "pl-[calc(1.5rem+var(--chat-space-row))]";
 
 export function SpawnReportCard({
   agentName,
@@ -41,12 +50,10 @@ export function SpawnReportCard({
   terminalAt,
   childThreadId,
   directResult = null,
+  savedReport = null,
   liveTool,
-  loadingReport = false,
-  reportError = false,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const openThread = useOpenChatThread();
   const resolvedOutcome = directResult?.outcome ?? outcome;
   const displayName = resolveSubagentName({ agentName, title });
   const running = status === "running" && resolvedOutcome == null;
@@ -55,19 +62,20 @@ export function SpawnReportCard({
     running,
   );
   const foreground = deliveryMode === "direct";
-  const openButton =
-    childThreadId && openThread && foreground ? (
-      <button
-        type="button"
-        aria-label={t`Open subagent chat`}
-        onClick={() => openThread(childThreadId)}
-        className="focus-ring grid size-7 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-      >
-        <ChevronRight className="size-4" aria-hidden />
-      </button>
-    ) : childThreadId && openThread ? (
-      <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-    ) : null;
+  const expandable = !running && (foreground ? directResult != null : savedReport != null);
+
+  const identity = (
+    <>
+      <SubagentMark agentName={agentName} status={markStatus} />
+      <span className="shrink-0 text-sm font-medium text-foreground">{displayName}</span>
+      <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+        {title && title !== displayName ? title : null}
+      </span>
+      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+        {running ? <Elapsed startedAt={startedAt} /> : formatSubagentElapsed(startedAt, terminalAt)}
+      </span>
+    </>
+  );
 
   return (
     <div
@@ -76,110 +84,95 @@ export function SpawnReportCard({
       data-subagent-thread-id={childThreadId ?? undefined}
       data-delivery-mode={deliveryMode}
     >
-      {!foreground && childThreadId && openThread ? (
-        <button
-          type="button"
-          aria-label={t`Open subagent chat`}
-          onClick={() => openThread(childThreadId)}
-          className="focus-ring flex w-full min-w-0 items-center gap-[var(--chat-space-row)] rounded-sm text-left hover:text-foreground"
-        >
-          <SubagentMark agentName={agentName} status={markStatus} />
-          <span className="shrink-0 text-sm font-medium text-foreground">{displayName}</span>
-          {title && title !== displayName ? (
-            <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{title}</span>
-          ) : (
-            <span className="min-w-0 flex-1" />
-          )}
-          {running && startedAt ? (
-            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-              <Elapsed startedAt={startedAt} />
-            </span>
-          ) : null}
-          {!running && startedAt && terminalAt ? (
-            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-              {formatSubagentElapsed(startedAt, terminalAt)}
-            </span>
-          ) : null}
-          {openButton}
-          {foreground && !running && directResult ? (
-            <button
-              type="button"
-              aria-label={expanded ? t`Hide result` : t`Show result`}
-              aria-expanded={expanded}
-              onClick={() => setExpanded((v) => !v)}
-              className="focus-ring grid size-7 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <ChevronDown
-                className={cn("size-4 transition-transform", expanded && "rotate-180")}
-                aria-hidden
-              />
-            </button>
-          ) : null}
-        </button>
-      ) : (
-        <div className="flex min-w-0 items-center gap-[var(--chat-space-row)]">
-          <SubagentMark agentName={agentName} status={markStatus} />
-          <span className="shrink-0 text-sm font-medium text-foreground">{displayName}</span>
-          {title && title !== displayName ? (
-            <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{title}</span>
-          ) : (
-            <span className="min-w-0 flex-1" />
-          )}
-          {running && startedAt ? (
-            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-              <Elapsed startedAt={startedAt} />
-            </span>
-          ) : null}
-          {!running && startedAt && terminalAt ? (
-            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-              {formatSubagentElapsed(startedAt, terminalAt)}
-            </span>
-          ) : null}
-          {openButton}
-          {foreground && !running && directResult ? (
-            <button
-              type="button"
-              aria-label={expanded ? t`Hide result` : t`Show result`}
-              aria-expanded={expanded}
-              onClick={() => setExpanded((v) => !v)}
-              className="focus-ring grid size-7 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <ChevronDown
-                className={cn("size-4 transition-transform", expanded && "rotate-180")}
-                aria-hidden
-              />
-            </button>
-          ) : null}
-        </div>
-      )}
+      <div className="flex min-w-0 items-center gap-1">
+        {expandable ? (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((value) => !value)}
+            className="focus-ring flex min-w-0 flex-1 items-center gap-[var(--chat-space-row)] rounded-sm text-left"
+          >
+            {identity}
+            <ChevronDown
+              className={cn(
+                "size-4 shrink-0 text-muted-foreground transition-transform",
+                expanded && "rotate-180",
+              )}
+              aria-hidden
+            />
+          </button>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-center gap-[var(--chat-space-row)]">
+            {identity}
+          </div>
+        )}
+        <OpenSubagentChatButton threadId={childThreadId} />
+      </div>
       {running ? (
-        <div className="mt-[var(--chat-space-row)] pl-[calc(1.5rem+var(--chat-space-row))] text-xs text-muted-foreground">
+        <div
+          className={cn(
+            "mt-[var(--chat-space-row)] truncate text-xs text-muted-foreground",
+            DETAIL_INDENT,
+          )}
+        >
           {liveTool || <Trans>Working</Trans>}
         </div>
       ) : null}
-      {foreground && expanded ? (
-        <div className="mt-[var(--chat-space-block)] pl-[calc(1.5rem+var(--chat-space-row))] text-sm">
-          {directResult ? (
-            <ReportContent
-              report={directResult}
-              empty={<Trans>No report text was returned.</Trans>}
-              message={directResult.message}
-              showStopMetadata={false}
-              className="mt-[var(--chat-space-block)] space-y-[var(--chat-space-block)]"
-            />
+      {expanded && expandable ? (
+        <div className={cn("mt-[var(--chat-space-block)] text-sm", DETAIL_INDENT)}>
+          {foreground && directResult ? (
+            <ReportBody report={directResult} message={directResult.message} />
+          ) : savedReport ? (
+            <SavedReportBody source={savedReport} />
           ) : null}
-        </div>
-      ) : null}
-      {foreground && loadingReport ? (
-        <div className="mt-[var(--chat-space-row)] pl-[calc(1.5rem+var(--chat-space-row))] text-xs text-muted-foreground">
-          <Trans>Loading report…</Trans>
-        </div>
-      ) : null}
-      {foreground && reportError ? (
-        <div className="mt-[var(--chat-space-row)] pl-[calc(1.5rem+var(--chat-space-row))] text-xs text-muted-foreground">
-          <Trans>Report is unavailable</Trans>
         </div>
       ) : null}
     </div>
   );
+}
+
+function ReportBody({
+  report,
+  message = null,
+}: {
+  report: import("./ReportContent").ReportContentValue;
+  message?: string | null;
+}) {
+  return (
+    <ReportContent
+      report={report}
+      empty={<Trans>No report text was returned.</Trans>}
+      message={message}
+      showStopMetadata={false}
+      className="space-y-[var(--chat-space-block)]"
+    />
+  );
+}
+
+/** Mounted only on expansion, so collapsed cards never fetch. */
+function SavedReportBody({ source }: { source: SavedReportSource }) {
+  const saved = useQuery({
+    queryKey: ["thread-execution-report", source.threadId, source.childThreadId, source.execution],
+    queryFn: () => getThreadExecutionReport(source),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  if (saved.isPending) return <Note>{<Trans>Loading report…</Trans>}</Note>;
+  const data = saved.data;
+  if (!data || !("outcome" in data)) return <Note>{<Trans>Report is unavailable</Trans>}</Note>;
+  return (
+    <ReportBody
+      report={{
+        outcome: data.outcome,
+        summary: data.summary,
+        ...(data.payload === undefined ? {} : { payload: data.payload }),
+        artifacts: data.artifacts ?? [],
+        partial: data.partial,
+        reason: data.reason,
+      }}
+    />
+  );
+}
+
+function Note({ children }: { children: ReactNode }) {
+  return <p className="text-xs text-muted-foreground">{children}</p>;
 }

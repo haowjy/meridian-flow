@@ -1,12 +1,11 @@
 /** In-flow summary of direct background runs, with current work on expansion. */
 
-import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadActivityNode } from "@meridian/contracts/threads";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { type OpenChatThread, useOpenChatThread } from "./ChatThreadNavigation";
+import { OpenSubagentChatButton } from "./OpenSubagentChatButton";
 import { SubagentMark } from "./SubagentMark";
 import { Elapsed, resolveSubagentName, subagentCurrentToolLabel } from "./subagent-display";
 
@@ -15,7 +14,6 @@ const TOOL_LINE_INDENT = "pl-7";
 
 export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActivityNode[] }) {
   const [expanded, setExpanded] = useState(false);
-  const openThread = useOpenChatThread();
   if (!descendants.length) return null;
   const single = descendants.length === 1 ? descendants[0] : undefined;
   const disclosure = (
@@ -42,7 +40,7 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
                 <RunIdentity node={single} />
                 {disclosure}
               </button>
-              <OpenButton node={single} openThread={openThread} />
+              <OpenSubagentChatButton threadId={single.threadId} />
             </div>
             {expanded ? <ToolLine node={single} /> : null}
           </>
@@ -84,7 +82,7 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
                       <span className="flex min-w-0 flex-1 items-center gap-2">
                         <RunIdentity node={node} />
                       </span>
-                      <OpenButton node={node} openThread={openThread} />
+                      <OpenSubagentChatButton threadId={node.threadId} />
                     </div>
                     <ToolLine node={node} />
                   </li>
@@ -113,27 +111,6 @@ function RunIdentity({ node }: { node: ThreadActivityNode }) {
         <Elapsed startedAt={node.runStartedAt} />
       </span>
     </>
-  );
-}
-
-function OpenButton({
-  node,
-  openThread,
-}: {
-  node: ThreadActivityNode;
-  openThread: OpenChatThread | null;
-}) {
-  if (!openThread) return null;
-  return (
-    <button
-      type="button"
-      aria-label={t`Open subagent chat`}
-      title={t`Open subagent chat`}
-      onClick={() => openThread(node.threadId)}
-      className="focus-ring grid size-7 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-    >
-      <ChevronRight className="size-4" aria-hidden />
-    </button>
   );
 }
 

@@ -15,6 +15,7 @@ vi.mock("@/rich-content/Markdown", () => ({
   Markdown: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { ChatThreadNavigationProvider } from "./ChatThreadNavigation";
 import { type DirectInvocationResult, directResultsForTurn } from "./invocation-direct-result";
 import { block } from "./report-test-fixtures";
@@ -28,6 +29,10 @@ beforeAll(() => {
 afterAll(() => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
 });
+
+function findToggle(): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>("button[aria-expanded]");
+}
 
 function findButton(name: string): HTMLButtonElement | undefined {
   return [...document.querySelectorAll("button")].find(
@@ -53,15 +58,17 @@ describe("SpawnReportCard", () => {
     const openThread = vi.fn();
     await act(async () =>
       root.render(
-        <ChatThreadNavigationProvider onOpenThread={openThread}>
-          <SpawnReportCard
-            deliveryMode="background_notification"
-            agentName="Critic"
-            title={null}
-            status="completed"
-            childThreadId="child-1"
-          />
-        </ChatThreadNavigationProvider>,
+        <TooltipProvider>
+          <ChatThreadNavigationProvider onOpenThread={openThread}>
+            <SpawnReportCard
+              deliveryMode="background_notification"
+              agentName="Critic"
+              title={null}
+              status="completed"
+              childThreadId="child-1"
+            />
+          </ChatThreadNavigationProvider>
+        </TooltipProvider>,
       ),
     );
 
@@ -119,8 +126,8 @@ describe("SpawnReportCard", () => {
     );
 
     expect(host.textContent).toContain("29s");
-    expect(findButton("Show result")).toBeDefined();
-    await act(async () => findButton("Show result")?.click());
+    expect(findToggle()).not.toBeNull();
+    await act(async () => findToggle()?.click());
     expect(host.textContent).toContain("Read the document 21 times. All reads matched.");
   });
 
@@ -262,7 +269,7 @@ describe("SpawnReportCard", () => {
     const status = outcome === "succeeded" ? "Finished" : "Stopped";
     expect(host.querySelector(`[aria-label="${status}"]`)).not.toBeNull();
     expect(host.textContent).not.toContain("Saved result");
-    await act(async () => findButton("Show result")?.click());
+    await act(async () => findToggle()?.click());
     expect(host.textContent).toContain("Saved result");
     expect(host.textContent).not.toContain("Working");
   });
@@ -288,7 +295,7 @@ describe("SpawnReportCard", () => {
     );
     expect(host.textContent).toContain("Working");
     expect(host.textContent).not.toContain("Child report is unavailable");
-    expect(findButton("Show result")).toBeUndefined();
+    expect(findToggle()).toBeNull();
     await act(async () =>
       root.render(
         <SpawnReportCard
@@ -306,15 +313,17 @@ describe("SpawnReportCard", () => {
   it("hides the door when no child thread exists", async () => {
     await act(async () =>
       root.render(
-        <ChatThreadNavigationProvider onOpenThread={vi.fn()}>
-          <SpawnReportCard
-            deliveryMode="background_notification"
-            agentName="Critic"
-            title={null}
-            status="failed"
-            childThreadId={null}
-          />
-        </ChatThreadNavigationProvider>,
+        <TooltipProvider>
+          <ChatThreadNavigationProvider onOpenThread={vi.fn()}>
+            <SpawnReportCard
+              deliveryMode="background_notification"
+              agentName="Critic"
+              title={null}
+              status="failed"
+              childThreadId={null}
+            />
+          </ChatThreadNavigationProvider>
+        </TooltipProvider>,
       ),
     );
 

@@ -28,6 +28,7 @@ vi.mock("@/client/api/execution-reports-api", () => ({
   })),
 }));
 
+import { getThreadExecutionReport } from "@/client/api/execution-reports-api";
 import { HelperResultBlock } from "./HelperResultBlock";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -50,7 +51,7 @@ describe("HelperResultBlock saved report", () => {
     document.body.innerHTML = "";
   });
 
-  it("keeps the background launch card status-only instead of duplicating the report", async () => {
+  it("reads the saved report only when a finished background card is expanded", async () => {
     await act(async () =>
       root.render(
         <QueryClientProvider client={queryClient}>
@@ -77,7 +78,16 @@ describe("HelperResultBlock saved report", () => {
     );
     expect(host.textContent).toContain("Poet");
     expect(host.textContent).not.toContain("A lantern swims through night.");
-    expect(host.textContent).not.toContain("The river keeps its silver name.");
-    expect(host.querySelector("button[aria-expanded]")).toBeNull();
+    expect(getThreadExecutionReport).not.toHaveBeenCalled();
+    const toggle = host.querySelector<HTMLButtonElement>("button[aria-expanded]");
+    expect(toggle).not.toBeNull();
+    await act(async () => toggle?.click());
+    await act(async () => undefined);
+    expect(getThreadExecutionReport).toHaveBeenCalledWith({
+      threadId: "parent-1",
+      childThreadId: "child-1",
+      execution: "run-1",
+    });
+    await vi.waitFor(() => expect(host.textContent).toContain("A lantern swims through night."));
   });
 });

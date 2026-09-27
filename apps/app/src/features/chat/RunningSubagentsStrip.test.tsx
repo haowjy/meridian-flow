@@ -18,6 +18,7 @@ vi.mock("@lingui/react/macro", () => ({
 import type { ThreadActivityNode, ThreadStatus } from "@meridian/contracts/threads";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { ChatThreadNavigationProvider } from "./ChatThreadNavigation";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 
@@ -74,22 +75,24 @@ describe("RunningSubagentsStrip", () => {
     const openThread = vi.fn();
     await act(async () =>
       root.render(
-        <ChatThreadNavigationProvider onOpenThread={openThread}>
-          <RunningSubagentsStrip
-            descendants={[
-              node({ threadId: "child-a", agentName: "Critic", title: "Review the chapter" }),
-              node({
-                threadId: "child-b",
-                agentName: "Reader",
-                currentTool: {
-                  toolCallId: "tool-1",
-                  toolName: "spawn",
-                  input: { agent: "Researcher" },
-                },
-              }),
-            ]}
-          />
-        </ChatThreadNavigationProvider>,
+        <TooltipProvider>
+          <ChatThreadNavigationProvider onOpenThread={openThread}>
+            <RunningSubagentsStrip
+              descendants={[
+                node({ threadId: "child-a", agentName: "Critic", title: "Review the chapter" }),
+                node({
+                  threadId: "child-b",
+                  agentName: "Reader",
+                  currentTool: {
+                    toolCallId: "tool-1",
+                    toolName: "spawn",
+                    input: { agent: "Researcher" },
+                  },
+                }),
+              ]}
+            />
+          </ChatThreadNavigationProvider>
+        </TooltipProvider>,
       ),
     );
 
