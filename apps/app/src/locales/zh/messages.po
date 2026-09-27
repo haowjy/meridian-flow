@@ -2773,7 +2773,6 @@ msgstr ""
 msgid "Open a Work to create an Untitled document"
 msgstr ""
 
-#: src/features/chat/AssistantTurn.tsx
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Open chat"
 msgstr ""

@@ -58,4 +58,24 @@ describe("shared report content", () => {
     expect(host.textContent).toContain("Reason: runtime_error");
     expect(host.textContent).not.toContain("Partial result");
   });
+
+  it("can omit stop metadata on subagent report surfaces", async () => {
+    await act(async () =>
+      root.render(
+        <ReportContent
+          report={{
+            summary: "The result",
+            artifacts: [],
+            reason: "execution_error",
+            partial: true,
+          }}
+          empty="No report text"
+          showStopMetadata={false}
+        />,
+      ),
+    );
+    expect(host.textContent).toContain("The result");
+    expect(host.textContent).not.toContain("execution_error");
+    expect(host.textContent).not.toContain("Partial result");
+  });
 });

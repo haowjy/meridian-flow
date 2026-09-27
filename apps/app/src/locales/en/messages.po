@@ -2777,7 +2777,6 @@ msgstr "Open a project to see its results."
 msgid "Open a Work to create an Untitled document"
 msgstr "Open a Work to create an Untitled document"
 
-#: src/features/chat/AssistantTurn.tsx
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Open chat"
 msgstr "Open chat"

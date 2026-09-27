@@ -57,12 +57,15 @@ background children for the live panel, while the pane and dock headers filter
 direct children for the Subagents pop-up. A background run's `thread_report`
 is a report artifact outside the process fold; a direct run's stays a process
 row, since its combined card already holds the result. Background `subagent_update` notices render
-as quiet expandable completion rows; adjacent completions merge at their
-transcript boundary. Every surface names a child through `subagent-display.ts`
+as quiet navigation rows: a single completion opens its child chat, while adjacent
+completions merge into a compact disclosure whose child rows open their chats.
+Notice text and task details are intentionally not repeated there. Every surface names a child through `subagent-display.ts`
 (agent name, else thread title; never a raw ref); the mark letter comes from
 the agent name, not the display name. Outcome maps to mark status there. The
-Each pop-up row opens its child chat; the separate Jump to in chat action uses
-a block-level conversation reveal that lands on the child's latest point:
+Each pop-up row opens its child chat. All open-subagent actions currently use
+the project chat navigation route; the app does not yet model multiple chat tabs.
+The separate Jump to in chat action uses a block-level conversation reveal
+that lands on the child's latest point:
 launch while running, the finished row until
 its report is read, then the latest report line.
 

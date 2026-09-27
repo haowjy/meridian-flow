@@ -9,7 +9,7 @@ import {
   isTerminalTurnStatus,
   type Turn,
 } from "@meridian/contracts/protocol";
-import { ChevronDown, ExternalLink, MessageSquareText } from "lucide-react";
+import { ChevronDown, ChevronRight, MessageSquareText } from "lucide-react";
 import { memo, useMemo, useState } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
@@ -235,9 +235,15 @@ function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
   const stopped = entries.filter(({ outcome }) => outcome !== "succeeded");
   const list = (values: string[]) =>
     new Intl.ListFormat(i18n.locale, { style: "long", type: "conjunction" }).format(values);
+  const [expanded, setExpanded] = useState(false);
   return (
-    <details className="group min-w-0 text-sm text-muted-foreground" data-subagent-finished>
-      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm py-[var(--chat-space-row)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+    <div className="min-w-0 text-sm text-muted-foreground" data-subagent-finished>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((v) => !v)}
+        className="focus-ring flex w-full items-center gap-2 rounded-sm py-[var(--chat-space-row)] text-left hover:text-foreground"
+      >
         <span className="flex -space-x-1.5">
           {names.slice(0, 3).map((name, index) => (
             <span key={`${name}-${index}`} className="rounded-full bg-background p-[2px]">
@@ -273,32 +279,46 @@ function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
             </Trans>
           )}
         </span>
-      </summary>
-      <div className="ml-7 space-y-[var(--chat-space-block)] border-l border-border-subtle py-[var(--chat-space-row)] pl-3 text-xs text-muted-foreground">
-        {entries.map(({ event: { turn, title }, name, threadId }) => {
-          const text = turn.blocks
-            .filter((block) => block.blockType === "text")
-            .map((block) => block.textContent ?? "")
-            .join("");
-          return (
-            <div key={turn.id} data-subagent-thread-id={threadId}>
-              <p className="font-medium text-foreground">{name}</p>
-              {title && title !== name ? <p>{title}</p> : null}
-              {text ? <p className="whitespace-pre-wrap">{text}</p> : null}
+        <ChevronRight
+          className={`ml-auto size-4 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
+          aria-hidden
+        />
+      </button>
+      {expanded ? (
+        <div className="ml-7 space-y-1 border-l border-border-subtle py-1 pl-3">
+          {entries.map(({ name, threadId, agentName, outcome }, index) => (
+            <div key={`${threadId ?? name}-${index}`} data-subagent-thread-id={threadId}>
               {threadId && openThread ? (
                 <button
                   type="button"
                   onClick={() => openThread(threadId)}
-                  className="mt-[var(--chat-space-row)] underline underline-offset-4 hover:text-foreground"
+                  className="focus-ring flex w-full items-center gap-2 rounded-sm py-1 text-left hover:text-foreground"
                 >
-                  <Trans>Open chat</Trans>
+                  <SubagentMark
+                    agentName={agentName}
+                    status={subagentStatus(outcome)}
+                    className="size-5 text-[10px]"
+                  />
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                    {name}
+                  </span>
+                  <ChevronRight className="size-4 shrink-0" aria-hidden />
                 </button>
-              ) : null}
+              ) : (
+                <div className="flex items-center gap-2 py-1">
+                  <SubagentMark
+                    agentName={agentName}
+                    status={subagentStatus(outcome)}
+                    className="size-5 text-[10px]"
+                  />
+                  <span>{name}</span>
+                </div>
+              )}
             </div>
-          );
-        })}
-      </div>
-    </details>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -310,43 +330,43 @@ function DeliveryEventRow({ turn, childThreadId, title, subagentUpdate }: Delive
     const agentName = node?.agentName;
     const name = resolveSubagentName(node ?? { agentName: null, title: title ?? null });
     const outcome = subagentUpdate.outcome;
-    const body = turn.blocks
-      .filter((block) => block.blockType === "text")
-      .map((block) => block.textContent ?? "")
-      .join("");
+    const threadId = node?.threadId ?? childThreadId;
     return (
-      <details
-        className="group min-w-0 text-sm text-muted-foreground"
+      <div
+        className="min-w-0 text-sm text-muted-foreground"
         data-subagent-finished
-        data-subagent-thread-id={node?.threadId ?? childThreadId ?? undefined}
+        data-subagent-thread-id={threadId ?? undefined}
       >
-        <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm py-[var(--chat-space-row)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          <SubagentMark
-            agentName={agentName}
-            status={subagentStatus(outcome)}
-            className="size-5 text-[10px]"
-          />
-          <span className="truncate">
-            <span className="font-medium text-foreground">{name}</span>{" "}
-            {outcome === "succeeded" ? <Trans>finished</Trans> : <Trans>stopped</Trans>}
-          </span>
-        </summary>
-        <div className="ml-7 border-l border-border-subtle py-[var(--chat-space-row)] pl-3 text-xs text-muted-foreground">
-          {title && title !== name ? (
-            <p className="mb-[var(--chat-space-row)] text-foreground">{title}</p>
-          ) : null}
-          {body ? <p className="whitespace-pre-wrap">{body}</p> : null}
-          {childThreadId && openThread ? (
-            <button
-              type="button"
-              onClick={() => openThread(childThreadId)}
-              className="mt-[var(--chat-space-row)] inline-block rounded-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <Trans>Open chat</Trans>
-            </button>
-          ) : null}
-        </div>
-      </details>
+        {threadId && openThread ? (
+          <button
+            type="button"
+            onClick={() => openThread(threadId)}
+            className="focus-ring flex w-full items-center gap-2 rounded-sm py-[var(--chat-space-row)] text-left hover:text-foreground"
+          >
+            <SubagentMark
+              agentName={agentName}
+              status={subagentStatus(outcome)}
+              className="size-5 text-[10px]"
+            />
+            <span className="min-w-0 flex-1 truncate">
+              <span className="font-medium text-foreground">{name}</span>{" "}
+              {outcome === "succeeded" ? <Trans>finished</Trans> : <Trans>stopped</Trans>}
+            </span>
+            <ChevronRight className="size-4 shrink-0" aria-hidden />
+          </button>
+        ) : (
+          <div className="flex items-center gap-2 py-[var(--chat-space-row)]">
+            <SubagentMark
+              agentName={agentName}
+              status={subagentStatus(outcome)}
+              className="size-5 text-[10px]"
+            />
+            <span>
+              {name} {outcome === "succeeded" ? <Trans>finished</Trans> : <Trans>stopped</Trans>}
+            </span>
+          </div>
+        )}
+      </div>
     );
   }
   const body = turn.blocks
@@ -519,7 +539,7 @@ function ThreadReportArtifact({
             onClick={() => openThread(subagent.threadId)}
             className="focus-ring grid size-7 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
           >
-            <ExternalLink className="size-3.5" aria-hidden />
+            <ChevronRight className="size-4" aria-hidden />
           </button>
         ) : null}
         <button
@@ -539,6 +559,7 @@ function ThreadReportArtifact({
         <ReportContent
           report={report}
           empty={<Trans>No report text was returned.</Trans>}
+          showStopMetadata={false}
           className="mt-[var(--chat-space-block)] pl-[calc(1.5rem+var(--chat-space-row))] space-y-[var(--chat-space-block)]"
         />
       ) : null}

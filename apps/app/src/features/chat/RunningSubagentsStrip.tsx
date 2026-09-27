@@ -3,7 +3,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadActivityNode } from "@meridian/contracts/threads";
-import { ChevronRight, ExternalLink } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { useOpenChatThread } from "./ChatThreadNavigation";
 import { SubagentMark } from "./SubagentMark";
@@ -54,7 +54,7 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
                 onClick={() => openThread(single.threadId)}
                 className="focus-ring grid size-7 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
               >
-                <ExternalLink className="size-3.5" aria-hidden />
+                <ChevronRight className="size-4" aria-hidden />
               </button>
             ) : null}
           </>
@@ -120,7 +120,7 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
                       onClick={() => openThread(node.threadId)}
                       className="focus-ring grid size-7 place-items-center rounded text-muted-foreground hover:bg-muted"
                     >
-                      <ExternalLink className="size-3.5" aria-hidden />
+                      <ChevronRight className="size-4" aria-hidden />
                     </button>
                   ) : null}
                 </div>

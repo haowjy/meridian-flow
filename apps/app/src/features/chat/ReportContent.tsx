@@ -22,6 +22,7 @@ type ReportContentProps = {
   message?: string | null;
   className?: string;
   emptyClassName?: string;
+  showStopMetadata?: boolean;
 };
 
 export function ReportContent({
@@ -30,6 +31,7 @@ export function ReportContent({
   message,
   className,
   emptyClassName,
+  showStopMetadata = true,
 }: ReportContentProps) {
   const hasContent =
     !!report.summary || report.payload !== undefined || report.artifacts.length > 0;
@@ -38,7 +40,7 @@ export function ReportContent({
       <div className={emptyClassName ?? className ?? "text-caption text-muted-foreground"}>
         {message ? <p>{message}</p> : null}
         {empty ? <p>{empty}</p> : null}
-        {report.reason ? (
+        {showStopMetadata && report.reason ? (
           <p>
             <Trans>Reason: {report.reason}</Trans>
           </p>
@@ -56,12 +58,12 @@ export function ReportContent({
       ) : null}
       {report.artifacts.length ? <ArtifactGrid artifacts={report.artifacts} /> : null}
       {message ? <p className="text-caption text-muted-foreground">{message}</p> : null}
-      {report.reason ? (
+      {showStopMetadata && report.reason ? (
         <p className="text-caption text-muted-foreground">
           <Trans>Reason: {report.reason}</Trans>
         </p>
       ) : null}
-      {report.partial ? (
+      {showStopMetadata && report.partial ? (
         <p className="text-caption text-muted-foreground">
           <Trans>Partial result</Trans>
         </p>
