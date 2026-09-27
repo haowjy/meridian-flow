@@ -93,7 +93,7 @@ async function fixture(kind: "primary" | "subagent") {
   const run = await harness.orchestrator.prepare({
     threadId: thread.id,
     userText: "Draft story-b.md",
-    ...(child ? { child: { parentThreadId: parent.id, background: false } } : {}),
+    ...(child ? { child: { parentThreadId: parent.id, background: false, origin: "spawn" } } : {}),
   });
   return { harness, run, ready, release: gate.open };
 }

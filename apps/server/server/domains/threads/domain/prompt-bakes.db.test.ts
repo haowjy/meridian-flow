@@ -2,6 +2,7 @@
 
 import { assertThrowawayDatabaseForRunDbTests } from "@meridian/database/__test-support__/db-fixtures";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { compactionTurnMetadata } from "../index.js";
 import {
   THREAD_WORK_RACE as ids,
   resetThreadWorkRaceFixture,
@@ -124,7 +125,10 @@ else {
           boundaryTurnId: boundary.id,
           completion: {
             blocks: [],
-            metadata: { kind: "compaction", compactedThrough: boundary.id },
+            metadata: compactionTurnMetadata({
+              compactedThrough: { turnId: boundary.id },
+              pinnedRequestTurnId: boundary.id,
+            }),
             modelResponses: [
               {
                 id: responseId,
@@ -162,8 +166,7 @@ else {
         status: "complete",
         promptBakeId: first.bake.id,
         metadata: {
-          kind: "compaction",
-          compactedThrough: boundary.id,
+          compactedThrough: { turnId: boundary.id },
           promptEpoch: { cause: "compaction" },
         },
       });

@@ -82,9 +82,13 @@ import type {
   TurnRepository,
 } from "../../threads/index.js";
 import {
+  agentRequestMetadata,
+  encodeImageInclusionMetadata,
+  type ImageContextBreak,
   loadThreadConversationContext,
   readThreadActivity,
   ThreadConversationContextError,
+  writerSendMetadata,
 } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import type {
@@ -110,11 +114,7 @@ import {
 import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import type { TerminalCause } from "./execution-finalizer.js";
-import {
-  encodeImageInclusionMetadata,
-  type ImageContextBreak,
-  type ImageInclusionDecision,
-} from "./image-context.js";
+import type { ImageInclusionDecision } from "./image-context.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
@@ -442,14 +442,15 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
   const userTurnId = crypto.randomUUID() as TurnId;
   const userMetadata = input.userTurnMetadata;
   const skillMetadata = activatedSkillMetadata(input.activatedSkillSlugs ?? []);
-  const metadata = {
+  const metadata = writerSendMetadata({
     ...(userMetadata && typeof userMetadata === "object" && !Array.isArray(userMetadata)
       ? userMetadata
       : {}),
     ...(skillMetadata && typeof skillMetadata === "object" && !Array.isArray(skillMetadata)
       ? skillMetadata
       : {}),
-  };
+    ...(input.child ? agentRequestMetadata(input.child.origin) : {}),
+  });
   let assistantTurnId: TurnId | undefined;
   const userTurn = await deps.delivery.withThreadLock(input.threadId, async (producer) => {
     const thread = await deps.repos.threads.findById(input.threadId);

@@ -14,6 +14,7 @@ import {
   bakeInEffect,
   hashPromptBakeContent,
   type PromptBakeContent,
+  promptEpochMetadata,
   type ThreadRepositories,
 } from "../../threads/index.js";
 import { type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
@@ -70,7 +71,7 @@ export async function beginPromptEpoch(
       completedAt,
       error: null,
       promptBakeId: bake.id,
-      metadata: withPromptEpochCause(completionMetadata, input.cause),
+      metadata: promptEpochMetadata(completionMetadata, input.cause),
     };
     const events: OrchestratorEvent[] = [
       ...input.completion.blocks.map(
@@ -85,16 +86,6 @@ export async function beginPromptEpoch(
     return { result: { bakeId: bake.id }, events };
   });
   return result;
-}
-
-function withPromptEpochCause(
-  metadata: Turn["metadata"] | JsonValue | undefined,
-  cause: BeginPromptEpochInput["cause"],
-): JsonValue {
-  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
-    return { ...metadata, promptEpoch: { cause } } as JsonValue;
-  }
-  return { kind: "prompt_epoch_boundary", cause, previousMetadata: metadata ?? null };
 }
 
 async function resolveBake(

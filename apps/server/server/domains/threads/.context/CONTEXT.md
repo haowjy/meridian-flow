@@ -19,9 +19,12 @@ tools are untyped `jsonb`: the runtime domain owns their exact shape (the
 gateway's `Tool[]`). Forks reference `bakeAt(originTurnId)` on the thread that
 owns the cutoff, so a fork of a fork can inherit a grandsource boundary. Fork
 derivation locks its selected source while choosing the cutoff and creating
-the fork. `bakeAt` may read the cutoff turn's owner without locking that
-ancestor; the prompt-bake, pointer, boundary-turn, and position rows are
-write-once.
+the fork. `bakeIdAt` is the one shared rule for the effective bake at a turn
+and is used by runtime cache prediction and fork/handoff derivation.
+`domain/cutoff-owner.ts` (`findCutoffOwnerThreadId`) is the only cutoff-owner
+lookup; callers do not walk parent turns themselves. The lookup may read the
+cutoff turn's owner without locking that ancestor; the prompt-bake, pointer,
+boundary-turn, and position rows are write-once.
 Same-revision handoff references the acted-on thread's current bake; an
 unfrozen source or a different Agent yields an unbaked target. A subagent-only
 or generic binding cannot become a primary thread without selecting a primary
@@ -44,6 +47,15 @@ notification folded into conversation (the existing inbox/notice path), never
 a prompt or tool-list change — see the
 [runtime contract](../../runtime/.context/CONTEXT.md)
 for the tool-freeze mechanics.
+
+`domain/turn-metadata.ts` is the single home for turn-metadata codecs,
+constructors, and `classifyHistoryItem`, including image-inclusion and
+compaction metadata. Runtime producers build inbox/child turns, writer sends
+and steers, Work/notice/skill/system updates, saved-report repairs, derivation
+seeds, image breaks, and compaction boundaries through its constructors.
+Compaction planning/projection, cache prediction, visible-conversation policy,
+and runtime delivery read those codecs or the shared classifier; there is no
+runtime-local codec copy.
 
 ## What it owns
 
@@ -225,7 +237,7 @@ transactions. See the [runtime contract](../../runtime/.context/CONTEXT.md).
 | `ThreadUserStateRepository` | Per-writer favorite authority. |
 | `TurnRepository` | `create / findById / listByThread / getLatestByThread / updateStatus / recomputeRollups` |
 | `BlockRepository` | `create / findById / listByTurn / listByThread / updatePruned` |
-| `ModelResponseRepository` | `create / findById / listByTurn / listByThread / sumUsageByThread / cacheResetContext` |
+| `ModelResponseRepository` | `create / findById / listByTurn / listByThread / findLatestByThread / sumUsageByThread / cacheResetContext` |
 | `ThreadRepositories` | aggregate of the repositories + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
 | `ThreadWorksRepository` | Adds organizational memberships and reads the primary. Its thread-before-Work primary rebind revalidates thread lifecycle under the same row lock, then demotes the old membership and promotes/upserts the target WorkId, retaining association history while preserving exactly one primary. |
 | `rebindThreadWork` | Transaction-composable mutation above `rebindPrimary`; binding, receipt, typed lifecycle errors, and targeted durable inbox notice have one policy owner. Actor adapters own the business transaction. |

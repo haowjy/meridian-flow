@@ -10,14 +10,15 @@ import type {
 } from "@meridian/contracts/threads";
 import {
   bakeIdAt,
+  decodeImageInclusionMetadata,
   ForkCutoffOwnerNotFoundError,
   findCutoffOwnerThreadId,
+  isPromptEpochMetadata,
   type ModelResponseRepository,
   type ThreadRepository,
   type TurnRepository,
 } from "../../threads/index.js";
 import type { ModelInfo, PromptCacheDescriptor } from "../gateway/index.js";
-import { decodeImageInclusionMetadata } from "./image-context.js";
 
 type CacheHistoryThread = Pick<
   Thread,
@@ -76,6 +77,14 @@ function imageBreaksPrefix(turn: Turn): boolean {
   );
 }
 
+function boundaryReason(turn: Turn): PrefixCacheStateReason | null {
+  if (turn.role === "compaction") return "compaction";
+  if (isPromptEpochMetadata(turn.metadata)) return "prompt_epoch";
+
+  if (imageBreaksPrefix(turn)) return "image_eviction";
+  return null;
+}
+
 function boundaryAtOrAfterResponse(
   history: PrefixCacheHistory,
   response: LastResponse,
@@ -84,7 +93,10 @@ function boundaryAtOrAfterResponse(
   for (const turn of turns) {
     if (turn.status !== "complete") continue;
     if (turn.role === "compaction" && turn.position >= response.turn.position) return "compaction";
-    if (turn.position > response.turn.position && imageBreaksPrefix(turn)) return "image_eviction";
+    if (turn.position > response.turn.position) {
+      const boundary = boundaryReason(turn);
+      if (boundary) return boundary;
+    }
   }
   return null;
 }
@@ -121,7 +133,8 @@ function forkBoundary(history: PrefixCacheHistory): PrefixCacheStateReason | nul
   for (const turn of ordered) {
     if (turn.status !== "complete") continue;
     if (turn.role === "compaction") return "compaction";
-    if (imageBreaksPrefix(turn)) return "image_eviction";
+    const boundary = boundaryReason(turn);
+    if (boundary) return boundary;
   }
   return null;
 }

@@ -39,6 +39,31 @@ export {
   type BoundaryCompletion,
   beginPromptEpoch,
 } from "./loop/begin-prompt-epoch.js";
+export type {
+  CompactedThrough,
+  CompactionBlockContent,
+  CompactionPlan,
+  CompactionProps,
+  CompactionTrigger,
+  CompactionTriggerSource,
+  PlanCompactionInput,
+  ProjectedActiveHistory,
+  ResolveCompactionTriggerInput,
+  RetainedTurnSlice,
+} from "./loop/compaction/index.js";
+export {
+  CJK_CODE_POINT_TOKEN_MULTIPLIER,
+  CompactionBlockContentCodec,
+  CompactionPropsCodec,
+  DEFAULT_COMPACTION_TAIL_FRACTION,
+  estimateRequestTokens,
+  FILE_PART_TOKEN_ESTIMATE,
+  FLOW_ABSOLUTE_CEILING,
+  IMAGE_PART_TOKEN_ESTIMATE,
+  planCompaction,
+  projectActiveHistory,
+  resolveCompactionTrigger,
+} from "./loop/compaction/index.js";
 export {
   createNoopInterruptArtifactFlushPort,
   type InterruptArtifactFlushPort,

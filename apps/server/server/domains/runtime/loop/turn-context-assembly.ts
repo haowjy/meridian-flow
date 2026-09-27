@@ -22,6 +22,7 @@ import {
   bakeInEffect,
   findCutoffOwnerThreadId,
   hashPromptBakeContent,
+  type ImageContextBreak,
 } from "../../threads/index.js";
 import type {
   PromptBakeContent,
@@ -35,17 +36,14 @@ import {
   type AvailableSkillListing,
   resolveThreadModelAvailableSkills,
 } from "./available-skills.js";
+import { projectActiveHistory } from "./compaction/index.js";
 import {
   assembleComposedSystemPrompt,
   isThreadPromptFrozen,
   type PromptInventoryListing,
 } from "./composed-system-prompt.js";
 import { buildContext } from "./context-builder.js";
-import {
-  type ImageContextBreak,
-  type ImageInclusionDecision,
-  projectImageBlocksForModel,
-} from "./image-context.js";
+import { type ImageInclusionDecision, projectImageBlocksForModel } from "./image-context.js";
 import type { EffectiveToolPolicy } from "./permissions/project-tool-policy.js";
 import { applyPromptCacheMarks } from "./prompt-cache-marks.js";
 import type { WorkContextReader } from "./work-context.js";
@@ -195,10 +193,11 @@ export async function assembleNextTurnContext(
   const resolvedModel = input.gateway?.listModels?.().find((model) => model.id === modelId);
   const supportsImageInput = resolvedModel?.capabilities.has("image_input") ?? false;
   const usesExplicitPromptCache = resolvedModel?.promptCache.kind === "explicit";
+  const activeHistory = projectActiveHistory(input.turns, input.blocks, input.thread.ref);
   const savedInclusions = (await input.imageInclusions?.findByThread(thread.id as ThreadId)) ?? [];
   const imageProjection = await projectImageBlocksForModel({
     thread,
-    blocks: input.blocks,
+    blocks: activeHistory.blocks,
     inclusions: new Map(savedInclusions.map(({ blockId, included }) => [blockId, included])),
     supportsImageInput,
     imageAssets: input.imageAssets ?? {
@@ -220,7 +219,7 @@ export async function assembleNextTurnContext(
   const imageTurnIds = new Set(imageContextUpdates.turns.map((turn) => turn.id));
   const built = buildContext({
     thread,
-    turns: [...input.turns, ...imageContextUpdates.turns],
+    turns: [...activeHistory.turns, ...imageContextUpdates.turns],
     blocks: [
       ...imageProjection.blocks,
       ...imageContextUpdates.blocks.filter((block) => imageTurnIds.has(block.turnId)),

@@ -4,6 +4,14 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryAccountSkillInstallStore } from "../../../packages/index.js";
+import {
+  childCompletionMetadata,
+  classifyHistoryItem,
+  decodeImageInclusionMetadata,
+  noticesMetadata,
+  SystemUpdateMetadataCodec,
+  skillBodyMetadata,
+} from "../../../threads/index.js";
 import type { Gateway, GenerateResult, Message } from "../../gateway/index.js";
 import { ImageAssetResolutionError } from "../../ports/image-asset.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
@@ -386,13 +394,13 @@ describe("inbox drain", () => {
     // assistant turn completes and a fresh one continues after the notice.
     const turns = await repos.turns.listByThread(thread.id);
     expect(turns).toHaveLength(4);
-    const noticesTurn = turns.find(
-      (turn) =>
-        (turn.metadata as { kind?: string; section?: string } | null)?.section === "notices",
-    );
+    const noticesTurn = turns.find((turn) => {
+      const metadata = SystemUpdateMetadataCodec.safeParse(turn.metadata);
+      return metadata.success && metadata.data.section === "notices";
+    });
     expect(noticesTurn).toMatchObject({
       role: "system",
-      metadata: { kind: "system_update", section: "notices" },
+      metadata: noticesMetadata(),
     });
     expect(await inbox.selectPending(thread.id)).toEqual([]);
   });
@@ -448,13 +456,12 @@ describe("inbox drain", () => {
     ) as Turn;
     expect(steerTurn).toBeDefined();
     const skillBodyTurn = turns.find(
-      (turn) =>
-        (turn.metadata as { kind?: string; section?: string } | null)?.section === "skill_body",
+      (turn) => classifyHistoryItem(turn).kind === "skill_body",
     ) as Turn;
     expect(skillBodyTurn).toMatchObject({
       role: "system",
       prevTurnId: steerTurn.id,
-      metadata: { kind: "system_update", section: "skill_body" },
+      metadata: skillBodyMetadata(),
     });
     const skillBodyBlocks = await repos.blocks.listByTurn(skillBodyTurn.id);
     expect(skillBodyBlocks).toHaveLength(1);
@@ -655,7 +662,7 @@ describe("inbox drain", () => {
     expect(await repos.imageInclusions.findByThread(thread.id)).toEqual([]);
     expect(
       (await repos.turns.listByThread(thread.id)).filter(
-        (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
+        (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
       ),
     ).toHaveLength(0);
     expect(await inbox.selectPending(thread.id)).toEqual([]);
@@ -1116,7 +1123,7 @@ describe("inbox drain", () => {
     ).toBe(false);
     expect(
       (await repos.turns.listByThread(thread.id)).filter(
-        (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
+        (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
       ),
     ).toHaveLength(1);
   });
@@ -1177,11 +1184,7 @@ describe("inbox drain", () => {
     expect(resolutions).toBe(1);
     const turns = await repos.turns.listByThread(thread.id);
     expect(turns).toHaveLength(2);
-    expect(
-      turns.some(
-        (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
-      ),
-    ).toBe(false);
+    expect(turns.some((turn) => decodeImageInclusionMetadata(turn.metadata) !== null)).toBe(false);
   });
 
   it("writes one durable system update when a new image evicts an older inclusion", async () => {
@@ -1226,9 +1229,7 @@ describe("inbox drain", () => {
     expect(updateText(required(requests[1]))).toHaveLength(1);
     expect(updateText(required(requests[2]))).toHaveLength(1);
     const turns = await repos.turns.listByThread(thread.id);
-    const updates = turns.filter(
-      (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
-    );
+    const updates = turns.filter((turn) => decodeImageInclusionMetadata(turn.metadata) !== null);
     expect(updates).toHaveLength(1);
     expect((await repos.blocks.listByTurn(required(updates[0]).id))[0]?.textContent).toContain(
       "old.png",
@@ -1355,11 +1356,11 @@ describe("inbox drain", () => {
       return block.blockType === "image" && content?.uri === originalImage.uri;
     });
     const imageBreak = (await repos.turns.listByThread(thread.id)).find(
-      (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
+      (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
     );
     expect(imageBreak).toBeDefined();
     const adoptedSkillBody = (await repos.turns.listByThread(thread.id))
-      .filter((turn) => (turn.metadata as { section?: string } | null)?.section === "skill_body")
+      .filter((turn) => classifyHistoryItem(turn).kind === "skill_body")
       .at(-1);
     expect(imageBreak?.prevTurnId).toBe(adoptedSkillBody?.id);
     expect(
@@ -1574,16 +1575,17 @@ describe("drain-only start", () => {
     }).publish(child.id, execution.id);
     const [queued] = await delivery.selectPending(thread.id);
     await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
+    const childHandle = child.ref;
+    if (childHandle === null) throw new Error("Expected child ref");
     expect(await repos.turns.findById(queued.id)).toMatchObject({
       role: "system",
-      metadata: {
-        kind: "subagent_update",
-        handle: child.ref,
+      metadata: childCompletionMetadata({
+        handle: childHandle,
         outcome: "succeeded",
         execution: execution.id,
         childThreadId: child.id,
         agentName: child.agentName ?? "Subagent",
-      },
+      }),
     });
     const blocks = await repos.blocks.listByTurn(queued.id);
     expect(blocks).toHaveLength(1);
@@ -1679,9 +1681,7 @@ describe("drain-only start", () => {
     const run = await orchestrator.prepare({ threadId: thread.id, drain: true });
     await run.execute();
     const turns = await repos.turns.listByThread(thread.id);
-    const skillBodyTurn = turns.find(
-      (turn) => (turn.metadata as { section?: string } | null)?.section === "skill_body",
-    );
+    const skillBodyTurn = turns.find((turn) => classifyHistoryItem(turn).kind === "skill_body");
     expect(skillBodyTurn?.prevTurnId).toBe(sent.userTurnId);
     expect((await repos.turns.findById(fresh.id))?.prevTurnId).toBe(skillBodyTurn?.id);
     expect((await repos.turns.findById(run.assistantTurnId))?.prevTurnId).toBe(fresh.id);

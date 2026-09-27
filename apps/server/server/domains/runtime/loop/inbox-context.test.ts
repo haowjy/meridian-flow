@@ -7,6 +7,7 @@
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
+import { workUpdateMetadata } from "../../threads/index.js";
 import { messageTurnFor } from "./inbox-context.js";
 import type { InboxMessage } from "./ports.js";
 
@@ -87,6 +88,6 @@ describe("messageTurnFor", () => {
       1,
     );
     expect(turn.origin).toBe("system");
-    expect(turn.metadata).toEqual({ kind: "system_update", section: "work_context" });
+    expect(turn.metadata).toEqual(workUpdateMetadata());
   });
 });

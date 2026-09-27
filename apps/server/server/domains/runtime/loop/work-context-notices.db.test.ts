@@ -5,7 +5,12 @@ import { createTestWorkProjectionMutation } from "../../../test-support/work-pro
 import { createDrizzleProjectWorkRepository, updateWork } from "../../projects/index.js";
 import { createDrizzleRepositoriesForTest } from "../../threads/adapters/drizzle/repositories.js";
 import { rebindThreadWork } from "../../threads/domain/rebind-thread-work.js";
-import { createDrizzleEventJournalWriter, hashPromptBakeContent } from "../../threads/index.js";
+import {
+  classifyHistoryItem,
+  createDrizzleEventJournalWriter,
+  hashPromptBakeContent,
+  isSystemUpdateMetadata,
+} from "../../threads/index.js";
 import {
   THREAD_WORK_RACE as ids,
   resetThreadWorkRaceFixture,
@@ -40,8 +45,8 @@ else
     const delivery = () =>
       createTestDrizzleDelivery(db, { repos, workContext, eventWriter, runClaim });
     const updates = async () =>
-      (await repos.turns.listByThread(ids.threadId)).filter(
-        (turn) => (turn.metadata as { kind?: string })?.kind === "system_update",
+      (await repos.turns.listByThread(ids.threadId)).filter((turn) =>
+        isSystemUpdateMetadata(turn.metadata),
       );
     const currentBake = async () => {
       const thread = await repos.threads.findById(ids.threadId);
@@ -238,9 +243,10 @@ else
           }),
         });
         expect(boundary.split).toBe(true);
-        expect(
-          boundary.drain.turns.map((turn) => (turn.metadata as { kind: string }).kind),
-        ).toEqual(["system_update", "inbox_message"]);
+        expect(boundary.drain.turns.map((turn) => classifyHistoryItem(turn).kind)).toEqual([
+          "work_update",
+          "agent_request",
+        ]);
         expect(boundary.drain.turns[0]?.prevTurnId).toBe(assistant.id);
         expect(boundary.drain.turns[1]?.prevTurnId).toBe(boundary.drain.turns[0]?.id);
         expect(boundary.next.prevTurnId).toBe(message.id);

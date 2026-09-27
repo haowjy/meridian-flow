@@ -2,10 +2,13 @@
 
 import { type ComponentBlockContent, parseInvocationCard } from "@meridian/contracts/components";
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
-import { parseSubagentUpdateMetadata } from "@meridian/contracts/spawn";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
 import { formatWorkSwitchedNotice, type Notice } from "../../notices/index.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
+import {
+  ChildCompletionMetadataCodec,
+  ChildCompletionMetadataTagCodec,
+} from "../../threads/index.js";
 import { orderTurnsByPosition } from "../../threads/order-turns.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
@@ -156,11 +159,8 @@ function reportPersistedContractFailures(input: BuildContextInput): void {
   for (const turn of input.turns) {
     const metadata = turn.metadata;
     if (
-      metadata &&
-      typeof metadata === "object" &&
-      !Array.isArray(metadata) &&
-      metadata.kind === "subagent_update" &&
-      !parseSubagentUpdateMetadata(metadata)
+      ChildCompletionMetadataTagCodec.safeParse(metadata).success &&
+      !ChildCompletionMetadataCodec.safeParse(metadata).success
     ) {
       emitEvent(input.eventSink, {
         level: "warn",

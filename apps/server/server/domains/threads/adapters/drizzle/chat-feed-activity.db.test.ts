@@ -8,6 +8,7 @@ import * as schema from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { truncateDrizzleTables } from "../../../../test-support/drizzle-reset.js";
+import { workUpdateMetadata } from "../../index.js";
 import { createDrizzleRepositoriesForTest } from "./repositories.js";
 
 const USER = "00000000-0000-4000-8000-000000000891";
@@ -123,7 +124,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         prevTurnId: first.id,
         role: "user",
         origin: "system",
-        metadata: { kind: "system_update", section: "work_context" },
+        metadata: workUpdateMetadata(),
         createdAt: "2025-01-01T00:05:00.000Z",
       });
       await repos.turns.updateStatus(hidden.id, {

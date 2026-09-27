@@ -12,6 +12,7 @@ import {
 } from "../../../projects/index.js";
 import { createInMemoryRepositories } from "../../../threads/adapters/in-memory/repositories.js";
 import {
+  decodeImageInclusionMetadata,
   forkThreadAgent,
   handoffThreadAgent,
   rebindThreadWork,
@@ -231,7 +232,7 @@ describe("frozen prompt provider requests", () => {
     ).toBe(false);
     expect(
       (await rig.repos.turns.listByThread(rig.thread.id)).filter(
-        (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
+        (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
       ),
     ).toHaveLength(1);
 
@@ -285,22 +286,19 @@ describe("frozen prompt provider requests", () => {
     if (!imageBlock) throw new Error("Missing first-sight image block");
     const writerTurn = await rig.repos.turns.findById(imageBlock.turnId);
     const breakTurn = (await rig.repos.turns.listByThread(rig.thread.id)).find(
-      (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
+      (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
     );
+    const imageMetadata = decodeImageInclusionMetadata(breakTurn?.metadata);
     expect(breakTurn).toMatchObject({
       prevTurnId: writerTurn?.id,
-      metadata: {
-        kind: "system_update",
-        section: "image_inclusion",
-        breaks: [
-          {
-            blockId: imageBlock.id,
-            uri: image.uri,
-            reason: "asset_unavailable_first_sight",
-          },
-        ],
-      },
     });
+    expect(imageMetadata?.breaks).toEqual([
+      {
+        blockId: imageBlock.id,
+        uri: image.uri,
+        reason: "asset_unavailable_first_sight",
+      },
+    ]);
     expect(
       (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
         (decision) => decision.blockId === imageBlock.id,
@@ -388,7 +386,7 @@ describe("frozen prompt provider requests", () => {
       (decision) => decision.blockId === imageBlock.id,
     );
     const breakTurn = (await rig.repos.turns.listByThread(rig.thread.id)).find(
-      (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
+      (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
     );
     expect(breakTurn?.prevTurnId).toBe(run.assistantTurnId);
     expect(sourceDecision).toMatchObject({ included: false, decisionTurnId: breakTurn?.id });
@@ -495,7 +493,7 @@ describe("frozen prompt provider requests", () => {
     ).toBe(false);
     expect(
       (await rig.repos.turns.listByThread(rig.thread.id)).filter(
-        (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
+        (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
       ),
     ).toHaveLength(1);
 
@@ -547,7 +545,7 @@ describe("frozen prompt provider requests", () => {
     ).toBe(false);
     expect(
       (await rig.repos.turns.listByThread(firstFork.id)).filter(
-        (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
+        (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
       ),
     ).toHaveLength(1);
 
@@ -558,7 +556,7 @@ describe("frozen prompt provider requests", () => {
     ).toBe(true);
     expect(
       (await rig.repos.turns.listByThread(secondFork.id)).filter(
-        (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
+        (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
       ),
     ).toHaveLength(0);
     expect(

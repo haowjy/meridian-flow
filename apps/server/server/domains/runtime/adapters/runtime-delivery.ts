@@ -1,6 +1,7 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
 import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { NoticePort } from "../../notices/index.js";
+import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
@@ -255,8 +256,9 @@ export function createDeliveryAdapter(
       const turn = await deps.repos.turns.findById(leaf);
       if (!turn) throw new Error(`Missing causal turn: ${leaf}`);
       const message = batch.find((entry) => entry.id === turn.id);
+      const systemUpdate = SystemUpdateMetadataCodec.safeParse(turn.metadata);
       if (message) committed.unshift(message);
-      else if ((turn.metadata as { kind?: string } | null)?.kind === "system_update") {
+      else if (systemUpdate.success && systemUpdate.data.section === "work_context") {
         committedWorkIds.push(turn.id);
         // A writer's prefix transaction already acked this durable notice. Replay
         // its saved blocks, not a fresh render of the current Work state.

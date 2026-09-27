@@ -18,7 +18,11 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
-import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
+import {
+  type TurnRepository,
+  TurnStartConflictError,
+  writerSendMetadata,
+} from "../../threads/index.js";
 import { activatedSkillMetadata } from "../loop/activated-skills.js";
 import type { PersistenceDeps } from "../loop/persistence.js";
 import type { InboxReader } from "../loop/ports.js";
@@ -104,7 +108,7 @@ export function createWriterTurnProducer(deps: {
           threadId,
           userTurnId,
           userBlocks: input.blocks,
-          userTurnMetadata: assistantTurnId ? markSteerDelivery(turnMetadata) : turnMetadata,
+          userTurnMetadata: writerSendMetadata(turnMetadata, assistantTurnId ? "steer" : "send"),
           delivery: deps.delivery,
           inbox: deps.inbox,
           draft: {
@@ -163,14 +167,4 @@ export function createWriterTurnProducer(deps: {
       }
     },
   };
-}
-
-/** The writer enqueue's live assistant binding is the durable authority for a mid-run steer. */
-function markSteerDelivery(metadata: JsonValue | null): JsonValue {
-  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
-    return { ...metadata, delivery: "steer" };
-  }
-  return metadata === null
-    ? { delivery: "steer" }
-    : { delivery: "steer", originalMetadata: metadata };
 }

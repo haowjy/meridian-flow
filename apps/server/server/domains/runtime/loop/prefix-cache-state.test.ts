@@ -1,7 +1,12 @@
 import type { ModelResponse, Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
-import { bakeIdAt, findCutoffOwnerThreadId } from "../../threads/index.js";
-import { encodeImageInclusionMetadata } from "./image-context.js";
+import {
+  bakeIdAt,
+  encodeImageInclusionMetadata,
+  findCutoffOwnerThreadId,
+  promptEpochMetadata,
+  workUpdateMetadata,
+} from "../../threads/index.js";
 import {
   createPrefixCacheStateService,
   derivePrefixCacheState,
@@ -214,12 +219,24 @@ describe("derivePrefixCacheState", () => {
     ).toEqual({ state: "cold", reason: "compaction" });
   });
 
+  it("recognizes a prompt epoch carried alongside existing typed metadata", () => {
+    const epoch = turn("epoch", 2, {
+      role: "system",
+      origin: "system",
+      metadata: promptEpochMetadata(workUpdateMetadata(), "compaction"),
+    });
+    expect(derive({ history: history({ turns: [turn("turn-1", 1), epoch] }) })).toEqual({
+      state: "cold",
+      reason: "prompt_epoch",
+    });
+  });
+
   it("uses beginPromptEpoch-shaped turns for the shared bake rule", () => {
     const boundary = turn("epoch", 2, {
       role: "system",
       origin: "system",
       promptBakeId: "bake-2" as Turn["promptBakeId"],
-      metadata: { promptEpoch: { cause: "compaction" } },
+      metadata: promptEpochMetadata(workUpdateMetadata(), "compaction"),
     });
     expect(bakeIdAt([boundary, turn("turn-1", 1)], "epoch", "bake-1")).toBe("bake-2");
   });

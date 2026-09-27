@@ -1,5 +1,6 @@
 /** Stable request-time projection of durable image occurrences into gateway bytes. */
-import type { Block, JsonValue, Thread } from "@meridian/contracts/threads";
+import type { Block, Thread } from "@meridian/contracts/threads";
+import type { ImageContextBreak } from "../../threads/index.js";
 import type { ImageAssetPort, PersistedImageReference } from "../ports/image-asset.js";
 
 type ResolvedImage = NonNullable<Awaited<ReturnType<ImageAssetPort["resolve"]>>>;
@@ -10,61 +11,6 @@ export const MAX_MODEL_IMAGE_CONTEXT_BYTES = 20 * 1024 * 1024;
 export interface ImageInclusionDecision {
   blockId: string;
   included: boolean;
-}
-
-export interface ImageContextBreak {
-  blockId: string;
-  uri: string;
-  reason: "asset_unavailable" | "asset_unavailable_first_sight" | "budget_eviction";
-}
-
-export interface ImageInclusionMetadata {
-  kind: "system_update";
-  section: "image_inclusion";
-  breaks: ImageContextBreak[];
-}
-
-/** Encode the one durable metadata shape used by image projection and cache readers. */
-export function encodeImageInclusionMetadata(breaks: readonly ImageContextBreak[]): JsonValue {
-  return {
-    kind: "system_update",
-    section: "image_inclusion",
-    breaks: breaks.map(({ blockId, uri, reason }) => ({ blockId, uri, reason })),
-  };
-}
-
-/** Decode image projection metadata without trusting old or malformed JSON. */
-export function decodeImageInclusionMetadata(value: unknown): ImageInclusionMetadata | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const metadata = value as Record<string, unknown>;
-  if (
-    metadata.kind !== "system_update" ||
-    metadata.section !== "image_inclusion" ||
-    !Array.isArray(metadata.breaks)
-  ) {
-    return null;
-  }
-
-  const breaks: ImageContextBreak[] = [];
-  for (const entry of metadata.breaks) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
-    const candidate = entry as Record<string, unknown>;
-    if (
-      typeof candidate.blockId !== "string" ||
-      typeof candidate.uri !== "string" ||
-      (candidate.reason !== "asset_unavailable" &&
-        candidate.reason !== "asset_unavailable_first_sight" &&
-        candidate.reason !== "budget_eviction")
-    ) {
-      return null;
-    }
-    breaks.push({
-      blockId: candidate.blockId,
-      uri: candidate.uri,
-      reason: candidate.reason,
-    });
-  }
-  return { kind: "system_update", section: "image_inclusion", breaks };
 }
 
 export interface ImageContextProjection {

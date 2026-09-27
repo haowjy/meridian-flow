@@ -20,6 +20,7 @@ import { createBoundConversation } from "./bound-conversation.js";
 import { bakeAt, bakeInEffect } from "./prompt-epochs.js";
 import { projectImageInclusionDecision } from "./read-model-projector.js";
 import { loadThreadConversationContext } from "./thread-conversation-context.js";
+import { derivationSeedMetadata } from "./turn-metadata.js";
 
 export interface ThreadAgentSwapDeps {
   threads: InternalThreadRepositories["threads"];
@@ -113,7 +114,7 @@ export async function handoffThreadAgent(
     if (!result.created) throw new Error("Failed to create handoff thread with a fresh ID");
     const target = await bindDerivedPrimary(deps, result.thread, sourceWorkId, binding);
     await inheritEditingDocuments(deps, source, target);
-    await seedSystemTurn(deps, target, `Handoff brief\n\n${summary}`);
+    await seedSystemTurn(deps, target, `Handoff brief\n\n${summary}`, "handoff");
     await deps.eventWriter.appendEvent(source.id as ThreadId, {
       type: "agent.handoff",
       sourceThreadId: source.id,
@@ -192,7 +193,12 @@ export async function forkThreadAgent(
       await deps.eventWriter.appendEvent(target.id as ThreadId, event);
     }
     await inheritEditingDocuments(deps, lockedSource, target);
-    await seedSystemTurn(deps, target, `Forked conversation through turn ${cutoff.turn.id}.`);
+    await seedSystemTurn(
+      deps,
+      target,
+      `Forked conversation through turn ${cutoff.turn.id}.`,
+      "fork",
+    );
     await deps.eventWriter.appendEvent(source.id as ThreadId, {
       type: "agent.fork",
       sourceThreadId: source.id,
@@ -395,12 +401,18 @@ async function programmaticSummary(deps: ThreadAgentSwapDeps, threadId: string):
   return snippets.join("\n\n") || "No prior conversation content was available.";
 }
 
-async function seedSystemTurn(deps: ThreadAgentSwapDeps, thread: Thread, text: string) {
+async function seedSystemTurn(
+  deps: ThreadAgentSwapDeps,
+  thread: Thread,
+  text: string,
+  derivation: "fork" | "handoff",
+) {
   const turn = await deps.turns.create({
     threadId: thread.id as ThreadId,
     role: "system",
     origin: "system",
     status: "complete",
+    metadata: derivationSeedMetadata(derivation),
   });
   await deps.blocks.create({
     turnId: turn.id,
