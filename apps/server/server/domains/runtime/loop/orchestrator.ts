@@ -441,6 +441,7 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
     ...(skillMetadata && typeof skillMetadata === "object" && !Array.isArray(skillMetadata)
       ? skillMetadata
       : {}),
+    ...(input.child ? { agentRequestKind: "child_seed" } : {}),
   };
   let assistantTurnId: TurnId | undefined;
   const userTurn = await deps.delivery.withThreadLock(input.threadId, async (producer) => {

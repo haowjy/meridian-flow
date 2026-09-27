@@ -30,6 +30,7 @@ import {
   type AvailableSkillListing,
   resolveThreadModelAvailableSkills,
 } from "./available-skills.js";
+import { projectActiveHistory } from "./compaction.js";
 import {
   assembleComposedSystemPrompt,
   isThreadPromptFrozen,
@@ -188,10 +189,11 @@ export async function assembleNextTurnContext(
   const resolvedModel = input.gateway?.listModels?.().find((model) => model.id === modelId);
   const supportsImageInput = resolvedModel?.capabilities.has("image_input") ?? false;
   const usesExplicitPromptCache = resolvedModel?.promptCache.kind === "explicit";
+  const activeHistory = projectActiveHistory(input.turns, input.blocks);
   const savedInclusions = (await input.imageInclusions?.findByThread(thread.id as ThreadId)) ?? [];
   const imageProjection = await projectImageBlocksForModel({
     thread,
-    blocks: input.blocks,
+    blocks: activeHistory.blocks,
     inclusions: new Map(savedInclusions.map(({ blockId, included }) => [blockId, included])),
     supportsImageInput,
     imageAssets: input.imageAssets ?? {
@@ -213,7 +215,7 @@ export async function assembleNextTurnContext(
   const imageTurnIds = new Set(imageContextUpdates.turns.map((turn) => turn.id));
   const built = buildContext({
     thread,
-    turns: [...input.turns, ...imageContextUpdates.turns],
+    turns: [...activeHistory.turns, ...imageContextUpdates.turns],
     blocks: [
       ...imageProjection.blocks,
       ...imageContextUpdates.blocks.filter((block) => imageTurnIds.has(block.turnId)),

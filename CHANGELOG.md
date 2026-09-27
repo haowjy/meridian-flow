@@ -7,6 +7,7 @@
 
 ## [Unreleased]
 
+- Add the pure compaction classifier, trigger resolution, retained-tail planner, and active-history projection; project completed summaries before image inclusion and context building.
 - Make forks retain their source Agent and idempotent by client ID. Normalize cutoff selection to the settled prefix of effective history. Refuse fork and handoff from subagent threads.
 - Show subagent progress live in the chat that spawned it, including forks and subagent views. List direct subagents only.
 - Keep forks of trashed chats working. Show a failed reply instead of a stuck message when a fork's history can't load.

@@ -1,6 +1,6 @@
 /** First bake persists Agent available; later account adds do not rebake. */
 
-import type { Turn } from "@meridian/contracts/threads";
+import type { Block, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { testWorkSlug } from "../../../test-support/work-slug.js";
 import {
@@ -13,6 +13,53 @@ import { createInMemoryRepositories, hashPromptBakeContent } from "../../threads
 import { createToolRegistry } from "../tools/index.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
 import type { WorkContextReader } from "./work-context.js";
+
+function turn(id: string, position: number, role: Turn["role"]): Turn {
+  return {
+    id,
+    threadId: "thread-1",
+    position,
+    prevTurnId: null,
+    parentTurnId: null,
+    role,
+    origin: role === "user" ? "writer" : role === "assistant" ? "assistant" : "system",
+    writeMode: null,
+    status: "complete",
+    promptBakeId: null,
+    finishReason: role === "assistant" ? "end_turn" : null,
+    inputTokens: 0,
+    outputTokens: 0,
+    totalCostUsd: "0",
+    responseCount: 0,
+    usage: null,
+    error: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    completedAt: "2026-01-01T00:00:00.000Z",
+    blocks: [],
+    siblingIds: [],
+    responses: [],
+  };
+}
+
+function contextBlock(
+  id: string,
+  turnId: string,
+  sequence: number,
+  blockType: Block["blockType"],
+  content: Block["content"],
+): Block {
+  return {
+    id,
+    turnId,
+    responseId: null,
+    blockType,
+    sequence,
+    textContent: blockType === "text" && typeof content === "string" ? content : null,
+    content,
+    status: "complete",
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+}
 
 const skillMd = (slug: string, description: string) =>
   `---\nname: ${slug}\ndescription: ${description}\n---\n\n${slug} body.\n`;
@@ -91,13 +138,13 @@ async function writerChat() {
     await agentRevisions.bindThread(thread.id, writerId, configuration, null);
     return thread;
   }
-  async function assemble(threadId: string, turns: Turn[] = []) {
+  async function assemble(threadId: string, turns: Turn[] = [], blocks: Block[] = []) {
     const thread = await repos.threads.findById(threadId);
     if (!thread) throw new Error("Thread missing");
     return assembleNextTurnContext({
       thread,
       turns,
-      blocks: [],
+      blocks,
       agentRevisions,
       toolRegistry: createToolRegistry(),
       promptBakes: repos.promptBakes,
@@ -195,6 +242,60 @@ describe("assembleNextTurnContext prompt epochs", () => {
 
     const request = await assemble(thread.id, await repos.turns.listByThread(thread.id as never));
     expect(request.systemPrompt).toBe(content.composedSystemPrompt);
+  });
+
+  it("projects a completed compaction before image projection and context building", async () => {
+    const { createBoundThread, assemble } = await writerChat();
+    const thread = await createBoundThread();
+    await assemble(thread.id);
+    const rows = [
+      {
+        ...turn("old-request", 1, "user"),
+        origin: "writer" as const,
+      },
+      turn("old-answer", 2, "assistant"),
+      {
+        ...turn("pinned-request", 3, "user"),
+        origin: "writer" as const,
+      },
+      turn("current-answer", 4, "assistant"),
+      {
+        ...turn("compaction", 5, "compaction"),
+        origin: "system" as const,
+        metadata: {
+          compactedThrough: { turnId: "old-answer" },
+          pinnedRequestTurnId: "pinned-request",
+        },
+      },
+    ];
+    const blocks: Block[] = [
+      contextBlock("old-request-text", "old-request", 0, "text", "Earlier user request."),
+      contextBlock("old-answer-text", "old-answer", 0, "text", "Earlier assistant reply."),
+      contextBlock("pinned-text", "pinned-request", 0, "text", "Keep this request."),
+      contextBlock("current-text", "current-answer", 0, "text", "Current continuation."),
+      contextBlock("summary", "compaction", 0, "custom", {
+        kind: "compaction",
+        props: {
+          summary: "The heroine found the forged succession record.",
+          excludedTurnCount: 2,
+          tokensBefore: 900,
+          tokensAfter: 80,
+          model: "fixture-model",
+        },
+      }),
+    ];
+
+    const assembled = await assemble(thread.id, rows, blocks);
+    const historyText = assembled.generateRequest.messages
+      .filter((message) => message.role === "user")
+      .flatMap((message) =>
+        message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])),
+      )
+      .join("\n");
+    expect(historyText).toContain("The heroine found the forged succession record.");
+    expect(historyText).toContain("Keep this request.");
+    expect(historyText).not.toContain("Earlier user request.");
+    expect(historyText).not.toContain("Earlier assistant reply.");
   });
 });
 
