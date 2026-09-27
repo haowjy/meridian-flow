@@ -5,7 +5,7 @@ the event journal that bridges orchestrator writes to AG-UI client streams.
 Threads now use an M:N membership model with Works (`thread_works` join table)
 instead of the N:1 `threads.workId` column.
 
-`domain/bound-conversation.ts` owns atomic thread creation, retained Agent configuration and optional Work membership. Root and child creation and the `derive-conversation.ts` handoff/fork operations use it. Fork selection is optional: omitted or same-revision selection inherits the retained Agent configuration and frozen prompt, independent of catalog changes. Handoff to the same revision also retains the prompt; selecting a different Agent revision starts unfrozen. Explicit changes require exact catalog selection rather than mutable target slugs; each mode includes required history and provenance writes in its outer transaction. Spawn execution begins only after commit.
+`domain/bound-conversation.ts` owns atomic thread creation, retained Agent configuration and optional Work membership. Root and child creation and the `derive-conversation.ts` handoff/fork operations use it. A fork has no Agent selection: it keeps the source's retained revision, resolved configuration, invocation overlay, and frozen prompt, independent of catalog changes. Its client-minted id is create-or-get by the row alone: the same owner and project plus `originType = fork` and `kind = primary` returns the existing row; any other existing row conflicts. Handoff may select a different Agent revision and then starts unfrozen. Each derivation includes required history and provenance writes in its outer transaction. Spawn execution begins only after commit.
 
 ## Prompt lifetime
 
@@ -234,6 +234,20 @@ Entity types (`Thread`, `Turn`, `Block`, `ModelResponse`) and event unions
   does not — the fork cannot foreground-drive the source's subtree, or vice
   versa. The fork-source edge is not a `threads` column; it is recovered by
   resolving `originTurnId`'s owning thread.
+- **Fork cutoff** — normalization walks the effective transcript forward, no
+  later than the requested selection, and stops before the first unsettled turn
+  (`pending`, `streaming`, or `waiting_interrupt`). `complete`, `cancelled`, and
+  `error` are settled and valid cutoffs. A queued writer turn after a streaming
+  reply is therefore never inherited. A source with no settled turn fails with
+  `no_settled_turn`.
+- **Fork idempotency** — an existing client ID is reused from its thread row
+  when owner and project match and its origin is `fork` and kind is `primary`;
+  source/cutoff journal events are not consulted. All other ID reuse is a 409.
+- **Origin-turn FK** — `threads.origin_turn_id` is `ON DELETE NO ACTION
+  DEFERRABLE INITIALLY IMMEDIATE`. Fork and spawn required-origin checks remain
+  in place; provenance cannot be nulled to permit deleting its source turn.
+  Test resets discover deferrable edges generically and defer constraints while
+  deleting the whole dependent graph.
 - **Fork-history resolution** — `domain/thread-conversation-context.ts` resolves
   inherited history through `findByIdIncludingDeleted` and throws
   `ThreadConversationContextError` rather than falling back when lineage cannot
