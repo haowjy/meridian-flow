@@ -1,14 +1,9 @@
 /** Thread driving commands: create, send (wait by default), tail, cancel, respond. */
 import { randomUUID } from "node:crypto";
-import type { AgentCatalogPage } from "@meridian/contracts/agents";
 import {
-  API_THREADS_PATH,
-  apiThreadCancelPath,
   apiThreadMessagePath,
   apiThreadSkillsPath,
   apiThreadSnapshotPath,
-  type CancelTurnResponse,
-  type CreateThreadRequest,
   type SendMessageRequest,
   type SendMessageResponse,
   type SubmittedReference,
@@ -16,8 +11,8 @@ import {
   type ThreadSnapshotResponse,
   type UserMessageBlock,
 } from "@meridian/contracts/protocol";
-import { blockPlainText, type Thread, type Turn } from "@meridian/contracts/threads";
-import { CliError, EXIT, type ExitCode, usageError } from "../cli-error";
+import { blockPlainText, type Turn } from "@meridian/contracts/threads";
+import { CliError, EXIT, type ExitCode, usageError } from "../../core/cli-error";
 import {
   type CommandSpec,
   durationOption,
@@ -26,90 +21,15 @@ import {
   readJsonArg,
   readValueArg,
   requirePositional,
-  resolveProjectId,
-  resolveThreadId,
-  resolveWorkId,
   stringOption,
-  THREAD_TARGET_OPTIONS,
-} from "../command";
-import { resolveDocumentId, resolveUri } from "../context-uri";
-import type { Output } from "../output";
-import type { CliEvent } from "../run-events";
-import type { Session } from "../session";
-import { openThreadSocket } from "../thread-socket";
-import { followThread } from "../thread-stream";
-import { enqueueMockScript, removeMockScript } from "./mock";
-
-const DEFAULT_AGENT_SLUG = "general";
-
-async function resolveAgentSelection(session: Session, projectId: string, slug: string) {
-  const page = await session.request<AgentCatalogPage>(
-    "GET",
-    `/api/agents?projectId=${encodeURIComponent(projectId)}&limit=100`,
-  );
-  const agent = page.agents.find((entry) => entry.slug === slug);
-  if (!agent) {
-    throw new CliError("not_found", `No agent with slug "${slug}"`, {
-      hint: `Available: ${page.agents.map((entry) => entry.slug).join(", ")}`,
-    });
-  }
-  if (agent.unavailableReasons.length > 0) {
-    throw new CliError(
-      "usage",
-      `Agent "${slug}" is unavailable: ${agent.unavailableReasons.join(", ")}`,
-    );
-  }
-  return agent.selection;
-}
-
-export async function createThread(
-  session: Session,
-  input: { project?: string; agent?: string; work?: string; title?: string },
-): Promise<Thread> {
-  const projectId = await resolveProjectId(session, input.project);
-  const body: CreateThreadRequest = {
-    id: randomUUID(),
-    projectId,
-    agentSelection: await resolveAgentSelection(
-      session,
-      projectId,
-      input.agent ?? DEFAULT_AGENT_SLUG,
-    ),
-    workId: await resolveWorkId(session, projectId, input.work),
-    ...(input.title ? { title: input.title } : {}),
-  };
-  return session.request<Thread>("POST", API_THREADS_PATH, body);
-}
-
-export const threadCreateCommand: CommandSpec = {
-  path: ["thread", "create"],
-  summary: "Create a thread and print its id",
-  route: "POST /api/threads",
-  options: {
-    project: { type: "string", description: "Project id, or `default` (default)" },
-    agent: { type: "string", description: `Agent slug (default ${DEFAULT_AGENT_SLUG})` },
-    work: { type: "string", description: "Bind to a Work: @slug, or @/ for No Work (default)" },
-    title: { type: "string", description: "Thread title" },
-  },
-  examples: [
-    "./mf thread create",
-    "./mf thread create --work @draft-2 --title 'Arc 3 planning' --json",
-  ],
-  async run(ctx) {
-    const session = await ctx.session();
-    const thread = await createThread(session, {
-      project: stringOption(ctx, "project"),
-      agent: stringOption(ctx, "agent"),
-      work: stringOption(ctx, "work"),
-      title: stringOption(ctx, "title"),
-    });
-    ctx.out.result(
-      { threadId: thread.id, ref: thread.ref, projectId: thread.projectId, workId: thread.workId },
-      (value) => `${value.threadId}\n(next: ./mf thread send ${value.threadId} "...")`,
-    );
-    return undefined;
-  },
-};
+} from "../../core/command";
+import type { Output } from "../../core/output";
+import type { Session } from "../../core/session";
+import { resolveDocumentId, resolveUri } from "../doc/uri";
+import { enqueueMockScript, removeMockScript } from "../mock/queue";
+import type { CliEvent } from "./events-map";
+import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
+import { followThread } from "./stream";
 
 export type ComposedMessage = Pick<
   SendMessageRequest,
@@ -414,151 +334,5 @@ export const threadSendCommand: CommandSpec = {
       return undefined;
     }
     return finish(ctx.out, await sendMessage(session, ctx.out, { threadId, ...input }));
-  },
-};
-
-export const threadTailCommand: CommandSpec = {
-  path: ["thread", "tail"],
-  summary: "Follow live events (catch-up first)",
-  args: "<thread>",
-  route: "WS /api/threads/ws subscribe",
-  options: {
-    ...THREAD_TARGET_OPTIONS,
-    since: { type: "string", description: "Replay strictly after this seq (default: live only)" },
-    "until-idle": { type: "boolean", description: "Stop after the next run finishes or fails" },
-    timeout: { type: "string", description: "Stop after this long (default 10m)" },
-    full: { type: "boolean", description: "Do not truncate tool payloads" },
-  },
-  examples: ["./mf thread tail <id>", "./mf thread tail <id> --until-idle --json"],
-  async run(ctx) {
-    const session = await ctx.session();
-    const threadId = await resolveThreadId(
-      session,
-      requirePositional(ctx, 0, "<thread>"),
-      stringOption(ctx, "project"),
-    );
-    let since = stringOption(ctx, "since");
-    if (since !== undefined && !/^\d+$/.test(since)) throw usageError("--since must be a seq");
-    if (since === undefined) {
-      const snapshot = await session.request<ThreadSnapshotResponse>(
-        "GET",
-        apiThreadSnapshotPath(threadId),
-      );
-      since = snapshot.liveState.resumeAfterSeq;
-    }
-    const untilIdle = flag(ctx, "until-idle");
-    try {
-      const result = await followThread({
-        session,
-        threadId,
-        lastSeq: since,
-        deadlineAt: Date.now() + durationOption(ctx, "timeout", 10 * 60_000),
-        out: ctx.out,
-        full: flag(ctx, "full"),
-        textStream: "out",
-        shouldStop: (event) =>
-          untilIdle && (event.type === "turn.finished" || event.type === "turn.failed"),
-      });
-      return result.stoppedBy?.type === "turn.failed" ? EXIT.failed : undefined;
-    } catch (error) {
-      // A bounded tail that simply ran out of time is a normal stop, not a failure.
-      if (error instanceof CliError && error.code === "timeout" && !untilIdle) return undefined;
-      throw error;
-    }
-  },
-};
-
-export const threadCancelCommand: CommandSpec = {
-  path: ["thread", "cancel"],
-  summary: "Cancel the running turn (or a given turn)",
-  args: "<thread>",
-  route: "POST /api/threads/:threadId/turns/:turnId/cancel",
-  options: {
-    ...THREAD_TARGET_OPTIONS,
-    turn: { type: "string", description: "Turn id (default: the running turn)" },
-  },
-  examples: ["./mf thread cancel <id>"],
-  async run(ctx) {
-    const session = await ctx.session();
-    const threadId = await resolveThreadId(
-      session,
-      requirePositional(ctx, 0, "<thread>"),
-      stringOption(ctx, "project"),
-    );
-    let turnId = stringOption(ctx, "turn");
-    if (!turnId) {
-      const snapshot = await session.request<ThreadSnapshotResponse>(
-        "GET",
-        apiThreadSnapshotPath(threadId),
-      );
-      turnId = snapshot.liveState.runningTurnId ?? undefined;
-      if (!turnId) throw new CliError("not_found", "Thread has no running turn");
-    }
-    const response = await session.request<CancelTurnResponse>(
-      "POST",
-      apiThreadCancelPath(threadId, turnId),
-    );
-    ctx.out.result(response, (value) => `${value.turnId} ${value.status}`);
-    return response.status === "not_found" ? EXIT.notFound : undefined;
-  },
-};
-
-export const threadRespondCommand: CommandSpec = {
-  path: ["thread", "respond"],
-  summary: "Answer a pending interrupt",
-  args: "<thread>",
-  route: "WS /api/threads/ws interrupt.respond",
-  options: {
-    ...THREAD_TARGET_OPTIONS,
-    turn: { type: "string", description: "Turn id that raised the interrupt" },
-    interrupt: { type: "string", description: "Interrupt id" },
-    value: { type: "string", description: "Answer as JSON (literal, @file, or -)" },
-  },
-  examples: [
-    `./mf thread respond <id> --turn <turnId> --interrupt <interruptId> --value '{"choice":"a"}'`,
-  ],
-  async run(ctx) {
-    const turnId = stringOption(ctx, "turn");
-    const interruptId = stringOption(ctx, "interrupt");
-    const rawValue = stringOption(ctx, "value");
-    if (!turnId || !interruptId || rawValue === undefined) {
-      throw usageError("--turn, --interrupt and --value are required");
-    }
-    const value = readJsonArg(rawValue, "--value");
-    const session = await ctx.session();
-    const threadId = await resolveThreadId(
-      session,
-      requirePositional(ctx, 0, "<thread>"),
-      stringOption(ctx, "project"),
-    );
-    const socket = await openThreadSocket(session);
-    try {
-      socket.send({ type: "interrupt.respond", threadId, turnId, interruptId, value });
-      // The socket reports failures as error frames; give it a moment to object.
-      const deadline = Date.now() + 1_500;
-      for (;;) {
-        const message = await socket.next(deadline).catch((error: unknown) => {
-          if (error instanceof CliError && error.code === "timeout") return null;
-          throw error;
-        });
-        if (!message) break;
-        if (message.type === "error") {
-          throw new CliError(
-            "http_error",
-            `Interrupt response rejected: ${message.error.message}`,
-            {
-              details: message.error,
-            },
-          );
-        }
-      }
-    } finally {
-      socket.close();
-    }
-    ctx.out.result(
-      { threadId, turnId, interruptId, status: "sent" },
-      () => `sent (./mf thread tail ${threadId} --until-idle to watch the run resume)`,
-    );
-    return undefined;
   },
 };

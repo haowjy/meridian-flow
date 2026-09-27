@@ -1,7 +1,7 @@
 /** `./mf api`: any authenticated request against this worktree's server (like `gh api`). */
-import { usageError } from "../cli-error";
-import { type CommandSpec, readJsonArg, requirePositional, stringOption } from "../command";
-import type { HttpMethod } from "../session";
+import { usageError } from "../../core/cli-error";
+import { type CommandSpec, readJsonArg, requirePositional, stringOption } from "../../core/command";
+import type { HttpMethod } from "../../core/session";
 
 const METHODS = new Set<HttpMethod>(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 

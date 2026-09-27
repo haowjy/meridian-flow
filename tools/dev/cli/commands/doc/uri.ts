@@ -5,9 +5,10 @@ import {
   type DocumentAddressResult,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-import { CliError, usageError } from "./cli-error";
-import { resolveWorkId } from "./command";
-import type { Session } from "./session";
+import { CliError, usageError } from "../../core/cli-error";
+
+import type { Session } from "../../core/session";
+import { resolveWorkId } from "../project/resolve";
 
 export type ResolvedUri = {
   scheme: ProjectContextTreeScheme;
@@ -54,3 +55,9 @@ export async function resolveDocumentId(
   }
   return address.document.documentId;
 }
+
+/** `--project`/`--work` shared by every command that takes a document URI. */
+export const PROJECT_OPTION = {
+  project: { type: "string" as const, description: "Project id, or `default` (default)" },
+  work: { type: "string" as const, description: "Work for scratch/uploads URIs: @slug or @/" },
+};

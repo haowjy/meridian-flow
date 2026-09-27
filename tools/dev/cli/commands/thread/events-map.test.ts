@@ -7,7 +7,7 @@ import {
   SIMPLE_TOOL_TURN_AGUI,
 } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
-import { type CliEvent, RunEventMapper, renderEventLine } from "./run-events";
+import { type CliEvent, RunEventMapper, renderEventLine } from "./events-map";
 
 function mapAll(events: AGUIEvent[]): CliEvent[] {
   const mapper = new RunEventMapper();

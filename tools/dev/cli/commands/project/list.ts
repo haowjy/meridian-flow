@@ -1,7 +1,6 @@
 /** Project lookup commands. */
 import { API_PROJECTS_PATH, type ListProjectsResponse } from "@meridian/contracts/protocol";
-import type { CommandSpec } from "../command";
-import { resolveProjectId } from "../command";
+import type { CommandSpec } from "../../core/command";
 
 export const projectListCommand: CommandSpec = {
   path: ["project", "list"],
@@ -16,19 +15,6 @@ export const projectListCommand: CommandSpec = {
         ? "(no projects)"
         : value.map((project) => `${project.id}  ${project.slug}  ${project.title}`).join("\n"),
     );
-    return undefined;
-  },
-};
-
-export const projectDefaultCommand: CommandSpec = {
-  path: ["project", "default"],
-  summary: "Ensure and print the default project id",
-  route: "POST /api/projects/bootstrap-default",
-  examples: ["./mf project default"],
-  async run(ctx) {
-    const session = await ctx.session();
-    const projectId = await resolveProjectId(session, undefined);
-    ctx.out.result({ projectId }, (value) => value.projectId);
     return undefined;
   },
 };

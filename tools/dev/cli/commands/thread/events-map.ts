@@ -3,7 +3,7 @@
  * (codex-exec style) and renders each as one text line.
  */
 import type { SequencedEvent } from "@meridian/contracts/protocol";
-import { oneLine, truncate } from "./output";
+import { oneLine, truncate } from "../../core/output";
 
 export type CliEvent =
   | { type: "turn.started"; seq: string; turnId: string }

@@ -1,5 +1,5 @@
 /** `./mf log`: recent server observability records (dev-only route), optionally followed. */
-import { usageError } from "../cli-error";
+import { usageError } from "../../core/cli-error";
 import {
   type CommandSpec,
   durationOption,
@@ -7,8 +7,8 @@ import {
   intOption,
   parseDuration,
   stringOption,
-} from "../command";
-import { oneLine, truncate } from "../output";
+} from "../../core/command";
+import { oneLine, truncate } from "../../core/output";
 
 const FILTERS: Record<string, string> = {
   event: "eventId",

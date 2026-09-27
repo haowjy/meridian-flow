@@ -1,7 +1,7 @@
 /** Compact projections of thread snapshots for `thread view` / `thread list` (text + JSON). */
 import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import { type Block, blockPlainText, type Thread, type Turn } from "@meridian/contracts/threads";
-import { oneLine, truncate } from "./output";
+import { oneLine, truncate } from "../../core/output";
 
 export type TranscriptLimits = { full: boolean };
 

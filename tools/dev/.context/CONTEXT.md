@@ -16,14 +16,25 @@ Local-dev-only utilities. Not loaded by the application runtime.
 - **Tailscale lifecycle** — `lib/tailscale-lifecycle.ts` (stale route pruning, verified external routes)
 - **Worktree cleanup** — `lib/worktree-cleanup.ts` + `prune-worktrees.ts` (merged-branch resource teardown)
 - **`./mf` dev CLI** — `cli/` is the agent-facing CLI behind the repo-root `./mf`
-  shim. It is a thin wrapper over the app's own HTTP routes and thread WebSocket:
-  `cli/session.ts` owns Portless discovery, the in-memory dev-login cookie,
-  and bounded requests; `cli/thread-stream.ts` follows a thread's sequenced
-  events; commands live in `cli/commands/` (one file per noun). It never reads
-  Postgres and holds no business logic. When the API cannot answer a question,
-  add a (dev-gated) server route instead of a CLI-side query. The only server
-  seam it added is the dev mock-model script queue
-  (`/api/debug/mock-model/script`).
+  shim: a thin wrapper over the app's own HTTP routes and thread WebSocket. It
+  never reads Postgres and holds no business logic; when the API cannot answer a
+  question, add a server route behind the debug gate instead of a CLI-side query.
+  - `cli/core/` is the framework and knows no domain: `command.ts` (`CommandSpec`,
+    `CommandGroup`, strict flat-arg parsing, option helpers), `output.ts` (text /
+    `--json` / NDJSON), `cli-error.ts` (the exit-code contract), `session.ts`
+    (Portless discovery, in-memory dev-login cookie, bounded requests).
+  - `cli/commands/<group>/` holds one command group each (`thread`, `doc`,
+    `project`, `mock`, `log`, `seed`, `api`): one file per command, an `index.ts`
+    exporting the `CommandGroup`, and the group's own helpers (thread:
+    `socket.ts`, `stream.ts`, `events-map.ts`, `transcript.ts`, `resolve.ts`;
+    project: `resolve.ts`; doc: `uri.ts`; mock: `queue.ts`). Groups may import
+    another group's helper module (`thread/send` uses `mock/queue`, `doc/uri`),
+    never `main.ts`; `core/` imports no group.
+  - **Adding a group:** create `cli/commands/<group>/` with its commands and an
+    `index.ts` exporting a `CommandGroup`, then list it in `GROUPS` in
+    `cli/main.ts`. Help, parsing, output, and errors come from `core/`.
+  - Tests share `cli/test-support/fake-stack.ts` (fake API + thread socket on the
+    real contracts); `cli/main.test.ts` also boots the real `./mf` shim.
 
 ## Directory layout
 
@@ -47,8 +58,7 @@ tools/dev/
 ├── docker-compose.yml
 ├── bootstrap.ts               pnpm bootstrap
 ├── check-db-gate.ts           Reachability-aware local `pnpm check` DB gate
-├── cli/                       ./mf: main.ts (command table, help), session.ts, thread-socket.ts,
-│                              thread-stream.ts, run-events.ts, transcript.ts, commands/, fixtures/
+├── cli/                       ./mf: main.ts (GROUPS, help, dispatch), core/, commands/<group>/, test-support/, fixtures/
 ├── dev-tmux.ts                pnpm dev entry point (thin — see session plan, readiness, tailscale)
 ├── dev-session-plan.ts        Session command construction + redaction + internal API origin
 ├── dev-readiness.ts           HTTP readiness probes (server /readyz + app origin)

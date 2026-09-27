@@ -1,16 +1,12 @@
 /** `./mf seed`: one-shot scenario setup (docs, a thread, opening messages) from a JSON fixture. */
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { EXIT, type ExitCode, usageError } from "../cli-error";
-import {
-  type CommandSpec,
-  flag,
-  parseDuration,
-  requirePositional,
-  resolveProjectId,
-} from "../command";
-import { putDocument } from "./doc";
-import { createThread, exitForOutcome, type SendOutcome, sendMessage } from "./thread-drive";
+import { EXIT, type ExitCode, usageError } from "../../core/cli-error";
+import { type CommandSpec, flag, parseDuration, requirePositional } from "../../core/command";
+import { putDocument } from "../doc/put";
+import { resolveProjectId } from "../project/resolve";
+import { createThread } from "../thread/create";
+import { exitForOutcome, type SendOutcome, sendMessage } from "../thread/send";
 
 export type SeedFixture = {
   project?: string;

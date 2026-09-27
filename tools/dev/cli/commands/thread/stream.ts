@@ -3,11 +3,11 @@
  * live frames, gap resubscription, and seq de-duplication shared by events/tail/send.
  */
 import type { ThreadLiveState, WsServerMessage } from "@meridian/contracts/protocol";
-import { CliError } from "./cli-error";
-import type { Output } from "./output";
-import { type CliEvent, RunEventMapper, renderEventLine } from "./run-events";
-import type { Session } from "./session";
-import { openThreadSocket, type ThreadSocket } from "./thread-socket";
+import { CliError } from "../../core/cli-error";
+import type { Output } from "../../core/output";
+import type { Session } from "../../core/session";
+import { type CliEvent, RunEventMapper, renderEventLine } from "./events-map";
+import { openThreadSocket, type ThreadSocket } from "./socket";
 
 export type FollowResult = {
   lastSeq: string;

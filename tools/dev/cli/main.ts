@@ -4,52 +4,35 @@
  */
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { CliError, EXIT, type ExitCode } from "./cli-error";
-import { type CommandSpec, GLOBAL_OPTIONS, parseCommandArgs } from "./command";
-import { apiCommand } from "./commands/api";
-import { docPutCommand, docReadCommand, docRmCommand } from "./commands/doc";
-import { logCommand } from "./commands/log";
-import { mockClearCommand, mockListCommand, mockScriptCommand } from "./commands/mock";
-import { projectDefaultCommand, projectListCommand } from "./commands/project";
-import { seedCommand } from "./commands/seed";
+import { apiGroup } from "./commands/api";
+import { docGroup } from "./commands/doc";
+import { logGroup } from "./commands/log";
+import { mockGroup } from "./commands/mock";
+import { projectGroup } from "./commands/project";
+import { seedGroup } from "./commands/seed";
+import { threadGroup } from "./commands/thread";
+import { CliError, EXIT, type ExitCode } from "./core/cli-error";
 import {
-  threadCancelCommand,
-  threadCreateCommand,
-  threadRespondCommand,
-  threadSendCommand,
-  threadTailCommand,
-} from "./commands/thread-drive";
-import {
-  threadContextCommand,
-  threadEventsCommand,
-  threadListCommand,
-  threadViewCommand,
-} from "./commands/thread-read";
-import { type Io, Output } from "./output";
-import { openSession, type Session } from "./session";
+  type CommandGroup,
+  type CommandSpec,
+  GLOBAL_OPTIONS,
+  parseCommandArgs,
+} from "./core/command";
+import { type Io, Output } from "./core/output";
+import { openSession, type Session } from "./core/session";
 
-export const COMMANDS: readonly CommandSpec[] = [
-  threadListCommand,
-  threadViewCommand,
-  threadContextCommand,
-  threadEventsCommand,
-  threadCreateCommand,
-  threadSendCommand,
-  threadTailCommand,
-  threadCancelCommand,
-  threadRespondCommand,
-  logCommand,
-  projectListCommand,
-  projectDefaultCommand,
-  docReadCommand,
-  docPutCommand,
-  docRmCommand,
-  seedCommand,
-  mockScriptCommand,
-  mockListCommand,
-  mockClearCommand,
-  apiCommand,
+/** Adding a group: a `commands/<group>/` folder whose `index.ts` exports a CommandGroup, listed here. */
+export const GROUPS: readonly CommandGroup[] = [
+  threadGroup,
+  docGroup,
+  projectGroup,
+  mockGroup,
+  logGroup,
+  seedGroup,
+  apiGroup,
 ];
+
+export const COMMANDS: readonly CommandSpec[] = GROUPS.flatMap((group) => group.commands);
 
 const EXIT_CODE_LINES = [
   "0 ok (empty results included)",
@@ -66,17 +49,25 @@ function synopsis(spec: CommandSpec): string {
   return `./mf ${spec.path.join(" ")}${spec.args ? ` ${spec.args}` : ""}`;
 }
 
-export function renderOverview(commands: readonly CommandSpec[]): string {
-  const width = Math.max(...commands.map((spec) => synopsis(spec).length));
+function renderGroup(group: CommandGroup, width: number): string[] {
+  return [
+    `${group.name}: ${group.summary}`,
+    ...group.commands.map(
+      (spec) =>
+        `  ${synopsis(spec).padEnd(width)}  ${spec.summary}\n  ${"".padEnd(width)}  ↳ ${spec.route}`,
+    ),
+  ];
+}
+
+export function renderOverview(groups: readonly CommandGroup[]): string {
+  const width = Math.max(
+    ...groups.flatMap((group) => group.commands.map((spec) => synopsis(spec).length)),
+  );
   return [
     "mf: drive and inspect this worktree's running Meridian Flow stack through its own API.",
     "Needs `pnpm dev` running (or MF_SERVER_URL + MF_COOKIE/MF_APP_URL).",
     "",
-    ...commands.map(
-      (spec) =>
-        `  ${synopsis(spec).padEnd(width)}  ${spec.summary}\n  ${"".padEnd(width)}  ↳ ${spec.route}`,
-    ),
-    "",
+    ...groups.flatMap((group) => [...renderGroup(group, width), ""]),
     "Global: --json (one object; NDJSON for streams, last line is the result), --fields a,b, -h/--help",
     `Exit codes: ${EXIT_CODE_LINES.join("; ")}`,
     "",
@@ -126,14 +117,14 @@ export async function runCli(argv: string[], deps: RunDeps): Promise<ExitCode> {
   const wantsJson = argv.includes("--json");
   const bootstrapOut = new Output(deps.io, { json: wantsJson });
   if (argv.length === 0 || argv[0] === "--help" || argv[0] === "-h" || argv[0] === "help") {
-    deps.io.stdout.write(`${renderOverview(COMMANDS)}\n`);
+    deps.io.stdout.write(`${renderOverview(GROUPS)}\n`);
     return EXIT.ok;
   }
   const found = findCommand(argv);
   if (!found) {
-    const noun = COMMANDS.filter((spec) => spec.path[0] === argv[0]);
-    if (noun.length > 0 && (argv.length === 1 || argv[1]?.startsWith("-"))) {
-      deps.io.stdout.write(`${renderOverview(noun)}\n`);
+    const group = GROUPS.find((candidate) => candidate.name === argv[0]);
+    if (group && (argv.length === 1 || argv[1]?.startsWith("-"))) {
+      deps.io.stdout.write(`${renderOverview([group])}\n`);
       return EXIT.ok;
     }
     bootstrapOut.error(

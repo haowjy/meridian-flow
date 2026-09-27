@@ -1,18 +1,12 @@
-/**
- * End-to-end `./mf` contract against an in-process fake of the app API + thread socket:
- * exit codes, stdout/stderr separation, --json envelopes, and the send-and-wait loop.
- */
+/** In-process fake of the app API + thread socket, speaking the real contracts, for ./mf command tests. */
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AGUIEvent, WsServerMessage } from "@meridian/contracts/protocol";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type WebSocket, WebSocketServer } from "ws";
-import { EXIT } from "./cli-error";
-import { composeMessage } from "./commands/thread-drive";
-import { COMMANDS, runCli } from "./main";
+import { runCli } from "../main";
 
-const COOKIE = "wos-session=test";
-const THREAD_ID = "11111111-1111-4111-8111-111111111111";
-const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
+export const COOKIE = "wos-session=test";
+export const THREAD_ID = "11111111-1111-4111-8111-111111111111";
+export const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
 
 type Journal = { seq: string; event: AGUIEvent }[];
 
@@ -260,187 +254,41 @@ function createFake() {
   return { server, mockScripts, removedMockScripts };
 }
 
-let fake: ReturnType<typeof createFake>;
-let baseUrl = "";
+export type FakeStack = ReturnType<typeof createFake> & {
+  baseUrl: string;
+  mf(
+    argv: string[],
+    env?: Record<string, string>,
+  ): Promise<{ code: number; stdout: string; stderr: string }>;
+  close(): Promise<void>;
+};
 
-beforeAll(async () => {
-  fake = createFake();
+/** Starts the fake on an ephemeral port; `mf` runs the CLI against it with a valid session cookie. */
+export async function startFakeStack(): Promise<FakeStack> {
+  const fake = createFake();
   await new Promise<void>((resolve) => fake.server.listen(0, "127.0.0.1", resolve));
   const address = fake.server.address();
   if (!address || typeof address === "string") throw new Error("no address");
-  baseUrl = `http://127.0.0.1:${address.port}`;
-});
-
-afterAll(async () => {
-  fake.server.closeAllConnections();
-  await new Promise<void>((resolve) => fake.server.close(() => resolve()));
-});
-
-async function mf(argv: string[], env: Record<string, string> = {}) {
-  let stdout = "";
-  let stderr = "";
-  const code = await runCli(argv, {
-    io: {
-      stdout: { write: (chunk: string) => (stdout += chunk) },
-      stderr: { write: (chunk: string) => (stderr += chunk) },
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  return {
+    ...fake,
+    baseUrl,
+    async mf(argv, env = {}) {
+      let stdout = "";
+      let stderr = "";
+      const code = await runCli(argv, {
+        io: {
+          stdout: { write: (chunk: string) => (stdout += chunk) },
+          stderr: { write: (chunk: string) => (stderr += chunk) },
+        },
+        env: { MF_SERVER_URL: baseUrl, MF_COOKIE: COOKIE, ...env },
+        repoRoot: process.cwd(),
+      });
+      return { code, stdout, stderr };
     },
-    env: { MF_SERVER_URL: baseUrl, MF_COOKIE: COOKIE, ...env },
-    repoRoot: process.cwd(),
-  });
-  return { code, stdout, stderr };
+    async close() {
+      fake.server.closeAllConnections();
+      await new Promise<void>((resolve) => fake.server.close(() => resolve()));
+    },
+  };
 }
-
-describe("./mf", () => {
-  it("lists every command with the route it wraps", async () => {
-    const { code, stdout } = await mf([]);
-    expect(code).toBe(EXIT.ok);
-    for (const spec of COMMANDS) {
-      expect(stdout).toContain(`./mf ${spec.path.join(" ")}`);
-      expect(stdout).toContain(spec.route);
-    }
-  });
-
-  it("rejects unknown flags and commands with exit 2", async () => {
-    expect((await mf(["thread", "view", THREAD_ID, "--bogus"])).code).toBe(EXIT.usage);
-    expect((await mf(["nope"])).code).toBe(EXIT.usage);
-  });
-
-  it("reports an unreachable stack as exit 4 with a JSON error on stderr", async () => {
-    const result = await mf(["thread", "list", "--json"], { MF_SERVER_URL: "http://127.0.0.1:9" });
-    expect(result.code).toBe(EXIT.unavailable);
-    expect(result.stdout).toBe("");
-    expect(JSON.parse(result.stderr)).toMatchObject({ code: "unavailable" });
-  });
-
-  it("maps 401 to exit 4", async () => {
-    expect((await mf(["thread", "list"], { MF_COOKIE: "wrong" })).code).toBe(EXIT.unavailable);
-  });
-
-  it("resolves cN refs through the by-ref route in the default or given project", async () => {
-    const byRef = await mf(["thread", "view", "c1", "--json", "--fields", "thread"]);
-    expect(byRef.code).toBe(EXIT.ok);
-    expect(JSON.parse(byRef.stdout)).toEqual({
-      thread: expect.objectContaining({ id: THREAD_ID, ref: "c1" }),
-    });
-    expect((await mf(["thread", "view", "c1", "--project", PROJECT_ID])).code).toBe(EXIT.ok);
-    const elsewhere = await mf(["thread", "view", "c1", "--project", "other-project"]);
-    expect(elsewhere.code).toBe(EXIT.notFound);
-    expect(elsewhere.stderr).toContain("--project");
-    expect((await mf(["thread", "view", "c9"])).code).toBe(EXIT.notFound);
-  });
-
-  it("also accepts full ids, app URLs, and unique id prefixes", async () => {
-    expect((await mf(["thread", "view", "1111"])).code).toBe(EXIT.ok);
-    expect((await mf(["thread", "view", `https://app.x/chat/${THREAD_ID}`])).code).toBe(EXIT.ok);
-    expect((await mf(["thread", "view", "9999"])).code).toBe(EXIT.notFound);
-  });
-
-  it("creates a thread with the default agent", async () => {
-    const result = await mf(["thread", "create", "--json"]);
-    expect(result.code).toBe(EXIT.ok);
-    expect(JSON.parse(result.stdout)).toMatchObject({ threadId: THREAD_ID, projectId: PROJECT_ID });
-  });
-
-  it("send waits, prints the answer on stdout and progress on stderr", async () => {
-    const result = await mf(["thread", "send", THREAD_ID, "hi"]);
-    expect(result.code).toBe(EXIT.ok);
-    expect(result.stdout.trim()).toBe("Hello there");
-    expect(result.stderr).toContain("turn.started");
-    expect(result.stderr).toContain("assistant: Hello there");
-  });
-
-  it("send --json streams NDJSON whose last line is the result envelope", async () => {
-    const result = await mf(["thread", "send", THREAD_ID, "hi again", "--json"]);
-    expect(result.code).toBe(EXIT.ok);
-    const lines = result.stdout
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line));
-    expect(lines.map((line) => line.type)).toContain("message.delta");
-    expect(lines.at(-1)).toMatchObject({
-      type: "result",
-      status: "complete",
-      finalText: "Hello there",
-    });
-    expect(result.stderr).toBe("");
-  });
-
-  it("send exits 1 on a failed run and 8 on a pending interrupt", async () => {
-    const failed = await mf(["thread", "send", THREAD_ID, "please fail", "--json"]);
-    expect(failed.code).toBe(EXIT.failed);
-    expect(JSON.parse(failed.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
-      type: "error",
-      status: "error",
-      error: "boom",
-    });
-    const asked = await mf(["thread", "send", THREAD_ID, "ask me"]);
-    expect(asked.code).toBe(EXIT.interrupt);
-    expect(asked.stderr).toContain("./mf thread respond");
-  });
-
-  it("send times out with exit 124 instead of hanging", async () => {
-    const result = await mf(["thread", "send", THREAD_ID, "hang", "--timeout", "300ms", "--json"]);
-    expect(result.code).toBe(EXIT.timeout);
-    expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
-      status: "timeout",
-    });
-  });
-
-  it("send --mock queues a script scoped to the message text, then removes it", async () => {
-    const before = fake.mockScripts.length;
-    const result = await mf([
-      "thread",
-      "send",
-      THREAD_ID,
-      "scripted hi",
-      "--mock",
-      '[{"text":"ok"}]',
-    ]);
-    expect(result.code).toBe(EXIT.ok);
-    expect(fake.mockScripts.slice(before)).toEqual([
-      { match: "scripted hi", steps: [{ text: "ok" }] },
-    ]);
-    expect(fake.removedMockScripts).toContain(`script-${fake.mockScripts.length}`);
-  });
-
-  it("thread events replays the journal from a seq", async () => {
-    const result = await mf(["thread", "events", THREAD_ID, "--json"]);
-    expect(result.code).toBe(EXIT.ok);
-    const types = result.stdout
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line).type);
-    expect(types).toContain("turn.started");
-    expect(types).toContain("turn.finished");
-  });
-
-  it("thread view renders the transcript", async () => {
-    const result = await mf(["thread", "view", THREAD_ID]);
-    expect(result.code).toBe(EXIT.ok);
-    expect(result.stdout).toContain("[assistant]");
-    expect(result.stdout).toContain("Hello there");
-  });
-
-  it("writes large JSON results whole", async () => {
-    const result = await mf(["api", "GET", "/api/big", "--json"]);
-    expect(result.code).toBe(EXIT.ok);
-    expect(JSON.parse(result.stdout).blob).toHaveLength(300_000);
-  });
-});
-
-describe("composeMessage", () => {
-  it("keeps text equal to the concatenated block text, as admission requires", () => {
-    const message = composeMessage({
-      text: "Tighten this",
-      skills: [{ slug: "line-edit", name: "Line edit", description: "d" }],
-      references: [{ documentId: "d1", uri: "manuscript://chapter-2.md" }],
-    });
-    const blocks = message.blocks as { text?: string }[];
-    expect(blocks.map((block) => block.text ?? "").join("")).toBe(message.text);
-    expect(message.text).toBe("/line-edit Tighten this @manuscript://chapter-2.md");
-    expect(message.references).toEqual([
-      { documentId: "d1", uri: "manuscript://chapter-2.md", purpose: "reference" },
-    ]);
-    expect(message.activatedSkillSlugs).toEqual(["line-edit"]);
-  });
-});

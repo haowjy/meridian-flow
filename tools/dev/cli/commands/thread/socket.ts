@@ -6,8 +6,8 @@ import {
   type WsServerMessage,
 } from "@meridian/contracts/protocol";
 import WebSocket from "ws";
-import { CliError } from "./cli-error";
-import type { Session } from "./session";
+import { CliError } from "../../core/cli-error";
+import type { Session } from "../../core/session";
 
 export interface ThreadSocket {
   send(message: WsClientMessage): void;
