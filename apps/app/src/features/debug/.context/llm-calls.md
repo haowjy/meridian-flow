@@ -19,6 +19,13 @@ and its immediate predecessor so the inspector can compare adjacent tool-loop
 prefixes. Model-request content never enters lifecycle events, the trace store,
 `EventSink`, or JSONL logs.
 
+Cache diagnostics pair successful gateway calls with the persisted response
+rows in the thread snapshot. The card shows the recorded predicted cache state
+and a readable reason beside observed cache hit percentage and reset status.
+Prediction mismatch is flagged for a predicted-warm call with an observed
+reset, or a predicted-cold call with at least 50% cache reads. Missing cache
+read data is not treated as a mismatch.
+
 ## Request views
 
 `ModelRequestInspector` presents the provider-neutral `GenerateRequest` in this
