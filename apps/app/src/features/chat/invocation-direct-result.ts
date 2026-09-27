@@ -1,16 +1,10 @@
 /** Turn-scoped protocol lookup for settled foreground invocation cards. */
+
+import { parseInvocationCard } from "@meridian/contracts/components";
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import { type Block, blockContentRecord, type JsonValue } from "@meridian/contracts/protocol";
 import { isArtifactRef } from "./ArtifactGrid";
 import { componentBlockContent } from "./component-block-content";
-
-type Invocation = {
-  parentTurnId?: string;
-  toolCallId?: string;
-  childThreadId?: string;
-  deliveryMode?: string;
-  execution?: string | null;
-};
 
 export type DirectInvocationResult = {
   execution: string;
@@ -53,9 +47,8 @@ export function directResultsForTurn(
   const direct = new Map<string, DirectInvocationResult>();
   for (const block of blocks) {
     if (block.blockType !== "custom") continue;
-    const content = componentBlockContent(block.content);
-    if (content?.kind !== "helper-result") continue;
-    const invocation = content.props as Invocation;
+    const invocation = parseInvocationCard(componentBlockContent(block.content));
+    if (!invocation) continue;
     if (
       invocation.parentTurnId !== block.turnId ||
       invocation.deliveryMode !== "direct" ||
@@ -70,7 +63,15 @@ export function directResultsForTurn(
     const result = settled.get(key);
     if (!result) continue;
     const envelope = resultEnvelope(result.output, result.isError, result.message);
-    if (envelope?.execution === invocation.execution) direct.set(block.id, envelope);
+    // Persisted direct results are already scoped by parent turn + tool call.
+    // Some valid spawn results omit their execution ID, but may not contradict
+    // the invocation when the ID is present.
+    if (
+      envelope &&
+      (envelope.execution === undefined || envelope.execution === invocation.execution)
+    ) {
+      direct.set(block.id, { ...envelope, execution: invocation.execution });
+    }
   }
   return direct;
 }
@@ -87,8 +88,8 @@ function resultEnvelope(
   output: JsonValue | null,
   isError: boolean,
   toolMessage: string | null,
-): DirectInvocationResult | null {
-  if (!isRecord(output) || typeof output.execution !== "string") return null;
+): (Omit<DirectInvocationResult, "execution"> & { execution?: string }) | null {
+  if (!isRecord(output)) return null;
   const outcome = output.outcome;
   if (output.status !== "completed" && output.status !== "error") return null;
   if (
@@ -110,7 +111,7 @@ function resultEnvelope(
         ? toolMessage
         : null;
   return {
-    execution: output.execution,
+    ...(typeof output.execution === "string" ? { execution: output.execution } : {}),
     outcome: outcome ?? null,
     summary,
     ...(report && Object.hasOwn(report, "payload") ? { payload: report.payload } : {}),

@@ -41,6 +41,8 @@ export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter 
     apiKey,
     ...(config.baseUrl ? { baseURL: config.baseUrl } : {}),
     defaultHeaders: config.auth?.headers,
+    // The gateway owns retries (streamWithRetry + retry.maxAttempts); SDK retries would multiply them.
+    maxRetries: 0,
   });
 
   const providerId = config.id;
@@ -91,12 +93,7 @@ export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter 
           return;
         }
         const mapped = mapAnthropicError(err);
-        yield {
-          type: "error",
-          code: mapped.code,
-          message: mapped.message,
-          retryable: mapped.retryable,
-        };
+        yield { type: "error", ...mapped };
       }
     },
   };

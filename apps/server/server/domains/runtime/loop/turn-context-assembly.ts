@@ -16,6 +16,7 @@
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, PromptBake, Thread, Turn } from "@meridian/contracts/threads";
+import type { EventSink } from "../../observability/index.js";
 import type { AgentRevisionStore } from "../../packages/index.js";
 import {
   bakeInEffect,
@@ -78,6 +79,7 @@ export interface AssembleNextTurnContextInput {
     input: PromptBakeContent,
   ) => Promise<{ thread: Thread; bake: PromptBake }>;
   workContext: WorkContextReader;
+  eventSink?: EventSink;
 }
 
 export interface AssembledNextTurnContext {
@@ -231,6 +233,7 @@ export async function assembleNextTurnContext(
     availableSkills: availableSkillsForUnfrozen,
     namedSubagents: namedSubagentsForUnfrozen,
     subagentGuidance: subagentGuidanceForUnfrozen,
+    eventSink: input.eventSink,
   });
   const contextTools = built.tools;
   const messages = usesExplicitPromptCache ? applyPromptCacheMarks(built.messages) : built.messages;

@@ -6,10 +6,10 @@
  */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { ThreadLeaseState, ThreadStatus } from "@meridian/contracts/threads";
+import type { CurrentToolCall, ThreadLeaseState, ThreadStatus } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
-import { and, eq, gt, inArray } from "drizzle-orm";
+import { and, eq, gt, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import {
   DEFAULT_LEASE_TTL_MS,
@@ -148,6 +148,7 @@ export function createDrizzleRunClaim(
         phase: schema.threadRunLeases.phase,
         cancelRequested: schema.threadRunLeases.cancelRequested,
         turnId: schema.threadRunLeases.turnId,
+        currentTool: schema.threadRunLeases.currentTool,
       })
       .from(schema.threadRunLeases);
 
@@ -176,6 +177,7 @@ export function createDrizzleRunClaim(
             holderId,
             phase: "generating",
             cancelRequested: false,
+            currentTool: null,
             acquiredAt,
             renewedAt: acquiredAt,
             expiresAt: nextExpiry(),
@@ -189,6 +191,7 @@ export function createDrizzleRunClaim(
               holderId,
               phase: "generating",
               cancelRequested: false,
+              currentTool: null,
               acquiredAt,
               renewedAt: acquiredAt,
               expiresAt: nextExpiry(),
@@ -239,6 +242,23 @@ export function createDrizzleRunClaim(
         );
     },
 
+    async setCurrentTool(lease, currentTool: CurrentToolCall) {
+      const rows = await db_()
+        .update(schema.threadRunLeases)
+        .set({ currentTool })
+        .where(
+          and(
+            eq(schema.threadRunLeases.threadId, lease.threadId),
+            eq(schema.threadRunLeases.runId, lease.runId),
+            eq(schema.threadRunLeases.holderId, lease.holderId),
+            gt(schema.threadRunLeases.expiresAt, new Date()),
+            sql`${schema.threadRunLeases.currentTool} IS DISTINCT FROM ${JSON.stringify(currentTool)}::jsonb`,
+          ),
+        )
+        .returning({ threadId: schema.threadRunLeases.threadId });
+      return rows.length > 0;
+    },
+
     async read(threadId) {
       const [row] = await selectLiveLease().where(liveLeaseWhere(threadId)).limit(1);
       if (!row) return { kind: "asleep" };
@@ -256,7 +276,7 @@ export function createDrizzleRunClaim(
       return new Map(
         rows.map((row) => [
           row.threadId as ThreadId,
-          { status: toThreadStatus(row), runningTurnId: row.turnId },
+          { status: toThreadStatus(row), runningTurnId: row.turnId, currentTool: row.currentTool },
         ]),
       );
     },

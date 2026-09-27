@@ -60,6 +60,7 @@ export function createInMemoryExecutionReportRepository(
       }
       const row: SavedExecutionReport = {
         ...identity,
+        admittedAt: new Date().toISOString(),
         terminalAssistantTurnId: null,
         capture: null,
         captureToolCallId: null,
@@ -111,6 +112,29 @@ export function createInMemoryExecutionReportRepository(
     },
     async findByExecution(child, execution) {
       return find(child, execution);
+    },
+    async listLatestByChildren(childThreadIds) {
+      const childIds = new Set(childThreadIds);
+      const latest = new Map<string, SavedExecutionReport>();
+      for (const row of rows.values()) {
+        if (!childIds.has(row.childThreadId)) continue;
+        const current = latest.get(row.childThreadId);
+        if (
+          !current ||
+          row.admittedAt > current.admittedAt ||
+          (row.admittedAt === current.admittedAt && row.assistantTurnId > current.assistantTurnId)
+        ) {
+          latest.set(row.childThreadId, row);
+        }
+      }
+      return [...latest.values()].map(
+        ({ childThreadId, deliveryMode, admittedAt, terminalAt }) => ({
+          childThreadId,
+          deliveryMode,
+          admittedAt,
+          terminalAt,
+        }),
+      );
     },
     async listFinishedByChild(child) {
       return [...rows.values()]

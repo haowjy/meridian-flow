@@ -2,8 +2,8 @@
 
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ThreadReportResult } from "@meridian/contracts/spawn";
+import { parseThreadRef } from "@meridian/contracts/threads";
 import { sameLineage } from "../../threads/domain/lineage.js";
-import { parseThreadRef } from "../../threads/domain/thread-ref.js";
 import type { ThreadRepositories } from "../../threads/ports/repositories.js";
 
 export async function readThreadReport(input: {
@@ -29,11 +29,13 @@ export async function readThreadReport(input: {
     const run = input.run ?? reports.length;
     const record = reports[run - 1];
     if (!record || record.outcome === null || record.source === null || record.summary === null)
-      return { ref: input.ref, status: "unavailable" };
+      return { childThreadId: child.id as ThreadId, ref: input.ref, status: "unavailable" };
     return {
+      childThreadId: child.id as ThreadId,
       ref: input.ref,
       run,
       outcome: record.outcome,
+      deliveryMode: record.deliveryMode,
       source: record.source,
       summary: record.summary,
       ...(record.payload !== undefined ? { payload: record.payload } : {}),

@@ -137,7 +137,10 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const identity = single ? (dock.rows[0].documentName ?? t`Document`) : null;
 
   return (
-    <div className="mx-2 rounded-t-lg bg-dock-surface" data-draft-dock="settled">
+    <div
+      className="mx-[var(--chat-space-block)] rounded-t-lg bg-dock-surface"
+      data-draft-dock="settled"
+    >
       {dock.rows.length > 0 ? (
         <>
           {/* The WHOLE strip is the expand/collapse target (multi only) — buttons
@@ -148,7 +151,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           <div
             onClick={multi ? () => setExpanded((value) => !value) : () => dock.reviewFirst()}
             className={cn(
-              "flex min-h-7 items-center gap-1.5 px-2.5 text-caption text-prose-foreground",
+              "flex min-h-7 items-center gap-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)] text-caption text-prose-foreground",
               multi && "cursor-pointer transition-colors hover:bg-muted/50",
             )}
           >
@@ -169,7 +172,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                 />
               </button>
             ) : null}
-            <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+            <div className="flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] overflow-hidden">
               <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
               {/* min() keeps the 12ch floor from padding short names with dead space */}
               <span className="min-w-[min(12ch,max-content)] shrink truncate">
@@ -184,7 +187,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             {/* biome-ignore lint/a11y/useKeyWithClickEvents: pure click fence so verb buttons don't also toggle the row. */}
             {/* biome-ignore lint/a11y/noStaticElementInteractions: same — stopPropagation fence only, no interaction of its own. */}
             <div
-              className="flex shrink-0 items-center gap-0.5"
+              className="flex shrink-0 items-center gap-[var(--chat-space-inline)]"
               onClick={(event) => event.stopPropagation()}
             >
               {confirmingDiscardAll ? (
@@ -235,7 +238,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
 
           {dock.dispositionError ? (
             <p
-              className="border-border-subtle border-t px-3 py-2 text-destructive text-micro"
+              className="border-border-subtle border-t px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-destructive text-micro"
               data-draft-dock-disposition-error={dock.dispositionError}
             >
               {dock.dispositionError === "apply-failed" ? (
@@ -268,7 +271,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               ? `recovery-${row.recovery.entryVersion}`
               : `unknown-${row.reservation.reservationVersion}`
           }
-          className="flex min-h-8 items-center gap-2 border-border-subtle border-t px-3 text-caption"
+          className="flex min-h-8 items-center gap-[var(--chat-space-block)] border-border-subtle border-t px-[var(--chat-card-pad-x)] text-caption"
           data-draft-disposition={row.kind}
         >
           <span className="min-w-0 flex-1 truncate">
@@ -390,7 +393,7 @@ function DockRowShell({
     <div
       onClick={onOpen}
       className={cn(
-        "group flex min-h-7 cursor-pointer items-center gap-1.5 border-b border-border-subtle pr-2.5 pl-7 text-caption transition-colors last:border-b-0 hover:bg-muted",
+        "group flex min-h-7 cursor-pointer items-center gap-[var(--chat-space-inline)] border-b border-border-subtle pr-[var(--chat-geometry-draft-inset)] pl-[var(--chat-geometry-draft-indent)] text-caption transition-colors last:border-b-0 hover:bg-muted",
         className,
       )}
     >
@@ -416,7 +419,7 @@ function ReviewPill({ onClick, disabled }: { onClick: () => void; disabled?: boo
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="focus-ring inline-flex h-5 shrink-0 items-center rounded-sm bg-primary px-2.5 text-caption font-semibold text-primary-foreground disabled:opacity-50"
+      className="focus-ring inline-flex h-5 shrink-0 items-center rounded-sm bg-primary px-2 text-caption font-semibold text-primary-foreground disabled:opacity-50"
     >
       <Trans>Review draft</Trans>
     </button>
@@ -438,7 +441,7 @@ function QuietButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="focus-ring shrink-0 whitespace-nowrap rounded-sm px-1.5 py-0.5 text-ink-muted hover:text-foreground disabled:opacity-50"
+      className="focus-ring shrink-0 whitespace-nowrap rounded-sm px-[var(--chat-space-block)] py-0.5 text-ink-muted hover:text-foreground disabled:opacity-50"
     >
       {children}
     </button>

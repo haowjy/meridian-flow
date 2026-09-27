@@ -4,7 +4,7 @@
  * returns the existing row instead of clobbering or duplicating it.
  */
 import * as schema from "@meridian/database/schema";
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gt, or, sql } from "drizzle-orm";
 import type {
   CreateModelResponseInput,
   CreateModelResponseResult,
@@ -33,6 +33,7 @@ export async function writeModelResponse(
       reasoningTokens: input.reasoningTokens ?? null,
       cacheReadTokens: input.cacheReadTokens ?? null,
       cacheWriteTokens: input.cacheWriteTokens ?? null,
+      cacheReset: input.cacheReset ?? false,
       usageBreakdown: input.rawUsage ?? null,
       costUsd: input.costUsd ?? "0",
       millicredits: input.millicredits != null ? Number(input.millicredits) : null,
@@ -40,8 +41,11 @@ export async function writeModelResponse(
       requestParams: null,
       responseMetadata: null,
       latencyMs: input.latencyMs ?? null,
+      requestStartedAt: input.requestStartedAt ? new Date(input.requestStartedAt) : null,
       predictedCacheState: input.predictedCacheState ?? null,
       predictedCacheReason: input.predictedCacheReason ?? null,
+      timeToFirstTokenMs: input.timeToFirstTokenMs ?? null,
+      generationMs: input.generationMs ?? null,
     })
     .onConflictDoNothing({ target: schema.modelResponses.id })
     .returning();
@@ -75,14 +79,14 @@ export function createDrizzleModelResponseRepository(db: DrizzleDb): ModelRespon
           turnId: schema.modelResponses.turnId,
           sequence: schema.modelResponses.sequence,
           model: schema.modelResponses.model,
-          createdAt: schema.modelResponses.createdAt,
+          requestStartedAt: schema.modelResponses.requestStartedAt,
         })
         .from(schema.modelResponses)
         .innerJoin(schema.turns, eq(schema.turns.id, schema.modelResponses.turnId))
         .where(eq(schema.turns.threadId, threadId))
         .orderBy(desc(schema.turns.position), desc(schema.modelResponses.sequence))
         .limit(1);
-      return row ? { ...row, createdAt: row.createdAt.toISOString() } : null;
+      return row ? { ...row, requestStartedAt: row.requestStartedAt?.toISOString() ?? null } : null;
     },
     async listByThread(threadId) {
       const rows = await currentDrizzleDb(db)
@@ -92,6 +96,59 @@ export function createDrizzleModelResponseRepository(db: DrizzleDb): ModelRespon
         .where(eq(schema.turns.threadId, threadId))
         .orderBy(asc(schema.modelResponses.sequence));
       return rows.map(({ response }) => mapModelResponse(response));
+    },
+    async sumUsageByThread(threadId) {
+      const [row] = await currentDrizzleDb(db)
+        .select({
+          inputTokens: sql<number>`coalesce(sum(${schema.modelResponses.inputTokens}), 0)::int`,
+          cacheReportedInputTokens: sql<number>`coalesce(sum(${schema.modelResponses.inputTokens}) filter (where ${schema.modelResponses.cacheReadTokens} is not null), 0)::int`,
+          cacheReportedCalls: sql<number>`count(*) filter (where ${schema.modelResponses.cacheReadTokens} is not null)::int`,
+          cacheReadTokens: sql<number>`coalesce(sum(${schema.modelResponses.cacheReadTokens}), 0)::int`,
+          cacheWriteTokens: sql<number>`coalesce(sum(${schema.modelResponses.cacheWriteTokens}), 0)::int`,
+          outputTokens: sql<number>`coalesce(sum(${schema.modelResponses.outputTokens}), 0)::int`,
+          cacheResets: sql<number>`count(*) filter (where ${schema.modelResponses.cacheReset})::int`,
+        })
+        .from(schema.modelResponses)
+        .innerJoin(schema.turns, eq(schema.turns.id, schema.modelResponses.turnId))
+        .where(eq(schema.turns.threadId, threadId));
+      return (
+        row ?? {
+          inputTokens: 0,
+          cacheReadTokens: 0,
+          cacheReportedInputTokens: 0,
+          cacheReportedCalls: 0,
+          cacheWriteTokens: 0,
+          outputTokens: 0,
+          cacheResets: 0,
+        }
+      );
+    },
+    async cacheResetContext(threadId) {
+      const activeDb = currentDrizzleDb(db);
+      const [latest] = await activeDb
+        .select({ inputTokens: schema.modelResponses.inputTokens })
+        .from(schema.modelResponses)
+        .innerJoin(schema.turns, eq(schema.turns.id, schema.modelResponses.turnId))
+        .where(eq(schema.turns.threadId, threadId))
+        .orderBy(desc(schema.turns.position), desc(schema.modelResponses.sequence))
+        .limit(1);
+      const [activity] = await activeDb
+        .select({ found: sql<boolean>`count(*) > 0` })
+        .from(schema.modelResponses)
+        .innerJoin(schema.turns, eq(schema.turns.id, schema.modelResponses.turnId))
+        .where(
+          and(
+            eq(schema.turns.threadId, threadId),
+            or(
+              gt(schema.modelResponses.cacheReadTokens, 0),
+              gt(schema.modelResponses.cacheWriteTokens, 0),
+            ),
+          ),
+        );
+      return {
+        hasCacheActivity: activity?.found ?? false,
+        previousInputTokens: latest?.inputTokens ?? null,
+      };
     },
     async listByTurn(turnId) {
       const rows = await currentDrizzleDb(db)

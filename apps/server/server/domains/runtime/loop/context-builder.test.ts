@@ -1,10 +1,15 @@
 /**
- * System-role turns project a completed `helper-result` custom card as model
- * text; running cards and assistant-role custom blocks project nothing.
+ * System-role turns project a pre-admission invocation failure as model text;
+ * terminal report cards stay as transcript-only writer UI.
  */
-import { buildHelperResultComponentContent } from "@meridian/contracts/components";
+import {
+  buildInvocationCardContent,
+  type InvocationCardProps,
+} from "@meridian/contracts/components";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { createInMemoryEventSink } from "../../observability/index.js";
+import { invocationCardProps, unadmittedInvocationFailureProps } from "../spawn/spawn-output.js";
 import { buildContext } from "./context-builder.js";
 
 const THREAD_ID = "thread-1";
@@ -126,15 +131,31 @@ describe("buildContext system-turn history projection", () => {
     expect(userMessageTexts(messages)).toEqual(["first", "second"]);
   });
 
-  it("projects a completed helper-result card in place as a system update", () => {
-    const content = buildHelperResultComponentContent({
-      agentSlug: "critic",
+  const correlation = {
+    parentTurnId: "turn-0",
+    toolCallId: "spawn-1",
+    deliveryMode: "background_notification" as const,
+  };
+  const runningCard = (): Extract<InvocationCardProps, { terminalAt: null }> =>
+    invocationCardProps({
+      agent: "critic",
       agentName: "Critic",
-      status: "completed",
-      summary: "Two chapter breaks sag.",
-      parentTurnId: "turn-0",
-      payload: { chapter: 3 },
+      correlation,
+      childThreadId: "child-1",
+      execution: null,
+      startedAt: "2026-01-01T00:00:00.000Z",
+      terminalAt: null,
     });
+
+  it("projects a pre-admission failure reason as model context", () => {
+    const content = buildInvocationCardContent(
+      unadmittedInvocationFailureProps({
+        agent: "critic",
+        agentName: "Critic",
+        correlation,
+        reason: "The selected agent is unavailable.",
+      }),
+    );
 
     const { messages } = buildContext({
       thread: thread(),
@@ -144,17 +165,17 @@ describe("buildContext system-turn history projection", () => {
     });
 
     expect(userMessageTexts(messages)).toContain(
-      `<system_update>\n${['Background subagent "Critic" reported.', "Two chapter breaks sag.", '{"chapter":3}'].join("\n")}\n</system_update>`,
+      '<system_update>\nSubagent "Critic" could not start: The selected agent is unavailable.\n</system_update>',
     );
   });
 
-  it("names a failed report as failed", () => {
-    const content = buildHelperResultComponentContent({
-      agentSlug: "critic",
-      agentName: "Critic",
-      status: "failed",
-      summary: "Provider returned 500.",
-      parentTurnId: "turn-0",
+  it("does not add report content from a terminal invocation card", () => {
+    const card = runningCard();
+    const content = buildInvocationCardContent({
+      ...card,
+      execution: "execution-1",
+      outcome: "failed",
+      terminalAt: "2026-01-01T00:01:00.000Z",
     });
 
     const { messages } = buildContext({
@@ -164,18 +185,11 @@ describe("buildContext system-turn history projection", () => {
       frozenSystemPrompt: "system prompt",
     });
 
-    expect(userMessageTexts(messages)).toContain(
-      `<system_update>\n${['Background subagent "Critic" failed.', "Provider returned 500."].join("\n")}\n</system_update>`,
-    );
+    expect(userMessageTexts(messages)).toEqual([]);
   });
 
   it("projects nothing while the card is still running", () => {
-    const content = buildHelperResultComponentContent({
-      agentSlug: "critic",
-      agentName: "Critic",
-      status: "running",
-      parentTurnId: "turn-0",
-    });
+    const content = buildInvocationCardContent(runningCard());
 
     const { messages } = buildContext({
       thread: thread(),
@@ -189,13 +203,14 @@ describe("buildContext system-turn history projection", () => {
   });
 
   it("projects nothing for an assistant-role custom block", () => {
-    const content = buildHelperResultComponentContent({
-      agentSlug: "critic",
-      agentName: "Critic",
-      status: "completed",
-      summary: "Should stay UI-only.",
-      parentTurnId: "turn-0",
-    });
+    const content = buildInvocationCardContent(
+      unadmittedInvocationFailureProps({
+        agent: "critic",
+        agentName: "Critic",
+        correlation,
+        reason: "Should stay UI-only.",
+      }),
+    );
 
     const { messages } = buildContext({
       thread: thread(),
@@ -206,6 +221,31 @@ describe("buildContext system-turn history projection", () => {
 
     expect(messages.some((message) => message.role === "assistant")).toBe(false);
     expect(systemMessageTexts(messages)).toEqual(["system prompt"]);
+  });
+
+  it("reports invalid persisted invocation and notification contracts", () => {
+    const sink = createInMemoryEventSink();
+    const invalidNotification = {
+      ...turn("system", "notice-1"),
+      metadata: { kind: "subagent_update", handle: "p1", outcome: "succeeded", execution: null },
+    } as Turn;
+    const invalidCard = customBlock({ kind: "helper-result", props: { status: "completed" } });
+
+    buildContext({
+      thread: thread(),
+      turns: [invalidNotification],
+      blocks: [invalidCard],
+      eventSink: sink,
+      frozenSystemPrompt: "system prompt",
+    });
+
+    expect(sink.events.map((event) => event.payload.field).sort()).toEqual([
+      "invocation_card",
+      "subagent_update",
+    ]);
+    expect(sink.events.every((event) => event.name === "chat.persisted_contract.invalid")).toBe(
+      true,
+    );
   });
 
   it("keeps adopted inbox parts after a tool result in one user message without changing the prompt", () => {

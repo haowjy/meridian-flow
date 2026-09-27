@@ -1,14 +1,15 @@
 /** AssistantTurn — single render path for assistant turns. */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { type Block, isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
-import { CheckCircle2, CircleAlert, MessageSquareText, XCircle } from "lucide-react";
 import { memo, useMemo } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
-import { ActivityRow } from "./ActivityRow";
+import { AssistantTurnActions } from "./AssistantTurnActions";
+import { assistantTurnCopyMarkdown } from "./assistant-turn-copy";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
@@ -24,6 +25,8 @@ import {
 } from "./partition-turn";
 import { ReportContent } from "./ReportContent";
 import { StreamingText } from "./StreamingText";
+import { DeliveryEventRows } from "./subagent/DeliveryEventRows";
+import type { SubagentUpdateMetadata } from "./subagent/update";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
 import { hasTurnEditsReceiptContent, TurnEditsReceipt } from "./TurnEditsReceipt";
@@ -35,8 +38,30 @@ import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 export type AssistantTurnProps = {
   threadId?: string;
   turn: Turn;
-  deliveryEvents?: Array<{ turn: Turn; childThreadId?: string; title?: string }>;
+  /** Assistant turns in the same writer-facing reply, supplied on its final part. */
+  responseParts?: readonly Turn[];
+  threadUsage?: {
+    inputTokens: number;
+    cacheReadTokens: number;
+    cacheReportedInputTokens: number;
+    cacheReportedCalls: number;
+    cacheWriteTokens: number;
+    outputTokens: number;
+    cacheResets: number;
+  } | null;
+  deliveryEvents?: Array<{
+    turn: Turn;
+    childThreadId?: string;
+    title?: string;
+    subagentUpdate: SubagentUpdateMetadata | null;
+  }>;
   isLatestAssistant?: boolean;
+  /**
+   * The next visible turn continues this response (a subagent notification
+   * woke the model, with no writer message between), so this part has no
+   * settled action row of its own.
+   */
+  continuesResponse?: boolean;
   onRetry?: () => void;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   changeTrail?: ChangeTrailShell;
@@ -46,8 +71,11 @@ export type AssistantTurnProps = {
 function AssistantTurnComponent({
   threadId,
   turn,
+  responseParts,
+  threadUsage,
   deliveryEvents = [],
   isLatestAssistant = false,
+  continuesResponse = false,
   onRetry,
   onRespondToInterrupt,
   changeTrail,
@@ -59,6 +87,7 @@ function AssistantTurnComponent({
   );
   const isSettled = isTerminalTurnStatus(turn.status);
   const items = useMemo(() => partitionTurn(sortedBlocks), [sortedBlocks]);
+  const copyMarkdown = useMemo(() => assistantTurnCopyMarkdown(items), [items]);
   const directResults = useMemo(() => directResultsForTurn(sortedBlocks), [sortedBlocks]);
   // Progressive-disclosure label: "Thinking part N" for a turn with several
   // process folds (one per artifact/interrupt-delimited stretch).
@@ -77,10 +106,6 @@ function AssistantTurnComponent({
     }
     return result;
   }, [items]);
-  let lastProcessIndex = -1;
-  rows.forEach(({ item }, index) => {
-    if (item.kind === "process") lastProcessIndex = index;
-  });
   const isErrored = turn.status === "error";
   const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
   const isLive = !isSettled;
@@ -101,111 +126,65 @@ function AssistantTurnComponent({
 
   return (
     <div
-      className="mb-10"
+      data-assistant-turn
+      data-latest-assistant={isLatestAssistant ? "true" : undefined}
       data-turn-id={turn.id}
       data-turn-role="assistant"
       data-turn-status={turn.status}
     >
-      {rows.map(({ item, processOrdinal, processCount }, rowIndex) => (
-        <TurnItemView
-          key={itemRenderKey(item)}
-          item={item}
-          processOrdinal={processOrdinal}
-          processCount={processCount}
-          threadId={resolvedThreadId}
-          turnStatus={turn.status}
-          onRespondToInterrupt={onRespondToInterrupt}
-          writeMode={turn.writeMode ?? "direct"}
-          directResult={
-            item.kind === "artifact" ? (directResults.get(item.block.id) ?? null) : null
-          }
-          deliveryEvents={
-            item.kind === "process" && rowIndex === lastProcessIndex ? deliveryEvents : []
-          }
-        />
-      ))}
-
-      {rows.every(({ item }) => item.kind !== "process") &&
-        deliveryEvents.map((event) => (
-          <DeliveryEventRow
-            key={event.turn.id}
-            turn={event.turn}
-            childThreadId={event.childThreadId}
-            title={event.title}
+      <div className="flex flex-col gap-[var(--chat-space-block)]">
+        {rows.map(({ item, processOrdinal, processCount }) => (
+          <TurnItemView
+            key={itemRenderKey(item)}
+            item={item}
+            processOrdinal={processOrdinal}
+            processCount={processCount}
+            threadId={resolvedThreadId}
+            turnStatus={turn.status}
+            onRespondToInterrupt={onRespondToInterrupt}
+            writeMode={turn.writeMode ?? "direct"}
+            directResult={
+              item.kind === "artifact" ? (directResults.get(item.block.id) ?? null) : null
+            }
           />
         ))}
+        {deliveryEvents.length ? (
+          <div data-turn-item-kind="delivery">
+            <DeliveryEventRows events={deliveryEvents} />
+          </div>
+        ) : null}
 
-      {hasTurnEditsReceiptContent(liveLineageDocuments, changeTrail, workReceipts) ? (
-        <TurnEditsReceipt
+        {hasTurnEditsReceiptContent(liveLineageDocuments, changeTrail, workReceipts) ? (
+          <TurnEditsReceipt
+            threadId={resolvedThreadId}
+            turn={turn}
+            documents={liveLineageDocuments}
+            receipt={liveLineage.receipt}
+            workReceipts={workReceipts}
+            changeTrail={changeTrail}
+            navigateToChange={navigateToChange}
+          />
+        ) : null}
+
+        {isErrored ? (
+          <ErrorBlock
+            isLatest={isLatestAssistant}
+            kind={turn.blocks.length === 0 ? "send" : "generation"}
+            onRetry={isLatestAssistant ? onRetry : undefined}
+          />
+        ) : null}
+      </div>
+      {isSettled && !continuesResponse ? (
+        <AssistantTurnActions
           threadId={resolvedThreadId}
           turn={turn}
-          documents={liveLineageDocuments}
-          receipt={liveLineage.receipt}
-          workReceipts={workReceipts}
-          changeTrail={changeTrail}
-          navigateToChange={navigateToChange}
-        />
-      ) : null}
-
-      {isErrored ? (
-        <ErrorBlock
-          isLatest={isLatestAssistant}
-          kind={turn.blocks.length === 0 ? "send" : "generation"}
-          onRetry={isLatestAssistant ? onRetry : undefined}
+          responseParts={responseParts ?? [turn]}
+          markdown={copyMarkdown}
+          threadUsage={threadUsage ?? null}
         />
       ) : null}
       {showsInkDrop ? <InkDrop /> : null}
     </div>
-  );
-}
-
-function DeliveryEventRow({
-  turn,
-  childThreadId,
-  title,
-}: {
-  turn: Turn;
-  childThreadId?: string;
-  title?: string;
-}) {
-  const metadata =
-    turn.metadata && typeof turn.metadata === "object" && !Array.isArray(turn.metadata)
-      ? (turn.metadata as Record<string, unknown>)
-      : {};
-  if (metadata.kind === "subagent_update") {
-    const outcome = String(metadata.outcome);
-    const Icon =
-      outcome === "succeeded" ? CheckCircle2 : outcome === "failed" ? CircleAlert : XCircle;
-    const label =
-      outcome === "succeeded" ? "finished" : outcome === "failed" ? "failed" : "was cancelled";
-    return (
-      <ActivityRow Icon={Icon}>
-        <span>
-          Subagent {String(metadata.handle)} {label}
-          {title ? `: ${title}` : ""}.
-        </span>
-        {childThreadId ? (
-          <>
-            {" "}
-            <a
-              className="rounded-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              href={`/chat/${childThreadId}`}
-            >
-              Open
-            </a>
-          </>
-        ) : null}
-      </ActivityRow>
-    );
-  }
-  const body = turn.blocks
-    .filter((block) => block.blockType === "text")
-    .map((block) => block.textContent ?? "")
-    .join("");
-  return (
-    <ActivityRow Icon={MessageSquareText}>
-      <span className="whitespace-pre-wrap text-foreground">{body || "Shared an attachment"}</span>
-    </ActivityRow>
   );
 }
 
@@ -239,7 +218,6 @@ const TurnItemView = memo(function TurnItemView({
   onRespondToInterrupt,
   writeMode,
   directResult,
-  deliveryEvents,
 }: {
   item: RenderItem;
   processOrdinal: number;
@@ -249,7 +227,6 @@ const TurnItemView = memo(function TurnItemView({
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   writeMode: "direct" | "draft";
   directResult: DirectInvocationResult | null;
-  deliveryEvents: AssistantTurnProps["deliveryEvents"];
 }) {
   const runs = item.kind === "process" ? item.runs : null;
   const digest = useMemo(
@@ -276,28 +253,27 @@ const TurnItemView = memo(function TurnItemView({
             />
           ))}
         </ProcessDisclosure>
-        {deliveryEvents?.map((event) => (
-          <DeliveryEventRow
-            key={event.turn.id}
-            turn={event.turn}
-            childThreadId={event.childThreadId}
-            title={event.title}
-          />
-        ))}
       </div>
     );
   }
 
   if (item.kind === "report") {
     return (
-      <div className="mb-2 space-y-2 text-prose-foreground" data-turn-item-kind="report">
-        <ReportContent report={item.report} empty={null} className="space-y-2" />
+      <div
+        className="space-y-[var(--chat-space-block)] text-prose-foreground"
+        data-turn-item-kind="report"
+      >
+        <ReportContent
+          report={item.report}
+          empty={null}
+          className="space-y-[var(--chat-space-block)]"
+        />
       </div>
     );
   }
 
   return (
-    <div className="space-y-1" data-turn-item-kind={item.kind}>
+    <div className="space-y-[var(--chat-space-row)]" data-turn-item-kind={item.kind}>
       <DeliveryBlock
         block={item.block}
         threadId={threadId}
@@ -357,7 +333,7 @@ const FoldRun = memo(function FoldRun({
   }
 
   return (
-    <div className="space-y-1" data-activity-block data-fold-activity-run>
+    <div className="space-y-[var(--chat-space-row)]" data-activity-block data-fold-activity-run>
       <DeliverySegments
         blocks={run.blocks}
         threadId={threadId}

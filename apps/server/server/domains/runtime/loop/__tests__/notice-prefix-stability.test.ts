@@ -27,6 +27,12 @@ function textResult(text: string): GenerateResult {
     usage: { inputTokens: 100, outputTokens: 100 },
     model: "gpt-4.1-mini",
     provider: "openai",
+    timing: {
+      requestStartedAt: new Date().toISOString(),
+      latencyMs: 1,
+      timeToFirstTokenMs: 1,
+      generationMs: 0,
+    },
   };
 }
 
@@ -57,6 +63,12 @@ async function setup() {
         {
           id: "gpt-4.1-mini",
           provider: "openai",
+          timing: {
+            requestStartedAt: new Date().toISOString(),
+            latencyMs: 1,
+            timeToFirstTokenMs: 1,
+            generationMs: 0,
+          },
           displayName: "Test model",
           contextWindow: 128_000,
           maxOutputTokens: 16_384,

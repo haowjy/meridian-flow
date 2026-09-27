@@ -261,6 +261,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await second.release(secondLease);
     });
 
+    it("stores one current tool per live lease and identifies repeated writes as unchanged", async () => {
+      const authority = createDrizzleRunClaim(db, { holderId: "current-tool" });
+      const lease = required(await authority.startExecution(THREAD_A, "run-tool"));
+      const first = {
+        toolCallId: "call-1",
+        toolName: "spawn",
+        input: { agent: "researcher", prompt: "Find sources" },
+      };
+      expect(await authority.setCurrentTool(lease, first)).toBe(true);
+      expect(await authority.setCurrentTool(lease, first)).toBe(false);
+
+      const next = { toolCallId: "call-2", toolName: "thread_report", input: { ref: "p3" } };
+      expect(await authority.setCurrentTool(lease, next)).toBe(true);
+      expect((await authority.readMany([THREAD_A])).get(THREAD_A)?.currentTool).toEqual(next);
+
+      await authority.release(lease);
+      expect((await authority.readMany([THREAD_A])).has(THREAD_A)).toBe(false);
+      expect(await authority.setCurrentTool(lease, first)).toBe(false);
+    });
+
     it("binds release to its run so a superseded release keeps the newer lock", async () => {
       const first = createDrizzleRunClaim(db, { holderId: "holder-1" });
       const second = createDrizzleRunClaim(db, { holderId: "holder-2" });

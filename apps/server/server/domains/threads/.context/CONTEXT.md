@@ -50,8 +50,24 @@ for the tool-freeze mechanics.
 - **Thread / Turn / Block / ModelResponse repositories** — CRUD for the
   conversation data model. A thread contains turns; a turn contains blocks
   (text, reasoning, tool_use, tool_result, image, file, custom) and model
-  responses with token/cost rollups. `ThreadRepository.listChildren` selects
-  direct live children on `parent_thread_id` (served by
+  responses with token/cost rollups and per-call latency, time to first token,
+  and generation duration (measured by the gateway attempt loop; see the
+  [runtime context](../../runtime/.context/CONTEXT.md)).
+  `ModelResponseRepository.sumUsageByThread` returns prompt/cache/output token sums
+  for every response billed to a thread, including all turn branches. It also
+  carries the prompt total and number of calls whose provider reported cache
+  counters; only those calls contribute to the cache-hit denominator. Snapshot
+  `threadUsage` carries these raw totals; the app derives the cache-hit rate as
+  cache-read tokens divided by the reported-call input tokens. `inputTokens`
+  includes cache reads and writes, which are both subsets; writes remain misses.
+  Each `ModelResponse` also carries nullable `requestStartedAt` for cache TTL age
+  and the predicted cache state/reason. Each response persists `cacheReset`, computed against the prior response
+  and prior cache activity. The aggregate counts resets with a filtered COUNT.
+  Stats never include descendant child/subagent threads, which report
+  independently. The `(turns.thread_id, turns.position)` and
+  `(model_responses.turn_id, sequence)` indexes support the join and response lookup.
+  `ThreadRepository.listChildren` selects direct live children on
+  `parent_thread_id` (served by
   `threads_parent_created_active`, excluding soft-deleted rows), returning the
   fields the direct-child activity read needs: id, parent, ref, title, agent
   name, spawn status, and origin turn.
@@ -83,12 +99,14 @@ for the tool-freeze mechanics.
   for the storage rationale.
 - **Historical block replacement** — `block.updated` carries a full existing custom block through the read-model projector and AG-UI custom upsert frame. Unlike insertion, it never advances the active frontier or closes open text/reasoning segments. `replaceExisting` retains id, turn and sequence and rejects a missing block; publisher B must not re-create a vanished card.
 - **Thread activity read** — `domain/thread-activity.ts` composes
-  `listChildren` for the viewed thread with the batch lease read
-  (`ThreadStatusReader.readMany`) into the pure `projectThreadActivity`
-  projection. It is the one server-truth "what direct subagents are running in
-  this thread", attached to `ThreadLiveState.activity` in both the snapshot and
-  WS `subscribed` state, and live-updated by the direct-parent-journal
-  `subagent.activity` event. Never a turn block.
+  `listChildren` (the viewed thread's direct live children on `parent_thread_id`), a batch lease read
+  (`ThreadStatusReader.readMany`), and the latest admitted execution report per
+  child into the pure `projectThreadActivity` projection. The report supplies
+  delivery mode and admission/terminal times; the live lease supplies the
+  current tool call. Activity is attached to `ThreadLiveState.activity` in both
+  the snapshot and WS `subscribed` state, and live-updated by the direct-parent-journal
+  `subagent.activity` event at run lifecycle and tool-dispatch boundaries. It is
+  never a turn block.
 - **Notification and steering tables** — `thread_inbox_messages` is the durable
   per-thread message queue (global `bigserial` `seq` for per-thread FIFO, unique
   `idempotency_key`, nullable `delivered_at`), drained by the runtime's `Inbox`
@@ -96,8 +114,9 @@ for the tool-freeze mechanics.
   (not a separate tray) from the runtime's [classified pending
   projection](../../runtime/.context/CONTEXT.md), not this storage queue alone.
   `thread_run_leases` is the queryable run lease paired with the runtime's
-  session advisory lock (`phase`, `cancel_requested`, `expires_at`, and the
-  run's bound `turn_id`). Run liveness is read from the lease alone: the project
+  session advisory lock (`phase`, `cancel_requested`, `expires_at`, the run's
+  bound `turn_id`, and its last dispatched `current_tool`). Run liveness is
+  read from the lease alone: the project
   list and `ThreadLiveState.runningTurnId` (snapshot and WS `subscribed`) both
   surface the lease's bound turn, and the orchestrator binds it inside the
   turn-start setup transaction (`RuntimeDelivery.adoptBatch`). Both cascade
@@ -145,8 +164,9 @@ for the tool-freeze mechanics.
   `turns`, `model_responses`, `turn_blocks`, and recomputed token/cost rollups.
 - **Thread snapshot builder** — reads rows, live state, materialized watermark, and journal head in one root repeatable-read view. All participating adapters honor the ambient transaction; blocks and responses are bulk-read per thread. Assembles the full `ThreadSnapshotResponse`
   (thread + turns + blocks + responses + live state) for initial page load.
-  Subagent snapshots include `parent: { id, title }` from a `findById` point
-  lookup, not the parent's conversation.
+  Subagent snapshots include an `ancestors` chain ordered root-first through
+  the direct parent; each entry comes from a `findById` point lookup, not an
+  ancestor conversation.
 - **Thread lifecycle validation** — public create (`normalizeThreadCreate`)
   accepts primary roots only and rejects spawn/fork fields. Subagent threads
   are created only by `SubagentThreadFactory` from the child-run coordinator.
@@ -205,7 +225,7 @@ transactions. See the [runtime contract](../../runtime/.context/CONTEXT.md).
 | `ThreadUserStateRepository` | Per-writer favorite authority. |
 | `TurnRepository` | `create / findById / listByThread / getLatestByThread / updateStatus / recomputeRollups` |
 | `BlockRepository` | `create / findById / listByTurn / listByThread / updatePruned` |
-| `ModelResponseRepository` | `create / findById / listByTurn / listByThread` |
+| `ModelResponseRepository` | `create / findById / listByTurn / listByThread / sumUsageByThread / cacheResetContext` |
 | `ThreadRepositories` | aggregate of the repositories + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
 | `ThreadWorksRepository` | Adds organizational memberships and reads the primary. Its thread-before-Work primary rebind revalidates thread lifecycle under the same row lock, then demotes the old membership and promotes/upserts the target WorkId, retaining association history while preserving exactly one primary. |
 | `rebindThreadWork` | Transaction-composable mutation above `rebindPrimary`; binding, receipt, typed lifecycle errors, and targeted durable inbox notice have one policy owner. Actor adapters own the business transaction. |
@@ -366,10 +386,14 @@ contract shapes.
 - A thread receives a project-scoped `ref` in the create transaction:
   primaries take `c1`, `c2`, … and subagents take `p1`, `p2`, … from one
   shared per-project counter, so every live handle is project-unique. The
-  handle grammar (`cN`/`pN`) lives in `domain/thread-ref.ts`
-  (`formatThreadRef`/`parseThreadRef`); allocation stays with the repository
-  adapters. Title is not an identifier and is not unique. Chat URLs use the
-  client-minted thread `id`, not `ref`.
+  handle grammar (`cN`/`pN`) lives in `@meridian/contracts/threads`
+  (`formatThreadRef`/`parseThreadRef`) so clients parse the same handles;
+  allocation stays with the repository adapters. The model addresses threads
+  by ref, and `GET /api/projects/:projectId/threads/by-ref/:ref` resolves a
+  live ref for the project owner (`./mf` wraps it). Title is not an identifier
+  and is not unique. Chat URLs use the client-minted thread `id`, not `ref`.
+  Refs are model-facing (tool currency) and dev-facing (`./mf`, the by-ref
+  route); they are not meant for writers.
   Create-or-get matches ownership only. A same-user same-project retry of a
   deleted thread conflicts; persist must not resurrect the tombstone.
 - **Work membership mutation is serialized.** Additions and rebinds follow the
@@ -393,10 +417,22 @@ contract shapes.
   (`domain/visible-conversation-policy.ts` and the app's `visible-chat-turns.ts`)
   keep `subagent_update` and adopted inbox-message turns out of the top-level
   bubble list; the app renders them inside the preceding assistant's activity
-  steps. The stored chat-activity projection below (`recompute_thread_chat_activity`)
-  is a frozen SQL copy of this same predicate. Project and Work lists, and
-  snapshots derive the independent `actionRequired` fact from a
-  `waiting_interrupt` assistant head.
+  steps. `inbox_message` marks machine deliveries only (agent `thread_message`
+  and other non-writer messages); a writer send never carries it and stays a
+  visible bubble. Visibility keys on `metadata.kind`, not `origin`: a child
+  run's first prompt is a `system`-origin user turn that must stay visible. The
+  stored chat-activity projection below (`recompute_thread_chat_activity`)
+  is a frozen SQL copy of this same predicate, and `threadActionRequiredSql`
+  (`adapters/drizzle/visible-conversation-sql.ts`) is the SQL copy of
+  `isThreadActionRequired`; change the TS policy, both SQL copies, and the
+  app's `visible-chat-turns.ts` together. Project and Work lists, and
+  snapshots and thread lists derive the independent `actionRequired` fact from
+  the nearest assistant turn in the active lineage. Lineage walks stop at that
+  assistant and are capped at a depth of 10,000; the chat-activity projection
+  also stops at the first assistant because every assistant turn is visible. A
+  visible writer turn may be the conversational head while an ancestor
+  assistant remains parked on `waiting_interrupt`; that still needs the
+  writer's answer.
 
 ### Chat activity projection (single owner)
 
@@ -460,7 +496,7 @@ key off `role`/`metadata`, not this column.
 - Draft-review action-required state remains an extension point. Establishing it requires
   collab-domain branch/journal queries and review-state semantics, so the
   threads projector currently sources `actionRequired` only from the durable
-  `ask_user` interrupt status already on the logical-head turn.
+  `ask_user` interrupt status on the nearest assistant in the active lineage.
 
 ## Cross-domain dependencies
 

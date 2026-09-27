@@ -10,15 +10,19 @@
  * while the tool handler is awaited.
  */
 
+import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ReturnResultCapture, TreeBudget } from "@meridian/contracts/spawn";
 import type {
   Block,
+  CurrentToolCall,
   JsonValue,
   OrchestratorEvent,
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import { readThreadActivity } from "../../threads/index.js";
+import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator, ChildRunRequest } from "../spawn/child-run-coordinator.js";
 import { readThreadReport } from "../spawn/read-thread-report.js";
 import { spawnOutputForTranscript } from "../spawn/spawn-output.js";
@@ -34,6 +38,7 @@ import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
 import type { InterruptAutoResumePolicy } from "./interrupts.js";
 import { appendEvent, type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
+import { toJsonValue } from "./streaming.js";
 
 export interface ToolDispatchDeps {
   toolExecutor: ToolExecutor;
@@ -42,11 +47,12 @@ export interface ToolDispatchDeps {
   persistenceDeps: PersistenceDeps;
   executionReports: import("../../threads/ports/repositories.js").ThreadRepositories["executionReports"];
   readSnapshot: import("../../threads/ports/repositories.js").ThreadRepositories["readSnapshot"];
-  runningTurn: Pick<import("./ports.js").RunClaim, "readRunningTurnId">;
+  runClaim: Pick<import("./ports.js").RunClaim, "readMany" | "setCurrentTool">;
 }
 
 export interface ToolDispatchContext {
   thread: Thread;
+  lease: import("./ports.js").Lease;
   agentSlug: string | null;
   responseId: string;
   /** Agent-edit lifecycle scope; rotates at an in-response Work switch. */
@@ -81,6 +87,31 @@ export async function dispatchToolCall(
   });
   if (ctx.state.signal?.aborted) {
     return { cancelled: true };
+  }
+
+  if (ctx.thread.kind === "subagent") {
+    const currentTool: CurrentToolCall = {
+      toolCallId: call.id,
+      toolName: call.name,
+      input: toJsonValue(call.arguments),
+    };
+    await appendSubagentActivityForToolChangeBestEffort({
+      recordCurrentTool: () => deps.runClaim.setCurrentTool(ctx.lease, currentTool),
+      currentTool,
+      eventWriter: deps.persistenceDeps.eventWriter,
+      readActivity: (threadId) =>
+        readThreadActivity(
+          {
+            threads: deps.persistenceDeps.repos.threads,
+            statusReader: deps.runClaim,
+            executionReports: deps.executionReports,
+          },
+          threadId,
+        ),
+      parentThreadId: ctx.thread.parentThreadId as ThreadId,
+      childThreadId: ctx.thread.id,
+      eventSink: deps.eventSink,
+    });
   }
 
   let outputDeltaAppendChain: Promise<void> = Promise.resolve();

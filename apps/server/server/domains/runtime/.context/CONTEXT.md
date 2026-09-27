@@ -14,7 +14,8 @@ streaming `Gateway` port.
 | `Gateway` port | `stream(request) -> AsyncIterable<StreamEvent>`, `generate(request) -> GenerateResult`, optional `settleCancelledResult()` and `listModels()` |
 | `ProviderAdapter` port | per-provider streaming implementation (Anthropic, OpenAI Responses, OpenAI-compatible) |
 | Routing | `ProviderRegistry` maps model IDs to adapters; `resolveRoute` picks adapter + model for a request |
-| Retry/fallback | exponential back-off and optional ordered fallback only before **committed** output has been emitted. Committed output is visible text or a tool call; reasoning deltas and usage are process-only, so a reasoning-only abort is retryable |
+| Retry/fallback | Exponential backoff honors provider `retry-after-ms` / `retry-after` hints (capped at 60s) and `x-should-retry: false`; its wait is abort-aware. Ordered fallback and retry happen only before **committed** output has been emitted. Committed output is visible text or a tool call; reasoning deltas and usage are process-only, so a reasoning-only abort is retryable. The gateway is the only retry layer: provider SDK clients run with `maxRetries: 0`, so one gateway attempt is one HTTP request |
+| Stream timing | `attempt-stream.ts` starts one monotonic clock per adapter attempt and eagerly stamps canonical events on arrival into a byte-bounded buffer, so downstream journal writes do not distort timing. A successful result carries `timing: { latencyMs, timeToFirstTokenMs, generationMs }`: provider-attempt invocation to stream-end arrival, attempt invocation to first nonempty text/reasoning/tool-argument delta, and first output arrival to stream-end arrival. If the pump waits on the consumer, generation duration is null; latency and TTFT are retained only when their endpoint events were stamped before that wait. Both TTFT and generation duration are null when no such delta arrives; `custom.delta` is not writer output. Retry timing resets for each attempt, and the successful attempt's values are persisted. |
 | Deadline | per attempt, two timers on one derived `AbortSignal`: an inactivity (stall) timer re-armed by every stream event (`GatewayConfig.attemptStallMs`, env `MODEL_CALL_STALL_MS`, default 60s; never kills a slow-but-streaming model) and an absolute ceiling backstop (`GatewayConfig.attemptCeilingMs`, env `MODEL_CALL_TIMEOUT_MS`, default 15 min / 900s, 0 disables). Per-model `stallTimeoutMs`/`ceilingTimeoutMs` override the gateway values. Retry/deadline driver lives in `attempt-stream.ts`; the signal lives in `deadline.ts` |
 | Cancel drain | After partial output, a parent cancel may drain usage/end events, but one absolute five-second deadline from abort bounds that drain even after a rejected read. `attempt-stream.ts` owns one abort listener per attempt and clears its timer/listener on exit; iterator `return()` is observed without awaiting it, so a hostile adapter cannot hold cancellation or retry hostage. |
 | Config | `GatewayConfig` with provider list, default model, retry/fallback/`attemptStallMs`/`attemptCeilingMs` policy; `createGatewayFromEnv` for env-driven setup |
@@ -24,9 +25,9 @@ streaming `Gateway` port.
 | OpenRouter | `openrouter` adapter reuses the OpenAI-compatible wire shape and owns provider-reported cost enrichment via `/generation`. |
 | Cancel settlement | `Gateway.settleCancelledResult()` owns interrupted-call reconciliation and persist decisions. Generic token/missing-usage handling lives in `gateway/domain/cancel-settlement.ts`; OpenRouter-specific `/generation` settlement lives under `gateway/adapters/openrouter/`. The loop only asks the gateway to settle and then finalizes cancellation. |
 | Tool-arg JSON repair | `gateway/helpers/parse-tool-arguments.ts` repairs malformed provider JSON (e.g. unquoted hex hash `"in": 6c4a`) via `jsonrepair` before falling back to a typed `ToolArgsParseError` sentinel. Unrepairable input surfaces a clear model-actionable parse error instead of degrading into misleading downstream schema errors. See issue [#113](https://github.com/haowjy/meridian-flow/issues/113). |
-| Instrumentation | `instrumented-gateway.ts` decorates the `Gateway` port once in `createProductionAppPorts` (`lib/compose.ts`), emitting `gateway`-source lifecycle events (`stream.open`/`first_output`/`retry`/`close`; per-chunk only under `OBS_VERBOSE=gateway.chunks`, dev/test-only) keyed by `correlation.gatewayCallId`. A `Gateway` constructed outside that seam bypasses instrumentation — intentional for tests, wrong for production consumers. Verbosity is resolved from the injected environment at that seam (`resolveObsVerbose({ rawNodeEnv, obsVerbose })` in `lib/compose.ts`), not a module-level `process.env` read — tests inject `OBS_VERBOSE`; a module-level const would bypass them. |
-| Model-request inspection | Immediately before `Gateway.stream()`, the orchestrator offers the provider-neutral `GenerateRequest` to a dev/test-only capture port. Disabled capture does not serialize it. Local dev/test capture shares `gatewayCallId` with lifecycle events and retains at most 200 records, 2 MiB per request, and 16 MiB total; exact-call reads include the preceding request for prefix comparison. The gate cannot enable capture in staging or production, and content never enters `EventSink`, thread snapshots, the event journal, or JSONL. |
-| Prefix cache state | `loop/prefix-cache-state.ts` exports pure `derivePrefixCacheState` and `createPrefixCacheStateService`. The service's `prefixCacheStateFor({ threadId, model, now })` gathers the latest response through `findLatestByThread`; model and descriptor come from the context assembly's resolved registry model. Predictions are recorded on `model_responses` in the same transaction as usage. Warmth follows the shared `threads/domain/prompt-epochs.ts` `bakeIdAt` rule, complete compaction boundaries, and the `system_update`/`image_inclusion` codec; first-sight image notices append without breaking the sent prefix. Forks resolve their cutoff owner's history and bake before first local response. Cache age is measured from request start, before `Gateway.stream()`. |
+| Instrumentation | `instrumented-gateway.ts` decorates the `Gateway` port once in `createProductionAppPorts` (`lib/compose.ts`), emitting `gateway`-source lifecycle events (`stream.open`/`retry`/`close`; per-chunk only under `OBS_VERBOSE=gateway.chunks`, dev/test-only) keyed by `correlation.gatewayCallId`. Close logs distinguish `gatewayObservationDurationMs` (includes downstream consumption) from provider timing carried by the attempt result. Provider SDK retries are disabled; `attempt-stream.ts` owns retry policy. A `Gateway` constructed outside that seam bypasses lifecycle instrumentation — intentional for tests, wrong for production consumers. Verbosity is resolved from the injected environment at that seam (`resolveObsVerbose({ rawNodeEnv, obsVerbose })` in `lib/compose.ts`), not a module-level `process.env` read — tests inject `OBS_VERBOSE`; a module-level const would bypass them. |
+| Model-request inspection | Immediately before `Gateway.stream()`, the orchestrator offers the provider-neutral `GenerateRequest` to a capture port. Disabled capture does not serialize it. Local dev/test capture shares `gatewayCallId` with lifecycle events and retains at most 200 records, 2 MiB per request, and 16 MiB total; exact-call reads include the preceding request for prefix comparison. The shared `APP_DEBUG` gate can enable capture outside production, and content never enters `EventSink`, thread snapshots, the event journal, or JSONL. |
+| Prefix cache state | `loop/prefix-cache-state.ts` exports pure `derivePrefixCacheState` and `createPrefixCacheStateService`. The service's `prefixCacheStateFor({ threadId, model, now })` gathers the latest response through `findLatestByThread`; model and descriptor come from the context assembly's resolved registry model. Predictions are recorded on `model_responses` in the same transaction as usage. Warmth follows the shared `threads/domain/prompt-epochs.ts` `bakeIdAt` rule, complete compaction boundaries, and the `system_update`/`image_inclusion` codec; first-sight image notices append without breaking the sent prefix. Forks resolve their cutoff owner's history and bake before first local response. Cache age uses `model_responses.request_started_at`, the successful gateway attempt's wall-clock invocation time, not persistence time or latency subtraction. Missing start is `cold/facts_unavailable`. The recorded prediction is made before `Gateway.stream()`; it is not recomputed after retry waits. |
 | Prompt cache intent | `ContentPart.cacheBreakpoint?: true` is provider-neutral intent, not provider syntax. The loop sets up to three marks only for a registry model with `promptCache.kind === "explicit"`. `GenerateRequest.promptCacheKey` is an unconditional routing hint: ordinary threads use their own ID, forks use the ID of the thread that owns their cutoff turn. Adapter wire shapes, TTLs, and the model descriptor live in [gateway context](../gateway/.context/CONTEXT.md). |
 
 Canonical gateway types live in `gateway/domain/types.ts`.
@@ -58,9 +59,10 @@ skeleton and delegates the moving parts.
 
 | `system-instructions/` | Model-facing prompt assets independent of any agent body. `document-dialect.ts` owns Meridian document language and its codec-backed spelling contract; `runtime-uris.ts` owns context namespace guidance. Tool descriptions continue to own mechanics. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
+| `partial-tool-activity.ts` | Reads only the top-level string fields used by live labels from partial tool-call JSON; it tolerates an unfinished object and ignores nested arguments. |
 | `execution-finalizer.ts` | Terminal transaction projects the current assistant event and finalizes the one admitted report found on its ancestor chain. The selector stays the first assistant; `terminalAssistantTurnId` records the final assistant. Fallback text is from that terminal turn’s final persisted response; cost sums every assistant response from selector to terminal. Run-scoped capture keeps the existing partial-outcome policy. Intermediate splits never publish a report. |
 | `persistence.ts` | Transactional persist/project-then-emit helper. **Ordering**: `projectReadModelEvent` runs before `eventWriter.appendEvent` so the `event_journal.turn_id` FK can reference the turn row created by the projector. Both happen in the same repo transaction. |
-| `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata for `prepareAdoptedTurn` to load when the turn is adopted; the delivery commit persists the hidden `system`-role skill-body turn immediately after it. It also appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status: a mid-run send yields the runner's live assistant turn id (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly), a fresh run yields null and the client learns the turn from `RUN_STARTED`. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission. `admission-turn-starter.ts` and `TurnRunner.startTurn` are gone. |
+| `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata for `prepareAdoptedTurn` to load when the turn is adopted; the delivery commit persists the hidden `system`-role skill-body turn immediately after it. It also appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status: a mid-run send yields the runner's live assistant turn id (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly), a fresh run yields null and the client learns the turn from `RUN_STARTED`. When a live assistant binding exists, the writer turn gets `metadata.delivery: "steer"` at enqueue; response grouping uses that stamp, not clock comparisons. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission. `admission-turn-starter.ts` and `TurnRunner.startTurn` are gone. |
 | `reference-context.ts` | Before the first model call, loads admitted current-turn text references through the host-wired shared agent-edit read operation; a mid-run adopted writer turn's unread references load at adoption. Reads run outside admission/persistence transactions; results are persisted server-side at `reference.read.result` before gateway submission. Duplicate `(documentId, uri)` identities read once per turn; replay reuses the frozen result, while a later mention reads afresh. Images retain their separate projection, and client admission rejects `read` payloads. |
 | `image-context.ts` / `ports/image-asset.ts` | Late image bytes are identity-resolved after admission and read-deduplicated. `thread_image_inclusions` is append-only, keyed by `(thread_id, block_id, decision_turn_id)`; the latest row by turn position wins. A definite asset loss, including at first sight, creates an `asset_unavailable` break turn that owns the exclusion decision; budget eviction of an included image creates its own named break. Transient resolution errors propagate to the failed-reply path without deciding the image. Projection applies the shared budget chronologically over history and adopted turns; C5 compaction is the explicit seam for rebalance. Durable blocks retain only `image_reference` identity, never resolved bytes or inclusion state. |
 | `permissions/` | `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow tool names and command sets (`write`, `work`). `write` is always advertised with `read` and `diff`; existing `edit` policy adds or removes mutation commands. `advertiseTools` uses that same command set to narrow both the schema and `write` description, so denied-command instructions are not exposed. Retained historical `read` policy metadata is inert. `commandSetForTool` is the single command mapping. Advertise and the per-turn permission gate (name + command) use that policy. `invocation-authority` validates that an invocation patch never grants the child more than the caller holds, applied only to the patch delta. Dispatch does not apply policy. The core catalogue stays policy-free. |
@@ -89,7 +91,8 @@ What the model actually receives for five common deliveries, so "durable
    followed by the text block `"also tighten the dialogue"`.
 2. **Background subagent completion.** `spawn/report-publisher.ts` enqueues a
    child-provenance `message`; `messageTurnFor` persists it as a `system`-role
-   turn (`{ kind: "subagent_update", handle, outcome, execution }`) whose block
+   turn (`{ kind: "subagent_update", handle, outcome, execution,
+   childThreadId, agentName }`) whose block
    text, once wrapped by the render path, is exactly:
    ```
    <system_update>
@@ -233,7 +236,7 @@ the agent-less generic subagent.
 | `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `execution`, optional `timeoutMs`, `sequential`, `advertise`, one privileged `capability`, and optional `formatExecutionError` when a tool owns its model-facing error protocol. |
 | Core handlers | The strict six-branch `work` union, the single `write` document definition, and other definitions live in `tools/core-tools.ts`; composition wires their handlers through `lib/wired-core-tools.ts`. |
 | Skills | References are retained at binding. `createSkillToolRegistrations` registers the `skill` tool (`source: "skill"`); invoke loads a SKILL.md body only when the slug is in Agent `skills.available` and `model-invocable` is not false. No legacy `invoke` registration or mutable skill catalog participates in preparation. |
-| Spawn tools | `tools/spawn-tools.ts` registers `spawn`, `thread_message`, and `return_result` with explicit privileged capabilities. `thread_message` `{ ref, message, mode }` puts a message into a thread (default `mode: background`); foreground targets a subagent in the caller's subtree and returns its report. Neither spawn nor thread_message accepts an escalation patch. |
+| Spawn tools | `tools/spawn-tools.ts` registers `spawn`, `thread_message`, and `return_result` with explicit privileged capabilities. `thread_message` `{ ref, message, mode }` puts a message into a thread (default `mode: background`); foreground targets a subagent in the caller's subtree and returns its report. `return_result` accepts Meridian document URI strings and validates them through the contracts capture schema before mapping them to `{ type: "object", uri }`. Invalid input returns a model-correctable tool error instead of aborting the child run. Neither spawn nor thread_message accepts an escalation patch. |
 
 Handler-owned `{ isError: true, output }` results already define their
 model-facing protocol, so the executor preserves their output by definition.
@@ -270,9 +273,14 @@ UUIDs do not enter the model surface. `context-builder.ts` emits every persisted
 system-role history turn in place as a user message wrapped once in
 `<system_update>`. Only the actual thread system prompt uses the provider
 system field; adapters merge adjacent user messages as required by Anthropic.
-Writer sends persisted for inbox adoption carry `kind: "inbox_message"`; the
-client keeps them visible with their inline queue state until adoption, then
-places them with other inbox updates inside the preceding assistant turn.
+A writer send is never an inbox delivery: `writer-enqueue.ts` persists the
+writer's user turn with its own metadata (activated skill slugs or null) and no
+`kind`, so it stays a visible bubble before and after adoption. Only machine
+deliveries (an agent `thread_message`, other non-child messages) materialize
+with `kind: "inbox_message"`, which hides them from the bubble list; the client
+renders them as delivery rows inside the preceding assistant turn. Tagging a
+writer turn `inbox_message` makes the writer's own message vanish once a run
+drains it.
 `spawn/orphan-report-repair.ts` scans bounded unfinalized metadata and requires
 the real session claim before failing a nonterminal admitted turn without a
 model call. The process scheduler runs wake, repair, and publication in separate lanes
@@ -305,11 +313,16 @@ claim/controller/registry, so a failed foreground message never writes the
 child's lifecycle; the caller owns the failure policy.
 
 Invocation helper-result cards persist through `spawn/spawn-transcript.ts`
-with the original parent turn, tool call, child thread, delivery mode, and a
-nullable execution until admission binds the committed assistant turn. The
-parent-lock-scoped admission replacement and publication B preserve that exact
-tuple and the original block id/turn/sequence; neither carries report body.
-An unadmitted failure keeps `execution: null`. A spawned background
+as one parsed `InvocationCardProps` contract. Their name is the bound Agent
+revision's `metadata.name`, falling back to its slug (the generic unbound
+subagent keeps its canonical display name). Running cards have `terminalAt: null`
+and keep the parent turn, tool call, child thread, delivery mode, and nullable
+execution until admission binds the committed assistant turn. Terminal cards
+carry `outcome` plus `terminalAt`, not a duplicate status. A pre-admission
+failure carries a writer-readable `reason` and intentionally has no child thread
+or execution link. The parent-lock-scoped admission replacement and publication
+B preserve the exact tuple and original block id/turn/sequence; neither carries
+report body. A spawned background
 execution returns only after assistant-turn admission commits, without waiting
 for terminal. Foreground spawn and message return the exact terminal report
 directly, preserving failure/cancellation and partial content. Background
@@ -325,7 +338,15 @@ not a competing body store. Every child run publishes neutral, body-free
 `ThreadActivity`. A foreground `thread_message` appends it once the wake lease is
 held, and a drain-woken run (a child report or background `thread_message`) is
 driven by the turn runner, which appends at lease acquire and again at lease
-release so the strip reads awake for the whole run and asleep after. The
+release so the strip reads awake for the whole run and asleep after. While a
+subagent response streams, the first `tool_call.delta` records its call name
+and best-effort partial input on the lease (`thread_run_leases.current_tool`,
+via `RunClaim.setCurrentTool`); one further refresh records the target once a
+document path/URI, search pattern, or spawn agent arrives. A `write` skips the
+first-delta record and waits for its command as well as its path, because the
+same tool reads, diffs, and edits; labeled early, every read would flash as a
+write. Other deltas do not write activity. Tool dispatch still records the full input and appends the same
+activity fact only when the call changed. The
 create-side append is strict (a failure fails the spawn), while terminal and
 wake appends are best-effort: a read-model failure is reported to the
 `EventSink` (`subagent.activity.append_failed`, or
@@ -367,9 +388,11 @@ carries only the caller/turn/tool/card and origin/delivery metadata; the actual
 child `assistantTurnId` is assigned only after turn admission. The runtime
 admits each child run once, finalizes its saved report with the terminal
 assistant turn, and publishes a parent card/notification from that durable
-row. Generic `ThreadPendingInbox` projects every provenance; the app's
-`writerTurnQueueStatus` (`pending-inbox.ts`) is the client-side selector that
-filters `provenance.kind === "writer"` to derive per-turn queue status.
+row. Tool and API responses share the `ThreadReportResult` contracts schema,
+including `childThreadId`; the app projects both through `toReportContentValue`.
+Generic `ThreadPendingInbox` projects every provenance; the app's
+`queuedWriterTurnIds` (`pending-inbox.ts`) is the client-side selector that
+keeps writer-provenance rows in `waiting` so only those bubbles show Queued.
 
 ### Vocabulary note
 
@@ -387,6 +410,11 @@ facet.
   command is `invalid_arguments`; a recognized but disabled command or tool is
   `permission_denied`. Dispatch does not apply policy. Direct
   `toolExecutor.executeTool` does not apply policy.
+- `ask_user` is never advertised until its rework (composer-attached answer
+  input and defined subagent semantics,
+  [#601](https://github.com/haowjy/meridian-flow/issues/601)), even when an
+  Agent's Mars policy allows it (`project-tool-policy.ts`). The interrupt
+  runtime and the app's interrupt card remain; re-enabling is that one line.
 - The single document tool is `write` and every call requires an explicit
   `command`. Baseline `write({ command: "read", path: "..." })` reads and
   `write({ command: "diff" })` inspects the folded turn trail; these baseline

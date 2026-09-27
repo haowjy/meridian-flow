@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Mounted transcript regression for awaiting-run status propagation. */
+/** Mounted transcript regression for queued writer status propagation. */
 import type { ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -39,7 +39,7 @@ vi.mock("@/rich-content/Markdown", () => ({
 import type { Turn } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { TurnList } from "./TurnList";
+import { continuesResponse, resolveSubagentRevealTurnId, TurnList } from "./TurnList";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 const previousActEnvironment = actGlobal.IS_REACT_ACT_ENVIRONMENT;
@@ -50,7 +50,7 @@ afterAll(() => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
 });
 
-describe("TurnList awaiting status", () => {
+describe("TurnList queued status", () => {
   let host: HTMLDivElement;
   let root: Root;
 
@@ -82,7 +82,7 @@ describe("TurnList awaiting status", () => {
           },
         ],
       },
-    ] as Turn[];
+    ] as unknown as Turn[];
     const stableProps = {
       threadId: "thread-1",
       turns,
@@ -93,28 +93,110 @@ describe("TurnList awaiting status", () => {
     };
 
     await act(async () =>
-      root.render(<TurnList {...stableProps} queueStatusByTurnId={new Map()} />),
+      root.render(<TurnList {...stableProps} queuedWriterTurnIds={new Set()} />),
     );
-    expect(host.textContent).not.toContain("Waiting for response");
+    expect(host.textContent).not.toContain("Queued");
 
     await act(async () =>
-      root.render(
-        <TurnList {...stableProps} queueStatusByTurnId={new Map([["user-1", "queued"]])} />,
-      ),
+      root.render(<TurnList {...stableProps} queuedWriterTurnIds={new Set(["user-1"])} />),
     );
     expect(host.textContent).toContain("Queued");
     expect(host.querySelectorAll('[data-user-turn-status="queued"]')).toHaveLength(1);
 
     await act(async () =>
-      root.render(
-        <TurnList {...stableProps} queueStatusByTurnId={new Map([["user-1", "waiting"]])} />,
-      ),
+      root.render(<TurnList {...stableProps} queuedWriterTurnIds={new Set()} />),
     );
-    expect(host.textContent).toContain("Waiting for response");
+    expect(host.textContent).not.toContain("Queued");
+    expect(host.querySelectorAll('[data-user-turn-status="queued"]')).toHaveLength(0);
+  });
+});
 
-    await act(async () =>
-      root.render(<TurnList {...stableProps} queueStatusByTurnId={new Map()} />),
-    );
-    expect(host.textContent).not.toContain("Waiting for response");
+describe("subagent reveal turn resolution", () => {
+  const _nodes = [{ threadId: "child", ref: "p3" }] as never;
+  const helper = {
+    id: "helper",
+    turnId: "launch",
+    responseId: null,
+    blockType: "custom",
+    sequence: 0,
+    content: {
+      kind: "helper-result",
+      props: {
+        agentSlug: "critic",
+        agentName: "Critic",
+        parentTurnId: "launch",
+        toolCallId: "call-1",
+        childThreadId: "child",
+        deliveryMode: "background_notification",
+        execution: "execution-1",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        terminalAt: "2026-01-01T00:01:00.000Z",
+        outcome: "succeeded",
+        title: "Task",
+      },
+    },
+  };
+
+  it("lands on the assistant turn that renders the completion row", () => {
+    const turns = [
+      { id: "launch", role: "assistant", blocks: [helper] },
+      { id: "completion-turn", role: "assistant", blocks: [] },
+      {
+        id: "notice",
+        role: "system",
+        prevTurnId: "completion-turn",
+        metadata: {
+          kind: "subagent_update",
+          handle: "p3",
+          execution: "execution-1",
+          outcome: "succeeded",
+          childThreadId: "child",
+          agentName: "Critic",
+        },
+        blocks: [],
+      },
+    ] as unknown as Turn[];
+    expect(resolveSubagentRevealTurnId(turns, "child", "launch")).toBe("completion-turn");
+  });
+
+  it("falls back to the origin turn while no later child point is loaded", () => {
+    expect(
+      resolveSubagentRevealTurnId(
+        [{ id: "launch", blocks: [] } as unknown as Turn],
+        "child",
+        "launch",
+      ),
+    ).toBe("launch");
+  });
+});
+
+describe("continuesResponse", () => {
+  const assistant = (id: string, completedAt: string | null, status = "complete") =>
+    ({ id, role: "assistant", status, completedAt }) as unknown as Turn;
+  const writer = (id: string, delivery: "steer" | undefined) =>
+    ({ id, role: "user", metadata: delivery ? { delivery } : null }) as unknown as Turn;
+
+  it("continues past a notification-woken assistant turn", () => {
+    const turns = [assistant("a", "2026-01-01T00:01:00Z"), assistant("b", "2026-01-01T00:02:00Z")];
+    expect(continuesResponse(turns, 0, false)).toBe(true);
+    expect(continuesResponse(turns, 1, false)).toBe(false);
+  });
+
+  it("continues past a writer steer sent while the turn was generating", () => {
+    const steer = [assistant("a", "2026-01-01T00:01:00Z"), writer("s", "steer")];
+    expect(continuesResponse(steer, 0, false)).toBe(true);
+    const reply = [assistant("a", "2026-01-01T00:01:00Z"), writer("s", undefined)];
+    expect(continuesResponse(reply, 0, false)).toBe(false);
+  });
+
+  it("keeps the latest turn open only while background subagents run", () => {
+    const turns = [assistant("a", "2026-01-01T00:01:00Z")];
+    expect(continuesResponse(turns, 0, true)).toBe(true);
+    expect(continuesResponse(turns, 0, false)).toBe(false);
+  });
+
+  it("treats a stopped or failed turn as finished", () => {
+    const turns = [assistant("a", "2026-01-01T00:01:00Z", "cancelled"), assistant("b", null)];
+    expect(continuesResponse(turns, 0, true)).toBe(false);
   });
 });

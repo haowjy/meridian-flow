@@ -56,6 +56,7 @@ describe("messageTurnFor", () => {
           reportId: "report-1" as TurnId,
           handle: "p1",
           outcome: "succeeded",
+          agentName: "Critic",
         },
       }),
       null,
@@ -63,6 +64,7 @@ describe("messageTurnFor", () => {
     );
     expect(turn.origin).toBe("system");
     expect(turn.role).toBe("system");
+    expect(turn.metadata).toMatchObject({ childThreadId: "child-1", agentName: "Critic" });
   });
 
   it("gives a system-provenance notice origin system", () => {

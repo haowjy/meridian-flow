@@ -59,6 +59,10 @@ describe("useThreadActivity", () => {
           spawnStatus: "running",
           status: { kind: "awake", phase: "generating", cancelRequested: false },
           originTurnId: null,
+          deliveryMode: null,
+          runStartedAt: null,
+          runEndedAt: null,
+          currentTool: null,
         },
       ],
     };

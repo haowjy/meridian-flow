@@ -108,10 +108,11 @@ async function recordNotice(notices: ReturnType<typeof createTestNoticePort>, th
 }
 
 function messageTurns(turns: readonly { id: TurnId; role: string; metadata?: unknown }[]) {
-  return turns.filter(
-    (turn) =>
-      turn.role === "user" && (turn.metadata as { kind?: string } | null)?.kind === "inbox_message",
-  );
+  return turns.filter((turn) => turn.role === "user");
+}
+
+function turnsWithId(turns: readonly { id: string }[], id: string) {
+  return turns.filter((turn) => turn.id === id);
 }
 
 async function messageTurnTexts(
@@ -213,6 +214,7 @@ describe("inbox drain", () => {
         toolCallResult("return_result", "rr-1", {
           summary: "explicit summary",
           payload: { answer: 42 },
+          artifacts: ["scratch://the-lamplighters-arithmetic.md"],
         }),
         toolCallResult("unknown", "repair-me"),
         textResult("steered answer after tool"),
@@ -231,6 +233,7 @@ describe("inbox drain", () => {
       source: "return_result",
       summary: "explicit summary",
       payload: { answer: 42 },
+      artifacts: [{ type: "object", uri: "scratch://the-lamplighters-arithmetic.md" }],
       captureToolCallId: "rr-1",
       terminalAssistantTurnId: terminal?.id,
     });
@@ -239,6 +242,45 @@ describe("inbox drain", () => {
     );
     expect(toolResults).toHaveLength(1);
     expect(toolResults[0]?.content).toMatchObject({ output: { ok: true }, isError: false });
+  });
+
+  it.each([
+    ["HTTP URL", "https://example.test/cover.png"],
+    ["non-URI string", "not a Meridian URI"],
+  ])("returns a tool error for a %s artifact and continues the child run", async (_label, artifact) => {
+    const { thread, orchestrator, requests, repos } = await setup({
+      child: true,
+      realSpawnTools: true,
+      results: [
+        toolCallResult("return_result", "rr-bad", {
+          summary: "malformed report",
+          artifacts: [artifact],
+        }),
+        textResult("recovered report"),
+      ],
+    });
+    const run = await orchestrator.prepare({ threadId: thread.id, userText: "report" });
+
+    await execute(run);
+
+    expect(requests).toHaveLength(2);
+    const report = await repos.executionReports.findByExecution(thread.id, run.assistantTurnId);
+    expect(report).toMatchObject({
+      outcome: "succeeded",
+      source: "final_assistant",
+      summary: "recovered report",
+    });
+    const toolResult = (await repos.blocks.listByTurn(run.assistantTurnId)).find(
+      (block) => block.blockType === "tool_result",
+    );
+    expect(toolResult?.content).toMatchObject({
+      isError: true,
+      output: {
+        code: "tool_error",
+        message: expect.stringContaining("artifacts[0]"),
+      },
+    });
+    expect(JSON.stringify(toolResult?.content)).toContain(artifact);
   });
 
   it("saves only the final response's public text and per-execution response cost", async () => {
@@ -1370,7 +1412,7 @@ describe("inbox drain", () => {
     const { thread, inbox, requests, orchestrator, repos } = await setup({
       results: [toolCallResult("ask_user", "call-1"), textResult("done")],
     });
-    await inbox.enqueue(message("carry me", thread.id));
+    const carried = await inbox.enqueue(message("carry me", thread.id));
 
     await execute(await orchestrator.prepare({ threadId: thread.id, userText: "hello" }));
 
@@ -1381,12 +1423,10 @@ describe("inbox drain", () => {
     expect(messageTexts(requests[1].messages)).toContain("carry me");
 
     const turns = await repos.turns.listByThread(thread.id);
-    const messageTurn = turns.find(
-      (turn) =>
-        turn.role === "user" &&
-        (turn.metadata as { kind?: string } | null)?.kind === "inbox_message",
-    );
-    expect(messageTurn).toBeDefined();
+    const messageTurn = turns.find((turn) => turn.id === carried.id);
+    expect(messageTurn?.role).toBe("user");
+    // A writer message is the writer's own turn, not a hidden inbox delivery.
+    expect(messageTurn?.metadata).toBeNull();
     const blocks = await repos.blocks.listByTurn(messageTurn?.id as string);
     expect(blocks.some((block) => block.textContent === "carry me")).toBe(true);
     expect(await inbox.selectPending(thread.id)).toEqual([]);
@@ -1394,19 +1434,19 @@ describe("inbox drain", () => {
 
   it("redelivers an unacked message once, without a second turn or render", async () => {
     const { thread, inbox, requests, orchestrator, repos } = await setup({ errorAtCall: 1 });
-    await inbox.enqueue(message("crash safe", thread.id));
+    const crashSafe = await inbox.enqueue(message("crash safe", thread.id));
 
     // First drain persists the message, then fails before the response acks it.
     await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
     expect(await inbox.selectPending(thread.id)).toHaveLength(1);
     let turns = await repos.turns.listByThread(thread.id);
-    expect(messageTurns(turns)).toHaveLength(1);
+    expect(turnsWithId(turns, crashSafe.id)).toHaveLength(1);
 
     // A later drain re-claims the same message and reuses its durable turn.
     await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
 
     turns = await repos.turns.listByThread(thread.id);
-    expect(messageTurns(turns)).toHaveLength(1);
+    expect(turnsWithId(turns, crashSafe.id)).toHaveLength(1);
     const secondRequest = requests[1];
     expect(secondRequest).toBeDefined();
     const renderCount = messageTexts(secondRequest?.messages ?? []).filter(
@@ -1425,7 +1465,7 @@ describe("inbox drain", () => {
     await execute(await orchestrator.prepare({ threadId: thread.id, userText: "first" }));
     expect((await repos.threads.findById(thread.id))?.initialPromptBakeId).not.toBeNull();
 
-    await inbox.enqueue(message("baked steer", thread.id));
+    const baked = await inbox.enqueue(message("baked steer", thread.id));
 
     const outcome = await execute(
       await orchestrator.prepare({ threadId: thread.id, userText: "second" }),
@@ -1435,6 +1475,7 @@ describe("inbox drain", () => {
     const turns = await repos.turns.listByThread(thread.id);
     expect(messageTurns(turns)).toHaveLength(3);
     expect(await messageTurnTexts(repos, thread.id)).toEqual(["first", "baked steer", "second"]);
+    expect(turnsWithId(turns, baked.id)).toHaveLength(1);
     expect(await inbox.selectPending(thread.id)).toEqual([]);
   });
 
@@ -1540,6 +1581,8 @@ describe("drain-only start", () => {
         handle: child.ref,
         outcome: "succeeded",
         execution: execution.id,
+        childThreadId: child.id,
+        agentName: child.agentName ?? "Subagent",
       },
     });
     const blocks = await repos.blocks.listByTurn(queued.id);

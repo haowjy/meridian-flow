@@ -1,4 +1,6 @@
 /** Parent-first publication B for immutable child execution reports. */
+
+import { GENERIC_SUBAGENT_SLUG } from "@meridian/contracts/agents";
 import { buildInvocationCardContent } from "@meridian/contracts/components";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
@@ -8,7 +10,7 @@ import type { EventJournalWriter, ThreadRepositories } from "../../threads/index
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
 import type { DeliveryProducer } from "../loop/runtime-delivery.js";
-import { invocationCardProps } from "./spawn-output.js";
+import { invocationAgentName, invocationCardProps } from "./spawn-output.js";
 
 export type PublicationOutcome = "published" | "parked" | "already";
 
@@ -58,6 +60,11 @@ export function createReportPublisher(deps: {
         if (report.outcome === null) {
           throw new Error("Pending execution report has no terminal outcome");
         }
+        const child = await deps.repos.threads.findById(report.childThreadId);
+        const agentName = invocationAgentName(
+          report.agentSlug ?? GENERIC_SUBAGENT_SLUG,
+          child?.agentName,
+        );
 
         const events: OrchestratorEvent[] = [];
         if (report.cardBlockId && report.callerTurnId) {
@@ -79,6 +86,7 @@ export function createReportPublisher(deps: {
                 content: buildInvocationCardContent(
                   invocationCardProps({
                     agent: report.agentSlug ?? undefined,
+                    agentName,
                     description: report.description ?? undefined,
                     correlation: {
                       parentTurnId: report.callerTurnId,
@@ -87,6 +95,8 @@ export function createReportPublisher(deps: {
                     },
                     childThreadId: report.childThreadId,
                     execution: report.assistantTurnId,
+                    startedAt: report.admittedAt,
+                    terminalAt: report.terminalAt,
                     outcome: report.outcome,
                   }),
                 ),
@@ -118,6 +128,7 @@ export function createReportPublisher(deps: {
               reportId: report.assistantTurnId,
               handle: report.handle,
               outcome: report.outcome,
+              agentName,
             },
             body: { kind: "text", text: notificationText(report) },
             idempotencyKey: `child-report:${report.assistantTurnId}`,

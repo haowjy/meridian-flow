@@ -12,3 +12,4 @@
 
 - Debug packaged add should resolve launch-agents by coordinate, not scan every system package (`apps/server/server/domains/packages/domain/account-skill-install.ts`).
 - Share fuzzy filter / group-heading chrome between composer `/` and manuscript slash (`apps/app/src/components/app/composer/command/`, `apps/app/src/core/editor/extensions/slash/`).
+- OpenAI-compatible and OpenRouter usage mapping reads `prompt_tokens_details.cached_tokens` but no cache-write counter, so Anthropic-via-OpenRouter cache writes don't appear as `cacheWriteTokens` (they still count as misses in `inputTokens`, so hit rate is right; write-premium cost visibility isn't). Map OpenRouter's cache-write field in `gateway/adapters/openai-compatible/stream-collect.ts` when cost-by-cache-layer matters.

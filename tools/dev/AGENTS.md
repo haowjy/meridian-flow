@@ -17,6 +17,7 @@ Local-dev-only utilities. Never imported by the application runtime.
 - Worktree cleanup (`pnpm dev:prune-worktrees`)
 - Migration SQL linting (`migration-lint.ts`, CI/pre-commit gate policy)
 - `pnpm bootstrap` and dev-data seeding
+- `./mf` (`cli/`): the agent-facing dev CLI that wraps this worktree's app API
 
 ## Rules
 
@@ -44,12 +45,13 @@ Local-dev-only utilities. Never imported by the application runtime.
 - **Worktree cleanup is deliberate and targeted.** Clean one lane at a time with `pnpm dev:prune-worktrees -- --target <work-id|path|branch|pr> --dry-run`; targeted cleanup refuses dirty or locked worktrees before teardown. `--auto` is an advanced batch escape hatch, not yet trusted for routine use. Ref deletion stays bound to the planned branch OID and is revalidated before every action. Keep authorization in `lib/worktree-cleanup-eligibility.ts`, readiness in `lib/worktree-cleanup-readiness.ts`, orchestration in `prune-worktrees.ts`, and actions in `lib/worktree-cleanup.ts`; never infer staleness from branch ancestry or a branch name.
 - **All TypeScript here stays inside one strict Nx boundary.** `tools/dev/project.json` registers `meridian-dev-tools:typecheck`; `tools/dev/tsconfig.json` includes the directory. Do not add per-script typecheck wrappers or weaken strictness.
 - **Surgical Tailscale cleanup in pruning.** Stale route removal goes through `findStaleTailscaleRoutes` + `tailscaleRouteOffArgs` (per-port `off`). Never call `tailscale serve reset` or `tailscale funnel reset`. Never prune a route with any live listener.
+- **`./mf` wraps the API; it never reimplements it.** Before changing `cli/`, read the `./mf` section of [`.context/CONTEXT.md`](.context/CONTEXT.md).
 - **WS 426 is not a warning.** Plain HTTP hits to `/api/threads/ws` and `/ws/yjs` produce expected 426 responses. `routeStatusEvent` in `apps/server/server/lib/request-observability.ts` suppresses these. When adding a new WebSocket route, add it to `isExpectedWsPlainHttpStatus`.
 
 ## Do not
 
 - Do not run `tools/dev/*` scripts from production code or app runtime
-- Do not import from `apps/`, `packages/`, or `python/` — these are dev tools, not app code
+- Do not import from `apps/`, `packages/`, or `python/` — these are dev tools, not app code (except `@meridian/contracts` in `cli/`; see `.context/CONTEXT.md`)
 - Do not depend on Node modules outside the root `package.json`'s devDependencies
 - Do not print or persist the `executable` command — stdout, logs, and `.meridian/dev-session.json` get `display` (redacted) only
 - Do not build the tmux command before calling `applyDevEnvToProcess`

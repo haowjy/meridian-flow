@@ -70,7 +70,7 @@ export async function persistWriterTurn(input: {
         role: "user",
         origin: input.origin,
         status: "complete",
-        metadata: writerInboxMetadata(input.userTurnMetadata),
+        metadata: input.userTurnMetadata ?? null,
       });
       const blocks = writerUserTurnBlocks(userTurn.id, input.userBlocks);
       input.afterTurnCreated?.(userTurn.id);
@@ -141,11 +141,4 @@ export async function persistWriterEnqueue<T>(input: {
       if (!(error instanceof TurnStartConflictError) || attempt >= 2) throw error;
     }
   }
-}
-
-export function writerInboxMetadata(metadata: JsonValue | null | undefined): JsonValue {
-  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
-    return { ...metadata, kind: "inbox_message" };
-  }
-  return { kind: "inbox_message" };
 }

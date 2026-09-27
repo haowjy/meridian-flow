@@ -57,7 +57,11 @@ navigation policy per renderer to remember or uphold.
 
 A row expands; a name inside it navigates. Never invert: the large forgiving
 target carries the safe reversible action, the small precise one carries
-leaving the transcript.
+leaving the transcript. Subagent rows and cards (`subagent/SubagentRow`) apply
+the same split: the row expands or jumps within the chat, and only the chat
+icon leaves for the child's chat. Bare rows pack their controls right after the
+text; see [turn rhythm and actions](turn-rhythm-and-actions.md) for the card
+exception.
 
 `ActivityRow` builds this as the stretched-button pattern — an empty
 absolutely-positioned toggle rendered **after** the title content, with the
@@ -132,3 +136,10 @@ one lives in [tool-expands.md](tool-expands.md).
 - **Open state is local to the row.** It resets when the row unmounts. Process
   folds live and settled alike, so settlement is not a remount — do not hoist
   it.
+
+## Activity scope
+
+The server sends only the viewed thread's direct children. The strip and panel
+consume that list without filtering or subtree rebasing. Live current-tool and
+run lifecycle refreshes land on the direct parent's journal. A subagent's path
+row reads its direct parent's activity for its own run times, never the root's.

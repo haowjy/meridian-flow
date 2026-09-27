@@ -16,12 +16,34 @@
  */
 import { EventType, type ThreadLiveState } from "@meridian/contracts/protocol";
 import type { ThreadActivity, ThreadStatus } from "@meridian/contracts/threads";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { useIsThreadPendingCreation } from "@/client/stores";
 import { EMPTY_THREAD_ACTIVITY, isThreadActivity } from "./thread-activity";
 
 const ASLEEP: ThreadStatus = { kind: "asleep" };
+type SharedActivity = {
+  view: ThreadActivityView;
+  listeners: Set<() => void>;
+  release?: () => void;
+  refs: number;
+  seeded: boolean;
+};
+const shared = new Map<string, SharedActivity>();
+
+function stateFor(threadId: string): SharedActivity {
+  let state = shared.get(threadId);
+  if (!state) {
+    state = { view: seedView(null), listeners: new Set(), refs: 0, seeded: false };
+    shared.set(threadId, state);
+  }
+  return state;
+}
+
+function publish(state: SharedActivity, view: ThreadActivityView) {
+  state.view = view;
+  for (const listener of state.listeners) listener();
+}
 
 export type ThreadActivityView = {
   activity: ThreadActivity;
@@ -35,40 +57,52 @@ export function useThreadActivity(input: {
   const { threadId, seed } = input;
   const transport = useThreadTransport();
   const isPendingCreation = useIsThreadPendingCreation(threadId);
-  const [view, setView] = useState<ThreadActivityView>(() => seedView(seed));
-  const prevThreadRef = useRef(threadId);
-  const seededRef = useRef(false);
+  const state = stateFor(threadId);
+  const view = useSyncExternalStore(
+    (listener) => {
+      state.listeners.add(listener);
+      return () => state.listeners.delete(listener);
+    },
+    () => state.view,
+    () => state.view,
+  );
 
   useEffect(() => {
-    if (prevThreadRef.current !== threadId) {
-      prevThreadRef.current = threadId;
-      seededRef.current = seed !== null;
-      setView(seedView(seed));
-      return;
+    if (seed && !state.seeded) {
+      state.seeded = true;
+      publish(state, seedView(seed));
     }
-    // The HTTP snapshot seeds once per thread. Later re-fetches are superseded
-    // by live frames and the subscribe-time `onLiveState` reconciliation, so
-    // they must not regress a newer live value.
-    if (seed && !seededRef.current) {
-      seededRef.current = true;
-      setView(seedView(seed));
-    }
-  }, [seed, threadId]);
+  }, [seed, state]);
 
   useEffect(() => {
-    if (isPendingCreation) return;
-    return transport.subscribe(threadId, {
-      onEvent: ({ event }) => {
-        if (event.type !== EventType.CUSTOM || event.name !== "meridian.subagent.activity") return;
-        if (!isThreadActivity(event.value)) return;
-        // Frames are already scoped to this thread's direct children.
-        setView((current) => ({ ...current, activity: event.value }));
-      },
-      onLiveState: (state) => {
-        setView({ activity: state.activity ?? EMPTY_THREAD_ACTIVITY, status: state.status });
-      },
-    });
-  }, [transport, threadId, isPendingCreation]);
+    if (!threadId || isPendingCreation) return;
+    state.refs += 1;
+    if (state.refs === 1)
+      state.release = transport.subscribe(threadId, {
+        onEvent: ({ event }) => {
+          if (event.type !== EventType.CUSTOM || event.name !== "meridian.subagent.activity")
+            return;
+          if (!isThreadActivity(event.value)) return;
+          // The server scopes frames to this thread's direct children.
+          state.seeded = true;
+          publish(state, { ...state.view, activity: event.value });
+        },
+        onLiveState: (liveState) => {
+          state.seeded = true;
+          publish(state, {
+            activity: liveState.activity ?? EMPTY_THREAD_ACTIVITY,
+            status: liveState.status,
+          });
+        },
+      });
+    return () => {
+      state.refs -= 1;
+      if (state.refs === 0) {
+        state.release?.();
+        state.release = undefined;
+      }
+    };
+  }, [transport, threadId, isPendingCreation, state]);
 
   return view;
 }

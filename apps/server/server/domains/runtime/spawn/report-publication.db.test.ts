@@ -92,7 +92,7 @@ else
       expect(card?.content).toMatchObject({
         kind: "helper-result",
         props: {
-          status: "completed",
+          outcome: "succeeded",
           parentTurnId: ids.callerTurn,
           toolCallId: "spawn-1",
           deliveryMode: "background_notification",
@@ -129,7 +129,12 @@ else
       const messages = await inbox.selectPending(ids.caller);
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
-        provenance: { kind: "child", threadId: ids.child, reportId: ids.execution },
+        provenance: {
+          kind: "child",
+          threadId: ids.child,
+          reportId: ids.execution,
+          agentName: "critic",
+        },
       });
       expect(JSON.stringify(messages)).toContain(
         `Subagent p1 finished (succeeded). Read its report with thread_report({\\"ref\\":\\"p1\\"}).`,
@@ -366,6 +371,7 @@ else
         card: originalCard,
         props: invocationCardProps({
           agent: "critic",
+          agentName: "critic",
           correlation: {
             parentTurnId: ids.callerTurn,
             toolCallId: "spawn-1",
@@ -373,8 +379,11 @@ else
           },
           childThreadId: ids.child,
           execution: null,
+          startedAt: "2026-01-01T00:00:00.000Z",
+          terminalAt: null,
         }),
         execution: ids.execution,
+        admittedAt: "2026-01-01T00:00:00.000Z",
       });
       expect((await repos.blocks.findById(ids.card))?.content).toEqual(terminalCard.content);
       const afterEvents = await db
@@ -425,7 +434,7 @@ else
       expect(await parentEvents()).toEqual([]);
       expect((await repos.blocks.findById(ids.card))?.content).toMatchObject({
         kind: "helper-result",
-        props: { status: "running" },
+        props: { execution: null, terminalAt: null },
       });
       expect(await inbox.selectPending(ids.caller)).toEqual([]);
       expect(

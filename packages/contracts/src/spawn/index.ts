@@ -4,9 +4,36 @@
  * Key decisions: SpawnResult union reserves a future interrupt arm; TreeBudget
  * spent counters are updated in-process until P4 wires the ledger.
  */
-import type { ArtifactRef, MeridianError } from "../interrupt/index.js";
+
+import { z } from "zod";
+import { parseContextUri } from "../context-uri.js";
+import { type ArtifactRef, artifactRefSchema, type MeridianError } from "../interrupt/index.js";
 import type { ThreadId, TurnBlockId, TurnId } from "../runtime/index.js";
 import type { JsonValue } from "../threads/index.js";
+
+const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
+  ]),
+);
+
+const artifactUriSchema = z
+  .string()
+  .superRefine((uri, context) => {
+    const parsed = parseContextUri(uri);
+    if (!uri.includes("://") || !parsed.ok || !parsed.value.path) {
+      context.addIssue({
+        code: "custom",
+        message: `Expected a Meridian document URI, received ${JSON.stringify(uri)}.`,
+      });
+    }
+  })
+  .transform((uri): ArtifactRef => ({ type: "object", uri }));
 
 /** Candidate content supplied by return_result, before terminal cause is known. */
 export type ReturnResultCapture = {
@@ -15,6 +42,13 @@ export type ReturnResultCapture = {
   artifacts?: AgentReport["artifacts"];
 };
 
+/** Canonical return_result input; artifact URI strings resolve to object refs. */
+export const returnResultCaptureSchema = z.strictObject({
+  summary: z.string(),
+  payload: jsonValueSchema.optional(),
+  artifacts: z.array(artifactUriSchema).optional(),
+});
+
 /** A run accepts one report; a second return_result is refused, not thrown. */
 export type ReturnResultOutcome = { ok: true } | { ok: false; message: string };
 
@@ -22,6 +56,30 @@ export type SavedOutcome = "succeeded" | "failed" | "cancelled";
 export type ExecutionReportSource = "return_result" | "final_assistant" | "empty";
 export type ExecutionReportOrigin = "spawn" | "foreground_message" | "thread_run";
 export type ExecutionReportDelivery = "background_notification" | "direct" | "none";
+
+/** Durable user-facing identity carried by a child-completion turn. */
+export type SubagentUpdateMetadata = {
+  kind: "subagent_update";
+  handle: string;
+  execution: string | null;
+  outcome: SavedOutcome;
+  childThreadId: ThreadId;
+  agentName: string;
+};
+
+const subagentUpdateMetadataSchema = z.object({
+  kind: z.literal("subagent_update"),
+  handle: z.string(),
+  execution: z.string().nullable(),
+  outcome: z.enum(["succeeded", "failed", "cancelled"]),
+  childThreadId: z.string(),
+  agentName: z.string(),
+});
+
+export function parseSubagentUpdateMetadata(value: unknown): SubagentUpdateMetadata | null {
+  const parsed = subagentUpdateMetadataSchema.safeParse(value);
+  return parsed.success ? (parsed.data as SubagentUpdateMetadata) : null;
+}
 
 /** Parent-side identity passed at child admission; the child turn ID is added only after admission commits. */
 export type ExecutionReportCorrelation = {
@@ -37,6 +95,8 @@ export type SavedExecutionReport = {
   terminalAssistantTurnId: TurnId | null;
   childThreadId: ThreadId;
   assistantTurnId: TurnId;
+  /** Durable report-row creation time, which commits with run admission. */
+  admittedAt: string;
   handle: string;
   origin: ExecutionReportOrigin;
   deliveryMode: ExecutionReportDelivery;
@@ -61,9 +121,11 @@ export type SavedExecutionReport = {
 
 export type ThreadReportResult =
   | {
+      childThreadId: ThreadId;
       ref: string;
       run: number;
       outcome: SavedOutcome;
+      deliveryMode: ExecutionReportDelivery;
       source: ExecutionReportSource;
       summary: string;
       payload?: JsonValue;
@@ -71,7 +133,58 @@ export type ThreadReportResult =
       partial: boolean;
       reason: string | null;
     }
-  | { ref: string; status: "not_ready" | "unavailable" };
+  | { childThreadId: ThreadId; ref: string; status: "not_ready" | "unavailable" };
+
+const threadReportResultSchema = z.union([
+  z.object({
+    childThreadId: z.string(),
+    ref: z.string(),
+    run: z.number().int().positive(),
+    outcome: z.enum(["succeeded", "failed", "cancelled"]),
+    deliveryMode: z.enum(["background_notification", "direct", "none"]),
+    source: z.enum(["return_result", "final_assistant", "empty"]),
+    summary: z.string(),
+    payload: jsonValueSchema.optional(),
+    artifacts: z.array(artifactRefSchema).optional(),
+    partial: z.boolean(),
+    reason: z.string().nullable(),
+  }),
+  z.object({
+    childThreadId: z.string(),
+    ref: z.string(),
+    status: z.enum(["not_ready", "unavailable"]),
+  }),
+]);
+
+/** Client-facing saved report details shared by the tool output and API reader. */
+export type SavedReportContentValue = {
+  summary: string;
+  payload?: JsonValue;
+  artifacts: ArtifactRef[];
+  partial?: boolean;
+  outcome?: SavedOutcome | null;
+  reason?: string | null;
+};
+
+export function parseThreadReportResult(value: unknown): ThreadReportResult | null {
+  const parsed = threadReportResultSchema.safeParse(value);
+  return parsed.success ? (parsed.data as ThreadReportResult) : null;
+}
+
+/** Project a ready saved report into the common report-content presentation shape. */
+export function toReportContentValue(
+  report: ThreadReportResult | null,
+): SavedReportContentValue | null {
+  if (!report || "status" in report) return null;
+  return {
+    summary: report.summary,
+    ...(report.payload === undefined ? {} : { payload: report.payload }),
+    artifacts: report.artifacts ?? [],
+    partial: report.partial,
+    outcome: report.outcome,
+    reason: report.reason,
+  };
+}
 
 export function isReturnResultOutcome(value: unknown): value is ReturnResultOutcome {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;

@@ -14,8 +14,9 @@ item is exactly one tier:
   `Thinking`. Default-collapsed.
 - **Text** — an assistant `text` block. Always rendered as prose. Never folded,
   never remounted.
-- **Artifact** — a writer-facing block: a custom card (interrupt, spawn
-  `helper-result`, child `child-report`), an image, or a file. Always rendered.
+- **Artifact** — a writer-facing block: a custom card (interrupt or spawn
+  `helper-result`), an image, or a file. `return_result` is a process tool whose
+  captured report becomes a `report` render item. Always rendered.
 
 The tiers are named in `tool-kind.ts`: an **artifact** result is writer-facing
 and never folds; a **process** tool is scaffolding (reads, searches, shell) and
@@ -84,16 +85,25 @@ reasoning run still shows `Thinking`. The accessible name remains `Thinking` /
 
 ## Cards are artifacts
 
-Writer-facing cards are custom blocks: an **interrupt** (`content.interrupt.id`,
-via `ask_user`), a **spawn helper-result card** (`kind: "helper-result"`), and a
-**child-report card** (`kind: "child-report"`, from `return_result`).
+Writer-facing custom blocks are an **interrupt** (`content.interrupt.id`, via
+`ask_user`) and a **spawn invocation card** (`kind: "helper-result"`). The
+captured `return_result` is rendered as a `report` item from its process-tool
+input/result pair; it is not a custom `child-report` card. The server does not
+advertise `ask_user` until its rework
+([#601](https://github.com/haowjy/meridian-flow/issues/601)); keep the
+interrupt card and its response path, they are not dead code.
 
 Cards hide their tool_use/tool_result rows (`tool-view-visibility.ts`). The
 custom card is the surface. Spawn and `return_result` protocol remain model
 history; the writer does not see their duplicate rows.
 
-Each card-bearing admitted invocation has one retained helper-result card
-with the original parent-turn/tool-call/child/delivery/execution tuple.
+Each card-bearing admitted invocation has one retained helper-result card,
+parsed through the `InvocationCardProps` contract in `@meridian/contracts`.
+The card's `agentName` is the bound revision's `metadata.name`, falling back to
+its slug; publication B re-reads that same bound thread identity. A running card
+has `terminalAt: null`; a terminal card carries its `outcome` and `terminalAt`,
+so a second `status` field is not persisted. An unadmitted failure carries a
+writer-readable `reason` but deliberately has no `childThreadId` or execution.
 Background `thread_message` is queue-only and makes no card promise. Terminal
 status is child execution truth, not parent protocol admission. If B card
 publication lags, a settled direct terminal outcome supplies the visible status
@@ -105,28 +115,42 @@ the complete turn; contiguous presentation groups cannot pair persisted
 are filtered, so authoritative snapshots and result-before-card converge
 without a second output store or per-card store subscription. A settled direct
 error without saved terminal evidence shows its error without claiming a child
-outcome; a later terminal card patch remains authoritative. Background cards
-remain status-only; notification contains no report body and triggers no
-automatic fetch. `thread_report` is an ordinary expandable activity row,
-including saved artifacts, not another artifact card.
+outcome; a later terminal card patch remains authoritative. Invocation cards
+branch on the required `deliveryMode`: background cards stay as one-line launch
+artifacts with the current tool line under them while running (the running
+strip carries it too); direct cards stay
+in place and combine launch, live edge, and expandable result. Background
+completion notices are quiet step rows. A finished background card expands to
+its saved report (read on expansion). `thread_report` stays an ordinary tool
+row in the process fold in both modes, titled with the subagent it read and
+expanding to that report.
 
 Child completion delivery persists one system turn with `subagent_update`
-metadata. `visible-chat-turns.ts` and the server visible-conversation policy
-keep delivery turns out of the top-level bubble list; `AssistantTurn` renders
-them as quiet activity rows inside the preceding assistant's steps. The row
-shows the handle and outcome, and correlates the internal execution id to its
-invocation card for the optional short description and Open door. Adopted
-writer messages use the same inline tool-row chrome with the writer's text.
+metadata validated by the shared contracts parser; it carries `childThreadId`
+and `agentName` as well as execution/outcome correlation. `transcript-model.ts`
+classifies turns and indexes delivery events alongside the server visible-
+conversation policy; `AssistantTurn` renders completion events as their own
+quiet render item after the turn's block items.
+The row shows the child's resolved name and outcome (never the raw handle) and
+correlates the internal execution id to its invocation card for navigation.
+Adjacent completions disclose compact child rows. Neither form repeats task
+details or notice text. Machine
+deliveries (`inbox_message` turns, such as an agent `thread_message`) use the
+same inline row chrome with the message text. Writer sends never become
+delivery rows; they stay bubbles.
 This is consistent whether a completion wakes an idle parent or is adopted at
-a mid-run steer split; do not infer events by parsing notice text.
+a mid-run steer split; do not infer events by parsing notice text. The writer
+enqueue stamps an adopted mid-run user turn with `metadata.delivery: "steer"`;
+response grouping reads this fact rather than comparing client/server times.
 
 Historical card replacement is sent over the existing
 `meridian.block.upserted` frame. Replace a loaded historical turn in place; if
 it is absent, invalidate/refetch its durable snapshot rather than creating a
 fake streaming turn. Equal replay is a reference-preserving no-op. Pending
-inbox remains complete in the transport/model path; `writerTurnQueueStatus`
-(`pending-inbox.ts`) filters it to writer provenance to derive each writer
-turn's own inline queued/waiting status -- there is no separate tray.
+inbox remains complete in the transport/model path; `queuedWriterTurnIds`
+(`pending-inbox.ts`) keeps writer-provenance rows still in `waiting`, and only
+those bubbles show Queued. `awaiting_run` has no label -- there is no separate
+tray.
 
 ### Interrupt response settlement
 
@@ -150,6 +174,7 @@ subscription.
 | **Process item / `Thinking` disclosure** | The default-collapsed disclosure rendered by `ProcessDisclosure.tsx`. Holds a contiguous run of reasoning and process tools. Its visible label is a tool digest when possible. |
 | **Text item** | An assistant `text` block rendered as prose (`Markdown` settled, `StreamingText` partial). |
 | **Artifact item** | A writer-facing custom card, image, or file. |
+| **Report item** | A child's captured `return_result`, rendered visibly through `ReportContent`; its tool pair is hidden protocol. |
 | **Process run** | A `reasoning` or `activity` run inside a process item. |
 | **Artifact boundary** | A card, image, or file that closes the open process run, so later reasoning opens a fresh fold. |
 | **Hidden protocol** | A `tool_use`/`tool_result` whose row a card already surfaces; dropped by partition. |
@@ -213,10 +238,13 @@ keys must be real runtime tool names from
 `thread_report`, and `return_result`. `ask_user` and `helper-result` render
 through custom cards; `spawn` and `thread_message` tool rows are hidden because
 the retained invocation card owns their writer surface. `thread_report` is a
-visible ordinary activity row with a first-line preview and full expandable
-result. Card `artifacts[]` render through
-the shared `ArtifactGrid` (`ArtifactGrid.tsx`), reused by `FormBlock`,
-`SpawnReportCard`, and `ChildReportBlock`.
+process row with its own renderer (`thread-report-renderer.tsx`).
+`return_result` remains a report render item, not a child-report artifact.
+Interrupt cards render in the shared `ArtifactCard` shell; invocation cards
+render through `SpawnReportCard` on `subagent/SubagentRow`. Artifact lists
+render through `ArtifactGrid`, used by `FormBlock` and by `ReportContent`, the
+one report body shared by the launch card, the `thread_report` step, and the
+`return_result` report item.
 Process tools (`write`, `work`, `ls`, `search`) render as `ActivityRow`.
 `tool-kind.ts` names the split: an **artifact** result is writer-facing
 (custom card, image) and never folds; a **process** tool is scaffolding.
@@ -245,6 +273,8 @@ Key files:
 | File | Role |
 |---|---|
 | `AssistantTurn.tsx` | Top-level turn render; drives partition + item mounting |
+| `transcript-model.ts` | Shared turn classifier, delivery/invocation indexes, response grouping, and reveal targets |
+| `subagent/` | Normalized `SubagentRun`, activity index, disclosure state, and shared row anatomy |
 | `partition-turn.ts` | Ordered walk from `Block[]` to `RenderItem[]` (process/text/artifact) |
 | `tool-kind.ts` | `artifact` vs `process` tool kinds |
 | `group-delivery-segments.ts` | Pairs adjacent tool protocol blocks into ToolViews, then emits single-tool or tool-run segments |
@@ -274,13 +304,9 @@ Key files:
 Implemented in `partition-turn.ts`, `ProcessDisclosure.tsx`, and
 `AssistantTurn.tsx`. The partition returns an ordered `RenderItem[]`:
 `process` items carry their ordered reasoning/activity runs, `text` and
-`artifact` items carry their block. `ProcessDisclosure` is a default-collapsed
-shell; process items compose reasoning rows and folded activity runs.
-
-Inbox delivery turns are not standalone bubbles after adoption. A writer turn
-keeps its visible `Queued`/`Waiting for response` row while pending, then the
-`inbox_message` marker hides that bubble once adopted. `AssistantTurn` renders
-the adopted inbox chain as ActivityRows after the assistant's final process
-item, preserving causal placement and the tool-step timeline chrome. Child
-completion rows correlate to invocation cards by their internal execution id
-for description and child-thread navigation.
+`artifact` items carry their block, and `report` items carry a captured
+`return_result`. `ProcessDisclosure` is a default-collapsed shell; process
+items compose reasoning rows and folded activity runs. Delivery turns
+(`inbox_message`, `subagent_update`) never become bubbles; `AssistantTurn`
+renders them through `subagent/DeliveryEventRows` after the preceding
+assistant turn's block items.

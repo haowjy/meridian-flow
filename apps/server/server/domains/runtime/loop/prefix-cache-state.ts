@@ -27,7 +27,7 @@ type CacheHistoryThread = Pick<
 export interface PrefixCacheHistory {
   thread: CacheHistoryThread;
   turns: readonly Turn[];
-  responses: readonly Pick<ModelResponse, "turnId" | "sequence" | "model" | "createdAt">[];
+  responses: readonly Pick<ModelResponse, "turnId" | "sequence" | "model" | "requestStartedAt">[];
 }
 
 export type PrefixCacheStateReason = PrefixCachePredictionReason;
@@ -49,7 +49,7 @@ export interface DerivePrefixCacheStateInput {
 
 type LastResponse = {
   model: string;
-  createdAt: string;
+  requestStartedAt: string | null;
   turn: Turn;
 };
 
@@ -63,7 +63,9 @@ function lastResponse(history: PrefixCacheHistory): LastResponse | null {
     (left, right) => left.turn.position - right.turn.position || left.sequence - right.sequence,
   );
   const latest = responses.at(-1);
-  return latest ? { model: latest.model, createdAt: latest.createdAt, turn: latest.turn } : null;
+  return latest
+    ? { model: latest.model, requestStartedAt: latest.requestStartedAt, turn: latest.turn }
+    : null;
 }
 
 function imageBreaksPrefix(turn: Turn): boolean {
@@ -165,7 +167,8 @@ export function derivePrefixCacheState(input: DerivePrefixCacheStateInput): Pref
 
   const ttlMs = input.promptCache.ttlMs;
   if (ttlMs === null) return cold("ttl_unknown");
-  const responseTimeMs = Date.parse(response.createdAt);
+  if (response.requestStartedAt === null) return cold("facts_unavailable");
+  const responseTimeMs = Date.parse(response.requestStartedAt);
   if (!Number.isFinite(responseTimeMs) || !Number.isFinite(input.nowMs)) {
     return cold("facts_unavailable");
   }

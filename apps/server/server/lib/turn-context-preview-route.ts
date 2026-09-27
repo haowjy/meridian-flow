@@ -4,6 +4,7 @@
  */
 
 import type { TurnContextPreview } from "@meridian/contracts/threads";
+import type { EventSink } from "../domains/observability/index.js";
 import type { AgentRevisionStore } from "../domains/packages/index.js";
 import { assembleNextTurnContext } from "../domains/runtime/loop/turn-context-assembly.js";
 import type { WorkContextReader } from "../domains/runtime/loop/work-context.js";
@@ -25,6 +26,7 @@ export interface TurnContextPreviewRouteDeps {
   toolRegistry: ToolRegistry;
   toolExecutor: Pick<ToolExecutor, "getDefinitions">;
   workContext: WorkContextReader;
+  eventSink?: EventSink;
 }
 
 export async function handleGetTurnContextPreview(
@@ -68,6 +70,7 @@ export async function handleGetTurnContextPreview(
     promptBakes: deps.repos.promptBakes,
     persistBake: false,
     workContext: deps.workContext,
+    eventSink: deps.eventSink,
   });
 
   return {

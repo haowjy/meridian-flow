@@ -25,6 +25,8 @@ import { PanelRightClose } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
+import { SubagentHeader } from "@/features/chat/SubagentHeader";
+import { useThreadActivity } from "@/features/chat/useThreadActivity";
 
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import type { DockView } from "./dock-view-store";
@@ -38,9 +40,21 @@ export type DockHeaderSlotArgs = {
 export type DockHeaderProps = DockHeaderSlotArgs & {
   onClose?: () => void;
   threadSelect?: ReactNode;
+  threadId?: string | null;
 };
 
-export function DockHeader({ view, views, onSelectView, onClose, threadSelect }: DockHeaderProps) {
+export function DockHeader({
+  view,
+  views,
+  onSelectView,
+  onClose,
+  threadSelect,
+  threadId,
+}: DockHeaderProps) {
+  const activity = useThreadActivity({
+    threadId: threadId ?? "",
+    seed: null,
+  });
   return (
     <header className="flex h-10 shrink-0 items-stretch pl-2">
       {/* No overflow-hidden: truncation is owned by the min-w-0/truncate chain
@@ -48,6 +62,9 @@ export function DockHeader({ view, views, onSelectView, onClose, threadSelect }:
           bleeds left of the slot). */}
       <div className="flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
         {view === "chat" ? threadSelect : null}
+        {view === "chat" && threadId ? (
+          <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
+        ) : null}
       </div>
       <DockViewSwitch view={view} views={views} onSelectView={onSelectView} />
       {onClose ? (

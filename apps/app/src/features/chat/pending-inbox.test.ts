@@ -3,7 +3,7 @@
  */
 import { EventType } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
-import { pendingInboxFromEvent, writerTurnQueueStatus } from "./pending-inbox";
+import { pendingInboxFromEvent, queuedWriterTurnIds } from "./pending-inbox";
 
 describe("pendingInboxFromEvent", () => {
   const pending = {
@@ -49,8 +49,8 @@ describe("pendingInboxFromEvent", () => {
   });
 });
 
-describe("writerTurnQueueStatus", () => {
-  it("selects one status per writer turn and excludes child/system notices", () => {
+describe("queuedWriterTurnIds", () => {
+  it("selects only unread writer turns and excludes child/system notices", () => {
     const writer = {
       id: "writer",
       seq: 1,
@@ -70,6 +70,7 @@ describe("writerTurnQueueStatus", () => {
         reportId: "execution",
         handle: "p1",
         outcome: "succeeded",
+        agentName: "Critic",
       },
       summary: "child report notification",
     };
@@ -87,12 +88,8 @@ describe("writerTurnQueueStatus", () => {
       provenance: { kind: "system" as const, source: "runtime" },
       summary: "system notice",
     };
-    const inbox = { items: [writer, child, agent, system] };
-
-    const statuses = writerTurnQueueStatus(inbox);
-    expect(statuses.size).toBe(1);
-    expect(statuses.get("writer")).toBe("queued");
-    expect(statuses.has("child")).toBe(false);
-    expect(statuses.has("system")).toBe(false);
+    const awaiting = { ...writer, id: "awaiting", deliveryState: "awaiting_run" as const };
+    const ids = queuedWriterTurnIds({ items: [writer, awaiting, child, agent, system] });
+    expect(ids).toEqual(new Set(["writer"]));
   });
 });

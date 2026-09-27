@@ -46,8 +46,8 @@ function response(
   turnId: string,
   model = MODEL,
   sequence = 0,
-): Pick<ModelResponse, "turnId" | "sequence" | "model" | "createdAt"> {
-  return { turnId, sequence, model, createdAt: RESPONSE_AT };
+): Pick<ModelResponse, "turnId" | "sequence" | "model" | "requestStartedAt"> {
+  return { turnId, sequence, model, requestStartedAt: RESPONSE_AT };
 }
 
 function history(values: Partial<PrefixCacheHistory> = {}): PrefixCacheHistory {
@@ -234,9 +234,19 @@ describe("derivePrefixCacheState", () => {
     });
     expect(
       derive({
-        history: history({ responses: [{ ...response("turn-1"), createdAt: "invalid" }] }),
+        history: history({ responses: [{ ...response("turn-1"), requestStartedAt: "invalid" }] }),
       }),
     ).toEqual({ state: "cold", reason: "facts_unavailable" });
+  });
+
+  it("expires from request start even when the response was just persisted", () => {
+    expect(
+      derive({
+        history: history({
+          responses: [{ ...response("turn-1"), requestStartedAt: "2026-09-27T11:58:00.000Z" }],
+        }),
+      }),
+    ).toEqual({ state: "cold", reason: "ttl_expired" });
   });
 
   it("expires at the descriptor TTL", () => {

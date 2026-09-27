@@ -110,12 +110,16 @@ export interface CreateModelResponseInput {
   reasoningTokens?: number | null;
   cacheReadTokens?: number | null;
   cacheWriteTokens?: number | null;
+  cacheReset?: boolean;
   costUsd?: string;
   millicredits?: string | null;
   priceSource: PriceSource;
   pricingSnapshot?: JsonValue | null;
   finishReason?: FinishReason | null;
   latencyMs?: number | null;
+  requestStartedAt?: string | null;
+  timeToFirstTokenMs?: number | null;
+  generationMs?: number | null;
   rawUsage?: JsonValue | null;
   predictedCacheState?: PrefixCachePredictionState | null;
   predictedCacheReason?: PrefixCachePredictionReason | null;
@@ -123,7 +127,7 @@ export interface CreateModelResponseInput {
 
 export type LatestModelResponse = Pick<
   ModelResponse,
-  "turnId" | "sequence" | "model" | "createdAt"
+  "turnId" | "sequence" | "model" | "requestStartedAt"
 >;
 
 export interface CreateModelResponseResult {
@@ -139,6 +143,18 @@ export interface ModelResponseRepository {
   findLatestByThread(threadId: ThreadId): Promise<LatestModelResponse | null>;
   listByTurn(turnId: TurnId): Promise<ModelResponse[]>;
   listByThread(threadId: ThreadId): Promise<ModelResponse[]>;
+  sumUsageByThread(threadId: ThreadId): Promise<{
+    inputTokens: number;
+    cacheReadTokens: number;
+    cacheReportedInputTokens: number;
+    cacheReportedCalls: number;
+    cacheWriteTokens: number;
+    outputTokens: number;
+    cacheResets: number;
+  }>;
+  cacheResetContext(
+    threadId: ThreadId,
+  ): Promise<{ hasCacheActivity: boolean; previousInputTokens: number | null }>;
 }
 
 export interface AdmitExecutionReportInput extends ExecutionReportCorrelation {
@@ -175,6 +191,8 @@ export interface ExecutionReportRepository {
     childThreadId: ThreadId,
     assistantTurnId: TurnId,
   ): Promise<SavedExecutionReport | null>;
+  /** Latest admitted execution per child, ordered from report admission truth. */
+  listLatestByChildren(childThreadIds: readonly ThreadId[]): Promise<LatestChildExecution[]>;
   listFinishedByChild(childThreadId: ThreadId): Promise<SavedExecutionReport[]>;
   /** Bounded metadata for admitted executions still lacking terminal truth. */
   listUnfinalized(
@@ -202,6 +220,11 @@ export interface ExecutionReportRepository {
     publication: "published",
   ): Promise<void>;
 }
+
+export type LatestChildExecution = Pick<
+  SavedExecutionReport,
+  "childThreadId" | "deliveryMode" | "admittedAt" | "terminalAt"
+>;
 
 export interface CreateThreadInput {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */

@@ -1,5 +1,5 @@
 {
-  "id": "71a3dc33-2861-4e0c-ad2d-5b09c815554a",
+  "id": "c16396d7-c608-4d2a-8626-03756d030d5d",
   "prevId": "a230e5e7-cb6f-442d-863b-a3057c4e70c6",
   "version": "7",
   "dialect": "postgresql",
@@ -1183,6 +1183,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "time_to_first_token_ms": {
+          "name": "time_to_first_token_ms",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "generation_ms": {
+          "name": "generation_ms",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1698,11 +1710,7 @@
         },
         "thread_execution_reports_publication_valid": {
           "name": "thread_execution_reports_publication_valid",
-          "value": "\"thread_execution_reports\".\"publication\" IN ('none','pending','published')"
-        },
-        "thread_execution_reports_pending_has_caller": {
-          "name": "thread_execution_reports_pending_has_caller",
-          "value": "\"thread_execution_reports\".\"publication\" <> 'pending' OR \"thread_execution_reports\".\"caller_thread_id\" IS NOT NULL"
+          "value": "\"thread_execution_reports\".\"publication\" IN ('none','pending','published','skipped')"
         },
         "thread_execution_reports_terminal_coherent": {
           "name": "thread_execution_reports_terminal_coherent",
@@ -1710,7 +1718,7 @@
         },
         "thread_execution_reports_publication_timestamp_coherent": {
           "name": "thread_execution_reports_publication_timestamp_coherent",
-          "value": "(\"thread_execution_reports\".\"publication\" IN ('none','pending') AND \"thread_execution_reports\".\"published_at\" IS NULL) OR (\"thread_execution_reports\".\"publication\" = 'published' AND \"thread_execution_reports\".\"published_at\" IS NOT NULL)"
+          "value": "(\"thread_execution_reports\".\"publication\" IN ('none','pending') AND \"thread_execution_reports\".\"published_at\" IS NULL) OR (\"thread_execution_reports\".\"publication\" IN ('published','skipped') AND \"thread_execution_reports\".\"published_at\" IS NOT NULL)"
         }
       },
       "isRLSEnabled": false
@@ -2463,19 +2471,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "threads_origin_turn_id_turns_id_fk": {
-          "name": "threads_origin_turn_id_turns_id_fk",
-          "tableFrom": "threads",
-          "tableTo": "turns",
-          "columnsFrom": [
-            "origin_turn_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "threads_spawn_root_same_project_fk": {

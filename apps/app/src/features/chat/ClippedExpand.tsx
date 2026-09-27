@@ -48,12 +48,12 @@ export function ClippedProse({ children, footer, className }: ClippedProseProps)
       >
         {children}
       </div>
-      {clipped && footer ? <div className="mt-1">{footer}</div> : null}
+      {clipped && footer ? <div className="mt-[var(--chat-space-inline)]">{footer}</div> : null}
     </div>
   );
 }
 
 /** A fact about what a capped list left out. Never an invitation. */
 export function BoundLine({ children }: { children: ReactNode }) {
-  return <p className="mt-1.5 text-meta text-ink-subtle">{children}</p>;
+  return <p className="mt-[var(--chat-space-inline)] text-meta text-ink-subtle">{children}</p>;
 }

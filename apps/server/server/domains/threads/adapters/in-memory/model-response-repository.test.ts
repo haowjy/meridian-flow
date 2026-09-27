@@ -38,15 +38,28 @@ describe("in-memory model response repository", () => {
       ...base,
       turnId: lastTurn.id,
       sequence: 2,
+      inputTokens: 200,
+      requestStartedAt: "2026-09-27T12:00:00.000Z",
       predictedCacheState: "warm",
       predictedCacheReason: "reusable_prefix",
+    });
+
+    // A late projection on an older turn must not become the latest cache fact.
+    await repos.modelResponses.create({
+      ...base,
+      turnId: firstTurn.id,
+      sequence: 10,
+      inputTokens: 999,
+    });
+    await expect(repos.modelResponses.cacheResetContext(thread.id)).resolves.toMatchObject({
+      previousInputTokens: 200,
     });
 
     await expect(repos.modelResponses.findLatestByThread(thread.id)).resolves.toEqual({
       turnId: lastTurn.id,
       sequence: 2,
       model: "test-model",
-      createdAt: newest.row.createdAt,
+      requestStartedAt: newest.row.requestStartedAt,
     });
     await expect(repos.modelResponses.findById(newest.row.id)).resolves.toMatchObject({
       predictedCacheState: "warm",

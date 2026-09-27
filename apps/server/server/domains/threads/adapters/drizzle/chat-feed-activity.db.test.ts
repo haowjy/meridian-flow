@@ -63,6 +63,54 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect(await activity()).toBe("2025-01-01T00:01:00.000000Z");
     });
 
+    it("keeps a parked interrupt action-required after a visible writer turn anchors the head", async () => {
+      const parkedAssistant = await repos.turns.create({
+        threadId: THREAD,
+        role: "assistant",
+        origin: "assistant",
+        status: "waiting_interrupt",
+        createdAt: "2025-01-01T00:00:00.000Z",
+      });
+      const writerTurn = await repos.turns.create({
+        threadId: THREAD,
+        prevTurnId: parkedAssistant.id,
+        role: "user",
+        origin: "writer",
+        status: "complete",
+        createdAt: "2025-01-01T00:01:00.000Z",
+      });
+      await repos.blocks.create({
+        turnId: writerTurn.id,
+        blockType: "text",
+        sequence: 0,
+        textContent: "one more detail",
+      });
+
+      const item = (
+        await repos.chatFeed.queryPage({
+          projectId: PROJECT,
+          userId: USER,
+          after: null,
+          limit: 10,
+          favorite: false,
+          search: null,
+        })
+      )[0];
+      const [thread] = await db
+        .select({ head: schema.threads.conversationalLeafTurnId })
+        .from(schema.threads)
+        .where(eq(schema.threads.id, THREAD));
+
+      expect(thread?.head).toBe(writerTurn.id);
+      expect(item).toMatchObject({
+        actionRequired: true,
+        lastMessagePreview: "one more detail",
+      });
+      await expect(repos.threads.listByProject(PROJECT)).resolves.toMatchObject([
+        { actionRequired: true },
+      ]);
+    });
+
     it("does not advance for a hidden work-context system update", async () => {
       const first = await repos.turns.create({
         threadId: THREAD,

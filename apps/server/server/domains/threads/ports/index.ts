@@ -17,6 +17,7 @@ export type {
   ExecutionReportRepository,
   FinalizeExecutionReportInput,
   InternalThreadRepositories,
+  LatestChildExecution,
   ModelResponseRepository,
   ProjectChatCursorKey,
   ProjectChatFeedRepository,

@@ -83,7 +83,12 @@ export function ChatSurface({
         placement={placement}
         screen={activeScreen}
         renderHeader={(args) => {
-          const headerProps: DockHeaderProps = { ...args, onClose: onCloseDock, threadSelect };
+          const headerProps: DockHeaderProps = {
+            ...args,
+            onClose: onCloseDock,
+            threadSelect,
+            threadId,
+          };
           return renderHeader ? renderHeader(headerProps) : <DockHeader {...headerProps} />;
         }}
       >

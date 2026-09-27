@@ -13,6 +13,7 @@ import { buildThreadSnapshot } from "../../threads/thread-snapshot.js";
 import {
   appendSubagentActivity,
   appendSubagentActivityBestEffort,
+  appendSubagentActivityForToolChangeBestEffort,
   createSubagentActivityRefresher,
   emitRunActivityBestEffort,
 } from "./activity-event.js";
@@ -74,7 +75,10 @@ describe("appendSubagentActivity", () => {
       },
     };
     const readParentActivity = (threadId: ThreadId) =>
-      readThreadActivity({ threads: repos.threads, statusReader }, threadId);
+      readThreadActivity(
+        { threads: repos.threads, executionReports: repos.executionReports, statusReader },
+        threadId,
+      );
 
     await appendSubagentActivity({
       eventWriter: hub,
@@ -178,6 +182,7 @@ describe("emitRunActivityBestEffort", () => {
         readThreadActivity(
           {
             threads: repos.threads,
+            executionReports: repos.executionReports,
             statusReader: {
               async readMany() {
                 return new Map();
@@ -223,5 +228,67 @@ describe("appendSubagentActivityBestEffort", () => {
     expect(eventSink.events.some((event) => event.name === "subagent.activity.append_failed")).toBe(
       true,
     );
+  });
+});
+
+describe("appendSubagentActivityForToolChangeBestEffort", () => {
+  it("appends one replacement only when the dispatched tool changes", async () => {
+    const { appended, eventWriter } = recordingWriter();
+    const eventSink = createInMemoryEventSink();
+    let currentTool: string | null = null;
+    const input = {
+      currentTool: { toolCallId: "call-1", toolName: "spawn", input: { prompt: "Research" } },
+      eventWriter,
+      readActivity,
+      parentThreadId: PARENT,
+      childThreadId: CHILD,
+      eventSink,
+    };
+
+    await appendSubagentActivityForToolChangeBestEffort({
+      ...input,
+      async recordCurrentTool() {
+        if (currentTool === input.currentTool.toolCallId) return false;
+        currentTool = input.currentTool.toolCallId;
+        return true;
+      },
+    });
+    await appendSubagentActivityForToolChangeBestEffort({
+      ...input,
+      async recordCurrentTool() {
+        if (currentTool === input.currentTool.toolCallId) return false;
+        currentTool = input.currentTool.toolCallId;
+        return true;
+      },
+    });
+
+    expect(appended).toHaveLength(1);
+    expect(appended[0]?.threadId).toBe(PARENT);
+    expect((appended[0]?.event as { type: string }).type).toBe("subagent.activity");
+  });
+
+  it("swallows a current-tool write failure without running the activity read", async () => {
+    const eventSink = createInMemoryEventSink();
+    let reads = 0;
+    await expect(
+      appendSubagentActivityForToolChangeBestEffort({
+        currentTool: { toolCallId: "call-1", toolName: "spawn", input: {} },
+        recordCurrentTool: async () => {
+          throw new Error("lease write failed");
+        },
+        eventWriter: recordingWriter().eventWriter,
+        readActivity: async () => {
+          reads++;
+          return { children: [] };
+        },
+        parentThreadId: PARENT,
+        childThreadId: CHILD,
+        eventSink,
+      }),
+    ).resolves.toBeUndefined();
+    expect(reads).toBe(0);
+    expect(
+      eventSink.events.some((event) => event.name === "subagent.activity.current_tool_failed"),
+    ).toBe(true);
   });
 });

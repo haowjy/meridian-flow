@@ -7,12 +7,35 @@
 
 ## [Unreleased]
 
+### Fixed
+- Cache TTL starts at the provider attempt, not response persistence.
+- Saved-report repair preserves fork cutoffs and cross-thread history.
+- Dev CLI unwraps API transport responses. Thread creation and inspection work against the live stack.
+
 - Make forks retain their source Agent and idempotent by client ID. Normalize cutoff selection to the settled prefix of effective history. Refuse fork and handoff from subagent threads.
 - Show subagent progress live in the chat that spawned it, including forks and subagent views. List direct subagents only.
 - Keep forks of trashed chats working. Show a failed reply instead of a stuck message when a fork's history can't load.
 
 - Store immutable prompt/tool bakes behind write-once pointers; resolve fork prefixes at their cutoff and journal named epoch boundaries atomically.
 - Derive prefix-cache warmth from durable bakes, completed compaction and typed image boundaries; record each request prediction on its response row, and share one runtime cache-state service across consumers.
+- Keep writer messages visible after the reply starts; only machine-delivered inbox messages fold into activity rows.
+- Show only "Queued" under a writer message the model has not read yet.
+- Keep "needs your answer" on a chat when the writer sends while a question is parked.
+- One chat spacing scale across turns, cards, prose, and composer; non-chat prose keeps its spacing.
+- Finished assistant turns get Copy (rich HTML and Markdown), turn info (model, calls, output speed, first-token time, tokens, turn cache hit, running thread cache hit and cache reset counts), and debug-gated model-call inspection.
+- Record per-call latency, time to first output, and generation time at provider-event arrival; omit generation time after consumer backpressure.
+- Gateway owns provider retries; honor retry-after hints and retry vetoes.
+- Show subagents the same way everywhere: mark with a status ring, agent name, then description. Launch cards stream the child's current tool and expand to the report once finished; a running panel and a Subagents pop-up list every run; finished lines sit inline and merge when runs finish together; reading a report is a folded step that links back to its card; only the chat icon opens a child chat, and child chats show their full path.
+- Only a turn the model finished on its own ends a reply: notifications, mid-stream steers, and turns awaiting background subagents continue it, and Copy takes the final answer's text, reports, and images.
+- Remove the standalone project-less chat route; a chat always lives in a project.
+- Disable ask_user until its rework (#601); no agent is offered the tool.
+- `server`: `GET /api/projects/:projectId/threads/by-ref/:ref` resolves a live `cN`/`pN` thread handle for the project owner; the ref grammar moved to `@meridian/contracts/threads`. `./mf` accepts refs wherever it takes a thread (default project, or `--project`).
+
+- `server`: one explicit debug gate. Model-request capture, `/api/debug/*`, and mock-model scripting now require `APP_DEBUG=1` (set by `pnpm dev`) and never turn on in production; staging can opt in. `MODEL_REQUEST_DEBUG_CAPTURE` is removed.
+
+- `tools`: added `./mf`, a local CLI that drives this worktree's stack through its own API. It creates threads, sends and waits (exit code = run outcome), tails and replays events, prints transcripts and model context, seeds docs and scenarios, and scripts the dev mock model (`/api/debug/mock-model/script`). It replaces `pnpm debug:events` (now `./mf log`) and `pnpm debug:model-context` (now `./mf thread context`).
+
+- Freeze thread prompts at the database boundary.
 - Keep the same Agent and prompt when forking by default.
 - Order turns by write-once per-thread positions, continuing fork-local order after the cutoff; inbox turns take their position when drained.
 - Persist image inclusion per block and keep request history stable; record asset loss and budget evictions as durable system updates.

@@ -5,7 +5,7 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ThreadLeaseState } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
-import type { ThreadChild } from "../ports/index.js";
+import type { LatestChildExecution, ThreadChild } from "../ports/index.js";
 import { projectThreadActivity, readThreadActivity } from "./thread-activity.js";
 
 function child(overrides: Partial<ThreadChild> & { id: string }): ThreadChild {
@@ -21,7 +21,7 @@ function child(overrides: Partial<ThreadChild> & { id: string }): ThreadChild {
 }
 
 function lease(status: ThreadLeaseState["status"]): ThreadLeaseState {
-  return { status, runningTurnId: null };
+  return { status, runningTurnId: null, currentTool: null };
 }
 
 describe("projectThreadActivity", () => {
@@ -31,6 +31,7 @@ describe("projectThreadActivity", () => {
         child({ id: "child-1", parentThreadId: "root-1" }),
         child({ id: "child-2", parentThreadId: "root-1" }),
       ],
+      new Map(),
       new Map(),
     );
 
@@ -42,7 +43,25 @@ describe("projectThreadActivity", () => {
     const leases = new Map<ThreadId, ThreadLeaseState>([
       [
         "child-1" as ThreadId,
-        lease({ kind: "awake", phase: "generating", cancelRequested: false }),
+        {
+          ...lease({ kind: "awake", phase: "generating", cancelRequested: false }),
+          currentTool: {
+            toolCallId: "call-7",
+            toolName: "spawn",
+            input: { agent: "researcher", prompt: "Find evidence" },
+          },
+        },
+      ],
+    ]);
+    const latestRuns = new Map<ThreadId, LatestChildExecution>([
+      [
+        "child-1" as ThreadId,
+        {
+          childThreadId: "child-1" as ThreadId,
+          deliveryMode: "direct",
+          admittedAt: "2026-09-26T10:00:00.000Z",
+          terminalAt: null,
+        },
       ],
     ]);
 
@@ -58,6 +77,7 @@ describe("projectThreadActivity", () => {
         }),
       ],
       leases,
+      latestRuns,
     );
 
     expect(activity.children[0]).toEqual({
@@ -68,8 +88,36 @@ describe("projectThreadActivity", () => {
       agentName: "Critic",
       spawnStatus: "running",
       status: { kind: "awake", phase: "generating", cancelRequested: false },
+      deliveryMode: "direct",
+      runStartedAt: "2026-09-26T10:00:00.000Z",
+      runEndedAt: null,
+      currentTool: {
+        toolCallId: "call-7",
+        toolName: "spawn",
+        input: { agent: "researcher", prompt: "Find evidence" },
+      },
       originTurnId: "turn-9",
     });
+  });
+
+  it("treats an admitted run without a delivery invocation as background activity", () => {
+    const activity = projectThreadActivity(
+      [child({ id: "child-1" })],
+      new Map(),
+      new Map([
+        [
+          "child-1" as ThreadId,
+          {
+            childThreadId: "child-1" as ThreadId,
+            deliveryMode: "none",
+            admittedAt: "2026-09-26T10:00:00.000Z",
+            terminalAt: null,
+          },
+        ],
+      ]),
+    );
+
+    expect(activity.children[0]?.deliveryMode).toBe("background_notification");
   });
 });
 
@@ -83,6 +131,12 @@ describe("readThreadActivity", () => {
           async listChildren(threadId) {
             readThreadId = threadId;
             return childRows;
+          },
+        },
+        executionReports: {
+          async listLatestByChildren(ids) {
+            expect(ids).toEqual(["child-1"]);
+            return [];
           },
         },
         statusReader: {
@@ -106,6 +160,10 @@ describe("readThreadActivity", () => {
         spawnStatus: "running",
         status: { kind: "asleep" },
         originTurnId: null,
+        deliveryMode: null,
+        runStartedAt: null,
+        runEndedAt: null,
+        currentTool: null,
       },
     ]);
     expect(activity.children[0]).not.toHaveProperty("depth");
