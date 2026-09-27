@@ -612,4 +612,224 @@ else
       });
       expect((await repos.turns.findById(ids.execution))?.status).toBe("error");
     });
+
+    it("repairs indexed pending placeholders for primary and child threads, then publishes the child report", async () => {
+      eventSink.clear();
+      const primaryC = await repos.turns.create({
+        threadId: ids.root,
+        prevTurnId: ids.rootTurn,
+        role: "compaction",
+        origin: "system",
+        status: "pending",
+      });
+      const childC = await repos.turns.create({
+        threadId: ids.child,
+        prevTurnId: ids.execution,
+        role: "compaction",
+        origin: "system",
+        status: "pending",
+      });
+      await repos.executionReports.captureOnce(ids.child, ids.execution, "candidate-before-c", {
+        summary: "Captured candidate is not an orphan report.",
+        payload: { partial: true },
+      });
+      for (const [turnId, millicredits] of [
+        [ids.execution, "13"],
+        [childC.id, "5"],
+      ] as const) {
+        await repos.modelResponses.create({
+          turnId,
+          sequence: 0,
+          provider: "test",
+          model: "fixture",
+          millicredits,
+          priceSource: "unknown",
+          requestMessageCount: 1,
+          predictedCacheState: "cold",
+          predictedCacheReason: "no_response",
+        });
+      }
+      const authority = createDrizzleRunClaim(db, { holderId: "placeholder-scan" });
+      const repair = createOrphanReportRepair({
+        repos,
+        eventWriter,
+        authority,
+        threadLock,
+        publisher,
+        eventSink,
+      });
+
+      expect(await repair.sweep(10)).toBe(2);
+      expect(eventSink.events.filter((event) => event.name === "placeholder.failed")).toEqual([]);
+      expect(await repos.turns.findById(primaryC.id)).toMatchObject({
+        status: "error",
+        error: "This compaction was interrupted.",
+      });
+      expect(await repos.turns.findById(childC.id)).toMatchObject({
+        status: "error",
+        error: "This compaction was interrupted.",
+      });
+      expect(await repos.executionReports.findByExecution(ids.child, ids.execution)).toMatchObject({
+        outcome: "failed",
+        reason: "orphaned",
+        source: "empty",
+        summary: "",
+        terminalTurnId: childC.id,
+        costMillicredits: 18,
+      });
+      expect(
+        await repos.executionReports.findByExecution(ids.child, ids.execution),
+      ).not.toHaveProperty("payload");
+      expect(await publisher.sweep(10)).toBe(1);
+      expect((await repos.blocks.findById(ids.card))?.content).toMatchObject({
+        props: { outcome: "failed", execution: ids.execution },
+      });
+    });
+
+    it("leaves a pending C alone while the session claim is held, even when its lease expired", async () => {
+      const c = await repos.turns.create({
+        threadId: ids.root,
+        prevTurnId: ids.rootTurn,
+        role: "compaction",
+        origin: "system",
+        status: "pending",
+      });
+      const authority = createDrizzleRunClaim(db, { holderId: "placeholder-live-run" });
+      const lease = await authority.startExecution(ids.root, crypto.randomUUID());
+      if (!lease) throw new Error("failed to acquire run claim");
+      await db
+        .update(schema.threadRunLeases)
+        .set({ expiresAt: new Date(0) })
+        .where(eq(schema.threadRunLeases.threadId, ids.root));
+      const repair = createOrphanReportRepair({
+        repos,
+        eventWriter,
+        authority,
+        threadLock,
+        publisher,
+        eventSink,
+      });
+
+      try {
+        expect(await repair.sweep(10)).toBeGreaterThanOrEqual(1);
+        expect(await repos.turns.findById(c.id)).toMatchObject({ status: "pending" });
+      } finally {
+        await authority.release(lease);
+      }
+    });
+
+    it("finalizes a stale C before run-start selection and redelivers the late writer message", async () => {
+      const c = await repos.turns.create({
+        threadId: ids.root,
+        prevTurnId: ids.rootTurn,
+        role: "compaction",
+        origin: "system",
+        status: "pending",
+      });
+      const authority = createDrizzleRunClaim(db, { holderId: "placeholder-run-start" });
+      const runDelivery = createTestDrizzleDelivery(db, {
+        repos,
+        eventWriter,
+        runClaim: authority,
+      });
+      const message = await runDelivery.enqueue({
+        threadId: ids.root,
+        intent: "message",
+        provenance: { kind: "writer", actorId: ids.user },
+        body: { kind: "text", text: "Arrived after compaction started." },
+        idempotencyKey: "late-writer-after-orphaned-c",
+      });
+      const userTurn = await repos.turns.create({
+        id: message.id as TurnId,
+        threadId: ids.root,
+        prevTurnId: c.id,
+        role: "user",
+        origin: "writer",
+        status: "complete",
+      });
+      await repos.blocks.create({
+        turnId: userTurn.id,
+        blockType: "text",
+        sequence: 0,
+        content: "Arrived after compaction started.",
+      });
+      const lease = await authority.startExecution(ids.root, crypto.randomUUID());
+      if (!lease) throw new Error("failed to acquire run claim");
+      const assistantId = crypto.randomUUID() as TurnId;
+      await runDelivery.adoptBatch(lease, async (selection) => {
+        expect((await repos.turns.findById(c.id))?.status).toBe("error");
+        expect(selection.batch.map(({ id }) => id)).toEqual([message.id]);
+        return {
+          value: assistantId,
+          turnId: assistantId,
+          turnKind: "assistant",
+          messageIds: [message.id],
+          persist: async () => {
+            await repos.turns.create({
+              id: assistantId,
+              threadId: ids.root,
+              prevTurnId: userTurn.id,
+              role: "assistant",
+              origin: "assistant",
+              status: "streaming",
+            });
+          },
+        };
+      });
+      const turns = await repos.turns.listByThread(ids.root);
+      expect(turns.slice(-3).map(({ id, role, status }) => ({ id, role, status }))).toEqual([
+        { id: c.id, role: "compaction", status: "error" },
+        { id: message.id, role: "user", status: "complete" },
+        { id: assistantId, role: "assistant", status: "streaming" },
+      ]);
+      await runDelivery.ackWithResponse(lease, [message.id], async () => true);
+      await runDelivery.close({
+        lease,
+        turnId: assistantId,
+        cause: { kind: "success", finishReason: "end_turn" },
+      });
+      expect(await inbox.selectPending(ids.root)).toEqual([]);
+    });
+
+    it("stops the orphan report walk at a newer compaction execution selector", async () => {
+      const c = await repos.turns.create({
+        threadId: ids.child,
+        prevTurnId: ids.execution,
+        role: "compaction",
+        origin: "system",
+        status: "pending",
+      });
+      await repos.executionReports.admit({
+        childThreadId: ids.child,
+        executionTurnId: c.id,
+        handle: "p1",
+        origin: "thread_run",
+        deliveryMode: "none",
+        callerThreadId: null,
+        callerTurnId: null,
+        toolCallId: null,
+        cardBlockId: null,
+      });
+      const authority = createDrizzleRunClaim(db, { holderId: "placeholder-report-walk" });
+      const repair = createOrphanReportRepair({
+        repos,
+        eventWriter,
+        authority,
+        threadLock,
+        publisher,
+        eventSink,
+      });
+
+      await repair.sweep(10);
+      expect(await repos.executionReports.findByExecution(ids.child, c.id)).toMatchObject({
+        outcome: "failed",
+        reason: "orphaned",
+        terminalTurnId: c.id,
+      });
+      expect(await repos.executionReports.findByExecution(ids.child, ids.execution)).toMatchObject({
+        outcome: "failed",
+        reason: "orphaned",
+        terminalTurnId: ids.execution,
+      });
+    });
   });

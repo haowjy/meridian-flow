@@ -566,6 +566,24 @@ export function createInMemoryRepositories(
     async listByThread(threadId) {
       return orderTurnsByPosition([...turns.values()].filter((t) => t.threadId === threadId));
     },
+    async listPendingPlaceholders(limit, afterTurnId) {
+      if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limit must be positive");
+      return [...turns.values()]
+        .filter(
+          (turn) =>
+            turn.status === "pending" &&
+            turn.role !== "user" &&
+            turn.role !== "assistant" &&
+            (!afterTurnId || turn.id > afterTurnId),
+        )
+        .sort((left, right) => left.id.localeCompare(right.id))
+        .slice(0, limit)
+        .map(({ id, threadId: ownerThreadId, role }) => ({
+          id,
+          threadId: ownerThreadId as ThreadId,
+          role,
+        }));
+    },
     async getLatestByThread(threadId) {
       const threadTurns = await this.listByThread(threadId);
       return threadTurns.at(-1) ?? null;

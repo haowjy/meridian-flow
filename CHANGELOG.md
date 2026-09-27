@@ -10,6 +10,7 @@
 ### Added
 - Stop a running compaction and deliver messages queued during its summary afterward.
 - Compact long conversations through reserved summary turns and atomic successor replies.
+- Recover pending compaction placeholders only after acquiring the session claim; child reports terminate on the orphaned placeholder and late inbox messages remain redeliverable.
 - Persist request sizes and turn-neutral child execution selectors for compaction.
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
 

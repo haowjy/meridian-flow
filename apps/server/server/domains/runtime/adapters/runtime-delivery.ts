@@ -1,11 +1,16 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
 import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { Turn } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
 import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
-import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
+import { createLocalTurn, currentTurnKind, reservationTurn } from "../loop/local-turn.js";
+import {
+  COMPACTION_PLACEHOLDER_KINDS,
+  finalizeOrphanedPlaceholder,
+} from "../loop/orphaned-placeholder.js";
 import { readPendingInbox } from "../loop/pending-inbox.js";
 import {
   type PersistenceDeps,
@@ -58,6 +63,7 @@ export function createDeliveryAdapter(
     inbox: DeliveryStore;
     leaseStore: DeliveryLeaseStore;
     runClaim: Pick<RunClaim, "release" | "withExclusiveThread">;
+    orphanedPlaceholderKinds?: readonly Turn["role"][];
     workContext: import("../loop/work-context.js").WorkContextReader;
     threadLock: ThreadLock;
     notices: NoticePort;
@@ -66,6 +72,7 @@ export function createDeliveryAdapter(
   },
 ): RuntimeDelivery {
   const { inbox, leaseStore, threadLock } = deps;
+  const orphanedPlaceholderKinds = deps.orphanedPlaceholderKinds ?? COMPACTION_PLACEHOLDER_KINDS;
   const appendPending = async (threadId: ThreadId) => {
     await deps.eventWriter.appendEvent(threadId, {
       type: "inbox.changed",
@@ -521,8 +528,16 @@ export function createDeliveryAdapter(
           },
         }),
       ),
-    adoptBatch: (lease, prepare, options) =>
-      prepareAndCommit({
+    adoptBatch: async (lease, prepare, options) => {
+      // startExecution already owns the non-reentrant session claim. Repair its
+      // stale predecessor before selection so the new batch cannot pass C.
+      await threadLock.withThreadLock(lease.threadId, () =>
+        finalizeOrphanedPlaceholder(deps, {
+          threadId: lease.threadId,
+          placeholderKinds: orphanedPlaceholderKinds,
+        }),
+      );
+      return prepareAndCommit({
         threadId: lease.threadId,
         signal: options?.signal,
         validate: async () => {
@@ -543,7 +558,8 @@ export function createDeliveryAdapter(
           await appendPending(lease.threadId);
           return prepared.value;
         },
-      }),
+      });
+    },
     ackWithResponse: (lease, ids, persist) =>
       threadLock.withThreadLock(lease.threadId, async () => {
         const result = await persist();

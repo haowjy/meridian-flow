@@ -51,7 +51,7 @@ function turnEvent(turn: Turn, cause: TerminalCause): OrchestratorEvent {
   return { type: "turn.error", turn, error };
 }
 
-/** Call under the child final-drain lock; nested persistence joins its transaction. */
+/** Call under the thread lock; nested persistence joins its transaction. */
 export async function finalizeExecution(
   deps: {
     repos: Pick<
@@ -67,9 +67,20 @@ export async function finalizeExecution(
     >;
     eventWriter: EventJournalWriter;
   },
-  input: { threadId: ThreadId; turnId: TurnId; cause: TerminalCause },
+  input: {
+    threadId: ThreadId;
+    turnId: TurnId;
+    /** The execution selector when it differs from the terminal turn. */
+    executionTurnId?: TurnId;
+    /** Additional pending placeholder roles accepted as failed/cancelled terminals. */
+    placeholderKinds?: readonly Turn["role"][];
+    /** A crash on a placeholder has no report content, even if a candidate was captured earlier. */
+    reportContent?: "empty";
+    cause: TerminalCause;
+  },
 ): Promise<FinalizedExecution> {
   let report: SavedExecutionReport | null = null;
+  const placeholderKinds = new Set(input.placeholderKinds ?? ["compaction"]);
   const persisted = await persistAndAppendEvents(
     deps,
     input.threadId,
@@ -80,17 +91,16 @@ export async function finalizeExecution(
         turn.threadId !== input.threadId ||
         (turn.role !== "assistant" &&
           !(
-            turn.role === "compaction" &&
+            placeholderKinds.has(turn.role) &&
             turn.status !== "complete" &&
             input.cause.kind !== "success"
           ))
       ) {
         throw new Error("Terminal turn is unavailable");
       }
-      const existingReport = await deps.repos.executionReports.findByTurn(
-        input.threadId,
-        input.turnId,
-      );
+      const existingReport = input.executionTurnId
+        ? await deps.repos.executionReports.findByExecution(input.threadId, input.executionTurnId)
+        : await deps.repos.executionReports.findByTurn(input.threadId, input.turnId);
       const thread = await deps.repos.threads.lockByIdIncludingDeleted(input.threadId);
       if (thread?.kind === "subagent" && !existingReport) {
         throw new Error("Subagent execution was not admitted");
@@ -132,7 +142,9 @@ export async function finalizeExecution(
     },
     {
       async afterEvents(turn) {
-        const admitted = await deps.repos.executionReports.findByTurn(input.threadId, input.turnId);
+        const admitted = input.executionTurnId
+          ? await deps.repos.executionReports.findByExecution(input.threadId, input.executionTurnId)
+          : await deps.repos.executionReports.findByTurn(input.threadId, input.turnId);
         if (!admitted) return;
         if (admitted.outcome !== null) {
           report = admitted;
@@ -147,10 +159,18 @@ export async function finalizeExecution(
               : "failed";
         const responses = await deps.repos.modelResponses.listByTurn(turn.id);
         const finalResponseId = responses.at(-1)?.id ?? null;
-        const text = capture
-          ? ""
-          : publicText(await deps.repos.blocks.listByTurn(turn.id), finalResponseId);
-        const source = capture ? "return_result" : text ? "final_assistant" : "empty";
+        const text =
+          capture || input.reportContent === "empty"
+            ? ""
+            : publicText(await deps.repos.blocks.listByTurn(turn.id), finalResponseId);
+        const source =
+          input.reportContent === "empty"
+            ? "empty"
+            : capture
+              ? "return_result"
+              : text
+                ? "final_assistant"
+                : "empty";
         let cost = responses.reduce((sum, row) => sum + BigInt(row.millicredits ?? "0"), 0n);
         let ancestor = turn;
         while (ancestor.id !== admitted.executionTurnId) {
@@ -175,9 +195,11 @@ export async function finalizeExecution(
           outcome,
           reason: input.cause.kind === "success" ? null : input.cause.reason,
           source,
-          summary: capture?.summary ?? text,
-          ...(capture && capture.payload !== undefined ? { payload: capture.payload } : {}),
-          artifacts: capture?.artifacts ?? null,
+          summary: input.reportContent === "empty" ? "" : (capture?.summary ?? text),
+          ...(input.reportContent !== "empty" && capture?.payload !== undefined
+            ? { payload: capture.payload }
+            : {}),
+          artifacts: input.reportContent === "empty" ? null : (capture?.artifacts ?? null),
           costMillicredits: Number(cost),
         });
         if (admitted.origin === "spawn") {

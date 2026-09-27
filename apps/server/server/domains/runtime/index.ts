@@ -76,6 +76,10 @@ export {
 } from "./loop/interrupts.js";
 export { createOrchestrator } from "./loop/orchestrator.js";
 export {
+  COMPACTION_PLACEHOLDER_KINDS,
+  finalizeOrphanedPlaceholder,
+} from "./loop/orphaned-placeholder.js";
+export {
   projectPendingInbox,
   readPendingInbox,
 } from "./loop/pending-inbox.js";
