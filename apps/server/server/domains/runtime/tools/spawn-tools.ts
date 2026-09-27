@@ -200,7 +200,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
             overrides: {
               type: "object",
               description:
-                "Per-invocation execution patch: model, effort, tools, disallowed-tools, subagents, skills. Omitted fields inherit the child's saved configuration. Override model or effort only when this run needs it, such as when the saved model keeps getting this task wrong or the task briefly needs more capability; the writer sees the override on the subagent's card.",
+                "Per-invocation execution patch: model, effort, tools, disallowed-tools, subagents, skills. Omitted fields inherit the child's saved configuration. Override model or effort only when this run needs it, such as when the saved model keeps getting this task wrong or the task briefly needs more capability.",
             },
           },
           required: ["prompt"],
