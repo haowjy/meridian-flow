@@ -113,12 +113,10 @@ branch on the required `deliveryMode`: background cards stay as one-line launch
 artifacts with the current tool line under them while running (the running
 strip carries it too); direct cards stay
 in place and combine launch, live edge, and expandable result. Background
-completion notices are quiet expandable step rows. `thread_report` of a
-background run is a report artifact outside the process fold, with a collapsed
-one-line summary and expanded summary, payload, and saved artifacts. A report
-whose saved execution was `direct` stays an ordinary tool row in the process
-fold, because the combined card already shows that result; the mode comes from
-the saved report, never from the child's latest activity.
+completion notices are quiet step rows. A finished background card expands to
+its saved report (read on expansion). `thread_report` stays an ordinary tool
+row in the process fold in both modes, titled with the subagent it read and
+expanding to that report.
 
 Child completion delivery persists one system turn with `subagent_update`
 metadata. `visible-chat-turns.ts` and the server visible-conversation policy
@@ -227,9 +225,9 @@ keys must be real runtime tool names from
 `write`, `work`, `ls`, `search`, `ask_user`, `spawn`, `thread_message`,
 `thread_report`, and `return_result`. `ask_user` and `helper-result` render
 through custom cards; `spawn` and `thread_message` tool rows are hidden because
-the retained invocation card owns their writer surface. `partitionTurn` lifts a
-background `thread_report` out of process rows into its report artifact; a
-direct one stays a process row. `return_result` remains a child-report artifact. Card `artifacts[]` render through
+the retained invocation card owns their writer surface. `thread_report` is a
+process row with its own renderer (`thread-report-renderer.tsx`).
+`return_result` remains a child-report artifact. Card `artifacts[]` render through
 the shared `ArtifactGrid` (`ArtifactGrid.tsx`), reused by `FormBlock`,
 `SpawnReportCard`, and `ChildReportBlock`.
 Process tools (`write`, `work`, `ls`, `search`) render as `ActivityRow`.

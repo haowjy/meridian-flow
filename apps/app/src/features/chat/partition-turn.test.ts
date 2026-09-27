@@ -274,47 +274,28 @@ describe("partitionTurn", () => {
     expect(items[0]).toMatchObject({ block: { sequence: 3 } });
   });
 
-  it("moves thread_report out of Thinking into a report artifact correlated by ref", () => {
-    const reportUse = block({
-      blockType: "tool_use",
-      sequence: 1,
-      content: { toolCallId: "report-1", toolName: "thread_report", input: { ref: "p3" } },
-    });
-    const reportResult = block({
-      blockType: "tool_result",
-      sequence: 2,
-      content: {
-        toolCallId: "report-1",
-        output: { outcome: "succeeded", summary: "Report summary", payload: { finding: "Clear" } },
-      },
-    });
-    const items = partitionTurn([reportUse, reportResult]);
+  it("keeps every thread_report in the process fold as the step where the model read it", () => {
+    for (const deliveryMode of ["background_notification", "direct"]) {
+      const reportUse = block({
+        blockType: "tool_use",
+        sequence: 1,
+        content: { toolCallId: "report-1", toolName: "thread_report", input: { ref: "p3" } },
+      });
+      const reportResult = block({
+        blockType: "tool_result",
+        sequence: 2,
+        content: {
+          toolCallId: "report-1",
+          output: { deliveryMode, outcome: "succeeded", summary: "Report summary" },
+        },
+      });
+      const items = partitionTurn([reportUse, reportResult]);
 
-    expect(kinds(items)).toEqual(["report"]);
-    expect(items[0]).toMatchObject({
-      kind: "report",
-      ref: "p3",
-      report: { summary: "Report summary", outcome: "succeeded" },
-    });
-  });
-
-  it("keeps a foreground thread_report as an ordinary process tool", () => {
-    const reportUse = block({
-      blockType: "tool_use",
-      sequence: 1,
-      content: { toolCallId: "report-direct", toolName: "thread_report", input: { ref: "p3" } },
-    });
-    const reportResult = block({
-      blockType: "tool_result",
-      sequence: 2,
-      content: {
-        toolCallId: "report-direct",
-        output: { deliveryMode: "direct", outcome: "succeeded", summary: "Already shown above" },
-      },
-    });
-    const items = partitionTurn([reportUse, reportResult]);
-
-    expect(kinds(items)).toEqual(["process"]);
-    expect(items[0]).toMatchObject({ kind: "process", runs: [{ blocks: [reportUse] }] });
+      expect(kinds(items)).toEqual(["process"]);
+      expect(items[0]).toMatchObject({
+        kind: "process",
+        runs: [{ blocks: [reportUse, reportResult] }],
+      });
+    }
   });
 });

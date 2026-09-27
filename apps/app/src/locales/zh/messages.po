@@ -1330,6 +1330,10 @@ msgstr ""
 msgid "Couldn't read"
 msgstr ""
 
+#: src/features/chat/thread-report-renderer.tsx
+msgid "Couldn't read report from {who}"
+msgstr "无法读取{who}的报告"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't redo"
 msgstr ""
@@ -2658,8 +2662,8 @@ msgstr ""
 #~ msgid "No report text was returned"
 #~ msgstr ""
 
-#: src/features/chat/AssistantTurn.tsx
 #: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/thread-report-renderer.tsx
 msgid "No report text was returned."
 msgstr ""
 
@@ -3034,6 +3038,10 @@ msgstr ""
 msgid "Read file"
 msgstr ""
 
+#: src/features/chat/thread-report-renderer.tsx
+msgid "Read report from {who}"
+msgstr "已读取{who}的报告"
+
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Read-only live document"
 msgstr ""
@@ -3045,6 +3053,10 @@ msgstr ""
 #: src/features/chat/command-descriptor.ts
 msgid "Reading"
 msgstr ""
+
+#: src/features/chat/thread-report-renderer.tsx
+msgid "Reading report from {who}"
+msgstr "正在读取{who}的报告"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Reading text size"
@@ -3230,8 +3242,8 @@ msgid "Replace image"
 msgstr ""
 
 #: src/features/chat/AssistantTurn.tsx
-msgid "Report"
-msgstr ""
+#~ msgid "Report"
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 #~ msgid "Report is still running"

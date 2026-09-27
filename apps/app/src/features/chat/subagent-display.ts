@@ -1,23 +1,22 @@
 /** Shared writer-facing identity, outcome, and elapsed-time display for subagent runs. */
 
-import type { ThreadActivityNode } from "@meridian/contracts/threads";
 import { createElement, useSyncExternalStore } from "react";
 import { i18n } from "@/lib/i18n";
 import { liveToolActivityLabel } from "./command-descriptor";
 
 export type SubagentVisualStatus = "running" | "done" | "stopped";
 
-export function resolveSubagentName(
-  node: Pick<ThreadActivityNode, "agentName" | "title"> | null | undefined,
-): string {
-  const agentName = node?.agentName?.trim();
-  // Some older activity producers materialize the generic fallback in this
-  // field. Treat it like a missing profile so the useful thread title wins.
-  return (
-    (agentName && agentName !== "Subagent" ? agentName : null) ||
-    node?.title?.trim() ||
-    i18n._("Subagent")
-  );
+/** The agent's name leads every subagent surface; the task description follows it. */
+type SubagentIdentity = { agentName?: string | null; title?: string | null };
+
+export function resolveSubagentName(node: SubagentIdentity | null | undefined): string {
+  return subagentMarkName(node?.agentName);
+}
+
+/** The run's description (thread title), when it adds something beside the agent name. */
+export function subagentDescription(node: SubagentIdentity | null | undefined): string | null {
+  const title = node?.title?.trim();
+  return title && title !== resolveSubagentName(node) ? title : null;
 }
 
 /** Marks identify the agent, while the adjacent display name may be a task title. */

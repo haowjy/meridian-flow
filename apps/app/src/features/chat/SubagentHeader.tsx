@@ -14,6 +14,7 @@ import {
   formatSubagentElapsed,
   resolveSubagentName,
   subagentCurrentToolLabel,
+  subagentDescription,
   subagentStatus,
 } from "./subagent-display";
 
@@ -142,6 +143,7 @@ function SubagentPopoverRow({
   onOpen: () => void;
 }) {
   const name = resolveSubagentName(node);
+  const description = subagentDescription(node);
   const running = node.status.kind === "awake";
   const content = (
     <>
@@ -152,9 +154,7 @@ function SubagentPopoverRow({
       />
       <span className={cn("min-w-0 flex-1 truncate", !running && "text-foreground/75")}>
         {name}
-        {node.title && node.title !== name ? (
-          <span className="ml-1 text-muted-foreground">{node.title}</span>
-        ) : null}
+        {description ? <span className="ml-1.5 text-muted-foreground">{description}</span> : null}
         {running && node.currentTool ? (
           <span className="block truncate text-xs text-muted-foreground">
             {subagentCurrentToolLabel(node.currentTool.toolName, node.currentTool.input)}

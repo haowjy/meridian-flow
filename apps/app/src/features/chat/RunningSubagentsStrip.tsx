@@ -7,7 +7,12 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { OpenSubagentChatButton } from "./OpenSubagentChatButton";
 import { SubagentMark } from "./SubagentMark";
-import { Elapsed, resolveSubagentName, subagentCurrentToolLabel } from "./subagent-display";
+import {
+  Elapsed,
+  resolveSubagentName,
+  subagentCurrentToolLabel,
+  subagentDescription,
+} from "./subagent-display";
 
 // Tool lines sit under the name: mark (size-5) plus the row gap (gap-2).
 const TOOL_LINE_INDENT = "pl-7";
@@ -98,14 +103,13 @@ export function RunningSubagentsStrip({ descendants }: { descendants: ThreadActi
 
 function RunIdentity({ node }: { node: ThreadActivityNode }) {
   const name = resolveSubagentName(node);
+  const description = subagentDescription(node);
   return (
     <>
       <SubagentMark agentName={node.agentName} status="running" className="size-5 text-[10px]" />
       <span className="min-w-0 flex-1 truncate">
         <span className="font-medium text-foreground">{name}</span>
-        {node.title && node.title !== name ? (
-          <span className="ml-1.5 text-muted-foreground">{node.title}</span>
-        ) : null}
+        {description ? <span className="ml-1.5 text-muted-foreground">{description}</span> : null}
       </span>
       <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
         <Elapsed startedAt={node.runStartedAt} />

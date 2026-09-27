@@ -11,7 +11,6 @@ export function isToolViewVisible(tool: ToolView): boolean {
   if (tool.toolName === "ask_user") return false;
   if (tool.toolName === "spawn") return false;
   if (tool.toolName === "thread_message") return false;
-  if (tool.toolName === "thread_report") return false;
   if (tool.toolName === "tool" && isInterruptResultOutput(tool.output)) return false;
   return true;
 }

@@ -6,6 +6,7 @@ import {
   Elapsed,
   formatSubagentElapsed,
   resolveSubagentName,
+  subagentDescription,
   subagentStatus,
 } from "@/features/chat/subagent-display";
 
@@ -25,6 +26,7 @@ export function SubagentPathRow({
   onOpenParent: (threadId: string) => void;
 }) {
   const name = resolveSubagentName(subagent);
+  const description = subagentDescription(subagent);
   return (
     <nav
       aria-label={t`Subagent chat path`}
@@ -57,6 +59,11 @@ export function SubagentPathRow({
             className="size-5 text-[10px]"
           />
           {name}
+          {description ? (
+            <span className="max-w-60 truncate font-normal text-muted-foreground">
+              {description}
+            </span>
+          ) : null}
           {startedAt ? (
             <span className="font-normal tabular-nums text-muted-foreground">
               {runStatus === "running" ? (

@@ -112,7 +112,7 @@ describe("TurnList queued status", () => {
 });
 
 describe("subagent reveal turn resolution", () => {
-  const nodes = [{ threadId: "child", ref: "p3" }] as never;
+  const _nodes = [{ threadId: "child", ref: "p3" }] as never;
   const helper = {
     id: "helper",
     turnId: "launch",
@@ -125,28 +125,7 @@ describe("subagent reveal turn resolution", () => {
     },
   };
 
-  it("prefers the latest report turn whose ref resolves to the child", () => {
-    const turns = [
-      { id: "launch", role: "assistant", blocks: [helper] },
-      {
-        id: "report",
-        role: "assistant",
-        blocks: [
-          {
-            id: "report-block",
-            turnId: "report",
-            responseId: null,
-            blockType: "tool_use",
-            sequence: 0,
-            content: { toolName: "thread_report", input: { ref: "p3" } },
-          },
-        ],
-      },
-    ] as unknown as Turn[];
-    expect(resolveSubagentRevealTurnId(turns, "child", "launch", nodes)).toBe("report");
-  });
-
-  it("lands on the assistant turn that renders the completion row when there is no report", () => {
+  it("lands on the assistant turn that renders the completion row", () => {
     const turns = [
       { id: "launch", role: "assistant", blocks: [helper] },
       { id: "completion-turn", role: "assistant", blocks: [] },
@@ -163,7 +142,7 @@ describe("subagent reveal turn resolution", () => {
         blocks: [],
       },
     ] as unknown as Turn[];
-    expect(resolveSubagentRevealTurnId(turns, "child", "launch", nodes)).toBe("completion-turn");
+    expect(resolveSubagentRevealTurnId(turns, "child", "launch")).toBe("completion-turn");
   });
 
   it("falls back to the origin turn while no later child point is loaded", () => {
@@ -172,7 +151,6 @@ describe("subagent reveal turn resolution", () => {
         [{ id: "launch", blocks: [] } as unknown as Turn],
         "child",
         "launch",
-        nodes,
       ),
     ).toBe("launch");
   });

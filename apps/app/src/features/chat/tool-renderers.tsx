@@ -22,6 +22,7 @@ import { documentDisplayName, folderDisplayName } from "./document-display-name"
 import type { ToolView } from "./group-delivery-segments";
 import { PassageDoor } from "./PassageDoor";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
+import { THREAD_REPORT_RENDERER } from "./thread-report-renderer";
 import { stringInput, toolInputObject, type WriteMode } from "./tool-command";
 import {
   boundLabel,
@@ -432,6 +433,7 @@ const RENDERERS: Record<string, ToolRenderer> = {
     title: (tool) => <WorkToolTitle tool={tool} />,
     expand: workExpand,
   },
+  thread_report: THREAD_REPORT_RENDERER,
 };
 
 export function rendererFor(toolName: string): ToolRenderer {

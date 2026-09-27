@@ -3,12 +3,7 @@
 import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import {
-  type Block,
-  blockContentRecord,
-  isTerminalTurnStatus,
-  type Turn,
-} from "@meridian/contracts/protocol";
+import { type Block, isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import { ChevronDown, MessageSquareText } from "lucide-react";
 import { memo, useMemo, useState } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
@@ -36,9 +31,9 @@ import {
 } from "./partition-turn";
 import { ReportContent } from "./ReportContent";
 import { StreamingText } from "./StreamingText";
-import { useSubagentActivityByRef, useSubagentActivityNodes } from "./SubagentActivityContext";
+import { useSubagentActivityNodes } from "./SubagentActivityContext";
 import { SubagentMark } from "./SubagentMark";
-import { resolveSubagentName, subagentStatus } from "./subagent-display";
+import { resolveSubagentName, subagentDescription, subagentStatus } from "./subagent-display";
 import type { SubagentUpdateMetadata } from "./subagent-update";
 import { groupAdjacentSubagentUpdates } from "./subagent-update";
 import { ToolRow } from "./ToolRow";
@@ -225,7 +220,8 @@ function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
       event,
       update,
       agentName: node?.agentName,
-      name: resolveSubagentName(node ?? { agentName: null, title: event.title ?? null }),
+      name: resolveSubagentName(node),
+      description: subagentDescription(node ?? { title: event.title ?? null }),
       threadId: node?.threadId ?? event.childThreadId,
       outcome: update?.outcome,
     };
@@ -256,7 +252,7 @@ function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
           ))}
         </span>
         <span className="truncate font-medium text-foreground">
-          {names.length > 3 ? (
+          {names.length > 3 || new Set(names).size < names.length ? (
             stopped.length ? (
               <Trans>
                 {names.length} subagents finished ({stopped.length} stopped)
@@ -286,7 +282,7 @@ function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
       </button>
       {expanded ? (
         <div className="ml-7 space-y-1 border-l border-border-subtle py-1 pl-3">
-          {entries.map(({ name, threadId, agentName, outcome }, index) => (
+          {entries.map(({ name, description, threadId, agentName, outcome }, index) => (
             <div key={`${threadId ?? name}-${index}`} data-subagent-thread-id={threadId}>
               <div className="flex items-center gap-2">
                 <SubagentMark
@@ -294,8 +290,9 @@ function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
                   status={subagentStatus(outcome)}
                   className="size-5 text-[10px]"
                 />
-                <span className="min-w-0 flex-1 truncate py-1 font-medium text-foreground">
-                  {name}
+                <span className="min-w-0 truncate py-1">
+                  <span className="font-medium text-foreground">{name}</span>
+                  {description ? <span className="ml-1.5">{description}</span> : null}
                 </span>
                 <OpenSubagentChatButton threadId={threadId} agentName={agentName} />
               </div>
@@ -312,7 +309,8 @@ function DeliveryEventRow({ turn, childThreadId, title, subagentUpdate }: Delive
   if (subagentUpdate) {
     const node = nodes.find((candidate) => candidate.ref === subagentUpdate.handle);
     const agentName = node?.agentName;
-    const name = resolveSubagentName(node ?? { agentName: null, title: title ?? null });
+    const name = resolveSubagentName(node);
+    const description = subagentDescription(node ?? { title: title ?? null });
     const outcome = subagentUpdate.outcome;
     const threadId = node?.threadId ?? childThreadId;
     return (
@@ -328,10 +326,12 @@ function DeliveryEventRow({ turn, childThreadId, title, subagentUpdate }: Delive
             className="size-5 text-[10px]"
             decorative
           />
-          <span className="min-w-0 flex-1 truncate py-[var(--chat-space-row)]">
+          <span className="min-w-0 truncate py-[var(--chat-space-row)]">
             <span className="font-medium text-foreground">{name}</span>{" "}
+            {description ? <>{description} </> : null}
             {outcome === "succeeded" ? <Trans>finished</Trans> : <Trans>stopped</Trans>}
           </span>
+          {/* Beside the text, not at the far edge, so the door reads as part of the line. */}
           <OpenSubagentChatButton threadId={threadId} agentName={agentName} />
         </div>
       </div>
@@ -423,10 +423,6 @@ const TurnItemView = memo(function TurnItemView({
   }
 
   if (item.kind === "report") {
-    const content = blockContentRecord(item.block);
-    if (content.toolName === "thread_report") {
-      return <ThreadReportArtifact refName={item.ref ?? ""} report={item.report} />;
-    }
     return (
       <div
         className="space-y-[var(--chat-space-block)] text-prose-foreground"
@@ -456,67 +452,6 @@ const TurnItemView = memo(function TurnItemView({
 
 function thinkingLabel() {
   return <Trans>Thinking</Trans>;
-}
-
-function ThreadReportArtifact({
-  refName,
-  report,
-}: {
-  refName: string;
-  report: import("./ReportContent").ReportContentValue;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const subagent = useSubagentActivityByRef(refName);
-  const agentName = subagent?.agentName;
-  const displayName = resolveSubagentName(subagent);
-  const taskTitle = subagent?.title?.trim();
-  return (
-    <div
-      className="chat-card [--chat-card-radius:var(--radius-xl)] [--chat-card-border:var(--color-border-subtle)] bg-background shadow-xs"
-      data-thread-report={refName}
-      data-subagent-thread-id={subagent?.threadId}
-    >
-      <div className="flex min-w-0 items-center gap-1">
-        <button
-          type="button"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((value) => !value)}
-          className="focus-ring flex min-w-0 flex-1 items-center gap-[var(--chat-space-row)] rounded-sm text-left"
-        >
-          <SubagentMark
-            agentName={agentName}
-            status={subagentStatus(
-              report.outcome ?? subagent?.spawnStatus ?? (report.partial ? "failed" : null),
-              !report.outcome && subagent?.status.kind === "awake",
-            )}
-          />
-          <span className="shrink-0 text-sm font-medium text-foreground">{displayName}</span>
-          <span className="shrink-0 text-xs text-muted-foreground">
-            <Trans>Report</Trans>
-          </span>
-          <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-            {taskTitle && taskTitle !== displayName ? taskTitle : null}
-          </span>
-          <ChevronDown
-            className={cn(
-              "size-4 shrink-0 text-muted-foreground transition-transform",
-              expanded && "rotate-180",
-            )}
-            aria-hidden
-          />
-        </button>
-        <OpenSubagentChatButton threadId={subagent?.threadId} agentName={agentName} />
-      </div>
-      {expanded ? (
-        <ReportContent
-          report={report}
-          empty={<Trans>No report text was returned.</Trans>}
-          showStopMetadata={false}
-          className="mt-[var(--chat-space-block)] pl-[calc(1.5rem+var(--chat-space-row))] space-y-[var(--chat-space-block)]"
-        />
-      ) : null}
-    </div>
-  );
 }
 
 function thinkingAriaLabel(processIndex: number, processCount: number): string | undefined {

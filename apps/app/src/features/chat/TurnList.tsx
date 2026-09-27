@@ -1,6 +1,5 @@
 /** Renders the transcript and owns its scroll viewport. */
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
-import type { ThreadActivityNode } from "@meridian/contracts/threads";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -42,7 +41,6 @@ export type TurnListProps = {
     outputTokens: number;
     cacheResets: number;
   } | null;
-  subagentNodes?: readonly ThreadActivityNode[];
 };
 
 /** Estimated row height before measurement; corrected by `measureElement`. */
@@ -62,7 +60,6 @@ export function TurnList({
   submissionRecoveryByTurnId,
   queuedWriterTurnIds,
   threadUsage = null,
-  subagentNodes = [],
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const navigateToChange = useChangeTrailNavigation(threadId);
@@ -108,9 +105,7 @@ export function TurnList({
     threadId,
     turns: visibleTurns,
     resolveTurnId: (turnId, subagentThreadId) =>
-      subagentThreadId
-        ? resolveSubagentRevealTurnId(turns, subagentThreadId, turnId, subagentNodes)
-        : turnId,
+      subagentThreadId ? resolveSubagentRevealTurnId(turns, subagentThreadId, turnId) : turnId,
     historySettled,
     viewportRef,
     scrollToIndex: (index) => virtualizer.scrollToIndex(index, { align: "center" }),
@@ -268,41 +263,12 @@ function deliveryEventsAfter(
   }
 }
 
-/** Latest transcript location for a child, resolved from loaded turn data. */
+/** Latest transcript location for a child: its finished line, else its launch card (which holds the report). */
 export function resolveSubagentRevealTurnId(
   turns: Turn[],
   childThreadId: string,
   originTurnId: string,
-  nodes: readonly ThreadActivityNode[],
 ): string {
-  const ref = nodes.find((node) => node.threadId === childThreadId)?.ref;
-  if (ref) {
-    for (let index = turns.length - 1; index >= 0; index--) {
-      const turn = turns[index];
-      if (
-        turn?.blocks.some((block) => {
-          const content = block.content;
-          if (
-            block.blockType !== "tool_use" ||
-            !content ||
-            typeof content !== "object" ||
-            Array.isArray(content) ||
-            content.toolName !== "thread_report"
-          )
-            return false;
-          const input = content.input;
-          return (
-            input !== null &&
-            typeof input === "object" &&
-            !Array.isArray(input) &&
-            input.ref === ref
-          );
-        })
-      )
-        return turn.id;
-    }
-  }
-
   for (let index = turns.length - 1; index >= 0; index--) {
     const turn = turns[index];
     if (

@@ -57,20 +57,20 @@ run's `deliveryMode`, never on which blocks happen to exist. Server activity
 subtree. The shared `useThreadActivity` store owns the cached live view and a
 single transport subscription per thread; `ChatView` filters direct running
 background children for the live panel, while the pane and dock headers filter
-direct children for the Subagents pop-up. A background run's `thread_report`
-is a report artifact outside the process fold; a direct run's stays a process
-row, since its combined card already holds the result. Background `subagent_update` notices render
-as quiet navigation rows: a single completion opens its child chat, while adjacent
-completions merge into a compact disclosure whose child rows open their chats.
-Notice text and task details are intentionally not repeated there. Every surface names a child through `subagent-display.ts`
-(agent name, else thread title; never a raw ref); the mark letter comes from
-the agent name, not the display name. Outcome maps to mark status there. The
-Each pop-up row opens its child chat. All open-subagent actions currently use
-the project chat navigation route; the app does not yet model multiple chat tabs.
-The separate Jump to in chat action uses a block-level conversation reveal
-that lands on the child's latest point:
-launch while running, the finished row until
-its report is read, then the latest report line.
+direct children for the Subagents pop-up. `thread_report` is always a process
+step ("Read report from ..."), in either mode: the launch or combined card is
+the one card per run and holds the report. Background `subagent_update` notices
+render as quiet rows: a single completion reads "<name> <description>
+finished", while adjacent completions merge into a compact disclosure. Notice
+text is intentionally not repeated there. Every surface names a child through
+`subagent-display.ts`: the agent name leads (generic runs read "Subagent"),
+followed by the run's description in muted text, separated only by spacing;
+never a raw ref. Outcome maps to mark status there. Row clicks expand or find;
+only the chat icon (`OpenSubagentChatButton`, labeled Open "<agent>") opens a
+child chat. All open-subagent actions use the project chat navigation route;
+the app does not yet model multiple chat tabs. A pop-up row jumps to the child
+through a block-level conversation reveal that lands on its latest point: the
+finished row once it completed, else its launch card.
 
 Child completion is a separate durable transcript event: system turns with
 `metadata.kind === "subagent_update"` render as a quiet inline row at their

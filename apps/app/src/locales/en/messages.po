@@ -1330,6 +1330,10 @@ msgstr "Couldn't open this document."
 msgid "Couldn't read"
 msgstr "Couldn't read"
 
+#: src/features/chat/thread-report-renderer.tsx
+msgid "Couldn't read report from {who}"
+msgstr "Couldn't read report from {who}"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't redo"
 msgstr "Couldn't redo"
@@ -2662,8 +2666,8 @@ msgstr "No projects yet"
 #~ msgid "No report text was returned"
 #~ msgstr "No report text was returned"
 
-#: src/features/chat/AssistantTurn.tsx
 #: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/thread-report-renderer.tsx
 msgid "No report text was returned."
 msgstr "No report text was returned."
 
@@ -3038,6 +3042,10 @@ msgstr "Read"
 msgid "Read file"
 msgstr "Read file"
 
+#: src/features/chat/thread-report-renderer.tsx
+msgid "Read report from {who}"
+msgstr "Read report from {who}"
+
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Read-only live document"
 msgstr "Read-only live document"
@@ -3049,6 +3057,10 @@ msgstr "Read-only preview"
 #: src/features/chat/command-descriptor.ts
 msgid "Reading"
 msgstr "Reading"
+
+#: src/features/chat/thread-report-renderer.tsx
+msgid "Reading report from {who}"
+msgstr "Reading report from {who}"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Reading text size"
@@ -3234,8 +3246,8 @@ msgid "Replace image"
 msgstr "Replace image"
 
 #: src/features/chat/AssistantTurn.tsx
-msgid "Report"
-msgstr "Report"
+#~ msgid "Report"
+#~ msgstr "Report"
 
 #: src/features/chat/tool-renderers.tsx
 #~ msgid "Report is still running"

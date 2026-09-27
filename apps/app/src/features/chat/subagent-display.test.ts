@@ -9,15 +9,18 @@ import {
   formatSubagentElapsed,
   resolveSubagentName,
   subagentCurrentToolLabel,
+  subagentDescription,
   subagentMarkName,
   subagentStatus,
 } from "./subagent-display";
 
 describe("subagent display", () => {
-  it("resolves one identity from profile, then title, then fallback", () => {
+  it("leads with the agent name and keeps the description separate", () => {
     expect(resolveSubagentName({ agentName: "  Scout  ", title: "Long task" })).toBe("Scout");
-    expect(resolveSubagentName({ agentName: null, title: "Long task" })).toBe("Long task");
-    expect(resolveSubagentName({ agentName: null, title: null })).toBe("Subagent");
+    expect(resolveSubagentName({ agentName: null, title: "Long task" })).toBe("Subagent");
+    expect(subagentDescription({ agentName: null, title: " Long task " })).toBe("Long task");
+    expect(subagentDescription({ agentName: "Scout", title: "Scout" })).toBeNull();
+    expect(subagentDescription({ agentName: "Scout", title: null })).toBeNull();
   });
 
   it("uses agent identity for marks instead of falling back to the task title", () => {

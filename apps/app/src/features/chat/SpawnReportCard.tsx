@@ -17,6 +17,7 @@ import {
   Elapsed,
   formatSubagentElapsed,
   resolveSubagentName,
+  subagentDescription,
   subagentStatus,
 } from "./subagent-display";
 
@@ -55,7 +56,8 @@ export function SpawnReportCard({
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const resolvedOutcome = directResult?.outcome ?? outcome;
-  const displayName = resolveSubagentName({ agentName, title });
+  const displayName = resolveSubagentName({ agentName });
+  const description = subagentDescription({ agentName, title });
   const running = status === "running" && resolvedOutcome == null;
   const markStatus = subagentStatus(
     resolvedOutcome ?? (status === "failed" ? "failed" : undefined),
@@ -68,9 +70,7 @@ export function SpawnReportCard({
     <>
       <SubagentMark agentName={agentName} status={markStatus} />
       <span className="shrink-0 text-sm font-medium text-foreground">{displayName}</span>
-      <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-        {title && title !== displayName ? title : null}
-      </span>
+      <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{description}</span>
       <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
         {running ? <Elapsed startedAt={startedAt} /> : formatSubagentElapsed(startedAt, terminalAt)}
       </span>
