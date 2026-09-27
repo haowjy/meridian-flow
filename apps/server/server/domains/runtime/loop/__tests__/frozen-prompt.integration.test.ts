@@ -248,6 +248,79 @@ describe("frozen prompt provider requests", () => {
     ).toMatchObject({ included: true });
   });
 
+  it("names a first-sight unavailable image and assigns its decision to the break turn", async () => {
+    const gateway = Object.assign(scriptedGateway(), {
+      listModels: () => [
+        {
+          id: "gpt-4.1-mini",
+          provider: "openai" as const,
+          displayName: "Fixture",
+          contextWindow: 100_000,
+          maxOutputTokens: 4_096,
+          promptCache: { kind: "none" as const, ttlMs: null },
+          capabilities: new Set(["image_input" as const]),
+        },
+      ],
+    });
+    const rig = await fixture(undefined, undefined, gateway, {
+      async resolve() {
+        return null;
+      },
+    });
+    const image = {
+      type: "image" as const,
+      documentId: "44444444-4444-4444-8444-000000000102",
+      uri: "uploads://@/first-sight-loss.png",
+    };
+    await rig.send(rig.thread.id, "look at this image", {
+      blocks: [{ type: "text", text: "look at this image" }, image],
+    });
+
+    const run = await rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true });
+    await expect(run.execute()).resolves.toMatchObject({ status: "complete" });
+
+    const imageBlock = (await rig.repos.blocks.listByThread(rig.thread.id)).find(
+      (block) => block.blockType === "image",
+    );
+    if (!imageBlock) throw new Error("Missing first-sight image block");
+    const writerTurn = await rig.repos.turns.findById(imageBlock.turnId);
+    const breakTurn = (await rig.repos.turns.listByThread(rig.thread.id)).find(
+      (turn) => (turn.metadata as { section?: string } | null)?.section === "image_inclusion",
+    );
+    expect(breakTurn).toMatchObject({
+      prevTurnId: writerTurn?.id,
+      metadata: {
+        kind: "system_update",
+        section: "image_inclusion",
+        breaks: [
+          {
+            blockId: imageBlock.id,
+            uri: image.uri,
+            reason: "asset_unavailable",
+          },
+        ],
+      },
+    });
+    expect(
+      (await rig.repos.imageInclusions.findByThread(rig.thread.id)).find(
+        (decision) => decision.blockId === imageBlock.id,
+      ),
+    ).toMatchObject({ included: false, decisionTurnId: breakTurn?.id });
+
+    const request = gateway.requests[0];
+    expect(request).toBeDefined();
+    const parts = request?.messages.flatMap((message) => message.content) ?? [];
+    expect(parts.some((part) => part.type === "image")).toBe(false);
+    expect(
+      parts
+        .filter((part) => part.type === "text")
+        .map((part) => part.text)
+        .join("\n"),
+    ).toContain(
+      "The model request no longer includes uploads://@/first-sight-loss.png because its asset is unavailable.",
+    );
+  });
+
   it("keeps a mid-run image-loss decision with its break notice across an assistant cutoff", async () => {
     let assetAvailable = true;
     const gateway = Object.assign(

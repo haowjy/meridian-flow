@@ -39,7 +39,7 @@ skeleton and delegates the moving parts.
 
 | File | Role |
 |---|---|
-| `orchestrator.ts` | Builds run-start and next-boundary model context from selected writer messages, durable history, references, skills, and images. It returns durable turn events plus the assistant to reserve; the delivery boundary owns preparation retries, notice consumption, inbox adoption, and atomic commit. A mid-run adoption completes assistant A and creates B, preserving graph order. Report admission happens only at run setup, and terminal finalization only at run exit. |
+| `orchestrator.ts` | Builds run-start and next-boundary model context from selected writer messages, durable history, references, skills, and images. It returns durable turn events plus the assistant to reserve; the delivery boundary owns preparation retries, notice consumption, inbox adoption, and atomic commit. `loadRunStartContext` reports a typed fork-history load failure as the `thread.conversation_context.load_failed` warn event and preserves the `thread_context_error` failed-reply path instead of falling back. A mid-run adoption completes assistant A and creates B, preserving graph order. Report admission happens only at run setup, and terminal finalization only at run exit. |
 | `inbox-context.ts` | Materializes a selected batch as durable turns/blocks. Caller-supplied notices and non-message inbox entries fold into one trailing `{ kind: "system_update", section: "notices" }` system turn built by `noticesTurnFor`/`formatNotices`; Work refreshes render to their own durable turn. Existing writer turns are adopted without a second append. `prepareAdoptedTurn` prepares missing text-reference reads and activated skill bodies, returning events and hidden sibling turns for the adoption transition -- never a block on the adopted turn itself, since anything that projects a user turn's text (`UserTurn.tsx`) concatenates every text block on it. `planMessageTurns` and `messageTurnFor` own fresh message history. Child completions persist a system turn with `{ kind: "subagent_update", handle, outcome, execution }` metadata; the execution UUID is for internal card correlation only. The shared context assembler renders from `turns`/`blocks` alone; never splice a second inbox rendering over the assembled request, which bypasses image authorization, model capability, and the whole-request occurrence budget. |
 | `runtime-delivery.ts` / `adapters/runtime-delivery.ts` | One `prepareAndCommit` protocol serves drain start and mid-run adoption. Direct run input first persists the writer turn and matching inbox message under the thread lock, then uses the drain-start path. The protocol selects pending IDs, peeks notices, and reads the active leaf without the lock; prepares image decisions, references, skills, and turn drafts without writes; then takes the thread lock and validates the leaf and pending batch. A changed selection is discarded and retried for at most three attempts; attempt three prepares under the lock. One ambient transaction consumes exactly the selected notice IDs, persists the first prompt bake and preparation effects, adopts the batch, and reserves/binds the assistant. Preparation failure leaves notices queued but adopts the writer batch and reserves the failed reply; the existing failure finalizer acknowledges that batch. Cancellation discards preparation. Notice IDs enter durable `system_update` history at the selected graph point, so prefix bytes remain stable. Image decisions are append-only by deciding turn; when a projection emits a break, its notice turn owns those decisions and `turn.created` precedes them. A fork copies the latest decision at or before its cutoff. Final close prepares only for pending messages or materializable Work refreshes; after a successful run's cleanup, any late pending message starts another run. The concrete Drizzle adapter appends the classified pending replacement before commit; journal failure rolls back the transition and only physical wake is best-effort after commit. |
 | `run-starter.ts` / `sweep-wakes.ts` | The wake actuation seam. `createRunStarter` maps `RunStarter.start` to the turn runner's `startDrain`, handling `TurnStartConflictError` quietly and reporting unexpected failures once through EventSink because a wake is best-effort. `sweepWakes` is the durable recovery: it keyset-pages pending threads in stable thread-ID order, batch-reads live leases, and starts eligible threads with bounded concurrency. Its caller retains the returned cursor across sweeps; an empty suffix wraps to the first page. One candidate’s failure is reported without stranding the rest. `app.ts` registers the sweep with the process recovery scheduler at boot, then rearms it after completion with `WAKE_SWEEP_INTERVAL_MS` (default 30s). The `enqueue` wake is the latency path; the sweep is the guarantee. |
@@ -60,9 +60,9 @@ skeleton and delegates the moving parts.
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
 | `execution-finalizer.ts` | Terminal transaction projects the current assistant event and finalizes the one admitted report found on its ancestor chain. The selector stays the first assistant; `terminalAssistantTurnId` records the final assistant. Fallback text is from that terminal turn’s final persisted response; cost sums every assistant response from selector to terminal. Run-scoped capture keeps the existing partial-outcome policy. Intermediate splits never publish a report. |
 | `persistence.ts` | Transactional persist/project-then-emit helper. **Ordering**: `projectReadModelEvent` runs before `eventWriter.appendEvent` so the `event_journal.turn_id` FK can reference the turn row created by the projector. Both happen in the same repo transaction. |
-| `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata that whichever drain first adopts the turn reads back and bakes into a hidden `system`-role skill-body turn chained right after it (`persistSkillBodies`, orchestrator.ts), and appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status: a mid-run send yields the runner's live assistant turn id (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly), a fresh run yields null and the client learns the turn from `RUN_STARTED`. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission. `admission-turn-starter.ts` and `TurnRunner.startTurn` are gone. |
+| `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata for `prepareAdoptedTurn` to load when the turn is adopted; the delivery commit persists the hidden `system`-role skill-body turn immediately after it. It also appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status: a mid-run send yields the runner's live assistant turn id (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly), a fresh run yields null and the client learns the turn from `RUN_STARTED`. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission. `admission-turn-starter.ts` and `TurnRunner.startTurn` are gone. |
 | `reference-context.ts` | Before the first model call, loads admitted current-turn text references through the host-wired shared agent-edit read operation; a mid-run adopted writer turn's unread references load at adoption. Reads run outside admission/persistence transactions; results are persisted server-side at `reference.read.result` before gateway submission. Duplicate `(documentId, uri)` identities read once per turn; replay reuses the frozen result, while a later mention reads afresh. Images retain their separate projection, and client admission rejects `read` payloads. |
-| `image-context.ts` / `ports/image-asset.ts` | Late image bytes are identity-resolved after admission and read-deduplicated. `thread_image_inclusions` stores one narrow decision per thread and block; later requests reuse it, and definite loss or budget eviction of an included image creates one durable named system update. Transient resolution errors propagate without evicting or deciding. Projection applies the shared budget chronologically over history and adopted turns; C5 compaction is the explicit seam for rebalance. Durable blocks retain only `image_reference` identity, never resolved bytes or inclusion state. |
+| `image-context.ts` / `ports/image-asset.ts` | Late image bytes are identity-resolved after admission and read-deduplicated. `thread_image_inclusions` is append-only, keyed by `(thread_id, block_id, decision_turn_id)`; the latest row by turn position wins. A definite asset loss, including at first sight, creates an `asset_unavailable` break turn that owns the exclusion decision; budget eviction of an included image creates its own named break. Transient resolution errors propagate to the failed-reply path without deciding the image. Projection applies the shared budget chronologically over history and adopted turns; C5 compaction is the explicit seam for rebalance. Durable blocks retain only `image_reference` identity, never resolved bytes or inclusion state. |
 | `permissions/` | `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow tool names and command sets (`write`, `work`). `write` is always advertised with `read` and `diff`; existing `edit` policy adds or removes mutation commands. `advertiseTools` uses that same command set to narrow both the schema and `write` description, so denied-command instructions are not exposed. Retained historical `read` policy metadata is inert. `commandSetForTool` is the single command mapping. Advertise and the per-turn permission gate (name + command) use that policy. `invocation-authority` validates that an invocation patch never grants the child more than the caller holds, applied only to the patch delta. Dispatch does not apply policy. The core catalogue stays policy-free. |
 
 `OrchestratorDeps` is fully required: gateway, repos, retained Agent revision reader, tool
@@ -112,22 +112,21 @@ What the model actually receives for five common deliveries, so "durable
    </system_update>
    ```
 4. **A request-only notice.** An `awareness_degraded` notice recorded through
-   `NoticePort.record` drains on the next `adopt()` call. `noticesTurnFor`
-   persists it as a `system`-role turn (`{ kind: "system_update", section:
-   "notices" }`) whose block text is:
+   `NoticePort.record` is selected by a delivery-boundary peek; commit consumes
+   its ID and `noticesTurnFor` persists it as a `system`-role turn (`{ kind:
+   "system_update", section: "notices" }`) whose block text is:
    ```
    <system_update>
    The system could not verify whether concurrent writer content was preserved in chapter-12.md. Re-read the document before making another write.
    </system_update>
    ```
 5. **A `/skill` activation.** A writer send stamps its activated slugs as
-   hidden turn metadata at admission. Whichever drain first adopts that turn
-   loads each body and `persistSkillBodies` (orchestrator.ts) persists a
-   `system`-role turn (`SKILL_BODY_METADATA`, i.e. `{ kind: "system_update",
-   section: "skill_body" }`) chained immediately after it -- never a block on
-   the writer's own turn, so `UserTurn.tsx`'s `projectUserTurn` (which
-   concatenates every text block of a user turn) never renders it. Its block
-   text is:
+   hidden turn metadata at admission. `prepareAdoptedTurn` loads each body, and
+   the delivery commit persists a `system`-role turn (`SKILL_BODY_METADATA`,
+   i.e. `{ kind: "system_update", section: "skill_body" }`) chained
+   immediately after it -- never a block on the writer's own turn, so
+   `UserTurn.tsx`'s `projectUserTurn` (which concatenates every text block of
+   a user turn) never renders it. Its block text is:
    ```
    <system_update>
    skill invoked: writing-principles
@@ -172,16 +171,18 @@ write-once `initialPromptBakeId`; concurrent first attempts use the row lock
 and all receive the winner. `turn-context-assembly.ts` loads the bake by that
 pointer and passes its system bytes to `buildContext`. Work, notices, child
 results, and invoked skills enter as durable in-place conversation turns,
-never a live-request-only splice: an invoked skill's body is baked once onto
-its own hidden `system`-role turn chained right after its activating turn
-(`persistSkillBodies`), a Work refresh is its own durable `user`-role
-`system_update` turn, and every other notice is its own durable `system`-role
-`system_update` turn (`inbox-context.ts`). Forks keep the source's bound Agent and inherit `bakeAt` the cutoff on the
-owning thread; a fork cannot select a different Agent. Only a handoff can
-change the Agent, and a different-Agent handoff starts unbaked.
+never a live-request-only splice: `prepareAdoptedTurn` prepares an invoked
+skill's body and the delivery commit persists it once onto its own hidden
+`system`-role turn chained right after its activating turn. A Work refresh is
+its own durable `user`-role `system_update` turn, and every other notice is its
+own durable `system`-role `system_update` turn (`inbox-context.ts`). Forks keep
+the source's bound Agent and inherit `bakeAt` the cutoff on the owning thread;
+a fork cannot select a different Agent. Only a handoff can change the Agent,
+and a different-Agent handoff starts unbaked.
 
-**A thread's whole cached request prefix — system prompt, advertised tools,
-and history — is fixed until a named prompt-epoch boundary.**
+**A thread's cached request prefix — system prompt, advertised tools, and
+history — is fixed except at named prompt-epoch boundaries and image-removal
+breaks.**
 `agent-thread-context.ts` still re-derives `advertiseTools(baseTools, policy)`
 (+ the spawn description and, for a subagent thread, `return_result`) every
 turn, but once `isThreadPromptFrozen(thread)` the assembler reads

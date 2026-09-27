@@ -1442,11 +1442,11 @@ function buildImageProjectionEvents(input: {
 
 function imageContextBreakText(breaks: readonly ImageContextBreak[]): string {
   const lines = [
-    "Image context changed. Previously included images were removed from the model request:",
+    "Image context changed.",
     ...breaks.map((entry) =>
       entry.reason === "budget_eviction"
         ? `Removed ${entry.uri} to fit the image context budget.`
-        : `Removed ${entry.uri} because its asset is no longer available.`,
+        : `The model request no longer includes ${entry.uri} because its asset is unavailable.`,
     ),
   ];
   return `<system_update>\n${lines.join("\n")}\n</system_update>`;

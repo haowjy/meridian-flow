@@ -77,12 +77,8 @@ export async function projectImageBlocksForModel(input: {
     if (block.blockType !== "image" || block.pruned || includedDecision === false) continue;
     const identity = reference(block.content);
     if (!identity) {
-      if (includedDecision === true) {
-        decisionById.set(block.id, { blockId: block.id, included: false });
-        breaks.push({ blockId: block.id, uri: block.id, reason: "asset_unavailable" });
-      } else {
-        decisionById.set(block.id, { blockId: block.id, included: false });
-      }
+      decisionById.set(block.id, { blockId: block.id, included: false });
+      breaks.push({ blockId: block.id, uri: block.id, reason: "asset_unavailable" });
       diagnosedOmission = true;
       continue;
     }
@@ -103,12 +99,8 @@ export async function projectImageBlocksForModel(input: {
     }
 
     if (!image || !Number.isFinite(image.sizeBytes) || image.sizeBytes < 0) {
-      if (includedDecision === true) {
-        decisionById.set(block.id, { blockId: block.id, included: false });
-        breaks.push({ blockId: block.id, uri: identity.uri, reason: "asset_unavailable" });
-      } else if (includedDecision == null) {
-        decisionById.set(block.id, { blockId: block.id, included: false });
-      }
+      decisionById.set(block.id, { blockId: block.id, included: false });
+      breaks.push({ blockId: block.id, uri: identity.uri, reason: "asset_unavailable" });
       diagnosedOmission = true;
       continue;
     }

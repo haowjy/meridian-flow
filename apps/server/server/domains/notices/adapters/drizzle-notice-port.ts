@@ -1,4 +1,4 @@
-/** Drizzle-backed destructive delivery queue for model-context notices. */
+/** Drizzle-backed storage for model-context notices with ID-based consumption. */
 import type { Database } from "@meridian/database";
 import { pendingNotices } from "@meridian/database/schema";
 import { asc, eq, inArray } from "drizzle-orm";

@@ -18,8 +18,10 @@ cascades) and pointer changes after their first non-null value. Advertised
 tools are untyped `jsonb`: the runtime domain owns their exact shape (the
 gateway's `Tool[]`). Forks reference `bakeAt(originTurnId)` on the thread that
 owns the cutoff, so a fork of a fork can inherit a grandsource boundary. Fork
-derivation reads that bake while holding the source row lock; it does not lock
-the fork's parent thread.
+derivation locks its selected source while choosing the cutoff and creating
+the fork. `bakeAt` may read the cutoff turn's owner without locking that
+ancestor; the prompt-bake, pointer, boundary-turn, and position rows are
+write-once.
 Same-revision handoff references the acted-on thread's current bake; an
 unfrozen source or a different Agent yields an unbaked target. A subagent-only
 or generic binding cannot become a primary thread without selecting a primary
@@ -27,13 +29,13 @@ Agent. Work changes, notices, child results, and skills are in-place
 conversation content, never system-prompt or tool-list edits. Fork/handoff
 seed turns render as user-role `<system_update>` content.
 
-**There is no refresh path today.** A thread's whole cached request prefix —
-prompt, tools, and history — stays fixed for the thread's life; a code
-deploy that changes the tool registry, an Agent revision update, a model
-change, or an idle/cache-TTL timer must never rebake a live thread. Compaction
-is the only planned in-thread exception. The `beginPromptEpoch` operation now
-hashes or reuses a bake and completes the reserved boundary through
-`persistAndAppendEvents`; it has no production caller until C4. `bakeAt` and
+**The cached request prefix is fixed except at named breaks.** Prompt, tools,
+and history stay fixed across deployments, Agent revision updates, model
+changes, and idle/cache-TTL changes. The named breaks are prompt-epoch
+boundaries and image removals; compaction uses the explicit rebalance seam.
+`beginPromptEpoch` hashes or reuses a bake and completes the reserved
+boundary through `persistAndAppendEvents`; it has no production caller until
+C4. `bakeAt` and
 `bakeInEffect` resolve owner-local completed boundaries in write-once
 `turns.position` order. Position is assigned under the existing thread mutation
 lock; fork-local turns continue after their cutoff position.
@@ -284,7 +286,7 @@ Meridian Flow's Postgres schema. Key column mappings:
 | `turns.model` / `turns.provider` | `turns.model` / `turns.provider` | Latest model response for the turn |
 | `turns.requestParams` | `turns.requestParams` | Request params captured when the turn row is created |
 | `turns.responseMetadata` | `turns.responseMetadata` | Latest response metadata projected onto the turn |
-| `threadImageInclusions` | `thread_image_inclusions` | Per-thread image decision keyed by `(thread_id, block_id)`; forks copy only inherited transcript decisions, and source/fork decisions never mutate each other |
+| `threadImageInclusions` | `thread_image_inclusions` | Append-only image decisions keyed by `(thread_id, block_id, decision_turn_id)`; the latest row by turn position wins. Forks copy the latest inherited transcript decision at their cutoff, and source/fork decisions never mutate each other |
 | `turnBlocks.provider` / `turnBlocks.providerData` | `turnBlocks.provider` / `turnBlocks.providerData` | Provider metadata for projected block rows |
 | `modelResponses.rawUsage` | `modelResponses.usageBreakdown` | Column renamed |
 | `modelResponses.finishReason` | `modelResponses.stopReason` | Column renamed |

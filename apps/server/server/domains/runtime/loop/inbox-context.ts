@@ -70,9 +70,8 @@ export async function drainInbox(input: {
   batch: InboxMessage[];
   workContext?: RenderedWorkContext;
   /**
-   * Already-drained `NoticePort` notices for this thread. Draining is
-   * destructive, so the caller (`adopt()`) owns calling it exactly once and
-   * folding the result into the same split/persist decision as the batch.
+   * Peeked `NoticePort` notices for this thread. The prepare/commit boundary
+   * consumes their selected IDs only when it persists the matching turn.
    */
   notices: readonly Notice[];
   threadId: ThreadId;
@@ -141,7 +140,7 @@ export async function drainInbox(input: {
     fresh.push(message);
   }
   // Every non-message, non-work-refresh batch entry is itself a request-only
-  // notice (an `inbox_notice`); fold it in with whatever `NoticePort` drained so
+  // notice (an `inbox_notice`); fold it in with the `NoticePort` peek so
   // both become the same durable turn.
   const notices: Notice[] = [
     ...input.notices,
@@ -348,7 +347,7 @@ export function messageTurnFor(
 
 /**
  * Builds the durable system turn and text block carrying every request-only
- * notice for one drain: `NoticePort`-drained notices (`undo`,
+ * notice for one delivery boundary: peeked `NoticePort` notices (`undo`,
  * `awareness_degraded`, writer `work_switched`) and non-message inbox entries,
  * formatted exactly like the request-only rendering they replace. Persisting
  * this once makes the notice reproduce identically on every later request
