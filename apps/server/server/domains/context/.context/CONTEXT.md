@@ -10,10 +10,15 @@ with a single unified `ContextPort` that resolves durable project schemes
 
 Runtime uses the context-owned `DocumentRevisions.current` port, never collab
 directly. Its adapter resolves the thread's current primary Work and write mode,
-checks project-final availability and draft manuscript manifest membership, then delegates each document to
-collab's effective reader. Missing/unavailable sources return null even when a
-deleted document's Y.Doc remains loaded in Hocuspocus or its Work manifest no longer includes it. Draft reads pull live changes synchronously before selecting
-peer, Work draft, or live; direct reads use live authority.
+checks project-final availability, and in draft mode checks the thread's Work
+manifest membership for `manuscript://` sources. It then delegates each
+document to collab's effective reader. A document a re-read would not find
+returns null, even when its Y.Doc remains loaded in Hocuspocus. Draft reads
+pull live changes synchronously before selecting peer, Work draft, or live;
+direct reads use live authority. The port may run inside a thread-locked
+transaction; collab's pull transaction rules make that safe (see the
+[collab contract](../../collab/.context/CONTEXT.md#pull-and-provisioning-transactions)).
+It reports settled authority, not a response's staged overlay.
 
 Search results carry `documentId` and `revision` from the document scanned.
 Tool wiring moves these fields to result metadata, not model-facing search JSON.

@@ -25,22 +25,50 @@ recovery returns null, never a later read's token.
 Effective markdown/hashline reads return content and revision from the same
 callback. `readEffectiveRevision` uses their synchronous pull/fallback chain.
 Context selects live authority for direct mode and the thread view for draft
-mode. A thread rebind is resolved anew on each query.
-
-Live pulls and peer content pulls commit in root transactions, never in a
-caller's ambient transaction. Shared pull promises represent committed state;
-caller rollback cannot undo them. Debounce timers clear only after commit.
-Reruns leave the initiating transaction context.
-
-Peer provisioning retains the canonical thread authority lock in the caller's
-transaction, then commits branch infrastructure in a separate root transaction.
-The root must not reacquire the thread row: a caller may already hold it.
-Callers release live/branch access before taking that authority lock (they pass
-detached snapshots). Pull callbacks never acquire it. Reads without a thread
-peer flush live into the shared Work draft without creating a peer.
+mode. A thread rebind is resolved anew on each query. A draft read with no
+thread peer flushes live into the shared Work draft and reads it; it never
+creates a peer, so search stays read-only in branch topology while seeing the
+state a later `write read` forks from.
 
 Direct response finalization invokes the receipt callback after the live core's
 durable commit; the thread-peer core invokes it inside its host transaction.
+
+## Pull and provisioning transactions
+
+Effective reads, and therefore `DocumentRevisions.current`, may run inside a
+caller's thread-locked or Work-locked command transaction. These rules keep
+that safe:
+
+- **Pulls commit on their own.** Live→Work-draft pull bodies
+  (`domain/branch-pulls.ts` `run()`) and thread-peer content pulls run in root
+  transactions outside any caller's ambient transaction. A shared pull promise
+  therefore resolves only on committed state, and a caller's rollback cannot
+  undo it. Reruns and timer callbacks also leave the initiating context.
+- **Joiners wait for the next run.** A caller that joins an in-flight live pull
+  awaits one coalesced run that starts after its call. The in-flight snapshot
+  may predate a writer edit the caller must observe.
+- **Timers survive failure.** Debounce and maximum timers clear only after a
+  pull commits. A failed pull leaves them armed; a fired handle is cleared so
+  the next update re-arms the maximum bound. Background failures go to
+  `BranchPullDiagnostics.backgroundFailed`.
+- **Provisioning splits authority from infrastructure.**
+  `ensureThreadPeerBranch` takes the canonical thread row lock in the caller's
+  (or its own enclosing) transaction, then commits the Work draft and thread
+  peer in a root transaction. The root must not relock the thread row, since
+  the caller may already hold it. It resolves committed Work membership, not a
+  caller's uncommitted rebind. Callers release live/branch access before taking
+  the thread lock (they pass detached snapshots); pull callbacks never take it.
+- **Referenced rows commit first.** `ensureProjectManifest` creates manifest
+  identity and its durable live head in a root transaction, so a root-committed
+  peer never references a row only the caller's transaction can see.
+- **FK references must not wait on the caller's locks.** A root insert that
+  references a row the caller locked waits on a transaction that is itself
+  awaiting the root in JavaScript; Postgres never detects that cycle. Work
+  lifecycle and thread locks therefore use `NO KEY UPDATE`, which admits FK
+  `KEY SHARE`. Authored branch mutations (`commitBranchMutation`) still take the
+  Work lifecycle lock. Replication pulls use the snapshot CAS
+  (`updateBranchSnapshot`) without it, because replication creates no
+  reviewable edit.
 
 
 ## Composition root
@@ -74,16 +102,3 @@ without collapsing their distinct caller contracts.
 - [Push settlement and change trail](settlement-and-trail.md)
 - [WebSocket concurrency boundary](websocket-concurrency.md)
 - [Draft/live visual model](draft-live-model.html)
-
-Manifest identity and its durable live head are root-committed infrastructure
-before any peer can reference them. Root provisioning resolves committed Work
-membership, not a caller's speculative rebind. Work lifecycle locks use NO KEY
-UPDATE so independent branch FK references can be installed while a caller
-holds that lock. Authored branch mutations still take the Work lifecycle lock;
-parent replication uses the existing snapshot CAS without taking it again,
-because replication creates no reviewable edit. This distinction is necessary
-for effective reads within Work-scoped context commands.
-
-A caller joining an in-flight live pull waits for the coalesced next pull: the
-old snapshot may precede its call. Failed background pulls are reported; expired
-timer handles are removed so future updates re-arm the maximum debounce.
