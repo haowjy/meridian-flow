@@ -38,9 +38,9 @@ and gap on one boundary.
 
 A finished turn has a quiet action row below all turn content. Copy takes the
 turn's final message: the text and report items after its last process fold
-(`finalMessageItems`), never thinking, tool rows, delivery events, or earlier
-prose. Images after the fold are not written to the clipboard yet, and a turn
-with no fold copies all its prose; see [TODO](TODO.md). Markdown is the plain-text flavor and is memoized; the HTML
+(`finalMessageItems`) plus its images, never thinking, tool rows, delivery
+events, spawn cards, or earlier prose. Images copy as Markdown images, so the
+HTML flavor carries real `<img>` elements. Markdown is the plain-text flavor and is memoized; the HTML
 flavor is rendered only inside the click handler through a module-level
 unified pipeline that strips presentation properties on the HAST tree (never
 by regex on serialized HTML, which corrupts code text). Stripping `className`

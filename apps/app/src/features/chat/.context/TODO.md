@@ -62,13 +62,3 @@ most three clauses ("Read and edited loop-test.md, 1 edit failed"). A failure
 shows in the label without opening the fold; a live fold names the current
 action. Deferred out of the subagent UI change because it rewrites the digest
 contract in `turn-composition.md`.
-
-## Copy takes the last text block plus its images and reports
-
-The owner rule for the action row's Copy is the reply's last assistant text
-block plus its images or report artifacts, never tools or thinking.
-`assistantTurnCopyMarkdown` (`assistant-turn-copy.ts`) copies every text and
-report item after the last process fold (`finalMessageItems`): images there are
-dropped, and a turn with no fold copies all of its prose. Select the last text
-item and the images and reports that follow it, and write images into the HTML
-flavor.

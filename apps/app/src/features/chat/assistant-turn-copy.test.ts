@@ -50,6 +50,26 @@ describe("assistant turn copy", () => {
     expect(html).not.toContain("Interim note");
   });
 
+  it("copies final-answer images with the prose, never tool output", () => {
+    const items = partitionTurn([
+      block("tool_use", 0, undefined, { toolCallId: "tool-1", toolName: "read", input: {} }),
+      block("tool_result", 1, undefined, { toolCallId: "tool-1", output: "tool text" }),
+      block("text", 2, "Here is the map."),
+      block("image", 3, undefined, {
+        url: "https://example.com/map.png",
+        alt: "Harbor map",
+        caption: "The harbor at dusk",
+      }),
+    ]);
+    const markdown = assistantTurnCopyMarkdown(items);
+
+    expect(markdown).toBe(
+      "Here is the map.\n\n![Harbor map](<https://example.com/map.png>)\n\nThe harbor at dusk",
+    );
+    expect(assistantTurnCopyHtml(markdown)).toContain('<img src="https://example.com/map.png"');
+    expect(markdown).not.toContain("tool text");
+  });
+
   it("fences report payloads in copied Markdown", () => {
     const markdown = assistantTurnCopyMarkdown(
       partitionTurn([
