@@ -1,9 +1,13 @@
 /** Bounded crash repair for admitted child turns without terminal truth. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import { isTerminalTurnStatus } from "@meridian/contracts/threads";
+import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { EventJournalWriter, ThreadRepositories } from "../../threads/index.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
+import {
+  COMPACTION_PLACEHOLDER_KINDS,
+  finalizeOrphanedPlaceholder,
+} from "../loop/orphaned-placeholder.js";
 import type { RunClaim } from "../loop/ports.js";
 import type { ThreadLock } from "../loop/thread-lock.js";
 import type { ReportPublisher } from "./report-publisher.js";
@@ -15,70 +19,115 @@ export function createOrphanReportRepair(deps: {
   threadLock: ThreadLock;
   publisher: Pick<ReportPublisher, "publish">;
   eventSink: EventSink;
+  placeholderKinds?: readonly Turn["role"][];
 }) {
-  let cursor: TurnId | undefined;
+  const placeholderKinds = deps.placeholderKinds ?? COMPACTION_PLACEHOLDER_KINDS;
+  const placeholderKindSet = new Set(placeholderKinds);
+  let reportCursor: TurnId | undefined;
+  let placeholderCursor: TurnId | undefined;
 
-  async function repair(childThreadId: ThreadId, assistantTurnId: TurnId): Promise<void> {
-    // A missing/expired lease row is not evidence of death. Only the real
-    // per-thread session claim can establish that no runner still owns it.
+  async function repairReport(childThreadId: ThreadId, executionTurnId: TurnId): Promise<void> {
     let finalized = false;
     await deps.authority.withExclusiveThread(childThreadId, async () => {
       await deps.threadLock.withThreadLock(childThreadId, async () => {
         const report = await deps.repos.executionReports.findByExecution(
           childThreadId,
-          assistantTurnId,
+          executionTurnId,
         );
+        if (!report || report.outcome !== null) return;
+
+        await finalizeOrphanedPlaceholder(deps, {
+          threadId: childThreadId,
+          placeholderKinds,
+        });
+        const afterPlaceholderRepair = await deps.repos.executionReports.findByExecution(
+          childThreadId,
+          executionTurnId,
+        );
+        if (!afterPlaceholderRepair || afterPlaceholderRepair.outcome !== null) {
+          finalized = true;
+          return;
+        }
+
         const turns = await deps.repos.turns.listByThread(childThreadId);
-        let turn = turns.find((candidate) => candidate.id === assistantTurnId);
-        let leaf = turn;
+        let terminal = turns.find((candidate) => candidate.id === executionTurnId);
+        let leaf = terminal;
         while (leaf) {
           const next = turns.find((candidate) => candidate.parentTurnId === leaf?.id);
           if (!next) break;
-          if (
-            next.role === "assistant" &&
-            (await deps.repos.executionReports.findByExecution(childThreadId, next.id))
-          )
-            break;
+          // Every admitted selector begins a separate execution, regardless of turn role.
+          if (await deps.repos.executionReports.findByExecution(childThreadId, next.id)) break;
           leaf = next;
-          if (next.role === "assistant") turn = next;
+          if (next.role === "assistant" || placeholderKindSet.has(next.role)) terminal = next;
         }
         if (
-          !report ||
-          report.outcome !== null ||
-          !turn ||
-          turn.role !== "assistant" ||
-          isTerminalTurnStatus(turn.status)
+          !terminal ||
+          (terminal.role !== "assistant" && !placeholderKindSet.has(terminal.role)) ||
+          isTerminalTurnStatus(terminal.status)
         )
           return;
-        await finalizeExecution(
-          { repos: deps.repos, eventWriter: deps.eventWriter },
-          {
-            threadId: childThreadId,
-            turnId: turn.id,
-            cause: {
-              kind: "failed",
-              reason: "orphaned",
-              error: "Child execution stopped before terminal completion",
-            },
+
+        await finalizeExecution(deps, {
+          threadId: childThreadId,
+          turnId: terminal.id,
+          executionTurnId,
+          placeholderKinds,
+          cause: {
+            kind: "failed",
+            reason: "orphaned",
+            error: "Child execution stopped before terminal completion",
           },
-        );
+        });
         finalized = true;
       });
     });
-    if (finalized) await deps.publisher.publish(childThreadId, assistantTurnId);
+    if (finalized) await deps.publisher.publish(childThreadId, executionTurnId);
+  }
+
+  async function repairPlaceholder(candidate: { threadId: ThreadId; id: TurnId }): Promise<void> {
+    await deps.authority.withExclusiveThread(candidate.threadId, () =>
+      deps.threadLock.withThreadLock(candidate.threadId, () =>
+        finalizeOrphanedPlaceholder(deps, {
+          threadId: candidate.threadId,
+          placeholderKinds,
+        }),
+      ),
+    );
   }
 
   async function sweep(limit: number): Promise<number> {
     if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Repair limit must be positive");
-    let candidates = await deps.repos.executionReports.listUnfinalized(limit, cursor);
-    if (candidates.length === 0 && cursor) {
-      cursor = undefined;
-      candidates = await deps.repos.executionReports.listUnfinalized(limit);
+
+    let placeholders = await deps.repos.turns.listPendingPlaceholders(limit, placeholderCursor);
+    if (placeholders.length === 0 && placeholderCursor) {
+      placeholderCursor = undefined;
+      placeholders = await deps.repos.turns.listPendingPlaceholders(limit);
     }
-    for (const candidate of candidates) {
-      cursor = candidate.executionTurnId;
+    for (const candidate of placeholders) {
+      placeholderCursor = candidate.id;
+      if (!placeholderKindSet.has(candidate.role)) continue;
       try {
-        await repair(candidate.childThreadId, candidate.executionTurnId);
+        await repairPlaceholder({ threadId: candidate.threadId, id: candidate.id });
+      } catch (error) {
+        emitEvent(deps.eventSink, {
+          level: "warn",
+          source: "runtime.report-repair",
+          name: "placeholder.failed",
+          correlation: { threadId: candidate.threadId, turnId: candidate.id },
+          payload: unknownToEventPayload(error),
+        });
+      }
+    }
+
+    let reports = await deps.repos.executionReports.listUnfinalized(limit, reportCursor);
+    if (reports.length === 0 && reportCursor) {
+      reportCursor = undefined;
+      reports = await deps.repos.executionReports.listUnfinalized(limit);
+    }
+    for (const candidate of reports) {
+      reportCursor = candidate.executionTurnId;
+      try {
+        await repairReport(candidate.childThreadId, candidate.executionTurnId);
       } catch (error) {
         emitEvent(deps.eventSink, {
           level: "warn",
@@ -89,7 +138,7 @@ export function createOrphanReportRepair(deps: {
         });
       }
     }
-    return candidates.length;
+    return placeholders.length + reports.length;
   }
 
   return { sweep };

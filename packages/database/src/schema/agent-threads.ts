@@ -310,6 +310,9 @@ export const turns = pgTable(
     index("turns_parent_position")
       .on(table.parentTurnId, table.position.desc())
       .where(sql`${table.parentTurnId} IS NOT NULL`),
+    index("turns_pending_placeholders")
+      .on(table.id)
+      .where(sql`${table.status} = 'pending' AND ${table.role} NOT IN ('user', 'assistant')`),
     uniqueIndex("turns_thread_single_root")
       .on(table.threadId)
       .where(sql`${table.parentTurnId} IS NULL`),

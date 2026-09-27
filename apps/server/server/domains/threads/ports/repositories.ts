@@ -434,6 +434,11 @@ export interface TurnRepository {
   create(input: CreateTurnInput): Promise<Turn>;
   findById(id: TurnId): Promise<Turn | null>;
   listByThread(threadId: ThreadId): Promise<Turn[]>;
+  /** Keyset page for pending non-user/non-assistant turns, which can be execution placeholders. */
+  listPendingPlaceholders(
+    limit: number,
+    afterTurnId?: TurnId,
+  ): Promise<Array<Pick<Turn, "id" | "threadId" | "role">>>;
   getLatestByThread(threadId: ThreadId): Promise<Turn | null>;
   /**
    * The assistant container of a run that the caller has already proven live
