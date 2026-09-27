@@ -13,6 +13,8 @@
 
 - Store immutable prompt/tool bakes behind write-once pointers; resolve fork prefixes at their cutoff and journal named epoch boundaries atomically.
 - Keep the same Agent and prompt when forking by default.
+- Order turns by write-once per-thread positions, continuing fork-local order after the cutoff; inbox turns take their position when drained.
+- Persist image inclusion per block and keep request history stable; record asset loss and budget evictions as durable system updates.
 
 - Open new chats immediately; subscribe once after first-send acceptance, without missing-thread errors.
 

@@ -17,7 +17,9 @@ boundaries. Database triggers reject bake updates/deletes (except owner-thread
 cascades) and pointer changes after their first non-null value. Advertised
 tools are untyped `jsonb`: the runtime domain owns their exact shape (the
 gateway's `Tool[]`). Forks reference `bakeAt(originTurnId)` on the thread that
-owns the cutoff, so a fork of a fork can inherit a grandsource boundary.
+owns the cutoff, so a fork of a fork can inherit a grandsource boundary. Fork
+derivation reads that bake while holding the source row lock; it does not lock
+the fork's parent thread.
 Same-revision handoff references the acted-on thread's current bake; an
 unfrozen source or a different Agent yields an unbaked target. A subagent-only
 or generic binding cannot become a primary thread without selecting a primary
@@ -32,8 +34,9 @@ change, or an idle/cache-TTL timer must never rebake a live thread. Compaction
 is the only planned in-thread exception. The `beginPromptEpoch` operation now
 hashes or reuses a bake and completes the reserved boundary through
 `persistAndAppendEvents`; it has no production caller until C4. `bakeAt` and
-`bakeInEffect` resolve owner-local completed boundaries; until C2b adds causal
-turn positions they use repository turn order.
+`bakeInEffect` resolve owner-local completed boundaries in write-once
+`turns.position` order. Position is assigned under the existing thread mutation
+lock; fork-local turns continue after their cutoff position.
 When the model needs to learn about a change mid-thread, that is a system
 notification folded into conversation (the existing inbox/notice path), never
 a prompt or tool-list change — see the
@@ -62,8 +65,9 @@ for the tool-freeze mechanics.
   persisting correlation. Finalization derives a pending publication obligation
   from admitted delivery mode; publication remains separate bookkeeping. The
   bounded discovery query skips soft-deleted callers and projects while retaining
-  their pending obligations for restoration, and surfaces null callers for
-  abandonment. `thread_report` performs an exact child+turn lookup
+  their pending obligations for restoration. A database check forbids a pending
+  publication without a caller, so discovery never surfaces null callers.
+  `thread_report` performs an exact child+turn lookup
   inside one root repeatable-read snapshot after reloading the live caller, resolving
   the target handle in its project, and checking same-owner/same-lineage. It
   never selects a latest report or reads transcript tails. Runtime terminal A
@@ -113,8 +117,9 @@ for the tool-freeze mechanics.
   runtime loop. Delivery cursors use `threads.next_seq` and
   `event_journal.seq` (unique `(thread_id, seq)`). `seq` is event-delivery
   cursoring for `readAfter`, the writer increment, and hub resume math — not
-  turn ordering. The turn tree (`parent_turn_id`, `active_leaf_turn_id`) remains
-  the ordering model. Turns have no `seq` column.
+  turn ordering. `turns.position` is the write-once per-thread transcript order;
+  the parent/active-leaf links describe turn ancestry and the current leaf. Turns
+  have no journal `seq` column.
 - **ThreadEventHub** — in-memory pub/sub + hot cache that sits on top of the
   journal. Local appends schedule only a committed-journal invalidation; local
   and PostgreSQL invalidations only drain existing observed/cached threads. Explicit
@@ -275,13 +280,15 @@ Meridian Flow's Postgres schema. Key column mappings:
 | `threads.totalCostUsd` | `threads.totalCostUsd` | Persisted aggregate maintained by repository/projector recompute |
 | `threads.initialPromptBakeId` | `threads.initialPromptBakeId` | null means not baked; points to the first immutable bake |
 | `turns.promptBakeId` | `turns.promptBakeId` | null except on completed epoch-boundary turns |
+| `turns.position` | `turns.position` | Write-once per-thread transcript order, assigned under the thread mutation lock |
 | `turns.model` / `turns.provider` | `turns.model` / `turns.provider` | Latest model response for the turn |
 | `turns.requestParams` | `turns.requestParams` | Request params captured when the turn row is created |
 | `turns.responseMetadata` | `turns.responseMetadata` | Latest response metadata projected onto the turn |
+| `turnBlocks.imageIncluded` | `turn_blocks.image_included` | Stable inclusion decision for an image occurrence; null until its first image-capable request |
 | `turnBlocks.provider` / `turnBlocks.providerData` | `turnBlocks.provider` / `turnBlocks.providerData` | Provider metadata for projected block rows |
 | `modelResponses.rawUsage` | `modelResponses.usageBreakdown` | Column renamed |
 | `modelResponses.finishReason` | `modelResponses.stopReason` | Column renamed |
-| `threads.workId` (N:1) | **`thread_works` join** (M:N) | Column **dropped** in migration 0011; replaced by membership join with primary marker |
+| `threads.workId` (N:1) | **`thread_works` join** (M:N) | Legacy column absent from the v3 baseline; membership uses a primary marker |
 
 **Billing audit columns on `model_responses`** (added during cleanse):
 
