@@ -12,8 +12,8 @@
  */
 import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { JsonValue } from "@meridian/contracts/threads";
-import { TurnStartConflictError } from "../../threads/index.js";
+import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
+import { inboxMessageMetadata, TurnStartConflictError } from "../../threads/index.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { InboxReader, MessageDraft } from "./ports.js";
@@ -145,7 +145,7 @@ export async function persistWriterEnqueue<T>(input: {
 
 export function writerInboxMetadata(metadata: JsonValue | null | undefined): JsonValue {
   if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
-    return { ...metadata, kind: "inbox_message" };
+    return inboxMessageMetadata(metadata as JsonObject);
   }
-  return { kind: "inbox_message" };
+  return inboxMessageMetadata();
 }

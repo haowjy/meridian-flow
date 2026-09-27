@@ -25,6 +25,12 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, BlockUpsertedRow, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
 import type { Notice } from "../../notices/index.js";
+import {
+  childCompletionMetadata,
+  inboxMessageMetadata,
+  noticesMetadata,
+  workUpdateMetadata,
+} from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import { formatNotices } from "./context-builder.js";
@@ -320,15 +326,14 @@ export function messageTurnFor(
     status: "complete",
     metadata:
       message.provenance.kind === "child"
-        ? {
-            kind: "subagent_update",
+        ? childCompletionMetadata({
             handle: message.provenance.handle,
             outcome: message.provenance.outcome,
             execution: message.provenance.reportId,
-          }
+          })
         : message.body.kind === "work_context_refresh"
-          ? { kind: "system_update", section: "work_context" }
-          : { kind: "inbox_message" },
+          ? workUpdateMetadata()
+          : inboxMessageMetadata(),
   });
   const text =
     message.body.kind === "work_context_refresh" && workContext
@@ -353,7 +358,7 @@ export function messageTurnFor(
  * this once makes the notice reproduce identically on every later request
  * instead of vanishing once the drain that carried it ends.
  */
-function noticesTurnFor(
+export function noticesTurnFor(
   threadId: ThreadId,
   notices: readonly Notice[],
   prevTurnId: TurnId | null,
@@ -367,7 +372,7 @@ function noticesTurnFor(
     // The platform injects this, never the writer.
     origin: "system",
     status: "complete",
-    metadata: { kind: "system_update", section: "notices" },
+    metadata: noticesMetadata(),
   });
   const block = contentForBlockInput({
     id: turn.id,

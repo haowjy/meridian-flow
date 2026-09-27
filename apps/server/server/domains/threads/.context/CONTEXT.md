@@ -45,6 +45,13 @@ a prompt or tool-list change — see the
 [runtime contract](../../runtime/.context/CONTEXT.md)
 for the tool-freeze mechanics.
 
+`domain/turn-metadata.ts` owns typed metadata codecs, constructors, and
+`classifyHistoryItem`. Runtime producers use its constructors for inbox and
+child turns, Work and notice updates, skill bodies, and derivation seeds. The
+runtime compaction planner and history projector consume the same classifier;
+image inclusion remains classified by its `section` because its payload codec
+belongs to image projection.
+
 ## What it owns
 
 - **Thread / Turn / Block / ModelResponse repositories** — CRUD for the

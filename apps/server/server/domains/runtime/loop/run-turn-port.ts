@@ -21,7 +21,7 @@ interface RunTurnBase {
     agentSlug?: string | null;
     description?: string | null;
   };
-  child?: { parentThreadId: ThreadId; background: boolean };
+  child?: { parentThreadId: ThreadId; background: boolean; origin: "spawn" | "message" };
   onAssistantTurnChanged?: (turnId: TurnId) => void;
 }
 

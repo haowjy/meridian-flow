@@ -31,7 +31,7 @@ const metadata = z.looseObject({
   subagents: references.optional(),
   skills: skills.optional(),
   approval: z.enum(["default", "auto", "confirm", "never"]).optional(),
-  autocompact: z.number().int().min(0).max(4_294_967_295).optional(),
+  autocompact: z.number().int().min(1).max(4_294_967_295).optional(),
   autocompact_pct: z.number().int().min(1).max(100).optional(),
 });
 

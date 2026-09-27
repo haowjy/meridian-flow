@@ -67,6 +67,31 @@ export {
   ThreadTrashUnavailableError,
   transitionThreadTrash,
 } from "./domain/thread-trash-lifecycle.js";
+export type {
+  AgentRequestOrigin,
+  AgentRequestSource,
+  HistoryItemClass,
+} from "./domain/turn-metadata.js";
+export {
+  agentRequestMetadata,
+  ChildCompletionMetadataCodec,
+  CompactionUndoMetadataCodec,
+  childCompletionMetadata,
+  childSeedMetadata,
+  classifyHistoryItem,
+  compactionSummaryMetadata,
+  compactionUndoMetadata,
+  DerivationSeedMetadataCodec,
+  derivationSeedMetadata,
+  foregroundMessageMetadata,
+  InboxMessageMetadataCodec,
+  inboxMessageMetadata,
+  isSystemUpdateMetadata,
+  noticesMetadata,
+  SystemUpdateMetadataCodec,
+  skillBodyMetadata,
+  workUpdateMetadata,
+} from "./domain/turn-metadata.js";
 export {
   TurnStartConflictError,
   type TurnStartConflictReason,

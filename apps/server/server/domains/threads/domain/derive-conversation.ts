@@ -20,6 +20,7 @@ import { createBoundConversation } from "./bound-conversation.js";
 import { bakeAt, bakeInEffect } from "./prompt-epochs.js";
 import { projectImageInclusionDecision } from "./read-model-projector.js";
 import { loadThreadConversationContext } from "./thread-conversation-context.js";
+import { derivationSeedMetadata } from "./turn-metadata.js";
 
 export interface ThreadAgentSwapDeps {
   threads: InternalThreadRepositories["threads"];
@@ -411,7 +412,7 @@ async function seedSystemTurn(
     role: "system",
     origin: "system",
     status: "complete",
-    metadata: { kind: "derivation_seed", derivation },
+    metadata: derivationSeedMetadata(derivation),
   });
   await deps.blocks.create({
     turnId: turn.id,

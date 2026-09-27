@@ -40,7 +40,6 @@ export {
   beginPromptEpoch,
 } from "./loop/begin-prompt-epoch.js";
 export type {
-  AgentRequestSource,
   CompactedThrough,
   CompactionBlockContent,
   CompactionMetadata,
@@ -48,24 +47,25 @@ export type {
   CompactionProps,
   CompactionTrigger,
   CompactionTriggerSource,
-  HistoryItemClass,
   PlanCompactionInput,
   ProjectedActiveHistory,
   ResolveCompactionTriggerInput,
   RetainedTurnSlice,
-} from "./loop/compaction.js";
+} from "./loop/compaction/index.js";
 export {
+  CJK_CODE_POINT_TOKEN_MULTIPLIER,
   CompactionBlockContentCodec,
   CompactionMetadataCodec,
   CompactionPropsCodec,
-  classifyHistoryItem,
   DEFAULT_COMPACTION_TAIL_FRACTION,
   estimateRequestTokens,
+  FILE_PART_TOKEN_ESTIMATE,
   FLOW_ABSOLUTE_CEILING,
+  IMAGE_PART_TOKEN_ESTIMATE,
   planCompaction,
   projectActiveHistory,
   resolveCompactionTrigger,
-} from "./loop/compaction.js";
+} from "./loop/compaction/index.js";
 export {
   createNoopInterruptArtifactFlushPort,
   type InterruptArtifactFlushPort,

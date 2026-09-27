@@ -1,20 +1,36 @@
 /** Pure fixtures for compaction classification, triggering, planning, and projection. */
 
-import type { Block, Thread, Turn } from "@meridian/contracts/threads";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { Block, JsonObject, Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import {
+  agentRequestMetadata,
+  childSeedMetadata,
+  classifyHistoryItem,
+  compactionUndoMetadata,
+  derivationSeedMetadata,
+  foregroundMessageMetadata,
+  skillBodyMetadata,
+  workUpdateMetadata,
+} from "../../threads/index.js";
+import { SKILL_BODY_METADATA } from "./activated-skills.js";
+import {
+  CJK_CODE_POINT_TOKEN_MULTIPLIER,
   CompactionBlockContentCodec,
   CompactionPropsCodec,
-  classifyHistoryItem,
   estimateRequestTokens,
+  FILE_PART_TOKEN_ESTIMATE,
   FLOW_ABSOLUTE_CEILING,
+  IMAGE_PART_TOKEN_ESTIMATE,
   planCompaction,
   projectActiveHistory,
   resolveCompactionTrigger,
-} from "./compaction.js";
+} from "./compaction/index.js";
 import { buildContext } from "./context-builder.js";
+import { messageTurnFor, noticesTurnFor } from "./inbox-context.js";
+import type { InboxMessage } from "./ports.js";
 
-const THREAD_ID = "thread-1";
+const THREAD_ID = "thread-1" as ThreadId;
 
 function turn(id: string, position: number, role: Turn["role"], extra: Partial<Turn> = {}): Turn {
   return {
@@ -65,37 +81,7 @@ function block(
   };
 }
 
-function compactionTurn(
-  id: string,
-  position: number,
-  status: Turn["status"] = "complete",
-  extra: Partial<Turn> = {},
-): Turn {
-  return turn(id, position, "compaction", {
-    origin: "system",
-    status,
-    metadata: {
-      compactedThrough: { turnId: "old-answer" },
-      pinnedRequestTurnId: "pinned-request",
-    },
-    ...extra,
-  });
-}
-
-function compactionBlock(id: string, turnId: string): Block {
-  return block(id, turnId, 0, "custom", {
-    kind: "compaction",
-    props: {
-      summary: "The heroine learned the regent forged the succession record.",
-      excludedTurnCount: 3,
-      tokensBefore: 900,
-      tokensAfter: 80,
-      model: "fixture-model",
-    },
-  });
-}
-
-function thread(): Thread {
+function thread(ref: string | null = "c12"): Thread {
   return {
     id: THREAD_ID,
     projectId: "project-1",
@@ -104,7 +90,7 @@ function thread(): Thread {
     kind: "primary",
     status: "idle",
     title: null,
-    ref: null,
+    ref,
     initialPromptBakeId: null,
     agentDefinitionRevisionId: null,
     agentName: null,
@@ -124,90 +110,148 @@ function thread(): Thread {
   };
 }
 
+function inboxMessage(
+  id: string,
+  provenance: InboxMessage["provenance"],
+  body: InboxMessage["body"] = { kind: "text", text: id },
+): InboxMessage {
+  return {
+    id,
+    threadId: THREAD_ID,
+    seq: 1,
+    intent: "message",
+    provenance,
+    body,
+    idempotencyKey: `idem-${id}`,
+    enqueuedAt: "2026-01-01T00:00:00.000Z",
+    deliveredAt: null,
+  };
+}
+
+function compactionTurn(
+  id: string,
+  position: number,
+  cutTurnId: string,
+  pinnedRequestTurnId: string,
+  status: Turn["status"] = "complete",
+  extra: Partial<Turn> = {},
+): Turn {
+  return turn(id, position, "compaction", {
+    origin: "system",
+    status,
+    metadata: { compactedThrough: { turnId: cutTurnId }, pinnedRequestTurnId },
+    ...extra,
+  });
+}
+
+function compactionBlock(
+  id: string,
+  turnId: string,
+  summary = "The heroine exposed the forged record.",
+): Block {
+  return block(id, turnId, 0, "custom", {
+    kind: "compaction",
+    props: {
+      summary,
+      excludedTurnCount: 3,
+      tokensBefore: 900,
+      tokensAfter: 80,
+      model: "fixture-model",
+    },
+  });
+}
+
+function signedReasoning(id: string, turnId: string, sequence: number, signature: string): Block {
+  return block(
+    id,
+    turnId,
+    sequence,
+    "reasoning",
+    { text: `thinking ${signature}`, providerOptions: { anthropic: { signature } } },
+    `thinking ${signature}`,
+  );
+}
+
+function requestMessage(text: string) {
+  return { role: "user" as const, content: [{ type: "text" as const, text }] };
+}
+
 describe("classifyHistoryItem", () => {
-  it.each([
-    ["writer request", turn("writer", 1, "user"), { kind: "writer_request" }],
-    [
-      "inbox agent request",
-      turn("inbox", 1, "user", { origin: "system", metadata: { kind: "inbox_message" } }),
-      { kind: "agent_request", source: "inbox_message" },
-    ],
-    [
-      "child seed",
-      turn("seed", 1, "user", {
-        origin: "system",
-        metadata: { agentRequestKind: "child_seed" },
+  it("classifies turns produced by the real inbox and metadata constructors", () => {
+    const writer = messageTurnFor(
+      inboxMessage("writer", { kind: "writer", actorId: "user-1" }),
+      null,
+      1,
+    ).turn;
+    const inbox = messageTurnFor(
+      inboxMessage("inbox", { kind: "agent", threadId: "agent-thread" as ThreadId }),
+      null,
+      2,
+    ).turn;
+    const work = messageTurnFor(
+      inboxMessage("work", { kind: "system", source: "work" }, { kind: "work_context_refresh" }),
+      null,
+      3,
+    ).turn;
+    const childCompletion = messageTurnFor(
+      inboxMessage("child", {
+        kind: "child",
+        threadId: "child-thread" as ThreadId,
+        reportId: "report-1" as TurnId,
+        handle: "p4",
+        outcome: "succeeded",
       }),
-      { kind: "agent_request", source: "child_seed" },
-    ],
-    [
-      "foreground agent message",
-      turn("foreground", 1, "user", { origin: "system" }),
-      { kind: "agent_request", source: "foreground_message" },
-    ],
-    [
-      "foreground agent message with unrelated metadata",
-      turn("foreground-meta", 1, "user", { origin: "system", metadata: {} }),
-      { kind: "agent_request", source: "foreground_message" },
-    ],
-    [
-      "child completion",
-      turn("child-completion", 1, "system", {
-        metadata: { kind: "subagent_update", handle: "p1", outcome: "success", execution: "e1" },
-      }),
-      { kind: "child_completion" },
-    ],
-    [
-      "Work update",
-      turn("work", 1, "user", {
-        origin: "system",
-        metadata: { kind: "system_update", section: "work_context" },
-      }),
-      { kind: "work_update" },
-    ],
-    [
-      "notice",
-      turn("notice", 1, "system", {
-        metadata: { kind: "system_update", section: "notices" },
-      }),
-      { kind: "notice" },
-    ],
-    [
-      "skill body",
-      turn("skill", 1, "system", {
-        metadata: { kind: "system_update", section: "skill_body" },
-      }),
-      { kind: "skill_body" },
-    ],
-    [
-      "image update by section",
-      turn("image", 1, "system", { metadata: { section: "image_inclusion", breaks: [] } }),
-      { kind: "image_update" },
-    ],
-    [
-      "fork seed",
-      turn("fork-seed", 1, "system", {
-        metadata: { kind: "derivation_seed", derivation: "fork" },
-      }),
-      { kind: "fork_or_handoff_seed", derivation: "fork" },
-    ],
-    [
-      "handoff seed",
-      turn("handoff-seed", 1, "system", {
-        metadata: { kind: "derivation_seed", derivation: "handoff" },
-      }),
-      { kind: "fork_or_handoff_seed", derivation: "handoff" },
-    ],
-    ["compaction", compactionTurn("compaction", 1, "pending"), { kind: "compaction" }],
-    [
-      "undo marker",
-      turn("undo", 1, "system", {
-        metadata: { kind: "compaction_undo", revertsCompactionTurnId: "compaction" },
-      }),
-      { kind: "undo_marker", compactionTurnId: "compaction" },
-    ],
-  ])("classifies %s", (_label, candidate, expected) => {
-    expect(classifyHistoryItem(candidate)).toEqual(expected);
+      null,
+      4,
+    ).turn;
+    const notice = noticesTurnFor(THREAD_ID, [], null, 5).turn;
+    const skill = turn("skill", 6, "system", { metadata: skillBodyMetadata() });
+    expect(SKILL_BODY_METADATA).toEqual(skillBodyMetadata());
+    const image = turn("image", 7, "system", {
+      metadata: { section: "image_inclusion", breaks: [] },
+    });
+    const childSeed = turn("seed", 8, "user", {
+      origin: "system",
+      metadata: childSeedMetadata(),
+    });
+    const foreground = turn("foreground", 9, "user", {
+      origin: "system",
+      metadata: foregroundMessageMetadata(),
+    });
+    const fork = turn("fork", 10, "system", { metadata: derivationSeedMetadata("fork") });
+    const handoff = turn("handoff", 11, "system", { metadata: derivationSeedMetadata("handoff") });
+    const undo = turn("undo", 12, "system", {
+      metadata: compactionUndoMetadata("compaction"),
+    });
+    const compaction = compactionTurn("compaction", 13, "old", "request", "pending");
+
+    expect(classifyHistoryItem(writer)).toEqual({ kind: "writer_request" });
+    expect(classifyHistoryItem(inbox)).toEqual({ kind: "agent_request", source: "inbox_message" });
+    expect(classifyHistoryItem(childSeed)).toEqual({ kind: "agent_request", source: "child_seed" });
+    expect(classifyHistoryItem(foreground)).toEqual({
+      kind: "agent_request",
+      source: "foreground_message",
+    });
+    expect(classifyHistoryItem(childCompletion)).toEqual({ kind: "child_completion" });
+    expect(classifyHistoryItem(work)).toEqual({ kind: "work_update" });
+    expect(classifyHistoryItem(notice)).toEqual({ kind: "notice" });
+    expect(classifyHistoryItem(skill)).toEqual({ kind: "skill_body" });
+    expect(classifyHistoryItem(image)).toEqual({ kind: "image_update" });
+    expect(classifyHistoryItem(fork)).toEqual({ kind: "fork_or_handoff_seed", derivation: "fork" });
+    expect(classifyHistoryItem(handoff)).toEqual({
+      kind: "fork_or_handoff_seed",
+      derivation: "handoff",
+    });
+    expect(classifyHistoryItem(compaction)).toEqual({ kind: "compaction" });
+    expect(classifyHistoryItem(undo)).toEqual({
+      kind: "undo_marker",
+      compactionTurnId: "compaction",
+    });
+  });
+
+  it("uses the driver's origin for spawn versus foreground continuation metadata", () => {
+    expect(agentRequestMetadata("spawn")).toEqual(childSeedMetadata());
+    expect(agentRequestMetadata("message")).toEqual(foregroundMessageMetadata());
   });
 });
 
@@ -236,7 +280,10 @@ describe("resolveCompactionTrigger", () => {
   it("keeps the config default off until C4d", () => {
     expect(
       resolveCompactionTrigger({ contextWindow: 100_000, maxOutputTokens: 10_000 }),
-    ).toMatchObject({ thresholdTokens: null, source: "off" });
+    ).toMatchObject({
+      thresholdTokens: null,
+      source: "off",
+    });
   });
 
   it("clamps at the usable window, the absolute ceiling, and zero", () => {
@@ -265,21 +312,52 @@ describe("resolveCompactionTrigger", () => {
 });
 
 describe("estimateRequestTokens", () => {
-  const request = {
-    messages: [
-      {
-        role: "user" as const,
-        content: [{ type: "text" as const, text: "A fairly long request." }],
-      },
-    ],
-    tools: [],
-  };
+  it("estimates full input and a baseline plus only newly appended messages", () => {
+    const first = requestMessage("The old request should be represented by the usage baseline.");
+    const next = requestMessage("Now continue from the fresh message.");
+    const request = { messages: [first, next], tools: [] };
+    const delta = estimateRequestTokens({
+      request: { messages: [next] },
+      baseline: { inputTokens: 0, messageCount: 0 },
+    });
 
-  it("estimates the full request without a baseline and a nonnegative delta with one", () => {
-    const whole = estimateRequestTokens({ request, baseline: null });
-    expect(whole).toBeGreaterThan(0);
-    expect(estimateRequestTokens({ request, baseline: { inputTokens: 1 } })).toBe(whole - 1);
-    expect(estimateRequestTokens({ request, baseline: { inputTokens: whole + 1 } })).toBe(0);
+    expect(estimateRequestTokens({ request, baseline: null })).toBeGreaterThan(0);
+    expect(
+      estimateRequestTokens({ request, baseline: { inputTokens: 400, messageCount: 1 } }),
+    ).toBe(400 + delta);
+    expect(
+      estimateRequestTokens({ request, baseline: { inputTokens: 400, messageCount: 2 } }),
+    ).toBe(400);
+  });
+
+  it("counts image and file parts by type, never by their base64 payload size", () => {
+    const image = (data: string) => ({
+      role: "user" as const,
+      content: [
+        { type: "image" as const, data, mediaType: "image/png" },
+        { type: "file" as const, data, mediaType: "application/pdf", filename: "chapter.pdf" },
+      ],
+    });
+    const request = { messages: [image("x".repeat(1_400_000))] };
+    const samePartsSmallPayload = { messages: [image("x")] };
+    const largeEstimate = estimateRequestTokens({ request, baseline: null });
+    expect(largeEstimate).toBe(
+      estimateRequestTokens({ request: samePartsSmallPayload, baseline: null }),
+    );
+    expect(largeEstimate).toBeGreaterThanOrEqual(
+      IMAGE_PART_TOKEN_ESTIMATE + FILE_PART_TOKEN_ESTIMATE,
+    );
+    expect(largeEstimate).toBeLessThan(IMAGE_PART_TOKEN_ESTIMATE + FILE_PART_TOKEN_ESTIMATE + 100);
+  });
+
+  it("uses a conservative CJK code-point multiplier", () => {
+    const text = "中".repeat(100);
+    const estimated = estimateRequestTokens({
+      request: { messages: [requestMessage(text)] },
+      baseline: null,
+    });
+    expect(CJK_CODE_POINT_TOKEN_MULTIPLIER).toBe(3);
+    expect(estimated).toBeGreaterThanOrEqual(text.length * CJK_CODE_POINT_TOKEN_MULTIPLIER);
   });
 });
 
@@ -290,7 +368,7 @@ describe("planCompaction", () => {
       return sum + (content?.tokens ?? 0);
     }, 0);
 
-  it("cuts inside an assistant turn after a complete tool group and pins the request before the suffix", () => {
+  it("cuts inside an assistant turn after a complete tool group and pins the request", () => {
     const request = turn("request", 1, "user", { blocks: [] });
     const assistantTurn = turn("assistant", 2, "assistant");
     const blocks = [
@@ -312,23 +390,23 @@ describe("planCompaction", () => {
       blocks,
       triggerTokens: 100,
       summaryReserveTokens: 10,
+      fixedOverheadTokens: 0,
       estimateTurnTokens: estimate,
     });
 
     expect(plan.compactedThrough).toEqual({ turnId: assistantTurn.id, blockSequence: 2 });
     expect(plan.pinnedRequest?.id).toBe(request.id);
     expect(plan.retainedSuffix.map(({ blocks: kept }) => kept.map(({ id }) => id))).toEqual([
+      [],
       ["tool-use-2", "tool-result-2", "new-text"],
     ]);
     expect(plan.minimalTailFits).toBe(true);
   });
 
-  it("keeps the Work refresh inside a retained assistant suffix", () => {
+  it("keeps Work refreshes as ordinary retained separators", () => {
     const request = turn("request", 1, "user");
     const firstAssistant = turn("assistant-before-work", 2, "assistant");
-    const work = turn("work-update", 3, "system", {
-      metadata: { kind: "system_update", section: "work_context" },
-    });
+    const work = turn("work-update", 3, "system", { metadata: workUpdateMetadata() });
     const secondAssistant = turn("assistant-after-work", 4, "assistant");
     const turns = [request, firstAssistant, work, secondAssistant];
     const blocks = turns.map((candidate, index) =>
@@ -339,107 +417,308 @@ describe("planCompaction", () => {
       blocks,
       triggerTokens: 100,
       summaryReserveTokens: 5,
+      fixedOverheadTokens: 0,
       tailBudgetFraction: 0.4,
       estimateTurnTokens: estimate,
     });
 
     expect(plan.retainedSuffix.map(({ turn: kept }) => kept.id)).toEqual([
+      request.id,
       firstAssistant.id,
       work.id,
       secondAssistant.id,
     ]);
-    expect(plan.keptWorkRefreshSeparators).toEqual([work]);
   });
 
-  it("reports when the summary reserve, pinned request, and minimum tail cannot fit", () => {
+  it("includes system prompt and tool-schema overhead in the minimal fit guarantee", () => {
     const request = turn("request", 1, "user");
-    const assistantTurn = turn("assistant", 2, "assistant");
+    const answer = turn("answer", 2, "assistant");
     const blocks = [
-      block("prompt", request.id, 0, "text", { tokens: 8 }, "large ask"),
-      block("tool-use", assistantTurn.id, 0, "tool_use", { toolCallId: "call", tokens: 2 }),
-      block("tool-result", assistantTurn.id, 1, "tool_result", { toolCallId: "call", tokens: 5 }),
+      block("request-text", request.id, 0, "text", { tokens: 8 }, "ask"),
+      block("answer-text", answer.id, 0, "text", { tokens: 5 }, "reply"),
     ];
     const plan = planCompaction({
-      turns: [request, assistantTurn],
+      turns: [request, answer],
       blocks,
-      triggerTokens: 20,
-      summaryReserveTokens: 10,
+      triggerTokens: 30,
+      summaryReserveTokens: 5,
+      fixedOverheadTokens: 15,
       estimateTurnTokens: estimate,
     });
 
-    expect(plan.minimalTailTokens).toBeGreaterThanOrEqual(20);
+    expect(plan.minimalTailTokens).toBeGreaterThanOrEqual(30);
     expect(plan.minimalTailFits).toBe(false);
+  });
+
+  it("does not let an old tool group make forty later chat exchanges too large", () => {
+    const turns: Turn[] = [];
+    const blocks: Block[] = [];
+    const oldRequest = messageTurnFor(
+      inboxMessage("old-request", { kind: "writer", actorId: "user-1" }),
+      null,
+      1,
+    ).turn;
+    const oldAnswer = turn("old-answer", 2, "assistant");
+    turns.push(oldRequest, oldAnswer);
+    blocks.push(
+      block("old-use", oldAnswer.id, 0, "tool_use", { toolCallId: "historical-tool", input: {} }),
+      block("old-result", oldAnswer.id, 1, "tool_result", {
+        toolCallId: "historical-tool",
+        output: "finished",
+      }),
+      block("old-answer-text", oldAnswer.id, 2, "text", { text: "old answer" }, "old answer"),
+    );
+    let position = 3;
+    for (let exchange = 1; exchange <= 40; exchange++) {
+      const request = messageTurnFor(
+        inboxMessage(
+          `request-${exchange}`,
+          { kind: "writer", actorId: "user-1" },
+          {
+            kind: "text",
+            text: `Writer request ${exchange}: continue the chapter with a concise beat.`,
+          },
+        ),
+        null,
+        position++,
+      ).turn;
+      const answer = turn(`answer-${exchange}`, position++, "assistant");
+      turns.push(request, answer);
+      blocks.push(
+        block(
+          `request-block-${exchange}`,
+          request.id,
+          0,
+          "text",
+          { text: `request ${exchange}` },
+          `request ${exchange}`,
+        ),
+        block(
+          `answer-block-${exchange}`,
+          answer.id,
+          0,
+          "text",
+          { text: `answer ${exchange}` },
+          `answer ${exchange}`,
+        ),
+      );
+    }
+    const plan = planCompaction({
+      turns,
+      blocks,
+      triggerTokens: 20_000,
+      summaryReserveTokens: 2_000,
+      fixedOverheadTokens: 500,
+    });
+    expect(plan.minimalTailFits).toBe(true);
+
+    const compaction = compactionTurn(
+      "old-tool-compaction",
+      position,
+      plan.compactedThrough?.turnId ?? oldAnswer.id,
+      plan.pinnedRequest?.id ?? turns.at(-2)?.id ?? oldRequest.id,
+    );
+    const projected = projectActiveHistory(
+      [...turns, compaction],
+      [...blocks, compactionBlock("summary", compaction.id)],
+      "c20",
+    );
+    const context = buildContext({ thread: thread("c20"), ...projected });
+    expect(context.messages.at(-1)?.role).toBe("assistant");
+    expect(
+      context.messages.every(
+        (message, index, messages) =>
+          !(message.role === "assistant" && messages[index - 1]?.role === "assistant"),
+      ),
+    ).toBe(true);
+  });
+
+  it("plans 2,000 default-estimated turns in under 1.5 seconds", () => {
+    const turns: Turn[] = [];
+    const blocks: Block[] = [];
+    for (let index = 0; index < 2_000; index++) {
+      const isRequest = index % 2 === 0;
+      const item = turn(`turn-${index}`, index + 1, isRequest ? "user" : "assistant");
+      turns.push(item);
+      blocks.push(
+        block(
+          `block-${index}`,
+          item.id,
+          0,
+          "text",
+          { text: `content ${index}` },
+          `content ${index}`,
+        ),
+      );
+    }
+    const startedAt = performance.now();
+    const plan = planCompaction({
+      turns,
+      blocks,
+      triggerTokens: 1_000_000,
+      summaryReserveTokens: 1_000,
+      fixedOverheadTokens: 5_000,
+    });
+    expect(plan.pinnedRequest?.id).toBe("turn-1998");
+    expect(performance.now() - startedAt).toBeLessThan(1_500);
   });
 });
 
 describe("projectActiveHistory", () => {
-  const writer = turn("pinned-request", 3, "user", {
-    blocks: [],
-    metadata: { kind: "inbox_message" },
-  });
-  const work = turn("work-refresh", 3, "user", {
-    origin: "system",
-    metadata: { kind: "system_update", section: "work_context" },
-  });
-  const assistant = turn("current-answer", 5, "assistant");
-  const originalTurns = [
-    turn("old-request", 1, "user"),
-    turn("old-answer", 2, "assistant"),
-    work,
-    { ...writer, position: 4 },
-    assistant,
-    compactionTurn("compaction", 6),
-  ];
-  const originalBlocks = [
-    block("old-request-text", "old-request", 0, "text", "Do something old."),
-    block("old-answer-text", "old-answer", 0, "text", "Old response."),
-    block(
-      "pinned-text",
-      writer.id,
-      0,
-      "text",
-      "Keep this exact request.",
-      "Keep this exact request.",
-    ),
-    block(
-      "work-text",
-      work.id,
-      0,
-      "text",
-      "Refresh the Work context.",
-      "Refresh the Work context.",
-    ),
-    block("reasoning", assistant.id, 0, "reasoning", { text: "thinking" }),
-    block(
-      "assistant-text",
-      assistant.id,
-      1,
-      "text",
-      { text: "Draft the reveal." },
-      "Draft the reveal.",
-    ),
-    compactionBlock("summary-block", "compaction"),
-  ];
-
-  it("projects a leading summary, pinned request, and extended-thinking assistant suffix", () => {
-    const projected = projectActiveHistory(originalTurns, originalBlocks);
-    const built = buildContext({ thread: thread(), ...projected });
-
-    expect(projected.turns.map(({ id }) => id)).toEqual([
-      "compaction:summary",
-      "pinned-request",
-      "work-refresh",
-      "current-answer",
+  it("keeps a pinned request in place when it already follows the cut", () => {
+    const r1 = turn("r1", 1, "user");
+    const a1 = turn("a1", 2, "assistant");
+    const r2 = messageTurnFor(
+      inboxMessage(
+        "r2",
+        { kind: "writer", actorId: "user-1" },
+        { kind: "text", text: "second request" },
+      ),
+      null,
+      3,
+    ).turn;
+    const a2 = turn("a2", 4, "assistant");
+    const compaction = compactionTurn("c", 5, r1.id, r2.id);
+    const turns = [r1, a1, r2, a2, compaction];
+    const blocks = [
+      block("r1-text", r1.id, 0, "text", { text: "first request" }, "first request"),
+      signedReasoning("a1-thinking", a1.id, 0, "sig-a1"),
+      block("a1-text", a1.id, 1, "text", { text: "first reply" }, "first reply"),
+      block("r2-text", r2.id, 0, "text", { text: "second request" }, "second request"),
+      signedReasoning("a2-thinking-before", a2.id, 0, "sig-a2-before"),
+      block("a2-tool-use", a2.id, 1, "tool_use", {
+        toolCallId: "a2-tool",
+        toolName: "thread_history",
+        input: {},
+      }),
+      block("a2-tool-result", a2.id, 2, "tool_result", { toolCallId: "a2-tool", output: "detail" }),
+      signedReasoning("a2-thinking-after", a2.id, 3, "sig-a2-after"),
+      block("a2-text", a2.id, 4, "text", { text: "second reply" }, "second reply"),
+      compactionBlock("c-summary", compaction.id),
+    ];
+    const projected = projectActiveHistory(turns, blocks, "p4");
+    expect(projected.turns.map(({ id }) => id)).toEqual(["c:summary", "a1", "r2", "a2"]);
+    expect(projected.blocks.map(({ turnId }) => turnId)).toEqual([
+      "c:summary",
+      "a1",
+      "a1",
+      "r2",
+      "a2",
+      "a2",
+      "a2",
+      "a2",
+      "a2",
     ]);
-    expect(built.messages.map(({ role }) => role)).toEqual(["system", "user", "assistant"]);
-    const historyUserText = built.messages[1]?.content
+
+    const context = buildContext({ thread: thread("p4"), ...projected });
+    const roles = context.messages.map(({ role }) => role);
+    expect(roles).toEqual([
+      "system",
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+      "tool",
+      "assistant",
+    ]);
+    expect(
+      roles.some((role, index) => role === "assistant" && roles[index - 1] === "assistant"),
+    ).toBe(false);
+    const summaryAndPin = context.messages[1]?.content
       .flatMap((part) => (part.type === "text" ? [part.text] : []))
       .join("\n");
-    expect(historyUserText).toContain("<system_update>");
-    expect(historyUserText).toContain("(c1)");
-    expect(historyUserText).toContain("Keep this exact request.");
-    expect(historyUserText).toContain("Refresh the Work context.");
-    expect(built.messages[2]?.content.map(({ type }) => type)).toEqual(["reasoning", "text"]);
+    expect(summaryAndPin).toContain("(p4)");
+    expect(
+      context.messages.some((message) =>
+        message.content.some(
+          (part) => part.type === "text" && part.text.includes("second request"),
+        ),
+      ),
+    ).toBe(true);
+    const assistantReasoning = context.messages
+      .filter((message) => message.role === "assistant")
+      .flatMap((message) => message.content.filter((part) => part.type === "reasoning"));
+    expect(assistantReasoning.map((part) => part.providerOptions)).toEqual([
+      { anthropic: { signature: "sig-a1" } },
+      { anthropic: { signature: "sig-a2-before" } },
+      { anthropic: { signature: "sig-a2-after" } },
+    ]);
+    expect(
+      context.messages
+        .flatMap((message) => message.content)
+        .filter((part) => part.type === "tool_use"),
+    ).toHaveLength(1);
+    expect(
+      context.messages
+        .flatMap((message) => message.content)
+        .filter((part) => part.type === "tool_result"),
+    ).toHaveLength(1);
+  });
+
+  it("cuts inside an assistant turn only after a whole tool group and keeps signed reasoning intact", () => {
+    const oldRequest = turn("old-request", 1, "user");
+    const oldAnswer = turn("old-answer", 2, "assistant");
+    const pinned = turn("pinned", 3, "user");
+    const current = turn("current", 4, "assistant");
+    const compaction = compactionTurn("c", 5, current.id, pinned.id, "complete", {
+      metadata: {
+        compactedThrough: { turnId: current.id, blockSequence: 2 },
+        pinnedRequestTurnId: pinned.id,
+      },
+    });
+    const turns = [oldRequest, oldAnswer, pinned, current, compaction];
+    const blocks = [
+      block("old-request-text", oldRequest.id, 0, "text", { text: "old" }, "old"),
+      block("old-answer-text", oldAnswer.id, 0, "text", { text: "old response" }, "old response"),
+      block("pinned-text", pinned.id, 0, "text", { text: "pinned request" }, "pinned request"),
+      signedReasoning("before-group", current.id, 0, "sig-before-cut"),
+      block("use-1", current.id, 1, "tool_use", {
+        toolCallId: "call-1",
+        toolName: "search",
+        input: {},
+      }),
+      block("result-1", current.id, 2, "tool_result", {
+        toolCallId: "call-1",
+        output: "old result",
+      }),
+      signedReasoning("after-first-group", current.id, 3, "sig-after-cut"),
+      block("use-2", current.id, 4, "tool_use", {
+        toolCallId: "call-2",
+        toolName: "thread_history",
+        input: {},
+      }),
+      block("result-2", current.id, 5, "tool_result", {
+        toolCallId: "call-2",
+        output: "kept result",
+      }),
+      signedReasoning("last-thinking", current.id, 6, "sig-last"),
+      block("current-text", current.id, 7, "text", { text: "current answer" }, "current answer"),
+      compactionBlock("c-summary", compaction.id),
+    ];
+    const projected = projectActiveHistory(turns, blocks, "c12");
+    expect(projected.turns.map(({ id }) => id)).toEqual(["c:summary", pinned.id, current.id]);
+    const context = buildContext({ thread: thread(), ...projected });
+    const messages = context.messages;
+    expect(messages.map(({ role }) => role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+      "tool",
+      "assistant",
+    ]);
+    const content = messages.flatMap((message) => message.content);
+    expect(
+      content.filter((part) => part.type === "tool_use").map((part) => part.toolCallId),
+    ).toEqual(["call-2"]);
+    expect(
+      content.filter((part) => part.type === "tool_result").map((part) => part.toolCallId),
+    ).toEqual(["call-2"]);
+    expect(
+      content.filter((part) => part.type === "reasoning").map((part) => part.providerOptions),
+    ).toEqual([
+      { anthropic: { signature: "sig-after-cut" } },
+      { anthropic: { signature: "sig-last" } },
+    ]);
   });
 
   it.each([
@@ -447,40 +726,63 @@ describe("projectActiveHistory", () => {
     "error",
     "cancelled",
   ] as const)("treats a %s compaction as identity", (status) => {
-    const candidate = compactionTurn("compaction", 5, status);
-    const turns = [...originalTurns.slice(0, -1), candidate];
-    const baseline = buildContext({ thread: thread(), turns, blocks: originalBlocks });
-    const projected = projectActiveHistory(turns, originalBlocks);
+    const first = turn("request", 1, "user");
+    const answer = turn("answer", 2, "assistant");
+    const candidate = compactionTurn("c", 3, first.id, first.id, status);
+    const turns = [first, answer, candidate];
+    const blocks = [
+      block("request-text", first.id, 0, "text", "request"),
+      compactionBlock("c-summary", candidate.id),
+    ];
+    const baseline = buildContext({ thread: thread(), turns, blocks });
+    const projected = projectActiveHistory(turns, blocks, "c12");
     expect(buildContext({ thread: thread(), ...projected }).messages).toEqual(baseline.messages);
   });
 
-  it("treats a reverted compaction as identity and inherits a source compaction in a fork", () => {
-    const undo = turn("undo", 7, "system", {
-      metadata: { kind: "compaction_undo", revertsCompactionTurnId: "compaction" },
-    });
-    const revertedTurns = [...originalTurns, undo];
-    const revertedBlocks = [
-      ...originalBlocks,
-      block("undo-text", undo.id, 0, "text", "Compaction undone."),
+  it("treats reverted and inherited fork compactions correctly", () => {
+    const oldRequest = turn("old-request", 1, "user");
+    const request = turn("request", 2, "user");
+    const answer = turn("answer", 3, "assistant");
+    const compaction = compactionTurn("c", 4, oldRequest.id, request.id);
+    const undo = turn("undo", 5, "system", { metadata: compactionUndoMetadata(compaction.id) });
+    const turns = [oldRequest, request, answer, compaction, undo];
+    const blocks = [
+      block("old-request-text", oldRequest.id, 0, "text", "old request"),
+      block("request-text", request.id, 0, "text", "request"),
+      block("answer-text", answer.id, 0, "text", "answer"),
+      compactionBlock("c-summary", compaction.id),
     ];
-    const baseline = buildContext({
-      thread: thread(),
-      turns: revertedTurns,
-      blocks: revertedBlocks,
-    });
-    const revertedProjection = projectActiveHistory(revertedTurns, revertedBlocks);
+    const baseline = buildContext({ thread: thread(), turns, blocks });
+    const revertedProjection = projectActiveHistory(turns, blocks, "c12");
     expect(buildContext({ thread: thread(), ...revertedProjection }).messages).toEqual(
       baseline.messages,
     );
 
-    const forkLocal = turn("fork-local", 7, "user", { threadId: "fork-thread", origin: "writer" });
+    const forkLocal = turn("fork-local", 5, "user", { threadId: "fork-thread", origin: "writer" });
     const inherited = projectActiveHistory(
-      [...originalTurns, forkLocal],
-      [...originalBlocks, block("fork-text", forkLocal.id, 0, "text", "Continue here.")],
+      [...turns.slice(0, 3), compaction, forkLocal],
+      [...blocks, block("fork-text", forkLocal.id, 0, "text", "continue")],
+      "c13",
     );
-    expect(inherited.turns.map(({ id }) => id)).toContain("compaction:summary");
-    expect(inherited.turns.map(({ id }) => id)).not.toContain("old-request");
+    expect(inherited.turns.map(({ id }) => id)).toContain("c:summary");
+    expect(inherited.turns.map(({ id }) => id)).not.toContain(oldRequest.id);
     expect(inherited.turns.map(({ id }) => id)).toContain("fork-local");
+  });
+
+  it("throws instead of hiding malformed completed compactions", () => {
+    const malformed = compactionTurn("broken", 3, "request", "request", "complete", {
+      metadata: { malformed: true } as JsonObject,
+    });
+    expect(() =>
+      projectActiveHistory([malformed], [compactionBlock("bad-props", malformed.id)], "c12"),
+    ).toThrow();
+
+    const validMetadata = compactionTurn("bad-block", 3, "request", "request");
+    const badProps = block("bad-props", validMetadata.id, 0, "custom", {
+      kind: "compaction",
+      props: { summary: "missing fields" },
+    });
+    expect(() => projectActiveHistory([validMetadata], [badProps], "c12")).toThrow();
   });
 
   it("decodes only well-shaped compaction props and block envelopes", () => {

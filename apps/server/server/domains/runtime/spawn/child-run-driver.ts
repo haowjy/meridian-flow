@@ -90,7 +90,11 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
       threadId: prepared.child.id as ThreadId,
       userText: input.prompt,
       signal: prepared.signal,
-      child: { parentThreadId: input.parentThread.id as ThreadId, background: prepared.background },
+      child: {
+        parentThreadId: input.parentThread.id as ThreadId,
+        background: prepared.background,
+        origin: prepared.origin,
+      },
       treeBudget: input.budget,
       executionReport: {
         correlation: input.reportCorrelation,

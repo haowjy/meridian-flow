@@ -81,6 +81,7 @@ import type {
   TurnRepository,
 } from "../../threads/index.js";
 import {
+  agentRequestMetadata,
   loadThreadConversationContext,
   ThreadConversationContextError,
 } from "../../threads/index.js";
@@ -441,7 +442,7 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
     ...(skillMetadata && typeof skillMetadata === "object" && !Array.isArray(skillMetadata)
       ? skillMetadata
       : {}),
-    ...(input.child ? { agentRequestKind: "child_seed" } : {}),
+    ...(input.child ? agentRequestMetadata(input.child.origin) : {}),
   };
   let assistantTurnId: TurnId | undefined;
   const userTurn = await deps.delivery.withThreadLock(input.threadId, async (producer) => {

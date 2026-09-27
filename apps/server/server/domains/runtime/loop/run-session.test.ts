@@ -4,6 +4,7 @@ import type { TurnId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import {
+  classifyHistoryItem,
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
 } from "../../threads/index.js";
@@ -84,11 +85,15 @@ describe("RunSession", () => {
     await f.runtime.prepare({
       threadId: child.id,
       userText: "spawned prompt",
-      child: { parentThreadId: f.thread.id, background: false },
+      child: { parentThreadId: f.thread.id, background: false, origin: "spawn" },
     });
     const [childUserTurn] = await f.repos.turns.listByThread(child.id);
     expect(childUserTurn?.role).toBe("user");
     expect(childUserTurn?.origin).toBe("system");
+    expect(childUserTurn && classifyHistoryItem(childUserTurn)).toEqual({
+      kind: "agent_request",
+      source: "child_seed",
+    });
   });
 
   it("commits setup and captures the cursor before one-shot execution", async () => {
@@ -476,17 +481,24 @@ describe("RunSession", () => {
     const parent = await f.runtime.prepare({
       threadId: f.thread.id,
       userText: "parent",
-      ...(childParent ? { child: { parentThreadId: "ancestor", background: false } } : {}),
+      ...(childParent
+        ? { child: { parentThreadId: "ancestor", background: false, origin: "spawn" as const } }
+        : {}),
     });
     const foreground = await f.runtime.prepare({
       threadId: fg.id,
       userText: "fg",
-      child: { parentThreadId: f.thread.id, background: false },
+      child: { parentThreadId: f.thread.id, background: false, origin: "message" },
+    });
+    const foregroundTurn = await f.repos.turns.findById(foreground.userTurnId);
+    expect(foregroundTurn && classifyHistoryItem(foregroundTurn)).toEqual({
+      kind: "agent_request",
+      source: "foreground_message",
     });
     const background = await f.runtime.prepare({
       threadId: bg.id,
       userText: "bg",
-      child: { parentThreadId: f.thread.id, background: true },
+      child: { parentThreadId: f.thread.id, background: true, origin: "spawn" },
     });
     expect((await parent.execute()).status).toBe("complete");
     expect((await foreground.execute()).status).toBe("cancelled");

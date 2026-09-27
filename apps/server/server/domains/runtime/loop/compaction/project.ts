@@ -1,0 +1,212 @@
+/** Projects the latest complete, non-reverted compaction over the effective transcript. */
+
+import type { Block, JsonObject, Turn } from "@meridian/contracts/threads";
+import { z } from "zod";
+import {
+  classifyHistoryItem,
+  compactionSummaryMetadata,
+  isSystemUpdateMetadata,
+} from "../../../threads/index.js";
+import { orderTurnsByPosition } from "../../../threads/order-turns.js";
+import { type CompactionCut, retainedTail } from "./tail.js";
+
+const compactedThroughCodec = z.object({
+  turnId: z.string().min(1),
+  blockSequence: z.number().int().nonnegative().optional(),
+});
+
+/** The durable model-visible summary block written by the compaction protocol. */
+export const CompactionPropsCodec = z
+  .object({
+    summary: z.string(),
+    excludedTurnCount: z.number().int().nonnegative(),
+    tokensBefore: z.number().int().nonnegative(),
+    tokensAfter: z.number().int().nonnegative(),
+    model: z.string().min(1),
+  })
+  .passthrough();
+export type CompactionProps = JsonObject & z.infer<typeof CompactionPropsCodec>;
+
+/** Typed read/write envelope for the custom block that carries a compaction summary. */
+export const CompactionBlockContentCodec = z
+  .object({ kind: z.literal("compaction"), props: CompactionPropsCodec })
+  .passthrough();
+export type CompactionBlockContent = JsonObject & z.infer<typeof CompactionBlockContentCodec>;
+
+/** C4b's persisted plan coordinates and the pinned request that must remain verbatim. */
+export const CompactionMetadataCodec = z
+  .object({
+    compactedThrough: compactedThroughCodec,
+    pinnedRequestTurnId: z.string().min(1),
+    trigger: z.enum(["auto", "manual"]).optional(),
+  })
+  .passthrough();
+export type CompactionMetadata = z.infer<typeof CompactionMetadataCodec>;
+
+export interface ProjectedActiveHistory {
+  turns: Turn[];
+  blocks: Block[];
+}
+
+function compactionPropsForTurn(turnId: string, blocks: readonly Block[]): CompactionProps {
+  const compactionBlock = blocks.find(
+    (block) => block.turnId === turnId && block.blockType === "custom" && !block.pruned,
+  );
+  if (!compactionBlock) throw new Error(`Complete compaction ${turnId} has no summary block`);
+  const envelope = CompactionBlockContentCodec.parse(compactionBlock.content);
+  return envelope.props as CompactionProps;
+}
+
+function compactionMetadata(turn: Turn): CompactionMetadata {
+  return CompactionMetadataCodec.parse(turn.metadata);
+}
+
+function revertedCompactionIds(turns: readonly Turn[]): Set<string> {
+  const reverted = new Set<string>();
+  for (const turn of turns) {
+    if (turn.status !== "complete") continue;
+    const classification = classifyHistoryItem(turn);
+    if (classification.kind === "undo_marker") reverted.add(classification.compactionTurnId);
+  }
+  return reverted;
+}
+
+function latestPinnedRequest(turns: readonly Turn[]): Turn | null {
+  for (let index = turns.length - 1; index >= 0; index--) {
+    const turn = turns[index];
+    if (turn?.role === "user" && !isSystemUpdateMetadata(turn.metadata)) return turn;
+  }
+  return null;
+}
+
+function summaryTurn(
+  compaction: Turn,
+  summary: string,
+  threadRef: string,
+): { turn: Turn; block: Block } {
+  const turnId = `${compaction.id}:summary`;
+  const textContent = [
+    "<system_update>",
+    `Conversation summary. Earlier turns of this conversation (${threadRef}) were compacted into the summary below. Read them with thread_history if you need detail.`,
+    "",
+    summary,
+    "</system_update>",
+  ].join("\n");
+  return {
+    turn: {
+      id: turnId,
+      threadId: compaction.threadId,
+      position: -1,
+      prevTurnId: null,
+      parentTurnId: null,
+      role: "user",
+      origin: "system",
+      writeMode: null,
+      status: "complete",
+      promptBakeId: null,
+      finishReason: null,
+      inputTokens: 0,
+      outputTokens: 0,
+      totalCostUsd: "0",
+      responseCount: 0,
+      usage: null,
+      error: null,
+      metadata: compactionSummaryMetadata(),
+      createdAt: compaction.createdAt,
+      completedAt: compaction.completedAt ?? compaction.createdAt,
+      blocks: [],
+      responses: [],
+      siblingIds: [],
+    },
+    block: {
+      id: `${turnId}:text`,
+      turnId,
+      responseId: null,
+      blockType: "text",
+      sequence: 0,
+      textContent,
+      content: textContent,
+      status: "complete",
+      createdAt: compaction.createdAt,
+    },
+  };
+}
+
+/** Projects the latest complete compaction using the owning thread's model-visible handle. */
+export function projectActiveHistory(
+  effectiveTurns: readonly Turn[],
+  effectiveBlocks: readonly Block[],
+  threadRef: string | null,
+): ProjectedActiveHistory {
+  const turns = orderTurnsByPosition(effectiveTurns);
+  const reverted = revertedCompactionIds(turns);
+  const blocksByTurn = new Map<string, Block[]>();
+  for (const block of effectiveBlocks) {
+    const entries = blocksByTurn.get(block.turnId) ?? [];
+    entries.push(block);
+    blocksByTurn.set(block.turnId, entries);
+  }
+
+  // Decode every complete compaction before selecting one; malformed durable state is never absence.
+  const completeCompactions = turns
+    .filter((turn) => turn.role === "compaction" && turn.status === "complete")
+    .map((turn) => ({
+      turn,
+      metadata: compactionMetadata(turn),
+      props: compactionPropsForTurn(turn.id, effectiveBlocks),
+    }));
+  let activeCompaction: (typeof completeCompactions)[number] | undefined;
+  for (const candidate of completeCompactions) {
+    if (!reverted.has(candidate.turn.id)) activeCompaction = candidate;
+  }
+  if (!activeCompaction) return { turns: [...effectiveTurns], blocks: [...effectiveBlocks] };
+  if (!threadRef)
+    throw new Error(`Thread ${activeCompaction.turn.threadId} has no ref for compaction summary`);
+
+  const { turn: compaction, metadata, props } = activeCompaction;
+  const beforeCompaction = turns.filter((turn) => turn.position < compaction.position);
+  const pinnedRequest =
+    beforeCompaction.find((turn) => turn.id === metadata.pinnedRequestTurnId) ??
+    latestPinnedRequest(beforeCompaction);
+  const cutTurn = turns.find((turn) => turn.id === metadata.compactedThrough.turnId);
+  if (!cutTurn || cutTurn.position >= compaction.position) {
+    throw new Error(`Complete compaction ${compaction.id} has an invalid cut turn`);
+  }
+
+  const cut: CompactionCut = {
+    turnId: cutTurn.id,
+    ...(metadata.compactedThrough.blockSequence !== undefined
+      ? { blockSequence: metadata.compactedThrough.blockSequence }
+      : {}),
+  };
+  const retainable = new Map<string, boolean>();
+  for (const turn of beforeCompaction) {
+    const kind = classifyHistoryItem(turn).kind;
+    retainable.set(
+      turn.id,
+      kind !== "fork_or_handoff_seed" && kind !== "compaction" && kind !== "undo_marker",
+    );
+  }
+  const tail = retainedTail({
+    turns: beforeCompaction,
+    blocksByTurn,
+    cut,
+    pinnedRequest,
+    canRetain: (turn) => retainable.get(turn.id) ?? true,
+  });
+  const afterCompaction = turns.filter((turn) => turn.position > compaction.position);
+  const synthetic = summaryTurn(compaction, props.summary, threadRef);
+  const projectedTurns = [synthetic.turn, ...tail.map(({ turn }) => turn), ...afterCompaction].map(
+    (turn, position) => ({ ...turn, position }),
+  );
+  const tailByTurn = new Map(tail.map((slice) => [slice.turn.id, slice]));
+  const projectedBlocks = projectedTurns.flatMap((turn) => {
+    if (turn.id === synthetic.turn.id) return [synthetic.block];
+    const retained = tailByTurn.get(turn.id);
+    return retained
+      ? retained.blocks
+      : (blocksByTurn.get(turn.id) ?? []).filter((block) => !block.pruned);
+  });
+
+  return { turns: projectedTurns, blocks: projectedBlocks };
+}
