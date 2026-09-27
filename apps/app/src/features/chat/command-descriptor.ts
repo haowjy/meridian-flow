@@ -1,5 +1,6 @@
 /** Maps tool commands to their transcript labels and metadata. */
 import { t } from "@lingui/core/macro";
+import type { JsonValue } from "@meridian/contracts/protocol";
 import {
   BookOpen,
   FilePlus2,
@@ -104,16 +105,24 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   },
   create: {
     Icon: FilePlus2,
-    phrases: (_tool, writeMode) =>
-      writeMode === "draft" ? tenses(t`Drafting…`, t`Drafted`) : tenses(t`Writing…`, t`Wrote`),
+    phrases: (tool, writeMode) =>
+      documentWriteTenses(
+        tool,
+        writeMode === "draft" ? t`Drafting` : t`Writing`,
+        writeMode === "draft" ? t`Drafted` : t`Wrote`,
+      ),
     failureVerb: (writeMode) => (writeMode === "draft" ? t`Couldn't draft` : t`Couldn't write`),
     pathlessTitle: (writeMode) => (writeMode === "draft" ? t`Drafted file` : t`Wrote file`),
     expand: "submitted-content",
   },
   edit: {
     Icon: PenLine,
-    phrases: (_tool, writeMode) =>
-      writeMode === "draft" ? tenses(t`Drafting…`, t`Drafted`) : tenses(t`Editing…`, t`Edited`),
+    phrases: (tool, writeMode) =>
+      documentWriteTenses(
+        tool,
+        writeMode === "draft" ? t`Drafting` : t`Editing`,
+        writeMode === "draft" ? t`Drafted` : t`Edited`,
+      ),
     failureVerb: (writeMode) => (writeMode === "draft" ? t`Couldn't draft` : t`Couldn't edit`),
     pathlessTitle: (writeMode) => (writeMode === "draft" ? t`Drafted file` : t`Edited file`),
     expand: "submitted-content",
@@ -145,7 +154,8 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   search: {
     Icon: Search,
     phrases: (tool) => {
-      const pattern = stringInput(toolInputObject(tool), "pattern");
+      const input = toolInputObject(tool);
+      const pattern = stringInput(input, "query") ?? stringInput(input, "pattern");
       if (!pattern) return tenses(t`Searching…`, t`Searched context`);
       const quoted = `“${truncatePattern(pattern)}”`;
       return {
@@ -242,13 +252,31 @@ function documentReadTenses(
   completeVerb: string,
 ): ToolActivityVocabulary {
   const input = toolInputObject(tool);
-  const file = stringInput(input, "path") ?? stringInput(input, "file");
+  const file = documentTarget(input);
   if (!file) return tenses(`${activeVerb}…`, completeVerb);
   const name = documentFileName(file);
   return {
     active: { verb: activeVerb, parameter: `${name}…` },
     complete: { verb: completeVerb, parameter: name },
   };
+}
+
+function documentWriteTenses(
+  tool: ToolView,
+  activeVerb: string,
+  completeVerb: string,
+): ToolActivityVocabulary {
+  const file = documentTarget(toolInputObject(tool));
+  if (!file) return tenses(`${activeVerb}…`, completeVerb);
+  const name = documentFileName(file);
+  return {
+    active: { verb: activeVerb, parameter: `${name}…` },
+    complete: { verb: completeVerb, parameter: name },
+  };
+}
+
+function documentTarget(input: Record<string, JsonValue>): string | undefined {
+  return stringInput(input, "path") ?? stringInput(input, "uri") ?? stringInput(input, "file");
 }
 
 export function descriptorFor(tool: ToolView): CommandDescriptor {

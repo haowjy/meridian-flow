@@ -58,6 +58,7 @@ skeleton and delegates the moving parts.
 
 | `system-instructions/` | Model-facing prompt assets independent of any agent body. `document-dialect.ts` owns Meridian document language and its codec-backed spelling contract; `runtime-uris.ts` owns context namespace guidance. Tool descriptions continue to own mechanics. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
+| `partial-tool-activity.ts` | Reads only the top-level string fields used by live labels from partial tool-call JSON; it tolerates an unfinished object and ignores nested arguments. |
 | `execution-finalizer.ts` | Terminal transaction projects the current assistant event and finalizes the one admitted report found on its ancestor chain. The selector stays the first assistant; `terminalAssistantTurnId` records the final assistant. Fallback text is from that terminal turn’s final persisted response; cost sums every assistant response from selector to terminal. Run-scoped capture keeps the existing partial-outcome policy. Intermediate splits never publish a report. |
 | `persistence.ts` | Transactional persist/project-then-emit helper. **Ordering**: `projectReadModelEvent` runs before `eventWriter.appendEvent` so the `event_journal.turn_id` FK can reference the turn row created by the projector. Both happen in the same repo transaction. |
 | `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata that whichever drain first adopts the turn reads back and bakes into a hidden `system`-role skill-body turn chained right after it (`persistSkillBodies`, orchestrator.ts), and appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status: a mid-run send yields the runner's live assistant turn id (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly), a fresh run yields null and the client learns the turn from `RUN_STARTED`. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission. `admission-turn-starter.ts` and `TurnRunner.startTurn` are gone. |
@@ -330,10 +331,13 @@ recomputed `ThreadActivity` so every subscriber of the run tree shares one
 activity source. A foreground `thread_message` appends it once the wake lease is
 held, and a drain-woken run (a child report or background `thread_message`) is
 driven by the turn runner, which appends at lease acquire and again at lease
-release so the strip reads awake for the whole run and asleep after. Tool
-dispatch in a subagent run records the dispatched call on its lease
-(`thread_run_leases.current_tool`, via `RunClaim.setCurrentTool`) and appends
-the same activity fact only when that call changed. The
+release so the strip reads awake for the whole run and asleep after. While a
+subagent response streams, the first `tool_call.delta` records its call name
+and best-effort partial input on the lease (`thread_run_leases.current_tool`,
+via `RunClaim.setCurrentTool`); one further refresh records the target once a
+document path/URI, search pattern, or spawn agent arrives. Other deltas do not
+write activity. Tool dispatch still records the full input and appends the same
+activity fact only when the call changed. The
 create-side append is strict (a failure fails the spawn), while terminal and
 wake appends are best-effort: a read-model failure is reported to the
 `EventSink` (`subagent.activity.append_failed`, or

@@ -53,10 +53,22 @@ describe("subagent display", () => {
   });
 
   it("uses the process-fold tool vocabulary for live calls", () => {
-    expect(subagentCurrentToolLabel("search", { pattern: "lantern" })).toContain("Searching");
+    expect(subagentCurrentToolLabel("search", { query: "lantern" })).toContain("Searching");
     expect(subagentCurrentToolLabel("spawn", { agent: "Reader" })).toContain("Waiting on Reader");
     expect(
       subagentCurrentToolLabel("write", { command: "read", path: "manuscript://chapter-1.md" }),
     ).toBe("Reading chapter-1.md…");
+    expect(subagentCurrentToolLabel("write", { path: "manuscript://story-b.md" })).toBe(
+      "Writing story-b.md…",
+    );
+    expect(subagentCurrentToolLabel("edit", { path: "manuscript://story-b.md" })).toBe(
+      "Editing story-b.md…",
+    );
+    expect(subagentCurrentToolLabel("read", { uri: "manuscript://story-a.md" })).toBe(
+      "Reading story-a.md…",
+    );
+    expect(subagentCurrentToolLabel("search", null)).toBe("Searching…");
+    expect(subagentCurrentToolLabel("spawn", null)).toContain("Waiting on");
+    expect(subagentCurrentToolLabel("write", null)).toBe("Writing…");
   });
 });

@@ -1659,8 +1659,12 @@ msgid "Drafted file"
 msgstr "Drafted file"
 
 #: src/features/chat/command-descriptor.ts
-msgid "Drafting…"
-msgstr "Drafting…"
+msgid "Drafting"
+msgstr "Drafting"
+
+#: src/features/chat/command-descriptor.ts
+#~ msgid "Drafting…"
+#~ msgstr "Drafting…"
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Drafts are waiting"
@@ -1734,8 +1738,12 @@ msgid "Edited file"
 msgstr "Edited file"
 
 #: src/features/chat/command-descriptor.ts
-msgid "Editing…"
-msgstr "Editing…"
+msgid "Editing"
+msgstr "Editing"
+
+#: src/features/chat/command-descriptor.ts
+#~ msgid "Editing…"
+#~ msgstr "Editing…"
 
 #: src/features/project/shell/screens.ts
 msgid "Editor"
@@ -4543,8 +4551,12 @@ msgstr "Write mode"
 #~ msgstr "Writer"
 
 #: src/features/chat/command-descriptor.ts
-msgid "Writing…"
-msgstr "Writing…"
+msgid "Writing"
+msgstr "Writing"
+
+#: src/features/chat/command-descriptor.ts
+#~ msgid "Writing…"
+#~ msgstr "Writing…"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Wrote"
