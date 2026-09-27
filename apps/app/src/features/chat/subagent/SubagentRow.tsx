@@ -30,11 +30,23 @@ export function SubagentIdentity({
       />
       {name ?? <SubagentIdentityName run={run} />}
       {showDescription && run.description ? (
-        <span className="min-w-0 truncate text-sm text-muted-foreground">{run.description}</span>
+        <span
+          className={cn(
+            "min-w-0 truncate text-sm text-muted-foreground",
+            size === "card" && "flex-1",
+          )}
+        >
+          {run.description}
+        </span>
       ) : null}
       {afterName}
       {run.startedAt ? (
-        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+        <span
+          className={cn(
+            "shrink-0 text-xs tabular-nums text-muted-foreground",
+            size === "card" && "ml-auto",
+          )}
+        >
           {run.status === "running" ? (
             <Elapsed startedAt={run.startedAt} />
           ) : (
@@ -96,7 +108,11 @@ export function SubagentToolLine({
   );
 }
 
-/** Row owns the left-packed identity/control layout; detail content is indented by mark + gap. */
+/**
+ * Row owns the identity/control layout; detail content is indented by mark + gap.
+ * Bare rows pack controls against the text. A card's border binds its controls
+ * to the row, so a card row spans its width and ends in them.
+ */
 export function SubagentRow({
   run,
   identity: identityOverride,
@@ -130,6 +146,7 @@ export function SubagentRow({
   className?: string;
 }) {
   const gap = "gap-[var(--chat-space-row)]";
+  const fill = size === "card" && "flex-1";
   const identity = identityOverride ?? <SubagentIdentity run={run} size={size} />;
   return (
     <div className={cn("min-w-0", className)}>
@@ -140,7 +157,7 @@ export function SubagentRow({
             aria-expanded={expanded}
             data-subagent-thread-ids={threadIds}
             onClick={onToggle}
-            className={cn("focus-ring flex min-w-0 items-center rounded-sm text-left", gap)}
+            className={cn("focus-ring flex min-w-0 items-center rounded-sm text-left", gap, fill)}
           >
             {identity}
             {<DisclosureChevron expanded={Boolean(expanded)} />}
@@ -150,12 +167,12 @@ export function SubagentRow({
             type="button"
             title={activateLabel}
             onClick={onActivate}
-            className={cn("focus-ring flex min-w-0 items-center rounded-sm text-left", gap)}
+            className={cn("focus-ring flex min-w-0 items-center rounded-sm text-left", gap, fill)}
           >
             {identity}
           </button>
         ) : (
-          <div className={cn("flex min-w-0 items-center", gap)}>{identity}</div>
+          <div className={cn("flex min-w-0 items-center", gap, fill)}>{identity}</div>
         )}
         {door ? (
           <OpenSubagentChatButton

@@ -28,6 +28,10 @@ export function SubagentMark({
     status === "stopped" && "border-destructive",
     status === "unknown" && "border-border",
     className,
+    // After `className`: a size override like `text-[10px]` would otherwise
+    // merge away the line-height, dropping the initial below center. Trimming
+    // to cap height centers the capital itself, not its line box.
+    "leading-none [text-box:trim-both_cap_alphabetic]",
   );
   if (decorative) {
     return (

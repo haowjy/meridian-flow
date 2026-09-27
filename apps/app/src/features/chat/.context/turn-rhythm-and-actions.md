@@ -63,7 +63,10 @@ so they cannot remain visible after debug is disabled. The latest settled turn
 keeps its row visible; older rows reveal actions on hover/focus and touch keeps
 them visible. An open popover keeps its anchored row visible.
 
-Transcript rows never right-align their controls. Status dots, times,
+Bare transcript rows never right-align their controls. Status dots, times,
 disclosure chevrons, and the subagent chat icon sit directly after the row's
 text, so the writer can see which row a control belongs to. This holds for
-activity rows in the process fold and for subagent cards and lines.
+activity rows in the process fold and for subagent lines. A card is the one
+exception: its border already binds the controls to the row, so a subagent
+launch card spans its width, truncates the description, and ends in the time,
+chevron, and chat icon.
