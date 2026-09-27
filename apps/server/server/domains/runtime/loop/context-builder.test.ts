@@ -20,8 +20,7 @@ function thread(): Thread {
     status: "idle",
     title: null,
     ref: null,
-    composedSystemPrompt: "system prompt",
-    bakedSkillSlugs: [],
+    initialPromptBakeId: "bake-1" as never,
     agentDefinitionRevisionId: null,
     agentName: null,
     activeLeafTurnId: null,
@@ -47,6 +46,7 @@ function turn(role: Turn["role"], id = TURN_ID): Turn {
     origin: role === "assistant" ? "assistant" : role === "user" ? "writer" : "system",
     writeMode: null,
     status: "complete",
+    promptBakeId: null,
     finishReason: "end_turn",
     inputTokens: 0,
     outputTokens: 0,
@@ -105,6 +105,7 @@ describe("buildContext system-turn history projection", () => {
       thread: thread(),
       turns: [turn("system")],
       blocks: [customBlock(content)],
+      frozenSystemPrompt: "system prompt",
     });
 
     expect(userMessageTexts(messages)).toContain(
@@ -125,6 +126,7 @@ describe("buildContext system-turn history projection", () => {
       thread: thread(),
       turns: [turn("system")],
       blocks: [customBlock(content)],
+      frozenSystemPrompt: "system prompt",
     });
 
     expect(userMessageTexts(messages)).toContain(
@@ -144,6 +146,7 @@ describe("buildContext system-turn history projection", () => {
       thread: thread(),
       turns: [turn("system")],
       blocks: [customBlock(content)],
+      frozenSystemPrompt: "system prompt",
     });
 
     expect(userMessageTexts(messages)).toEqual([]);
@@ -163,6 +166,7 @@ describe("buildContext system-turn history projection", () => {
       thread: thread(),
       turns: [turn("assistant")],
       blocks: [customBlock(content)],
+      frozenSystemPrompt: "system prompt",
     });
 
     expect(messages.some((message) => message.role === "assistant")).toBe(false);
@@ -218,11 +222,17 @@ describe("buildContext system-turn history projection", () => {
       block("writer-1", "writer-1", "text", "Writer message 1"),
       block("writer-2", "writer-2", "text", "Writer message 2"),
     ];
-    const before = buildContext({ thread: thread(), turns: [], blocks: [] });
+    const before = buildContext({
+      thread: thread(),
+      turns: [],
+      blocks: [],
+      frozenSystemPrompt: "system prompt",
+    });
     const messages = buildContext({
       thread: thread(),
       turns,
       blocks,
+      frozenSystemPrompt: "system prompt",
     }).messages;
     expect(messages.map((message) => message.role)).toEqual([
       "system",

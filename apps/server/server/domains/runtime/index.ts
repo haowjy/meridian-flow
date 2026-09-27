@@ -35,6 +35,11 @@ export {
 export { createWriterTurnProducer } from "./admission/writer-turn-producer.js";
 export * from "./gateway/index.js";
 export {
+  type BeginPromptEpochInput,
+  type BoundaryCompletion,
+  beginPromptEpoch,
+} from "./loop/begin-prompt-epoch.js";
+export {
   createNoopInterruptArtifactFlushPort,
   type InterruptArtifactFlushPort,
 } from "./loop/interrupt-session.js";

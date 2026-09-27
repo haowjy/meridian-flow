@@ -4,6 +4,7 @@
  * MULTIPLE PURPOSES: thread DTOs, JSON value primitives, journal event vocabulary, and submodule re-exports.
  */
 
+import type { PromptBakeId, ThreadId } from "../runtime/ids.js";
 import type { AiWriteMode } from "../works/index.js";
 import type { TurnStatus } from "./status.js";
 
@@ -11,6 +12,7 @@ export type {
   ArtifactId,
   BlockId,
   ProjectId,
+  PromptBakeId,
   ThreadId,
   TurnId,
   UserId,
@@ -223,19 +225,8 @@ export interface Thread {
   title: string | null;
   /** Server-assigned handle: `cN` for primaries, `pN` for subagents; null before persist. */
   ref: string | null;
-  /** Baked system prompt output — set only by first-attempt bake or subagent creation. */
-  composedSystemPrompt?: string | null;
-  /**
-   * Model-invocable skill slugs frozen with `composedSystemPrompt` at first attempt
-   * (or subagent creation). `null` = not yet baked; `[]` = baked with no skills.
-   */
-  bakedSkillSlugs?: string[] | null;
-  /**
-   * Advertised Tool[] payload frozen with `composedSystemPrompt` at first
-   * attempt (or subagent creation): opaque JSON, shaped by the runtime
-   * gateway's `Tool` type. `null` = not yet baked.
-   */
-  bakedTools?: JsonValue | null;
+  /** First immutable bake for this thread; null until the first request is assembled. */
+  initialPromptBakeId: PromptBakeId | null;
   agentDefinitionRevisionId: string | null;
   /** Display name from the retained Agent definition. */
   agentName: string | null;
@@ -269,7 +260,6 @@ export interface Thread {
   spawnStatus: SpawnStatus | null;
   totalCostUsd: string;
   turnCount: number;
-  historySummary?: string | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -298,6 +288,8 @@ export interface Turn {
   /** Write policy frozen when this turn began; null identifies pre-contract turns. */
   writeMode: AiWriteMode | null;
   status: TurnStatus;
+  /** Set once on a completed prompt-epoch boundary. */
+  promptBakeId: PromptBakeId | null;
   finishReason: FinishReason | null;
   model?: string | null;
   provider?: string | null;
@@ -319,6 +311,17 @@ export interface Turn {
   blocks: Block[];
   siblingIds: string[];
   responses: ModelResponse[];
+}
+
+/** Immutable system prompt and advertised tools for one prompt epoch. */
+export interface PromptBake {
+  id: PromptBakeId;
+  ownerThreadId: ThreadId;
+  composedSystemPrompt: string;
+  bakedSkillSlugs: string[];
+  bakedTools: JsonValue;
+  contentHash: string;
+  createdAt: string;
 }
 
 export interface Block {

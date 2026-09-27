@@ -12,6 +12,8 @@ export interface BuildContextInput {
   thread: Thread;
   turns: Turn[];
   blocks: Block[];
+  /** Immutable bake read by the assembler when the thread already has a pointer. */
+  frozenSystemPrompt?: string;
   tools?: Tool[];
   /** Raw agent/project prompt used only while the thread prompt is not frozen. */
   unfrozenBasePrompt?: string | null;
@@ -40,15 +42,15 @@ export function buildContext(input: BuildContextInput): {
   const messages: Message[] = [];
   const sourceTurnStatusByMessage = new Map<Message, Turn["status"]>();
 
-  const composed = input.thread.composedSystemPrompt;
-  if (composed && isThreadPromptFrozen(input.thread)) {
-    messages.push(system(composed));
+  if (isThreadPromptFrozen(input.thread)) {
+    if (input.frozenSystemPrompt === undefined)
+      throw new Error(`Prompt bake is required for frozen thread ${input.thread.id}`);
+    messages.push(system(input.frozenSystemPrompt));
   } else {
-    const systemPrompt = input.unfrozenBasePrompt ?? composed;
     messages.push(
       system(
         assembleComposedSystemPrompt({
-          basePrompt: systemPrompt,
+          basePrompt: input.unfrozenBasePrompt,
           appendPrompt: input.appendPrompt,
           workContext: input.workContext,
           availableSkills: input.availableSkills,

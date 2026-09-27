@@ -126,8 +126,7 @@ else
       } as never);
       await repos.threadWorks.addMembership(derived.id, ids.noWorkId, true);
       await repos.threadWorks.addMembership(subagent.id, ids.noWorkId, true);
-      expect(subagent.composedSystemPrompt).toBeNull();
-      expect(subagent.bakedSkillSlugs).toBeNull();
+      expect(subagent.initialPromptBakeId).toBeNull();
       await expect(repos.threadWorks.findPrimary(derived.id)).resolves.toEqual({
         workId: ids.noWorkId,
       });

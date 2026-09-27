@@ -6,7 +6,9 @@
 import { GENERIC_SUBAGENT_NAME } from "@meridian/contracts/agents";
 import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type {
+  PromptBake,
   SpawnStatus,
+  Thread,
   ThreadKind,
   ThreadLifecycleStatus,
   TurnRole,
@@ -25,13 +27,14 @@ import { formatThreadRef } from "../../domain/thread-ref.js";
 import type {
   CreateThreadInput,
   DerivedPrimaryThreadFactory,
+  PromptBakeContent,
   SubagentThreadFactory,
   ThreadChild,
   ThreadRepository,
   ThreadStatusReader,
   UpdateSpawnLifecycleInput,
 } from "../../ports/repositories.js";
-import { mapThread } from "./mappers.js";
+import { mapPromptBake, mapThread } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
 import { workAssociationCandidatesSql } from "./work-association-candidates-sql.js";
 
@@ -179,7 +182,6 @@ export function createDrizzleThreadRepository(
         createdByUserId: input.userId as string,
         kind: normalized.kind,
         title: normalized.title,
-        composedSystemPrompt: normalized.systemPrompt,
         parentThreadId: normalized.parentThreadId,
         rootThreadId: threadId,
         spawnStatus: normalized.spawnStatus,
@@ -197,9 +199,7 @@ export function createDrizzleThreadRepository(
         createdByUserId: thread.userId,
         kind: thread.kind,
         title: thread.title ?? "",
-        composedSystemPrompt: thread.composedSystemPrompt,
-        bakedSkillSlugs: thread.bakedSkillSlugs,
-        bakedTools: thread.bakedTools,
+        initialPromptBakeId: thread.initialPromptBakeId ?? null,
         parentThreadId: thread.parentThreadId,
         rootThreadId: thread.rootThreadId,
         originTurnId: input.originTurnId,
@@ -221,9 +221,7 @@ export function createDrizzleThreadRepository(
           createdByUserId: thread.userId,
           kind: "primary",
           title: thread.title ?? "",
-          composedSystemPrompt: thread.composedSystemPrompt,
-          bakedSkillSlugs: thread.bakedSkillSlugs,
-          bakedTools: thread.bakedTools,
+          initialPromptBakeId: thread.initialPromptBakeId ?? null,
           parentThreadId: thread.parentThreadId,
           rootThreadId: thread.rootThreadId,
           originTurnId: thread.originTurnId,
@@ -473,28 +471,38 @@ export function createDrizzleThreadRepository(
         .limit(1);
       return mapThread({ ...row, workId: primary[0]?.workId ?? null });
     },
-    async bakeComposedSystemPrompt(id, input) {
-      const [row] = await currentDrizzleDb(db)
-        .update(schema.threads)
-        .set({
-          composedSystemPrompt: input.composedSystemPrompt,
-          bakedSkillSlugs: input.bakedSkillSlugs,
-          bakedTools: input.bakedTools,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(schema.threads.id, id), isNull(schema.threads.bakedSkillSlugs)))
-        .returning(threadColumns);
-      if (row) {
-        const primary = await currentDrizzleDb(db)
-          .select({ workId: schema.threadWorks.workId })
-          .from(schema.threadWorks)
-          .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
-          .limit(1);
-        return mapThread({ ...row, workId: primary[0]?.workId ?? null });
-      }
-      const existing = await this.findById(id);
-      if (!existing) throw new Error(`Thread not found: ${id}`);
-      return existing;
+    async bakeInitialPrompt(
+      id,
+      input: PromptBakeContent,
+    ): Promise<{ thread: Thread; bake: PromptBake }> {
+      return runInDrizzleTransaction(db, async () => {
+        const locked = await lockThreadForMutation(db, id);
+        if (!locked) throw new Error(`Thread not found: ${id}`);
+        const thread = await this.findById(id);
+        if (!thread) throw new Error(`Thread not found: ${id}`);
+        if (thread.initialPromptBakeId != null) {
+          const [row] = await currentDrizzleDb(db)
+            .select()
+            .from(schema.promptBakes)
+            .where(eq(schema.promptBakes.id, thread.initialPromptBakeId));
+          if (!row) throw new Error(`Prompt bake not found: ${thread.initialPromptBakeId}`);
+          return { thread, bake: mapPromptBake(row) };
+        }
+        const [bakeRow] = await currentDrizzleDb(db)
+          .insert(schema.promptBakes)
+          .values({ ownerThreadId: id, ...input })
+          .returning();
+        if (!bakeRow) throw new Error("Failed to create prompt bake");
+        const [updated] = await currentDrizzleDb(db)
+          .update(schema.threads)
+          .set({ initialPromptBakeId: bakeRow.id, updatedAt: new Date() })
+          .where(and(eq(schema.threads.id, id), isNull(schema.threads.initialPromptBakeId)))
+          .returning();
+        if (!updated) throw new Error(`Thread initial bake changed while locked: ${id}`);
+        const current = await this.findById(id);
+        if (!current) throw new Error(`Thread not found: ${id}`);
+        return { thread: current, bake: mapPromptBake(bakeRow) };
+      });
     },
     async recomputeCostFromModelResponses(id) {
       await writeThreadCostRecompute(db, id);

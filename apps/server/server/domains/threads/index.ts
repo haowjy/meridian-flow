@@ -29,6 +29,14 @@ export {
   createOrchestratorEventProjector,
   projectOrchestratorEvents,
 } from "./domain/orchestrator-event-projector.js";
+export { hashPromptBakeContent } from "./domain/prompt-bake-hash.js";
+export {
+  bakeAt,
+  bakeInEffect,
+  PromptBakeNotFoundError,
+  PromptBakeTurnNotFoundError,
+  type PromptEpochReader,
+} from "./domain/prompt-epochs.js";
 export { projectReadModelEvent } from "./domain/read-model-projector.js";
 export {
   RebindThreadWorkError,

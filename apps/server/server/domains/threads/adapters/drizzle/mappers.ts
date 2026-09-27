@@ -3,7 +3,14 @@
  * into their @meridian/contracts shapes (decimal/date/seq coercions). Shared by
  * the drizzle repositories so row translation lives in one place.
  */
-import type { Block, ModelResponse, Thread, Turn, TurnUsage } from "@meridian/contracts/threads";
+import type {
+  Block,
+  ModelResponse,
+  PromptBake,
+  Thread,
+  Turn,
+  TurnUsage,
+} from "@meridian/contracts/threads";
 import type * as schema from "@meridian/database/schema";
 import { toIsoString } from "../../domain/contract-serialization.js";
 
@@ -32,7 +39,6 @@ export function mapThread(
     agentName?: string | null;
   },
 ): Thread {
-  const isFrozen = row.bakedSkillSlugs !== null;
   return {
     id: row.id,
     projectId: row.projectId,
@@ -42,9 +48,7 @@ export function mapThread(
     status: row.status as Thread["status"],
     title: row.title === "" ? null : row.title,
     ref: row.ref,
-    composedSystemPrompt: isFrozen ? row.composedSystemPrompt : null,
-    bakedSkillSlugs: row.bakedSkillSlugs,
-    bakedTools: isFrozen ? (row.bakedTools as Thread["bakedTools"]) : null,
+    initialPromptBakeId: row.initialPromptBakeId,
     agentDefinitionRevisionId: row.agentDefinitionRevisionId ?? null,
     agentName: row.agentName ?? null,
     nextSeq: String(row.nextSeq),
@@ -57,7 +61,6 @@ export function mapThread(
     spawnStatus: row.spawnStatus as Thread["spawnStatus"],
     totalCostUsd: decimalString(row.totalCostUsd),
     turnCount: row.turnCount,
-    historySummary: null,
     createdAt: toIsoString(row.createdAt),
     updatedAt: toIsoString(row.updatedAt),
     deletedAt: row.deletedAt ? toIsoString(row.deletedAt) : null,
@@ -74,6 +77,7 @@ export function mapTurn(row: typeof schema.turns.$inferSelect): Turn {
     origin: row.origin as Turn["origin"],
     writeMode: row.aiWriteMode as Turn["writeMode"],
     status: row.status as Turn["status"],
+    promptBakeId: row.promptBakeId,
     finishReason: row.finishReason as Turn["finishReason"],
     model: row.model,
     provider: row.provider,
@@ -95,6 +99,18 @@ export function mapTurn(row: typeof schema.turns.$inferSelect): Turn {
     blocks: [],
     siblingIds: [],
     responses: [],
+  };
+}
+
+export function mapPromptBake(row: typeof schema.promptBakes.$inferSelect): PromptBake {
+  return {
+    id: row.id,
+    ownerThreadId: row.ownerThreadId,
+    composedSystemPrompt: row.composedSystemPrompt,
+    bakedSkillSlugs: row.bakedSkillSlugs,
+    bakedTools: row.bakedTools as PromptBake["bakedTools"],
+    contentHash: row.contentHash,
+    createdAt: toIsoString(row.createdAt),
   };
 }
 

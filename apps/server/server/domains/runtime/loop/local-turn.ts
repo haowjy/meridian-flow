@@ -31,6 +31,7 @@ export function createLocalTurn(input: {
     origin: input.origin,
     writeMode: input.writeMode ?? null,
     status: input.status,
+    promptBakeId: null,
     finishReason: null,
     model: null,
     provider: null,

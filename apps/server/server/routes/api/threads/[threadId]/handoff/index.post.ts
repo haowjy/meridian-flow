@@ -22,6 +22,7 @@ export default defineEventHandler(async (event) => {
         threads: app.repos.threads as ThreadAgentSwapDeps["threads"],
         threadWorks: app.repos.threadWorks,
         turns: app.repos.turns,
+        promptBakes: app.repos.promptBakes,
         blocks: app.repos.blocks,
         threadDocuments: app.repos.threadDocuments,
         transaction: app.repos.transaction,

@@ -3,6 +3,7 @@ import type {
   EventJournalId,
   ModelResponseId,
   ProjectId,
+  PromptBakeId,
   ThreadId,
   TurnBlockId,
   TurnId,
@@ -50,11 +51,9 @@ export const threads = pgTable(
     ref: text("ref"),
     kind: text("kind").notNull().default("primary"),
     status: text("status").notNull().default("idle"),
-    composedSystemPrompt: text("composed_system_prompt"),
-    bakedSkillSlugs: jsonb("baked_skill_slugs").$type<string[] | null>(),
-    /** Frozen advertised Tool[] payload, baked atomically with the prompt. Untyped: the runtime owns the shape. */
-    bakedTools: jsonb("baked_tools"),
-    systemPromptHash: text("system_prompt_hash"),
+    initialPromptBakeId: uuid("initial_prompt_bake_id")
+      .$type<PromptBakeId>()
+      .references((): PgColumn => promptBakes.id),
     parentThreadId: uuid("parent_thread_id").$type<ThreadId>(),
     rootThreadId: uuid("root_thread_id").$type<ThreadId>(),
     originTurnId: uuid("origin_turn_id")
@@ -266,6 +265,9 @@ export const turns = pgTable(
       .notNull()
       .references((): PgColumn => threads.id, { onDelete: "restrict" }),
     parentTurnId: uuid("parent_turn_id").$type<TurnId>(),
+    promptBakeId: uuid("prompt_bake_id")
+      .$type<PromptBakeId>()
+      .references((): PgColumn => promptBakes.id),
     compactionModel: text("compaction_model"),
     role: text("role").notNull(),
     /** Who authored the turn; independent of `role`. No default: every insert states it. */
@@ -318,6 +320,23 @@ export const turns = pgTable(
       sql`${table.role} != 'compaction' OR ${table.compactionModel} IS NOT NULL`,
     ),
   ],
+);
+
+export const promptBakes = pgTable(
+  "prompt_bakes",
+  {
+    id: idColumn<PromptBakeId>(),
+    ownerThreadId: uuid("owner_thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references((): PgColumn => threads.id, { onDelete: "cascade" }),
+    composedSystemPrompt: text("composed_system_prompt").notNull(),
+    bakedSkillSlugs: jsonb("baked_skill_slugs").$type<string[]>().notNull(),
+    bakedTools: jsonb("baked_tools").notNull(),
+    contentHash: text("content_hash").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [index("prompt_bakes_owner_created").on(table.ownerThreadId, table.createdAt)],
 );
 
 export const modelResponses = pgTable(

@@ -109,7 +109,8 @@ if (!enabled || !databaseUrl) {
         expect(functions.map((row) => row.name)).toEqual([
           "complete_turn_trail_work",
           "consume_credit_lots_fifo",
-          "enforce_thread_prompt_freeze",
+          "enforce_prompt_bake_insert_only",
+          "enforce_prompt_bake_write_once",
           "enlist_turn_trail_work",
           "recompute_thread_chat_activity",
           "recompute_thread_chat_activity_from_block_insert",

@@ -18,7 +18,7 @@ import type { ThreadRepositories } from "./compose.js";
 import { throwHttpInterruptForStatus } from "./interrupt-boundary.js";
 
 export interface TurnContextPreviewRouteDeps {
-  repos: Pick<ThreadRepositories, "threads" | "turns" | "blocks">;
+  repos: Pick<ThreadRepositories, "threads" | "turns" | "blocks" | "promptBakes">;
   projectRepo: Parameters<typeof requireThreadOwner>[0]["projects"];
   modelRequestDebug: ModelRequestDebugStore;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource" | "readRevision">;
@@ -65,6 +65,7 @@ export async function handleGetTurnContextPreview(
     agentRevisions: deps.agentRevisions,
     toolRegistry: deps.toolRegistry,
     baseTools: deps.toolExecutor.getDefinitions?.(),
+    promptBakes: deps.repos.promptBakes,
     persistBake: false,
     workContext: deps.workContext,
   });

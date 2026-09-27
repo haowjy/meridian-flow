@@ -10,6 +10,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { truncateDrizzleTables } from "../../../test-support/drizzle-reset.js";
 import { createDrizzleThreadRepository } from "../../threads/adapters/drizzle/thread-repository.js";
+import { hashPromptBakeContent } from "../../threads/domain/prompt-bake-hash.js";
 import { createDrizzleAgentRevisionStore } from "../adapters/drizzle-agent-revision-store.js";
 import { createBoundAgentCatalog } from "../domain/bound-agent-catalog.js";
 import { seedGeneralAgent } from "../domain/default-package-seeding.js";
@@ -158,22 +159,22 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
             bakedTools: [],
           },
         ];
+        const inputs = candidates.map((candidate) => ({
+          ...candidate,
+          contentHash: hashPromptBakeContent(candidate),
+        }));
         const winners = await Promise.all([
-          firstThreads.bakeComposedSystemPrompt(THREAD, candidates[0]),
-          otherThreads.bakeComposedSystemPrompt(THREAD, candidates[1]),
+          firstThreads.bakeInitialPrompt(THREAD, inputs[0]),
+          otherThreads.bakeInitialPrompt(THREAD, inputs[1]),
         ]);
-        expect(winners[0].composedSystemPrompt).toBe(winners[1].composedSystemPrompt);
-        expect(winners[0].bakedSkillSlugs).toEqual(winners[1].bakedSkillSlugs);
-        expect(winners[0].bakedTools).toEqual(winners[1].bakedTools);
+        expect(winners[0].bake).toEqual(winners[1].bake);
         expect(candidates).toContainEqual({
-          composedSystemPrompt: winners[0].composedSystemPrompt,
-          bakedSkillSlugs: winners[0].bakedSkillSlugs,
-          bakedTools: winners[0].bakedTools,
+          composedSystemPrompt: winners[0].bake.composedSystemPrompt,
+          bakedSkillSlugs: winners[0].bake.bakedSkillSlugs,
+          bakedTools: winners[0].bake.bakedTools,
         });
         const reloaded = await otherThreads.findById(THREAD);
-        expect(reloaded?.composedSystemPrompt).toBe(winners[0].composedSystemPrompt);
-        expect(reloaded?.bakedSkillSlugs).toEqual(winners[0].bakedSkillSlugs);
-        expect(reloaded?.bakedTools).toEqual(winners[0].bakedTools);
+        expect(reloaded?.initialPromptBakeId).toBe(winners[0].bake.id);
       } finally {
         await otherDb.close();
       }

@@ -5,8 +5,15 @@
  */
 
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
-import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
-import type { Block, ModelResponse, Thread, Turn, TurnUsage } from "@meridian/contracts/threads";
+import type { PromptBakeId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type {
+  Block,
+  ModelResponse,
+  PromptBake,
+  Thread,
+  Turn,
+  TurnUsage,
+} from "@meridian/contracts/threads";
 import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { toIsoString } from "../../domain/contract-serialization.js";
@@ -20,11 +27,13 @@ import type {
   BlockRepository,
   CreateBlockInput,
   CreateModelResponseInput,
+  CreatePromptBakeInput,
   CreateThreadInput,
   CreateTurnInput,
   DerivedPrimaryThreadFactory,
   InternalThreadRepositories,
   ModelResponseRepository,
+  PromptBakeRepository,
   SubagentThreadFactory,
   ThreadChild,
   ThreadDocument,
@@ -92,9 +101,7 @@ function defaultThread(input: CreateThreadInput): Thread {
     status: "idle",
     title: normalized.title === "" ? null : normalized.title,
     ref: null,
-    composedSystemPrompt: null,
-    bakedSkillSlugs: null,
-    bakedTools: null,
+    initialPromptBakeId: null,
     agentDefinitionRevisionId: null,
     agentName: null,
     nextSeq: "0",
@@ -105,7 +112,6 @@ function defaultThread(input: CreateThreadInput): Thread {
     spawnStatus: normalized.spawnStatus,
     totalCostUsd: "0",
     turnCount: 0,
-    historySummary: null,
     createdAt: now,
     updatedAt: now,
     deletedAt: null,
@@ -122,6 +128,7 @@ function defaultTurn(input: CreateTurnInput): Turn {
     origin: input.origin,
     writeMode: input.writeMode ?? null,
     status: input.status ?? "pending",
+    promptBakeId: input.promptBakeId ?? null,
     parentTurnId: input.prevTurnId ?? null,
     finishReason: null,
     model: null,
@@ -175,6 +182,7 @@ export function createInMemoryRepositories(
   const turns = transactionOwner.map<string, Turn>();
   const blocks = transactionOwner.map<string, Block>();
   const modelResponses = transactionOwner.map<string, ModelResponse>();
+  const promptBakes = transactionOwner.map<PromptBakeId, PromptBake>();
   const threadDocuments = transactionOwner.map<string, ThreadDocument>();
   const documentTouches = transactionOwner.map<string, TurnDocumentTouch>();
   const threadWorks = transactionOwner.map<
@@ -379,21 +387,28 @@ export function createInMemoryRepositories(
       threads.set(id, updated);
       return projectThread(updated);
     },
-    async bakeComposedSystemPrompt(id, input) {
+    async bakeInitialPrompt(id, input) {
       const thread = threads.get(id);
       if (!thread) throw new Error(`Thread not found: ${id}`);
-      if (thread.bakedSkillSlugs !== null) {
-        return projectThread(thread);
+      if (thread.initialPromptBakeId != null) {
+        const bake = promptBakes.get(thread.initialPromptBakeId);
+        if (!bake) throw new Error(`Prompt bake not found: ${thread.initialPromptBakeId}`);
+        return { thread: projectThread(thread), bake };
       }
+      const bake: PromptBake = {
+        ...input,
+        id: crypto.randomUUID() as PromptBakeId,
+        ownerThreadId: id,
+        createdAt: toIsoString(new Date()),
+      };
+      promptBakes.set(bake.id, bake);
       const updated = {
         ...thread,
-        composedSystemPrompt: input.composedSystemPrompt,
-        bakedSkillSlugs: input.bakedSkillSlugs,
-        bakedTools: input.bakedTools,
+        initialPromptBakeId: bake.id,
         updatedAt: toIsoString(new Date()),
       };
       threads.set(id, updated);
-      return projectThread(updated);
+      return { thread: projectThread(updated), bake };
     },
     async recomputeCostFromModelResponses(id) {
       const thread = threads.get(id);
@@ -558,6 +573,13 @@ export function createInMemoryRepositories(
     async updateStatus(id, input: UpdateTurnStatusInput) {
       const turn = turns.get(id);
       if (!turn) throw new Error(`Turn not found: ${id}`);
+      if (
+        turn.promptBakeId != null &&
+        input.promptBakeId !== undefined &&
+        input.promptBakeId !== turn.promptBakeId
+      ) {
+        throw new Error("Turn prompt bake pointer is write-once");
+      }
       const updated: Turn = {
         ...turn,
         status: input.status,
@@ -569,6 +591,9 @@ export function createInMemoryRepositories(
               : toIsoString(input.completedAt)
             : turn.completedAt,
         error: input.error !== undefined ? input.error : turn.error,
+        promptBakeId:
+          input.promptBakeId !== undefined ? input.promptBakeId : (turn.promptBakeId ?? null),
+        metadata: input.metadata !== undefined ? input.metadata : (turn.metadata ?? null),
       };
       turns.set(id, updated);
       return updated;
@@ -764,6 +789,21 @@ export function createInMemoryRepositories(
     },
   };
 
+  const promptBakeRepo: PromptBakeRepository = {
+    async create(input: CreatePromptBakeInput) {
+      const bake: PromptBake = {
+        ...input,
+        id: crypto.randomUUID() as PromptBakeId,
+        createdAt: toIsoString(new Date()),
+      };
+      promptBakes.set(bake.id, bake);
+      return bake;
+    },
+    async findById(id) {
+      return promptBakes.get(id) ?? null;
+    },
+  };
+
   const threadDocumentRepo: ThreadDocumentRepository = {
     async attach(threadId, documentId, relationship: ThreadDocumentRelationship) {
       const key = `${threadId}:${documentId}`;
@@ -857,6 +897,7 @@ export function createInMemoryRepositories(
     threadUserState,
     threadWorks: threadWorksRepo,
     turns: turnRepo,
+    promptBakes: promptBakeRepo,
     blocks: blockRepo,
     modelResponses: modelResponseRepo,
     executionReports: createInMemoryExecutionReportRepository(transactionOwner, {

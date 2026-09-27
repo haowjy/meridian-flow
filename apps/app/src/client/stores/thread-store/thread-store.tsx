@@ -190,6 +190,7 @@ function createAssistantTurn(
     origin: "assistant",
     writeMode: opts?.writeMode ?? null,
     status: "streaming",
+    promptBakeId: null,
     finishReason: null,
     ...baseTurnFields(),
     error: null,

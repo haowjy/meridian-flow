@@ -70,6 +70,7 @@ function turnToCreateInput(turn: Turn): CreateTurnInput {
     threadId: turn.threadId,
     createdAt: turn.createdAt,
     prevTurnId: turn.prevTurnId ?? turn.parentTurnId ?? null,
+    promptBakeId: turn.promptBakeId ?? null,
     role: turn.role,
     origin: turn.origin,
     writeMode: turn.writeMode,
@@ -85,6 +86,8 @@ function turnToLifecycleStatusUpdate(turn: Turn): UpdateTurnStatusInput {
     finishReason: turn.finishReason,
     completedAt: turn.completedAt,
     error: turn.error,
+    promptBakeId: turn.promptBakeId ?? null,
+    metadata: turn.metadata ?? null,
   };
 }
 

@@ -543,11 +543,11 @@ describe("inbox drain", () => {
   it("persists a message on a second run of an already-baked thread", async () => {
     const { thread, inbox, orchestrator, repos } = await setup();
 
-    // First run freezes the prompt (`bakedSkillSlugs` becomes non-null), so the
+    // First run freezes the prompt by assigning the initial bake pointer, so the
     // second run's assembly reuses the stale thread loaded at run start instead
     // of refreshing it from the bake.
     await execute(await orchestrator.prepare({ threadId: thread.id, userText: "first" }));
-    expect((await repos.threads.findById(thread.id))?.bakedSkillSlugs).not.toBeNull();
+    expect((await repos.threads.findById(thread.id))?.initialPromptBakeId).not.toBeNull();
 
     await inbox.enqueue(message("baked steer", thread.id));
 

@@ -142,6 +142,7 @@ const MAX_TURN_ITERATIONS = 32;
 export interface OrchestratorRepositories {
   threads: ThreadRepository;
   turns: TurnRepository;
+  promptBakes: ThreadRepositories["promptBakes"];
   blocks: BlockRepository;
   modelResponses: ModelResponseRepository;
   executionReports: ThreadRepositories["executionReports"];
@@ -1107,10 +1108,9 @@ async function buildGenerateRequest(input: {
     gateway: input.deps.gateway,
     imageAssets: input.deps.imageAssets,
     baseTools: input.runInput.tools ?? input.deps.toolExecutor.getDefinitions?.(),
+    promptBakes: input.deps.repos.promptBakes,
     persistBake: true,
-    bakeComposedSystemPrompt: input.deps.repos.threads.bakeComposedSystemPrompt.bind(
-      input.deps.repos.threads,
-    ),
+    bakeInitialPrompt: input.deps.repos.threads.bakeInitialPrompt.bind(input.deps.repos.threads),
     workContext: input.deps.workContext,
   });
 

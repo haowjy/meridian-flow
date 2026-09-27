@@ -20,6 +20,7 @@ else
     const { createDrizzleEventJournalReader, createDrizzleEventJournalWriter } = await import(
       "../index.js"
     );
+    const { hashPromptBakeContent } = await import("./prompt-bake-hash.js");
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { DerivedSourceNotFoundError, forkThreadAgent } = await import(
       "./derive-conversation.js"
@@ -89,6 +90,7 @@ else
         threads: repos.threads,
         threadWorks: repos.threadWorks,
         turns: repos.turns,
+        promptBakes: repos.promptBakes,
         blocks: repos.blocks,
         threadDocuments: repos.threadDocuments,
         transaction: repos.transaction,
@@ -303,6 +305,15 @@ else
 
     it("forks a fork at an inherited turn with the grandsource's exact prefix", async () => {
       const fixture = await setupSource();
+      const initialContent = {
+        composedSystemPrompt: "Grandsource initial prompt",
+        bakedSkillSlugs: [],
+        bakedTools: [],
+      };
+      const initialBake = await repos.threads.bakeInitialPrompt(fixture.source.id as never, {
+        ...initialContent,
+        contentHash: hashPromptBakeContent(initialContent),
+      });
       const secondTurn = await repos.turns.create({
         threadId: fixture.source.id,
         role: "assistant",
@@ -311,9 +322,25 @@ else
         prevTurnId: fixture.firstTurn.id,
         createdAt: "2026-01-01T00:00:01.000Z",
       });
+      const boundaryContent = {
+        composedSystemPrompt: "Grandsource second epoch",
+        bakedSkillSlugs: ["updated"],
+        bakedTools: [],
+      };
+      const boundaryBake = await repos.promptBakes.create({
+        ownerThreadId: fixture.source.id as never,
+        ...boundaryContent,
+        contentHash: hashPromptBakeContent(boundaryContent),
+      });
+      await repos.turns.updateStatus(secondTurn.id, {
+        status: "complete",
+        promptBakeId: boundaryBake.id,
+      });
       const firstFork = await createFork(fixture.source, fixture.deps, {
         originTurnId: secondTurn.id,
       });
+      expect(firstFork.thread.initialPromptBakeId).toBe(boundaryBake.id);
+      expect(firstFork.thread.initialPromptBakeId).not.toBe(initialBake.bake.id);
       await repos.turns.create({
         threadId: firstFork.thread.id as never,
         role: "user",
@@ -323,23 +350,43 @@ else
           ?.id as never,
         createdAt: "2026-01-01T00:05:00.000Z",
       });
-      const inheritedFork = await createFork(firstFork.thread, fixture.deps, {
-        originTurnId: fixture.firstTurn.id,
+      const forkEpochContent = {
+        composedSystemPrompt: "First fork's later epoch",
+        bakedSkillSlugs: ["later"],
+        bakedTools: [],
+      };
+      const forkEpoch = await repos.promptBakes.create({
+        ownerThreadId: firstFork.thread.id as never,
+        ...forkEpochContent,
+        contentHash: hashPromptBakeContent(forkEpochContent),
       });
+      await repos.turns.create({
+        threadId: firstFork.thread.id as never,
+        role: "system",
+        origin: "system",
+        status: "complete",
+        promptBakeId: forkEpoch.id,
+        prevTurnId: (await repos.turns.getLatestByThread(firstFork.thread.id as never))
+          ?.id as never,
+      });
+      const inheritedFork = await createFork(firstFork.thread, fixture.deps, {
+        originTurnId: secondTurn.id,
+      });
+      expect(inheritedFork.thread.initialPromptBakeId).toBe(boundaryBake.id);
       const forkEvents = await eventReader.listByType(firstFork.thread.id as never, "agent.fork");
       expect(forkEvents.map((entry) => entry.payload)).toContainEqual(
         expect.objectContaining({
           type: "agent.fork",
           sourceThreadId: firstFork.thread.id,
           targetThreadId: inheritedFork.thread.id,
-          originTurnId: fixture.firstTurn.id,
+          originTurnId: secondTurn.id,
         }),
       );
       const directFork = await createFork(fixture.source, fixture.deps, {
-        originTurnId: fixture.firstTurn.id,
+        originTurnId: secondTurn.id,
       });
 
-      expect(inheritedFork.thread.originTurnId).toBe(fixture.firstTurn.id);
+      expect(inheritedFork.thread.originTurnId).toBe(secondTurn.id);
       expect(
         (await repos.turns.findById(inheritedFork.thread.originTurnId as never))?.threadId,
       ).toBe(fixture.source.id);

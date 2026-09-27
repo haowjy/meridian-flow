@@ -18,6 +18,7 @@ export function goldenAssistantTurn(
     origin: "assistant",
     writeMode: null,
     status,
+    promptBakeId: null,
     finishReason: null,
     inputTokens: 0,
     outputTokens: 0,

@@ -98,21 +98,28 @@ async function writerChat() {
       blocks: [],
       agentRevisions,
       toolRegistry: createToolRegistry(),
+      promptBakes: repos.promptBakes,
       persistBake: true,
-      bakeComposedSystemPrompt: repos.threads.bakeComposedSystemPrompt.bind(repos.threads),
+      bakeInitialPrompt: repos.threads.bakeInitialPrompt.bind(repos.threads),
       workContext: emptyWorkContext(project.id),
     });
   }
-  return { createBoundThread, assemble, accountSkillInstalls, repos };
+  async function readBake(threadId: string) {
+    const thread = await repos.threads.findById(threadId);
+    if (!thread?.initialPromptBakeId) return null;
+    return repos.promptBakes.findById(thread.initialPromptBakeId);
+  }
+  return { createBoundThread, assemble, accountSkillInstalls, readBake, repos };
 }
 
 describe("assembleNextTurnContext skill freeze", () => {
   it("bakes Writer available skills, then leaves an account add frozen without a notice", async () => {
-    const { createBoundThread, assemble, accountSkillInstalls } = await writerChat();
+    const { createBoundThread, assemble, accountSkillInstalls, readBake } = await writerChat();
     const thread = await createBoundThread();
 
     const first = await assemble(thread.id);
-    expect(first.thread.bakedSkillSlugs).toEqual(["creative-writing-modes", "writing-principles"]);
+    const firstBake = await readBake(thread.id);
+    expect(firstBake?.bakedSkillSlugs).toEqual(["creative-writing-modes", "writing-principles"]);
     expect(first.systemPrompt).toContain(
       "creative-writing-modes\nModes for putting prose on the page.",
     );
@@ -122,7 +129,7 @@ describe("assembleNextTurnContext skill freeze", () => {
 
     const second = await assemble(thread.id);
     expect(second.systemPrompt).toBe(first.systemPrompt);
-    expect(second.thread.bakedSkillSlugs).toEqual(first.thread.bakedSkillSlugs);
+    expect((await readBake(thread.id))?.id).toBe(firstBake?.id);
 
     await accountSkillInstalls.insert({
       ownerUserId: "user-1",
@@ -134,18 +141,21 @@ describe("assembleNextTurnContext skill freeze", () => {
 
     const afterAdd = await assemble(thread.id);
     expect(afterAdd.systemPrompt).toBe(first.systemPrompt);
-    expect(afterAdd.thread.bakedSkillSlugs).toEqual([
+    expect((await readBake(thread.id))?.bakedSkillSlugs).toEqual([
       "creative-writing-modes",
       "writing-principles",
     ]);
 
     const afterStillFrozen = await assemble(thread.id);
     expect(afterStillFrozen.systemPrompt).toBe(first.systemPrompt);
-    expect(afterStillFrozen.thread.bakedSkillSlugs).toEqual(first.thread.bakedSkillSlugs);
+    expect((await readBake(thread.id))?.bakedSkillSlugs).toEqual([
+      "creative-writing-modes",
+      "writing-principles",
+    ]);
 
     const nextChat = await createBoundThread();
     const nextFirst = await assemble(nextChat.id);
-    expect(nextFirst.thread.bakedSkillSlugs).toEqual([
+    expect((await readBake(nextChat.id))?.bakedSkillSlugs).toEqual([
       "creative-writing-modes",
       "writing-principles",
     ]);
@@ -211,8 +221,9 @@ describe("assembleNextTurnContext named subagent freeze", () => {
         blocks: [],
         agentRevisions,
         toolRegistry: createToolRegistry(),
+        promptBakes: repos.promptBakes,
         persistBake: true,
-        bakeComposedSystemPrompt: repos.threads.bakeComposedSystemPrompt.bind(repos.threads),
+        bakeInitialPrompt: repos.threads.bakeInitialPrompt.bind(repos.threads),
         workContext: emptyWorkContext(project.id),
       });
     };
@@ -268,8 +279,9 @@ describe("assembleNextTurnContext agentless overlay freeze", () => {
         blocks: [],
         agentRevisions,
         toolRegistry: createToolRegistry(),
+        promptBakes: repos.promptBakes,
         persistBake: true,
-        bakeComposedSystemPrompt: repos.threads.bakeComposedSystemPrompt.bind(repos.threads),
+        bakeInitialPrompt: repos.threads.bakeInitialPrompt.bind(repos.threads),
         workContext: emptyWorkContext(project.id),
       });
     };

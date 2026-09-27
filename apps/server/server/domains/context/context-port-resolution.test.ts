@@ -33,6 +33,7 @@ function thread(): Thread {
     status: "idle",
     title: "Custom project thread",
     ref: null,
+    initialPromptBakeId: null,
     agentDefinitionRevisionId: null,
     agentName: null,
     activeLeafTurnId: null,

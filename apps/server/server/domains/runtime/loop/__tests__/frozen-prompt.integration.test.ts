@@ -162,7 +162,8 @@ describe("frozen prompt provider requests", () => {
 
       expect(gateway.requests).toHaveLength(3);
       expect(gateway.requests[0]?.tools).toEqual(tools);
-      // Correlation is observability-only metadata, not provider request bytes.
+      // Correlation is observability-only metadata, not provider request bytes;
+      // storage IDs added by later implementation steps must not move this gate.
       const providerRequests = gateway.requests.map(
         ({ correlation: _correlation, ...request }) => request,
       );
@@ -272,8 +273,7 @@ describe("frozen prompt provider requests", () => {
         threadId: rig.thread.id,
         userId: rig.thread.userId,
       });
-      expect(fork.bakedSkillSlugs).toEqual(parent?.bakedSkillSlugs);
-      expect(fork.bakedTools).toEqual(parent?.bakedTools);
+      expect(fork.initialPromptBakeId).toBe(parent?.initialPromptBakeId);
       expect(fork.agentDefinitionRevisionId).toBe(rig.original.selection.definitionRevisionId);
       expect(fork.agentName).toBe("Writer");
       await rig.run(fork.id);
@@ -304,6 +304,7 @@ describe("frozen prompt provider requests", () => {
       agentSelection: rig.original.selection,
       summary: "Continue the revision.",
     });
+    expect(handoff.initialPromptBakeId).toBe(parent?.initialPromptBakeId);
     await rig.run(handoff.id);
     const request = rig.requests[rig.requests.length - 1];
     expect(
@@ -323,6 +324,22 @@ describe("frozen prompt provider requests", () => {
           message.role === "user" && JSON.stringify(message.content).includes("Handoff brief"),
       ),
     ).toBe(true);
+  });
+
+  it("starts a different-Agent handoff without carrying the source bake", async () => {
+    const rig = await fixture();
+    await rig.run();
+    const nextAgent = await rig.derive.agentCatalog.save(rig.thread.userId, {
+      slug: "new-writer",
+      content: "---\nname: New Writer\nmode: primary\n---\n\nNew writer prompt.",
+    });
+    const handoff = await handoffThreadAgent(rig.derive, {
+      threadId: rig.thread.id,
+      userId: rig.thread.userId,
+      agentSelection: nextAgent.selection,
+    });
+    expect(handoff.agentDefinitionRevisionId).toBe(nextAgent.selection.definitionRevisionId);
+    expect(handoff.initialPromptBakeId).toBeNull();
   });
 
   it("refuses forking or handing off a subagent thread", async () => {
@@ -384,14 +401,11 @@ describe("frozen prompt provider requests", () => {
       threadId: rig.thread.id,
       userId: rig.thread.userId,
     });
-    expect(fork.bakedSkillSlugs).toBeNull();
-    expect(fork.bakedTools).toBeNull();
+    expect(fork.initialPromptBakeId).toBeNull();
     await rig.run(fork.id);
     const rebaked = await rig.repos.threads.findById(fork.id);
-    expect(rebaked?.bakedSkillSlugs).toEqual([]);
-    expect(rebaked?.bakedTools).not.toBeNull();
+    expect(rebaked?.initialPromptBakeId).not.toBeNull();
     const untouchedParent = await rig.repos.threads.findById(rig.thread.id);
-    expect(untouchedParent?.bakedSkillSlugs).toBeNull();
-    expect(untouchedParent?.bakedTools).toBeNull();
+    expect(untouchedParent?.initialPromptBakeId).toBeNull();
   });
 });

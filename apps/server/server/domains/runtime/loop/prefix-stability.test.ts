@@ -72,6 +72,7 @@ function userTurn(id: string, text: string): { turn: Turn; block: Block } {
       origin: "writer",
       writeMode: null,
       status: "complete",
+      promptBakeId: null,
       finishReason: null,
       inputTokens: 0,
       outputTokens: 0,
@@ -116,6 +117,7 @@ function assistantToolExchangeTurn(
     origin: "assistant",
     writeMode: null,
     status: "complete",
+    promptBakeId: null,
     finishReason: "tool_use",
     inputTokens: 0,
     outputTokens: 0,
@@ -226,7 +228,8 @@ describe("prefix stability across a growing thread", () => {
         gateway,
         baseTools: liveBaseTools,
         persistBake: true,
-        bakeComposedSystemPrompt: repos.threads.bakeComposedSystemPrompt.bind(repos.threads),
+        promptBakes: repos.promptBakes,
+        bakeInitialPrompt: repos.threads.bakeInitialPrompt.bind(repos.threads),
         workContext,
       });
     }
@@ -409,7 +412,8 @@ describe("prefix stability across a growing thread", () => {
         ],
       },
       persistBake: true,
-      bakeComposedSystemPrompt: repos.threads.bakeComposedSystemPrompt.bind(repos.threads),
+      promptBakes: repos.promptBakes,
+      bakeInitialPrompt: repos.threads.bakeInitialPrompt.bind(repos.threads),
       workContext: noWorkContext(project.id),
     });
     for (const message of assembled.generateRequest.messages) {

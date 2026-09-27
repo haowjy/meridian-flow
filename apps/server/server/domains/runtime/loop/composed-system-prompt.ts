@@ -1,9 +1,9 @@
 /**
- * Composed system prompt assembly and freeze detection.
+ * Composed system prompt assembly and prompt-bake detection.
  *
  * Key decisions:
- * - Freeze sentinel is persisted bake state: `bakedSkillSlugs !== null`. Prompt
- *   text is never sniffed for markers.
+ * - The initial bake pointer is the freeze sentinel. Prompt text is never
+ *   sniffed for markers.
  * - Frozen at first context assembly, even if the gateway send fails or is cancelled.
  */
 
@@ -53,7 +53,7 @@ function inventorySection(
   ].join("\n\n");
 }
 
-/** Frozen threads have a persisted bake (`bakedSkillSlugs` is non-null). */
-export function isThreadPromptFrozen(thread: { bakedSkillSlugs?: string[] | null }): boolean {
-  return thread.bakedSkillSlugs != null;
+/** Frozen threads have an immutable first-bake pointer. */
+export function isThreadPromptFrozen(thread: { initialPromptBakeId?: string | null }): boolean {
+  return thread.initialPromptBakeId != null;
 }

@@ -20,6 +20,7 @@ import { createDrizzleBlockRepository } from "./block-repository.js";
 import { createDrizzleProjectChatFeedRepository } from "./chat-feed-repository.js";
 import { createDrizzleExecutionReportRepository } from "./execution-report-repository.js";
 import { createDrizzleModelResponseRepository } from "./model-response-repository.js";
+import { createDrizzlePromptBakeRepository } from "./prompt-bake-repository.js";
 import { createDrizzleThreadDocumentRepository } from "./thread-document-repository.js";
 import { createDrizzleThreadRepository } from "./thread-repository.js";
 import { createDrizzleThreadUserStateRepository } from "./thread-user-state-repository.js";
@@ -42,6 +43,7 @@ function composeDrizzleRepositories(
     threadUserState: createDrizzleThreadUserStateRepository(db),
     threadWorks: createDrizzleThreadWorksRepository(db),
     turns: createDrizzleTurnRepository(db, workActivity),
+    promptBakes: createDrizzlePromptBakeRepository(db),
     blocks: createDrizzleBlockRepository(db),
     modelResponses: createDrizzleModelResponseRepository(db),
     executionReports: createDrizzleExecutionReportRepository(db),

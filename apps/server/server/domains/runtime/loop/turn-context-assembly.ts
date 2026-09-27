@@ -4,20 +4,20 @@
  *
  * Key decisions:
  * - Preview (`persistBake: false`) computes a would-be first-attempt bake in memory
- *   only; `baked` in the response still reflects persisted `bakedSkillSlugs`.
- * - Orchestrator (`persistBake: true`) atomically persists prompt + Agent
- *   `skills.available` slugs on first attempt via compare-and-swap
- *   `bakeComposedSystemPrompt`. Empty Agent available still writes `[]`. A losing
- *   concurrent bake refetches and uses the winner's frozen prompt + slugs. After
- *   freeze, dynamic context never rewrites the prompt.
+ *   only; `baked` reflects whether the thread already has an initial bake pointer.
+ * - Orchestrator (`persistBake: true`) atomically persists prompt, Agent
+ *   `skills.available` slugs, and advertised tools on first attempt. Empty Agent
+ *   available still writes `[]`. Concurrent attempts use the winning bake row.
+ *   After first assembly, dynamic context never rewrites the thread's initial bake.
  * - Freeze happens at first turn attempt (context assembly), even if the gateway
  *   send then fails or is cancelled.
  */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
+import type { Block, PromptBake, Thread, Turn } from "@meridian/contracts/threads";
 import type { AgentRevisionStore } from "../../packages/index.js";
-import type { BakeComposedSystemPromptInput } from "../../threads/ports/repositories.js";
+import { hashPromptBakeContent } from "../../threads/index.js";
+import type { PromptBakeContent, PromptBakeRepository } from "../../threads/ports/repositories.js";
 import type { FunctionTool, Gateway, GenerateRequest, Tool } from "../gateway/index.js";
 import type { ImageAssetPort } from "../ports/image-asset.js";
 import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
@@ -36,8 +36,8 @@ import type { EffectiveToolPolicy } from "./permissions/project-tool-policy.js";
 import { applyPromptCacheMarks } from "./prompt-cache-marks.js";
 import type { WorkContextReader } from "./work-context.js";
 
-/** Frozen `bakedTools` is opaque JSON at the contract boundary; the runtime owns its shape. */
-function toolsFromBakedJson(value: Thread["bakedTools"]): Tool[] | null {
+/** Baked `Tool[]` is opaque JSON at the contract boundary; the runtime owns its shape. */
+function toolsFromBakedJson(value: PromptBake["bakedTools"]): Tool[] | null {
   return Array.isArray(value) ? (value as unknown as Tool[]) : null;
 }
 
@@ -52,10 +52,11 @@ export interface AssembleNextTurnContextInput {
   baseTools?: Tool[];
   /** When true, first-attempt bake is persisted; preview callers pass false. */
   persistBake?: boolean;
-  bakeComposedSystemPrompt?: (
+  promptBakes: Pick<PromptBakeRepository, "findById">;
+  bakeInitialPrompt?: (
     threadId: ThreadId,
-    input: BakeComposedSystemPromptInput,
-  ) => Promise<Thread>;
+    input: PromptBakeContent,
+  ) => Promise<{ thread: Thread; bake: PromptBake }>;
   workContext: WorkContextReader;
 }
 
@@ -97,11 +98,13 @@ export async function assembleNextTurnContext(
   let namedSubagentsForUnfrozen: PromptInventoryListing[] | undefined;
   let subagentGuidanceForUnfrozen: string | undefined;
   let systemPrompt: string;
-  const baked = thread.bakedSkillSlugs != null;
+  const baked = thread.initialPromptBakeId != null;
 
   if (isThreadPromptFrozen(thread)) {
-    systemPrompt = thread.composedSystemPrompt ?? "";
-    tools = toolsFromBakedJson(thread.bakedTools) ?? tools;
+    const bake = await input.promptBakes.findById(thread.initialPromptBakeId as string);
+    if (!bake) throw new Error(`Prompt bake not found: ${thread.initialPromptBakeId}`);
+    systemPrompt = bake.composedSystemPrompt;
+    tools = toolsFromBakedJson(bake.bakedTools) ?? tools;
   } else {
     const availableSkills = await resolveThreadModelAvailableSkills({
       thread,
@@ -121,17 +124,22 @@ export async function assembleNextTurnContext(
       subagentGuidance: agentContext.subagentGuidance,
     });
 
-    if (input.persistBake && input.bakeComposedSystemPrompt) {
-      thread = await input.bakeComposedSystemPrompt(thread.id as ThreadId, {
+    if (input.persistBake && input.bakeInitialPrompt) {
+      const content = {
         composedSystemPrompt: bakedPrompt,
         bakedSkillSlugs: availableSkills.map((skill) => skill.slug),
-        bakedTools: tools as unknown as JsonValue,
+        bakedTools: tools as unknown as PromptBake["bakedTools"],
+      };
+      const result = await input.bakeInitialPrompt(thread.id as ThreadId, {
+        ...content,
+        contentHash: hashPromptBakeContent(content),
       });
+      thread = result.thread;
       if (!isThreadPromptFrozen(thread))
         throw new Error("Thread prompt freeze returned an unfrozen thread");
-      systemPrompt = thread.composedSystemPrompt ?? bakedPrompt;
+      systemPrompt = result.bake.composedSystemPrompt;
       // A losing CAS refetches the winner's frozen tools, mirroring the prompt above.
-      tools = toolsFromBakedJson(thread.bakedTools) ?? tools;
+      tools = toolsFromBakedJson(result.bake.bakedTools) ?? tools;
     } else {
       systemPrompt = bakedPrompt;
       unfrozenBasePrompt = agentContext.agentBody;
@@ -162,6 +170,7 @@ export async function assembleNextTurnContext(
     thread,
     turns: input.turns,
     blocks,
+    frozenSystemPrompt: isThreadPromptFrozen(thread) ? systemPrompt : undefined,
     tools,
     unfrozenBasePrompt,
     appendPrompt: appendPromptForUnfrozen,

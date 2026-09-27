@@ -17,12 +17,14 @@ import {
 import type { EventJournalWriter } from "../ports/event-journal.js";
 import type { InternalThreadRepositories } from "../ports/repositories.js";
 import { createBoundConversation } from "./bound-conversation.js";
+import { bakeAt, bakeInEffect } from "./prompt-epochs.js";
 import { loadThreadConversationContext } from "./thread-conversation-context.js";
 
 export interface ThreadAgentSwapDeps {
   threads: InternalThreadRepositories["threads"];
   threadWorks: InternalThreadRepositories["threadWorks"];
   turns: InternalThreadRepositories["turns"];
+  promptBakes: InternalThreadRepositories["promptBakes"];
   blocks: InternalThreadRepositories["blocks"];
   threadDocuments: InternalThreadRepositories["threadDocuments"];
   transaction: InternalThreadRepositories["transaction"];
@@ -93,16 +95,15 @@ export async function handoffThreadAgent(
     // The source journal is mutated after the new thread acquires its Work membership.
     const lockedSource = await deps.threads.lockByIdIncludingDeleted(source.id as ThreadId);
     if (!lockedSource || lockedSource.deletedAt) throw new Error("Source thread no longer exists");
+    const sameRevision = (binding.revision?.id ?? null) === lockedSource.agentDefinitionRevisionId;
+    const inheritedBake = sameRevision ? await bakeInEffect(deps, lockedSource) : null;
     const result = await deps.threads.createDerivedPrimary({
       id: crypto.randomUUID() as ThreadId,
       userId: source.userId,
       projectId: source.projectId,
       workId: sourceWorkId,
       source: lockedSource,
-      inheritedPrompt:
-        (binding.revision?.id ?? null) === lockedSource.agentDefinitionRevisionId
-          ? lockedSource
-          : undefined,
+      initialPromptBakeId: inheritedBake?.id ?? null,
       originType: "handoff",
       originTurnId: (await latestTurnId(deps, source.id)) as TurnId | null,
       title: `Handoff from ${source.title ?? "thread"}`,
@@ -145,6 +146,7 @@ export async function forkThreadAgent(
     if (existing) return { thread: existing, created: false };
 
     const cutoff = await normalizeForkCutoff(deps, lockedSource, input.originTurnId);
+    const inheritedBake = await bakeAt(deps, cutoff.turn);
     const sourceWorkId = await requirePrimaryWorkId(deps, lockedSource.id, lockedSource.projectId);
     const binding = await resolveDerivedBinding(deps, lockedSource, input.userId);
     const result = await deps.threads.createDerivedPrimary({
@@ -156,7 +158,7 @@ export async function forkThreadAgent(
       originType: "fork",
       originTurnId: cutoff.turn.id as TurnId,
       title: `Fork from ${lockedSource.title ?? "thread"}`,
-      inheritedPrompt: lockedSource,
+      initialPromptBakeId: inheritedBake?.id ?? null,
     });
     if (!result.created) {
       return {
@@ -294,7 +296,7 @@ async function bindDerivedPrimary(
     },
   });
   // The inherited bake may predate the current Work or the chosen fork point.
-  if (target.bakedSkillSlugs !== null) await deps.workContextNotices.threadChanged(target.id);
+  if (target.initialPromptBakeId != null) await deps.workContextNotices.threadChanged(target.id);
   return target;
 }
 

@@ -50,6 +50,13 @@
       "when": 1790479135971,
       "tag": "0006_threads_origin_turn_fk",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790489262155,
+      "tag": "0007_prompt_bakes",
+      "breakpoints": true
     }
   ]
 }

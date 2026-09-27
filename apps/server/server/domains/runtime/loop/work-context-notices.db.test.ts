@@ -5,7 +5,7 @@ import { createTestWorkProjectionMutation } from "../../../test-support/work-pro
 import { createDrizzleProjectWorkRepository, updateWork } from "../../projects/index.js";
 import { createDrizzleRepositoriesForTest } from "../../threads/adapters/drizzle/repositories.js";
 import { rebindThreadWork } from "../../threads/domain/rebind-thread-work.js";
-import { createDrizzleEventJournalWriter } from "../../threads/index.js";
+import { createDrizzleEventJournalWriter, hashPromptBakeContent } from "../../threads/index.js";
 import {
   THREAD_WORK_RACE as ids,
   resetThreadWorkRaceFixture,
@@ -43,6 +43,12 @@ else
       (await repos.turns.listByThread(ids.threadId)).filter(
         (turn) => (turn.metadata as { kind?: string })?.kind === "system_update",
       );
+    const currentBake = async () => {
+      const thread = await repos.threads.findById(ids.threadId);
+      return thread?.initialPromptBakeId
+        ? repos.promptBakes.findById(thread.initialPromptBakeId)
+        : null;
+    };
     const rebind = (workId: string, notices = delivery()) =>
       repos.transaction(() =>
         rebindThreadWork(
@@ -62,10 +68,15 @@ else
         .set({ status: "active", archivedAt: null })
         .where(eq(schema.works.id, ids.targetWorkId));
       await repos.threadWorks.addMembership(ids.threadId, ids.workId, true);
-      await db
-        .update(schema.threads)
-        .set({ composedSystemPrompt: "frozen prompt", bakedSkillSlugs: [] })
-        .where(eq(schema.threads.id, ids.threadId));
+      const content = {
+        composedSystemPrompt: "frozen prompt",
+        bakedSkillSlugs: [],
+        bakedTools: [],
+      };
+      await repos.threads.bakeInitialPrompt(ids.threadId, {
+        ...content,
+        contentHash: hashPromptBakeContent(content),
+      });
     });
     afterAll(() => db.close());
 
@@ -117,9 +128,7 @@ else
       expect(blocks[0]?.textContent).toContain("latest");
       expect(blocks[0]?.textContent).toContain("<system_update>");
       expect(await notices.selectPending(ids.threadId)).toEqual([]);
-      expect((await repos.threads.findById(ids.threadId))?.composedSystemPrompt).toBe(
-        "frozen prompt",
-      );
+      expect((await currentBake())?.composedSystemPrompt).toBe("frozen prompt");
       await notices.sweepWorkNotices();
       expect(await updates()).toHaveLength(1);
     });
@@ -228,9 +237,7 @@ else
         expect((await notices.selectPending(ids.threadId)).map((row) => row.id)).toEqual([
           message.id,
         ]);
-        expect((await repos.threads.findById(ids.threadId))?.composedSystemPrompt).toBe(
-          "frozen prompt",
-        );
+        expect((await currentBake())?.composedSystemPrompt).toBe("frozen prompt");
         await notices.threadChanged(ids.threadId);
         const noticeOnly = await notices.splitAndContinue({
           lease,

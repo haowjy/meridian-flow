@@ -6,7 +6,14 @@
 
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
-import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type {
+  ProjectId,
+  PromptBakeId,
+  ThreadId,
+  TurnId,
+  UserId,
+  WorkId,
+} from "@meridian/contracts/runtime";
 import type {
   ExecutionReportCorrelation,
   ExecutionReportSource,
@@ -23,6 +30,7 @@ import type {
   ModelResponse,
   PriceSource,
   ProjectChatItem,
+  PromptBake,
   SpawnStatus,
   Thread,
   ThreadKind,
@@ -177,7 +185,6 @@ export interface CreateThreadInput {
   workId?: WorkId | null;
   kind?: ThreadKind;
   title?: string | null;
-  systemPrompt?: string | null;
   parentThreadId?: ThreadId | null;
   spawnStatus?: SpawnStatus | null;
   spawnDepth?: number;
@@ -187,12 +194,21 @@ export interface UpdateSpawnLifecycleInput {
   spawnStatus: SpawnStatus;
 }
 
-/** Atomic first-attempt bake payload for gateway prompt + skill + tool contract. */
-export interface BakeComposedSystemPromptInput {
+/** Immutable system and tool bytes stored in a prompt bake. */
+export interface PromptBakeContent {
   composedSystemPrompt: string;
   bakedSkillSlugs: string[];
-  /** Exact advertised Tool[] payload, opaque JSON; the runtime owns its shape. */
   bakedTools: JsonValue;
+  contentHash: string;
+}
+
+export interface CreatePromptBakeInput extends PromptBakeContent {
+  ownerThreadId: ThreadId;
+}
+
+export interface PromptBakeRepository {
+  create(input: CreatePromptBakeInput): Promise<PromptBake>;
+  findById(id: PromptBakeId): Promise<PromptBake | null>;
 }
 
 export interface ThreadRepository {
@@ -224,11 +240,11 @@ export interface ThreadRepository {
   updateStatus(id: ThreadId, status: ThreadLifecycleStatus): Promise<Thread>;
   /** Persists a writer-authored title and refreshes `updatedAt`; returns the authoritative row. */
   updateTitle(id: ThreadId, title: string): Promise<Thread>;
-  /**
-   * Compare-and-swap first-attempt bake: writes only while `bakedSkillSlugs` is still
-   * null. Returns the authoritative thread row (winner's bake on CAS loss).
-   */
-  bakeComposedSystemPrompt(id: ThreadId, input: BakeComposedSystemPromptInput): Promise<Thread>;
+  /** Locks, inserts, and points at the first bake; contenders receive the winner. */
+  bakeInitialPrompt(
+    id: ThreadId,
+    input: PromptBakeContent,
+  ): Promise<{ thread: Thread; bake: PromptBake }>;
   /** Recomputes total cost from all model responses belonging to this thread's turns. */
   recomputeCostFromModelResponses(id: ThreadId): Promise<void>;
   updateCost(id: ThreadId, deltaCostUsd: string, turnCountIncrement?: number): Promise<void>;
@@ -342,6 +358,7 @@ export interface CreateTurnInput {
   /** Event/projector callers may preserve the event-authored creation time. */
   createdAt?: string;
   prevTurnId?: TurnId | null;
+  promptBakeId?: PromptBakeId | null;
   role: TurnRole;
   /** No default: every creation path must state who authored the turn. */
   origin: TurnOrigin;
@@ -356,6 +373,8 @@ export interface UpdateTurnStatusInput {
   finishReason?: FinishReason | null;
   completedAt?: string | null;
   error?: string | null;
+  promptBakeId?: PromptBakeId | null;
+  metadata?: JsonValue | null;
 }
 
 export interface TurnRepository {
@@ -457,6 +476,7 @@ export type ThreadRepositories = {
   readSnapshot<T>(operation: () => Promise<T>): Promise<T>;
   threadDocuments: ThreadDocumentRepository;
   documentTouches: TurnDocumentTouchRepository;
+  promptBakes: PromptBakeRepository;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   /**
    * Serializes a complete turn-start transition on the thread and rejects
