@@ -4,9 +4,23 @@
  * Key decisions: SpawnResult union reserves a future interrupt arm; TreeBudget
  * spent counters are updated in-process until P4 wires the ledger.
  */
+
+import { z } from "zod";
 import type { ArtifactRef, MeridianError } from "../interrupt/index.js";
+import { artifactRefInputSchema } from "../interrupt/index.js";
 import type { ThreadId, TurnBlockId, TurnId } from "../runtime/index.js";
 import type { JsonValue } from "../threads/index.js";
+
+const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
+  ]),
+);
 
 /** Candidate content supplied by return_result, before terminal cause is known. */
 export type ReturnResultCapture = {
@@ -14,6 +28,13 @@ export type ReturnResultCapture = {
   payload?: JsonValue;
   artifacts?: AgentReport["artifacts"];
 };
+
+/** Canonical return_result input; artifact URI strings normalize to object refs. */
+export const returnResultCaptureSchema = z.strictObject({
+  summary: z.string(),
+  payload: jsonValueSchema.optional(),
+  artifacts: z.array(artifactRefInputSchema).optional(),
+});
 
 /** A run accepts one report; a second return_result is refused, not thrown. */
 export type ReturnResultOutcome = { ok: true } | { ok: false; message: string };

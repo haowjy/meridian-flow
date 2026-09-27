@@ -152,6 +152,7 @@ describe("inbox drain", () => {
         toolCallResult("return_result", "rr-1", {
           summary: "explicit summary",
           payload: { answer: 42 },
+          artifacts: ["scratch://the-lamplighters-arithmetic.md"],
         }),
         toolCallResult("unknown", "repair-me"),
         textResult("steered answer after tool"),
@@ -170,6 +171,7 @@ describe("inbox drain", () => {
       source: "return_result",
       summary: "explicit summary",
       payload: { answer: 42 },
+      artifacts: [{ type: "object", uri: "scratch://the-lamplighters-arithmetic.md" }],
       captureToolCallId: "rr-1",
       terminalAssistantTurnId: terminal?.id,
     });
@@ -178,6 +180,41 @@ describe("inbox drain", () => {
     );
     expect(toolResults).toHaveLength(1);
     expect(toolResults[0]?.content).toMatchObject({ output: { ok: true }, isError: false });
+  });
+
+  it("returns malformed return_result artifacts as a tool error and continues the child run", async () => {
+    const { thread, orchestrator, requests, repos } = await setup({
+      child: true,
+      realSpawnTools: true,
+      results: [
+        toolCallResult("return_result", "rr-bad", {
+          summary: "malformed report",
+          artifacts: [42],
+        }),
+        textResult("recovered report"),
+      ],
+    });
+    const run = await orchestrator.prepare({ threadId: thread.id, userText: "report" });
+
+    await execute(run);
+
+    expect(requests).toHaveLength(2);
+    const report = await repos.executionReports.findByExecution(thread.id, run.assistantTurnId);
+    expect(report).toMatchObject({
+      outcome: "succeeded",
+      source: "final_assistant",
+      summary: "recovered report",
+    });
+    const toolResult = (await repos.blocks.listByTurn(run.assistantTurnId)).find(
+      (block) => block.blockType === "tool_result",
+    );
+    expect(toolResult?.content).toMatchObject({
+      isError: true,
+      output: {
+        code: "tool_error",
+        message: expect.stringContaining("artifacts[0]"),
+      },
+    });
   });
 
   it("saves only the final response's public text and per-execution response cost", async () => {

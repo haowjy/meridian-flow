@@ -4,10 +4,12 @@
  * ChildRunCoordinator owns lifecycle; these only validate input.
  */
 import { type InvocationPatch, invocationPatchSchema } from "@meridian/contracts/agents";
-import type { ArtifactRef } from "@meridian/contracts/interrupt";
-import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
-import type { SpawnResult } from "@meridian/contracts/spawn";
-import type { JsonValue } from "@meridian/contracts/threads";
+import {
+  meridianErrorFromSystem,
+  meridianErrorFromTool,
+  meridianErrorToJson,
+} from "@meridian/contracts/interrupt";
+import { returnResultCaptureSchema, type SpawnResult } from "@meridian/contracts/spawn";
 import { ZodError } from "zod";
 import { InvocationPatchError } from "../spawn/apply-invocation-patch.js";
 import type {
@@ -69,6 +71,31 @@ function parseInvocationPatch(input: unknown): InvocationPatch {
 /** Roster-aware spawn description; the caller's binding supplies whether it has named targets. */
 export function spawnToolDescription(hasNamedTargets: boolean): string {
   return hasNamedTargets ? SPAWN_DESCRIPTION : SPAWN_DESCRIPTION_EMPTY_ROSTER;
+}
+
+function returnResultInputError(error: ZodError): string {
+  const issue = error.issues[0];
+  const field = issue?.path.length
+    ? issue.path.reduce<string>(
+        (path, part) =>
+          typeof part === "number"
+            ? `${path}[${part}]`
+            : path
+              ? `${path}.${String(part)}`
+              : String(part),
+        "",
+      )
+    : "input";
+  if (issue?.path[0] === "artifacts") {
+    return `Invalid return_result input at ${field}: expected a URI string or an ArtifactRef object with type "object" and uri, type "image" and url, or type "liveView" and url.`;
+  }
+  if (issue?.path[0] === "summary") {
+    return `Invalid return_result input at ${field}: expected a string.`;
+  }
+  if (issue?.path[0] === "payload") {
+    return `Invalid return_result input at ${field}: expected a JSON value.`;
+  }
+  return `Invalid return_result input at ${field}: expected an object with a string summary, optional JSON payload, and optional artifacts array of URI strings or ArtifactRef objects.`;
 }
 
 const THREAD_MESSAGE_DESCRIPTION =
@@ -243,7 +270,52 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
             payload: { description: "Package-defined structured result." },
             artifacts: {
               type: "array",
-              description: "Promoted artifact references produced by this child.",
+              description:
+                "Promoted artifact references produced by this child. Each item is an artifact URI string or a typed ArtifactRef object.",
+              items: {
+                anyOf: [
+                  {
+                    type: "string",
+                    description:
+                      "Artifact URI such as scratch://… or manuscript://…. It is saved as an object reference.",
+                  },
+                  {
+                    type: "object",
+                    properties: {
+                      type: { const: "object" },
+                      uri: { type: "string" },
+                      label: { type: "string" },
+                      mimeType: { type: "string" },
+                    },
+                    required: ["type", "uri"],
+                    additionalProperties: false,
+                  },
+                  {
+                    type: "object",
+                    properties: {
+                      type: { const: "image" },
+                      url: {
+                        type: "string",
+                        description: "HTTP(S) image URL.",
+                      },
+                      label: { type: "string" },
+                      mimeType: { type: "string" },
+                    },
+                    required: ["type", "url"],
+                    additionalProperties: false,
+                  },
+                  {
+                    type: "object",
+                    properties: {
+                      type: { const: "liveView" },
+                      url: { type: "string" },
+                      expiresAt: { type: "string" },
+                    },
+                    required: ["type", "url"],
+                    additionalProperties: false,
+                  },
+                ],
+              },
             },
           },
           required: ["summary"],
@@ -253,16 +325,16 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: ReturnResultToolHandlerContext) => {
-          const args = input as {
-            summary: string;
-            payload?: JsonValue;
-            artifacts?: ArtifactRef[];
-          };
-          return ctx.returnResult({
-            summary: args.summary,
-            payload: args.payload,
-            artifacts: args.artifacts,
-          });
+          const parsed = returnResultCaptureSchema.safeParse(input);
+          if (!parsed.success) {
+            return {
+              isError: true,
+              output: meridianErrorToJson(
+                meridianErrorFromTool(returnResultInputError(parsed.error)),
+              ),
+            };
+          }
+          return ctx.returnResult(parsed.data);
         },
       },
       capability: "return_result",

@@ -92,3 +92,59 @@ describe("thread_report tool contract", () => {
     });
   });
 });
+
+describe("return_result tool contract", () => {
+  const registration = createSpawnToolRegistrations().find(
+    (entry) => entry.definition.name === "return_result",
+  );
+
+  it("advertises artifact items and normalizes URI strings before capture", async () => {
+    const returnResult = vi.fn(async () => ({ ok: true as const }));
+    if (registration?.execution.type !== "server") throw new Error("missing return_result");
+
+    const properties = registration.definition.inputSchema.properties as
+      | Record<string, unknown>
+      | undefined;
+    expect(properties?.artifacts).toMatchObject({
+      type: "array",
+      items: expect.any(Object),
+    });
+    await registration.execution.handler(
+      {
+        summary: "done",
+        artifacts: [
+          "scratch://the-lamplighters-arithmetic.md",
+          { type: "image", url: "https://example.test/cover.png" },
+        ],
+      },
+      { returnResult } as never,
+    );
+
+    expect(returnResult).toHaveBeenCalledWith({
+      summary: "done",
+      payload: undefined,
+      artifacts: [
+        { type: "object", uri: "scratch://the-lamplighters-arithmetic.md" },
+        { type: "image", url: "https://example.test/cover.png" },
+      ],
+    });
+  });
+
+  it("returns a tool error for malformed artifacts without invoking capture", async () => {
+    const returnResult = vi.fn(async () => ({ ok: true as const }));
+    if (registration?.execution.type !== "server") throw new Error("missing return_result");
+
+    const result = await registration.execution.handler({ summary: "done", artifacts: [42] }, {
+      returnResult,
+    } as never);
+
+    expect(result).toMatchObject({
+      isError: true,
+      output: {
+        code: "tool_error",
+        message: expect.stringContaining("artifacts[0]"),
+      },
+    });
+    expect(returnResult).not.toHaveBeenCalled();
+  });
+});
