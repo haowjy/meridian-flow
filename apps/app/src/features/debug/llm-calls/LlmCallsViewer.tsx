@@ -400,6 +400,7 @@ function predictionReasonLabel(
     image_eviction: "Image prefix changed",
     compaction: "Compaction boundary",
     ttl_unknown: "Cache lifetime unknown",
+    summary_transcript: "Separate summary transcript",
     ttl_expired: "Cache expired",
     fork_cutoff: "Fork cutoff",
     fork_bake_changed: "Fork prompt changed",

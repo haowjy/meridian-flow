@@ -413,7 +413,7 @@ export const modelResponses = pgTable(
     ),
     check(
       "model_responses_predicted_cache_reason_valid",
-      sql`${table.predictedCacheReason} IN ('reusable_prefix', 'uncached', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'compaction', 'ttl_unknown', 'ttl_expired', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')`,
+      sql`${table.predictedCacheReason} IN ('reusable_prefix', 'uncached', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'compaction', 'ttl_unknown', 'ttl_expired', 'summary_transcript', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')`,
     ),
   ],
 );

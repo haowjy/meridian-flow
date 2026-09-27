@@ -11,6 +11,7 @@ export type PrefixCachePredictionReason =
   | "image_eviction"
   | "compaction"
   | "ttl_unknown"
+  | "summary_transcript"
   | "ttl_expired"
   | "fork_cutoff"
   | "fork_bake_changed"

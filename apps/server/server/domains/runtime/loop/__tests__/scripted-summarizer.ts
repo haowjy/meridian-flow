@@ -3,11 +3,15 @@ import type {
   ConversationSummarizer,
   SummaryOutcome,
 } from "../../ports/conversation-summarizer.js";
+
+type ScriptedOutcome<T = SummaryOutcome> = T extends SummaryOutcome
+  ? Omit<T, "summarizer"> & { summarizer?: SummaryOutcome["summarizer"] }
+  : never;
 export function scriptedSummarizer(
   script: (
     input: Parameters<ConversationSummarizer["summarize"]>[0],
     call: number,
-  ) => Promise<SummaryOutcome> = async () => ({
+  ) => Promise<ScriptedOutcome> = async () => ({
     kind: "complete",
     text: "Earlier context.",
     model: "summary-model",
@@ -16,12 +20,11 @@ export function scriptedSummarizer(
 ): ConversationSummarizer & { calls: Parameters<ConversationSummarizer["summarize"]>[0][] } {
   const calls: Parameters<ConversationSummarizer["summarize"]>[0][] = [];
   return {
-    enabled: true,
     maxOutputTokens: 100,
     calls,
     async summarize(input: Parameters<ConversationSummarizer["summarize"]>[0]) {
       calls.push(input);
-      return script(input, calls.length);
+      return { summarizer: { path: "cold", segments: 1 }, ...(await script(input, calls.length)) };
     },
   };
 }

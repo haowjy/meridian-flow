@@ -3,7 +3,7 @@ import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { SummaryOutcome, SummaryResponse } from "../ports/conversation-summarizer.js";
 import type { CompactionDecision } from "./compaction/decision.js";
-import { projectActiveHistory } from "./compaction/index.js";
+import { projectActiveHistory, projectCompactedHistory } from "./compaction/index.js";
 import {
   completeCompactionCurrent,
   type PreparedCompaction,
@@ -34,7 +34,7 @@ export async function executeCompaction({
   allBlocks: Block[];
   boundary: DeliveryBoundary;
   decision: Extract<CompactionDecision, { kind: "compact" }>;
-  recordResponses: (rows: SummaryResponse[]) => void;
+  recordResponses: (rows: SummaryResponse[], summarizer: SummaryOutcome["summarizer"]) => void;
   settleResponses: (rows: SummaryResponse[]) => Promise<void>;
 }) {
   const projection = projectActiveHistory(allTurns, allBlocks, thread.ref);
@@ -46,7 +46,8 @@ export async function executeCompaction({
       turnId: currentTurn.id,
       instruction: "compaction",
       requestInHand: decision.requestInHand,
-      projection,
+      forceCold: decision.path === "cold",
+      projection: projectCompactedHistory(projection, decision.plan),
       signal: input.signal ?? new AbortController().signal,
     });
   } catch (error) {
@@ -58,9 +59,14 @@ export async function executeCompaction({
         correlation: { threadId: input.threadId, turnId: currentTurn.id },
         payload: unknownToEventPayload(error),
       });
-    summary = { kind: input.signal?.aborted ? "cancelled" : "failed", error, modelResponses: [] };
+    summary = {
+      kind: input.signal?.aborted ? "cancelled" : "failed",
+      error,
+      modelResponses: [],
+      summarizer: { path: "cold", segments: 0 },
+    };
   }
-  recordResponses(summary.modelResponses);
+  recordResponses(summary.modelResponses, summary.summarizer);
   input.signal?.throwIfAborted();
   const outcome = summary;
   const complete = (prepared: PreparedCompaction | undefined, failure: unknown) =>

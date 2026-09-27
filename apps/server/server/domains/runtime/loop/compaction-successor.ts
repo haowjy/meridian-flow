@@ -178,6 +178,8 @@ export async function completeCompactionCurrent(input: {
 }): Promise<Turn> {
   const { deps, threadId, placeholder, prepared } = input;
   await input.settleResponses();
+  const settled = await deps.repos.turns.findById(placeholder.id);
+  if (!settled) throw new Error("Compaction placeholder disappeared");
   if (prepared?.kind === "usable") {
     await beginPromptEpoch(deps, {
       threadId,
@@ -187,7 +189,7 @@ export async function completeCompactionCurrent(input: {
       completion: {
         blocks: [prepared.summaryBlock],
         compactionModel: prepared.model,
-        metadata: placeholder.metadata,
+        metadata: promptEpochMetadata(settled.metadata, "compaction"),
         events: (bakeId) => [
           {
             type: "context.compacted",
@@ -202,8 +204,6 @@ export async function completeCompactionCurrent(input: {
       },
     });
   } else {
-    const settled = await deps.repos.turns.findById(placeholder.id);
-    if (!settled) throw new Error("Compaction placeholder disappeared");
     const failed = {
       ...settled,
       status: "error" as const,

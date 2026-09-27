@@ -57,6 +57,8 @@ export interface PromptCacheDescriptor {
  * etc.) that the provider executes without Meridian involvement.
  */
 export interface ModelInfo {
+  /** Whole-request input repricing threshold, if the model has one. */
+  inputTierTokens?: number;
   id: string;
   provider: string;
   displayName: string;
@@ -316,6 +318,8 @@ export type StreamEvent =
   | {
       type: "error";
       code: ErrorCode;
+      /** Metered partial output when the provider terminates with an error. */
+      result?: GenerateResult;
       message: string;
       retryable: boolean;
       retryAfterMs?: number;
@@ -348,7 +352,7 @@ export interface ToolCall {
  *   `max_tokens`→`max_tokens`, `stop_sequence`→`stop_sequence`, `refusal`→`error`.
  *   NOTE: Anthropic docs additionally list `model_context_window_exceeded` but the
  *   installed SDK 0.100.1 union does not include it; if that value arrives at runtime
- *   it falls through the switch in stream-collect.ts and becomes `end_turn`.
+ *   the adapter maps the wire string to the canonical `context_overflow` error.
  * - OpenAI Responses status: `completed`→`end_turn`, `failed`/`cancelled`→`error`,
  *   `incomplete` maps to `max_tokens` or `error` depending on `incomplete_details.reason`.
  * - OpenAI-Chat finish_reason: `stop`→`end_turn`, `tool_calls`→`tool_use`,

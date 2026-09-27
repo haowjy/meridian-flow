@@ -6,12 +6,14 @@ import { executionScenario } from "../../../test-support/execution-scenario.js";
 import type { NoticePort } from "../../notices/index.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { ImageAssetResolutionError } from "../ports/image-asset.js";
+import { createConversationSummarizer } from "../summary/conversation-summarizer.js";
 import { createTestAgentBinding } from "./__tests__/runtime-fixtures.js";
 import { createRuntimeHarness } from "./__tests__/runtime-harness.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
 import { createOrchestrator } from "./orchestrator.js";
+import { createPrefixCacheStateService } from "./prefix-cache-state.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
 
 function promptBytes(request: import("../gateway/index.js").GenerateRequest) {
@@ -158,6 +160,255 @@ else
         },
       };
     }
+
+    it("settles both rows when a warm overflow falls back cold", async () => {
+      const gateway = scriptedGateway();
+      const original = gateway.stream;
+      let summaries = 0;
+      gateway.stream = async function* (request) {
+        const isSummary = request.messages.some((message) =>
+          message.content.some(
+            (part) => part.type === "text" && part.text.includes("Summarize this conversation"),
+          ),
+        );
+        if (!isSummary) {
+          yield* original(request);
+          return;
+        }
+        summaries++;
+        if (summaries === 1) {
+          yield { type: "usage", usage: { inputTokens: 100, outputTokens: 1 } };
+          yield {
+            type: "error",
+            code: "context_overflow",
+            message: "input length and max_tokens exceed context limit",
+            retryable: false,
+          };
+          return;
+        }
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "text", text: "The earlier work is complete." }],
+            toolCalls: [],
+            finishReason: "end_turn",
+            usage: { inputTokens: 100, outputTokens: 10 },
+            model: "gpt-4.1-mini",
+            provider: "openai",
+          },
+        };
+      };
+      const rig = await fixture({ gateway });
+      rig.deps.summarizer = createConversationSummarizer({
+        gateway: rig.deps.gateway,
+        agentRevisions: rig.deps.agentRevisions,
+        prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
+        config: { model: "gpt-4.1-mini", maxOutputTokens: 100 },
+      });
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      expect((await run.execute()).status).toBe("complete");
+      expect(summaries).toBe(2);
+      const rows = await rig.repos.modelResponses.listByTurn(run.executionTurnId);
+      expect(rows).toHaveLength(2);
+      expect(
+        rows.map((row) => [row.finishReason, row.predictedCacheState, row.predictedCacheReason]),
+      ).toEqual([
+        ["error", "warm", "reusable_prefix"],
+        ["end_turn", "cold", "summary_transcript"],
+      ]);
+      const debits = await db.select().from(schema.creditTransactions);
+      for (const row of rows) {
+        expect(BigInt(row.millicredits ?? "0")).toBeGreaterThan(0n);
+        expect(debits.filter((debit) => debit.usageEventId === row.id)).toHaveLength(1);
+      }
+    });
+
+    it.each([
+      "recovered",
+      "second_overflow",
+      "new_reply",
+    ])("forces cold after provider overflow and retries once (%s)", async (scenario) => {
+      const secondOverflow = scenario === "second_overflow";
+      let rig: Awaited<ReturnType<typeof fixture>>;
+      const gateway = scriptedGateway();
+      let calls = 0;
+      let summaries = 0;
+      const requests: import("../gateway/index.js").GenerateRequest[] = [];
+      gateway.stream = async function* (request) {
+        requests.push(request);
+        const summary = request.messages.some((message) =>
+          message.content.some(
+            (part) => part.type === "text" && part.text.includes("Summarize this conversation"),
+          ),
+        );
+        if (summary) {
+          summaries++;
+          yield {
+            type: "end",
+            result: {
+              content: [{ type: "text", text: "The earlier work is complete." }],
+              toolCalls: [],
+              finishReason: "end_turn",
+              usage: { inputTokens: 100, outputTokens: 10 },
+              model: "gpt-4.1-mini",
+              provider: "openai",
+            },
+          };
+          return;
+        }
+        calls++;
+        if (calls === 1 || secondOverflow || (scenario === "new_reply" && calls === 3)) {
+          yield {
+            type: "error",
+            code: "context_overflow",
+            message: "Provider window exceeded",
+            retryable: false,
+          };
+          return;
+        }
+        if (scenario === "new_reply" && calls === 2)
+          await rig.send(rig.threadId, "A new writer request.");
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "text", text: "Continued after compaction." }],
+            toolCalls: [],
+            finishReason: "end_turn",
+            usage: { inputTokens: 100, outputTokens: 10 },
+            model: "gpt-4.1-mini",
+            provider: "openai",
+          },
+        };
+      };
+      rig = await fixture({ gateway });
+      rig.setThreshold(undefined);
+      const real = createConversationSummarizer({
+        gateway: rig.deps.gateway,
+        agentRevisions: rig.deps.agentRevisions,
+        prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
+        config: { model: "gpt-4.1-mini", maxOutputTokens: 100 },
+      });
+      const inputs: Parameters<typeof real.summarize>[0][] = [];
+      rig.deps.summarizer = {
+        ...real,
+        async summarize(input) {
+          inputs.push(input);
+          return real.summarize(input);
+        },
+      };
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      const result = await run.execute();
+      expect(calls).toBe(scenario === "new_reply" ? 4 : 2);
+      expect(summaries).toBe(scenario === "new_reply" ? 2 : 1);
+      expect(inputs[0].forceCold).toBe(true);
+      expect(inputs[0].projection.blocks.some((block) => block.textContent === "Continue.")).toBe(
+        false,
+      );
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
+      const [a, c, b] = turns.slice(-3);
+      expect([a.role, c.role, b.role]).toEqual(["assistant", "compaction", "assistant"]);
+      expect(a.status).toBe("complete");
+      expect(await rig.repos.blocks.listByTurn(a.id)).toEqual([]);
+      expect(c).toMatchObject({
+        status: "complete",
+        metadata: { summarizer: { path: "cold", segments: 1 } },
+      });
+      expect(result.status).toBe(secondOverflow ? "error" : "complete");
+      if (secondOverflow) {
+        expect(b.error).toContain("context window after compaction");
+        const events = await db
+          .select({ payload: schema.eventJournal.payload })
+          .from(schema.eventJournal);
+        expect(JSON.stringify(events)).toContain("context_window_exceeded");
+      }
+      expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
+      expect(JSON.stringify(requests.at(-1))).toContain("The earlier work is complete.");
+    });
+
+    it.each([
+      "complete",
+      "failed",
+      "cancelled",
+    ] as const)("settles real summary responses on %s, with prediction, message count and debit", async (ending) => {
+      let rig: Awaited<ReturnType<typeof fixture>>;
+      const gateway = scriptedGateway();
+      const original = gateway.stream;
+      gateway.stream = async function* (request) {
+        if (
+          request.messages.some((message) =>
+            message.content.some(
+              (part) => part.type === "text" && part.text.includes("Summarize this conversation"),
+            ),
+          )
+        ) {
+          yield {
+            type: "usage",
+            usage: { inputTokens: 100, outputTokens: 10, cacheReadTokens: 60 },
+          };
+          if (ending === "cancelled") {
+            const current = await rig.runClaim.readRunningTurnId(rig.threadId);
+            if (!current) throw new Error("Missing current summary");
+            await rig.orchestrator.cancel(rig.threadId, current);
+            return;
+          }
+          yield {
+            type: "end",
+            result: {
+              model: "gpt-4.1-mini",
+              provider: "openai",
+              content: [{ type: "text", text: "Story facts and writer preferences." }],
+              toolCalls: [],
+              finishReason: ending === "failed" ? "max_tokens" : "end_turn",
+              usage: { inputTokens: 100, outputTokens: 10, cacheReadTokens: 60 },
+            },
+          };
+          return;
+        }
+        yield* original(request);
+      };
+      rig = await fixture({ gateway });
+      rig.deps.summarizer = createConversationSummarizer({
+        gateway: rig.deps.gateway,
+        agentRevisions: rig.deps.agentRevisions,
+        prefixCacheStateFor: createPrefixCacheStateService({ repos: rig.repos })
+          .prefixCacheStateFor,
+        config: { model: "disabled-cheap-model", maxOutputTokens: 100 },
+      });
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      const terminal = await run.execute();
+      expect(terminal.status).toBe(ending === "failed" ? "error" : ending);
+      const c = await rig.repos.turns.findById(run.executionTurnId);
+      expect(c).toMatchObject({
+        status: ending === "failed" ? "error" : ending,
+        metadata: { summarizer: { path: "cold", segments: 1 } },
+      });
+      const rows = await rig.repos.modelResponses.listByTurn(run.executionTurnId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        inputTokens: 100,
+        outputTokens: 10,
+        requestMessageCount: 2,
+        predictedCacheState: "cold",
+        predictedCacheReason: "summary_transcript",
+      });
+      expect(BigInt(rows[0].millicredits ?? "0")).toBeGreaterThan(0n);
+      const debits = (await db.select().from(schema.creditTransactions)).filter(
+        (row) => row.usageEventId === rows[0].id,
+      );
+      expect(debits).toHaveLength(1);
+    });
 
     it.each([
       false,
@@ -412,7 +663,7 @@ else
             requestMessageCount: 7,
             priceSource: "unknown" as const,
             predictedCacheState: "cold" as const,
-            predictedCacheReason: "no_response" as const,
+            predictedCacheReason: "summary_transcript" as const,
           },
         ];
         return failure
@@ -439,7 +690,7 @@ else
         {
           requestMessageCount: 7,
           predictedCacheState: "cold",
-          predictedCacheReason: "no_response",
+          predictedCacheReason: "summary_transcript",
         },
       ]);
       const rows = await rig.repos.modelResponses.listByTurn(tail[0].id);
@@ -491,23 +742,6 @@ else
         });
         expect(promptBytes(rig.gateway.requests[0])).toBe(promptBytes(rebuilt.generateRequest));
       }
-    });
-
-    it("does not trigger with an unavailable production summarizer even for an explicit threshold", async () => {
-      const summarizer = { ...scriptedSummarizer(), enabled: false };
-      const rig = await fixture({ summarizer });
-      const run = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        tools: [],
-        userText: "Continue.",
-      });
-      expect((await run.execute()).status).toBe("complete");
-      expect(summarizer.calls).toHaveLength(0);
-      expect(
-        (await rig.repos.turns.listByThread(rig.threadId)).some(
-          (turn) => turn.role === "compaction",
-        ),
-      ).toBe(false);
     });
 
     it("lands a failed rebake as a failed C and reply with compaction copy", async () => {
@@ -699,7 +933,7 @@ else
               requestMessageCount: 7,
               priceSource: "unknown",
               predictedCacheState: "cold",
-              predictedCacheReason: "no_response",
+              predictedCacheReason: "summary_transcript",
             },
           ],
         };
@@ -784,7 +1018,7 @@ else
         ],
         toolCalls: [],
         finishReason: "tool_use" as const,
-        usage: { inputTokens: 1000000, outputTokens: 10 },
+        usage: { inputTokens: 10000, outputTokens: 10 },
         model: "gpt-4.1-mini",
         provider: "openai",
       });
@@ -886,7 +1120,7 @@ else
             outputTokens: 10,
             requestMessageCount: 7,
             predictedCacheState: "cold",
-            predictedCacheReason: "no_response",
+            predictedCacheReason: "summary_transcript",
           },
         ],
       }));
@@ -938,7 +1172,7 @@ else
             outputTokens: 10,
             requestMessageCount: 7,
             predictedCacheState: "cold",
-            predictedCacheReason: "no_response",
+            predictedCacheReason: "summary_transcript",
           },
         ],
       }));
@@ -1007,7 +1241,7 @@ else
               requestMessageCount: 7,
               priceSource: "unknown",
               predictedCacheState: "cold",
-              predictedCacheReason: "no_response",
+              predictedCacheReason: "summary_transcript",
             },
           ],
         };

@@ -1,3 +1,4 @@
+import { MODEL_REGISTRY } from "../gateway/index.js";
 /** Pure fixtures for compaction classification, triggering, planning, and projection. */
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -28,6 +29,7 @@ import {
   IMAGE_PART_TOKEN_ESTIMATE,
   planCompaction,
   projectActiveHistory,
+  projectCompactedHistory,
   resolveCompactionTrigger,
 } from "./compaction/index.js";
 import { buildContext } from "./context-builder.js";
@@ -283,6 +285,21 @@ describe("classifyHistoryItem", () => {
 });
 
 describe("resolveCompactionTrigger", () => {
+  it("defaults every registered flat-priced model to its usable window or ceiling", () => {
+    for (const provider of MODEL_REGISTRY.providers) {
+      for (const model of provider.models) {
+        expect(resolveCompactionTrigger(model)).toEqual({
+          thresholdTokens: Math.min(
+            Math.floor(0.9 * (model.contextWindow - model.maxOutputTokens)),
+            FLOW_ABSOLUTE_CEILING,
+          ),
+          usableWindowTokens: model.contextWindow - model.maxOutputTokens,
+          source: "config_default",
+        });
+      }
+    }
+  });
+
   it("normalizes explicit token and percent triggers to the usable window", () => {
     expect(
       resolveCompactionTrigger({
@@ -304,13 +321,26 @@ describe("resolveCompactionTrigger", () => {
     ).toEqual({ thresholdTokens: 40_000, usableWindowTokens: 80_000, source: "agent_percent" });
   });
 
-  it("keeps the config default off until C4d", () => {
+  it("defaults flat-priced models to their usable window", () => {
     expect(
       resolveCompactionTrigger({ contextWindow: 100_000, maxOutputTokens: 10_000 }),
     ).toMatchObject({
-      thresholdTokens: null,
-      source: "off",
+      thresholdTokens: 81_000,
+      source: "config_default",
     });
+  });
+
+  it("defaults to the pricing tier, with usable-window and ceiling clamps", () => {
+    for (const [inputTierTokens, contextWindow, expected] of [
+      [60_000, 100_000, 54_000],
+      [95_000, 100_000, 81_000],
+      [800_000, 1_000_000, 400_000],
+    ]) {
+      expect(
+        resolveCompactionTrigger({ inputTierTokens, contextWindow, maxOutputTokens: 10_000 })
+          .thresholdTokens,
+      ).toBe(expected);
+    }
   });
 
   it("clamps at the usable window, the absolute ceiling, and zero", () => {
@@ -1038,4 +1068,37 @@ describe("projectActiveHistory", () => {
         .success,
     ).toBe(false);
   });
+});
+
+it("summarizes only the cut blocks plus the prior summary, not the lifted pin or tail", () => {
+  const prior = turn("prior", 0, "user", {
+    metadata: { kind: "system_update", section: "compaction_summary" },
+  });
+  const pin = turn("pin", 1, "user");
+  const assistant = turn("reply", 2, "assistant");
+  const tail = turn("tail", 3, "assistant");
+  const blocks = [
+    block("prior-text", prior.id, 0, "text", "Earlier facts", "Earlier facts"),
+    block("pin-text", pin.id, 0, "text", "Latest request", "Latest request"),
+    block("cut", assistant.id, 0, "text", "Done", "Done"),
+    block("retained", assistant.id, 1, "text", "Recent", "Recent"),
+    block("tail-text", tail.id, 0, "text", "Tail", "Tail"),
+  ];
+  const plan = {
+    outcome: "planned" as const,
+    pinnedRequest: pin,
+    compactedThrough: { turnId: assistant.id, blockSequence: 0 },
+    retainedSuffix: [
+      { turn: pin, blocks: [blocks[1]] },
+      { turn: assistant, blocks: [blocks[3]] },
+      { turn: tail, blocks: [blocks[4]] },
+    ],
+    minimalTailFits: true,
+    tailBudgetTokens: 100,
+    minimalTailTokens: 100,
+    retainedSuffixTokens: 100,
+  };
+  const projected = projectCompactedHistory({ turns: [prior, pin, assistant, tail], blocks }, plan);
+  expect(projected.turns.map((turn) => turn.id)).toEqual(["prior", "reply"]);
+  expect(projected.blocks.map((block) => block.id)).toEqual(["prior-text", "cut"]);
 });

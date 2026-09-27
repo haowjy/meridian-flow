@@ -22,6 +22,7 @@ export {
   CompactionBlockContentCodec,
   CompactionPropsCodec,
   projectActiveHistory,
+  projectCompactedHistory,
 } from "./project.js";
 export type {
   CompactionTrigger,

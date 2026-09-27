@@ -10,6 +10,7 @@ import {
   isSystemUpdateMetadata,
 } from "../../../threads/index.js";
 import { orderTurnsByPosition } from "../../../threads/order-turns.js";
+import type { CompactionPlan } from "./plan.js";
 import { type CompactionCut, retainedTail } from "./tail.js";
 
 /** The durable model-visible summary block written by the compaction protocol. */
@@ -66,7 +67,7 @@ function summaryTurn(
   const turnId = `${compaction.id}:summary`;
   const textContent = [
     "<system_update>",
-    `Conversation summary. Earlier turns of this conversation (${threadRef}) were compacted into the summary below. Read them with thread_history if you need detail.`,
+    `Conversation summary. Earlier turns of this conversation (${threadRef}) were compacted into the summary below.`,
     "",
     summary,
     "</system_update>",
@@ -200,4 +201,22 @@ export function projectActiveHistory(
   });
 
   return { turns: projectedTurns, blocks: projectedBlocks };
+}
+
+/** The cold summary replaces only the cut, never the pin or the verbatim retained tail. */
+export function projectCompactedHistory(
+  projection: ProjectedActiveHistory,
+  plan: Extract<CompactionPlan, { outcome: "planned" }>,
+): ProjectedActiveHistory {
+  const retained = new Map(
+    plan.retainedSuffix.map(({ turn, blocks }) => [
+      turn.id,
+      new Set(blocks.map((block) => block.sequence)),
+    ]),
+  );
+  const blocks = projection.blocks.filter(
+    (block) => !retained.get(block.turnId)?.has(block.sequence),
+  );
+  const included = new Set(blocks.map((block) => block.turnId));
+  return { turns: projection.turns.filter((turn) => included.has(turn.id)), blocks };
 }

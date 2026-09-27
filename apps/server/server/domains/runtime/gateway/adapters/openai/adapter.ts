@@ -60,7 +60,10 @@ export function createOpenAIResponsesAdapter(config: ProviderConfig): ProviderAd
         const stream = await client.responses.create(params, { signal: request.signal });
 
         for await (const event of stream) {
-          yield* eventsFromResponseStreamEvent(event, acc);
+          for (const mapped of eventsFromResponseStreamEvent(event, acc)) {
+            yield mapped;
+            if (mapped.type === "error") return;
+          }
         }
 
         const result = buildGenerateResult(acc);

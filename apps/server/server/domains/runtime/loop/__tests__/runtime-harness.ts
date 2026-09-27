@@ -29,7 +29,6 @@ import {
   createInMemoryRuntimeDelivery,
   createInMemoryThreadLock,
 } from "../../adapters/in-memory/loop-ports.js";
-import { unavailableConversationSummarizer } from "../../adapters/unavailable-conversation-summarizer.js";
 import { createWriterTurnProducer } from "../../admission/writer-turn-producer.js";
 import type { Gateway, StreamEvent } from "../../gateway/index.js";
 import { createInMemoryModelRequestDebugStore } from "../../model-request-debug/index.js";
@@ -42,6 +41,7 @@ import { createOrchestrator } from "../orchestrator.js";
 import { readPendingInbox } from "../pending-inbox.js";
 import type { PreparedRun } from "../run-turn-port.js";
 import { createTestAgentBinding, createTestNoticePort } from "./runtime-fixtures.js";
+import { scriptedSummarizer } from "./scripted-summarizer.js";
 import { createInertGateway } from "./test-gateway.js";
 
 function noopChildRunCoordinator(): ChildRunCoordinator {
@@ -121,7 +121,7 @@ export function createRuntimeHarness(
   };
   const deps: OrchestratorDeps & { creditLedger: CreditLedger } = {
     creditLedger,
-    summarizer: unavailableConversationSummarizer,
+    summarizer: scriptedSummarizer(),
     gateway,
     toolExecutor: overrides.toolExecutor ?? createToolExecutor(toolRegistry),
     referenceReader: {

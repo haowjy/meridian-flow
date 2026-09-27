@@ -565,8 +565,53 @@ the Yjs gateway and flushing observability. Still-running lanes emit
 `loop/request-preparation.ts` measures the assembled request and plans against raw
 history. The token baseline comes from the cache service's reusable-prefix
 selection with TTL ignored; missing/zero usage estimates the whole request.
-The production summarizer advertises `enabled: false` until C4d, so even explicit
-retained Agent thresholds cannot reach the unavailable adapter.
+Without an explicit Agent limit, the trigger is floor(90% × min(input pricing
+tier ?? usable window, usable window)), capped at 400,000 tokens. Explicit Agent
+token and percentage limits are not scaled. Mars defines no off switch.
+
+| Models | Default trigger tokens |
+|---|---:|
+| Sonnet 4 (direct and OpenRouter) | 165,254 |
+| Sonnet 4.6, GPT-4.1, GPT-4.1 mini, Gemini 2.5 Flash, DeepSeek V4 Flash | 400,000 |
+| Haiku 4.5 | 122,400 |
+| Haiku 3.5 | 172,627 |
+| GPT-4o (direct and OpenRouter), GPT-4o mini | 100,454 |
+
+`summary/conversation-summarizer.ts` implements the port in production. Warm
+sends the request in hand with an appended system-origin instruction and a lower
+output cap (summary reserve plus thinking budget), never increases its cap or
+changes its other fields. Any unusable warm response or provider failure runs
+cold once; Stop does not. Both attempts return their rows for settlement.
+Cold uses `COMPACTION_SUMMARIZER_MODEL` (default DeepSeek Flash), or the retained
+thread model when that provider is disabled. Its prediction is always
+`cold/summary_transcript`, not the thread prefix's prediction.
+
+Cold receives only the cut blocks and prior summary, excluding the retained pin
+and tail. It renders model-visible custom content, omits opaque reasoning and
+thinking, and labels prior context. Before any cold call, all turns are measured.
+Oversized turns replace re-readable tool bodies with a URI and short excerpt,
+then split at block boundaries if needed. An oversized indivisible block fails
+before any cold call. Rolling segments carry the running summary forward and
+recheck each assembled request against the usable window. Prompts preserve exact
+story terminology, quoted writer wording and per-document done/pending edits;
+they forbid invented facts.
+
+Output-limit failure uses the provider finish reason, not an input-token estimate;
+the successor fit check still measures the full assembled request.
+Every attempted call returns its row, prediction and message count, even when a
+later segment fails or Stop aborts it. Settlement records path/segment metadata
+and charges those rows only in the transaction ending C.
+
+The gateway normalizes provider context-window failures to `context_overflow`.
+The loop completes A at its last persisted tool group (empty is legal), then
+prepares a forced `compact` decision with a cold path and an independent usable
+window fit limit from the resolved usable window. It retries generation once per
+reply (not once per tool iteration); a split adopting new input renews that
+budget, while the compaction successor preserves it. A second overflow fails with
+`context_window_exceeded` and acknowledges the receipt rather than re-sweeping
+the same request. Metered output from an overflow is billed without retaining
+the incomplete response's blocks. The WebSocket live-state codec accepts
+`compacting` so a client can join while C is pending.
 
 Compaction is two delivery transitions around an unlocked `ConversationSummarizer`
 call. The first reserves pending C instead of an assistant. `compaction-phase.ts`

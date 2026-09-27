@@ -8,6 +8,8 @@
 ## [Unreleased]
 
 ### Added
+- Summarize long chats with cached requests or rolling cheap-model summaries. Keep story facts and writer preferences.
+- Default compaction to the model's usable window, pricing tier, or 400,000-token ceiling.
 - Stop a running compaction and deliver messages queued during its summary afterward.
 - Compact long conversations through reserved summary turns and atomic successor replies.
 - Recover pending compaction placeholders only after acquiring the session claim; child reports terminate on the orphaned placeholder and late inbox messages remain redeliverable.
@@ -16,6 +18,15 @@
 
 ### Fixed
 - Keep pending-placeholder roles and predicates in contracts, SQL in the database package, and interruption copy in the threads domain.
+- Retry failed warm summaries cold once. Bound summary output without changing cached thinking.
+- Preflight cold transcripts before paid calls. Excerpt large document reads and split large turns at blocks.
+- Summarize only compacted history. Preserve exact story terms and completed versus pending edits.
+- Label cold summarizer calls independently of the chat cache. Correct DeepSeek Flash's context window to 1M.
+- Leave 10% headroom in default compaction triggers. Recover older Claude context-limit errors.
+- Keep complete summaries without confusing estimated input size with provider output tokens. Skip opaque reasoning in summaries.
+- Propagate context-window errors when provider fallback is enabled.
+- Compact cold and retry once after a provider context-window failure. Fail oversized retries without redelivery.
+- Allow clients to join chats while compaction is running.
 - Failed compaction lands a failed reply and retires its messages instead of paying for repeated summaries.
 - Stop follows the same run across a committed reply split, including remote cancellation. Internal aborts stay errors.
 - Leave a compaction pending for recovery when its live failure transaction cannot commit.

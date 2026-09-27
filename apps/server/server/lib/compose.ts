@@ -107,6 +107,7 @@ import {
   createChildRunCoordinator,
   createChildRunDriver,
   createContextImageAssetPort,
+  createConversationSummarizer,
   createDrizzleAdmissionRecords,
   createDrizzleRunClaim,
   createDrizzleRuntimeDelivery,
@@ -120,6 +121,7 @@ import {
   createInstrumentedGateway,
   createOrchestrator,
   createOrphanReportRepair,
+  createPrefixCacheStateService,
   createReportPublisher,
   createRunStarter,
   createSkillToolRegistrations,
@@ -142,7 +144,6 @@ import {
   type ToolRegistry,
   type TurnRunner,
   type UserTurnAdmission,
-  unavailableConversationSummarizer,
   type WorkContextNotices,
   type WorkContextReader,
 } from "../domains/runtime/index.js";
@@ -272,6 +273,7 @@ function stripeReady(env: NodeJS.ProcessEnv): boolean {
 export type ProductionAppPorts = {
   db: Database;
   gateway: Gateway;
+  summarizerConfig: { model: string; maxOutputTokens: number };
   threadRepos: InternalThreadRepositories;
   journalReader: EventJournalReader;
   journalWriter: EventJournalWriter;
@@ -511,6 +513,14 @@ export async function createProductionAppPorts(input: {
         webhookSecret: environment.STRIPE_WEBHOOK_SECRET as string,
       })
     : null;
+  const summarizerModel = environment.COMPACTION_SUMMARIZER_MODEL ?? "deepseek-v4-flash";
+  if (
+    !MODEL_REGISTRY.providers.some((provider) =>
+      provider.models.some((model) => model.id === summarizerModel),
+    )
+  ) {
+    throw new Error(`Unknown compaction summarizer model: ${summarizerModel}`);
+  }
   const getOrCreateStripeCustomer = createStripeCustomerProvisioner({ db, stripeGateway });
   const billingDomain = createBillingDomain({
     ledger: creditLedger,
@@ -523,6 +533,10 @@ export async function createProductionAppPorts(input: {
     db,
     runClaim,
     gateway,
+    summarizerConfig: {
+      model: summarizerModel,
+      maxOutputTokens: 4096,
+    },
     threadRepos,
     journalReader,
     journalWriter,
@@ -792,7 +806,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
   });
   const orchestrator = createOrchestrator({
-    summarizer: unavailableConversationSummarizer,
+    summarizer: createConversationSummarizer({
+      gateway: ports.gateway,
+      agentRevisions: ports.agentRevisions,
+      prefixCacheStateFor: createPrefixCacheStateService({ repos: ports.threadRepos })
+        .prefixCacheStateFor,
+      config: ports.summarizerConfig,
+    }),
     headSeq: (id) => threadEventHub.headSeq(id),
     onRunStarted: refreshSubagentActivity,
     onRunSettled(threadId) {

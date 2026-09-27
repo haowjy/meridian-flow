@@ -78,70 +78,13 @@ export function buildContext(input: BuildContextInput): {
     list.push(block);
     blocksByTurn.set(key, list);
   }
-  for (const list of blocksByTurn.values()) {
-    list.sort((a, b) => a.sequence - b.sequence);
-  }
 
   for (const turn of orderTurnsByPosition(input.turns)) {
     const turnBlocks = blocksByTurn.get(turn.id as string) ?? [];
-    if (turn.role === "user") {
-      const parts = userTurnContentParts(turnBlocks);
-      if (parts.length > 0) {
-        messages.push({ role: "user", content: parts });
-      }
-      continue;
-    }
-    if (turn.role === "system") {
-      const textParts = turnBlocks
-        .flatMap((b) =>
-          b.blockType === "text" && b.textContent
-            ? [b.textContent]
-            : b.blockType === "custom"
-              ? [componentModelText(b.content as ComponentBlockContent)].filter(
-                  (v): v is string => !!v,
-                )
-              : [],
-        )
-        .join("\n");
-      if (textParts) {
-        const update =
-          textParts.startsWith("<system_update>") && textParts.endsWith("</system_update>")
-            ? textParts
-            : `<system_update>\n${textParts}\n</system_update>`;
-        messages.push({ role: "user", content: [text(update)] });
-      }
-      continue;
-    }
-
-    if (turn.role === "assistant") {
-      const assistantParts: ContentPart[] = [];
-      for (const block of turnBlocks) {
-        if (block.blockType === "tool_result") {
-          if (assistantParts.length > 0) {
-            const message = assistant(assistantParts.slice());
-            messages.push(message);
-            sourceTurnStatusByMessage.set(message, turn.status);
-            assistantParts.length = 0;
-          }
-          const content = block.content as {
-            toolCallId?: string;
-            output?: JsonValue;
-            isError?: boolean;
-          } | null;
-          const toolCallId = content?.toolCallId ?? "";
-          messages.push(
-            toolResult(toolCallId, content?.output ?? block.textContent ?? null, content?.isError),
-          );
-          continue;
-        }
-        const part = blockToContentPart(block);
-        if (part) assistantParts.push(part);
-      }
-      if (assistantParts.length > 0) {
-        const message = assistant(assistantParts.slice());
-        messages.push(message);
-        sourceTurnStatusByMessage.set(message, turn.status);
-      }
+    const rendered = turnContextMessages(turn, turnBlocks);
+    for (const message of rendered) {
+      messages.push(message);
+      if (message.role === "assistant") sourceTurnStatusByMessage.set(message, turn.status);
     }
   }
 
@@ -151,6 +94,73 @@ export function buildContext(input: BuildContextInput): {
     ),
     tools: input.tools?.length ? input.tools : undefined,
   };
+}
+
+/** One model-visible turn, shared by live requests and cold summary transcripts. */
+export function turnContextMessages(turn: Turn, blocks: readonly Block[]): Message[] {
+  const messages: Message[] = [];
+  const turnBlocks = blocks
+    .filter((block) => !block.pruned)
+    .sort((a, b) => a.sequence - b.sequence);
+  if (turn.role === "user") {
+    const parts = userTurnContentParts(turnBlocks);
+    if (parts.length > 0) {
+      messages.push({ role: "user", content: parts });
+    }
+    return messages;
+  }
+  if (turn.role === "system") {
+    const textParts = turnBlocks
+      .flatMap((b) =>
+        b.blockType === "text" && b.textContent
+          ? [b.textContent]
+          : b.blockType === "custom"
+            ? [componentModelText(b.content as ComponentBlockContent)].filter(
+                (v): v is string => !!v,
+              )
+            : [],
+      )
+      .join("\n");
+    if (textParts) {
+      const update =
+        textParts.startsWith("<system_update>") && textParts.endsWith("</system_update>")
+          ? textParts
+          : `<system_update>\n${textParts}\n</system_update>`;
+      messages.push({ role: "user", content: [text(update)] });
+    }
+    return messages;
+  }
+
+  if (turn.role === "assistant") {
+    const assistantParts: ContentPart[] = [];
+    for (const block of turnBlocks) {
+      if (block.blockType === "tool_result") {
+        if (assistantParts.length > 0) {
+          const message = assistant(assistantParts.slice());
+          messages.push(message);
+          assistantParts.length = 0;
+        }
+        const content = block.content as {
+          toolCallId?: string;
+          output?: JsonValue;
+          isError?: boolean;
+        } | null;
+        const toolCallId = content?.toolCallId ?? "";
+        messages.push(
+          toolResult(toolCallId, content?.output ?? block.textContent ?? null, content?.isError),
+        );
+        continue;
+      }
+      const part = blockToContentPart(block);
+      if (part) assistantParts.push(part);
+    }
+    if (assistantParts.length > 0) {
+      const message = assistant(assistantParts.slice());
+      messages.push(message);
+    }
+  }
+
+  return messages;
 }
 
 function reportPersistedContractFailures(input: BuildContextInput): void {

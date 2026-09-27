@@ -107,7 +107,12 @@ import {
 } from "./activated-skills.js";
 import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import { type CompactionDecision, CompactionPreparationError } from "./compaction/decision.js";
+import {
+  type CompactionDecision,
+  CompactionPreparationError,
+  type ForcedCompactionDecision,
+} from "./compaction/decision.js";
+import { FLOW_ABSOLUTE_CEILING } from "./compaction/index.js";
 import { executeCompaction } from "./compaction-phase.js";
 import { failCompactionSuccessor } from "./compaction-successor.js";
 import type { TerminalCause } from "./execution-finalizer.js";
@@ -1445,6 +1450,7 @@ async function executeLoop(
   let currentTurn: Turn = reservedTurn;
   let preparedContext: AssembledNextTurnContext | undefined = initialContext;
   let pendingSummaryResponses: import("../ports/conversation-summarizer.js").SummaryResponse[] = [];
+  let pendingSummary: Parameters<typeof settleSummaryResponses>[0]["summary"];
   let responseScope: ReturnType<typeof createResponseScope> | undefined;
   const allTurns: Turn[] = [...initialTurns, reservedTurn];
   const allBlocks: Block[] = [
@@ -1453,8 +1459,10 @@ async function executeLoop(
   ];
   let queuedDrain: Awaited<ReturnType<typeof drainInbox>> | undefined;
   let endTurnRequested = false;
+  // One emergency retry per reply, even across tool iterations and compaction splits.
+  let retriedContextOverflow = false;
 
-  function boundaryInput(): DeliveryBoundary {
+  function boundaryInput(forcedDecision?: ForcedCompactionDecision): DeliveryBoundary {
     return {
       lease: input.lease,
       currentTurn: currentTurn,
@@ -1494,7 +1502,12 @@ async function executeLoop(
         // Run-start preparation already froze the first request before its
         // assistant turn was reserved. Do not resolve its assets a second
         // time before that request is sent.
-        if (preparedContext && drain.turns.length === 0 && drain.blocks.length === 0) {
+        if (
+          !forcedDecision &&
+          preparedContext &&
+          drain.turns.length === 0 &&
+          drain.blocks.length === 0
+        ) {
           return { events: [], turns: [], blocks: [], requiresSplit: false };
         }
         const latestUserTurn =
@@ -1511,6 +1524,7 @@ async function executeLoop(
           baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
           readReferences: false,
           signal: input.signal,
+          forcedDecision,
         });
         thread = prepared.assembled.thread;
         preparedContext = prepared.assembled;
@@ -1531,6 +1545,17 @@ async function executeLoop(
       const index = allTurns.findIndex((turn) => turn.id === result.completed?.id);
       allTurns[index] = result.completed;
     }
+    // A genuinely new input starts a new reply budget. Rebased context rows and
+    // the compaction successor itself do not grant another emergency retry.
+    if (
+      result.split &&
+      result.drain.turns.some(
+        (turn) =>
+          result.drain.ackIds.includes(turn.id) &&
+          !allTurns.some((existing) => existing.id === turn.id),
+      )
+    )
+      retriedContextOverflow = false;
     allTurns.push(...result.drain.turns);
     for (const block of result.drain.blocks) {
       const index = allBlocks.findIndex((existing) => existing.id === block.id);
@@ -1566,12 +1591,21 @@ async function executeLoop(
       boundary: boundaryInput(),
       decision,
       settleResponses: (rows) =>
-        settleSummaryResponses({ deps, thread, rows, accounting: turnAccounting, treeBudget }),
-      recordResponses: (rows) => {
+        settleSummaryResponses({
+          deps,
+          thread,
+          rows,
+          summary: pendingSummary,
+          accounting: turnAccounting,
+          treeBudget,
+        }),
+      recordResponses: (rows, summarizer) => {
         pendingSummaryResponses = rows;
+        pendingSummary = { turnId: currentTurn.id, summarizer };
       },
     });
     pendingSummaryResponses = [];
+    pendingSummary = undefined;
     preparedContext = result.preparedContext;
     if (result.summaryBlock) allBlocks.push(localBlockFromEvent(result.summaryBlock));
     return acceptBoundary(result.successor);
@@ -1593,6 +1627,7 @@ async function executeLoop(
           deps,
           thread,
           rows: pendingSummaryResponses,
+          summary: pendingSummary,
           accounting: turnAccounting,
           treeBudget,
         }),
@@ -1706,6 +1741,7 @@ async function executeLoop(
         runInput: input,
         gatewaySignal: gatewayAbort.signal,
       });
+      const usableWindowTokens = preparedContext.compactionUsableWindowTokens;
       preparedContext = undefined;
       thread = built.thread;
       const request = built.request;
@@ -1845,6 +1881,50 @@ async function executeLoop(
         if (event.type === "error") {
           if (cancelRequested) {
             break;
+          }
+          if (event.code === "context_overflow") {
+            // Partial output from the rejected request is not a completed tool group.
+            // Keep its paid usage, but only prior completed responses remain in A.
+            if (event.result) {
+              const paid = await persistModelResponse({
+                deps,
+                runInput: input,
+                thread,
+                currentTurn,
+                result: { ...event.result, content: [], toolCalls: [], finishReason: "error" },
+                requestMessageCount: request.messages.length,
+                predictedCacheState,
+                treeBudget,
+                turnAccounting,
+                blockSeq: 0,
+                inboxAckIds: [],
+              });
+              currentTurn = paid.updatedTurn;
+            }
+            if (retriedContextOverflow) {
+              return exitRun(false, {
+                kind: "failed",
+                reason: "context_window_exceeded",
+                error: writerFacingPreparationError(
+                  new CompactionPreparationError("context_window_exceeded"),
+                ),
+                acknowledgeInbox: true,
+              });
+            }
+            retriedContextOverflow = true;
+            if (usableWindowTokens === null)
+              throw new Error("Context overflow requires a resolved model");
+            queuedDrain = await acceptBoundary(
+              await deps.delivery.splitAndContinue(
+                boundaryInput({
+                  kind: "compact",
+                  trigger: "auto",
+                  path: "cold",
+                  fitLimitTokens: Math.min(usableWindowTokens, FLOW_ABSOLUTE_CEILING),
+                }),
+              ),
+            );
+            return true;
           }
           return exitRun(
             false,
@@ -2088,6 +2168,7 @@ async function executeLoop(
               deps,
               thread,
               rows: pendingSummaryResponses,
+              summary: pendingSummary,
               accounting: turnAccounting,
               treeBudget,
             }),
@@ -2102,6 +2183,7 @@ async function executeLoop(
         throw failure;
       }
       pendingSummaryResponses = [];
+      pendingSummary = undefined;
       await acceptBoundary(failed);
     } else if (
       err instanceof RequestPreparationError ||

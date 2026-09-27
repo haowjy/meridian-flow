@@ -66,7 +66,10 @@ export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter 
         const stream = await client.messages.create(params, { signal: request.signal });
 
         for await (const event of stream) {
-          yield* eventsFromAnthropicStreamEvent(event, acc);
+          for (const mapped of eventsFromAnthropicStreamEvent(event, acc)) {
+            yield mapped;
+            if (mapped.type === "error") return;
+          }
         }
 
         const result = buildGenerateResult(acc);

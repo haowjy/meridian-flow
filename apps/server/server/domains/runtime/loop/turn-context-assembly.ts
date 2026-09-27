@@ -90,6 +90,7 @@ export interface AssembledNextTurnContext {
   resolvedModel: ModelInfo | null;
   baked: boolean;
   compactionTriggerTokens: number | null;
+  compactionUsableWindowTokens: number | null;
   /** First-attempt prompt freeze staged for the delivery commit, if still needed. */
   pendingBake?: PromptBakeContent;
   generateRequest: Pick<
@@ -252,6 +253,14 @@ export async function assembleNextTurnContext(
     async (turnId) => input.turns.find((turn) => turn.id === turnId) ?? null,
   );
 
+  const compactionTrigger = resolvedModel
+    ? resolveCompactionTrigger({
+        ...agentContext.compaction,
+        contextWindow: resolvedModel.contextWindow,
+        inputTierTokens: resolvedModel.inputTierTokens,
+        maxOutputTokens: resolvedModel.maxOutputTokens,
+      })
+    : null;
   return {
     thread,
     agentSlug: agentContext.agentSlug,
@@ -261,13 +270,8 @@ export async function assembleNextTurnContext(
     gatewayParams,
     resolvedModel: resolvedModel ?? null,
     baked,
-    compactionTriggerTokens: resolvedModel
-      ? resolveCompactionTrigger({
-          ...agentContext.compaction,
-          contextWindow: resolvedModel.contextWindow,
-          maxOutputTokens: resolvedModel.maxOutputTokens,
-        }).thresholdTokens
-      : null,
+    compactionTriggerTokens: compactionTrigger?.thresholdTokens ?? null,
+    compactionUsableWindowTokens: compactionTrigger?.usableWindowTokens ?? null,
     ...(pendingBake ? { pendingBake } : {}),
     generateRequest: {
       messages,

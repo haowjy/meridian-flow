@@ -22,7 +22,6 @@ export {
   type InMemoryRunClaimOptions,
   type InMemoryRunStarter,
 } from "./adapters/in-memory/loop-ports.js";
-export { unavailableConversationSummarizer } from "./adapters/unavailable-conversation-summarizer.js";
 export {
   type AdmissionPersistencePort,
   createDrizzleAdmissionRecords,
@@ -164,4 +163,5 @@ export {
 } from "./spawn/child-run-driver.js";
 export { createOrphanReportRepair } from "./spawn/orphan-report-repair.js";
 export { createReportPublisher, type ReportPublisher } from "./spawn/report-publisher.js";
+export { createConversationSummarizer } from "./summary/conversation-summarizer.js";
 export * from "./tools/index.js";

@@ -110,7 +110,7 @@ const threadStatusSchema: z.ZodType<import("../threads/index.js").ThreadStatus> 
   z.object({ kind: z.literal("asleep") }),
   z.object({
     kind: z.literal("awake"),
-    phase: z.enum(["generating", "waiting"]),
+    phase: z.enum(["generating", "waiting", "compacting"]),
     cancelRequested: z.boolean(),
   }),
 ]);
