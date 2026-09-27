@@ -99,6 +99,13 @@ function routeWork(resolution: AddressResolution<Work>): RouteWorkResolution {
   return { status: "none" };
 }
 
+function routeWorkForDestination(
+  destination: ProjectDestination,
+  resolution: AddressResolution<Work>,
+): RouteWorkResolution {
+  return destination.kind === "works-new" ? { status: "new" } : routeWork(resolution);
+}
+
 function resolveWorkId(
   workId: string,
   catalog: AddressCatalog<Work>,
@@ -118,7 +125,12 @@ function resolveWorkId(
 }
 
 function screen(destination: ProjectDestination): ScreenKey {
-  if (destination.kind === "work" || destination.kind === "work-id" || destination.kind === "works")
+  if (
+    destination.kind === "work" ||
+    destination.kind === "work-id" ||
+    destination.kind === "works" ||
+    destination.kind === "works-new"
+  )
     return "work";
   if (destination.kind === "chat" || destination.kind === "chat-index") return "chat";
   return "context";
@@ -685,7 +697,7 @@ export function ReadableProjectRoute({
             chatDisplay={chat.display}
             entryHydration={entryHydration}
             addressOwnsDocumentAdmission
-            routeWork={routeWork(work)}
+            routeWork={routeWorkForDestination(destination, work)}
             editorRouteWork={routeWork(editorWork)}
             routeLocationKey={location.state.__TSR_key ?? location.href}
             routeIssues={{ main: mainIssue, editor: editorIssue }}

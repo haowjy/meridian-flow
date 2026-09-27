@@ -43,6 +43,19 @@ describe("readable project addresses", () => {
     expect(confirmedWorkAddress(parsed.address, "another-id", "fight-scene")).toBe(parsed.address);
   });
 
+  it("parses the Work creation destination without treating new as an id", () => {
+    const projectId = "550e8400-e29b-41d4-a716-446655440000";
+    const href = `/p/${projectId}/works/new`;
+    expect(parseProjectAddress(href)).toMatchObject({
+      kind: "valid",
+      address: { destination: { kind: "works-new" } },
+      href,
+    });
+    const parsed = parseProjectAddress(href);
+    if (parsed.kind !== "valid") throw new Error(parsed.reason);
+    expect(projectAddressHref(parsed.address)).toBe(href);
+  });
+
   it.each([
     "/p/550e8400-e29b-41d4-a716-446655440000/chat/550e8400-e29b-41d4-a716-446655440000",
     "/p/550e8400-e29b-41d4-a716-446655440000/works",

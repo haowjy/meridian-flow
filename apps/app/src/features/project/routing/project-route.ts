@@ -30,6 +30,7 @@ export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): 
 }
 
 export type RouteWorkResolution =
+  | { status: "new" }
   | { status: "unresolved"; reason: "loading" | "error" | "unavailable"; slug: string }
   | { status: "none" }
   | { status: "present"; workId: ParsedRequestId; work: Work };

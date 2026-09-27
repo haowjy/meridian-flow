@@ -15,7 +15,7 @@ export type AddressSelection =
   | { kind: "malformed"; value: string };
 
 export type ProjectDestination =
-  | { kind: "chat-index" | "works" | "editor" }
+  | { kind: "chat-index" | "works" | "works-new" | "editor" }
   | { kind: "chat"; chatId: string }
   | { kind: "work"; workSlug: string }
   | { kind: "work-id"; workId: ParsedRequestId }
@@ -67,9 +67,11 @@ function parseDestination(parts: string[]): ProjectDestination | null {
   if (parts.length === 0) return { kind: "chat-index" };
   if (parts.length === 1) {
     if (parts[0] === "works" || parts[0] === "editor") return { kind: parts[0] };
+    if (parts[0] === "works-new") return { kind: "works-new" };
     if (parts[0] === "browse") return { kind: "browse", scheme: null, path: "", workSlug: null };
   }
   if (parts.length === 2 && parts[0] === "works") {
+    if (parts[1] === "new") return { kind: "works-new" };
     const workId = parseRequestId(parts[1]);
     return workId ? { kind: "work-id", workId } : null;
   }
@@ -190,6 +192,9 @@ export function projectAddressHref(address: ProjectAddress): string {
     case "works":
     case "editor":
       parts.push(d.kind);
+      break;
+    case "works-new":
+      parts.push("works", "new");
       break;
     case "browse":
     case "document":

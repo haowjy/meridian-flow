@@ -11,7 +11,10 @@ import { useWorkMutations, useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import { CreationPage } from "@/features/creation/CreationPage";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
 import { useCreateWork, useWorkCreationRecords, useWorkCreationState } from "./useWorkCreation";
 import { WorkCard } from "./WorkCard";
@@ -30,6 +33,7 @@ export type WorkScreenProps = {
 };
 
 export function WorkScreen(props: WorkScreenProps) {
+  const createWork = useCreateWork(props.projectId, props.routeCommands);
   const catalog = useWorks(props.projectId);
   const routeWorkId =
     props.routeWork.status === "present"
@@ -38,6 +42,11 @@ export function WorkScreen(props: WorkScreenProps) {
         ? parseRequestId(props.routeWork.slug)
         : null;
   const creation = useWorkCreationState(props.projectId, routeWorkId, props.routeCommands);
+  if (props.routeWork.status === "new") {
+    return (
+      <NewWorkPage projectId={props.projectId} onCreate={(request) => createWork.create(request)} />
+    );
+  }
   if (
     creation.status !== "none" &&
     creation.status !== "confirmed" &&
@@ -88,9 +97,8 @@ export function WorkScreen(props: WorkScreenProps) {
 export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenProps) {
   const { works, isError, isFetching, refetch } = useWorks(projectId);
   const mutation = useWorkMutations(projectId);
-  const createWork = useCreateWork(projectId, routeCommands);
   const creations = useWorkCreationRecords(projectId);
-  const [dialog, setDialog] = useState<"new" | Work | null>(null);
+  const [dialog, setDialog] = useState<Work | null>(null);
   const [activeCommand, setActiveCommand] = useState<Exclude<
     WorkDialogAction["type"],
     "create"
@@ -159,7 +167,7 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
   const openWork = (work: Work) => {
     openWorkId(work.id);
   };
-  const openDialog = (work: "new" | Work) => {
+  const openDialog = (work: Work) => {
     setActiveCommand(null);
     setDialog(work);
   };
@@ -180,12 +188,14 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
           </h1>
           <Button
             ref={newWorkButton}
+            asChild
             size="sm"
             className="[@media(pointer:coarse)]:min-h-11"
-            onClick={() => openDialog("new")}
           >
-            <Plus className="size-4" />
-            <Trans>New Work</Trans>
+            <Link to="/p/$projectId/$" params={{ projectId, _splat: "works/new" }}>
+              <Plus className="size-4" />
+              <Trans>New Work</Trans>
+            </Link>
           </Button>
         </div>
         {unfinishedCreations.length ? (
@@ -344,11 +354,7 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
               setDialog(null);
             }}
             onAction={(action) => {
-              if (action.type === "create") {
-                createWork.create(action.data);
-                setDialog(null);
-                return;
-              }
+              if (action.type === "create") return;
               setActiveCommand(action.type);
               const deletionFocus =
                 action.type === "delete" ? focusAfterDelete(works ?? [], action.workId) : null;
@@ -432,6 +438,66 @@ function WorkCreationDestination({
         )}
       </section>
     </div>
+  );
+}
+
+function NewWorkPage({
+  projectId,
+  onCreate,
+}: {
+  projectId: string;
+  onCreate: (request: { name: string; goal?: string }) => void;
+}) {
+  const nameRef = useRef<HTMLInputElement>(null);
+  const descriptionRef = useRef<HTMLTextAreaElement>(null);
+  return (
+    <CreationPage
+      backTo={`/p/${projectId}/works`}
+      backLabel={"All Work"}
+      title={"New Work"}
+      submitLabel={"Create Work"}
+      onSubmit={() =>
+        onCreate({
+          name: nameRef.current?.value ?? "",
+          goal: descriptionRef.current?.value.trim() || undefined,
+        })
+      }
+    >
+      <div className="grid gap-1.5">
+        <label htmlFor="work-name" className="text-sm font-medium">
+          <Trans>Name</Trans>
+        </label>
+        <Input
+          ref={nameRef}
+          id="work-name"
+          name="creation-name"
+          autoFocus
+          autoComplete="off"
+          maxLength={120}
+          placeholder="Name this Work"
+          className="h-[38px] bg-card text-[15px]"
+        />
+      </div>
+      <div className="grid gap-1.5">
+        <div className="flex items-baseline justify-between gap-3">
+          <label htmlFor="work-description" className="text-sm font-medium">
+            <Trans>What is this Work for?</Trans>
+          </label>
+          <span className="text-xs text-muted-foreground">
+            <Trans>Optional</Trans>
+          </span>
+        </div>
+        <Textarea
+          ref={descriptionRef}
+          id="work-description"
+          placeholder="The purpose or context for this Work"
+          className="min-h-16 resize-none bg-card text-sm"
+        />
+        <p className="text-xs text-muted-foreground">
+          <Trans>The AI reads this in every chat in this Work.</Trans>
+        </p>
+      </div>
+    </CreationPage>
   );
 }
 
