@@ -23,6 +23,8 @@ describe("in-memory model response repository", () => {
       provider: "test-provider",
       model: "test-model",
       priceSource: "unknown" as const,
+      predictedCacheState: "cold" as const,
+      predictedCacheReason: "facts_unavailable" as const,
     };
     await repos.modelResponses.create({
       ...base,

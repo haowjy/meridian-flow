@@ -1825,6 +1825,7 @@ async function executeLoop(
           threadId: input.threadId,
           model: built.resolvedModel,
           now: Date.now(),
+          knownLocalTurns: allTurns,
         });
       } catch (cause) {
         predictedCacheState = { state: "cold", reason: "facts_unavailable" };

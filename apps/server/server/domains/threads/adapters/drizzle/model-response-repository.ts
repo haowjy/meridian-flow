@@ -42,8 +42,8 @@ export async function writeModelResponse(
       responseMetadata: null,
       latencyMs: input.latencyMs ?? null,
       requestStartedAt: input.requestStartedAt ? new Date(input.requestStartedAt) : null,
-      predictedCacheState: input.predictedCacheState ?? null,
-      predictedCacheReason: input.predictedCacheReason ?? null,
+      predictedCacheState: input.predictedCacheState,
+      predictedCacheReason: input.predictedCacheReason,
       timeToFirstTokenMs: input.timeToFirstTokenMs ?? null,
       generationMs: input.generationMs ?? null,
     })

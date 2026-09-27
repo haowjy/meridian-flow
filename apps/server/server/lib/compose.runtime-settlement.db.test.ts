@@ -132,6 +132,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         sequence: 1,
         provider: "runtime-test",
         model: "runtime-test",
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
       });
 
       const toolContext = {
@@ -218,6 +220,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         sequence: 1,
         provider: "runtime-test",
         model: "runtime-test",
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
       });
       await ports.documentSync.agentEdit().write(
         { command: "read", file: "runtime-settlement.md", documentId: DOC_ID },

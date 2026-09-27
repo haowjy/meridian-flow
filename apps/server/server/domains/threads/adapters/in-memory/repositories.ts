@@ -784,8 +784,8 @@ export function createInMemoryRepositories(
         timeToFirstTokenMs: input.timeToFirstTokenMs ?? null,
         generationMs: input.generationMs ?? null,
         rawUsage: input.rawUsage ?? null,
-        predictedCacheState: input.predictedCacheState ?? null,
-        predictedCacheReason: input.predictedCacheReason ?? null,
+        predictedCacheState: input.predictedCacheState,
+        predictedCacheReason: input.predictedCacheReason,
         createdAt: toIsoString(new Date()),
       };
       modelResponses.set(row.id, row);

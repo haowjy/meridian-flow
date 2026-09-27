@@ -1190,6 +1190,24 @@
           "primaryKey": false,
           "notNull": false
         },
+        "request_started_at": {
+          "name": "request_started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "predicted_cache_state": {
+          "name": "predicted_cache_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "predicted_cache_reason": {
+          "name": "predicted_cache_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "time_to_first_token_ms": {
           "name": "time_to_first_token_ms",
           "type": "bigint",
@@ -1211,24 +1229,6 @@
         },
         "completed_at": {
           "name": "completed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "predicted_cache_state": {
-          "name": "predicted_cache_state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "predicted_cache_reason": {
-          "name": "predicted_cache_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "request_started_at": {
-          "name": "request_started_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
@@ -1309,15 +1309,11 @@
         },
         "model_responses_predicted_cache_state_valid": {
           "name": "model_responses_predicted_cache_state_valid",
-          "value": "\"model_responses\".\"predicted_cache_state\" IS NULL OR \"model_responses\".\"predicted_cache_state\" IN ('warm', 'cold')"
+          "value": "\"model_responses\".\"predicted_cache_state\" IN ('warm', 'cold')"
         },
         "model_responses_predicted_cache_reason_valid": {
           "name": "model_responses_predicted_cache_reason_valid",
-          "value": "\"model_responses\".\"predicted_cache_reason\" IS NULL OR \"model_responses\".\"predicted_cache_reason\" IN ('reusable_prefix', 'uncached', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'compaction', 'ttl_unknown', 'ttl_expired', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')"
-        },
-        "model_responses_predicted_cache_pair_valid": {
-          "name": "model_responses_predicted_cache_pair_valid",
-          "value": "(\"model_responses\".\"predicted_cache_state\" IS NULL) = (\"model_responses\".\"predicted_cache_reason\" IS NULL)"
+          "value": "\"model_responses\".\"predicted_cache_reason\" IN ('reusable_prefix', 'uncached', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'compaction', 'ttl_unknown', 'ttl_expired', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')"
         }
       },
       "isRLSEnabled": false
@@ -1347,6 +1343,99 @@
           "tableTo": "projects",
           "columnsFrom": [
             "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.prompt_bakes": {
+      "name": "prompt_bakes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "owner_thread_id": {
+          "name": "owner_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "composed_system_prompt": {
+          "name": "composed_system_prompt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "baked_skill_slugs": {
+          "name": "baked_skill_slugs",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "baked_tools": {
+          "name": "baked_tools",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "prompt_bakes_owner_created": {
+          "name": "prompt_bakes_owner_created",
+          "columns": [
+            {
+              "expression": "owner_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "prompt_bakes_owner_thread_id_threads_id_fk": {
+          "name": "prompt_bakes_owner_thread_id_threads_id_fk",
+          "tableFrom": "prompt_bakes",
+          "tableTo": "threads",
+          "columnsFrom": [
+            "owner_thread_id"
           ],
           "columnsTo": [
             "id"
@@ -1749,6 +1838,10 @@
           "name": "thread_execution_reports_publication_valid",
           "value": "\"thread_execution_reports\".\"publication\" IN ('none','pending','published')"
         },
+        "thread_execution_reports_pending_has_caller": {
+          "name": "thread_execution_reports_pending_has_caller",
+          "value": "\"thread_execution_reports\".\"publication\" <> 'pending' OR \"thread_execution_reports\".\"caller_thread_id\" IS NOT NULL"
+        },
         "thread_execution_reports_terminal_coherent": {
           "name": "thread_execution_reports_terminal_coherent",
           "value": "(\"thread_execution_reports\".\"outcome\" IS NULL AND \"thread_execution_reports\".\"terminal_at\" IS NULL) OR (\"thread_execution_reports\".\"outcome\" IS NOT NULL AND \"thread_execution_reports\".\"source\" IS NOT NULL AND \"thread_execution_reports\".\"summary\" IS NOT NULL AND \"thread_execution_reports\".\"terminal_at\" IS NOT NULL)"
@@ -1756,12 +1849,101 @@
         "thread_execution_reports_publication_timestamp_coherent": {
           "name": "thread_execution_reports_publication_timestamp_coherent",
           "value": "(\"thread_execution_reports\".\"publication\" IN ('none','pending') AND \"thread_execution_reports\".\"published_at\" IS NULL) OR (\"thread_execution_reports\".\"publication\" = 'published' AND \"thread_execution_reports\".\"published_at\" IS NOT NULL)"
-        },
-        "thread_execution_reports_pending_has_caller": {
-          "name": "thread_execution_reports_pending_has_caller",
-          "value": "\"thread_execution_reports\".\"publication\" <> 'pending' OR \"thread_execution_reports\".\"caller_thread_id\" IS NOT NULL"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.thread_image_inclusions": {
+      "name": "thread_image_inclusions",
+      "schema": "",
+      "columns": {
+        "thread_id": {
+          "name": "thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "block_id": {
+          "name": "block_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decision_turn_id": {
+          "name": "decision_turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "included": {
+          "name": "included",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "thread_image_inclusions_thread_id_threads_id_fk": {
+          "name": "thread_image_inclusions_thread_id_threads_id_fk",
+          "tableFrom": "thread_image_inclusions",
+          "tableTo": "threads",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "thread_image_inclusions_block_id_turn_blocks_id_fk": {
+          "name": "thread_image_inclusions_block_id_turn_blocks_id_fk",
+          "tableFrom": "thread_image_inclusions",
+          "tableTo": "turn_blocks",
+          "columnsFrom": [
+            "block_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "thread_image_inclusions_decision_turn_id_turns_id_fk": {
+          "name": "thread_image_inclusions_decision_turn_id_turns_id_fk",
+          "tableFrom": "thread_image_inclusions",
+          "tableTo": "turns",
+          "columnsFrom": [
+            "decision_turn_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "thread_image_inclusions_thread_id_block_id_decision_turn_id_pk": {
+          "name": "thread_image_inclusions_thread_id_block_id_decision_turn_id_pk",
+          "columns": [
+            "thread_id",
+            "block_id",
+            "decision_turn_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.thread_inbox_messages": {
@@ -2259,6 +2441,12 @@
           "notNull": true,
           "default": "'idle'"
         },
+        "initial_prompt_bake_id": {
+          "name": "initial_prompt_bake_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "parent_thread_id": {
           "name": "parent_thread_id",
           "type": "uuid",
@@ -2353,12 +2541,6 @@
         "deleted_at": {
           "name": "deleted_at",
           "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "initial_prompt_bake_id": {
-          "name": "initial_prompt_bake_id",
-          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         }
@@ -2502,19 +2684,17 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "threads_spawn_root_same_project_fk": {
-          "name": "threads_spawn_root_same_project_fk",
+        "threads_initial_prompt_bake_id_prompt_bakes_id_fk": {
+          "name": "threads_initial_prompt_bake_id_prompt_bakes_id_fk",
           "tableFrom": "threads",
-          "tableTo": "threads",
+          "tableTo": "prompt_bakes",
           "columnsFrom": [
-            "project_id",
-            "root_thread_id"
+            "initial_prompt_bake_id"
           ],
           "columnsTo": [
-            "project_id",
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "threads_origin_turn_id_turns_id_fk": {
@@ -2530,17 +2710,19 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "threads_initial_prompt_bake_id_prompt_bakes_id_fk": {
-          "name": "threads_initial_prompt_bake_id_prompt_bakes_id_fk",
+        "threads_spawn_root_same_project_fk": {
+          "name": "threads_spawn_root_same_project_fk",
           "tableFrom": "threads",
-          "tableTo": "prompt_bakes",
+          "tableTo": "threads",
           "columnsFrom": [
-            "initial_prompt_bake_id"
+            "project_id",
+            "root_thread_id"
           ],
           "columnsTo": [
+            "project_id",
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -2819,6 +3001,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prompt_bake_id": {
+          "name": "prompt_bake_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "compaction_model": {
           "name": "compaction_model",
           "type": "text",
@@ -2956,37 +3150,9 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "prompt_bake_id": {
-          "name": "prompt_bake_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "position": {
-          "name": "position",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
         }
       },
       "indexes": {
-        "turns_thread_single_root": {
-          "name": "turns_thread_single_root",
-          "columns": [
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"turns\".\"parent_turn_id\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "turns_thread_position_unique": {
           "name": "turns_thread_position_unique",
           "columns": [
@@ -3026,6 +3192,22 @@
           ],
           "isUnique": false,
           "where": "\"turns\".\"parent_turn_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "turns_thread_single_root": {
+          "name": "turns_thread_single_root",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"turns\".\"parent_turn_id\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3076,6 +3258,10 @@
           "name": "turns_no_self_parent",
           "value": "\"turns\".\"parent_turn_id\" IS NULL OR \"turns\".\"parent_turn_id\" != \"turns\".\"id\""
         },
+        "turns_position_positive": {
+          "name": "turns_position_positive",
+          "value": "\"turns\".\"position\" > 0"
+        },
         "turns_role_valid": {
           "name": "turns_role_valid",
           "value": "\"turns\".\"role\" IN ('user', 'assistant', 'system', 'compaction')"
@@ -3095,10 +3281,6 @@
         "turns_compaction_model_required": {
           "name": "turns_compaction_model_required",
           "value": "\"turns\".\"role\" != 'compaction' OR \"turns\".\"compaction_model\" IS NOT NULL"
-        },
-        "turns_position_positive": {
-          "name": "turns_position_positive",
-          "value": "\"turns\".\"position\" > 0"
         }
       },
       "isRLSEnabled": false
@@ -9294,192 +9476,6 @@
           "value": "\"turn_trail_work\".\"state\" IN ('pending', 'running', 'complete', 'no_op', 'exhausted')"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.prompt_bakes": {
-      "name": "prompt_bakes",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "owner_thread_id": {
-          "name": "owner_thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "composed_system_prompt": {
-          "name": "composed_system_prompt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "baked_skill_slugs": {
-          "name": "baked_skill_slugs",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "baked_tools": {
-          "name": "baked_tools",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content_hash": {
-          "name": "content_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "prompt_bakes_owner_created": {
-          "name": "prompt_bakes_owner_created",
-          "columns": [
-            {
-              "expression": "owner_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "prompt_bakes_owner_thread_id_threads_id_fk": {
-          "name": "prompt_bakes_owner_thread_id_threads_id_fk",
-          "tableFrom": "prompt_bakes",
-          "tableTo": "threads",
-          "columnsFrom": [
-            "owner_thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.thread_image_inclusions": {
-      "name": "thread_image_inclusions",
-      "schema": "",
-      "columns": {
-        "thread_id": {
-          "name": "thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "block_id": {
-          "name": "block_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decision_turn_id": {
-          "name": "decision_turn_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "included": {
-          "name": "included",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decided_at": {
-          "name": "decided_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "thread_image_inclusions_thread_id_threads_id_fk": {
-          "name": "thread_image_inclusions_thread_id_threads_id_fk",
-          "tableFrom": "thread_image_inclusions",
-          "tableTo": "threads",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "thread_image_inclusions_block_id_turn_blocks_id_fk": {
-          "name": "thread_image_inclusions_block_id_turn_blocks_id_fk",
-          "tableFrom": "thread_image_inclusions",
-          "tableTo": "turn_blocks",
-          "columnsFrom": [
-            "block_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "thread_image_inclusions_decision_turn_id_turns_id_fk": {
-          "name": "thread_image_inclusions_decision_turn_id_turns_id_fk",
-          "tableFrom": "thread_image_inclusions",
-          "tableTo": "turns",
-          "columnsFrom": [
-            "decision_turn_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "thread_image_inclusions_thread_id_block_id_decision_turn_id_pk": {
-          "name": "thread_image_inclusions_thread_id_block_id_decision_turn_id_pk",
-          "columns": [
-            "thread_id",
-            "block_id",
-            "decision_turn_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },

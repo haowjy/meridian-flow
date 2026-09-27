@@ -46,8 +46,8 @@ export interface ModelResponseReceivedRow {
   timeToFirstTokenMs?: number | null;
   generationMs?: number | null;
   rawUsage?: JsonValue | null;
-  predictedCacheState?: PrefixCachePredictionState | null;
-  predictedCacheReason?: PrefixCachePredictionReason | null;
+  predictedCacheState: PrefixCachePredictionState;
+  predictedCacheReason: PrefixCachePredictionReason;
 }
 
 export interface BlockUpsertedRow {

@@ -412,8 +412,8 @@ export interface ModelResponse {
   /** First output arrival to provider stream-end arrival; null if no output delta arrived. */
   generationMs: number | null;
   rawUsage?: JsonValue | null;
-  predictedCacheState?: PrefixCachePredictionState | null;
-  predictedCacheReason?: PrefixCachePredictionReason | null;
+  predictedCacheState: PrefixCachePredictionState;
+  predictedCacheReason: PrefixCachePredictionReason;
   createdAt: string;
   completedAt?: string | null;
 }

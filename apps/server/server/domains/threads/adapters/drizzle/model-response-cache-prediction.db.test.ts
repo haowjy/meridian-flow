@@ -39,6 +39,8 @@ else
         provider: "test-provider",
         model: "test-model",
         priceSource: "unknown" as const,
+        predictedCacheState: "cold" as const,
+        predictedCacheReason: "facts_unavailable" as const,
       };
       await repos.modelResponses.create({ ...base, turnId: firstTurn.id, sequence: 9 });
       await repos.modelResponses.create({ ...base, turnId: lastTurn.id, sequence: 0 });

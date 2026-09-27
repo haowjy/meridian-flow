@@ -376,8 +376,12 @@ export const modelResponses = pgTable(
     responseMetadata: jsonb("response_metadata"),
     latencyMs: bigint("latency_ms", { mode: "number" }),
     requestStartedAt: timestamp("request_started_at", { withTimezone: true }),
-    predictedCacheState: text("predicted_cache_state").$type<PrefixCachePredictionState>(),
-    predictedCacheReason: text("predicted_cache_reason").$type<PrefixCachePredictionReason>(),
+    predictedCacheState: text("predicted_cache_state")
+      .$type<PrefixCachePredictionState>()
+      .notNull(),
+    predictedCacheReason: text("predicted_cache_reason")
+      .$type<PrefixCachePredictionReason>()
+      .notNull(),
     timeToFirstTokenMs: bigint("time_to_first_token_ms", { mode: "number" }),
     generationMs: bigint("generation_ms", { mode: "number" }),
     createdAt: createdAt(),
@@ -396,15 +400,11 @@ export const modelResponses = pgTable(
     ),
     check(
       "model_responses_predicted_cache_state_valid",
-      sql`${table.predictedCacheState} IS NULL OR ${table.predictedCacheState} IN ('warm', 'cold')`,
+      sql`${table.predictedCacheState} IN ('warm', 'cold')`,
     ),
     check(
       "model_responses_predicted_cache_reason_valid",
-      sql`${table.predictedCacheReason} IS NULL OR ${table.predictedCacheReason} IN ('reusable_prefix', 'uncached', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'compaction', 'ttl_unknown', 'ttl_expired', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')`,
-    ),
-    check(
-      "model_responses_predicted_cache_pair_valid",
-      sql`(${table.predictedCacheState} IS NULL) = (${table.predictedCacheReason} IS NULL)`,
+      sql`${table.predictedCacheReason} IN ('reusable_prefix', 'uncached', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'compaction', 'ttl_unknown', 'ttl_expired', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')`,
     ),
   ],
 );

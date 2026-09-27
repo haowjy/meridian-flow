@@ -159,10 +159,9 @@ export function derivePrefixCacheState(input: DerivePrefixCacheStateInput): Pref
   }
 
   if (!response) return cold("no_response");
-  if (response.model !== input.model) return cold("model_changed");
-
   const boundary = boundaryAtOrAfterResponse(history, response);
   if (boundary) return cold(boundary);
+  if (response.model !== input.model) return cold("model_changed");
   if (responseBakeChanged(history, response)) return cold("prompt_epoch");
 
   const ttlMs = input.promptCache.ttlMs;
@@ -191,6 +190,7 @@ export interface PrefixCacheStateRequest {
   /** The model resolved during context assembly, including its cache descriptor. */
   model: ModelInfo | null;
   now?: Date | number;
+  knownLocalTurns?: readonly Turn[];
 }
 
 /** Builds the repository-backed cache-state service for any runtime consumer. */
@@ -200,7 +200,7 @@ export function createPrefixCacheStateService(deps: PrefixCacheStateServiceDeps)
       const thread = await deps.repos.threads.findByIdIncludingDeleted(input.threadId);
       if (!thread || !input.model) return cold("facts_unavailable");
 
-      const turns = await deps.repos.turns.listByThread(input.threadId);
+      const turns = input.knownLocalTurns ?? (await deps.repos.turns.listByThread(input.threadId));
       const latestResponse = await deps.repos.modelResponses.findLatestByThread(input.threadId);
       const history: PrefixCacheHistory = {
         thread,

@@ -52,8 +52,8 @@ function responseToCreateInput(response: ModelResponseReceivedRow): CreateModelR
     timeToFirstTokenMs: response.timeToFirstTokenMs ?? null,
     generationMs: response.generationMs ?? null,
     rawUsage: response.rawUsage ?? null,
-    predictedCacheState: response.predictedCacheState ?? null,
-    predictedCacheReason: response.predictedCacheReason ?? null,
+    predictedCacheState: response.predictedCacheState,
+    predictedCacheReason: response.predictedCacheReason,
   };
 }
 

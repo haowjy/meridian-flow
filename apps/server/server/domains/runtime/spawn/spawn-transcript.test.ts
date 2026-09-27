@@ -193,6 +193,8 @@ async function appendPublicResponse(
     provider: "test",
     model: "test-model",
     priceSource: "unknown",
+    predictedCacheState: "cold",
+    predictedCacheReason: "facts_unavailable",
   });
   for (const block of blocks) {
     await setupResult.repos.blocks.create({

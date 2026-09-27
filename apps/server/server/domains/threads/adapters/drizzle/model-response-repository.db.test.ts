@@ -70,6 +70,8 @@ else
           priceSource: "unknown",
           inputTokens: 12,
           outputTokens: 3,
+          predictedCacheState: "cold",
+          predictedCacheReason: "facts_unavailable",
           ...modelResponseTimingFields(result),
         },
       });

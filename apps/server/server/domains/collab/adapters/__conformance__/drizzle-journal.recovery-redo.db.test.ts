@@ -177,6 +177,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           sequence: 1,
           provider: "test",
           model: "test",
+          predictedCacheState: "cold" as const,
+          predictedCacheReason: "facts_unavailable" as const,
         })),
       );
     }

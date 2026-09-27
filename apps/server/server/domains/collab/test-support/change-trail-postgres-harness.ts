@@ -746,6 +746,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         sequence: 1,
         provider: "fixture",
         model: "fixture",
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
       });
     }
     const applyWriterEdit = () =>

@@ -368,6 +368,8 @@ else
         model: "test-model",
         priceSource: "unknown",
         millicredits: "3",
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
       });
       const final = await repos.modelResponses.create({
         turnId: ids.execution,
@@ -376,6 +378,8 @@ else
         model: "test-model",
         priceSource: "unknown",
         millicredits: "4",
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
       });
       await repos.blocks.create({
         turnId: ids.execution,

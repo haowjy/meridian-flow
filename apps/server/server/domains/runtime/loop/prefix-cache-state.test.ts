@@ -135,6 +135,52 @@ describe("derivePrefixCacheState", () => {
     ).resolves.toEqual({ state: "warm", reason: "reusable_prefix" });
   });
 
+  it("uses known local turns without another thread-history read", async () => {
+    const threadHistory = history();
+    let turnReads = 0;
+    const { prefixCacheStateFor } = createPrefixCacheStateService({
+      repos: {
+        threads: {
+          async findByIdIncludingDeleted() {
+            return threadHistory.thread as Thread;
+          },
+        },
+        turns: {
+          async findById() {
+            return null;
+          },
+          async listByThread() {
+            turnReads += 1;
+            return [];
+          },
+        },
+        modelResponses: {
+          async findLatestByThread() {
+            return response("turn-1");
+          },
+        },
+      },
+    });
+
+    await expect(
+      prefixCacheStateFor({
+        threadId: "thread-1" as Thread["id"],
+        model: {
+          id: MODEL,
+          provider: "test-provider",
+          displayName: "Writer model",
+          contextWindow: 128_000,
+          maxOutputTokens: 4_096,
+          promptCache: CACHE,
+          capabilities: new Set(),
+        },
+        now: NOW_MS,
+        knownLocalTurns: threadHistory.turns,
+      }),
+    ).resolves.toEqual({ state: "warm", reason: "reusable_prefix" });
+    expect(turnReads).toBe(0);
+  });
+
   it("is cold before any model response has warmed a prefix", () => {
     expect(derive({ history: history({ responses: [] }) })).toEqual({
       state: "cold",
@@ -153,6 +199,19 @@ describe("derivePrefixCacheState", () => {
       state: "cold",
       reason: "prompt_epoch",
     });
+  });
+
+  it("reports a compaction before a model change", () => {
+    const compaction = turn("compaction", 2, {
+      role: "compaction",
+      origin: "system",
+    });
+    expect(
+      derive({
+        model: "summarizer-model",
+        history: history({ turns: [turn("turn-1", 1), compaction] }),
+      }),
+    ).toEqual({ state: "cold", reason: "compaction" });
   });
 
   it("uses beginPromptEpoch-shaped turns for the shared bake rule", () => {
