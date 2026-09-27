@@ -174,6 +174,7 @@ subscription.
 | **Process item / `Thinking` disclosure** | The default-collapsed disclosure rendered by `ProcessDisclosure.tsx`. Holds a contiguous run of reasoning and process tools. Its visible label is a tool digest when possible. |
 | **Text item** | An assistant `text` block rendered as prose (`Markdown` settled, `StreamingText` partial). |
 | **Artifact item** | A writer-facing custom card, image, or file. |
+| **Report item** | A child's captured `return_result`, rendered visibly through `ReportContent`; its tool pair is hidden protocol. |
 | **Process run** | A `reasoning` or `activity` run inside a process item. |
 | **Artifact boundary** | A card, image, or file that closes the open process run, so later reasoning opens a fresh fold. |
 | **Hidden protocol** | A `tool_use`/`tool_result` whose row a card already surfaces; dropped by partition. |
@@ -238,9 +239,12 @@ keys must be real runtime tool names from
 through custom cards; `spawn` and `thread_message` tool rows are hidden because
 the retained invocation card owns their writer surface. `thread_report` is a
 process row with its own renderer (`thread-report-renderer.tsx`).
-`return_result` remains a report render item, not a child-report artifact. Card `artifacts[]` render through
-the shared `ArtifactGrid` (`ArtifactGrid.tsx`), reused by `FormBlock`,
-`SpawnReportCard`, and `ChildReportBlock`.
+`return_result` remains a report render item, not a child-report artifact.
+Interrupt cards render in the shared `ArtifactCard` shell; invocation cards
+render through `SpawnReportCard` on `subagent/SubagentRow`. Artifact lists
+render through `ArtifactGrid`, used by `FormBlock` and by `ReportContent`, the
+one report body shared by the launch card, the `thread_report` step, and the
+`return_result` report item.
 Process tools (`write`, `work`, `ls`, `search`) render as `ActivityRow`.
 `tool-kind.ts` names the split: an **artifact** result is writer-facing
 (custom card, image) and never folds; a **process** tool is scaffolding.
@@ -300,13 +304,9 @@ Key files:
 Implemented in `partition-turn.ts`, `ProcessDisclosure.tsx`, and
 `AssistantTurn.tsx`. The partition returns an ordered `RenderItem[]`:
 `process` items carry their ordered reasoning/activity runs, `text` and
-`artifact` items carry their block. `ProcessDisclosure` is a default-collapsed
-shell; process items compose reasoning rows and folded activity runs.
-
-Inbox delivery turns are not standalone bubbles after adoption. A writer turn
-keeps its visible `Queued`/`Waiting for response` row while pending, then the
-`inbox_message` marker hides that bubble once adopted. `AssistantTurn` renders
-the adopted inbox chain as ActivityRows after the assistant's final process
-item, preserving causal placement and the tool-step timeline chrome. Child
-completion rows correlate to invocation cards by their internal execution id
-for description and child-thread navigation.
+`artifact` items carry their block, and `report` items carry a captured
+`return_result`. `ProcessDisclosure` is a default-collapsed shell; process
+items compose reasoning rows and folded activity runs. Delivery turns
+(`inbox_message`, `subagent_update`) never become bubbles; `AssistantTurn`
+renders them through `subagent/DeliveryEventRows` after the preceding
+assistant turn's block items.

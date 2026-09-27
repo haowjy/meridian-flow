@@ -1,8 +1,8 @@
 ## Turn rhythm and settled actions
 
 `--chat-space-*`, `--chat-card-pad-*`, and `--chat-geometry-*` live on `:root`
-because chat chrome and portaled menus (the independent chat header, composer
-reference and command menus, Work pickers) render outside the chat subtree;
+because chat chrome and portaled menus (composer reference and command menus,
+Work pickers) render outside the chat subtree;
 scoping them to `text-tier-chat` collapses those surfaces to zero spacing.
 Shared `prose-tokens` read independent `--prose-space-*` variables whose
 `:root` defaults keep manuscript and other non-chat prose at their own values;
@@ -21,12 +21,13 @@ Every boundary has exactly one spacing owner. In particular, `TurnList`'s
 measured `<li>` owns space between turns using padding inside the row: 12px
 after a writer turn and 6px after the assistant's reserved action row. Only a
 finished turn gets the action row: one the model ended with nothing to pick it
-back up. `continuesResponse` (TurnList) marks the others, which render no
-action row and pad only the 8px block gap: the next visible turn is another
-assistant turn (a subagent notification woke the model), the next turn is a
-writer message created before this turn completed (a mid-run steer), or this is
-the latest turn while background subagents still run. Stopped and failed turns
-are always finished. The
+back up. `continuesResponse` (`transcript-model.ts`) marks the others, which
+render no action row and pad only the 8px block gap: the next visible turn is
+another assistant turn (a subagent notification woke the model), the next turn
+is a writer turn the server stamped `metadata.delivery: "steer"` (enqueued while
+this run was live), or this is the latest turn while background subagents still
+run. Read the steer stamp; never compare client and server timestamps. Stopped
+and failed turns are always finished. The
 hidden action row still reserves its compact height to prevent hover layout
 shift. Do not add vertical margins to `UserTurn` or the `AssistantTurn` root;
 keeping the turn gap inside the measured row keeps TanStack Virtual's geometry
@@ -35,10 +36,11 @@ fold-to-body and prose-to-action boundaries are separately owned by their
 inner block and inline spacing respectively. Never stack a margin, padding,
 and gap on one boundary.
 
-Settled assistant turns have a quiet action row below all turn content. Copy
-takes the turn's final message: the text and report items after its last
-process fold (`finalMessageItems`), never thinking, tool rows, delivery events,
-or earlier prose. Markdown is the plain-text flavor and is memoized; the HTML
+A finished turn has a quiet action row below all turn content. Copy takes the
+turn's final message: the text and report items after its last process fold
+(`finalMessageItems`), never thinking, tool rows, delivery events, or earlier
+prose. Images after the fold are not written to the clipboard yet, and a turn
+with no fold copies all its prose; see [TODO](TODO.md). Markdown is the plain-text flavor and is memoized; the HTML
 flavor is rendered only inside the click handler through a module-level
 unified pipeline that strips presentation properties on the HAST tree (never
 by regex on serialized HTML, which corrupts code text). Stripping `className`
@@ -55,11 +57,11 @@ nulls `generationMs` when backpressure made the measurement unreliable.
 Speed and TTFT are omitted when they cannot be computed; cache hit is omitted
 for zero input. No row ever reads "Unavailable". No Info button is rendered
 until a turn has model responses.
-Debug is gated by the shared debug store. Opening from a settled reply's action
+Debug is gated by the shared debug store. Opening from a finished reply's action
 row scopes LLM Calls to every assistant part in that reply; the pill always
 opens unscoped, and the viewer's Show all control clears an active scope.
 Settled actions use the shared enabled boolean,
-so they cannot remain visible after debug is disabled. The latest settled turn
+so they cannot remain visible after debug is disabled. The latest finished turn
 keeps its row visible; older rows reveal actions on hover/focus and touch keeps
 them visible. An open popover keeps its anchored row visible.
 

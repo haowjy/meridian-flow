@@ -8,6 +8,9 @@ draft-control changes can be understood independently.
 - [Activity row anatomy](activity-row-anatomy.md) — document names as doors,
   the stretched-button row, command glyphs, verb vocabulary, and why row
   chrome carries no colour of its own.
+- [Turn rhythm and actions](turn-rhythm-and-actions.md) — the spacing scale,
+  which turns are finished, the Copy/Info/Debug row, and control placement on
+  rows and cards.
 - [Tool expands](tool-expands.md) — the three rendering tiers, the three
   channels, what each expand shows, and how a clipped expand states its bound.
 - [Turn edit receipts](turn-edit-receipts.md) — committed change records, Undo/Redo,

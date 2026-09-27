@@ -45,34 +45,37 @@ folded.
 
 Run liveness is never a turn block. Each admitted spawn invocation has one
 durable retained card on the parent turn. At settlement, the card's status is
-the child execution outcome, not parent protocol admission. Foreground cards join the durable direct `spawn` or `thread_message` result
-by parent turn, tool call, child execution and direct delivery mode. Cards
-branch on `deliveryMode`: background cards are one-line launches with the live
-current tool under them while running, and once finished the row expands to the
-saved report (read on expansion); direct cards combine launch, live current
-tool, and expandable result. Row clicks expand; only the chat icon
-(`OpenSubagentChatButton`) opens the child. Branch on the
-run's `deliveryMode`, never on which blocks happen to exist. Server activity
-(snapshot plus `meridian.subagent.activity`) is still the viewed thread's whole
-subtree. The shared `useThreadActivity` store owns the cached live view and a
-single transport subscription per thread; `ChatView` filters direct running
-background children for the live panel, while the pane and dock headers filter
-direct children for the Subagents pop-up. `thread_report` is always a process
-step ("Read report from ..."), in either mode: the launch or combined card is
-the one card per run and holds the report. The step still expands to the
-report, and its subagent name links to the launch card (a `subagentBlock:
-"card"` reveal). Background `subagent_update` notices
-render as quiet rows: a single completion reads "<name> <description>
-finished", while adjacent completions merge into a compact disclosure. Notice
-text is intentionally not repeated there. Every surface uses the normalized
-`subagent/SubagentRun` view and shared `subagent/SubagentRow` anatomy: the agent name leads (generic runs read "Subagent"),
-followed by the run's description in muted text, separated only by spacing;
-never a raw ref. Outcome maps to mark status there. Row clicks expand or find;
-only the chat icon (`OpenSubagentChatButton`, labeled Open "<agent>") opens a
-child chat. All open-subagent actions use the project chat navigation route;
-the app does not yet model multiple chat tabs. A pop-up row jumps to the child
-through a block-level conversation reveal that lands on its latest point: the
-finished row once it completed, else its launch card.
+the child execution outcome, not parent protocol admission. Foreground cards
+join the durable direct `spawn` or `thread_message` result by parent turn, tool
+call, child execution and direct delivery mode. Cards branch on the run's
+`deliveryMode`, never on which blocks happen to exist: background cards are
+one-line launches with the live current tool under them while running, and
+once finished they expand to the saved report (read on expansion); direct cards
+combine launch, live current tool, and expandable result. `thread_report` is
+always a folded process step ("Read report from ..."), in either mode, because
+the card is the one surface per run: the step expands to the report, and its
+agent name links to the launch card (a `subagentBlock: "card"` reveal).
+Background `subagent_update` notices render as quiet rows ("<name>
+<description> finished"); adjacent completions merge into one disclosure.
+Notice text is never repeated there.
+
+Every subagent surface (launch card, running panel, Subagents pop-up, finished
+row, report step, path row) builds on the normalized `subagent/SubagentRun`
+and the shared `subagent/SubagentRow` anatomy. The mark leads, then the agent
+name (generic runs read "Subagent"), then the description in muted text,
+separated only by spacing; never a raw ref. **Only the chat icon
+(`OpenSubagentChatButton`, labeled Open "<agent>") opens a child chat**, through
+the project chat navigation route, replacing the current chat; chat tabs are
+[#606](https://github.com/haowjy/meridian-flow/issues/606). A row or card click expands it or jumps
+within the current chat; it never switches threads. A pop-up row jumps through
+a block-level conversation reveal to the child's latest point: the finished
+row once it completed, else its launch card.
+
+Server activity (snapshot plus `meridian.subagent.activity`) is still the
+viewed thread's whole subtree. The shared `useThreadActivity` store owns the
+cached live view and one transport subscription per thread; the running panel
+shows direct children running in the background, and the Subagents pop-up
+lists every direct child.
 
 `subagent/ActivityContext.tsx` indexes activity, invocation cards, and completion
 notices by child thread, ref, and execution. A saved running card with no live
@@ -115,9 +118,9 @@ composer mode, and review state live in
 2. **Process folds live and settled alike.** Reasoning and process tools
    collapse into their `Thinking` disclosure as they stream. There is no
    settlement-time fold and no visible frontier. Text and artifacts never fold.
-3. **Artifact cards stay visible.** Custom cards (`ask_user` interrupt, spawn
-   `helper-result`) render through the shared `ArtifactCard`
-   shell (`icon`/`tone`/`title`/`door`/`hint`/children); process tools render as
+3. **Artifact cards stay visible.** Interrupt cards render through the shared
+   `ArtifactCard` shell (`icon`/`tone`/`title`/`door`/`hint`/children); spawn
+   `helper-result` cards render through `SubagentRow`; process tools render as
    `ActivityRow`. Their tool protocol is dropped, not folded. The two tool kinds
   are named in `tool-kind.ts`: an artifact's result is writer-facing (custom
   card, image, file); a process tool is scaffolding.
@@ -127,7 +130,12 @@ composer mode, and review state live in
    don't make a folder, pattern or skill a door. A row expands, a name
    navigates; never invert that, and never author the name button as a JSX
    child of the row button.
-5. **Block render keys are positional.** Use `blockRenderKey(block)` —
+5. **Only a finished turn ends a reply.** A notification-woken continuation, a
+   server-stamped steer, or background subagents still running keep the reply
+   open: no action row, no exchange gap. `continuesResponse` in
+   `transcript-model.ts` is the one rule; see
+   [`.context/turn-rhythm-and-actions.md`](.context/turn-rhythm-and-actions.md).
+6. **Block render keys are positional.** Use `blockRenderKey(block)` —
    `turnId::sequence`. Never key by `block.id`. Prose, images, and custom cards
    keep identity across streaming because they never change zone; a process fold
    is keyed by its first block.
