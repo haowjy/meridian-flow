@@ -27,6 +27,10 @@ export function toolCommand(tool: ToolView): ToolCommand {
   switch (tool.toolName) {
     case "write":
       return documentCommand(toolInputObject(tool));
+    case "edit":
+      return "edit";
+    case "read":
+      return "read";
     case "search":
       return "search";
     case "ls":
@@ -112,7 +116,7 @@ function documentCommand(input: Record<string, JsonValue>): ToolCommand {
     case "diff":
       return "review";
     default:
-      return "unknown";
+      return stringInput(input, "command") ? "unknown" : "create";
   }
 }
 

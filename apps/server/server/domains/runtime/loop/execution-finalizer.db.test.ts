@@ -153,6 +153,7 @@ else
                   reportId: ids.callerTurn,
                   handle: "p1",
                   outcome: "succeeded",
+                  agentName: "Subagent",
                 },
                 body: { kind: "text", text: "child notification" },
                 idempotencyKey: "child",

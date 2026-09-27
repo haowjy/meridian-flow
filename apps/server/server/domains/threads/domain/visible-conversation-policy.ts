@@ -1,5 +1,5 @@
 /** Canonical visible-conversational-head and action-required policy. */
-import type { JsonValue, TurnRole, TurnStatus } from "@meridian/contracts/threads";
+import type { JsonValue, Turn, TurnRole } from "@meridian/contracts/threads";
 
 export function isVisibleConversationalTurn(input: {
   role: TurnRole;
@@ -19,8 +19,8 @@ export function isVisibleConversationalTurn(input: {
 }
 
 export function isThreadActionRequired(input: {
-  headRole: TurnRole | null;
-  headStatus: TurnStatus | null;
+  activeLineage: ReadonlyArray<Pick<Turn, "role" | "status">>;
 }): boolean {
-  return input.headRole === "assistant" && input.headStatus === "waiting_interrupt";
+  const nearestAssistant = input.activeLineage.find((turn) => turn.role === "assistant");
+  return nearestAssistant?.status === "waiting_interrupt";
 }

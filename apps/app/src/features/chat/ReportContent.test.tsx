@@ -41,7 +41,10 @@ describe("shared report content", () => {
     await act(async () => root.render(<ReportContent report={report} empty="No report text" />));
     expect(host.textContent).toContain("First line.\nFull report.");
     expect(host.textContent).toContain('{\n  "answer": 42\n}');
-    expect(host.textContent).toContain("Saved artifact");
+    // Document artifacts read as the document's name, never a type tile or raw URI.
+    expect(host.textContent).toContain("saved");
+    expect(host.textContent).not.toContain("Object");
+    expect(host.textContent).not.toContain("scratch://saved.md");
     expect(host.textContent).toContain("Reason: budget_exhausted");
     expect(host.textContent).toContain("Partial result");
     expect(host.textContent).not.toContain("No report text");
@@ -56,6 +59,26 @@ describe("shared report content", () => {
     );
     expect(host.textContent).toContain("No partial report text was returned.");
     expect(host.textContent).toContain("Reason: runtime_error");
+    expect(host.textContent).not.toContain("Partial result");
+  });
+
+  it("can omit stop metadata on subagent report surfaces", async () => {
+    await act(async () =>
+      root.render(
+        <ReportContent
+          report={{
+            summary: "The result",
+            artifacts: [],
+            reason: "execution_error",
+            partial: true,
+          }}
+          empty="No report text"
+          showStopMetadata={false}
+        />,
+      ),
+    );
+    expect(host.textContent).toContain("The result");
+    expect(host.textContent).not.toContain("execution_error");
     expect(host.textContent).not.toContain("Partial result");
   });
 });

@@ -148,13 +148,13 @@ export function WorkPickerPanel({
       role="group"
       aria-label={purposeLabel}
       aria-busy={(view.status === "ready" && view.refreshing) || operation.pending}
-      className="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
+      className="flex min-h-0 min-w-0 flex-1 flex-col gap-[var(--chat-space-block)]"
       onKeyDown={navigate}
     >
       <label htmlFor={searchId} className="sr-only">
         <Trans>Search Work</Trans>
       </label>
-      <div className="relative mx-2 shrink-0">
+      <div className="relative mx-[var(--chat-space-block)] shrink-0">
         <Search
           className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground"
           aria-hidden
@@ -170,7 +170,7 @@ export function WorkPickerPanel({
           className={dropdownSearchClass}
         />
       </div>
-      <div className={`${dropdownResultsClass} space-y-2`}>
+      <div className={`${dropdownResultsClass} space-y-[var(--chat-space-row)]`}>
         {view.status === "ready" && onChooseNone ? (
           <Button
             ref={operation.currentWorkId === "" ? focusRefs?.selected : undefined}
@@ -230,7 +230,7 @@ export function WorkPickerPanel({
           />
         ) : null}
         {view.status === "ready" && view.query.trim() !== "" && !view.ordered.length ? (
-          <p className="px-2 py-4 text-center text-sm text-muted-foreground">
+          <p className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-center text-sm text-muted-foreground">
             <Trans>No Work matches your search.</Trans>
           </p>
         ) : null}
@@ -240,7 +240,11 @@ export function WorkPickerPanel({
 }
 
 function PickerState({ children }: { children: ReactNode }) {
-  return <p className="px-2 py-4 text-center text-sm text-muted-foreground">{children}</p>;
+  return (
+    <p className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-center text-sm text-muted-foreground">
+      {children}
+    </p>
+  );
 }
 
 function WorkSection({
@@ -267,10 +271,15 @@ function WorkSection({
 }) {
   return (
     <section aria-label={label}>
-      <h3 className={sectionLabelVariants({ variant: "group", className: "mb-1 px-2" })}>
+      <h3
+        className={sectionLabelVariants({
+          variant: "group",
+          className: "mb-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)]",
+        })}
+      >
         {label}
       </h3>
-      <div className="space-y-0.5">
+      <div className="space-y-[var(--chat-space-row)]">
         {works.map((work) => {
           const current = work.id === operation.currentWorkId;
           const changing = work.id === operation.targetId && operation.pending;
@@ -331,7 +340,11 @@ function WorkSection({
                 ) : null}
               </Button>
               {error ? (
-                <p id={errorId} role="alert" className="px-2 pt-1 text-xs text-destructive">
+                <p
+                  id={errorId}
+                  role="alert"
+                  className="px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] text-xs text-destructive"
+                >
                   {failureCopy(error)}
                 </p>
               ) : null}

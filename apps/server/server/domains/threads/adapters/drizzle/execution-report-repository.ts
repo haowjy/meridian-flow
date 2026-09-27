@@ -3,7 +3,7 @@
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import * as schema from "@meridian/database/schema";
-import { and, asc, eq, getTableColumns, gt, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { assertExecutionReportAdmission } from "../../domain/execution-report-admission.js";
 import {
   assertReportCapture,
@@ -37,6 +37,7 @@ function map(row: ExecutionReportRow): SavedExecutionReport {
   return {
     childThreadId: row.childThreadId,
     assistantTurnId: row.assistantTurnId,
+    admittedAt: row.createdAt.toISOString(),
     terminalAssistantTurnId: row.terminalAssistantTurnId,
     handle: row.handle,
     origin: row.origin as SavedExecutionReport["origin"],
@@ -218,6 +219,25 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
     async findByExecution(childThreadId, assistantTurnId) {
       const row = await find(childThreadId, assistantTurnId);
       return row ? map(row) : null;
+    },
+    async listLatestByChildren(childThreadIds) {
+      if (childThreadIds.length === 0) return [];
+      const rows = await currentDrizzleDb(db)
+        .selectDistinctOn([table.childThreadId], {
+          childThreadId: table.childThreadId,
+          deliveryMode: table.deliveryMode,
+          admittedAt: table.createdAt,
+          terminalAt: table.terminalAt,
+        })
+        .from(table)
+        .where(inArray(table.childThreadId, childThreadIds))
+        .orderBy(asc(table.childThreadId), desc(table.createdAt), desc(table.assistantTurnId));
+      return rows.map((row) => ({
+        childThreadId: row.childThreadId,
+        deliveryMode: row.deliveryMode as SavedExecutionReport["deliveryMode"],
+        admittedAt: row.admittedAt.toISOString(),
+        terminalAt: row.terminalAt?.toISOString() ?? null,
+      }));
     },
     async listFinishedByChild(childThreadId) {
       const rows = await currentDrizzleDb(db)

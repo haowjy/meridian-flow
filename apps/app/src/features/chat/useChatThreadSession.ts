@@ -21,7 +21,7 @@ export function useChatThreadSession({
   projectId,
 }: {
   threadId: string;
-  projectId?: string | null;
+  projectId: string;
   controller: Controller;
   actions: ThreadStoreActions;
   isStreaming: boolean;
@@ -37,7 +37,7 @@ export function useChatThreadSession({
 
   useEffect(() => {
     if (!isStreaming) return;
-    actions.setStreamingThreadId(threadId, projectId ?? null);
+    actions.setStreamingThreadId(threadId, projectId);
     return () => {
       actions.setStreamingThreadId(null);
     };

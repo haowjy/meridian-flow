@@ -16,7 +16,6 @@ import {
   ProjectStoreProvider,
   rehydrateEditorWorkspace,
   ThreadStoreProvider,
-  useIndependentProjectsStore,
 } from "@/client/stores";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
@@ -177,7 +176,6 @@ function AuthenticatedProviderTree({
   useEffect(() => {
     resources?.start();
     void rehydrateEditorWorkspace(user.userId);
-    void useIndependentProjectsStore.persist.rehydrate();
     void useProjectSurfacePrefsStore.persist.rehydrate();
     useProjectSurfacePrefsStore.getState().setHydrated();
   }, [resources, user.userId]);

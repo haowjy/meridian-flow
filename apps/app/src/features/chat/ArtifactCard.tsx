@@ -47,11 +47,11 @@ export function ArtifactCard({
   return (
     <section
       className={cn(
-        "surface-card mb-4 rounded-xl border border-border-subtle px-4 py-3 shadow-xs",
+        "surface-card chat-card [--chat-card-radius:var(--radius-xl)] [--chat-card-border:var(--color-border-subtle)] shadow-xs",
         className,
       )}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-[var(--chat-space-inline)]">
         <div
           className={cn(
             "mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-muted",
@@ -61,7 +61,7 @@ export function ArtifactCard({
           <Icon className="size-3.5" aria-hidden />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
+          <div className="flex items-start justify-between gap-[var(--chat-space-block)]">
             {title ? (
               <p className="min-w-0 text-sm font-medium text-foreground">{title}</p>
             ) : (
@@ -70,7 +70,7 @@ export function ArtifactCard({
             {door ? <div className="shrink-0">{door}</div> : null}
           </div>
           {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-          {children ? <div className="mt-3">{children}</div> : null}
+          {children ? <div className="mt-[var(--chat-space-block)]">{children}</div> : null}
         </div>
       </div>
     </section>
@@ -101,7 +101,7 @@ export function ComponentResolvedSummary({
       title={<span className="text-muted-foreground">{title}</span>}
       className={className}
     >
-      <div className="flex flex-wrap items-center gap-2 text-foreground text-sm">
+      <div className="flex flex-wrap items-center gap-[var(--chat-space-inline)] text-foreground text-sm">
         <span className="font-medium">{value}</span>
         <Badge variant="neutral">{statusLabel}</Badge>
       </div>

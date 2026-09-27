@@ -6,7 +6,7 @@
  * the rule that a failed emission never gates a run.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { ThreadActivity } from "@meridian/contracts/threads";
+import type { CurrentToolCall, ThreadActivity } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { EventJournalWriter } from "../../threads/index.js";
 
@@ -51,6 +51,42 @@ export async function appendSubagentActivityBestEffort(input: {
       },
     });
   }
+}
+
+/** A tool boundary refreshes activity only when it changes the child's live call. */
+export async function appendSubagentActivityForToolChangeBestEffort(input: {
+  recordCurrentTool: () => Promise<boolean>;
+  currentTool: CurrentToolCall;
+  eventWriter: EventJournalWriter;
+  readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
+  rootThreadId: ThreadId;
+  childThreadId: string;
+  eventSink: EventSink;
+}): Promise<void> {
+  try {
+    if (!(await input.recordCurrentTool())) return;
+  } catch (error) {
+    emitEvent(input.eventSink, {
+      level: "warn",
+      source: "runtime.activity",
+      name: "subagent.activity.current_tool_failed",
+      correlation: { threadId: input.rootThreadId, childRunId: input.childThreadId },
+      payload: {
+        childThreadId: input.childThreadId,
+        toolCallId: input.currentTool.toolCallId,
+        ...unknownToEventPayload(error),
+      },
+    });
+    return;
+  }
+
+  await appendSubagentActivityBestEffort({
+    eventWriter: input.eventWriter,
+    readActivity: input.readActivity,
+    rootThreadId: input.rootThreadId,
+    childThreadId: input.childThreadId,
+    eventSink: input.eventSink,
+  });
 }
 
 /**

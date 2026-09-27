@@ -5,7 +5,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ThreadTransport, ThreadTransportHandlers } from "@/core/transport";
-import { writerTurnQueueStatus } from "./pending-inbox";
+import { queuedWriterTurnIds } from "./pending-inbox";
 import { UserTurn } from "./UserTurn";
 import { usePendingInbox } from "./usePendingInbox";
 
@@ -80,7 +80,7 @@ describe("mounted pending inbox owner", () => {
     }
   });
 
-  it("replaces queued with waiting, clears on ack, and ignores an old thread epoch", async () => {
+  it("shows only queued writer turns, clears on adoption, and ignores an old thread epoch", async () => {
     harness.transport = transport;
     const host = document.createElement("div");
     const root = createRoot(host);
@@ -91,7 +91,7 @@ describe("mounted pending inbox owner", () => {
     });
     function Probe({ threadId }: { threadId: string }) {
       const pending = usePendingInbox({ threadId, seed: null });
-      const queueStatus = writerTurnQueueStatus(pending).get("turn-1");
+      const queued = queuedWriterTurnIds(pending).has("turn-1");
       return createElement(UserTurn, {
         turn: {
           id: "turn-1",
@@ -100,7 +100,7 @@ describe("mounted pending inbox owner", () => {
           status: "complete",
           blocks: [{ id: "block-1", sequence: 0, blockType: "text", textContent: "follow-up" }],
         } as Turn,
-        queueStatus,
+        queued,
       });
     }
     const deliver = async (
@@ -115,11 +115,7 @@ describe("mounted pending inbox owner", () => {
         }),
       );
       expect(host.querySelector("[data-user-turn-status]")?.textContent).toBe(
-        expected === "clear"
-          ? undefined
-          : expected === "queued"
-            ? "Queued"
-            : "Waiting for response",
+        expected === "queued" ? "Queued" : undefined,
       );
       expect(host.textContent).not.toContain("child report notification");
     };
@@ -130,7 +126,7 @@ describe("mounted pending inbox owner", () => {
     expect(subscriptions[1]?.active).toBe(true);
     await deliver(0, inbox("waiting"), "clear"); // stale thread epoch
     await deliver(1, inbox("waiting"), "queued");
-    await deliver(1, inbox("awaiting_run"), "waiting");
+    await deliver(1, inbox("awaiting_run"), "clear");
     await deliver(1, { items: [] }, "clear");
 
     await act(async () => root.unmount());

@@ -4,6 +4,40 @@ import type { ExecutionScenario } from "./execution-scenario.js";
 
 export function executionReportContract(create: () => Promise<ExecutionScenario>) {
   describe("execution report adapter contract", () => {
+    it("projects the most recently admitted run per child", async () => {
+      const s = await create();
+      const first = await s.admit();
+      const nextTurn = await s.repos.turns.create({
+        threadId: s.ids.child,
+        prevTurnId: s.ids.execution,
+        role: "assistant",
+        origin: "assistant",
+        status: "streaming",
+      });
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      const second = await s.repos.executionReports.admit({
+        ...s.input,
+        assistantTurnId: nextTurn.id,
+        origin: "thread_run",
+        deliveryMode: "none",
+        callerThreadId: null,
+        callerTurnId: null,
+        toolCallId: null,
+        cardBlockId: null,
+      });
+
+      await expect(s.repos.executionReports.listLatestByChildren([s.ids.child])).resolves.toEqual([
+        {
+          childThreadId: s.ids.child,
+          deliveryMode: "none",
+          admittedAt: second.admittedAt,
+          terminalAt: null,
+        },
+      ]);
+      expect(first.admittedAt).not.toBe(second.admittedAt);
+      await expect(s.repos.executionReports.listLatestByChildren([])).resolves.toEqual([]);
+    });
+
     it("preserves admission identity, capture snapshots and immutable terminal/publication replay", async () => {
       const s = await create();
       const { ids, repos } = s;

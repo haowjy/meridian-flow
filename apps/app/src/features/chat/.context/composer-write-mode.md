@@ -11,9 +11,7 @@ composition boundary and passes that same Work identity to `DraftReviewProvider`
 and `ChatView`; the dock and composer control therefore share one binding.
 Project chat always has a Work: named or No Work, looked up from
 `snapshot.noWork`, never `works.find`. `ChatView` renders picker plus write mode
-for that Work. `AgentOnlyComposerToolbar` is only the no-project (account New)
-composer. The independent chat composition root performs the same resolution for
-its thread. There is no first/default-Work fallback.
+for that Work. There is no first/default-Work fallback.
 
 `useComposerWorkBinding` owns Work interaction, mutation presentation, and
 Undo. `useThreadDurableProjections` owns transport projection, while

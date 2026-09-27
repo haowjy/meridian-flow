@@ -49,7 +49,7 @@ export function ComposerCommandMenu({ editor }: { editor: Editor }) {
         key: item.id,
         before:
           grouped && groupLabels && item.group !== snapshot.items[index - 1]?.group ? (
-            <div className="px-2 pt-2 pb-1 font-semibold text-ink-subtle text-xs uppercase tracking-wider">
+            <div className="px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-[var(--chat-space-inline)] font-semibold text-ink-subtle text-xs uppercase tracking-wider">
               {groupLabels[item.group]}
             </div>
           ) : undefined,
@@ -61,7 +61,7 @@ export function ComposerCommandMenu({ editor }: { editor: Editor }) {
 
 function CommandRow({ item }: { item: ComposerCommandItem }) {
   return (
-    <span className="flex min-w-0 flex-1 items-baseline gap-4">
+    <span className="flex min-w-0 flex-1 items-baseline gap-[var(--chat-space-inline)]">
       <span className="shrink-0">{item.slug}</span>
       {item.description ? (
         <span className="min-w-0 flex-1 truncate text-ink-subtle text-xs" title={item.description}>

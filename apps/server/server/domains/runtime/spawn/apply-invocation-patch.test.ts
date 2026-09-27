@@ -66,7 +66,7 @@ describe("applyInvocationPatch", () => {
     expect(result.tools).toEqual([]);
     const policy = projectToolPolicy(result);
     expect(policy.writeCommands).toContain("replace");
-    expect(policy.tools.has("ask_user")).toBe(true);
+    expect(policy.tools.has("spawn")).toBe(true);
   });
 
   it("deep-copies baseline arrays, objects, and retained skill references", async () => {

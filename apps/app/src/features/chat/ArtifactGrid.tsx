@@ -1,14 +1,16 @@
 /**
  * ArtifactGrid — the shared renderer for a list of `ArtifactRef`s.
  *
- * Purpose: image and object arms render as thumbnails in a responsive grid;
- * the reserved `liveView` arm gets a full-width isolated iframe slot. Extracted
+ * Purpose: object arms render as compact document links through the chat's
+ * context navigation, image arms as thumbnails in a responsive grid, and the
+ * reserved `liveView` arm gets a full-width isolated iframe slot. Extracted
  * from `FormBlock` so ask_user interrupts and agent report cards render the same
  * artifacts identically. `isArtifactRef` admits untrusted artifact values.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
+import { FileText } from "lucide-react";
 
 import {
   Dialog,
@@ -17,6 +19,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { DocumentName } from "./DocumentName";
 
 export function isArtifactRef(value: unknown): value is ArtifactRef {
   if (!value || typeof value !== "object") return false;
@@ -40,21 +43,36 @@ export function isArtifactRef(value: unknown): value is ArtifactRef {
 }
 
 export function ArtifactGrid({ artifacts }: { artifacts: ArtifactRef[] }) {
-  // Live-view arms get a dedicated row spanning the grid; image + object
-  // thumbnails share the responsive grid.
+  // Documents read as compact links, images as thumbnails, and live views get
+  // their own full-width slot.
+  const documents = artifacts.filter(
+    (artifact): artifact is Extract<ArtifactRef, { type: "object" }> => artifact.type === "object",
+  );
+  const images = artifacts.filter(
+    (artifact): artifact is Extract<ArtifactRef, { type: "image" }> => artifact.type === "image",
+  );
   const liveViews = artifacts.filter(
     (artifact): artifact is Extract<ArtifactRef, { type: "liveView" }> =>
       artifact.type === "liveView",
   );
-  const thumbs = artifacts.filter((artifact) => artifact.type !== "liveView");
 
   return (
-    <div className="flex flex-col gap-3">
-      {thumbs.length > 0 ? (
-        <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-          {thumbs.map((artifact, index) => (
+    <div className="flex flex-col gap-[var(--chat-space-block)]">
+      {documents.length > 0 ? (
+        <ul className="flex flex-wrap gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-inline)] text-sm">
+          {documents.map((artifact, index) => (
+            <li key={artifactKey(artifact, index)} className="flex min-w-0 items-center gap-1.5">
+              <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              <DocumentName path={artifact.uri} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {images.length > 0 ? (
+        <ul className="grid grid-cols-2 gap-[var(--chat-space-block)] sm:grid-cols-3 lg:grid-cols-4">
+          {images.map((artifact, index) => (
             <li key={artifactKey(artifact, index)}>
-              <ArtifactThumb artifact={artifact} />
+              <ImageArtifact image={artifact} />
             </li>
           ))}
         </ul>
@@ -70,17 +88,6 @@ function artifactKey(artifact: ArtifactRef, index: number): string {
   if (artifact.type === "image") return `${artifact.type}:${artifact.url}:${index}`;
   if (artifact.type === "object") return `${artifact.type}:${artifact.uri}:${index}`;
   return `${artifact.type}:${index}`;
-}
-
-function ArtifactThumb({
-  artifact,
-}: {
-  artifact: Extract<ArtifactRef, { type: "image" | "object" }>;
-}) {
-  if (artifact.type === "image") {
-    return <ImageArtifact image={artifact} />;
-  }
-  return <ObjectArtifact object={artifact} />;
 }
 
 function ImageArtifact({ image }: { image: Extract<ArtifactRef, { type: "image" }> }) {
@@ -99,11 +106,13 @@ function ImageArtifact({ image }: { image: Extract<ArtifactRef, { type: "image" 
             loading="lazy"
           />
           {image.label ? (
-            <span className="block truncate px-2 py-1 text-foreground text-xs">{image.label}</span>
+            <span className="block truncate px-[var(--chat-space-block)] py-[var(--chat-space-inline)] text-foreground text-xs">
+              {image.label}
+            </span>
           ) : null}
         </button>
       </DialogTrigger>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="text-tier-chat max-w-3xl">
         <DialogTitle className="sr-only">{label}</DialogTitle>
         <DialogClose asChild>
           <button
@@ -114,29 +123,13 @@ function ImageArtifact({ image }: { image: Extract<ArtifactRef, { type: "image" 
             <img src={image.url} alt={label} className="h-auto w-full" />
           </button>
         </DialogClose>
-        {image.label ? <p className="mt-2 text-muted-foreground text-sm">{image.label}</p> : null}
+        {image.label ? (
+          <p className="mt-[var(--chat-space-block)] text-muted-foreground text-sm">
+            {image.label}
+          </p>
+        ) : null}
       </DialogContent>
     </Dialog>
-  );
-}
-
-function ObjectArtifact({ object }: { object: Extract<ArtifactRef, { type: "object" }> }) {
-  const label = object.label ?? object.uri;
-  return (
-    <a
-      href={object.uri}
-      target="_blank"
-      rel="noreferrer"
-      className="focus-ring flex h-full min-h-20 flex-col justify-between rounded-md border border-border-subtle bg-muted p-2 transition-all hover:border-border-focus"
-    >
-      <span className="font-medium text-foreground text-xs uppercase tracking-wide">
-        <Trans>Object</Trans>
-      </span>
-      <span className="truncate text-foreground text-sm">{label}</span>
-      {object.mimeType ? (
-        <span className="text-muted-foreground text-xs">{object.mimeType}</span>
-      ) : null}
-    </a>
   );
 }
 
@@ -148,7 +141,7 @@ function LiveViewSlot({ artifact }: { artifact: Extract<ArtifactRef, { type: "li
   // this slot is the contract landing zone.
   return (
     <div className="overflow-hidden rounded-md border border-border-subtle bg-muted">
-      <div className="flex items-center justify-between border-border-subtle border-b px-3 py-1.5">
+      <div className="flex items-center justify-between border-border-subtle border-b px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]">
         <span className="font-medium text-foreground text-xs uppercase tracking-wide">
           <Trans>Live view</Trans>
         </span>

@@ -60,6 +60,13 @@ export type ThreadStatus =
 export type ThreadLeaseState = {
   status: ThreadStatus;
   runningTurnId: string | null;
+  currentTool: CurrentToolCall | null;
+};
+/** Most recent tool call dispatched by a live run. */
+export type CurrentToolCall = {
+  toolCallId: string;
+  toolName: string;
+  input: JsonValue;
 };
 export type TurnRole = "user" | "assistant" | "system" | "compaction";
 /**
@@ -105,6 +112,14 @@ export type ThreadActivityNode = {
   spawnStatus: SpawnStatus | null;
   /** Derived from the live lease; absent lease reads `asleep`. */
   status: ThreadStatus;
+  /** Delivery behavior for this thread's latest admitted execution. */
+  deliveryMode: "direct" | "background_notification" | null;
+  /** Admission time for the latest run, or null before its first admitted run. */
+  runStartedAt: string | null;
+  /** Terminal time for the latest run, or null while it is running. */
+  runEndedAt: string | null;
+  /** The live run's current or most recently dispatched tool call. */
+  currentTool: CurrentToolCall | null;
   /** Parent turn that spawned this thread (transcript anchor). */
   originTurnId: string | null;
 };
@@ -124,7 +139,14 @@ export type MessageIntent = "message" | "notice";
 export type MessageProvenance =
   | { kind: "writer"; actorId: string }
   | { kind: "agent"; threadId: string }
-  | { kind: "child"; threadId: string; reportId: string; handle: string; outcome: string }
+  | {
+      kind: "child";
+      threadId: string;
+      reportId: string;
+      handle: string;
+      outcome: string;
+      agentName: string;
+    }
   | { kind: "system"; source: string };
 
 /**
@@ -279,6 +301,7 @@ export interface Thread {
 }
 
 export type TurnUsage = {
+  /** Provider-normalized prompt total, including cache-read and cache-write token subsets. */
   inputTokens: number;
   outputTokens: number;
   reasoningTokens?: number | null;
@@ -362,6 +385,8 @@ export interface ModelResponse {
   reasoningTokens?: number | null;
   cacheReadTokens?: number | null;
   cacheWriteTokens?: number | null;
+  /** True when this call's reported cache read dropped below half the previous prompt after prior cache activity. */
+  cacheReset: boolean;
   usageBreakdown?: JsonValue | null;
   costUsd: string | null;
   millicredits?: string | null;
@@ -371,7 +396,12 @@ export interface ModelResponse {
   stopReason?: string | null;
   requestParams?: JsonValue | null;
   responseMetadata?: JsonValue | null;
+  /** Adapter invocation to provider stream-end arrival; excludes consumer persistence time. */
   latencyMs: number | null;
+  /** Adapter invocation to first text, reasoning, or tool-argument delta arrival; null if none. */
+  timeToFirstTokenMs: number | null;
+  /** First output arrival to provider stream-end arrival; null if no output delta arrived. */
+  generationMs: number | null;
   rawUsage?: JsonValue | null;
   createdAt: string;
   completedAt?: string | null;

@@ -42,11 +42,11 @@ function textBlock(id: string, turnId: string, text: string): Block {
 }
 
 describe("filterVisibleTurns", () => {
-  it("keeps queued inbox messages visible until adoption, then hides them for inline placement", () => {
+  it("always hides inbox-message turns for inline placement", () => {
     const turn = userTurn("message-1", { kind: "inbox_message" });
 
-    expect(filterVisibleTurns([turn], new Map([[turn.id, "queued"]]))).toEqual([turn]);
-    expect(filterVisibleTurns([turn], new Map())).toEqual([]);
+    expect(isVisibleChatTurn(turn)).toBe(false);
+    expect(filterVisibleTurns([turn])).toEqual([]);
   });
 
   it("hides a hidden skill-body turn: it carries no custom block, so it never reaches the transcript", () => {

@@ -15,6 +15,19 @@ export type RenderItem =
   | { kind: "report"; block: Block; report: ReportContentValue }
   | { kind: "artifact"; block: Block };
 
+/** The writer-facing answer is the prose/report suffix after the final process fold. */
+export function finalMessageItems(items: RenderItem[]): RenderItem[] {
+  return items.slice(lastProcessIndex(items) + 1);
+}
+
+/** Index of the final process fold, shared by answer selection and delivery placement. */
+export function lastProcessIndex(items: RenderItem[]): number {
+  for (let index = items.length - 1; index >= 0; index--) {
+    if (items[index]?.kind === "process") return index;
+  }
+  return -1;
+}
+
 export function isReasoningBlock(block: Block): boolean {
   return block.blockType === "reasoning" || block.blockType === "thinking";
 }
@@ -62,7 +75,7 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
       if (block.blockType === "tool_use" && content.toolName === "return_result") {
         const input = isRecord(content.input) ? content.input : {};
         const result = typeof toolCallId === "string" ? resultByCall.get(toolCallId) : undefined;
-        const failed = result?.ok === false;
+        const output = isRecord(result) && isRecord(result.output) ? result.output : result;
         flushProcess();
         items.push({
           kind: "report",
@@ -71,8 +84,12 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
             summary: typeof input.summary === "string" ? input.summary : "",
             ...(input.payload === undefined ? {} : { payload: input.payload }),
             artifacts: Array.isArray(input.artifacts) ? input.artifacts.filter(isArtifactRef) : [],
-            partial: failed || content.isError === true,
-            ...(typeof result?.message === "string" ? { reason: result.message } : {}),
+            partial: result?.ok === false || content.isError === true || output?.partial === true,
+            ...(typeof output?.reason === "string"
+              ? { reason: output.reason }
+              : typeof result?.message === "string"
+                ? { reason: result.message }
+                : {}),
           },
         });
         continue;

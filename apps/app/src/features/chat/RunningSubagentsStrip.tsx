@@ -1,123 +1,68 @@
-/**
- * RunningSubagentsStrip — the per-thread, recursive running-subagent surface.
- *
- * Anchored to the thread, not a turn, so a terminal parent turn cannot erase
- * it; fed by the server-truth `ThreadActivity` (leases + lineage). One surface
- * per viewed thread: a child shows its own children with no primary special
- * case. Each row opens that child thread; rows indent by spawn depth.
- */
-import { t } from "@lingui/core/macro";
+/** In-flow summary of direct background runs, with current work on expansion. */
+
 import { Trans } from "@lingui/react/macro";
-import type { ThreadActivityNode, ThreadStatus } from "@meridian/contracts/threads";
-import { ChevronRight, LoaderCircle } from "lucide-react";
-import { useState } from "react";
-import { cn } from "@/lib/utils";
-import { useOpenChatThread } from "./ChatThreadNavigation";
-import { ThreadStatusLabel } from "./ThreadStatusLabel";
+import { useSubagentRuns } from "./subagent/ActivityContext";
+import { useSubagentDisclosure } from "./subagent/DisclosureStore";
+import { SubagentIdentity, SubagentRow, SubagentToolLine } from "./subagent/SubagentRow";
 
-export type RunningSubagentsStripProps = {
-  /** The viewed thread's own derived status. */
-  selfStatus: ThreadStatus;
-  /** Active descendants of the viewed thread, ordered (depth, createdAt). */
-  descendants: ThreadActivityNode[];
-};
-
-export function RunningSubagentsStrip({ selfStatus, descendants }: RunningSubagentsStripProps) {
-  const [expanded, setExpanded] = useState(true);
-
-  if (descendants.length === 0) return null;
-
-  const minDepth = descendants.reduce(
-    (min, node) => Math.min(min, node.depth),
-    Number.POSITIVE_INFINITY,
+export function RunningSubagentsStrip({ threadId }: { threadId: string }) {
+  const descendants = useSubagentRuns(threadId, { directOnly: true }).filter(
+    (run) => run.deliveryMode === "background_notification" && run.status === "running",
   );
-
+  const [expanded, setExpanded] = useSubagentDisclosure(`panel:${threadId}`);
+  if (!descendants.length) return null;
+  const first = descendants[0];
+  if (!first) return null;
+  const aggregate = { ...first, agentName: "Subagent", description: null };
+  const single = descendants.length === 1 ? descendants[0] : undefined;
   return (
-    <div className="border-b border-border-subtle bg-card" data-running-subagents>
-      <div className="mx-auto flex w-full max-w-chat-column items-center gap-2 px-6 py-1 md:px-8">
-        <button
-          type="button"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((value) => !value)}
-          className="focus-ring flex min-w-0 flex-1 items-center gap-1.5 rounded-sm py-0.5 text-left text-caption text-ink-muted"
-        >
-          <ChevronRight
-            className={cn(
-              "size-3 shrink-0 text-ink-subtle transition-transform",
-              expanded && "rotate-90",
-            )}
-            aria-hidden
-          />
-          <span className="truncate">
-            {descendants.length === 1 ? (
-              <Trans>1 subagent running</Trans>
-            ) : (
-              <Trans>{descendants.length} subagents running</Trans>
-            )}
-          </span>
-        </button>
-        <ThreadStatusLabel status={selfStatus} className="shrink-0" />
+    <section
+      className="relative z-10 border-b border-border-subtle bg-background"
+      data-running-subagents
+    >
+      <div className="mx-auto w-full max-w-chat-column px-6 md:px-8">
+        {single ? (
+          <SubagentRow
+            run={single}
+            expanded={expanded}
+            onToggle={() => setExpanded(!expanded)}
+            expandable
+            className="py-1 text-caption text-ink-muted"
+          >
+            <SubagentToolLine run={single} />
+          </SubagentRow>
+        ) : (
+          <SubagentRow
+            run={first}
+            identity={
+              <>
+                <SubagentIdentity
+                  run={aggregate}
+                  showDescription={false}
+                  name={<Trans>{descendants.length} subagents</Trans>}
+                />
+                <span className="truncate text-xs text-muted-foreground">
+                  <Trans>{descendants.length} running</Trans>
+                </span>
+              </>
+            }
+            door={false}
+            expanded={expanded}
+            onToggle={() => setExpanded(!expanded)}
+            expandable
+            className="py-1 text-caption text-ink-muted"
+          >
+            <ul className="pb-1">
+              {descendants.map((run) => (
+                <li key={run.threadId} className="py-1 text-caption text-ink-muted">
+                  <SubagentRow run={run} />
+                  <SubagentToolLine run={run} className="pb-1 pl-7" />
+                </li>
+              ))}
+            </ul>
+          </SubagentRow>
+        )}
       </div>
-
-      {expanded ? (
-        <ul className="mx-auto w-full max-w-chat-column pb-1">
-          {descendants.map((node) => (
-            <SubagentRow
-              key={node.threadId}
-              node={node}
-              indent={Number.isFinite(minDepth) ? node.depth - minDepth : 0}
-            />
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
-
-function SubagentRow({ node, indent }: { node: ThreadActivityNode; indent: number }) {
-  const openThread = useOpenChatThread();
-  const name = node.agentName?.trim() || node.title?.trim() || t`Subagent`;
-  const title = node.title?.trim();
-  const hint = title && title !== name ? title : null;
-
-  const body = (
-    <>
-      <span className="grid size-5 shrink-0 place-items-center rounded-full bg-muted text-primary">
-        <LoaderCircle
-          className={cn("size-3", node.status.kind === "awake" && "motion-safe:animate-spin")}
-          aria-hidden
-        />
-      </span>
-      <span className="min-w-0 flex-1 truncate">
-        <span className="font-medium text-foreground">{name}</span>
-        {hint ? <span className="ml-1.5 text-ink-subtle">{hint}</span> : null}
-      </span>
-      <ThreadStatusLabel status={node.status} className="shrink-0" />
-    </>
-  );
-
-  const className = cn(
-    "flex w-full items-center gap-2 py-1 pr-3 text-sm",
-    openThread && "focus-ring rounded-sm transition-colors hover:bg-muted",
-  );
-  const style = { paddingInlineStart: `calc(1.5rem + ${indent}rem)` };
-
-  return (
-    <li>
-      {openThread ? (
-        <button
-          type="button"
-          onClick={() => openThread(node.threadId)}
-          className={cn(className, "text-left")}
-          style={style}
-        >
-          {body}
-        </button>
-      ) : (
-        <div className={className} style={style}>
-          {body}
-        </div>
-      )}
-    </li>
+    </section>
   );
 }

@@ -645,7 +645,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const toolExecutor = createToolExecutor(toolRegistry);
   const readActivity = (threadId: ThreadId) =>
     readThreadActivity(
-      { threads: ports.threadRepos.threads, statusReader: ports.runClaim },
+      {
+        threads: ports.threadRepos.threads,
+        statusReader: ports.runClaim,
+        executionReports: ports.threadRepos.executionReports,
+      },
       threadId,
     );
   // A drain-woken subagent run (a child report or thread_message) has no driver
@@ -833,6 +837,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       db: ports.db,
       statusReader: ports.runClaim,
       threads: ports.threadRepos.threads,
+      executionReports: ports.threadRepos.executionReports,
       readPending,
     }),
     documentSync: ports.documentSync,

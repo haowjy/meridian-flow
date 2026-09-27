@@ -1,16 +1,21 @@
 /** Pop-out dashboard joining gateway lifecycle events with canonical model requests. */
+
+import { t } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react";
 import type { EventRecord } from "@meridian/contracts/observability";
 import type { ModelRequestDebugListResponse } from "@meridian/contracts/protocol";
+import type { ModelResponse } from "@meridian/contracts/threads";
 import { useEffect, useMemo, useState } from "react";
 
 import { getJson, isMeridianApiError } from "@/client/api/http-client";
-import { getThreadModelRequestDebugRecords } from "@/client/api/threads-api";
+import { getThreadModelRequestDebugRecords, getThreadSnapshot } from "@/client/api/threads-api";
 import { Button } from "@/components/ui/button";
+import { cacheHitPercent } from "@/features/chat/turn-stats";
 import { cn } from "@/lib/utils";
-
 import { DebugPopout, type DebugPopoutTarget, openDebugPopoutWindow } from "../DebugPopout";
 import { JsonTree } from "../JsonTree";
 import { ModelRequestInspector } from "../model-requests/ModelRequestInspector";
+import type { LlmCallsScope } from "../use-debug-enabled";
 import { deriveLlmCalls, type LlmCallOutcome, type LlmCallSummary } from "./derive-llm-calls";
 
 const EVENTS_PATH = "/api/debug/events?source=gateway&excludeName=stream.chunk&limit=500";
@@ -46,19 +51,51 @@ export function openLlmCallsViewerWindow(): LlmCallsViewerTarget | null {
 export function LlmCallsViewer({
   target,
   onClose,
+  filter,
+  onShowAll,
 }: {
   target: LlmCallsViewerTarget | null;
   onClose: (target: LlmCallsViewerTarget) => void;
+  filter?: LlmCallsScope;
+  onShowAll?: () => void;
 }) {
   return (
     <DebugPopout target={target} onClose={onClose}>
-      <LlmCallsContent />
+      <LlmCallsContent filter={filter} onShowAll={onShowAll} />
     </DebugPopout>
   );
 }
 
-function LlmCallsContent() {
+function LlmCallsContent({
+  filter,
+  onShowAll,
+}: {
+  filter?: LlmCallsScope;
+  onShowAll?: () => void;
+}) {
+  const { i18n } = useLingui();
   const [state, setState] = useState<CallsState>({ status: "loading" });
+  const [responsesByTurn, setResponsesByTurn] = useState<Record<string, ModelResponse[]>>({});
+
+  useEffect(() => {
+    let active = true;
+    setResponsesByTurn({});
+    if (!filter)
+      return () => {
+        active = false;
+      };
+    void getThreadSnapshot({ data: { threadId: filter.threadId } })
+      .then((snapshot) => {
+        if (!active) return;
+        setResponsesByTurn(
+          Object.fromEntries(snapshot.turns.map((turn) => [turn.id, turn.responses])),
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [filter]);
 
   useEffect(() => {
     let active = true;
@@ -101,10 +138,46 @@ function LlmCallsContent() {
     };
   }, []);
 
-  const calls = useMemo(
+  const allCalls = useMemo(
     () => (state.status === "loaded" ? deriveLlmCalls(state.events) : []),
     [state],
   );
+  const calls = useMemo(
+    () =>
+      filter
+        ? allCalls.filter(
+            (call) =>
+              call.threadId === filter.threadId &&
+              ("turnId" in filter
+                ? call.turnId === filter.turnId
+                : filter.turnIds.includes(call.turnId ?? "")),
+          )
+        : allCalls,
+    [allCalls, filter],
+  );
+  const cacheResponseByCall = useMemo(() => {
+    const result = new Map<string, ModelResponse>();
+    const byTurn = new Map<string, LlmCallSummary[]>();
+    for (const call of allCalls) {
+      if (!call.turnId || !call.threadId || (filter && call.threadId !== filter.threadId)) continue;
+      const turnCalls = byTurn.get(call.turnId) ?? [];
+      turnCalls.push(call);
+      byTurn.set(call.turnId, turnCalls);
+    }
+    for (const [turnId, responses] of Object.entries(responsesByTurn)) {
+      const turnCalls = (byTurn.get(turnId) ?? [])
+        .filter((call) => call.outcome === "ok")
+        .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+      const available = [...responses].sort((a, b) => a.sequence - b.sequence);
+      for (const call of turnCalls) {
+        const responseIndex = available.findIndex((response) => response.model === call.model);
+        if (responseIndex < 0) continue;
+        const [response] = available.splice(responseIndex, 1);
+        if (response) result.set(call.gatewayCallId, response);
+      }
+    }
+    return result;
+  }, [allCalls, filter, responsesByTurn]);
 
   return (
     <section
@@ -117,6 +190,23 @@ function LlmCallsContent() {
           <p className="text-meta text-muted-foreground">
             Gateway lifecycle and canonical model requests, refreshed while this window is open
           </p>
+          {filter ? (
+            <div className="mt-1 flex items-center gap-3">
+              <p className="font-mono text-meta text-muted-foreground">
+                Thread {filter.threadId},{" "}
+                {"turnId" in filter
+                  ? `turn ${filter.turnId}`
+                  : i18n._(t`Turns ${filter.turnIds.join(", ")}`)}
+              </p>
+              <button
+                type="button"
+                className="focus-ring rounded-sm text-meta text-primary underline"
+                onClick={onShowAll}
+              >
+                Show all
+              </button>
+            </div>
+          ) : null}
         </div>
         {state.status === "loaded" ? (
           <div className="flex flex-1 flex-wrap items-center gap-3 text-meta text-muted-foreground">
@@ -139,14 +229,19 @@ function LlmCallsContent() {
         ) : null}
         {state.status === "loaded" && calls.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            No gateway calls are retained. Start a generation, then leave this window open to
-            refresh.
+            {filter
+              ? "No calls match this thread and turn. The viewer refreshes while this window is open."
+              : "No gateway calls are retained. Start a generation, then leave this window open to refresh."}
           </p>
         ) : null}
         {calls.length > 0 ? (
           <div className="mx-auto flex max-w-6xl flex-col gap-2">
             {calls.map((call) => (
-              <CallCard key={call.gatewayCallId} call={call} />
+              <CallCard
+                key={call.gatewayCallId}
+                call={call}
+                response={cacheResponseByCall.get(call.gatewayCallId)}
+              />
             ))}
           </div>
         ) : null}
@@ -155,8 +250,12 @@ function LlmCallsContent() {
   );
 }
 
-function CallCard({ call }: { call: LlmCallSummary }) {
+function CallCard({ call, response }: { call: LlmCallSummary; response?: ModelResponse }) {
   const [expanded, setExpanded] = useState(false);
+  const responseCacheHit =
+    response?.cacheReadTokens == null
+      ? null
+      : cacheHitPercent(response.cacheReadTokens, response.inputTokens);
   const correlation = [
     call.threadId ? `thread ${call.threadId}` : null,
     call.turnId ? `turn ${call.turnId}` : null,
@@ -203,6 +302,17 @@ function CallCard({ call }: { call: LlmCallSummary }) {
           <Metric label="duration" value={formatMilliseconds(call.durationMs)} />
           <Metric label="input tokens" value={formatCount(call.inputTokens)} />
           <Metric label="output tokens" value={formatCount(call.outputTokens)} />
+          {response ? (
+            <>
+              <Metric
+                label="cache hit"
+                value={
+                  responseCacheHit == null ? "Not reported" : `${responseCacheHit.toFixed(1)}%`
+                }
+              />
+              <Metric label="cache reset" value={response.cacheReset ? "Yes" : "No"} />
+            </>
+          ) : null}
         </dl>
         {correlation.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 break-all font-mono text-meta text-muted-foreground">

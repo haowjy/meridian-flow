@@ -122,7 +122,7 @@ describe("WorkPickerPanel", () => {
         const search = document.querySelector<HTMLInputElement>('input[type="search"]');
         expect(row?.className).toContain("px-2");
         expect(row?.className).toContain("dropdown-focus-ring");
-        expect(search?.parentElement?.className).toContain("mx-2");
+        expect(search?.parentElement?.className).toContain("mx-[var(--chat-space-block)]");
         expect(row?.getAttribute("aria-current")).toBe("true");
         expect(row?.hasAttribute("aria-label")).toBe(false);
         const description = document.getElementById(row?.getAttribute("aria-describedby") ?? "");

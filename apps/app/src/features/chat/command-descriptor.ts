@@ -1,5 +1,6 @@
 /** Maps tool commands to their transcript labels and metadata. */
 import { t } from "@lingui/core/macro";
+import type { JsonValue } from "@meridian/contracts/protocol";
 import {
   BookOpen,
   FilePlus2,
@@ -16,7 +17,7 @@ import {
   Wrench,
 } from "lucide-react";
 
-import { folderDisplayName } from "./document-display-name";
+import { documentFileName, folderDisplayName } from "./document-display-name";
 import type { ToolView } from "./group-delivery-segments";
 import {
   humanizeSkillSlug,
@@ -88,7 +89,7 @@ function workTenses(tool: ToolView, active: string, complete: string): ToolActiv
 const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   read: {
     Icon: BookOpen,
-    phrases: () => tenses(t`Reading…`, t`Read`),
+    phrases: (tool) => documentReadTenses(tool, t`Reading`, t`Read`),
     failureVerb: () => t`Couldn't read`,
     pathlessTitle: () => t`Read file`,
     expand: "output-preview",
@@ -97,23 +98,31 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   // over that payload claims the model saw the words.
   skim: {
     Icon: List,
-    phrases: () => tenses(t`Skimming…`, t`Skimmed`),
+    phrases: (tool) => documentReadTenses(tool, t`Skimming`, t`Skimmed`),
     failureVerb: () => t`Couldn't read`,
     pathlessTitle: () => t`Read file`,
     expand: "output-outline",
   },
   create: {
     Icon: FilePlus2,
-    phrases: (_tool, writeMode) =>
-      writeMode === "draft" ? tenses(t`Drafting…`, t`Drafted`) : tenses(t`Writing…`, t`Wrote`),
+    phrases: (tool, writeMode) =>
+      documentWriteTenses(
+        tool,
+        writeMode === "draft" ? t`Drafting` : t`Writing`,
+        writeMode === "draft" ? t`Drafted` : t`Wrote`,
+      ),
     failureVerb: (writeMode) => (writeMode === "draft" ? t`Couldn't draft` : t`Couldn't write`),
     pathlessTitle: (writeMode) => (writeMode === "draft" ? t`Drafted file` : t`Wrote file`),
     expand: "submitted-content",
   },
   edit: {
     Icon: PenLine,
-    phrases: (_tool, writeMode) =>
-      writeMode === "draft" ? tenses(t`Drafting…`, t`Drafted`) : tenses(t`Editing…`, t`Edited`),
+    phrases: (tool, writeMode) =>
+      documentWriteTenses(
+        tool,
+        writeMode === "draft" ? t`Drafting` : t`Editing`,
+        writeMode === "draft" ? t`Drafted` : t`Edited`,
+      ),
     failureVerb: (writeMode) => (writeMode === "draft" ? t`Couldn't draft` : t`Couldn't edit`),
     pathlessTitle: (writeMode) => (writeMode === "draft" ? t`Drafted file` : t`Edited file`),
     expand: "submitted-content",
@@ -145,7 +154,8 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   search: {
     Icon: Search,
     phrases: (tool) => {
-      const pattern = stringInput(toolInputObject(tool), "pattern");
+      const input = toolInputObject(tool);
+      const pattern = stringInput(input, "query") ?? stringInput(input, "pattern");
       if (!pattern) return tenses(t`Searching…`, t`Searched context`);
       const quoted = `“${truncatePattern(pattern)}”`;
       return {
@@ -236,6 +246,39 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   },
 };
 
+function documentReadTenses(
+  tool: ToolView,
+  activeVerb: string,
+  completeVerb: string,
+): ToolActivityVocabulary {
+  const input = toolInputObject(tool);
+  const file = documentTarget(input);
+  if (!file) return tenses(`${activeVerb}…`, completeVerb);
+  const name = documentFileName(file);
+  return {
+    active: { verb: activeVerb, parameter: `${name}…` },
+    complete: { verb: completeVerb, parameter: name },
+  };
+}
+
+function documentWriteTenses(
+  tool: ToolView,
+  activeVerb: string,
+  completeVerb: string,
+): ToolActivityVocabulary {
+  const file = documentTarget(toolInputObject(tool));
+  if (!file) return tenses(`${activeVerb}…`, completeVerb);
+  const name = documentFileName(file);
+  return {
+    active: { verb: activeVerb, parameter: `${name}…` },
+    complete: { verb: completeVerb, parameter: name },
+  };
+}
+
+function documentTarget(input: Record<string, JsonValue>): string | undefined {
+  return stringInput(input, "path") ?? stringInput(input, "uri") ?? stringInput(input, "file");
+}
+
 export function descriptorFor(tool: ToolView): CommandDescriptor {
   return COMMAND_DESCRIPTORS[toolCommand(tool)];
 }
@@ -258,4 +301,21 @@ export function toolActivityPhrase(
 /** Flattens a phrase for the screen reader, which hears no typography. */
 export function toolActivityAnnouncement(phrase: ToolActivityPhrase): string {
   return phrase.parameter ? `${phrase.verb} ${phrase.parameter}` : phrase.verb;
+}
+
+/** Shared writer-facing label for a live tool dispatch (same vocabulary as ToolRow). */
+export function liveToolActivityLabel(toolName: string, input: unknown): string {
+  const tool: ToolView = {
+    toolCallId: null,
+    toolName,
+    input: (input ?? null) as ToolView["input"],
+    output: null,
+    status: "partial",
+    isError: false,
+    message: null,
+    streamedOutput: null,
+    metadata: null,
+    keyBlock: {} as ToolView["keyBlock"],
+  };
+  return toolActivityAnnouncement(toolActivityPhrase(tool));
 }

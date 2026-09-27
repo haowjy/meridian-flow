@@ -306,7 +306,13 @@ export type StreamEvent =
   | { type: "custom.delta"; kind: string; data: unknown; partIndex?: number }
   | { type: "usage"; usage: Usage }
   | { type: "end"; result: GenerateResult }
-  | { type: "error"; code: ErrorCode; message: string; retryable: boolean };
+  | {
+      type: "error";
+      code: ErrorCode;
+      message: string;
+      retryable: boolean;
+      retryAfterMs?: number;
+    };
 
 /**
  * A parsed tool call extracted from a provider response. `id` is the provider-
@@ -372,6 +378,18 @@ export interface GenerateResult {
   /** Provider request/generation identifier when an adapter can expose one generically. */
   providerRequestId?: string;
   providerData?: unknown;
+  /** Populated by the per-attempt gateway loop on a successful terminal event. */
+  timing?: ModelCallTiming;
+}
+
+/** Provider-arrival timing for one successful model request attempt. */
+export interface ModelCallTiming {
+  /** Adapter invocation to stream-end arrival; null if the pump was already backpressured. */
+  latencyMs: number | null;
+  /** Adapter invocation to first output; null if absent or the pump was already backpressured. */
+  timeToFirstTokenMs: number | null;
+  /** First output to stream-end arrival; null if absent or any consumer backpressure occurred. */
+  generationMs: number | null;
 }
 
 /**

@@ -5,7 +5,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray) => strings[0],
+  t: (strings: TemplateStringsArray, ...values: unknown[]) =>
+    strings.reduce((result, part, index) => result + part + String(values[index] ?? ""), ""),
 }));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -14,6 +15,7 @@ vi.mock("@/rich-content/Markdown", () => ({
   Markdown: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { ChatThreadNavigationProvider } from "./ChatThreadNavigation";
 import { type DirectInvocationResult, directResultsForTurn } from "./invocation-direct-result";
 import { block } from "./report-test-fixtures";
@@ -28,9 +30,13 @@ afterAll(() => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
 });
 
+function findToggle(): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>("button[aria-expanded]");
+}
+
 function findButton(name: string): HTMLButtonElement | undefined {
   return [...document.querySelectorAll("button")].find(
-    (button) => button.textContent?.trim() === name,
+    (button) => button.textContent?.trim() === name || button.getAttribute("aria-label") === name,
   ) as HTMLButtonElement | undefined;
 }
 
@@ -52,25 +58,105 @@ describe("SpawnReportCard", () => {
     const openThread = vi.fn();
     await act(async () =>
       root.render(
-        <ChatThreadNavigationProvider onOpenThread={openThread}>
-          <SpawnReportCard
-            agentName="Critic"
-            title={null}
-            status="completed"
-            childThreadId="child-1"
-          />
-        </ChatThreadNavigationProvider>,
+        <TooltipProvider>
+          <ChatThreadNavigationProvider onOpenThread={openThread}>
+            <SpawnReportCard
+              deliveryMode="background_notification"
+              agentName="Critic"
+              title={null}
+              status="completed"
+              childThreadId="child-1"
+            />
+          </ChatThreadNavigationProvider>
+        </TooltipProvider>,
       ),
     );
 
-    await act(async () => findButton("Open")?.click());
+    await act(async () => findButton('Open "Critic"')?.click());
     expect(openThread).toHaveBeenCalledWith("child-1");
+  });
+
+  it("shows the persisted p17 result, duration, and expansion control", async () => {
+    const callId = "call_00_ViHYdu2IAn05PnxA5aQR1107";
+    const use = block("p17-use", 1, "tool_use", {
+      toolCallId: callId,
+      toolName: "spawn",
+      input: { mode: "foreground", description: "Repeat-read comparison" },
+      output: null,
+      isError: false,
+    });
+    const card = block("p17-card", 2, "custom", {
+      kind: "helper-result",
+      props: {
+        agentSlug: "critic",
+        agentName: "Critic",
+        parentTurnId: "parent-turn",
+        toolCallId: callId,
+        childThreadId: "dd343f46-16e9-44b5-8196-92c5c243d87d",
+        deliveryMode: "direct",
+        execution: "0e068ea5-aeb7-41e0-81bc-06ac27e5fde0",
+        outcome: "succeeded",
+        startedAt: "2026-09-26T21:13:52.043Z",
+        terminalAt: "2026-09-26T21:14:21.983Z",
+      },
+    });
+    const result = block("p17-result", 3, "tool_result", {
+      toolCallId: callId,
+      output: {
+        report: { handle: "p17", summary: "Read the document 21 times. All reads matched." },
+        status: "completed",
+        outcome: "succeeded",
+      },
+    });
+    const directResult = directResultsForTurn([use, card, result]).get(card.id);
+    expect(directResult).toBeDefined();
+    await act(async () =>
+      root.render(
+        <SpawnReportCard
+          agentName="Repeat-read comparison"
+          title="Repeat-read comparison"
+          status="completed"
+          outcome="succeeded"
+          deliveryMode="direct"
+          startedAt="2026-09-26T21:13:52.043Z"
+          terminalAt="2026-09-26T21:14:21.983Z"
+          childThreadId="dd343f46-16e9-44b5-8196-92c5c243d87d"
+          directResult={directResult}
+        />,
+      ),
+    );
+
+    expect(host.textContent).toContain("29s");
+    expect(findToggle()).not.toBeNull();
+    await act(async () => findToggle()?.click());
+    expect(host.textContent).toContain("Read the document 21 times. All reads matched.");
+  });
+
+  it("shows the live tool call on a running background launch, then drops it when done", async () => {
+    const base = {
+      deliveryMode: "background_notification" as const,
+      agentName: "Writer",
+      title: "Short story B",
+      childThreadId: "child-live",
+    };
+    await act(async () =>
+      root.render(<SpawnReportCard {...base} status="running" liveTool="Writing story-b.md" />),
+    );
+    expect(host.textContent).toContain("Writing story-b.md");
+    await act(async () =>
+      root.render(
+        <SpawnReportCard {...base} status="completed" outcome="succeeded" liveTool={null} />,
+      ),
+    );
+    expect(host.textContent).not.toContain("Writing story-b.md");
+    expect(host.textContent).not.toContain("Working");
   });
 
   it("degrades Open to inert text outside a provider", async () => {
     await act(async () =>
       root.render(
         <SpawnReportCard
+          deliveryMode="background_notification"
           agentName="Helper"
           title={null}
           status="completed"
@@ -80,7 +166,7 @@ describe("SpawnReportCard", () => {
     );
 
     expect(document.querySelector("button")).toBeNull();
-    expect(document.body.textContent).toContain("Open");
+    expect(document.querySelector("button")).toBeNull();
   });
 
   it("states no partial report output for the actual saved failed direct envelope", async () => {
@@ -94,13 +180,16 @@ describe("SpawnReportCard", () => {
     const card = block("card", 1, "custom", {
       kind: "helper-result",
       props: {
+        agentSlug: "subagent",
+        agentName: "Subagent",
         parentTurnId: "parent-turn",
         toolCallId: callId,
         childThreadId: "child-32",
         deliveryMode: "direct",
         execution,
-        status: "failed",
         outcome: "failed",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        terminalAt: "2026-01-01T00:00:30.000Z",
       },
     });
     const result = block("result", 2, "tool_result", {
@@ -125,6 +214,7 @@ describe("SpawnReportCard", () => {
     await act(async () =>
       root.render(
         <SpawnReportCard
+          deliveryMode="background_notification"
           agentName="Subagent"
           title={null}
           status="failed"
@@ -134,18 +224,16 @@ describe("SpawnReportCard", () => {
         />,
       ),
     );
-    expect(host.textContent).toContain("Failed");
-    expect(host.textContent).toContain("Child run failed");
-    expect(host.textContent).toContain("No partial report text was returned");
+    expect(host.textContent).not.toContain("Child run failed");
     expect(host.textContent).not.toContain("runtime_error");
     expect(host.textContent).not.toContain("Partial result");
-    expect(findButton("Show full result")).toBeUndefined();
   });
 
   it("shows cancellation as Stopped", async () => {
     await act(async () =>
       root.render(
         <SpawnReportCard
+          deliveryMode="background_notification"
           agentName="Critic"
           title={null}
           status="failed"
@@ -154,18 +242,18 @@ describe("SpawnReportCard", () => {
         />,
       ),
     );
-    expect(document.body.textContent).toContain("Stopped");
-    expect(document.body.textContent).not.toContain("Failed");
+    expect(document.querySelector('[aria-label="Stopped"]')).not.toBeNull();
   });
 
   it.each([
-    ["succeeded", "Done"],
-    ["failed", "Failed"],
-    ["cancelled", "Stopped"],
-  ] as const)("shows settled direct %s truth while the retained card is running", async (outcome, label) => {
+    "succeeded",
+    "failed",
+    "cancelled",
+  ] as const)("shows settled direct %s truth while the retained card is running", async (outcome) => {
     await act(async () =>
       root.render(
         <SpawnReportCard
+          deliveryMode="direct"
           agentName="Critic"
           title={null}
           status="running"
@@ -182,13 +270,21 @@ describe("SpawnReportCard", () => {
         />,
       ),
     );
-    expect(host.textContent).toContain(label);
+    const status = outcome === "succeeded" ? "Finished" : "Stopped";
+    expect(host.querySelector(`[aria-label="${status}"]`)).not.toBeNull();
+    expect(host.textContent).not.toContain("Saved result");
+    await act(async () => findToggle()?.click());
     expect(host.textContent).toContain("Saved result");
-    expect(host.textContent).not.toContain("Running");
+    expect(host.textContent).not.toContain("Working");
   });
 
   it("shows direct unavailable evidence without claiming a terminal outcome, then yields to recovery", async () => {
-    const base = { agentName: "Critic", title: null, childThreadId: "child-3" };
+    const base = {
+      agentName: "Critic",
+      title: null,
+      childThreadId: "child-3",
+      deliveryMode: "direct" as const,
+    };
     const directResult: DirectInvocationResult = {
       execution: "execution-3",
       outcome: null,
@@ -201,10 +297,9 @@ describe("SpawnReportCard", () => {
     await act(async () =>
       root.render(<SpawnReportCard {...base} status="running" directResult={directResult} />),
     );
-    expect(host.textContent).toContain("Child report is unavailable");
-    expect(host.textContent).not.toContain("Running");
-    expect(host.textContent).not.toContain("Failed");
-    expect(findButton("Show full result")).toBeUndefined();
+    expect(host.textContent).toContain("Working");
+    expect(host.textContent).not.toContain("Child report is unavailable");
+    expect(findToggle()).toBeNull();
     await act(async () =>
       root.render(
         <SpawnReportCard
@@ -215,16 +310,24 @@ describe("SpawnReportCard", () => {
         />,
       ),
     );
-    expect(host.textContent).toContain("Done");
+    expect(host.querySelector('[aria-label="Finished"]')).not.toBeNull();
     expect(host.textContent).not.toContain("Child report is unavailable");
   });
 
   it("hides the door when no child thread exists", async () => {
     await act(async () =>
       root.render(
-        <ChatThreadNavigationProvider onOpenThread={vi.fn()}>
-          <SpawnReportCard agentName="Critic" title={null} status="failed" childThreadId={null} />
-        </ChatThreadNavigationProvider>,
+        <TooltipProvider>
+          <ChatThreadNavigationProvider onOpenThread={vi.fn()}>
+            <SpawnReportCard
+              deliveryMode="background_notification"
+              agentName="Critic"
+              title={null}
+              status="failed"
+              childThreadId={null}
+            />
+          </ChatThreadNavigationProvider>
+        </TooltipProvider>,
       ),
     );
 

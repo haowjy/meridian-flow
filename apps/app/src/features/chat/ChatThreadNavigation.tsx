@@ -1,11 +1,10 @@
 /**
- * ChatThreadNavigation — optional chat-local bridge from a child thread id to
- * whichever shell owns chat routing.
+ * ChatThreadNavigation — chat-local bridge from a child thread id to the
+ * project shell that owns chat routing.
  *
- * A spawn report's door and the background helper card's door call the same
- * `onSelectThread` the parent breadcrumb uses, so there is one chat router and
- * two entrances onto it. Outside a project shell the hook returns `null` and
- * every door degrades to inert text, exactly like `DocumentName`.
+ * A spawn report's door, a background helper card's door, and the parent
+ * breadcrumb call the same `onSelectThread`, so there is one chat router and
+ * three entrances onto it.
  */
 import { createContext, type ReactNode, useContext } from "react";
 

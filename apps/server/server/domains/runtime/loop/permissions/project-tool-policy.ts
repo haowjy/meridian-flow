@@ -41,7 +41,6 @@ type CompiledToolFields = {
 
 export function projectToolPolicy(metadata: CompiledToolFields): EffectiveToolPolicy {
   const mutate = marsAllowed("edit", metadata);
-  const askUser = marsAllowed("ask_user", metadata);
 
   const writeCommands = new Set<WriteCommandName>([
     "read",
@@ -67,7 +66,9 @@ export function projectToolPolicy(metadata: CompiledToolFields): EffectiveToolPo
     "ls",
     "search",
   ]);
-  if (askUser) tools.add("ask_user");
+  // ask_user is disabled until its rework (composer-attached input, subagent
+  // semantics): https://github.com/haowjy/meridian-flow/issues/601
+  // if (marsAllowed("ask_user", metadata)) tools.add("ask_user");
 
   return { tools, writeCommands, workCommands };
 }

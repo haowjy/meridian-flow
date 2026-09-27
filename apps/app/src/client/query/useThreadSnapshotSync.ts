@@ -130,6 +130,8 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
                 if (!current(expected) || (sourceThreadId && sourceThreadId !== threadId)) return;
                 if ("threadId" in event && event.threadId !== threadId) return;
                 if (event.type === EventType.RUN_STARTED) refresh(expected);
+                if (event.type === EventType.CUSTOM && event.name === "meridian.usage")
+                  refresh(expected);
                 if (
                   !isDurableBlockEvent(event) ||
                   !isWellFormedDurableBlockEvent(event) ||

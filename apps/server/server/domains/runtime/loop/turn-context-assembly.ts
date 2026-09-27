@@ -16,6 +16,7 @@
 
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
+import type { EventSink } from "../../observability/index.js";
 import type { AgentRevisionStore } from "../../packages/index.js";
 import type { BakeComposedSystemPromptInput } from "../../threads/ports/repositories.js";
 import type { FunctionTool, Gateway, GenerateRequest, Tool } from "../gateway/index.js";
@@ -57,6 +58,7 @@ export interface AssembleNextTurnContextInput {
     input: BakeComposedSystemPromptInput,
   ) => Promise<Thread>;
   workContext: WorkContextReader;
+  eventSink?: EventSink;
 }
 
 export interface AssembledNextTurnContext {
@@ -169,6 +171,7 @@ export async function assembleNextTurnContext(
     availableSkills: availableSkillsForUnfrozen,
     namedSubagents: namedSubagentsForUnfrozen,
     subagentGuidance: subagentGuidanceForUnfrozen,
+    eventSink: input.eventSink,
   });
   const contextTools = built.tools;
   const messages = supportsPromptCaching ? applyPromptCacheMarks(built.messages) : built.messages;

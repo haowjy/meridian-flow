@@ -9,18 +9,13 @@ import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 
 export const EMPTY_THREAD_PENDING_INBOX: ThreadPendingInbox = { items: [] };
 
-export type WriterTurnQueueStatus = "queued" | "waiting";
-
-/** One status per accepted writer turn; inbox IDs are the persisted turn IDs. */
-export function writerTurnQueueStatus(
-  pending: ThreadPendingInbox,
-): ReadonlyMap<string, WriterTurnQueueStatus> {
-  const statuses = new Map<string, WriterTurnQueueStatus>();
+/** Writer turns still waiting for the model to read them; inbox IDs are turn IDs. */
+export function queuedWriterTurnIds(pending: ThreadPendingInbox): ReadonlySet<string> {
+  const ids = new Set<string>();
   for (const item of pending.items) {
-    if (item.provenance.kind !== "writer") continue;
-    statuses.set(item.id, item.deliveryState === "waiting" ? "queued" : "waiting");
+    if (item.provenance.kind === "writer" && item.deliveryState === "waiting") ids.add(item.id);
   }
-  return statuses;
+  return ids;
 }
 
 export function isThreadPendingInbox(value: unknown): value is ThreadPendingInbox {

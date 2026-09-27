@@ -89,6 +89,10 @@ export function createWriterTurnProducer(deps: {
             createdAfter: live.startedAt,
           })))
         : null;
+      const turnMetadata =
+        activatedSkillMetadata(input.admission.activatedSkillSlugs ?? []) ??
+        input.userTurnMetadata ??
+        null;
 
       type Projection =
         | AcceptedAdmission
@@ -100,10 +104,7 @@ export function createWriterTurnProducer(deps: {
           threadId,
           userTurnId,
           userBlocks: input.blocks,
-          userTurnMetadata:
-            activatedSkillMetadata(input.admission.activatedSkillSlugs ?? []) ??
-            input.userTurnMetadata ??
-            null,
+          userTurnMetadata: assistantTurnId ? markSteerDelivery(turnMetadata) : turnMetadata,
           delivery: deps.delivery,
           inbox: deps.inbox,
           draft: {
@@ -162,4 +163,14 @@ export function createWriterTurnProducer(deps: {
       }
     },
   };
+}
+
+/** The writer enqueue's live assistant binding is the durable authority for a mid-run steer. */
+function markSteerDelivery(metadata: JsonValue | null): JsonValue {
+  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+    return { ...metadata, delivery: "steer" };
+  }
+  return metadata === null
+    ? { delivery: "steer" }
+    : { delivery: "steer", originalMetadata: metadata };
 }

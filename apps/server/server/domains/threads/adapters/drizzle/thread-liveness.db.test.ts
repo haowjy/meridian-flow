@@ -28,6 +28,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleRunClaim } = await import("../../../runtime/index.js");
     const { createThreadRuntimeService } = await import("../../runtime-service.js");
     const { createDrizzleThreadRepository } = await import("./thread-repository.js");
+    const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 6 });
@@ -133,10 +134,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("reads the running turn from the lease in both the list and live state", async () => {
       const authority = createDrizzleRunClaim(db);
       const repo = createDrizzleThreadRepository(db, { statusReader: authority });
+      const repos = createDrizzleRepositoriesForTest(db);
       const runtime = createThreadRuntimeService({
         db,
         statusReader: authority,
         threads: repo,
+        executionReports: repos.executionReports,
         readPending: async () => ({ items: [] }),
       });
 

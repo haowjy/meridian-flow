@@ -1,18 +1,12 @@
 /** Shared report-body presentation for invocation cards and saved report rows. */
 import { Trans } from "@lingui/react/macro";
-import type { ArtifactRef } from "@meridian/contracts/interrupt";
-import type { JsonValue } from "@meridian/contracts/protocol";
+import type { SavedReportContentValue } from "@meridian/contracts/spawn";
 import type { ReactNode } from "react";
 import { Markdown } from "@/rich-content/Markdown";
 import { ArtifactGrid } from "./ArtifactGrid";
+import { payloadText } from "./report-payload";
 
-export type ReportContentValue = {
-  summary: string;
-  payload?: JsonValue;
-  artifacts: ArtifactRef[];
-  reason?: string | null;
-  partial?: boolean;
-};
+export type ReportContentValue = SavedReportContentValue;
 
 type ReportContentProps = {
   report: ReportContentValue;
@@ -20,6 +14,7 @@ type ReportContentProps = {
   message?: string | null;
   className?: string;
   emptyClassName?: string;
+  showStopMetadata?: boolean;
 };
 
 export function ReportContent({
@@ -28,6 +23,7 @@ export function ReportContent({
   message,
   className,
   emptyClassName,
+  showStopMetadata = true,
 }: ReportContentProps) {
   const hasContent =
     !!report.summary || report.payload !== undefined || report.artifacts.length > 0;
@@ -36,7 +32,7 @@ export function ReportContent({
       <div className={emptyClassName ?? className ?? "text-caption text-muted-foreground"}>
         {message ? <p>{message}</p> : null}
         {empty ? <p>{empty}</p> : null}
-        {report.reason ? (
+        {showStopMetadata && report.reason ? (
           <p>
             <Trans>Reason: {report.reason}</Trans>
           </p>
@@ -54,21 +50,16 @@ export function ReportContent({
       ) : null}
       {report.artifacts.length ? <ArtifactGrid artifacts={report.artifacts} /> : null}
       {message ? <p className="text-caption text-muted-foreground">{message}</p> : null}
-      {report.reason ? (
+      {showStopMetadata && report.reason ? (
         <p className="text-caption text-muted-foreground">
           <Trans>Reason: {report.reason}</Trans>
         </p>
       ) : null}
-      {report.partial ? (
+      {showStopMetadata && report.partial ? (
         <p className="text-caption text-muted-foreground">
           <Trans>Partial result</Trans>
         </p>
       ) : null}
     </div>
   );
-}
-
-export function payloadText(payload: JsonValue | undefined): string {
-  if (payload === undefined) return "";
-  return typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
 }

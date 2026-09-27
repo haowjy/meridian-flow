@@ -7,6 +7,7 @@
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
+  CurrentToolCall,
   MessageIntent,
   MessageProvenance,
   ThreadLeaseState,
@@ -82,6 +83,8 @@ export interface RunClaim {
   renew(lease: Lease): Promise<boolean>;
   holder(threadId: ThreadId): Promise<RunId | null>;
   publish(lease: Lease, phase: ThreadPhase): Promise<void>;
+  /** Updates the live run's current tool; returns false when it did not change. */
+  setCurrentTool(lease: Lease, currentTool: CurrentToolCall): Promise<boolean>;
   read(threadId: ThreadId): Promise<ThreadStatus>;
   /**
    * Batch liveness read for a page of threads, one lease query. Only threads

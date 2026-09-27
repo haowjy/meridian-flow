@@ -4,10 +4,12 @@
  * ChildRunCoordinator owns lifecycle; these only validate input.
  */
 import { type InvocationPatch, invocationPatchSchema } from "@meridian/contracts/agents";
-import type { ArtifactRef } from "@meridian/contracts/interrupt";
-import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
-import type { SpawnResult } from "@meridian/contracts/spawn";
-import type { JsonValue } from "@meridian/contracts/threads";
+import {
+  meridianErrorFromSystem,
+  meridianErrorFromTool,
+  meridianErrorToJson,
+} from "@meridian/contracts/interrupt";
+import { returnResultCaptureSchema, type SpawnResult } from "@meridian/contracts/spawn";
 import { ZodError } from "zod";
 import { InvocationPatchError } from "../spawn/apply-invocation-patch.js";
 import type {
@@ -69,6 +71,31 @@ function parseInvocationPatch(input: unknown): InvocationPatch {
 /** Roster-aware spawn description; the caller's binding supplies whether it has named targets. */
 export function spawnToolDescription(hasNamedTargets: boolean): string {
   return hasNamedTargets ? SPAWN_DESCRIPTION : SPAWN_DESCRIPTION_EMPTY_ROSTER;
+}
+
+function returnResultInputError(error: ZodError): string {
+  const issue = error.issues[0];
+  const field = issue?.path.length
+    ? issue.path.reduce<string>(
+        (path, part) =>
+          typeof part === "number"
+            ? `${path}[${part}]`
+            : path
+              ? `${path}.${String(part)}`
+              : String(part),
+        "",
+      )
+    : "input";
+  if (issue?.path[0] === "artifacts") {
+    return `Invalid return_result input at ${field}: expected a Meridian document URI string. ${issue.message}`;
+  }
+  if (issue?.path[0] === "summary") {
+    return `Invalid return_result input at ${field}: expected a string.`;
+  }
+  if (issue?.path[0] === "payload") {
+    return `Invalid return_result input at ${field}: expected a JSON value.`;
+  }
+  return `Invalid return_result input at ${field}: expected an object with a string summary, optional JSON payload, and optional artifacts array of Meridian document URI strings.`;
 }
 
 const THREAD_MESSAGE_DESCRIPTION =
@@ -155,7 +182,11 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
                 "Named subagent from your subagents roster. Omit or pass an empty string for the generic subagent.",
             },
             prompt: { type: "string", description: "Task prompt for the child agent." },
-            description: { type: "string", description: "Short label for the subagent thread." },
+            description: {
+              type: "string",
+              description:
+                "The writer sees this as the subagent's name in chat and in its thread title, so always set it. Use 2 to 5 words naming the task or its deliverable in the writer's terms, such as \"Chapter 12 continuity check\" or \"Lantern festival research\". Make parallel subagents distinguishable. Don't use a sentence, the agent's name, or a pN handle.",
+            },
             mode: {
               type: "string",
               enum: ["foreground", "background"],
@@ -169,7 +200,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
             overrides: {
               type: "object",
               description:
-                "Per-invocation execution patch: model, effort, tools, disallowed-tools, subagents, skills. Omitted fields inherit the child's saved configuration.",
+                "Per-invocation execution patch: model, effort, tools, disallowed-tools, subagents, skills. Omitted fields inherit the child's saved configuration. Override model or effort only when this run needs it, such as when the saved model keeps getting this task wrong or the task briefly needs more capability.",
             },
           },
           required: ["prompt"],
@@ -243,7 +274,12 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
             payload: { description: "Package-defined structured result." },
             artifacts: {
               type: "array",
-              description: "Promoted artifact references produced by this child.",
+              description: "Meridian document URIs produced by this child.",
+              items: {
+                type: "string",
+                description:
+                  "Meridian URI of a document this subagent produced, such as scratch://… or manuscript://…",
+              },
             },
           },
           required: ["summary"],
@@ -253,16 +289,16 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: ReturnResultToolHandlerContext) => {
-          const args = input as {
-            summary: string;
-            payload?: JsonValue;
-            artifacts?: ArtifactRef[];
-          };
-          return ctx.returnResult({
-            summary: args.summary,
-            payload: args.payload,
-            artifacts: args.artifacts,
-          });
+          const parsed = returnResultCaptureSchema.safeParse(input);
+          if (!parsed.success) {
+            return {
+              isError: true,
+              output: meridianErrorToJson(
+                meridianErrorFromTool(returnResultInputError(parsed.error)),
+              ),
+            };
+          }
+          return ctx.returnResult(parsed.data);
         },
       },
       capability: "return_result",

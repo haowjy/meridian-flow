@@ -142,7 +142,9 @@ describe("interrupt cancel", () => {
     expect(await rig.inbox.selectPending(rig.thread.id)).toEqual([]);
   });
 
-  it("cancels after a committed response acknowledges its trigger without starting a successor", async () => {
+  // Dormant while ask_user is disabled: nothing can park a run on an interrupt.
+  // Re-enable with https://github.com/haowjy/meridian-flow/issues/601
+  it.skip("cancels after a committed response acknowledges its trigger without starting a successor", async () => {
     const toolStarted = runtimeGate();
     const releaseTool = runtimeGate();
     let streamCalls = 0;

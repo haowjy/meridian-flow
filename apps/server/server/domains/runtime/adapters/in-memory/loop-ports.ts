@@ -4,7 +4,7 @@
  * injected clock so lease expiry and renewal are deterministic.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { ThreadLeaseState } from "@meridian/contracts/threads";
+import type { CurrentToolCall, ThreadLeaseState } from "@meridian/contracts/threads";
 import {
   DEFAULT_LEASE_TTL_MS,
   type InboxMessage,
@@ -107,6 +107,7 @@ interface InMemoryLease {
   holderId: string;
   phase: ThreadPhase;
   cancelRequested: boolean;
+  currentTool: CurrentToolCall | null;
   expiresAt: number;
 }
 
@@ -157,6 +158,7 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
         holderId,
         phase: "generating",
         cancelRequested: false,
+        currentTool: null,
         expiresAt: now() + leaseTtlMs,
       });
       return { threadId, runId, holderId };
@@ -177,6 +179,14 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
       const row = leases.get(lease.threadId);
       if (!row || row.runId !== lease.runId) return;
       row.phase = phase;
+    },
+
+    async setCurrentTool(lease, currentTool) {
+      const row = liveLease(lease.threadId);
+      if (!row || row.runId !== lease.runId || row.holderId !== lease.holderId) return false;
+      if (JSON.stringify(row.currentTool) === JSON.stringify(currentTool)) return false;
+      row.currentTool = currentTool;
+      return true;
     },
 
     async bindTurn(lease, turnId, messageIds) {
@@ -228,6 +238,7 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
         states.set(threadId, {
           status: { kind: "awake", phase: row.phase, cancelRequested: row.cancelRequested },
           runningTurnId: row.turnId,
+          currentTool: row.currentTool,
         });
       }
       return states;

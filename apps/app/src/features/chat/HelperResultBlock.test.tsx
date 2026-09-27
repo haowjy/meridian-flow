@@ -4,6 +4,10 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@lingui/core/macro", () => ({
+  t: (strings: TemplateStringsArray, ...values: unknown[]) =>
+    strings.reduce((result, part, index) => result + part + String(values[index] ?? ""), ""),
+}));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
@@ -12,9 +16,11 @@ vi.mock("@/rich-content/Markdown", () => ({
 }));
 vi.mock("@/client/api/execution-reports-api", () => ({
   getThreadExecutionReport: vi.fn(async () => ({
+    childThreadId: "child-1",
     ref: "p1",
-    execution: "run-1",
+    run: 1,
     outcome: "succeeded",
+    deliveryMode: "background_notification",
     source: "return_result",
     summary: "A lantern swims through night.\nThe river keeps its silver name.",
     payload: { stanza: 2 },
@@ -24,6 +30,7 @@ vi.mock("@/client/api/execution-reports-api", () => ({
   })),
 }));
 
+import { getThreadExecutionReport } from "@/client/api/execution-reports-api";
 import { HelperResultBlock } from "./HelperResultBlock";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -46,7 +53,7 @@ describe("HelperResultBlock saved report", () => {
     document.body.innerHTML = "";
   });
 
-  it("loads a background card's saved report collapsed and expands the full result", async () => {
+  it("reads the saved report only when a finished background card is expanded", async () => {
     await act(async () =>
       root.render(
         <QueryClientProvider client={queryClient}>
@@ -54,12 +61,16 @@ describe("HelperResultBlock saved report", () => {
             content={{
               kind: "helper-result",
               props: {
+                agentSlug: "poet",
                 agentName: "Poet",
-                status: "completed",
-                outcome: "succeeded",
+                parentTurnId: "parent-turn",
+                toolCallId: "spawn-1",
                 deliveryMode: "background_notification",
                 childThreadId: "child-1",
                 execution: "run-1",
+                startedAt: "2026-01-01T00:00:00.000Z",
+                terminalAt: "2026-01-01T00:01:00.000Z",
+                outcome: "succeeded",
               },
             }}
             threadId="parent-1"
@@ -71,15 +82,18 @@ describe("HelperResultBlock saved report", () => {
         </QueryClientProvider>,
       ),
     );
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
-
-    expect(host.textContent).toContain("A lantern swims through night.");
-    expect(host.textContent).not.toContain("The river keeps its silver name.");
-    const toggle = [...host.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("Show full result"),
-    );
-    expect(toggle).toBeDefined();
+    expect(host.textContent).toContain("Poet");
+    expect(host.textContent).not.toContain("A lantern swims through night.");
+    expect(getThreadExecutionReport).not.toHaveBeenCalled();
+    const toggle = host.querySelector<HTMLButtonElement>("button[aria-expanded]");
+    expect(toggle).not.toBeNull();
     await act(async () => toggle?.click());
-    expect(host.textContent).toContain("The river keeps its silver name.");
+    await act(async () => undefined);
+    expect(getThreadExecutionReport).toHaveBeenCalledWith({
+      threadId: "parent-1",
+      childThreadId: "child-1",
+      execution: "run-1",
+    });
+    await vi.waitFor(() => expect(host.textContent).toContain("A lantern swims through night."));
   });
 });

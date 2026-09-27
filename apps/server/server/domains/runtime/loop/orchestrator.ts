@@ -71,6 +71,7 @@ import type { AiWriteMode } from "@meridian/contracts/works";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { AccountSkillInstallStore, AgentRevisionStore } from "../../packages/index.js";
+import { isCacheReset } from "../../threads/domain/cache-reset.js";
 import type {
   ActiveDocumentResolver,
   BlockRepository,
@@ -80,9 +81,11 @@ import type {
   ThreadRepository,
   TurnRepository,
 } from "../../threads/index.js";
+import { readThreadActivity } from "../../threads/index.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ImageAssetPort } from "../ports/image-asset.js";
+import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
@@ -105,6 +108,12 @@ import {
   type InterruptRegistry,
 } from "./interrupts.js";
 import { createLocalTurn } from "./local-turn.js";
+import { modelResponseTimingFields } from "./model-response-timing.js";
+import {
+  hasPartialToolActivityTarget,
+  parsePartialToolActivityInput,
+  showsPartialToolActivityBeforeTarget,
+} from "./partial-tool-activity.js";
 import { type PermissionGate, permissionGateFromToolPolicy } from "./permissions/index.js";
 import {
   appendEvent,
@@ -656,6 +665,9 @@ async function persistModelResponse(input: {
           responseId,
         );
         const costUsd = computedCost.costUsd;
+        const cacheResetContext = await deps.repos.modelResponses.cacheResetContext(
+          runInput.threadId,
+        );
         const response: ModelResponseReceivedRow = {
           id: responseId,
           turnId: currentAssistantTurn.id,
@@ -668,11 +680,16 @@ async function persistModelResponse(input: {
           reasoningTokens: result.usage.reasoningTokens ?? null,
           cacheReadTokens: result.usage.cacheReadTokens ?? null,
           cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
+          cacheReset: isCacheReset({
+            ...cacheResetContext,
+            currentCacheReadTokens: result.usage.cacheReadTokens ?? null,
+          }),
           costUsd,
           millicredits: computedCost.millicredits,
           priceSource: computedCost.priceSource,
           pricingSnapshot: computedCost.pricingSnapshot,
           finishReason: result.finishReason,
+          ...modelResponseTimingFields(result),
           rawUsage: toJsonValue(result.usage),
         };
         const updatedTurn = applyResponseToTurnSnapshot(currentAssistantTurn, response);
@@ -1067,6 +1084,7 @@ async function buildGenerateRequest(input: {
       input.deps.repos.threads,
     ),
     workContext: input.deps.workContext,
+    eventSink: input.deps.eventSink,
   });
 
   return {
@@ -1512,9 +1530,64 @@ async function executeLoop(
       await publishPhase("generating");
       let result: GenerateResult | undefined;
       let streamModel = request.model ?? "unknown";
+      const partialToolCalls = new Map<
+        string,
+        { toolName: string; arguments: string; targetRecorded: boolean }
+      >();
       for await (const event of gateway.stream(request)) {
         if (isCancelled()) {
           cancelRequested = true;
+        }
+
+        if (thread.kind === "subagent" && event.type === "tool_call.delta") {
+          let partialCall = partialToolCalls.get(event.id);
+          const firstDelta = partialCall === undefined;
+          if (!partialCall) {
+            partialCall = { toolName: event.name, arguments: "", targetRecorded: false };
+            partialToolCalls.set(event.id, partialCall);
+          } else if (event.name) {
+            // Some compatible providers split the tool name from the first
+            // arguments chunk; keep the newest nonempty canonical name.
+            partialCall.toolName = event.name;
+          }
+
+          if (!partialCall.targetRecorded) {
+            partialCall.arguments += event.argumentsDelta;
+            const partialInput = parsePartialToolActivityInput(
+              partialCall.toolName,
+              partialCall.arguments,
+            );
+            const hasTarget = hasPartialToolActivityTarget(partialCall.toolName, partialInput);
+            if (
+              (firstDelta && showsPartialToolActivityBeforeTarget(partialCall.toolName)) ||
+              hasTarget
+            ) {
+              const currentTool = {
+                toolCallId: event.id,
+                toolName: partialCall.toolName,
+                input: partialInput,
+              };
+              await appendSubagentActivityForToolChangeBestEffort({
+                recordCurrentTool: () => deps.runClaim.setCurrentTool(input.lease, currentTool),
+                currentTool,
+                eventWriter,
+                readActivity: (threadId) =>
+                  readThreadActivity(
+                    {
+                      threads: repos.threads,
+                      statusReader: deps.runClaim,
+                      executionReports: deps.repos.executionReports,
+                    },
+                    threadId,
+                  ),
+                rootThreadId: (thread.rootThreadId ?? thread.id) as ThreadId,
+                childThreadId: thread.id,
+                eventSink,
+              });
+              partialCall.targetRecorded = hasTarget;
+              if (hasTarget) partialCall.arguments = "";
+            }
+          }
         }
 
         if (event.type === "start") {
@@ -1678,11 +1751,12 @@ async function executeLoop(
               persistenceDeps: deps,
               executionReports: deps.repos.executionReports,
               readSnapshot: deps.repos.readSnapshot,
-              runningTurn: deps.runClaim,
+              runClaim: deps.runClaim,
             },
             call,
             {
               thread,
+              lease: input.lease,
               agentSlug: built.agentSlug,
               responseId,
               editResponseId: scope.id,

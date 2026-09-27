@@ -2,10 +2,7 @@
 import type { Work } from "@meridian/contracts/works";
 import { ComposerToolbar, createComposerToolbarModel } from "@/components/app/composer-toolbar";
 import { useSelectedWorkWriteModeToolbarControl } from "@/components/app/work-composer-controls";
-import {
-  type ComposerAgentControlProps,
-  useComposerAgentToolbarControl,
-} from "@/features/agents/ComposerAgentControl";
+import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 import { useComposerWorkToolbarControl } from "./ComposerWorkControl";
 
@@ -33,18 +30,4 @@ export function ChatComposerToolbar({
   const workControl = useComposerWorkToolbarControl({ projectId, threadId, work });
   const model = createComposerToolbarModel([agent, writeMode, workControl]);
   return <ComposerToolbar ariaLabel="Composer controls" model={model} />;
-}
-
-export function AgentOnlyComposerToolbar({
-  control,
-  disabled = false,
-}: {
-  control: ComposerAgentControlProps;
-  disabled?: boolean;
-}) {
-  const agent = useComposerAgentToolbarControl(control);
-  const visible = disabled ? { ...agent, interaction: "busy" as const } : agent;
-  return (
-    <ComposerToolbar ariaLabel="Composer controls" model={createComposerToolbarModel([visible])} />
-  );
 }

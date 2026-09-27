@@ -126,6 +126,16 @@ const threadActivityNodeSchema: z.ZodType<import("../threads/index.js").ThreadAc
     agentName: z.string().nullable(),
     spawnStatus: z.enum(["running", "succeeded", "failed", "cancelled"]).nullable(),
     status: threadStatusSchema,
+    deliveryMode: z.enum(["direct", "background_notification"]).nullable(),
+    runStartedAt: z.string().nullable(),
+    runEndedAt: z.string().nullable(),
+    currentTool: z
+      .object({
+        toolCallId: z.string().min(1),
+        toolName: z.string().min(1),
+        input: jsonValueSchema,
+      })
+      .nullable(),
     originTurnId: z.string().min(1).nullable(),
   });
 
@@ -143,6 +153,7 @@ const messageProvenanceSchema: z.ZodType<import("../threads/index.js").MessagePr
       reportId: z.string().min(1),
       handle: z.string().min(1),
       outcome: z.enum(["succeeded", "failed", "cancelled"]),
+      agentName: z.string().min(1),
     }),
     z.object({ kind: z.literal("system"), source: z.string().min(1) }),
   ],

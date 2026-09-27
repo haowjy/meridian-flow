@@ -1,9 +1,11 @@
 /**
- * Stream-event classification shared by the retry gate and observability.
+ * Stream-event classification shared by the retry gate and per-attempt timing.
  *
  * Two questions look similar but must stay separate:
  * - Did the attempt emit anything at all? (`isPartialOutputEvent`) — drives
- *   cancel draining and first-output timing.
+ *   cancel draining.
+ * - Did it emit the first model output token? (`isFirstTokenEvent`) — drives
+ *   provider-arrival TTFT and generation-duration timing.
  * - Did it emit output the caller may have already acted on?
  *   (`isCommittedOutputEvent`) — drives the retry gate.
  *
@@ -14,11 +16,24 @@
 import type { StreamEvent } from "./domain/index.js";
 
 /**
- * Any event that carries provider content, including reasoning, usage, and
- * custom events. Start and error are control events, not output.
+ * Any event that carries provider content or usage. Start and error are
+ * control events, not output.
  */
 export function isPartialOutputEvent(event: StreamEvent): boolean {
   return event.type !== "start" && event.type !== "error";
+}
+
+/** Content deltas the writer can receive; custom deltas are UI-only today. */
+export function isFirstTokenEvent(event: StreamEvent): boolean {
+  switch (event.type) {
+    case "text.delta":
+    case "reasoning.delta":
+      return event.text.length > 0;
+    case "tool_call.delta":
+      return event.argumentsDelta.length > 0;
+    default:
+      return false;
+  }
 }
 
 /**

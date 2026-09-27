@@ -65,12 +65,16 @@ function harness() {
     persistenceDeps,
     executionReports: {} as ToolDispatchDeps["executionReports"],
     readSnapshot: async (operation) => operation(),
-    runningTurn: { readRunningTurnId: async () => null },
+    runClaim: {
+      readMany: async () => new Map(),
+      setCurrentTool: async () => false,
+    },
   };
   const thread = { id: PARENT_THREAD_ID, userId: "user-1" } as unknown as Thread;
   const currentTurn = { id: "turn-1", threadId: PARENT_THREAD_ID } as unknown as Turn;
   const ctx: ToolDispatchContext = {
     thread,
+    lease: { threadId: PARENT_THREAD_ID, runId: "run-1", holderId: "holder" },
     agentSlug: null,
     responseId: "resp-1",
     state: {

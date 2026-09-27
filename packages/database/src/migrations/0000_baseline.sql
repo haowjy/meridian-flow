@@ -1203,13 +1203,14 @@ BEGIN
     LEFT JOIN LATERAL (
       WITH RECURSIVE lineage AS (
         SELECT tr.id, tr.parent_turn_id, tr.role, tr.metadata, tr.created_at, tr.completed_at,
-          0 AS depth, ARRAY[tr.id]::uuid[] AS path
+          0 AS depth
         FROM turns tr WHERE tr.id = t.active_leaf_turn_id
         UNION ALL
         SELECT parent.id, parent.parent_turn_id, parent.role, parent.metadata,
-          parent.created_at, parent.completed_at, l.depth + 1, l.path || parent.id
+          parent.created_at, parent.completed_at, l.depth + 1
         FROM lineage l JOIN turns parent ON parent.id = l.parent_turn_id
-        WHERE NOT parent.id = ANY(l.path)
+        -- Every assistant is visible; this also caps malformed/cyclic lineage.
+        WHERE l.role <> 'assistant' AND l.depth < 10000
       )
       SELECT l.id AS turn_id, COALESCE(l.completed_at, l.created_at) AS activity_at
       FROM lineage l

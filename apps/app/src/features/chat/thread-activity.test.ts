@@ -17,6 +17,10 @@ function node(overrides: Partial<ThreadActivityNode> & { threadId: string }): Th
     agentName: null,
     spawnStatus: null,
     status: { kind: "asleep" },
+    deliveryMode: null,
+    runStartedAt: null,
+    runEndedAt: null,
+    currentTool: null,
     originTurnId: null,
     ...overrides,
   };

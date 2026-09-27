@@ -58,17 +58,13 @@ function message(key: string, threadId: ThreadId): MessageDraft {
 describe("wake run", () => {
   it("starts and drains a run for a message on an asleep thread", async () => {
     const rig = await runtimeScenario({ gateway: textGateway() });
-    await rig.inbox.enqueue(message("wake me", rig.thread.id));
+    const queued = await rig.inbox.enqueue(message("wake me", rig.thread.id));
 
     await createRunStarter(rig.runner, createInMemoryEventSink()).start(rig.thread.id);
     await rig.untilSettled();
 
     const turns = await rig.repos.turns.listByThread(rig.thread.id);
-    const messageTurn = turns.find(
-      (turn) =>
-        turn.role === "user" &&
-        (turn.metadata as { kind?: string } | null)?.kind === "inbox_message",
-    );
+    const messageTurn = turns.find((turn) => turn.id === queued.id);
     const assistantTurn = turns.find((turn) => turn.role === "assistant");
     expect(messageTurn).toBeDefined();
     expect(assistantTurn?.prevTurnId).toBe(messageTurn?.id);

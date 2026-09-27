@@ -74,7 +74,9 @@ export async function persistWriterEnqueue<T>(input: {
                 role: "user",
                 origin: "writer",
                 status: "complete",
-                metadata: writerInboxMetadata(input.userTurnMetadata),
+                // A writer send is the writer's own message, never an inbox
+                // delivery: `inbox_message` hides a turn from the transcript.
+                metadata: input.userTurnMetadata ?? null,
               });
               const blocks = writerUserTurnBlocks(userTurn.id, input.userBlocks);
               return {
@@ -108,11 +110,4 @@ export async function persistWriterEnqueue<T>(input: {
       if (!(error instanceof TurnStartConflictError) || attempt >= 2) throw error;
     }
   }
-}
-
-function writerInboxMetadata(metadata: JsonValue | null | undefined): JsonValue {
-  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
-    return { ...metadata, kind: "inbox_message" };
-  }
-  return { kind: "inbox_message" };
 }

@@ -21,7 +21,9 @@ function toolUseResult(toolName: string, toolCallId: string): GenerateResult {
 }
 
 describe("single cancel exit", () => {
-  it("finalizes once when a tool batch cancels, without starting another stream", async () => {
+  // Dormant while ask_user is disabled: nothing can park a run on an interrupt.
+  // Re-enable with https://github.com/haowjy/meridian-flow/issues/601
+  it.skip("finalizes once when a tool batch cancels, without starting another stream", async () => {
     const controller = new AbortController();
     let streams = 0;
     const gateway: Gateway = {

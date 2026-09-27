@@ -11,6 +11,7 @@ function saved(
     childThreadId: "child-id",
     terminalAssistantTurnId: null,
     assistantTurnId: "execution-id",
+    admittedAt: "2026-01-01T00:00:00.000Z",
     handle: "p3",
     origin: "spawn",
     deliveryMode: "direct",
