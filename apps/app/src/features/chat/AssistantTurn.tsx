@@ -252,7 +252,7 @@ function MergedCompletionRow({ events }: { events: DeliveryEvent[] }) {
               <SubagentMark
                 agentName={entries[index]?.agentName}
                 status={subagentStatus(entries[index]?.outcome)}
-                className="size-5 border-background text-[10px]"
+                className="size-5 text-[10px]"
                 decorative
               />
             </span>
