@@ -1,6 +1,5 @@
 /** Shared compact card for Work collection rows. */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import type { MouseEvent } from "react";
 
@@ -38,9 +37,11 @@ export function WorkCard({
             {work.name}
           </span>
         </a>
-        <p className="col-start-1 line-clamp-2 whitespace-pre-line text-meta text-muted-foreground">
-          {work.goal || <Trans>No goal yet</Trans>}
-        </p>
+        {work.goal ? (
+          <p className="col-start-1 line-clamp-2 whitespace-pre-line text-meta text-muted-foreground">
+            {work.goal}
+          </p>
+        ) : null}
         <CardAction className="relative z-10">
           <OverflowMenuTrigger
             ref={registerLifecycleFocus}

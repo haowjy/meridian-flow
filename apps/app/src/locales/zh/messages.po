@@ -2707,8 +2707,8 @@ msgid "No files in {containerLabel}."
 msgstr ""
 
 #: src/features/project/work/WorkCard.tsx
-msgid "No goal yet"
-msgstr ""
+#~ msgid "No goal yet"
+#~ msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "No matching chats"
