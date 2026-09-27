@@ -26,6 +26,8 @@ export type DeliveryBoundary = Pick<
   lease: Lease;
   currentTurn: Turn;
   signal?: AbortSignal;
+  /** Prepare the current placeholder before late arrivals; retried with the same selection. */
+  prepareCurrent?: () => Promise<void>;
   /** Completes a placeholder in the same transaction as late adoption and reservation. */
   completeCurrent?: (preparationFailure: unknown | undefined) => Promise<Turn>;
   /** Prepare image decisions/breaks before the next assistant turn is reserved. */
@@ -69,6 +71,7 @@ export interface RuntimeDelivery
     prepare: (selection: DeliverySelection) => Promise<{
       value: T;
       turnId: TurnId;
+      turnKind: "assistant" | "compaction";
       messageIds: readonly string[];
       /** Preparation failures still adopt messages and reserve a failed assistant turn. */
       preparationFailure?: unknown;
@@ -81,7 +84,7 @@ export interface RuntimeDelivery
   splitAndContinue(input: DeliveryBoundary): Promise<AdoptedBatch>;
   close(input: {
     lease: Lease;
-    assistantTurnId: TurnId;
+    turnId: TurnId;
     cause: TerminalCause;
     modelResponses?: ModelResponseReceivedRow[];
     continueWith?: DeliveryBoundary;

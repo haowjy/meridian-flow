@@ -84,12 +84,12 @@ else
           later.id,
         ]);
         expect((await handle.execute()).status).toBe("cancelled");
-        expect((await repos.turns.findById(handle.assistantTurnId))?.status).toBe("cancelled");
+        expect((await repos.turns.findById(handle.executionTurnId))?.status).toBe("cancelled");
         expect((await inbox.selectPending(ids.caller)).map((row) => row.id)).toEqual([later.id]);
         expect(await authority.holder(ids.caller)).toBeNull();
         const next = await orchestrator.prepare({ threadId: ids.caller, drain: true });
         expect(next.userTurnId).toBe(later.id);
-        expect(next.assistantTurnId).not.toBe(handle.assistantTurnId);
+        expect(next.executionTurnId).not.toBe(handle.executionTurnId);
         await next.execute();
       }
     });
@@ -237,12 +237,12 @@ else
           threadId: ids.child,
           userText: "start",
           signal: controller.signal,
-          onAssistantTurnChanged: (id) => {
+          onCurrentTurnChanged: ({ id }) => {
             terminal = id;
             if (boundary === "cancel") controller.abort();
           },
         });
-        selector = run.assistantTurnId;
+        selector = run.executionTurnId;
         const outcome = await run.execute();
         const events = (await createDrizzleEventJournalReader(db).listByThread(ids.child)).map(
           (entry) => entry.payload,
@@ -319,7 +319,7 @@ else
             { repos, eventWriter },
             {
               threadId: ids.child,
-              assistantTurnId: ids.execution,
+              turnId: ids.execution,
               cause: { kind: "failed", reason: "budget", error: "budget exhausted" },
             },
           );
@@ -337,7 +337,7 @@ else
         { repos, eventWriter },
         {
           threadId: ids.child,
-          assistantTurnId: ids.execution,
+          turnId: ids.execution,
           cause: { kind: "failed", reason: "budget", error: "budget exhausted" },
         },
       );
@@ -352,7 +352,7 @@ else
         { repos, eventWriter },
         {
           threadId: ids.child,
-          assistantTurnId: ids.execution,
+          turnId: ids.execution,
           cause: { kind: "failed", reason: "budget", error: "budget exhausted" },
         },
       );
@@ -408,7 +408,7 @@ else
         { repos, eventWriter },
         {
           threadId: ids.child,
-          assistantTurnId: ids.execution,
+          turnId: ids.execution,
           cause: { kind: "success", finishReason: "end_turn" },
         },
       );

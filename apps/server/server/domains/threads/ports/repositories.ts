@@ -140,7 +140,7 @@ export interface ModelResponseRepository {
   /** Inserts a response row, or returns the existing row plus `inserted:false` on response-id replay. */
   create(input: CreateModelResponseInput): Promise<CreateModelResponseResult>;
   findById(id: string): Promise<ModelResponse | null>;
-  /** Most recent response by turn position, then response sequence; returns only prediction facts. */
+  /** Most recent non-compaction response by turn position and sequence; cache and estimate facts. */
   findLatestByThread(threadId: ThreadId): Promise<LatestModelResponse | null>;
   listByTurn(turnId: TurnId): Promise<ModelResponse[]>;
   listByThread(threadId: ThreadId): Promise<ModelResponse[]>;

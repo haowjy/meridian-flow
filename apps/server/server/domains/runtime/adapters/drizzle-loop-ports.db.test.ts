@@ -365,6 +365,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await createTestDrizzleDelivery(db, { runClaim: authority }).adoptBatch(lease, async () => ({
         value: undefined,
+        turnKind: "assistant" as const,
         turnId: ASSISTANT_TURN,
         messageIds: [],
       }));
@@ -478,7 +479,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
         const failing = createTestDrizzleDelivery(db, { repos, runClaim, eventWriter: failure });
         const row = await delivery.enqueue(message("batch"));
-        const prepare = async () => ({ value: undefined, turnId: turn.id, messageIds: [row.id] });
+        const prepare = async () => ({
+          value: undefined,
+          turnKind: "assistant" as const,
+          turnId: turn.id,
+          messageIds: [row.id],
+        });
         await expect(failing.adoptBatch(lease, prepare)).rejects.toThrow("projection unavailable");
         expect(await runClaim.readRunningTurnId(THREAD_A)).toBeNull();
         await delivery.adoptBatch(lease, prepare);
@@ -497,7 +503,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(await delivery.selectPending(THREAD_A)).toHaveLength(0);
         const terminal = {
           lease,
-          assistantTurnId: turn.id,
+          turnId: turn.id,
           cause: { kind: "success" as const, finishReason: "end_turn" as const },
         };
         await expect(failing.close(terminal)).rejects.toThrow("projection unavailable");
@@ -515,6 +521,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         try {
           await delivery.adoptBatch(lease, async () => ({
             value: undefined,
+            turnKind: "assistant" as const,
             turnId: turn.id,
             messageIds: [],
           }));
@@ -558,6 +565,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           const row = await delivery.enqueue(message("receipt"));
           await delivery.adoptBatch(lease, async () => ({
             value: undefined,
+            turnKind: "assistant" as const,
             turnId: turn.id,
             messageIds: [row.id],
           }));
@@ -594,6 +602,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         try {
           await delivery.adoptBatch(lease, async () => ({
             value: undefined,
+            turnKind: "assistant" as const,
             turnId: turn.id,
             messageIds: [],
           }));
@@ -601,7 +610,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           expect(await remote.cancelExecution(THREAD_A, turn.id)).toBe(true);
           const closed = await delivery.close({
             lease,
-            assistantTurnId: turn.id,
+            turnId: turn.id,
             cause: { kind: "success", finishReason: "end_turn" },
             continueWith: {
               lease,
@@ -641,6 +650,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
         await delivery.adoptBatch(lease, async () => ({
           value: undefined,
+          turnKind: "assistant" as const,
           turnId: turn.id,
           messageIds: [],
         }));
@@ -658,7 +668,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         }).close({
           lease,
-          assistantTurnId: turn.id,
+          turnId: turn.id,
           cause: { kind: "success", finishReason: "end_turn" },
         });
         await reached;

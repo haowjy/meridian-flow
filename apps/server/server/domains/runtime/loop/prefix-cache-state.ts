@@ -63,7 +63,7 @@ function lastResponse(history: PrefixCacheHistory): LastResponse | null {
   const turnsById = new Map(history.turns.map((turn) => [turn.id, turn]));
   const responses = history.responses.flatMap((response) => {
     const turn = turnsById.get(response.turnId);
-    return turn ? [{ ...response, turn }] : [];
+    return turn && turn.role !== "compaction" ? [{ ...response, turn }] : [];
   });
   responses.sort(
     (left, right) => left.turn.position - right.turn.position || left.sequence - right.sequence,
@@ -155,6 +155,10 @@ function unavailable(reason: PrefixCacheStateReason) {
 export function selectReusablePrefixResponse(input: DerivePrefixCacheStateInput) {
   let history = input.history;
   let response = lastResponse(history);
+  if (!response) {
+    const boundary = forkBoundary(history);
+    if (boundary) return unavailable(boundary);
+  }
   if (!response && history.thread.originType === "fork") {
     if (!isForkCutoffCurrent(input)) return unavailable("fork_cutoff");
     const cutoffTurnId = history.thread.originTurnId;
@@ -276,7 +280,7 @@ export function createPrefixCacheStateService(deps: PrefixCacheStateServiceDeps)
       const facts = await readFacts(input);
       if ("state" in facts) return null;
       const { response } = selectReusablePrefixResponse(facts);
-      return response
+      return response && response.inputTokens > 0
         ? { inputTokens: response.inputTokens, messageCount: response.requestMessageCount }
         : null;
     },

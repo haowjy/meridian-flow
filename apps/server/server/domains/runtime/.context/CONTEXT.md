@@ -57,12 +57,12 @@ skeleton and delegates the moving parts.
 | `turn-context-assembly.ts` | Resolves the retained Agent and bake, then projects active compaction history with `thread.ref` before stable image inclusion and `buildContext`; this keeps old pre-cut images out of the rebuilt model request while leaving un-compacted requests byte-identical. |
 | `composed-system-prompt.ts` | Assembles the first gateway system prompt in a fixed layer order: immutable agent body (revision body or the host-owned empty default), the invocation overlay's additive `appendSystemPrompt`, frozen Work context, available skill slugs (name when it differs) and descriptions, named subagent slug/name/description from the bound roster, core document dialect, runtime URI instruction, and, for subagent threads only, the mandatory closing report instruction as the last layer. An empty or absent append adds nothing, and the guidance string is a module constant (`SUBAGENT_GUIDANCE`). Freeze sentinel is `thread.initialPromptBakeId !== null`. The first bake commits with a successfully prepared run start before model execution; a later gateway failure or cancellation leaves it in place. |
 | `work-context.ts` / delivery adapter | Renders authoritative Work state. Mutations enqueue immutable system-provenance refresh notices in the business transaction. The delivery boundary coalesces a batch into one durable system update and event and acknowledges its notice IDs atomically. Idle recovery uses a short run claim; notices never wake a model. |
-| `ports.ts` / `adapters/drizzle-run-claim.ts` | `InboxReader` is read-only; `selectPending` does not claim or mutate. `RunClaim` shares one nonreentrant session advisory claim across `withExclusiveThread` (short admission/Work/recovery work without a lease) and `startExecution` (observable, heartbeating lease). Only delivery binds the current assistant and receipt. Receipt mutation is guarded by thread/run/holder and exact IDs when clearing; the held session claim, not heartbeat expiry, authorizes a paid response commit. Guarded `cancelExecution(threadId, currentTurnId)` cannot cancel a successor run or a steered segment through a stale turn ID. Session release deletes only its own lease and physically unlocks after commit; the session owner retains one failure-backstop release. |
+| `ports.ts` / `adapters/drizzle-run-claim.ts` | `InboxReader` is read-only; `selectPending` does not claim or mutate. `RunClaim` shares one nonreentrant session advisory claim across `withExclusiveThread` (short admission/Work/recovery work without a lease) and `startExecution` (observable, heartbeating lease). Only delivery binds the current turn (assistant or pending compaction) and receipt. Receipt mutation is guarded by thread/run/holder and exact IDs when clearing; the held session claim, not heartbeat expiry, authorizes a paid response commit. Guarded `cancelExecution(threadId, currentTurnId)` cannot cancel a successor run or a steered segment through a stale turn ID. Session release deletes only its own lease and physically unlocks after commit; the session owner retains one failure-backstop release. |
 
 | `system-instructions/` | Model-facing prompt assets independent of any agent body. `document-dialect.ts` owns Meridian document language and its codec-backed spelling contract; `runtime-uris.ts` owns context namespace guidance. Tool descriptions continue to own mechanics. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
 | `partial-tool-activity.ts` | Reads only the top-level string fields used by live labels from partial tool-call JSON; it tolerates an unfinished object and ignores nested arguments. |
-| `execution-finalizer.ts` | Terminal transaction projects the current assistant event and finalizes the one admitted report found on its ancestor chain. The selector stays the first assistant; `terminalAssistantTurnId` records the final assistant. Fallback text is from that terminal turn’s final persisted response; cost sums every assistant response from selector to terminal. Run-scoped capture keeps the existing partial-outcome policy. Intermediate splits never publish a report. |
+| `execution-finalizer.ts` | Terminal transaction projects the current turn event and finalizes the one admitted report found on its ancestor chain. The selector is the first reserved turn (`executionTurnId`), including pending compaction C; `terminalTurnId` records the final turn. A compaction can end failed or cancelled, never successful through this finalizer. Fallback text is from that terminal turn’s final persisted response; cost sums every assistant response from selector to terminal. Run-scoped capture keeps the existing partial-outcome policy. Intermediate splits never publish a report. |
 | `persistence.ts` | Transactional persist/project-then-emit helper. **Ordering**: `projectReadModelEvent` runs before `eventWriter.appendEvent` so the `event_journal.turn_id` FK can reference the turn row created by the projector. Both happen in the same repo transaction. |
 | `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata for `prepareAdoptedTurn` to load when the turn is adopted; the delivery commit persists the hidden `system`-role skill-body turn immediately after it. It also appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status: a mid-run send yields the runner's live assistant turn id (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly), a fresh run yields null and the client learns the turn from `RUN_STARTED`. When a live assistant binding exists, the writer turn gets `metadata.delivery: "steer"` at enqueue; response grouping uses that stamp, not clock comparisons. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission. `admission-turn-starter.ts` and `TurnRunner.startTurn` are gone. |
 | `reference-context.ts` | Before the first model call, loads admitted current-turn text references through the host-wired shared agent-edit read operation; a mid-run adopted writer turn's unread references load at adoption. Reads run outside admission/persistence transactions; results are persisted server-side at `reference.read.result` before gateway submission. Duplicate `(documentId, uri)` identities read once per turn; replay reuses the frozen result, while a later mention reads afresh. Images retain their separate projection, and client admission rejects `read` payloads. |
@@ -319,13 +319,13 @@ as one parsed `InvocationCardProps` contract. Their name is the bound Agent
 revision's `metadata.name`, falling back to its slug (the generic unbound
 subagent keeps its canonical display name). Running cards have `terminalAt: null`
 and keep the parent turn, tool call, child thread, delivery mode, and nullable
-execution until admission binds the committed assistant turn. Terminal cards
+execution until admission binds the first committed reservation. Terminal cards
 carry `outcome` plus `terminalAt`, not a duplicate status. A pre-admission
 failure carries a writer-readable `reason` and intentionally has no child thread
 or execution link. The parent-lock-scoped admission replacement and publication
 B preserve the exact tuple and original block id/turn/sequence; neither carries
 report body. A spawned background
-execution returns only after assistant-turn admission commits, without waiting
+execution returns only after execution admission commits, without waiting
 for terminal. Foreground spawn and message return the exact terminal report
 directly, preserving failure/cancellation and partial content. Background
 `thread_message` remains queue-only with no promised execution or reply. The
@@ -387,9 +387,9 @@ non-success status this tool returns. (The separate writer-facing
 `not_ready` for an execution that has not finished yet; it resolves `execution`
 to a `run` index itself and is not the model-facing tool.) `ChildDriveInput.reportCorrelation`
 carries only the caller/turn/tool/card and origin/delivery metadata; the actual
-child `assistantTurnId` is assigned only after turn admission. The runtime
+child `executionTurnId` is assigned only after turn admission. The runtime
 admits each child run once, finalizes its saved report with the terminal
-assistant turn, and publishes a parent card/notification from that durable
+turn, and publishes a parent card/notification from that durable
 row. Tool and API responses share the `ThreadReportResult` contracts schema,
 including `childThreadId`; the app projects both through `toReportContentValue`.
 Generic `ThreadPendingInbox` projects every provenance; the app's
@@ -556,13 +556,29 @@ the Yjs gateway and flushing observability. Still-running lanes emit
 
 `loop/request-preparation.ts` measures the assembled request and plans against raw
 history. The token baseline comes from the cache service's reusable-prefix
-selection with TTL ignored. Default triggers remain off until the real summarizer
-ships; explicit retained Agent thresholds opt in.
+selection with TTL ignored; missing/zero usage estimates the whole request.
+The production summarizer advertises `enabled: false` until C4d, so even explicit
+retained Agent thresholds cannot reach the unavailable adapter.
 
 Compaction is two delivery transitions around an unlocked `ConversationSummarizer`
 call. The first reserves pending C instead of an assistant. `compaction-phase.ts`
-then prepares late arrivals and a live rebake over provisional completed C; its
+then prepares a live rebake over provisional completed C before late arrivals; its
 successor commit joins `beginPromptEpoch`, adoption, notice consumption and B's
 reservation. A moved leaf repeats only successor preparation, never summarization.
 An impossible tail reserves no C. A failed summary errors C and replies below the
-latest message. `composeLivePromptBake` serves initial bakes and rebakes alike.
+latest message. A usable epoch still commits when a late arrival fails context
+preparation (including an oversized late paste); only B fails. `composeLivePromptBake` serves initial bakes and rebakes
+alike. Reference reads during this prepare belong to current C; B does not exist
+until commit. Summary responses never supply the conversation token baseline.
+
+Current-turn identity carries `assistant` or `compaction` in the lease and run
+session. Writer admission returns an assistant ID only for the former. Stop
+aborts the summary, and terminal close settles its response rows on cancelled C
+with the receipt acknowledgment. Late arrivals are not part of C's receipt and
+remain queued for the cancel wake. Remote cancellation reaches the local signal
+through the lease heartbeat as well as boundary checks.
+
+Not built yet: crash repair of a pending C (C4c; run start, the placeholder scan,
+and `spawn/orphan-report-repair.ts`, whose walk still stops only at assistant
+turns) and compaction cost in the report walk (C4e; responses on a compaction
+turn count only when it is the terminal turn).

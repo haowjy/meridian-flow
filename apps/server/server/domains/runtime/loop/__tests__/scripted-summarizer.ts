@@ -13,14 +13,15 @@ export function scriptedSummarizer(
     model: "summary-model",
     modelResponses: [],
   }),
-) {
+): ConversationSummarizer & { calls: Parameters<ConversationSummarizer["summarize"]>[0][] } {
   const calls: Parameters<ConversationSummarizer["summarize"]>[0][] = [];
   return {
+    enabled: true,
     maxOutputTokens: 100,
     calls,
     async summarize(input: Parameters<ConversationSummarizer["summarize"]>[0]) {
       calls.push(input);
       return script(input, calls.length);
     },
-  } satisfies ConversationSummarizer & { calls: typeof calls };
+  };
 }

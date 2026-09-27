@@ -67,20 +67,29 @@ export async function finalizeExecution(
     >;
     eventWriter: EventJournalWriter;
   },
-  input: { threadId: ThreadId; assistantTurnId: TurnId; cause: TerminalCause },
+  input: { threadId: ThreadId; turnId: TurnId; cause: TerminalCause },
 ): Promise<FinalizedExecution> {
   let report: SavedExecutionReport | null = null;
   const persisted = await persistAndAppendEvents(
     deps,
     input.threadId,
     async () => {
-      const turn = await deps.repos.turns.findById(input.assistantTurnId);
-      if (!turn || turn.threadId !== input.threadId || turn.role !== "assistant") {
-        throw new Error("Terminal assistant turn is unavailable");
+      const turn = await deps.repos.turns.findById(input.turnId);
+      if (
+        !turn ||
+        turn.threadId !== input.threadId ||
+        (turn.role !== "assistant" &&
+          !(
+            turn.role === "compaction" &&
+            turn.status !== "complete" &&
+            input.cause.kind !== "success"
+          ))
+      ) {
+        throw new Error("Terminal turn is unavailable");
       }
       const existingReport = await deps.repos.executionReports.findByTurn(
         input.threadId,
-        input.assistantTurnId,
+        input.turnId,
       );
       const thread = await deps.repos.threads.lockByIdIncludingDeleted(input.threadId);
       if (thread?.kind === "subagent" && !existingReport) {
@@ -123,10 +132,7 @@ export async function finalizeExecution(
     },
     {
       async afterEvents(turn) {
-        const admitted = await deps.repos.executionReports.findByTurn(
-          input.threadId,
-          input.assistantTurnId,
-        );
+        const admitted = await deps.repos.executionReports.findByTurn(input.threadId, input.turnId);
         if (!admitted) return;
         if (admitted.outcome !== null) {
           report = admitted;

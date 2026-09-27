@@ -299,7 +299,7 @@ export function createOrchestrator(deps: OrchestratorDeps) {
       const requestPreparationFailed = input.error instanceof RequestPreparationError;
       const outcome = await deps.delivery.close({
         lease: input.lease,
-        assistantTurnId: input.assistantTurnId,
+        turnId: input.turnId,
         cause: input.signal?.aborted
           ? { kind: "cancelled", reason: "cancelled" }
           : {
@@ -392,7 +392,7 @@ async function admitRunExecution(
   deps: OrchestratorDeps,
   input: RunLoopInput,
   thread: Thread,
-  assistantTurnId: TurnId,
+  executionTurnId: TurnId,
 ): Promise<void> {
   if (thread.kind !== "subagent" && input.executionReport) {
     throw new Error("Execution report correlation requires a subagent thread");
@@ -409,7 +409,7 @@ async function admitRunExecution(
     };
     await deps.repos.executionReports.admit({
       childThreadId: input.threadId,
-      executionTurnId: assistantTurnId,
+      executionTurnId,
       handle: thread.ref,
       ...correlation,
       agentSlug: input.executionReport?.agentSlug ?? null,
@@ -450,7 +450,7 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
       : {}),
     ...(input.child ? agentRequestMetadata(input.child.origin) : {}),
   });
-  let assistantTurnId: TurnId | undefined;
+  let reservedTurnId: TurnId | undefined;
   const userTurn = await deps.delivery.withThreadLock(input.threadId, async (producer) => {
     const thread = await deps.repos.threads.findById(input.threadId);
     if (!thread) throw new Error(`Thread not found: ${input.threadId}`);
@@ -463,7 +463,7 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
       origin: input.child ? "system" : "writer",
       producer,
       afterTurnCreated: () => {
-        assistantTurnId = crypto.randomUUID() as TurnId;
+        reservedTurnId = crypto.randomUUID() as TurnId;
       },
       draft: {
         id: userTurnId,
@@ -478,8 +478,8 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
     });
   });
   try {
-    if (!assistantTurnId) throw new Error("Direct writer turn did not reserve an assistant turn");
-    return await runDrainTurn(deps, { ...input, drain: true }, assistantTurnId);
+    if (!reservedTurnId) throw new Error("Direct writer turn did not allocate its reservation ID");
+    return await runDrainTurn(deps, { ...input, drain: true }, reservedTurnId);
   } catch (error) {
     if (input.signal?.aborted) {
       await deps.delivery.withThreadLock(input.threadId, (producer) =>
@@ -502,7 +502,7 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
 async function runDrainTurn(
   deps: OrchestratorDeps,
   input: DrainRunLoopInput,
-  reservedAssistantTurnId?: TurnId,
+  reservedTurnId?: TurnId,
 ): Promise<PreparedLoop> {
   let preparationError: Error | null = null;
   const setup = await deps.delivery.adoptBatch(
@@ -569,8 +569,8 @@ async function runDrainTurn(
         [...priorTurns, ...inheritedTurns].reverse().find((turn) => turn.role === "user")?.id ??
         prevTurnId;
       if (!referenceUserTurnId) throw new Error("Drained inbox has no user turn to prepare");
-      const assistantTurn = createLocalTurn({
-        id: reservedAssistantTurnId,
+      const reservedTurn = createLocalTurn({
+        id: reservedTurnId,
         threadId: input.threadId,
         position: nextTurnPosition(plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn),
         prevTurnId: plan.leafTurnId ?? skillBody?.turn.id ?? prevTurnId,
@@ -587,7 +587,7 @@ async function runDrainTurn(
             thread: setupThread,
             threadId: input.threadId,
             referenceUserTurnId,
-            assistantTurnId: assistantTurn.id,
+            assistantTurnId: reservedTurn.id,
             turns: [
               ...inheritedTurns,
               ...priorTurns,
@@ -612,29 +612,29 @@ async function runDrainTurn(
         preflight = null;
         skillBody = null;
         plan = makePlan([]);
-        assistantTurn.prevTurnId = plan.leafTurnId ?? prevTurnId;
-        assistantTurn.parentTurnId = assistantTurn.prevTurnId;
-        assistantTurn.position = nextTurnPosition(plan.turns.at(-1) ?? previousTurn);
+        reservedTurn.prevTurnId = plan.leafTurnId ?? prevTurnId;
+        reservedTurn.parentTurnId = reservedTurn.prevTurnId;
+        reservedTurn.position = nextTurnPosition(plan.turns.at(-1) ?? previousTurn);
       }
       const imageUpdateTurn = preflight?.assembled.imageContextUpdates.turns.at(-1);
-      assistantTurn.prevTurnId =
+      reservedTurn.prevTurnId =
         imageUpdateTurn?.id ?? plan.leafTurnId ?? skillBody?.turn.id ?? referenceUserTurnId;
-      assistantTurn.parentTurnId = assistantTurn.prevTurnId;
-      assistantTurn.position = nextTurnPosition(
+      reservedTurn.parentTurnId = reservedTurn.prevTurnId;
+      reservedTurn.position = nextTurnPosition(
         imageUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
       );
       if (preflight?.compaction.kind === "compact") {
-        assistantTurn.role = "compaction";
-        assistantTurn.origin = "system";
-        assistantTurn.status = "pending";
-        assistantTurn.metadata = compactionTurnMetadata({
+        reservedTurn.role = "compaction";
+        reservedTurn.origin = "system";
+        reservedTurn.status = "pending";
+        reservedTurn.metadata = compactionTurnMetadata({
           trigger: "auto",
           compactedThrough: preflight.compaction.plan.compactedThrough,
           pinnedRequestTurnId: preflight.compaction.plan.pinnedRequest.id,
         });
       }
       const value = {
-        assistantTurn,
+        reservedTurn,
         skillBody,
         referenceUserTurnId,
         preflight,
@@ -652,11 +652,12 @@ async function runDrainTurn(
           : []),
         ...plan.events,
         ...(preflight?.events ?? []),
-        { type: "turn.created" as const, turn: assistantTurn },
+        { type: "turn.created" as const, turn: reservedTurn },
       ];
       return {
         value,
-        turnId: assistantTurn.id,
+        turnId: reservedTurn.id,
+        turnKind: reservedTurn.role === "compaction" ? "compaction" : "assistant",
         messageIds: batch.map(({ id }) => id),
         ...(preparationError === null ? {} : { preparationFailure: preparationError }),
         persist: async () => {
@@ -671,13 +672,13 @@ async function runDrainTurn(
                   preflight.assembled,
                   deps.repos.threads.bakeInitialPrompt.bind(deps.repos.threads),
                 );
-              assistantTurn.writeMode = setupThread.workId
+              reservedTurn.writeMode = setupThread.workId
                 ? await deps.workWriteMode.read(setupThread.workId)
                 : "direct";
               return { result: undefined, events };
             },
             {
-              afterEvents: () => admitRunExecution(deps, input, setupThread, assistantTurn.id),
+              afterEvents: () => admitRunExecution(deps, input, setupThread, reservedTurn.id),
             },
           );
         },
@@ -687,7 +688,7 @@ async function runDrainTurn(
   );
 
   const {
-    assistantTurn,
+    reservedTurn,
     skillBody,
     referenceUserTurnId,
     preflight,
@@ -698,7 +699,10 @@ async function runDrainTurn(
   } = setup;
   return {
     userTurnId: referenceUserTurnId,
-    assistantTurnId: assistantTurn.id,
+    currentTurn: {
+      id: reservedTurn.id,
+      kind: reservedTurn.role === "compaction" ? "compaction" : "assistant",
+    },
     execute: async () => {
       if (preparationError) throw new RequestPreparationError(preparationError);
       if (!preflight) throw new Error("Request context is unavailable after preparation failed");
@@ -706,7 +710,7 @@ async function runDrainTurn(
         deps,
         input,
         preflight.assembled.thread,
-        assistantTurn,
+        reservedTurn,
         [
           ...inheritedTurns,
           ...priorTurns,
@@ -807,7 +811,7 @@ async function persistModelResponse(input: {
   deps: OrchestratorDeps;
   runInput: RunLoopInput;
   thread: Thread;
-  currentAssistantTurn: Turn;
+  currentTurn: Turn;
   result: GenerateResult;
   requestMessageCount: number;
   predictedCacheState: PrefixCacheState;
@@ -823,10 +827,9 @@ async function persistModelResponse(input: {
   toolCalls: ReturnType<typeof collectToolCalls>;
   nextBlockSeq: number;
 }> {
-  const { deps, runInput, thread, currentAssistantTurn, result, treeBudget, turnAccounting } =
-    input;
+  const { deps, runInput, thread, currentTurn, result, treeBudget, turnAccounting } = input;
   let blockSeq = input.blockSeq;
-  const responseSeq = currentAssistantTurn.responseCount;
+  const responseSeq = currentTurn.responseCount;
   const toolCalls = collectToolCalls(result);
   const persistedResponse = await deps.delivery.ackWithResponse(
     runInput.lease,
@@ -838,7 +841,7 @@ async function persistModelResponse(input: {
           result,
           thread,
           runInput.threadId,
-          currentAssistantTurn.id,
+          currentTurn.id,
           treeBudget,
           responseId,
         );
@@ -848,7 +851,7 @@ async function persistModelResponse(input: {
         );
         const response: ModelResponseReceivedRow = {
           id: responseId,
-          turnId: currentAssistantTurn.id,
+          turnId: currentTurn.id,
           sequence: responseSeq,
           provider: result.provider,
           model: result.model,
@@ -873,7 +876,7 @@ async function persistModelResponse(input: {
           predictedCacheState: input.predictedCacheState.state,
           predictedCacheReason: input.predictedCacheState.reason,
         };
-        const updatedTurn = applyResponseToTurnSnapshot(currentAssistantTurn, response);
+        const updatedTurn = applyResponseToTurnSnapshot(currentTurn, response);
 
         const createdBlocks: Block[] = [];
         const events: OrchestratorEvent[] = [{ type: "model.response_received", response }];
@@ -953,7 +956,7 @@ async function settleCancelledResponse(input: {
   deps: OrchestratorDeps;
   runInput: RunLoopInput;
   thread: Thread;
-  currentAssistantTurn: Turn;
+  currentTurn: Turn;
   treeBudget: TreeBudget;
   turnAccounting: TurnAccounting;
   blockSeq: number;
@@ -971,13 +974,13 @@ async function settleCancelledResponse(input: {
       : {}),
   });
 
-  let currentAssistantTurn = input.currentAssistantTurn;
+  let currentTurn = input.currentTurn;
   if (settlement?.persist) {
     const persistedResponse = await persistModelResponse({
       deps: input.deps,
       runInput: input.runInput,
       thread: input.thread,
-      currentAssistantTurn,
+      currentTurn,
       result: settlement.result,
       requestMessageCount: input.requestMessageCount,
       predictedCacheState: input.predictedCacheState,
@@ -987,14 +990,14 @@ async function settleCancelledResponse(input: {
       // The terminal cancellation retires the lease receipt after settlement.
       inboxAckIds: [],
     });
-    currentAssistantTurn = persistedResponse.updatedTurn;
+    currentTurn = persistedResponse.updatedTurn;
     input.allBlocks.push(...persistedResponse.createdBlocks);
     await input.deps.responseWrites.rollbackResponse(persistedResponse.responseId, {
       threadId: input.runInput.threadId,
-      turnId: currentAssistantTurn.id,
+      turnId: currentTurn.id,
     });
   }
-  return currentAssistantTurn;
+  return currentTurn;
 }
 
 async function persistToolRejection(input: {
@@ -1443,7 +1446,7 @@ async function executeLoop(
   deps: OrchestratorDeps,
   input: RunLoopInput,
   thread: Thread,
-  assistantTurn: Turn,
+  reservedTurn: Turn,
   /** Full ordered history before the assistant container, including drained messages. */
   initialTurns: Turn[],
   inheritedBlocks: Block[],
@@ -1474,11 +1477,11 @@ async function executeLoop(
     }
   }
 
-  let currentAssistantTurn: Turn = assistantTurn;
+  let currentTurn: Turn = reservedTurn;
   let preparedContext: AssembledNextTurnContext | undefined = initialContext;
   let pendingSummaryResponses: ModelResponseReceivedRow[] = [];
   let responseScope: ReturnType<typeof createResponseScope> | undefined;
-  const allTurns: Turn[] = [...initialTurns, assistantTurn];
+  const allTurns: Turn[] = [...initialTurns, reservedTurn];
   const allBlocks: Block[] = [
     ...inheritedBlocks,
     ...(await repos.blocks.listByThread(input.threadId)),
@@ -1489,7 +1492,7 @@ async function executeLoop(
   function boundaryInput(): DeliveryBoundary {
     return {
       lease: input.lease,
-      currentTurn: currentAssistantTurn,
+      currentTurn: currentTurn,
       signal: input.signal,
       knownTurnIds: new Set(allTurns.map((turn) => turn.id)),
       expectedLeafTurnId: allTurns.at(-1)?.id ?? null,
@@ -1498,7 +1501,7 @@ async function executeLoop(
           deps,
           threadId: input.threadId,
           userTurnId: turn.id,
-          assistantTurnId: currentAssistantTurn.id,
+          assistantTurnId: currentTurn.id,
           blocks,
           signal: input.signal,
         });
@@ -1535,8 +1538,8 @@ async function executeLoop(
           deps,
           thread,
           threadId: input.threadId,
-          referenceUserTurnId: latestUserTurn?.id ?? currentAssistantTurn.id,
-          assistantTurnId: currentAssistantTurn.id,
+          referenceUserTurnId: latestUserTurn?.id ?? currentTurn.id,
+          assistantTurnId: currentTurn.id,
           turns: [...allTurns, ...drain.turns],
           blocks: [...allBlocks, ...drain.blocks],
           baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
@@ -1571,9 +1574,12 @@ async function executeLoop(
     if (result.split) {
       const next = result.next;
       allTurns.push(next);
-      currentAssistantTurn = next;
+      currentTurn = next;
       endTurnRequested = false;
-      input.onAssistantTurnChanged?.(next.id);
+      input.onCurrentTurnChanged?.({
+        id: next.id,
+        kind: next.role === "compaction" ? "compaction" : "assistant",
+      });
     }
     if (result.preparationFailure !== undefined) {
       throw new RequestPreparationError(result.preparationFailure);
@@ -1588,7 +1594,7 @@ async function executeLoop(
       deps,
       input,
       thread,
-      currentTurn: currentAssistantTurn,
+      currentTurn: currentTurn,
       allTurns,
       allBlocks,
       boundary: boundaryInput(),
@@ -1612,7 +1618,7 @@ async function executeLoop(
   async function exitRun(continueOnPending: boolean, cause: TerminalCause): Promise<boolean> {
     const outcome = await deps.delivery.close({
       lease: input.lease,
-      assistantTurnId: currentAssistantTurn.id,
+      turnId: currentTurn.id,
       cause,
       modelResponses: pendingSummaryResponses,
       ...(continueOnPending ? { continueWith: boundaryInput() } : {}),
@@ -1621,7 +1627,7 @@ async function executeLoop(
       queuedDrain = await acceptBoundary(outcome.adopted);
       return true;
     }
-    currentAssistantTurn = outcome.completion.turn;
+    currentTurn = outcome.completion.turn;
     return false;
   }
   const cancelTerminal: TerminalCause = { kind: "cancelled", reason: "cancelled" };
@@ -1661,7 +1667,7 @@ async function executeLoop(
   try {
     if (initialCompaction.kind === "compact") {
       queuedDrain = await acceptBoundary({
-        next: currentAssistantTurn,
+        next: currentTurn,
         split: false,
         drain: { turns: [], blocks: [], events: [], ackIds: [] },
         compaction: initialCompaction,
@@ -1732,7 +1738,7 @@ async function executeLoop(
       request.correlation = {
         gatewayCallId,
         threadId: input.threadId,
-        turnId: currentAssistantTurn.id,
+        turnId: currentTurn.id,
         iteration: iteration - 1,
         ...(built.agentSlug ? { agentSlug: built.agentSlug } : {}),
       };
@@ -1754,7 +1760,7 @@ async function executeLoop(
           level: "warn",
           source: "runtime.orchestrator",
           name: "prefix_cache_state.derive_failed",
-          correlation: { threadId: input.threadId, turnId: currentAssistantTurn.id },
+          correlation: { threadId: input.threadId, turnId: currentTurn.id },
           payload: unknownToEventPayload(cause),
         });
       }
@@ -1763,7 +1769,7 @@ async function executeLoop(
         deps.modelRequestDebug.capture({
           gatewayCallId,
           threadId: input.threadId,
-          turnId: currentAssistantTurn.id,
+          turnId: currentTurn.id,
           iteration: iteration - 1,
           agentSlug: built.agentSlug,
           request,
@@ -1776,7 +1782,7 @@ async function executeLoop(
           source: "runtime.orchestrator",
           name: "model_request_debug.capture_failed",
           sensitivity: "safe",
-          correlation: { threadId: input.threadId, turnId: currentAssistantTurn.id },
+          correlation: { threadId: input.threadId, turnId: currentTurn.id },
           payload: unknownToEventPayload(cause),
         });
       }
@@ -1877,12 +1883,11 @@ async function executeLoop(
           deps,
           runInput: input,
           thread,
-          currentAssistantTurn,
+          currentTurn,
           treeBudget,
           turnAccounting,
-          blockSeq: allBlocks.filter(
-            (b) => (b.turnId as string) === (currentAssistantTurn.id as string),
-          ).length,
+          blockSeq: allBlocks.filter((b) => (b.turnId as string) === (currentTurn.id as string))
+            .length,
           allBlocks,
           result,
           model: result?.model ?? streamModel,
@@ -1890,7 +1895,7 @@ async function executeLoop(
           predictedCacheState,
         });
 
-        currentAssistantTurn = settled;
+        currentTurn = settled;
         return exitRun(false, cancelTerminal);
       }
 
@@ -1902,13 +1907,13 @@ async function executeLoop(
       // already stored for this assistant turn and is handed to interrupt/tool
       // collaborators so later blocks remain contiguous.
       let blockSeq = allBlocks.filter(
-        (b) => (b.turnId as string) === (currentAssistantTurn.id as string),
+        (b) => (b.turnId as string) === (currentTurn.id as string),
       ).length;
       const persistedResponse = await persistModelResponse({
         deps,
         runInput: input,
         thread,
-        currentAssistantTurn,
+        currentTurn,
         result,
         requestMessageCount: request.messages.length,
         predictedCacheState,
@@ -1917,7 +1922,7 @@ async function executeLoop(
         blockSeq,
         inboxAckIds,
       });
-      currentAssistantTurn = persistedResponse.updatedTurn;
+      currentTurn = persistedResponse.updatedTurn;
       blockSeq = persistedResponse.nextBlockSeq;
       const responseId = persistedResponse.responseId;
       const toolCallsFromResult = persistedResponse.toolCalls;
@@ -1937,7 +1942,7 @@ async function executeLoop(
         const scope = createResponseScope({
           deps,
           threadId: input.threadId,
-          turnId: currentAssistantTurn.id,
+          turnId: currentTurn.id,
           responseId,
           allBlocks,
         });
@@ -1976,7 +1981,7 @@ async function executeLoop(
             const persistedRejection = await persistToolRejection({
               deps,
               threadId: input.threadId,
-              turn: currentAssistantTurn,
+              turn: currentTurn,
               call,
               decision: { ...decision, category: "tool_denied" },
               blockSeq,
@@ -1991,7 +1996,7 @@ async function executeLoop(
           const interruptState = {
             thread,
             threadId: input.threadId,
-            currentTurn: currentAssistantTurn,
+            currentTurn: currentTurn,
             autoResume: interruptAutoResume,
             signal: input.signal,
             blockSeqRef: { value: blockSeq },
@@ -2031,7 +2036,7 @@ async function executeLoop(
               allTurns,
             },
           );
-          currentAssistantTurn = interruptState.currentTurn;
+          currentTurn = interruptState.currentTurn;
           blockSeq = interruptState.blockSeqRef.value;
 
           if (!dispatched.cancelled) scope.stage(dispatched);
@@ -2101,7 +2106,14 @@ async function executeLoop(
     } else {
       await exitRun(
         false,
-        errorTerminal(err instanceof Error ? err.message : String(err), "execution_error"),
+        errorTerminal(
+          currentTurn.role === "compaction"
+            ? "This conversation couldn't be compacted. Try again."
+            : err instanceof Error
+              ? err.message
+              : String(err),
+          currentTurn.role === "compaction" ? "compaction_failed" : "execution_error",
+        ),
       );
     }
   } finally {
@@ -2118,5 +2130,5 @@ async function executeLoop(
     // is cleared. Draining here would race queued helper system turns into a
     // still-running parent thread.
   }
-  return currentAssistantTurn;
+  return currentTurn;
 }

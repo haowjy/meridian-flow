@@ -173,6 +173,7 @@ export function createDrizzleRunClaim(
             threadId,
             runId,
             turnId: null,
+            turnKind: null,
             adoptedMessageIds: [],
             holderId,
             phase: "generating",
@@ -187,6 +188,7 @@ export function createDrizzleRunClaim(
             set: {
               runId,
               turnId: null,
+              turnKind: null,
               adoptedMessageIds: [],
               holderId,
               phase: "generating",

@@ -106,10 +106,10 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
       if (onAdmitted) {
         const report = await deps.repos.executionReports.findByExecution(
           prepared.child.id as ThreadId,
-          handle.assistantTurnId,
+          handle.executionTurnId,
         );
         if (!report) throw new Error("Admitted child run has no execution report");
-        await onAdmitted(handle.assistantTurnId, report.admittedAt);
+        await onAdmitted(handle.executionTurnId, report.admittedAt);
       }
     } catch (error) {
       observeCleanupFailure(prepared, "child.admission_callback_failed", error);
@@ -133,11 +133,11 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
 
     const saved = await deps.repos.executionReports.findByExecution(
       childThreadId,
-      handle.assistantTurnId,
+      handle.executionTurnId,
     );
     if (saved?.outcome) {
       try {
-        await deps.publisher.publish(childThreadId, handle.assistantTurnId);
+        await deps.publisher.publish(childThreadId, handle.executionTurnId);
       } catch (error) {
         observeCleanupFailure(prepared, "child.publication_failed", error);
       }
@@ -158,7 +158,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
           ? "Child run failed before a saved terminal report"
           : "Child report is unavailable",
       ),
-      execution: handle.assistantTurnId,
+      execution: handle.executionTurnId,
     };
   }
 
@@ -180,7 +180,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     void finish(prepared, handle).catch((error) => {
       observeCleanupFailure(prepared, "child.background_driver_failed", error);
     });
-    return handle.assistantTurnId;
+    return handle.executionTurnId;
   }
 
   return { register, drive, driveBackground };

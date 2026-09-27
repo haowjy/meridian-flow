@@ -77,7 +77,7 @@ else
         { repos, eventWriter },
         {
           threadId: ids.child,
-          assistantTurnId: ids.execution,
+          turnId: ids.execution,
           cause: { kind: "success", finishReason: "end_turn" },
         },
       );
@@ -155,7 +155,7 @@ else
         { repos, eventWriter },
         {
           threadId: ids.child,
-          assistantTurnId: ids.execution,
+          turnId: ids.execution,
           cause: { kind: "success", finishReason: "end_turn" },
         },
       );
@@ -218,7 +218,7 @@ else
         { repos, eventWriter },
         {
           threadId: ids.child,
-          assistantTurnId: ids.nextExecution,
+          turnId: ids.nextExecution,
           cause: { kind: "success", finishReason: "end_turn" },
         },
       );
@@ -532,7 +532,7 @@ else
         { repos, eventWriter },
         {
           threadId: ids.child,
-          assistantTurnId: ids.nextExecution,
+          turnId: ids.nextExecution,
           cause: { kind: "success", finishReason: "end_turn" },
         },
       );

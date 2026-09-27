@@ -102,7 +102,7 @@ describe("RunSession", () => {
     expect(f.calls()).toBe(0);
     expect(run.resumeAfterSeq).toBe("0");
     expect(BigInt(run.snapshotFloorNextSeq)).toBe((await f.journal.headSeq(f.thread.id)) + 1n);
-    expect(await f.deps.repos.turns.findById(run.assistantTurnId)).toMatchObject({
+    expect(await f.deps.repos.turns.findById(run.executionTurnId)).toMatchObject({
       status: "streaming",
     });
     expect(await f.deps.runClaim.holder(f.thread.id)).toBe(run.runId);
@@ -110,7 +110,7 @@ describe("RunSession", () => {
     expect(run.execute()).toBe(execution);
     expect(await execution).toMatchObject({
       status: "complete",
-      turn: { id: run.assistantTurnId },
+      turn: { id: run.executionTurnId },
     });
     expect(f.calls()).toBe(1);
     expect(f.journal.getEvents(f.thread.id).map(({ event }) => event.type)).toContain(
@@ -204,7 +204,7 @@ describe("RunSession", () => {
   it("cancels a prepared run without invoking the model", async () => {
     const f = await fixture();
     const run = await f.prepare();
-    expect(await f.runtime.cancel(f.thread.id, run.assistantTurnId)).toBe("cancelled");
+    expect(await f.runtime.cancel(f.thread.id, run.executionTurnId)).toBe("cancelled");
     expect(await run.execute()).toMatchObject({ status: "cancelled" });
     expect(f.calls()).toBe(0);
     await expect.poll(() => f.runtime.isThreadRunning(f.thread.id)).toBe(false);
@@ -249,7 +249,7 @@ describe("RunSession", () => {
     expect(await f.deps.runClaim.holder(f.thread.id)).toBe(run.runId);
 
     expect(await run.execute()).toMatchObject({ status: "error", turn: { status: "error" } });
-    expect(await f.repos.turns.findById(run.assistantTurnId)).toMatchObject({ status: "error" });
+    expect(await f.repos.turns.findById(run.executionTurnId)).toMatchObject({ status: "error" });
     const terminal = f.journal
       .getEvents(f.thread.id)
       .map(({ event }) => event)
@@ -307,7 +307,7 @@ describe("RunSession", () => {
       origin: "writer",
     });
     expect(await run.execute()).toMatchObject({ status: "error", turn: { status: "error" } });
-    expect(await f.repos.turns.findById(run.assistantTurnId)).toMatchObject({ status: "error" });
+    expect(await f.repos.turns.findById(run.executionTurnId)).toMatchObject({ status: "error" });
     expect(f.journal.getEvents(f.thread.id).some(({ event }) => event.type === "turn.error")).toBe(
       true,
     );
@@ -512,14 +512,14 @@ describe("RunSession", () => {
       role: "assistant",
       origin: "assistant",
       status: "streaming",
-      prevTurnId: run.assistantTurnId,
+      prevTurnId: run.executionTurnId,
     });
     f.deps.runClaim.readRunningTurnId = async () => other.id;
     f.deps.repos.blocks.listByThread = async () => {
       throw new Error("history unavailable");
     };
     const outcome = await run.execute();
-    expect(outcome).toMatchObject({ status: "error", turn: { id: run.assistantTurnId } });
+    expect(outcome).toMatchObject({ status: "error", turn: { id: run.executionTurnId } });
     expect((await f.repos.turns.findById(other.id))?.status).toBe("streaming");
   });
 
@@ -535,7 +535,7 @@ describe("RunSession", () => {
     const run = await f.prepare();
     expect(await run.execute()).toMatchObject({
       status: "complete",
-      turn: { id: run.assistantTurnId },
+      turn: { id: run.executionTurnId },
     });
     expect(f.sink.events.map((event) => event.name)).toContain("lease_release.failed");
     expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();

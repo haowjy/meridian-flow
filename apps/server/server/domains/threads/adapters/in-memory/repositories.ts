@@ -806,7 +806,7 @@ export function createInMemoryRepositories(
       const latest = [...modelResponses.values()]
         .flatMap((response) => {
           const turn = turnById.get(response.turnId);
-          return turn ? [{ response, turn }] : [];
+          return turn && turn.role !== "compaction" ? [{ response, turn }] : [];
         })
         .sort(
           (left, right) =>

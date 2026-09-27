@@ -233,9 +233,9 @@ describe("inbox drain", () => {
     expect(requests).toHaveLength(3);
     const turns = await repos.turns.listByThread(thread.id);
     const terminal = turns.at(-1);
-    expect(terminal?.id).not.toBe(run.assistantTurnId);
+    expect(terminal?.id).not.toBe(run.executionTurnId);
     expect(terminal?.finishReason).toBe("end_turn");
-    const report = await repos.executionReports.findByExecution(thread.id, run.assistantTurnId);
+    const report = await repos.executionReports.findByExecution(thread.id, run.executionTurnId);
     expect(report).toMatchObject({
       outcome: "succeeded",
       source: "return_result",
@@ -245,7 +245,7 @@ describe("inbox drain", () => {
       captureToolCallId: "rr-1",
       terminalTurnId: terminal?.id,
     });
-    const toolResults = (await repos.blocks.listByTurn(run.assistantTurnId)).filter(
+    const toolResults = (await repos.blocks.listByTurn(run.executionTurnId)).filter(
       (block) => block.blockType === "tool_result",
     );
     expect(toolResults).toHaveLength(1);
@@ -272,13 +272,13 @@ describe("inbox drain", () => {
     await execute(run);
 
     expect(requests).toHaveLength(2);
-    const report = await repos.executionReports.findByExecution(thread.id, run.assistantTurnId);
+    const report = await repos.executionReports.findByExecution(thread.id, run.executionTurnId);
     expect(report).toMatchObject({
       outcome: "succeeded",
       source: "final_assistant",
       summary: "recovered report",
     });
-    const toolResult = (await repos.blocks.listByTurn(run.assistantTurnId)).find(
+    const toolResult = (await repos.blocks.listByTurn(run.executionTurnId)).find(
       (block) => block.blockType === "tool_result",
     );
     expect(toolResult?.content).toMatchObject({
@@ -300,7 +300,7 @@ describe("inbox drain", () => {
     await execute(first);
     const firstReport = await repos.executionReports.findByExecution(
       thread.id,
-      first.assistantTurnId,
+      first.executionTurnId,
     );
     expect(firstReport).toMatchObject({
       outcome: "succeeded",
@@ -314,7 +314,7 @@ describe("inbox drain", () => {
     await execute(second);
     const secondReport = await repos.executionReports.findByExecution(
       thread.id,
-      second.assistantTurnId,
+      second.executionTurnId,
     );
     expect(secondReport).toMatchObject({
       outcome: "succeeded",
@@ -329,7 +329,7 @@ describe("inbox drain", () => {
     const run = await orchestrator.prepare({ threadId: thread.id, userText: "empty" });
     await execute(run);
     expect(
-      await repos.executionReports.findByExecution(thread.id, run.assistantTurnId),
+      await repos.executionReports.findByExecution(thread.id, run.executionTurnId),
     ).toMatchObject({
       outcome: "succeeded",
       source: "empty",
@@ -344,7 +344,7 @@ describe("inbox drain", () => {
     const run = await orchestrator.prepare({ threadId: thread.id, userText: "long" });
     await execute(run);
     expect(
-      await repos.executionReports.findByExecution(thread.id, run.assistantTurnId),
+      await repos.executionReports.findByExecution(thread.id, run.executionTurnId),
     ).toMatchObject({
       outcome: "failed",
       reason: "max_tokens",
@@ -357,9 +357,9 @@ describe("inbox drain", () => {
     const { thread, inbox, orchestrator, repos } = await setup({ child: true });
     const writer = await orchestrator.prepare({ threadId: thread.id, userText: "writer prompt" });
     expect(
-      await repos.executionReports.findByExecution(thread.id, writer.assistantTurnId),
+      await repos.executionReports.findByExecution(thread.id, writer.executionTurnId),
     ).toMatchObject({
-      executionTurnId: writer.assistantTurnId,
+      executionTurnId: writer.executionTurnId,
       deliveryMode: "none",
       origin: "thread_run",
       outcome: null,
@@ -369,14 +369,14 @@ describe("inbox drain", () => {
     await inbox.enqueue(message("queued prompt", thread.id));
     const queued = await orchestrator.prepare({ threadId: thread.id, drain: true });
     expect(
-      await repos.executionReports.findByExecution(thread.id, queued.assistantTurnId),
+      await repos.executionReports.findByExecution(thread.id, queued.executionTurnId),
     ).toMatchObject({
-      executionTurnId: queued.assistantTurnId,
+      executionTurnId: queued.executionTurnId,
       deliveryMode: "none",
       origin: "thread_run",
       outcome: null,
     });
-    expect(queued.assistantTurnId).not.toBe(writer.assistantTurnId);
+    expect(queued.executionTurnId).not.toBe(writer.executionTurnId);
     await execute(queued);
   });
 
@@ -654,7 +654,7 @@ describe("inbox drain", () => {
         error: "An image in this message couldn't be loaded. Try again.",
       },
     });
-    expect(await repos.turns.findById(first.assistantTurnId)).toMatchObject({
+    expect(await repos.turns.findById(first.executionTurnId)).toMatchObject({
       role: "assistant",
       status: "error",
       finishReason: "error",
@@ -728,7 +728,7 @@ describe("inbox drain", () => {
     });
 
     expect(requests).toHaveLength(1);
-    expect(await repos.turns.findById(run.assistantTurnId)).toMatchObject({
+    expect(await repos.turns.findById(run.executionTurnId)).toMatchObject({
       role: "assistant",
       status: "complete",
       finishReason: "end_turn",
@@ -893,7 +893,7 @@ describe("inbox drain", () => {
           error: "An image in this message couldn't be loaded. Try again.",
         },
       });
-      const reply = await rig.repos.turns.findById(run.assistantTurnId);
+      const reply = await rig.repos.turns.findById(run.executionTurnId);
       expect(reply?.prevTurnId).toBe(run.userTurnId);
     } else {
       const run = await rig.orchestrator.prepare({ threadId: rig.thread.id, userText: "begin" });
@@ -1684,7 +1684,7 @@ describe("drain-only start", () => {
     const skillBodyTurn = turns.find((turn) => classifyHistoryItem(turn).kind === "skill_body");
     expect(skillBodyTurn?.prevTurnId).toBe(sent.userTurnId);
     expect((await repos.turns.findById(fresh.id))?.prevTurnId).toBe(skillBodyTurn?.id);
-    expect((await repos.turns.findById(run.assistantTurnId))?.prevTurnId).toBe(fresh.id);
+    expect((await repos.turns.findById(run.executionTurnId))?.prevTurnId).toBe(fresh.id);
 
     expect(requests).toHaveLength(1);
     const texts = messageTexts(requests[0]?.messages ?? []);

@@ -154,14 +154,14 @@ describe("frozen prompt provider requests", () => {
         id: "00000000-0000-4000-8000-000000000020",
         threadId: rig.thread.id,
         userId: rig.thread.userId,
-        originTurnId: plain.assistantTurnId,
+        originTurnId: plain.executionTurnId,
       });
       await rig.run(fork.id, tools);
       const { thread: nestedFork } = await forkThreadAgent(rig.derive, {
         id: "00000000-0000-4000-8000-000000000030",
         threadId: fork.id,
         userId: fork.userId,
-        originTurnId: plain.assistantTurnId,
+        originTurnId: plain.executionTurnId,
       });
       await rig.run(nestedFork.id, tools);
 
@@ -240,7 +240,7 @@ describe("frozen prompt provider requests", () => {
       id: crypto.randomUUID(),
       threadId: rig.thread.id,
       userId: rig.thread.userId,
-      originTurnId: original.assistantTurnId,
+      originTurnId: original.executionTurnId,
     });
     expect(
       (await rig.repos.imageInclusions.findByThread(fork.id)).find(
@@ -388,14 +388,14 @@ describe("frozen prompt provider requests", () => {
     const breakTurn = (await rig.repos.turns.listByThread(rig.thread.id)).find(
       (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
     );
-    expect(breakTurn?.prevTurnId).toBe(run.assistantTurnId);
+    expect(breakTurn?.prevTurnId).toBe(run.executionTurnId);
     expect(sourceDecision).toMatchObject({ included: false, decisionTurnId: breakTurn?.id });
 
     const { thread: fork } = await forkThreadAgent(rig.derive, {
       id: crypto.randomUUID(),
       threadId: rig.thread.id,
       userId: rig.thread.userId,
-      originTurnId: run.assistantTurnId,
+      originTurnId: run.executionTurnId,
     });
     expect(
       (await rig.repos.imageInclusions.findByThread(fork.id)).find(
@@ -471,13 +471,13 @@ describe("frozen prompt provider requests", () => {
       id: crypto.randomUUID(),
       threadId: rig.thread.id,
       userId: rig.thread.userId,
-      originTurnId: original.assistantTurnId,
+      originTurnId: original.executionTurnId,
     });
     const { thread: secondFork } = await forkThreadAgent(rig.derive, {
       id: crypto.randomUUID(),
       threadId: rig.thread.id,
       userId: rig.thread.userId,
-      originTurnId: original.assistantTurnId,
+      originTurnId: original.executionTurnId,
     });
 
     await sendAndRun(rig.thread.id, "source eviction", [
@@ -501,7 +501,7 @@ describe("frozen prompt provider requests", () => {
       id: crypto.randomUUID(),
       threadId: rig.thread.id,
       userId: rig.thread.userId,
-      originTurnId: original.assistantTurnId,
+      originTurnId: original.executionTurnId,
     });
     await sendAndRun(forkAfterSourceEviction.thread.id, "cutoff still includes image", []);
     expect(
@@ -576,7 +576,7 @@ describe("frozen prompt provider requests", () => {
       id: crypto.randomUUID(),
       threadId: rig.thread.id,
       userId: rig.thread.userId,
-      originTurnId: reverseSourceRun.assistantTurnId,
+      originTurnId: reverseSourceRun.executionTurnId,
     });
     await sendAndRun(reverseFork.thread.id, "fork evicts image", [
       image("uploads://@/reverse-fork-large-1.png"),
@@ -621,7 +621,7 @@ describe("frozen prompt provider requests", () => {
       projectId: rig.thread.projectId,
       parentThreadId: rig.thread.id,
       rootThreadId: rig.thread.id,
-      originTurnId: first.assistantTurnId,
+      originTurnId: first.executionTurnId,
       spawnDepth: 1,
     });
     const execution = await rig.repos.turns.create({
@@ -637,7 +637,7 @@ describe("frozen prompt provider requests", () => {
       origin: "spawn",
       deliveryMode: "background_notification",
       callerThreadId: rig.thread.id,
-      callerTurnId: first.assistantTurnId,
+      callerTurnId: first.executionTurnId,
       toolCallId: "spawn-1",
       cardBlockId: null,
     });

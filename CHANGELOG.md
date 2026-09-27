@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 ### Added
+- Stop a running compaction and deliver messages queued during its summary afterward.
 - Compact long conversations through reserved summary turns and atomic successor replies.
 - Persist request sizes and turn-neutral child execution selectors for compaction.
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.

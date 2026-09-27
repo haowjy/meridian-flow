@@ -84,8 +84,8 @@ runtime-local codec copy.
   fields the direct-child activity read needs: id, parent, ref, title, agent
   name, spawn status, and origin turn.
 - **Execution reports** — `ExecutionReportRepository` owns one row per admitted
-  child run, keyed by its first `assistantTurnId`. Steering may split that run into
-  multiple assistant turns; `terminalAssistantTurnId` is set only at finalization.
+  child run, keyed by its first reserved `executionTurnId`. Steering may split that run into
+  multiple assistant turns; `terminalTurnId` is set only at finalization.
   `findByTurn` resolves the nearest admitted ancestor, never the latest report. Capture and
   terminal writes are idempotent compare-and-set operations. The domain report-state
   module owns identity, capture and terminal comparisons and the delivery-to-publication

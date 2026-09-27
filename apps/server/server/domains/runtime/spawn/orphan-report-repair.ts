@@ -54,7 +54,7 @@ export function createOrphanReportRepair(deps: {
           { repos: deps.repos, eventWriter: deps.eventWriter },
           {
             threadId: childThreadId,
-            assistantTurnId: turn.id,
+            turnId: turn.id,
             cause: {
               kind: "failed",
               reason: "orphaned",

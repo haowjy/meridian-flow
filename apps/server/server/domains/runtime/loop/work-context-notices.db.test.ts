@@ -210,6 +210,7 @@ else
       try {
         await notices.adoptBatch(lease, async () => ({
           value: null,
+          turnKind: "assistant" as const,
           turnId: assistant.id,
           messageIds: [],
           persist: async () => {
@@ -354,6 +355,7 @@ else
       try {
         await notices.adoptBatch(lease, async () => ({
           value: null,
+          turnKind: "assistant" as const,
           turnId: assistant.id,
           messageIds: [],
           persist: async () => {

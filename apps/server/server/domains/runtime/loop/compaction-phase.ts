@@ -36,17 +36,19 @@ export async function executeCompaction({
   decision: Extract<CompactionDecision, { kind: "compact" }>;
   recordResponses: (rows: ModelResponseReceivedRow[]) => void;
 }) {
-  const { repos, eventWriter } = deps;
+  const { repos } = deps;
+  const projection = projectActiveHistory(allTurns, allBlocks, thread.ref);
   const placeholder = currentTurn;
   const summarizer = deps.summarizer;
   let summary: SummaryOutcome;
   try {
+    input.signal?.throwIfAborted();
     summary = await summarizer.summarize({
       threadId: input.threadId,
       turnId: placeholder.id,
       instruction: "compaction",
       requestInHand: decision.requestInHand,
-      projection: projectActiveHistory(allTurns, allBlocks, thread.ref),
+      projection,
       signal: input.signal ?? new AbortController().signal,
     });
   } catch (error) {
@@ -69,12 +71,30 @@ export async function executeCompaction({
   let composed: Awaited<ReturnType<typeof composeLivePromptBake>> | undefined;
   let summaryBlock: ReturnType<typeof contentForBlockInput> | undefined;
   let tokensAfter = 0;
+  let usableSummary = false;
+  let assembleSuccessor:
+    | ((turns: Turn[], blocks: Block[]) => ReturnType<typeof prepareRequestContext>)
+    | undefined;
   let preparedContext: AssembledNextTurnContext | undefined;
+  function assertFits(context: AssembledNextTurnContext) {
+    const estimate = estimateRequestTokens({ request: context.generateRequest, baseline: null });
+    if (estimate >= decision.triggerTokens)
+      throw new CompactionPreparationError("context_too_large");
+    tokensAfter = estimate;
+    if (summaryBlock) {
+      const content = summaryBlock.content as {
+        kind: "compaction";
+        props: Record<string, string | number>;
+      };
+      content.props.tokensAfter = tokensAfter;
+    }
+  }
   const successor = await deps.delivery.splitAndContinue({
     ...boundary,
-    prepareNextContext: async (drain) => {
+    prepareCurrent: async () => {
+      usableSummary = false;
       if (outcome.kind !== "complete") throw new CompactionPreparationError("compaction_failed");
-      composed = await composeLivePromptBake({
+      const composition = await composeLivePromptBake({
         thread,
         turns: allTurns,
         blocks: allBlocks,
@@ -83,7 +103,10 @@ export async function executeCompaction({
         baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
         promptBakes: repos.promptBakes,
         workContext: deps.workContext,
+      }).catch(() => {
+        throw new CompactionPreparationError("compaction_failed");
       });
+      composed = composition;
       const provisionalBakeId = crypto.randomUUID();
       const provisional = {
         ...placeholder,
@@ -101,51 +124,56 @@ export async function executeCompaction({
           props: {
             summary: outcome.text,
             model: outcome.model,
-            excludedTurnCount: allTurns.filter(
+            excludedTurnCount: projection.turns.filter(
               (turn) =>
-                turn.position <=
-                (allTurns.find((turn) => turn.id === decision.plan.compactedThrough.turnId)
-                  ?.position ?? 0),
+                turn.role !== "compaction" &&
+                allTurns.some((raw) => raw.id === turn.id) &&
+                !decision.plan.retainedSuffix.some((slice) => slice.turn.id === turn.id),
             ).length,
             tokensBefore: decision.tokensBefore,
             tokensAfter: 0,
           },
         },
       });
-      const prepared = await prepareRequestContext({
-        deps,
-        thread,
-        threadId: input.threadId,
-        referenceUserTurnId: placeholder.id,
-        assistantTurnId: placeholder.id,
-        turns: [
-          ...allTurns.map((turn) => (turn.id === placeholder.id ? provisional : turn)),
-          ...drain.turns,
-        ],
-        blocks: [...allBlocks, localBlockFromEvent(summaryBlock), ...drain.blocks],
-        baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
-        readReferences: false,
-        skipCompaction: true,
-        signal: input.signal,
-        promptBakes: {
-          ...repos.promptBakes,
-          findById: async (id) =>
-            id === provisionalBakeId
-              ? {
-                  id,
-                  ownerThreadId: thread.id,
-                  ...composed!.bakeContent,
-                  createdAt: new Date().toISOString(),
-                }
-              : repos.promptBakes.findById(id),
-        },
-      });
-      tokensAfter = estimateRequestTokens({
-        request: prepared.assembled.generateRequest,
-        baseline: null,
-      });
-      if (tokensAfter >= decision.triggerTokens)
-        throw new CompactionPreparationError("context_too_large");
+      const preparedSummaryBlock = summaryBlock;
+      assembleSuccessor = (lateTurns, lateBlocks) =>
+        prepareRequestContext({
+          deps,
+          thread,
+          threadId: input.threadId,
+          referenceUserTurnId: placeholder.id,
+          assistantTurnId: placeholder.id,
+          turns: [
+            ...allTurns.map((turn) => (turn.id === placeholder.id ? provisional : turn)),
+            ...lateTurns,
+          ],
+          blocks: [...allBlocks, localBlockFromEvent(preparedSummaryBlock), ...lateBlocks],
+          baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
+          readReferences: false,
+          skipCompaction: true,
+          signal: input.signal,
+          promptBakes: {
+            ...repos.promptBakes,
+            findById: async (id) =>
+              id === provisionalBakeId
+                ? {
+                    id,
+                    ownerThreadId: thread.id,
+                    ...composition.bakeContent,
+                    createdAt: new Date().toISOString(),
+                  }
+                : repos.promptBakes.findById(id),
+          },
+        });
+      // A late-arrival failure must not discard a usable summary and rebake.
+      const base = await assembleSuccessor([], []);
+      assertFits(base.assembled);
+      usableSummary = true;
+    },
+    prepareNextContext: async (drain) => {
+      if (!assembleSuccessor) throw new Error("Missing prepared compaction epoch");
+      const prepared = await assembleSuccessor(drain.turns, drain.blocks);
+      assertFits(prepared.assembled);
       preparedContext = prepared.assembled;
       return {
         events: prepared.events,
@@ -154,8 +182,8 @@ export async function executeCompaction({
         requiresSplit: true,
       };
     },
-    completeCurrent: async (failure) => {
-      if (failure !== undefined || outcome.kind !== "complete") {
+    completeCurrent: async () => {
+      if (!usableSummary || outcome.kind !== "complete") {
         await persistSummaryResponses();
         const failed = {
           ...placeholder,
@@ -185,18 +213,18 @@ export async function executeCompaction({
             compactionModel: outcome.model,
             metadata: placeholder.metadata,
             modelResponses: outcome.modelResponses,
+            events: (bakeId) => [
+              {
+                type: "context.compacted",
+                compactionTurnId: placeholder.id,
+                compactedThrough: decision.plan.compactedThrough,
+                bakeId,
+                model: outcome.model,
+                tokensBefore: decision.tokensBefore,
+                tokensAfter,
+              },
+            ],
           },
-        });
-        const completed = await repos.turns.findById(placeholder.id);
-        if (!completed?.promptBakeId) throw new Error("Compaction epoch did not persist its bake");
-        await eventWriter.appendEvent(input.threadId, {
-          type: "context.compacted",
-          compactionTurnId: placeholder.id,
-          compactedThrough: decision.plan.compactedThrough,
-          bakeId: completed.promptBakeId,
-          model: outcome.model,
-          tokensBefore: decision.tokensBefore,
-          tokensAfter,
         });
       }
       const completed = await repos.turns.findById(placeholder.id);

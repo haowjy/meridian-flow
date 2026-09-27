@@ -38,7 +38,12 @@ export interface DeliveryStore extends InboxReader {
 }
 
 export interface DeliveryLeaseStore {
-  bindTurn(lease: Lease, turnId: TurnId, ids: readonly string[]): Promise<void>;
+  bindTurn(
+    lease: Lease,
+    turnId: TurnId,
+    ids: readonly string[],
+    kind: "assistant" | "compaction",
+  ): Promise<void>;
   setAdoptedMessageIds(lease: Lease, ids: readonly string[]): Promise<boolean>;
   clearReceipt(lease: Lease, expectedIds: readonly string[]): Promise<boolean>;
   lockReceipt(lease: Lease): Promise<{ ids: string[]; cancelRequested: boolean } | null>;
@@ -298,6 +303,7 @@ export function createDeliveryAdapter(
     let prepared: Awaited<ReturnType<DeliveryBoundary["prepareNextContext"]>>;
     let preparationFailure: unknown;
     try {
+      await input.prepareCurrent?.();
       drain = await drainInbox({
         ...input,
         persistence: deps,
@@ -414,7 +420,15 @@ export function createDeliveryAdapter(
             { type: "turn.created", turn: next },
           ],
         }),
-        { afterEvents: () => leaseStore.bindTurn(lease, next.id, drain.ackIds) },
+        {
+          afterEvents: () =>
+            leaseStore.bindTurn(
+              lease,
+              next.id,
+              drain.ackIds,
+              compaction ? "compaction" : "assistant",
+            ),
+        },
       );
       if (currentTurn.role === "assistant") await deps.repos.threads.updateCost(threadId, "0", 1);
     } else if (events.length > 0) {
@@ -515,6 +529,7 @@ export function createDeliveryAdapter(
             lease,
             prepared.turnId,
             prepared.messageIds.filter((id) => !work.ids.includes(id)),
+            prepared.turnKind,
           );
           await appendPending(lease.threadId);
           return prepared.value;
@@ -550,17 +565,18 @@ export function createDeliveryAdapter(
             return { kind: "prepare_split" as const };
           }
         }
-        if (input.modelResponses?.length)
+        const terminalResponses = input.modelResponses ?? [];
+        if (terminalResponses.length)
           await persistAndAppendEvents(deps, threadId, async () => ({
             result: undefined,
-            events: input.modelResponses!.map((response) => ({
+            events: terminalResponses.map((response) => ({
               type: "model.response_received" as const,
               response,
             })),
           }));
         const completion = await finalizeExecution(deps, {
           threadId,
-          assistantTurnId: input.assistantTurnId,
+          turnId: input.turnId,
           cause,
         });
         if (
@@ -585,7 +601,7 @@ export function createDeliveryAdapter(
           : input.cause;
         const result = await finalizeExecution(deps, {
           threadId,
-          assistantTurnId: input.assistantTurnId,
+          turnId: input.turnId,
           cause,
         });
         if (result.turn.status === "cancelled") await inbox.ack(threadId, receipt?.ids ?? []);

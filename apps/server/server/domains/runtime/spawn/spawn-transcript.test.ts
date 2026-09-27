@@ -130,7 +130,7 @@ describe("captured candidate terminal policy", () => {
       { repos, eventWriter: transcript.persistence.eventWriter },
       {
         threadId: child.id,
-        assistantTurnId: turn.id,
+        turnId: turn.id,
         cause: { kind: "failed", reason: "runtime_error", error: "later failure" },
       },
     );
@@ -158,7 +158,7 @@ describe("captured candidate terminal policy", () => {
         },
         {
           threadId: child.id,
-          assistantTurnId: turn.id,
+          turnId: turn.id,
           cause: { kind: "success", finishReason: "end_turn" },
         },
       ),
@@ -171,7 +171,7 @@ describe("captured candidate terminal policy", () => {
       { repos, eventWriter: transcript.persistence.eventWriter },
       {
         threadId: child.id,
-        assistantTurnId: turn.id,
+        turnId: turn.id,
         cause: { kind: "success", finishReason: "end_turn" },
       },
     );
@@ -220,7 +220,7 @@ describe("persisted execution fallback", () => {
       { repos: scope.repos, eventWriter: scope.transcript.persistence.eventWriter },
       {
         threadId: scope.child.id,
-        assistantTurnId: scope.turn.id,
+        turnId: scope.turn.id,
         cause: { kind: "success", finishReason: "end_turn" },
       },
     );
@@ -241,7 +241,7 @@ describe("persisted execution fallback", () => {
       { repos: scope.repos, eventWriter: scope.transcript.persistence.eventWriter },
       {
         threadId: scope.child.id,
-        assistantTurnId: scope.turn.id,
+        turnId: scope.turn.id,
         cause: { kind: "success", finishReason: "end_turn" },
       },
     );
@@ -256,7 +256,7 @@ describe("persisted execution fallback", () => {
       { repos: scope.repos, eventWriter: scope.transcript.persistence.eventWriter },
       {
         threadId: scope.child.id,
-        assistantTurnId: scope.turn.id,
+        turnId: scope.turn.id,
         cause: { kind: "failed", reason: "budget", error: "budget exhausted" },
       },
     );
@@ -273,7 +273,7 @@ describe("persisted execution fallback", () => {
       await appendPublicResponse(scope, 1, [{ sequence: 2, text: "partial last" }]);
       const terminal = await finalizeExecution(
         { repos: scope.repos, eventWriter: scope.transcript.persistence.eventWriter },
-        { threadId: scope.child.id, assistantTurnId: scope.turn.id, cause },
+        { threadId: scope.child.id, turnId: scope.turn.id, cause },
       );
       expect(terminal.report).toMatchObject({
         outcome: cause.kind === "failed" ? "failed" : "cancelled",
@@ -295,7 +295,7 @@ describe("persisted execution fallback", () => {
       { repos: scope.repos, eventWriter: scope.transcript.persistence.eventWriter },
       {
         threadId: scope.child.id,
-        assistantTurnId: scope.turn.id,
+        turnId: scope.turn.id,
         cause: { kind: "failed", reason: "generator_error", error: "provider failed" },
       },
     );

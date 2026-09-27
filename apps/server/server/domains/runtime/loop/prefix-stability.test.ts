@@ -18,10 +18,11 @@ import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { createInMemoryAgentRevisionStore } from "../../packages/index.js";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
-import { createInMemoryRepositories } from "../../threads/index.js";
+import { compactionTurnMetadata, createInMemoryRepositories } from "../../threads/index.js";
 import type { Gateway, GenerateRequest, Message, ModelInfo } from "../gateway/index.js";
 import { createToolRegistry } from "../tools/index.js";
 import { formatInvokedSkills } from "./activated-skills.js";
+import { createLocalTurn } from "./local-turn.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
 import type { WorkContextReader } from "./work-context.js";
 
@@ -195,6 +196,7 @@ describe("prefix stability across a growing thread", () => {
       threadExists: async (id) => Boolean(await repos.threads.findById(id)),
     });
     const thread0 = await repos.threads.create({
+      id: "00000000-0000-4000-8000-000000000040",
       userId: "user-1",
       projectId: project.id,
       title: "Prefix stability",
@@ -364,6 +366,78 @@ describe("prefix stability across a growing thread", () => {
       changedBaseTools,
     );
     expect(r7.generateRequest.tools).toEqual(r0.generateRequest.tools);
+
+    const beforeCutTurns = [
+      t1.turn,
+      skillTurn.turn,
+      steer.turn,
+      workSwitch.turn,
+      subagentDone.turn,
+      toolExchange.turn,
+      nextTurn.turn,
+    ];
+    const beforeCutBlocks = [
+      t1.block,
+      skillTurn.block,
+      steer.block,
+      workSwitch.block,
+      subagentDone.block,
+      ...toolExchange.blocks,
+      nextTurn.block,
+    ];
+    const c = createLocalTurn({
+      id: "cut",
+      threadId: thread0.id,
+      position: 8,
+      prevTurnId: nextTurn.turn.id,
+      role: "compaction",
+      origin: "system",
+      status: "pending",
+      metadata: compactionTurnMetadata({
+        trigger: "auto",
+        compactedThrough: { turnId: toolExchange.turn.id },
+        pinnedRequestTurnId: nextTurn.turn.id,
+      }),
+    });
+    const late = userTurn("late", "A late direction.", 9);
+    for (const status of ["pending", "error", "cancelled"] as const) {
+      const next = await assemble(
+        [...beforeCutTurns, { ...c, status }, late.turn],
+        [...beforeCutBlocks, late.block],
+      );
+      assertIsStableExtension(r7.generateRequest, next.generateRequest);
+    }
+    const summaryBlock: Block = {
+      responseId: null,
+      id: "summary",
+      turnId: c.id,
+      blockType: "custom",
+      sequence: 0,
+      createdAt: c.createdAt,
+      content: {
+        kind: "compaction",
+        props: {
+          summary: "The writer is drafting chapter 4 with tight pacing.",
+          excludedTurnCount: 6,
+          tokensBefore: 5000,
+          tokensAfter: 500,
+          model: "summary-model",
+        },
+      },
+    };
+    const compacted = await assemble(
+      [
+        ...beforeCutTurns,
+        { ...c, status: "complete", promptBakeId: r0.thread.initialPromptBakeId },
+        late.turn,
+      ],
+      [...beforeCutBlocks, summaryBlock, late.block],
+    );
+    expect(compacted.generateRequest.tools).toEqual(r7.generateRequest.tools);
+    expect(compacted.generateRequest.messages[0]).toEqual(r7.generateRequest.messages[0]);
+    expect(withoutCacheMarks(compacted.generateRequest.messages[1])).not.toEqual(
+      withoutCacheMarks(r7.generateRequest.messages[1]),
+    );
 
     // The frozen system message carries the same cache mark on every request,
     // and every request carries the thread's stable prompt-cache routing key.

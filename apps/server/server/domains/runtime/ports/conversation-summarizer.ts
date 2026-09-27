@@ -12,6 +12,8 @@ export type SummaryOutcome = {
   | { kind: "cancelled" }
 );
 export interface ConversationSummarizer {
+  /** Production remains disabled until a real summarizer is configured. */
+  readonly enabled: boolean;
   readonly maxOutputTokens: number;
   summarize(input: {
     threadId: ThreadId;

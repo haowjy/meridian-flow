@@ -94,7 +94,7 @@ function stubOrchestrator(
       });
       return {
         userTurnId: userTurn.id,
-        assistantTurnId,
+        executionTurnId: assistantTurnId,
         runId: assistantTurnId,
         resumeAfterSeq: "0",
         snapshotFloorNextSeq: "1",

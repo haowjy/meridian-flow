@@ -87,12 +87,13 @@ export function createWriterTurnProducer(deps: {
       // at durable rows, and only for the setup window where the runner has not
       // published the assistant id yet. `createdAfter` keeps an older orphan out.
       const live = deps.runner.getRunningTurn(threadId);
-      const assistantTurnId = live
-        ? (live.assistantTurnId ??
-          (await deps.turns.findRunningAssistantId(threadId, {
-            createdAfter: live.startedAt,
-          })))
-        : null;
+      const assistantTurnId =
+        live && live.kind !== "compaction"
+          ? (live.turnId ??
+            (await deps.turns.findRunningAssistantId(threadId, {
+              createdAfter: live.startedAt,
+            })))
+          : null;
       const turnMetadata =
         activatedSkillMetadata(input.admission.activatedSkillSlugs ?? []) ??
         input.userTurnMetadata ??

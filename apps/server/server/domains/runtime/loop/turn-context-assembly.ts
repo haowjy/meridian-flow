@@ -301,7 +301,8 @@ export async function persistPreparedPromptBake(
   assembled.pendingBake = undefined;
   assembled.systemPrompt = result.bake.composedSystemPrompt;
   const tools = toolsFromBakedJson(result.bake.bakedTools) ?? assembled.generateRequest.tools ?? [];
-  assembled.generateRequest.tools = tools;
+  // Match buildContext: an empty advertised tool set is omitted from request bytes.
+  assembled.generateRequest.tools = tools.length ? tools : undefined;
   assembled.tools = functionToolsFromAdvertised(tools);
 
   const systemIndex = assembled.generateRequest.messages.findIndex(

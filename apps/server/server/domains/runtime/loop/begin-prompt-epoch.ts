@@ -29,7 +29,7 @@ export interface BoundaryCompletion {
   completedAt?: string;
   finishReason?: Turn["finishReason"];
   /** Caller-owned visible history event, such as `context.compacted`. */
-  events?: OrchestratorEvent[];
+  events?: OrchestratorEvent[] | ((bakeId: PromptBakeId) => OrchestratorEvent[]);
 }
 
 export type BeginPromptEpochInput = {
@@ -83,7 +83,9 @@ export async function beginPromptEpoch(
       ...(input.completion.modelResponses ?? []).map(
         (response): OrchestratorEvent => ({ type: "model.response_received", response }),
       ),
-      ...(input.completion.events ?? []),
+      ...(typeof input.completion.events === "function"
+        ? input.completion.events(bake.id)
+        : (input.completion.events ?? [])),
     ];
     return { result: { bakeId: bake.id }, events };
   });

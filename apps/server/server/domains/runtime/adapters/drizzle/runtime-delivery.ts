@@ -23,15 +23,15 @@ export function createDrizzleRuntimeDelivery(
       eq(schema.threadRunLeases.holderId, lease.holderId),
     );
   const leaseStore: DeliveryLeaseStore = {
-    async bindTurn(lease, turnId, messageIds) {
+    async bindTurn(lease, turnId, messageIds, kind) {
       const [bound] = await db_()
         .update(schema.threadRunLeases)
-        .set({ turnId, adoptedMessageIds: [...messageIds] })
+        .set({ turnId, turnKind: kind, adoptedMessageIds: [...messageIds] })
         .where(
           and(
             eq(schema.threadRunLeases.cancelRequested, false),
             sql`EXISTS (SELECT 1 FROM ${schema.turns} WHERE ${schema.turns.id} = ${turnId}
-                AND ${schema.turns.threadId} = ${lease.threadId} AND (${schema.turns.role} = 'assistant' OR (${schema.turns.role} = 'compaction' AND ${schema.turns.status} = 'pending')))`,
+                AND ${schema.turns.threadId} = ${lease.threadId} AND ${schema.turns.role} = ${kind} AND (${schema.turns.role} = 'assistant' OR (${schema.turns.role} = 'compaction' AND ${schema.turns.status} = 'pending')))`,
             ownedLease(lease),
           ),
         )

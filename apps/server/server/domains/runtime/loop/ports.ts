@@ -16,6 +16,7 @@ import type {
 } from "@meridian/contracts/threads";
 
 export type RunId = string;
+export type CurrentTurn = { id: TurnId; kind: "assistant" | "compaction" };
 
 /** Lease lifetime; a held lease is renewed at a third of this interval. */
 export const DEFAULT_LEASE_TTL_MS = 30_000;
@@ -93,7 +94,7 @@ export interface RunClaim {
    */
   readMany(threadIds: readonly ThreadId[]): Promise<Map<ThreadId, ThreadLeaseState>>;
   /**
-   * The assistant turn bound to the live lease, or null when the thread is
+   * The current turn bound to the live lease (assistant or compaction), or null when the thread is
    * asleep or a run has not yet bound its turn. Derived from the same row as
    * {@link read}, never from the turns table.
    */

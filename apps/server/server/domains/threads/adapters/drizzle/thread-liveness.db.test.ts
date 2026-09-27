@@ -148,6 +148,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!lease) throw new Error("expected the lease to be acquired");
       await createTestDrizzleDelivery(db, { runClaim: authority }).adoptBatch(lease, async () => ({
         value: undefined,
+        turnKind: "assistant" as const,
         turnId: TURN_ID,
         messageIds: [],
       }));

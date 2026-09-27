@@ -3,7 +3,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
-import { DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
+import { type CurrentTurn, DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
 import { createRunStarter } from "./run-starter.js";
 import {
   NoPendingWakeError,
@@ -17,7 +17,7 @@ import type { RuntimeDelivery } from "./runtime-delivery.js";
 
 type RunSession = {
   controller: AbortController;
-  assistantTurnId: TurnId | null;
+  currentTurn: CurrentTurn | null;
   startedAt: Date;
   child?: RunTurnInput["child"];
   completion: Promise<void>;
@@ -27,7 +27,7 @@ export function createRunSessions(deps: {
   setup(input: RunLoopInput): Promise<PreparedLoop>;
   finalizeFailure(input: {
     threadId: ThreadId;
-    assistantTurnId: TurnId;
+    turnId: TurnId;
     error: unknown;
     signal: AbortSignal;
     lease: Lease;
@@ -67,7 +67,7 @@ export function createRunSessions(deps: {
     let complete!: () => void;
     const session: RunSession = {
       controller,
-      assistantTurnId: null,
+      currentTurn: null,
       startedAt: new Date(),
       child: input.child,
       completion: new Promise<void>((resolve) => {
@@ -93,7 +93,7 @@ export function createRunSessions(deps: {
         if (lease) {
           await deps.delivery.refreshPending(threadId);
           if (
-            session.assistantTurnId &&
+            session.currentTurn &&
             restartPending &&
             !session.controller.signal.aborted &&
             (await deps.delivery.selectPending(threadId)).some(
@@ -108,7 +108,7 @@ export function createRunSessions(deps: {
       } finally {
         complete();
         try {
-          if (session.assistantTurnId) deps.onRunSettled?.(threadId);
+          if (session.currentTurn) deps.onRunSettled?.(threadId);
         } catch (error) {
           observe(threadId, "settled.failed", error);
         }
@@ -127,11 +127,14 @@ export function createRunSessions(deps: {
         () => {
           void authority
             .renew(heldLease)
-            .then((held) => {
+            .then(async (held) => {
               if (!held) {
                 clearInterval(heartbeat);
                 observe(threadId, "lease.lost", new Error("Run lease lost"));
                 controller.abort();
+              } else {
+                const state = await authority.read(threadId);
+                if (state.kind === "awake" && state.cancelRequested) controller.abort();
               }
             })
             .catch((error) => observe(threadId, "lease_renew.failed", error));
@@ -144,12 +147,12 @@ export function createRunSessions(deps: {
         ...input,
         signal: controller.signal,
         lease,
-        onAssistantTurnChanged(turnId) {
-          session.assistantTurnId = turnId;
-          input.onAssistantTurnChanged?.(turnId);
+        onCurrentTurnChanged(turn) {
+          session.currentTurn = turn;
+          input.onCurrentTurnChanged?.(turn);
         },
       });
-      session.assistantTurnId = loop.assistantTurnId;
+      session.currentTurn = loop.currentTurn;
       const snapshotFloorNextSeq = ((await deps.headSeq(threadId)) + 1n).toString();
       try {
         deps.onRunStarted?.(threadId);
@@ -167,7 +170,7 @@ export function createRunSessions(deps: {
             observe(threadId, "execution.failed", error);
             turn = await deps.finalizeFailure({
               threadId,
-              assistantTurnId: session.assistantTurnId ?? loop.assistantTurnId,
+              turnId: session.currentTurn?.id ?? loop.currentTurn.id,
               error,
               signal: controller.signal,
               lease: heldLease,
@@ -184,17 +187,17 @@ export function createRunSessions(deps: {
       return {
         runId: lease.runId,
         userTurnId: loop.userTurnId,
-        assistantTurnId: loop.assistantTurnId,
+        executionTurnId: loop.currentTurn.id,
         resumeAfterSeq,
         snapshotFloorNextSeq,
         execute: () => (execution ??= execute()),
       };
     } catch (error) {
-      if (lease && session.assistantTurnId) {
+      if (lease && session.currentTurn) {
         try {
           await deps.finalizeFailure({
             threadId,
-            assistantTurnId: session.assistantTurnId,
+            turnId: session.currentTurn.id,
             error,
             signal: controller.signal,
             lease,
@@ -222,17 +225,21 @@ export function createRunSessions(deps: {
     getRunningTurn(threadId: ThreadId) {
       const session = running.get(threadId);
       return session
-        ? { assistantTurnId: session.assistantTurnId, startedAt: session.startedAt }
+        ? {
+            turnId: session.currentTurn?.id ?? null,
+            kind: session.currentTurn?.kind ?? null,
+            startedAt: session.startedAt,
+          }
         : null;
     },
-    getRunningTurnId: (threadId: ThreadId) => running.get(threadId)?.assistantTurnId ?? null,
+    getRunningTurnId: (threadId: ThreadId) => running.get(threadId)?.currentTurn?.id ?? null,
     isThreadRunning: (threadId: ThreadId) => running.has(threadId),
     async cancel(
       threadId: ThreadId,
       turnId: TurnId,
     ): Promise<"cancelled" | "already_finished" | "not_found"> {
       const active = running.get(threadId);
-      if (active?.assistantTurnId === turnId) {
+      if (active?.currentTurn?.id === turnId) {
         if (!(await authority.cancelExecution(threadId, turnId))) return "already_finished";
         abortChildrenOf(threadId, true);
         active.controller.abort();

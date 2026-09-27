@@ -8,7 +8,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ExecutionReportCorrelation, TreeBudget } from "@meridian/contracts/spawn";
 import type { JsonValue, Turn } from "@meridian/contracts/threads";
 import type { Tool } from "../gateway/index.js";
-import type { Lease } from "./ports.js";
+import type { CurrentTurn, Lease } from "./ports.js";
 
 interface RunTurnBase {
   threadId: ThreadId;
@@ -22,7 +22,7 @@ interface RunTurnBase {
     description?: string | null;
   };
   child?: { parentThreadId: ThreadId; background: boolean; origin: "spawn" | "message" };
-  onAssistantTurnChanged?: (turnId: TurnId) => void;
+  onCurrentTurnChanged?: (turn: CurrentTurn) => void;
 }
 
 /** A run born from a direct writer message: setup persists the user turn before preparation. */
@@ -36,8 +36,8 @@ export interface WriterRunTurnInput extends RunTurnBase {
 
 /**
  * A drain-only start (a wake): there is no new writer message. The first
- * drained message becomes the run's first user turn, ahead of the assistant
- * container, and the model sees exactly the drained batch.
+ * drained message becomes the run's first user turn, ahead of the first reserved
+ * turn, and the model sees exactly the drained batch.
  */
 export interface DrainRunTurnInput extends RunTurnBase {
   drain: true;
@@ -67,7 +67,7 @@ export class NoPendingWakeError extends Error {
 
 export interface PreparedLoop {
   userTurnId: TurnId;
-  assistantTurnId: TurnId;
+  currentTurn: CurrentTurn;
   execute(): Promise<Turn>;
 }
 
@@ -79,7 +79,7 @@ export type RunOutcome =
 export interface PreparedRun {
   runId: string;
   userTurnId: TurnId;
-  assistantTurnId: TurnId;
+  executionTurnId: TurnId;
   resumeAfterSeq: string;
   snapshotFloorNextSeq: string;
   execute(): Promise<RunOutcome>;

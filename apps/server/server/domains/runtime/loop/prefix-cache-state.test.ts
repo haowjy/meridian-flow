@@ -151,6 +151,46 @@ describe("derivePrefixCacheState", () => {
     ).resolves.toEqual({ state: "warm", reason: "reusable_prefix" });
   });
 
+  it("estimates the whole request after a cancelled response without usage", async () => {
+    const threadHistory = history();
+    const service = createPrefixCacheStateService({
+      repos: {
+        threads: {
+          async findByIdIncludingDeleted() {
+            return threadHistory.thread as Thread;
+          },
+        },
+        turns: {
+          async findById() {
+            return null;
+          },
+          async listByThread() {
+            return [...threadHistory.turns];
+          },
+        },
+        modelResponses: {
+          async findLatestByThread() {
+            return { ...response("turn-1"), inputTokens: 0 };
+          },
+        },
+      },
+    });
+    await expect(
+      service.reusableResponseFor({
+        threadId: "thread-1",
+        model: {
+          id: MODEL,
+          provider: "test",
+          displayName: "test",
+          contextWindow: 128000,
+          maxOutputTokens: 4096,
+          promptCache: CACHE,
+          capabilities: new Set(),
+        },
+      }),
+    ).resolves.toBeNull();
+  });
+
   it("uses known local turns without another thread-history read", async () => {
     const threadHistory = history();
     let turnReads = 0;
@@ -465,4 +505,28 @@ it("retains an expired response baseline but rejects model and completed-boundar
       history: history({ turns: [turn("turn-1", 1), turn("cut", 2, { role: "compaction" })] }),
     }).response,
   ).toBeNull();
+});
+
+it.each([
+  "pending",
+  "error",
+  "cancelled",
+] as const)("excludes a %s summary response from the reusable baseline", (status) => {
+  const input = {
+    model: MODEL,
+    promptCache: CACHE,
+    nowMs: NOW_MS,
+    history: history({
+      turns: [turn("turn-1", 1), turn("summary", 2, { role: "compaction", status })],
+      responses: [
+        response("turn-1"),
+        { ...response("summary"), inputTokens: 900, requestMessageCount: 9 },
+      ],
+    }),
+  };
+  expect(selectReusablePrefixResponse(input).response).toMatchObject({
+    inputTokens: 100,
+    requestMessageCount: 2,
+  });
+  expect(derivePrefixCacheState(input)).toEqual({ state: "warm", reason: "reusable_prefix" });
 });
