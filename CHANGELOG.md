@@ -18,6 +18,7 @@
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
 
 ### Fixed
+- Keep cold project bootstrap atomic while committing peer manifest dependencies independently.
 - Refresh search-only Work drafts before revision checks. Ignore documents removed from a Work.
 - Commit shared document pulls independently of chat transactions; preserve retries after failed pulls.
 - Settle direct-write tool results after their document commit instead of leaving successful edits marked staged.

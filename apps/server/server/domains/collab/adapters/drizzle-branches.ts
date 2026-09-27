@@ -295,7 +295,7 @@ export function createDrizzleBranchStore(
   }
 
   async function reconcileProjectManifest(projectId: ProjectId): Promise<void> {
-    const { documentId, doc } = await ensureProjectManifest({ projectId });
+    const { documentId, doc } = await loadProjectManifest({ projectId });
     doc.destroy();
     await reconcileLiveManifest(documentId, projectId, await draftSeedExclusions(projectId));
   }
@@ -418,36 +418,43 @@ export function createDrizzleBranchStore(
     return (row?.projectId as ProjectId | null | undefined) ?? null;
   }
 
-  async function ensureProjectManifest(input: {
+  function ensureProjectManifest(input: {
     projectId: ProjectId;
     contextSourceId?: string;
   }): Promise<{ documentId: DocumentId; doc: Y.Doc }> {
-    return runInRootDrizzleTransaction(db, async () => {
-      const txDb = currentDrizzleDb(db);
-      const [existing] = await txDb
-        .select({ id: documents.id })
-        .from(documents)
-        .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
-        .where(
-          and(
-            eq(contextSources.projectId, input.projectId),
-            eq(documents.kind, "manifest"),
-            isNull(documents.deletedAt),
-          ),
-        )
-        .limit(1);
-      if (existing?.id) {
-        return {
-          documentId: existing.id as DocumentId,
-          doc: await ensureLiveManifestDocument(existing.id as DocumentId),
-        };
-      }
-      const documentId = await createManifestIdentity(input.projectId, input.contextSourceId);
+    return runInRootDrizzleTransaction(db, () => loadProjectManifest(input));
+  }
+
+  // Live bootstrap joins its caller: the project/source may not be committed yet.
+  // Branch readers use ensureProjectManifest so root peer FKs see durable identity.
+  async function loadProjectManifest(input: {
+    projectId: ProjectId;
+    contextSourceId?: string;
+  }): Promise<{ documentId: DocumentId; doc: Y.Doc }> {
+    const txDb = currentDrizzleDb(db);
+    const [existing] = await txDb
+      .select({ id: documents.id })
+      .from(documents)
+      .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+      .where(
+        and(
+          eq(contextSources.projectId, input.projectId),
+          eq(documents.kind, "manifest"),
+          isNull(documents.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (existing?.id) {
       return {
-        documentId,
-        doc: await ensureLiveManifestDocument(documentId),
+        documentId: existing.id as DocumentId,
+        doc: await ensureLiveManifestDocument(existing.id as DocumentId),
       };
-    });
+    }
+    const documentId = await createManifestIdentity(input.projectId, input.contextSourceId);
+    return {
+      documentId,
+      doc: await ensureLiveManifestDocument(documentId),
+    };
   }
 
   async function createManifestIdentity(
@@ -831,7 +838,7 @@ export function createDrizzleBranchStore(
   ): Promise<ManifestMutationResult> {
     const projectId = await projectForDocument(documentId);
     if (!projectId) return {};
-    const { documentId: manifestDocumentId, doc } = await ensureProjectManifest({ projectId });
+    const { documentId: manifestDocumentId, doc } = await loadProjectManifest({ projectId });
     doc.destroy();
     await mutateLiveManifestDocument(manifestDocumentId, (manifestDoc) => {
       const map = manifestDoc.getMap<{ present: true }>("documents");
