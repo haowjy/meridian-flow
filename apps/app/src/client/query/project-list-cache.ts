@@ -1,7 +1,7 @@
 /**
  * project-list-cache — direct read/write helpers for the cached project list in
- * the React Query client. Keeps cache mutation logic in one place; used by the
- * optimistic independent-creation path.
+ * the React Query client. Keeps cache mutation logic in one place for
+ * optimistic project creation.
  */
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";

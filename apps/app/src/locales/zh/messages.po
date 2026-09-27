@@ -14,11 +14,6 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. js-lingui-explicit-id
-#: src/features/chat/subagent/display.ts
-msgid "Reporting back…"
-msgstr "正在汇报…"
-
-#. js-lingui-explicit-id
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "finished"
 msgstr "已完成"
@@ -38,6 +33,11 @@ msgstr ""
 #: src/features/chat/subagent/display.ts
 msgid "Waiting on {0}"
 msgstr "正在等待 {0}"
+
+#. js-lingui-explicit-id
+#: src/features/chat/subagent/display.ts
+msgid "Reporting back…"
+msgstr "正在汇报…"
 
 #. js-lingui-explicit-id
 #: src/core/editor/change-mark-labels.ts
@@ -681,10 +681,6 @@ msgstr ""
 msgid "Back to chat"
 msgstr ""
 
-#: src/features/chat/IndependentChatView.tsx
-#~ msgid "Back to home"
-#~ msgstr ""
-
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Back to live"
@@ -871,10 +867,6 @@ msgstr "随便聊聊"
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Chat context"
-msgstr ""
-
-#: src/features/chat/IndependentChatView.tsx
-msgid "Chat couldn’t load"
 msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
@@ -1441,7 +1433,6 @@ msgstr ""
 msgid "Create it now and the link starts working. Nothing about the link changes."
 msgstr ""
 
-#: src/features/chat/IndependentChatView.tsx
 #: src/features/home/NewProjectView.tsx
 #: src/features/home/ProjectLibrary.tsx
 msgid "Create project"
@@ -2270,10 +2261,6 @@ msgstr ""
 msgid "Loading agents…"
 msgstr ""
 
-#: src/features/chat/IndependentChatView.tsx
-msgid "Loading chat…"
-msgstr ""
-
 #: src/features/project/chat-index/ChatIndexLoading.tsx
 msgid "Loading chats"
 msgstr ""
@@ -2522,7 +2509,6 @@ msgstr ""
 
 #: src/features/chat/ChatThreadHeader.tsx
 #: src/features/chat/ChatView.tsx
-#: src/features/chat/IndependentChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/features/project/chat/ChatScreen.tsx
@@ -2970,10 +2956,6 @@ msgstr ""
 #: src/features/home/NewProjectView.tsx
 #~ msgid "Project couldn’t be created. Try again."
 #~ msgstr ""
-
-#: src/features/chat/IndependentChatView.tsx
-msgid "Project couldn’t load"
-msgstr ""
 
 #: src/features/home/NewProjectView.tsx
 msgid "Project created, but it couldn’t open. Try again."
@@ -4438,7 +4420,6 @@ msgstr ""
 msgid "User"
 msgstr ""
 
-#: src/features/chat/IndependentChatView.tsx
 #: src/features/home/NewProjectView.tsx
 #: src/features/project/shell/WorkspaceNavBody.tsx
 msgid "View projects"
