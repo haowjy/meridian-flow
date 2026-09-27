@@ -5,6 +5,13 @@ PL/pgSQL functions, and the `createDb(DATABASE_URL)` factory. It has **no**
 business logic and **no** ambient transaction context — domain persistence and
 transaction propagation live in `apps/server`.
 
+## Migration integrity
+
+The M4 integration corrected `0009_repair_saved_subagent_contracts` in place to
+retain fork cutoffs and cross-thread parents. A scoped dev database that applied
+the original needs `pnpm db:reset` from its own checkout; migration replay cannot
+restore deleted cutoffs. Never hand-patch the journal or reset a shared database.
+
 ## Contracts
 
 ### Timestamp `mode` policy
@@ -52,8 +59,8 @@ composite child-thread/turn foreign key prevents assigning a report to a turn
 owned by another thread. Child/assistant-turn ownership cascades; nullable
 caller thread/turn/card references use `SET NULL` so deleting the invocation
 does not erase the child's output. Soft deletion is enforced by live
-repository reads, not destructive report mutation. Migration history remains
-additive; the initial table has no backfill or compatibility path.
+repository reads, not destructive report mutation. The initial table has no
+backfill or compatibility path.
 
 The public `payload` is an exact optional `JsonValue`: omitted content is SQL
 `NULL`, while JSON `null` remains a present value. The Drizzle report adapter
@@ -68,7 +75,8 @@ ReturnResultCapture object (including rejecting JSON null).
 The `threads`, `turns`, `model_responses`, and `turn_blocks` tables persist the
 JSON-natural thread contract fields that repository conformance reads back:
 thread total cost, turn usage rollups/latest model metadata, model-response
-reasoning/cache token counts and latency/TTFT/generation timing, and block provider
+reasoning/cache token counts, observed reset, predicted cache state/reason,
+successful-attempt start and latency/TTFT/generation timing, and block provider
 metadata. These values are written by TypeScript repositories and the
 read-model projector; do not add database triggers/functions for them.
 
