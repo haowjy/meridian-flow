@@ -9,7 +9,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
-import type { JsonValue, PriceSource } from "@meridian/contracts/threads";
+import type { CurrentToolCall, JsonValue, PriceSource } from "@meridian/contracts/threads";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -244,6 +244,7 @@ export const threadRunLeases = pgTable(
     holderId: text("holder_id").notNull(),
     phase: text("phase").notNull().default("generating"),
     cancelRequested: boolean("cancel_requested").notNull().default(false),
+    currentTool: jsonb("current_tool").$type<CurrentToolCall | null>(),
     acquiredAt: timestamp("acquired_at", { withTimezone: true }).notNull().defaultNow(),
     renewedAt: timestamp("renewed_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
@@ -336,6 +337,7 @@ export const modelResponses = pgTable(
     reasoningTokens: integer("reasoning_tokens"),
     cacheReadTokens: integer("cache_read_tokens"),
     cacheWriteTokens: integer("cache_write_tokens"),
+    cacheReset: boolean("cache_reset").notNull().default(false),
     usageBreakdown: jsonb("usage_breakdown").default(sql`'{}'::jsonb`),
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
     millicredits: bigint("millicredits", { mode: "number" }),
@@ -343,6 +345,8 @@ export const modelResponses = pgTable(
     requestParams: jsonb("request_params"),
     responseMetadata: jsonb("response_metadata"),
     latencyMs: bigint("latency_ms", { mode: "number" }),
+    timeToFirstTokenMs: bigint("time_to_first_token_ms", { mode: "number" }),
+    generationMs: bigint("generation_ms", { mode: "number" }),
     createdAt: createdAt(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },

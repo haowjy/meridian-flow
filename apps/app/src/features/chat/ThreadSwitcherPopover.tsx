@@ -124,15 +124,15 @@ export function ThreadSwitcherPopover({
           aria-expanded={open}
           aria-haspopup="dialog"
           className={cn(
-            "focus-ring flex w-fit min-w-0 max-w-full items-center gap-1.5 text-left",
+            "focus-ring flex w-fit min-w-0 max-w-full items-center gap-[var(--chat-space-inline)] text-left",
             variant === "tab"
-              ? // h-9 plus the grammar's mt-1 exactly fill the h-10 band, so the
+              ? // h-9 plus the grammar's mt-[var(--chat-space-inline)] exactly fill the h-10 band, so the
                 // chip's base (and its flares) sit on the band's bottom edge
                 // where the page begins.
-                "tab-chip-active relative h-9 px-3 [--tab-chip-surface:var(--color-background)]"
+                "tab-chip-active relative h-9 px-[var(--chat-card-pad-x)] [--tab-chip-surface:var(--color-background)]"
               : // An inactive document tab's hover: the inset pill over the
                 // band's full height, not a pill hugging the text.
-                "tab-chip-inactive relative -ml-2 self-stretch px-3 [--tab-chip-surface:var(--color-background)] [@media(pointer:coarse)]:min-h-11",
+                "tab-chip-inactive relative -ml-2 self-stretch px-[var(--chat-card-pad-x)] [--tab-chip-surface:var(--color-background)] [@media(pointer:coarse)]:min-h-11",
           )}
         >
           <PaneTitle className="min-w-0 flex-1">{title}</PaneTitle>
@@ -149,7 +149,10 @@ export function ThreadSwitcherPopover({
         {...densityPopoverCollisionProps}
         ref={contentRef}
         align="start"
-        className={cn(dropdownSurfaceVariants({ measure: "catalog", page: null }), "p-0")}
+        className={cn(
+          dropdownSurfaceVariants({ measure: "catalog", page: null }),
+          "text-tier-chat p-0",
+        )}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           const content = contentRef.current;
@@ -167,7 +170,7 @@ export function ThreadSwitcherPopover({
         }}
         onKeyDown={handleNavigationKeyDown}
       >
-        <div className="px-2 pt-1">
+        <div className="px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)]">
           <button
             data-switcher-focus
             type="button"
@@ -183,7 +186,7 @@ export function ThreadSwitcherPopover({
           </button>
         </div>
         {showSearch ? (
-          <div className="px-2 py-1">
+          <div className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]">
             <div className="relative">
               <Search
                 className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground"
@@ -203,21 +206,31 @@ export function ThreadSwitcherPopover({
           </div>
         ) : null}
 
-        <div className={cn(dropdownResultsClass, "max-h-72 px-2 py-1")}>
+        <div
+          className={cn(
+            dropdownResultsClass,
+            "max-h-72 px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]",
+          )}
+        >
           {filteredThreads.length === 0 ? (
-            <p className="px-2.5 py-4 text-center text-sm text-muted-foreground">
+            <p className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-center text-sm text-muted-foreground">
               <Trans>No matching chats</Trans>
             </p>
           ) : (
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-[var(--chat-space-inline)]">
               {visibleWorkItems.map((group) => (
                 <section key={group.id} aria-label={showGroupHeaders ? group.name : undefined}>
                   {showGroupHeaders ? (
-                    <h3 className={cn(sectionLabelVariants({ variant: "group" }), "mb-1 px-2")}>
+                    <h3
+                      className={cn(
+                        sectionLabelVariants({ variant: "group" }),
+                        "mb-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)]",
+                      )}
+                    >
                       {group.name}
                     </h3>
                   ) : null}
-                  <ul className="flex flex-col gap-0.5">
+                  <ul className="flex flex-col gap-[var(--chat-space-row)]">
                     {group.threadIds.map((id) => {
                       const thread = threadById.get(id);
                       if (!thread) return null;
@@ -236,7 +249,7 @@ export function ThreadSwitcherPopover({
                 </section>
               ))}
               {visibleUngrouped.length > 0 ? (
-                <ul className="flex flex-col gap-0.5">
+                <ul className="flex flex-col gap-[var(--chat-space-row)]">
                   {visibleUngrouped.map((thread) => (
                     <ThreadSwitchItem
                       key={thread.id}

@@ -7,12 +7,15 @@ function card(mode = "direct", execution: string | null = "execution-1") {
   return block("card", 0, "custom", {
     kind: "helper-result",
     props: {
+      agentSlug: "critic",
+      agentName: "Critic",
       parentTurnId: "parent-turn",
       toolCallId: "call-1",
       childThreadId: "child-1",
       deliveryMode: mode,
       execution,
-      status: "completed",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      terminalAt: "2026-01-01T00:01:00.000Z",
       outcome: "succeeded",
     },
   });
@@ -163,6 +166,52 @@ describe("direct invocation result join", () => {
     expect(directResultsForTurn([mergedUse, card()]).get("card")?.summary).toBe(
       "First line.\nFull report.",
     );
+  });
+
+  it("joins persisted foreground results that omit execution but retain tool-call identity", () => {
+    const callId = "call_00_ViHYdu2IAn05PnxA5aQR1107";
+    const execution = "0e068ea5-aeb7-41e0-81bc-06ac27e5fde0";
+    const invocation = block("p17-card", 2, "custom", {
+      kind: "helper-result",
+      props: {
+        agentSlug: "critic",
+        agentName: "Critic",
+        title: "Repeat-read comparison",
+        outcome: "succeeded",
+        execution,
+        startedAt: "2026-09-26T21:13:52.043Z",
+        terminalAt: "2026-09-26T21:14:21.983Z",
+        toolCallId: callId,
+        deliveryMode: "direct",
+        parentTurnId: "parent-turn",
+        childThreadId: "dd343f46-16e9-44b5-8196-92c5c243d87d",
+      },
+    });
+    const use = block("p17-use", 1, "tool_use", {
+      toolCallId: callId,
+      toolName: "spawn",
+      input: { mode: "foreground" },
+      output: null,
+      isError: false,
+    });
+    const result = block("p17-result", 3, "tool_result", {
+      toolCallId: callId,
+      output: {
+        report: {
+          handle: "p17",
+          summary:
+            "Read `manuscript://chapter-1.md` 21 times total (1 starting read + 20 repeats, each a single unbatched call, same path, same default format, strictly read-only — no edits/creates/deletes). All 21 responses were byte-identical.\n\nStructure (stable in every pass): 1 block — hash `6624`, extent `full`, relation `document`, body `# Chapter 1`; its `items` array holds one entry, also hash `6624`, body `# Chapter 1`.\n\nEnvelope fields shared by all passes: schema `meridian.agent-edit.v1`; command `read`; status `success`; phase `committed`; read.format `full`; blocks.length 1.\n\nComparison: 20 of 20 repeats matched the starting read exactly, and the full set of 21 was uniform. Verdict: fully stable; no deviation or anomaly of any size.\n\nNon-anomalous content note: the file resolves to a lone heading with no prose; since extent is `full`, that is the whole document as returned.",
+        },
+        status: "completed",
+        outcome: "succeeded",
+      },
+    });
+    const directResult = directResultsForTurn([use, invocation, result]).get(invocation.id);
+    expect(directResult).toMatchObject({
+      execution,
+      outcome: "succeeded",
+      summary: expect.stringContaining("All 21 responses were byte-identical."),
+    });
   });
 
   it("preserves an error envelope and available partial report", () => {

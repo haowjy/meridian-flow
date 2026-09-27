@@ -37,4 +37,8 @@ export { assistant, image, system, text, toolResult, user } from "./helpers/mess
 export { createInstrumentedGateway } from "./instrumented-gateway.js";
 export type { Gateway } from "./ports/gateway.js";
 export type { ProviderAdapter } from "./ports/provider-adapter.js";
-export { isCommittedOutputEvent, isPartialOutputEvent } from "./stream-events.js";
+export {
+  isCommittedOutputEvent,
+  isFirstTokenEvent,
+  isPartialOutputEvent,
+} from "./stream-events.js";

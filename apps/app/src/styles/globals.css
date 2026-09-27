@@ -31,7 +31,45 @@
      may still float over content; `scrollbar-gutter: stable` on the scrollport helps. */
   --chat-scroll-scrollbar-width: 6px;
   --chat-scroll-scrollbar-gap: 0.5rem;
+  /* Chat layout tokens are global because some chat chrome and portaled menus
+     intentionally render outside the text-tier-chat subtree. */
+  --chat-space-inline: 4px;
+  --chat-space-row: 4px;
+  --chat-space-block: 8px;
+  --chat-space-turn: 12px;
+  --chat-space-exchange: 6px;
+  --chat-card-pad-x: 12px;
+  --chat-card-pad-y: 8px;
+  --chat-row-status-center-offset: 7px;
+  --chat-tool-list-indent: 13px;
+  --chat-geometry-hit-area-x: 4px;
+  --chat-geometry-draft-indent: 28px;
+  --chat-geometry-draft-inset: 10px;
+  --chat-geometry-receipt-indent: 36px;
+  --chat-geometry-fold-icon-offset: 6px;
+  /* Chat rhythm is intentionally an app-only scale: each boundary has one
+     owner, and virtual-row spacing stays inside the measured row. */
+  /* Prose rhythm defaults stay independent from chat and preserve non-chat surfaces. */
+  --prose-space-inline: 4px;
+  --prose-space-row: 4px;
+  --prose-space-block: 8px;
+  --prose-space-heading-large-top: 24px;
+  --prose-space-h1-bottom: 12px;
+  --prose-space-h2-bottom: 10px;
+  --prose-space-heading-small-top: 16px;
+  --prose-space-heading-small-bottom: 8px;
+  --prose-space-heading-h3-top: 20px;
+  --prose-space-nested-list: 4px;
+  --prose-space-rule: 20px;
+  --prose-space-quote: 12px;
+  --prose-space-table: 12px;
 }
+
+/* Every virtual row owns a gap; user rows receive the larger user-to-reply spacing. */
+[data-chat-turn-row] { padding-bottom: var(--chat-space-exchange); }
+[data-chat-turn-row][data-chat-turn-role="user"] { padding-bottom: var(--chat-space-turn); }
+/* A response woken by a subagent notification continues without a turn break. */
+[data-chat-turn-row][data-chat-turn-continues] { padding-bottom: var(--chat-space-block); }
 
 :root[data-text-size="sm"] {
   /* Small anchors near the old chat body (14.5px): 0.875rem ≈ 14px at browser default. */
@@ -57,6 +95,19 @@
    opt back in with this class. */
 @utility text-tier-chat {
   --text-scale: var(--text-scale-chat);
+  --prose-space-inline: var(--chat-space-inline);
+  --prose-space-row: var(--chat-space-row);
+  --prose-space-block: var(--chat-space-block);
+  --prose-space-heading-large-top: 24px;
+  --prose-space-h1-bottom: 8px;
+  --prose-space-h2-bottom: 8px;
+  --prose-space-heading-small-top: 16px;
+  --prose-space-heading-small-bottom: 8px;
+  --prose-space-heading-h3-top: 16px;
+  --prose-space-nested-list: 8px;
+  --prose-space-rule: 16px;
+  --prose-space-quote: 8px;
+  --prose-space-table: 8px;
 }
 
 /* Compact tier — markdown in the dense meta voice (tool output, reasoning).
@@ -399,11 +450,33 @@
 }
 
 @utility user-turn {
-  @apply mb-8 ml-auto w-fit max-w-[95%];
+  @apply ml-auto w-fit max-w-[95%];
+}
+
+/* Keep settled history actions available to keyboard users while keeping the
+   reading surface quiet for pointer users. Touch devices have no hover affordance. */
+@media (hover: hover) {
+  [data-assistant-turn]:not([data-latest-assistant="true"]) .assistant-turn-actions {
+    opacity: 0;
+  }
+  [data-assistant-turn]:not([data-latest-assistant="true"]):hover .assistant-turn-actions,
+  [data-assistant-turn]:not([data-latest-assistant="true"]):focus-within .assistant-turn-actions,
+  [data-assistant-turn]:has(.assistant-turn-actions [aria-expanded="true"]) .assistant-turn-actions {
+    opacity: 1;
+  }
+}
+@media (hover: none), (pointer: coarse) {
+  [data-assistant-turn] .assistant-turn-actions { opacity: 1; }
+}
+
+@utility chat-card {
+  padding: var(--chat-card-pad-y) var(--chat-card-pad-x);
+  border: 1px solid var(--chat-card-border, var(--color-border));
+  border-radius: var(--chat-card-radius, var(--radius-md));
 }
 
 @utility user-message-bubble {
-  @apply overflow-hidden rounded-[var(--radius-lg)_var(--radius-sm)_var(--radius-lg)_var(--radius-lg)] border border-border-subtle bg-chat-interactive px-[18px] py-[14px] text-prose-foreground;
+  @apply overflow-hidden rounded-[var(--radius-lg)_var(--radius-sm)_var(--radius-lg)_var(--radius-lg)] border border-border-subtle bg-chat-interactive px-4 py-3 text-prose-foreground;
 }
 
 /* Context-dependent interactive lift for chat elements (user bubble, composer,
@@ -432,36 +505,58 @@
      h6 is near-unused in fiction; six size-distinct levels don't fit). */
   & h1 {
     font-size: 1.875em;
-    @apply mt-6 mb-3 leading-[1.25] font-semibold tracking-prose-heading text-foreground first:mt-0;
+    @apply leading-[1.25] font-semibold tracking-prose-heading text-foreground;
+    margin-block: var(--prose-space-heading-large-top) var(--prose-space-h1-bottom);
+    &:first-child { margin-top: 0; }
   }
   & h2 {
     font-size: 1.375em;
-    @apply mt-6 mb-2.5 leading-[1.3] font-semibold tracking-prose-heading text-foreground first:mt-0;
+    @apply leading-[1.3] font-semibold tracking-prose-heading text-foreground;
+    margin-block: var(--prose-space-heading-large-top) var(--prose-space-h2-bottom);
+    &:first-child { margin-top: 0; }
   }
   & h3 {
     font-size: 1.25em;
-    @apply mt-5 mb-2 leading-[1.35] font-semibold text-foreground first:mt-0;
+    @apply leading-[1.35] font-semibold text-foreground;
+    margin-block: var(--prose-space-heading-h3-top) var(--prose-space-heading-small-bottom);
+    &:first-child { margin-top: 0; }
   }
   & h4 {
     font-size: 1.125em;
-    @apply mt-4 mb-2 leading-[1.4] font-semibold text-foreground first:mt-0;
+    @apply leading-[1.4] font-semibold text-foreground;
+    margin-block: var(--prose-space-heading-small-top) var(--prose-space-heading-small-bottom);
+    &:first-child { margin-top: 0; }
   }
   & h5 {
     font-size: 1.0625em;
-    @apply mt-4 mb-2 leading-[1.4] font-semibold text-foreground first:mt-0;
+    @apply leading-[1.4] font-semibold text-foreground;
+    margin-block: var(--prose-space-heading-small-top) var(--prose-space-heading-small-bottom);
+    &:first-child { margin-top: 0; }
   }
   & h6 {
     font-size: 1.0625em;
-    @apply mt-4 mb-2 leading-[1.45] font-semibold text-muted-foreground first:mt-0;
+    @apply leading-[1.45] font-semibold text-muted-foreground;
+    margin-block: var(--prose-space-heading-small-top) var(--prose-space-heading-small-bottom);
+    &:first-child { margin-top: 0; }
   }
   & p {
-    @apply my-2 first:mt-0 last:mb-0;
+    margin-block: var(--prose-space-block);
+    &:first-child { margin-top: 0; }
+    &:last-child { margin-bottom: 0; }
   }
   & ul {
-    @apply my-2 list-disc space-y-1 pl-6 marker:text-muted-foreground;
+    @apply list-disc pl-6 marker:text-muted-foreground;
+    margin-block: var(--prose-space-block);
+    &:first-child { margin-top: 0; }
+    &:last-child { margin-bottom: 0; }
+    & > li + li { margin-top: var(--prose-space-row); }
   }
   & ol {
-    @apply my-2 list-decimal space-y-1 pl-6 marker:text-muted-foreground;
+    @apply list-decimal pl-6 marker:text-muted-foreground;
+    margin-block: var(--prose-space-block);
+    &:first-child { margin-top: 0; }
+    &:last-child { margin-bottom: 0; }
+    & > li + li { margin-top: var(--prose-space-row); }
   }
   & li {
     @apply pl-1;
@@ -474,18 +569,16 @@
   & li > p:first-child:has(+ ol) {
     @apply inline;
   }
-  & li > ul,
-  & li > ol {
-    @apply mt-1 mb-0;
-  }
   & strong {
     @apply font-semibold text-foreground;
   }
   & blockquote {
-    @apply my-3 border-l-4 border-primary/30 pl-4 text-muted-foreground italic;
+    @apply border-l-4 border-primary/30 pl-4 text-muted-foreground italic;
+    margin-block: var(--prose-space-quote);
   }
   & hr {
-    @apply my-5 border-0 border-t border-border-subtle;
+    @apply border-0 border-t border-border-subtle;
+    margin-block: var(--prose-space-rule);
   }
   & a {
     @apply focus-ring rounded-sm text-primary underline decoration-primary/30 underline-offset-[3px] transition-colors hover:decoration-primary;
@@ -532,7 +625,14 @@
   }
 
   & [data-streamdown="table-wrapper"] {
-    @apply my-3 max-w-full overflow-x-auto rounded-md border border-border-subtle;
+    @apply max-w-full overflow-x-auto rounded-md border border-border-subtle;
+    margin-block: var(--prose-space-table);
+  }
+  & > :first-child {
+    margin-top: 0;
+  }
+  & > :last-child {
+    margin-bottom: 0;
   }
   & table {
     font-size: 0.9em;
@@ -551,15 +651,21 @@
     /* em (not rem) so headers ride the text-size preference; 0.867em inside
        the 0.9em table ≈ the previous 0.78rem at the medium stop. */
     font-size: 0.867em;
-    @apply border-b border-border-subtle px-3 py-2 font-semibold tracking-table-heading uppercase;
+    @apply border-b border-border-subtle px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] font-semibold tracking-table-heading uppercase;
   }
   & td {
     /* 1em: cells inherit the table's em ladder. Without an explicit size,
        Streamdown's baked `text-sm` on the td wins and pins cells to a fixed
        rem while headers (which declare a size here) ride the scale. */
     font-size: 1em;
-    @apply px-3 py-2 align-top text-foreground;
+    @apply px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] align-top text-foreground;
   }
+}
+
+.prose-tokens li > ul,
+.prose-tokens li > ol {
+  margin-top: var(--prose-space-nested-list);
+  margin-bottom: 0;
 }
 
 /* Single source of truth for the green-tinted focus ring.
@@ -832,5 +938,24 @@
 @media (display-mode: standalone) {
   .mobile-top-bar {
     padding-top: env(safe-area-inset-top);
+  }
+}
+
+@keyframes subagent-block-reveal {
+  0%, 100% { outline-color: transparent; background-color: transparent; }
+  20%, 70% { outline-color: color-mix(in srgb, var(--color-primary) 58%, transparent); background-color: color-mix(in srgb, var(--color-primary) 9%, transparent); }
+}
+
+.subagent-reveal-flash {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  animation: subagent-block-reveal 1600ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subagent-reveal-flash {
+    outline-color: var(--color-primary);
+    background-color: color-mix(in srgb, var(--color-primary) 9%, transparent);
+    animation: none;
   }
 }

@@ -20,6 +20,7 @@ const expectedSuites = [
   "apps/server/server/domains/packages/__tests__/agent-revision-store.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/chat-feed-activity.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/chat-feed.adapter-contract.db.test.ts",
+  "apps/server/server/domains/threads/adapters/drizzle/model-response-repository.db.test.ts",
   "apps/server/server/domains/billing/adapters/__conformance__/drizzle-credit-ledger.db.test.ts",
   "apps/server/server/domains/collab/adapters/__conformance__/drizzle-branches.adapter-contract.db.test.ts",
   "apps/server/server/domains/collab/adapters/__conformance__/drizzle-journal.recovery-redo.db.test.ts",
@@ -75,6 +76,7 @@ const expectedSuites = [
   "apps/server/server/test-support/drizzle-reset.db.test.ts",
   "packages/database/src/consume-credit-lots-fifo.db.test.ts",
   "packages/database/src/fresh-migrations.db.test.ts",
+  "packages/database/src/saved-subagent-contracts-migration.db.test.ts",
 ] as const;
 const discoveredSuites = globSync("{apps/server,packages/database}/**/*.db.test.ts", {
   cwd: root,

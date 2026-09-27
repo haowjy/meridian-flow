@@ -78,11 +78,11 @@ export function ActivityRow({
   // wrap under it (in the content column, never under the icon column).
   if (!title && children) {
     return (
-      <div className="flex items-stretch gap-2.5" data-activity-row>
+      <div className="flex items-stretch gap-[var(--chat-space-block)]" data-activity-row>
         {iconColumn("")}
         <div
           className={cn(
-            "min-w-0 flex-1 pb-2 text-compact text-muted-foreground",
+            "min-w-0 flex-1 text-compact text-muted-foreground",
             ICON_TOP_PAD,
             proseClassName,
           )}
@@ -96,12 +96,12 @@ export function ActivityRow({
   const dot =
     status === "running" ? (
       <span
-        className="bg-status-live-foreground mt-[7px] size-1.5 shrink-0 rounded-full motion-safe:animate-pulse"
+        className="bg-status-live-foreground mt-[var(--chat-row-status-center-offset)] size-1.5 shrink-0 rounded-full motion-safe:animate-pulse"
         aria-hidden
       />
     ) : status === "error" ? (
       <span
-        className="mt-[7px] size-1.5 shrink-0 rounded-full bg-destructive"
+        className="mt-[var(--chat-row-status-center-offset)] size-1.5 shrink-0 rounded-full bg-destructive"
         role="img"
         aria-label="Failed"
       />
@@ -113,7 +113,7 @@ export function ActivityRow({
   const titleRow = (
     <div
       className={cn(
-        "relative -mx-1 flex items-start gap-2.5 rounded-md px-1",
+        "relative -mx-1 flex items-start gap-[var(--chat-space-block)] rounded-md px-1",
         TITLE_ROW_PAD,
         hasInlineFold && "transition-colors hover:bg-muted",
       )}
@@ -121,8 +121,9 @@ export function ActivityRow({
       {title ? (
         // No `overflow-hidden` here: a door inside grows past the line box to
         // reach a touch target, and clipping it would shrink that back down.
-        // Each title renderer truncates its own content.
-        <span id={titleId} className="min-w-0 flex-1 text-compact font-medium text-foreground">
+        // Each title renderer truncates its own content. The title sizes to its
+        // text so the status dot and chevron sit beside it, not at the far edge.
+        <span id={titleId} className="min-w-0 text-compact font-medium text-foreground">
           {title}
         </span>
       ) : null}
@@ -130,7 +131,7 @@ export function ActivityRow({
       {hasInlineFold ? (
         <ChevronRight
           className={cn(
-            "mt-1.5 size-3 shrink-0 text-ink-subtle transition-transform duration-200",
+            "mt-[var(--chat-space-inline)] size-3 shrink-0 text-ink-subtle transition-transform duration-200",
             open && "rotate-90",
           )}
           aria-hidden
@@ -155,13 +156,18 @@ export function ActivityRow({
   // the icon column owns the rail and the rail must extend through the row's
   // full height including any inline-fold body.
   return (
-    <div className="flex items-stretch gap-2.5" data-activity-row>
+    <div className="flex items-stretch gap-[var(--chat-space-block)]" data-activity-row>
       {iconColumn(TITLE_ROW_PAD)}
-      <div className={cn("min-w-0 flex-1 pb-2", ICON_TOP_PAD)}>
+      <div className={cn("min-w-0 flex-1", ICON_TOP_PAD)}>
         {titleRow}
 
         {title && children ? (
-          <div className={cn("mt-1 text-compact text-muted-foreground", proseClassName)}>
+          <div
+            className={cn(
+              "mt-[var(--chat-space-inline)] text-compact text-muted-foreground",
+              proseClassName,
+            )}
+          >
             {children}
           </div>
         ) : null}
@@ -176,7 +182,7 @@ export function ActivityRow({
           >
             <div className="min-w-0 overflow-hidden">
               {/* Evaluated on open, not on render. */}
-              <div className="mt-1.5">{open ? expand() : null}</div>
+              <div className="mt-[var(--chat-space-inline)]">{open ? expand() : null}</div>
             </div>
           </div>
         ) : null}

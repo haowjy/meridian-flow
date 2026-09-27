@@ -41,6 +41,7 @@ import {
   retryWorkingSetHydration,
   type WorkingSetHydrationPlan,
 } from "@/client/working-set";
+import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
@@ -93,6 +94,7 @@ import {
   type ChatDisplay,
   chatSurfaceThreadId,
   displayedChatThreadId,
+  useChatNavigation,
   useDockReveal,
 } from "./routing/chat-navigation";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
@@ -414,13 +416,16 @@ type MobileEditorPresentation = Pick<
 > & { mobileDocumentRoute: MobileDocumentRoute };
 
 function HydratedReviewProject(props: ResolvedProjectViewProps & ProjectIdentityProps) {
+  const { openChat } = useChatNavigation();
   return (
-    <EditorReviewHandoffProvider
-      projectId={props.projectId}
-      openContextRoute={props.onOpenContextTarget}
-    >
-      <HydratedReviewScopes {...props} />
-    </EditorReviewHandoffProvider>
+    <ChatThreadNavigationProvider onOpenThread={openChat}>
+      <EditorReviewHandoffProvider
+        projectId={props.projectId}
+        openContextRoute={props.onOpenContextTarget}
+      >
+        <HydratedReviewScopes {...props} />
+      </EditorReviewHandoffProvider>
+    </ChatThreadNavigationProvider>
   );
 }
 

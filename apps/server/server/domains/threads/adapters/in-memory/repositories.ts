@@ -222,13 +222,10 @@ export function createInMemoryRepositories(
     const projected = projectThread(thread);
     const work =
       projected.workId && options.works ? await options.works.findById(projected.workId) : null;
-    const latestTurn = conversationalHead(projected);
-
     return toThreadListItem({
       thread: projected,
       workTitle: work && !work.deletedAt ? work.name : null,
-      lastTurnRole: latestTurn?.role ?? null,
-      lastTurnStatus: latestTurn?.status ?? null,
+      actionRequired: projectChatActionRequired(projected),
       // Run liveness is the live lease, which this durable fake does not model;
       // tests read it through the in-memory RunClaim instead.
       runningTurnId: null,
@@ -736,12 +733,15 @@ export function createInMemoryRepositories(
         reasoningTokens: input.reasoningTokens ?? null,
         cacheReadTokens: input.cacheReadTokens ?? null,
         cacheWriteTokens: input.cacheWriteTokens ?? null,
+        cacheReset: input.cacheReset ?? false,
         costUsd: input.costUsd ?? "0",
         millicredits: input.millicredits ?? null,
         priceSource: input.priceSource,
         pricingSnapshot: input.pricingSnapshot ?? null,
         finishReason: input.finishReason ?? null,
         latencyMs: input.latencyMs ?? null,
+        timeToFirstTokenMs: input.timeToFirstTokenMs ?? null,
+        generationMs: input.generationMs ?? null,
         rawUsage: input.rawUsage ?? null,
         createdAt: toIsoString(new Date()),
       };
@@ -758,6 +758,41 @@ export function createInMemoryRepositories(
       return [...modelResponses.values()]
         .filter((response) => turnIds.has(response.turnId))
         .sort((a, b) => a.sequence - b.sequence);
+    },
+    async sumUsageByThread(threadId) {
+      const responses = await this.listByThread(threadId);
+      return responses.reduce(
+        (sum, response) => ({
+          inputTokens: sum.inputTokens + response.inputTokens,
+          cacheReadTokens: sum.cacheReadTokens + (response.cacheReadTokens ?? 0),
+          cacheReportedInputTokens:
+            sum.cacheReportedInputTokens +
+            (response.cacheReadTokens == null ? 0 : response.inputTokens),
+          cacheReportedCalls: sum.cacheReportedCalls + (response.cacheReadTokens == null ? 0 : 1),
+          cacheWriteTokens: sum.cacheWriteTokens + (response.cacheWriteTokens ?? 0),
+          outputTokens: sum.outputTokens + response.outputTokens,
+          cacheResets: sum.cacheResets + (response.cacheReset ? 1 : 0),
+        }),
+        {
+          inputTokens: 0,
+          cacheReadTokens: 0,
+          cacheReportedInputTokens: 0,
+          cacheReportedCalls: 0,
+          cacheWriteTokens: 0,
+          outputTokens: 0,
+          cacheResets: 0,
+        },
+      );
+    },
+    async cacheResetContext(threadId) {
+      const responses = await this.listByThread(threadId);
+      const ordered = responses.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      return {
+        hasCacheActivity: responses.some(
+          (response) => (response.cacheReadTokens ?? 0) > 0 || (response.cacheWriteTokens ?? 0) > 0,
+        ),
+        previousInputTokens: ordered[0]?.inputTokens ?? null,
+      };
     },
     async listByTurn(turnId) {
       return [...modelResponses.values()]
@@ -837,20 +872,24 @@ export function createInMemoryRepositories(
     },
   };
 
-  const { chatFeed, workChatFeed, threadUserState, conversationalHead } =
-    createInMemoryProjectChatAdapter(
-      {
-        threads: () => threads.values(),
-        turn: (id) => turns.get(id),
-        blocks: () => blocks.values(),
-        isProjectVisible: threadInActiveProject,
-        primaryWorkId: primaryWorkIdForThread,
-        hasWorkMembership: (threadId, workId) =>
-          threadWorks.has(membershipKey(threadId, workId as WorkId)),
-        work: async (id) => options.works?.findById(id) ?? null,
-      },
-      userStateByThreadUser,
-    );
+  const {
+    chatFeed,
+    workChatFeed,
+    threadUserState,
+    actionRequired: projectChatActionRequired,
+  } = createInMemoryProjectChatAdapter(
+    {
+      threads: () => threads.values(),
+      turn: (id) => turns.get(id),
+      blocks: () => blocks.values(),
+      isProjectVisible: threadInActiveProject,
+      primaryWorkId: primaryWorkIdForThread,
+      hasWorkMembership: (threadId, workId) =>
+        threadWorks.has(membershipKey(threadId, workId as WorkId)),
+      work: async (id) => options.works?.findById(id) ?? null,
+    },
+    userStateByThreadUser,
+  );
 
   return {
     threads: threadRepo,

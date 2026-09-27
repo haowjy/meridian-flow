@@ -11,12 +11,19 @@ import type {
   ThreadActivityNode,
   ThreadLeaseState,
 } from "@meridian/contracts/threads";
-import type { ThreadDescendant, ThreadRepository, ThreadStatusReader } from "../ports/index.js";
+import type {
+  ExecutionReportRepository,
+  LatestChildExecution,
+  ThreadDescendant,
+  ThreadRepository,
+  ThreadStatusReader,
+} from "../ports/index.js";
 
-/** Pure projection of a descendant walk + batch lease read into the activity read model. */
+/** Pure projection of child rows, admitted executions, and batch lease state. */
 export function projectThreadActivity(
   descendants: readonly ThreadDescendant[],
   leases: ReadonlyMap<ThreadId, ThreadLeaseState>,
+  latestRuns: ReadonlyMap<ThreadId, LatestChildExecution>,
 ): ThreadActivity {
   return {
     descendants: descendants.map(
@@ -30,6 +37,13 @@ export function projectThreadActivity(
         agentName: descendant.agentName,
         spawnStatus: descendant.spawnStatus,
         status: leases.get(descendant.id as ThreadId)?.status ?? { kind: "asleep" },
+        deliveryMode: deliveryMode(latestRuns.get(descendant.id as ThreadId)),
+        runStartedAt: latestRuns.get(descendant.id as ThreadId)?.admittedAt ?? null,
+        runEndedAt: latestRuns.get(descendant.id as ThreadId)?.terminalAt ?? null,
+        currentTool:
+          leases.get(descendant.id as ThreadId)?.status.kind === "awake"
+            ? (leases.get(descendant.id as ThreadId)?.currentTool ?? null)
+            : null,
         originTurnId: descendant.originTurnId ?? null,
       }),
     ),
@@ -39,16 +53,30 @@ export function projectThreadActivity(
 export type ThreadActivityReadDeps = {
   threads: Pick<ThreadRepository, "listDescendants">;
   statusReader: Pick<ThreadStatusReader, "readMany">;
+  executionReports: Pick<ExecutionReportRepository, "listLatestByChildren">;
 };
 
-/** Read `threadId`'s own subtree activity: one descendant walk + one batched lease read. */
+/** Read the activity subtree with batched lease and latest-admission projections. */
 export async function readThreadActivity(
   deps: ThreadActivityReadDeps,
   threadId: ThreadId,
 ): Promise<ThreadActivity> {
   const descendants = await deps.threads.listDescendants(threadId);
-  const leases = await deps.statusReader.readMany(
-    descendants.map((descendant) => descendant.id as ThreadId),
+  const childIds = descendants.map((descendant) => descendant.id as ThreadId);
+  const [leases, runs] = await Promise.all([
+    deps.statusReader.readMany(childIds),
+    deps.executionReports.listLatestByChildren(childIds),
+  ]);
+  return projectThreadActivity(
+    descendants,
+    leases,
+    new Map(runs.map((run) => [run.childThreadId, run])),
   );
-  return projectThreadActivity(descendants, leases);
+}
+
+function deliveryMode(run: LatestChildExecution | undefined): ThreadActivityNode["deliveryMode"] {
+  if (!run) return null;
+  // `none` is an admitted thread-run without a foreground invocation; its
+  // writer-facing activity is necessarily background, not direct delivery.
+  return run.deliveryMode === "direct" ? "direct" : "background_notification";
 }

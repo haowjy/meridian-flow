@@ -1,7 +1,7 @@
 import type { Block, JsonValue } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 
-import { partitionTurn } from "./partition-turn";
+import { finalMessageItems, lastProcessIndex, partitionTurn } from "./partition-turn";
 
 function block(args: {
   blockType: Block["blockType"];
@@ -60,7 +60,18 @@ const spawnCard = (sequence: number) =>
     sequence,
     content: {
       kind: "helper-result",
-      props: { agentName: "Helper", status: "completed", summary: "2+2=4.", childThreadId: "c" },
+      props: {
+        agentSlug: "helper",
+        agentName: "Helper",
+        parentTurnId: "turn-1",
+        toolCallId: "spawn-1",
+        childThreadId: "c",
+        deliveryMode: "direct",
+        execution: "execution-1",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        terminalAt: "2026-01-01T00:01:00.000Z",
+        outcome: "succeeded",
+      },
     },
   });
 const threadMessageUse = (sequence: number) =>
@@ -86,6 +97,18 @@ const threadMessageResult = (sequence: number, useSequence: number) =>
 const kinds = (items: ReturnType<typeof partitionTurn>) => items.map((item) => item.kind);
 
 describe("partitionTurn", () => {
+  it("shares final process-fold selection between the transcript and final answer", () => {
+    const items = partitionTurn([
+      reasoning(0, "Earlier process."),
+      prose(1, "Interim answer."),
+      reasoning(2, "Final process."),
+      prose(3, "Final answer."),
+    ]);
+
+    expect(lastProcessIndex(items)).toBe(2);
+    expect(finalMessageItems(items)).toEqual([items[3]]);
+  });
+
   it("keeps prose visible between process runs, in chronological order", () => {
     const items = partitionTurn([
       reasoning(0, "First thought."),
@@ -260,5 +283,30 @@ describe("partitionTurn", () => {
 
     expect(kinds(items)).toEqual(["artifact"]);
     expect(items[0]).toMatchObject({ block: { sequence: 3 } });
+  });
+
+  it("keeps every thread_report in the process fold as the step where the model read it", () => {
+    for (const deliveryMode of ["background_notification", "direct"]) {
+      const reportUse = block({
+        blockType: "tool_use",
+        sequence: 1,
+        content: { toolCallId: "report-1", toolName: "thread_report", input: { ref: "p3" } },
+      });
+      const reportResult = block({
+        blockType: "tool_result",
+        sequence: 2,
+        content: {
+          toolCallId: "report-1",
+          output: { deliveryMode, outcome: "succeeded", summary: "Report summary" },
+        },
+      });
+      const items = partitionTurn([reportUse, reportResult]);
+
+      expect(kinds(items)).toEqual(["process"]);
+      expect(items[0]).toMatchObject({
+        kind: "process",
+        runs: [{ blocks: [reportUse, reportResult] }],
+      });
+    }
   });
 });

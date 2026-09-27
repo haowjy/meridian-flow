@@ -181,10 +181,6 @@ Both transports emit this shape; the reducer consumes this shape.
 
 ## Client-led creation patterns
 
-Existing standalone `/chat/<id>` links still render an independent-chat view.
-Their backing projects are hidden from the library by the device-local
-independent-project registry until the writer promotes one through that view.
-Neither the account library nor project entry exposes independent-chat creation.
 `/projects/new` mints a project UUID for an idempotent create request, but
 remains the pending destination until creation is confirmed or reconciled by
 that ID. An uncertain outcome stays on the form for retry, not on an unconfirmed
@@ -306,7 +302,8 @@ not a remembered destination.
 `/projects/new` is a separate creation destination. Its title form keeps
 network pending and failure there until the server returns the authoritative
 project ID, then enters that project's Chat index. No account-level composer or
-project-less quick-chat entry is exposed. The existing personal-project
+project-less quick-chat entry is exposed; every chat is created and opened from
+its owning project workspace. The existing personal-project
 bootstrap may still place a starter project in the library for a new account;
 this UI change does not decide zero-project onboarding.
 
@@ -318,12 +315,11 @@ Slug-shaped project routes are not aliases. The parent loads the owner-gated
 project by ID, mounts `ProjectView` once keyed by that ID, and its `$` catch-all
 selects child destinations.
 There is no `/project/<UUID>` or `/projects/<UUID>` project route and no
-`screen`/`thread`/`scheme`/`folder`/`path` query grammar. `/chat/<thread-UUID>`
-remains the deliberately independent chat route and is outside project-address
-cutover scope.
+`screen`/`thread`/`scheme`/`folder`/`path` query grammar. Chat details stay
+inside the owning project's address space.
 
 Path destinations are the Chat index (`/p/<project>`) and chat detail
-(`/chat/<chat-UUID>`), Work collection/detail
+(`/p/<project>/chat/<chat-UUID>`), Work collection/detail
 (`/works`, `/work/<work-slug>`), Editor (`/editor`), and context browse or
 document paths. A Work-scoped context path carries its Work slug in the path;
 project-scoped context can use the explicit `work` query selector. The only

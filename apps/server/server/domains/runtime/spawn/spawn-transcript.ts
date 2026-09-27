@@ -7,10 +7,10 @@
  * persistence transaction; capture is candidate content, not a terminal card.
  */
 import {
-  buildHelperResultComponentContent,
   buildInvocationCardContent,
   type ComponentBlockContent,
   type InvocationCardProps,
+  parseInvocationCard,
 } from "@meridian/contracts/components";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ReturnResultCapture, ReturnResultOutcome } from "@meridian/contracts/spawn";
@@ -20,7 +20,6 @@ import type { ExecutionReportRepository } from "../../threads/ports/repositories
 import { contentForBlockInput, localBlockFromEvent } from "../loop/block-helpers.js";
 import { type PersistenceDeps, persistAndAppendEvents } from "../loop/persistence.js";
 import type { DeliveryProducer } from "../loop/runtime-delivery.js";
-import { spawnHelperCardProps } from "./spawn-output.js";
 
 export type SpawnTranscript = {
   persistence: PersistenceDeps;
@@ -77,19 +76,6 @@ export async function persistCustomCard(
   return persisted.result;
 }
 
-export async function persistHelperCard(
-  transcript: SpawnTranscript | undefined,
-  input: Parameters<typeof spawnHelperCardProps>[0],
-  existing?: Block | null,
-): Promise<Block | null> {
-  if (!transcript) return existing ?? null;
-  return persistCustomCard(
-    transcript,
-    buildHelperResultComponentContent(spawnHelperCardProps(input)),
-    existing,
-  );
-}
-
 export async function persistInvocationCard(
   transcript: SpawnTranscript | undefined,
   props: InvocationCardProps,
@@ -104,8 +90,9 @@ export async function bindAdmittedInvocationCard(input: {
   transcript: SpawnTranscript | undefined;
   delivery: Pick<DeliveryProducer, "withThreadLock">;
   card: Block | null;
-  props: InvocationCardProps;
+  props: Extract<InvocationCardProps, { terminalAt: null }>;
   execution: TurnId;
+  admittedAt: string;
 }): Promise<void> {
   const { transcript, card } = input;
   if (!transcript || !card) return;
@@ -119,14 +106,8 @@ export async function bindAdmittedInvocationCard(input: {
         if (current.turnId !== transcript.turnId || current.blockType !== "custom") {
           throw new Error("Invocation card changed ownership before admission binding");
         }
-        const content = current.content;
-        if (!content || typeof content !== "object" || Array.isArray(content)) {
-          throw new Error("Invocation card has invalid content");
-        }
-        const props = "props" in content ? content.props : null;
-        if (!props || typeof props !== "object" || Array.isArray(props)) {
-          throw new Error("Invocation card has invalid props");
-        }
+        const props = parseInvocationCard(current.content);
+        if (!props) throw new Error("Invocation card has invalid content");
         if (
           props.parentTurnId !== input.props.parentTurnId ||
           props.toolCallId !== input.props.toolCallId ||
@@ -136,7 +117,7 @@ export async function bindAdmittedInvocationCard(input: {
           throw new Error("Invocation card correlation changed before admission binding");
         }
         if (props.execution === input.execution) return { result: null, events: [] };
-        if (props.status !== "running" || props.execution !== null) {
+        if (props.terminalAt !== null || props.execution !== null || !props.childThreadId) {
           throw new Error("Invocation card has a conflicting execution binding");
         }
         const block = contentForBlockInput({
@@ -151,8 +132,9 @@ export async function bindAdmittedInvocationCard(input: {
             toolCallId: input.props.toolCallId,
             deliveryMode: input.props.deliveryMode,
             childThreadId: input.props.childThreadId,
+            startedAt: input.admittedAt,
+            terminalAt: null,
             ...(input.props.title !== undefined ? { title: input.props.title } : {}),
-            status: "running",
             execution: input.execution,
           }),
           status: "complete",

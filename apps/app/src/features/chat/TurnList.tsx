@@ -1,5 +1,6 @@
 /** Renders the transcript and owns its scroll viewport. */
-import type { Turn } from "@meridian/contracts/protocol";
+
+import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -9,18 +10,23 @@ import { AssistantTurn } from "./AssistantTurn";
 import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
+import { buildTranscriptModel } from "./transcript-model";
+
+export { continuesResponse } from "./transcript-model";
+
 import { UserTurn, type UserTurnRecovery } from "./UserTurn";
 import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
 import type { FailedSendRetry } from "./useThreadHandoff";
 import { useTurnRevealLanding } from "./useTurnRevealLanding";
-import { filterVisibleTurns } from "./visible-chat-turns";
 
 export type TurnListProps = {
   threadId: string;
   /** Settled history with the live turn merged in by id, oldest first. */
   turns: Turn[];
   historySettled: boolean;
+  /** Background subagents are still running; their notification will wake the latest reply. */
+  awaitingSubagents?: boolean;
   /** Monotonic submit signal: new local messages intentionally reacquire tail-follow. */
   tailFollowRevision: number;
   /** Accessible label for the scroll log region. */
@@ -30,7 +36,16 @@ export type TurnListProps = {
   changeTrails?: Record<string, ChangeTrailShell>;
   /** Recovered ambiguous submissions, keyed by the restored user turn id. */
   submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
-  queueStatusByTurnId?: ReadonlyMap<string, "queued" | "waiting">;
+  queuedWriterTurnIds?: ReadonlySet<string>;
+  threadUsage?: {
+    inputTokens: number;
+    cacheReadTokens: number;
+    cacheReportedInputTokens: number;
+    cacheReportedCalls: number;
+    cacheWriteTokens: number;
+    outputTokens: number;
+    cacheResets: number;
+  } | null;
 };
 
 /** Estimated row height before measurement; corrected by `measureElement`. */
@@ -42,22 +57,26 @@ export function TurnList({
   threadId,
   turns,
   historySettled,
+  awaitingSubagents = false,
   tailFollowRevision,
   ariaLabel,
   onRespondToInterrupt,
   failedSendRetry = null,
   changeTrails = {},
   submissionRecoveryByTurnId,
-  queueStatusByTurnId,
+  queuedWriterTurnIds,
+  threadUsage = null,
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const navigateToChange = useChangeTrailNavigation(threadId);
   const bottomInset = useChatSurfaceBottomInset();
-  const visibleTurns = useMemo(
-    () => filterVisibleTurns(turns, queueStatusByTurnId),
-    [queueStatusByTurnId, turns],
+  const transcript = useMemo(
+    () => buildTranscriptModel(turns, awaitingSubagents),
+    [turns, awaitingSubagents],
   );
+  const visibleTurns = transcript.visibleTurns;
   const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
+  const { continuing, partsByFinalTurnId } = transcript;
   const byTurnId = useMemo(() => {
     const byTurnId = new Map<string, ChangeTrailShell>();
     for (const shell of Object.values(changeTrails)) {
@@ -96,6 +115,11 @@ export function TurnList({
   useTurnRevealLanding({
     threadId,
     turns: visibleTurns,
+    // The launch card lives in the origin turn; only "latest" follows the child forward.
+    resolveTurnId: (turnId, subagentThreadId, subagentBlock) =>
+      subagentThreadId && subagentBlock !== "card"
+        ? transcript.resolveRevealTurnId(subagentThreadId, turnId)
+        : turnId,
     historySettled,
     viewportRef,
     scrollToIndex: (index) => virtualizer.scrollToIndex(index, { align: "center" }),
@@ -126,7 +150,7 @@ export function TurnList({
           <UserTurn
             turn={turn}
             submissionRecovery={submissionRecoveryByTurnId?.get(turn.id)}
-            queueStatus={queueStatusByTurnId?.get(turn.id)}
+            queued={queuedWriterTurnIds?.has(turn.id)}
           />
         );
       }
@@ -134,8 +158,11 @@ export function TurnList({
         <AssistantTurn
           threadId={threadId}
           turn={turn}
-          deliveryEvents={deliveryEventsAfter(turn, turns)}
+          responseParts={partsByFinalTurnId.get(turn.id)}
+          threadUsage={threadUsage}
+          deliveryEvents={transcript.deliveryEventsFor(turn.id)}
           isLatestAssistant={idx === lastAssistantIdx}
+          continuesResponse={continuing[idx] ?? false}
           onRetry={turn.id === failedSendRetry?.turnId ? failedSendRetry.retry : undefined}
           onRespondToInterrupt={onRespondToInterrupt}
           changeTrail={byTurnId.get(turn.id)}
@@ -150,9 +177,12 @@ export function TurnList({
       navigateToChange,
       onRespondToInterrupt,
       submissionRecoveryByTurnId,
-      queueStatusByTurnId,
+      queuedWriterTurnIds,
       threadId,
       turns,
+      transcript,
+      continuing,
+      partsByFinalTurnId,
     ],
   );
 
@@ -190,8 +220,10 @@ export function TurnList({
                   key={virtualItem.key}
                   data-index={virtualItem.index}
                   data-chat-turn-row="settled"
+                  data-chat-turn-role={turn.role}
+                  data-chat-turn-continues={continuing[virtualItem.index] ? "" : undefined}
                   ref={virtualizer.measureElement}
-                  className="absolute inset-x-0 top-0 pb-6"
+                  className="absolute inset-x-0 top-0"
                   style={{ transform: `translateY(${virtualItem.start}px)` }}
                 >
                   {renderTurn(turn, virtualItem.index)}
@@ -213,85 +245,13 @@ export function TurnList({
   );
 }
 
-function deliveryEventsAfter(
-  turn: Turn,
+/** Latest transcript location for a child: its finished line, else its launch card. */
+export function resolveSubagentRevealTurnId(
   turns: Turn[],
-): Array<{ turn: Turn; childThreadId?: string; title?: string }> {
-  const events: Array<{ turn: Turn; childThreadId?: string; title?: string }> = [];
-  let precedingId = turn.id;
-  for (;;) {
-    const next = turns.find((candidate) => candidate.prevTurnId === precedingId);
-    if (!next) return events;
-    if (!isDeliveryEvent(next)) {
-      if (!isHiddenContextTurn(next)) return events;
-      precedingId = next.id;
-      continue;
-    }
-    const metadata = next.metadata as Record<string, unknown>;
-    const invocation =
-      metadata.kind === "subagent_update"
-        ? findInvocation(turns, String(metadata.execution))
-        : null;
-    events.push({
-      turn: next,
-      ...(invocation?.threadId ? { childThreadId: invocation.threadId } : {}),
-      ...(invocation?.title ? { title: invocation.title } : {}),
-    });
-    precedingId = next.id;
-  }
-}
-
-function isHiddenContextTurn(turn: Turn): boolean {
-  if (turn.role === "system") return !turn.blocks.some((block) => block.blockType === "custom");
-  const metadata = turn.metadata;
-  return Boolean(
-    turn.role === "user" &&
-      metadata &&
-      typeof metadata === "object" &&
-      !Array.isArray(metadata) &&
-      metadata.kind === "system_update" &&
-      metadata.section === "work_context",
-  );
-}
-
-function isDeliveryEvent(turn: Turn): boolean {
-  const metadata = turn.metadata;
-  return Boolean(
-    metadata &&
-      typeof metadata === "object" &&
-      !Array.isArray(metadata) &&
-      (metadata.kind === "inbox_message" || metadata.kind === "subagent_update"),
-  );
-}
-
-function findInvocation(
-  turns: Turn[],
-  execution: string,
-): { threadId?: string; title?: string } | null {
-  for (const turn of turns)
-    for (const block of turn.blocks) {
-      const content = block.content;
-      if (
-        !content ||
-        typeof content !== "object" ||
-        Array.isArray(content) ||
-        content.kind !== "helper-result"
-      )
-        continue;
-      const props = content.props;
-      if (
-        !props ||
-        typeof props !== "object" ||
-        Array.isArray(props) ||
-        props.execution !== execution
-      )
-        continue;
-      return {
-        threadId: typeof props.childThreadId === "string" ? props.childThreadId : undefined,
-        title: typeof props.title === "string" ? props.title : undefined,
-      };
-    }
-  return null;
+  childThreadId: string,
+  originTurnId: string,
+): string {
+  return buildTranscriptModel(turns, false).resolveRevealTurnId(childThreadId, originTurnId);
 }
 
 function JumpToLatestButton({
@@ -330,7 +290,8 @@ function JumpToLatestButton({
 /** Index of the last assistant turn in `turns`, or -1 if none. */
 function findLastAssistantIndex(turns: Turn[]): number {
   for (let i = turns.length - 1; i >= 0; i--) {
-    if (turns[i].role === "assistant") return i;
+    const turn = turns[i];
+    if (turn?.role === "assistant" && isTerminalTurnStatus(turn.status)) return i;
   }
   return -1;
 }

@@ -6,7 +6,6 @@ import type { EventCorrelation, EventLevel, EventSink } from "../../observabilit
 import { emitEvent } from "../../observability/index.js";
 import type { GenerateRequest, GenerateResult, StreamEvent } from "./domain/index.js";
 import type { Gateway } from "./ports/gateway.js";
-import { isPartialOutputEvent } from "./stream-events.js";
 
 const VERBOSE_CHUNKS = "gateway.chunks";
 const UTF8_ENCODER = new TextEncoder();
@@ -110,18 +109,21 @@ function routePayload(route: { provider?: string; model?: string }): Record<stri
 }
 
 function streamClosePayload(input: {
-  durationMs: number;
-  firstOutputMs?: number;
-  chunkCount: number;
+  gatewayObservationDurationMs: number;
+  chunkCount?: number;
   chunkCounts?: ReadonlyMap<StreamEvent["type"], number>;
   result?: GenerateResult;
   outcome: Outcome;
   errorCode?: string;
 }): Record<string, unknown> {
   return {
-    durationMs: input.durationMs,
-    ...(input.firstOutputMs === undefined ? {} : { firstOutputMs: input.firstOutputMs }),
-    chunkCount: input.chunkCount,
+    // Observation duration includes downstream consumption; provider timing is
+    // carried by the attempt result and ends at provider-event arrival.
+    gatewayObservationDurationMs: input.gatewayObservationDurationMs,
+    providerLatencyMs: input.result?.timing?.latencyMs ?? null,
+    providerFirstOutputMs: input.result?.timing?.timeToFirstTokenMs ?? null,
+    providerGenerationMs: input.result?.timing?.generationMs ?? null,
+    chunkCount: input.chunkCount ?? 0,
     ...(input.chunkCounts ? { chunkCounts: Object.fromEntries(input.chunkCounts.entries()) } : {}),
     toolCallCount: input.result?.toolCalls.length ?? 0,
     ...(input.result
@@ -140,6 +142,10 @@ type StreamTerminal =
   | { type: "end"; at: number; result: GenerateResult }
   | { type: "error"; at: number; errorCode?: string; cause?: unknown };
 
+function elapsedMs(startedAt: number, endedAt: number): number {
+  return Math.max(0, Math.round(endedAt - startedAt));
+}
+
 function createStreamObservation(input: {
   request: GenerateRequest;
   emitter: CallEmitter;
@@ -153,7 +159,6 @@ function createStreamObservation(input: {
   let startCount = 0;
   let chunkCount = 0;
   const chunkCounts = new Map<StreamEvent["type"], number>();
-  let firstOutputMs: number | undefined;
   let terminal: StreamTerminal | undefined;
   let closed = false;
 
@@ -162,7 +167,7 @@ function createStreamObservation(input: {
     const errorCode = errorCodeFrom(error);
     terminal = {
       type: "error",
-      at: Date.now(),
+      at: performance.now(),
       cause: error,
       ...(errorCode ? { errorCode } : {}),
     };
@@ -171,15 +176,14 @@ function createStreamObservation(input: {
   function close(): void {
     if (closed) return;
     closed = true;
-    const terminalAt = terminal?.at ?? Date.now();
+    const terminalAt = terminal?.at ?? performance.now();
     const outcome = classifyTerminalOutcome(terminal ?? { type: "none" }, input.request.signal);
     const errorCode = terminal?.type === "error" ? terminal.errorCode : undefined;
     input.emitter.emit(
       outcome === "ok" ? "info" : "warn",
       "stream.close",
       streamClosePayload({
-        durationMs: terminalAt - input.startedAt,
-        firstOutputMs,
+        gatewayObservationDurationMs: elapsedMs(input.startedAt, terminalAt),
         chunkCount,
         chunkCounts,
         result: terminal?.type === "end" ? terminal.result : undefined,
@@ -212,18 +216,12 @@ function createStreamObservation(input: {
           }
         }
 
-        let eventAt: number | undefined;
-        if (firstOutputMs === undefined && isPartialOutputEvent(event)) {
-          eventAt = Date.now();
-          firstOutputMs = eventAt - input.startedAt;
-          input.emitter.emit("debug", "stream.first_output", { latencyMs: firstOutputMs }, route);
-        }
-
         if (terminal === undefined && event.type === "end") {
           route = { provider: event.result.provider, model: event.result.model };
-          terminal = { type: "end", result: event.result, at: eventAt ?? Date.now() };
+          const endedAt = performance.now();
+          terminal = { type: "end", result: event.result, at: endedAt };
         } else if (terminal === undefined && event.type === "error") {
-          terminal = { type: "error", errorCode: event.code, at: Date.now() };
+          terminal = { type: "error", errorCode: event.code, at: performance.now() };
         }
 
         if (input.verboseChunks) {
@@ -265,7 +263,7 @@ export function createInstrumentedGateway(
 ): Gateway {
   const instrumented: Gateway = {
     stream(request) {
-      const startedAt = Date.now();
+      const startedAt = performance.now();
       const gatewayCallId = request.correlation?.gatewayCallId ?? crypto.randomUUID();
       const emitter = createCallEmitter(request, deps, gatewayCallId);
       const observation = createStreamObservation({
@@ -283,7 +281,7 @@ export function createInstrumentedGateway(
     },
 
     async generate(request) {
-      const startedAt = Date.now();
+      const startedAt = performance.now();
       const gatewayCallId = request.correlation?.gatewayCallId ?? crypto.randomUUID();
       const emitter = createCallEmitter(request, deps, gatewayCallId);
       let route = {
@@ -294,31 +292,29 @@ export function createInstrumentedGateway(
 
       try {
         const result = await gateway.generate(request);
-        const terminalAt = Date.now();
+        const terminalAt = performance.now();
         route = { provider: result.provider, model: result.model };
         const outcome = classifyTerminalOutcome({ type: "end" }, request.signal);
         emitter.emit(
           outcome === "ok" ? "info" : "warn",
           "stream.close",
-          {
-            durationMs: terminalAt - startedAt,
-            inputTokens: result.usage.inputTokens,
-            outputTokens: result.usage.outputTokens,
-            finishReason: result.finishReason,
+          streamClosePayload({
+            gatewayObservationDurationMs: elapsedMs(startedAt, terminalAt),
+            result,
             outcome,
-          },
+          }),
           route,
         );
         return result;
       } catch (error) {
-        const terminalAt = Date.now();
+        const terminalAt = performance.now();
         const errorCode = errorCodeFrom(error);
         const outcome = classifyTerminalOutcome({ type: "error", cause: error }, request.signal);
         emitter.emit(
           "warn",
           "stream.close",
           {
-            durationMs: terminalAt - startedAt,
+            gatewayObservationDurationMs: elapsedMs(startedAt, terminalAt),
             outcome,
             ...(errorCode ? { errorCode } : {}),
           },

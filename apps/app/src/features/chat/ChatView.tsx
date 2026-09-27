@@ -1,6 +1,5 @@
 /**
- * ChatView — the full conversation view for a thread (project chat and the
- * independent `/chat/:threadId` surface).
+ * ChatView — the full conversation view for a project-owned thread.
  *
  * Composition root for the chat feature: reads canonical turns directly from
  * ThreadStore, wires snapshot sync, handoff, announcements, and renders
@@ -41,13 +40,15 @@ import { useAccountId } from "@/features/project/context/account-feature-context
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
-import { AgentOnlyComposerToolbar, ChatComposerToolbar } from "./ChatComposerToolbar";
+import { ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
-import { writerTurnQueueStatus } from "./pending-inbox";
+import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
+import { SubagentActivityProvider } from "./subagent/ActivityContext";
+import { SubagentDisclosureProvider } from "./subagent/DisclosureStore";
 import { TurnList } from "./TurnList";
 import { activeDescendants } from "./thread-activity";
 import type { UserTurnRecovery } from "./UserTurn";
@@ -70,11 +71,20 @@ const EMPTY_TURNS: Turn[] = [];
 
 export type ChatViewProps = {
   threadId: string;
-  projectId?: string | null;
+  projectId: string;
   activeThread?: Thread | null;
   activeWork?: Work | null;
   snapshotLiveState?: ThreadLiveState | null;
   snapshotNextSeq?: string | null;
+  snapshotThreadUsage?: {
+    inputTokens: number;
+    cacheReadTokens: number;
+    cacheReportedInputTokens: number;
+    cacheReportedCalls: number;
+    cacheWriteTokens: number;
+    outputTokens: number;
+    cacheResets: number;
+  } | null;
   /**
    * Whether the thread snapshot request has resolved. Feeds the transcript's
    * conversation-reveal ownership: only a settled history can say a named turn
@@ -86,15 +96,16 @@ export type ChatViewProps = {
 
 export function ChatView({
   threadId,
-  projectId = null,
+  projectId,
   activeThread = null,
   activeWork = null,
   snapshotLiveState = null,
   snapshotNextSeq = null,
+  snapshotThreadUsage = null,
   historySettled,
   activateProjection,
 }: ChatViewProps) {
-  const openReferenceDocument = useOpenProjectDocument(projectId ?? undefined);
+  const openReferenceDocument = useOpenProjectDocument(projectId);
   const actions = useThreadActions();
   const { changeTrails } = useThreadDurableProjections({ threadId, projectId });
   const queryClient = useQueryClient();
@@ -123,8 +134,14 @@ export function ChatView({
     seed: snapshotLiveState,
   });
   const runningSubagents = activeDescendants(activity.activity);
+  const runningBackgroundSubagents = runningSubagents.filter(
+    (node) => node.parentThreadId === threadId && node.deliveryMode === "background_notification",
+  );
   const pendingInbox = usePendingInbox({ threadId, seed: snapshotLiveState });
-  const queueStatusByTurnId = useMemo(() => writerTurnQueueStatus(pendingInbox), [pendingInbox]);
+  const queuedWriterTurnIds = useMemo(
+    () => selectQueuedWriterTurnIds(pendingInbox),
+    [pendingInbox],
+  );
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
 
@@ -162,7 +179,7 @@ export function ChatView({
       kind: "existing-thread",
       submissionId: envelope.submissionId,
       threadId,
-      projectId: projectId ?? null,
+      projectId,
       createdAt: new Date().toISOString(),
       text,
       blocks: [...envelope.blocks],
@@ -276,7 +293,7 @@ export function ChatView({
   useEffect(() => () => transcriptNavigation.current?.abort(), [projectId, activeWork?.id]);
   const followTranscriptLink = useCallback(
     async (target: LinkTarget) => {
-      if (!projectId || target.kind === "relative") return;
+      if (target.kind === "relative") return;
       const request = documentLinkTarget(target, "");
       if (!request) return;
       transcriptNavigation.current?.abort();
@@ -329,15 +346,10 @@ export function ChatView({
   }
 
   return (
-    <TranscriptLinkNavigationContext.Provider value={projectId ? followTranscriptLink : undefined}>
+    <TranscriptLinkNavigationContext.Provider value={followTranscriptLink}>
       <ChatSurface
         title={pageTitle}
         surfaceRef={chatSurfaceRef}
-        header={
-          runningSubagents.length > 0 ? (
-            <RunningSubagentsStrip selfStatus={activity.status} descendants={runningSubagents} />
-          ) : null
-        }
         footer={
           <div data-debug-composer={threadId}>
             {/* The dock strip sits BEHIND (below) the composer — narrower via
@@ -345,16 +357,12 @@ export function ChatView({
               always keeps its own border and overlaps the strip's edge. */}
             <DraftDock dock={dock} />
             <Composer
-              onOpenReference={
-                projectId
-                  ? (reference) => {
-                      void openReferenceDocument({
-                        documentId: reference.documentId,
-                        disposition: "current",
-                      });
-                    }
-                  : undefined
-              }
+              onOpenReference={(reference) => {
+                void openReferenceDocument({
+                  documentId: reference.documentId,
+                  disposition: "current",
+                });
+              }}
               ref={composerRef}
               variant="pinned"
               streaming={isStreaming}
@@ -362,20 +370,14 @@ export function ChatView({
               availableSkills={availableSkills.skills}
               uploadPort={uploadIntakePort}
               uploadScope={
-                projectId && activeWork
-                  ? { kind: "work", projectId, workId: activeWork.id }
-                  : undefined
+                activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
               }
               onSubmit={handleSubmit}
               onCheckSubmission={(envelope) => settleQuarantined(envelope, false)}
               onRetireSubmission={(envelope) => settleQuarantined(envelope, true)}
               onStop={handleStop}
               toolbarLeft={
-                !projectId ? (
-                  <AgentOnlyComposerToolbar
-                    control={{ mode: "readonly", name: composerAgentName }}
-                  />
-                ) : activeWork ? (
+                activeWork ? (
                   <ChatComposerToolbar
                     projectId={projectId}
                     threadId={threadId}
@@ -388,18 +390,27 @@ export function ChatView({
           </div>
         }
       >
-        <TurnList
-          threadId={threadId}
-          turns={turns}
-          historySettled={historySettled}
-          tailFollowRevision={tailFollowRevision}
-          ariaLabel={t`Chat`}
-          onRespondToInterrupt={handleRespondToInterrupt}
-          failedSendRetry={failedSendRetry}
-          changeTrails={changeTrails.byId}
-          submissionRecoveryByTurnId={submissionRecoveryByTurnId}
-          queueStatusByTurnId={queueStatusByTurnId}
-        />
+        <SubagentDisclosureProvider>
+          <SubagentActivityProvider nodes={activity.activity.descendants} turns={turns}>
+            <div className="relative flex min-h-0 flex-1 flex-col">
+              <RunningSubagentsStrip threadId={threadId} />
+              <TurnList
+                threadId={threadId}
+                turns={turns}
+                awaitingSubagents={runningBackgroundSubagents.length > 0}
+                historySettled={historySettled}
+                tailFollowRevision={tailFollowRevision}
+                ariaLabel={t`Chat`}
+                onRespondToInterrupt={handleRespondToInterrupt}
+                failedSendRetry={failedSendRetry}
+                changeTrails={changeTrails.byId}
+                submissionRecoveryByTurnId={submissionRecoveryByTurnId}
+                queuedWriterTurnIds={queuedWriterTurnIds}
+                threadUsage={snapshotThreadUsage}
+              />
+            </div>
+          </SubagentActivityProvider>
+        </SubagentDisclosureProvider>
       </ChatSurface>
     </TranscriptLinkNavigationContext.Provider>
   );

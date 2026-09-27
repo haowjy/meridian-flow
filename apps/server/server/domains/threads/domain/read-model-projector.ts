@@ -41,11 +41,15 @@ function responseToCreateInput(response: ModelResponseReceivedRow): CreateModelR
     reasoningTokens: response.reasoningTokens ?? null,
     cacheReadTokens: response.cacheReadTokens ?? null,
     cacheWriteTokens: response.cacheWriteTokens ?? null,
+    cacheReset: response.cacheReset ?? false,
     costUsd: response.costUsd ?? "0",
     millicredits: response.millicredits ?? null,
     priceSource: response.priceSource ?? "unknown",
     pricingSnapshot: response.pricingSnapshot ?? null,
     finishReason: response.finishReason ?? null,
+    latencyMs: response.latencyMs ?? null,
+    timeToFirstTokenMs: response.timeToFirstTokenMs ?? null,
+    generationMs: response.generationMs ?? null,
     rawUsage: response.rawUsage ?? null,
   };
 }

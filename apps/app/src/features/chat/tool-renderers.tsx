@@ -9,7 +9,6 @@ import { type ReactNode, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
-import { isArtifactRef } from "./ArtifactGrid";
 import { BoundLine, ClippedProse } from "./ClippedExpand";
 import {
   type CommandExpand,
@@ -22,8 +21,8 @@ import { DocumentName } from "./DocumentName";
 import { documentDisplayName, folderDisplayName } from "./document-display-name";
 import type { ToolView } from "./group-delivery-segments";
 import { PassageDoor } from "./PassageDoor";
-import { payloadText, ReportContent } from "./ReportContent";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
+import { THREAD_REPORT_RENDERER } from "./thread-report-renderer";
 import { stringInput, toolInputObject, type WriteMode } from "./tool-command";
 import {
   boundLabel,
@@ -68,7 +67,7 @@ function asString(value: JsonValue | undefined): string | undefined {
 /** A command and what it acted on, laid out as one line. */
 function CommandTitle({ verb, parameter }: { verb: ReactNode; parameter?: ReactNode }) {
   return (
-    <span className="flex w-full min-w-0 items-baseline gap-1.5">
+    <span className="flex w-full min-w-0 items-baseline gap-[var(--chat-space-inline)]">
       <span className="shrink-0">{verb}</span>
       {parameter ? (
         <span className="flex min-w-0 items-baseline font-normal text-muted-foreground">
@@ -102,7 +101,7 @@ function rowKey(row: ToolResultRow, index: number): string {
 function ResultRows({ results }: { results: SearchResultRows }) {
   const bound = boundLabel(results);
   return (
-    <div className="rounded-md border border-border bg-result-card p-2.5">
+    <div className="chat-card bg-result-card">
       <p className="border-border-subtle border-b pb-2 text-meta text-ink-subtle">
         {searchCardSummary(results)}
       </p>
@@ -110,7 +109,10 @@ function ResultRows({ results }: { results: SearchResultRows }) {
         {results.rows.map((row, index) => (
           <li
             key={`${index}:${row.uri}`}
-            className={cn("py-2.5", index > 0 && "border-border-subtle border-t")}
+            className={cn(
+              "py-[var(--chat-card-pad-y)]",
+              index > 0 && "border-border-subtle border-t",
+            )}
           >
             <SearchHit row={row} />
           </li>
@@ -127,7 +129,7 @@ function SearchHit({ row }: { row: SearchHitRow }) {
   const [best, ...rest] = row.passages;
   return (
     <>
-      <div className="flex min-w-0 items-baseline gap-[7px] text-compact font-medium text-prose-foreground">
+      <div className="flex min-w-0 items-baseline gap-[var(--chat-space-inline)] text-compact font-medium text-prose-foreground">
         <DocumentName path={row.uri} />
         <MatchCount count={row.matchCount} />
       </div>
@@ -145,7 +147,7 @@ function SearchHit({ row }: { row: SearchHitRow }) {
               event.stopPropagation();
               setOpen((wasOpen) => !wasOpen);
             }}
-            className="focus-ring mt-1 inline-flex items-center gap-0.5 rounded-sm text-meta text-muted-foreground underline decoration-border decoration-1 underline-offset-[3px] transition-colors hover:text-jade-text hover:decoration-jade-text focus-visible:text-jade-text focus-visible:decoration-jade-text"
+            className="focus-ring mt-[var(--chat-space-inline)] inline-flex items-center gap-[var(--chat-space-inline)] rounded-sm text-meta text-muted-foreground underline decoration-border decoration-1 underline-offset-[3px] transition-colors hover:text-jade-text hover:decoration-jade-text focus-visible:text-jade-text focus-visible:decoration-jade-text"
           >
             {moreMatchesLabel(rest.length)}
             <ChevronRight
@@ -157,7 +159,7 @@ function SearchHit({ row }: { row: SearchHitRow }) {
             // Indented against a rule so the extra passages read as belonging
             // to the document above them. It grows in place: the transcript is
             // the single scroll owner and no expand may own another.
-            <div className="mt-1 ml-[13px] space-y-0.5 border-border-subtle border-l pl-2.5">
+            <div className="mt-[var(--chat-space-inline)] ml-[var(--chat-tool-list-indent)] space-y-[var(--chat-space-row)] border-border-subtle border-l pl-2.5">
               {rest.map((passage, index) => (
                 <PassageDoor
                   key={`${index}:${passage.excerpt.match}${passage.excerpt.trail}`}
@@ -176,14 +178,15 @@ function SearchHit({ row }: { row: SearchHitRow }) {
 
 function MatchCount({ count }: { count: number }) {
   return (
-    <span className="ml-auto inline-grid min-w-5 shrink-0 place-items-center rounded-full border border-border bg-muted px-1.5 py-px text-meta font-semibold text-ink-muted">
+    <span className="ml-auto inline-grid min-w-5 shrink-0 place-items-center rounded-full border border-border bg-muted px-2 py-0.5 text-meta font-semibold text-ink-muted">
       <span aria-hidden>{count}</span>
       <span className="sr-only">{matchCountLabel(count)}</span>
     </span>
   );
 }
 
-const LISTING_ROW = "flex min-w-0 items-baseline gap-[7px] py-0.5 text-compact";
+const LISTING_ROW =
+  "flex min-w-0 items-baseline gap-[var(--chat-space-inline)] py-0.5 text-compact";
 
 function ListingRows({ results }: { results: ToolResultRows }) {
   const bound = boundLabel(results);
@@ -317,7 +320,7 @@ function submittedContent(tool: ToolView): ToolExpand | null {
   if (!content) return null;
   const path = readPath(tool);
   return () => (
-    <div className="rounded-md border border-border-subtle bg-muted px-3 py-2">
+    <div className="chat-card [--chat-card-border:var(--color-border-subtle)] bg-muted">
       <QuotedPreview markup={content} path={path} />
     </div>
   );
@@ -416,28 +419,6 @@ const DOCUMENT_TOOL_RENDERER: ToolRenderer = {
   expand: documentExpand,
 };
 
-const THREAD_REPORT_RENDERER: ToolRenderer = {
-  title: (tool) => {
-    const report = threadReport(tool.output);
-    const preview = report ? report.summary || reportPayloadText(report.payload) : "";
-    if (preview) return <CommandTitle verb={preview.split(/\r?\n/, 1)[0] ?? ""} />;
-    if (tool.message) return <CommandTitle verb={tool.message} />;
-    if (report?.status === "not_ready") return <CommandTitle verb={t`Report is still running`} />;
-    if (report?.status === "unavailable") return <CommandTitle verb={t`Report is unavailable`} />;
-    if (report?.outcome === "failed") return <CommandTitle verb={t`The child run failed`} />;
-    if (report?.outcome === "cancelled") return <CommandTitle verb={t`The child run stopped`} />;
-    if (report?.artifacts?.length) return <CommandTitle verb={t`Saved artifacts`} />;
-    if (report?.reason) return <CommandTitle verb={report.reason} />;
-    if (report) return <CommandTitle verb={t`No report text was returned`} />;
-    return <CommandTitle verb={t`Report unavailable`} />;
-  },
-  expand: threadReportExpand,
-};
-
-function reportPayloadText(payload: JsonValue | undefined): string {
-  return payloadText(payload);
-}
-
 const RENDERERS: Record<string, ToolRenderer> = {
   write: DOCUMENT_TOOL_RENDERER,
   ls: {
@@ -457,70 +438,4 @@ const RENDERERS: Record<string, ToolRenderer> = {
 
 export function rendererFor(toolName: string): ToolRenderer {
   return RENDERERS[toolName] ?? DEFAULT_RENDERER;
-}
-
-type ThreadReportView = {
-  status?: "not_ready" | "unavailable";
-  outcome?: "succeeded" | "failed" | "cancelled";
-  summary?: string;
-  payload?: JsonValue;
-  artifacts?: import("@meridian/contracts/interrupt").ArtifactRef[];
-  reason?: string | null;
-  partial?: boolean;
-};
-
-function threadReport(output: JsonValue | null): ThreadReportView | null {
-  if (!output || typeof output !== "object" || Array.isArray(output)) return null;
-  const record = output as Record<string, JsonValue>;
-  if (record.status === "not_ready" || record.status === "unavailable") {
-    return { status: record.status };
-  }
-  if (
-    record.outcome !== "succeeded" &&
-    record.outcome !== "failed" &&
-    record.outcome !== "cancelled"
-  )
-    return null;
-  return {
-    outcome: record.outcome,
-    summary: typeof record.summary === "string" ? record.summary : "",
-    ...(Object.hasOwn(record, "payload") ? { payload: record.payload } : {}),
-    artifacts: Array.isArray(record.artifacts) ? record.artifacts.filter(isArtifactRef) : [],
-    reason: typeof record.reason === "string" ? record.reason : null,
-    partial: record.partial === true,
-  };
-}
-
-function threadReportExpand(tool: ToolView): ToolExpand | null {
-  const report = threadReport(tool.output);
-  if (!report) {
-    const message = tool.message;
-    return message ? () => <Markdown variant="compact">{message}</Markdown> : null;
-  }
-  if (report.status)
-    return () => (
-      <p className="text-caption text-muted-foreground">
-        {report.status === "not_ready"
-          ? t`This execution has not finished.`
-          : t`This report is unavailable.`}
-      </p>
-    );
-  return () => (
-    <ReportContent
-      report={{
-        summary: report.summary ?? "",
-        payload: report.payload,
-        artifacts: report.artifacts ?? [],
-        reason: report.reason,
-        partial: report.partial,
-      }}
-      empty={
-        report.outcome === "succeeded"
-          ? t`No report text was returned.`
-          : t`No partial report text was returned.`
-      }
-      className="space-y-2"
-      emptyClassName="space-y-1 text-caption text-muted-foreground"
-    />
-  );
 }

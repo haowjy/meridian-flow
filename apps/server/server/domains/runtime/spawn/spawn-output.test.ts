@@ -1,36 +1,50 @@
 import { describe, expect, it } from "vitest";
 
-import { spawnHelperCardProps, spawnOutputForTranscript } from "./spawn-output.js";
+import {
+  invocationCardProps,
+  spawnOutputForTranscript,
+  unadmittedInvocationFailure,
+  unadmittedInvocationFailureProps,
+} from "./spawn-output.js";
 
 describe("spawnOutputForTranscript", () => {
-  it("builds a running helper card then a body-free completed one", () => {
-    const running = spawnHelperCardProps({
-      parentTurnId: "turn-1",
+  const correlation = {
+    parentTurnId: "turn-1",
+    toolCallId: "call-1",
+    deliveryMode: "background_notification" as const,
+  };
+
+  it("retains the bound Agent's display name on running and completed cards", () => {
+    const running = invocationCardProps({
+      agent: "critic",
+      agentName: "Critic (harsh)",
       description: "Continuity",
+      correlation,
+      childThreadId: "child-1",
+      execution: null,
+      startedAt: "2026-01-01T00:00:00.000Z",
+      terminalAt: null,
     });
     expect(running).toMatchObject({
-      agentName: "Subagent",
-      status: "running",
+      agentName: "Critic (harsh)",
+      execution: null,
+      terminalAt: null,
       title: "Continuity",
     });
-    expect(running.childThreadId).toBeUndefined();
-    const done = spawnHelperCardProps({
+    const done = invocationCardProps({
       agent: "critic",
-      parentTurnId: "turn-1",
-      output: {
-        status: "completed",
-        report: {
-          threadId: "child-1",
-          summary: "Holds.",
-          payload: { verdict: "ok" },
-          artifacts: [{ type: "object", uri: "scratch://outline.md", label: "Outline" }],
-          costMillicredits: 9,
-        },
-      },
+      agentName: "Critic (harsh)",
+      correlation,
+      childThreadId: "child-1",
+      execution: "execution-1",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      terminalAt: "2026-01-01T00:01:00.000Z",
+      outcome: "succeeded",
     });
     expect(done).toMatchObject({
-      agentName: "Critic",
-      status: "completed",
+      agentName: "Critic (harsh)",
+      outcome: "succeeded",
+      terminalAt: "2026-01-01T00:01:00.000Z",
     });
     expect(done).not.toHaveProperty("summary");
     expect(done).not.toHaveProperty("payload");
@@ -38,21 +52,36 @@ describe("spawnOutputForTranscript", () => {
     expect(JSON.stringify(done)).not.toContain("cost");
   });
 
-  it("keeps childThreadId on a failed card and titles from description", () => {
-    const failed = spawnHelperCardProps({
+  it("stores a writer-readable pre-admission failure without a child link", () => {
+    const running = invocationCardProps({
       agent: "subagent",
+      agentName: "Subagent",
       description: "Check continuity",
-      parentTurnId: "turn-1",
+      correlation,
       childThreadId: "child-9",
-      output: { status: "error", error: { message: "Child run failed" } },
+      execution: null,
+      startedAt: "2026-01-01T00:00:00.000Z",
+      terminalAt: null,
     });
+    const failed = unadmittedInvocationFailure(running, "The agent is unavailable.");
     expect(failed).toMatchObject({
       agentName: "Subagent",
-      status: "failed",
-      childThreadId: "child-9",
+      reason: "The agent is unavailable.",
+      terminalAt: expect.any(String),
       title: "Check continuity",
     });
-    expect(failed).not.toHaveProperty("summary");
+    expect(failed).not.toHaveProperty("childThreadId");
+    expect(failed).not.toHaveProperty("execution");
+  });
+
+  it("uses the slug verbatim for a pre-resolution failure", () => {
+    expect(
+      unadmittedInvocationFailureProps({
+        agent: "continuity-checker",
+        correlation,
+        reason: "Unavailable.",
+      }),
+    ).toMatchObject({ agentSlug: "continuity-checker", agentName: "continuity-checker" });
   });
 
   it("removes internal execution and thread ids from model-facing spawn output", () => {

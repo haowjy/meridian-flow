@@ -97,7 +97,7 @@ function UnknownComponentFallback({ block, kind }: { block: Block; kind: string 
   const kindLabel = kind ?? t`missing kind`;
   return (
     <div
-      className="mb-4 rounded-lg border border-subtle bg-muted px-3 py-2 text-xs text-muted-foreground"
+      className="chat-card [--chat-card-radius:var(--radius-lg)] [--chat-card-border:var(--color-border-subtle)] bg-muted text-xs text-muted-foreground"
       data-block-id={block.id}
       data-block-type={block.blockType}
       data-block-seq={block.sequence}

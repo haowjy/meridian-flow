@@ -123,6 +123,7 @@ export async function executionScenario(db?: Database, ids = executionIds()) {
       content: buildInvocationCardContent(
         invocationCardProps({
           agent: "critic",
+          agentName: "critic",
           correlation: {
             parentTurnId: ids.callerTurn,
             toolCallId: "spawn-1",
@@ -130,6 +131,8 @@ export async function executionScenario(db?: Database, ids = executionIds()) {
           },
           childThreadId: ids.child,
           execution: null,
+          startedAt: "2026-01-01T00:00:00.000Z",
+          terminalAt: null,
         }),
       ),
     });

@@ -76,6 +76,7 @@ describe("projectPendingInbox", () => {
           reportId: "report-1",
           handle: "p1",
           outcome: "succeeded",
+          agentName: "Critic",
         },
         body: { kind: "text", text: "Read thread_report(...)" },
       }),
@@ -99,6 +100,7 @@ describe("projectPendingInbox", () => {
       reportId: "report-1",
       handle: "p1",
       outcome: "succeeded",
+      agentName: "Critic",
     });
   });
 

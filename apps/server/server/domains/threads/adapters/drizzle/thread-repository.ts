@@ -5,17 +5,10 @@
  */
 import { GENERIC_SUBAGENT_NAME } from "@meridian/contracts/agents";
 import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
-import type {
-  SpawnStatus,
-  ThreadKind,
-  ThreadLifecycleStatus,
-  TurnRole,
-  TurnStatus,
-} from "@meridian/contracts/threads";
+import type { SpawnStatus, ThreadKind, ThreadLifecycleStatus } from "@meridian/contracts/threads";
 import { formatThreadRef } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, getTableColumns, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { lockThreadAndWorks, lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
@@ -33,6 +26,7 @@ import type {
 } from "../../ports/repositories.js";
 import { mapThread } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
+import { threadActionRequiredSql } from "./visible-conversation-sql.js";
 import { workAssociationCandidatesSql } from "./work-association-candidates-sql.js";
 
 // RETURNING strips table qualifiers from Column chunks; preserve the outer reference
@@ -68,29 +62,24 @@ const threadColumns = {
 type ThreadListRow = typeof schema.threads.$inferSelect & {
   workId: string | null;
   workTitle: string | null;
-  lastTurnRole: (typeof schema.turns.$inferSelect)["role"] | null;
-  lastTurnStatus: (typeof schema.turns.$inferSelect)["status"] | null;
+  actionRequired: boolean;
 };
 
 function mapThreadListRow(row: ThreadListRow, runningTurnId: string | null) {
   return toThreadListItem({
     thread: mapThread(row),
     workTitle: row.workTitle,
-    lastTurnRole: row.lastTurnRole as TurnRole | null,
-    lastTurnStatus: row.lastTurnStatus as TurnStatus | null,
+    actionRequired: row.actionRequired,
     runningTurnId,
   });
 }
-
-const conversationalHead = alias(schema.turns, "conversational_head");
 
 function threadListSelect() {
   return {
     ...threadColumns,
     workId: schema.threadWorks.workId,
     workTitle: schema.works.name,
-    lastTurnRole: conversationalHead.role,
-    lastTurnStatus: conversationalHead.status,
+    actionRequired: threadActionRequiredSql({ activeLeafTurnId: schema.threads.activeLeafTurnId }),
   };
 }
 
@@ -338,11 +327,6 @@ export function createDrizzleThreadRepository(
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
         .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
         .leftJoin(schema.works, eq(schema.threadWorks.workId, schema.works.id))
-        // The stored head the chat feed reads, not a lineage walk per thread.
-        .leftJoin(
-          conversationalHead,
-          eq(conversationalHead.id, schema.threads.conversationalLeafTurnId),
-        )
         .where(
           and(
             eq(schema.threads.projectId, projectId),

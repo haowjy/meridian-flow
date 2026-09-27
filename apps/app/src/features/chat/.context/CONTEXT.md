@@ -8,6 +8,9 @@ draft-control changes can be understood independently.
 - [Activity row anatomy](activity-row-anatomy.md) — document names as doors,
   the stretched-button row, command glyphs, verb vocabulary, and why row
   chrome carries no colour of its own.
+- [Turn rhythm and actions](turn-rhythm-and-actions.md) — the spacing scale,
+  which turns are finished, the Copy/Info/Debug row, and control placement on
+  rows and cards.
 - [Tool expands](tool-expands.md) — the three rendering tiers, the three
   channels, what each expand shows, and how a clipped expand states its bound.
 - [Turn edit receipts](turn-edit-receipts.md) — committed change records, Undo/Redo,
@@ -47,14 +50,10 @@ draft-control changes can be understood independently.
   bridge an accepted row after teardown.
   See [`client/chat-submissions/AGENTS.md`](../../../client/chat-submissions/AGENTS.md).
 
-- The authenticated `/chat/{threadId}` shell remains the project-less surface
-  for independent-project and child threads. Its thread snapshot is the source
-  of the backing project identity; after that resolves, the shell owns the
-  project draft-recovery executor and the project navigation/review-handoff
-  providers around its `DraftReviewProvider`. Keep these owners above
-  `ChatView` on direct loads and refreshes, just as the project shell does.
-  First-send project chats use `/p/{projectId}/chat/{threadId}` instead; the
-  remaining `/chat/` producer is the child-thread door in `AssistantTurn`.
+- Every `ChatView` is owned by a project workspace and receives its required
+  project ID from `ChatScreen`. Child-thread doors use the project shell's
+  `ChatThreadNavigationProvider`, so they open the child in the same project
+  address space instead of creating a second chat shell.
 
 Durable change detail renders only through the owning turn receipt; the
 transcript does not add a conversation-wide aggregate record.

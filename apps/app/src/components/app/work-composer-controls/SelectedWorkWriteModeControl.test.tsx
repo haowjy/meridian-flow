@@ -116,7 +116,7 @@ describe("useSelectedWorkWriteModeToolbarControl", () => {
     await act(async () => findButton("Auto-apply")?.click());
     expect(document.body.textContent).toContain("Drafts are waiting");
     const confirmation = document.querySelector("h2")?.parentElement;
-    expect(confirmation?.className).toContain("px-1");
+    expect(confirmation?.className).toContain("px-[var(--chat-space-inline)]");
     expect(confirmation?.querySelector("p")?.parentElement).toBe(confirmation);
     expect(findButton("Cancel")?.parentElement?.parentElement).toBe(confirmation);
     expect(document.activeElement).toBe(document.querySelector('[role="dialog"]'));

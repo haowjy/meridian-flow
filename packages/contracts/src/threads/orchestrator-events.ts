@@ -31,11 +31,15 @@ export interface ModelResponseReceivedRow {
   reasoningTokens?: number | null;
   cacheReadTokens?: number | null;
   cacheWriteTokens?: number | null;
+  cacheReset?: boolean;
   costUsd?: string | null;
   millicredits?: string | null;
   priceSource?: PriceSource;
   pricingSnapshot?: JsonValue | null;
   finishReason?: FinishReason | null;
+  latencyMs?: number | null;
+  timeToFirstTokenMs?: number | null;
+  generationMs?: number | null;
   rawUsage?: JsonValue | null;
 }
 

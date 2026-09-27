@@ -139,10 +139,7 @@ describe("createWriterTurnProducer", () => {
 
     if (!("userTurnId" in result)) throw new Error("expected accepted admission");
     const turn = await repos.turns.findById(result.userTurnId);
-    expect(turn?.metadata).toEqual({
-      kind: "inbox_message",
-      activatedSkillSlugs: ["writing-principles"],
-    });
+    expect(turn?.metadata).toEqual({ activatedSkillSlugs: ["writing-principles"] });
   });
 
   it("merges a mid-run send onto the live assistant turn instead of conflicting", async () => {
@@ -163,6 +160,7 @@ describe("createWriterTurnProducer", () => {
     expect(runStarter.started).toEqual([thread.id]);
     const turns = await repos.turns.listByThread(thread.id);
     expect(turns.filter((turn) => turn.role === "user")).toHaveLength(1);
+    expect(turns.find((turn) => turn.role === "user")?.metadata).toEqual({ delivery: "steer" });
   });
 
   it("treats a crash-orphaned streaming turn as no live run on the next send", async () => {

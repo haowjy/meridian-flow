@@ -24,10 +24,14 @@ import { appendSubagentActivity } from "./activity-event.js";
 import { authorizeThreadMessage } from "./authorize-thread-message.js";
 import type { ChildDriveInput, ChildRunDriver, PreparedChild } from "./child-run-driver.js";
 import { resolveChildInvocation } from "./resolve-child-invocation.js";
-import { invocationCardProps, unadmittedInvocationFailure } from "./spawn-output.js";
+import {
+  invocationAgentName,
+  invocationCardProps,
+  unadmittedInvocationFailure,
+  unadmittedInvocationFailureProps,
+} from "./spawn-output.js";
 import {
   bindAdmittedInvocationCard,
-  persistHelperCard,
   persistInvocationCard,
   type SpawnTranscript,
 } from "./spawn-transcript.js";
@@ -233,20 +237,9 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
   async function prepare(
     request: ChildRunRequest,
     background: boolean,
-    transcript: SpawnTranscript | undefined,
   ): Promise<PreparedChild | SpawnResult> {
     if (request.kind === "spawn") {
       const outcome = await prepareSpawn(request, background);
-      // A failed spawn shows its error on the parent-turn run card; foreground
-      // and background both have a card writer now.
-      if ("status" in outcome) {
-        await persistHelperCard(transcript, {
-          agent: request.agentSlug,
-          description: request.description,
-          parentTurnId: request.parentTurnId as string,
-          output: outcome,
-        });
-      }
       return outcome;
     }
 
@@ -288,21 +281,27 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     request: ChildRunRequest,
     prepared: PreparedChild,
     correlation: Pick<InvocationCardProps, "parentTurnId" | "toolCallId" | "deliveryMode">,
-  ): InvocationCardProps {
+  ): Extract<InvocationCardProps, { terminalAt: null }> {
     if (request.kind === "spawn") {
       return invocationCardProps({
         agent: request.agentSlug,
+        agentName: invocationAgentName(prepared.resolvedSlug, prepared.child.agentName),
         description: request.description,
         correlation,
         childThreadId: prepared.child.id,
         execution: null,
+        startedAt: new Date().toISOString(),
+        terminalAt: null,
       });
     }
     return invocationCardProps({
       agent: prepared.resolvedSlug,
+      agentName: invocationAgentName(prepared.resolvedSlug, prepared.child.agentName),
       correlation,
       childThreadId: prepared.child.id,
       execution: null,
+      startedAt: new Date().toISOString(),
+      terminalAt: null,
     });
   }
 
@@ -355,14 +354,27 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 
     const correlation = invocationCorrelation(request, background);
 
-    const prepared = await prepare(request, background, options.transcript);
-    if ("status" in prepared) return prepared;
+    const prepared = await prepare(request, background);
+    if ("status" in prepared) {
+      if (prepared.status === "error" && request.kind === "spawn") {
+        await persistInvocationCard(
+          options.transcript,
+          unadmittedInvocationFailureProps({
+            agent: request.agentSlug,
+            description: request.description,
+            correlation,
+            reason: prepared.error.message,
+          }),
+        );
+      }
+      return prepared;
+    }
 
     const cardProps = runCardProps(request, prepared, correlation);
 
     let admitted: TurnId | null = null;
     let runCard: Block | null = null;
-    const onAdmitted = async (execution: TurnId) => {
+    const onAdmitted = async (execution: TurnId, admittedAt: string) => {
       admitted = execution;
       await bindAdmittedInvocationCard({
         transcript: options.transcript,
@@ -370,6 +382,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         card: runCard,
         props: cardProps,
         execution,
+        admittedAt,
       });
     };
 
@@ -398,7 +411,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         if (!admitted) {
           await persistInvocationCard(
             options.transcript,
-            unadmittedInvocationFailure(cardProps),
+            unadmittedInvocationFailure(cardProps, readableFailureReason(error)),
             runCard,
           );
         }
@@ -416,7 +429,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       if (!admitted) {
         await persistInvocationCard(
           options.transcript,
-          unadmittedInvocationFailure(cardProps),
+          unadmittedInvocationFailure(cardProps, readableFailureReason(error)),
           runCard,
         );
       }
@@ -434,4 +447,10 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
   }
 
   return { runChild };
+}
+
+function readableFailureReason(error: unknown): string {
+  return error instanceof Error && error.message.trim()
+    ? error.message
+    : "The subagent could not start.";
 }
