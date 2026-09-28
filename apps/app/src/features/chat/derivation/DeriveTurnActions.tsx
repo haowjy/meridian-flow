@@ -147,6 +147,13 @@ function HandoffAction({ turnId, derivation }: { turnId: string; derivation: Tur
           event.preventDefault();
           contentRef.current?.focus();
         }}
+        // A focused row shows its tooltip, the top dismissable layer, which
+        // would swallow the first Escape. One Escape closes the picker.
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          event.preventDefault();
+          setOpen(false);
+        }}
       >
         <p className="px-2 pt-1 pb-1.5 text-xs font-medium text-muted-foreground">
           {t`Hand off to`}

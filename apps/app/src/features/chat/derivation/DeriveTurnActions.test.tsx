@@ -141,6 +141,29 @@ describe("DeriveTurnActions", () => {
   });
 });
 
+describe("the handoff picker", () => {
+  it("closes on one Escape, even while a focused row shows its tooltip", async () => {
+    const value = derivation();
+    await render(value);
+    const trigger = button("Hand off from here");
+    await act(async () => {
+      trigger?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+      trigger?.click();
+    });
+    await act(
+      async () => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined))),
+    );
+    expect(document.querySelector('[aria-label="Hand off to an Agent"]')).not.toBeNull();
+    await act(async () => {
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+    expect(document.querySelector('[aria-label="Hand off to an Agent"]')).toBeNull();
+    expect(value.handoff).not.toHaveBeenCalled();
+  });
+});
+
 describe("defaultHandoffAgent", () => {
   it("prefers the source's own revision, then its Agent by name", () => {
     const agents = [agent("General", "rev-new"), agent("Critic", "rev-critic")];

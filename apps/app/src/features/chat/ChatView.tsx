@@ -54,7 +54,7 @@ import { ChatSurface } from "./ChatSurface";
 import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { answeredControlIds } from "./compaction/compaction-model";
-import { useCompactionAnnouncements } from "./compaction/useCompactionAnnouncements";
+import { useControlTurnAnnouncements } from "./compaction/useControlTurnAnnouncements";
 import { useThreadControls } from "./compaction/useThreadControls";
 import { composerRun } from "./composer-run";
 import { DraftDock, useDraftDock } from "./DraftDock";
@@ -203,7 +203,7 @@ export function ChatView({
     answeredControlIds: answeredControls,
     leafTurnId: storedTurns.at(-1)?.id ?? null,
   });
-  useCompactionAnnouncements(turns);
+  useControlTurnAnnouncements(turns);
   // The snapshot revalidates as a compaction reserves and settles, so its live
   // state is fresher here than the subscription seed for the divider's phase.
   const liveStatus = snapshotLiveState?.status ?? activity.status;
