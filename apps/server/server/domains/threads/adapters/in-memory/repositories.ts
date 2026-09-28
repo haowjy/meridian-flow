@@ -563,6 +563,22 @@ export function createInMemoryRepositories(
     async findById(id) {
       return turns.get(id) ?? null;
     },
+    async findByControlId(threadId, controlId) {
+      return (
+        orderTurnsByPosition(
+          [...turns.values()].filter((turn) => {
+            const metadata = turn.metadata as
+              | import("@meridian/contracts/threads").JsonObject
+              | null;
+            return (
+              turn.threadId === threadId &&
+              (metadata?.controlMessageId === controlId ||
+                metadata?.satisfiesControlId === controlId)
+            );
+          }),
+        ).at(-1) ?? null
+      );
+    },
     async listByThread(threadId) {
       return orderTurnsByPosition([...turns.values()].filter((t) => t.threadId === threadId));
     },

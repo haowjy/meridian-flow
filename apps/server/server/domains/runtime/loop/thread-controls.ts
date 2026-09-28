@@ -18,7 +18,8 @@ export function createThreadControls(deps: {
   withThreadLock: ThreadLock["withThreadLock"];
   findMessage(id: string): Promise<InboxMessage | null>;
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
-  turns(threadId: ThreadId): Promise<Turn[]>;
+  findTurn(id: TurnId): Promise<Turn | null>;
+  findControlTurn(threadId: ThreadId, controlId: string): Promise<Turn | null>;
   pending(threadId: ThreadId): Promise<ThreadPendingInbox>;
   lockReceipt(threadId: ThreadId): Promise<{ ids: string[]; turnId: TurnId | null } | null>;
   cancel(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
@@ -41,10 +42,7 @@ export function createThreadControls(deps: {
             provenance: { kind: "writer", actorId: input.actorId },
             idempotencyKey: input.id,
           }));
-        const turn = (await deps.turns(input.threadId)).reverse().find((turn) => {
-          const metadata = turn.metadata as JsonObject | null;
-          return metadata?.controlMessageId === row.id || metadata?.satisfiesControlId === row.id;
-        });
+        const turn = await deps.findControlTurn(input.threadId, row.id);
         const pending =
           (await deps.pending(input.threadId)).items.find((item) => item.id === row.id) ?? null;
         return { created: !existing, response: { id: row.id, pending, turnId: turn?.id ?? null } };
@@ -56,12 +54,12 @@ export function createThreadControls(deps: {
         if (row?.threadId !== threadId || row.intent !== "control")
           throw new ThreadControlError(404, "control_not_found");
         if (row.deliveredAt) return { outcome: "already_finished" };
-        if (
-          receipt?.ids.includes(controlId) &&
-          receipt.turnId &&
-          (await deps.cancel(threadId, receipt.turnId))
-        )
-          return { outcome: "stopping" };
+        if (receipt?.ids.includes(controlId) && receipt.turnId) {
+          const turn = await deps.findTurn(receipt.turnId);
+          if ((turn?.metadata as JsonObject | null)?.satisfiesControlId === controlId)
+            return { outcome: "already_finished" };
+          if (await deps.cancel(threadId, receipt.turnId)) return { outcome: "stopping" };
+        }
         await deps.acknowledge(threadId, controlId);
         deps.wake(threadId);
         return { outcome: "withdrawn" };

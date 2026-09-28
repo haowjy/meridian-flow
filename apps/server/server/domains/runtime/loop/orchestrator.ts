@@ -115,6 +115,7 @@ import {
 import { FLOW_ABSOLUTE_CEILING } from "./compaction/index.js";
 import { executeCompaction } from "./compaction-phase.js";
 import { failCompactionSuccessor } from "./compaction-successor.js";
+import { absorbPendingCompact } from "./control-barrier.js";
 import type { TerminalCause } from "./execution-finalizer.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
@@ -592,15 +593,8 @@ async function runDrainTurn(
         skillBody = null;
         plan = makePlan([]);
       }
-      if (
-        preflight?.compaction.kind === "compact" &&
-        !preflight.compaction.controlMessageId &&
-        selection.headControl?.body.kind === "compact"
-      )
-        preflight.compaction = {
-          ...preflight.compaction,
-          satisfiesControlId: selection.headControl.id,
-        };
+      if (preflight)
+        preflight.compaction = absorbPendingCompact(preflight.compaction, selection.headControl);
       const controlId =
         preflight?.compaction.kind === "compact"
           ? (preflight.compaction.controlMessageId ?? preflight.compaction.satisfiesControlId)

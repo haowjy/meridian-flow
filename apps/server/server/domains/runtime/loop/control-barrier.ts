@@ -1,5 +1,6 @@
 /** Selects one boundary's eligible inbox prefix before Work coalescing or acknowledgement. */
 import type { ControlBody } from "@meridian/contracts/threads";
+import type { CompactionDecision } from "./compaction/decision.js";
 import type { InboxMessage } from "./ports.js";
 
 export type ControlMessage = InboxMessage & { intent: "control"; body: ControlBody };
@@ -24,4 +25,16 @@ export function planControlBarrier(input: {
     ),
     execute: execute ? head : null,
   };
+}
+
+/** Required compaction retires a queued compact without reserving a second C. */
+export function absorbPendingCompact(
+  decision: CompactionDecision,
+  headControl: ControlMessage | null,
+): CompactionDecision {
+  return decision.kind === "compact" &&
+    !decision.controlMessageId &&
+    headControl?.body.kind === "compact"
+    ? { ...decision, satisfiesControlId: headControl.id }
+    : decision;
 }

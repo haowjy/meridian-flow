@@ -37,7 +37,10 @@ message or a row in another thread returns 409 (`control_id_conflict`).
 ```
 
 Withdrawal acknowledges an unbound pending row. If a live run already bound
-it, withdrawal requests Stop for that run instead. A finished or withdrawn row
+it as `controlMessageId`, withdrawal requests Stop for that run instead.
+An automatic compaction that absorbed it as `satisfiesControlId` returns
+`already_finished`; its reply continues and C retires the control.
+A finished or withdrawn row
 returns `already_finished`. An unknown control returns 404
 (`control_not_found`). Withdrawal and reservation share the thread lock, so
 exactly one wins. Stop on a manual divider preserves unanswered messages adopted by the control;

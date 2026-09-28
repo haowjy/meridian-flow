@@ -19,6 +19,9 @@
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
 
 ### Fixed
+- Keep failed replies sweep-paced when a compact request waits behind them.
+- Withdrawing an absorbed compact request leaves the writer's reply running.
+- Refuse back-to-back manual compaction until new history arrives.
 - Stop an automatic compaction even when it absorbed a queued manual request. Retry pre-reservation failures through the sweep, not a tight loop.
 - Keep pending-placeholder roles and predicates in contracts, SQL in the database package, and interruption copy in the threads domain.
 - Retry failed warm summaries cold once. Bound summary output without changing cached thinking.

@@ -3,6 +3,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
+import { planControlBarrier } from "./control-barrier.js";
 import { type CurrentTurn, DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
 import { createRunStarter } from "./run-starter.js";
 import {
@@ -96,7 +97,8 @@ export function createRunSessions(deps: {
           const pending = await deps.delivery.selectPending(threadId);
           if (
             session.currentTurn &&
-            (pending.some((message) => message.intent === "control") ||
+            (planControlBarrier({ pending, chainedIds: new Set(), boundIds: new Set() }).execute !==
+              null ||
               ((releaseUnanswered || (restartPending && !session.controller.signal.aborted)) &&
                 pending.some((message) => message.intent === "message")))
           ) {

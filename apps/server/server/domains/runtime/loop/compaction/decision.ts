@@ -1,5 +1,6 @@
 /** A request boundary's compaction choice; committed with its selected leaf and inbox batch. */
 import type { Block, Turn } from "@meridian/contracts/threads";
+import { orderTurnsByPosition } from "../../../threads/order-turns.js";
 import type { GenerateRequest, TokenizerFamily } from "../../gateway/index.js";
 import { estimateRequestTokens } from "./estimate.js";
 import { type CompactionPlan, planCompaction } from "./plan.js";
@@ -84,6 +85,13 @@ export function decideCompaction(input: {
     }),
     tokenizer: input.tokenizer,
   });
+  // A retained tail is not new history: consecutive manual controls cannot
+  // repeatedly summarize it without an intervening completed turn.
+  const immediatelyAfterCompaction =
+    input.forcedDecision?.trigger === "manual" &&
+    orderTurnsByPosition(input.turns)
+      .reverse()
+      .find((turn) => turn.status === "complete")?.role === "compaction";
   return input.forcedDecision?.trigger === "manual" ||
     (plan.outcome === "planned" && plan.minimalTailFits)
     ? {
@@ -98,7 +106,7 @@ export function decideCompaction(input: {
           input.forcedDecision?.trigger !== "manual" ||
           (input.thresholdTokens !== null && tokensBefore >= input.thresholdTokens),
         ...(input.controlMessageId ? { controlMessageId: input.controlMessageId } : {}),
-        ...(plan.outcome === "no_compaction"
+        ...(immediatelyAfterCompaction || plan.outcome === "no_compaction"
           ? { refusal: "nothing_to_compact" as const }
           : !plan.minimalTailFits
             ? { refusal: "context_too_large" as const }

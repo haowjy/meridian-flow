@@ -694,14 +694,19 @@ Writer enqueue keeps writer turns visible immediately. Its prefix materializer
 uses the barrier but never reserves a control. Idle materialization holds a
 claim, finalizes orphan placeholders first, and then uses the same selection.
 A normal assistant close defers an executable control to the post-release wake;
-a tool boundary executes it inline. Both durable wake sweeps include controls. Pre-reservation failures retry through
-the sweep, not a hot post-release loop.
+a tool boundary executes it inline. Both durable wake sweeps include controls.
+Cleanup wakes only when the raw pending barrier can execute a control now,
+with no bound/chained exemptions from the released run. A directed row ahead
+of K follows the ordinary message restart rule; failed replies and failures
+before reservation retry through the sweep, not a hot post-release loop.
 
 Manual decisions fit against the usable window; their tail budget base is
 `min(trigger, tokensBefore)`. Automatic and overflow decisions use their fit
 limit as the tail budget base. Pins include the existing unacknowledged receipt
 and newly adopted directed rows, even across consecutive controls. A refusal
 records an error divider without calling the summarizer or opening an epoch.
+A manual control immediately after completed C refuses with `nothing_to_compact`;
+C's retained tail is not new history.
 
 A control's ending commit acknowledges its row, then reserves/binds the next
 due control, reserves B for an outstanding message or ongoing task, or releases
@@ -712,5 +717,9 @@ semantics. A crash leaves K pending for redelivery after orphan finalization.
 
 `thread-controls.ts` owns writer enqueue and withdrawal, separately from the
 message producer port. Client ids remain taken after execution or withdrawal.
-The thread lock serializes withdrawal with reservation; a bound live row becomes
-Stop. See [HTTP contracts](../../../../../../docs/api/thread-controls.md).
+The thread lock serializes withdrawal with reservation. A manual control bound
+as `controlMessageId` becomes Stop. An absorbed `satisfiesControlId` returns
+`already_finished`: the automatic C still retires it and answers its messages.
+`absorbPendingCompact` owns satisfaction selection for initial and mid-run
+reservation. Control enqueue finds the latest matching turn by control id,
+not by loading the transcript. See [HTTP contracts](../../../../../../docs/api/thread-controls.md).

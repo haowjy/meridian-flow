@@ -5,7 +5,11 @@ import { isPendingPlaceholder } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
 import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
-import { type ControlMessage, planControlBarrier } from "../loop/control-barrier.js";
+import {
+  absorbPendingCompact,
+  type ControlMessage,
+  planControlBarrier,
+} from "../loop/control-barrier.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
 import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
@@ -373,15 +377,8 @@ export function createDeliveryAdapter(
         workContext: work.workContext,
       });
       prepared = await input.prepareNextContext(drain, preparedCurrent, selection);
-      if (
-        prepared.compaction?.kind === "compact" &&
-        !prepared.compaction.controlMessageId &&
-        selection.headControl?.body.kind === "compact"
-      )
-        prepared.compaction = {
-          ...prepared.compaction,
-          satisfiesControlId: selection.headControl.id,
-        };
+      if (prepared.compaction)
+        prepared.compaction = absorbPendingCompact(prepared.compaction, selection.headControl);
     } catch (error) {
       if (input.signal?.aborted) throw error;
       preparationFailure = error;
@@ -597,7 +594,8 @@ export function createDeliveryAdapter(
       withThreadLock: threadLock.withThreadLock,
       findMessage: inbox.findMessage,
       enqueue,
-      turns: (id) => deps.repos.turns.listByThread(id),
+      findTurn: (id) => deps.repos.turns.findById(id),
+      findControlTurn: (id, controlId) => deps.repos.turns.findByControlId(id, controlId),
       pending: (id) => readPendingInbox(inbox, id),
       lockReceipt: leaseStore.lockThreadReceipt,
       cancel: deps.runClaim.cancelExecution,

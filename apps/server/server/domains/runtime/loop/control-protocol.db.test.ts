@@ -38,6 +38,87 @@ else
       });
     }
 
+    it("C6 provider error on M with K queued behind stays sweep-paced", async () => {
+      const gateway = scriptedGateway({ usage: { inputTokens: 100, outputTokens: 10 } });
+      const stream = gateway.stream;
+      let failing = true;
+      gateway.stream = async function* (request) {
+        if (!failing) {
+          yield* stream(request);
+          return;
+        }
+        gateway.requests.push(request);
+        yield {
+          type: "error",
+          code: "provider_error",
+          message: "provider failed",
+          retryable: false,
+        };
+      };
+      const rig = await manualFixture({ gateway });
+      await rig.send(rig.threadId, "M ahead of K");
+      await compactControl(rig);
+      await drainControls(rig);
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      const calls = gateway.requests.length;
+      console.log(`C6 provider error gateway calls in 5s: ${calls}`);
+      failing = false;
+      // Let a pre-fix hot loop finish before this test releases its database.
+      if (calls === 1) await drainControls(rig);
+      await settled(rig);
+      expect(calls).toBe(1);
+    });
+
+    it.each([
+      "unsettled",
+      "execution_error",
+    ])("C6 auto C with absorbed K and a failed successor stays sweep-paced: %s", async (path) => {
+      const rig = await fixture({
+        gateway: scriptedGateway({ usage: { inputTokens: 100, outputTokens: 10 } }),
+      });
+      await rig.send(rig.threadId, "M ahead of K");
+      await compactControl(rig);
+      const split = rig.delivery.splitAndContinue.bind(rig.delivery);
+      const read = rig.runClaim.read.bind(rig.runClaim);
+      let failedSuccessor = false;
+      rig.delivery.splitAndContinue = async () => {
+        failedSuccessor = true;
+        throw new Error("successor unavailable");
+      };
+      rig.runClaim.read = async (id) => {
+        if (path === "execution_error" && failedSuccessor) {
+          failedSuccessor = false;
+          throw new Error("status read failed after successor failure");
+        }
+        return read(id);
+      };
+      const outcome = await drainControls(rig);
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      const calls = rig.summarizer.calls.length;
+      console.log(`C6 failed auto successor (${path}) summary calls in 5s: ${calls}`);
+      rig.delivery.splitAndContinue = split;
+      rig.runClaim.read = read;
+      if (calls === 1) await drainControls(rig);
+      await settled(rig);
+      expect(calls).toBe(1);
+      expect(outcome.status).toBe(path === "execution_error" ? "error" : "failed");
+    });
+
+    it("C6 withdrawing an absorbed compact leaves M to be answered", async () => {
+      const rig = await fixture({
+        gateway: scriptedGateway({ usage: { inputTokens: 100, outputTokens: 10 } }),
+      });
+      await rig.send(rig.threadId, "M ahead of absorbed K");
+      const control = await compactControl(rig);
+      const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
+      const withdrawal = await rig.delivery.withdrawControl(rig.threadId, control.id);
+      await run.execute();
+      const turns = await settled(rig);
+      expect(withdrawal).toEqual({ outcome: "already_finished" });
+      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
+      expect(JSON.stringify(rig.gateway.requests.at(-1))).toContain("M ahead of absorbed K");
+    });
+
     it("C6 idle compact ends on C without reserving B", async () => {
       const rig = await fixture();
       rig.setThreshold(100000);
@@ -318,6 +399,11 @@ else
       const turns = await settled(rig);
       const cs = turns.filter((turn) => turn.role === "compaction");
       expect(cs).toHaveLength(count);
+      if (count === 2)
+        expect(cs[1]).toMatchObject({
+          status: "error",
+          metadata: { reason: "nothing_to_compact" },
+        });
       expect(turns.at(-1)?.role).toBe("assistant");
       for (const c of cs)
         if (c.status === "complete")
