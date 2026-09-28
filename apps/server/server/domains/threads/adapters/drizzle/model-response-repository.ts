@@ -4,7 +4,7 @@
  * returns the existing row instead of clobbering or duplicating it.
  */
 import * as schema from "@meridian/database/schema";
-import { and, asc, desc, eq, gt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import type {
   CreateModelResponseInput,
   CreateModelResponseResult,
@@ -87,6 +87,30 @@ export function createDrizzleModelResponseRepository(db: DrizzleDb): ModelRespon
         .from(schema.modelResponses)
         .innerJoin(schema.turns, eq(schema.turns.id, schema.modelResponses.turnId))
         .where(and(eq(schema.turns.threadId, threadId), eq(schema.turns.role, "assistant")))
+        .orderBy(desc(schema.turns.position), desc(schema.modelResponses.sequence))
+        .limit(1);
+      return row
+        ? {
+            ...row,
+            inputTokens: row.inputTokens ?? 0,
+            requestStartedAt: row.requestStartedAt?.toISOString() ?? null,
+          }
+        : null;
+    },
+    async findLatestForTurns(turnIds) {
+      if (turnIds.length === 0) return null;
+      const [row] = await currentDrizzleDb(db)
+        .select({
+          turnId: schema.modelResponses.turnId,
+          sequence: schema.modelResponses.sequence,
+          model: schema.modelResponses.model,
+          requestStartedAt: schema.modelResponses.requestStartedAt,
+          inputTokens: schema.modelResponses.inputTokens,
+          requestMessageCount: schema.modelResponses.requestMessageCount,
+        })
+        .from(schema.modelResponses)
+        .innerJoin(schema.turns, eq(schema.turns.id, schema.modelResponses.turnId))
+        .where(and(inArray(schema.turns.id, turnIds), eq(schema.turns.role, "assistant")))
         .orderBy(desc(schema.turns.position), desc(schema.modelResponses.sequence))
         .limit(1);
       return row

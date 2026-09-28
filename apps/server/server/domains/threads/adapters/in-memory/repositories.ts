@@ -1083,6 +1083,33 @@ export function createInMemoryRepositories(
           }
         : null;
     },
+    async findLatestForTurns(turnIds) {
+      const turnById = new Map(
+        [...turns.values()]
+          .filter((turn) => turnIds.includes(turn.id))
+          .map((turn) => [turn.id, turn]),
+      );
+      const latest = [...modelResponses.values()]
+        .flatMap((response) => {
+          const turn = turnById.get(response.turnId);
+          return turn && turn.role === "assistant" ? [{ response, turn }] : [];
+        })
+        .sort(
+          (left, right) =>
+            right.turn.position - left.turn.position ||
+            right.response.sequence - left.response.sequence,
+        )[0]?.response;
+      return latest
+        ? {
+            turnId: latest.turnId,
+            sequence: latest.sequence,
+            model: latest.model,
+            requestStartedAt: latest.requestStartedAt,
+            inputTokens: latest.inputTokens,
+            requestMessageCount: latest.requestMessageCount,
+          }
+        : null;
+    },
     async listByThread(threadId) {
       const turnIds = new Set(
         [...turns.values()].filter((turn) => turn.threadId === threadId).map((turn) => turn.id),

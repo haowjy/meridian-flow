@@ -30,7 +30,7 @@ export interface ConversationSummarizerDeps {
 }
 
 function instructionText(
-  instruction: "compaction" | "handoff_brief",
+  instruction: "compaction" | "handoff",
   maxTokens: number,
   incomingAgentName?: string,
 ): string {
@@ -38,6 +38,11 @@ function instructionText(
     instruction === "compaction"
       ? "Summarize this conversation so the writer's task can continue from the summary."
       : `Write a handoff brief for ${incomingAgentName}, the incoming Agent, so it can continue the writer's task.`,
+    ...(instruction === "handoff"
+      ? [
+          "If the conversation ends with a writer message you have not answered, report it as the open request; do not answer it.",
+        ]
+      : []),
     "Return only the summary, without calling tools or continuing the task.",
     "Preserve the objective, decisions made, open questions, unfinished work and next steps.",
     "For each document, distinguish edits already made from edits still pending.",
@@ -83,7 +88,7 @@ export function createConversationSummarizer(
     maxOutputTokens: config.maxOutputTokens,
     async summarize(input): Promise<SummaryOutcome> {
       const modelResponses: SummaryResponse[] = [];
-      const summarizer: SummaryOutcome["summarizer"] = { path: "cold", segments: 0 };
+      const summarizer: SummaryOutcome["summarizer"] = { path: "rolling", segments: 0 };
       const outcome = { modelResponses, summarizer };
       // The one catch spans every path/segment so a later failure cannot lose a paid row.
       try {
@@ -207,20 +212,25 @@ export function createConversationSummarizer(
           return result;
         }
 
-        if (input.requestInHand && !input.forceCold && prediction.state === "warm") {
-          summarizer.path = "warm";
+        const branchRequest = input.requestInHand;
+        if (
+          branchRequest !== null &&
+          (input.path === "branch" ||
+            (input.path === "branch_if_warm" && prediction.state === "warm"))
+        ) {
+          summarizer.path = "branch";
           summarizer.segments = 1;
           try {
-            const original = input.requestInHand.maxTokens ?? threadModel.maxOutputTokens;
+            const original = branchRequest.maxTokens ?? threadModel.maxOutputTokens;
             const cap =
               config.maxOutputTokens +
-              thinkingBudgetTokens(input.requestInHand, threadModel.maxOutputTokens);
+              thinkingBudgetTokens(branchRequest, threadModel.maxOutputTokens);
             const result = await call(
               {
-                ...input.requestInHand,
+                ...branchRequest,
                 ...(cap < original ? { maxTokens: cap } : {}),
                 messages: [
-                  ...input.requestInHand.messages,
+                  ...branchRequest.messages,
                   {
                     role: "user",
                     content: [
@@ -260,7 +270,7 @@ export function createConversationSummarizer(
           }
         }
 
-        summarizer.path = "cold";
+        summarizer.path = "rolling";
         summarizer.segments = 0;
         const model = cheapModel ?? threadModel;
         const usableWindow =

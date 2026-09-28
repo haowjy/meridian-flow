@@ -9,7 +9,7 @@ export type SummaryResponse = ModelResponseReceivedRow & { providerData?: unknow
 export type { SummaryRejectionReason } from "@meridian/contracts/runtime";
 export type SummaryOutcome = {
   modelResponses: SummaryResponse[];
-  summarizer: { path: "warm" | "cold"; segments: number };
+  summarizer: { path: "branch" | "rolling"; segments: number };
 } & (
   | { kind: "complete"; text: string; model: string }
   | { kind: "failed"; error: unknown; rejectionReason?: SummaryRejectionReason }
@@ -24,11 +24,11 @@ export interface ConversationSummarizer {
   summarize(input: {
     owner: { threadId: ThreadId; turnId: TurnId };
     source: { threadId: ThreadId; throughTurnId?: TurnId };
-    instruction: "compaction" | "handoff_brief";
+    instruction: "compaction" | "handoff";
     incomingAgentName?: string;
     changedDocuments?: readonly string[];
     requestInHand: GenerateRequest | null;
-    forceCold?: boolean;
+    path: "branch" | "branch_if_warm" | "rolling";
     /** Warm compaction exclusions, rendered from the plan's retained pin/tail slices. */
     retainedMessages?: readonly Message[];
     /** Cold source: only the cut (excluding the retained pin/tail), plus prior summary context. */

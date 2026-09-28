@@ -21,17 +21,22 @@ The caller supplies the source projection. Both callers build it with
 ([compaction](compaction.md#one-projection-authority)), so a compacted source
 keeps its summary bytes.
 
-## Warm, then cold
+## Branch and rolling paths
 
-The path comes from one `prefixCacheStateFor` call on the source's model
-([request assembly](request-assembly.md#cache-state-and-cache-hints)); only
-`state` chooses it.
+The caller selects `path`; cache prediction reports expected reuse but does not
+choose handoff's request shape. `branch` always sends the source-shaped request,
+`branch_if_warm` sends it only when the prediction is warm, and `rolling` skips
+the branch. Handoff uses `branch` at every cutoff; compaction uses
+`branch_if_warm` or `rolling`.
 
-**Warm** sends the request in hand plus one appended system-origin
+**Branch** sends the request in hand plus one appended system-origin
 instruction, with the output cap lowered to the summary reserve plus the
 thinking budget. It never raises the cap or changes other fields: tools,
-`tool_choice`, reasoning, `promptCacheKey`, and cache marks stay as assembled,
-so the prefix stays warm. The warm row records the thread model's prediction.
+`tool_choice`, reasoning, `promptCacheKey`, and cache marks stay as assembled.
+The response row records the source model's cache prediction, including a cold
+prediction. For a handoff, the appended instruction names the incoming Agent
+and says an unanswered writer message is an open request, not something to
+answer.
 
 For a compaction, the warm instruction also names what the summary is not
 replacing (issue [#619][i619]): the plan's retained pins and tail, each
@@ -51,14 +56,17 @@ projection (the history the summarizer reads, not only the planned cut)
 supplies the changed URIs, named in the instruction (appended on warm, in the
 system prompt on cold). Warm requests keep their prefix unchanged.
 
-Any unusable warm response or provider failure runs **cold** once; Stop does
-not. Cold uses `COMPACTION_SUMMARIZER_MODEL` (default DeepSeek Flash), or the
-retained source model when that provider is disabled. Every cold row records
-`cold/summary_transcript`, never the thread prefix's prediction: its request
-does not share the thread's prefix. (A handoff from an older cutoff predicts
-`cold/fork_cutoff` for the source, which is why it takes the cold path.)
+For compaction, an unusable warm response or provider failure runs **rolling**
+once; Stop does not. A handoff also falls back to rolling after any branch
+failure except Stop, retaining the branch attempt row. A source-preparation
+failure uses rolling directly. Rolling uses `COMPACTION_SUMMARIZER_MODEL`
+(default DeepSeek Flash), or the retained source model when that provider is
+disabled. Each rolling row records `rolling/summary_transcript`, not the
+thread-prefix prediction. A handoff's older-cutoff prediction is truncated to
+the cutoff's ancestor chain: responses from abandoned sibling branches or
+descendant turns cannot make it appear warm.
 
-Cold receives only the cut blocks and prior summary (`projectCompactedHistory`
+Rolling receives only the cut blocks and prior summary (`projectCompactedHistory`
 drops the retained pin and tail). It renders model-visible custom content,
 omits opaque reasoning and thinking, and labels prior context. Before any cold
 call, all turns are measured. Oversized turns replace re-readable tool bodies
@@ -80,7 +88,8 @@ a later segment fails or Stop aborts it. Adapters never throw after a paid
 call; unexpected throws are error-level events. Summary rejections share one
 contract reason set (`SummaryRejectionReason` in `@meridian/contracts/runtime`:
 `max_tokens`, `provider_error`, `tool_use`, `empty_text`); each owner composes
-its own failure phases.
+its own failure phases. Handoff seed metadata calls the path `branch` or
+`rolling`; telemetry does not decide the fallback policy.
 
 `settleSummaryResponses` (`loop/settle-summary-responses.ts`) writes
 predictions, request sizes, and debits through `TurnAccounting.computeAndDebit`

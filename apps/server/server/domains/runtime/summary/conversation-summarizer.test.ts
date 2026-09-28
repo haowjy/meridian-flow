@@ -84,6 +84,7 @@ function setup(
     owner: { threadId: "thread", turnId: "summary" },
     source: { threadId: "thread" },
     instruction: "compaction",
+    path: "branch_if_warm",
     requestInHand: {
       model: threadModel.id,
       messages: [{ role: "user", content: [{ type: "text", text: "Task" }] }],
@@ -187,7 +188,7 @@ describe("conversation summarizer", () => {
     ]);
     expect(result).toMatchObject({
       kind: "complete",
-      summarizer: { path: "warm", segments: 1 },
+      summarizer: { path: "branch", segments: 1 },
       modelResponses: [
         {
           predictedCacheState: "warm",
@@ -224,7 +225,10 @@ describe("conversation summarizer", () => {
       },
     });
     const outcome = await rig.service.summarize(rig.input);
-    expect(outcome).toMatchObject({ kind: "complete", summarizer: { path: "cold", segments: 1 } });
+    expect(outcome).toMatchObject({
+      kind: "complete",
+      summarizer: { path: "rolling", segments: 1 },
+    });
     expect(outcome.modelResponses).toHaveLength(2);
     expect(outcome.modelResponses[1]).toMatchObject({
       predictedCacheState: "cold",
@@ -432,7 +436,7 @@ describe("conversation summarizer", () => {
     expect(outcome).toMatchObject({
       kind: "complete",
       model: cheapModel.id,
-      summarizer: { path: "cold", segments: 1 },
+      summarizer: { path: "rolling", segments: 1 },
     });
     expect(outcome.modelResponses).toHaveLength(2);
     expect(rig.requests.map((r) => r.model)).toEqual([threadModel.id, cheapModel.id]);
@@ -455,7 +459,7 @@ describe("conversation summarizer", () => {
     expect(outcome).toMatchObject({
       kind: "complete",
       text: "Summary 3",
-      summarizer: { path: "cold", segments: 3 },
+      summarizer: { path: "rolling", segments: 3 },
     });
     expect(outcome.modelResponses).toHaveLength(3);
     rig.requests.forEach((request, index) => {
@@ -488,7 +492,7 @@ describe("conversation summarizer", () => {
   it("falls back to the thread model when the configured provider is disabled, including idle callers", async () => {
     const rig = setup({ models: [threadModel] });
     rig.input.requestInHand = null;
-    rig.input.instruction = "handoff_brief";
+    rig.input.instruction = "handoff";
     expect((await rig.service.summarize(rig.input)).kind).toBe("complete");
     expect(rig.requests[0].model).toBe(threadModel.id);
     expect(JSON.stringify(rig.requests[0])).toContain("handoff brief");
@@ -496,7 +500,7 @@ describe("conversation summarizer", () => {
 
   it("forces cold despite warm state and renders images as URI and prior summaries as context", async () => {
     const rig = setup({ warm: true });
-    rig.input.forceCold = true;
+    rig.input.path = "rolling";
     rig.input.projection = projection([
       "Conversation summary. Earlier turns were compacted. Established story facts.",
     ]);
@@ -597,13 +601,15 @@ it.each([
   expect(JSON.stringify(sent.messages)).toContain("manuscript://chapter-12.md");
   expect(JSON.stringify(sent.messages)).not.toContain("thread_history");
   expect(JSON.stringify(rig.input.requestInHand)).toBe(before);
-  if (warm) expect(sent.messages.slice(0, -1)).toEqual(rig.input.requestInHand!.messages);
+  if (warm) expect(sent.messages.slice(0, -1)).toEqual(rig.input.requestInHand?.messages);
 });
 
 it("C7b warm brief preserves the source request and tools, correlating rows to the owner", async () => {
   const rig = setup({ warm: true });
+  const requestInHand = rig.input.requestInHand;
+  if (!requestInHand) throw new Error("Expected a source request");
   const sourceRequest = {
-    ...rig.input.requestInHand!,
+    ...requestInHand,
     tools: [
       {
         type: "function" as const,
@@ -617,7 +623,7 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
     ...rig.input,
     owner: { threadId: "destination", turnId: "seed" },
     source: { threadId: "thread", throughTurnId: "cutoff" },
-    instruction: "handoff_brief",
+    instruction: "handoff",
     incomingAgentName: "Editor",
     requestInHand: sourceRequest,
   });
@@ -626,6 +632,9 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
   expect(request.tools).toEqual(sourceRequest.tools);
   expect(request.messages).toHaveLength(sourceRequest.messages.length + 1);
   expect(JSON.stringify(request.messages.at(-1))).toContain("Editor");
+  expect(JSON.stringify(request.messages.at(-1))).toContain(
+    "report it as the open request; do not answer it.",
+  );
   expect(JSON.stringify(request.messages.at(-1))).not.toContain("thread_history");
   expect(request.correlation).toEqual({ threadId: "destination", turnId: "seed" });
   expect(outcome.modelResponses[0].turnId).toBe("seed");
@@ -634,11 +643,43 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
   );
 });
 
+it("branches at a cold cutoff with the source model and byte-identical tools", async () => {
+  const rig = setup({ warm: false });
+  const tools = [
+    {
+      type: "function" as const,
+      name: "read",
+      description: "Read a source document",
+      inputSchema: { type: "object", properties: { uri: { type: "string" } } },
+    },
+  ];
+  const requestInHand = rig.input.requestInHand;
+  if (!requestInHand) throw new Error("Expected a source request");
+  const sourceRequest = {
+    ...requestInHand,
+    tools,
+    reasoning: { effort: "high" as const },
+  };
+  const outcome = await rig.service.summarize({
+    ...rig.input,
+    instruction: "handoff",
+    path: "branch",
+    requestInHand: sourceRequest,
+  });
+
+  expect(outcome).toMatchObject({ kind: "complete", summarizer: { path: "branch", segments: 1 } });
+  expect(rig.requests).toHaveLength(1);
+  expect(rig.requests[0].model).toBe(threadModel.id);
+  expect(rig.requests[0].tools).toEqual(tools);
+  expect(rig.requests[0].reasoning).toEqual({ effort: "high" });
+  expect(rig.prefixCacheStateFor).toHaveBeenCalled();
+});
+
 it("C7b a cold transcript needs no source model when the cheap model is enabled", async () => {
   const rig = setup({ models: [cheapModel] });
   const outcome = await rig.service.summarize({
     ...rig.input,
-    instruction: "handoff_brief",
+    instruction: "handoff",
     incomingAgentName: "Editor",
     requestInHand: null,
   });

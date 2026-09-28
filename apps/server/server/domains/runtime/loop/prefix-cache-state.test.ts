@@ -130,6 +130,9 @@ describe("derivePrefixCacheState", () => {
           async findLatestByThread() {
             return latest;
           },
+          async findLatestForTurns() {
+            return latest;
+          },
         },
       },
     });
@@ -173,6 +176,9 @@ describe("derivePrefixCacheState", () => {
           async findLatestByThread() {
             return { ...response("turn-1"), inputTokens: 0 };
           },
+          async findLatestForTurns() {
+            return { ...response("turn-1"), inputTokens: 0 };
+          },
         },
       },
     });
@@ -214,6 +220,9 @@ describe("derivePrefixCacheState", () => {
         },
         modelResponses: {
           async findLatestByThread() {
+            return response("turn-1");
+          },
+          async findLatestForTurns() {
             return response("turn-1");
           },
         },
@@ -534,7 +543,7 @@ it.each([
   expect(derivePrefixCacheState(input)).toEqual({ state: "warm", reason: "reusable_prefix" });
 });
 
-it("C7b an explicit older source cutoff is cold and supplies no baseline", async () => {
+it("truncates an older source cutoff before predicting the cache prefix", async () => {
   const h = history({ turns: [turn("turn-1", 1), turn("turn-2", 2)] });
   const service = createPrefixCacheStateService({
     repos: {
@@ -555,6 +564,9 @@ it("C7b an explicit older source cutoff is cold and supplies no baseline", async
         async findLatestByThread() {
           return response("turn-2");
         },
+        async findLatestForTurns(turnIds) {
+          return turnIds.includes("turn-1") ? response("turn-1") : null;
+        },
       },
     },
   });
@@ -574,10 +586,13 @@ it("C7b an explicit older source cutoff is cold and supplies no baseline", async
     },
   };
   expect(await service.prefixCacheStateFor(input)).toEqual({
-    state: "cold",
-    reason: "fork_cutoff",
+    state: "warm",
+    reason: "reusable_prefix",
   });
-  expect(await service.reusableResponseFor(input)).toBeNull();
+  expect(await service.reusableResponseFor(input)).toEqual({
+    inputTokens: 100,
+    messageCount: 2,
+  });
 });
 
 it("C7b brief rows cannot warm a destination or supply its token baseline", () => {

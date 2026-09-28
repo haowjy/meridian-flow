@@ -145,6 +145,8 @@ export interface ModelResponseRepository {
   findById(id: string): Promise<ModelResponse | null>;
   /** Most recent non-compaction response by turn position and sequence; cache and estimate facts. */
   findLatestByThread(threadId: ThreadId): Promise<LatestModelResponse | null>;
+  /** Most recent response whose turn belongs to the supplied active ancestor chain. */
+  findLatestForTurns(turnIds: readonly TurnId[]): Promise<LatestModelResponse | null>;
   listByTurn(turnId: TurnId): Promise<ModelResponse[]>;
   listByThread(threadId: ThreadId): Promise<ModelResponse[]>;
   sumUsageByThread(threadId: ThreadId): Promise<{
