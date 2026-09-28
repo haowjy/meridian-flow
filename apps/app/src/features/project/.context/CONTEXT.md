@@ -386,7 +386,11 @@ registers one same-tab persistence attempt before navigating to its UUID route.
 Only that explicit attempt may sequence the route behind creation; afterwards the
 ordinary owner-gated project and shell-data reads still establish authority.
 Creation failure and same-identity retry stay on the destination, while the
-project-list cache receives only confirmed projects.
+project-list cache receives only confirmed projects. Independent identity,
+thread, Work, and working-set reads start together. The project route bootstrap
+installs their cache snapshots and adopts working-set state in a layout commit
+before mounting `ReadableProjectRoute`; query or driver mutation during render is
+forbidden.
 
 The basic `EditorView` is a static dependency of the project hosts, not a lazy
 chunk fetched on first New/open. This makes a loaded empty workspace capable of

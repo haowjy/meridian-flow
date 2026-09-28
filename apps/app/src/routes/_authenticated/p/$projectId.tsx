@@ -1,13 +1,19 @@
 /** Authorized project identity and persistent shell lifetime for readable child destinations. */
 import { Trans } from "@lingui/react/macro";
+import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useRouter, useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useLayoutEffect, useState } from "react";
 import {
   isProjectCreationPending,
   projectCreationFailed,
   retryProjectCreation,
 } from "@/client/project-creation";
-import { loadProjectEntry } from "@/client/query/project-route-data";
+import {
+  loadProjectEntry,
+  type ProjectRouteData,
+  seedProjectRouteData,
+} from "@/client/query/project-route-data";
+import { hydrateWorkingSet, type WorkingSetHydrationPlan } from "@/client/working-set";
 import { Button } from "@/components/ui/button";
 import { ReadableProjectRoute } from "@/features/project/routing/ReadableProjectRoute";
 import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
@@ -82,9 +88,30 @@ function ProjectRoute() {
   const { user } = AuthenticatedRoute.useLoaderData();
   return (
     <ProjectIdentityBoundary projectId={project.id}>
-      <ReadableProjectRoute key={project.id} project={project} data={data} user={user} />
+      <ProjectRouteBootstrap key={project.id} project={project} data={data} user={user} />
     </ProjectIdentityBoundary>
   );
+}
+
+function ProjectRouteBootstrap({
+  project,
+  data,
+  user,
+}: {
+  project: ReturnType<typeof Route.useLoaderData>["project"];
+  data: ProjectRouteData;
+  user: ReturnType<typeof AuthenticatedRoute.useLoaderData>["user"];
+}) {
+  const queryClient = useQueryClient();
+  const [entryHydration, setEntryHydration] = useState<WorkingSetHydrationPlan | null>(null);
+  useLayoutEffect(() => {
+    seedProjectRouteData(queryClient, project.id, data);
+    setEntryHydration(
+      hydrateWorkingSet(project.id, data.workingSet, user.workingSetSyncEnabled === true),
+    );
+  }, [data, project.id, queryClient, user.workingSetSyncEnabled]);
+  if (!entryHydration) return <PendingProject />;
+  return <ReadableProjectRoute project={project} entryHydration={entryHydration} user={user} />;
 }
 
 /** Fence the previous live project synchronously, before the next loader settles. */

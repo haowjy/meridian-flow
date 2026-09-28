@@ -23,7 +23,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { updateProject } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import type { ProjectRouteData } from "@/client/query/project-route-data";
 import { useContextCatalogWake } from "@/client/query/useContextCatalog";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -131,8 +130,6 @@ export type ProjectViewProps = {
   projectId: string;
   /** Full route-loaded project, used before the account list query is ready. */
   project: Project;
-  workingSet: ProjectRouteData["workingSet"];
-  workingSetSyncEnabled: boolean;
   /** Resolved screen key from the route (defaults to Chat). */
   activeScreen: ScreenKey;
   /** What the Chat screen or the dock currently shows for chat. */

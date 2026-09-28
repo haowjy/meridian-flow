@@ -85,6 +85,7 @@ export function ProjectLibrary() {
                       <Link
                         to="/p/$projectId/$"
                         params={{ projectId: project.id, _splat: "" }}
+                        preload="intent"
                         className="group focus-ring block rounded-xl"
                         aria-label={t`Open ${title}`}
                       >

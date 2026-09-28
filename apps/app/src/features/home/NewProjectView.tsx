@@ -2,7 +2,7 @@
 import { Trans } from "@lingui/react/macro";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { beginProjectCreation } from "@/client/project-creation";
 import { useProjectActions } from "@/client/stores";
 import { MeridianMark } from "@/components/app/MeridianMark";
@@ -17,6 +17,12 @@ export function NewProjectView() {
   const [projectId] = useState(() => crypto.randomUUID());
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    // The destination UUID does not exist yet, so route preloading would run
+    // owner-gated loaders into a 404. Warm only the inevitable workspace code.
+    void import("@/features/project/routing/ReadableProjectRoute").catch(() => undefined);
+  }, []);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
