@@ -165,6 +165,17 @@ function compareKey(left: TranscriptKey, right: TranscriptKey): number {
   return left.position - right.position || left.sequence - right.sequence;
 }
 
+function isCursorPositionConsistent(cursor: TranscriptCursor): boolean {
+  if (compareKey(cursor.k, cursor.a) <= 0) return true;
+  // Newest-first previews can fill a page before the settled chain starts.
+  // This sentinel restarts before the anchor and is the only key above it.
+  return (
+    cursor.o === "newest_first" &&
+    cursor.k.position === cursor.a.position + 1 &&
+    cursor.k.sequence === -1
+  );
+}
+
 function isKeyTuple(value: unknown): value is [number, number] {
   return (
     Array.isArray(value) &&
@@ -240,7 +251,9 @@ function encodeCursor(cursor: TranscriptCursor): string {
 export function cursorAfter(cursor: string, key: TranscriptKey): string {
   const decoded = decodeCursor(cursor);
   if (!isTranscriptKey(key)) throw new InvalidTranscriptCursorError();
-  return encodeCursor({ ...decoded, k: key });
+  const next = { ...decoded, k: key };
+  if (!isCursorPositionConsistent(next)) throw new InvalidTranscriptCursorError();
+  return encodeCursor(next);
 }
 
 function orderRows<T extends { turn: Turn; sequence: number }>(
@@ -356,7 +369,8 @@ export async function readTranscriptPage(
     (cursor.t !== thread.id ||
       cursor.o !== input.order ||
       cursor.u !== input.unit ||
-      cursor.r !== range)
+      cursor.r !== range ||
+      !isCursorPositionConsistent(cursor))
   ) {
     throw new InvalidTranscriptCursorError();
   }
@@ -395,9 +409,10 @@ export async function readTranscriptPage(
     }
 
     const firstUnsettled =
-      cursor || range === "inherited"
-        ? null
-        : await repos.turns.findFirstUnsettledTranscriptTurn(spans);
+      range === "inherited" ? null : await repos.turns.findFirstUnsettledTranscriptTurn(spans);
+    if (cursor && firstUnsettled && cursor.a.position >= firstUnsettled.position) {
+      throw new InvalidTranscriptCursorError();
+    }
     const anchor =
       cursor?.a ??
       (await (async () => {
@@ -479,9 +494,7 @@ export async function readTranscriptPage(
       const key = last
         ? { position: last.turn.position, sequence: last.sequence }
         : input.order === "newest_first"
-          ? input.unit === "turn"
-            ? { position: anchor.position + 1, sequence: -1 }
-            : { position: anchor.position, sequence: anchor.sequence + 1 }
+          ? { position: anchor.position + 1, sequence: -1 }
           : { position: anchor.position - 1, sequence: -1 };
       nextCursor = encodeCursor({
         v: 1,

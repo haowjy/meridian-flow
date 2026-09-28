@@ -556,8 +556,10 @@ owner-local `(afterPosition, throughPosition]` spans by following cutoff turns;
 it never loads the transcript to resolve lineage. `readTranscriptPage` reads
 those spans under one repeatable-read snapshot and pages by `(position,
 sequence)`. The Drizzle keyset query unions one index-bounded branch per span,
-then fetches only selected turn/block rows; the in-memory adapter implements
-the same contract. `turns_thread_position_unique` and
+then fetches only selected turn/block rows. Every Drizzle reader query resolves
+the ambient connection per call, so anchor, unsettled, boundary, and item reads
+stay inside the same snapshot. The in-memory adapter implements the same
+contract. `turns_thread_position_unique` and
 `turn_blocks_turn_sequence` serve item pages. `turns_epoch_boundaries` serves
 complete bake boundaries, and `turns_unsettled` finds the settled-prefix
 anchor and orphan candidates. Cursors pin that anchor; only the first

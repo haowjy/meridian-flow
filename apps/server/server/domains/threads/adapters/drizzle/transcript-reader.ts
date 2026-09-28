@@ -6,6 +6,7 @@ import { asc, eq, inArray, sql } from "drizzle-orm";
 import type {
   ReadTranscriptItemsInput,
   TranscriptItemRow,
+  TranscriptSpan,
   TurnRepository,
 } from "../../ports/repositories.js";
 import { mapBlock, mapTurn } from "./mappers.js";
@@ -25,12 +26,15 @@ export function transcriptItemKeysSql(input: ReadTranscriptItemsInput) {
       positionConditions.push(sql`t.position <= ${span.throughPosition}`);
     if (input.through) positionConditions.push(sql`t.position <= ${input.through.position}`);
     if (input.after) {
-      const compare = input.order === "newest_first" ? sql`<` : sql`>`;
-      positionConditions.push(
-        input.unit === "item"
-          ? sql`(t.position ${compare} ${input.after.position} OR t.position = ${input.after.position})`
-          : sql`t.position ${compare} ${input.after.position}`,
-      );
+      const compare =
+        input.order === "newest_first"
+          ? input.unit === "item"
+            ? sql`<=`
+            : sql`<`
+          : input.unit === "item"
+            ? sql`>=`
+            : sql`>`;
+      positionConditions.push(sql`t.position ${compare} ${input.after.position}`);
     }
     if (input.unit === "turn") {
       return sql`(
@@ -42,27 +46,42 @@ export function transcriptItemKeysSql(input: ReadTranscriptItemsInput) {
       )`;
     }
 
+    const throughBlockBound = input.through
+      ? sql`AND b.sequence <= CASE WHEN t.position = ${input.through.position} THEN ${input.through.sequence} ELSE 2147483647 END`
+      : sql``;
+    const afterBlockBound = input.after
+      ? sql`AND b.sequence ${input.order === "newest_first" ? sql`<` : sql`>`}
+          CASE WHEN t.position = ${input.after.position} THEN ${input.after.sequence}
+            ELSE ${input.order === "newest_first" ? sql`2147483647` : sql`-1`} END`
+      : sql``;
     return sql`(
-      SELECT t.id AS turn_id, t.position,
-        COALESCE(b.sequence, -1)::int AS sequence, b.id AS block_id
+      SELECT t.id AS turn_id, t.position, b.sequence, b.id AS block_id
       FROM (
         SELECT t.id, t.thread_id, t.position
         FROM turns t
         WHERE ${sql.join(positionConditions, sql` AND `)}
         ORDER BY t.position ${direction}
-        LIMIT ${input.limit + 1}
+        LIMIT ${input.limit + 2}
       ) t
-      LEFT JOIN LATERAL (
-        SELECT b.id, b.sequence
-        FROM turn_blocks b
-        WHERE b.turn_id = t.id
-          ${input.through ? sql`AND (t.position <> ${input.through.position} OR b.sequence <= ${input.through.sequence})` : sql``}
-          ${input.after ? sql`AND (t.position <> ${input.after.position} OR b.sequence ${input.order === "newest_first" ? sql`<` : sql`>`} ${input.after.sequence})` : sql``}
-        ORDER BY b.sequence ${direction}
-        LIMIT ${input.limit + 1}
-      ) b ON TRUE
-      WHERE ${input.through ? sql`(t.position < ${input.through.position} OR (t.position = ${input.through.position} AND COALESCE(b.sequence, -1) <= ${input.through.sequence}))` : sql`TRUE`}
-        AND ${input.after ? sql`(t.position ${input.order === "newest_first" ? sql`<` : sql`>`} ${input.after.position} OR (t.position = ${input.after.position} AND COALESCE(b.sequence, -1) ${input.order === "newest_first" ? sql`<` : sql`>`} ${input.after.sequence}))` : sql`TRUE`}
+      CROSS JOIN LATERAL (
+        SELECT selected.id, selected.sequence
+        FROM (
+          SELECT b.id, b.sequence
+          FROM turn_blocks b
+          WHERE b.turn_id = t.id
+            ${throughBlockBound}
+            ${afterBlockBound}
+          ORDER BY b.sequence ${direction}
+          LIMIT ${input.limit + 1}
+        ) selected
+        UNION ALL
+        SELECT NULL::uuid AS id, -1::int AS sequence
+        WHERE NOT EXISTS (
+          SELECT 1 FROM turn_blocks existing WHERE existing.turn_id = t.id
+        )
+      ) b
+      WHERE ${input.through ? sql`(t.position < ${input.through.position} OR (t.position = ${input.through.position} AND b.sequence <= ${input.through.sequence}))` : sql`TRUE`}
+        AND ${input.after ? sql`(t.position ${input.order === "newest_first" ? sql`<` : sql`>`} ${input.after.position} OR (t.position = ${input.after.position} AND b.sequence ${input.order === "newest_first" ? sql`<` : sql`>`} ${input.after.sequence}))` : sql`TRUE`}
     )`;
   });
   const union =
@@ -78,6 +97,42 @@ export function transcriptItemKeysSql(input: ReadTranscriptItemsInput) {
   `;
 }
 
+/** SQL shape used by the first-unsettled lookup and its partial index plan. */
+export function transcriptUnsettledTurnsSql(spans: readonly TranscriptSpan[]) {
+  const branches = spans.map(
+    (span) => sql`(
+      SELECT t.id, t.position
+      FROM turns t
+      WHERE t.thread_id = ${span.threadId}::uuid
+        AND t.position > ${span.afterPosition}
+        ${span.throughPosition === null ? sql`` : sql`AND t.position <= ${span.throughPosition}`}
+        AND t.status IN ('pending','streaming','waiting_interrupt')
+      ORDER BY t.position ASC
+      LIMIT 1
+    )`,
+  );
+  return sql`
+    SELECT id FROM (${sql.join(branches, sql` UNION ALL `)}) unsettled
+    ORDER BY position ASC LIMIT 1
+  `;
+}
+
+/** SQL shape used by prompt-epoch boundary reads and their partial index. */
+export function transcriptBoundariesSql(spans: readonly TranscriptSpan[]) {
+  const branches = spans.map(
+    (span) => sql`(
+      SELECT t.id, t.position
+      FROM turns t
+      WHERE t.thread_id = ${span.threadId}::uuid
+        AND t.position > ${span.afterPosition}
+        ${span.throughPosition === null ? sql`` : sql`AND t.position <= ${span.throughPosition}`}
+        AND t.prompt_bake_id IS NOT NULL AND t.status = 'complete'
+      ORDER BY t.position ASC
+    )`,
+  );
+  return sql`SELECT id FROM (${sql.join(branches, sql` UNION ALL `)}) boundaries ORDER BY position ASC`;
+}
+
 export function createDrizzleTranscriptReader(
   db: DrizzleDb,
 ): Pick<
@@ -88,28 +143,29 @@ export function createDrizzleTranscriptReader(
   | "listTranscriptBoundaries"
   | "listUnsettledPrimaryTurns"
 > {
-  const turns = currentDrizzleDb(db);
+  // Resolve at call time so snapshot and thread-lock transactions stay ambient.
+  const turns = () => currentDrizzleDb(db);
   return {
     async readTranscriptItems(input): Promise<TranscriptItemRow[]> {
       if (input.spans.length === 0 || input.limit <= 0) return [];
-      const keyResult = await turns.execute(transcriptItemKeysSql(input));
+      const keyResult = await turns().execute(transcriptItemKeysSql(input));
       const keys = Array.from(keyResult as unknown as Iterable<ItemKey>);
       if (keys.length === 0) return [];
       const turnIds = [...new Set(keys.map((key) => key.turn_id))];
       const blockIds = [...new Set(keys.flatMap((key) => (key.block_id ? [key.block_id] : [])))];
-      const turnRows = await turns
+      const turnRows = await turns()
         .select()
         .from(schema.turns)
         .where(inArray(schema.turns.id, turnIds));
       const blockRows =
         input.unit === "turn"
-          ? await turns
+          ? await turns()
               .select()
               .from(schema.turnBlocks)
               .where(inArray(schema.turnBlocks.turnId, turnIds))
           : blockIds.length === 0
             ? []
-            : await turns
+            : await turns()
                 .select()
                 .from(schema.turnBlocks)
                 .where(inArray(schema.turnBlocks.id, blockIds));
@@ -144,25 +200,10 @@ export function createDrizzleTranscriptReader(
     },
     async findFirstUnsettledTranscriptTurn(spans) {
       if (spans.length === 0) return null;
-      const branches = spans.map(
-        (span) => sql`(
-        SELECT t.id, t.position
-        FROM turns t
-        WHERE t.thread_id = ${span.threadId}::uuid
-          AND t.position > ${span.afterPosition}
-          ${span.throughPosition === null ? sql`` : sql`AND t.position <= ${span.throughPosition}`}
-          AND t.status IN ('pending','streaming','waiting_interrupt')
-        ORDER BY t.position ASC
-        LIMIT 1
-      )`,
-      );
-      const result = await turns.execute(sql`
-        SELECT id FROM (${sql.join(branches, sql` UNION ALL `)}) unsettled
-        ORDER BY position ASC LIMIT 1
-      `);
+      const result = await turns().execute(transcriptUnsettledTurnsSql(spans));
       const [row] = Array.from(result as unknown as Iterable<{ id: string }>);
       return row
-        ? await turns
+        ? await turns()
             .select()
             .from(schema.turns)
             .where(eq(schema.turns.id, row.id))
@@ -170,7 +211,7 @@ export function createDrizzleTranscriptReader(
         : null;
     },
     async listUnsettledForThread(threadId) {
-      const rows = await turns
+      const rows = await turns()
         .select()
         .from(schema.turns)
         .where(
@@ -181,23 +222,10 @@ export function createDrizzleTranscriptReader(
     },
     async listTranscriptBoundaries(spans) {
       if (spans.length === 0) return [];
-      const branches = spans.map(
-        (span) => sql`(
-        SELECT t.id, t.position
-        FROM turns t
-        WHERE t.thread_id = ${span.threadId}::uuid
-          AND t.position > ${span.afterPosition}
-          ${span.throughPosition === null ? sql`` : sql`AND t.position <= ${span.throughPosition}`}
-          AND t.prompt_bake_id IS NOT NULL AND t.status = 'complete'
-        ORDER BY t.position ASC
-      )`,
-      );
-      const result = await turns.execute(
-        sql`SELECT id FROM (${sql.join(branches, sql` UNION ALL `)}) boundaries ORDER BY position ASC`,
-      );
+      const result = await turns().execute(transcriptBoundariesSql(spans));
       const ids = Array.from(result as unknown as Iterable<{ id: string }>).map((row) => row.id);
       if (ids.length === 0) return [];
-      const rows = await turns.select().from(schema.turns).where(inArray(schema.turns.id, ids));
+      const rows = await turns().select().from(schema.turns).where(inArray(schema.turns.id, ids));
       const byId = new Map(rows.map((row) => [row.id, mapTurn(row)]));
       return ids.flatMap((id) => {
         const turn = byId.get(id);
@@ -205,7 +233,7 @@ export function createDrizzleTranscriptReader(
       });
     },
     async listUnsettledPrimaryTurns(limit, after) {
-      const rows = await turns.execute(sql`
+      const rows = await turns().execute(sql`
         SELECT t.id, t.thread_id, t.position, t.role, t.status
         FROM turns t
         JOIN threads th ON th.id = t.thread_id
