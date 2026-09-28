@@ -29,24 +29,64 @@ export type CompactionDecision =
     }
   | { kind: "too_large"; plan: CompactionPlan };
 
+export type CompactionFailureReason =
+  | "nothing_to_compact"
+  | "context_too_large"
+  | "compaction_failed"
+  | "context_window_exceeded"
+  | "max_tokens"
+  | "provider_error"
+  | "tool_use"
+  | "empty_text";
+
+export type CompactionFailurePhase = "summary" | "initial_prepare" | "late_arrival" | "delivery";
+
+export type CompactionFailureOutcome = {
+  reason: CompactionFailureReason;
+  phase: CompactionFailurePhase;
+  estimatedTokens?: number;
+  fitLimitTokens?: number;
+};
+
 export class CompactionPreparationError extends Error {
-  constructor(
-    readonly reason:
-      | "nothing_to_compact"
-      | "context_too_large"
-      | "compaction_failed"
-      | "context_window_exceeded",
-  ) {
-    super(
-      reason === "nothing_to_compact"
-        ? "There is nothing to compact yet."
-        : reason === "context_too_large"
-          ? "This message is too long for this chat's model."
-          : reason === "context_window_exceeded"
-            ? "This conversation still exceeds the model's context window after compaction. Try a smaller request."
-            : "This conversation couldn't be compacted. Try again.",
-    );
+  constructor(readonly reason: CompactionFailureReason) {
+    super(compactionFailureMessage(reason));
   }
+}
+
+export class CompactionFailureError extends CompactionPreparationError {
+  constructor(readonly outcome: CompactionFailureOutcome) {
+    super(outcome.reason);
+  }
+}
+
+export function compactionFailureMessage(reason: CompactionFailureReason): string {
+  switch (reason) {
+    case "nothing_to_compact":
+      return "There is nothing to compact yet.";
+    case "context_too_large":
+      return "This message is too long for this chat's model.";
+    case "context_window_exceeded":
+      return "This conversation still exceeds the model's context window after compaction. Try a smaller request.";
+    default:
+      return "This conversation couldn't be compacted. Try again.";
+  }
+}
+
+/** Preserve known outcomes across async preparation and the delivery transaction. */
+export function compactionFailureFrom(
+  error: unknown,
+  phase: CompactionFailurePhase,
+): CompactionFailureOutcome {
+  if (error instanceof CompactionFailureError) return error.outcome;
+  if (error instanceof CompactionPreparationError) return { reason: error.reason, phase };
+  return { reason: "compaction_failed", phase };
+}
+
+export function summaryCompactionFailure(
+  reason: "max_tokens" | "provider_error" | "tool_use" | "empty_text" | undefined,
+): CompactionFailureOutcome {
+  return { reason: reason ?? "compaction_failed", phase: "summary" };
 }
 
 export function decideCompaction(input: {

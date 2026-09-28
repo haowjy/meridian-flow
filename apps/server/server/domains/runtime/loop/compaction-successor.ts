@@ -7,7 +7,15 @@ import type { SummaryOutcome } from "../ports/conversation-summarizer.js";
 import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
 import { beginPromptEpoch } from "./begin-prompt-epoch.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import { type CompactionDecision, CompactionPreparationError } from "./compaction/decision.js";
+import {
+  type CompactionDecision,
+  CompactionFailureError,
+  type CompactionFailureOutcome,
+  type CompactionFailurePhase,
+  compactionFailureFrom,
+  compactionFailureMessage,
+  summaryCompactionFailure,
+} from "./compaction/decision.js";
 import { collectRecordedDocuments, planModelElisions } from "./compaction/elide.js";
 import { estimateRequestTokens, type projectActiveHistory } from "./compaction/index.js";
 import { queryCompactionRevisions } from "./compaction-revisions.js";
@@ -20,7 +28,7 @@ import { type AssembledNextTurnContext, composeLivePromptBake } from "./turn-con
 
 type Decision = Extract<CompactionDecision, { kind: "compact" }>;
 export type PreparedCompaction =
-  | { kind: "failed"; reason: CompactionPreparationError }
+  | { kind: "failed"; failure: CompactionFailureOutcome }
   | {
       kind: "usable";
       metadata: JsonObject;
@@ -37,7 +45,11 @@ export type PreparedCompaction =
       ) => ReturnType<typeof prepareRequestContext>;
     };
 
-function fittingTokens(context: AssembledNextTurnContext, fitLimitTokens: number) {
+function fittingTokens(
+  context: AssembledNextTurnContext,
+  fitLimitTokens: number,
+  phase: CompactionFailurePhase,
+) {
   const tokenizer = context.resolvedModel?.tokenizer;
   if (!tokenizer) throw new Error("Cannot estimate compaction successor without a model tokenizer");
   const tokens = estimateRequestTokens({
@@ -45,7 +57,13 @@ function fittingTokens(context: AssembledNextTurnContext, fitLimitTokens: number
     baseline: null,
     tokenizer,
   });
-  if (tokens >= fitLimitTokens) throw new CompactionPreparationError("context_too_large");
+  if (tokens >= fitLimitTokens)
+    throw new CompactionFailureError({
+      reason: "context_too_large",
+      phase,
+      estimatedTokens: tokens,
+      fitLimitTokens,
+    });
   return tokens;
 }
 
@@ -64,18 +82,36 @@ export async function prepareCompactionSuccessor(args: {
   const { deps, input, thread, placeholder, allTurns, allBlocks, decision, outcome, projection } =
     args;
   if (decision.refusal)
-    return { kind: "failed", reason: new CompactionPreparationError(decision.refusal) };
+    return {
+      kind: "failed",
+      failure: {
+        reason: decision.refusal,
+        phase: "initial_prepare",
+        ...(decision.refusal === "context_too_large"
+          ? {
+              estimatedTokens: decision.tokensBefore,
+              fitLimitTokens: decision.fitLimitTokens,
+            }
+          : {}),
+      },
+    };
   if (outcome.kind !== "complete")
-    return { kind: "failed", reason: new CompactionPreparationError("compaction_failed") };
-  const policies = (name: string) => deps.toolRegistry.getRegistration(name)?.documentText;
-  const recorded = collectRecordedDocuments(decision.plan.retainedSuffix, policies);
-  const current = await queryCompactionRevisions({
-    threadId: input.threadId,
-    recorded,
-    revisions: deps.documentRevisions,
-    assertNoResponseScope: args.assertNoResponseScope,
-  });
+    return {
+      kind: "failed",
+      failure:
+        outcome.kind === "failed"
+          ? summaryCompactionFailure(outcome.rejectionReason)
+          : summaryCompactionFailure(undefined),
+    };
   try {
+    const policies = (name: string) => deps.toolRegistry.getRegistration(name)?.documentText;
+    const recorded = collectRecordedDocuments(decision.plan.retainedSuffix, policies);
+    const current = await queryCompactionRevisions({
+      threadId: input.threadId,
+      recorded,
+      revisions: deps.documentRevisions,
+      assertNoResponseScope: args.assertNoResponseScope,
+    });
     const elisions = planModelElisions({
       retainedSuffix: decision.plan.retainedSuffix,
       recorded,
@@ -171,7 +207,7 @@ export async function prepareCompactionSuccessor(args: {
         },
       });
     const base = await assemble([], []);
-    const tokensAfter = fittingTokens(base.assembled, decision.fitLimitTokens);
+    const tokensAfter = fittingTokens(base.assembled, decision.fitLimitTokens, "initial_prepare");
     const summaryBlock = contentForBlockInput({
       ...blockInput,
       content: { kind: "compaction", props: { ...props, tokensAfter } },
@@ -189,13 +225,7 @@ export async function prepareCompactionSuccessor(args: {
     };
   } catch (error) {
     if (input.signal?.aborted) throw error;
-    return {
-      kind: "failed",
-      reason:
-        error instanceof CompactionPreparationError
-          ? error
-          : new CompactionPreparationError("compaction_failed"),
-    };
+    return { kind: "failed", failure: compactionFailureFrom(error, "initial_prepare") };
   }
 }
 
@@ -204,9 +234,13 @@ export async function prepareCompactionContext(
   prepared: PreparedCompaction | undefined,
 ) {
   if (!prepared) throw new Error("Missing prepared compaction");
-  if (prepared.kind === "failed") throw prepared.reason;
+  if (prepared.kind === "failed") throw new CompactionFailureError(prepared.failure);
   const next = await prepared.assemble(drain.turns, drain.blocks);
-  fittingTokens(next.assembled, prepared.decision.fitLimitTokens);
+  try {
+    fittingTokens(next.assembled, prepared.decision.fitLimitTokens, "late_arrival");
+  } catch (error) {
+    throw new CompactionFailureError(compactionFailureFrom(error, "late_arrival"));
+  }
   return {
     events: next.events,
     turns: next.assembled.imageContextUpdates.turns,
@@ -240,7 +274,15 @@ export async function completeCompactionCurrent(input: {
       metadata: settled.metadata,
     });
   }
-  if (prepared?.kind === "usable") {
+  const deliveryFailure =
+    input.failure === undefined ? undefined : compactionFailureFrom(input.failure, "delivery");
+  const failure =
+    prepared?.kind === "failed"
+      ? prepared.failure
+      : prepared?.kind === "usable" && deliveryFailure?.phase === "delivery"
+        ? undefined
+        : deliveryFailure;
+  if (prepared?.kind === "usable" && failure === undefined) {
     await beginPromptEpoch(deps, {
       threadId,
       cause: "compaction",
@@ -269,13 +311,17 @@ export async function completeCompactionCurrent(input: {
     const failed = {
       ...settled,
       status: "error" as const,
-      error:
-        prepared?.kind === "failed"
-          ? prepared.reason.message
-          : "This conversation couldn't be compacted. Try again.",
+      error: compactionFailureMessage(failure?.reason ?? "compaction_failed"),
       metadata: {
         ...(settled.metadata as import("@meridian/contracts/threads").JsonObject),
-        reason: prepared?.kind === "failed" ? prepared.reason.reason : "compaction_failed",
+        reason: failure?.reason ?? "compaction_failed",
+        phase: failure?.phase ?? "delivery",
+        ...(failure?.estimatedTokens === undefined
+          ? {}
+          : { estimatedTokens: failure.estimatedTokens }),
+        ...(failure?.fitLimitTokens === undefined
+          ? {}
+          : { fitLimitTokens: failure.fitLimitTokens }),
       },
       completedAt: new Date().toISOString(),
     };
@@ -285,14 +331,7 @@ export async function completeCompactionCurrent(input: {
         {
           type: "turn.error",
           turn: failed,
-          error: meridianErrorFromSystem(
-            prepared?.kind === "failed"
-              ? prepared.reason.reason
-              : input.failure instanceof CompactionPreparationError
-                ? input.failure.reason
-                : "compaction_failed",
-            failed.error,
-          ),
+          error: meridianErrorFromSystem(failure?.reason ?? "compaction_failed", failed.error),
         },
       ],
     }));
@@ -310,12 +349,13 @@ export async function failCompactionSuccessor(input: {
   boundary: import("./runtime-delivery.js").DeliveryBoundary;
   optional?: boolean;
   settleResponses: () => Promise<void>;
+  failure: unknown;
 }) {
-  const reason = new CompactionPreparationError("compaction_failed");
+  const failure = compactionFailureFrom(input.failure, "delivery");
   try {
     return await input.deps.delivery.splitAndContinue<PreparedCompaction>({
       ...input.boundary,
-      prepareCurrent: async () => ({ kind: "failed", reason }),
+      prepareCurrent: async () => ({ kind: "failed", failure }),
       prepareNextContext: input.optional
         ? (drain, _prepared, selection) =>
             input.boundary.prepareNextContext(drain, undefined, selection)

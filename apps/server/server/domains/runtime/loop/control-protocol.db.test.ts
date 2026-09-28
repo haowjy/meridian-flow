@@ -521,7 +521,10 @@ else
       const c = (await rig.repos.turns.listByThread(rig.threadId)).find(
         (turn) => turn.role === "compaction",
       );
-      expect(c).toMatchObject({ status: "error", metadata: { reason: "context_too_large" } });
+      expect(c).toMatchObject({
+        status: "error",
+        metadata: { reason: "context_too_large", phase: "initial_prepare" },
+      });
       expect(rig.summarizer.calls).toHaveLength(0);
     });
 

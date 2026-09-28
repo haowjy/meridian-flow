@@ -6,12 +6,13 @@ import type { ProjectedActiveHistory } from "../loop/compaction/index.js";
 
 /** Provider metering data is passed to the shared debit path, not persisted in the row. */
 export type SummaryResponse = ModelResponseReceivedRow & { providerData?: unknown };
+export type SummaryRejectionReason = "max_tokens" | "provider_error" | "tool_use" | "empty_text";
 export type SummaryOutcome = {
   modelResponses: SummaryResponse[];
   summarizer: { path: "warm" | "cold"; segments: number };
 } & (
   | { kind: "complete"; text: string; model: string }
-  | { kind: "failed"; error: unknown }
+  | { kind: "failed"; error: unknown; rejectionReason?: SummaryRejectionReason }
   | { kind: "cancelled" }
 );
 export interface ConversationSummarizer {
