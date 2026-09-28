@@ -56,12 +56,9 @@ export const projectQueryKeys = {
   renamePrefix: ["projects", "rename"] as const,
   rename: (projectId: string) => ["projects", "rename", projectId] as const,
   detail: (projectId: string) => ["projects", "detail", projectId] as const,
-  projectCreation: (projectId: string) => ["projects", "creation", projectId] as const,
   documentAddresses: (projectId: string) => ["projects", projectId, "document-addresses"] as const,
   threads: (projectId: string) => ["projects", projectId, "threads"] as const,
   works: (projectId: string) => ["projects", projectId, "works"] as const,
-  workCreations: (projectId: string) => ["projects", projectId, "work-creations"] as const,
-  workCreate: (projectId: string) => ["projects", projectId, "work-create"] as const,
   chatFeed: (projectId: string) => ["projects", projectId, "chat-feed"] as const,
   /** One filtered chat feed; a partial filter (`{ favorite: true }`) matches every variant. */
   chatFeedFilter: (

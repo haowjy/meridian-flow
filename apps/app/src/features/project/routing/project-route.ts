@@ -2,6 +2,7 @@
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { ScreenKey } from "../shell/screens";
+import type { WorkView } from "./project-address";
 
 export type ProjectSearch = {
   screen?: ScreenKey;
@@ -14,6 +15,8 @@ export type ProjectSearch = {
   filter?: "favorites";
   /** The chat index's settled search text; owned by `features/project/chat-index`. */
   q?: string;
+  /** Work detail view; chats is the omitted default. */
+  view?: WorkView;
 };
 
 export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): boolean {
@@ -25,13 +28,21 @@ export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): 
     left.results === right.results &&
     left.work === right.work &&
     left.filter === right.filter &&
-    left.q === right.q
+    left.q === right.q &&
+    left.view === right.view
   );
 }
 
 export type RouteWorkResolution =
   | { status: "new" }
   | { status: "unresolved"; reason: "loading" | "error" | "unavailable"; slug: string }
+  | {
+      status: "creating";
+      workId: ParsedRequestId;
+      name: string;
+      goal: string | null;
+      phase: "pending" | "failed";
+    }
   | { status: "none" }
   | { status: "present"; workId: ParsedRequestId; work: Work };
 
@@ -43,6 +54,7 @@ export function workDockDestinationId(
   if (screen !== "work") return null;
   if (routeWork.status === "present") return routeWork.workId;
   if (routeWork.status === "unresolved") return routeWork.slug;
+  if (routeWork.status === "creating") return routeWork.workId;
   return null;
 }
 
@@ -124,8 +136,8 @@ export type WorkContextTarget = {
 export type ProjectRouteCommands = {
   openWork: (target: WorkDetailTarget, options: NavigationOptions) => Promise<void>;
   workHref: (target: WorkDetailTarget) => string;
-  /** Replace an id-addressed creation route with its server-assigned Work slug. */
-  canonicalizeWork: (workId: string, slug: string) => Promise<void>;
+  workView: WorkView;
+  setWorkView: (view: WorkView) => Promise<void>;
   closeWork: (options: NavigationOptions) => Promise<void>;
   openWorkContext: (target: WorkContextTarget, options: NavigationOptions) => Promise<void>;
   /** Editor destination with no document and no local history pointer. */

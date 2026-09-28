@@ -1,9 +1,7 @@
 /** Session-only view choices and transient Work file state for the project dock. */
 import { t } from "@lingui/core/macro";
-import { useCallback } from "react";
 import { create } from "zustand";
 import type { ContextTab } from "@/client/stores";
-import { useChatNavigation } from "../routing/chat-navigation";
 import type { ScreenKey } from "../shell/screens";
 
 /** Dock destinations. File is transient and only offered while a Work file is open. */
@@ -67,19 +65,6 @@ export const useDockViewStore = create<DockViewState>((set) => ({
     }),
   leaveWork: () => set((state) => (state.workFile ? { workFile: null } : state)),
 }));
-
-/** Open one read-only Scratch/Uploads file in the Work dock slot. */
-export function useOpenFileInDock(workId: string) {
-  const openWorkFile = useDockViewStore((state) => state.openWorkFile);
-  const { revealDock } = useChatNavigation();
-  return useCallback(
-    (tab: Extract<ContextTab, { kind: "viewer" }>) => {
-      openWorkFile({ workId, tab });
-      revealDock("file");
-    },
-    [openWorkFile, revealDock, workId],
-  );
-}
 
 export type ResolvedDockView = {
   view: DockView;

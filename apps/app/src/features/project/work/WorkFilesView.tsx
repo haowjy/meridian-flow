@@ -32,7 +32,8 @@ import {
 import { fileKindIcon } from "../context/context-file-icon";
 import { EntryNameField } from "../context/EntryNameField";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
-import { useDockViewStore, useOpenFileInDock } from "../dock/dock-view-store";
+import { useDockViewStore } from "../dock/dock-view-store";
+import { useOpenFileInDock } from "../dock/use-open-file-in-dock";
 import { usePostApplyDraftGroupProjections } from "../draft-apply-recovery/DraftApplyRecoveryProvider";
 import type { ProjectRouteCommands } from "../routing/project-route";
 import { uniqueScratchNoteName } from "./work-file-names";

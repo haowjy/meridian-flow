@@ -31,14 +31,17 @@ export type ProjectAddress = {
   projectId: string;
   destination: ProjectDestination;
   work: AddressSelection;
+  /** Work detail's chats view is the default and is omitted from the address. */
+  workView?: "files";
   settings?: SettingsSection;
   results: boolean;
 };
+export type WorkView = "chats" | "files";
 export type ParsedProjectAddress =
   | { kind: "valid"; address: ProjectAddress; href: string }
   | { kind: "invalid"; reason: string };
 const ABSENT: AddressSelection = { kind: "absent" };
-const RECOGNIZED_QUERY = new Set(["work", "settings", "results"]);
+const RECOGNIZED_QUERY = new Set(["work", "settings", "results", "view"]);
 const HANDLE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -67,7 +70,6 @@ function parseDestination(parts: string[]): ProjectDestination | null {
   if (parts.length === 0) return { kind: "chat-index" };
   if (parts.length === 1) {
     if (parts[0] === "works" || parts[0] === "editor") return { kind: parts[0] };
-    if (parts[0] === "works-new") return { kind: "works-new" };
     if (parts[0] === "browse") return { kind: "browse", scheme: null, path: "", workSlug: null };
   }
   if (parts.length === 2 && parts[0] === "works") {
@@ -146,10 +148,15 @@ export function parseProjectAddress(
     work = ABSENT;
   }
   const settings = query.get("settings");
+  const workView =
+    (destination.kind === "work" || destination.kind === "work-id") && query.get("view") === "files"
+      ? "files"
+      : undefined;
   const address: ProjectAddress = {
     projectId,
     destination,
     work,
+    ...(workView ? { workView } : {}),
     ...(isSettingsSection(settings) ? { settings } : {}),
     results: (editor || destination.kind === "chat") && query.has("results"),
   };
@@ -175,33 +182,38 @@ function writeSelection(query: URLSearchParams, key: string, value: AddressSelec
 }
 
 export function projectAddressHref(address: ProjectAddress): string {
-  const parts = ["p", address.projectId];
+  const parts = ["p", address.projectId].map(encodeURIComponent);
+  const push = (...segments: string[]) => parts.push(...segments.map(encodeURIComponent));
   const d = address.destination;
   switch (d.kind) {
     case "chat-index":
       break;
     case "chat":
-      parts.push("chat", d.chatId);
+      push("chat", d.chatId);
       break;
     case "work":
-      parts.push("work", `@${d.workSlug}`);
+      push("work");
+      parts.push(`@${encodeURIComponent(d.workSlug)}`);
       break;
     case "work-id":
-      parts.push("works", d.workId);
+      push("works", d.workId);
       break;
     case "works":
     case "editor":
-      parts.push(d.kind);
+      push(d.kind);
       break;
     case "works-new":
-      parts.push("works", "new");
+      push("works", "new");
       break;
     case "browse":
     case "document":
-      if (d.workSlug) parts.push("work", `@${d.workSlug}`);
-      if (d.kind === "browse") parts.push("browse");
-      if (d.scheme) parts.push(d.scheme);
-      if (d.path) parts.push(...d.path.split("/"));
+      if (d.workSlug) {
+        push("work");
+        parts.push(`@${encodeURIComponent(d.workSlug)}`);
+      }
+      if (d.kind === "browse") push("browse");
+      if (d.scheme) push(d.scheme);
+      if (d.path) push(...d.path.split("/"));
       break;
   }
   const query = new URLSearchParams();
@@ -212,15 +224,11 @@ export function projectAddressHref(address: ProjectAddress): string {
     isWorkScopedProjectContextScheme(d.scheme);
   if (context && !pathOwnsWork) writeSelection(query, "work", address.work);
   if ((context || d.kind === "chat") && address.results) query.set("results", "");
+  if ((d.kind === "work" || d.kind === "work-id") && address.workView === "files")
+    query.set("view", "files");
   if (address.settings) query.set("settings", address.settings);
   const search = query.toString();
-  const path = parts
-    .map((part, index) =>
-      index > 0 && parts[index - 1] === "work" && part.startsWith("@")
-        ? part
-        : encodeURIComponent(part),
-    )
-    .join("/");
+  const path = parts.join("/");
   return `/${path}${search ? `?${search}` : ""}`;
 }
 

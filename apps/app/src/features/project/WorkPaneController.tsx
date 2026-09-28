@@ -5,6 +5,8 @@
  * open Work's name as the active tab the page rises into (renamed in place),
  * and the Work's `…` actions at the far right.
  */
+
+import type { Work } from "@meridian/contracts/protocol";
 import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
 import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { useWorkChrome } from "./work/useWorkChrome";
@@ -16,6 +18,7 @@ export type WorkPaneControllerProps = {
   sidebarToggle: PaneHeaderRailToggle;
   chatToggle: PaneHeaderRailToggle;
   routeWork: RouteWorkResolution;
+  rememberedWork: Work | null;
   routeCommands: ProjectRouteCommands;
 };
 
@@ -24,10 +27,18 @@ export function WorkPaneController({
   sidebarToggle,
   chatToggle,
   routeWork,
+  rememberedWork,
   routeCommands,
 }: WorkPaneControllerProps) {
   const deletion = useWorkDeletion(projectId, routeWork, routeCommands);
-  const chrome = useWorkChrome(projectId, routeWork, routeCommands, deletion.remove, "tab");
+  const chrome = useWorkChrome(
+    projectId,
+    routeWork,
+    rememberedWork,
+    routeCommands,
+    deletion.remove,
+    "tab",
+  );
   return (
     <main className="main-pane flex min-h-0 flex-1 flex-col">
       <PaneHeader

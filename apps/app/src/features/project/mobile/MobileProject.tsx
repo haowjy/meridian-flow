@@ -75,6 +75,7 @@ export function MobileProject(props: MobileProjectProps) {
   const work = useWorkChrome(
     props.projectId,
     props.routeWork,
+    props.rememberedWork,
     props.routeCommands,
     workDeletion.remove,
     "quiet",

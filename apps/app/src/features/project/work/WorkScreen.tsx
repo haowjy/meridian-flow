@@ -7,8 +7,7 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { CreationDialog } from "@/features/creation/CreationDialog";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
-import { routeWorkIdentity } from "./route-work-identity";
-import { useCreateWork, useWorkCreationState } from "./useWorkCreation";
+import { useCreateWork, useWorkCreationRecovery } from "./useWorkCreation";
 import type { WorkDeletion } from "./useWorkDeletion";
 import { WorkCollection } from "./WorkCollection";
 import { WorkCreationDestination } from "./WorkCreationDestination";
@@ -23,8 +22,11 @@ export type WorkScreenProps = {
 
 export function WorkScreen({ projectId, routeWork, routeCommands, deletion }: WorkScreenProps) {
   const createWork = useCreateWork(projectId, routeCommands);
-  const workId = routeWorkIdentity(routeWork);
-  const creation = useWorkCreationState(projectId, workId, routeCommands);
+  const recovery = useWorkCreationRecovery(
+    projectId,
+    routeWork.status === "creating" ? routeWork.workId : null,
+    routeCommands,
+  );
 
   if (routeWork.status === "new")
     return (
@@ -47,14 +49,14 @@ export function WorkScreen({ projectId, routeWork, routeCommands, deletion }: Wo
       </>
     );
 
-  if (creation.status !== "none" && creation.status !== "confirmed" && workId && creation.name)
+  if (routeWork.status === "creating")
     return (
       <WorkCreationDestination
-        name={creation.name}
-        goal={creation.goal}
-        failed={creation.status === "failed"}
-        onRetry={creation.retry}
-        onDiscard={creation.discard}
+        name={routeWork.name}
+        goal={routeWork.goal}
+        failed={routeWork.phase === "failed"}
+        onRetry={recovery.retry}
+        onDiscard={recovery.discard}
       />
     );
 
