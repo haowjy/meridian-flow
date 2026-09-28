@@ -94,7 +94,8 @@ export function useCreateProject(userId: string, accountSignal: AbortSignal) {
       void router.navigate({
         to: "/p/$projectId/$",
         params: { projectId: id, _splat: "works" },
-        replace: false,
+        // Created from the /projects/new dialog: Back returns to the library.
+        replace: true,
         state: (previous) => ({
           ...previous,
           ...pendingProjectRouteState({ id, title, userId }),

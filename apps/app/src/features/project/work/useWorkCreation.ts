@@ -119,7 +119,8 @@ export function useCreateWork(projectId: string, routeCommands: ProjectRouteComm
         status: "pending",
         error: null,
       });
-      void routeCommands.openWork({ kind: "work-detail", workId }, { replace: false });
+      // Created from the works/new dialog: Back returns to the collection.
+      void routeCommands.openWork({ kind: "work-detail", workId }, { replace: true });
       mutation.mutate({ workId, request });
       return workId;
     },

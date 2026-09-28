@@ -14,8 +14,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Textarea } from "@/components/ui/textarea";
-import { CreationPage } from "@/features/creation/CreationPage";
+import { CreationDialog } from "@/features/creation/CreationDialog";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { cn } from "@/lib/utils";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
@@ -46,7 +45,30 @@ export function WorkScreen(props: WorkScreenProps & { deletion: WorkDeletion }) 
   const creation = useWorkCreationState(props.projectId, routeWorkId, props.routeCommands);
   if (props.routeWork.status === "new") {
     return (
-      <NewWorkPage projectId={props.projectId} onCreate={(request) => createWork.create(request)} />
+      <>
+        <WorkCollectionScreen
+          {...props}
+          deleteState={deletion.state}
+          onDeleteWork={(work) => deletion.remove(work, "list")}
+          onUndoDelete={deletion.undo}
+          onDismissDelete={deletion.dismiss}
+          onRetryDelete={deletion.retry}
+        />
+        <CreationDialog
+          title={t`Create a Work`}
+          nameLabel={t`What are you working on?`}
+          namePlaceholder={t`Name this Work`}
+          description={{
+            label: t`What should the AI know?`,
+            placeholder: t`The goal, scope, or anything to keep in mind. Every chat in this Work reads it.`,
+          }}
+          submitLabel={t`Create Work`}
+          onClose={() => void props.routeCommands.closeWork({ replace: true })}
+          onCreate={({ name, description }) =>
+            createWork.create({ name, goal: description || undefined })
+          }
+        />
+      </>
     );
   }
   if (
@@ -494,64 +516,6 @@ export function WorkCreationDestination({
         </div>
       </article>
     </div>
-  );
-}
-
-function NewWorkPage({
-  projectId,
-  onCreate,
-}: {
-  projectId: string;
-  onCreate: (request: { name: string; goal?: string }) => void;
-}) {
-  const nameRef = useRef<HTMLInputElement>(null);
-  const descriptionRef = useRef<HTMLTextAreaElement>(null);
-  return (
-    <CreationPage
-      backTo={`/p/${projectId}/works`}
-      backLabel={"All Work"}
-      title={"New Work"}
-      submitLabel={"Create Work"}
-      onSubmit={() =>
-        onCreate({
-          name: nameRef.current?.value ?? "",
-          goal: descriptionRef.current?.value.trim() || undefined,
-        })
-      }
-    >
-      <div className="grid gap-1.5">
-        <label htmlFor="work-name" className="text-sm font-medium">
-          <Trans>Name</Trans>
-        </label>
-        <Input
-          ref={nameRef}
-          id="work-name"
-          name="creation-name"
-          autoFocus
-          autoComplete="off"
-          maxLength={120}
-          placeholder="Name this Work"
-          className="h-[38px] bg-card text-[15px]"
-        />
-      </div>
-      <div className="grid gap-1.5">
-        <label htmlFor="work-description" className="text-sm font-medium">
-          <Trans>What is this Work for?</Trans>{" "}
-          <span className="font-normal text-muted-foreground">
-            <Trans>Optional</Trans>
-          </span>
-        </label>
-        <Textarea
-          ref={descriptionRef}
-          id="work-description"
-          placeholder="The purpose or context for this Work"
-          className="min-h-16 resize-none bg-card text-sm"
-        />
-        <p className="text-xs text-muted-foreground">
-          <Trans>The AI reads this in every chat in this Work.</Trans>
-        </p>
-      </div>
-    </CreationPage>
   );
 }
 

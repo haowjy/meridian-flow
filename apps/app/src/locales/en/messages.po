@@ -389,6 +389,10 @@ msgstr "{shown} of {total}"
 msgid "{steps, plural, one {# step} other {# steps}}"
 msgstr "{steps, plural, one {# step} other {# steps}}"
 
+#: src/features/creation/CreationDialog.tsx
+msgid "{submitLabel} (enter a name first)"
+msgstr "{submitLabel} (enter a name first)"
+
 #: src/features/project/chat-list/useChatRowCommands.tsx
 msgid "{title} added to Favorites"
 msgstr "{title} added to Favorites"
@@ -810,6 +814,7 @@ msgid "Can't undo"
 msgstr "Can't undo"
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+#: src/features/creation/CreationDialog.tsx
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/project/chat-list/DeleteChatDialog.tsx
@@ -1472,12 +1477,16 @@ msgid "Create “{0}”"
 msgstr "Create “{0}”"
 
 #: src/features/home/NewProjectView.tsx
-#~ msgid "Create a project"
-#~ msgstr "Create a project"
+msgid "Create a project"
+msgstr "Create a project"
 
 #: src/features/home/ProjectLibrary.tsx
 msgid "Create a project for your first book, series, or story world."
 msgstr "Create a project for your first book, series, or story world."
+
+#: src/features/project/work/WorkScreen.tsx
+msgid "Create a Work"
+msgstr "Create a Work"
 
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "Create file or folder"
@@ -1487,6 +1496,7 @@ msgstr "Create file or folder"
 msgid "Create it now and the link starts working. Nothing about the link changes."
 msgstr "Create it now and the link starts working. Nothing about the link changes."
 
+#: src/features/home/NewProjectView.tsx
 #: src/features/home/ProjectLibrary.tsx
 msgid "Create project"
 msgstr "Create project"
@@ -1495,9 +1505,9 @@ msgstr "Create project"
 msgid "Create the document"
 msgstr "Create the document"
 
-#: src/features/project/work/WorkDialog.tsx
-#~ msgid "Create Work"
-#~ msgstr "Create Work"
+#: src/features/project/work/WorkScreen.tsx
+msgid "Create Work"
+msgstr "Create Work"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Created a Work"
@@ -1885,8 +1895,8 @@ msgid "Enclosing folder"
 msgstr "Enclosing folder"
 
 #: src/features/creation/CreationPage.tsx
-msgid "Enter a name to continue."
-msgstr "Enter a name to continue."
+#~ msgid "Enter a name to continue."
+#~ msgstr "Enter a name to continue."
 
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Enter an amount in USD."
@@ -2595,13 +2605,21 @@ msgid "Must be at most {value}"
 msgstr "Must be at most {value}"
 
 #: src/features/project/work/WorkScreen.tsx
-msgid "Name"
-msgstr "Name"
+#~ msgid "Name"
+#~ msgstr "Name"
 
 #: src/features/project/context/context-entry-name.ts
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Name is required"
 msgstr "Name is required"
+
+#: src/features/project/work/WorkScreen.tsx
+msgid "Name this Work"
+msgstr "Name this Work"
+
+#: src/features/home/NewProjectView.tsx
+msgid "Name your project"
+msgstr "Name your project"
 
 #: src/features/project/context/context-entry-name.ts
 msgid "Names cannot be empty"
@@ -3031,8 +3049,8 @@ msgid "Opening the link"
 msgstr "Opening the link"
 
 #: src/features/project/work/WorkScreen.tsx
-msgid "Optional"
-msgstr "Optional"
+#~ msgid "Optional"
+#~ msgstr "Optional"
 
 #: src/features/project/context/ContextViewer.tsx
 #~ msgid "Or pick a file from the tree."
@@ -3132,8 +3150,8 @@ msgid "Project creation failed."
 msgstr "Project creation failed."
 
 #: src/features/home/NewProjectView.tsx
-msgid "Project name"
-msgstr "Project name"
+#~ msgid "Project name"
+#~ msgstr "Project name"
 
 #: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Project name is required"
@@ -4090,8 +4108,8 @@ msgid "The AI asked you a question"
 msgstr "The AI asked you a question"
 
 #: src/features/project/work/WorkScreen.tsx
-msgid "The AI reads this in every chat in this Work."
-msgstr "The AI reads this in every chat in this Work."
+#~ msgid "The AI reads this in every chat in this Work."
+#~ msgstr "The AI reads this in every chat in this Work."
 
 #: src/features/project/context/ContextViewer.tsx
 msgid "The assistant referred to this document, but it isn't there now. It may have been renamed, deleted, or never finished being created."
@@ -4129,6 +4147,10 @@ msgstr "The endpoint reports its own env-presence checklist in the body above (p
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "The entry changed. Refresh the tree and try again."
 msgstr "The entry changed. Refresh the tree and try again."
+
+#: src/features/project/work/WorkScreen.tsx
+msgid "The goal, scope, or anything to keep in mind. Every chat in this Work reads it."
+msgstr "The goal, scope, or anything to keep in mind. Every chat in this Work reads it."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row does not merge into the body."
@@ -4712,13 +4734,21 @@ msgstr "We couldn’t confirm this purchase. Check your balance before trying ag
 #~ msgid "We’re still confirming your purchase. Your balance will update shortly."
 #~ msgstr "We’re still confirming your purchase. Your balance will update shortly."
 
-#: src/features/home/HomeHero.tsx
-#~ msgid "What are you working on?"
-#~ msgstr "What are you working on?"
+#: src/features/project/work/WorkScreen.tsx
+msgid "What are you working on?"
+msgstr "What are you working on?"
+
+#: src/features/home/NewProjectView.tsx
+msgid "What are you writing?"
+msgstr "What are you writing?"
 
 #: src/features/project/work/WorkScreen.tsx
-msgid "What is this Work for?"
-msgstr "What is this Work for?"
+#~ msgid "What is this Work for?"
+#~ msgstr "What is this Work for?"
+
+#: src/features/project/work/WorkScreen.tsx
+msgid "What should the AI know?"
+msgstr "What should the AI know?"
 
 #: src/features/editor/surfaces/objects/ObjectFieldPopover.tsx
 msgid "What this figure shows"
