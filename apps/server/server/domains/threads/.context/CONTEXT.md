@@ -37,8 +37,8 @@ and history stay fixed across deployments, Agent revision updates, model
 changes, and idle/cache-TTL changes. The named breaks are prompt-epoch
 boundaries and image removals; compaction uses the explicit rebalance seam.
 `beginPromptEpoch` hashes or reuses a bake and completes the reserved
-boundary through `persistAndAppendEvents`; it has no production caller until
-C4. `bakeAt` and
+boundary through `persistAndAppendEvents`; the compaction successor commit is
+its caller. `bakeAt` and
 `bakeInEffect` resolve owner-local completed boundaries in write-once
 `turns.position` order. Position is assigned under the existing thread mutation
 lock; fork-local turns continue after their cutoff position.

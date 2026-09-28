@@ -36,7 +36,7 @@ streaming `Gateway` port.
 | Deadline | per attempt, two timers on one derived `AbortSignal`: an inactivity (stall) timer re-armed by every stream event (`GatewayConfig.attemptStallMs`, env `MODEL_CALL_STALL_MS`, default 60s; never kills a slow-but-streaming model) and an absolute ceiling backstop (`GatewayConfig.attemptCeilingMs`, env `MODEL_CALL_TIMEOUT_MS`, default 15 min / 900s, 0 disables). Per-model `stallTimeoutMs`/`ceilingTimeoutMs` override the gateway values. Retry/deadline driver lives in `attempt-stream.ts`; the signal lives in `deadline.ts` |
 | Cancel drain | After partial output, a parent cancel may drain usage/end events, but one absolute five-second deadline from abort bounds that drain even after a rejected read. `attempt-stream.ts` owns one abort listener per attempt and clears its timer/listener on exit; iterator `return()` is observed without awaiting it, so a hostile adapter cannot hold cancellation or retry hostage. |
 | Config | `GatewayConfig` with provider list, default model, retry/fallback/`attemptStallMs`/`attemptCeilingMs` policy; `createGatewayFromEnv` for env-driven setup |
-| Registry | `MODEL_REGISTRY` in `config/registry.ts` — single-source for config + pinned pricing. `buildFromRegistry` composes providers. Flat `MODEL_TOKEN_RATES` table is **deleted**. |
+| Registry | `MODEL_REGISTRY` in `config/registry.ts` is the single source for each model's config, pinned pricing, cache descriptor, and required tokenizer family. `buildFromRegistry` composes providers. |
 | Collision warning | `onWarning` callback on registry construction warns on duplicate model IDs (was last-writer-wins silently). |
 | Usage normalization | Adapters own the conversion into canonical `Usage` and call `assertValidUsage` before returning. Providers disagree on what `inputTokens` counts: OpenAI reports an inclusive total, Anthropic reports uncached input and each cache counter as separate additive categories. An adapter that passes additive counters through unchanged underbills every cached turn — see issue [#356](https://github.com/haowjy/meridian-flow/issues/356). |
 | OpenRouter | `openrouter` adapter reuses the OpenAI-compatible wire shape and owns provider-reported cost enrichment via `/generation`. |
@@ -71,7 +71,7 @@ skeleton and delegates the moving parts.
 | `orphaned-placeholder.ts` | `finalizeOrphanedPlaceholder` uses the pure `@meridian/contracts/threads` placeholder predicate and targeted per-thread query under the thread lock and an already-held session claim. Writer-facing interrupted copy comes from `threads/domain/turn-metadata.ts`, through its compaction metadata codec. The helper returns reports it finalizes, and callers publish them only after releasing the child lock. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; receives the frozen system prompt from the immutable bake row when the thread has an initial pointer; renders every persisted turn, including durable notices, skill-body, and subagent-update turns. Child-provenance system text contains a compact exact `thread_report` call, never the report body; the parent model may fetch that report with the authorized tool. Assistant custom blocks stay UI-only to preserve tool_use→tool_result adjacency. |
-| `compaction/{trigger,estimate,plan,project,tail}.ts` | Pure C4a core. `trigger.ts` resolves explicit Agent limits; `estimate.ts` owns the shared per-part estimator for planner defaults and request estimates. Every estimate receives the model registry's required tokenizer family, including turn planning and summary segmentation. CJK family rates and evidence are recorded in [CJK estimator rates](#cjk-estimator-rates). Image parts use 1,600 tokens, and file text uses the greater of its visible-string estimate or the 10,000-token floor. `plan.ts` takes the raw effective transcript, reserves overhead and the pinned request, and limits later cuts to after the active compaction cut. A missing pinned request yields an explicit `no_compaction` plan, never persistable metadata; `tail.ts` is the shared ordered projection rule, lifting the pin only when the cut removes it; `project.ts` strictly decodes complete compactions, requires the pinned turn to exist, and projects the summary under the owning thread ref. The folder's `index.ts` is the runtime public surface. History-item metadata classification and its codecs live in `threads/domain/turn-metadata.ts`. |
+| `compaction/{trigger,estimate,plan,project,tail}.ts` | Pure compaction core. `trigger.ts` resolves explicit Agent limits; `estimate.ts` owns the shared per-part estimator for planner defaults and request estimates. Every estimate receives the model registry's required tokenizer family, including turn planning and summary segmentation. CJK family rates and evidence are recorded in [CJK estimator rates](#cjk-estimator-rates). Image parts use 1,600 tokens, and file text uses the greater of its visible-string estimate or the 10,000-token floor. `plan.ts` takes the raw effective transcript, reserves overhead and the pinned request, and limits later cuts to after the active compaction cut. A missing pinned request yields an explicit `no_compaction` plan, never persistable metadata; `tail.ts` is the shared ordered projection rule, lifting the pin only when the cut removes it; `project.ts` strictly decodes complete compactions, requires the pinned turn to exist, and projects the summary under the owning thread ref. The folder's `index.ts` is the runtime public surface. History-item metadata classification and its codecs live in `threads/domain/turn-metadata.ts`. |
 | `turn-context-assembly.ts` | Resolves the retained Agent and bake, then projects active compaction history with `thread.ref` before stable image inclusion and `buildContext`; this keeps old pre-cut images out of the rebuilt model request while leaving un-compacted requests byte-identical. |
 | `composed-system-prompt.ts` | Assembles the first gateway system prompt in a fixed layer order: immutable agent body (revision body or the host-owned empty default), the invocation overlay's additive `appendSystemPrompt`, frozen Work context, available skill slugs (name when it differs) and descriptions, named subagent slug/name/description from the bound roster, core document dialect, runtime URI instruction, and, for subagent threads only, the mandatory closing report instruction as the last layer. An empty or absent append adds nothing, and the guidance string is a module constant (`SUBAGENT_GUIDANCE`). Freeze sentinel is `thread.initialPromptBakeId !== null`. The first bake commits with a successfully prepared run start before model execution; a later gateway failure or cancellation leaves it in place. |
 | `work-context.ts` / delivery adapter | Renders authoritative Work state. Mutations enqueue immutable system-provenance refresh notices in the business transaction. The delivery boundary coalesces a batch into one durable system update and event and acknowledges its notice IDs atomically. Idle recovery uses a short run claim; notices never wake a model. |
@@ -221,7 +221,8 @@ list. A code deploy, Agent revision update, model change, or idle/cache-TTL
 timer never rebakes a live thread. `beginPromptEpoch` is the named transactional
 operation for a reserved boundary: it hashes composed live parts, reuses the
 current row when bytes match, and completes the turn through
-`persistAndAppendEvents`. It has no production caller until C4. `bakeAt` and
+`persistAndAppendEvents`. The compaction successor commit is its caller
+(`compaction-successor.ts`). `bakeAt` and
 `bakeInEffect` use complete owner-local boundary turns in write-once
 `turns.position` order. Turn positions are assigned under the existing thread
 mutation lock, and fork-local turns begin after their cutoff. When the model
@@ -588,7 +589,7 @@ there is no fallback family.
 | `anthropic` | 3.0 | Conservative placeholder above a small published ~2.3 sample (range to 2.5); not measured locally. [Carwash methodology](https://carwashtest.org/methodology.html), [Anthropic token-counting guidance](https://github.com/anthropics/skills/blob/main/skills/claude-api/shared/token-counting.md). |
 | `o200k` | 1.1 | Offline `tiktoken` `o200k_base` count of the committed CJK corpus: 1,827 tokens / 1,882 Han points = 0.9708; add 10% headroom and round up to a tenth. Published sample is ~1.0; encoding mapping: [OpenAI `tiktoken` model map](https://github.com/openai/tiktoken/blob/main/tiktoken/model.py), [Carwash methodology](https://carwashtest.org/methodology.html). |
 | `gemini` | 1.2 | Low-confidence placeholder over a published ~0.8 sample; Google’s general character heuristic is not Chinese-specific. [Google token guide](https://ai.google.dev/gemini-api/docs/tokens), [Carwash methodology](https://carwashtest.org/methodology.html). |
-| `deepseek` | 0.8 | C4e live V4 Flash corpus measured 0.69 with headroom; near DeepSeek’s published ~0.6 general guidance. [DeepSeek token usage](https://api-docs.deepseek.com/quick_start/token_usage/). |
+| `deepseek` | 0.8 | A live V4 Flash corpus measured 0.69; 0.8 adds headroom. It is near DeepSeek’s published ~0.6 general guidance. [DeepSeek token usage](https://api-docs.deepseek.com/quick_start/token_usage/). |
 
 Refresh rates with `pnpm --filter @meridian/server exec tsx
 scripts/probe-compaction-estimates.ts`. The probe reports each reachable
@@ -690,10 +691,17 @@ on a live signal is failed, and an internal AbortError alone is not Stop.
 Summarizer adapters return every attempted paid response in their outcome and
 never throw after a paid call; unexpected throws are error-level events.
 
+A pending placeholder is a turn with status `pending` and a role in
+`PENDING_PLACEHOLDER_ROLES` from `@meridian/contracts/threads` (today only
+`compaction`); a pending assistant turn is not one. Test with
+`isPendingPlaceholder` or the database's `pendingPlaceholderPredicate`, never a
+local role or status check.
+
 Run start finalizes stale pending placeholders before selection using the new
 run's own held claim. The orphan-repair lane also scans indexed pending
 placeholders, so quiet primary threads recover without a new wake; child reports
 are finalized on C and published after releasing the child's lock. A late writer
 message stays unacknowledged and is redelivered rather than receiving a synthetic
-failed reply. Compaction responses count when the compaction is the orphaned
-execution's terminal turn; accounting completed compaction ancestors remains C4e.
+failed reply. A child report's cost sums every assistant and compaction response from its
+selector through its terminal turn, counting a C that is both once
+(`execution-finalizer.ts`).
