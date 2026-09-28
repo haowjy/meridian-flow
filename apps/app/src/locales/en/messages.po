@@ -584,8 +584,8 @@ msgid "All Work"
 msgstr "All Work"
 
 #: src/features/chat/compaction/useThreadControls.ts
-msgid "Already ran"
-msgstr "Already ran"
+#~ msgid "Already ran"
+#~ msgstr "Already ran"
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
@@ -1123,8 +1123,7 @@ msgstr "Compacting"
 msgid "Compacting conversation"
 msgstr "Compacting conversation"
 
-#: src/features/chat/compaction/QueuedControlRows.tsx
-#: src/features/chat/compaction/useThreadControls.ts
+#: src/features/chat/compaction/control-copy.ts
 msgid "Compaction queued"
 msgstr "Compaction queued"
 
@@ -1138,8 +1137,7 @@ msgstr "Compaction stopped"
 msgid "Compaction undone"
 msgstr "Compaction undone"
 
-#: src/features/chat/compaction/QueuedControlRows.tsx
-#: src/features/chat/compaction/useThreadControls.ts
+#: src/features/chat/compaction/control-copy.ts
 msgid "Compaction withdrawn"
 msgstr "Compaction withdrawn"
 
@@ -1385,18 +1383,15 @@ msgstr "Couldn't open review mode."
 msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
 
-#: src/features/chat/compaction/QueuedControlRows.tsx
-#: src/features/chat/compaction/useThreadControls.ts
+#: src/features/chat/compaction/control-copy.ts
 msgid "Couldn't queue the compaction."
 msgstr "Couldn't queue the compaction."
 
-#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/compaction/control-copy.ts
 msgid "Couldn't queue the handoff brief."
 msgstr "Couldn't queue the handoff brief."
 
-#: src/features/chat/compaction/CompactionDivider.tsx
-#: src/features/chat/compaction/QueuedControlRows.tsx
-#: src/features/chat/compaction/useThreadControls.ts
+#: src/features/chat/compaction/control-copy.ts
 msgid "Couldn't queue the undo."
 msgstr "Couldn't queue the undo."
 
@@ -2078,13 +2073,11 @@ msgstr "h2"
 msgid "h3"
 msgstr "h3"
 
-#: src/features/chat/compaction/QueuedControlRows.tsx
-#: src/features/chat/compaction/useThreadControls.ts
+#: src/features/chat/compaction/control-copy.ts
 msgid "Handoff brief queued"
 msgstr "Handoff brief queued"
 
-#: src/features/chat/compaction/QueuedControlRows.tsx
-#: src/features/chat/compaction/useThreadControls.ts
+#: src/features/chat/compaction/control-copy.ts
 msgid "Handoff brief withdrawn"
 msgstr "Handoff brief withdrawn"
 
@@ -3820,12 +3813,12 @@ msgstr "Stopped"
 #~ msgstr "Stopped."
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/compaction/control-copy.ts
 msgid "Stopping"
 msgstr "Stopping"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/compaction/control-copy.ts
 #: src/features/chat/compaction/useThreadControls.ts
 msgid "Stopping compaction"
 msgstr "Stopping compaction"
@@ -4236,7 +4229,7 @@ msgstr "This chat's Work changed to {0}"
 msgid "This column is already at the edge."
 msgstr "This column is already at the edge."
 
-#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/compaction/control-copy.ts
 msgid "This compaction already ran."
 msgstr "This compaction already ran."
 
@@ -4339,7 +4332,7 @@ msgstr "This folder is empty."
 msgid "This folder no longer exists."
 msgstr "This folder no longer exists."
 
-#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/compaction/control-copy.ts
 msgid "This handoff brief already ran."
 msgstr "This handoff brief already ran."
 
@@ -4387,7 +4380,7 @@ msgstr "This selection holds blocks that keep their own block type."
 msgid "This stored figure needs a project before it can be rendered."
 msgstr "This stored figure needs a project before it can be rendered."
 
-#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/compaction/control-copy.ts
 msgid "This undo already ran."
 msgstr "This undo already ran."
 
@@ -4531,20 +4524,17 @@ msgstr "Undo didn't go through. Try again."
 msgid "Undo is no longer available."
 msgstr "Undo is no longer available."
 
-#: src/features/chat/compaction/CompactionDivider.tsx
-#: src/features/chat/compaction/QueuedControlRows.tsx
-#: src/features/chat/compaction/useThreadControls.ts
+#: src/features/chat/compaction/control-copy.ts
 msgid "Undo queued"
 msgstr "Undo queued"
 
-#: src/features/chat/compaction/QueuedControlRows.tsx
-#: src/features/chat/compaction/useThreadControls.ts
+#: src/features/chat/compaction/control-copy.ts
 msgid "Undo withdrawn"
 msgstr "Undo withdrawn"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "Undo withdrawn."
-msgstr "Undo withdrawn."
+#~ msgid "Undo withdrawn."
+#~ msgstr "Undo withdrawn."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Undoing…"
@@ -4733,10 +4723,18 @@ msgid "Withdraw undo"
 msgstr "Withdraw undo"
 
 #: src/features/chat/compaction/QueuedControlRows.tsx
-msgid "Withdrawing"
-msgstr "Withdrawing"
+#~ msgid "Withdrawing"
+#~ msgstr "Withdrawing"
 
-#: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/compaction/control-copy.ts
+msgid "Withdrawing compaction"
+msgstr "Withdrawing compaction"
+
+#: src/features/chat/compaction/control-copy.ts
+msgid "Withdrawing handoff brief"
+msgstr "Withdrawing handoff brief"
+
+#: src/features/chat/compaction/control-copy.ts
 msgid "Withdrawing undo"
 msgstr "Withdrawing undo"
 

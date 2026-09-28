@@ -42,9 +42,10 @@ stays quiet (R3): the failed reply under the newest message carries it.
 
 Undo is offered only where it is likely to succeed (R-C6-2): on the divider
 `snapshot.compactionUndo` names with `availability: "likely"`. With
-`would_recompact` there is no Undo. While any compaction runs, no divider
-offers Undo (`currentUndoAvailability`): the snapshot still names the divider
-the running compaction will replace. A queued undo stays on its divider
+`would_recompact` there is no Undo. The server owns availability alone: it
+reads `null` while any compaction is pending and `would_recompact` after a
+refusal at an unchanged trigger, so the divider follows the snapshot with no
+client correction. A queued undo stays on its divider
 whatever the availability says, and a refused undo's copy stays on the divider
 it targeted, in the quiet muted tone of a historical error (it lost nothing).
 
@@ -73,6 +74,14 @@ moves. Placement: `compaction_undo` on its divider, everything else at the
 tail. A control a transcript turn already names (`controlMessageId`,
 `satisfiesControlId`, a U's control) is no longer queued.
 
-Compaction turns have no AG-UI stream. The snapshot revalidates on run end and
-on inbox frames that carry or clear a control; see
+One announcer. Rows and dividers carry no live region; `useThreadControls`
+announces each writer-caused change and `useCompactionAnnouncements` each
+turn-driven one, through the global polite announcer, which reaches rows the
+virtualized list has scrolled away. Status words come from
+`compaction/control-copy.ts`, so the announcement and the row say the same
+thing for each control kind.
+
+Compaction turns have no AG-UI stream, and a cancelled one ends without
+`RUN_FINISHED`. The snapshot revalidates on run end and on every inbox frame
+(the server sends one after every lease release); see
 [thread live updates](thread-live-updates.md).

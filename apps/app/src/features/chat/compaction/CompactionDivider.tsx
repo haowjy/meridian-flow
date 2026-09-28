@@ -7,7 +7,8 @@
  * undo with Withdraw, and a pending compaction's Stop live on the same line.
  * A refused undo and a manual compaction's failure speak on the divider they
  * belong to. An autocompaction's failure stays quiet (R3): the failed reply
- * under the writer's newest message already says so.
+ * under the writer's newest message already says so. State changes are spoken
+ * by the global polite announcer, never a live region on the row.
  */
 import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
@@ -20,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { type CompactionUndoMarkers, type DividerView, dividerView } from "./compaction-model";
+import { controlStatusCopy } from "./control-copy";
 import type { QueuedControl } from "./thread-controls";
 import { useFocusWithinRow } from "./useFocusWithinRow";
 
@@ -120,9 +122,17 @@ export function CompactionDivider({
   // A refused undo loses nothing: it reads like a historical error, not an alarm.
   if (view.refusalCopy) notes.push({ key: "refusal", text: view.refusalCopy, tone: "muted" });
   if (view.undoNote === "withdrawn")
-    notes.push({ key: "withdrawn", text: t`Undo withdrawn.`, tone: "muted" });
+    notes.push({
+      key: "withdrawn",
+      text: controlStatusCopy("compaction_undo", "withdrawn"),
+      tone: "muted",
+    });
   if (view.undo?.kind === "queued" && view.undo.control.status === "failed")
-    notes.push({ key: "undo-failed", text: t`Couldn't queue the undo.`, tone: "error" });
+    notes.push({
+      key: "undo-failed",
+      text: controlStatusCopy("compaction_undo", "failed"),
+      tone: "error",
+    });
   if (view.undo?.kind === "queued" && view.undo.control.status === "withdraw_failed")
     notes.push({ key: "withdraw-failed", text: t`Couldn't withdraw the undo.`, tone: "error" });
 
@@ -266,8 +276,8 @@ function QueuedUndoControls({
   const withdrawing = control.status === "withdrawing";
   return (
     <>
-      <span role="status" className="shrink-0 whitespace-nowrap text-meta text-muted-foreground">
-        {withdrawing ? t`Withdrawing undo` : t`Undo queued`}
+      <span className="shrink-0 whitespace-nowrap text-meta text-muted-foreground">
+        {controlStatusCopy("compaction_undo", withdrawing ? "withdrawing" : "queued")}
       </span>
       {onWithdraw ? (
         <Button

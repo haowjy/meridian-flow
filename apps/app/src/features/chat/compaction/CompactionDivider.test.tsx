@@ -170,7 +170,9 @@ describe("CompactionDivider", () => {
       onWithdraw,
     });
     expect(button("Undo compaction")).toBeUndefined();
-    expect(host.querySelector('[role="status"]')?.textContent).toBe("Undo queued");
+    expect(host.textContent).toContain("Undo queued");
+    // The global announcer speaks it; the row is not a second live region.
+    expect(host.querySelector('[role="status"]')).toBeNull();
     await act(async () => button("Withdraw undo")?.click());
     expect(onWithdraw).toHaveBeenCalledWith(queued);
   });
@@ -303,7 +305,8 @@ describe("QueuedControlRows", () => {
     await act(async () =>
       root.render(<QueuedControlRows controls={[compact(status)]} onWithdraw={vi.fn()} />),
     );
-    expect(host.querySelector('[role="status"]')?.textContent).toBe(copy);
+    expect(host.querySelector("[data-queued-control]")?.textContent).toBe(copy);
+    expect(host.querySelector('[role="status"]')).toBeNull();
     expect(button("Withdraw compaction")).toBeUndefined();
   });
 

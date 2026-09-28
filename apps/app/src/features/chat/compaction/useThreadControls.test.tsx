@@ -92,7 +92,7 @@ describe("useThreadControls", () => {
       id = latest.enqueue({ kind: "compact" });
     });
     expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "failed" }]);
-    expect(announcements.announceError).toHaveBeenCalled();
+    expect(announcements.announceError).toHaveBeenCalledWith("Couldn't queue the compaction.");
     const retry = deferred<unknown>();
     api.enqueueThreadControl.mockReturnValueOnce(retry.promise);
     await act(async () => latest.retry(id));
@@ -116,6 +116,7 @@ describe("useThreadControls", () => {
     await act(async () => latest.withdraw(queued));
     expect(api.withdrawThreadControl).not.toHaveBeenCalled();
     expect(latest.queued[0]?.status).toBe("withdrawing");
+    expect(announcements.announce).toHaveBeenLastCalledWith("Withdrawing compaction");
     await act(async () =>
       enqueued.resolve({
         id,
@@ -158,5 +159,28 @@ describe("useThreadControls", () => {
     expect(transport.cancel).toHaveBeenCalledWith("thread-1", "c");
     expect(latest.stoppingTurnIds.has("c")).toBe(true);
     expect(invalidateQueries).toHaveBeenCalled();
+  });
+
+  it("announces a failed enqueue in its own control kind's words", async () => {
+    api.enqueueThreadControl.mockRejectedValue(new Error("offline"));
+    await act(async () => {
+      latest.enqueue({ kind: "handoff_brief" });
+    });
+    expect(announcements.announceError).toHaveBeenLastCalledWith(
+      "Couldn't queue the handoff brief.",
+    );
+    await act(async () => {
+      latest.enqueue({ kind: "compaction_undo", compactionTurnId: "c" });
+    });
+    expect(announcements.announceError).toHaveBeenLastCalledWith("Couldn't queue the undo.");
+  });
+
+  it("announces the same words the row shows when a withdrawal finds the control already ran", async () => {
+    api.enqueueThreadControl.mockResolvedValue({ id: "x", pending: null, turnId: null });
+    api.withdrawThreadControl.mockResolvedValue({ outcome: "already_finished" });
+    await act(async () =>
+      latest.withdraw({ id: "k", control: { kind: "compact" }, status: "queued" }),
+    );
+    expect(announcements.announce).toHaveBeenLastCalledWith("This compaction already ran.");
   });
 });

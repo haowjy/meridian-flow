@@ -5,7 +5,9 @@
  * `/compact` sits after the newest turn as a dashed rule: the divider it will
  * become, not yet drawn. Withdraw is right after the words; the withdrawal's
  * outcome replaces the words on the same row. A handoff brief Retry renders
- * minimally here; its card is the handoff surface's.
+ * minimally here; its card is the handoff surface's. The rows carry no live
+ * region: `useThreadControls` announces each change through the global polite
+ * announcer, which also reaches a row scrolled out of the virtualized list.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -13,6 +15,7 @@ import { CircleAlert, FoldVertical } from "lucide-react";
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { controlStatusCopy } from "./control-copy";
 import type { QueuedControl } from "./thread-controls";
 import { useFocusWithinRow } from "./useFocusWithinRow";
 
@@ -21,41 +24,6 @@ export type QueuedControlRowsProps = {
   onWithdraw?: (control: QueuedControl) => void;
   onRetry?: (controlId: string) => void;
 };
-
-function copyFor(control: QueuedControl): string {
-  const kind = control.control.kind;
-  switch (control.status) {
-    case "queued":
-    case "withdraw_failed":
-      return kind === "compact"
-        ? t`Compaction queued`
-        : kind === "compaction_undo"
-          ? t`Undo queued`
-          : t`Handoff brief queued`;
-    case "failed":
-      return kind === "compact"
-        ? t`Couldn't queue the compaction.`
-        : kind === "compaction_undo"
-          ? t`Couldn't queue the undo.`
-          : t`Couldn't queue the handoff brief.`;
-    case "withdrawing":
-      return t`Withdrawing`;
-    case "withdrawn":
-      return kind === "compact"
-        ? t`Compaction withdrawn`
-        : kind === "compaction_undo"
-          ? t`Undo withdrawn`
-          : t`Handoff brief withdrawn`;
-    case "stopping":
-      return kind === "compact" ? t`Stopping compaction` : t`Stopping`;
-    case "already_finished":
-      return kind === "compact"
-        ? t`This compaction already ran.`
-        : kind === "compaction_undo"
-          ? t`This undo already ran.`
-          : t`This handoff brief already ran.`;
-  }
-}
 
 function withdrawLabel(control: QueuedControl): string {
   return control.control.kind === "compact"
@@ -116,13 +84,12 @@ function QueuedControlRow({
           <FoldVertical aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
         )}
         <span
-          role="status"
           className={cn(
             "text-caption",
             failed ? "text-destructive" : settled ? "text-ink-subtle" : "text-ink-muted",
           )}
         >
-          {copyFor(control)}
+          {controlStatusCopy(control.control.kind, status)}
         </span>
       </span>
       {failed && onRetry ? (

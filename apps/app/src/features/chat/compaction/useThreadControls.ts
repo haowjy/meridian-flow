@@ -15,12 +15,12 @@ import { enqueueThreadControl, withdrawThreadControl } from "@/client/api/thread
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announce, announceError } from "@/client/stores";
+import { controlStatusCopy } from "./control-copy";
 import {
   controlsReducer,
   type LocalControl,
   mergeQueuedControls,
   type QueuedControl,
-  type WithdrawOutcome,
 } from "./thread-controls";
 
 const NO_LOCAL: readonly LocalControl[] = [];
@@ -33,24 +33,6 @@ export type ThreadControls = {
   withdraw: (control: QueuedControl) => void;
   stop: (turnId: string) => void;
 };
-
-function queuedCopy(control: ControlBody): string {
-  return control.kind === "compact"
-    ? t`Compaction queued`
-    : control.kind === "compaction_undo"
-      ? t`Undo queued`
-      : t`Handoff brief queued`;
-}
-
-function outcomeCopy(control: ControlBody, outcome: WithdrawOutcome): string {
-  if (outcome === "stopping") return t`Stopping compaction`;
-  if (outcome === "already_finished") return t`Already ran`;
-  return control.kind === "compact"
-    ? t`Compaction withdrawn`
-    : control.kind === "compaction_undo"
-      ? t`Undo withdrawn`
-      : t`Handoff brief withdrawn`;
-}
 
 export function useThreadControls(input: {
   threadId: string;
@@ -91,11 +73,7 @@ export function useThreadControls(input: {
         },
         () => {
           dispatch({ type: "enqueue_failed", id });
-          announceError(
-            control.kind === "compaction_undo"
-              ? t`Couldn't queue the undo.`
-              : t`Couldn't queue the compaction.`,
-          );
+          announceError(controlStatusCopy(control.kind, "failed"));
         },
       );
       inflight.current.set(id, request);
@@ -110,7 +88,7 @@ export function useThreadControls(input: {
     (control: ControlBody) => {
       const id = crypto.randomUUID();
       dispatch({ type: "enqueue", id, control });
-      announce(queuedCopy(control));
+      announce(controlStatusCopy(control.kind, "queued"));
       send(id, control);
       return id;
     },
@@ -122,7 +100,7 @@ export function useThreadControls(input: {
       const entry = localRef.current.find((candidate) => candidate.id === controlId);
       if (entry?.request !== "failed") return;
       dispatch({ type: "retry", id: controlId });
-      announce(queuedCopy(entry.control));
+      announce(controlStatusCopy(entry.control.kind, "queued"));
       // Same id: the server treats a repeat as the original request.
       send(controlId, entry.control);
     },
@@ -132,13 +110,14 @@ export function useThreadControls(input: {
   const withdraw = useCallback(
     (queued: QueuedControl) => {
       dispatch({ type: "withdraw", id: queued.id, control: queued.control });
+      announce(controlStatusCopy(queued.control.kind, "withdrawing"));
       const enqueueing = inflight.current.get(queued.id) ?? Promise.resolve();
       void enqueueing
         .then(() => withdrawThreadControl(threadId, queued.id))
         .then(
           ({ outcome }) => {
             dispatch({ type: "withdrawn", id: queued.id, outcome, leafTurnId: leafRef.current });
-            announce(outcomeCopy(queued.control, outcome));
+            announce(controlStatusCopy(queued.control.kind, outcome));
             revalidate();
           },
           () => {
