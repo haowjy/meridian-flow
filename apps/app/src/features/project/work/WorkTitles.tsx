@@ -9,7 +9,8 @@ import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/works";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { TabTitleField, titleChipClass } from "../shell/TabTitleField";
+import { TabTitleField } from "../shell/TabTitleField";
+import { titleChipClass } from "../shell/title-chip";
 import { useWorkRename } from "./useWorkRename";
 
 const headingClass = "min-w-0 text-xl font-semibold tracking-tight [overflow-wrap:anywhere]";

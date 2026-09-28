@@ -80,7 +80,6 @@ export function CreationDialog({
               id={nameId}
               autoFocus
               autoComplete="off"
-              maxLength={120}
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder={namePlaceholder}

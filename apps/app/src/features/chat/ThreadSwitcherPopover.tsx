@@ -28,7 +28,7 @@ import { useProjectThreadGroups } from "@/features/project/data/project-thread-g
 import { PaneTitle } from "@/features/project/PaneTitle";
 import { relativeTime } from "@/features/project/relative-time";
 import { useChatNavigation } from "@/features/project/routing/chat-navigation";
-import { titleChipClass } from "@/features/project/shell/TabTitleField";
+import { titleChipClass } from "@/features/project/shell/title-chip";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 

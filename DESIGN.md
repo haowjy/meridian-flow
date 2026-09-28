@@ -108,7 +108,11 @@ Core shell expectations:
   (`InlineEditInput`, `InlineEditTextarea`): the field inherits the text's
   typography, has no padding or border, sizes to its text, and paints its edge
   with the `inline-edit-field` box-shadow bleed. Resting text wears
-  `inline-edit-trigger`. Tab titles (chat, Work) rename inside their tab.
+  `inline-edit-trigger`. Tab titles (chat, Work) rename inside their tab. Single-line
+  edits share one protocol, `useInlineEdit`: Enter or blur commits, Escape or an
+  empty or unchanged name cancels, and a failure stays open with its message.
+  iOS focus zoom is suppressed globally (`lib/ios-focus-zoom`), so fields keep the
+  text's size on phones too.
 - Confirm/dismiss pairs sit at the right edge, dismiss first: Cancel, then the
   primary action (Save, Create, Delete).
 - Respect reduced motion; motion should clarify location or state, not perform for its own sake.

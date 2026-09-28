@@ -2632,8 +2632,13 @@ msgstr "Names cannot begin with '@'. That prefix is reserved for authority quali
 
 #. placeholder {0}: error.character ?? ""
 #: src/features/project/context/context-entry-name.ts
-msgid "Names cannot contain '{0}'"
-msgstr "Names cannot contain '{0}'"
+#~ msgid "Names cannot contain '{0}'"
+#~ msgstr "Names cannot contain '{0}'"
+
+#. placeholder {0}: error.character ?? ""
+#: src/features/project/context/context-entry-name.ts
+msgid "Names cannot contain “{0}”"
+msgstr "Names cannot contain “{0}”"
 
 #: src/features/project/context/context-entry-name.ts
 msgid "Names cannot end with '/'"
@@ -3155,8 +3160,8 @@ msgstr "Project creation failed."
 #~ msgstr "Project name"
 
 #: src/features/project/shell/InlineProjectTitle.tsx
-msgid "Project name is required"
-msgstr "Project name is required"
+#~ msgid "Project name is required"
+#~ msgstr "Project name is required"
 
 #: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Project title"

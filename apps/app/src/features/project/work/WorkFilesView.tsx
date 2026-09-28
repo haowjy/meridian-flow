@@ -18,7 +18,6 @@ import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
-import { InlineEditInput } from "@/components/ui/inline-edit";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -30,6 +29,7 @@ import {
   useDeleteConfirmation,
 } from "../context/ContextEntryActions";
 import { fileKindIcon } from "../context/context-file-icon";
+import { EntryNameField } from "../context/EntryNameField";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
 import { useDockViewStore, useOpenFileInDock } from "../dock/dock-view-store";
 import { usePostApplyDraftGroupProjections } from "../draft-apply-recovery/DraftApplyRecoveryProvider";
@@ -599,21 +599,7 @@ function InlineRename({
     kind: "file",
     onDone,
   });
-  return (
-    <span className="flex min-w-0 flex-1">
-      <InlineEditInput
-        ref={form.inputRef}
-        value={form.name}
-        onChange={form.onChange}
-        onKeyDown={form.onKeyDown}
-        onBlur={form.onBlur}
-        aria-label={t`File name`}
-        autoCapitalize="off"
-        autoCorrect="off"
-        spellCheck={false}
-      />
-    </span>
-  );
+  return <EntryNameField form={form} label={t`File name`} />;
 }
 
 /** A group label in the recency-list rank, with the recency list's rhythm. */

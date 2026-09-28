@@ -9,7 +9,8 @@ import { useRenameThread } from "@/client/query/useRenameThread";
 import { announce } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
-import { TabTitleField, titleChipClass } from "@/features/project/shell/TabTitleField";
+import { TabTitleField } from "@/features/project/shell/TabTitleField";
+import { titleChipClass } from "@/features/project/shell/title-chip";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { ThreadSwitcherPopover } from "./ThreadSwitcherPopover";
 

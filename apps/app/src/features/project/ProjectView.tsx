@@ -378,12 +378,7 @@ export function ProjectView(props: ProjectViewProps) {
           <HydratedReviewProject
             {...resolvedProps}
             projectTitle={projectTitle}
-            titleEdit={{
-              pending: renameProject.isPending,
-              error: renameProject.error,
-              onStart: () => renameProject.reset(),
-              onSave: (title) => renameProject.mutateAsync(title),
-            }}
+            titleEdit={{ onSave: (title) => renameProject.mutateAsync(title) }}
           />
         </>
       ) : null}

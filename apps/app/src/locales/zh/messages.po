@@ -2632,7 +2632,12 @@ msgstr ""
 
 #. placeholder {0}: error.character ?? ""
 #: src/features/project/context/context-entry-name.ts
-msgid "Names cannot contain '{0}'"
+#~ msgid "Names cannot contain '{0}'"
+#~ msgstr ""
+
+#. placeholder {0}: error.character ?? ""
+#: src/features/project/context/context-entry-name.ts
+msgid "Names cannot contain “{0}”"
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
@@ -3151,8 +3156,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/shell/InlineProjectTitle.tsx
-msgid "Project name is required"
-msgstr ""
+#~ msgid "Project name is required"
+#~ msgstr ""
 
 #: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Project title"

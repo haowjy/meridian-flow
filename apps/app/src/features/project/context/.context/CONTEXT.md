@@ -52,7 +52,7 @@ ContextTreePanel (desktop)          MobileContextBrowser (mobile)
        ├─ useDeleteConfirmation ─────────────┤
        └─ ContextEntryActions (menus) ───────┘
                      │
-              useInlineNameForm (shared core)
+      useInlineEdit (components/ui, shared core)
                      │
           validateContextEntryName (pure)
 
