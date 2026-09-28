@@ -7,8 +7,9 @@ import {
   requirePositional,
   stringOption,
 } from "../../core/command";
+import { blockTimings, renderBlocks } from "./block-timing";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
-import { projectThreadView, renderThreadView } from "./transcript";
+import { projectThreadView, renderThreadView, selectTurns } from "./transcript";
 
 export const threadViewCommand: CommandSpec = {
   path: ["thread", "view"],
@@ -20,6 +21,10 @@ export const threadViewCommand: CommandSpec = {
     turn: { type: "string", description: "Only this turn (id or id prefix)" },
     last: { type: "string", description: "Show the last N turns (default 20)" },
     full: { type: "boolean", description: "No truncation, all turns" },
+    blocks: {
+      type: "boolean",
+      description: "Per-block timing instead: sequence, type, tool, created time, gap, size",
+    },
   },
   examples: [
     "./mf thread view c3   # ref in the default project",
@@ -27,6 +32,7 @@ export const threadViewCommand: CommandSpec = {
     "./mf thread view 3f9a1c   # unique id prefix",
     "./mf thread view <id> --turn <turnId> --full",
     "./mf thread view <id> --json --fields turns",
+    "./mf thread view <id> --blocks --json | jq -c '.blocks[] | select(.gapMs > 5000)'",
   ],
   async run(ctx) {
     const session = await ctx.session();
@@ -39,12 +45,16 @@ export const threadViewCommand: CommandSpec = {
       "GET",
       apiThreadSnapshotPath(threadId),
     );
-    const view = projectThreadView(snapshot, {
+    const selection = {
       full: flag(ctx, "full"),
       turnId: stringOption(ctx, "turn"),
       last: intOption(ctx, "last", 20),
-    });
-    ctx.out.result(view, renderThreadView);
+    };
+    if (flag(ctx, "blocks")) {
+      ctx.out.result(blockTimings(threadId, selectTurns(snapshot, selection).turns), renderBlocks);
+    } else {
+      ctx.out.result(projectThreadView(snapshot, selection), renderThreadView);
+    }
     return undefined;
   },
 };

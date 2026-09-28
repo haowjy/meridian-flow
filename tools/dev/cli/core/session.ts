@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import http, { type IncomingHttpHeaders } from "node:http";
 import https from "node:https";
 import path from "node:path";
+import { deserializeTransport } from "@meridian/contracts/protocol";
 import { portlessCa } from "../../dev-readiness";
 import { branchToPortlessPrefix } from "../../portless-prefix";
 import { resolveExpectedRouteUrls } from "../../portless-routes";
@@ -168,11 +169,14 @@ export function createSession(input: {
         throw httpError(method, requestPath, response);
       }
       if (!response.body) return undefined as T;
+      let parsed: unknown;
       try {
-        return JSON.parse(response.body) as T;
+        parsed = JSON.parse(response.body);
       } catch {
         return response.body as T;
       }
+      // Many routes answer through serializeTransport; callers always see the bare value.
+      return deserializeTransport(parsed) as T;
     },
   };
 }
@@ -202,7 +206,9 @@ async function devLogin(appUrl: string, ca: string[] | undefined): Promise<strin
     throw new CliError(
       "unavailable",
       `Dev login failed with HTTP ${response.status}: ${response.body.slice(0, 200)}`,
-      { hint: "Dev login needs WORKOS_DEV_AUTOLOGIN=1 and a non-production app." },
+      {
+        hint: "Dev login needs WORKOS_DEV_AUTOLOGIN=1, a non-production app, and WORKOS_DEV_LOGIN_EMAIL/PASSWORD for a WorkOS password user whose email domain no SSO connection claims (see the WorkOS error above).",
+      },
     );
   }
   return sessionCookie(response.headers);

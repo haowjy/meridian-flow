@@ -27,6 +27,8 @@ export type FollowOptions = {
   textStream: "out" | "err";
   /** Stop after the subscription catch-up instead of following live frames. */
   catchupOnly?: boolean;
+  /** Replaces the default record and line per event; null drops the event from output. */
+  present?: (event: CliEvent) => { value: Record<string, unknown>; line: string | null } | null;
   /** Return true to stop following after this event has been emitted. */
   shouldStop?: (event: CliEvent) => boolean;
   /** Test seam. */
@@ -44,11 +46,16 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
   let state: ThreadLiveState | null = null;
 
   const emit = (event: CliEvent): boolean => {
-    options.out.record(
-      { ...event, threadId: options.threadId },
-      renderEventLine(event, options.full),
-      options.textStream,
-    );
+    const shown = options.present
+      ? options.present(event)
+      : { value: event, line: renderEventLine(event, options.full) };
+    if (shown) {
+      options.out.record(
+        { ...shown.value, threadId: options.threadId },
+        shown.line,
+        options.textStream,
+      );
+    }
     return options.shouldStop?.(event) ?? false;
   };
 
