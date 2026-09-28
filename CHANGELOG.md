@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 ### Changed
+- Withdrawn controls cannot replay if their owner crashes before stopping.
 - Validate Agent selections consistently across handoff and thread creation.
 - Reject handoff Retry while a brief is pending or the latest brief succeeded. Replayed requests stay idempotent.
 - Withdrawing a running compaction still stops it after its lease expires.

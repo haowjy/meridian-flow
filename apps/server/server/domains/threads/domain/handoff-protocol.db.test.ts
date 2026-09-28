@@ -431,12 +431,13 @@ else
       await r.drain();
       await r.settled();
       const before = await repos.turns.listByThread(r.thread.id);
-      await r.delivery.enqueueControl({
+      const retry = {
         threadId: r.thread.id,
         actorId: ids.userId,
         id: crypto.randomUUID(),
-        control: { kind: "handoff_brief" },
-      });
+        control: { kind: "handoff_brief" as const },
+      };
+      await r.delivery.enqueueControl(retry);
       await r.drain();
       const after = await r.settled();
       expect(after.slice(0, -1)).toEqual(before);
@@ -445,6 +446,10 @@ else
         status: "complete",
         prevTurnId: before.at(-1)?.id,
       });
+      expect(await r.delivery.enqueueControl(retry)).toMatchObject({ created: false });
+      await expect(
+        r.delivery.enqueueControl({ ...retry, id: crypto.randomUUID() }),
+      ).rejects.toMatchObject({ statusCode: 409 });
     });
     it.each([false, true])("C7 scan preserves row-owned seed after crash=%s", async (crashed) => {
       const r = await fixture();
@@ -661,12 +666,17 @@ else
         outcome: kind === "compact" ? "stopping" : "withdrawn",
       });
       if (kind === "compact") {
-        expect(await r.delivery.selectPending(r.thread.id)).toHaveLength(1);
+        expect(await r.delivery.selectPending(r.thread.id)).toEqual([]);
         const [lease] = await db
           .select()
           .from(schema.threadRunLeases)
           .where(eq(schema.threadRunLeases.threadId, r.thread.id));
         expect(lease.cancelRequested).toBe(true);
+        await r.send(r.thread.id, "hi after dead owner withdrawal");
+        await r.drain();
+        const turns = await r.settled();
+        expect(turns.filter((turn) => turn.role === "compaction")).toHaveLength(1);
+        expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
       } else {
         expect(await r.delivery.selectPending(r.thread.id)).toEqual([]);
         expect((await repos.turns.findById(turn.id))?.status).toBe("cancelled");

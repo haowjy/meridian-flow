@@ -108,7 +108,12 @@ export function createThreadControls(deps: {
           const turn = await deps.findTurn(receipt.turnId);
           if ((turn?.metadata as JsonObject | null)?.satisfiesControlId === controlId)
             return { outcome: "already_finished" };
-          if (await deps.cancel(threadId, receipt.turnId)) return { outcome: "stopping" };
+          if (await deps.cancel(threadId, receipt.turnId)) {
+            // A cancelled owner can die before cleanup; withdrawal must never replay the control.
+            await deps.acknowledge(threadId, controlId);
+            deps.wake(threadId);
+            return { outcome: "stopping" };
+          }
         }
         await cancelUnboundSeed(threadId, row);
         await deps.acknowledge(threadId, controlId);

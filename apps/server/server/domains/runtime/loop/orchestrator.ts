@@ -154,7 +154,6 @@ import { createRunSessions } from "./run-session.js";
 import {
   type DrainRunLoopInput,
   isDrainRun,
-  NoPendingWakeError,
   type PreparedLoop,
   type RunLoopInput,
 } from "./run-turn-port.js";
@@ -522,9 +521,6 @@ async function runDrainTurn(
         ? (existingTurns.find((turn) => turn.id === prevTurnId) ?? null)
         : null;
       if (prevTurnId && !previousTurn) throw new Error(`Missing causal turn: ${prevTurnId}`);
-      if (!selection.control && !batch.some((message) => message.intent === "message")) {
-        throw new NoPendingWakeError(input.threadId);
-      }
       const turnById = new Map(
         [...inheritedTurns, ...priorTurns].map((turn) => [turn.id as string, turn]),
       );

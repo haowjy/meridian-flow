@@ -3,7 +3,7 @@ import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import { isPendingPlaceholder } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
-import { HandoffSeedMetadataCodec, SystemUpdateMetadataCodec } from "../../threads/index.js";
+import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import {
   absorbPendingCompact,
@@ -178,6 +178,7 @@ export function createDeliveryAdapter(
       selection: DeliverySelection,
       work: Awaited<ReturnType<typeof workBatch>>,
       prepared: TPrepared,
+      retiredSeedControls: readonly string[],
     ) => Promise<TResult>;
   }): Promise<TResult> {
     for (let attempt = 0; attempt < PREPARATION_ATTEMPTS; attempt += 1) {
@@ -214,7 +215,12 @@ export function createDeliveryAdapter(
     ): Promise<TResult> {
       // Retire invalid seed barriers in the same transaction as their replacement reservation.
       await inbox.ack(input.threadId, selected.staleSeedControls);
-      const result = await input.commit(selected.selection, selected.work, prepared);
+      const result = await input.commit(
+        selected.selection,
+        selected.work,
+        prepared,
+        selected.staleSeedControls,
+      );
       if (!input.hasPreparationFailure(prepared)) {
         await deps.notices.consume(selected.selection.notices.map(({ id }) => id));
       }
@@ -646,10 +652,7 @@ export function createDeliveryAdapter(
       enqueue,
       findTurn: (id) => deps.repos.turns.findById(id),
       findControlTurn: (id, controlId) => deps.repos.turns.findByControlId(id, controlId),
-      findLatestHandoffSeed: async (id) =>
-        (await deps.repos.turns.listByThread(id))
-          .reverse()
-          .find((turn) => HandoffSeedMetadataCodec.safeParse(turn.metadata).success) ?? null,
+      findLatestHandoffSeed: (id) => deps.repos.turns.findLatestHandoffSeed(id),
       pending: (id) => readPendingInbox(inbox, id),
       lockReceipt: leaseStore.lockThreadReceipt,
       cancel: leaseStore.cancelThreadReceipt,
@@ -716,9 +719,9 @@ export function createDeliveryAdapter(
             ? Promise.resolve(null)
             : prepare(selection),
         hasPreparationFailure: (prepared) => !prepared || prepared.preparationFailure !== undefined,
-        commit: async (_selection, work, prepared) => {
+        commit: async (_selection, work, prepared, retiredSeedControls) => {
           if (!prepared) {
-            await appendPending(lease.threadId);
+            if (retiredSeedControls.length > 0) await appendPending(lease.threadId);
             return null;
           }
           await prepared.persist?.();

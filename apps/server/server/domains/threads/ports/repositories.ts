@@ -434,6 +434,7 @@ export interface TurnRepository {
   findById(id: TurnId): Promise<Turn | null>;
   /** Latest execution or automatic satisfaction of one inbox control. */
   findByControlId(threadId: ThreadId, controlId: string): Promise<Turn | null>;
+  findLatestHandoffSeed(threadId: ThreadId): Promise<Turn | null>;
   listByThread(threadId: ThreadId): Promise<Turn[]>;
   /** Targeted run-start and under-lock re-read for one thread's pending placeholders. */
   listPendingPlaceholdersForThread(threadId: ThreadId): Promise<Turn[]>;

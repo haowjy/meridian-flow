@@ -43,7 +43,10 @@ including after that Retry succeeds; it never queues another paid summary.
 ```
 
 Withdrawal acknowledges an unbound pending row. If a live run already bound
-it as `controlMessageId`, withdrawal requests Stop for that run instead.
+it as `controlMessageId`, withdrawal requests Stop for that run instead,
+including when the receipt lease is overdue. The control is acknowledged in
+the same transaction: a crashed owner cannot replay a withdrawn request.
+A row-owned handoff seed ignores an expired receipt and settles directly.
 An automatic compaction that absorbed it as `satisfiesControlId` returns
 `already_finished`; its reply continues and C retires the control.
 A finished or withdrawn row

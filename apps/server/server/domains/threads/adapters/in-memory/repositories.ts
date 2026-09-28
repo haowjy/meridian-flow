@@ -563,6 +563,23 @@ export function createInMemoryRepositories(
     async findById(id) {
       return turns.get(id) ?? null;
     },
+    async findLatestHandoffSeed(threadId) {
+      return (
+        orderTurnsByPosition(
+          [...turns.values()].filter((turn) => {
+            const metadata = turn.metadata as
+              | import("@meridian/contracts/threads").JsonObject
+              | null;
+            return (
+              turn.threadId === threadId &&
+              turn.role === "system" &&
+              metadata?.kind === "derivation_seed" &&
+              metadata?.derivation === "handoff"
+            );
+          }),
+        ).at(-1) ?? null
+      );
+    },
     async findByControlId(threadId, controlId) {
       return (
         orderTurnsByPosition(
