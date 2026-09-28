@@ -111,4 +111,5 @@ export interface WorkContextProjectionSignal {
 
 export * from "./receipts.js";
 export * from "./work-authority.js";
+export * from "./work-retention.js";
 export * from "./work-slug.js";
