@@ -3,7 +3,9 @@ import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { SummaryOutcome, SummaryResponse } from "../ports/conversation-summarizer.js";
 import type { CompactionDecision } from "./compaction/decision.js";
+import { changedDocuments, collectRecordedDocuments } from "./compaction/elide.js";
 import { projectActiveHistory, projectCompactedHistory } from "./compaction/index.js";
+import { queryCompactionRevisions } from "./compaction-revisions.js";
 import {
   completeCompactionCurrent,
   type PreparedCompaction,
@@ -16,6 +18,7 @@ import type { DeliveryBoundary } from "./runtime-delivery.js";
 
 export async function executeCompaction({
   deps,
+  assertNoResponseScope,
   input,
   thread,
   currentTurn,
@@ -27,6 +30,7 @@ export async function executeCompaction({
   settleResponses,
 }: {
   deps: OrchestratorDeps;
+  assertNoResponseScope: () => void;
   input: RunLoopInput;
   thread: Thread;
   currentTurn: Turn;
@@ -38,6 +42,23 @@ export async function executeCompaction({
   settleResponses: (rows: SummaryResponse[]) => Promise<void>;
 }) {
   const projection = projectActiveHistory(allTurns, allBlocks, thread.ref);
+  const policies = (name: string) => deps.toolRegistry.getRegistration(name)?.documentText;
+  const recorded = collectRecordedDocuments(
+    projection.turns.map((turn) => ({
+      turn,
+      blocks: projection.blocks.filter((block) => block.turnId === turn.id),
+    })),
+    policies,
+  );
+  const current = await queryCompactionRevisions({
+    threadId: input.threadId,
+    recorded,
+    revisions: deps.documentRevisions,
+    assertNoResponseScope,
+  });
+  const changed = [
+    ...new Set(changedDocuments(recorded, current).flatMap((ref) => (ref.uri ? [ref.uri] : []))),
+  ];
   let summary: SummaryOutcome;
   try {
     input.signal?.throwIfAborted();
@@ -45,6 +66,7 @@ export async function executeCompaction({
       threadId: input.threadId,
       turnId: currentTurn.id,
       instruction: "compaction",
+      changedDocuments: changed,
       requestInHand: decision.requestInHand,
       forceCold: decision.path === "cold",
       projection: projectCompactedHistory(projection, decision.plan),
@@ -84,6 +106,7 @@ export async function executeCompaction({
     prepareCurrent: () =>
       prepareCompactionSuccessor({
         deps,
+        assertNoResponseScope,
         input,
         thread,
         placeholder: currentTurn,

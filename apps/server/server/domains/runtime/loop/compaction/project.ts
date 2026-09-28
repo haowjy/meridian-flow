@@ -38,7 +38,7 @@ export interface ProjectedActiveHistory {
 
 function compactionPropsForTurn(turnId: string, blocks: readonly Block[]): CompactionProps {
   const compactionBlock = blocks.find(
-    (block) => block.turnId === turnId && block.blockType === "custom" && !block.pruned,
+    (block) => block.turnId === turnId && block.blockType === "custom",
   );
   if (!compactionBlock) throw new Error(`Complete compaction ${turnId} has no summary block`);
   const envelope = CompactionBlockContentCodec.parse(compactionBlock.content);
@@ -192,12 +192,15 @@ export function projectActiveHistory(
     (turn, position) => ({ ...turn, position }),
   );
   const tailByTurn = new Map(tail.map((slice) => [slice.turn.id, slice]));
+  const elisions = new Map(metadata.elisions?.map((elision) => [elision.blockId, elision.content]));
   const projectedBlocks = projectedTurns.flatMap((turn) => {
     if (turn.id === synthetic.turn.id) return [synthetic.block];
     const retained = tailByTurn.get(turn.id);
     return retained
-      ? retained.blocks
-      : (blocksByTurn.get(turn.id) ?? []).filter((block) => !block.pruned);
+      ? retained.blocks.map((block) =>
+          elisions.has(block.id) ? { ...block, content: elisions.get(block.id)! } : block,
+        )
+      : (blocksByTurn.get(turn.id) ?? []);
   });
 
   return { turns: projectedTurns, blocks: projectedBlocks };

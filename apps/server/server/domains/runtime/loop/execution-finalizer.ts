@@ -35,9 +35,7 @@ export type FinalizedExecution = {
 
 function publicText(blocks: Block[], responseId: string | null): string {
   return blocks
-    .filter(
-      (block) => block.responseId === responseId && block.blockType === "text" && !block.pruned,
-    )
+    .filter((block) => block.responseId === responseId && block.blockType === "text")
     .map((block) => blockPlainText(block.blockType, block.content) ?? "")
     .join("");
 }

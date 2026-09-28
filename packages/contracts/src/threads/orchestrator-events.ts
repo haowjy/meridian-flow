@@ -106,7 +106,6 @@ export type OrchestratorEvent =
       decisionTurnId: TurnId;
       included: boolean;
     }
-  | { type: "block.pruned"; blockId: string }
   | {
       type: "context.compacted";
       compactionTurnId: TurnId;

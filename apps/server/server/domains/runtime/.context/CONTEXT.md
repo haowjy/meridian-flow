@@ -697,3 +697,32 @@ are finalized on C and published after releasing the child's lock. A late writer
 message stays unacknowledged and is redelivered rather than receiving a synthetic
 failed reply. Compaction responses count when the compaction is the orphaned
 execution's terminal turn; accounting completed compaction ancestors remains C4e.
+
+
+### Document text at compaction
+
+The writer transcript is never pruned. A completed compaction owns frozen
+`metadata.elisions` (block ID, treatment, affected URIs, replacement content).
+`projectActiveHistory` substitutes only its retained tail and pinned request,
+not later arrivals. Reverted, failed, pending and superseded owners do not apply.
+Forks inherit this metadata only when their cutoff includes the owner.
+
+`ToolRegistration.documentText` owns each tool's classification and replacement
+copy. `write` and `search` register policies; references use `reference-context`.
+Error pairs are outside the policy. Explicit empty `documentRevisions` means no
+document text; absent evidence, null tokens and failed lookups fail closed.
+`diff` always elides. Tool pairing, reasoning, writer words and fresh text stay.
+
+Before summarization, one settled-authority revision query supplies the changed
+URIs in the appended instruction (including warm requests, whose prefix stays
+unchanged). Successor prepare independently queries once per attempt and plans
+from raw retained blocks, never from a previous owner's replacements. The loop
+asserts no response scope is open: `DocumentRevisions.current` cannot represent
+response-staged overlays. Query failures become unknown tokens; the assertion
+is an invariant failure, not a lookup failure.
+
+The usable prepared value carries metadata into both provisional assembly and
+`beginPromptEpoch`. The same assembly measures `tokensAfter`; the epoch, frozen
+elisions and successor commit atomically. A moved leaf re-queries, while a failed
+prepare writes no elisions. The estimator excludes elision payloads from C's
+header because only the summary renders there.

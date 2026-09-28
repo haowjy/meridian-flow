@@ -82,9 +82,7 @@ export function createInMemoryProjectChatAdapter(
     const work = workId ? await source.work(workId) : null;
     const preview = head
       ? [...source.blocks()]
-          .filter(
-            (block) => block.turnId === head.id && block.blockType === "text" && !block.pruned,
-          )
+          .filter((block) => block.turnId === head.id && block.blockType === "text")
           .sort((a, b) => a.sequence - b.sequence)
           .map((block) => block.modelText ?? "")
           .join(" ")

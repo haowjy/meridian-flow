@@ -20,6 +20,7 @@ import {
 } from "../../threads/index.js";
 import { SKILL_BODY_METADATA } from "./activated-skills.js";
 import { decideCompaction } from "./compaction/decision.js";
+import { estimateTurnTokens } from "./compaction/estimate.js";
 import {
   CJK_CODE_POINT_TOKEN_RATES,
   CompactionBlockContentCodec,
@@ -1158,4 +1159,65 @@ it("summarizes only the cut blocks plus the prior summary, not the lifted pin or
   const projected = projectCompactedHistory({ turns: [prior, pin, assistant, tail], blocks }, plan);
   expect(projected.turns.map((turn) => turn.id)).toEqual(["prior", "reply"]);
   expect(projected.blocks.map((block) => block.id)).toEqual(["prior-text", "cut"]);
+});
+
+describe("compaction-owned elisions", () => {
+  it("substitutes only the active complete C retained tail, never later blocks", () => {
+    const old = turn("old", 0, "user");
+    const pin = turn("pin", 1, "user");
+    const reply = turn("reply", 2, "assistant");
+    const c = compactionTurn("c", 3, "old", "pin");
+    const late = turn("late", 4, "assistant");
+    const raw = { toolCallId: "call", toolName: "write", output: "STALE" };
+    const replacement = { ...raw, output: "FROZEN STUB" };
+    c.metadata = {
+      ...(c.metadata as JsonObject),
+      elisions: [
+        {
+          blockId: "read",
+          treatment: "stale_read",
+          uris: ["manuscript://chapter"],
+          content: replacement,
+        },
+        { blockId: "late-read", treatment: "stale_read", uris: [], content: replacement },
+      ],
+    };
+    const blocks = [
+      block("read", "reply", 0, "tool_result", raw),
+      block("late-read", "late", 0, "tool_result", raw),
+      compactionBlock("summary", c.id, "Summary"),
+    ];
+    const projected = projectActiveHistory([old, pin, reply, c, late], blocks, "c1");
+    expect(projected.blocks.find((b) => b.id === "read")?.content).toEqual(replacement);
+    expect(projected.blocks.find((b) => b.id === "late-read")?.content).toEqual(raw);
+    for (const status of ["pending", "error", "cancelled"] as const) {
+      expect(
+        projectActiveHistory([old, pin, reply, { ...c, status }, late], blocks, "c1").blocks,
+      ).toEqual(blocks);
+    }
+    const undo = turn("undo", 5, "user", { metadata: compactionUndoMetadata(c.id) });
+    expect(projectActiveHistory([old, pin, reply, c, late, undo], blocks, "c1").blocks).toEqual(
+      blocks,
+    );
+    const next = compactionTurn("next", 6, "old", "pin");
+    expect(
+      projectActiveHistory(
+        [old, pin, reply, c, late, next],
+        [...blocks, compactionBlock("next-summary", next.id, "Next summary")],
+        "c1",
+      ).blocks.find((b) => b.id === "read")?.content,
+    ).toEqual(raw);
+  });
+});
+
+it("does not count frozen elisions as model-visible compaction header tokens", () => {
+  const c = compactionTurn("c", 3, "old", "pin");
+  const before = estimateTurnTokens(c, [], "o200k");
+  c.metadata = {
+    ...(c.metadata as JsonObject),
+    elisions: [
+      { blockId: "read", treatment: "stale_read", uris: [], content: "kept output ".repeat(10000) },
+    ],
+  };
+  expect(estimateTurnTokens(c, [], "o200k")).toBe(before);
 });

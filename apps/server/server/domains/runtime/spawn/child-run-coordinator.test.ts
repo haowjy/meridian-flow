@@ -1079,7 +1079,6 @@ describe("ChildRunCoordinator thread_message", () => {
         },
       });
     });
-    expect((await repos.blocks.findById(cardId))?.pruned).not.toBe(true);
     expect(journal.some((entry) => entry.type === "block.updated")).toBe(true);
   });
 

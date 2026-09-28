@@ -67,6 +67,16 @@ const compactedThroughCodec = z.object({
 
 export const CompactionMetadataCodec = z
   .object({
+    elisions: z
+      .array(
+        z.object({
+          blockId: z.string(),
+          treatment: z.enum(["stale_read", "stale_write"]),
+          uris: z.array(z.string()),
+          content: z.json(),
+        }),
+      )
+      .optional(),
     compactedThrough: compactedThroughCodec,
     pinnedRequestTurnId: z.string().min(1),
     trigger: z.enum(["auto", "manual"]).optional(),

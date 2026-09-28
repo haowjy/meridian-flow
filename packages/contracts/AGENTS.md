@@ -34,3 +34,6 @@ runtime shapes, and observability records.
   real-Work serialization requires opaque project-resolved authority.
 - Keep types JSON-natural at boundaries.
 - Do not import server adapters, database clients, React, or provider SDKs.
+
+- Blocks describe the writer transcript. Model-only document-text elisions belong
+  to compaction metadata, never a block lifecycle flag or client event.

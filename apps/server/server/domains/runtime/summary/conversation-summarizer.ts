@@ -84,7 +84,15 @@ export function createConversationSummarizer(
           model: threadModel,
           now: Date.now(),
         });
-        const prompt = instructionText(input.instruction, config.maxOutputTokens);
+        const prompt = [
+          instructionText(input.instruction, config.maxOutputTokens),
+          ...(input.changedDocuments?.length
+            ? [
+                "These documents changed after they were read; name them, do not restate their earlier text.",
+                ...input.changedDocuments,
+              ]
+            : []),
+        ].join("\n");
 
         async function call(
           request: GenerateRequest,

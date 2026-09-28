@@ -1,0 +1,1 @@
+ALTER TABLE "turn_blocks" DROP COLUMN "pruned";

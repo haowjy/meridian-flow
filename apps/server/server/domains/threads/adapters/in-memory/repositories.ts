@@ -700,7 +700,6 @@ export function createInMemoryRepositories(
         executionSide: input.executionSide ?? null,
         status: input.status ?? "complete",
         collapsedContent: input.collapsedContent ?? null,
-        pruned: false,
         createdAt: toIsoString(new Date()),
       };
       blocks.set(block.id, block);
@@ -723,7 +722,6 @@ export function createInMemoryRepositories(
         executionSide: input.executionSide ?? null,
         status: input.status ?? "complete",
         collapsedContent: input.collapsedContent ?? null,
-        pruned: existing?.pruned ?? false,
         createdAt: existing?.createdAt ?? toIsoString(new Date()),
       };
       blocks.set(block.id, block);
@@ -766,13 +764,6 @@ export function createInMemoryRepositories(
             (turnOrder.get(a.turnId as string) ?? 0) - (turnOrder.get(b.turnId as string) ?? 0);
           return turnDelta === 0 ? a.sequence - b.sequence : turnDelta;
         });
-    },
-    async updatePruned(id, pruned) {
-      const block = blocks.get(id);
-      if (!block) return null;
-      const updated = { ...block, pruned };
-      blocks.set(id, updated);
-      return updated;
     },
   };
 

@@ -72,7 +72,6 @@ export function buildContext(input: BuildContextInput): {
 
   const blocksByTurn = new Map<string, Block[]>();
   for (const block of input.blocks) {
-    if (block.pruned) continue;
     const key = block.turnId as string;
     const list = blocksByTurn.get(key) ?? [];
     list.push(block);
@@ -99,9 +98,7 @@ export function buildContext(input: BuildContextInput): {
 /** One model-visible turn, shared by live requests and cold summary transcripts. */
 export function turnContextMessages(turn: Turn, blocks: readonly Block[]): Message[] {
   const messages: Message[] = [];
-  const turnBlocks = blocks
-    .filter((block) => !block.pruned)
-    .sort((a, b) => a.sequence - b.sequence);
+  const turnBlocks = [...blocks].sort((a, b) => a.sequence - b.sequence);
   if (turn.role === "user") {
     const parts = userTurnContentParts(turnBlocks);
     if (parts.length > 0) {
@@ -183,7 +180,7 @@ function reportPersistedContractFailures(input: BuildContextInput): void {
     }
   }
   for (const block of input.blocks) {
-    if (block.pruned || block.blockType !== "custom") continue;
+    if (block.blockType !== "custom") continue;
     const content = block.content;
     if (
       !content ||
