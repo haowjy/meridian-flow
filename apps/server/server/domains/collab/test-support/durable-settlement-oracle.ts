@@ -35,7 +35,8 @@ export type SettlementOracleResult = {
 
 /**
  * The fixture owns independent row identities for equivalent warm and cold
- * inputs, and normalizes only those fixture namespaces in its observations. This function owns the mandatory kill boundary
+ * inputs, and normalizes only those fixture namespaces in its observations.
+ * This function owns the mandatory kill boundary
  * and the one normalized comparison used by every settlement regression.
  */
 export async function settlementOracle(

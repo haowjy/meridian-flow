@@ -206,7 +206,7 @@ describe("branch push settlement transitions", () => {
     const writer = rig.coordinator.withDocument(documentId, async () => {
       crossed = true;
     });
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(crossed).toBe(false);
     expect(rig.pushes).toEqual([]);
     release();
@@ -233,7 +233,7 @@ describe("branch push settlement transitions", () => {
     expect(await replacement.recover()).toBe(0);
     if (mode === "handoff")
       expect(await rig.store.handoffClaim({ pushId: 1, claim: pending.claim })).toBe(true);
-    else vi.advanceTimersByTime(30_001);
+    else vi.setSystemTime(pending.claim.leaseExpiresAt.getTime() + 1);
     expect(await replacement.recover()).toBe(1);
     expect(await replacement.recover()).toBe(0);
     expect(rig.completed).toEqual([1]);
@@ -281,7 +281,8 @@ describe("branch push settlement transitions", () => {
     };
     await expect(rig.push()).rejects.toThrow("completion fault");
     expect(rig.completed).toEqual([]);
-    vi.advanceTimersByTime(30_001);
+    const pending = await rig.store.loadLiveSettlement(1);
+    vi.setSystemTime(pending.claim.leaseExpiresAt.getTime() + 1);
     expect(await rig.replaceProcess().recover()).toBe(1);
     expect(rig.text()).toBe("Survivor.");
     expect(rig.completed).toEqual([1]);

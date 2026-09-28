@@ -115,6 +115,8 @@ export async function observeSettlement(
   const recoverable = changes.filter(
     (change) => change.beforeText !== null && change.beforeBlockIdentity,
   );
+  // Only fixture namespaces differ; retain and check the document-scoped identity.
+  for (const change of recoverable) expect(change.beforeBlockIdentity?.documentId).toBe(documentId);
   const [outbox] = await db
     .select()
     .from(schema.branchPushSettlementOutbox)

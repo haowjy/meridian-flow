@@ -123,7 +123,7 @@ export const DEFAULT_SCENARIO_IDS = {
 export type ChangeTrailScenarioIds = typeof DEFAULT_SCENARIO_IDS;
 
 export async function resetDatabase(): Promise<void> {
-  // Reset only this suite's owned graph using the shared FK-ordered delete seam.
+  // Clear the graph in this runner-owned disposable database using FK-ordered deletes.
   await deleteDrizzleRows(db, [
     schema.branchPushOutboxUpdates,
     schema.branchPushSettlementOutbox,
@@ -267,8 +267,7 @@ export type MatrixDraftStep = {
 };
 
 export function createHarness(options: ChangeTrailHarnessOptions = {}) {
-  const { PROJECT_ID, SOURCE_ID, WORK_ID, ALPHA_ID, BETA_ID, THREAD_ID, TURN_ID } =
-    options.ids ?? DEFAULT_SCENARIO_IDS;
+  const { ALPHA_ID, BETA_ID, THREAD_ID, TURN_ID } = options.ids ?? DEFAULT_SCENARIO_IDS;
   const persistence = createDrizzleCollabPersistence(db);
   const hocuspocus = fakeHocuspocus();
   const liveCoordinator = createHocuspocusCoordinator({

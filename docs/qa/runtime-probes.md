@@ -64,8 +64,8 @@ appended writer message. Preserve the compared message arrays and their hashes.
 Worked examples: [C6a command transcript][c6a] and [merge-gate report][merge].
 The first merge-gate report explicitly failed real-provider scenarios because
 of billing settlement; its mock and crash successes are not evidence of real
-cache warmth. Historical dates not recorded in those reports are marked unknown
-below, not inferred from file timestamps. The current catalog has not been run
+cache warmth. Historical run dates below come from timestamps in the saved JSON events
+and snapshots, not file modification times. The current catalog has not been run
 end-to-end as one suite.
 
 ## RP-1: Failed controls do not hot-loop
@@ -116,7 +116,7 @@ end-to-end as one suite.
   the behind-barrier case. `hi2` remains pinned after the summary in its request;
   no message is lost or answered twice. The bent case preserves `hi1`, too.
 - **Evidence:** admitted messages, control UUID, final roles and request messages.
-- **Last run:** C6a §4 PASS at `e48c032cd`; date not recorded in report.
+- **Last run:** C6a §4 PASS at `e48c032cd`; 2026-09-28.
 
 ## RP-3: Withdraw before execution and during summary
 
@@ -138,7 +138,7 @@ end-to-end as one suite.
   still gets a reply. A late withdrawal may instead return `already_finished`;
   that does not prove the during-summary case.
 - **Evidence:** pre-withdraw snapshot, withdrawal outcome, terminal turn statuses.
-- **Last run:** C6a §5–6 PASS at `e48c032cd`; date unknown. Merge-gate §26
+- **Last run:** C6a §5–6 PASS at `e48c032cd`; 2026-09-28. Merge-gate §26
   also records queued Withdraw and Stop.
 
 ## RP-4: Proactive autocompaction and byte-stable continuation
@@ -165,7 +165,7 @@ end-to-end as one suite.
 - **Evidence:** C metadata, before/after/following requests, prefix comparison;
   real-provider variant also records usage, cache reads and actual spend.
 - **Last run:** merge-gate §13–16 mock PASS; original real run FAIL (billing
-  settlement), date/commit not recorded in that report. Do not mark real PASS
+  settlement), 2026-09-28 (source commit not recorded in that report). Do not mark real PASS
   from the mock result.
 
 ## RP-5: Kill the server mid-summary
@@ -193,7 +193,7 @@ end-to-end as one suite.
 - **Evidence:** PID/cwd ownership, kill result, pre/post snapshots, recovery events,
   parent report for the child variant.
 - **Last run:** merge-gate §29–30 and §33 PASS for C and S; C6a §8 PASS at
-  `e48c032cd`. Child variant not recorded. Dates unknown.
+  `e48c032cd`. Child variant not recorded. 2026-09-28.
 
 ## RP-6: Manual compact then Undo restores request bytes
 
@@ -267,7 +267,7 @@ end-to-end as one suite.
 - **Evidence:** source sentinel, destination requests, S/control statuses, 409,
   summary path/cache metrics for the real variant.
 - **Last run:** merge-gate §21–24 mock PASS; original real warm/cold run blocked
-  by billing settlement. Date/commit unknown.
+  by billing settlement. 2026-09-28 (source commit not recorded).
 
 ## RP-9: Fork prefix remains frozen as source grows and compacts
 
@@ -289,7 +289,7 @@ end-to-end as one suite.
 - **Expect:** inherited prefix bytes do not change; later source turns/C/U do not
   appear in the fork's inherited transcript.
 - **Evidence:** source and fork snapshots plus inherited-prefix arrays/hashes.
-- **Last run:** merge-gate §8–12 PASS; date/commit unknown.
+- **Last run:** merge-gate §8–12 PASS; 2026-09-28 (source commit not recorded).
 
 ## RP-10: Compaction elides stale document text
 
@@ -348,7 +348,7 @@ end-to-end as one suite.
 - **Evidence:** parent/child requests, tool results, before/after child list and
   model-response usage, inspection cursors and filter inputs.
 - **Last run:** merge-gate §18–20 PASS for current/from-outside and inspection;
-  trashed/malformed variants not recorded there. Date/commit unknown.
+  trashed/malformed variants not recorded there. 2026-09-28 (source commit not recorded).
 
-[c6a]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/agents-milestone-4/evidence/c6a-probe/report.md
-[merge]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/agents-milestone-4/evidence/merge-gate/REPORT.md
+[c6a]: https://github.com/haowjy/meridian-flow-docs/blob/683395ca9b084cee0196ec9c9070755930d38329/work/agents-milestone-4/evidence/c6a-probe/report.md
+[merge]: https://github.com/haowjy/meridian-flow-docs/blob/a4b1dddbd615bbab334dc6fa7b700245f768d288/work/agents-milestone-4/evidence/merge-gate/REPORT.md
