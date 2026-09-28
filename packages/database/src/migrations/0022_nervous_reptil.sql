@@ -1,3 +1,4 @@
 ALTER TABLE "threads" DROP CONSTRAINT "threads_spawn_root_required";--> statement-breakpoint
-ALTER TABLE "threads" ALTER COLUMN "root_thread_id" SET NOT NULL; -- migration-lint: skip SET_NOT_NULL_UNSAFE (thread creation now sets root_thread_id; the pre-launch database has no existing threads requiring backfill)--> statement-breakpoint
+UPDATE "threads" SET "root_thread_id" = "id" WHERE "root_thread_id" IS NULL;--> statement-breakpoint
+ALTER TABLE "threads" ALTER COLUMN "root_thread_id" SET NOT NULL; -- migration-lint: skip SET_NOT_NULL_UNSAFE (the statement above backfills NULL roots to each primary thread's own id)--> statement-breakpoint
 CREATE INDEX "threads_lineage_derivations" ON "threads" USING btree ("root_thread_id") WHERE "threads"."origin_type" IN ('fork', 'handoff'); -- migration-lint: skip INDEX_NOT_CONCURRENTLY (pre-launch threads has no deployed rows; Drizzle runs migrations transactionally, so CONCURRENTLY is unavailable)
