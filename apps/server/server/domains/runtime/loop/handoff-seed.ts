@@ -2,6 +2,7 @@
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { Turn } from "@meridian/contracts/threads";
 import {
+  type HandoffFailureOutcome,
   HandoffFailureOutcomeCodec,
   HandoffSeedMetadataCodec,
   handoffSeedMetadata,
@@ -75,9 +76,13 @@ export async function completeHandoffSeed(
   deps: PersistenceDeps,
   completed: Turn,
   block: ReturnType<typeof handoffSeedBlock>,
+  outcome: HandoffSeedOutcome,
 ): Promise<Turn> {
   const saved = await deps.repos.turns.findById(completed.id);
-  if (saved && saved.status !== "pending") throw new HandoffSeedSettledError(saved);
+  if (!saved) throw new Error("Handoff seed disappeared");
+  if (saved.status !== "pending") throw new HandoffSeedSettledError(saved);
+  const recorded = await recordHandoffSeedOutcome(deps, saved, outcome);
+  completed = { ...completed, metadata: recorded.metadata };
   await persistAndAppendEvents(deps, completed.threadId, async () => ({
     result: undefined,
     events: [
@@ -97,15 +102,24 @@ export async function completeHandoffSeed(
   return completed;
 }
 
-export async function recordHandoffSummary(
-  deps: PersistenceDeps,
+type HandoffSeedOutcome = {
+  summarizer?: import("../ports/conversation-summarizer.js").SummaryOutcome["summarizer"];
+  failure?: HandoffFailureOutcome;
+};
+
+/** One metadata writer, under the ending transaction's thread lock. */
+export async function recordHandoffSeedOutcome(
+  deps: Pick<PersistenceDeps, "repos">,
   turn: Turn,
-  summarizer: import("../ports/conversation-summarizer.js").SummaryOutcome["summarizer"],
-): Promise<void> {
+  outcome: HandoffSeedOutcome,
+): Promise<Turn> {
   // Terminal seed telemetry belongs to its winning completion, not a stale paid attempt.
-  if (turn.status !== "pending") return;
-  await deps.repos.turns.updateStatus(turn.id, {
-    status: turn.status,
-    metadata: { ...HandoffSeedMetadataCodec.parse(turn.metadata), summarizer },
-  });
+  if (turn.status !== "pending") return turn;
+  const metadata = {
+    ...HandoffSeedMetadataCodec.parse(turn.metadata),
+    ...(outcome.summarizer ? { summarizer: outcome.summarizer } : {}),
+    ...outcome.failure,
+  };
+  await deps.repos.turns.updateStatus(turn.id, { status: turn.status, metadata });
+  return { ...turn, metadata };
 }

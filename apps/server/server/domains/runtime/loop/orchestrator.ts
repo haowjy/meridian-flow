@@ -85,7 +85,6 @@ import type {
 } from "../../threads/index.js";
 import {
   agentRequestMetadata,
-  HandoffSeedMetadataCodec,
   loadThreadConversationContext,
   readThreadActivity,
   ThreadConversationContextError,
@@ -127,7 +126,7 @@ import {
   HandoffSeedSettledError,
   handoffBriefFailedCopy,
   handoffSeedBlock,
-  recordHandoffSummary,
+  recordHandoffSeedOutcome,
   reserveHandoffSeed,
 } from "./handoff-seed.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
@@ -1622,9 +1621,11 @@ async function executeLoop({
     if (pendingSummary) {
       const turn = await repos.turns.findById(pendingSummary.turnId);
       if (!turn) throw new Error("Summary placeholder disappeared");
-      const record =
-        pendingSummary.kind === "compaction" ? recordCompactionSummary : recordHandoffSummary;
-      await record(deps, turn, pendingSummary.summarizer);
+      if (pendingSummary.kind === "compaction") {
+        await recordCompactionSummary(deps, turn, pendingSummary.summarizer);
+      } else {
+        await recordHandoffSeedOutcome(deps, turn, { summarizer: pendingSummary.summarizer });
+      }
     }
     await settleSummaryResponses({ deps, thread, rows, accounting: turnAccounting, treeBudget });
   }
@@ -1859,11 +1860,6 @@ async function executeLoop({
       ...currentTurn,
       status: available ? ("complete" as const) : ("error" as const),
       error: available ? null : handoffBriefFailedCopy,
-      metadata: {
-        ...HandoffSeedMetadataCodec.parse(currentTurn.metadata),
-        summarizer: outcome.summarizer,
-        ...failure,
-      },
       completedAt: new Date().toISOString(),
     };
     const index = allTurns.findIndex((turn) => turn.id === currentTurn.id);
@@ -1878,7 +1874,10 @@ async function executeLoop({
         current: {
           kind: "placeholder",
           complete: async () => {
-            const saved = await completeHandoffSeed(deps, completed, block);
+            const saved = await completeHandoffSeed(deps, completed, block, {
+              summarizer: outcome.summarizer,
+              failure,
+            });
             await settlePendingSummary();
             return saved;
           },

@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 - Preserve undo-before-Retry order in expanded control batches; only brief-only batches skip control history.
+- Record brief telemetry and failure metadata through one pending-owner writer; late paid attempts cannot replace the winning outcome.
 
 - Stage activated skills through one boundary owner. Retry briefs defer skill bodies until the successor commits.
 

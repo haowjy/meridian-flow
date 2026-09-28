@@ -19,12 +19,15 @@ import {
   compactionFailureMetadata,
   type EventJournalWriter,
   HandoffFailureOutcomeCodec,
-  HandoffSeedMetadataCodec,
   interruptedPlaceholderError,
   type ThreadRepositories,
 } from "../../threads/index.js";
 import { compactionFailureMeridianError } from "./compaction/decision.js";
-import { handoffBriefFailedCopy, handoffSeedBlock } from "./handoff-seed.js";
+import {
+  handoffBriefFailedCopy,
+  handoffSeedBlock,
+  recordHandoffSeedOutcome,
+} from "./handoff-seed.js";
 import { persistAndAppendEvents } from "./persistence.js";
 
 export type TerminalCause =
@@ -153,7 +156,7 @@ export async function finalizeExecution(
     deps,
     input.threadId,
     async () => {
-      const turn = await deps.repos.turns.findById(input.turnId);
+      let turn = await deps.repos.turns.findById(input.turnId);
       if (
         !turn ||
         turn.threadId !== input.threadId ||
@@ -178,6 +181,14 @@ export async function finalizeExecution(
         report = existingReport;
         return { result: turn, events: [] };
       }
+      if (turn.role === "system" && input.cause.kind === "failed") {
+        turn = await recordHandoffSeedOutcome(deps, turn, {
+          failure: {
+            reason: input.cause.reason === "orphaned" ? "interrupted" : "handoff_brief_failed",
+            phase: input.cause.reason === "orphaned" ? "recovery" : "delivery",
+          },
+        });
+      }
       const completedAt = toIsoString(new Date());
       const error =
         input.cause.kind === "failed"
@@ -197,15 +208,6 @@ export async function finalizeExecution(
                 turn.metadata,
                 compactionFailureForFinalizer(input.cause),
               ),
-            }
-          : {}),
-        ...(turn.role === "system" && input.cause.kind === "failed"
-          ? {
-              metadata: {
-                ...HandoffSeedMetadataCodec.parse(turn.metadata),
-                reason: input.cause.reason === "orphaned" ? "interrupted" : "handoff_brief_failed",
-                phase: input.cause.reason === "orphaned" ? "recovery" : "delivery",
-              },
             }
           : {}),
         status:

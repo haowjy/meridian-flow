@@ -64,8 +64,8 @@ ending-control acknowledgement, including when no reply remains.
 
 Both successful and failed summaries return every attempted paid row.
 `settleSummaryResponses` only meters and journals rows; each owner writes its
-own telemetry. Brief metadata goes through `HandoffSeedMetadataCodec`, never
-the compaction codec. Summary rejection reasons are shared contracts; each
+own telemetry. `recordHandoffSeedOutcome` owns brief telemetry and failure
+metadata through `HandoffSeedMetadataCodec`, never the compaction codec. Summary rejection reasons are shared contracts; each
 owner composes its own failure phases. Failed S records reason and phase in
 metadata and `handoff_brief_failed` details, with writer copy in `turn.error`.
 Rows attach to S, debit the destination run's shared tree budget and source
