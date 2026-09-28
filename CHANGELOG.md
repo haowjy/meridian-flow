@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 ### Changed
+- Expose compaction failure and control metadata, with token counts, in the existing `thread view --json` projection.
 - Persist typed compaction failure reasons and phases on failed C turns and their `turn.error` events; fail C on a late-arrival fit overflow while settling paid summaries.
 
 - Compaction clears stale document reads, write text, search excerpts and references from model context. Fresh text and writer transcripts stay intact.

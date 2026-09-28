@@ -19,6 +19,17 @@ export type CompactTurn = {
   finishReason: Turn["finishReason"];
   model: string | null;
   error: string | null;
+  compactionMetadata?: {
+    trigger?: string;
+    controlMessageId?: string;
+    satisfiesControlId?: string;
+    reason?: string;
+    phase?: string;
+    estimatedTokens?: number;
+    fitLimitTokens?: number;
+    tokensBefore?: number;
+    tokensAfter?: number;
+  };
   createdAt: string;
   usage: { inputTokens: number; outputTokens: number; costUsd: string };
   blocks: CompactBlock[];
@@ -102,6 +113,41 @@ export function compactBlock(block: Block, limits: TranscriptLimits): CompactBlo
 }
 
 export function compactTurn(turn: Turn, limits: TranscriptLimits): CompactTurn {
+  const metadata = record(turn.metadata);
+  const summaryBlock = turn.blocks.find(
+    (block) => block.blockType === "custom" && record(block.content).kind === "compaction",
+  );
+  const summaryProps = record(record(summaryBlock?.content).props);
+  const compactionMetadata =
+    turn.role === "compaction"
+      ? {
+          ...(typeof metadata.trigger === "string" ? { trigger: metadata.trigger } : {}),
+          ...(typeof metadata.controlMessageId === "string"
+            ? { controlMessageId: metadata.controlMessageId }
+            : {}),
+          ...(typeof metadata.satisfiesControlId === "string"
+            ? { satisfiesControlId: metadata.satisfiesControlId }
+            : {}),
+          ...(typeof metadata.reason === "string" ? { reason: metadata.reason } : {}),
+          ...(typeof metadata.phase === "string" ? { phase: metadata.phase } : {}),
+          ...(typeof metadata.estimatedTokens === "number"
+            ? { estimatedTokens: metadata.estimatedTokens }
+            : {}),
+          ...(typeof metadata.fitLimitTokens === "number"
+            ? { fitLimitTokens: metadata.fitLimitTokens }
+            : {}),
+          ...(typeof metadata.tokensBefore === "number"
+            ? { tokensBefore: metadata.tokensBefore }
+            : typeof summaryProps?.tokensBefore === "number"
+              ? { tokensBefore: summaryProps.tokensBefore }
+              : {}),
+          ...(typeof metadata.tokensAfter === "number"
+            ? { tokensAfter: metadata.tokensAfter }
+            : typeof summaryProps?.tokensAfter === "number"
+              ? { tokensAfter: summaryProps.tokensAfter }
+              : {}),
+        }
+      : undefined;
   return {
     id: turn.id,
     role: turn.role,
@@ -110,6 +156,9 @@ export function compactTurn(turn: Turn, limits: TranscriptLimits): CompactTurn {
     finishReason: turn.finishReason,
     model: turn.model ?? null,
     error: turn.error,
+    ...(compactionMetadata && Object.keys(compactionMetadata).length > 0
+      ? { compactionMetadata }
+      : {}),
     createdAt: turn.createdAt,
     usage: {
       inputTokens: turn.inputTokens,
@@ -195,6 +244,15 @@ export function renderThreadView(view: ThreadView): string {
       `[${turn.role}] ${turn.id} ${turn.status}${turn.finishReason ? `/${turn.finishReason}` : ""}${turn.model ? ` ${turn.model}` : ""}${turn.role === "assistant" ? ` in=${turn.usage.inputTokens} out=${turn.usage.outputTokens}` : ""}`,
     );
     if (turn.error) lines.push(`  error: ${turn.error}`);
+    if (
+      turn.role === "compaction" &&
+      turn.status === "error" &&
+      turn.compactionMetadata?.reason &&
+      turn.compactionMetadata.phase
+    )
+      lines.push(
+        `  compaction failure: ${turn.compactionMetadata.reason} during ${turn.compactionMetadata.phase}`,
+      );
     for (const block of turn.blocks) {
       const rendered = renderBlock(block);
       if (rendered) lines.push(...rendered.split("\n").map((line) => `  ${line}`));
