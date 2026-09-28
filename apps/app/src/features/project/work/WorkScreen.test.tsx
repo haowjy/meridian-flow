@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { WorkCreationDestination } from "./WorkScreen";
+import { WorkCreationDestination } from "./WorkCreationDestination";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray, ...values: unknown[]) =>
