@@ -6,7 +6,8 @@
  */
 import type { Block } from "@meridian/contracts/protocol";
 
-export type ThreadReference = { threadId: string; title: string | null; ref: string | null };
+/** A source chat the child was pointed at. Its ref is a model handle, never writer copy. */
+export type ThreadReference = { threadId: string; title: string | null };
 
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -29,7 +30,6 @@ export function readThreadReferences(blocks: readonly Block[]): ThreadReference[
         {
           threadId,
           title: typeof props?.title === "string" ? props.title : null,
-          ref: typeof props?.ref === "string" ? props.ref : null,
         },
       ];
     });

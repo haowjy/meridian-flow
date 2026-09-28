@@ -64,7 +64,7 @@ const referenceBlock = (threadId: string, title: string | null, sequence = 1) =>
     },
   }) as unknown as Block;
 
-async function render(reference: { threadId: string; title: string | null; ref: string | null }) {
+async function render(reference: { threadId: string; title: string | null }) {
   const onOpen = vi.fn();
   await act(async () =>
     root.render(
@@ -84,8 +84,8 @@ describe("readThreadReferences", () => {
     expect(
       readThreadReferences([referenceBlock("b", "Second", 2), text, referenceBlock("a", null, 1)]),
     ).toEqual([
-      { threadId: "a", title: null, ref: "c4" },
-      { threadId: "b", title: "Second", ref: "c4" },
+      { threadId: "a", title: null },
+      { threadId: "b", title: "Second" },
     ]);
   });
 });
@@ -93,7 +93,7 @@ describe("readThreadReferences", () => {
 describe("ThreadReferenceChip", () => {
   it("names a live source by its current title and opens it", async () => {
     lookup.projectThreads = [{ id: "source", title: "Chapter 12 plan (renamed)" }];
-    const onOpen = await render({ threadId: "source", title: "Chapter 12 plan", ref: "c4" });
+    const onOpen = await render({ threadId: "source", title: "Chapter 12 plan" });
     const link = host.querySelector("button");
     expect(link?.textContent).toBe("Chapter 12 plan (renamed)");
     expect(link?.getAttribute("aria-label")).toBe("Open source chat Chapter 12 plan (renamed)");
@@ -104,8 +104,17 @@ describe("ThreadReferenceChip", () => {
 
   it("says a trashed source is in the trash, and does not offer to open it", async () => {
     lookup.probe.mockRejectedValue(Object.assign(new Error("Thread not found"), { status: 404 }));
-    await render({ threadId: "gone", title: "Old outline", ref: "c4" });
+    await render({ threadId: "gone", title: "Old outline" });
     await vi.waitFor(() => expect(host.textContent).toContain("Old outline (in the trash)"));
     expect(host.querySelector("button")).toBeNull();
+  });
+
+  it("never shows the source's ref: an untitled source reads as an untitled chat", async () => {
+    lookup.probe.mockRejectedValueOnce(
+      Object.assign(new Error("Thread not found"), { status: 404 }),
+    );
+    await render({ threadId: "gone", title: null });
+    await vi.waitFor(() => expect(host.textContent).toContain("Untitled chat (in the trash)"));
+    expect(host.textContent).not.toContain("c4");
   });
 });

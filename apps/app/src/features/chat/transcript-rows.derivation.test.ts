@@ -166,7 +166,7 @@ describe("thread-reference rows", () => {
     expect(kinds(model)).toEqual(["thread-reference:seed", "turn:a"]);
     const row = model.rows[0];
     expect(row?.kind === "thread-reference" && row.references).toEqual([
-      { threadId: "source", ref: "c3", title: "Plan" },
+      { threadId: "source", title: "Plan" },
     ]);
   });
 

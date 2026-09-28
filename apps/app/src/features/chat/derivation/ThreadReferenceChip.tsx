@@ -12,7 +12,7 @@ import { SourceChatLink, useSourceThread } from "./SourceChatLink";
 import type { ThreadReference } from "./thread-reference";
 
 export function ThreadReferenceChip({ reference }: { reference: ThreadReference }) {
-  const source = useSourceThread(reference.threadId, reference.title ?? reference.ref);
+  const source = useSourceThread(reference.threadId, reference.title);
   return (
     <span
       data-thread-reference={reference.threadId}
