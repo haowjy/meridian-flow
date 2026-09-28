@@ -26,7 +26,13 @@ retired: retrying enqueue never schedules a withdrawn or completed control.
 A crash may retry an unacknowledged control on a new divider.
 
 Invalid bodies return 400 (`invalid_control`). An id belonging to an ordinary
-message or a row in another thread returns 409 (`control_id_conflict`).
+message, another control kind, or a row in another thread returns 409 (`control_id_conflict`).
+
+`handoff_brief` Retry requires a handoff thread whose latest seed is `error` or
+`cancelled`, and no pending brief control. Otherwise it returns 409
+(`handoff_retry_unavailable`; `not_a_handoff_retry` for a non-handoff thread or
+client-supplied seed pointer). Replaying the same matching id returns 200,
+including after that Retry succeeds; it never queues another paid summary.
 
 ## Withdraw
 

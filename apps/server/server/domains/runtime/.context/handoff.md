@@ -15,6 +15,9 @@ remain. Stop and withdrawal acknowledge such controls without re-finalizing
 the seed. If a live brief discovers a settled seed, it retires its control and
 lets the normal wake answer queued messages from durable context.
 
+Retry enqueue is server-gated: the latest handoff seed must be `error` or
+`cancelled`, with no pending brief control. Replaying an existing matching
+control id remains idempotent even after success; a fresh id must pass the gate.
 Retry has no seed pointer: its new seed is reserved at the execution leaf.
 The current-turn kind is `handoff_brief`; the live phase is `briefing`.
 

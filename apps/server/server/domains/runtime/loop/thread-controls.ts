@@ -20,6 +20,7 @@ export function createThreadControls(deps: {
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   findTurn(id: TurnId): Promise<Turn | null>;
   findControlTurn(threadId: ThreadId, controlId: string): Promise<Turn | null>;
+  findLatestHandoffSeed(threadId: ThreadId): Promise<Turn | null>;
   pending(threadId: ThreadId): Promise<ThreadPendingInbox>;
   lockReceipt(
     threadId: ThreadId,
@@ -61,8 +62,23 @@ export function createThreadControls(deps: {
             throw new ThreadControlError(409, "not_a_handoff_retry");
         }
         const existing = await deps.findMessage(input.id);
-        if (existing && (existing.threadId !== input.threadId || existing.intent !== "control"))
+        if (
+          existing &&
+          (existing.threadId !== input.threadId ||
+            existing.intent !== "control" ||
+            existing.body.kind !== input.control.kind)
+        )
           throw new ThreadControlError(409, "control_id_conflict");
+        if (!existing && input.control.kind === "handoff_brief") {
+          const latest = await deps.findLatestHandoffSeed(input.threadId);
+          const pending = await deps.pendingRows(input.threadId);
+          if (
+            !latest ||
+            (latest.status !== "error" && latest.status !== "cancelled") ||
+            pending.some((row) => row.body.kind === "handoff_brief")
+          )
+            throw new ThreadControlError(409, "handoff_retry_unavailable");
+        }
         const row =
           existing ??
           (await deps.enqueue({

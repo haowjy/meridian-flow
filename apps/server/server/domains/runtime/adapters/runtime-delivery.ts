@@ -3,7 +3,7 @@ import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import { isPendingPlaceholder } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
-import { SystemUpdateMetadataCodec } from "../../threads/index.js";
+import { HandoffSeedMetadataCodec, SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import {
   absorbPendingCompact,
@@ -646,6 +646,10 @@ export function createDeliveryAdapter(
       enqueue,
       findTurn: (id) => deps.repos.turns.findById(id),
       findControlTurn: (id, controlId) => deps.repos.turns.findByControlId(id, controlId),
+      findLatestHandoffSeed: async (id) =>
+        (await deps.repos.turns.listByThread(id))
+          .reverse()
+          .find((turn) => HandoffSeedMetadataCodec.safeParse(turn.metadata).success) ?? null,
       pending: (id) => readPendingInbox(inbox, id),
       lockReceipt: leaseStore.lockThreadReceipt,
       cancel: leaseStore.cancelThreadReceipt,

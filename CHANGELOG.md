@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 ### Changed
+- Reject handoff Retry while a brief is pending or the latest brief succeeded. Replayed requests stay idempotent.
 - Withdrawing a running compaction still stops it after its lease expires.
 - Recover handoffs whose brief seed already ended. Queued replies, Stop and withdrawal no longer get stuck.
 - Handoffs create immediately with a recoverable brief seed. Stop preserves queued messages. Retry appends a new seed.

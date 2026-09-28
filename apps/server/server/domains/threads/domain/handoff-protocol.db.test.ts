@@ -559,28 +559,66 @@ else
       ).rejects.toThrow("subagent");
     });
 
-    it.each([
-      "handoff_brief",
-      "compact",
-    ] as const)("C7 consecutive %s control precedes the queued reply", async (kind) => {
+    it("C7 a compact after the brief precedes the queued reply", async () => {
       const r = await fixture();
       await r.delivery.enqueueControl({
         threadId: r.thread.id,
         id: crypto.randomUUID(),
         actorId: ids.userId,
-        control: { kind },
+        control: { kind: "compact" },
       });
       await r.send(r.thread.id, "after two controls");
       await r.drain();
       const turns = await r.settled();
-      expect(turns.map((t) => t.role)).toEqual([
-        "system",
-        "user",
-        kind === "compact" ? "compaction" : "system",
-        "assistant",
-      ]);
+      expect(turns.map((t) => t.role)).toEqual(["system", "user", "compaction", "assistant"]);
       expect(turns.at(-1)?.status).toBe("complete");
       expect(JSON.stringify(r.gateway.requests.at(-1))).toContain("after two controls");
+    });
+
+    it.each(["pending", "complete"])("C7 Retry rejects a latest %s seed", async (status) => {
+      const r = await fixture();
+      if (status === "complete") {
+        await r.drain();
+        await r.settled();
+      }
+      await expect(
+        r.delivery.enqueueControl({
+          threadId: r.thread.id,
+          id: crypto.randomUUID(),
+          actorId: ids.userId,
+          control: { kind: "handoff_brief" },
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+    });
+
+    it.each([
+      "error",
+      "cancelled",
+    ] as const)("C7 Retry after %s is idempotent and excludes another pending brief", async (status) => {
+      const r = await fixture(async () => ({
+        kind: "failed",
+        error: new Error("failed"),
+        modelResponses: [],
+      }));
+      if (status === "cancelled") await r.orchestrator.cancel(r.thread.id, r.seed.id);
+      else {
+        await r.drain();
+        await r.settled();
+      }
+      const input = {
+        threadId: r.thread.id,
+        id: crypto.randomUUID(),
+        actorId: ids.userId,
+        control: { kind: "handoff_brief" as const },
+      };
+      expect(await r.delivery.enqueueControl(input)).toMatchObject({ created: true });
+      expect(await r.delivery.enqueueControl(input)).toMatchObject({ created: false });
+      await expect(
+        r.delivery.enqueueControl({ ...input, id: crypto.randomUUID() }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      await r.drain();
+      await r.settled();
+      expect(await r.delivery.enqueueControl(input)).toMatchObject({ created: false });
     });
 
     it.each([
