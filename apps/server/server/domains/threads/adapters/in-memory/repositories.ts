@@ -637,11 +637,7 @@ export function createInMemoryRepositories(
             const metadata = turn.metadata as
               | import("@meridian/contracts/threads").JsonObject
               | null;
-            return (
-              turn.threadId === threadId &&
-              (metadata?.controlMessageId === controlId ||
-                metadata?.satisfiesControlId === controlId)
-            );
+            return turn.threadId === threadId && metadata?.controlMessageId === controlId;
           }),
         ).at(-1) ?? null
       );

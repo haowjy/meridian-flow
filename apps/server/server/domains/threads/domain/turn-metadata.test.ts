@@ -63,7 +63,6 @@ describe("compaction metadata", () => {
     const metadata = CompactionMetadataCodec.parse({
       trigger: "auto",
       controlMessageId: "control-1",
-      satisfiesControlId: "satisfied-1",
       reason: "context_too_large",
       phase: "late_arrival",
       estimatedTokens: 4_321,
@@ -73,7 +72,6 @@ describe("compaction metadata", () => {
     expect(metadata).toMatchObject({
       trigger: "auto",
       controlMessageId: "control-1",
-      satisfiesControlId: "satisfied-1",
       reason: "context_too_large",
       phase: "late_arrival",
       estimatedTokens: 4_321,

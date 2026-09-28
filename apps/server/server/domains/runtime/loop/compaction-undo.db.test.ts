@@ -3,7 +3,6 @@
 import type { ControlBody, Turn } from "@meridian/contracts/threads";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
-import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
 
 const url = process.env.DATABASE_URL;
@@ -253,43 +252,6 @@ else
       await undo(rig, c);
       expect(marker(await drain(rig)).status).toBe("complete");
     });
-    it("C6b compact undo M executes C U B before answering M", async () => {
-      let rig: Rig;
-      rig = await fixture({
-        summarizer: scriptedSummarizer(async ({ owner: { turnId } }) => {
-          await enqueue(rig, { kind: "compaction_undo", compactionTurnId: turnId });
-          await rig.send(rig.threadId, "M after controls");
-          return { kind: "complete", text: "Summary", model: "summary-model", modelResponses: [] };
-        }),
-      });
-      await enqueue(rig, { kind: "compact" });
-      const turns = await drain(rig);
-      const u = marker(turns);
-      expect(u.status).toBe("complete");
-      expect(turns.at(-1)?.role).toBe("assistant");
-      expect(JSON.stringify(rig.gateway.requests[0].messages)).toContain("M after controls");
-      expect(JSON.stringify(rig.gateway.requests[0].messages)).not.toContain(
-        "Conversation summary.",
-      );
-    });
-    it("C6b auto summary folds undo and late message into C U B", async () => {
-      let rig: Rig;
-      rig = await fixture({
-        history: "Earlier scene. ".repeat(1500),
-        summarizer: scriptedSummarizer(async ({ owner: { turnId } }) => {
-          rig.setThreshold(100000);
-          await enqueue(rig, { kind: "compaction_undo", compactionTurnId: turnId });
-          await rig.send(rig.threadId, "Late M");
-          return { kind: "complete", text: "Summary", model: "summary-model", modelResponses: [] };
-        }),
-      });
-      rig.setThreshold(2500);
-      await rig.send(rig.threadId, "Trigger C");
-      const turns = await drain(rig);
-      expect(marker(turns).status).toBe("complete");
-      expect(rig.gateway.requests).toHaveLength(1);
-      expect(JSON.stringify(rig.gateway.requests[0].messages)).toContain("Earlier scene.");
-    });
     it("C6b C2 then C1 restores whole history", async () => {
       const rig = await fixture();
       const c1 = await compact(rig);
@@ -535,32 +497,6 @@ else
       });
     });
 
-    it("C6b undo adopting a parent message admits on B never U", async () => {
-      const rig = await fixture({ child: true });
-      const c = await compact(rig);
-      await undo(rig, c);
-      const parentMessage = await rig.delivery.enqueue({
-        threadId: rig.threadId,
-        intent: "message",
-        provenance: { kind: "agent", threadId: rig.ids.caller },
-        body: { kind: "text", text: "Parent follow-up" },
-        idempotencyKey: "parent",
-      });
-      const turns = await drain(rig);
-      const b = turns.at(-1)!;
-      expect(turns.find((t) => t.id === parentMessage.id)!.position).toBeGreaterThan(
-        marker(turns).position,
-      );
-      expect(marker(turns).status).toBe("complete");
-      expect(b.role).toBe("assistant");
-      expect(await rig.repos.executionReports.findByExecution(rig.threadId, b.id)).toMatchObject({
-        terminalTurnId: b.id,
-      });
-      expect(
-        await rig.repos.executionReports.findByExecution(rig.threadId, marker(turns).id),
-      ).toBeNull();
-    });
-
     it("C6b snapshot advisory follows current trigger and active local C", async () => {
       const rig = await fixture();
       const c = await compact(rig);
@@ -675,7 +611,7 @@ else
       });
     });
 
-    it("C6b live undo commit failure rolls back and lands undo_failed with M answered", async () => {
+    it("retires an undo whose start transition fails", async () => {
       const { currentDrizzleDb } = await import("../../../shared/drizzle-transaction.js");
       const rig = await fixture();
       const c = await compact(rig);
@@ -689,7 +625,6 @@ else
         return find(id);
       };
       await undo(rig, c);
-      await rig.send(rig.threadId, "M survives undo failure");
       const turns = await drain(rig);
       expect(failed).toBe(true);
       expect(marker(turns)).toMatchObject({
@@ -698,7 +633,6 @@ else
         metadata: { reason: "undo_failed" },
         promptBakeId: null,
       });
-      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
       expect(rig.summarizer.calls).toHaveLength(1);
     });
@@ -751,136 +685,16 @@ else
         ),
       ).toBeNull();
     });
-    it("C6b review refused undo still compacts the ordinary oversized continuation", async () => {
-      const rig = await fixture();
-      const c = await compact(rig);
-      await undo(rig, c);
-      const grown = await rig.repos.turns.create({
-        threadId: rig.threadId,
-        prevTurnId: c.id,
-        role: "assistant",
-        origin: "assistant",
-        status: "complete",
-      });
-      await rig.repos.blocks.create({
-        turnId: grown.id,
-        blockType: "text",
-        sequence: 0,
-        textContent: "Long generated answer. ".repeat(1500),
-        content: "Long generated answer. ".repeat(1500),
-        status: "complete",
-      });
-      await rig.send(rig.threadId, "Continue");
-      rig.setThreshold(3000);
-      const turns = await drain(rig);
-      expect(marker(turns)).toMatchObject({
-        status: "error",
-        error: "Undo would make this conversation compact again immediately.",
-        metadata: { reason: "would_recompact" },
-      });
-      expect(turns.filter((t) => t.role === "compaction")).toHaveLength(2);
-    });
-    it("C6b review immediate undo does not readmit C images", async () => {
-      let rig: Rig;
-      rig = await fixture({
-        summarizer: scriptedSummarizer(async ({ owner: { turnId } }) => {
-          await enqueue(rig, { kind: "compaction_undo", compactionTurnId: turnId });
-          await rig.send(rig.threadId, "Continue without excluded image");
-          return { kind: "complete", text: "Summary", model: "summary-model", modelResponses: [] };
-        }),
-      });
-      const previous = (await rig.repos.turns.listByThread(rig.threadId)).at(-1)!;
-      const user = await rig.repos.turns.create({
-        threadId: rig.threadId,
-        prevTurnId: previous.id,
-        role: "user",
-        origin: "writer",
-        status: "complete",
-      });
-      await rig.repos.blocks.create({
-        turnId: user.id,
-        blockType: "text",
-        sequence: 0,
-        content: "Image message",
-        textContent: "Image message",
-        status: "complete",
-      });
-      const image = await rig.repos.blocks.create({
-        turnId: user.id,
-        blockType: "image",
-        sequence: 1,
-        content: {
-          type: "image_reference",
-          documentId: crypto.randomUUID(),
-          uri: "scratch://excluded.png",
-        },
-        status: "complete",
-      });
-      await rig.repos.imageInclusions.set({
-        threadId: rig.threadId,
-        blockId: image.id,
-        decisionTurnId: user.id,
-        included: false,
-      });
-      rig.deps.imageAssets.resolve = async () => ({
-        mediaType: "image/png",
-        data: "excluded-image",
-        sizeBytes: 100,
-      });
-      await enqueue(rig, { kind: "compact" });
-      await drain(rig);
-      expect(
-        rig.gateway.requests
-          .at(-1)!
-          .messages.flatMap((m) => m.content)
-          .filter((p) => p.type === "image"),
-      ).toEqual([]);
-    });
-
-    it("C6b tool boundary undo continues the same task under restored history", async () => {
-      let rig: Rig;
-      let c: Turn;
-      const gateway = scriptedGateway({
-        onStream: async (call) => {
-          if (call === 1) await undo(rig, c);
-        },
-        results: [
-          {
-            content: [
-              {
-                type: "tool_use",
-                toolCallId: "tool-before-undo",
-                toolName: "unavailable_probe_tool",
-                input: {},
-              },
-            ],
-            toolCalls: [],
-            finishReason: "tool_use",
-            usage: { inputTokens: 100, outputTokens: 10 },
-            model: "gpt-4.1-mini",
-            provider: "openai",
-          },
-        ],
-      });
-      rig = await fixture({ gateway });
-      c = await compact(rig);
-      await (
-        await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "Continue the task" })
-      ).execute();
-      const turns = await rig.repos.turns.listByThread(rig.threadId);
-      expect(turns.slice(-3).map((t) => (t.metadata as { kind?: string })?.kind ?? t.role)).toEqual(
-        ["assistant", "compaction_undo", "assistant"],
-      );
-      expect(marker(turns).status).toBe("complete");
-      expect(gateway.requests).toHaveLength(2);
-      expect(JSON.stringify(gateway.requests[1].messages)).toContain("Earlier scene.");
-      expect(JSON.stringify(gateway.requests[1].messages)).not.toContain("Conversation summary.");
-    });
-
     it("C6b an oversized reply does not overwrite an undo refusal", async () => {
       const rig = await fixture();
       const c = await compact(rig);
+      rig.setThreshold(100);
       await undo(rig, c);
+      await drain(rig);
+      expect(marker(await rig.repos.turns.listByThread(rig.threadId))).toMatchObject({
+        status: "error",
+        metadata: { reason: "would_recompact" },
+      });
       await rig.send(rig.threadId, "Cannot fit this pin ".repeat(1000));
       rig.setThreshold(2500);
       await (await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true })).execute();
@@ -891,24 +705,5 @@ else
         metadata: { reason: "would_recompact" },
       });
       expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "error" });
-    });
-
-    it("C6b a queued undo cannot hide a missing activated skill", async () => {
-      const rig = await fixture();
-      const c = await compact(rig);
-      await undo(rig, c);
-      await rig.send(rig.threadId, "Use the selected skill", {
-        activatedSkillSlugs: ["missing-skill"],
-      });
-      const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
-      await run.execute();
-      const turns = await rig.repos.turns.listByThread(rig.threadId);
-      expect(marker(turns)).toMatchObject({
-        status: "error",
-        error: "This compaction couldn't be undone. Try again.",
-        metadata: { reason: "undo_failed" },
-      });
-      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "error" });
-      expect(rig.gateway.requests).toHaveLength(0);
     });
   });

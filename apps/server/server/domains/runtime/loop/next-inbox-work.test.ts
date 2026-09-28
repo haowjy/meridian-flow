@@ -57,4 +57,17 @@ describe("next inbox work", () => {
     });
     expect(next([notice], "run_start")).toEqual({ kind: "none" });
   });
+
+  it("co-adopts non-message notices with a runnable command", () => {
+    const notice = row({
+      id: "notice",
+      intent: "notice",
+      body: { kind: "work_context_refresh" },
+    });
+    expect(next([compact, notice], "run_start")).toEqual({
+      kind: "control",
+      control: compact,
+      rows: [notice],
+    });
+  });
 });

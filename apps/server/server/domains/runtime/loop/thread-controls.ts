@@ -1,6 +1,6 @@
 /** Writer control commands serialize idempotency and withdrawal with boundary reservation. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { JsonObject, ThreadPendingInbox, Turn } from "@meridian/contracts/threads";
+import type { ThreadPendingInbox, Turn } from "@meridian/contracts/threads";
 import type { InboxMessage, MessageDraft } from "./ports.js";
 import type { ThreadControls } from "./runtime-delivery.js";
 import type { ThreadLock } from "./thread-lock.js";
@@ -21,8 +21,6 @@ export function createThreadControls(deps: {
   findTurn(id: TurnId): Promise<Turn | null>;
   findControlTurn(threadId: ThreadId, controlId: string): Promise<Turn | null>;
   pending(threadId: ThreadId): Promise<ThreadPendingInbox>;
-  lockReceipt(threadId: ThreadId): Promise<{ ids: string[]; turnId: TurnId | null } | null>;
-  cancel(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
   acknowledge(threadId: ThreadId, id: string): Promise<void>;
   wake(threadId: ThreadId): void;
 }): ThreadControls {
@@ -62,19 +60,8 @@ export function createThreadControls(deps: {
         const row = await deps.findMessage(controlId);
         if (row?.threadId !== threadId || row.intent !== "control")
           throw new ThreadControlError(404, "control_not_found");
-        if (row.deliveredAt) return { outcome: "already_finished" };
-        const receipt = await deps.lockReceipt(threadId);
-        if (receipt?.ids.includes(controlId) && receipt.turnId) {
-          const turn = await deps.findTurn(receipt.turnId);
-          if ((turn?.metadata as JsonObject | null)?.satisfiesControlId === controlId)
-            return { outcome: "already_finished" };
-          if (await deps.cancel(threadId, receipt.turnId)) {
-            // A cancelled owner can die before cleanup; withdrawal must never replay the control.
-            await deps.acknowledge(threadId, controlId);
-            deps.wake(threadId);
-            return { outcome: "stopping" };
-          }
-        }
+        if (await deps.findControlTurn(threadId, controlId)) return { outcome: "already_started" };
+        if (row.deliveredAt) return { outcome: "withdrawn" };
         await deps.acknowledge(threadId, controlId);
         deps.wake(threadId);
         return { outcome: "withdrawn" };

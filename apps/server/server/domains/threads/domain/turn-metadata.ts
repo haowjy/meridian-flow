@@ -150,7 +150,6 @@ const compactionMetadataFields = {
   elisions: modelElisionsCodec.optional(),
   trigger: z.enum(["auto", "manual"]).optional(),
   controlMessageId: z.string().min(1).optional(),
-  satisfiesControlId: z.string().min(1).optional(),
 };
 
 export const CompactionPlanMetadataCodec = z

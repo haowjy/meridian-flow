@@ -16,14 +16,12 @@ import {
   type ForcedCompactionDecision,
 } from "./compaction/decision.js";
 import { type PreparedUndo, prepareCompactionUndo } from "./compaction-undo.js";
-import type { ControlMessage } from "./control-barrier.js";
 import type { CompactionImageProjectionMode, ImageInclusionDecision } from "./image-context.js";
-import { planMessageTurns } from "./inbox-context.js";
 import { createLocalTurn } from "./local-turn.js";
+import type { ControlMessage } from "./next-inbox-work.js";
 import type { OrchestratorDeps, OrchestratorRepositories } from "./orchestrator.js";
 import { createPrefixCacheStateService } from "./prefix-cache-state.js";
 import { loadReferenceReads } from "./reference-context.js";
-import type { DeliverySelection } from "./runtime-delivery.js";
 import { type AssembledNextTurnContext, assembleNextTurnContext } from "./turn-context-assembly.js";
 
 export type PrepareRequestInput = {
@@ -40,10 +38,8 @@ export type PrepareRequestInput = {
   forcedDecision?: ForcedCompactionDecision;
   imageProjectionMode?: CompactionImageProjectionMode;
   controlMessageId?: string;
-  controls?: readonly ControlMessage[];
-  continueAfterControls?: boolean;
-  followingBatches?: DeliverySelection["followingBatches"];
-  failedUndoIds?: ReadonlySet<string>;
+  control?: ControlMessage | null;
+  failedControlIds?: ReadonlySet<string>;
   assertNoResponseScope?: () => void;
   pinnedRequestTurnIds?: ReadonlySet<string>;
   promptBakes?: OrchestratorRepositories["promptBakes"];
@@ -51,7 +47,6 @@ export type PrepareRequestInput = {
 };
 export type PreparedRequest = {
   undos: PreparedUndo[];
-  adoptedIds: string[];
   turns: Turn[];
   blocks: Block[];
   assembled: AssembledNextTurnContext;
@@ -86,15 +81,15 @@ export function prepareFailedUndoHistory(
 ): Promise<PreparedControlHistory> {
   return prepareControlHistory({
     ...input,
-    failedUndoIds: new Set(
-      input.controls?.filter((c) => c.body.kind === "compaction_undo").map((c) => c.id),
+    failedControlIds: new Set(
+      input.control?.body.kind === "compaction_undo" ? [input.control.id] : [],
     ),
   });
 }
 
 export async function prepareRequestContext(input: PrepareRequestInput): Promise<PreparedRequest> {
   const history = await prepareControlHistory(input);
-  const compact = input.controls?.find((c) => c.body.kind === "compact");
+  const compact = input.control?.body.kind === "compact" ? input.control : null;
   try {
     const prepared = await prepareBaseRequest({
       ...input,
@@ -102,10 +97,7 @@ export async function prepareRequestContext(input: PrepareRequestInput): Promise
       blocks: history.historyBlocks,
       controlMessageId: compact?.id ?? input.controlMessageId,
       skipCompaction:
-        !compact &&
-        history.undos.length > 0 &&
-        (history.undos.some((u) => u.turn.status === "complete") ||
-          input.continueAfterControls === false)
+        !compact && history.undos.some((u) => u.turn.status === "complete")
           ? true
           : input.skipCompaction,
     });
@@ -120,8 +112,11 @@ export async function prepareRequestContext(input: PrepareRequestInput): Promise
     if (input.signal?.aborted || history.undos.length === 0) throw error;
     if (history.undos.every((u) => u.turn.status === "error"))
       throw new UndoRequestPreparationError(history, error);
-    const failedUndoIds = new Set(history.undos.map((u) => u.controlId));
-    const failed = await prepareControlHistory({ ...input, failedUndoIds });
+    const failedControlIds = new Set(history.undos.map((u) => u.controlId));
+    const failed = await prepareControlHistory({
+      ...input,
+      failedControlIds,
+    });
     throw new UndoRequestPreparationError(failed, error);
   }
 }
@@ -133,34 +128,22 @@ export async function prepareControlHistory(
   const addedTurns: Turn[] = [];
   const addedBlocks: Block[] = [];
   const events: OrchestratorEvent[] = [];
-  const adoptedIds: string[] = [];
   let turns = input.turns;
   let blocks = input.blocks;
-  for (const control of input.controls ?? []) {
-    if (control.body.kind !== "compaction_undo") continue;
-    const following = input.followingBatches?.find((s) => s.afterControlId === control.id);
-    const planFollowing = (u: Turn) =>
-      planMessageTurns({
-        threadId: input.threadId,
-        batch: following?.batch ?? [],
-        workContext: following?.workContext,
-        prevTurnId: u.id,
-        prevTurnPosition: u.position,
-        knownTurnIds: new Set(turns.map((t) => t.id)),
-      });
+  const control = input.control;
+  if (control?.body.kind === "compaction_undo") {
     const undo = await prepareCompactionUndo({
       ...input,
       turns,
       blocks,
       control,
-      forceFailure: input.failedUndoIds?.has(control.id),
+      forceFailure: input.failedControlIds?.has(control.id),
       assemble: async (restoredTurns, restoredBlocks) => {
-        const plan = planFollowing(restoredTurns.at(-1)!);
         return (
           await prepareBaseRequest({
             ...input,
-            turns: [...restoredTurns, ...plan.turns],
-            blocks: [...restoredBlocks, ...plan.blocks.map(localBlockFromEvent)],
+            turns: restoredTurns,
+            blocks: restoredBlocks,
             skipCompaction: true,
             controlMessageId: undefined,
           })
@@ -179,22 +162,14 @@ export async function prepareControlHistory(
         turn,
         error: undo.error,
       });
-    const plan = planFollowing(turn);
-    events.push(...plan.events);
-    const nextTurns = [turn, ...plan.turns];
-    const nextBlocks = [
-      ...(undo.block ? [localBlockFromEvent(undo.block)] : []),
-      ...plan.blocks.map(localBlockFromEvent),
-    ];
-    addedTurns.push(...nextTurns);
+    const nextBlocks = undo.block ? [localBlockFromEvent(undo.block)] : [];
+    addedTurns.push(turn);
     addedBlocks.push(...nextBlocks);
-    turns = [...turns, ...nextTurns];
+    turns = [...turns, turn];
     blocks = [...blocks, ...nextBlocks];
-    adoptedIds.push(...(following?.ackIds ?? []));
   }
   return {
     undos,
-    adoptedIds,
     events,
     turns: addedTurns,
     blocks: addedBlocks,
@@ -205,7 +180,7 @@ export async function prepareControlHistory(
 
 async function prepareBaseRequest(
   input: PrepareRequestInput,
-): Promise<Omit<PreparedRequest, "undos" | "adoptedIds" | "turns" | "blocks">> {
+): Promise<Omit<PreparedRequest, "undos" | "turns" | "blocks">> {
   const imageProjectionMode =
     input.imageProjectionMode &&
     revertedCompactionIds(input.turns).has(input.imageProjectionMode.decidingTurnId)

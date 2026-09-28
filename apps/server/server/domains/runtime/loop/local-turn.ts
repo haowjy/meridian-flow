@@ -99,9 +99,6 @@ export function reservationTurn(
                 })
               : {}),
             ...(decision.controlMessageId ? { controlMessageId: decision.controlMessageId } : {}),
-            ...(decision.satisfiesControlId
-              ? { satisfiesControlId: decision.satisfiesControlId }
-              : {}),
           }
         : null,
   });

@@ -113,6 +113,7 @@ import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import {
   type CompactionDecision,
+  CompactionFailureError,
   CompactionPreparationError,
   type ForcedCompactionDecision,
 } from "./compaction/decision.js";
@@ -120,7 +121,6 @@ import { FLOW_ABSOLUTE_CEILING } from "./compaction/index.js";
 import { executeCompaction, recordCompactionSummary } from "./compaction-phase.js";
 import { failCompactionSuccessor } from "./compaction-successor.js";
 import { persistPreparedControlEvents } from "./compaction-undo.js";
-import { absorbPendingCompact } from "./control-barrier.js";
 import type { TerminalCause } from "./execution-finalizer.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
@@ -569,6 +569,14 @@ async function runDrainTurn(
         reservedTurnId;
       let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
       let controlHistory: PreparedControlHistory | null = null;
+      if (
+        selection.control?.body.kind === "compact" &&
+        selection.failedControlIds?.has(selection.control.id)
+      )
+        preparationError = new CompactionFailureError({
+          reason: "compaction_failed",
+          phase: "delivery",
+        });
       if (!preparationError) {
         try {
           const previousBlocks = await deps.repos.blocks.listByThread(input.threadId);
@@ -578,10 +586,8 @@ async function runDrainTurn(
             threadId: input.threadId,
             referenceTurnId: referenceUserTurnId,
             currentTurnId: reservedTurnId,
-            controls: selection.controls,
-            followingBatches: selection.followingBatches,
-            failedUndoIds: selection.failedUndoIds,
-            continueAfterControls: selection.outstanding.length > 0,
+            control: selection.control,
+            failedControlIds: selection.failedControlIds,
             pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
             turns: [
               ...inheritedTurns,
@@ -610,7 +616,7 @@ async function runDrainTurn(
         plan = makePlan([]);
         if (preparationError instanceof UndoRequestPreparationError) {
           controlHistory = preparationError.after(plan.turns.at(-1) ?? previousTurn);
-        } else if (selection.controls?.some((c) => c.body.kind === "compaction_undo")) {
+        } else if (selection.control?.body.kind === "compaction_undo") {
           controlHistory = await prepareFailedUndoHistory({
             deps,
             thread: setupThread,
@@ -619,19 +625,13 @@ async function runDrainTurn(
             currentTurnId: reservedTurnId,
             turns: [...inheritedTurns, ...priorTurns, ...plan.turns],
             blocks: [],
-            controls: selection.controls,
-            followingBatches: selection.followingBatches,
+            control: selection.control,
+            failedControlIds: selection.failedControlIds,
             signal: input.signal,
           });
         }
       }
       const controlPreparation = preflight ?? controlHistory;
-      if (preflight)
-        preflight.compaction = absorbPendingCompact(preflight.compaction, selection.headControl);
-      const controlId =
-        preflight?.compaction.kind === "compact"
-          ? (preflight.compaction.controlMessageId ?? preflight.compaction.satisfiesControlId)
-          : undefined;
       const imageUpdateTurn = controlPreparation?.turns.at(-1);
       const terminal =
         !!controlPreparation?.undos.length &&
@@ -687,17 +687,12 @@ async function runDrainTurn(
         value,
         turnId: reservedTurn.id,
         terminal,
-        completedControlIds: controlPreparation?.undos.map((u) => u.controlId),
-        turnKind: terminal ? ("assistant" as const) : currentTurnKind(reservedTurn),
-        messageIds: [
-          ...batch.map(({ id }) => id),
-          ...(controlPreparation?.adoptedIds ?? []),
-          ...(controlId
-            ? [controlId]
-            : preparationError && selection.control?.body.kind === "compact"
-              ? [selection.control.id]
-              : []),
+        completedControlIds: [
+          ...(controlPreparation?.undos.map((u) => u.controlId) ?? []),
+          ...(selection.control?.body.kind === "compact" ? [selection.control.id] : []),
         ],
+        turnKind: terminal ? ("assistant" as const) : currentTurnKind(reservedTurn),
+        messageIds: [...batch.map(({ id }) => id)],
         ...(preparationError === null ? {} : { preparationFailure: preparationError }),
         persist: async () => {
           await persistAndAppendTurnStartEvents(
@@ -1713,10 +1708,8 @@ async function executeLoop({
             if (responseScope)
               throw new Error("Undo revision query requires no open response scope");
           },
-          controls: selection.controls,
-          followingBatches: selection.followingBatches,
-          failedUndoIds: selection.failedUndoIds,
-          continueAfterControls: selection.outstanding.length > 0 || !!selection.continueTask,
+          control: selection.control,
+          failedControlIds: selection.failedControlIds,
           pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
         });
         thread = prepared.assembled.thread;
@@ -1724,7 +1717,6 @@ async function executeLoop({
         return {
           events: [...skillEvents, ...prepared.events],
           undos: prepared.undos,
-          adoptedIds: prepared.adoptedIds,
           turns: [...skillTurns, ...prepared.turns],
           blocks: [...skillBlocks, ...prepared.blocks],
           requiresSplit: skillEvents.length + prepared.events.length > 0,
@@ -1782,7 +1774,7 @@ async function executeLoop({
   }
 
   async function compact(decision: Extract<CompactionDecision, { kind: "compact" }>) {
-    activeCompactionRequired = decision.required;
+    activeCompactionRequired = decision.trigger === "auto";
     await publishPhase("compacting");
     const result = await executeCompaction({
       deps,

@@ -182,7 +182,7 @@ export type EnqueueThreadControlResponse = {
   turnId: string | null;
 };
 export type WithdrawThreadControlResponse = {
-  outcome: "withdrawn" | "stopping" | "already_finished";
+  outcome: "withdrawn" | "already_started";
 };
 
 /** Who authored a durable inbox message. JSON-natural; ids are plain strings at the wire. */

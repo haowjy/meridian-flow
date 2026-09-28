@@ -27,9 +27,7 @@ export type CompactionDecision =
       kind: "compact";
       plan: CompactionPlan;
       controlMessageId?: string;
-      satisfiesControlId?: string;
       refusal?: "nothing_to_compact" | "context_too_large";
-      required: boolean;
       requestInHand: GenerateRequest;
       trigger: "auto" | "manual";
       fitLimitTokens: number;
@@ -174,9 +172,6 @@ export function decideCompaction(input: {
           ? { knownTooLarge: input.forcedDecision.knownTooLarge }
           : {}),
         tokensBefore,
-        required:
-          input.forcedDecision?.trigger !== "manual" ||
-          (input.thresholdTokens !== null && tokensBefore >= input.thresholdTokens),
         ...(input.controlMessageId ? { controlMessageId: input.controlMessageId } : {}),
         ...(immediatelyAfterCompaction || plan.outcome === "no_compaction" || belowSummaryFloor
           ? { refusal: "nothing_to_compact" as const }

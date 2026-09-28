@@ -191,10 +191,8 @@ export async function prepareCompactionSuccessor(args: {
         },
         skipCompaction: !selection?.control,
         assertNoResponseScope: args.assertNoResponseScope,
-        controls: selection?.controls,
-        followingBatches: selection?.followingBatches,
-        failedUndoIds: selection?.failedUndoIds,
-        continueAfterControls: !!selection?.outstanding.length || !!selection?.continueTask,
+        control: selection?.control,
+        failedControlIds: selection?.failedControlIds,
         pinnedRequestTurnIds: new Set(selection?.outstanding.map((row) => row.id)),
         signal: input.signal,
         promptBakes: {
@@ -244,7 +242,6 @@ export async function prepareCompactionContext(
   return {
     events: next.events,
     undos: next.undos,
-    adoptedIds: next.adoptedIds,
     turns: next.turns,
     blocks: next.blocks,
     requiresSplit: true,
@@ -260,22 +257,11 @@ export async function completeCompactionCurrent(input: {
   prepared: PreparedCompaction | undefined;
   failure: unknown;
   settleResponses: () => Promise<void>;
-  satisfiesControlId?: string;
 }): Promise<Turn> {
   const { deps, threadId, placeholder, prepared } = input;
   await input.settleResponses();
   const settled = await deps.repos.turns.findById(placeholder.id);
   if (!settled) throw new Error("Compaction placeholder disappeared");
-  if (input.satisfiesControlId) {
-    settled.metadata = {
-      ...(settled.metadata as import("@meridian/contracts/threads").JsonObject),
-      satisfiesControlId: input.satisfiesControlId,
-    };
-    await deps.repos.turns.updateStatus(settled.id, {
-      status: settled.status,
-      metadata: settled.metadata,
-    });
-  }
   const deliveryFailure =
     input.failure === undefined ? undefined : compactionFailureFrom(input.failure, "delivery");
   const failure =

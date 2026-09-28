@@ -26,5 +26,5 @@ export function next(
   if (runsFirst) return { kind: "control", control: runsFirst, rows: [...rows] };
   if (hasMessages) return { kind: "messages", rows: [...rows] };
   const control = controls[0];
-  return control ? { kind: "control", control, rows: [] } : { kind: "none" };
+  return control ? { kind: "control", control, rows: [...rows] } : { kind: "none" };
 }

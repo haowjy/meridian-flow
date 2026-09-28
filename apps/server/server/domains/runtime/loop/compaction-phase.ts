@@ -129,20 +129,18 @@ export async function executeCompaction({
   const complete = (
     prepared: PreparedCompaction | undefined,
     failure: unknown,
-    selection: import("./runtime-delivery.js").DeliverySelection,
+    _selection: import("./runtime-delivery.js").DeliverySelection,
   ) =>
     completeCompactionCurrent({
       deps,
       threadId: input.threadId,
       placeholder: currentTurn,
-      satisfiesControlId: selection.satisfiesControlId,
       prepared,
       failure,
       settleResponses: () => settleResponses(outcome.modelResponses),
     });
   const successorBoundary = {
     ...boundary,
-    satisfyPendingCompact: decision.trigger === "auto" && !decision.satisfiesControlId,
     current: { kind: "placeholder" as const, complete },
     prepareCurrent: () =>
       prepareCompactionSuccessor({
@@ -162,7 +160,7 @@ export async function executeCompaction({
       prepared: PreparedCompaction | undefined,
       selection: import("./runtime-delivery.js").DeliverySelection,
     ) => {
-      if (prepared?.kind === "failed" && decision.required)
+      if (prepared?.kind === "failed" && decision.trigger === "auto")
         throw new CompactionFailureError(prepared.failure);
       if (prepared?.kind === "usable" && !selection.control)
         return prepareCompactionContext(drain, prepared);
@@ -191,17 +189,14 @@ export async function executeCompaction({
               baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
               readReferences: false,
               skipCompaction: !selection.control,
-              controls: selection.controls,
-              followingBatches: selection.followingBatches,
-              failedUndoIds: selection.failedUndoIds,
-              continueAfterControls: selection.outstanding.length > 0 || !!selection.continueTask,
+              control: selection.control,
+              failedControlIds: selection.failedControlIds,
               pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
               signal: input.signal,
             });
       return {
         events: next.events,
         undos: next.undos,
-        adoptedIds: next.adoptedIds,
         turns: next.turns,
         blocks: next.blocks,
         requiresSplit: true,

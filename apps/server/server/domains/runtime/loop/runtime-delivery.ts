@@ -24,8 +24,6 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
   currentTurn: Turn;
   signal?: AbortSignal;
   continueTask?: boolean;
-  deferControl?: boolean;
-  satisfyPendingCompact?: boolean;
   admit?: (turn: Turn) => Promise<void>;
   /** Prepare the current placeholder before late arrivals; retried with the same selection. */
   prepareCurrent?: () => Promise<TCurrent>;
@@ -48,7 +46,6 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
   ) => Promise<{
     events: OrchestratorEvent[];
     undos?: import("./compaction-undo.js").PreparedUndo[];
-    adoptedIds?: string[];
     turns: Turn[];
     blocks: Block[];
     requiresSplit: boolean;
@@ -60,17 +57,8 @@ export type DeliverySelection = {
   next: InboxWorkSelection;
   batch: InboxMessage[];
   continueTask?: boolean;
-  controls?: ControlMessage[];
-  failedUndoIds?: ReadonlySet<string>;
-  followingBatches?: {
-    afterControlId: string;
-    ackIds: string[];
-    batch: InboxMessage[];
-    workContext?: import("./work-context.js").RenderedWorkContext;
-  }[];
+  failedControlIds?: ReadonlySet<string>;
   control: ControlMessage | null;
-  satisfiesControlId?: string;
-  headControl: ControlMessage | null;
   outstanding: InboxMessage[];
   workContext?: import("./work-context.js").RenderedWorkContext;
   notices: Notice[];

@@ -26,8 +26,8 @@ import {
   resolveCompactionTrigger,
 } from "./compaction/index.js";
 import { queryCompactionRevisions } from "./compaction-revisions.js";
-import type { ControlMessage } from "./control-barrier.js";
 import { createLocalTurn } from "./local-turn.js";
+import type { ControlMessage } from "./next-inbox-work.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
 import { persistAndAppendEvents } from "./persistence.js";
 import type { AssembledNextTurnContext } from "./turn-context-assembly.js";
