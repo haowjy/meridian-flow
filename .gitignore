@@ -32,6 +32,7 @@ __pycache__/
 .vscode/settings.json
 .claude/*
 !.claude/settings.json
+!.claude/hooks/
 .cursor
 .pi
 .codex

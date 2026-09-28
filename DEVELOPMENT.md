@@ -193,6 +193,18 @@ fixed ports. It logs each remaining holder by PID and command, sends SIGTERM,
 waits briefly, and sends SIGKILL to stragglers. An uninspectable bound port still
 aborts startup with diagnostics.
 
+### Cloud sessions (Claude Code on the web)
+
+`.claude/hooks/session-start.sh` brings the stack up at session start: deps, the
+image's Postgres 16 on `:54422` (Docker Hub pulls are rate-limited there), the
+`meridian` database with migrations and functions, the Portless proxy, and
+`pnpm dev --no-tailscale`. It logs to `logs/session-start.log` and skips local
+machines. The app starts only when the environment settings provide
+`WORKOS_API_KEY`, `WORKOS_CLIENT_ID`, `WORKOS_COOKIE_PASSWORD`,
+`WORKOS_DEV_AUTOLOGIN=1`, and `WORKOS_DEV_LOGIN_EMAIL`/`PASSWORD` for a WorkOS
+Staging password user whose email domain no SSO connection claims (Staging's
+test organization claims `example.com`).
+
 ## Workstation: memory-safe ripgrep
 
 `rg` on this machine is wrapped at `~/.local/bin/rg` to prevent OOM kills. A bare `rg` over a large codebase can mmap hundreds of GB of virtual address space and exhaust RAM (this happened — it killed a tmux session).
