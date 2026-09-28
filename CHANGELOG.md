@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Run unit tests in worker threads while preserving module isolation.
+
 - Run DB tests on eight isolated workers, with a bounded override for busy shared servers.
 
 - Build the large transcript plan fixture once; restore only the tail each case mutates.
