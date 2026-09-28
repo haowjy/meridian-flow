@@ -1054,10 +1054,8 @@ msgstr ""
 msgid "Close"
 msgstr ""
 
-#. placeholder {0}: fileTab.name
 #. placeholder {0}: tab.name
 #: src/features/project/context/ContextTabBar.tsx
-#: src/features/project/dock/DockHeader.tsx
 msgid "Close {0}"
 msgstr ""
 
@@ -2981,7 +2979,7 @@ msgstr ""
 msgid "Open full screen"
 msgstr ""
 
-#: src/features/project/dock/DockShell.tsx
+#: src/features/project/dock/DockFileView.tsx
 msgid "Open in Editor"
 msgstr ""
 
@@ -3654,6 +3652,7 @@ msgid "scene break"
 msgstr ""
 
 #: src/features/project/context/context-schemes.ts
+#: src/features/project/dock/dock-view-store.ts
 #: src/features/project/work/WorkFilesView.tsx
 msgid "Scratch"
 msgstr ""
@@ -4671,6 +4670,7 @@ msgid "Uploading…"
 msgstr ""
 
 #: src/features/project/context/context-schemes.ts
+#: src/features/project/dock/dock-view-store.ts
 #: src/features/project/work/WorkFilesView.tsx
 msgid "Uploads"
 msgstr ""

@@ -19,7 +19,6 @@ import {
   type ProjectContextTreeScheme,
   type Work,
 } from "@meridian/contracts/protocol";
-import { parseRequestId } from "@meridian/contracts/request-id";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { updateProject } from "@/client/api/projects-api";
@@ -173,13 +172,13 @@ export type ProjectViewProps = {
 };
 
 export function ProjectView(props: ProjectViewProps) {
-  const syncWorkDestination = useDockViewStore((state) => state.syncWorkDestination);
+  const enterWork = useDockViewStore((state) => state.enterWork);
+  const leaveWork = useDockViewStore((state) => state.leaveWork);
   useLayoutEffect(() => {
-    syncWorkDestination(
-      props.activeScreen,
-      workDockDestinationId(props.activeScreen, props.routeWork),
-    );
-  }, [props.activeScreen, props.routeWork, syncWorkDestination]);
+    const workId = workDockDestinationId(props.activeScreen, props.routeWork);
+    if (workId) enterWork(workId);
+    else leaveWork();
+  }, [props.activeScreen, props.routeWork, enterWork, leaveWork]);
   const queryClient = useQueryClient();
   const cachedProject = useProject(props.projectId);
   const projectTitle = cachedProject?.title ?? props.project.title;
@@ -770,15 +769,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                     visible={!chatIndexShowing && (chatPlacement === "center" || isOpen("chat"))}
                     onCloseDock={close("chat")}
                     onOpenContextTarget={props.onOpenContextTarget}
-                    onOpenFileInEditor={(tab) => {
-                      if (tab.scheme !== "scratch" && tab.scheme !== "uploads") return;
-                      const workId = parseRequestId(tab.workId);
-                      if (!workId) return;
-                      void props.routeCommands.openWorkContext(
-                        { kind: "work-context", workId, scheme: tab.scheme, path: tab.path },
-                        { replace: false },
-                      );
-                    }}
                   />
                 </DraftReviewBoundary>
               </div>

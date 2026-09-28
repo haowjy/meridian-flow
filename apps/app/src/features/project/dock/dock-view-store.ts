@@ -1,4 +1,5 @@
-/** dock-view-store — which view the right dock shows, per screen, for the session. */
+/** Session-only view choices and transient Work file state for the project dock. */
+import { t } from "@lingui/core/macro";
 import { useCallback } from "react";
 import { create } from "zustand";
 import type { ContextTab } from "@/client/stores";
@@ -7,16 +8,18 @@ import type { ScreenKey } from "../shell/screens";
 
 /** Dock destinations. File is transient and only offered while a Work file is open. */
 export type DockView = "chat" | "context" | "changes" | "file";
+type StoredDockView = Exclude<DockView, "file">;
 
-export type DockFileView = { workId: string; tab: Extract<ContextTab, { kind: "viewer" }> };
+export type DockFile = { workId: string; tab: Extract<ContextTab, { kind: "viewer" }> };
+type DockFileSlot = DockFile & { active: boolean };
 
 type DockViewSet = {
   /** Ordered segments for the switch. */
-  views: readonly DockView[];
+  views: readonly StoredDockView[];
   /** Shown when the writer has made no explicit choice this session. */
-  default: DockView;
+  default: StoredDockView;
   /** The occupant's native (non-Changes) view — its content stays mounted. */
-  primary: DockView;
+  primary: StoredDockView;
 };
 
 /**
@@ -30,40 +33,39 @@ const DOCK_VIEW_SETS: Record<ScreenKey, DockViewSet> = {
 };
 
 type DockViewState = {
-  byScreen: Partial<Record<ScreenKey, DockView>>;
-  workFile: DockFileView | null;
+  /** Writer-selected non-file view only. A transient file never replaces this choice. */
+  byScreen: Partial<Record<ScreenKey, StoredDockView>>;
+  workFile: DockFileSlot | null;
   setDockView: (screen: ScreenKey, view: DockView) => void;
-  openWorkFile: (file: DockFileView) => void;
+  openWorkFile: (file: DockFile) => void;
   closeWorkFile: () => void;
-  syncWorkDestination: (screen: ScreenKey, workId: string | null) => void;
+  enterWork: (workId: string) => void;
+  leaveWork: () => void;
 };
 
 export const useDockViewStore = create<DockViewState>((set) => ({
   byScreen: {},
   workFile: null,
   setDockView: (screen, view) =>
-    set((state) => ({ byScreen: { ...state.byScreen, [screen]: view } })),
-  openWorkFile: (workFile) =>
-    set((state) => ({
-      workFile,
-      byScreen: { ...state.byScreen, work: "file" },
-    })),
-  closeWorkFile: () =>
-    set((state) => ({
-      workFile: null,
-      byScreen: { ...state.byScreen, work: "chat" },
-    })),
-  syncWorkDestination: (screen, workId) =>
     set((state) => {
-      if (screen === "work" && state.workFile && state.workFile.workId === workId) {
-        return state;
+      if (view === "file") {
+        if (screen !== "work" || !state.workFile || state.workFile.active) return state;
+        return { workFile: { ...state.workFile, active: true } };
       }
-      if (!state.workFile) return state;
-      return {
-        workFile: null,
-        byScreen: { ...state.byScreen, work: "chat" },
+      const next = {
+        byScreen: { ...state.byScreen, [screen]: view },
       };
+      if (screen !== "work" || !state.workFile?.active) return next;
+      return { ...next, workFile: { ...state.workFile, active: false } };
     }),
+  openWorkFile: (file) => set({ workFile: { ...file, active: true } }),
+  closeWorkFile: () => set({ workFile: null }),
+  enterWork: (workId) =>
+    set((state) => {
+      if (!state.workFile || state.workFile.workId === workId) return state;
+      return { workFile: null };
+    }),
+  leaveWork: () => set((state) => (state.workFile ? { workFile: null } : state)),
 }));
 
 /** Open one read-only Scratch/Uploads file in the Work dock slot. */
@@ -85,6 +87,21 @@ export type ResolvedDockView = {
   primaryView: DockView;
 };
 
+/** Resolve the explicit choice/default and include the transient file segment when present. */
+export function resolveDockView(
+  screen: ScreenKey,
+  stored: StoredDockView | undefined,
+  hasFile: boolean,
+): ResolvedDockView {
+  const set = DOCK_VIEW_SETS[screen];
+  const explicit = stored && set.views.includes(stored) ? stored : set.default;
+  const views =
+    hasFile && screen === "work"
+      ? [set.views[0], "file" as const, ...set.views.slice(1)]
+      : set.views;
+  return { view: explicit, views, primaryView: set.primary };
+}
+
 /** Remove the Changes destination when its model is empty. */
 export function withoutEmptyChanges(
   resolved: ResolvedDockView,
@@ -98,39 +115,31 @@ export function withoutEmptyChanges(
   };
 }
 
-export function resolveDockView(screen: ScreenKey, stored: DockView | undefined): ResolvedDockView {
-  const set = DOCK_VIEW_SETS[screen];
-  const view = stored && set.views.includes(stored) ? stored : set.default;
-  return { view, views: set.views, primaryView: set.primary };
-}
-
 /** Resolve the active dock view for a screen and bind the switch action. */
 export function useDockView(screen: ScreenKey): ResolvedDockView & {
   setView: (view: DockView) => void;
-  file: DockFileView | null;
+  file: DockFile | null;
   closeFile: () => void;
 } {
   const stored = useDockViewStore((state) => state.byScreen[screen]);
   const setDockView = useDockViewStore((state) => state.setDockView);
-  const file = useDockViewStore((state) => (screen === "work" ? state.workFile : null));
+  const workFile = useDockViewStore((state) => (screen === "work" ? state.workFile : null));
   const closeFile = useDockViewStore((state) => state.closeWorkFile);
-  const resolved = resolveDockView(screen, stored);
-  const withFile =
-    file && screen === "work"
-      ? {
-          ...resolved,
-          view: (stored === "changes"
-            ? "changes"
-            : stored === "chat"
-              ? "chat"
-              : "file") as DockView,
-          views: [resolved.views[0], "file" as const, ...resolved.views.slice(1)],
-        }
-      : resolved;
+  const resolved = resolveDockView(screen, stored, workFile !== null);
   return {
-    ...withFile,
+    ...resolved,
+    view: workFile?.active ? "file" : resolved.view,
     setView: (next) => setDockView(screen, next),
-    file,
+    file: workFile,
     closeFile,
+  };
+}
+
+/** Localized location chrome for a Scratch or Uploads file in the dock. */
+export function dockFileLocation(tab: DockFile["tab"]): { name: string; folder?: string } {
+  const folders = tab.path.split("/").filter(Boolean).slice(0, -1);
+  return {
+    name: tab.scheme === "scratch" ? t`Scratch` : t`Uploads`,
+    ...(folders.length > 0 ? { folder: folders.join(", ") } : {}),
   };
 }

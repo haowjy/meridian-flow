@@ -1,7 +1,6 @@
 /** Renders the mobile project workspace. */
 
 import { t } from "@lingui/core/macro";
-import { parseRequestId } from "@meridian/contracts/request-id";
 import { MessageSquare, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ContextTab, useContextTabs } from "@/client/stores";
@@ -166,15 +165,6 @@ export function MobileProject(props: MobileProjectProps) {
                 visible
                 onCloseDock={() => setChatOpen(false)}
                 onOpenContextTarget={props.onOpenContextTarget}
-                onOpenFileInEditor={(tab) => {
-                  if (tab.scheme !== "scratch" && tab.scheme !== "uploads") return;
-                  const workId = parseRequestId(tab.workId);
-                  if (!workId) return;
-                  void props.routeCommands.openWorkContext(
-                    { kind: "work-context", workId, scheme: tab.scheme, path: tab.path },
-                    { replace: false },
-                  );
-                }}
               />
             </MobileKeyboardAware>
           </DraftReviewBoundary>

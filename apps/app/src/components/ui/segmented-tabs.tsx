@@ -15,7 +15,8 @@ export type SegmentedTabOption<T extends string> = {
   value: T;
   label: ReactNode;
   disabled?: boolean;
-  trailingAction?: ReactNode;
+  /** A visible close affordance on a removable tab, also available by Delete/Backspace. */
+  closeAction?: { icon: ReactNode; onClose: () => void };
 };
 
 export function SegmentedTabs<T extends string>({
@@ -49,8 +50,26 @@ export function SegmentedTabs<T extends string>({
               type="button"
               role="tab"
               aria-selected={active}
+              aria-keyshortcuts={option.closeAction ? "Delete Backspace" : undefined}
               disabled={option.disabled}
-              onClick={() => onChange(option.value)}
+              onClick={(event) => {
+                if (
+                  option.closeAction &&
+                  event.target instanceof Element &&
+                  event.target.closest("[data-segmented-tab-close]")
+                ) {
+                  event.preventDefault();
+                  option.closeAction.onClose();
+                  return;
+                }
+                onChange(option.value);
+              }}
+              onKeyDown={(event) => {
+                if (option.closeAction && (event.key === "Delete" || event.key === "Backspace")) {
+                  event.preventDefault();
+                  option.closeAction.onClose();
+                }
+              }}
               className={cn(
                 "focus-ring h-6 shrink-0 rounded-[calc(var(--radius-lg)-2px)] px-2.5 text-xs transition-colors [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:px-3.5 [@media(pointer:coarse)]:text-sm",
                 active
@@ -60,8 +79,16 @@ export function SegmentedTabs<T extends string>({
               )}
             >
               {option.label}
+              {option.closeAction ? (
+                <span
+                  data-segmented-tab-close
+                  aria-hidden="true"
+                  className="mr-1 grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground [@media(pointer:coarse)]:size-8"
+                >
+                  {option.closeAction.icon}
+                </span>
+              ) : null}
             </button>
-            {option.trailingAction}
           </div>
         );
       })}
