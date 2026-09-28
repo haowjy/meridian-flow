@@ -7,7 +7,7 @@ import {
   HandoffSeedMetadataCodec,
   handoffSeedMetadata,
 } from "../../threads/index.js";
-import { threadReferenceText } from "../spawn/thread-reference.js";
+import { threadReferenceText } from "../thread-reference.js";
 import { contentForBlockInput } from "./block-helpers.js";
 import type { ControlMessage } from "./control-barrier.js";
 import { createLocalTurn } from "./local-turn.js";

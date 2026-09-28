@@ -5,6 +5,7 @@ import {
   serializeTransport,
   type WsServerMessage,
 } from "@meridian/contracts/protocol";
+import type { Thread } from "@meridian/contracts/threads";
 import { type WebSocket, WebSocketServer } from "ws";
 import { runCli } from "../main";
 
@@ -22,16 +23,17 @@ type FakeTurn = {
   text: string;
 };
 
-function threadDto() {
+function threadDto(): Thread {
   return {
     id: THREAD_ID,
     projectId: PROJECT_ID,
     workId: null,
     userId: "u1",
     kind: "primary",
-    status: "active",
+    status: "idle",
     title: "Fake thread",
     ref: "c1",
+    initialPromptBakeId: null,
     agentDefinitionRevisionId: null,
     agentName: "General",
     activeLeafTurnId: null,
@@ -43,6 +45,7 @@ function threadDto() {
     turnCount: 0,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-02T00:00:00.000Z",
+    lastActivityAt: "2026-01-02T00:00:00.000Z",
     deletedAt: null,
   };
 }

@@ -16,6 +16,7 @@ import { createChildRunCoordinator } from "../../runtime/spawn/child-run-coordin
 import { createChildRunDriver } from "../../runtime/spawn/child-run-driver.js";
 import { createOrphanReportRepair } from "../../runtime/spawn/orphan-report-repair.js";
 import { createReportPublisher } from "../../runtime/spawn/report-publisher.js";
+import { createToolRegistry } from "../../runtime/tools/index.js";
 import { readThreadActivity } from "../index.js";
 import {
   resetThreadWorkRaceFixture,
@@ -154,7 +155,13 @@ else
     async function fixture(script?: Parameters<typeof scriptedSummarizer>[0]) {
       const base = await setupSource();
       const claim = createDrizzleRunClaim(db);
-      const delivery = createTestDrizzleDelivery(db, { repos, eventWriter, runClaim: claim });
+      const toolRegistry = createToolRegistry();
+      const delivery = createTestDrizzleDelivery(db, {
+        repos,
+        eventWriter,
+        runClaim: claim,
+        toolRegistry,
+      });
       const gateway = {
         ...scriptedGateway({ usage: { inputTokens: 100, outputTokens: 10 } }),
         listModels: () => [
@@ -179,6 +186,7 @@ else
         agentRevisions: revisions,
         gateway,
         summarizer: summarizer,
+        toolRegistry,
       });
       await rig.creditLedger.grant({
         userId: ids.userId,
@@ -327,6 +335,8 @@ else
       const content = blocks[1].content as { props: { text: string } };
       expect(content.props.text).toContain(`thread_history({"ref":"${target.ref}"})`);
       const first = r.gateway.requests.at(-1)!;
+      const user = first.messages.find((message) => message.role === "user");
+      expect(JSON.stringify(user?.content)).toContain("\\n\\n<thread_reference");
       expect(JSON.stringify(first.messages)).toContain("Check the chapter");
       expect(JSON.stringify(first.messages)).toContain("thread_reference");
       expect(JSON.stringify(first.messages)).not.toContain("Source-only transcript");
@@ -1099,6 +1109,45 @@ else
         r.delivery.enqueueControl({ ...retry, id: crypto.randomUUID() }),
       ).rejects.toMatchObject({ statusCode: 409 });
     });
+    it.each([
+      "bake",
+      "registered",
+    ])("C9 Stop preserves the read instruction with %s availability", async (availability) => {
+      const r = await fixture();
+      if (availability === "bake") {
+        const { hashPromptBakeContent } = await import("./prompt-bake-hash.js");
+        const content = {
+          composedSystemPrompt: "Destination",
+          bakedSkillSlugs: [],
+          bakedTools: [{ type: "function", name: "thread_history" }],
+        };
+        const bake = await repos.promptBakes.create({
+          ownerThreadId: r.thread.id,
+          ...content,
+          contentHash: hashPromptBakeContent(content),
+        });
+        await db
+          .update(schema.threads)
+          .set({ initialPromptBakeId: bake.id })
+          .where(eq(schema.threads.id, r.thread.id));
+      } else {
+        const { createInspectionToolRegistrations } = await import(
+          "../../runtime/tools/inspection-tools.js"
+        );
+        for (const tool of createInspectionToolRegistrations({
+          repos,
+          statusReader: r.runClaim,
+          registry: r.deps.toolRegistry,
+          tokenizer: async () => "o200k",
+        }))
+          r.deps.toolRegistry.register(tool);
+      }
+      expect(await r.orchestrator.cancel(r.thread.id, r.seed.id)).toBe("cancelled");
+      const blocks = await repos.blocks.listByTurn(r.seed.id);
+      expect(JSON.stringify(blocks)).toContain("thread_history");
+      expect(JSON.stringify(blocks)).toContain("No brief is available.");
+    });
+
     it.each([false, true])("C7 scan preserves row-owned seed after crash=%s", async (crashed) => {
       const r = await fixture();
       if (crashed) {

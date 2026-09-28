@@ -7,7 +7,7 @@
 
 ## [Unreleased]
 
-- Point spawned agents at connected prior work without copying history; freeze reference text and handoff read instructions.
+- Point spawned agents at connected prior work without copying history; freeze reference text and read instructions, including stopped handoffs.
 
 - Preserve bake-gated history guidance in cold handoff summaries; classify completed and failed briefs as system history.
 

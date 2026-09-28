@@ -74,6 +74,7 @@ const PREPARATION_ATTEMPTS = 3;
 export function createDeliveryAdapter(
   deps: PersistenceDeps & {
     repos: import("../../threads/index.js").ThreadRepositories;
+    toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
     inbox: DeliveryStore;
     leaseStore: DeliveryLeaseStore;
     runClaim: Pick<RunClaim, "release" | "withExclusiveThread" | "cancelExecution">;

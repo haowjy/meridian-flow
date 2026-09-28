@@ -275,7 +275,8 @@ function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
   for (const block of blocks) {
     if (block.blockType === "custom") {
       const content = block.content as ComponentBlockContent;
-      if (content.kind === "thread-reference") parts.push(text(content.props.text as string));
+      if (content.kind === "thread-reference")
+        parts.push(text(`\n\n${content.props.text as string}`));
     }
     const reference = referenceOccurrenceContent(block);
     if (!reference?.read) continue;

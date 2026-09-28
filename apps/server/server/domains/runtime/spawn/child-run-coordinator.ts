@@ -20,6 +20,7 @@ import type {
 } from "../../threads/index.js";
 import { createBoundConversation, TurnStartConflictError } from "../../threads/index.js";
 import type { DeliveryProducer } from "../loop/runtime-delivery.js";
+import { threadReferenceBlock } from "../thread-reference.js";
 import { appendSubagentActivity } from "./activity-event.js";
 import { authorizeThreadMessage } from "./authorize-thread-message.js";
 import type { ChildDriveInput, ChildRunDriver, PreparedChild } from "./child-run-driver.js";
@@ -36,7 +37,6 @@ import {
   persistInvocationCard,
   type SpawnTranscript,
 } from "./spawn-transcript.js";
-import { threadReferenceBlock } from "./thread-reference.js";
 import { assertSpawnDepthAllowed, assertTurnBudget } from "./tree-budget.js";
 
 export interface SpawnChildInput extends ChildDriveInput {

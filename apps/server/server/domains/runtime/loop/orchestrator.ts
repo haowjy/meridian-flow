@@ -109,7 +109,7 @@ import {
   SKILL_BODY_METADATA,
 } from "./activated-skills.js";
 import { loadUserSkillBody } from "./available-skills.js";
-import { contentForBlockInput, isJsonObject, localBlockFromEvent } from "./block-helpers.js";
+import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import {
   type CompactionDecision,
   CompactionPreparationError,
@@ -130,6 +130,7 @@ import {
   recordHandoffSeedOutcome,
   reserveHandoffSeed,
 } from "./handoff-seed.js";
+import { historyReadableAt } from "./history-tool-availability.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
@@ -1857,11 +1858,7 @@ async function executeLoop({
     };
     input.signal?.throwIfAborted();
     const available = outcome.kind === "complete" ? outcome : undefined;
-    const bake = await bakeAt(deps.repos, currentTurn, allTurns);
-    const historyReadable = bake
-      ? Array.isArray(bake.bakedTools) &&
-        bake.bakedTools.some((tool) => isJsonObject(tool) && tool.name === "thread_history")
-      : deps.toolRegistry.getRegistration("thread_history") !== undefined;
+    const historyReadable = await historyReadableAt(deps, currentTurn, allTurns);
     const block = handoffSeedBlock(currentTurn, available, historyReadable);
     const completed = {
       ...currentTurn,

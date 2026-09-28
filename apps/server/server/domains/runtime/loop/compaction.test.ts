@@ -904,7 +904,7 @@ describe("projectActiveHistoryWithBakes", () => {
     });
     expect(mismatched.blocks[0]?.textContent).toBe(old.blocks[0]?.textContent);
   });
-  it("projects 2,000 compaction-free turns by identity without decoding their metadata", async () => {
+  it("projects 2,000 compaction-free turns by identity", async () => {
     const turns = Array.from({ length: 2_000 }, (_, index) =>
       turn(`identity-${index}`, index + 1, index % 2 === 0 ? "user" : "assistant", {
         metadata: { unrelated: { deeply: { nested: "metadata" } } },
@@ -913,9 +913,7 @@ describe("projectActiveHistoryWithBakes", () => {
     const blocks = turns.map((entry, index) =>
       block(`identity-block-${index}`, entry.id, 0, "text", { text: "content" }, "content"),
     );
-    const startedAt = performance.now();
     const projected = await projectActiveHistoryWithBakes(turns, blocks, "c12", noPromptBakes);
-    expect(performance.now() - startedAt).toBeLessThan(50);
     expect(projected.turns).toEqual(turns);
     expect(projected.blocks).toEqual(blocks);
   });

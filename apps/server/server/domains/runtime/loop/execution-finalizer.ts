@@ -28,6 +28,7 @@ import {
   handoffSeedBlock,
   recordHandoffSeedOutcome,
 } from "./handoff-seed.js";
+import { historyReadableAt } from "./history-tool-availability.js";
 import { persistAndAppendEvents } from "./persistence.js";
 
 export type TerminalCause =
@@ -132,6 +133,7 @@ export async function finalizeExecution(
   deps: {
     repos: Pick<
       ThreadRepositories,
+      | "promptBakes"
       | "threads"
       | "turns"
       | "blocks"
@@ -142,6 +144,7 @@ export async function finalizeExecution(
       | "runTurnStartTransition"
     >;
     eventWriter: EventJournalWriter;
+    toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
   },
   input: {
     threadId: ThreadId;
@@ -232,7 +235,7 @@ export async function finalizeExecution(
       if (turn.role === "system") {
         events.push({
           type: "block.upserted",
-          block: handoffSeedBlock(turn),
+          block: handoffSeedBlock(turn, undefined, await historyReadableAt(deps, turn)),
         });
       }
       return { result: updated, events: [...events, turnEvent(updated, input.cause)] };

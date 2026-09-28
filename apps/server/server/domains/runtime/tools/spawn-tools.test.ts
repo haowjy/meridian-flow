@@ -30,6 +30,18 @@ describe("parseSpawnToolArgs", () => {
     );
   });
 
+  it.each([12, null, ["c1"]])("refuses malformed from %j without spawning", async (from) => {
+    const spawn = vi.fn();
+    const registration = createSpawnToolRegistrations().find(
+      (entry) => entry.definition.name === "spawn",
+    );
+    if (registration?.execution.type !== "server") throw new Error("missing spawn");
+    expect(
+      await registration.execution.handler({ prompt: "go", from }, { spawn } as never),
+    ).toMatchObject({ ok: false, error: { code: "invalid_from" } });
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
   it("maps malformed nested patches before spawning", async () => {
     const spawn = vi.fn();
     const registration = createSpawnToolRegistrations().find(

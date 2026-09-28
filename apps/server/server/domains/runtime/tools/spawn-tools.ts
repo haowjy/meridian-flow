@@ -10,7 +10,7 @@ import {
   meridianErrorToJson,
 } from "@meridian/contracts/interrupt";
 import { returnResultCaptureSchema, type SpawnResult } from "@meridian/contracts/spawn";
-import { ZodError } from "zod";
+import { ZodError, z } from "zod";
 import { InvocationPatchError } from "../spawn/apply-invocation-patch.js";
 import { spawnHistoryPreview, threadHistoryPreview } from "./history-previews.js";
 import { toolFailureResult } from "./tool-executor.js";
@@ -44,7 +44,7 @@ export function parseSpawnToolArgs(input: unknown): SpawnToolArgs {
       : {};
   return {
     ...(typeof rec.agent === "string" ? { agent: rec.agent } : {}),
-    ...(typeof rec.from === "string" ? { from: rec.from } : {}),
+    ...(rec.from !== undefined ? { from: z.string().parse(rec.from) } : {}),
     prompt: typeof rec.prompt === "string" ? rec.prompt : "",
     ...(typeof rec.description === "string" ? { description: rec.description } : {}),
     mode: rec.mode === "background" ? "background" : "foreground",
@@ -222,15 +222,26 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: SpawnToolHandlerContext) => {
+          let args: SpawnToolArgs;
           try {
-            return await ctx.spawn(parseSpawnToolArgs(input));
+            args = parseSpawnToolArgs(input);
           } catch (error) {
+            if (error instanceof ZodError) {
+              return {
+                ok: false,
+                error: meridianErrorFromSystem(
+                  "invalid_from",
+                  'from must be one conversation ref or "current".',
+                ),
+              };
+            }
             if (!(error instanceof InvocationPatchError)) throw error;
             return {
               ok: false,
               error: meridianErrorFromSystem("spawn_invocation_patch_invalid", error.message),
             };
           }
+          return ctx.spawn(args);
         },
       },
       sequential: true,
