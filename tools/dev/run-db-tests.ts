@@ -1,12 +1,9 @@
 #!/usr/bin/env tsx
 /** Run the shared DB suite against a database owned by this invocation. */
-import { spawn } from "node:child_process";
-import {
-  cloneDatabaseForUrl,
-  dropDatabaseForUrl,
-  ensureDatabaseForUrl,
-  isLocalDevPostgres,
-} from "./lib/dev-db";
+import { fork, spawn } from "node:child_process";
+import { closeSync, mkdirSync, openSync } from "node:fs";
+import { join } from "node:path";
+import { cloneDatabaseForUrl, ensureDatabaseForUrl, isLocalDevPostgres } from "./lib/dev-db";
 import { resolveCurrentRepoRoot, resolveMainDatabaseNames } from "./lib/dev-env";
 import { managedTestDatabaseUrl, managedTestDatabaseWorkerUrl } from "./lib/test-db-lifecycle";
 
@@ -101,12 +98,26 @@ async function main(): Promise<void> {
     process.exitCode = testExit;
   } finally {
     if (local) {
-      for (const workerDatabaseUrl of workerDatabaseUrls) {
-        const result = await dropDatabaseForUrl(workerDatabaseUrl, mainDatabaseNames);
-        console.log(`DB tests: dropped worker database ${result.targetDb}.`);
-      }
-      const result = await dropDatabaseForUrl(databaseUrl, mainDatabaseNames);
-      console.log(`DB tests: dropped owned database ${result.targetDb}.`);
+      const logDirectory = join(repoRoot, ".meridian", "db-test-cleanup");
+      mkdirSync(logDirectory, { recursive: true });
+      const logPath = join(logDirectory, `${process.pid}.log`);
+      const log = openSync(logPath, "a", 0o600);
+      const cleanup = fork(join(repoRoot, "tools/dev/cleanup-test-databases.ts"), [], {
+        cwd: repoRoot,
+        detached: true,
+        stdio: ["ignore", log, log, "ipc"],
+      });
+      closeSync(log);
+      await new Promise<void>((resolve, reject) => {
+        cleanup.once("error", reject);
+        cleanup.once("exit", (code) =>
+          reject(new Error(`DB cleanup exited before handoff (${code}); see ${logPath}`)),
+        );
+        cleanup.once("message", () => resolve());
+        cleanup.send({ databaseUrl, workerCount: workerDatabaseUrls.length });
+      });
+      cleanup.unref();
+      console.log(`DB tests: cleanup continues in PID ${cleanup.pid}; log: ${logPath}.`);
     }
   }
 }

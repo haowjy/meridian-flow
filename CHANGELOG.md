@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Return DB test results without waiting for database-drop checkpoints; keep owned cleanup logs and stale-run GC.
+
 - Disable synchronous commit only on runner-owned DB test connections.
 
 - Reset DB tests with rollback or FK-ordered deletes, without per-case table rewrites.
