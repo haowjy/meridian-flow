@@ -5,6 +5,7 @@
  * SSR data priming so project data is ready on a cold refresh.
  */
 
+import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type {
   ListWorksResponse,
   ProjectWorkingSet,
@@ -12,11 +13,13 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 import {
+  getProject,
   getProjectWorkingSet,
   listProjectThreads,
   listProjectWorks,
 } from "@/client/api/projects-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
+import { waitForProjectCreation } from "@/client/project-creation";
 
 import { projectQueryKeys } from "./project-query-keys";
 import { beginWorksSnapshotRequest, seedWorksSnapshot } from "./works-projection-acquisition";
@@ -47,6 +50,20 @@ function settledValue<T>(result: PromiseSettledResult<T>): T | null {
 
   logUnexpectedSsrLoadError(result.reason);
   return null;
+}
+
+export async function loadProjectEntry(
+  projectId: string,
+): Promise<{ project: Project; data: ProjectRouteData }> {
+  // Same-tab creation is sequencing only, never authorization. Once persistence
+  // settles, the ordinary owner-gated reads still establish route authority.
+  await waitForProjectCreation(projectId);
+  const init = ssrApiRequestInit();
+  const [project, data] = await Promise.all([
+    getProject(projectId, init),
+    loadProjectRouteData(projectId),
+  ]);
+  return { project, data };
 }
 
 export async function loadProjectRouteData(projectId: string): Promise<ProjectRouteData> {

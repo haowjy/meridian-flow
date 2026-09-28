@@ -1,59 +1,31 @@
 /** Project creation destination: name a project, then enter its Chat landing. */
 import { Trans } from "@lingui/react/macro";
-import { Link, useNavigate, useRouter } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { type FormEvent, useEffect, useRef, useState } from "react";
-import { createProject, getProject } from "@/client/api/projects-api";
+import { type FormEvent, useState } from "react";
+import { beginProjectCreation } from "@/client/project-creation";
 import { useProjectActions } from "@/client/stores";
 import { MeridianMark } from "@/components/app/MeridianMark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useAccountId } from "@/features/project/context/account-feature-context";
 
 export function NewProjectView() {
   const navigate = useNavigate();
-  const router = useRouter();
   const { ensureProject } = useProjectActions();
+  const accountId = useAccountId();
   const [projectId] = useState(() => crypto.randomUUID());
-  const active = useRef(true);
   const [title, setTitle] = useState("");
-  const [submittedTitle, setSubmittedTitle] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(false);
-  const [createdProjectId, setCreatedProjectId] = useState<string | null>(null);
 
-  useEffect(() => {
-    active.current = true;
-    return () => {
-      active.current = false;
-    };
-  }, []);
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || !title.trim()) return;
+    const name = title.trim();
+    if (busy || !name) return;
     setBusy(true);
-    setError(false);
-    try {
-      let createdId = createdProjectId;
-      if (!createdId) {
-        const name = submittedTitle ?? title.trim();
-        setSubmittedTitle(name);
-        const project = await createProject({ id: projectId, title: name }).catch(() =>
-          getProject(projectId),
-        );
-        ensureProject(project);
-        createdId = project.id;
-        if (active.current) setCreatedProjectId(createdId);
-      }
-      if (active.current && router.history.location.pathname === "/projects/new") {
-        await navigate({ to: "/p/$projectId/$", params: { projectId: createdId, _splat: "" } });
-      }
-    } catch {
-      if (active.current) {
-        setError(true);
-        setBusy(false);
-      }
-    }
+    const persistence = beginProjectCreation({ projectId, accountId, title: name });
+    void persistence.then(ensureProject, () => undefined);
+    void navigate({ to: "/p/$projectId/$", params: { projectId, _splat: "" } });
   }
 
   return (
@@ -91,33 +63,18 @@ export function NewProjectView() {
               autoComplete="off"
               maxLength={120}
               value={title}
-              disabled={busy || submittedTitle !== null}
+              disabled={busy}
               onChange={(event) => setTitle(event.target.value)}
               className="mt-2 h-11 bg-card"
               required
             />
-            {error && (
-              <p className="mt-3 text-sm text-destructive" role="alert">
-                {createdProjectId ? (
-                  <Trans>Project created, but it couldn’t open. Try again.</Trans>
-                ) : (
-                  <Trans>Project wasn’t confirmed. Retry creation.</Trans>
-                )}
-              </p>
-            )}
             <Button
               type="submit"
               size="sm"
               className="mt-6 [@media(pointer:coarse)]:min-h-11"
               disabled={busy || !title.trim()}
             >
-              {busy ? (
-                <Trans>Creating project…</Trans>
-              ) : createdProjectId ? (
-                <Trans>Open project</Trans>
-              ) : (
-                <Trans>Create project</Trans>
-              )}
+              {busy ? <Trans>Opening project…</Trans> : <Trans>Create project</Trans>}
             </Button>
           </form>
         </div>

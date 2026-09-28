@@ -381,7 +381,12 @@ Work projection.
 Persistent root/account/project loaders acquire shell identity on entry. Child
 navigation and same-href history-state writes do not reload them; explicit router
 invalidation and re-entry still do. This permits warm local editing offline,
-not cold offline app boot or bypassing server authorization.
+not cold offline app boot or bypassing server authorization. New project creation
+registers one same-tab persistence attempt before navigating to its UUID route.
+Only that explicit attempt may sequence the route behind creation; afterwards the
+ordinary owner-gated project and shell-data reads still establish authority.
+Creation failure and same-identity retry stay on the destination, while the
+project-list cache receives only confirmed projects.
 
 The basic `EditorView` is a static dependency of the project hosts, not a lazy
 chunk fetched on first New/open. This makes a loaded empty workspace capable of
