@@ -1,5 +1,4 @@
 /** Request preparation stages references and image decisions without writes, then measures compaction. */
-import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Thread, Turn } from "@meridian/contracts/threads";
 import {
@@ -172,11 +171,11 @@ async function prepareControlHistory(input: PrepareRequestInput): Promise<Prepar
       type: "turn.created",
       turn: turn.status === "complete" ? { ...turn, status: "pending", promptBakeId: null } : turn,
     });
-    if (turn.status === "error")
+    if (undo.error)
       events.push({
         type: "turn.error",
         turn,
-        error: meridianErrorFromSystem(turn.error!, turn.error!),
+        error: undo.error,
       });
     const plan = planFollowing(turn);
     events.push(...plan.events);

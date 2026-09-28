@@ -118,3 +118,28 @@ describe("thread transcript compaction failures", () => {
     });
   });
 });
+
+it("surfaces undo metadata without replacing writer-facing error copy", () => {
+  const turn = {
+    id: "undo-id",
+    role: "system",
+    origin: "system",
+    status: "error",
+    error: "This compaction has already been undone.",
+    metadata: {
+      kind: "compaction_undo",
+      revertsCompactionTurnId: "compaction-id",
+      controlMessageId: "control-id",
+      reason: "already_undone",
+    },
+    blocks: [],
+  } as unknown as Turn;
+  expect(compactTurn(turn, { full: false })).toMatchObject({
+    error: "This compaction has already been undone.",
+    compactionUndoMetadata: {
+      revertsCompactionTurnId: "compaction-id",
+      controlMessageId: "control-id",
+      reason: "already_undone",
+    },
+  });
+});

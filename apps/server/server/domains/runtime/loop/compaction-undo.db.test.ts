@@ -139,8 +139,27 @@ else
       rig.setThreshold(2500);
       await undo(rig, c);
       const u = marker(await drain(rig));
-      expect(u).toMatchObject({ status: "error", error: "would_recompact", promptBakeId: null });
+      expect(u).toMatchObject({
+        status: "error",
+        error: "Undo would make this conversation compact again immediately.",
+        metadata: { reason: "would_recompact" },
+        promptBakeId: null,
+      });
       expect(await rig.repos.blocks.listByTurn(u.id)).toEqual([]);
+      const { createDrizzleEventJournalReader } = await import("../../threads/index.js");
+      const journal = await createDrizzleEventJournalReader(db).listByThread(rig.threadId);
+      expect(
+        journal.find((row) => row.payload.type === "turn.error" && row.payload.turn.id === u.id)
+          ?.payload,
+      ).toMatchObject({
+        type: "turn.error",
+        error: {
+          code: "would_recompact",
+          message: "Undo would make this conversation compact again immediately.",
+          details: { reason: "would_recompact" },
+        },
+      });
+
       await (
         await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "Continue compacted" })
       ).execute();
@@ -155,7 +174,11 @@ else
       await undo(rig, c);
       await drain(rig);
       await undo(rig, c);
-      expect(marker(await drain(rig))).toMatchObject({ status: "error", error: "already_undone" });
+      expect(marker(await drain(rig))).toMatchObject({
+        status: "error",
+        error: "This compaction has already been undone.",
+        metadata: { reason: "already_undone" },
+      });
     });
     it("C6b A C B undo uses A usage never B", async () => {
       const gateway = scriptedGateway({ usage: { inputTokens: 100, outputTokens: 10 } });
@@ -255,7 +278,11 @@ else
       });
       rig.setThreshold(2500);
       await undo(rig, c);
-      expect(marker(await drain(rig))).toMatchObject({ status: "error", error: "would_recompact" });
+      expect(marker(await drain(rig))).toMatchObject({
+        status: "error",
+        error: "Undo would make this conversation compact again immediately.",
+        metadata: { reason: "would_recompact" },
+      });
     });
 
     it("C6b inherited C is not_active and fork cutoffs isolate U", async () => {
@@ -314,7 +341,11 @@ else
           throw new Error("Inherited undo must never assemble");
         },
       });
-      expect(prepared.turn).toMatchObject({ status: "error", error: "not_active" });
+      expect(prepared.turn).toMatchObject({
+        status: "error",
+        error: "Only the active compaction in this chat can be undone.",
+        metadata: { reason: "not_active" },
+      });
       await expect(
         rig.delivery.enqueueControl({
           threadId: between.id,
@@ -502,7 +533,8 @@ else
       expect(failed).toBe(true);
       expect(marker(turns)).toMatchObject({
         status: "error",
-        error: "undo_failed",
+        error: "This compaction couldn't be undone. Try again.",
+        metadata: { reason: "undo_failed" },
         promptBakeId: null,
       });
       expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
@@ -522,7 +554,11 @@ else
       await run.execute();
       rig.deps.gateway.listModels = list;
       const turns = await rig.repos.turns.listByThread(rig.threadId);
-      expect(marker(turns)).toMatchObject({ status: "error", error: "undo_failed" });
+      expect(marker(turns)).toMatchObject({
+        status: "error",
+        error: "This compaction couldn't be undone. Try again.",
+        metadata: { reason: "undo_failed" },
+      });
       expect(turns.filter((t) => t.role === "compaction")).toHaveLength(1);
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
     });
@@ -576,7 +612,11 @@ else
       await rig.send(rig.threadId, "Continue");
       rig.setThreshold(3000);
       const turns = await drain(rig);
-      expect(marker(turns)).toMatchObject({ status: "error", error: "would_recompact" });
+      expect(marker(turns)).toMatchObject({
+        status: "error",
+        error: "Undo would make this conversation compact again immediately.",
+        metadata: { reason: "would_recompact" },
+      });
       expect(turns.filter((t) => t.role === "compaction")).toHaveLength(2);
     });
     it("C6b review immediate undo does not readmit C images", async () => {
@@ -684,7 +724,11 @@ else
       rig.setThreshold(2500);
       await (await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true })).execute();
       const turns = await rig.repos.turns.listByThread(rig.threadId);
-      expect(marker(turns)).toMatchObject({ status: "error", error: "would_recompact" });
+      expect(marker(turns)).toMatchObject({
+        status: "error",
+        error: "Undo would make this conversation compact again immediately.",
+        metadata: { reason: "would_recompact" },
+      });
       expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "error" });
     });
 
@@ -698,7 +742,11 @@ else
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
       await run.execute();
       const turns = await rig.repos.turns.listByThread(rig.threadId);
-      expect(marker(turns)).toMatchObject({ status: "error", error: "undo_failed" });
+      expect(marker(turns)).toMatchObject({
+        status: "error",
+        error: "This compaction couldn't be undone. Try again.",
+        metadata: { reason: "undo_failed" },
+      });
       expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "error" });
       expect(rig.gateway.requests).toHaveLength(0);
     });

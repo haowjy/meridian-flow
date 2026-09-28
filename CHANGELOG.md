@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Undo failures show writer copy, retain typed reasons, and expose metadata in `mf thread view --json`.
+
 - Regenerate compaction undo migration after transcript indexes; keep both database changes.
 
 - Compaction undo preserves paged transcript segments and restores the pre-compaction prompt bake.

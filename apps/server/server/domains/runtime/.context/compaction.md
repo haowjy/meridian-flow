@@ -357,7 +357,9 @@ pending privately, then announced complete in the journal; readers never receive
 a pending U. Inbox-only rows beyond U are planned after it, not folded into its
 adopted prefix. An idle undo reserves no
 assistant and admits no execution. A refused U has no blocks or bake; its reason
-is `turn.error` (`already_undone`, `not_active`, `would_recompact`, `undo_failed`).
+lives in typed undo metadata (`already_undone`, `not_active`, `would_recompact`,
+`undo_failed`), while `turn.error` carries writer copy. The journal keeps the
+existing undo error codes and includes the reason in error details.
 A failed undo commit rolls back, then retries the delivery transaction with those
 undo controls marked `undo_failed`; ordinary messages still continue.
 

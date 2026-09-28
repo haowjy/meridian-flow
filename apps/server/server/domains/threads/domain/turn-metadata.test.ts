@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   CompactionMetadataCodec,
   CompactionPlanMetadataCodec,
+  CompactionUndoMetadataCodec,
   interruptedPlaceholderError,
 } from "./turn-metadata.js";
 
@@ -80,4 +81,12 @@ describe("compaction metadata", () => {
       }).success,
     ).toBe(false);
   });
+});
+
+it("rejects unknown undo refusal reasons but accepts successful markers", () => {
+  const metadata = { kind: "compaction_undo", revertsCompactionTurnId: "c" };
+  expect(CompactionUndoMetadataCodec.safeParse(metadata).success).toBe(true);
+  expect(
+    CompactionUndoMetadataCodec.safeParse({ ...metadata, reason: "provider_error" }).success,
+  ).toBe(false);
 });

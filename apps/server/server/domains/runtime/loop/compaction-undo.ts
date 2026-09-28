@@ -1,11 +1,13 @@
 /** Prepare restored history without writes; complete U with its reused bake in the boundary commit. */
 
+import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { PromptBakeId, ThreadId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
 import {
   activeCompaction,
   bakeIdAt,
   CompactionMetadataCodec,
+  type CompactionUndoFailureReason,
   compactionUndoMetadata,
   ImageInclusionMetadataCodec,
   promptEpochMetadata,
@@ -33,9 +35,23 @@ export const COMPACTION_UNDO_TEXT =
   "The writer undid the compaction here. The earlier conversation above is restored.";
 export type PreparedUndo = {
   controlId: string;
+  error?: MeridianError;
   turn: Turn;
   block?: ReturnType<typeof contentForBlockInput>;
 };
+
+function undoFailureMessage(reason: CompactionUndoFailureReason): string {
+  switch (reason) {
+    case "would_recompact":
+      return "Undo would make this conversation compact again immediately.";
+    case "not_active":
+      return "Only the active compaction in this chat can be undone.";
+    case "already_undone":
+      return "This compaction has already been undone.";
+    case "undo_failed":
+      return "This compaction couldn't be undone. Try again.";
+  }
+}
 
 /** Q2/R-C6-2: keep the refusal in one place pending the user's ruling. */
 function wouldRecompact(tokens: number, trigger: number | null): boolean {
@@ -66,19 +82,21 @@ export async function prepareCompactionUndo(input: {
     status: "complete",
     metadata: compactionUndoMetadata(targetId, control.id),
   });
-  const refused = (
-    reason: "already_undone" | "not_active" | "would_recompact" | "undo_failed",
-  ): PreparedUndo => ({
-    controlId: control.id,
-    turn: {
-      ...turn,
-      status: "error",
-      promptBakeId: null,
-      metadata: compactionUndoMetadata(targetId, control.id),
-      error: reason,
-      completedAt: new Date().toISOString(),
-    },
-  });
+  const refused = (reason: CompactionUndoFailureReason): PreparedUndo => {
+    const message = undoFailureMessage(reason);
+    return {
+      controlId: control.id,
+      error: { ...meridianErrorFromSystem(reason, message), details: { reason } },
+      turn: {
+        ...turn,
+        status: "error",
+        promptBakeId: null,
+        metadata: compactionUndoMetadata(targetId, control.id, reason),
+        error: message,
+        completedAt: new Date().toISOString(),
+      },
+    };
+  };
   if (input.forceFailure) return refused("undo_failed");
   input.assertNoResponseScope?.();
   const target = turns.find((t) => t.id === targetId);

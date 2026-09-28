@@ -573,7 +573,8 @@ Complete undo markers identify reverted compactions and carry their own frozen
 model-only elisions. The active compaction is the latest complete C not reverted
 in the effective transcript. Runtime projects its tail, then applies the latest
 complete undo after it; refused markers have no blocks or bake and do not alter
-that projection. A fork cutoff includes or excludes U with the rest of its
+that projection. Their typed metadata carries the refusal reason; `turn.error`
+carries writer copy. A fork cutoff includes or excludes U with the rest of its
 prefix. Image inclusion reads filter reverted deciding C IDs before selecting
 the latest decision per block, so pre-C exclusions can take effect again.
 

@@ -90,6 +90,7 @@ export type {
   CompactionFailureReason,
   CompactionMetadata,
   CompactionPlanMetadata,
+  CompactionUndoFailureReason,
   HistoryItemClass,
   ImageContextBreak,
   ImageInclusionMetadata,

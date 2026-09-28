@@ -64,10 +64,19 @@ const modelElisionsCodec = z.array(
   }),
 );
 
+export const CompactionUndoFailureReasonCodec = z.enum([
+  "would_recompact",
+  "not_active",
+  "already_undone",
+  "undo_failed",
+]);
+export type CompactionUndoFailureReason = z.infer<typeof CompactionUndoFailureReasonCodec>;
+
 export const CompactionUndoMetadataCodec = z
   .object({
     kind: z.literal("compaction_undo"),
     revertsCompactionTurnId: z.string().min(1),
+    reason: CompactionUndoFailureReasonCodec.optional(),
     controlMessageId: z.string().optional(),
     elisions: modelElisionsCodec.optional(),
   })
@@ -266,10 +275,12 @@ export function derivationSeedMetadata(derivation: "fork" | "handoff"): JsonObje
 export function compactionUndoMetadata(
   revertsCompactionTurnId: string,
   controlMessageId?: string,
+  reason?: CompactionUndoFailureReason,
 ): JsonObject {
   return {
     kind: "compaction_undo",
     revertsCompactionTurnId,
+    ...(reason ? { reason } : {}),
     ...(controlMessageId ? { controlMessageId } : {}),
   };
 }

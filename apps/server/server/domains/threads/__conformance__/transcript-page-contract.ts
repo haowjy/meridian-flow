@@ -672,10 +672,10 @@ export function defineTranscriptPageContract(
       await block(undo.id as TurnId, "undo-text", 0);
       const pages = await readAll(repos, root, order, unit, 1);
       const pageFor = (id: string) =>
-        pages.find((page) => page.entries.some((entry) => entry.turn.id === id))!;
-      expect(pageFor(refused.id).segment).toEqual(pageFor(compact.id).segment);
-      expect(pageFor(refused.id).entries[0]?.blocks).toEqual([]);
-      expect(pageFor(undo.id).segment).toMatchObject({
+        pages.find((page) => page.entries.some((entry) => entry.turn.id === id));
+      expect(pageFor(refused.id)?.segment).toEqual(pageFor(compact.id)?.segment);
+      expect(pageFor(refused.id)?.entries[0]?.blocks).toEqual([]);
+      expect(pageFor(undo.id)?.segment).toMatchObject({
         index: 2,
         bakeId: rootBake.id,
         openedBy: { turnId: undo.id, kind: "undo_marker" },
