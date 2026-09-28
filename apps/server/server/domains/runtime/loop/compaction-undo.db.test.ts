@@ -201,7 +201,7 @@ else
     it("C6b compact undo M executes C U B before answering M", async () => {
       let rig: Rig;
       rig = await fixture({
-        summarizer: scriptedSummarizer(async ({ turnId }) => {
+        summarizer: scriptedSummarizer(async ({ owner: { turnId } }) => {
           await enqueue(rig, { kind: "compaction_undo", compactionTurnId: turnId });
           await rig.send(rig.threadId, "M after controls");
           return { kind: "complete", text: "Summary", model: "summary-model", modelResponses: [] };
@@ -221,7 +221,7 @@ else
       let rig: Rig;
       rig = await fixture({
         history: "Earlier scene. ".repeat(1500),
-        summarizer: scriptedSummarizer(async ({ turnId }) => {
+        summarizer: scriptedSummarizer(async ({ owner: { turnId } }) => {
           rig.setThreshold(100000);
           await enqueue(rig, { kind: "compaction_undo", compactionTurnId: turnId });
           await rig.send(rig.threadId, "Late M");
@@ -622,7 +622,7 @@ else
     it("C6b review immediate undo does not readmit C images", async () => {
       let rig: Rig;
       rig = await fixture({
-        summarizer: scriptedSummarizer(async ({ turnId }) => {
+        summarizer: scriptedSummarizer(async ({ owner: { turnId } }) => {
           await enqueue(rig, { kind: "compaction_undo", compactionTurnId: turnId });
           await rig.send(rig.threadId, "Continue without excluded image");
           return { kind: "complete", text: "Summary", model: "summary-model", modelResponses: [] };

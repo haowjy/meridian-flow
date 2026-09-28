@@ -1,6 +1,7 @@
 /** A request boundary's compaction choice; committed with its selected leaf and inbox batch. */
 
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
+import type { SummaryRejectionReason } from "@meridian/contracts/runtime";
 import type { Block, Turn } from "@meridian/contracts/threads";
 import type {
   CompactionFailureOutcome,
@@ -95,7 +96,7 @@ export function compactionFailureFrom(
 }
 
 export function summaryCompactionFailure(
-  reason: "max_tokens" | "provider_error" | "tool_use" | "empty_text" | undefined,
+  reason: SummaryRejectionReason | undefined,
 ): CompactionFailureOutcome {
   return { reason: reason ?? "compaction_failed", phase: "summary" };
 }

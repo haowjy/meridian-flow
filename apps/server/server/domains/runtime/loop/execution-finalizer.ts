@@ -18,6 +18,8 @@ import {
   CompactionFailureReasonCodec,
   compactionFailureMetadata,
   type EventJournalWriter,
+  HandoffFailureOutcomeCodec,
+  HandoffSeedMetadataCodec,
   type ThreadRepositories,
 } from "../../threads/index.js";
 import { compactionFailureMeridianError } from "./compaction/decision.js";
@@ -85,6 +87,16 @@ function turnEvent(turn: Turn, cause: TerminalCause): OrchestratorEvent {
         compactionFailureForFinalizer(cause),
         typeof cause.error === "string" ? cause.error : cause.error.message,
       ),
+    };
+  }
+  if (turn.role === "system") {
+    return {
+      type: "turn.error",
+      turn,
+      error: {
+        ...meridianErrorFromSystem("handoff_brief_failed", turn.error ?? ""),
+        details: HandoffFailureOutcomeCodec.parse(turn.metadata),
+      },
     };
   }
   const error =
@@ -177,6 +189,15 @@ export async function finalizeExecution(
                 turn.metadata,
                 compactionFailureForFinalizer(input.cause),
               ),
+            }
+          : {}),
+        ...(turn.role === "system" && input.cause.kind === "failed"
+          ? {
+              metadata: {
+                ...HandoffSeedMetadataCodec.parse(turn.metadata),
+                reason: input.cause.reason === "orphaned" ? "interrupted" : "handoff_brief_failed",
+                phase: input.cause.reason === "orphaned" ? "recovery" : "delivery",
+              },
             }
           : {}),
         status:

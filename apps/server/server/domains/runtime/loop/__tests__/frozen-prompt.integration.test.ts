@@ -12,9 +12,11 @@ import {
 } from "../../../projects/index.js";
 import { createInMemoryRepositories } from "../../../threads/adapters/in-memory/repositories.js";
 import {
+  CompactionMetadataCodec,
   decodeImageInclusionMetadata,
   forkThreadAgent,
   handoffThreadAgent,
+  loadThreadConversationContext,
   rebindThreadWork,
   SubagentDerivationError,
   type ThreadAgentSwapDeps,
@@ -22,6 +24,7 @@ import {
 import type { Gateway, Message, ModelInfo, Tool } from "../../gateway/index.js";
 import type { ImageAssetPort } from "../../ports/image-asset.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
+import { prepareRequestContext } from "../request-preparation.js";
 import { createWorkContextReader } from "../work-context.js";
 import { createRuntimeHarness } from "./runtime-harness.js";
 import { scriptedSummarizer } from "./scripted-summarizer.js";
@@ -772,6 +775,81 @@ describe("frozen prompt provider requests", () => {
     ).toBe(true);
   });
 
+  it("C7b previews exactly the source request and settles brief rows without parsing compaction metadata", async () => {
+    const rig = await fixture();
+    await rig.run();
+    const cutoff = await rig.repos.turns.getLatestByThread(rig.thread.id);
+    if (!cutoff) throw new Error("missing cutoff");
+    const source = await rig.repos.threads.findById(rig.thread.id);
+    if (!source) throw new Error("missing source");
+    const history = await loadThreadConversationContext(rig.repos, source);
+    const expected = await prepareRequestContext({
+      deps: rig.deps,
+      thread: source,
+      threadId: source.id,
+      referenceTurnId: cutoff.id,
+      currentTurnId: cutoff.id,
+      ...history,
+      skipCompaction: true,
+      readReferences: false,
+    });
+    const { thread } = await handoffThreadAgent(
+      { ...rig.derive, delivery: rig.delivery },
+      {
+        id: crypto.randomUUID(),
+        threadId: source.id,
+        userId: source.userId,
+        originTurnId: cutoff.id,
+        agentSelection: rig.original.selection,
+      },
+    );
+    const seed = (await rig.repos.turns.listByThread(thread.id))[0];
+    const responseId = crypto.randomUUID();
+    const summary = scriptedSummarizer(async (input) => {
+      expect(input).toMatchObject({
+        owner: { threadId: thread.id, turnId: seed.id },
+        source: { threadId: source.id, throughTurnId: cutoff.id },
+        incomingAgentName: "Writer",
+      });
+      expect(input.requestInHand).toEqual(expected.assembled.generateRequest);
+      expect(input.requestInHand?.tools).toEqual(expected.assembled.generateRequest.tools);
+      return {
+        kind: "complete",
+        text: "Paid source brief",
+        model: "gpt-4.1-mini",
+        modelResponses: [
+          {
+            id: responseId,
+            turnId: seed.id,
+            sequence: 0,
+            provider: "openai",
+            model: "gpt-4.1-mini",
+            inputTokens: 100,
+            outputTokens: 10,
+            priceSource: "unknown",
+            requestMessageCount: 3,
+            predictedCacheState: "warm",
+            predictedCacheReason: "reusable_prefix",
+            finishReason: "end_turn",
+          },
+        ],
+      };
+    });
+    rig.deps.summarizer = summary;
+    const parse = vi.spyOn(CompactionMetadataCodec, "parse");
+    try {
+      await (await rig.orchestrator.prepare({ threadId: thread.id, drain: true })).execute();
+      expect(await rig.repos.modelResponses.findById(responseId)).toMatchObject({
+        turnId: seed.id,
+      });
+      expect(parse).not.toHaveBeenCalled();
+      expect(await rig.repos.turns.listByThread(source.id)).toEqual(history.turns);
+      expect(await rig.repos.blocks.listByThread(source.id)).toEqual(history.blocks);
+    } finally {
+      parse.mockRestore();
+    }
+  });
+
   it("does not overwrite a row-owned Stop when an expired live brief resumes", async () => {
     const rig = await fixture();
     await rig.run();
@@ -788,7 +866,7 @@ describe("frozen prompt provider requests", () => {
       },
     );
     const seed = (await rig.repos.turns.listByThread(thread.id))[0];
-    rig.deps.handoffSummarizer = scriptedSummarizer(async () => {
+    rig.deps.summarizer = scriptedSummarizer(async () => {
       const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60000);
       const stopped = await rig.orchestrator.cancel(thread.id, seed.id);
       clock.mockRestore();

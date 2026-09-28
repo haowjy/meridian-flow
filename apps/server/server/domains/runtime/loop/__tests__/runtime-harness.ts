@@ -122,7 +122,6 @@ export function createRuntimeHarness(
   const deps: OrchestratorDeps & { creditLedger: CreditLedger } = {
     creditLedger,
     summarizer: scriptedSummarizer(),
-    handoffSummarizer: scriptedSummarizer(),
     gateway,
     toolExecutor: overrides.toolExecutor ?? createToolExecutor(toolRegistry),
     documentRevisions: {

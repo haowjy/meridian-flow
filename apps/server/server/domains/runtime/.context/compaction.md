@@ -29,7 +29,7 @@ Compaction is two delivery transitions around an unlocked
 
 The complete summary block is immutable. Its fit limit comes from the
 decision, independently of the automatic trigger. A usable value's token
-count describes the compacted base before late arrivals. Summary responses
+count describes the compacted base before late arrivals. Only assistant response rows can supply a reusable baseline. Summary responses
 never supply the conversation token baseline.
 
 The usable prepared value carries metadata (the placeholder's reservation
@@ -172,7 +172,9 @@ Do not route a completed undo through the pending handoff-seed lifecycle.
 ## Cost
 
 `settleSummaryResponses` writes predictions, request sizes, and debits through
-`TurnAccounting.computeAndDebit` inside whichever transaction ends C.
+`TurnAccounting.computeAndDebit` inside whichever transaction ends its owner. It does not decode or write turn
+metadata: compaction records its own summarizer telemetry through
+`CompactionMetadataCodec`; handoffs use their seed codec.
 Retrying settlement does not count the paid call twice in the shared tree
 budget. A child report's cost sums every assistant and compaction response
 from its selector through its terminal turn, counting a C that is both once
@@ -218,7 +220,8 @@ headroom, using `apps/server/scripts/fixtures/compaction-estimator-probe.json`.
 
 ## Summarizer
 
-`summary/conversation-summarizer.ts` implements the port in production. Warm
+`summary/conversation-summarizer.ts` implements the port in production. The port separates owner (response rows/correlation) from source (model, cache
+and transcript); compaction supplies the same thread for both. Warm
 sends the request in hand with an appended system-origin instruction and a
 lower output cap (summary reserve plus thinking budget); it never raises the
 cap or changes other fields. Any unusable warm response or provider failure

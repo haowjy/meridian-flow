@@ -45,7 +45,24 @@ Retry enqueues `{ "id": "new-uuid", "control": { "kind": "handoff_brief" } }`
 through [the control API](thread-controls.md). It appends a new seed at the
 execution leaf; no sent turn changes. Non-handoff destinations return 409.
 
-C7a supplies the seed protocol and unavailable fallback. The provider-backed
-brief, source cache handling and metered calls are C7b; the card and Retry UI
-are C10. A C7a-only server therefore reports an unavailable brief, not a fake
-summary.
+## Brief generation and accounting
+
+The server generates the brief from the source's effective transcript through
+the cutoff. Warm current cutoffs reuse the source model's prefix; older cutoffs
+use the cheap rolling summarizer. The incoming Agent is named in the instruction.
+Only the frozen brief and source reference enter the destination request.
+
+Seed metadata additionally carries `summarizer: { path: "warm" | "cold", segments }`.
+On failure it carries `reason` and `phase`. Shared summary reasons are
+`max_tokens`, `provider_error`, `tool_use`, and `empty_text`; brief-specific
+fallbacks are `handoff_brief_failed` and `interrupted`. Brief phases are
+`source_prepare`, `summary`, `delivery`, and `recovery`.
+The journal's `turn.error` uses code `handoff_brief_failed` with
+`{ reason, phase }` details and writer-facing copy.
+
+Every returned provider attempt, including failed attempts, records a response
+on S with prediction, usage and debit. These system-turn rows never make the
+destination's first reply predict warmth or supply its token baseline.
+The brief does not write compaction metadata or start a prompt epoch.
+Destination preparation happens after the brief; its failure affects the reply,
+not the seed. Queued controls remain ordered behind the brief.

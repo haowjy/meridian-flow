@@ -168,7 +168,7 @@ else
         delivery,
         agentRevisions: revisions,
         gateway,
-        handoffSummarizer: summarizer,
+        summarizer: summarizer,
       });
       await rig.creditLedger.grant({
         userId: ids.userId,
@@ -214,6 +214,120 @@ else
         },
       };
     }
+
+    it.each([
+      "complete",
+      "failed",
+    ] as const)("C7b settles paid %s brief rows on S without compaction metadata", async (kind) => {
+      let r: Awaited<ReturnType<typeof fixture>>;
+      const responseId = crypto.randomUUID();
+      r = await fixture(async () => ({
+        kind,
+        text: "Paid brief",
+        model: "gpt-4.1-mini",
+        error: new Error("provider failed"),
+        rejectionReason: "provider_error",
+        modelResponses: [
+          {
+            id: responseId,
+            turnId: r.seed.id,
+            sequence: 0,
+            model: "gpt-4.1-mini",
+            provider: "openai",
+            inputTokens: 200,
+            outputTokens: 20,
+            cacheReadTokens: 100,
+            priceSource: "unknown",
+            requestMessageCount: 4,
+            predictedCacheState: "warm",
+            predictedCacheReason: "reusable_prefix",
+            requestStartedAt: new Date().toISOString(),
+            finishReason: kind === "complete" ? "end_turn" : "error",
+          },
+        ],
+        summarizer: { path: "warm", segments: 1 },
+      }));
+      await r.send(r.thread.id, "hi");
+      await r.drain();
+      const turns = await r.settled();
+      expect(await repos.modelResponses.findById(responseId)).toMatchObject({
+        turnId: r.seed.id,
+        predictedCacheState: "warm",
+        predictedCacheReason: "reusable_prefix",
+        requestMessageCount: 4,
+      });
+      const response = await repos.modelResponses.findById(responseId);
+      expect(Number(response?.costUsd)).toBeGreaterThan(0);
+      expect(Number(response?.millicredits)).toBeGreaterThan(0);
+      expect(turns[0]).toMatchObject({
+        status: kind === "complete" ? "complete" : "error",
+        metadata: { kind: "derivation_seed", summarizer: { path: "warm", segments: 1 } },
+      });
+      expect(turns[0].metadata).not.toHaveProperty("compactedThrough");
+      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
+      const replyRows = await repos.modelResponses.listByTurn(turns.at(-1)!.id);
+      expect(replyRows[0]).toMatchObject({
+        predictedCacheState: "cold",
+        predictedCacheReason: "no_response",
+      });
+      if (kind === "failed") {
+        expect(turns[0].metadata).toMatchObject({ reason: "provider_error", phase: "summary" });
+        const errors = await eventReader.listByType(r.thread.id, "turn.error");
+        expect(errors[0].payload).toMatchObject({
+          error: {
+            code: "handoff_brief_failed",
+            details: { reason: "provider_error", phase: "summary" },
+          },
+        });
+        expect(JSON.stringify(r.gateway.requests.at(-1))).toContain("No brief is available.");
+      }
+    });
+
+    it("C7b briefs before a broken destination binding and fails only its reply", async () => {
+      const r = await fixture();
+      const read = revisions.readThreadBinding.bind(revisions);
+      revisions.readThreadBinding = async (id) => {
+        if (id === r.thread.id) throw new Error("destination binding unavailable");
+        return read(id);
+      };
+      try {
+        await r.send(r.thread.id, "hi");
+        await r.drain();
+        const turns = await r.settled();
+        expect(turns[0]).toMatchObject({ id: r.seed.id, status: "complete" });
+        expect(r.summarizer.calls).toHaveLength(1);
+        expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "error" });
+      } finally {
+        revisions.readThreadBinding = read;
+      }
+    });
+
+    it("C7b a due undo behind K follows the completed brief", async () => {
+      const r = await fixture();
+      const target = await repos.turns.create({
+        threadId: r.thread.id,
+        prevTurnId: r.seed.id,
+        role: "compaction",
+        origin: "system",
+        status: "error",
+      });
+      await r.delivery.enqueueControl({
+        id: crypto.randomUUID(),
+        threadId: r.thread.id,
+        actorId: ids.userId,
+        control: { kind: "compaction_undo", compactionTurnId: target.id },
+      });
+      await r.send(r.thread.id, "hi after undo");
+      await r.drain();
+      const turns = await r.settled();
+      const undo = turns.find(
+        (t) => (t.metadata as { kind?: string } | null)?.kind === "compaction_undo",
+      );
+      expect(turns[0].status).toBe("complete");
+      expect(undo).toMatchObject({ status: "error", metadata: { reason: "not_active" } });
+      expect(undo!.position).toBeGreaterThan(r.seed.position);
+      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
+    });
 
     it("C7 create-or-get is idempotent and mismatched reuse conflicts", async () => {
       const r = await fixture();
@@ -384,7 +498,17 @@ else
         error: new Error("brief unavailable"),
         modelResponses: [],
       }));
-      r.deps.summarizer = scriptedSummarizer();
+      const briefSummarizer = r.summarizer;
+      r.deps.summarizer = scriptedSummarizer(async (input) =>
+        input.instruction === "handoff_brief"
+          ? briefSummarizer.summarize(input)
+          : {
+              kind: "complete",
+              text: "Earlier context.",
+              model: "summary-model",
+              modelResponses: [],
+            },
+      );
       const [firstControl] = await r.delivery.selectPending(r.thread.id);
       await r.drain();
       await r.settled();
@@ -595,6 +719,8 @@ else
       expect(await repos.turns.listByThread(r.thread.id)).toMatchObject([
         { id: r.seed.id, status: "complete" },
       ]);
+      expect(r.summarizer.calls).toHaveLength(1);
+      expect(await r.delivery.selectPending(r.thread.id)).toEqual([]);
     });
 
     it("C7 Stop wins an optimistic binding prepare without losing hi", async () => {
@@ -608,17 +734,18 @@ else
       const resumed = new Promise<void>((resolve) => {
         release = resolve;
       });
-      const render = r.deps.workContext.renderForThread;
-      r.deps.workContext.renderForThread = async (...args) => {
+      const list = repos.blocks.listByThread.bind(repos.blocks);
+      repos.blocks.listByThread = async (...args) => {
         entered();
         await resumed;
-        return render(...args);
+        return list(...args);
       };
       const preparation = r.orchestrator.prepare({ threadId: r.thread.id, drain: true });
       await preparing;
       expect(await r.orchestrator.cancel(r.thread.id, r.seed.id)).toBe("cancelled");
       release();
       const run = await preparation;
+      repos.blocks.listByThread = list;
       expect((await run.execute()).status).toBe("complete");
       expect((await r.settled())[0].status).toBe("cancelled");
       expect(r.summarizer.calls).toHaveLength(0);

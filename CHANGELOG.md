@@ -7,6 +7,9 @@
 
 ## [Unreleased]
 
+- Generate handoff briefs from the source model’s warm prefix or the cheap cold summarizer. Meter every returned attempt on the destination seed.
+- Keep brief failures typed, preserve queued replies, and exclude brief calls from future cache baselines.
+
 - Undo failures show writer copy, retain typed reasons, and expose metadata in `mf thread view --json`.
 
 - Regenerate compaction undo migration after transcript indexes; keep both database changes.

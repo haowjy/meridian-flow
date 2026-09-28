@@ -1,7 +1,11 @@
 /** Frozen model context for a handoff seed, including the no-brief terminal states. */
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { Turn } from "@meridian/contracts/threads";
-import { HandoffSeedMetadataCodec, handoffSeedMetadata } from "../../threads/index.js";
+import {
+  HandoffFailureOutcomeCodec,
+  HandoffSeedMetadataCodec,
+  handoffSeedMetadata,
+} from "../../threads/index.js";
 import { contentForBlockInput } from "./block-helpers.js";
 import type { ControlMessage } from "./control-barrier.js";
 import { createLocalTurn } from "./local-turn.js";
@@ -81,9 +85,23 @@ export async function completeHandoffSeed(
         : {
             type: "turn.error",
             turn: completed,
-            error: meridianErrorFromSystem("handoff_brief_failed", completed.error ?? ""),
+            error: {
+              ...meridianErrorFromSystem("handoff_brief_failed", completed.error ?? ""),
+              details: HandoffFailureOutcomeCodec.parse(completed.metadata),
+            },
           },
     ],
   }));
   return completed;
+}
+
+export async function recordHandoffSummary(
+  deps: PersistenceDeps,
+  turn: Turn,
+  summarizer: import("../ports/conversation-summarizer.js").SummaryOutcome["summarizer"],
+): Promise<void> {
+  await deps.repos.turns.updateStatus(turn.id, {
+    status: turn.status,
+    metadata: { ...HandoffSeedMetadataCodec.parse(turn.metadata), summarizer },
+  });
 }
