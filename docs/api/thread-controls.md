@@ -1,8 +1,9 @@
 # Thread control API
 
 Both routes authenticate the writer and require ownership of the thread.
-Controls are durable inbox entries, not chat text. `compact`, `compaction_undo`, and `handoff_brief` Retry are supported.
-See [handoff creation and seed data](thread-handoff.md).
+Controls are durable inbox commands, not chat text. The supported kinds are
+`compact` and `compaction_undo`; handoff Stop and Retry act on handoff seed turns
+through the [handoff API](thread-handoff.md), not through controls.
 
 ## Enqueue
 
@@ -18,14 +19,12 @@ Undo names a local compaction turn (pending is allowed at enqueue):
 { "id": "client-minted-uuid", "control": { "kind": "compaction_undo", "compactionTurnId": "compaction-turn-uuid" } }
 ```
 
-A missing, inherited or non-compaction target returns 404 (`compaction_not_found`).
-Active-target and size checks happen at execution. A refusal appends an empty
-system marker whose `metadata.reason` is `already_undone`, `not_active`,
-`would_recompact`, or `undo_failed`; its `error` is writer copy. The
-`turn.error` event uses the reason as its code and in `details.reason`.
-Successful undo restores pre-cut history under the pre-C bake. It is refused if the restored request reaches the current
-Agent trigger. It makes no model call. Undo withdrawal returns `withdrawn` or
-`already_finished`, never `stopping`: U commits atomically without a pending phase.
+A missing, inherited or non-compaction target returns 404
+(`compaction_not_found`). Active-target and size checks happen at execution.
+A refusal appends an empty system marker with a typed `metadata.reason` and
+writer-facing error. Successful undo restores pre-cut history under the
+pre-compaction bake. It is refused if the restored request reaches the current
+Agent trigger and makes no model call.
 
 Returns 201 for a new row or 200 for an existing id:
 
@@ -33,22 +32,15 @@ Returns 201 for a new row or 200 for an existing id:
 { id: string; pending: PendingInboxItem | null; turnId: string | null }
 ```
 
-A queued row carries its body in `pending.control` (`kind` is `compact`,
-`compaction_undo`, or `handoff_brief`). Once executed, its turn carries
-`metadata.controlMessageId`; an automatic compaction satisfying a `compact`
-request carries `satisfiesControlId` instead. Completed controls return their
+A queued row carries its control body in `pending.control`. Once executed, its
+turn carries `metadata.controlMessageId`; an automatic compaction satisfying a
+`compact` request carries `satisfiesControlId`. Completed controls return their
 turn id. A withdrawn row returns both `pending` and `turnId` null. Its key stays
 retired: retrying enqueue never schedules a withdrawn or completed control.
-A crash may retry an unacknowledged control on a new divider.
 
 Invalid bodies return 400 (`invalid_control`). An id belonging to an ordinary
-message, another control kind, or a row in another thread returns 409 (`control_id_conflict`).
-
-`handoff_brief` Retry requires a handoff thread whose latest seed is `error` or
-`cancelled`, and no pending brief control. Otherwise it returns 409
-(`handoff_retry_unavailable`; `not_a_handoff_retry` for a non-handoff thread or
-client-supplied seed pointer). Replaying the same matching id returns 200,
-including after that Retry succeeds; it never queues another paid summary.
+message, another control kind, or a row in another thread returns 409
+(`control_id_conflict`).
 
 ## Withdraw
 
@@ -59,18 +51,10 @@ including after that Retry succeeds; it never queues another paid summary.
 ```
 
 Withdrawal acknowledges an unbound pending row. If a live run already bound
-it as `controlMessageId`, withdrawal requests Stop for that run instead,
-including when the receipt lease is overdue. The control is acknowledged in
-the same transaction: a crashed owner cannot replay a withdrawn request.
-A row-owned handoff seed ignores an expired receipt and settles directly.
-An automatic compaction that absorbed it as `satisfiesControlId` returns
-`already_finished`; its reply continues and C retires the control.
-A finished or withdrawn row
-returns `already_finished`. An unknown control returns 404
-(`control_not_found`). Withdrawal and reservation share the thread lock, so
-exactly one wins. Stop on a manual divider preserves unanswered messages adopted by the control;
-the owner's post-release wake delivers them. Stop on an automatic compaction
-retires its entire receipt, including any manual request it absorbed.
+it, withdrawal requests Stop for that run, including when the receipt lease is
+overdue. A finished or withdrawn row returns `already_finished`. An unknown
+control returns 404 (`control_not_found`). Withdrawal and reservation share the
+thread lock, so exactly one wins.
 
 ## CLI probe
 

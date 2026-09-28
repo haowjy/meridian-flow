@@ -29,8 +29,8 @@
 - Reset DB tests with rollback or FK-ordered deletes, without per-case table rewrites.
 - Resolve guarded worktree DB targets for `db:apply-functions`; make `db:migrate` finish by applying functions so migrated databases are complete.
 
-- Fork or hand off a chat from any finished reply, including a reply a fork inherited. The new chat opens at once and finishes creating in the background; a reload lands on the same chat, and a failure stays on it with Retry. Hand off picks the Agent, starting from the source's. Subagent chats offer neither.
-- Show the handoff brief as a card that writes itself in place: Stop while it writes, the brief behind Show the whole brief once ready, and Retry on a brief that failed or was stopped. A queued Retry can be withdrawn; messages sent meanwhile wait behind the brief.
+- Fork or hand off a chat from an assistant reply or delivered writer turn, including a reply a fork inherited. The new chat opens at once and finishes creating in the background; a reload lands on the same chat, and a failure stays on it with Retry. Hand off picks the Agent, starting from the source's. Subagent chats offer neither.
+- Show the handoff brief as a card that writes itself in place: Stop while it writes, the brief behind Show the whole brief once ready, and Retry on a brief that failed or was stopped. Retry appends a seed directly; messages sent meanwhile wait behind the pending seed.
 - Show a fork's inherited history read-only, marked with the chat it came from and where the fork begins; it never changes when the source moves on.
 - Name the chat a subagent was pointed at with `from`, on its spawn card and at the top of its chat, and say when that chat is in the trash. Spawns no longer flash an "Unknown component" note in the reply.
 - A fork whose history fails to load says so with Retry; a fork cut at a failed reply shows it as history; a message sent while a fork or handoff is still being created survives a reload; an older failed brief says it failed instead of asking to try again; the Agent picker's row tooltip stays on screen on phones and no longer covers the list as it opens.
@@ -39,13 +39,13 @@
 - Skip paid manual compaction when too little context can be removed. Tell warm summaries not to repeat retained conversation.
 
 - Show compaction in the chat: a divider for compacting, compacted (summary behind a disclosure), failed, stopped, and undone; Stop on a running compaction, from the divider or the composer; Undo only where the server expects it to hold, with refusals quiet on the divider; one-line dividers on narrow screens; hide the empty reply an overflow recovery completes before compacting. A stopped autocompaction settles without waiting for another change, and screen readers hear each control change once, in the words its row shows.
-- Add `/compact` to the composer. Queued compactions, undos, and handoff brief retries show at once at the transcript tail or on their divider, and can be withdrawn in place.
+- Add `/compact` to the composer. Compactions and undos remain inbox controls; handoff Retry appends a seed directly and is not withdrawable as a queued control.
 - Point spawned agents at connected prior work without copying history; freeze reference text and read instructions, including stopped handoffs.
 - Freeze handoff source titles on seeds and brief cards, and keep spawn source provenance on durable invocation cards.
 - A handed-off chat names a trashed source by its title, and a spawn card names its `from` chat straight from the card after a reload.
 - Treat a null spawn source as omitted.
 
-- Preserve bake-gated history guidance in cold handoff summaries; classify completed and failed briefs as system history.
+- Preserve bake-gated history guidance in rolling handoff fallbacks; classify completed and failed briefs as system history.
 
 - Preserve structured inspection errors, including unavailable bound models.
 
@@ -63,22 +63,22 @@
 - Keep history pages stable across compaction and undo; preserve old prompt-bake bytes.
 
 - Require a lineage root on every conversation; index fork and handoff discovery.
-- Accept failed replies as handoff cutoffs without changing the source warmth rule or rewriting their failed status on later sends.
+- Accept delivered user turns as handoff cutoffs while the source reply streams; source-shaped briefs branch at every cutoff without rewriting failed reply history.
 
-- Preserve undo-before-Retry order in expanded control batches; only brief-only batches skip control history.
+- Keep inbox controls to compact and undo; handoff Retry appends outside the control barrier.
 - Record brief telemetry and failure metadata through one pending-owner writer; late paid attempts cannot replace the winning outcome.
 
-- Stage activated skills through one boundary owner. Retry briefs defer skill bodies until the successor commits.
+- Stage activated skills through one boundary owner. A pending handoff seed gates the destination until settlement, then queued skill activations materialize with the reply.
 
-- Skip destination control-history preparation while a handoff brief owns the boundary.
+- Gate destination run preparation on pending handoff seeds without creating a run boundary for the brief.
 
 - Keep internal ending-commit failures out of handoff brief writer copy. Retain diagnostic causes in error details.
 
-- Fall back to cold briefs when source preview fails. Preserve queued skill activations through Retry and winning seed metadata through late paid responses.
+- Use the rolling summarizer when source request preparation fails. Preserve queued skill activations behind pending seeds and winning seed metadata through late paid responses.
 
-- Keep source image decisions unchanged when handoff preview discovers a lost asset; generate the brief cold.
+- Keep source image decisions unchanged when handoff preparation discovers a lost asset; use the rolling fallback.
 
-- Generate handoff briefs from the source model’s warm prefix or the cheap cold summarizer. Meter every returned attempt on the destination seed.
+- Branch every handoff brief from the source-shaped request, warm or cold, with one rolling fallback. Meter every returned attempt on the destination seed.
 - Keep brief failures typed, preserve queued replies, and exclude brief calls from future cache baselines.
 
 - Undo failures show writer copy, retain typed reasons, and expose metadata in `mf thread view --json`.
@@ -88,16 +88,16 @@
 - Compaction undo preserves paged transcript segments and restores the pre-compaction prompt bake.
 
 ### Changed
-- Regenerate handoff migration after undo; accept all three queued control kinds.
-- Preserve handoff seeds during idle and startup repair; keep undo and handoff controls ordered together.
-- Preserve Work-context delivery while recovering stranded handoff controls.
+- Regenerate the handoff migration in place; keep inbox control schemas limited to compact and undo.
+- Preserve pending handoff seeds from run-owned orphan repair; recover them through their claimed sweep.
+- Preserve Work-context delivery while pending handoff seeds gate destination starts.
 - Withdrawn controls cannot replay if their owner crashes before stopping.
 - Validate Agent selections consistently across handoff and thread creation.
-- Reject handoff Retry while a brief is pending or the latest brief succeeded. Replayed requests stay idempotent.
+- Reject handoff Retry while a brief is pending, the latest brief succeeded, or the destination has a live run lease. Replayed seed ids stay idempotent.
 - Withdrawing a running compaction still stops it after its lease expires.
-- Recover handoffs whose brief seed already ended. Queued replies, Stop and withdrawal no longer get stuck.
-- Handoffs create immediately with a recoverable brief seed. Stop preserves queued messages. Retry appends a new seed.
-- Stop reaches pending handoff seeds after their owner lease expires. Resumed briefs cannot overwrite Stop.
+- Recover handoffs through the independent brief sweep. Queued replies and Stop are no longer tied to an inbox control receipt.
+- Handoffs create immediately with a durable pending seed and post-commit launch. Stop preserves queued messages; Retry appends a new seed.
+- Stop settles pending handoff seeds under the destination lock; a late brief cannot overwrite Stop.
 - Handoff requests require a destination id and cutoff; client-written summaries removed.
 
 - Type compaction failure reasons, phases, fit measurements and control IDs in the durable metadata codec, including failures without a planned cut.

@@ -2,12 +2,14 @@
 
 These back up the automated control, compaction, undo, handoff, and history
 contracts. They do not replace the project checks. `C` means a compaction turn;
-`B` an assistant continuation; `S` a handoff seed. A control is an inbox entry,
-not a chat message.
+`B` an assistant continuation; `S` a handoff seed. Only `compact` and
+`compaction_undo` are inbox controls; the handoff brief runs outside the inbox.
 
 ## Setup and evidence
 
 Use a disposable worktree. `pnpm bootstrap` provisions its database if needed.
+Migration 0021 is edited in place; reset existing worktree dev and test databases
+that already applied it with `pnpm db:reset` before running migrations or probes.
 Start `MODEL_PROVIDER=mock pnpm dev --no-tailscale`, then `pnpm portless:list`.
 Use only that worktree's routes. All commands below run from its checkout.
 Set `E` to a directory under the active work item's `evidence/`, not the repo.
@@ -170,8 +172,8 @@ end-to-end as one suite.
 
 ## RP-5: Kill the server mid-summary
 
-- **Protects:** dead lease repair, exactly-once redelivery and row-owned seeds
-  (`control-protocol` interrupted summary, handoff scan after crash).
+- **Protects:** dead lease repair, exactly-once redelivery, and claimed handoff
+  seed recovery (`control-protocol` interrupted summary, handoff brief sweep).
 - **Stack:** mock, isolated owned server process, real Postgres.
 - **Steps:** queue a 30-second summary, compact, and send a message while C is
   pending. Save the pre-kill snapshot. Resolve this worktree's server wrapper
@@ -185,10 +187,11 @@ end-to-end as one suite.
   ./mf log --thread "$T" --json
   ```
 
-  Repeat during handoff briefing. For a subagent variant also inspect the parent report.
+  Repeat while a handoff brief is pending. For a subagent variant also inspect the parent report.
 - **Expect:** dead C is error with interrupted/recovery metadata, followed by one
   recovered control execution; queued message is delivered after C. Handoff
-  resumes the same row-owned S, not a duplicate seed. No stuck placeholders.
+  relaunches the same pending S with `launches: 2`, no control row, and the
+  queued destination message answered after S. No stuck placeholders.
   A dead child execution settles one failed/orphaned report.
 - **Evidence:** PID/cwd ownership, kill result, pre/post snapshots, recovery events,
   parent report for the child variant.
@@ -239,8 +242,10 @@ end-to-end as one suite.
 
 ## RP-8: Handoff brief, Stop, Retry, failure and source isolation
 
-- **Protects:** seed ownership, binding and fallback (`handoff-protocol`).
-- **Stack:** mock; real provider required to verify warm-cache versus cold briefing.
+- **Protects:** independent seed ownership, source-shaped branching, Stop,
+  Retry, fallback and destination gating (`handoff/brief-service`).
+- **Stack:** mock; a real provider is required to compare predicted cache state
+  with actual cache use.
 - **Steps:** choose a settled reply ID `CUT` from the source `T`, allocate `DEST`,
   and use the exact selection returned by setup (do not guess a revision):
 
@@ -249,23 +254,29 @@ end-to-end as one suite.
   jq --arg id "$DEST" --arg cut "$CUT" '{id:$id,originTurnId:$cut,agentSelection:.selection}' "$E/agent.json" > "$E/handoff-body.json"
   ./mf mock script '[{"text":"Brief: keep the silver gate secret.","delayMs":5000}]' --json
   ./mf api POST "/api/threads/$T/handoff" --data @"$E/handoff-body.json" --json
-  ./mf thread cancel "$DEST" --json
+  S=$(./mf thread view "$DEST" --json | jq -r '.turns[0].id')
+  ./mf thread cancel "$DEST" --turn "$S" --json
   ./mf mock script '[{"text":"Retried brief."}]' --json
-  ./mf api POST "/api/threads/$DEST/controls" --data "{\"id\":\"$(node -p 'crypto.randomUUID()')\",\"control\":{\"kind\":\"handoff_brief\"}}" --json
+  ./mf api POST "/api/threads/$DEST/handoff/brief" --data "{\"id\":\"$(node -p 'crypto.randomUUID()')\"}" --json
   ./mf thread send "$DEST" hi --mock '[{"text":"Hello from the destination."}]' --json
   ./mf thread context "$DEST" --all --view raw --json
   ```
 
   In separate destinations, let the first brief complete, or fail it with a
-  sticky mock error; clear that script ID before sending `hi`. Send another
-  Retry while one is pending to check 409. For real warm/cold variants compare
-  recent latest-cut versus older-cut summary calls and capture cache usage.
+  sticky mock error; clear that script ID before sending `hi`. Retry with a new
+  id while S is pending and expect 409. For the running-source variant, start a
+  source reply with a long mock `delayMs`, capture its delivered user-turn id,
+  and hand off at that user row before the reply completes. For real-provider
+  runs also compare recent and older cutoffs and capture cache metrics.
 - **Expect:** destination contains the brief/source ref, never source transcript
-  text. Stop cancels S without blocking messages. Retry creates a new leaf seed;
-  duplicate pending Retry conflicts. Failed brief uses `No brief is available.`
-  and ordinary messages still run.
-- **Evidence:** source sentinel, destination requests, S/control statuses, 409,
-  summary path/cache metrics for the real variant.
+  text. Stop cancels S without a destination run lease and releases queued
+  messages. Retry appends a new leaf seed; replaying the same id returns that
+  seed. Failed brief uses `No brief is available.` and ordinary messages still
+  run. In the running-source variant the brief completes while the source reply
+  is still streaming and only includes the selected user cutoff.
+- **Evidence:** source sentinel and lease before/after, destination requests,
+  seed state and `launches`, 409, and summary path/cache metrics for the real
+  variant. Do not expect an inbox control or a `briefing` lease phase.
 - **Last run:** merge-gate §21–24 mock PASS; original real warm/cold run blocked
   by billing settlement. 2026-09-28 (source commit not recorded).
 
