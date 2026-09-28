@@ -1,6 +1,7 @@
 /** Business mutations, durable Work notice history, and request-boundary replay against Postgres. */
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDrizzleProjectWorkRepository, updateWork } from "../../projects/index.js";
 import { createDrizzleRepositoriesForTest } from "../../threads/adapters/drizzle/repositories.js";
@@ -157,10 +158,7 @@ else
       await delivery().sweepWorkNotices();
       expect(await updates()).toHaveLength(1);
       expect(await delivery().selectPending(ids.threadId)).toEqual([]);
-      const events = await db
-        .select()
-        .from(schema.eventJournal)
-        .where(eq(schema.eventJournal.threadId, ids.threadId));
+      const events = await journalEventsByThread(db, ids.threadId);
       expect(events.filter((row) => row.eventType === "work_context.changed")).toHaveLength(1);
     });
 

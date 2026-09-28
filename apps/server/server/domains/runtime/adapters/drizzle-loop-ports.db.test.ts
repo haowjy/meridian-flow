@@ -4,6 +4,7 @@ import { createInMemoryEventSink } from "../../observability/index.js";
 
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import type { MessageDraft } from "../loop/ports.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -517,10 +518,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               },
             },
           });
-          const events = await db
-            .select()
-            .from(schema.eventJournal)
-            .where(eq(schema.eventJournal.threadId, THREAD_A));
+          const events = await journalEventsByThread(db, THREAD_A);
           expect(events.at(-1)?.payload).toMatchObject({
             type: "inbox.changed",
             pending: { items: [{ deliveryState: "awaiting_run" }] },
