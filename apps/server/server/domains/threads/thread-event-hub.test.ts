@@ -514,6 +514,31 @@ describe("thread event hub subagent activity", () => {
   });
 });
 
+it("projects the spawn source hint live and on journal replay", async () => {
+  const { hub } = createHub();
+  const received: SequencedEventInternal[] = [];
+  hub.subscribe(THREAD_ID, (entry) => received.push(entry));
+  const spawn: OrchestratorEvent = {
+    type: "agent.spawn",
+    parentThreadId: THREAD_ID,
+    parentTurnId: PARENT_TURN_ID,
+    childThreadId: "child-1",
+    agentSlug: "subagent",
+    prompt: "Read prior work",
+    fromThreadId: THREAD_ID,
+  };
+  await hub.appendEvent(THREAD_ID, spawn);
+  expect(received).toHaveLength(1);
+  expect(received[0]?.event).toMatchObject({
+    type: "CUSTOM",
+    name: "meridian.agent.spawn",
+    value: spawn,
+  });
+  const replay = await hub.catchupAndSubscribe(THREAD_ID, 0n, () => {});
+  expect(replay.catchup.map((row) => row.event)).toEqual(received.map((row) => row.event));
+  replay.unsubscribe();
+});
+
 describe("thread event hub complete replay", () => {
   it("replays all rows beyond 10k through the captured head", async () => {
     const headJournalSeq = 23_081n;

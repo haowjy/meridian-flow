@@ -63,6 +63,7 @@ export function mapThread(
     turnCount: row.turnCount,
     createdAt: toIsoString(row.createdAt),
     updatedAt: toIsoString(row.updatedAt),
+    lastActivityAt: toIsoString(row.lastActivityAt),
     deletedAt: row.deletedAt ? toIsoString(row.deletedAt) : null,
   };
 }

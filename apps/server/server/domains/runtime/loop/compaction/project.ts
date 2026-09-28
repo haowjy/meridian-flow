@@ -13,6 +13,7 @@ import {
 } from "../../../threads/index.js";
 import { orderTurnsByPosition } from "../../../threads/order-turns.js";
 import type { PromptBakeRepository } from "../../../threads/ports/repositories.js";
+import { bakeHasHistoryTool } from "../history-tool-availability.js";
 import type { CompactionPlan } from "./plan.js";
 import { type CompactionCut, retainedTail } from "./tail.js";
 
@@ -201,15 +202,7 @@ function projectActiveHistory(
   });
   const afterCompaction = turns.filter((turn) => turn.position > compaction.position);
   const historyReadable =
-    compactionBake?.id === compaction.promptBakeId &&
-    Array.isArray(compactionBake?.bakedTools) &&
-    compactionBake.bakedTools.some(
-      (tool) =>
-        tool !== null &&
-        typeof tool === "object" &&
-        !Array.isArray(tool) &&
-        tool.name === "thread_history",
-    );
+    compactionBake?.id === compaction.promptBakeId && bakeHasHistoryTool(compactionBake);
   const synthetic = summaryTurn(compaction, props.summary, threadRef, historyReadable);
   const projectedTurns = [synthetic.turn, ...tail.map(({ turn }) => turn), ...afterCompaction].map(
     (turn, position) => ({ ...turn, position }),

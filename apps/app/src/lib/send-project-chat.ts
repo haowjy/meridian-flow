@@ -90,6 +90,7 @@ export function makeOptimisticThread(input: {
     turnCount: 0,
     createdAt: input.timestamp,
     updatedAt: input.timestamp,
+    lastActivityAt: input.timestamp,
     deletedAt: null,
   };
 }

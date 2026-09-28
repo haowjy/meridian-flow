@@ -85,6 +85,7 @@ import type {
 } from "../../threads/index.js";
 import {
   agentRequestMetadata,
+  bakeAt,
   loadThreadConversationContext,
   readThreadActivity,
   ThreadConversationContextError,
@@ -129,6 +130,7 @@ import {
   recordHandoffSeedOutcome,
   reserveHandoffSeed,
 } from "./handoff-seed.js";
+import { historyReadableAt } from "./history-tool-availability.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
@@ -465,6 +467,7 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
       userTurnId,
       userBlocks: input.userBlocks ?? [{ type: "text", text: input.userText }],
       userTurnMetadata: metadata,
+      seedBlocks: input.seedBlocks,
       origin: input.child ? "system" : "writer",
       producer,
       afterTurnCreated: () => {
@@ -1855,7 +1858,8 @@ async function executeLoop({
     };
     input.signal?.throwIfAborted();
     const available = outcome.kind === "complete" ? outcome : undefined;
-    const block = handoffSeedBlock(currentTurn, available);
+    const historyReadable = await historyReadableAt(deps, currentTurn, allTurns);
+    const block = handoffSeedBlock(currentTurn, available, historyReadable);
     const completed = {
       ...currentTurn,
       status: available ? ("complete" as const) : ("error" as const),

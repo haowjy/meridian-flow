@@ -56,6 +56,7 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     turnCount: 0,
     createdAt: now,
     updatedAt: now,
+    lastActivityAt: now,
     deletedAt: null,
   };
 }

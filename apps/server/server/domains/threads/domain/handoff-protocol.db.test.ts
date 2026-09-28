@@ -16,6 +16,7 @@ import { createChildRunCoordinator } from "../../runtime/spawn/child-run-coordin
 import { createChildRunDriver } from "../../runtime/spawn/child-run-driver.js";
 import { createOrphanReportRepair } from "../../runtime/spawn/orphan-report-repair.js";
 import { createReportPublisher } from "../../runtime/spawn/report-publisher.js";
+import { createToolRegistry } from "../../runtime/tools/index.js";
 import { readThreadActivity } from "../index.js";
 import {
   resetThreadWorkRaceFixture,
@@ -87,6 +88,10 @@ else
         overrides: { effort: "high" as const },
       };
 
+      await db
+        .update(schema.threads)
+        .set({ ref: "c900" })
+        .where(eq(schema.threads.id, ids.threadId));
       const source = await repos.threads.findById(ids.threadId);
       if (!source) throw new Error("Could not find fixture source thread");
       await repos.threadWorks.addMembership(source.id, ids.noWorkId, true);
@@ -136,7 +141,7 @@ else
       });
       return {
         delivery,
-        source,
+        source: (await repos.threads.findById(source.id))!,
         deps,
         agentCatalog,
         agent,
@@ -150,7 +155,13 @@ else
     async function fixture(script?: Parameters<typeof scriptedSummarizer>[0]) {
       const base = await setupSource();
       const claim = createDrizzleRunClaim(db);
-      const delivery = createTestDrizzleDelivery(db, { repos, eventWriter, runClaim: claim });
+      const toolRegistry = createToolRegistry();
+      const delivery = createTestDrizzleDelivery(db, {
+        repos,
+        eventWriter,
+        runClaim: claim,
+        toolRegistry,
+      });
       const gateway = {
         ...scriptedGateway({ usage: { inputTokens: 100, outputTokens: 10 } }),
         listModels: () => [
@@ -175,6 +186,7 @@ else
         agentRevisions: revisions,
         gateway,
         summarizer: summarizer,
+        toolRegistry,
       });
       await rig.creditLedger.grant({
         userId: ids.userId,
@@ -220,6 +232,253 @@ else
         },
       };
     }
+
+    function childCoordinator(r: Awaited<ReturnType<typeof fixture>>) {
+      const eventSink = createInMemoryEventSink();
+      const readActivity = (threadId: string) =>
+        readThreadActivity(
+          {
+            threads: repos.threads,
+            statusReader: r.runClaim,
+            executionReports: repos.executionReports,
+          },
+          threadId,
+        );
+      const publisher = createReportPublisher({
+        repos,
+        eventWriter,
+        delivery: r.delivery,
+        eventSink,
+      });
+      const driver = createChildRunDriver({
+        orchestrator: r.orchestrator,
+        repos,
+        eventWriter,
+        readActivity,
+        publisher,
+        eventSink,
+      });
+      return createChildRunCoordinator({
+        driver,
+        repos: {
+          threads: repos.threads,
+          subagentThreads: repos.threads,
+          transaction: repos.transaction,
+        },
+        async resolveWorkMembership({ threadId }) {
+          await repos.threadWorks.addMembership(threadId, ids.noWorkId, true);
+          return ids.noWorkId;
+        },
+        eventWriter,
+        readActivity,
+        delivery: r.delivery,
+        agentRevisions: revisions,
+        defaultModel: () => "gpt-4.1-mini",
+        unavailableReasons: () => [],
+        modelUnavailable: () => [],
+        eventSink,
+      });
+    }
+
+    async function spawnFrom(r: Awaited<ReturnType<typeof fixture>>, from: string) {
+      return childCoordinator(r).runChild(
+        {
+          kind: "spawn",
+          parentThread: r.source,
+          parentTurnId: r.firstTurn.id,
+          prompt: "Check the chapter",
+          ...{ from },
+          budget: createDefaultTreeBudget(),
+          reportCorrelation: {
+            callerThreadId: r.source.id,
+            callerTurnId: r.firstTurn.id,
+            toolCallId: "from-spawn",
+            cardBlockId: null,
+            origin: "spawn",
+            deliveryMode: "direct",
+          },
+        },
+        { mode: "foreground" },
+      );
+    }
+
+    it.each([
+      "current",
+      "lineage",
+    ])("C9 %s freezes the reference after user blocks without source history", async (from) => {
+      const r = await fixture();
+      const target = from === "current" ? r.source : r.thread;
+      const result = await spawnFrom(r, from === "current" ? from : target.ref!);
+      expect(result.status).toBe("completed");
+      if (result.status !== "completed") throw new Error(JSON.stringify(result));
+      const turns = await repos.turns.listByThread(result.report.threadId);
+      const blocks = await repos.blocks.listByTurn(turns[0].id);
+      expect(blocks).toHaveLength(2);
+      expect(blocks[0]).toMatchObject({
+        sequence: 0,
+        blockType: "text",
+        textContent: "Check the chapter",
+      });
+      expect(blocks[1]).toMatchObject({
+        sequence: 1,
+        blockType: "custom",
+        content: {
+          kind: "thread-reference",
+          props: {
+            threadId: target.id,
+            ref: target.ref,
+            title: target.title,
+            agentName: target.agentName,
+          },
+        },
+      });
+      const content = blocks[1].content as { props: { text: string } };
+      expect(content.props.text).toContain(`thread_history({"ref":"${target.ref}"})`);
+      const first = r.gateway.requests.at(-1)!;
+      const user = first.messages.find((message) => message.role === "user");
+      expect(JSON.stringify(user?.content)).toContain("\\n\\n<thread_reference");
+      expect(JSON.stringify(first.messages)).toContain("Check the chapter");
+      expect(JSON.stringify(first.messages)).toContain("thread_reference");
+      expect(JSON.stringify(first.messages)).not.toContain("Source-only transcript");
+      const events = await db
+        .select()
+        .from(schema.eventJournal)
+        .where(eq(schema.eventJournal.threadId, r.source.id));
+      expect(events.find((row) => row.eventType === "agent.spawn")?.payload).toMatchObject({
+        fromThreadId: target.id,
+      });
+      await db
+        .update(schema.threads)
+        .set({ title: "A changed title" })
+        .where(eq(schema.threads.id, target.id));
+      await (
+        await r.orchestrator.prepare({ threadId: result.report.threadId, userText: "Continue" })
+      ).execute();
+      const next = r.gateway.requests.at(-1)!;
+      expect(JSON.stringify(next.messages.slice(0, first.messages.length))).toBe(
+        JSON.stringify(first.messages),
+      );
+    });
+
+    it.each([
+      "outside",
+      "trashed",
+      "malformed",
+    ])("C9 refuses %s from before child, run or debit", async (kind) => {
+      const r = await fixture();
+      let ref = "not-a-ref";
+      if (kind === "outside") {
+        const outside = await repos.threads.create({
+          userId: ids.userId,
+          projectId: ids.projectId,
+          title: "Outside",
+        });
+        ref = outside.ref!;
+      }
+      if (kind === "trashed") {
+        ref = r.thread.ref!;
+        await db
+          .update(schema.threads)
+          .set({ deletedAt: new Date() })
+          .where(eq(schema.threads.id, r.thread.id));
+      }
+      const beforeThreads = await db.select().from(schema.threads);
+      const beforeRuns = await db.select().from(schema.threadRunLeases);
+      const beforeBalance = await r.creditLedger.getBalance({ userId: ids.userId });
+      const result = await spawnFrom(r, ref);
+      expect(result).toMatchObject({
+        status: "error",
+        error: { code: kind === "outside" ? "thread_not_connected" : "thread_not_found" },
+      });
+      expect(await db.select().from(schema.threads)).toEqual(beforeThreads);
+      expect(await db.select().from(schema.threadRunLeases)).toEqual(beforeRuns);
+      expect(await r.creditLedger.getBalance({ userId: ids.userId })).toEqual(beforeBalance);
+      expect(r.gateway.requests).toHaveLength(0);
+    });
+
+    it.each([
+      false,
+      true,
+    ])("C9 handoff read line follows the seed's existing bake (history=%s)", async (history) => {
+      const r = await fixture();
+      const { hashPromptBakeContent } = await import("./prompt-bake-hash.js");
+      const content = {
+        composedSystemPrompt: "Existing destination epoch",
+        bakedSkillSlugs: [],
+        bakedTools: history ? [{ type: "function", name: "thread_history" }] : [],
+      };
+      const bake = await repos.promptBakes.create({
+        ownerThreadId: r.thread.id,
+        ...content,
+        contentHash: hashPromptBakeContent(content),
+      });
+      await db
+        .update(schema.threads)
+        .set({ initialPromptBakeId: bake.id })
+        .where(eq(schema.threads.id, r.thread.id));
+      // Opposite registry availability proves the persisted bake wins.
+      if (!history) {
+        const { createInspectionToolRegistrations } = await import(
+          "../../runtime/tools/inspection-tools.js"
+        );
+        for (const tool of createInspectionToolRegistrations({
+          repos,
+          statusReader: r.runClaim,
+          registry: r.deps.toolRegistry,
+          tokenizer: async () => "o200k",
+        }))
+          r.deps.toolRegistry.register(tool);
+      }
+      await r.drain();
+      await r.settled();
+      const block = (await repos.blocks.listByTurn(r.seed.id))[0];
+      const props = (block.content as { props: { modelText: string } }).props;
+      expect(props.modelText.includes('thread_history({"ref":"c900"})')).toBe(history);
+    });
+
+    it.each([
+      "complete",
+      "failed",
+    ] as const)("C9 new %s handoff freezes the shared read line and preserves an existing S", async (kind) => {
+      const r = await fixture(async () =>
+        kind === "complete"
+          ? { kind: "complete", text: "Earlier context.", model: "script", modelResponses: [] }
+          : { kind: "failed", error: new Error("brief failed"), modelResponses: [] },
+      );
+      const { createInspectionToolRegistrations } = await import(
+        "../../runtime/tools/inspection-tools.js"
+      );
+      for (const tool of createInspectionToolRegistrations({
+        repos,
+        statusReader: r.runClaim,
+        registry: r.deps.toolRegistry,
+        tokenizer: async () => "o200k",
+      }))
+        r.deps.toolRegistry.register(tool);
+      await r.send(r.thread.id, "hi");
+      await r.drain();
+      await r.settled();
+      const block = (await repos.blocks.listByTurn(r.seed.id))[0];
+      const props = (block.content as { props: { modelText: string } }).props;
+      expect(props.modelText).toContain(`thread_history({"ref":"${r.source.ref}"})`);
+      expect(props.modelText.indexOf("thread_history")).toBeGreaterThan(
+        props.modelText.indexOf(
+          kind === "complete" ? "</prior-session-context>" : "No brief is available.",
+        ),
+      );
+      // A pre-C9 S carries its own frozen bytes, not deploy-time rendering.
+      const old = "<system_update>\nExisting pre-C9 brief.\n</system_update>";
+      await db
+        .update(schema.turnBlocks)
+        .set({ content: { ...(block.content as object), props: { ...props, modelText: old } } })
+        .where(eq(schema.turnBlocks.id, block.id));
+      await (
+        await r.orchestrator.prepare({ threadId: r.thread.id, userText: "after deploy" })
+      ).execute();
+      const request = JSON.stringify(r.gateway.requests.at(-1)?.messages);
+      expect(request).toContain(JSON.stringify(old).slice(1, -1));
+      expect(request).not.toContain("thread_history");
+    });
 
     it.each([
       "complete",
@@ -850,6 +1109,45 @@ else
         r.delivery.enqueueControl({ ...retry, id: crypto.randomUUID() }),
       ).rejects.toMatchObject({ statusCode: 409 });
     });
+    it.each([
+      "bake",
+      "registered",
+    ])("C9 Stop preserves the read instruction with %s availability", async (availability) => {
+      const r = await fixture();
+      if (availability === "bake") {
+        const { hashPromptBakeContent } = await import("./prompt-bake-hash.js");
+        const content = {
+          composedSystemPrompt: "Destination",
+          bakedSkillSlugs: [],
+          bakedTools: [{ type: "function", name: "thread_history" }],
+        };
+        const bake = await repos.promptBakes.create({
+          ownerThreadId: r.thread.id,
+          ...content,
+          contentHash: hashPromptBakeContent(content),
+        });
+        await db
+          .update(schema.threads)
+          .set({ initialPromptBakeId: bake.id })
+          .where(eq(schema.threads.id, r.thread.id));
+      } else {
+        const { createInspectionToolRegistrations } = await import(
+          "../../runtime/tools/inspection-tools.js"
+        );
+        for (const tool of createInspectionToolRegistrations({
+          repos,
+          statusReader: r.runClaim,
+          registry: r.deps.toolRegistry,
+          tokenizer: async () => "o200k",
+        }))
+          r.deps.toolRegistry.register(tool);
+      }
+      expect(await r.orchestrator.cancel(r.thread.id, r.seed.id)).toBe("cancelled");
+      const blocks = await repos.blocks.listByTurn(r.seed.id);
+      expect(JSON.stringify(blocks)).toContain("thread_history");
+      expect(JSON.stringify(blocks)).toContain("No brief is available.");
+    });
+
     it.each([false, true])("C7 scan preserves row-owned seed after crash=%s", async (crashed) => {
       const r = await fixture();
       if (crashed) {
@@ -980,50 +1278,7 @@ else
         status: "complete",
         prevTurnId: r.firstTurn.id,
       });
-      const eventSink = createInMemoryEventSink();
-      const readActivity = (threadId: string) =>
-        readThreadActivity(
-          {
-            threads: repos.threads,
-            statusReader: r.runClaim,
-            executionReports: repos.executionReports,
-          },
-          threadId,
-        );
-      const publisher = createReportPublisher({
-        repos,
-        eventWriter,
-        delivery: r.delivery,
-        eventSink,
-      });
-      const driver = createChildRunDriver({
-        orchestrator: r.orchestrator,
-        repos,
-        eventWriter,
-        readActivity,
-        publisher,
-        eventSink,
-      });
-      const coordinator = createChildRunCoordinator({
-        driver,
-        repos: {
-          threads: repos.threads,
-          subagentThreads: repos.threads,
-          transaction: repos.transaction,
-        },
-        async resolveWorkMembership({ threadId }) {
-          await repos.threadWorks.addMembership(threadId, ids.noWorkId, true);
-          return ids.noWorkId;
-        },
-        eventWriter,
-        readActivity,
-        delivery: r.delivery,
-        agentRevisions: revisions,
-        defaultModel: () => "gpt-4.1-mini",
-        unavailableReasons: () => [],
-        modelUnavailable: () => [],
-        eventSink,
-      });
+      const coordinator = childCoordinator(r);
       const result = await coordinator.runChild(
         {
           kind: "spawn",

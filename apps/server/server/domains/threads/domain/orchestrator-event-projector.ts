@@ -432,6 +432,15 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
+      case "agent.spawn":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: "meridian.agent.spawn",
+            value: event,
+          }),
+        ];
+
       // The producer recomputed the parent's direct children, so this frame is
       // a bounded replace of the client's activity state with no refetch race.
       case "subagent.activity":

@@ -162,6 +162,7 @@ export function createRuntimeHarness(
     delivery:
       overrides.delivery ??
       createInMemoryRuntimeDelivery({
+        toolRegistry,
         workContext,
         repos,
         eventWriter,

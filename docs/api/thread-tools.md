@@ -87,3 +87,26 @@ The writer's [transcript route][transcript] remains raw and unchanged by these
 model-only projections.
 
 [transcript]: thread-transcript.md
+
+## `spawn` context: `from`
+
+`spawn({ prompt, from?: "current" | string, ... })` accepts one prior-conversation
+ref. `current` resolves to the caller. The same live owner/project/lineage check
+runs before creating the child. Invalid, trashed and disconnected targets return
+structured tool errors without a child, run or debit. Error codes are
+`invalid_from` for a non-string value, `thread_not_found` for a malformed,
+missing or trashed ref, and `thread_not_connected` for another lineage.
+
+The child's first user turn holds the task prompt followed by a
+`thread-reference` custom block. Its source ref, title, Agent, last activity and
+read instructions are frozen at spawn. No source history is copied; the child
+can call `thread_history` and `thread_ls` on the reference. Retitling the source
+does not change the child's request prefix. `agent.spawn.fromThreadId` is only
+a live UI hint; the block is the durable record.
+
+`./mf thread view` shows the reference and its frozen fields (`--json`);
+`./mf thread context --all` shows the actual model input. Spawn events in
+`./mf thread send --json` / `events --json` carry `fromThreadId`.
+New handoff briefs use the same read instruction when the bake in effect at S
+advertises history. Only when S has no bake does tool registration decide. Earlier
+briefs retain their frozen text.

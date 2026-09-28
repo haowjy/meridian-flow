@@ -620,6 +620,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     | ((childThreadId: ThreadId, executionTurnId: TurnId) => Promise<unknown>)
     | undefined;
   const delivery = createDrizzleRuntimeDelivery(ports.db, {
+    toolRegistry,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     runClaim: ports.runClaim,
@@ -719,6 +720,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
   publishReport = reportPublisher.publish;
   const orphanRepair = createOrphanReportRepair({
+    toolRegistry,
     inbox: delivery,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,

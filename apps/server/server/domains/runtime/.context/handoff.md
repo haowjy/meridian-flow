@@ -33,7 +33,12 @@ from its discarded brief.
 
 Success stores a `handoff-brief` custom block with frozen `modelText`. Failure
 and Stop store the source-naming unavailable block. Model rendering replays
-that text verbatim. Neither first-send nor Retry reads source history into the
+that text verbatim. When a seed finishes, the brief and finalizer append
+`threadReferenceText` inside `<system_update>` only if the bake at S advertises
+`thread_history`; without a bake it uses registration availability. It never
+resolves the destination binding for this decision. Both successful and failed
+summary outcomes, Stop and recovery get the instruction, and existing S blocks keep their bytes.
+Neither first-send nor Retry reads source history into the
 destination request. Stop releases unanswered messages. Before binding, Stop
 and withdrawal settle S themselves, under the same thread/receipt locks as
 reservation; after binding they cancel its owning run.
@@ -91,3 +96,7 @@ Telemetry is written only by the pending owner’s ending transaction.
 Warm preparation intentionally does not compact the source or enforce the
 destination’s fit limits. If the source-shaped request exceeds the provider
 window, the shared summarizer retains that attempt and falls back cold.
+
+The delivery and orphan-repair compositions must pass the same registered-tool
+reader as the loop. Omitting it means a tool-less runtime, not automatic
+production defaults; a missing reader on a fresh seed freezes no read line.

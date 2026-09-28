@@ -23,6 +23,7 @@ import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
 import { toThreadListItem } from "../../domain/thread-list-projection.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
+import { isVisibleConversationalTurn } from "../../domain/visible-conversation-policy.js";
 import { orderTurnsByPosition } from "../../order-turns.js";
 import type {
   BlockRepository,
@@ -125,6 +126,7 @@ function defaultThread(input: CreateThreadInput): Thread {
     turnCount: 0,
     createdAt: now,
     updatedAt: now,
+    lastActivityAt: now,
     deletedAt: null,
   };
 }
@@ -223,8 +225,21 @@ export function createInMemoryRepositories(
   }
 
   function projectThread(thread: Thread): Thread {
+    let head = thread.activeLeafTurnId ? turns.get(thread.activeLeafTurnId) : undefined;
+    while (
+      head &&
+      !isVisibleConversationalTurn({
+        role: head.role,
+        metadata: head.metadata ?? null,
+        hasCustomBlock: [...blocks.values()].some(
+          (block) => block.turnId === head?.id && block.blockType === "custom",
+        ),
+      })
+    )
+      head = head.prevTurnId ? turns.get(head.prevTurnId) : undefined;
     return {
       ...thread,
+      lastActivityAt: head?.completedAt ?? head?.createdAt ?? thread.createdAt,
       workId: primaryWorkIdForThread(thread.id as ThreadId),
       ...(options.boundAgent?.(thread.id) ?? {
         agentDefinitionRevisionId: null,

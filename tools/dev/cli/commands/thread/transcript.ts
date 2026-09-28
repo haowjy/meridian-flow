@@ -1,4 +1,5 @@
 /** Compact projections of thread snapshots for `thread view` / `thread list` (text + JSON). */
+import type { ThreadReferenceProps } from "@meridian/contracts/components";
 import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import { type Block, blockPlainText, type Thread, type Turn } from "@meridian/contracts/threads";
 import { oneLine, truncate } from "../../core/output";
@@ -9,6 +10,7 @@ export type CompactBlock =
   | { kind: "text" | "reasoning"; text: string }
   | { kind: "tool_call"; toolCallId: string; name: string; input: unknown }
   | { kind: "tool_result"; toolCallId: string; output: unknown; isError: boolean }
+  | { kind: "thread-reference"; props: ThreadReferenceProps }
   | { kind: "other"; blockType: string; summary: string };
 
 export type CompactTurn = {
@@ -81,6 +83,8 @@ function clip(value: unknown, limit: number, full: boolean): unknown {
 
 export function compactBlock(block: Block, limits: TranscriptLimits): CompactBlock {
   const content = record(block.content);
+  if (block.blockType === "custom" && content.kind === "thread-reference")
+    return { kind: "thread-reference", props: content.props as ThreadReferenceProps };
   switch (block.blockType) {
     case "text":
     case "reasoning":
@@ -243,6 +247,8 @@ function renderBlock(block: CompactBlock): string {
         typeof block.output === "string" ? block.output : (JSON.stringify(block.output) ?? "");
       return `tool_result [${block.toolCallId}]${block.isError ? " ERROR" : ""}: ${oneLine(output)}`;
     }
+    case "thread-reference":
+      return block.props.text;
     case "other":
       return `(${block.blockType}) ${block.summary}`;
   }

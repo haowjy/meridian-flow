@@ -32,6 +32,16 @@ export type ComponentBlockContent = {
   interrupt?: ComponentInterrupt;
 };
 
+/** Runtime-created pointer in a child's first user turn; text is frozen at spawn. */
+export type ThreadReferenceProps = {
+  threadId: string;
+  ref: string;
+  title: string | null;
+  agentName: string | null;
+  lastActivityAt: string;
+  text: string;
+};
+
 /** Identity and timing shared by every retained child invocation card. */
 type InvocationCardBase = {
   agentSlug: string;
