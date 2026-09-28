@@ -142,30 +142,8 @@ describe("thread", () => {
     expect(types).toContain("turn.finished");
   });
 
-  it("thread events --name keeps only those events and gives custom ones a line", async () => {
-    expect((await mf(["thread", "send", THREAD_ID, "delegate"])).code).toBe(EXIT.ok);
-    const json = await mf([
-      "thread",
-      "events",
-      THREAD_ID,
-      "--name",
-      "tool.completed,meridian.subagent.activity",
-      "--json",
-    ]);
-    expect(json.code).toBe(EXIT.ok);
-    const lines = json.stdout
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line));
-    expect(new Set(lines.map((line) => (line.type === "event" ? line.name : line.type)))).toEqual(
-      new Set(["tool.completed", "meridian.subagent.activity"]),
-    );
-    const text = await mf(["thread", "events", THREAD_ID, "--name", "meridian.subagent.activity"]);
-    expect(text.stdout.trim().split("\n")).toHaveLength(3);
-    expect(text.stdout).toMatch(/^\d+ meridian\.subagent\.activity \{"descendants":\[\]\}/);
-  });
-
   it("thread events --child follows one descendant's status and current tool", async () => {
+    expect((await mf(["thread", "send", THREAD_ID, "delegate"])).code).toBe(EXIT.ok);
     const byRef = await mf(["thread", "events", THREAD_ID, "--child", "p2"]);
     expect(byRef.code).toBe(EXIT.ok);
     expect(byRef.stdout.trim().split("\n")).toEqual([
@@ -188,8 +166,8 @@ describe("thread", () => {
     expect(conflict.code).toBe(EXIT.usage);
   });
 
-  it("thread blocks lists persisted blocks with timing and tool names", async () => {
-    const json = await mf(["thread", "blocks", THREAD_ID, "--last", "1", "--json"]);
+  it("thread view --blocks lists persisted blocks with timing and tool names", async () => {
+    const json = await mf(["thread", "view", THREAD_ID, "--blocks", "--last", "1", "--json"]);
     expect(json.code).toBe(EXIT.ok);
     const { blocks } = JSON.parse(json.stdout);
     expect(blocks).toEqual([
@@ -197,7 +175,7 @@ describe("thread", () => {
       expect.objectContaining({ sequence: 1, type: "tool_result", tool: "spawn", gapMs: 1500 }),
       expect.objectContaining({ sequence: 2, type: "text", tool: null, offsetMs: 3000 }),
     ]);
-    const text = await mf(["thread", "blocks", THREAD_ID, "--last", "1"]);
+    const text = await mf(["thread", "view", THREAD_ID, "--blocks", "--last", "1"]);
     expect(text.stdout).toContain(
       "#1 2026-01-01T00:00:02.000Z +2.00s (gap 1.50s) tool_result spawn",
     );

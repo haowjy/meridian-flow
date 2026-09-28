@@ -1,6 +1,5 @@
 /** `thread`: read, drive, and follow thread sessions. */
 import type { CommandGroup } from "../../core/command";
-import { threadBlocksCommand } from "./blocks";
 import { threadCancelCommand } from "./cancel";
 import { threadContextCommand } from "./context";
 import { threadCreateCommand } from "./create";
@@ -17,7 +16,6 @@ export const threadGroup: CommandGroup = {
   commands: [
     threadListCommand,
     threadViewCommand,
-    threadBlocksCommand,
     threadContextCommand,
     threadEventsCommand,
     threadCreateCommand,

@@ -1,8 +1,5 @@
-/** `thread blocks`: every persisted block with its timing, so "when did this land" needs no psql. */
-import { apiThreadSnapshotPath, type ThreadSnapshotResponse } from "@meridian/contracts/protocol";
-import { blockContentRecord } from "@meridian/contracts/threads";
-import { type CommandSpec, intOption, requirePositional, stringOption } from "../../core/command";
-import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
+/** `thread view --blocks`: every persisted block with its timing, so "when did this land" needs no psql. */
+import { blockContentRecord, type Turn } from "@meridian/contracts/threads";
 
 export type BlockRow = {
   turnId: string;
@@ -23,13 +20,7 @@ export type BlockRow = {
 
 export type BlockTable = { threadId: string; blocks: BlockRow[]; turns: number };
 
-export function projectBlocks(
-  snapshot: ThreadSnapshotResponse,
-  options: { turnId?: string; last: number },
-): BlockTable {
-  const selected = options.turnId
-    ? snapshot.turns.filter((turn) => turn.id.startsWith(options.turnId ?? ""))
-    : snapshot.turns.slice(-options.last);
+export function blockTimings(threadId: string, selected: Turn[]): BlockTable {
   const toolNames = new Map<string, string>();
   const blocks: BlockRow[] = [];
   for (const turn of selected) {
@@ -61,7 +52,7 @@ export function projectBlocks(
       previous = at;
     }
   }
-  return { threadId: snapshot.threadId, blocks, turns: selected.length };
+  return { threadId, blocks, turns: selected.length };
 }
 
 function seconds(ms: number): string {
@@ -89,40 +80,3 @@ export function renderBlocks(table: BlockTable): string {
   }
   return lines.join("\n");
 }
-
-export const threadBlocksCommand: CommandSpec = {
-  path: ["thread", "blocks"],
-  summary: "Persisted blocks with timing: sequence, type, tool, created time, size",
-  args: "<thread>",
-  route: "GET /api/threads/:threadId/snapshot",
-  options: {
-    ...THREAD_TARGET_OPTIONS,
-    turn: { type: "string", description: "Only this turn (id or id prefix)" },
-    last: { type: "string", description: "Blocks of the last N turns (default 20)" },
-  },
-  examples: [
-    "./mf thread blocks c3",
-    "./mf thread blocks <id> --turn <turnId>",
-    "./mf thread blocks <id> --json | jq -c '.blocks[] | select(.gapMs > 5000)'",
-  ],
-  async run(ctx) {
-    const session = await ctx.session();
-    const threadId = await resolveThreadId(
-      session,
-      requirePositional(ctx, 0, "<thread>"),
-      stringOption(ctx, "project"),
-    );
-    const snapshot = await session.request<ThreadSnapshotResponse>(
-      "GET",
-      apiThreadSnapshotPath(threadId),
-    );
-    ctx.out.result(
-      projectBlocks(snapshot, {
-        turnId: stringOption(ctx, "turn"),
-        last: intOption(ctx, "last", 20),
-      }),
-      renderBlocks,
-    );
-    return undefined;
-  },
-};

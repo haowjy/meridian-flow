@@ -6,7 +6,7 @@ import {
   requirePositional,
   stringOption,
 } from "../../core/command";
-import { ACTIVITY_EVENT, applyEventFilter, type EventFilter } from "./event-filter";
+import { presentChild } from "./child-activity";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import { followThread } from "./stream";
 
@@ -18,10 +18,6 @@ export const threadEventsCommand: CommandSpec = {
   options: {
     ...THREAD_TARGET_OPTIONS,
     since: { type: "string", description: "Replay strictly after this seq (default 0)" },
-    name: {
-      type: "string",
-      description: `Only these events (comma list): dotted types like tool.completed, or custom names like ${ACTIVITY_EVENT}`,
-    },
     child: {
       type: "string",
       description:
@@ -33,23 +29,12 @@ export const threadEventsCommand: CommandSpec = {
   examples: [
     "./mf thread events <id>",
     "./mf thread events <id> --since 120 --json",
-    "./mf thread events <id> --name tool.started,tool.completed",
     "./mf thread events <id> --child p2   # one subagent's status and tool over time",
   ],
   async run(ctx) {
     const since = stringOption(ctx, "since") ?? "0";
     if (!/^\d+$/.test(since)) throw usageError("--since must be a non-negative integer seq");
-    const names = stringOption(ctx, "name")
-      ?.split(",")
-      .map((name) => name.trim())
-      .filter(Boolean);
     const child = stringOption(ctx, "child")?.trim();
-    if (names?.length === 0) throw usageError("--name needs at least one event name");
-    if (child && names && !names.includes(ACTIVITY_EVENT)) {
-      throw usageError(`--child reads ${ACTIVITY_EVENT} frames; drop --name or include that name`);
-    }
-    const filter: EventFilter = { names: names ?? null, child: child || null };
-    const full = flag(ctx, "full");
     const session = await ctx.session();
     const threadId = await resolveThreadId(
       session,
@@ -62,11 +47,9 @@ export const threadEventsCommand: CommandSpec = {
       lastSeq: since,
       deadlineAt: Date.now() + durationOption(ctx, "timeout", 15_000),
       out: ctx.out,
-      full,
+      full: flag(ctx, "full"),
       textStream: "out",
-      ...(filter.names || filter.child
-        ? { present: (event) => applyEventFilter(event, filter, full) }
-        : {}),
+      ...(child ? { present: presentChild(child) } : {}),
       catchupOnly: true,
     });
     ctx.out.note(
