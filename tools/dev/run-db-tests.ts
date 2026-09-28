@@ -85,7 +85,17 @@ async function main(): Promise<void> {
       ["exec", "vitest", "run", "--config", "apps/server/vitest.db.config.ts", ...testArgs],
       databaseUrl,
       workerDatabaseUrls.length > 0
-        ? { DB_TEST_DATABASE_URLS: JSON.stringify(workerDatabaseUrls) }
+        ? {
+            DB_TEST_DATABASE_URLS: JSON.stringify(
+              workerDatabaseUrls.map((workerUrl) => {
+                const url = new URL(workerUrl);
+                // Postgres.js forwards unknown URL parameters as session startup settings.
+                // Only these owned throwaway connections sacrifice crash durability.
+                url.searchParams.set("synchronous_commit", "off");
+                return url.toString();
+              }),
+            ),
+          }
         : {},
     );
     process.exitCode = testExit;

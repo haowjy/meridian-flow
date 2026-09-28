@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Disable synchronous commit only on runner-owned DB test connections.
+
 - Reset DB tests with rollback or FK-ordered deletes, without per-case table rewrites.
 
 - Fork or hand off a chat from any finished reply, including a reply a fork inherited. The new chat opens at once and finishes creating in the background; a reload lands on the same chat, and a failure stays on it with Retry. Hand off picks the Agent, starting from the source's. Subagent chats offer neither.
