@@ -8,6 +8,9 @@
 ## [Unreleased]
 
 ### Changed
+- Type compaction failure reasons, phases, fit measurements and control IDs in the durable metadata codec, including failures without a planned cut.
+- Expose compaction failure and control metadata, with token counts, in the existing `thread view --json` projection.
+- Persist typed compaction failure reasons and phases on failed C turns and their `turn.error` events; fail C on a late-arrival fit overflow while settling paid summaries.
 
 - Compaction clears stale document reads, write text, search excerpts and references from model context. Fresh text and writer transcripts stay intact.
 
@@ -27,6 +30,7 @@
 
 ### Fixed
 - Settle orphaned primary assistant turns at startup and after a new run acquires its claim, keeping transcript anchors and fork cutoffs movable.
+- Reset change-trail Postgres fixtures with truncation so insert-only prompt bakes do not block cleanup.
 - Give database fixture hooks the same timeout budget as test bodies to avoid overlapping resets.
 - Publish committed pulls even if the caller response aborts. Preserve live manifest read-your-writes.
 - Keep cold project bootstrap atomic while committing peer manifest dependencies independently.

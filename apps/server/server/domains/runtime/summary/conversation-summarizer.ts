@@ -17,6 +17,7 @@ import type { PrefixCacheState, PrefixCacheStateRequest } from "../loop/prefix-c
 import type {
   ConversationSummarizer,
   SummaryOutcome,
+  SummaryRejectionReason,
   SummaryResponse,
 } from "../ports/conversation-summarizer.js";
 import { transcriptSegments } from "./transcript.js";
@@ -44,18 +45,29 @@ function instructionText(instruction: "compaction" | "handoff_brief", maxTokens:
   ].join("\n");
 }
 
+class SummaryRejection extends Error {
+  constructor(
+    readonly reason: SummaryRejectionReason,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 function summaryText(result: GenerateResult): string {
-  if (result.finishReason === "max_tokens") throw new Error("Summary exhausted its output limit");
-  if (result.finishReason === "error") throw new Error("Summary provider failed");
+  if (result.finishReason === "max_tokens")
+    throw new SummaryRejection("max_tokens", "Summary exhausted its output limit");
+  if (result.finishReason === "error")
+    throw new SummaryRejection("provider_error", "Summary provider failed");
   if (result.toolCalls.length || result.content.some((part) => part.type === "tool_use")) {
-    throw new Error("Summary returned tool use");
+    throw new SummaryRejection("tool_use", "Summary returned tool use");
   }
   const text = result.content
     .filter((part) => part.type === "text")
     .map((part) => part.text)
     .join("\n")
     .trim();
-  if (!text) throw new Error("Summary returned no text");
+  if (!text) throw new SummaryRejection("empty_text", "Summary returned no text");
   return text;
 }
 
@@ -140,12 +152,15 @@ export function createConversationSummarizer(
                   result = event.result;
                   usage = result.usage;
                 }
-                failure = new Error(event.message);
+                failure = new SummaryRejection("provider_error", event.message);
                 break;
               }
             }
           } catch (error) {
-            failure = error;
+            failure = new SummaryRejection(
+              "provider_error",
+              error instanceof Error ? error.message : String(error),
+            );
           }
           if (input.signal.aborted && gateway.settleCancelledResult) {
             try {
@@ -177,7 +192,8 @@ export function createConversationSummarizer(
             });
           input.signal.throwIfAborted();
           if (failure) throw failure;
-          if (!result) throw new Error("Summary stream ended without a result");
+          if (!result)
+            throw new SummaryRejection("provider_error", "Summary stream ended without a result");
           return result;
         }
 
@@ -288,9 +304,13 @@ export function createConversationSummarizer(
         } while (offset < turns.length);
         return { ...outcome, kind: "complete", text: running, model: keptModel };
       } catch (error) {
-        return input.signal.aborted
-          ? { ...outcome, kind: "cancelled" }
-          : { ...outcome, kind: "failed", error };
+        if (input.signal.aborted) return { ...outcome, kind: "cancelled" };
+        return {
+          ...outcome,
+          kind: "failed",
+          error,
+          ...(error instanceof SummaryRejection ? { rejectionReason: error.reason } : {}),
+        };
       }
     },
   };

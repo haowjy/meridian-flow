@@ -65,23 +65,89 @@ const compactedThroughCodec = z.object({
   blockSequence: z.number().int().nonnegative().optional(),
 });
 
-export const CompactionMetadataCodec = z
+export const CompactionFailureReasonCodec = z.enum([
+  "nothing_to_compact",
+  "context_too_large",
+  "compaction_failed",
+  "context_window_exceeded",
+  "max_tokens",
+  "provider_error",
+  "tool_use",
+  "empty_text",
+  "interrupted",
+]);
+export const CompactionFailurePhaseCodec = z.enum([
+  "summary",
+  "initial_prepare",
+  "late_arrival",
+  "delivery",
+  "recovery",
+]);
+export const CompactionFailureOutcomeCodec = z.object({
+  reason: CompactionFailureReasonCodec,
+  phase: CompactionFailurePhaseCodec,
+  estimatedTokens: z.number().int().nonnegative().optional(),
+  fitLimitTokens: z.number().int().nonnegative().optional(),
+});
+
+export type CompactionFailureOutcome = z.infer<typeof CompactionFailureOutcomeCodec>;
+
+const compactionFailureMetadataFields = {
+  reason: CompactionFailureReasonCodec.optional(),
+  phase: CompactionFailurePhaseCodec.optional(),
+  estimatedTokens: z.number().int().nonnegative().optional(),
+  fitLimitTokens: z.number().int().nonnegative().optional(),
+};
+
+const compactionMetadataFields = {
+  elisions: z
+    .array(
+      z.object({
+        blockId: z.string(),
+        treatment: z.enum(["stale_read", "stale_write"]),
+        uris: z.array(z.string()),
+        content: z.json(),
+      }),
+    )
+    .optional(),
+  trigger: z.enum(["auto", "manual"]).optional(),
+  controlMessageId: z.string().min(1).optional(),
+  satisfiesControlId: z.string().min(1).optional(),
+};
+
+export const CompactionPlanMetadataCodec = z
   .object({
-    elisions: z
-      .array(
-        z.object({
-          blockId: z.string(),
-          treatment: z.enum(["stale_read", "stale_write"]),
-          uris: z.array(z.string()),
-          content: z.json(),
-        }),
-      )
-      .optional(),
+    ...compactionMetadataFields,
     compactedThrough: compactedThroughCodec,
     pinnedRequestTurnIds: z.array(z.string().min(1)).min(1),
-    trigger: z.enum(["auto", "manual"]).optional(),
+    ...compactionFailureMetadataFields,
+  })
+  .passthrough()
+  .superRefine((metadata, context) => {
+    if ((metadata.reason === undefined) !== (metadata.phase === undefined)) {
+      context.addIssue({
+        code: "custom",
+        message: "Compaction failure metadata must include both reason and phase",
+      });
+    }
+  });
+
+const CompactionFailureMetadataCodec = z
+  .object({
+    ...compactionMetadataFields,
+    compactedThrough: compactedThroughCodec.optional(),
+    pinnedRequestTurnIds: z.array(z.string().min(1)).min(1).optional(),
+    reason: CompactionFailureReasonCodec,
+    phase: CompactionFailurePhaseCodec,
+    estimatedTokens: z.number().int().nonnegative().optional(),
+    fitLimitTokens: z.number().int().nonnegative().optional(),
   })
   .passthrough();
+
+export const CompactionMetadataCodec = z.union([
+  CompactionPlanMetadataCodec,
+  CompactionFailureMetadataCodec,
+]);
 
 export const PromptEpochMetadataCodec = z.union([
   z
@@ -100,6 +166,9 @@ export const SteerMetadataCodec = z.object({ delivery: z.literal("steer") }).pas
 export type ImageContextBreak = z.infer<typeof ImageContextBreakCodec>;
 export type ImageInclusionMetadata = z.infer<typeof ImageInclusionMetadataCodec>;
 export type CompactionMetadata = z.infer<typeof CompactionMetadataCodec>;
+export type CompactionPlanMetadata = z.infer<typeof CompactionPlanMetadataCodec>;
+export type CompactionFailureReason = z.infer<typeof CompactionFailureReasonCodec>;
+export type CompactionFailurePhase = z.infer<typeof CompactionFailurePhaseCodec>;
 export type AgentRequestOrigin = "spawn" | "message";
 export type AgentRequestSource = "inbox_message" | "child_seed" | "foreground_message";
 
@@ -194,11 +263,34 @@ export function compactionUndoMetadata(revertsCompactionTurnId: string): JsonObj
   return { kind: "compaction_undo", revertsCompactionTurnId };
 }
 
-export function compactionTurnMetadata(metadata: CompactionMetadata): JsonObject {
+export function compactionTurnMetadata(metadata: CompactionPlanMetadata): JsonObject {
   return {
     compactedThrough: { ...metadata.compactedThrough },
     pinnedRequestTurnIds: metadata.pinnedRequestTurnIds,
     ...(metadata.trigger ? { trigger: metadata.trigger } : {}),
+  };
+}
+
+/** Replace failure fields without disturbing the placeholder's control metadata. */
+export function compactionFailureMetadata(
+  metadata: JsonValue | null | undefined,
+  failure: CompactionFailureOutcome,
+): JsonObject {
+  const previous =
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? (metadata as JsonObject)
+      : {};
+  const preserved = { ...previous };
+  delete preserved.reason;
+  delete preserved.phase;
+  delete preserved.estimatedTokens;
+  delete preserved.fitLimitTokens;
+  return {
+    ...preserved,
+    reason: failure.reason,
+    phase: failure.phase,
+    ...(failure.estimatedTokens === undefined ? {} : { estimatedTokens: failure.estimatedTokens }),
+    ...(failure.fitLimitTokens === undefined ? {} : { fitLimitTokens: failure.fitLimitTokens }),
   };
 }
 

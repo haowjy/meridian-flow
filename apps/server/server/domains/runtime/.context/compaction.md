@@ -97,8 +97,15 @@ against overflow.
 
 - A failed required summary errors C and fails a reply below the latest message.
   A failed optional manual summary errors only C and continues the request.
-- A usable epoch still commits when a late arrival fails context preparation,
-  including an oversized late paste; only B fails.
+- Failed C metadata records the typed `reason` and `phase`; a fit rejection also
+  records `estimatedTokens` and `fitLimitTokens`. `turn.error` uses that same
+  reason code. Summary rejections distinguish `max_tokens`, `provider_error`,
+  `tool_use`, and `empty_text`; unknown summary errors stay `compaction_failed`.
+- If the initial successor fits but a late arrival fails the second fit check,
+  C fails with `context_too_large` at `late_arrival` instead of committing the
+  epoch. Its paid summary rows settle in the C failure transaction. The late
+  message remains durably adopted, B fails below the latest arrival, and the
+  receipt is acknowledged with C6a semantics.
 - A live unexpected error while C is current uses a fresh failure
   transaction: C `error`, settled summary rows, failed B below the latest
   arrivals, and receipt acknowledgment. Notices remain queued.

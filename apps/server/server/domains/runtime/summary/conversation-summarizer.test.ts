@@ -113,6 +113,23 @@ describe("conversation summarizer", () => {
     });
   });
 
+  it.each([
+    ["max_tokens", reply("partial", { finishReason: "max_tokens" })],
+    ["provider_error", reply("", { finishReason: "error" })],
+    ["tool_use", reply("", { toolCalls: [{ id: "call", name: "read", arguments: {} }] })],
+    ["empty_text", reply("   ")],
+  ] as const)("labels rejected summary output as %s", async (reason, result) => {
+    const rig = setup({
+      async *events() {
+        yield { type: "end", result };
+      },
+    });
+    expect(await rig.service.summarize(rig.input)).toMatchObject({
+      kind: "failed",
+      rejectionReason: reason,
+    });
+  });
+
   it("labels prior context and omits opaque reasoning from the cold transcript", async () => {
     const rig = setup();
     rig.input.projection.turns[0].metadata = {

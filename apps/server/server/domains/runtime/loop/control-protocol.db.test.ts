@@ -1,5 +1,6 @@
 /** Control inbox ordering, claims and acknowledgements against real PostgreSQL transactions. */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { CompactionMetadataCodec } from "../../threads/index.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
@@ -383,9 +384,17 @@ else
       expect(cs.map((turn) => turn.status)).toEqual(["error", "complete"]);
       expect(cs[0]).toMatchObject({
         error: "This manual compaction was interrupted.",
-        metadata: { reason: "interrupted" },
+        metadata: { reason: "interrupted", phase: "recovery" },
       });
+      expect(CompactionMetadataCodec.safeParse(cs[0].metadata).success).toBe(true);
       expect(cs[1].metadata).toMatchObject({ controlMessageId: row.id });
+      const journal = await db
+        .select({ payload: schema.eventJournal.payload })
+        .from(schema.eventJournal);
+      const interruptedEvent = JSON.stringify(journal);
+      expect(interruptedEvent).toContain('"code":"compaction_failed"');
+      expect(interruptedEvent).toContain('"reason":"interrupted"');
+      expect(interruptedEvent).toContain('"phase":"recovery"');
     });
 
     it.each([
@@ -521,7 +530,10 @@ else
       const c = (await rig.repos.turns.listByThread(rig.threadId)).find(
         (turn) => turn.role === "compaction",
       );
-      expect(c).toMatchObject({ status: "error", metadata: { reason: "context_too_large" } });
+      expect(c).toMatchObject({
+        status: "error",
+        metadata: { reason: "context_too_large", phase: "initial_prepare" },
+      });
       expect(rig.summarizer.calls).toHaveLength(0);
     });
 
