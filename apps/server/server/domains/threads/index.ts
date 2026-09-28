@@ -71,6 +71,7 @@ export {
 export type {
   AgentRequestOrigin,
   AgentRequestSource,
+  CompactionFailureOutcome,
   CompactionFailurePhase,
   CompactionFailureReason,
   CompactionMetadata,
@@ -83,6 +84,7 @@ export {
   agentRequestMetadata,
   ChildCompletionMetadataCodec,
   ChildCompletionMetadataTagCodec,
+  CompactionFailureOutcomeCodec,
   CompactionFailurePhaseCodec,
   CompactionFailureReasonCodec,
   CompactionMetadataCodec,
@@ -91,6 +93,7 @@ export {
   childCompletionMetadata,
   childSeedMetadata,
   classifyHistoryItem,
+  compactionFailureMetadata,
   compactionSummaryMetadata,
   compactionTurnMetadata,
   compactionUndoMetadata,

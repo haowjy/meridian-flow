@@ -2,12 +2,23 @@
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import { ThreadConversationContextError } from "../../threads/index.js";
 import { ImageAssetResolutionError } from "../ports/image-asset.js";
-import { CompactionPreparationError } from "./compaction/decision.js";
+import {
+  CompactionFailureError,
+  CompactionPreparationError,
+  compactionFailureMeridianError,
+} from "./compaction/decision.js";
 export function writerFacingPreparationError(
   error: Error,
 ): ReturnType<typeof meridianErrorFromSystem> {
+  if (error instanceof CompactionFailureError)
+    return compactionFailureMeridianError(error.outcome, error.message);
   if (error instanceof CompactionPreparationError)
-    return meridianErrorFromSystem(error.reason, error.message);
+    return meridianErrorFromSystem(
+      error.reason === "context_too_large" || error.reason === "nothing_to_compact"
+        ? error.reason
+        : "compaction_failed",
+      error.message,
+    );
   if (error instanceof ThreadConversationContextError) {
     return meridianErrorFromSystem(
       "thread_context_error",

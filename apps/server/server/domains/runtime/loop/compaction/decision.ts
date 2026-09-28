@@ -1,6 +1,12 @@
 /** A request boundary's compaction choice; committed with its selected leaf and inbox batch. */
+
+import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { Block, Turn } from "@meridian/contracts/threads";
-import type { CompactionFailurePhase, CompactionFailureReason } from "../../../threads/index.js";
+import type {
+  CompactionFailureOutcome,
+  CompactionFailurePhase,
+  CompactionFailureReason,
+} from "../../../threads/index.js";
 import { orderTurnsByPosition } from "../../../threads/order-turns.js";
 import type { GenerateRequest, TokenizerFamily } from "../../gateway/index.js";
 import { estimateRequestTokens } from "./estimate.js";
@@ -30,14 +36,7 @@ export type CompactionDecision =
     }
   | { kind: "too_large"; plan: CompactionPlan };
 
-export type { CompactionFailurePhase, CompactionFailureReason };
-
-export type CompactionFailureOutcome = {
-  reason: CompactionFailureReason;
-  phase: CompactionFailurePhase;
-  estimatedTokens?: number;
-  fitLimitTokens?: number;
-};
+export type { CompactionFailureOutcome, CompactionFailurePhase, CompactionFailureReason };
 
 export class CompactionPreparationError extends Error {
   constructor(readonly reason: CompactionFailureReason) {
@@ -62,6 +61,25 @@ export function compactionFailureMessage(reason: CompactionFailureReason): strin
     default:
       return "This conversation couldn't be compacted. Try again.";
   }
+}
+
+/** Keep rejection reasons in details instead of expanding the system error-code family. */
+export function compactionFailureMeridianError(failure: CompactionFailureOutcome, message: string) {
+  const code =
+    failure.reason === "context_too_large" || failure.reason === "nothing_to_compact"
+      ? failure.reason
+      : "compaction_failed";
+  return {
+    ...meridianErrorFromSystem(code, message),
+    details: {
+      reason: failure.reason,
+      phase: failure.phase,
+      ...(failure.estimatedTokens === undefined
+        ? {}
+        : { estimatedTokens: failure.estimatedTokens }),
+      ...(failure.fitLimitTokens === undefined ? {} : { fitLimitTokens: failure.fitLimitTokens }),
+    },
+  };
 }
 
 /** Preserve known outcomes across async preparation and the delivery transaction. */

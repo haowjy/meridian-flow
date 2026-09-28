@@ -4,6 +4,7 @@ import {
   CompactionFailureError,
   CompactionPreparationError,
   compactionFailureFrom,
+  compactionFailureMeridianError,
   summaryCompactionFailure,
 } from "./compaction/decision.js";
 
@@ -65,6 +66,31 @@ describe("compaction failure outcomes", () => {
     expect(summaryCompactionFailure(undefined)).toEqual({
       reason: "compaction_failed",
       phase: "summary",
+    });
+  });
+
+  it("keeps summary reasons in details and uses the compaction error-code family", () => {
+    expect(
+      compactionFailureMeridianError(
+        { reason: "provider_error", phase: "summary" },
+        "Compaction failed.",
+      ),
+    ).toMatchObject({
+      code: "compaction_failed",
+      source: "system",
+      details: { reason: "provider_error", phase: "summary" },
+    });
+  });
+
+  it("keeps writer-facing refusal codes", () => {
+    expect(
+      compactionFailureMeridianError(
+        { reason: "context_too_large", phase: "late_arrival" },
+        "Too large.",
+      ),
+    ).toMatchObject({
+      code: "context_too_large",
+      details: { reason: "context_too_large", phase: "late_arrival" },
     });
   });
 });

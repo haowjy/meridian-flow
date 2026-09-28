@@ -74,13 +74,23 @@ export const CompactionFailureReasonCodec = z.enum([
   "provider_error",
   "tool_use",
   "empty_text",
+  "interrupted",
 ]);
 export const CompactionFailurePhaseCodec = z.enum([
   "summary",
   "initial_prepare",
   "late_arrival",
   "delivery",
+  "recovery",
 ]);
+export const CompactionFailureOutcomeCodec = z.object({
+  reason: CompactionFailureReasonCodec,
+  phase: CompactionFailurePhaseCodec,
+  estimatedTokens: z.number().int().nonnegative().optional(),
+  fitLimitTokens: z.number().int().nonnegative().optional(),
+});
+
+export type CompactionFailureOutcome = z.infer<typeof CompactionFailureOutcomeCodec>;
 
 const compactionFailureMetadataFields = {
   reason: CompactionFailureReasonCodec.optional(),
@@ -258,6 +268,29 @@ export function compactionTurnMetadata(metadata: CompactionPlanMetadata): JsonOb
     compactedThrough: { ...metadata.compactedThrough },
     pinnedRequestTurnIds: metadata.pinnedRequestTurnIds,
     ...(metadata.trigger ? { trigger: metadata.trigger } : {}),
+  };
+}
+
+/** Replace failure fields without disturbing the placeholder's control metadata. */
+export function compactionFailureMetadata(
+  metadata: JsonValue | null | undefined,
+  failure: CompactionFailureOutcome,
+): JsonObject {
+  const previous =
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? (metadata as JsonObject)
+      : {};
+  const preserved = { ...previous };
+  delete preserved.reason;
+  delete preserved.phase;
+  delete preserved.estimatedTokens;
+  delete preserved.fitLimitTokens;
+  return {
+    ...preserved,
+    reason: failure.reason,
+    phase: failure.phase,
+    ...(failure.estimatedTokens === undefined ? {} : { estimatedTokens: failure.estimatedTokens }),
+    ...(failure.fitLimitTokens === undefined ? {} : { fitLimitTokens: failure.fitLimitTokens }),
   };
 }
 

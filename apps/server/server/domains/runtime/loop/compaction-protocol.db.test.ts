@@ -4,6 +4,7 @@ import type { JsonObject } from "@meridian/contracts/threads";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import {
+  CompactionMetadataCodec,
   decodeImageInclusionMetadata,
   encodeImageInclusionMetadata,
   loadThreadConversationContext,
@@ -1107,10 +1108,17 @@ else
         },
       });
       if (ending === "failed") {
+        const turns = await rig.repos.turns.listByThread(rig.threadId);
+        const failedReply = turns.at(-1);
+        expect(failedReply).toMatchObject({ role: "assistant", status: "error" });
         const events = await db
           .select({ payload: schema.eventJournal.payload })
           .from(schema.eventJournal);
-        expect(JSON.stringify(events)).toContain('"code":"max_tokens"');
+        const serializedEvents = JSON.stringify(events);
+        expect(serializedEvents).toContain('"code":"compaction_failed"');
+        expect(serializedEvents).not.toContain('"code":"max_tokens"');
+        expect(serializedEvents).toContain('"reason":"max_tokens"');
+        expect(serializedEvents).toContain('"phase":"summary"');
       }
       const rows = await rig.repos.modelResponses.listByTurn(run.executionTurnId);
       expect(rows).toHaveLength(1);
@@ -1740,6 +1748,7 @@ else
           fitLimitTokens: 2_500,
         },
       });
+      expect(CompactionMetadataCodec.safeParse(tail[0].metadata).success).toBe(true);
       expect(tail[0].metadata).toMatchObject({
         estimatedTokens: expect.any(Number),
         fitLimitTokens: 2_500,

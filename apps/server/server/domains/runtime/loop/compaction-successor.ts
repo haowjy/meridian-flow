@@ -1,8 +1,7 @@
 /** Retry-local compaction values and the reusable placeholder completion transaction. */
-import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, Thread, Turn } from "@meridian/contracts/threads";
-import { promptEpochMetadata } from "../../threads/index.js";
+import { compactionFailureMetadata, promptEpochMetadata } from "../../threads/index.js";
 import type { SummaryOutcome } from "../ports/conversation-summarizer.js";
 import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
 import { beginPromptEpoch } from "./begin-prompt-epoch.js";
@@ -13,6 +12,7 @@ import {
   type CompactionFailureOutcome,
   type CompactionFailurePhase,
   compactionFailureFrom,
+  compactionFailureMeridianError,
   compactionFailureMessage,
   summaryCompactionFailure,
 } from "./compaction/decision.js";
@@ -51,7 +51,7 @@ function fittingTokens(
   phase: CompactionFailurePhase,
 ) {
   const tokenizer = context.resolvedModel?.tokenizer;
-  if (!tokenizer) throw new Error("Cannot estimate compaction successor without a model tokenizer");
+  if (!tokenizer) throw new CompactionFailureError({ reason: "compaction_failed", phase });
   const tokens = estimateRequestTokens({
     request: context.generateRequest,
     baseline: null,
@@ -236,11 +236,7 @@ export async function prepareCompactionContext(
   if (!prepared) throw new Error("Missing prepared compaction");
   if (prepared.kind === "failed") throw new CompactionFailureError(prepared.failure);
   const next = await prepared.assemble(drain.turns, drain.blocks);
-  try {
-    fittingTokens(next.assembled, prepared.decision.fitLimitTokens, "late_arrival");
-  } catch (error) {
-    throw new CompactionFailureError(compactionFailureFrom(error, "late_arrival"));
-  }
+  fittingTokens(next.assembled, prepared.decision.fitLimitTokens, "late_arrival");
   return {
     events: next.events,
     turns: next.assembled.imageContextUpdates.turns,
@@ -308,21 +304,12 @@ export async function completeCompactionCurrent(input: {
       },
     });
   } else {
+    const outcome = failure ?? { reason: "compaction_failed" as const, phase: "delivery" as const };
     const failed = {
       ...settled,
       status: "error" as const,
-      error: compactionFailureMessage(failure?.reason ?? "compaction_failed"),
-      metadata: {
-        ...(settled.metadata as import("@meridian/contracts/threads").JsonObject),
-        reason: failure?.reason ?? "compaction_failed",
-        phase: failure?.phase ?? "delivery",
-        ...(failure?.estimatedTokens === undefined
-          ? {}
-          : { estimatedTokens: failure.estimatedTokens }),
-        ...(failure?.fitLimitTokens === undefined
-          ? {}
-          : { fitLimitTokens: failure.fitLimitTokens }),
-      },
+      error: compactionFailureMessage(outcome.reason),
+      metadata: compactionFailureMetadata(settled.metadata, outcome),
       completedAt: new Date().toISOString(),
     };
     await persistAndAppendEvents(deps, threadId, async () => ({
@@ -331,7 +318,7 @@ export async function completeCompactionCurrent(input: {
         {
           type: "turn.error",
           turn: failed,
-          error: meridianErrorFromSystem(failure?.reason ?? "compaction_failed", failed.error),
+          error: compactionFailureMeridianError(outcome, failed.error),
         },
       ],
     }));
