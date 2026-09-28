@@ -11,28 +11,27 @@ import { Button } from "@/components/ui/button";
 import { InlineEditTextarea } from "@/components/ui/inline-edit";
 import { cn } from "@/lib/utils";
 
-type HeldIntent = { run: () => void; cancel?: () => void; label: string } | null;
+type HeldIntent = { run: () => void; cancel: () => void };
 
 export function useWorkMetadataController(
-  initial: Work,
+  work: Work,
   saveWork: (data: UpdateWorkRequest) => Promise<Work>,
 ) {
-  const [work, setWork] = useState(initial);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [held, setHeld] = useState<HeldIntent>(null);
+  const [hasPendingIntent, setHasPendingIntent] = useState(false);
   const heldRef = useRef<HeldIntent>(null);
   const takeHeld = useCallback(() => {
     const intent = heldRef.current;
     heldRef.current = null;
-    setHeld(null);
+    setHasPendingIntent(false);
     return intent;
   }, []);
   useEffect(
     () => () => {
-      heldRef.current?.cancel?.();
+      heldRef.current?.cancel();
       heldRef.current = null;
     },
     [],
@@ -40,16 +39,7 @@ export function useWorkMetadataController(
   const [announcement, setAnnouncement] = useState("");
   const displayRef = useRef<HTMLElement | null>(null);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
-  const initialRef = useRef(initial);
   const dirty = editing && draft.trim() !== (work.goal ?? "").trim();
-  useEffect(() => {
-    if (sameMetadata(initialRef.current, initial)) return;
-    initialRef.current = initial;
-    setWork(initial);
-  }, [initial]);
-  useEffect(() => {
-    if (!saving && !editing && held) takeHeld()?.run();
-  }, [editing, held, saving, takeHeld]);
   const focusDisplay = useCallback(
     () => requestAnimationFrame(() => displayRef.current?.focus()),
     [],
@@ -58,7 +48,7 @@ export function useWorkMetadataController(
     if (!editing || saving) return;
     setEditing(false);
     setError(null);
-    takeHeld()?.cancel?.();
+    takeHeld()?.cancel();
     setAnnouncement(t`Description edit canceled`);
     focusDisplay();
   }, [editing, focusDisplay, saving, takeHeld]);
@@ -72,47 +62,39 @@ export function useWorkMetadataController(
       return true;
     }
     const goal = draft.trim();
-    const previous = work;
-    setWork({ ...work, goal, updatedAt: new Date().toISOString() });
     setSaving(true);
     setError(null);
     try {
-      const returned = await saveWork({ goal });
-      setWork(returned);
+      await saveWork({ goal });
       setEditing(false);
       setAnnouncement(t`Description saved`);
       focusDisplay();
       return true;
     } catch (cause) {
-      setWork(previous);
       setError(cause instanceof Error ? cause.message : t`Save failed`);
       return false;
     } finally {
       setSaving(false);
     }
-  }, [dirty, draft, editing, focusDisplay, saveWork, saving, work]);
+  }, [dirty, draft, editing, focusDisplay, saveWork, saving]);
   const request = useCallback(
-    (intent: NonNullable<HeldIntent>) => {
+    (intent: HeldIntent) => {
+      if (!dirty) {
+        intent.run();
+        return;
+      }
       const previous = heldRef.current;
       heldRef.current = intent;
-      setHeld(intent);
-      previous?.cancel?.();
-      if (!saving && !dirty && heldRef.current === intent) takeHeld()?.run();
+      setHasPendingIntent(true);
+      previous?.cancel();
     },
-    [dirty, saving, takeHeld],
+    [dirty],
   );
-  const activate = useCallback(
-    () =>
-      request({
-        label: t`Edit Description`,
-        run: () => {
-          setEditing(true);
-          setDraft(work.goal ?? "");
-          setError(null);
-        },
-      }),
-    [request, work],
-  );
+  const activate = useCallback(() => {
+    setEditing(true);
+    setDraft(work.goal ?? "");
+    setError(null);
+  }, [work.goal]);
   const saveAndResume = useCallback(async () => {
     const intent = heldRef.current;
     if (intent && (await save()) && heldRef.current === intent) takeHeld()?.run();
@@ -124,18 +106,17 @@ export function useWorkMetadataController(
     takeHeld()?.run();
   }, [saving, takeHeld]);
   const keepEditing = useCallback(() => {
-    takeHeld()?.cancel?.();
+    takeHeld()?.cancel();
     requestAnimationFrame(() => editorRef.current?.focus());
   }, [takeHeld]);
   return {
-    work,
     editing,
     draft,
     setDraft,
     dirty,
     saving,
     error,
-    held,
+    held: hasPendingIntent,
     announcement,
     editorRef,
     displayRef,
@@ -161,7 +142,13 @@ const clampHeight = "max-h-[calc(var(--text-body--line-height)*3)]";
  * empty description) edits in place: the field takes the text's exact position
  * and size. Save and Cancel sit below; blur never saves.
  */
-export function WorkDescription({ controller: c }: { controller: WorkMetadataController }) {
+export function WorkDescription({
+  work,
+  controller: c,
+}: {
+  work: Work;
+  controller: WorkMetadataController;
+}) {
   const display = useRef<HTMLDivElement | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
@@ -182,7 +169,7 @@ export function WorkDescription({ controller: c }: { controller: WorkMetadataCon
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [c.editing, c.work.goal, expanded]);
+  }, [c.editing, work.goal, expanded]);
   const clamped = overflows && !expanded;
   const bindEditFocus = (node: HTMLButtonElement | null) => {
     c.displayRef.current = node;
@@ -194,7 +181,7 @@ export function WorkDescription({ controller: c }: { controller: WorkMetadataCon
       </p>
       {c.editing ? (
         <DescriptionEditor controller={c} />
-      ) : !c.work.goal ? (
+      ) : !work.goal ? (
         <button
           type="button"
           ref={bindEditFocus}
@@ -223,7 +210,7 @@ export function WorkDescription({ controller: c }: { controller: WorkMetadataCon
                 "cursor-pointer [mask-image:linear-gradient(to_bottom,#000_55%,transparent)]",
             )}
           >
-            {c.work.goal}
+            {work.goal}
           </div>
           <div className="mt-1 flex max-w-3xl items-center gap-3">
             {clamped ? (
@@ -304,15 +291,5 @@ function DescriptionEditor({ controller: c }: { controller: WorkMetadataControll
         </Button>
       </div>
     </>
-  );
-}
-
-function sameMetadata(a: Work, b: Work) {
-  return (
-    a.id === b.id &&
-    a.name === b.name &&
-    a.goal === b.goal &&
-    a.status === b.status &&
-    a.updatedAt === b.updatedAt
   );
 }

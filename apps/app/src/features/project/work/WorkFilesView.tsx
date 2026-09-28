@@ -16,6 +16,7 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
+import { viewerTabForCatalogFile } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -34,10 +35,17 @@ import { useRenameEntryForm } from "../context/use-rename-entry-form";
 import { useDockViewStore, useOpenFileInDock } from "../dock/dock-view-store";
 import { usePostApplyDraftGroupProjections } from "../draft-apply-recovery/DraftApplyRecoveryProvider";
 import type { ProjectRouteCommands } from "../routing/project-route";
-import { filterWorkFileGroups } from "./work-files-model";
+import { uniqueScratchNoteName } from "./work-file-names";
+import {
+  catalogSiblingNames,
+  filterWorkFileGroups,
+  type WorkFileSearch,
+  workFileSearch,
+} from "./work-files-model";
 
 type Scheme = "scratch" | "uploads";
 type UploadAttempt = { key: string; name: string; state: "uploading" | "failed" };
+type ScratchNoteAttempt = { key: string; name: string; state: "creating" | "failed" };
 
 export function useWorkFiles(projectId: string, work: Work) {
   const scratch = useContextCatalogView(projectId, "scratch", { workId: work.id });
@@ -46,6 +54,7 @@ export function useWorkFiles(projectId: string, work: Work) {
   const queryClient = useQueryClient();
   const [renaming, setRenaming] = useState<string | null>(null);
   const [attempts, setAttempts] = useState<UploadAttempt[]>([]);
+  const [scratchNoteAttempt, setScratchNoteAttempt] = useState<ScratchNoteAttempt | null>(null);
   const picker = useRef<HTMLInputElement>(null);
 
   const submitFiles = useCallback(
@@ -73,24 +82,41 @@ export function useWorkFiles(projectId: string, work: Work) {
     [projectId, queryClient, work.id],
   );
 
-  const createScratch = useCallback(async () => {
-    const name = `Scratch note ${new Date().toLocaleDateString().replaceAll("/", "-")}.md`;
-    try {
-      await create.mutateAsync({
-        scheme: "scratch",
-        type: "file",
-        path: name,
-        content: "",
-        workId: work.id,
-      });
-      setRenaming(name);
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.contextCatalogView(projectId, "scratch", work.id),
-      });
-    } catch {
-      /* the catalog query exposes the failed create on refresh */
-    }
-  }, [create, projectId, queryClient, work.id]);
+  const createScratch = useCallback(
+    async (retry?: ScratchNoteAttempt) => {
+      const siblingNames = [
+        ...(scratch.catalog?.children(scratch.catalog.root.entryId).map((entry) => entry.name) ??
+          []),
+        ...(scratchNoteAttempt ? [scratchNoteAttempt.name] : []),
+      ];
+      const name =
+        retry?.name ??
+        uniqueScratchNoteName(
+          `Scratch note ${new Date().toLocaleDateString().replaceAll("/", "-")}.md`,
+          siblingNames,
+        );
+      const attempt = { key: retry?.key ?? crypto.randomUUID(), name, state: "creating" as const };
+      setScratchNoteAttempt(attempt);
+      try {
+        await create.mutateAsync({
+          scheme: "scratch",
+          type: "file",
+          path: name,
+          content: "",
+          workId: work.id,
+        });
+        setRenaming(name);
+        setScratchNoteAttempt(null);
+      } catch {
+        setScratchNoteAttempt({ ...attempt, state: "failed" });
+      }
+    },
+    [create, scratch.catalog, scratchNoteAttempt, work.id],
+  );
+  const retryScratchNote = useCallback(() => {
+    if (scratchNoteAttempt) void createScratch(scratchNoteAttempt);
+  }, [createScratch, scratchNoteAttempt]);
+  const dismissScratchNote = useCallback(() => setScratchNoteAttempt(null), []);
 
   return {
     scratch,
@@ -99,6 +125,9 @@ export function useWorkFiles(projectId: string, work: Work) {
     renaming,
     setRenaming,
     attempts,
+    scratchNoteAttempt,
+    retryScratchNote,
+    dismissScratchNote,
     dismissAttempt: (key: string) =>
       setAttempts((items) => items.filter((item) => item.key !== key)),
     picker,
@@ -139,7 +168,7 @@ export function WorkFilesActions({ files }: { files: WorkFiles }) {
       </Button>
       <Button
         size="sm"
-        disabled={files.creating}
+        disabled={files.creating || !files.scratch.catalog}
         onClick={() => void files.createScratch()}
         aria-label={t`New note`}
         className="[@media(pointer:coarse)]:min-h-11"
@@ -185,13 +214,13 @@ export function WorkFilesView({
           file.parentId === scratchRoot ||
           [...expanded].some((path) => file.path.startsWith(`${path}/`)),
       ) ?? [];
+  const matchesSearch = workFileSearch(search);
   const visible = filterWorkFileGroups(
     {
-      drafts: [],
       scratch: [...scratchFolders, ...scratchFiles],
       uploads: uploads.catalog?.files() ?? [],
     },
-    search,
+    matchesSearch,
   );
   const toggleFolder = (path: string) =>
     setExpanded((current) => {
@@ -222,7 +251,7 @@ export function WorkFilesView({
         void files.submitFiles(event.dataTransfer.files);
       }}
     >
-      <Drafts projectId={projectId} work={work} commands={commands} search={search} />
+      <Drafts projectId={projectId} work={work} commands={commands} matchesSearch={matchesSearch} />
       <Group label={t`Scratch`}>
         {scratch.isError ? (
           <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />
@@ -233,7 +262,11 @@ export function WorkFilesView({
             {visible.scratch.map((node, index) => (
               <li
                 key={node.entryId}
-                className={cn("relative", index < visible.scratch.length - 1 && "row-rule")}
+                className={cn(
+                  "relative",
+                  (index < visible.scratch.length - 1 || Boolean(files.scratchNoteAttempt)) &&
+                    "row-rule",
+                )}
               >
                 {node.kind === "dir" ? (
                   <FolderRow
@@ -247,7 +280,7 @@ export function WorkFilesView({
                     work={work}
                     scheme="scratch"
                     file={node}
-                    siblingNames={scratchFiles.map((item) => item.name)}
+                    siblingNames={catalogSiblingNames(scratch.catalog, node)}
                     renaming={files.renaming === node.path}
                     onRename={files.setRenaming}
                     onDelete={() =>
@@ -263,7 +296,7 @@ export function WorkFilesView({
               </li>
             ))}
           </ul>
-        ) : (
+        ) : files.scratchNoteAttempt ? null : (
           <Quiet>
             {search ? (
               <Trans>No scratch notes match “{search}”.</Trans>
@@ -272,6 +305,20 @@ export function WorkFilesView({
             )}
           </Quiet>
         )}
+        {files.scratchNoteAttempt ? (
+          <ul className="-mx-2 min-w-0">
+            <li className="relative">
+              <FileAttemptRow
+                name={files.scratchNoteAttempt.name}
+                state={files.scratchNoteAttempt.state}
+                pendingLabel={<Trans>Creating…</Trans>}
+                failureLabel={<Trans>Couldn’t create note</Trans>}
+                onRetry={files.retryScratchNote}
+                onDismiss={files.dismissScratchNote}
+              />
+            </li>
+          </ul>
+        ) : null}
       </Group>
       <Group label={t`Uploads`}>
         {uploads.isError ? (
@@ -293,7 +340,7 @@ export function WorkFilesView({
                   work={work}
                   scheme="uploads"
                   file={file}
-                  siblingNames={visible.uploads.map((item) => item.name)}
+                  siblingNames={catalogSiblingNames(uploads.catalog, file)}
                   renaming={files.renaming === file.path}
                   onRename={files.setRenaming}
                 />
@@ -304,7 +351,13 @@ export function WorkFilesView({
                 key={attempt.key}
                 className={cn("relative", index < files.attempts.length - 1 && "row-rule")}
               >
-                <UploadAttemptRow attempt={attempt} onDismiss={files.dismissAttempt} />
+                <FileAttemptRow
+                  name={attempt.name}
+                  state={attempt.state === "uploading" ? "pending" : "failed"}
+                  pendingLabel={<Trans>Uploading…</Trans>}
+                  failureLabel={<Trans>Couldn’t upload</Trans>}
+                  onDismiss={() => files.dismissAttempt(attempt.key)}
+                />
               </li>
             ))}
           </ul>
@@ -339,22 +392,20 @@ function Drafts({
   projectId,
   work,
   commands,
-  search,
+  matchesSearch,
 }: {
   projectId: string;
   work: Work;
   commands: ProjectRouteCommands;
-  search: string;
+  matchesSearch: WorkFileSearch;
 }) {
   const query = useWorkDrafts(projectId, work.id);
   const groups = activeWorkDraftGroups(
     usePostApplyDraftGroupProjections(query.groups, projectId, work.id).commandEligibleGroups,
   );
   const workId = parseRequestId(work.id);
-  const needle = search.trim().toLowerCase();
-  const visible = groups.filter(
-    (group) =>
-      !needle || (group.documentName || group.contextPath || "").toLowerCase().includes(needle),
+  const visible = groups.filter((group) =>
+    matchesSearch(group.documentName || group.contextPath || ""),
   );
   // Drafts appear only when there is something to review; never a loading flash.
   if (query.status !== "error" && visible.length === 0) return null;
@@ -452,7 +503,7 @@ function CatalogFileRow({
   work: Work;
   scheme: Scheme;
   file: CatalogFile;
-  siblingNames: string[];
+  siblingNames: readonly string[];
   renaming: boolean;
   onRename: (path: string | null) => void;
   onDelete?: () => void;
@@ -480,32 +531,7 @@ function CatalogFileRow({
     if (action === "rename") onRename(file.path);
     if (action === "delete") onDelete?.();
   };
-  const open = () =>
-    openFile(
-      scheme === "scratch"
-        ? {
-            kind: "viewer",
-            documentId: file.documentId,
-            scheme,
-            path: file.path,
-            name: file.name,
-            workId: work.id,
-            editable: false,
-            fileType: "binary",
-            mimeType: "text/markdown",
-          }
-        : {
-            kind: "viewer",
-            documentId: file.documentId,
-            scheme,
-            path: file.path,
-            name: file.name,
-            workId: work.id,
-            editable: false,
-            fileType: file.editable ? "binary" : file.fileType,
-            mimeType: file.editable ? undefined : file.mimeType,
-          },
-    );
+  const open = () => openFile(viewerTabForCatalogFile(file, scheme, work.id));
   return (
     <ContextEntryMenu allowCreate={false} allowDelete={Boolean(onDelete)} onAction={onAction}>
       <div
@@ -538,33 +564,40 @@ function CatalogFileRow({
   );
 }
 
-function UploadAttemptRow({
-  attempt,
+function FileAttemptRow({
+  name,
+  state,
+  pendingLabel,
+  failureLabel,
+  onRetry,
   onDismiss,
 }: {
-  attempt: UploadAttempt;
-  onDismiss: (key: string) => void;
+  name: string;
+  state: "pending" | "creating" | "uploading" | "failed";
+  pendingLabel: React.ReactNode;
+  failureLabel: React.ReactNode;
+  onRetry?: () => void;
+  onDismiss?: () => void;
 }) {
   return (
     <div className="flex min-h-10 min-w-0 items-center gap-3 px-2 py-1.5 text-sm">
-      <RowIcon icon={fileKindIcon(attempt.name)} />
-      <span className="min-w-0 flex-1 truncate font-medium text-muted-foreground">
-        {attempt.name}
-      </span>
-      {attempt.state === "uploading" ? (
+      <RowIcon icon={fileKindIcon(name)} />
+      <span className="min-w-0 flex-1 truncate font-medium text-muted-foreground">{name}</span>
+      {state !== "failed" ? (
         <span role="status" className="shrink-0 text-xs text-ink-subtle">
-          <Trans>Uploading…</Trans>
+          {pendingLabel}
         </span>
       ) : (
         <>
           <span role="alert" className="shrink-0 text-xs text-destructive">
-            <Trans>Couldn’t upload</Trans>
+            {failureLabel}
           </span>
-          <button
-            type="button"
-            className="text-button shrink-0 text-xs"
-            onClick={() => onDismiss(attempt.key)}
-          >
+          {onRetry ? (
+            <button type="button" className="text-button shrink-0 text-xs" onClick={onRetry}>
+              <Trans>Retry</Trans>
+            </button>
+          ) : null}
+          <button type="button" className="text-button shrink-0 text-xs" onClick={onDismiss}>
             <Trans>Dismiss</Trans>
           </button>
         </>
@@ -585,7 +618,7 @@ function InlineRename({
   workId: string;
   scheme: Scheme;
   file: CatalogFile;
-  siblingNames: string[];
+  siblingNames: readonly string[];
   onDone: () => void;
 }) {
   const form = useRenameEntryForm({

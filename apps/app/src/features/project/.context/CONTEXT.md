@@ -55,14 +55,15 @@ active and archived Work and owns creation and lifecycle entry points; it never 
   a project-wide Work or rebinds a chat. Its response contains only named catalog
   Works and never lists No Work as a row. Route-owned detail and inline metadata consume
 the typed catalog, PATCH mutation, and filtered chat-feed query seams.
-Work detail owns one page-scoped metadata controller. It coordinates the active field,
-authoritative returned Work, field-local failure, and an awaited Save/Discard/Keep
-editing decision with the route-owned navigation guard; leaves only submit intents through it.
-Hard unload uses the router's native before-unload integration rather than a second
-draft owner.
-Incoming authoritative Work revisions update the clean baseline without replacing the
-active draft. One-shot focus intents bridge detail close/delete to the collection;
-they are route continuity, not Work selection or persistent state.
+Work detail's route Work is the sole source for title and description values. The
+Work update command optimistically patches the works snapshot query and restores
+the prior snapshot on rejection; acquisition watermarks keep an older in-flight
+snapshot from erasing that patch. The page-scoped metadata controller owns only
+the description draft, field-local failure, and the route leave decision. A dirty
+description offers Save, Discard, or Keep editing; hard unload uses the router's
+native before-unload integration rather than a second draft owner. The collection
+focuses its heading after the catalog resolves. `useArchiveFocusFollow` separately
+follows a Work row when Archive moves it between sections.
 Detail composes identity and lifecycle, Goal, pending drafts, Scratch,
 Uploads, and associated chats. Associated chats use bounded cursor pages and the
 same virtualized, borderless project chat row as the Chat index without adding a nested
@@ -79,7 +80,8 @@ Work's `…` menu at the far right. The phone top bar shows the same pieces as a
 `Work › <name>` trail. Delete state (`useWorkDeletion`) lives above the screen so
 the band's menu and the collection's Undo row share it. The page body starts with
 the Work's heading (`WorkHeading`), renamed in place like the tab; both titles
-show a rename at once through one shared pending name (`useWorkRename`). Then
+read the same route Work, so the update command's cache projection publishes a
+rename in both places at once. Then
 the description: clicking a clamped description shows all of it, Show less folds
 it, and a right-aligned Edit edits it in place without moving (see DESIGN.md),
 with Cancel and Save right-aligned below. The last opened Work is remembered
@@ -94,7 +96,12 @@ The collection, the Chats tab and the Files tab share the app's list grammar
 (Chat index, Editor recents): recency-rank `SectionLabel` groups, hairline
 `row-rule` rows with hover pills, a trailing age or state, and one `…` menu
 (`WorkActionsMenu` for Work, the tree's `ContextEntryActions` for files). The
-Work toolbar is one sticky row: view switch, full-width search, then the view's
+route dispatcher is `WorkScreen`; `WorkCollection` and
+`WorkCreationDestination` own their page bodies. `WorkCollection` receives the
+shared deletion controller as a required prop. `useWorkArchiveToggle` is shared
+by the collection and band; `useArchiveFocusFollow` owns collection focus after
+Archive or Unarchive.
+The Work toolbar is one sticky row: view switch, full-width search, then the view's
 jade action. Both shells share this route-owned module. At phone geometry, text
 must wrap without horizontal overflow and product controls retain coarse-pointer touch
 targets.
@@ -103,6 +110,10 @@ The Work dock has one transient read-only file slot for Scratch and Uploads. Its
 session-only `workFile` state carries `{ workId, tab }`; opening a second file
 replaces the first. `DockShell` keeps the Chat occupant mounted and inert behind
 the viewer, and the contained dock switch can return to Chat or close the file.
+`viewerTabForCatalogFile` is the common catalog-file to viewer-tab builder for
+Scratch and Uploads. Files search uses one name matcher across drafts,
+Scratch, and Uploads; rename collisions use direct catalog siblings, and a
+failed New note remains as a retryable, dismissible attempt row.
 `ProjectView` clears the slot when its Work changes or the Work destination
 leaves. It reconciles against the route screen and Work identity, including
 unresolved client-addressed creation routes, so the collection and other screens

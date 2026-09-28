@@ -1,4 +1,4 @@
-import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
+import type { UpdateWorkRequest, Work, WorksSnapshot } from "@meridian/contracts/works";
 import {
   type QueryClient,
   type UseMutateAsyncFunction,
@@ -28,7 +28,9 @@ import {
 import { convergeWorkProjection } from "./work-projection-cache";
 import {
   acquireWorksSnapshot,
+  beginWorksSnapshotRequest,
   repairWorksSnapshot,
+  seedWorksSnapshot,
   workFromSnapshot,
 } from "./works-projection-acquisition";
 
@@ -132,6 +134,8 @@ export function useWorkMutations(projectId: string): WorkMutations {
 
 type WorkOperation = "update" | "archive" | "unarchive" | "delete" | "restore";
 
+type WorkUpdateContext = { previous: WorksSnapshot | undefined };
+
 function useWorkCommand<TResult, TVariables>(
   client: QueryClient,
   projectId: string,
@@ -139,10 +143,48 @@ function useWorkCommand<TResult, TVariables>(
   command: (variables: TVariables) => Promise<TResult>,
   options: { scope?: { id: string } } = {},
 ): WorkCommand<TResult, TVariables> {
-  const mutation = useMutation<TResult, Error, TVariables>({
+  const mutation = useMutation<TResult, Error, TVariables, WorkUpdateContext>({
     mutationFn: command,
     scope: options.scope,
-    onSuccess: () => convergeWorkCommand(client, projectId, operation),
+    onMutate:
+      operation === "update"
+        ? async (variables): Promise<WorkUpdateContext> => {
+            const queryKey = projectQueryKeys.works(projectId);
+            await client.cancelQueries({ queryKey, exact: true });
+            const previous = client.getQueryData<WorksSnapshot>(queryKey);
+            if (previous) {
+              const { workId, data } = variables as {
+                workId: string;
+                data: UpdateWorkRequest;
+              };
+              const patchWork = <T extends Work>(work: T): T =>
+                work.id === workId
+                  ? ({ ...work, ...data, updatedAt: new Date().toISOString() } as T)
+                  : work;
+              const optimistic = {
+                ...previous,
+                works: previous.works.map(patchWork),
+                noWork: patchWork(previous.noWork),
+              };
+              // Advance the acquisition watermark as well as the cache. An
+              // older request can write directly from the snapshot adapter.
+              seedWorksSnapshot(client, optimistic, beginWorksSnapshotRequest(projectId));
+            }
+            return { previous };
+          }
+        : undefined,
+    onError:
+      operation === "update"
+        ? (_error, _variables, context) => {
+            if (!context?.previous) return;
+            seedWorksSnapshot(client, context.previous, beginWorksSnapshotRequest(projectId));
+          }
+        : undefined,
+    onSuccess: () => {
+      if (operation !== "update") return convergeWorkCommand(client, projectId, operation);
+    },
+    onSettled:
+      operation === "update" ? () => convergeWorkCommand(client, projectId, operation) : undefined,
   });
   return {
     mutate: mutation.mutate,

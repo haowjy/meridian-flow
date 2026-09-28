@@ -6,6 +6,7 @@ import type {
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
+import type { CatalogFile } from "@/client/query/context-catalog-projection";
 export type ContextTab =
   | {
       tabInstanceId?: string;
@@ -59,6 +60,26 @@ export type ContextTab =
     };
 
 export type ServerContextTab = Extract<ContextTab, { kind: "tracked" | "viewer" }>;
+
+/** Build the read-only viewer tab used by Work's Scratch and Uploads dock. */
+export function viewerTabForCatalogFile(
+  file: CatalogFile,
+  scheme: ProjectContextTreeScheme,
+  workId: string,
+): Extract<ContextTab, { kind: "viewer" }> {
+  const scratch = scheme === "scratch";
+  return {
+    kind: "viewer",
+    documentId: file.documentId,
+    scheme,
+    path: file.path,
+    name: file.name,
+    workId,
+    editable: false,
+    fileType: scratch || file.editable ? "binary" : file.fileType,
+    mimeType: scratch ? "text/markdown" : file.editable ? undefined : file.mimeType,
+  };
+}
 
 export type ProjectTabsSlice = {
   tabs: ContextTab[];

@@ -7,15 +7,16 @@ import { t } from "@lingui/core/macro";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import { Layers } from "lucide-react";
 import { readCurrentWork } from "@/client/current-work";
-import { useWorkMutations, useWorks } from "@/client/query/useWorks";
+import { useWorks } from "@/client/query/useWorks";
 import { useAccountId } from "../context/account-feature-context";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
 import { IndexTabChip, ReturnTabChip } from "../shell/IndexTabChip";
+import { routeWorkIdentity } from "./route-work-identity";
+import { useWorkArchiveToggle } from "./useWorkArchiveToggle";
 import { useWorkCreationRecords } from "./useWorkCreation";
 import type { WorkDeletion } from "./useWorkDeletion";
 import { WorkActionsMenu } from "./WorkActionsMenu";
 import { PendingWorkTitleTab, WorkTitleTab } from "./WorkTitles";
-import { holdWorkCollectionFocus } from "./work-focus-intent";
 
 /** The Work destination's chrome pieces, shared by the desktop band and the phone top bar. */
 export function useWorkChrome(
@@ -26,15 +27,14 @@ export function useWorkChrome(
   /** `tab` in the desktop band; `quiet` in the phone top bar's trail. */
   variant: "tab" | "quiet",
 ) {
-  const mutations = useWorkMutations(projectId);
+  const archiveToggle = useWorkArchiveToggle(projectId);
   const creations = useWorkCreationRecords(projectId);
   const onCollection = routeWork.status === "none" || routeWork.status === "new";
-  const pendingId = routeWork.status === "unresolved" ? parseRequestId(routeWork.slug) : null;
+  const pendingId = routeWork.status === "unresolved" ? routeWorkIdentity(routeWork) : null;
   const pendingName = pendingId
     ? creations.find((creation) => creation.workId === pendingId)?.request.name
     : undefined;
   const openCollection = () => {
-    holdWorkCollectionFocus(projectId, { kind: "heading" });
     void routeCommands.closeWork({ replace: false });
   };
   const work = routeWork.status === "present" ? routeWork.work : null;
@@ -75,10 +75,8 @@ export function useWorkChrome(
     actions: work ? (
       <WorkActionsMenu
         work={work}
-        disabled={mutations.isPending}
-        onToggleArchive={() =>
-          (work.status === "archived" ? mutations.unarchive : mutations.archive).mutate(work.id)
-        }
+        disabled={archiveToggle.isPending}
+        onToggleArchive={() => archiveToggle.toggle(work)}
         onDelete={() => onDelete(work, "detail")}
       />
     ) : null,

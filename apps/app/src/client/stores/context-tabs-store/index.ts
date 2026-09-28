@@ -19,4 +19,5 @@ export {
   useContextTabs,
   useContextTabsActions,
   useContextTabsStore,
+  viewerTabForCatalogFile,
 } from "./context-tabs-store";

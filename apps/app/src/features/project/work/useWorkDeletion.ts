@@ -2,17 +2,16 @@
  * Optimistic Work deletion with Undo, owned above the Work screen so the pane
  * chrome (the band's `…` menu) and the collection share one delete state.
  */
-import { parseRequestId } from "@meridian/contracts/request-id";
 import type { Work } from "@meridian/contracts/works";
 import { useEffect, useState } from "react";
 import { useWorkMutations } from "@/client/query/useWorks";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
+import { routeWorkIdentity } from "./route-work-identity";
 import {
   emptyWorkDeleteState,
   type WorkDeleteState,
   workDeleteTransition,
 } from "./work-delete-state";
-import { holdWorkCollectionFocus } from "./work-focus-intent";
 
 export type WorkDeletion = {
   state: WorkDeleteState;
@@ -32,12 +31,7 @@ export function useWorkDeletion(
   const [state, setState] = useState<WorkDeleteState>(emptyWorkDeleteState);
   const failed = () =>
     setState((current) => workDeleteTransition(current, { type: "delete-failed" }));
-  const routeWorkId =
-    routeWork.status === "present"
-      ? routeWork.workId
-      : routeWork.status === "unresolved"
-        ? parseRequestId(routeWork.slug)
-        : null;
+  const routeWorkId = routeWorkIdentity(routeWork);
   // Opening another Work or starting a new one ends the Undo window.
   useEffect(() => {
     if (routeWork.status === "new") {
@@ -56,7 +50,6 @@ export function useWorkDeletion(
     remove: (work, from) => {
       setState((current) => workDeleteTransition(current, { type: "delete", work }));
       if (from === "detail") {
-        holdWorkCollectionFocus(projectId, { kind: "heading" });
         void routeCommands.closeWork({ replace: true });
       }
       mutations.delete.mutate(work.id, { onError: failed });
@@ -77,6 +70,6 @@ export function useWorkDeletion(
           setState((current) => workDeleteTransition(current, { type: "restore-failed" })),
       });
     },
-    dismiss: () => setState(emptyWorkDeleteState()),
+    dismiss: () => setState((current) => workDeleteTransition(current, { type: "dismiss" })),
   };
 }

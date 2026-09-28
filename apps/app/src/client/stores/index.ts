@@ -25,6 +25,7 @@ export {
   useContextTabs,
   useContextTabsActions,
   useContextTabsStore,
+  viewerTabForCatalogFile,
 } from "./context-tabs-store";
 export type { ProjectStoreActions, ProjectStoreState } from "./project-store";
 export {

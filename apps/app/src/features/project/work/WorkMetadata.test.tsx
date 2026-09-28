@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Work description edit safety and clamped display behavior. */
 import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
-import { act } from "react";
+import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { useWorkMetadataController, WorkDescription } from "./WorkMetadata";
@@ -32,8 +32,39 @@ const WORK: Work = {
   deletedAt: null,
 };
 function Harness({ saveWork }: { saveWork: (data: UpdateWorkRequest) => Promise<Work> }) {
-  const controller = useWorkMetadataController(WORK, saveWork);
-  return <WorkDescription controller={controller} />;
+  const [work, setWork] = useState(WORK);
+  const controller = useWorkMetadataController(work, async (data) => {
+    const updated = await saveWork(data);
+    setWork(updated);
+    return updated;
+  });
+  return <WorkDescription work={work} controller={controller} />;
+}
+function LeaveGuardHarness({ saveWork }: { saveWork: (data: UpdateWorkRequest) => Promise<Work> }) {
+  const [work, setWork] = useState(WORK);
+  const [result, setResult] = useState("");
+  const controller = useWorkMetadataController(work, async (data) => {
+    const updated = await saveWork(data);
+    setWork(updated);
+    return updated;
+  });
+  return (
+    <>
+      <WorkDescription work={work} controller={controller} />
+      <button
+        type="button"
+        onClick={() =>
+          controller.request({ run: () => setResult("left"), cancel: () => setResult("kept") })
+        }
+      >
+        Leave
+      </button>
+      <button type="button" onClick={controller.discardAndResume}>
+        Discard and leave
+      </button>
+      <output>{controller.held ? "decision" : result}</output>
+    </>
+  );
 }
 function setValue(node: HTMLInputElement | HTMLTextAreaElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(node), "value")?.set;
@@ -87,6 +118,32 @@ describe("WorkMetadata", () => {
           null,
       );
       expect(saveWork).toHaveBeenCalledWith({ goal: "A changed description" });
+      expect(document.querySelector("textarea")).toBeNull();
+    });
+  });
+
+  it("holds a leave intent until a dirty description is explicitly discarded", async () => {
+    const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
+    await withReactRoot(<LeaveGuardHarness saveWork={saveWork} />, async () => {
+      await click(
+        [...document.querySelectorAll("button")].find((button) => button.textContent === "Edit") ??
+          null,
+      );
+      const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
+      if (!textarea) throw new Error("Description editor did not open");
+      await act(async () => setValue(textarea, "Changed description"));
+      await click(
+        [...document.querySelectorAll("button")].find((button) => button.textContent === "Leave") ??
+          null,
+      );
+      expect(document.querySelector("output")?.textContent).toBe("decision");
+      expect(saveWork).not.toHaveBeenCalled();
+      await click(
+        [...document.querySelectorAll("button")].find(
+          (button) => button.textContent === "Discard and leave",
+        ) ?? null,
+      );
+      expect(document.querySelector("output")?.textContent).toBe("left");
       expect(document.querySelector("textarea")).toBeNull();
     });
   });

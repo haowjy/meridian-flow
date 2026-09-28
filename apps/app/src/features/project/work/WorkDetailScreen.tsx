@@ -19,6 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
+import { NextPage } from "../chat-index/ChatIndex";
 import { ChatIndexList, type ChatIndexRowProps } from "../chat-index/ChatIndexList";
 import { ChatIndexLoading } from "../chat-index/ChatIndexLoading";
 import { useChatRowCommands } from "../chat-list/useChatRowCommands";
@@ -39,10 +40,6 @@ export type WorkDetailScreenProps = {
   routeCommands: ProjectRouteCommands;
 };
 
-/**
- * One compact header block: back link, name and status share the top row with
- * the actions menu pinned right; the description sits directly beneath.
- */
 /**
  * The Work page's own header block under the band: the description (or a
  * pending Work's state), then one sticky toolbar row.
@@ -127,7 +124,7 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
     return () => window.clearTimeout(timer);
   }, [searchText]);
   useProjectLeaveGuard({
-    request: (intent) => controller.request({ ...intent, label: t`Continue navigation` }),
+    request: controller.request,
     dirty: () => controller.dirty,
     cancel: controller.keepEditing,
   });
@@ -138,7 +135,7 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
           description={
             <>
               <WorkHeading projectId={projectId} work={work} />
-              <WorkDescription controller={controller} />
+              <WorkDescription work={work} controller={controller} />
             </>
           }
           view={view}
@@ -194,7 +191,7 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
         ) : (
           <WorkFilesView
             projectId={projectId}
-            work={controller.work}
+            work={work}
             commands={routeCommands}
             search={filesSearch}
             files={files}
@@ -262,39 +259,9 @@ function WorkChatList({
         deleteFailure={deleteFailure}
         retryDelete={retryDelete}
       />
-      <WorkChatNextPage feed={feed} />
+      <NextPage feed={feed} />
     </>
   );
-}
-function WorkChatNextPage({ feed }: { feed: ReturnType<typeof useProjectChatFeed> }) {
-  const sentinel = useRef<HTMLDivElement>(null);
-  const pages = feed.data?.pages.length;
-  const { fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError } = feed;
-  useEffect(() => {
-    if (!sentinel.current || !hasNextPage || isFetchingNextPage || isFetchNextPageError) return;
-    let active = true;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (!active || !entry?.isIntersecting) return;
-        active = false;
-        void fetchNextPage();
-      },
-      { rootMargin: "240px" },
-    );
-    observer.observe(sentinel.current);
-    return () => {
-      active = false;
-      observer.disconnect();
-    };
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError, pages]);
-  if (isFetchNextPageError)
-    return (
-      <InlineErrorRow
-        message={<Trans>More chats couldn’t load.</Trans>}
-        onRetry={() => void fetchNextPage()}
-      />
-    );
-  return <div ref={sentinel} aria-hidden className="h-px" />;
 }
 function DirtyDecision({ controller }: { controller: WorkMetadataController }) {
   return (
@@ -305,7 +272,7 @@ function DirtyDecision({ controller }: { controller: WorkMetadataController }) {
       >
         <DialogHeader>
           <DialogTitle>
-            <Trans>Save metadata changes?</Trans>
+            <Trans>Save description changes?</Trans>
           </DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">

@@ -16,14 +16,14 @@ import { useWorkRename } from "./useWorkRename";
 const headingClass = "min-w-0 text-xl font-semibold tracking-tight [overflow-wrap:anywhere]";
 
 function useTitleEditing(projectId: string, work: Work) {
-  const { name, rename } = useWorkRename(projectId, work);
+  const { rename } = useWorkRename(projectId, work);
   const [editing, setEditing] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   return {
-    name,
+    name: work.name,
     editing,
     failed,
-    start: () => setEditing(name),
+    start: () => setEditing(work.name),
     commit: (next: string) => {
       setEditing(null);
       setFailed(false);
