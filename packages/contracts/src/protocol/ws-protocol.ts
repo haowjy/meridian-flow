@@ -161,7 +161,12 @@ const pendingInboxItemSchema: z.ZodType<import("../threads/index.js").PendingInb
   id: z.string().min(1),
   seq: z.number().int(),
   intent: z.enum(["message", "notice", "control"]),
-  control: z.object({ kind: z.literal("compact") }).optional(),
+  control: z
+    .discriminatedUnion("kind", [
+      z.object({ kind: z.literal("compact") }),
+      z.object({ kind: z.literal("compaction_undo"), compactionTurnId: z.string().uuid() }),
+    ])
+    .optional(),
   provenance: messageProvenanceSchema,
   deliveryState: z.enum(["awaiting_run", "waiting"]),
   summary: z.string(),

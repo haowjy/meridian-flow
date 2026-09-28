@@ -32,6 +32,11 @@ export function createThreadControls(deps: {
         const existing = await deps.findMessage(input.id);
         if (existing && (existing.threadId !== input.threadId || existing.intent !== "control"))
           throw new ThreadControlError(409, "control_id_conflict");
+        if (!existing && input.control.kind === "compaction_undo") {
+          const target = await deps.findTurn(input.control.compactionTurnId);
+          if (!target || target.threadId !== input.threadId || target.role !== "compaction")
+            throw new ThreadControlError(404, "compaction_not_found");
+        }
         const row =
           existing ??
           (await deps.enqueue({

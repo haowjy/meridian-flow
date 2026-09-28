@@ -33,6 +33,7 @@ export function createThreadRuntimeService(deps: {
   executionReports: Pick<ExecutionReportRepository, "listLatestByChildren">;
   /** Reads the thread's undelivered inbox as the writer-facing pending shape. */
   readPending: (threadId: ThreadId) => Promise<ThreadPendingInbox>;
+  readCompactionUndo?: import("./ports/repositories.js").ThreadLiveReaders["readCompactionUndo"];
 }) {
   async function requireOwnedThread(threadId: ThreadId, userId: UserId): Promise<OwnedThread> {
     const [thread] = await deps.db
@@ -84,6 +85,7 @@ export function createThreadRuntimeService(deps: {
   }
 
   return {
+    readCompactionUndo: deps.readCompactionUndo,
     requireOwnedThread,
     liveState,
     /** The lease-derived status seam, exposed so snapshot reads share it. */

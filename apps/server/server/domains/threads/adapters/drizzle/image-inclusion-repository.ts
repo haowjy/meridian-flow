@@ -8,7 +8,7 @@ export function createDrizzleThreadImageInclusionRepository(
   db: DrizzleDb,
 ): ThreadImageInclusionRepository {
   return {
-    async findByThread(threadId) {
+    async findByThread(threadId, revertedCompactions) {
       const rows = await currentDrizzleDb(db)
         .select({
           threadId: schema.threadImageInclusions.threadId,
@@ -22,7 +22,8 @@ export function createDrizzleThreadImageInclusionRepository(
         .where(eq(schema.threadImageInclusions.threadId, threadId))
         .orderBy(asc(schema.turns.position));
       const latest = new Map<string, (typeof rows)[number]>();
-      for (const row of rows) latest.set(row.blockId, row);
+      for (const row of rows)
+        if (!revertedCompactions?.has(row.decisionTurnId)) latest.set(row.blockId, row);
       return [...latest.values()].map(({ position: _position, ...decision }) => decision);
     },
     async listByThread(threadId) {

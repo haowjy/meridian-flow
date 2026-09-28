@@ -434,6 +434,7 @@ export type ThreadSnapshotAncestor = {
 };
 
 export type ThreadSnapshotResponse = {
+  compactionUndo: import("../threads/index.js").CompactionUndoAvailability;
   threadId: string;
   thread: Thread;
   turns: Turn[];

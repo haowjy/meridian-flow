@@ -64,6 +64,7 @@ export {
   projectActiveHistory,
   resolveCompactionTrigger,
 } from "./loop/compaction/index.js";
+export { createCompactionUndoReader } from "./loop/compaction-undo.js";
 export {
   createNoopInterruptArtifactFlushPort,
   type InterruptArtifactFlushPort,

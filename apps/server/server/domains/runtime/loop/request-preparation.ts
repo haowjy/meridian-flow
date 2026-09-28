@@ -1,3 +1,4 @@
+import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 /** Request preparation stages references and image decisions without writes, then measures compaction. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Thread, Turn } from "@meridian/contracts/threads";
@@ -11,6 +12,8 @@ import {
   decideCompaction,
   type ForcedCompactionDecision,
 } from "./compaction/decision.js";
+import { type PreparedUndo, prepareCompactionUndo } from "./compaction-undo.js";
+import type { ControlMessage } from "./control-barrier.js";
 import type { CompactionImageProjectionMode, ImageInclusionDecision } from "./image-context.js";
 import { createLocalTurn } from "./local-turn.js";
 import type { OrchestratorDeps, OrchestratorRepositories } from "./orchestrator.js";
@@ -18,7 +21,7 @@ import { createPrefixCacheStateService } from "./prefix-cache-state.js";
 import { loadReferenceReads } from "./reference-context.js";
 import { type AssembledNextTurnContext, assembleNextTurnContext } from "./turn-context-assembly.js";
 
-export async function prepareRequestContext(input: {
+export type PrepareRequestInput = {
   deps: OrchestratorDeps;
   thread: Thread;
   threadId: ThreadId;
@@ -32,14 +35,90 @@ export async function prepareRequestContext(input: {
   forcedDecision?: ForcedCompactionDecision;
   imageProjectionMode?: CompactionImageProjectionMode;
   controlMessageId?: string;
+  controls?: readonly ControlMessage[];
+  failedUndoIds?: ReadonlySet<string>;
+  assertNoResponseScope?: () => void;
   pinnedRequestTurnIds?: ReadonlySet<string>;
   promptBakes?: OrchestratorRepositories["promptBakes"];
   signal?: AbortSignal;
-}): Promise<{
+};
+export type PreparedRequest = {
+  undos: PreparedUndo[];
+  turns: Turn[];
+  blocks: Block[];
   assembled: AssembledNextTurnContext;
   events: OrchestratorEvent[];
   compaction: CompactionDecision;
-}> {
+};
+
+export async function prepareRequestContext(input: PrepareRequestInput): Promise<PreparedRequest> {
+  const undos: PreparedUndo[] = [];
+  let turns = input.turns;
+  let blocks = input.blocks;
+  for (const control of input.controls ?? []) {
+    if (control.body.kind !== "compaction_undo") continue;
+    const undo = await prepareCompactionUndo({
+      ...input,
+      turns,
+      blocks,
+      control,
+      forceFailure: input.failedUndoIds?.has(control.id),
+      assemble: async (turns, blocks) =>
+        (
+          await prepareBaseRequest({
+            ...input,
+            turns,
+            blocks,
+            skipCompaction: true,
+            controlMessageId: undefined,
+          })
+        ).assembled,
+    });
+    undos.push(undo);
+    turns = [...turns, undo.turn];
+    if (undo.block) blocks = [...blocks, localBlockFromEvent(undo.block)];
+  }
+  const compact = input.controls?.find((c) => c.body.kind === "compact");
+  const prepared = await prepareBaseRequest({
+    ...input,
+    turns,
+    blocks,
+    controlMessageId: compact?.id ?? input.controlMessageId,
+    skipCompaction: undos.length > 0 && !compact ? true : input.skipCompaction,
+  });
+  return {
+    ...prepared,
+    undos,
+    events: [
+      ...undos.flatMap(({ turn }): OrchestratorEvent[] => [
+        {
+          type: "turn.created",
+          turn:
+            turn.status === "complete" ? { ...turn, status: "pending", promptBakeId: null } : turn,
+        },
+        ...(turn.status === "error"
+          ? [
+              {
+                type: "turn.error" as const,
+                turn,
+                error: meridianErrorFromSystem(turn.error!, turn.error!),
+              },
+            ]
+          : []),
+      ]),
+      ...prepared.events,
+    ],
+    turns: [...undos.map((u) => u.turn), ...prepared.assembled.imageContextUpdates.turns],
+    blocks: [
+      ...undos.flatMap((u) => (u.block ? [localBlockFromEvent(u.block)] : [])),
+      ...prepared.assembled.imageContextUpdates.blocks,
+    ],
+  };
+}
+
+async function prepareBaseRequest(
+  input: PrepareRequestInput,
+): Promise<Omit<PreparedRequest, "undos" | "turns" | "blocks">> {
   const referenceUpdates =
     input.readReferences === false
       ? []

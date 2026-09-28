@@ -134,6 +134,13 @@
       "when": 1790562869160,
       "tag": "0018_odd_white_tiger",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790568368329,
+      "tag": "0019_curly_doomsday",
+      "breakpoints": true
     }
   ]
 }

@@ -1,3 +1,4 @@
+import { createCompactionUndoReader } from "../domains/runtime/index.js";
 /**
  * Composition root: wires production adapters into AppServices and owns the pure
  * runtime service graph. App startup supplies process-level resources; this file
@@ -875,6 +876,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       threads: ports.threadRepos.threads,
       executionReports: ports.threadRepos.executionReports,
       readPending,
+      readCompactionUndo: createCompactionUndoReader({
+        agentRevisions: ports.agentRevisions,
+        toolRegistry,
+        gateway: ports.gateway,
+      }),
     }),
     documentSync: ports.documentSync,
     contextPorts: ports.contextPorts,
@@ -1092,6 +1098,7 @@ export function createInMemoryAppServices(): AppServices {
     threadEventHub: inMemoryThreadEventHub,
     hub: inMemoryThreadEventHub,
     threadRuntime: {
+      readCompactionUndo: undefined,
       async requireOwnedThread() {
         throw new Error("in-memory thread runtime is not implemented");
       },

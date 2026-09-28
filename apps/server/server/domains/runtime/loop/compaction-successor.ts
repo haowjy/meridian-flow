@@ -154,7 +154,9 @@ export async function prepareCompactionSuccessor(args: {
           decidingTurnId: placeholder.id as TurnId,
         },
         skipCompaction: !selection?.control,
-        controlMessageId: selection?.control?.id,
+        assertNoResponseScope: args.assertNoResponseScope,
+        controls: selection?.controls,
+        failedUndoIds: selection?.failedUndoIds,
         pinnedRequestTurnIds: new Set(selection?.outstanding.map((row) => row.id)),
         signal: input.signal,
         promptBakes: {
@@ -209,8 +211,9 @@ export async function prepareCompactionContext(
   fittingTokens(next.assembled, prepared.decision.fitLimitTokens);
   return {
     events: next.events,
-    turns: next.assembled.imageContextUpdates.turns,
-    blocks: next.assembled.imageContextUpdates.blocks,
+    undos: next.undos,
+    turns: next.turns,
+    blocks: next.blocks,
     requiresSplit: true,
     context: next.assembled,
   };

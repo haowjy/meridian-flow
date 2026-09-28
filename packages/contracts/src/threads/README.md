@@ -21,3 +21,14 @@ plus the newest writer request; ids may identify user or directed system turns.
 See [the HTTP control API](../../../../docs/api/thread-controls.md) for enqueue
 idempotency and withdrawal outcomes. Frontend commands and divider rendering
 are separate from these transport contracts.
+
+### Compaction undo
+
+`ControlBody` accepts `{ kind: "compaction_undo", compactionTurnId: string }`.
+It shares the controls route, idempotency and pending WS projection with compact.
+Completed U is a system turn with `metadata.kind: "compaction_undo"`,
+`revertsCompactionTurnId`, `controlMessageId`, a reused `promptBakeId`, and frozen
+`elisions`. Refused U has no blocks or bake and puts its reason in `turn.error`.
+The snapshot always carries `compactionUndo`: null, or
+`{ turnId, availability: "likely" | "would_recompact" }`. Availability compares
+C's pre-cut size with the current trigger; actual execution remeasures.

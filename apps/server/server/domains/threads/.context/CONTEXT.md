@@ -556,3 +556,17 @@ Completed compactions require ordered `pinnedRequestTurnIds`, including every
 unanswered directed message in the run receipt and adoption batch. Failed
 manual dividers carry their reason in metadata and writer copy in `turn.error`.
 Control acknowledgement commits with the divider's ending, never B's response.
+
+### Compaction undo projection
+
+Complete undo markers identify reverted compactions and carry their own frozen
+model-only elisions. The active compaction is the latest complete C not reverted
+in the effective transcript. Runtime projects its tail, then applies the latest
+complete undo after it; refused markers have no blocks or bake and do not alter
+that projection. A fork cutoff includes or excludes U with the rest of its
+prefix. Image inclusion reads filter reverted deciding C IDs before selecting
+the latest decision per block, so pre-C exclusions can take effect again.
+
+`ThreadSnapshotResponse.compactionUndo` is null without an active local C;
+otherwise the runtime reader supplies `{ turnId, availability }` using today's
+Agent trigger. `likely` is advisory, not a promise of admission.

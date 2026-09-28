@@ -12,6 +12,7 @@
 - Compaction clears stale document reads, write text, search excerpts and references from model context. Fresh text and writer transcripts stay intact.
 
 ### Added
+- Undo local compactions under the prior prompt. Refuse restores that would compact again.
 - Record atomic document revisions on agent reads, searches, references, and settled writes without adding model-visible text.
 - Queue manual compaction in message order. Withdraw queued requests or stop running dividers.
 - Keep unanswered writer text and mentions verbatim across compaction. Failed optional summaries leave replies running.

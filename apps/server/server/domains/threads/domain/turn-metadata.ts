@@ -55,10 +55,23 @@ export const DerivationSeedMetadataCodec = z.object({
   derivation: z.enum(["fork", "handoff"]),
 });
 
-export const CompactionUndoMetadataCodec = z.object({
-  kind: z.literal("compaction_undo"),
-  revertsCompactionTurnId: z.string().min(1),
-});
+const modelElisionsCodec = z.array(
+  z.object({
+    blockId: z.string(),
+    treatment: z.enum(["stale_read", "stale_write"]),
+    uris: z.array(z.string()),
+    content: z.json(),
+  }),
+);
+
+export const CompactionUndoMetadataCodec = z
+  .object({
+    kind: z.literal("compaction_undo"),
+    revertsCompactionTurnId: z.string().min(1),
+    controlMessageId: z.string().optional(),
+    elisions: modelElisionsCodec.optional(),
+  })
+  .passthrough();
 
 const compactedThroughCodec = z.object({
   turnId: z.string().min(1),
@@ -67,16 +80,7 @@ const compactedThroughCodec = z.object({
 
 export const CompactionMetadataCodec = z
   .object({
-    elisions: z
-      .array(
-        z.object({
-          blockId: z.string(),
-          treatment: z.enum(["stale_read", "stale_write"]),
-          uris: z.array(z.string()),
-          content: z.json(),
-        }),
-      )
-      .optional(),
+    elisions: modelElisionsCodec.optional(),
     compactedThrough: compactedThroughCodec,
     pinnedRequestTurnIds: z.array(z.string().min(1)).min(1),
     trigger: z.enum(["auto", "manual"]).optional(),
@@ -307,4 +311,26 @@ export function classifyHistoryItem(
     return { kind: "assistant_response" };
   }
   return { kind: "other" };
+}
+
+/** Effective transcript, already bounded by a fork cutoff, owns its reverted set. */
+export function revertedCompactionIds(turns: readonly Turn[]): Set<string> {
+  return new Set(
+    turns.flatMap((turn) => {
+      if (turn.status !== "complete") return [];
+      const undo = CompactionUndoMetadataCodec.safeParse(turn.metadata);
+      return undo.success ? [undo.data.revertsCompactionTurnId] : [];
+    }),
+  );
+}
+export function activeCompaction(turns: readonly Turn[]): Turn | null {
+  const reverted = revertedCompactionIds(turns);
+  return (
+    [...turns]
+      .sort((a, b) => b.position - a.position)
+      .find(
+        (turn) =>
+          turn.role === "compaction" && turn.status === "complete" && !reverted.has(turn.id),
+      ) ?? null
+  );
 }
