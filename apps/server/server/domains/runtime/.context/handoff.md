@@ -53,7 +53,9 @@ With the cheap model available, cold needs neither a source bake nor a resolved
 source binding. Without that provider, it falls back to the retained source model.
 An older cutoff is `cold/fork_cutoff`; a current warm prefix uses the source
 model, unchanged tools, and one appended instruction naming the incoming
-Agent. Cold rolls the active source projection through the cheap summarizer.
+Agent. Cold rolls the bake-aware active source projection (source ref and
+source C's bake) through the cheap summarizer, so a compacted source keeps its
+summary bytes.
 The instruction does not advertise `thread_history`.
 
 Destination binding/bake/fit preparation belongs to the successor after S's
