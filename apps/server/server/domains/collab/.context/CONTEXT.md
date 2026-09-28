@@ -66,7 +66,8 @@ that safe:
   manifest writes (`mutateLiveManifest`, `reconcileProjectManifest`) instead
   call `loadProjectManifest` in the caller's transaction: during cold project
   bootstrap the project and source are uncommitted, and identity, content, and
-  membership must roll back together. These writes provision no root peer.
+  membership must roll back together. Live-only membership reads use that same
+  ambient loader to see the caller's writes. Neither path provisions a root peer.
 - **FK references must not wait on the caller's locks.** A root insert that
   references a row the caller locked waits on a transaction that is itself
   awaiting the root in JavaScript; Postgres never detects that cycle. Work
@@ -75,7 +76,6 @@ that safe:
   Work lifecycle lock. Replication pulls use the snapshot CAS
   (`updateBranchSnapshot`) without it, because replication creates no
   reviewable edit.
-
 
 ## Composition root
 
