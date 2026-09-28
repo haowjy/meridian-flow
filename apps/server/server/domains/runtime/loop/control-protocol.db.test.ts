@@ -317,77 +317,27 @@ else
       expect(cs[0].metadata).toMatchObject({ trigger: "auto", satisfiesControlId: controlId });
     });
 
-    it.each([
-      { history: "A short planning note.", refuses: true },
-      { history: "Established story facts. ".repeat(100), refuses: false },
-    ])("#619 manual compact floor: refuses=$refuses", async ({ history, refuses }) => {
-      const rig = await manualFixture({
-        history,
-        summarizer: scriptedSummarizer(async ({ owner: { turnId } }) => ({
-          kind: "complete",
-          text: "Earlier context.",
-          model: "gpt-4.1-mini",
-          modelResponses: [
-            {
-              id: crypto.randomUUID(),
-              turnId,
-              sequence: 0,
-              provider: "openai",
-              model: "gpt-4.1-mini",
-              inputTokens: 100,
-              outputTokens: 10,
-              requestMessageCount: 2,
-              predictedCacheState: "cold",
-              predictedCacheReason: "summary_transcript",
-            },
-          ],
-        })),
-      });
-      // A later writer/reply pair leaves the first pair as the compactable range.
-      const run = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        userText: "Read the latest chapter.",
-      });
-      await run.execute();
+    it("#619 refuses manual compaction below the compactable floor without billing", async () => {
+      const rig = await manualFixture({ history: "A short planning note." });
+      await (
+        await rig.orchestrator.prepare({
+          threadId: rig.threadId,
+          userText: "Read the latest chapter.",
+        })
+      ).execute();
       await settled(rig);
       const balance = await rig.creditLedger.getBalance({ userId: rig.ids.user });
       await compactControl(rig);
       await drainControls(rig);
-      const turn = (await settled(rig)).at(-1);
-      if (!turn) throw new Error("Missing compaction turn");
-      expect(turn).toMatchObject({
-        role: "compaction",
-        status: refuses ? "error" : "complete",
-        ...(refuses
-          ? { metadata: { reason: "nothing_to_compact", phase: "initial_prepare" } }
-          : {}),
-      });
-      expect(rig.summarizer.calls).toHaveLength(refuses ? 0 : 1);
-      if (refuses) {
-        expect(await rig.repos.modelResponses.listByTurn(turn.id)).toEqual([]);
-        expect(await rig.creditLedger.getBalance({ userId: rig.ids.user })).toBe(balance);
-      } else {
-        expect(await rig.repos.modelResponses.listByTurn(turn.id)).toHaveLength(1);
-        expect(BigInt(await rig.creditLedger.getBalance({ userId: rig.ids.user }))).toBeLessThan(
-          BigInt(balance),
-        );
-      }
-    });
-
-    it("C6 no history writes nothing_to_compact without a summary or response", async () => {
-      const rig = await manualFixture({ empty: true });
-      await compactControl(rig);
-      const result = await drainControls(rig);
-      expect(result.status).toBe("error");
-      const turn = (await rig.repos.turns.listByThread(rig.threadId)).at(-1);
+      const turn = (await settled(rig)).at(-1)!;
       expect(turn).toMatchObject({
         role: "compaction",
         status: "error",
-        metadata: { reason: "nothing_to_compact" },
+        metadata: { reason: "nothing_to_compact", phase: "initial_prepare" },
       });
-      if (!turn) throw new Error("Missing C");
-      expect(await rig.repos.modelResponses.listByTurn(turn.id)).toEqual([]);
       expect(rig.summarizer.calls).toHaveLength(0);
+      expect(await rig.repos.modelResponses.listByTurn(turn.id)).toEqual([]);
+      expect(await rig.creditLedger.getBalance({ userId: rig.ids.user })).toBe(balance);
     });
 
     it("C6 control-only sweep starts an idle thread", async () => {
@@ -478,9 +428,8 @@ else
       expect(interruptedEvent).toContain('"phase":"recovery"');
     });
 
-    it.each([
-      1, 2,
-    ])("C6 %i controls pin both unanswered messages beyond the tail budget", async (count) => {
+    it("C6 two controls pin both unanswered messages beyond the tail budget", async () => {
+      const count = 2;
       const rig = await manualFixture();
       for (let n = 0; n < count; n++) await compactControl(rig);
       const first = await rig.send(rig.threadId, `M1 ${"large unanswered ".repeat(2000)}`);
@@ -489,11 +438,10 @@ else
       const turns = await settled(rig);
       const cs = turns.filter((turn) => turn.role === "compaction");
       expect(cs).toHaveLength(count);
-      if (count === 2)
-        expect(cs[1]).toMatchObject({
-          status: "error",
-          metadata: { reason: "nothing_to_compact" },
-        });
+      expect(cs[1]).toMatchObject({
+        status: "error",
+        metadata: { reason: "nothing_to_compact" },
+      });
       expect(turns.at(-1)?.role).toBe("assistant");
       for (const c of cs)
         if (c.status === "complete")

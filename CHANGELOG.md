@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Remove duplicate runtime checks; test editor undo and stream recovery through behavior.
+
 - Require an explicit ownership acknowledgment before detaching test database cleanup.
 
 - Run unit tests in worker threads while preserving module isolation.
