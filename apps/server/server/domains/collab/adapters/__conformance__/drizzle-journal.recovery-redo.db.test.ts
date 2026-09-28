@@ -73,8 +73,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { asc, eq } = await import("drizzle-orm");
-    const { useRollbackTestDatabase } = await import("../../../../test-support/drizzle-reset.js");
-    const { deleteDrizzleRows } = await import("../../../../test-support/drizzle-reset.js");
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../../../test-support/drizzle-reset.js"
+    );
     const { createDrizzleJournal } = await import("../drizzle-journal.js");
 
     const database = useRollbackTestDatabase(DATABASE_URL, {

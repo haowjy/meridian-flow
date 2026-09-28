@@ -25,8 +25,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleProjectWorkAuthorityResolver } = await import(
       "../../domains/projects/index.js"
     );
-    const { useRollbackTestDatabase } = await import("../../test-support/drizzle-reset.js");
-    const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../test-support/drizzle-reset.js"
+    );
     const { createUntitledContextDocument } = await import(
       "../../routes/api/projects/[projectId]/context/[scheme]/create-untitled.post.js"
     );

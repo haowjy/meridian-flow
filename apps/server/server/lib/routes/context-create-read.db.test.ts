@@ -33,8 +33,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createInMemoryObjectStore } = await import("../../domains/storage/index.js");
     const { handleContextReadRequest } = await import("../context-read-route.js");
     const { createDrizzleDocumentAccess } = await import("../document-access.js");
-    const { useRollbackTestDatabase } = await import("../../test-support/drizzle-reset.js");
-    const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../test-support/drizzle-reset.js"
+    );
     const { createContextEntry, parseCreateContextEntryBody } = await import(
       "../../routes/api/projects/[projectId]/context/[scheme]/create.post.js"
     );

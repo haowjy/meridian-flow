@@ -61,7 +61,7 @@ else
       await compactControl(rig);
       const assertSweepPaced = observeRunStarts(rig);
       await drainControls(rig);
-      await assertSweepPaced();
+      assertSweepPaced();
       const calls = gateway.requests.length;
       failing = false;
       if (calls === 1) await drainControls(rig);
@@ -94,7 +94,7 @@ else
       };
       const assertSweepPaced = observeRunStarts(rig);
       const outcome = await drainControls(rig);
-      await assertSweepPaced();
+      assertSweepPaced();
       const calls = rig.summarizer.calls.length;
       rig.delivery.splitAndContinue = split;
       rig.runClaim.read = read;
@@ -175,9 +175,10 @@ else
         .spyOn(rig.runClaim, "startExecution")
         .mockResolvedValue(null)
         .mockImplementationOnce(start);
-      return async () => {
-        // execute() has completed cleanup; flush its queued automatic-start microtask.
-        await new Promise<void>((resolve) => queueMicrotask(resolve));
+      return () => {
+        // cleanup queues its wake before execute() resolves, and that wake reaches
+        // startExecution synchronously. This observes cleanup-scheduled restarts,
+        // not an arbitrary elapsed sweep interval.
         const attempts = starts.mock.calls.length;
         starts.mockRestore();
         expect(attempts).toBe(1);

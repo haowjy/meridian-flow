@@ -121,7 +121,9 @@ async function main(): Promise<void> {
         cleanup.once("exit", (code) =>
           reject(new Error(`DB cleanup exited before handoff (${code}); see ${logPath}`)),
         );
-        cleanup.once("message", () => resolve());
+        cleanup.on("message", (message) => {
+          if (message === "ready") resolve();
+        });
         cleanup.send({ databaseUrl, workerCount: workerDatabaseUrls.length });
       });
       cleanup.unref();

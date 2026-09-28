@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Require an explicit ownership acknowledgment before detaching test database cleanup.
+
 - Run unit tests in worker threads while preserving module isolation.
 
 - Run DB tests on eight isolated workers, with a bounded override for busy shared servers.

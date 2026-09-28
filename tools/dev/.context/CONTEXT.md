@@ -106,12 +106,15 @@ tools/dev/
   `DB_TEST_WORKERS=1..8` can lower concurrency when sharing a busy server; the
   cap leaves connection headroom rather than scaling with host CPU count.
   Migration catalog assertions run against those fresh clones instead of
-  replaying migrations in a nested process. After Vitest exits, the runner hands only its own clone/template URLs to
+  replaying migrations in a nested process. After Vitest exits, the runner hands
+  only its own clone/template URLs to
   a detached cleanup child over IPC. Ownership is checked against the live
   sending parent before acknowledgment. Cleanup logs live in
   `.meridian/db-test-cleanup/<owner-pid>.log`; the CLI does not wait on
   PostgreSQL's forced DROP checkpoint. `dev:gc-dbs` recognizes the encoded
-  owner PID and reclaims leftovers after interrupted or failed cleanup. CI/external Postgres instances retain serial execution against their
+  owner PID and can reclaim both leftovers and in-flight detached cleanup once
+  that owner exits. Failed drops leave remaining databases for GC. CI/external
+  Postgres instances retain serial execution against their
   pre-provisioned ephemeral database.
 - **DB suites under load:** runs never share databases, but under shared
   Postgres load a timed-out fixture hook's async work can overlap the next
@@ -119,7 +122,8 @@ tools/dev/
   (duplicate `users_pkey`, `TRUNCATE users` deadlocks). The 30-second
   `hookTimeout` mitigates it; the harness fix is
   [#616](https://github.com/haowjy/meridian-flow/issues/616). Do not run
-  `pnpm check` and `pnpm test:db` at once in one worktree, and inspect the cleanup log when detached drops are still waiting on a
+  `pnpm check` and `pnpm test:db` at once in one worktree. Inspect the cleanup
+  log when detached drops are still waiting on a
   PostgreSQL checkpoint. Cleanup relocates that I/O; it does not eliminate it.
 - **Root check integration:** `pnpm check` ends with `check-db-gate.ts`. A
   missing or unreachable configured Postgres server is a loud skip because the

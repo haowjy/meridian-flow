@@ -12,8 +12,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { useRollbackTestDatabase } = await import("../../../../test-support/drizzle-reset.js");
-    const { deleteDrizzleRows } = await import("../../../../test-support/drizzle-reset.js");
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../../../test-support/drizzle-reset.js"
+    );
     const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
     const {
       expectChatFeedCursorAcrossFilterContract,

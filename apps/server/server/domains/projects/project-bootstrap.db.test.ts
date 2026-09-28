@@ -17,8 +17,9 @@ else
     const { eq } = await import("drizzle-orm");
     const { createCollabDomain } = await import("../collab/composition.js");
     const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
-    const { useRollbackTestDatabase } = await import("../../test-support/drizzle-reset.js");
-    const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../test-support/drizzle-reset.js"
+    );
     const { createDrizzleProjectWorkAuthorityResolver } = await import("./index.js");
     const { createProjectContextDocumentStore } = await import(
       "../context/context-source-provisioning.js"
