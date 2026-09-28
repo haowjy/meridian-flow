@@ -10,6 +10,7 @@ import { createRuntimeHarness } from "../../runtime/loop/__tests__/runtime-harne
 import { scriptedSummarizer } from "../../runtime/loop/__tests__/scripted-summarizer.js";
 import { createTestDrizzleDelivery } from "../../runtime/loop/__tests__/test-drizzle-delivery.js";
 import { scriptedGateway } from "../../runtime/loop/__tests__/test-gateway.js";
+import { createPrefixCacheStateService } from "../../runtime/loop/prefix-cache-state.js";
 import { createOrphanReportRepair } from "../../runtime/spawn/orphan-report-repair.js";
 import {
   resetThreadWorkRaceFixture,
@@ -281,6 +282,66 @@ else
         });
         expect(JSON.stringify(r.gateway.requests.at(-1))).toContain("No brief is available.");
       }
+    });
+
+    it("C7b accepts a failed reply cutoff with ordinary source warmth after M4", async () => {
+      const r = await fixture();
+      const stream = vi.spyOn(r.gateway, "stream").mockImplementationOnce(async function* () {
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "text", text: "Partial scene decision." }],
+            toolCalls: [],
+            finishReason: "error",
+            timing: {
+              requestStartedAt: new Date().toISOString(),
+              latencyMs: 1,
+              timeToFirstTokenMs: 1,
+              generationMs: 0,
+            },
+            usage: { inputTokens: 100, outputTokens: 10 },
+            model: "gpt-4.1-mini",
+            provider: "openai",
+          },
+        };
+      });
+      try {
+        await r.send(r.source.id, "Plan the jade gate scene.");
+        await (await r.orchestrator.prepare({ threadId: r.source.id, drain: true })).execute();
+      } finally {
+        stream.mockRestore();
+      }
+      const failed = await repos.turns.getLatestByThread(r.source.id);
+      expect(failed).toMatchObject({ role: "assistant", status: "error" });
+      if (!failed) throw new Error("Missing source reply");
+      const { prefixCacheStateFor } = createPrefixCacheStateService({ repos });
+      expect(
+        await prefixCacheStateFor({
+          threadId: r.source.id,
+          throughTurnId: failed.id,
+          model: r.gateway.listModels()[0],
+        }),
+      ).toEqual({ state: "warm", reason: "reusable_prefix" });
+      const { thread } = await handoffThreadAgent(r.derive, {
+        ...r.input,
+        id: crypto.randomUUID(),
+        originTurnId: failed.id,
+      });
+      await (await r.orchestrator.prepare({ threadId: thread.id, drain: true })).execute();
+      expect((await repos.turns.listByThread(thread.id))[0]).toMatchObject({
+        status: "complete",
+        metadata: { cutoffTurnId: failed.id },
+      });
+      expect(r.summarizer.calls[0].requestInHand).not.toBeNull();
+      expect(r.summarizer.calls[0].source).toEqual({
+        threadId: r.source.id,
+        throughTurnId: failed.id,
+      });
+      await r.send(r.source.id, "Move on to the next scene.");
+      expect(await repos.turns.findById(failed.id)).toMatchObject({
+        status: "error",
+        error: failed.error,
+      });
     });
 
     it("C7b ending commit failure keeps internal causes out of seed writer copy", async () => {

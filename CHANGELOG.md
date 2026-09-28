@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Accept failed replies as handoff cutoffs without changing the source warmth rule or rewriting their failed status on later sends.
+
 - Preserve undo-before-Retry order in expanded control batches; only brief-only batches skip control history.
 - Record brief telemetry and failure metadata through one pending-owner writer; late paid attempts cannot replace the winning outcome.
 

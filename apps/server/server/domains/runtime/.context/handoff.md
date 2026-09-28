@@ -59,7 +59,7 @@ The instruction does not advertise `thread_history`.
 Destination binding/bake/fit preparation belongs to the successor after S's
 outcome is known. A destination preparation failure lands on the reply, not S.
 One skill-body staging owner serves run start and successor preparation.
-Normal runs stage bodies before fresh messages; Retry defers them until after
+Normal runs stage bodies before fresh messages; a pending brief defers them until after
 S and before the reply. Only a committed body consumes its activations, so
 optimistic preparation can repeat. Brief-only batches need no control-history
 preparation; an expanded undo prefix before Retry still does. Due undo controls
@@ -73,6 +73,8 @@ own telemetry. `recordHandoffSeedOutcome` owns brief telemetry and failure
 metadata through `HandoffSeedMetadataCodec`, never the compaction codec. Summary rejection reasons are shared contracts; each
 owner composes its own failure phases. Failed S records reason and phase in
 metadata and `handoff_brief_failed` details, with writer copy in `turn.error`.
+Ending-commit exceptions retain their internal cause in the event’s
+`details.cause`; operational logs use the sanitized error payload.
 Rows attach to S, debit the destination run's shared tree budget and source
 root, and retain source-evaluated predictions. Only assistant responses supply
 future prefix warmth or token baselines.
