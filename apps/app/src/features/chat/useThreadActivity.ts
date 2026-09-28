@@ -16,8 +16,9 @@
  *
  * The same subscription records each `meridian.agent.spawn` frame's
  * `fromThreadId`: the conversation a child was pointed at, which the parent's
- * spawn card names. It is a live hint only; the durable record is the child's
- * `thread-reference` block, and the card cannot recover it after a reload.
+ * spawn card names. The subscription's catch-up replays the journal, so a
+ * reload recovers it; the durable record is the child's `thread-reference`
+ * block.
  */
 import { EventType, type ThreadLiveState } from "@meridian/contracts/protocol";
 import type { ThreadActivity, ThreadStatus } from "@meridian/contracts/threads";
@@ -48,7 +49,7 @@ function recordSpawnSource(value: unknown) {
   for (const listener of spawnSourceListeners) listener();
 }
 
-/** The conversation a child's spawn named with `from`, when this tab saw the spawn. */
+/** The conversation a child's spawn named with `from`, once the parent's stream (live or replayed) carried it. */
 export function useSpawnSource(childThreadId: string | null): string | null {
   return useSyncExternalStore(
     (listener) => {
