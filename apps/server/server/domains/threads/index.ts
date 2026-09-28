@@ -90,11 +90,13 @@ export type {
   CompactionFailureReason,
   CompactionMetadata,
   CompactionPlanMetadata,
+  CompactionUndoFailureReason,
   HistoryItemClass,
   ImageContextBreak,
   ImageInclusionMetadata,
 } from "./domain/turn-metadata.js";
 export {
+  activeCompaction,
   agentRequestMetadata,
   ChildCompletionMetadataCodec,
   ChildCompletionMetadataTagCodec,
@@ -126,6 +128,7 @@ export {
   noticesMetadata,
   PromptEpochMetadataCodec,
   promptEpochMetadata,
+  revertedCompactionIds,
   SavedSubagentReportMetadataCodec,
   SteerMetadataCodec,
   SystemUpdateMetadataCodec,

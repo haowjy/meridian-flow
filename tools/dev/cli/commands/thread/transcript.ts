@@ -19,6 +19,11 @@ export type CompactTurn = {
   finishReason: Turn["finishReason"];
   model: string | null;
   error: string | null;
+  compactionUndoMetadata?: {
+    revertsCompactionTurnId?: string;
+    controlMessageId?: string;
+    reason?: string;
+  };
   compactionMetadata?: {
     trigger?: string;
     controlMessageId?: string;
@@ -158,6 +163,19 @@ export function compactTurn(turn: Turn, limits: TranscriptLimits): CompactTurn {
     error: turn.error,
     ...(compactionMetadata && Object.keys(compactionMetadata).length > 0
       ? { compactionMetadata }
+      : {}),
+    ...(metadata.kind === "compaction_undo"
+      ? {
+          compactionUndoMetadata: {
+            ...(typeof metadata.revertsCompactionTurnId === "string"
+              ? { revertsCompactionTurnId: metadata.revertsCompactionTurnId }
+              : {}),
+            ...(typeof metadata.controlMessageId === "string"
+              ? { controlMessageId: metadata.controlMessageId }
+              : {}),
+            ...(typeof metadata.reason === "string" ? { reason: metadata.reason } : {}),
+          },
+        }
       : {}),
     createdAt: turn.createdAt,
     usage: {

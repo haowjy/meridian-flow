@@ -8,7 +8,9 @@
 
 - The in-memory thread repository's `nextRef` counter increments outside a
   transaction, so a rolled-back test create leaves a handle gap the Drizzle
-  counter (which shares the insert transaction) would not. Test-only divergence;
+  counter (which shares the insert transaction) would not. Undo commit-failure
+  retries likewise require PostgreSQL to prove rollback; the in-memory delivery
+  lock and repository transactions cannot prove atomic failure recovery. Test-only divergence;
   converge the adapters only if the in-memory one gains rollback semantics
   (`apps/server/server/domains/threads/adapters/in-memory/repositories.ts`).
 

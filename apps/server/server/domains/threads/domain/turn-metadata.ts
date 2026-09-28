@@ -55,10 +55,32 @@ export const DerivationSeedMetadataCodec = z.object({
   derivation: z.enum(["fork", "handoff"]),
 });
 
-export const CompactionUndoMetadataCodec = z.object({
-  kind: z.literal("compaction_undo"),
-  revertsCompactionTurnId: z.string().min(1),
-});
+const modelElisionsCodec = z.array(
+  z.object({
+    blockId: z.string(),
+    treatment: z.enum(["stale_read", "stale_write"]),
+    uris: z.array(z.string()),
+    content: z.json(),
+  }),
+);
+
+export const CompactionUndoFailureReasonCodec = z.enum([
+  "would_recompact",
+  "not_active",
+  "already_undone",
+  "undo_failed",
+]);
+export type CompactionUndoFailureReason = z.infer<typeof CompactionUndoFailureReasonCodec>;
+
+export const CompactionUndoMetadataCodec = z
+  .object({
+    kind: z.literal("compaction_undo"),
+    revertsCompactionTurnId: z.string().min(1),
+    reason: CompactionUndoFailureReasonCodec.optional(),
+    controlMessageId: z.string().optional(),
+    elisions: modelElisionsCodec.optional(),
+  })
+  .passthrough();
 
 const compactedThroughCodec = z.object({
   turnId: z.string().min(1),
@@ -100,16 +122,7 @@ const compactionFailureMetadataFields = {
 };
 
 const compactionMetadataFields = {
-  elisions: z
-    .array(
-      z.object({
-        blockId: z.string(),
-        treatment: z.enum(["stale_read", "stale_write"]),
-        uris: z.array(z.string()),
-        content: z.json(),
-      }),
-    )
-    .optional(),
+  elisions: modelElisionsCodec.optional(),
   trigger: z.enum(["auto", "manual"]).optional(),
   controlMessageId: z.string().min(1).optional(),
   satisfiesControlId: z.string().min(1).optional(),
@@ -259,8 +272,17 @@ export function derivationSeedMetadata(derivation: "fork" | "handoff"): JsonObje
   return { kind: "derivation_seed", derivation };
 }
 
-export function compactionUndoMetadata(revertsCompactionTurnId: string): JsonObject {
-  return { kind: "compaction_undo", revertsCompactionTurnId };
+export function compactionUndoMetadata(
+  revertsCompactionTurnId: string,
+  controlMessageId?: string,
+  reason?: CompactionUndoFailureReason,
+): JsonObject {
+  return {
+    kind: "compaction_undo",
+    revertsCompactionTurnId,
+    ...(reason ? { reason } : {}),
+    ...(controlMessageId ? { controlMessageId } : {}),
+  };
 }
 
 export function compactionTurnMetadata(metadata: CompactionPlanMetadata): JsonObject {
@@ -399,4 +421,26 @@ export function classifyHistoryItem(
     return { kind: "assistant_response" };
   }
   return { kind: "other" };
+}
+
+/** Effective transcript, already bounded by a fork cutoff, owns its reverted set. */
+export function revertedCompactionIds(turns: readonly Turn[]): Set<string> {
+  return new Set(
+    turns.flatMap((turn) => {
+      if (turn.status !== "complete") return [];
+      const undo = CompactionUndoMetadataCodec.safeParse(turn.metadata);
+      return undo.success ? [undo.data.revertsCompactionTurnId] : [];
+    }),
+  );
+}
+export function activeCompaction(turns: readonly Turn[]): Turn | null {
+  const reverted = revertedCompactionIds(turns);
+  return (
+    [...turns]
+      .sort((a, b) => b.position - a.position)
+      .find(
+        (turn) =>
+          turn.role === "compaction" && turn.status === "complete" && !reverted.has(turn.id),
+      ) ?? null
+  );
 }

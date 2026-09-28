@@ -155,7 +155,9 @@ export type ThreadActivity = {
 export type MessageIntent = "message" | "notice" | "control";
 
 /** Runtime commands take their transcript position at execution, not enqueue. */
-export type ControlBody = { kind: "compact" };
+export type ControlBody =
+  | { kind: "compact" }
+  | { kind: "compaction_undo"; compactionTurnId: string };
 export type EnqueueThreadControlRequest = { id: string; control: ControlBody };
 export type EnqueueThreadControlResponse = {
   id: string;
@@ -479,3 +481,8 @@ export type {
   TurnContextPreview,
   TurnContextPreviewFunctionTool,
 } from "./turn-context-preview.js";
+
+export type CompactionUndoAvailability = {
+  turnId: string;
+  availability: "likely" | "would_recompact";
+} | null;

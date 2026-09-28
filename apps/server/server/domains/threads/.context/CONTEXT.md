@@ -567,6 +567,23 @@ writer copy in `turn.error`. A failed C gets no bake pointer, so it stays an
 ordinary transcript item and opens no history segment.
 Control acknowledgement commits with the divider's ending, never B's response.
 
+### Compaction undo projection
+
+Complete undo markers identify reverted compactions and carry their own frozen
+model-only elisions. The active compaction is the latest complete C not reverted
+in the effective transcript. Runtime projects its tail, then applies the latest
+complete undo after it; refused markers have no blocks or bake and do not alter
+that projection. Their typed metadata carries the refusal reason; `turn.error`
+carries writer copy. A fork cutoff includes or excludes U with the rest of its
+prefix. Image inclusion reads filter reverted deciding C IDs before selecting
+the latest decision per block, so pre-C exclusions can take effect again.
+
+`ThreadSnapshotResponse.compactionUndo` is null without an active local C or
+when the retained model is absent from the runtime catalog; otherwise the runtime
+reader supplies `{ turnId, availability }` using today's Agent trigger. `likely`
+is advisory, not a promise of admission. Missing bindings and corrupt compaction
+metadata remain invariant errors, not null availability.
+
 ## Paged effective transcript
 
 `domain/transcript-page.ts` resolves a fork's effective transcript into

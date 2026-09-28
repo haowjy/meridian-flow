@@ -644,6 +644,49 @@ export function defineTranscriptPageContract(
       expect(newestPages.map((page) => page.segment.index)).toEqual([2, 1, 0]);
     });
 
+    it.each([
+      ["oldest_first", "item"],
+      ["oldest_first", "turn"],
+      ["newest_first", "item"],
+      ["newest_first", "turn"],
+    ] as const)("restores the pre-C bake only for a complete undo (%s, %s)", async (order, unit) => {
+      const { repos, root, rootBake, turn, block, bake } = await fixture();
+      const before = await turn(root.id as ThreadId, "before-undo");
+      const compactBake = await bake("compacted");
+      const compact = await turn(root.id as ThreadId, "compact-undo", "compaction", {
+        promptBakeId: compactBake.id,
+        metadata: {
+          compactedThrough: { turnId: before.id },
+          pinnedRequestTurnIds: [before.id],
+        },
+      });
+      const refused = await turn(root.id as ThreadId, "refused-undo", "system", {
+        status: "error",
+        promptBakeId: null,
+        metadata: { kind: "compaction_undo", revertsCompactionTurnId: compact.id },
+      });
+      const undo = await turn(root.id as ThreadId, "complete-undo", "system", {
+        promptBakeId: rootBake.id,
+        metadata: { kind: "compaction_undo", revertsCompactionTurnId: compact.id },
+      });
+      await block(undo.id as TurnId, "undo-text", 0);
+      const pages = await readAll(repos, root, order, unit, 1);
+      const pageFor = (id: string) =>
+        pages.find((page) => page.entries.some((entry) => entry.turn.id === id));
+      expect(pageFor(refused.id)?.segment).toEqual(pageFor(compact.id)?.segment);
+      expect(pageFor(refused.id)?.entries[0]?.blocks).toEqual([]);
+      expect(pageFor(undo.id)?.segment).toMatchObject({
+        index: 2,
+        bakeId: rootBake.id,
+        openedBy: { turnId: undo.id, kind: "undo_marker" },
+      });
+      expect(pages.flatMap((page) => page.entries).map((entry) => entry.turn.id)).toEqual(
+        order === "oldest_first"
+          ? [before.id, compact.id, refused.id, undo.id]
+          : [undo.id, refused.id, compact.id, before.id],
+      );
+    });
+
     it("forks before and after a compaction retain one and two segments respectively", async () => {
       const { repos, root, turn, id, bake } = await fixture();
       const before = await turn(root.id as ThreadId, "fork-before");

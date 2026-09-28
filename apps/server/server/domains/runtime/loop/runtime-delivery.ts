@@ -47,6 +47,8 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
     selection: DeliverySelection,
   ) => Promise<{
     events: OrchestratorEvent[];
+    undos?: import("./compaction-undo.js").PreparedUndo[];
+    adoptedIds?: string[];
     turns: Turn[];
     blocks: Block[];
     requiresSplit: boolean;
@@ -56,6 +58,15 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
 };
 export type DeliverySelection = {
   batch: InboxMessage[];
+  continueTask?: boolean;
+  controls?: ControlMessage[];
+  failedUndoIds?: ReadonlySet<string>;
+  followingBatches?: {
+    afterControlId: string;
+    ackIds: string[];
+    batch: InboxMessage[];
+    workContext?: import("./work-context.js").RenderedWorkContext;
+  }[];
   control: ControlMessage | null;
   satisfiesControlId?: string;
   headControl: ControlMessage | null;
@@ -107,6 +118,8 @@ export interface RuntimeDelivery
     /** Pure preparation over the selection; transactional writes belong in `persist`. */
     prepare: (selection: DeliverySelection) => Promise<{
       value: T;
+      terminal?: boolean;
+      completedControlIds?: string[];
       turnId: TurnId;
       turnKind: "assistant" | "compaction";
       messageIds: readonly string[];

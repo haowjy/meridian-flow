@@ -338,5 +338,39 @@ reservation. Control enqueue finds the latest matching turn by control id
 (`TurnRepository.findByControlId`), not by loading the transcript. See
 [HTTP contracts](../../../../../../docs/api/thread-controls.md).
 
+## Undo
+
+`compaction-undo.ts` prepares U over the restored raw history. Only the active,
+local completed C is eligible. Runtime eligibility returns `not_active` for an
+inherited target; the enqueue route rejects a target outside this thread with
+`compaction_not_found` before execution. U reuses `bakeIdAt` immediately before C, owns a
+fresh document-staleness pass, and measures the decorated restored request
+against today's trigger. The sole refusal predicate implements Q2: reaching the
+trigger is `would_recompact`. The baseline is the last assistant response before
+C, never a response to C's summary. Model/bake mismatch, subsequent image eviction,
+or an elision inside that response's prefix removes the baseline.
+
+U has no reservation or model phase. Delivery inserts and completes it through
+`beginPromptEpoch` in the same transaction as adoption, control acknowledgement,
+and the next control/reply binding or lease release. Successful U is inserted
+pending privately, then announced complete in the journal; readers never receive
+a pending U. Inbox-only rows beyond U are planned after it, not folded into its
+adopted prefix. An idle undo reserves no
+assistant and admits no execution. A refused U has no blocks or bake; its reason
+lives in typed undo metadata (`already_undone`, `not_active`, `would_recompact`,
+`undo_failed`), while `turn.error` carries writer copy. The journal keeps the
+existing undo error codes and includes the reason in error details.
+A failed undo commit rolls back, then retries the delivery transaction with those
+undo controls marked `undo_failed`; ordinary messages still continue.
+
+Projection applies the active C's elisions to its retained tail, followed by the
+latest complete U after C. U plans from raw blocks, including earlier U owners'
+blocks but excluding replacements still owned by active C. A later C ends U's
+ownership. Image inclusion selects the latest decision after filtering out all
+reverted C owners from the same effective transcript. Fork cutoffs bound both.
+Snapshot availability is advisory and compares active local C's `tokensBefore`
+with the current trigger; execution always measures again. A missing model
+catalog entry yields null availability without hiding the durable snapshot.
+
 [kb-elision]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/request-prefix/stale-document-elision.md
 [kb-thread-controls]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/thread-controls.md

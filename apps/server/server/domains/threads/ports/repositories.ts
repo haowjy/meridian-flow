@@ -90,7 +90,10 @@ export interface ThreadImageInclusion {
 
 export interface ThreadImageInclusionRepository {
   /** Latest decision per block, ordered by the deciding turn's transcript position. */
-  findByThread(threadId: ThreadId): Promise<ThreadImageInclusion[]>;
+  findByThread(
+    threadId: ThreadId,
+    revertedCompactions?: ReadonlySet<string>,
+  ): Promise<ThreadImageInclusion[]>;
   /** Append-only decision history, used to reconstruct forks at their cutoff. */
   listByThread(threadId: ThreadId): Promise<ThreadImageInclusion[]>;
   set(input: ThreadImageInclusion): Promise<void>;
@@ -346,7 +349,12 @@ export interface ThreadPendingInboxReader {
 }
 
 /** The derived live reads the snapshot builder and WS `subscribed` state share. */
-export interface ThreadLiveReaders extends ThreadStatusReader, ThreadPendingInboxReader {}
+export interface ThreadLiveReaders extends ThreadStatusReader, ThreadPendingInboxReader {
+  readCompactionUndo?: (
+    thread: Thread,
+    turns: Turn[],
+  ) => Promise<import("@meridian/contracts/threads").CompactionUndoAvailability>;
+}
 
 export interface ProjectChatCursorKey {
   sortAt: string;
