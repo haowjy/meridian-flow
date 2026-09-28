@@ -29,14 +29,16 @@ Compaction is two delivery transitions around an unlocked
 
 The complete summary block is immutable. Its fit limit comes from the
 decision, independently of the automatic trigger. A usable value's token
-count describes the compacted base before late arrivals. Summary responses
-never supply the conversation token baseline.
+count describes the compacted base before late arrivals. Only assistant response
+rows can supply a reusable baseline; summary rows never supply the conversation
+token baseline.
 
 The usable prepared value carries metadata (the placeholder's reservation
 metadata plus `elisions`) into provisional assembly. The commit reloads C after
 paid-summary settlement and passes `{ ...settled.metadata, ...prepared.metadata }`
-to `beginPromptEpoch`: settlement appends summarizer telemetry to C, so passing
-the prepared value alone would drop it. A control absorbed during the summary
+to `beginPromptEpoch`: the owner hook `recordCompactionSummary` writes C's
+summarizer telemetry during settlement, so passing the prepared value alone
+would drop it. A control absorbed during the summary
 writes `satisfiesControlId` onto settled C; the prepared metadata predates that
 write and carries no satisfaction key for it. Telemetry never renders to the
 model, so B's first request still equals the rebuild. The same assembly measures
@@ -103,7 +105,9 @@ against overflow.
   reasons distinguish `max_tokens`, `provider_error`, `tool_use`, and `empty_text`;
   unknown summary errors stay `compaction_failed`. Orphan recovery uses the same
   metadata writer with `reason: interrupted` and `phase: recovery`, both at run
-  preparation and during the primary/child startup sweep.
+  preparation and during the primary/child startup sweep. These codecs are
+  C's alone: a refused undo has its own reason set (Undo below), and the
+  handoff seed's typed outcome is separate ([handoff seeds](handoff.md)).
 - If the initial successor fits but a late arrival fails the second fit check,
   C fails with `context_too_large` at `late_arrival` instead of committing the
   epoch. Its paid summary rows settle in the C failure transaction. The late
@@ -148,22 +152,36 @@ the handoff seed's `system`); a pending assistant turn is not one. Test with
 `isPendingPlaceholder` or the database's `pendingPlaceholderPredicate`, never a
 local role or status check.
 
-`finalizeOrphanedTurns` repairs stale turns from RunSession.prepare before setup
-can plan a control barrier,
-using the new run's own held claim. Delivery adoption does not repair again.
-Pending controls own their `seedTurnId` placeholders, which this repair preserves
-in run preparation, idle materialization, and the orphan sweep.
-The orphan-repair lane also scans indexed pending placeholders, so quiet primary
-threads recover without a new wake. Child reports are finalized on C and
-published after releasing the child's lock. A late writer message stays
-unacknowledged and is redelivered rather than receiving a synthetic failed reply.
+This section is the one owner of orphan repair; other docs link here.
 
-The same repair lane settles orphaned primary assistant turns in
-`pending`, `streaming`, or `waiting_interrupt`: run start repairs under its
-held session claim before context selection, while startup recovery pages
-indexed unsettled primary turns and claims each thread before repair. A live
-run keeps its claim, preventing repair from entering its thread. Subagent assistant turns remain owned by
-child-report recovery; the primary repair does not finalize them.
+`finalizeOrphanedTurns` (`loop/orphaned-placeholder.ts`) settles a thread's
+dead primary assistant turns (`pending`, `streaming`, `waiting_interrupt`) and
+its unowned pending placeholders. It runs under the thread lock with a held
+session claim, from exactly three callers:
+
+- `RunSession.prepare`, through `delivery.repairOrphanedTurns`, after it
+  acquires the new run's claim and before setup plans a control barrier;
+- idle materialization, under its exclusive claim, before planning;
+- the startup and periodic orphan sweep (`spawn/orphan-report-repair.ts`),
+  which pages indexed pending placeholders and unsettled primary turns so a
+  quiet thread recovers without a new wake, and claims each thread first.
+
+Delivery adoption (`adoptBatch`) never repairs. A live run keeps its claim, so
+repair cannot enter its thread; an expired lease row alone is not proof of
+death.
+
+**A pending placeholder named by a pending control row is owned, not
+orphaned.** `finalizeOrphanedTurns` reads the pending inbox once under the lock
+and skips a seed S whose `handoff_brief` control names it in `seedTurnId`, so
+a crashed brief redelivers into the same S. Put any new ownership rule in this
+function, never in one caller.
+
+`finalizeOrphanedPlaceholders` is the child-report walk's placeholder-only
+helper and carries no ownership rule; a handoff destination is never a
+subagent. Child assistant turns stay with that walk, which finalizes the report
+on C and publishes after releasing the child's lock. A late writer message
+stays unacknowledged and is redelivered rather than receiving a synthetic
+failed reply.
 
 Undo markers are system turns but never run-owned current turns: creation and
 completion share one transaction, and terminal routing precedes brief dispatch.
@@ -172,7 +190,9 @@ Do not route a completed undo through the pending handoff-seed lifecycle.
 ## Cost
 
 `settleSummaryResponses` writes predictions, request sizes, and debits through
-`TurnAccounting.computeAndDebit` inside whichever transaction ends C.
+`TurnAccounting.computeAndDebit` inside whichever transaction ends its owner. It does not decode or write turn
+metadata: compaction records its own summarizer telemetry through
+`CompactionMetadataCodec`; handoffs use their seed codec.
 Retrying settlement does not count the paid call twice in the shared tree
 budget. A child report's cost sums every assistant and compaction response
 from its selector through its terminal turn, counting a C that is both once
@@ -218,7 +238,8 @@ headroom, using `apps/server/scripts/fixtures/compaction-estimator-probe.json`.
 
 ## Summarizer
 
-`summary/conversation-summarizer.ts` implements the port in production. Warm
+`summary/conversation-summarizer.ts` implements the port in production. The port separates owner (response rows/correlation) from source (model, cache
+and transcript); compaction supplies the same thread for both. Warm
 sends the request in hand with an appended system-origin instruction and a
 lower output cap (summary reserve plus thinking budget); it never raises the
 cap or changes other fields. Any unusable warm response or provider failure
@@ -271,8 +292,10 @@ the incomplete response's blocks. The WebSocket live-state codec accepts
 
 ## Control boundaries
 
-A control K (`intent: "control"`, today only `{ kind: "compact" }`) takes no
-transcript position at enqueue. Its C is reserved at the leaf when a run
+A control K (`intent: "control"`, a `ControlBody` of kind `compact`,
+`compaction_undo`, or `handoff_brief`; the contracts package owns that list)
+takes no transcript position at enqueue. This section covers `compact`; Undo
+below and [handoff seeds](handoff.md) cover the other two. Its C is reserved at the leaf when a run
 boundary executes it, mid-task included; writer sends keep their enqueue
 position. So `hi1`, `/compact`, `hi2` sent while one reply streams compact
 before either message is answered, and both are pinned. Never reserve a

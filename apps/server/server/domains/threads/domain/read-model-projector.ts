@@ -1,11 +1,9 @@
 /**
  * Read-model projector: applies durable orchestrator events to thread read-model
  * tables. This is the in-transaction projection seam that makes event journal
- * facts the authority for model responses, blocks, and their rollups. When a
- * new user turn arrives, this projector clears only that turn's explicit
- * `prevTurnId` if it is an errored assistant turn: the append-only error event
- * remains journal truth, while the projected snapshot stops rendering a stale
- * error banner after the user moves on.
+ * facts the authority for model responses, blocks, and their rollups. Each
+ * turn row carries exactly the lifecycle its own events recorded: a later turn
+ * never rewrites an earlier turn's terminal status.
  */
 import {
   type BlockUpsertedRow,
@@ -111,38 +109,13 @@ async function updateInterruptTurnStatus(
   await repos.turns.updateStatus(turnId, { status });
 }
 
-async function clearPreviousAssistantErrorIfUserTurn(
-  repos: ReadModelProjectorRepositories,
-  turn: Turn,
-): Promise<void> {
-  if (turn.role !== "user" || !turn.prevTurnId) return;
-  const previousTurn = await repos.turns.findById(turn.prevTurnId);
-  if (
-    previousTurn?.threadId !== turn.threadId ||
-    previousTurn.role !== "assistant" ||
-    previousTurn.status !== "error"
-  ) {
-    return;
-  }
-
-  await repos.turns.updateStatus(previousTurn.id, {
-    status: "complete",
-    finishReason: previousTurn.finishReason,
-    completedAt: previousTurn.completedAt,
-    error: null,
-  });
-}
-
 export async function projectReadModelEvent(
   repos: ReadModelProjectorRepositories,
   event: OrchestratorEvent,
 ): Promise<Turn | null> {
   switch (event.type) {
-    case "turn.created": {
-      const created = await repos.turns.create(turnToCreateInput(event.turn));
-      await clearPreviousAssistantErrorIfUserTurn(repos, event.turn);
-      return created;
-    }
+    case "turn.created":
+      return repos.turns.create(turnToCreateInput(event.turn));
     case "turn.completed":
     case "turn.cancelled":
     case "turn.error":

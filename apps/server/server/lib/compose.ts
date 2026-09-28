@@ -139,7 +139,6 @@ import {
   type DeliveryProducer,
   type Gateway,
   InvalidAdmissionError,
-  pendingHandoffSummarizer,
   type RunClaim,
   type RunStarter,
   type RunTurnPort,
@@ -831,7 +830,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
   });
   const orchestrator = createOrchestrator({
-    handoffSummarizer: pendingHandoffSummarizer,
     summarizer: createConversationSummarizer({
       gateway: ports.gateway,
       agentRevisions: ports.agentRevisions,

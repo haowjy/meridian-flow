@@ -169,16 +169,35 @@ binding backfills had no rows to transform. Application project bootstrap
 creates locked No Work; thread admission establishes the primary binding.
 Legacy user imports belong in a separate ETL, not universal schema migrations.
 
-### Merge renumbering
+### Merging parallel migration lanes
 
-Never renumber a migration already present on `main`. When merging a branch
-whose ordinals collide with newly deployed ones, renumber only the branch
-migrations behind the deployed tail and regenerate their snapshots. The
-journal tail must maintain strictly monotonic `when` timestamps; renumbering
-ordinals without advancing timestamps can make an incremental database skip
-the renumbered entries while a fresh database applies them normally.
-`fresh-migrations.db.test.ts` checks strict journal ordering and the installed
-baseline hash without preventing future additive migrations.
+When two branches each add a migration at the same ordinal, **regenerate the
+incoming branch's migration from the merged schema; never renumber, rename, or
+hand-edit it.** Never touch a migration already present on the target branch
+(or on `main`).
+
+1. Keep the target branch's migrations, snapshots, and journal entries as
+   they are.
+2. Delete the incoming branch's colliding `.sql`, its `meta/NNNN_snapshot.json`,
+   and its `_journal.json` entry.
+3. Resolve `src/schema/` so it holds both sides. A constraint or enum both
+   branches rewrote must carry the union of their values.
+4. Run `pnpm db:generate`. It emits one migration chained on the target's last
+   snapshot, with a fresh `when` timestamp. Review the SQL against the deleted
+   file, then run `pnpm db:generate` again: it must report no changes.
+   `git add` the new `.sql` and snapshot explicitly; the merged journal already
+   names them.
+5. A handwritten `--custom` migration cannot be regenerated. Recreate it with
+   `drizzle-kit generate --custom` at the new ordinal and copy its body.
+
+Why: two lanes that each recreate the same CHECK constraint (the thread inbox
+body check gained `compaction_undo` in one lane and `handoff_brief` in the
+other) each list only their own value. Renumbering one by hand keeps that
+SQL, so whichever runs last silently drops the other lane's value. A renamed
+file also breaks the snapshot `prevId` chain, and ordinals without advancing
+`when` timestamps can make an incremental database skip entries that a fresh
+database applies. `fresh-migrations.db.test.ts` checks strict journal ordering
+and the installed baseline hash without preventing future additive migrations.
 
 ### Works columns that must not return
 

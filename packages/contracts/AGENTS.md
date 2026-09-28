@@ -37,6 +37,13 @@ runtime shapes, and observability records.
   database's SQL predicate and partial index derive from it, and
   `turn-metadata.ts` owns each role's interrupted copy. Add a role here, then
   regenerate the index; never test placeholders with a local role check.
+- `ControlBody` in `threads/` is the one list of thread control kinds
+  (`compact`, `compaction_undo`, `handoff_brief`). Four restatements do not
+  fail to compile when a kind is missing, so change them with it: the
+  websocket pending schema (`protocol/ws-protocol.ts`), the controls route's
+  request schema, runtime `pending-inbox.ts`, and the database inbox body
+  check (`schema/agent-threads.ts`, then regenerate). A missing kind drops that
+  queued item from the tray or fails its enqueue.
 - Keep types JSON-natural at boundaries.
 - Do not import server adapters, database clients, React, or provider SDKs.
 - Blocks describe the writer transcript. Model-only document-text elisions belong

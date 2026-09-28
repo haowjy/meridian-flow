@@ -1,11 +1,18 @@
 /** Frozen model context for a handoff seed, including the no-brief terminal states. */
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { Turn } from "@meridian/contracts/threads";
-import { HandoffSeedMetadataCodec, handoffSeedMetadata } from "../../threads/index.js";
+import {
+  type HandoffFailureOutcome,
+  HandoffFailureOutcomeCodec,
+  HandoffSeedMetadataCodec,
+  handoffSeedMetadata,
+} from "../../threads/index.js";
 import { contentForBlockInput } from "./block-helpers.js";
 import type { ControlMessage } from "./control-barrier.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
+
+export const handoffBriefFailedCopy = "This handoff brief couldn't be generated. Try again.";
 
 export async function reserveHandoffSeed(
   repos: Pick<import("../../threads/index.js").ThreadRepositories, "turns" | "threads">,
@@ -69,9 +76,13 @@ export async function completeHandoffSeed(
   deps: PersistenceDeps,
   completed: Turn,
   block: ReturnType<typeof handoffSeedBlock>,
+  outcome: HandoffSeedOutcome,
 ): Promise<Turn> {
   const saved = await deps.repos.turns.findById(completed.id);
-  if (saved && saved.status !== "pending") throw new HandoffSeedSettledError(saved);
+  if (!saved) throw new Error("Handoff seed disappeared");
+  if (saved.status !== "pending") throw new HandoffSeedSettledError(saved);
+  const recorded = await recordHandoffSeedOutcome(deps, saved, outcome);
+  completed = { ...completed, metadata: recorded.metadata };
   await persistAndAppendEvents(deps, completed.threadId, async () => ({
     result: undefined,
     events: [
@@ -81,9 +92,34 @@ export async function completeHandoffSeed(
         : {
             type: "turn.error",
             turn: completed,
-            error: meridianErrorFromSystem("handoff_brief_failed", completed.error ?? ""),
+            error: {
+              ...meridianErrorFromSystem("handoff_brief_failed", completed.error ?? ""),
+              details: HandoffFailureOutcomeCodec.parse(completed.metadata),
+            },
           },
     ],
   }));
   return completed;
+}
+
+type HandoffSeedOutcome = {
+  summarizer?: import("../ports/conversation-summarizer.js").SummaryOutcome["summarizer"];
+  failure?: HandoffFailureOutcome;
+};
+
+/** One metadata writer, under the ending transaction's thread lock. */
+export async function recordHandoffSeedOutcome(
+  deps: Pick<PersistenceDeps, "repos">,
+  turn: Turn,
+  outcome: HandoffSeedOutcome,
+): Promise<Turn> {
+  // Terminal seed telemetry belongs to its winning completion, not a stale paid attempt.
+  if (turn.status !== "pending") return turn;
+  const metadata = {
+    ...HandoffSeedMetadataCodec.parse(turn.metadata),
+    ...(outcome.summarizer ? { summarizer: outcome.summarizer } : {}),
+    ...outcome.failure,
+  };
+  await deps.repos.turns.updateStatus(turn.id, { status: turn.status, metadata });
+  return { ...turn, metadata };
 }

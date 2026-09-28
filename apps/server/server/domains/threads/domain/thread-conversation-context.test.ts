@@ -129,6 +129,7 @@ describe("loadThreadConversationContext", () => {
 
     await expect(loadThreadConversationContext(deps, fork)).rejects.toMatchObject({
       code: "cutoff_not_in_transcript",
+      threadId: "fork",
     });
   });
 

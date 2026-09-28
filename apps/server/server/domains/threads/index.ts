@@ -120,6 +120,8 @@ export {
   derivationSeedMetadata,
   encodeImageInclusionMetadata,
   foregroundMessageMetadata,
+  type HandoffFailureOutcome,
+  HandoffFailureOutcomeCodec,
   HandoffSeedMetadataCodec,
   handoffSeedMetadata,
   ImageContextBreakCodec,

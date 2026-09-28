@@ -23,6 +23,23 @@
 - Keep history pages stable across compaction and undo; preserve old prompt-bake bytes.
 
 - Require a lineage root on every conversation; index fork and handoff discovery.
+- Accept failed replies as handoff cutoffs without changing the source warmth rule or rewriting their failed status on later sends.
+
+- Preserve undo-before-Retry order in expanded control batches; only brief-only batches skip control history.
+- Record brief telemetry and failure metadata through one pending-owner writer; late paid attempts cannot replace the winning outcome.
+
+- Stage activated skills through one boundary owner. Retry briefs defer skill bodies until the successor commits.
+
+- Skip destination control-history preparation while a handoff brief owns the boundary.
+
+- Keep internal ending-commit failures out of handoff brief writer copy. Retain diagnostic causes in error details.
+
+- Fall back to cold briefs when source preview fails. Preserve queued skill activations through Retry and winning seed metadata through late paid responses.
+
+- Keep source image decisions unchanged when handoff preview discovers a lost asset; generate the brief cold.
+
+- Generate handoff briefs from the source model’s warm prefix or the cheap cold summarizer. Meter every returned attempt on the destination seed.
+- Keep brief failures typed, preserve queued replies, and exclude brief calls from future cache baselines.
 
 - Undo failures show writer copy, retain typed reasons, and expose metadata in `mf thread view --json`.
 
@@ -70,6 +87,8 @@
 - Re-admit retained excluded images into budget left after normal late-arrival handling during complete compaction; compaction-owned decisions remain reversible, and forks preserve decision history through their cutoff, including undo.
 
 ### Fixed
+- Keep a failed reply marked failed after the writer sends again. Its error turns into a quiet marker as soon as anything follows it, and each failure keeps its own marker. Its pending trail work no longer auto-pushes its branch when the writer sends first; before, that depended on timing.
+- Say "Couldn't send." only when the writer's message never reached the server. A reply that fails before writing anything now reads as a failed response, both while current and in history.
 - Keep interrupted compaction metadata parseable across run-start and startup recovery.
 - Read transcript segment cuts with the planned-compaction codec; failed dividers stay ordinary items.
 - Settle orphaned primary assistant turns at startup and after a new run acquires its claim, keeping transcript anchors and fork cutoffs movable.

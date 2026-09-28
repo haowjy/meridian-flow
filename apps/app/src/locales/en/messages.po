@@ -1794,8 +1794,8 @@ msgstr "epigraph"
 #~ msgstr "Errored"
 
 #: src/features/chat/ErrorBlock.tsx
-msgid "Errored."
-msgstr "Errored."
+#~ msgid "Errored."
+#~ msgstr "Errored."
 
 #: src/features/chat/DraftDock.tsx
 msgid "Expand changes"
@@ -4186,6 +4186,10 @@ msgstr "This project couldn’t load. It may be unavailable."
 #: src/features/chat/tool-renderers.tsx
 #~ msgid "This report is unavailable."
 #~ msgstr "This report is unavailable."
+
+#: src/features/chat/ErrorBlock.tsx
+msgid "This response failed."
+msgstr "This response failed."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "This row is already at the edge."

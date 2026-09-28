@@ -1,6 +1,8 @@
 /** Runs the unlocked summary, then prepares values for an atomic epoch/successor transition. */
+
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import { CompactionMetadataCodec } from "../../threads/index.js";
 import type { SummaryOutcome, SummaryResponse } from "../ports/conversation-summarizer.js";
 import {
   type CompactionDecision,
@@ -17,6 +19,7 @@ import {
   prepareCompactionSuccessor,
 } from "./compaction-successor.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
+import type { PersistenceDeps } from "./persistence.js";
 import { prepareRequestContext } from "./request-preparation.js";
 import type { RunLoopInput } from "./run-turn-port.js";
 import type { DeliveryBoundary } from "./runtime-delivery.js";
@@ -81,8 +84,8 @@ export async function executeCompaction({
             summarizer: { path: "cold", segments: 0 },
           }
         : await deps.summarizer.summarize({
-            threadId: input.threadId,
-            turnId: currentTurn.id,
+            owner: { threadId: input.threadId, turnId: currentTurn.id },
+            source: { threadId: input.threadId },
             instruction: "compaction",
             changedDocuments: changed,
             requestInHand: decision.requestInHand,
@@ -204,4 +207,15 @@ export async function executeCompaction({
         ? successor.preparedCurrent.summaryBlock
         : undefined,
   };
+}
+
+export async function recordCompactionSummary(
+  deps: PersistenceDeps,
+  turn: Turn,
+  summarizer: SummaryOutcome["summarizer"],
+): Promise<void> {
+  await deps.repos.turns.updateStatus(turn.id, {
+    status: turn.status,
+    metadata: { ...CompactionMetadataCodec.parse(turn.metadata), summarizer },
+  });
 }

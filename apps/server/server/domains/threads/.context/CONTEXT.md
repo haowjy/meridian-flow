@@ -14,10 +14,17 @@ It shares fork's settled-cutoff normalization and row-only create-or-get rule
 (with `originType = handoff`). The cutoff owner is its recorded source, including
 an inherited fork cutoff. A subagent cannot be a derivation source.
 The create transaction writes one pending system seed, its `handoff_brief`
-control and the source event (cutoff, no summary). Delivery schedules the wake
-after commit. The control's `seedTurnId` owns the first seed even across a
-process death. See [runtime handoff](../../runtime/.context/handoff.md) and
+control (naming the seed in `seedTurnId`) and the source event (cutoff, no
+summary). Delivery schedules the wake after commit. Runtime owns the seed from
+there, including its crash recovery: see
+[runtime handoff](../../runtime/.context/handoff.md) and
 [HTTP contract](../../../../../../docs/api/thread-handoff.md).
+
+The seed codec owns summarizer telemetry and typed brief failure reason/phase;
+the shared summary rejection codec is in `@meridian/contracts/runtime`.
+Response rows on system seeds never supply prefix warmth or token baselines.
+The effective-transcript loader accepts an optional through-cutoff selection,
+sharing the exact prefix slicing used for fork inheritance.
 
 ## Prompt lifetime
 
@@ -626,12 +633,9 @@ that fact in `owners[].trashed`.
 content replaced in place, but adding a block after settlement would create a
 key behind active cursors and is forbidden by the runtime's append protocol.
 The sole allowed additions are to the live unsettled turn before it joins the
-settled prefix. Orphan repair reuses the placeholder module and C4 scan, and
-adds a primary-assistant scan at startup and run claim. With the session claim
-held, a dead primary assistant becomes an interrupted reply; pending
-placeholders keep their existing interruption copy, and child turns keep the
-execution-report repair path. The held session claim protects live turns;
-there is no separate `liveTurnId` guard.
+settled prefix. A dead unsettled turn joins the settled prefix only when
+runtime orphan repair finalizes it; see
+[placeholders and recovery](../../runtime/.context/compaction.md).
 
 ## Connected conversation authority
 
