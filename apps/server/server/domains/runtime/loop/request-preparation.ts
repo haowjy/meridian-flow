@@ -289,6 +289,7 @@ async function prepareBaseRequest(
     }
     compaction = decideCompaction({
       request: assembled.generateRequest,
+      activeHistory: assembled.activeHistory,
       turns: [...input.turns, ...assembled.imageContextUpdates.turns],
       blocks: [...blocks, ...assembled.imageContextUpdates.blocks],
       thresholdTokens: assembled.compactionTriggerTokens,

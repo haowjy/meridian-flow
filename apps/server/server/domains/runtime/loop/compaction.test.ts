@@ -479,10 +479,75 @@ describe("estimateRequestTokens", () => {
     expect(estimated).toBeGreaterThanOrEqual(3 * text.length * CJK_CODE_POINT_TOKEN_RATES.deepseek);
   });
 
+  it("#619 measures only the active cut, refuses strictly below the cap, and leaves auto alone", () => {
+    const turns = [
+      turn("old", 1, "user"),
+      turn("answer", 2, "assistant"),
+      turn("pin", 3, "user"),
+      turn("latest", 4, "assistant"),
+    ];
+    const blocks = turns.map((turn, i) =>
+      block(`b${i}`, turn.id, 0, "text", null, i === 0 ? "old facts ".repeat(2000) : "short"),
+    );
+    // A prior projection can make a large raw history cheap (for example stale read elision).
+    const activeHistory = { turns, blocks: blocks.map((b) => ({ ...b, textContent: "short" })) };
+    const common = {
+      request: { messages: [requestMessage("raw request ".repeat(3000))] },
+      turns,
+      blocks,
+      activeHistory,
+      thresholdTokens: 100000,
+      baseline: null,
+      tokenizer: "deepseek" as const,
+      forcedDecision: {
+        kind: "compact" as const,
+        trigger: "manual" as const,
+        fitLimitTokens: 100000,
+      },
+    };
+    const first = decideCompaction({ ...common, summaryReserveTokens: 1 });
+    if (first.kind !== "compact" || first.plan.outcome !== "planned")
+      throw new Error("Missing plan");
+    const cut = projectCompactedHistory(activeHistory, first.plan);
+    const floor = cut.turns.reduce(
+      (sum, turn) =>
+        sum +
+        estimateTurnTokens(
+          turn,
+          cut.blocks.filter((b) => b.turnId === turn.id),
+          "deepseek",
+        ),
+      0,
+    );
+    expect(floor).toBeGreaterThan(0);
+    expect(decideCompaction({ ...common, summaryReserveTokens: floor })).not.toHaveProperty(
+      "refusal",
+    );
+    expect(decideCompaction({ ...common, summaryReserveTokens: floor + 1 })).toMatchObject({
+      kind: "compact",
+      refusal: "nothing_to_compact",
+    });
+    expect(
+      decideCompaction({
+        ...common,
+        summaryReserveTokens: floor + 1,
+        forcedDecision: { ...common.forcedDecision, trigger: "auto" },
+      }),
+    ).toMatchObject({ kind: "compact", trigger: "auto" });
+    expect(
+      decideCompaction({
+        ...common,
+        summaryReserveTokens: floor + 1,
+        forcedDecision: { ...common.forcedDecision, trigger: "auto" },
+      }),
+    ).not.toHaveProperty("refusal");
+  });
+
   it("makes Claude and DeepSeek trigger different decisions for the same Chinese read", () => {
     const request = { messages: [requestMessage("中".repeat(200))] };
     const common = {
       request,
+      activeHistory: { turns: [], blocks: [] },
       turns: [],
       blocks: [],
       thresholdTokens: 400,
