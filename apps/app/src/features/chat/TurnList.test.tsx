@@ -10,7 +10,9 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 const rendered = vi.hoisted(() => ({
-  assistants: new Map<string, { endsTranscript?: boolean; hasRetry: boolean }>(),
+  // `failedSend` records whether the turn got `failedSendRetry`, which alone picks send copy and
+  // Retry over generation copy (AssistantTurn.error.test.tsx covers the rendered copy).
+  assistants: new Map<string, { endsTranscript?: boolean; failedSend: boolean }>(),
 }));
 vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
@@ -30,7 +32,7 @@ vi.mock("./AssistantTurn", () => ({
   }) => {
     rendered.assistants.set(props.turn.id, {
       endsTranscript: props.endsTranscript,
-      hasRetry: props.failedSendRetry !== undefined,
+      failedSend: props.failedSendRetry !== undefined,
     });
     return null;
   },
@@ -145,7 +147,7 @@ describe("TurnList failed replies", () => {
   const user = (id: string) => ({ id, role: "user", status: "complete", blocks: [] });
   const assistant = (id: string, status: string) => ({ id, role: "assistant", status, blocks: [] });
 
-  async function renderTurns(turns: unknown[], retryTurnId: string) {
+  async function renderTurns(turns: unknown[], failedSendTurnId?: string) {
     await act(async () =>
       root.render(
         <TurnList
@@ -155,7 +157,9 @@ describe("TurnList failed replies", () => {
           tailFollowRevision={0}
           ariaLabel="Conversation"
           changeTrails={{}}
-          failedSendRetry={{ turnId: retryTurnId, retry: () => undefined }}
+          failedSendRetry={
+            failedSendTurnId ? { turnId: failedSendTurnId, retry: () => undefined } : null
+          }
         />,
       ),
     );
@@ -163,7 +167,7 @@ describe("TurnList failed replies", () => {
 
   it("makes a failure historical once the writer sends, and the next failure current", async () => {
     await renderTurns([user("u1"), assistant("b", "error")], "b");
-    expect(rendered.assistants.get("b")).toEqual({ endsTranscript: true, hasRetry: true });
+    expect(rendered.assistants.get("b")).toEqual({ endsTranscript: true, failedSend: true });
 
     // The optimistic send alone moves the failure into history.
     await renderTurns([user("u1"), assistant("b", "error"), user("u2")], "b");
@@ -175,12 +179,32 @@ describe("TurnList failed replies", () => {
     );
     expect(rendered.assistants.get("b")?.endsTranscript).toBe(false);
 
-    await renderTurns(
-      [user("u1"), assistant("b", "error"), user("u2"), assistant("c", "error")],
-      "c",
-    );
-    expect(rendered.assistants.get("b")).toEqual({ endsTranscript: false, hasRetry: false });
-    expect(rendered.assistants.get("c")).toEqual({ endsTranscript: true, hasRetry: true });
+    // A failure after a second writer message was admitted, so it never carries the failed-send
+    // retry: it is current with generation copy and no Retry.
+    await renderTurns([user("u1"), assistant("b", "error"), user("u2"), assistant("c", "error")]);
+    expect(rendered.assistants.get("b")).toEqual({ endsTranscript: false, failedSend: false });
+    expect(rendered.assistants.get("c")).toEqual({ endsTranscript: true, failedSend: false });
+  });
+
+  it("keeps a failure current when only hidden rows follow it", async () => {
+    const delivery = {
+      id: "notice",
+      role: "system",
+      status: "complete",
+      prevTurnId: "b",
+      metadata: {
+        kind: "subagent_update",
+        handle: "p3",
+        execution: "execution-1",
+        outcome: "succeeded",
+        childThreadId: "child",
+        agentName: "Critic",
+      },
+      blocks: [],
+    };
+    const compaction = { id: "compaction", role: "compaction", status: "complete", blocks: [] };
+    await renderTurns([user("u1"), assistant("b", "error"), delivery, compaction]);
+    expect(rendered.assistants.get("b")).toEqual({ endsTranscript: true, failedSend: false });
   });
 });
 
