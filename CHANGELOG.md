@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Regenerate compaction undo migration after transcript indexes; keep both database changes.
+
 - Compaction undo preserves paged transcript segments and restores the pre-compaction prompt bake.
 
 ### Changed

@@ -372,4 +372,3 @@ catalog entry yields null availability without hiding the durable snapshot.
 
 [kb-elision]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/request-prefix/stale-document-elision.md
 [kb-thread-controls]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/thread-controls.md
-
