@@ -29,6 +29,7 @@ export type PreparedChild = {
   resolvedSlug: string;
   description?: string;
   seedBlocks?: BlockUpsertedRow[];
+  from?: { threadId: ThreadId; ref: string; title: string | null };
   signal?: AbortSignal;
   background: boolean;
   origin: "spawn" | "message";

@@ -217,7 +217,20 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         parentThreadId: input.parentThread.id as ThreadId,
         childThreadId: child.id,
       });
-      return { ...prepared, description: input.description, seedBlocks };
+      return {
+        ...prepared,
+        description: input.description,
+        seedBlocks,
+        ...(source
+          ? {
+              from: {
+                threadId: source.id as ThreadId,
+                ref: source.ref as string,
+                title: source.title,
+              },
+            }
+          : {}),
+      };
     } catch (error) {
       await deps.repos.threads.updateSpawnLifecycle(child.id as ThreadId, {
         spawnStatus: "failed",
@@ -308,6 +321,13 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         execution: null,
         startedAt: new Date().toISOString(),
         terminalAt: null,
+        ...(prepared.from
+          ? {
+              fromThreadId: prepared.from.threadId,
+              fromThreadRef: prepared.from.ref,
+              fromThreadTitle: prepared.from.title,
+            }
+          : {}),
       });
     }
     return invocationCardProps({

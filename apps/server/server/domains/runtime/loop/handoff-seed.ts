@@ -1,4 +1,5 @@
 /** Frozen model context for a handoff seed, including the no-brief terminal states. */
+import type { HandoffBriefProps } from "@meridian/contracts/components";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { Turn } from "@meridian/contracts/threads";
 import {
@@ -25,6 +26,8 @@ export async function reserveHandoffSeed(
   if (!cutoff) throw new Error("Handoff cutoff is missing");
   const source = await repos.threads.findByIdIncludingDeleted(cutoff.threadId);
   if (!source) throw new Error("Handoff source is missing");
+  // S already captured this title at creation; a later retitle must not rewrite it.
+  const existingMetadata = HandoffSeedMetadataCodec.safeParse(input.metadata);
   return createLocalTurn({
     ...input,
     prevTurnId: input.prevTurnId ?? null,
@@ -34,6 +37,7 @@ export async function reserveHandoffSeed(
     metadata: handoffSeedMetadata({
       sourceThreadId: source.id,
       sourceRef: source.ref ?? source.id,
+      sourceTitle: existingMetadata.success ? existingMetadata.data.sourceTitle : source.title,
       cutoffTurnId: cutoff.id,
       controlMessageId: control.id,
     }),
@@ -51,23 +55,22 @@ export function handoffSeedBlock(
   const modelText = brief
     ? `<system_update>\n<prior-session-context source="${sourceRef}">\n${brief.text}\n</prior-session-context>${reference}\n</system_update>`
     : `<system_update>\nThis conversation was handed off from ${sourceRef}. No brief is available.${reference}\n</system_update>`;
+  const props: HandoffBriefProps = {
+    state: brief ? "available" : "unavailable",
+    brief: brief?.text ?? null,
+    sourceThreadId: metadata.sourceThreadId,
+    sourceRef,
+    sourceTitle: metadata.sourceTitle,
+    cutoffTurnId: metadata.cutoffTurnId,
+    model: brief?.model ?? null,
+    modelText,
+  };
   return contentForBlockInput({
     turnId: seed.id,
     blockType: "custom",
     sequence: 0,
     status: "complete",
-    content: {
-      kind: "handoff-brief",
-      props: {
-        state: brief ? "available" : "unavailable",
-        brief: brief?.text ?? null,
-        sourceThreadId: metadata.sourceThreadId,
-        sourceRef,
-        cutoffTurnId: metadata.cutoffTurnId,
-        model: brief?.model ?? null,
-        modelText,
-      },
-    },
+    content: { kind: "handoff-brief", props },
   });
 }
 

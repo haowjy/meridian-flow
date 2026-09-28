@@ -31,7 +31,11 @@ are separate from these transport contracts.
 Handoff seeds are pending `system` placeholders with current-turn kind
 `handoff_brief` and phase `briefing`. After a crash the first seed is
 completed in place; clients never see a replacement seed for it. Its custom block
-carries frozen `modelText` and available/unavailable brief data. See
+carries frozen `modelText` and available/unavailable brief data. Its
+`sourceTitle` is writer-facing display data copied from the seed metadata and
+is excluded from `modelText`. The shared `HandoffBriefProps` and
+`InvocationCardProps` component contracts describe the handoff and spawn-card
+fields. See
 [handoff API](../../../../docs/api/thread-handoff.md).
 
 ### Compaction undo

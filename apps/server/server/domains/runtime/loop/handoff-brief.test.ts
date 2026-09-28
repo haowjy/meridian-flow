@@ -71,6 +71,7 @@ it.each([
     metadata: handoffSeedMetadata({
       sourceThreadId: source.id,
       sourceRef: source.ref!,
+      sourceTitle: source.title,
       cutoffTurnId: c.id,
       controlMessageId: crypto.randomUUID(),
     }),

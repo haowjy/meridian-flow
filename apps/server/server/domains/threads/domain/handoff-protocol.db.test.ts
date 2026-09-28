@@ -16,8 +16,9 @@ import { createChildRunCoordinator } from "../../runtime/spawn/child-run-coordin
 import { createChildRunDriver } from "../../runtime/spawn/child-run-driver.js";
 import { createOrphanReportRepair } from "../../runtime/spawn/orphan-report-repair.js";
 import { createReportPublisher } from "../../runtime/spawn/report-publisher.js";
+import type { SpawnTranscript } from "../../runtime/spawn/spawn-transcript.js";
 import { createToolRegistry } from "../../runtime/tools/index.js";
-import { readThreadActivity } from "../index.js";
+import { readThreadActivity, readTranscriptPage } from "../index.js";
 import {
   resetThreadWorkRaceFixture,
   THREAD_WORK_RACE,
@@ -280,7 +281,11 @@ else
       });
     }
 
-    async function spawnFrom(r: Awaited<ReturnType<typeof fixture>>, from: string) {
+    async function spawnFrom(
+      r: Awaited<ReturnType<typeof fixture>>,
+      from: string,
+      transcript?: SpawnTranscript,
+    ) {
       return childCoordinator(r).runChild(
         {
           kind: "spawn",
@@ -298,7 +303,7 @@ else
             deliveryMode: "direct",
           },
         },
-        { mode: "foreground" },
+        { mode: "foreground", ...(transcript ? { transcript } : {}) },
       );
     }
 
@@ -358,6 +363,64 @@ else
       expect(JSON.stringify(next.messages.slice(0, first.messages.length))).toBe(
         JSON.stringify(first.messages),
       );
+    });
+
+    it("C10b freezes the handoff source title without changing modelText", async () => {
+      const r = await fixture();
+      const sourceTitle = r.source.title;
+      expect(r.seed.metadata).toMatchObject({ sourceTitle });
+
+      await db
+        .update(schema.threads)
+        .set({ title: "Retitled after handoff creation" })
+        .where(eq(schema.threads.id, r.source.id));
+      await r.drain();
+      await r.settled();
+
+      const [block] = await repos.blocks.listByTurn(r.seed.id);
+      const props = (block.content as { props: Record<string, unknown> }).props;
+      expect(props).toMatchObject({ sourceTitle });
+      expect(props.modelText).toBe(
+        '<system_update>\n<prior-session-context source="c900">\nEarlier context.\n</prior-session-context>\n</system_update>',
+      );
+      expect(props.modelText).not.toContain(sourceTitle);
+    });
+
+    it("C10b keeps spawn source provenance on a fresh transcript snapshot", async () => {
+      const r = await fixture();
+      const transcript: SpawnTranscript = {
+        persistence: { repos, eventWriter },
+        threadId: r.source.id,
+        turnId: r.firstTurn.id,
+        blockSeqRef: { value: 1 },
+        allBlocks: await repos.blocks.listByTurn(r.firstTurn.id),
+      };
+
+      const result = await spawnFrom(r, "current", transcript);
+      expect(result.status).toBe("completed");
+      await db
+        .update(schema.threads)
+        .set({ title: "Retitled after spawn" })
+        .where(eq(schema.threads.id, r.source.id));
+
+      const parent = await repos.threads.findById(r.source.id);
+      if (!parent) throw new Error("Spawn parent missing");
+      const snapshot = await readTranscriptPage(repos, parent, {
+        order: "oldest_first",
+        unit: "turn",
+        limit: 10,
+      });
+      const card = snapshot.entries
+        .flatMap((entry) => entry.blocks)
+        .find((block) => (block.content as { kind?: string }).kind === "helper-result");
+
+      expect(card?.content).toMatchObject({
+        props: {
+          fromThreadId: r.source.id,
+          fromThreadRef: r.source.ref,
+          fromThreadTitle: r.source.title,
+        },
+      });
     });
 
     it.each([

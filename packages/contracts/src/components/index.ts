@@ -42,6 +42,18 @@ export type ThreadReferenceProps = {
   text: string;
 };
 
+/** Writer-facing handoff card data, frozen when its seed is reserved. */
+export type HandoffBriefProps = {
+  state: "available" | "unavailable";
+  brief: string | null;
+  sourceThreadId: string;
+  sourceRef: string;
+  sourceTitle: string | null;
+  cutoffTurnId: string;
+  model: string | null;
+  modelText: string;
+};
+
 /** Identity and timing shared by every retained child invocation card. */
 type InvocationCardBase = {
   agentSlug: string;
@@ -51,6 +63,9 @@ type InvocationCardBase = {
   deliveryMode: Extract<ExecutionReportDelivery, "direct" | "background_notification">;
   startedAt: string;
   title?: string;
+  fromThreadId?: ThreadId;
+  fromThreadRef?: string;
+  fromThreadTitle?: string | null;
 };
 
 /** Exact parent invocation identity retained on a child run's historical card. */
@@ -87,6 +102,9 @@ const invocationCardBaseSchema = z.strictObject({
   deliveryMode: z.enum(["direct", "background_notification"]),
   startedAt: z.string(),
   title: z.string().optional(),
+  fromThreadId: z.string().optional(),
+  fromThreadRef: z.string().optional(),
+  fromThreadTitle: z.string().nullable().optional(),
 });
 
 export const invocationCardPropsSchema = z.union([
