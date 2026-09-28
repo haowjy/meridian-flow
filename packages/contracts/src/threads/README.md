@@ -12,9 +12,13 @@ position. It is rendered at the transcript tail until a divider with
 identified by `metadata.satisfiesControlId`.
 
 Manual dividers use role `compaction`, `trigger: "manual"`, and ordinary turn
-statuses: `pending`, `complete`, `error`, `cancelled`. Failure reason metadata
-is `nothing_to_compact`, `context_too_large`, `compaction_failed`, or
-`interrupted`. Completed summary blocks carry `summary`, `tokensBefore`, and
+statuses: `pending`, `complete`, `error`, `cancelled`. A failed divider of
+either trigger carries a typed `reason` and `phase` in metadata (crash recovery
+is `interrupted` at `recovery`); the server's `CompactionFailureReasonCodec`
+and `CompactionFailurePhaseCodec` in `threads/domain/turn-metadata.ts` own the
+values. Its `turn.error` code stays `nothing_to_compact`, `context_too_large`,
+`context_window_exceeded`, or `compaction_failed`, with the outcome in
+`details`. Completed summary blocks carry `summary`, `tokensBefore`, and
 `tokensAfter`. `pinnedRequestTurnIds` records every unanswered directed request
 plus the newest writer request; ids may identify user or directed system turns.
 
