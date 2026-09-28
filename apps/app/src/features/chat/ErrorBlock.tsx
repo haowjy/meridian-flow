@@ -13,14 +13,23 @@ export type ErrorBlockProps = {
    * - `false` → quiet historical marker: single muted line, no background.
    */
   isLatest: boolean;
-  /** Empty working turn that never generated. Not generation-failure copy. */
+  /**
+   * - `send` → the writer's message was never admitted (failed first send).
+   * - `generation` → the message was admitted and the reply failed, with or
+   *   without partial output.
+   */
   kind?: "send" | "generation";
   /** Retry this turn with the same ids. Omit to hide the control. */
   onRetry?: () => void;
 };
 
-function errorCopy(kind: ErrorBlockProps["kind"]): string {
+function activeCopy(kind: ErrorBlockProps["kind"]): string {
   return kind === "send" ? t`Couldn't send.` : t`Something went wrong generating a response.`;
+}
+
+/** One quiet sentence per kind; reads on its own in history, no status prefix. */
+function historicalCopy(kind: ErrorBlockProps["kind"]): string {
+  return kind === "send" ? t`Couldn't send.` : t`This response failed.`;
 }
 
 /**
@@ -49,7 +58,7 @@ function ActiveError({ kind, onRetry }: { kind: ErrorBlockProps["kind"]; onRetry
     >
       <CircleAlert className="text-destructive" aria-hidden />
       <AlertDescription className="text-compact text-ink-muted">
-        <p>{errorCopy(kind)}</p>
+        <p>{activeCopy(kind)}</p>
         {onRetry ? (
           <Button
             type="button"
@@ -67,9 +76,5 @@ function ActiveError({ kind, onRetry }: { kind: ErrorBlockProps["kind"]; onRetry
 }
 
 function HistoricalError({ kind }: { kind: ErrorBlockProps["kind"] }) {
-  return (
-    <p className="text-caption text-muted-foreground">
-      <Trans>Errored.</Trans> {errorCopy(kind)}
-    </p>
-  );
+  return <p className="text-caption text-muted-foreground">{historicalCopy(kind)}</p>;
 }

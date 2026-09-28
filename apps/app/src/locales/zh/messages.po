@@ -1794,8 +1794,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/ErrorBlock.tsx
-msgid "Errored."
-msgstr ""
+#~ msgid "Errored."
+#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 msgid "Expand changes"
@@ -4182,6 +4182,10 @@ msgstr ""
 #: src/features/chat/tool-renderers.tsx
 #~ msgid "This report is unavailable."
 #~ msgstr ""
+
+#: src/features/chat/ErrorBlock.tsx
+msgid "This response failed."
+msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "This row is already at the edge."

@@ -27,6 +27,7 @@
 
 ### Fixed
 - Keep a failed reply marked failed after the writer sends again. Its error turns into a quiet marker as soon as anything follows it, and each failure keeps its own marker.
+- Say "Couldn't send." only when the writer's message never reached the server. A reply that fails before writing anything now reads as a failed response, both while current and in history.
 - Settle orphaned primary assistant turns at startup and after a new run acquires its claim, keeping transcript anchors and fork cutoffs movable.
 - Give database fixture hooks the same timeout budget as test bodies to avoid overlapping resets.
 - Publish committed pulls even if the caller response aborts. Preserve live manifest read-your-writes.

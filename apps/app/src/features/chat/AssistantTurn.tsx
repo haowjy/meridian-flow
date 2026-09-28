@@ -67,7 +67,12 @@ export type AssistantTurnProps = {
    * settled action row of its own.
    */
   continuesResponse?: boolean;
-  onRetry?: () => void;
+  /**
+   * Present only on the working turn of a send the server never admitted (the
+   * failed first send during route handoff). Its presence is what makes the
+   * error send copy rather than generation copy; calling it resubmits.
+   */
+  failedSendRetry?: () => void;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   changeTrail?: ChangeTrailShell;
   navigateToChange?: NavigateToTrailChange;
@@ -82,7 +87,7 @@ function AssistantTurnComponent({
   isLatestAssistant = false,
   endsTranscript = false,
   continuesResponse = false,
-  onRetry,
+  failedSendRetry,
   onRespondToInterrupt,
   changeTrail,
   navigateToChange,
@@ -175,8 +180,8 @@ function AssistantTurnComponent({
         {isErrored ? (
           <ErrorBlock
             isLatest={endsTranscript}
-            kind={turn.blocks.length === 0 ? "send" : "generation"}
-            onRetry={endsTranscript ? onRetry : undefined}
+            kind={failedSendRetry ? "send" : "generation"}
+            onRetry={endsTranscript ? failedSendRetry : undefined}
           />
         ) : null}
       </div>

@@ -164,7 +164,7 @@ export function TurnList({
           isLatestAssistant={idx === lastAssistantIdx}
           endsTranscript={idx === visibleTurns.length - 1}
           continuesResponse={continuing[idx] ?? false}
-          onRetry={turn.id === failedSendRetry?.turnId ? failedSendRetry.retry : undefined}
+          failedSendRetry={turn.id === failedSendRetry?.turnId ? failedSendRetry.retry : undefined}
           onRespondToInterrupt={onRespondToInterrupt}
           changeTrail={byTurnId.get(turn.id)}
           navigateToChange={navigateToChange}

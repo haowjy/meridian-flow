@@ -23,10 +23,14 @@ vi.mock("@tanstack/react-virtual", () => ({
   }),
 }));
 vi.mock("./AssistantTurn", () => ({
-  AssistantTurn: (props: { turn: { id: string }; endsTranscript?: boolean; onRetry?: unknown }) => {
+  AssistantTurn: (props: {
+    turn: { id: string };
+    endsTranscript?: boolean;
+    failedSendRetry?: unknown;
+  }) => {
     rendered.assistants.set(props.turn.id, {
       endsTranscript: props.endsTranscript,
-      hasRetry: props.onRetry !== undefined,
+      hasRetry: props.failedSendRetry !== undefined,
     });
     return null;
   },
