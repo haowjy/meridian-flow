@@ -44,7 +44,7 @@ export function parseSpawnToolArgs(input: unknown): SpawnToolArgs {
       : {};
   return {
     ...(typeof rec.agent === "string" ? { agent: rec.agent } : {}),
-    ...(rec.from !== undefined ? { from: z.string().parse(rec.from) } : {}),
+    ...(rec.from !== undefined && rec.from !== null ? { from: z.string().parse(rec.from) } : {}),
     prompt: typeof rec.prompt === "string" ? rec.prompt : "",
     ...(typeof rec.description === "string" ? { description: rec.description } : {}),
     mode: rec.mode === "background" ? "background" : "foreground",
