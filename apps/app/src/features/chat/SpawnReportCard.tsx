@@ -8,6 +8,7 @@ import { parseThreadReportResult, toReportContentValue } from "@meridian/contrac
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { getThreadExecutionReport } from "@/client/api/execution-reports-api";
+import { SourceChatLink, useSourceThread } from "./derivation/SourceChatLink";
 import type { DirectInvocationResult } from "./invocation-direct-result";
 import { ReportContent } from "./ReportContent";
 import { useSubagentDisclosure } from "./subagent/DisclosureStore";
@@ -31,6 +32,8 @@ type Props = {
   savedReport?: SavedReportSource | null;
   liveTool?: string | null;
   run?: SubagentRun;
+  /** The conversation the spawn named with `from`, when known. */
+  fromThreadId?: string | null;
 };
 
 export function SpawnReportCard({
@@ -47,6 +50,7 @@ export function SpawnReportCard({
   savedReport = null,
   liveTool,
   run: suppliedRun,
+  fromThreadId = null,
 }: Props) {
   const [expanded, setExpanded] = useSubagentDisclosure(
     childThreadId ? `run:${childThreadId}` : `execution:${savedReport?.execution ?? "unknown"}`,
@@ -98,6 +102,7 @@ export function SpawnReportCard({
           ) : undefined
         }
       />
+      {fromThreadId ? <SpawnSourceLine threadId={fromThreadId} /> : null}
       {expanded && expandable ? (
         <div className="mt-[var(--chat-space-block)] pl-[calc(1.5rem+var(--chat-space-row))] text-sm">
           {foreground && directResult ? (
@@ -140,6 +145,22 @@ function SavedReportBody({ source }: { source: SavedReportSource }) {
   const report = toReportContentValue(parseThreadReportResult(saved.data));
   if (!report) return <Note>{<Trans>Report is unavailable</Trans>}</Note>;
   return <ReportBody report={report} />;
+}
+
+/** "From <source>": the earlier conversation this subagent was pointed at. */
+function SpawnSourceLine({ threadId }: { threadId: string }) {
+  const source = useSourceThread(threadId, null);
+  return (
+    <p
+      data-spawn-source={threadId}
+      className="mt-[var(--chat-space-inline)] flex min-w-0 items-baseline gap-1 pl-[calc(1.5rem+var(--chat-space-row))] text-xs text-muted-foreground"
+    >
+      <span className="shrink-0">
+        <Trans>From</Trans>
+      </span>
+      <SourceChatLink threadId={threadId} title={source.title} trashed={source.trashed} />
+    </p>
+  );
 }
 
 function Note({ children }: { children: ReactNode }) {

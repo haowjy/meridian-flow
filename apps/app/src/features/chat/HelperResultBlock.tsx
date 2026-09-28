@@ -5,6 +5,7 @@ import type { ComponentBlockProps } from "./component-registry";
 import { reportPersistedContractFailure } from "./persisted-contract-debug";
 import { SpawnReportCard } from "./SpawnReportCard";
 import { useSubagentRun } from "./subagent/ActivityContext";
+import { useSpawnSource } from "./useThreadActivity";
 
 export function HelperResultBlock({ content, invocationResult, threadId }: ComponentBlockProps) {
   const props = parseInvocationCard(content);
@@ -12,6 +13,7 @@ export function HelperResultBlock({ content, invocationResult, threadId }: Compo
     reportPersistedContractFailure({ contract: "invocation_card", threadId });
   }
   const run = useSubagentRun({ threadId: props?.childThreadId ?? "" });
+  const fromThreadId = useSpawnSource(props?.childThreadId ?? null);
   if (!props) return null;
   const liveTool = run?.liveTool ?? null;
   const savedReport =
@@ -51,6 +53,7 @@ export function HelperResultBlock({ content, invocationResult, threadId }: Compo
       directResult={invocationResult}
       savedReport={savedReport}
       run={run}
+      fromThreadId={fromThreadId}
     />
   );
 }

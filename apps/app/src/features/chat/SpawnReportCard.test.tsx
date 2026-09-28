@@ -15,6 +15,11 @@ vi.mock("@/rich-content/Markdown", () => ({
   Markdown: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
+vi.mock("./derivation/SourceChatLink", () => ({
+  useSourceThread: () => ({ title: "Chapter 12 plan", trashed: false }),
+  SourceChatLink: ({ title }: { title: string }) => <span data-source-link>{title}</span>,
+}));
+
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ChatThreadNavigationProvider } from "./ChatThreadNavigation";
 import { type DirectInvocationResult, directResultsForTurn } from "./invocation-direct-result";
@@ -74,6 +79,39 @@ describe("SpawnReportCard", () => {
 
     await act(async () => findButton('Open "Critic"')?.click());
     expect(openThread).toHaveBeenCalledWith("child-1");
+  });
+
+  it("names the conversation the spawn pointed the child at with from", async () => {
+    await act(async () =>
+      root.render(
+        <TooltipProvider>
+          <SpawnReportCard
+            deliveryMode="direct"
+            agentName="Critic"
+            title={null}
+            status="running"
+            childThreadId="child-1"
+            fromThreadId="source"
+          />
+        </TooltipProvider>,
+      ),
+    );
+    const line = host.querySelector("[data-spawn-source]");
+    expect(line?.textContent).toBe("FromChapter 12 plan");
+    await act(async () =>
+      root.render(
+        <TooltipProvider>
+          <SpawnReportCard
+            deliveryMode="direct"
+            agentName="Critic"
+            title={null}
+            status="running"
+            childThreadId="child-1"
+          />
+        </TooltipProvider>,
+      ),
+    );
+    expect(host.querySelector("[data-spawn-source]")).toBeNull();
   });
 
   it("shows the persisted p17 result, duration, and expansion control", async () => {

@@ -13,6 +13,11 @@
  * reconciliation as the correction: `subscribed.state.activity` is recomputed
  * from the live leases and always wins after catch-up. No lease-expiry activity
  * signal is added.
+ *
+ * The same subscription records each `meridian.agent.spawn` frame's
+ * `fromThreadId`: the conversation a child was pointed at, which the parent's
+ * spawn card names. It is a live hint only; the durable record is the child's
+ * `thread-reference` block, and the card cannot recover it after a reload.
  */
 import { EventType, type ThreadLiveState } from "@meridian/contracts/protocol";
 import type { ThreadActivity, ThreadStatus } from "@meridian/contracts/threads";
@@ -30,6 +35,30 @@ type SharedActivity = {
   seeded: boolean;
 };
 const shared = new Map<string, SharedActivity>();
+/** Child thread id -> the conversation its spawn named with `from`. */
+const spawnSources = new Map<string, string>();
+const spawnSourceListeners = new Set<() => void>();
+
+function recordSpawnSource(value: unknown) {
+  if (!value || typeof value !== "object") return;
+  const { childThreadId, fromThreadId } = value as Record<string, unknown>;
+  if (typeof childThreadId !== "string" || typeof fromThreadId !== "string") return;
+  if (spawnSources.get(childThreadId) === fromThreadId) return;
+  spawnSources.set(childThreadId, fromThreadId);
+  for (const listener of spawnSourceListeners) listener();
+}
+
+/** The conversation a child's spawn named with `from`, when this tab saw the spawn. */
+export function useSpawnSource(childThreadId: string | null): string | null {
+  return useSyncExternalStore(
+    (listener) => {
+      spawnSourceListeners.add(listener);
+      return () => spawnSourceListeners.delete(listener);
+    },
+    () => (childThreadId ? (spawnSources.get(childThreadId) ?? null) : null),
+    () => null,
+  );
+}
 
 function stateFor(threadId: string): SharedActivity {
   let state = shared.get(threadId);
@@ -80,8 +109,12 @@ export function useThreadActivity(input: {
     if (state.refs === 1)
       state.release = transport.subscribe(threadId, {
         onEvent: ({ event }) => {
-          if (event.type !== EventType.CUSTOM || event.name !== "meridian.subagent.activity")
+          if (event.type !== EventType.CUSTOM) return;
+          if (event.name === "meridian.agent.spawn") {
+            recordSpawnSource(event.value);
             return;
+          }
+          if (event.name !== "meridian.subagent.activity") return;
           if (!isThreadActivity(event.value)) return;
           // The server scopes frames to this thread's direct children.
           state.seeded = true;

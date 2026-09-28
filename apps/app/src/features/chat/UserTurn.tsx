@@ -19,6 +19,7 @@ import type {
   MarkdownSkillOccurrence,
 } from "@/rich-content/reference-occurrences";
 import type { TranscriptReferenceResolution } from "@/rich-content/TranscriptReference";
+import { readThreadReferences, ThreadReferenceChip } from "./derivation/ThreadReferenceChip";
 
 export type UserTurnRecovery =
   | {
@@ -83,6 +84,7 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
   const projectId = useProjectDocumentNavigationProjectId();
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
   const projected = useMemo(() => projectUserTurn(turn), [turn]);
+  const threadReferences = useMemo(() => readThreadReferences(turn.blocks), [turn.blocks]);
   const [resolutions, setResolutions] = useState<
     ReadonlyMap<string, TranscriptReferenceResolution>
   >(new Map());
@@ -144,6 +146,13 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
           {projected.text}
         </Markdown>
       </div>
+      {threadReferences.length ? (
+        <div className="mt-[var(--chat-space-inline)] flex flex-wrap justify-end gap-[var(--chat-space-inline)]">
+          {threadReferences.map((reference) => (
+            <ThreadReferenceChip key={reference.threadId} reference={reference} />
+          ))}
+        </div>
+      ) : null}
       {turn.status === "pending" ? (
         <p
           data-user-turn-status="pending"

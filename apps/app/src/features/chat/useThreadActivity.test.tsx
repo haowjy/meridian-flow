@@ -11,7 +11,7 @@ vi.mock("@/client/providers/TransportProvider", () => ({
 }));
 vi.mock("@/client/stores", () => ({ useIsThreadPendingCreation: () => false }));
 
-import { useThreadActivity } from "./useThreadActivity";
+import { useSpawnSource, useThreadActivity } from "./useThreadActivity";
 
 const THREAD_ID = "nested-thread";
 
@@ -78,5 +78,39 @@ describe("useThreadActivity", () => {
     });
 
     expect(activity).toBe(frame);
+  });
+
+  it("records the source a spawn named with from, for the parent's card", async () => {
+    let handlers: { onEvent: (message: never) => void } | undefined;
+    mocks.subscribe.mockImplementation((_threadId, nextHandlers) => {
+      handlers = nextHandlers;
+      return () => {};
+    });
+    let source: string | null = null;
+    function Reader() {
+      useThreadActivity({ threadId: "parent", seed: null });
+      source = useSpawnSource("child");
+      return null;
+    }
+    await act(async () => root.render(<Reader />));
+    expect(source).toBeNull();
+    await act(async () => {
+      handlers?.onEvent({
+        event: {
+          type: EventType.CUSTOM,
+          name: "meridian.agent.spawn",
+          value: {
+            type: "agent.spawn",
+            parentThreadId: "parent",
+            parentTurnId: "turn",
+            childThreadId: "child",
+            agentSlug: "critic",
+            prompt: "Review",
+            fromThreadId: "source",
+          },
+        },
+      } as never);
+    });
+    expect(source).toBe("source");
   });
 });
