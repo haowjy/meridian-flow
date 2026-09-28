@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import type { AgentSelection } from "../agents/index.js";
+import { type AgentSelection, agentSelectionSchema } from "../agents/index.js";
 import {
   CONTEXT_URI_SCHEMES,
   type ContextUriScheme,
@@ -373,7 +373,7 @@ export const forkThreadRequestSchema = z
 export const handoffThreadRequestSchema = z.strictObject({
   id: z.uuid(),
   originTurnId: z.uuid(),
-  agentSelection: z.strictObject({ catalogEntryId: z.uuid(), definitionRevisionId: z.uuid() }),
+  agentSelection: agentSelectionSchema,
 });
 export type HandoffThreadRequest = z.infer<typeof handoffThreadRequestSchema>;
 
