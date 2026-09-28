@@ -118,9 +118,9 @@ tools/dev/
   pre-provisioned ephemeral database.
 - **DB suites under load:** runs never share databases, but under shared
   Postgres load a timed-out fixture hook's async work can overlap the next
-  reset inside one worker database, which looks like cross-run interference
-  (duplicate `users_pkey`, `TRUNCATE users` deadlocks). The 30-second
-  `hookTimeout` mitigates it; the harness fix is
+  rollback or FK-DELETE reset inside one worker database, which can cause
+  duplicate-key errors or lock contention that looks like cross-run interference.
+  The 30-second `hookTimeout` mitigates it; the harness fix is
   [#616](https://github.com/haowjy/meridian-flow/issues/616). Do not run
   `pnpm check` and `pnpm test:db` at once in one worktree. Inspect the cleanup
   log when detached drops are still waiting on a
