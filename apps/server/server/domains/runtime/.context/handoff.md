@@ -1,8 +1,9 @@
 # Handoff seeds
 
 The first seed is already in the destination chain before a run exists. Its
-pending control owns it through `body.seedTurnId`. Both run-start repair and
-the orphan scan re-read pending ownership under the thread lock; a crashed
+pending control owns it through `body.seedTurnId`. Shared `finalizeOrphanedTurns`
+re-reads pending ownership under the thread lock at run start, idle materialization,
+and orphan scanning; a crashed
 brief redelivers into the same seed, not an interrupted replacement.
 
 The barrier gives a row-owned seed an empty adoption batch. Messages already
@@ -19,7 +20,10 @@ Retry enqueue is server-gated: the latest handoff seed must be `error` or
 `cancelled`, with no pending brief control. Replaying an existing matching
 control id remains idempotent even after success; a fresh id must pass the gate.
 Retry has no seed pointer: its new seed is reserved at the execution leaf.
-The current-turn kind is `handoff_brief`; the live phase is `briefing`.
+The current-turn kind is `handoff_brief`; the live phase is `briefing`. Only
+run-owned system turns dispatch here; completed undo markers take the terminal
+route first (see [placeholder ownership](compaction.md)). A handoff anywhere
+in the expanded controls list suppresses successor compaction.
 
 The source ref is frozen in seed metadata; Stop/failure needs no source lookup.
 An expired lease receipt does not block row-owned Stop. The brief ending commit

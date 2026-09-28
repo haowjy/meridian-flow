@@ -143,14 +143,16 @@ the cancel wake.
 ## Placeholders and recovery
 
 A pending placeholder is a turn with status `pending` and a role in
-`PENDING_PLACEHOLDER_ROLES` from `@meridian/contracts/threads` (today only
-`compaction`); a pending assistant turn is not one. Test with
+`PENDING_PLACEHOLDER_ROLES` from `@meridian/contracts/threads` (`compaction` and
+the handoff seed's `system`); a pending assistant turn is not one. Test with
 `isPendingPlaceholder` or the database's `pendingPlaceholderPredicate`, never a
 local role or status check.
 
-RunSession.prepare repairs stale turns before setup can plan a control barrier,
-using the new run's own held claim. Delivery adoption does not repair again. Pending controls own their `seedTurnId`
-placeholders, which this repair preserves.
+`finalizeOrphanedTurns` repairs stale turns from RunSession.prepare before setup
+can plan a control barrier,
+using the new run's own held claim. Delivery adoption does not repair again.
+Pending controls own their `seedTurnId` placeholders, which this repair preserves
+in run preparation, idle materialization, and the orphan sweep.
 The orphan-repair lane also scans indexed pending placeholders, so quiet primary
 threads recover without a new wake. Child reports are finalized on C and
 published after releasing the child's lock. A late writer message stays
@@ -162,6 +164,10 @@ held session claim before context selection, while startup recovery pages
 indexed unsettled primary turns and claims each thread before repair. A live
 run keeps its claim, preventing repair from entering its thread. Subagent assistant turns remain owned by
 child-report recovery; the primary repair does not finalize them.
+
+Undo markers are system turns but never run-owned current turns: creation and
+completion share one transaction, and terminal routing precedes brief dispatch.
+Do not route a completed undo through the pending handoff-seed lifecycle.
 
 ## Cost
 
@@ -337,6 +343,11 @@ reservation. Control enqueue finds the latest matching turn by control id
 [HTTP contracts](../../../../../../docs/api/thread-controls.md).
 
 ## Undo
+
+A boundary expands consecutive due undos, then targets the first following
+compact or handoff control. Reservation and terminal checks use that expanded
+list, not only its head. Stale seed controls are excluded throughout expansion
+and retired in the same commit as the undo and its successor.
 
 `compaction-undo.ts` prepares U over the restored raw history. Only the active,
 local completed C is eligible. Runtime eligibility returns `not_active` for an
