@@ -73,6 +73,7 @@ export async function prepareRequestContext(input: {
     imageAssets: input.deps.imageAssets,
     imageInclusions: input.deps.repos.imageInclusions,
     imageProjectionMode: input.imageProjectionMode,
+    signal: input.signal,
     baseTools: input.baseTools ?? input.deps.toolExecutor.getDefinitions?.(),
     promptBakes: input.promptBakes ?? input.deps.repos.promptBakes,
     persistBake: false,

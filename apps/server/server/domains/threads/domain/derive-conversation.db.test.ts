@@ -239,6 +239,23 @@ else
           { decisionTurnId: compaction.id, included: true },
         ].sort((left, right) => left.decisionTurnId.localeCompare(right.decisionTurnId)),
       );
+      expect(
+        (await repos.imageInclusions.findByThread(afterCompaction.thread.id)).find(
+          (row) => row.blockId === image.id,
+        )?.included,
+      ).toBe(true);
+
+      const forkOfFork = await createFork(afterCompaction.thread, fixture.deps);
+      expect(
+        (await repos.imageInclusions.listByThread(forkOfFork.thread.id))
+          .map(({ decisionTurnId, included }) => ({ decisionTurnId, included }))
+          .sort((left, right) => left.decisionTurnId.localeCompare(right.decisionTurnId)),
+      ).toEqual(
+        [
+          { decisionTurnId: fixture.firstTurn.id, included: false },
+          { decisionTurnId: compaction.id, included: true },
+        ].sort((left, right) => left.decisionTurnId.localeCompare(right.decisionTurnId)),
+      );
     });
 
     it("reuses repeated client IDs by the existing fork row", async () => {

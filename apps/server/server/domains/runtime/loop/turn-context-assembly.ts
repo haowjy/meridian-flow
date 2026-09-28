@@ -67,6 +67,7 @@ export interface AssembleNextTurnContextInput {
   imageAssets?: ImageAssetPort;
   imageInclusions?: Pick<ThreadImageInclusionRepository, "findByThread">;
   imageProjectionMode?: CompactionImageProjectionMode;
+  signal?: AbortSignal;
   persistImageProjection?: (input: {
     afterTurnId: TurnId | null;
     afterTurnPosition: number | null;
@@ -224,6 +225,7 @@ export async function assembleNextTurnContext(
       },
     },
     mode: input.imageProjectionMode,
+    signal: input.signal,
   });
   const imageContextUpdates =
     input.persistImageProjection &&

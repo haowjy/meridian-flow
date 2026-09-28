@@ -1,6 +1,6 @@
 import type { Block, Thread } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
-import type { ImageAssetPort } from "../ports/image-asset.js";
+import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
 import { MAX_MODEL_IMAGE_CONTEXT_BYTES, projectImageBlocksForModel } from "./image-context.js";
 
 const thread: Pick<Thread, "id" | "projectId" | "userId"> = {
@@ -151,21 +151,24 @@ describe("projectImageBlocksForModel", () => {
     expect(protectedProjection.breaks).toEqual([]);
 
     const included = image("included");
+    const included2 = image("included-2");
     const candidate = image("candidate");
     const lateArrival = image("late");
-    const blocks = [included, candidate, lateArrival];
+    const blocks = [included, included2, candidate, lateArrival];
     const projection = await projectImageBlocksForModel({
       thread,
       blocks,
       inclusions: new Map([
         [included.id, true],
+        [included2.id, true],
         [candidate.id, false],
       ]),
       supportsImageInput: true,
       imageAssets: assets(
         new Map([
           [`document-${included.id}`, 10 * mib],
-          [`document-${candidate.id}`, 8 * mib],
+          [`document-${included2.id}`, 6 * mib],
+          [`document-${candidate.id}`, 5 * mib],
           [`document-${lateArrival.id}`, 9 * mib],
         ]),
       ),
@@ -176,14 +179,79 @@ describe("projectImageBlocksForModel", () => {
       },
     });
 
-    // The candidate fits alongside the included image. The genuinely late image then
-    // uses the ordinary eviction rule and evicts the older included image.
-    expect(imageIds(projection.blocks)).toEqual(["candidate", "late"]);
+    // The late image applies ordinary eviction first. The candidate then fills the
+    // remaining budget without being able to evict the remaining included image.
+    expect(imageIds(projection.blocks)).toEqual(["included-2", "candidate", "late"]);
     expect(projection.decisions).toEqual([
       { blockId: "candidate", included: true, decidedByCompaction: true },
       { blockId: "included", included: false },
       { blockId: "late", included: true },
     ]);
+  });
+
+  it("lets a late arrival use the existing image budget before re-admitting candidates", async () => {
+    const mib = 1024 * 1024;
+    const included = image("included");
+    const candidate = image("candidate");
+    const lateArrival = image("late");
+    const projection = await projectImageBlocksForModel({
+      thread,
+      blocks: [included, candidate, lateArrival],
+      inclusions: new Map([
+        [included.id, true],
+        [candidate.id, false],
+      ]),
+      supportsImageInput: true,
+      imageAssets: assets(
+        new Map([
+          [`document-${included.id}`, 8 * mib],
+          [`document-${candidate.id}`, 8 * mib],
+          [`document-${lateArrival.id}`, 8 * mib],
+        ]),
+      ),
+      mode: {
+        kind: "compaction",
+        candidates: new Set([candidate.id]),
+        decidingTurnId: "turn-c",
+      },
+    });
+
+    expect(imageIds(projection.blocks)).toEqual(["included", "late"]);
+    expect(projection.decisions).toEqual([{ blockId: "late", included: true }]);
+    expect(projection.breaks).toEqual([]);
+  });
+
+  it("does not decide or announce a candidate twice when it precedes included images", async () => {
+    const mib = 1024 * 1024;
+    const candidate = image("candidate");
+    const included = image("included");
+    const lateArrival = image("late");
+    const projection = await projectImageBlocksForModel({
+      thread,
+      blocks: [candidate, included, lateArrival],
+      inclusions: new Map([
+        [candidate.id, false],
+        [included.id, true],
+      ]),
+      supportsImageInput: true,
+      imageAssets: assets(
+        new Map([
+          [`document-${candidate.id}`, 8 * mib],
+          [`document-${included.id}`, 8 * mib],
+          [`document-${lateArrival.id}`, 8 * mib],
+        ]),
+      ),
+      mode: {
+        kind: "compaction",
+        candidates: new Set([candidate.id]),
+        decidingTurnId: "turn-c",
+      },
+    });
+
+    expect(imageIds(projection.blocks)).toEqual(["included", "late"]);
+    expect(projection.decisions).toEqual([{ blockId: "late", included: true }]);
+    expect(projection.breaks).toEqual([]);
+    expect(projection.breaks.some(({ uri }) => uri === "scratch://candidate.png")).toBe(false);
   });
 
   it("skips a transient candidate failure without deciding or failing", async () => {
@@ -197,7 +265,7 @@ describe("projectImageBlocksForModel", () => {
       imageAssets: {
         async resolve() {
           attempts++;
-          throw new Error("object store timed out");
+          throw new ImageAssetResolutionError("object store timed out");
         },
       },
       mode: {
@@ -211,5 +279,61 @@ describe("projectImageBlocksForModel", () => {
     expect(attempts).toBe(1);
     expect(projection.decisions).toEqual([]);
     expect(projection.breaks).toEqual([]);
+  });
+
+  it("rethrows unexpected candidate resolution errors", async () => {
+    const candidate = image("candidate");
+    await expect(
+      projectImageBlocksForModel({
+        thread,
+        blocks: [candidate],
+        inclusions: new Map([[candidate.id, false]]),
+        supportsImageInput: true,
+        imageAssets: {
+          async resolve() {
+            throw new Error("adapter bug");
+          },
+        },
+        mode: {
+          kind: "compaction",
+          candidates: new Set([candidate.id]),
+          decidingTurnId: "turn-c",
+        },
+      }),
+    ).rejects.toThrow("adapter bug");
+  });
+
+  it("stops candidate resolution when the signal aborts", async () => {
+    const first = image("first");
+    const second = image("second");
+    const controller = new AbortController();
+    let attempts = 0;
+
+    await expect(
+      projectImageBlocksForModel({
+        thread,
+        blocks: [first, second],
+        inclusions: new Map([
+          [first.id, false],
+          [second.id, false],
+        ]),
+        supportsImageInput: true,
+        imageAssets: {
+          async resolve() {
+            attempts++;
+            controller.abort();
+            throw new ImageAssetResolutionError("object store timed out");
+          },
+        },
+        mode: {
+          kind: "compaction",
+          candidates: new Set([first.id, second.id]),
+          decidingTurnId: "turn-c",
+        },
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow();
+
+    expect(attempts).toBe(1);
   });
 });
