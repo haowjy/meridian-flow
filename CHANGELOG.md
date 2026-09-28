@@ -26,6 +26,7 @@
 - Re-admit retained excluded images into budget left after normal late-arrival handling during complete compaction; compaction-owned decisions remain reversible, and forks preserve decision history.
 
 ### Fixed
+- Keep a failed reply marked failed after the writer sends again. Its error turns into a quiet marker as soon as anything follows it, and each failure keeps its own marker.
 - Settle orphaned primary assistant turns at startup and after a new run acquires its claim, keeping transcript anchors and fork cutoffs movable.
 - Give database fixture hooks the same timeout budget as test bodies to avoid overlapping resets.
 - Publish committed pulls even if the caller response aborts. Preserve live manifest read-your-writes.

@@ -57,6 +57,11 @@ export type AssistantTurnProps = {
   }>;
   isLatestAssistant?: boolean;
   /**
+   * No visible turn follows this one. An error is current only here: once the
+   * writer (or a woken model) moves on, it stays as a quiet historical marker.
+   */
+  endsTranscript?: boolean;
+  /**
    * The next visible turn continues this response (a subagent notification
    * woke the model, with no writer message between), so this part has no
    * settled action row of its own.
@@ -75,6 +80,7 @@ function AssistantTurnComponent({
   threadUsage,
   deliveryEvents = [],
   isLatestAssistant = false,
+  endsTranscript = false,
   continuesResponse = false,
   onRetry,
   onRespondToInterrupt,
@@ -168,9 +174,9 @@ function AssistantTurnComponent({
 
         {isErrored ? (
           <ErrorBlock
-            isLatest={isLatestAssistant}
+            isLatest={endsTranscript}
             kind={turn.blocks.length === 0 ? "send" : "generation"}
-            onRetry={isLatestAssistant ? onRetry : undefined}
+            onRetry={endsTranscript ? onRetry : undefined}
           />
         ) : null}
       </div>

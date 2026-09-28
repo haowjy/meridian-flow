@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Mounted transcript regression for queued writer status propagation. */
+/** Mounted transcript regressions: queued writer status and which failure is current. */
 import type { ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,16 +9,28 @@ vi.mock("@lingui/core/macro", () => ({
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
+const rendered = vi.hoisted(() => ({
+  assistants: new Map<string, { endsTranscript?: boolean; hasRetry: boolean }>(),
+}));
 vi.mock("@tanstack/react-virtual", () => ({
-  useVirtualizer: () => ({
+  useVirtualizer: ({ count }: { count: number }) => ({
     shouldAdjustScrollPositionOnItemSizeChange: undefined,
     getTotalSize: () => 200,
-    getVirtualItems: () => [{ index: 0, key: "user-1", start: 24 }],
+    getVirtualItems: () =>
+      Array.from({ length: count }, (_, index) => ({ index, key: index, start: 24 + index })),
     measureElement: () => undefined,
     scrollToIndex: () => undefined,
   }),
 }));
-vi.mock("./AssistantTurn", () => ({ AssistantTurn: () => null }));
+vi.mock("./AssistantTurn", () => ({
+  AssistantTurn: (props: { turn: { id: string }; endsTranscript?: boolean; onRetry?: unknown }) => {
+    rendered.assistants.set(props.turn.id, {
+      endsTranscript: props.endsTranscript,
+      hasRetry: props.onRetry !== undefined,
+    });
+    return null;
+  },
+}));
 vi.mock("./ChatColumn", () => ({
   ChatColumn: ({ children }: { children: ReactNode }) => children,
 }));
@@ -108,6 +120,63 @@ describe("TurnList queued status", () => {
     );
     expect(host.textContent).not.toContain("Queued");
     expect(host.querySelectorAll('[data-user-turn-status="queued"]')).toHaveLength(0);
+  });
+});
+
+describe("TurnList failed replies", () => {
+  let host: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    rendered.assistants.clear();
+  });
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    document.body.innerHTML = "";
+  });
+
+  const user = (id: string) => ({ id, role: "user", status: "complete", blocks: [] });
+  const assistant = (id: string, status: string) => ({ id, role: "assistant", status, blocks: [] });
+
+  async function renderTurns(turns: unknown[], retryTurnId: string) {
+    await act(async () =>
+      root.render(
+        <TurnList
+          threadId="thread-1"
+          turns={turns as Turn[]}
+          historySettled
+          tailFollowRevision={0}
+          ariaLabel="Conversation"
+          changeTrails={{}}
+          failedSendRetry={{ turnId: retryTurnId, retry: () => undefined }}
+        />,
+      ),
+    );
+  }
+
+  it("makes a failure historical once the writer sends, and the next failure current", async () => {
+    await renderTurns([user("u1"), assistant("b", "error")], "b");
+    expect(rendered.assistants.get("b")).toEqual({ endsTranscript: true, hasRetry: true });
+
+    // The optimistic send alone moves the failure into history.
+    await renderTurns([user("u1"), assistant("b", "error"), user("u2")], "b");
+    expect(rendered.assistants.get("b")?.endsTranscript).toBe(false);
+
+    await renderTurns(
+      [user("u1"), assistant("b", "error"), user("u2"), assistant("c", "streaming")],
+      "b",
+    );
+    expect(rendered.assistants.get("b")?.endsTranscript).toBe(false);
+
+    await renderTurns(
+      [user("u1"), assistant("b", "error"), user("u2"), assistant("c", "error")],
+      "c",
+    );
+    expect(rendered.assistants.get("b")).toEqual({ endsTranscript: false, hasRetry: false });
+    expect(rendered.assistants.get("c")).toEqual({ endsTranscript: true, hasRetry: true });
   });
 });
 

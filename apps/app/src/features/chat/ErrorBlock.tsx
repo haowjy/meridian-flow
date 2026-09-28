@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 
 export type ErrorBlockProps = {
   /**
-   * Whether this errored turn is the latest assistant turn in the thread.
+   * Whether this error is current: no visible turn follows the errored one.
    * - `true` → full tinted block with icon + message.
    * - `false` → quiet historical marker: single muted line, no background.
    */

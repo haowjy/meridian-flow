@@ -162,6 +162,7 @@ export function TurnList({
           threadUsage={threadUsage}
           deliveryEvents={transcript.deliveryEventsFor(turn.id)}
           isLatestAssistant={idx === lastAssistantIdx}
+          endsTranscript={idx === visibleTurns.length - 1}
           continuesResponse={continuing[idx] ?? false}
           onRetry={turn.id === failedSendRetry?.turnId ? failedSendRetry.retry : undefined}
           onRespondToInterrupt={onRespondToInterrupt}
@@ -181,6 +182,7 @@ export function TurnList({
       threadId,
       turns,
       transcript,
+      visibleTurns.length,
       continuing,
       partsByFinalTurnId,
     ],
