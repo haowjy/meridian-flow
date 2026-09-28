@@ -53,7 +53,7 @@ describe("project creation", () => {
     await expect(
       beginProjectCreation({ projectId, accountId, title: "Fast project" }),
     ).rejects.toBe(failure);
-    expect(projectCreationFailed(projectId)).toBe(true);
+    expect(projectCreationFailed(projectId, accountId)).toBe(true);
 
     await expect(retryProjectCreation(projectId, accountId)).resolves.toMatchObject({
       id: projectId,
@@ -63,7 +63,7 @@ describe("project creation", () => {
       title: "Fast project",
     });
     await waitForProjectCreation(projectId);
-    expect(projectCreationFailed(projectId)).toBe(false);
+    expect(projectCreationFailed(projectId, accountId)).toBe(false);
   });
 
   it("recovers an ambiguous create only from the matching account project", async () => {
@@ -74,10 +74,10 @@ describe("project creation", () => {
     await expect(
       beginProjectCreation({ projectId, accountId, title: "Fast project" }),
     ).resolves.toMatchObject({ id: projectId, userId: accountId });
-    expect(isProjectCreationPending(projectId)).toBe(true);
+    expect(isProjectCreationPending(projectId, accountId)).toBe(true);
 
     await waitForProjectCreation(projectId);
-    expect(isProjectCreationPending(projectId)).toBe(false);
+    expect(isProjectCreationPending(projectId, accountId)).toBe(false);
   });
 
   it("does not retry an earlier account's failed attempt", async () => {
@@ -107,6 +107,28 @@ describe("project creation", () => {
     await expect(
       beginProjectCreation({ projectId, accountId, title: "Fast project" }),
     ).rejects.toBe(failure);
-    expect(projectCreationFailed(projectId)).toBe(true);
+    expect(projectCreationFailed(projectId, accountId)).toBe(true);
+  });
+
+  it("forgets an attempt when its account epoch ends", async () => {
+    const projectId = "00000000-0000-4000-8000-000000000006";
+    const accountEpoch = new AbortController();
+    let resolve!: (value: Project) => void;
+    mocks.createProject.mockReturnValueOnce(
+      new Promise<Project>((done) => {
+        resolve = done;
+      }),
+    );
+
+    const persistence = beginProjectCreation(
+      { projectId, accountId, title: "Fast project" },
+      accountEpoch.signal,
+    );
+    expect(isProjectCreationPending(projectId, accountId)).toBe(true);
+
+    accountEpoch.abort();
+    expect(isProjectCreationPending(projectId, accountId)).toBe(false);
+    resolve(project(projectId));
+    await expect(persistence).resolves.toMatchObject({ id: projectId });
   });
 });

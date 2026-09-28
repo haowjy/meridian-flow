@@ -1,21 +1,16 @@
 /** Authorized project identity and persistent shell lifetime for readable child destinations. */
 import { Trans } from "@lingui/react/macro";
-import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useRouter, useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useLayoutEffect, useState } from "react";
+import { type ReactNode, useState } from "react";
 import {
   isProjectCreationPending,
   projectCreationFailed,
   retryProjectCreation,
 } from "@/client/project-creation";
-import {
-  loadProjectEntry,
-  type ProjectRouteData,
-  seedProjectRouteData,
-} from "@/client/query/project-route-data";
-import { hydrateWorkingSet, type WorkingSetHydrationPlan } from "@/client/working-set";
+import { loadProjectEntry } from "@/client/query/project-route-data";
 import { Button } from "@/components/ui/button";
-import { ReadableProjectRoute } from "@/features/project/routing/ReadableProjectRoute";
+import { useAccountEpochSignal } from "@/features/project/context/account-feature-context";
+import { ProjectRouteBootstrap } from "@/features/project/routing/ProjectRouteBootstrap";
 import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
 import { Route as AuthenticatedRoute } from "../../_authenticated";
 
@@ -31,12 +26,13 @@ export const Route = createFileRoute("/_authenticated/p/$projectId")({
 
 function PendingProject() {
   const { projectId } = Route.useParams();
+  const { user } = AuthenticatedRoute.useLoaderData();
   return (
     <main
       className="grid h-full place-items-center bg-background text-muted-foreground"
       role="status"
     >
-      {isProjectCreationPending(projectId) ? (
+      {isProjectCreationPending(projectId, user.userId) ? (
         <Trans>Creating project…</Trans>
       ) : (
         <Trans>Loading project…</Trans>
@@ -49,7 +45,9 @@ function ProjectLoadError() {
   const router = useRouter();
   const { projectId } = Route.useParams();
   const { user } = AuthenticatedRoute.useLoaderData();
-  const creationFailed = projectCreationFailed(projectId);
+  const accountEpoch = useAccountEpochSignal();
+  const creationFailed = projectCreationFailed(projectId, user.userId);
+  const creationFlow = creationFailed || isProjectCreationPending(projectId, user.userId);
   const [retrying, setRetrying] = useState(false);
   const retry = async () => {
     if (!creationFailed) {
@@ -58,7 +56,7 @@ function ProjectLoadError() {
     }
     setRetrying(true);
     try {
-      await retryProjectCreation(projectId, user.userId);
+      await retryProjectCreation(projectId, user.userId, accountEpoch);
       await router.invalidate();
     } catch {
       // The creation attempt retains its failure so this destination can retry again.
@@ -70,7 +68,7 @@ function ProjectLoadError() {
     <main className="grid h-full place-items-center bg-background text-foreground">
       <div className="flex flex-col items-center gap-3" role="alert">
         <p>
-          {creationFailed ? (
+          {creationFlow ? (
             <Trans>This project couldn’t be created.</Trans>
           ) : (
             <Trans>This project couldn’t load. It may be unavailable.</Trans>
@@ -89,30 +87,15 @@ function ProjectRoute() {
   const { user } = AuthenticatedRoute.useLoaderData();
   return (
     <ProjectIdentityBoundary projectId={project.id}>
-      <ProjectRouteBootstrap key={project.id} project={project} data={data} user={user} />
+      <ProjectRouteBootstrap
+        key={project.id}
+        project={project}
+        data={data}
+        user={user}
+        pending={<PendingProject />}
+      />
     </ProjectIdentityBoundary>
   );
-}
-
-function ProjectRouteBootstrap({
-  project,
-  data,
-  user,
-}: {
-  project: ReturnType<typeof Route.useLoaderData>["project"];
-  data: ProjectRouteData;
-  user: ReturnType<typeof AuthenticatedRoute.useLoaderData>["user"];
-}) {
-  const queryClient = useQueryClient();
-  const [entryHydration, setEntryHydration] = useState<WorkingSetHydrationPlan | null>(null);
-  useLayoutEffect(() => {
-    seedProjectRouteData(queryClient, project.id, data);
-    setEntryHydration(
-      hydrateWorkingSet(project.id, data.workingSet, user.workingSetSyncEnabled === true),
-    );
-  }, [data, project.id, queryClient, user.workingSetSyncEnabled]);
-  if (!entryHydration) return <PendingProject />;
-  return <ReadableProjectRoute project={project} entryHydration={entryHydration} user={user} />;
 }
 
 /** Fence the previous live project synchronously, before the next loader settles. */

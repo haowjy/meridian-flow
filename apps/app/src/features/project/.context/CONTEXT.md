@@ -397,6 +397,9 @@ The basic `EditorView` is a static dependency of the project hosts, not a lazy
 chunk fetched on first New/open. This makes a loaded empty workspace capable of
 starting local writing offline; it deliberately costs earlier editor-code loading
 for Chat-only project visits. It does not provide cold offline application boot.
+Library intent and the project-creation form may warm workspace code, but must not
+preload the project route loader: entering a successful preloaded match would
+otherwise repeat owner and shell-data reads in the background.
 
 ## Document system map
 

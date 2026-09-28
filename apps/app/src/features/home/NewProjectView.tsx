@@ -12,6 +12,7 @@ import {
   useAccountEpochSignal,
   useAccountId,
 } from "@/features/project/context/account-feature-context";
+import { preloadProjectWorkspace } from "@/features/project/preload-project-workspace";
 
 export function NewProjectView() {
   const navigate = useNavigate();
@@ -25,7 +26,7 @@ export function NewProjectView() {
   useEffect(() => {
     // The destination UUID does not exist yet, so route preloading would run
     // owner-gated loaders into a 404. Warm only the inevitable workspace code.
-    void import("@/features/project/routing/ReadableProjectRoute").catch(() => undefined);
+    preloadProjectWorkspace();
   }, []);
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -33,7 +34,7 @@ export function NewProjectView() {
     const name = title.trim();
     if (busy || !name) return;
     setBusy(true);
-    const persistence = beginProjectCreation({ projectId, accountId, title: name });
+    const persistence = beginProjectCreation({ projectId, accountId, title: name }, accountEpoch);
     void persistence.then(
       (project) => {
         if (!accountEpoch.aborted) ensureProject(project);

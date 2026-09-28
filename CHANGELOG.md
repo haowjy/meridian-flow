@@ -29,8 +29,8 @@
 
 - Open new chats immediately; subscribe once after first-send acceptance, without missing-thread errors.
 - Open a new project destination immediately, persist it in the background, and retry failed creation there with the same project identity.
-- Keep delayed project confirmation and creation retry fenced to the account that started it.
-- Start independent project-entry reads together, warm workspace code from clear project intent, and initialize route caches outside React render.
+- Keep delayed project confirmation and creation retry fenced to the account epoch that started it.
+- Start independent project-entry reads together, warm workspace code without duplicating route reads, and initialize route caches once outside React render.
 
 - Resolve images sent while a reply streams. Share history image limits and keep saved image identities.
 
