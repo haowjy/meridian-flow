@@ -12,8 +12,9 @@ Compaction is two delivery transitions around an unlocked
 1. **Reservation commit.** The boundary's own preparation commit reserves
    pending C instead of an assistant turn. Both reservation sites build the
    turn with `reservationTurn`, including the decision's trigger. An
-   impossible tail (the summary reserve, pinned request, and minimal suffix already
-   reach the fit limit) reserves no C and fails as a preparation failure.
+   impossible automatic tail (the summary reserve, pinned requests, and minimal
+   suffix already reach the fit limit) reserves no C and fails as a preparation
+   failure.
 2. **Summary.** `compaction-phase.ts` runs the summarizer, then prepares a
    live rebake over a provisional completed C before preparing late
    arrivals. `composeLivePromptBake` serves initial bakes and rebakes alike.
@@ -34,15 +35,17 @@ The usable prepared value carries metadata (the placeholder's reservation
 metadata plus `elisions`) into provisional assembly. The commit reloads C after
 paid-summary settlement and passes `{ ...settled.metadata, ...prepared.metadata }`
 to `beginPromptEpoch`: settlement appends summarizer telemetry to C, so passing
-the prepared value alone would drop it. Telemetry never renders to the model, so
-B's first request still equals the rebuild. The same assembly measures
+the prepared value alone would drop it. A control absorbed during the summary
+writes `satisfiesControlId` onto settled C; the prepared metadata predates that
+write and carries no satisfaction key for it. Telemetry never renders to the
+model, so B's first request still equals the rebuild. The same assembly measures
 `tokensAfter`; the epoch, frozen elisions and successor commit atomically.
 
 ## Document-text elision
 
 The writer transcript stays intact. A completed compaction owns frozen
 `metadata.elisions` (block ID, treatment, affected URIs, replacement content).
-`projectActiveHistory` substitutes only its retained tail and pinned request,
+`projectActiveHistory` substitutes only its retained tail and pinned requests,
 not later arrivals. Reverted, failed, pending and superseded owners do not apply.
 Forks inherit this metadata only when their cutoff includes the owner.
 
@@ -51,6 +54,8 @@ copy. `write` and `search` register policies; references use `reference-context`
 Error pairs are outside the policy. Explicit empty `documentRevisions` means no
 document text; absent evidence, null tokens and failed lookups fail closed.
 `diff` always elides. Tool pairing, reasoning, writer words and fresh text stay.
+Stale reference reads inside pinned unanswered messages are elided; the writer
+words and mention stay verbatim. Pins retain identity and order, not stale embedded document text.
 
 Successor prepare independently queries current document revisions once per
 attempt and plans from raw retained blocks, never from a previous owner's
@@ -75,7 +80,8 @@ against overflow.
 
 ## Failure landing
 
-- A failed summary errors C and fails a reply below the latest message.
+- A failed required summary errors C and fails a reply below the latest message.
+  A failed optional manual summary errors only C and continues the request.
 - A usable epoch still commits when a late arrival fails context preparation,
   including an oversized late paste; only B fails.
 - A live unexpected error while C is current uses a fresh failure
@@ -219,3 +225,47 @@ compaction successor preserves it. A second overflow fails with
 the same request. Metered output from an overflow is billed without retaining
 the incomplete response's blocks. The WebSocket live-state codec accepts
 `compacting` so a client can join while C is pending.
+
+## Control boundaries
+
+`planControlBarrier` selects the raw inbox before Work coalescing and ack-id
+calculation. A head control waits for unbound directed rows ahead unless a
+chained row lies behind it; then every chained row and the inbox-only prefix
+are adopted before C. Notices alone never delay K. Controls never enter
+`drainInbox` or `planMessageTurns`. The first request after reservation uses its
+already-prepared context, not another control boundary.
+
+Writer enqueue keeps writer turns visible immediately. Its prefix materializer
+uses the barrier but never reserves a control. Idle materialization holds a
+claim, finalizes orphan placeholders first, and then uses the same selection.
+A normal assistant close defers an executable control to the post-release wake;
+a tool boundary executes it inline. Both durable wake sweeps include controls.
+Cleanup wakes only when the raw pending barrier can execute a control now,
+with no bound/chained exemptions from the released run. A directed row ahead
+of K follows the ordinary message restart rule; failed replies and failures
+before reservation retry through the sweep, not a hot post-release loop.
+
+Manual decisions fit against the usable window; their tail budget base is
+`min(trigger, tokensBefore)`. Automatic and overflow decisions use their fit
+limit as the tail budget base. Pins include the existing unacknowledged receipt
+and newly adopted directed rows, even across consecutive controls. A refusal
+records an error divider without calling the summarizer or opening an epoch.
+A manual control immediately after completed C refuses with `nothing_to_compact`;
+C's retained tail is not new history.
+
+A control's ending commit acknowledges its row, then reserves/binds the next
+due control, reserves B for an outstanding message or ongoing task, or releases
+the lease atomically. A control-only idle compaction creates no B. A failed
+optional manual summary continues the ordinary request. Stop on a manual C
+acknowledges controls only, leaving unanswered messages for the owner's
+post-release wake; ordinary autocompaction Stop retains its old receipt
+semantics. A crash leaves K pending for redelivery after orphan finalization.
+
+`thread-controls.ts` owns writer enqueue and withdrawal, separately from the
+message producer port. Client ids remain taken after execution or withdrawal.
+The thread lock serializes withdrawal with reservation. A manual control bound
+as `controlMessageId` becomes Stop. An absorbed `satisfiesControlId` returns
+`already_finished`: the automatic C still retires it and answers its messages.
+`absorbPendingCompact` owns satisfaction selection for initial and mid-run
+reservation. Control enqueue finds the latest matching turn by control id,
+not by loading the transcript. See [HTTP contracts](../../../../../../docs/api/thread-controls.md).

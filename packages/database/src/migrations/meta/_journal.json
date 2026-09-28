@@ -127,6 +127,13 @@
       "when": 1790557157808,
       "tag": "0017_melted_shotgun",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790562869160,
+      "tag": "0018_odd_white_tiger",
+      "breakpoints": true
     }
   ]
 }

@@ -90,11 +90,19 @@ export function reservationTurn(
     status: decision.kind === "compact" ? "pending" : "streaming",
     metadata:
       decision.kind === "compact"
-        ? compactionTurnMetadata({
+        ? {
             trigger: decision.trigger,
-            compactedThrough: decision.plan.compactedThrough,
-            pinnedRequestTurnId: decision.plan.pinnedRequest.id,
-          })
+            ...(decision.plan.outcome === "planned"
+              ? compactionTurnMetadata({
+                  compactedThrough: decision.plan.compactedThrough,
+                  pinnedRequestTurnIds: decision.plan.pinnedRequests.map((turn) => turn.id),
+                })
+              : {}),
+            ...(decision.controlMessageId ? { controlMessageId: decision.controlMessageId } : {}),
+            ...(decision.satisfiesControlId
+              ? { satisfiesControlId: decision.satisfiesControlId }
+              : {}),
+          }
         : null,
   });
 }

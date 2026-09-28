@@ -1,5 +1,6 @@
 /** A request boundary's compaction choice; committed with its selected leaf and inbox batch. */
 import type { Block, Turn } from "@meridian/contracts/threads";
+import { orderTurnsByPosition } from "../../../threads/order-turns.js";
 import type { GenerateRequest, TokenizerFamily } from "../../gateway/index.js";
 import { estimateRequestTokens } from "./estimate.js";
 import { type CompactionPlan, planCompaction } from "./plan.js";
@@ -9,13 +10,17 @@ export interface ForcedCompactionDecision {
   kind: "compact";
   trigger: "auto" | "manual";
   fitLimitTokens: number;
-  path: "cold";
+  path?: "cold";
 }
 export type CompactionDecision =
   | { kind: "generate" }
   | {
       kind: "compact";
-      plan: Extract<CompactionPlan, { outcome: "planned" }>;
+      plan: CompactionPlan;
+      controlMessageId?: string;
+      satisfiesControlId?: string;
+      refusal?: "nothing_to_compact" | "context_too_large";
+      required: boolean;
       requestInHand: GenerateRequest;
       trigger: "auto" | "manual";
       fitLimitTokens: number;
@@ -26,14 +31,20 @@ export type CompactionDecision =
 
 export class CompactionPreparationError extends Error {
   constructor(
-    readonly reason: "context_too_large" | "compaction_failed" | "context_window_exceeded",
+    readonly reason:
+      | "nothing_to_compact"
+      | "context_too_large"
+      | "compaction_failed"
+      | "context_window_exceeded",
   ) {
     super(
-      reason === "context_too_large"
-        ? "This message is too long for this chat's model."
-        : reason === "context_window_exceeded"
-          ? "This conversation still exceeds the model's context window after compaction. Try a smaller request."
-          : "This conversation couldn't be compacted. Try again.",
+      reason === "nothing_to_compact"
+        ? "There is nothing to compact yet."
+        : reason === "context_too_large"
+          ? "This message is too long for this chat's model."
+          : reason === "context_window_exceeded"
+            ? "This conversation still exceeds the model's context window after compaction. Try a smaller request."
+            : "This conversation couldn't be compacted. Try again.",
     );
   }
 }
@@ -44,6 +55,8 @@ export function decideCompaction(input: {
   blocks: Block[];
   thresholdTokens: number | null;
   forcedDecision?: ForcedCompactionDecision;
+  pinnedRequestTurnIds?: ReadonlySet<string>;
+  controlMessageId?: string;
   summaryReserveTokens: number;
   baseline: { inputTokens: number; messageCount: number } | null;
   tokenizer: TokenizerFamily;
@@ -55,7 +68,12 @@ export function decideCompaction(input: {
   const plan = planCompaction({
     turns: input.turns,
     blocks: input.blocks,
-    triggerTokens: fitLimitTokens,
+    fitLimitTokens,
+    tailBudgetBaseTokens:
+      input.forcedDecision?.trigger === "manual"
+        ? Math.min(input.thresholdTokens ?? fitLimitTokens, tokensBefore)
+        : fitLimitTokens,
+    pinnedRequestTurnIds: input.pinnedRequestTurnIds,
     summaryReserveTokens: input.summaryReserveTokens,
     fixedOverheadTokens: estimateRequestTokens({
       tokenizer: input.tokenizer,
@@ -67,7 +85,15 @@ export function decideCompaction(input: {
     }),
     tokenizer: input.tokenizer,
   });
-  return plan.outcome === "planned" && plan.minimalTailFits
+  // A retained tail is not new history: consecutive manual controls cannot
+  // repeatedly summarize it without an intervening completed turn.
+  const immediatelyAfterCompaction =
+    input.forcedDecision?.trigger === "manual" &&
+    orderTurnsByPosition(input.turns)
+      .reverse()
+      .find((turn) => turn.status === "complete")?.role === "compaction";
+  return input.forcedDecision?.trigger === "manual" ||
+    (plan.outcome === "planned" && plan.minimalTailFits)
     ? {
         kind: "compact",
         plan,
@@ -76,6 +102,15 @@ export function decideCompaction(input: {
         fitLimitTokens,
         ...(input.forcedDecision ? { path: input.forcedDecision.path } : {}),
         tokensBefore,
+        required:
+          input.forcedDecision?.trigger !== "manual" ||
+          (input.thresholdTokens !== null && tokensBefore >= input.thresholdTokens),
+        ...(input.controlMessageId ? { controlMessageId: input.controlMessageId } : {}),
+        ...(immediatelyAfterCompaction || plan.outcome === "no_compaction"
+          ? { refusal: "nothing_to_compact" as const }
+          : !plan.minimalTailFits
+            ? { refusal: "context_too_large" as const }
+            : {}),
       }
     : { kind: "too_large", plan };
 }

@@ -3,6 +3,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
+import { planControlBarrier } from "./control-barrier.js";
 import { type CurrentTurn, DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
 import { createRunStarter } from "./run-starter.js";
 import {
@@ -83,7 +84,7 @@ export function createRunSessions(deps: {
     let lease: Lease | null = null;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     let restartPendingAfterCompletion = false;
-    async function cleanup(restartPending = false) {
+    async function cleanup(restartPending = false, releaseUnanswered = false) {
       clearInterval(heartbeat);
       parentSignal?.removeEventListener("abort", abort);
       running.delete(threadId);
@@ -93,13 +94,13 @@ export function createRunSessions(deps: {
         if (lease) await authority.release(lease);
         if (lease) {
           await deps.delivery.refreshPending(threadId);
+          const pending = await deps.delivery.selectPending(threadId);
           if (
             session.currentTurn &&
-            restartPending &&
-            !session.controller.signal.aborted &&
-            (await deps.delivery.selectPending(threadId)).some(
-              (message) => message.intent === "message",
-            )
+            (planControlBarrier({ pending, chainedIds: new Set(), boundIds: new Set() }).execute !==
+              null ||
+              ((releaseUnanswered || (restartPending && !session.controller.signal.aborted)) &&
+                pending.some((message) => message.intent === "message")))
           ) {
             restartPendingAfterCompletion = true;
           }
@@ -183,7 +184,13 @@ export function createRunSessions(deps: {
           observe(threadId, "terminal_fallback.failed", error);
           outcome = { status: "failed", error };
         }
-        await cleanup(outcome.status === "complete");
+        await cleanup(
+          outcome.status === "complete",
+          outcome.status !== "failed" &&
+            outcome.turn.role === "compaction" &&
+            (outcome.turn.metadata as import("@meridian/contracts/threads").JsonObject | null)
+              ?.trigger === "manual",
+        );
         return outcome;
       }
       return {

@@ -534,17 +534,25 @@ key off `role`/`metadata`, not this column.
 
 Pending compaction turns reserve their position without a model or bake pointer.
 Only a completed compaction requires `compaction_model`. The successor transaction
-sets its write-once bake pointer through `beginPromptEpoch` and reserves the reply.
+sets its write-once bake pointer through `beginPromptEpoch` and reserves the next
+control or reply, or releases an idle control-only lease.
 Child report selectors use `executionTurnId` and terminals use `terminalTurnId`;
-the first reservation can be a compaction rather than an assistant. Model response
+the first commit adopting a directed row admits on its reserved compaction or
+assistant. A control-only run has no execution report. Model response
 rows include the request message count alongside usage and cache predictions.
 
-
 Compaction success, failure and cancellation settle response rows and debits in
-their ending transaction. A live failure also creates a terminal failed reply
+their ending transaction. A live failure of a required compaction also creates a terminal failed reply
 under the newest adopted message and acknowledges the receipt atomically;
 only a failed failure-landing transaction is left for orphan repair.
 The run lease has no role/kind copy: runtime derives kind from the referenced
 turn. Its bound_turn_ids retain cancellation membership only for the live run,
 including committed predecessors; membership and current-turn binding are atomic.
 Initial and rebaked prompts share one resolved Agent context per composition.
+
+Manual compaction controls hold no transcript position until execution. Divider
+metadata links `controlMessageId` (manual) or `satisfiesControlId` (automatic).
+Completed compactions require ordered `pinnedRequestTurnIds`, including every
+unanswered directed message in the run receipt and adoption batch. Failed
+manual dividers carry their reason in metadata and writer copy in `turn.error`.
+Control acknowledgement commits with the divider's ending, never B's response.

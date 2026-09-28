@@ -5,6 +5,11 @@ import { isPendingPlaceholder } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
 import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
+import {
+  absorbPendingCompact,
+  type ControlMessage,
+  planControlBarrier,
+} from "../loop/control-barrier.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
 import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
@@ -30,10 +35,12 @@ import type {
   DeliverySelection,
   RuntimeDelivery,
 } from "../loop/runtime-delivery.js";
+import { createThreadControls } from "../loop/thread-controls.js";
 import type { ThreadLock } from "../loop/thread-lock.js";
 
 /** Adapter-private storage primitives; never injected into the model loop or producers. */
 export interface DeliveryStore extends InboxReader {
+  findMessage(id: string): Promise<InboxMessage | null>;
   workNoticeTargets(projectId: ProjectId): Promise<ThreadId[]>;
   canMaterializeWork(threadId: ThreadId): Promise<boolean>;
   pendingWorkThreads(limit: number, afterThreadId?: ThreadId): Promise<ThreadId[]>;
@@ -42,6 +49,7 @@ export interface DeliveryStore extends InboxReader {
 }
 
 export interface DeliveryLeaseStore {
+  lockThreadReceipt(threadId: ThreadId): Promise<{ ids: string[]; turnId: TurnId | null } | null>;
   bindTurn(
     lease: Lease,
     turnId: TurnId,
@@ -60,7 +68,7 @@ export function createDeliveryAdapter(
     repos: import("../../threads/index.js").ThreadRepositories;
     inbox: DeliveryStore;
     leaseStore: DeliveryLeaseStore;
-    runClaim: Pick<RunClaim, "release" | "withExclusiveThread">;
+    runClaim: Pick<RunClaim, "release" | "withExclusiveThread" | "cancelExecution">;
     publishFinalizedReports(reports: readonly SavedExecutionReport[]): Promise<void>;
     workContext: import("../loop/work-context.js").WorkContextReader;
     threadLock: ThreadLock;
@@ -77,9 +85,29 @@ export function createDeliveryAdapter(
       pending: await readPendingInbox(inbox, threadId),
     });
   };
-  async function selectForPreparation(threadId: ThreadId) {
+  async function selectForPreparation(threadId: ThreadId, satisfyPendingCompact?: boolean) {
     const pendingBatch = await inbox.selectPending(threadId);
-    const work = await workBatch(threadId, pendingBatch);
+    const projection = await inbox.readPendingProjection(threadId);
+    const headControl = pendingBatch.find(
+      (row) => row.intent === "control" && !projection.run?.messageIds.includes(row.id),
+    );
+    const satisfiesControlId =
+      satisfyPendingCompact && headControl?.body.kind === "compact" ? headControl.id : undefined;
+    const boundIds = new Set([
+      ...(projection.run?.messageIds ?? []),
+      ...(satisfiesControlId ? [satisfiesControlId] : []),
+    ]);
+    const chained = await Promise.all(
+      pendingBatch
+        .filter((row) => !boundIds.has(row.id))
+        .map((row) => deps.repos.turns.findById(row.id)),
+    );
+    const barrier = planControlBarrier({
+      pending: pendingBatch,
+      boundIds,
+      chainedIds: new Set(chained.flatMap((turn) => (turn ? [turn.id] : []))),
+    });
+    const work = await workBatch(threadId, barrier.batch);
     const [notices, thread] = await Promise.all([
       deps.notices.peek(threadId),
       deps.repos.threads.findById(threadId),
@@ -87,6 +115,17 @@ export function createDeliveryAdapter(
     if (!thread) throw new Error(`Thread not found: ${threadId}`);
     const selection: DeliverySelection = {
       batch: work.batch,
+      control: barrier.execute,
+      satisfiesControlId,
+      headControl:
+        (pendingBatch.find((row) => row.intent === "control" && !boundIds.has(row.id)) as
+          | ControlMessage
+          | undefined) ?? null,
+      outstanding: pendingBatch.filter(
+        (row) =>
+          row.intent === "message" &&
+          (boundIds.has(row.id) || barrier.batch.some((selected) => selected.id === row.id)),
+      ),
       workContext: work.workContext,
       notices,
       activeLeafTurnId: thread.activeLeafTurnId,
@@ -110,6 +149,7 @@ export function createDeliveryAdapter(
   async function prepareAndCommit<TPrepared, TResult>(input: {
     threadId: ThreadId;
     signal?: AbortSignal;
+    satisfyPendingCompact?: boolean;
     validate?: () => Promise<void>;
     prepare: (
       selection: DeliverySelection,
@@ -126,7 +166,7 @@ export function createDeliveryAdapter(
       const lockedPreparation = attempt === PREPARATION_ATTEMPTS - 1;
       if (lockedPreparation) {
         return threadLock.withThreadLock(input.threadId, async () => {
-          const selected = await selectForPreparation(input.threadId);
+          const selected = await selectForPreparation(input.threadId, input.satisfyPendingCompact);
           input.signal?.throwIfAborted();
           const prepared = await input.prepare(selected.selection, selected.work);
           input.signal?.throwIfAborted();
@@ -135,7 +175,7 @@ export function createDeliveryAdapter(
         });
       }
 
-      const selected = await selectForPreparation(input.threadId);
+      const selected = await selectForPreparation(input.threadId, input.satisfyPendingCompact);
       input.signal?.throwIfAborted();
       const prepared = await input.prepare(selected.selection, selected.work);
       input.signal?.throwIfAborted();
@@ -164,7 +204,7 @@ export function createDeliveryAdapter(
   const enqueue = async (draft: MessageDraft) => {
     const message = await inbox.enqueue(draft);
     await appendPending(draft.threadId);
-    if (draft.intent === "message")
+    if (draft.intent === "message" || draft.intent === "control")
       deps.schedulePostCommit(() => deps.runStarter.start(draft.threadId));
     return message;
   };
@@ -187,11 +227,11 @@ export function createDeliveryAdapter(
     };
   }
   async function materializePrefix(threadId: ThreadId) {
-    const work = await workBatch(threadId, await inbox.selectPending(threadId));
+    const { selection, work } = await selectForPreparation(threadId);
     const turns = await Promise.all(
       work.batch.map((message) => deps.repos.turns.findById(message.id)),
     );
-    const leaf = (await deps.repos.threads.findById(threadId))?.activeLeafTurnId ?? null;
+    const leaf = selection.activeLeafTurnId;
     const leafTurn = leaf ? await deps.repos.turns.findById(leaf) : null;
     if (leaf && !leafTurn) throw new Error(`Missing causal turn: ${leaf}`);
     const plan = planMessageTurns({
@@ -213,6 +253,8 @@ export function createDeliveryAdapter(
   async function materializeIdle(threadId: ThreadId) {
     await deps.runClaim.withExclusiveThread(threadId, () =>
       threadLock.withThreadLock(threadId, async () => {
+        const reports = await finalizeOrphanedPlaceholder(deps, { threadId });
+        deps.schedulePostCommit(() => deps.publishFinalizedReports(reports));
         if (await inbox.canMaterializeWork(threadId)) await materializePrefix(threadId);
       }),
     );
@@ -245,6 +287,8 @@ export function createDeliveryAdapter(
     split: boolean;
     preparationFailure?: unknown;
     preparedCurrent?: TCurrent;
+    selection: DeliverySelection;
+    deferred?: boolean;
   };
 
   async function prepareAdoption<TCurrent>(
@@ -253,6 +297,19 @@ export function createDeliveryAdapter(
     work: Awaited<ReturnType<typeof workBatch>>,
   ): Promise<PreparedAdoption<TCurrent>> {
     const { lease } = input;
+    if (input.deferControl && selection.control)
+      return {
+        batch: [],
+        work: { ids: [], batch: [], workContext: undefined },
+        committedWorkIds: [],
+        expectedLeaf: selection.activeLeafTurnId,
+        expectedLeafPosition: null,
+        drain: { turns: [], blocks: [], events: [], ackIds: [] },
+        prepared: { events: [], turns: [], blocks: [], requiresSplit: false },
+        split: false,
+        selection,
+        deferred: true,
+      };
     const batch = selection.batch;
     const threadId = lease.threadId;
     // Writer enqueue can have persisted and acked an earlier Work prefix while
@@ -319,7 +376,9 @@ export function createDeliveryAdapter(
         batch: orderedBatch,
         workContext: work.workContext,
       });
-      prepared = await input.prepareNextContext(drain, preparedCurrent);
+      prepared = await input.prepareNextContext(drain, preparedCurrent, selection);
+      if (prepared.compaction)
+        prepared.compaction = absorbPendingCompact(prepared.compaction, selection.headControl);
     } catch (error) {
       if (input.signal?.aborted) throw error;
       preparationFailure = error;
@@ -338,6 +397,7 @@ export function createDeliveryAdapter(
     }
     return {
       batch: orderedBatch,
+      selection,
       preparedCurrent,
       work,
       committedWorkIds,
@@ -380,51 +440,90 @@ export function createDeliveryAdapter(
     let completed: typeof currentTurn | undefined;
     const compaction = prepared.compaction?.kind === "compact" ? prepared.compaction : undefined;
 
+    const receipt = await leaseStore.lockReceipt(lease);
+    drain.ackIds = [...new Set([...(receipt?.ids ?? []), ...drain.ackIds])];
+    let terminal = false;
     if (split) {
       completed =
         input.current.kind === "placeholder"
-          ? await input.current.complete(adoption.preparedCurrent, preparationFailure)
+          ? await input.current.complete(
+              adoption.preparedCurrent,
+              preparationFailure,
+              adoption.selection,
+            )
           : {
               ...currentTurn,
               status: "complete" as const,
               finishReason: "end_turn" as const,
               completedAt: new Date().toISOString(),
             };
-      const leaf = turns.at(-1)?.id ?? expectedLeaf ?? currentTurn.id;
-      next = reservationTurn(
-        {
+      const pending = await inbox.selectPending(threadId);
+      const endingControls =
+        input.current.kind === "placeholder"
+          ? pending
+              .filter(
+                (row) =>
+                  row.intent === "control" &&
+                  (receipt?.ids.includes(row.id) ||
+                    row.id === adoption.selection.satisfiesControlId),
+              )
+              .map((row) => row.id)
+          : [];
+      await inbox.ack(threadId, endingControls);
+      drain.ackIds = [...new Set([...(receipt?.ids ?? []), ...drain.ackIds])].filter(
+        (id) => !endingControls.includes(id),
+      );
+      const nextControlId = compaction?.controlMessageId ?? compaction?.satisfiesControlId;
+      if (nextControlId) drain.ackIds.push(nextControlId);
+      terminal =
+        input.current.kind === "placeholder" &&
+        !input.continueTask &&
+        !compaction &&
+        !adoption.selection.outstanding.length;
+      if (terminal) {
+        await persistAndAppendEvents(deps, threadId, async () => ({ result: undefined, events }));
+        await inbox.ack(threadId, drain.ackIds);
+        drain.ackIds = [];
+        await deps.runClaim.release(lease);
+        next = completed;
+      } else {
+        const leaf = turns.at(-1)?.id ?? expectedLeaf ?? currentTurn.id;
+        next = reservationTurn(
+          {
+            threadId,
+            position: nextTurnPosition(
+              turns.at(-1) ??
+                (expectedLeafPosition === null ? null : { position: expectedLeafPosition }),
+            ),
+            prevTurnId: leaf,
+            writeMode: currentTurn.writeMode,
+          },
+          compaction,
+        );
+        const completedTurn = completed;
+
+        await persistAndAppendTurnStartEvents(
+          deps,
           threadId,
-          position: nextTurnPosition(
-            turns.at(-1) ??
-              (expectedLeafPosition === null ? null : { position: expectedLeafPosition }),
-          ),
-          prevTurnId: leaf,
-          writeMode: currentTurn.writeMode,
-        },
-        compaction,
-      );
-      const completedTurn = completed;
-      const receipt = await leaseStore.lockReceipt(lease);
-      drain.ackIds = [...new Set([...(receipt?.ids ?? []), ...drain.ackIds])];
-      await persistAndAppendTurnStartEvents(
-        deps,
-        threadId,
-        expectedLeaf,
-        async () => ({
-          result: undefined,
-          events: [
-            ...(input.current.kind === "assistant"
-              ? [{ type: "turn.completed" as const, turn: completedTurn }]
-              : []),
-            ...events,
-            { type: "turn.created", turn: next },
-          ],
-        }),
-        {
-          afterEvents: () =>
-            leaseStore.bindTurn(lease, next.id, drain.ackIds, currentTurnKind(next)),
-        },
-      );
+          expectedLeaf,
+          async () => ({
+            result: undefined,
+            events: [
+              ...(input.current.kind === "assistant"
+                ? [{ type: "turn.completed" as const, turn: completedTurn }]
+                : []),
+              ...events,
+              { type: "turn.created", turn: next },
+            ],
+          }),
+          {
+            afterEvents: async () => {
+              await leaseStore.bindTurn(lease, next.id, drain.ackIds, currentTurnKind(next));
+              if (adoption.selection.outstanding.length > 0) await input.admit?.(next);
+            },
+          },
+        );
+      }
       if (input.current.kind === "assistant") await deps.repos.threads.updateCost(threadId, "0", 1);
     } else if (events.length > 0) {
       await persistAndAppendEvents(deps, threadId, async () => ({ result: undefined, events }));
@@ -441,7 +540,7 @@ export function createDeliveryAdapter(
     ) {
       throw new Error("Cannot adopt inbox batch after losing live run lease");
     }
-    if (input.current.kind === "placeholder" && preparationFailure !== undefined) {
+    if (input.current.kind === "placeholder" && !terminal && preparationFailure !== undefined) {
       const error = writerFacingPreparationError(
         preparationFailure instanceof Error
           ? preparationFailure
@@ -455,7 +554,8 @@ export function createDeliveryAdapter(
       next = completion.turn;
       await inbox.ack(threadId, drain.ackIds);
     }
-    if (batch.length > 0) await appendPending(threadId);
+    if (batch.length > 0 || input.current.kind === "placeholder" || compaction)
+      await appendPending(threadId);
     drain.turns = turns;
     drain.blocks = blocks;
     return {
@@ -464,6 +564,7 @@ export function createDeliveryAdapter(
       context: prepared.context,
       next,
       split,
+      terminal,
       completed,
       compaction,
       ...(preparationFailure === undefined ? {} : { preparationFailure }),
@@ -476,17 +577,34 @@ export function createDeliveryAdapter(
     return prepareAndCommit({
       threadId: input.lease.threadId,
       signal: input.signal,
+      satisfyPendingCompact: input.satisfyPendingCompact,
       validate: async () => {
         if ((await leaseStore.lockReceipt(input.lease))?.cancelRequested)
           throw new DOMException("The operation was aborted", "AbortError");
       },
       prepare: (selection, work) => prepareAdoption(input, selection, work),
-      hasPreparationFailure: (prepared) => prepared.preparationFailure !== undefined,
+      hasPreparationFailure: (prepared) =>
+        prepared.deferred === true || prepared.preparationFailure !== undefined,
       commit: async (_selection, _work, prepared) => commitAdoption(input, prepared),
     });
   }
 
   return {
+    ...createThreadControls({
+      withThreadLock: threadLock.withThreadLock,
+      findMessage: inbox.findMessage,
+      enqueue,
+      findTurn: (id) => deps.repos.turns.findById(id),
+      findControlTurn: (id, controlId) => deps.repos.turns.findByControlId(id, controlId),
+      pending: (id) => readPendingInbox(inbox, id),
+      lockReceipt: leaseStore.lockThreadReceipt,
+      cancel: deps.runClaim.cancelExecution,
+      acknowledge: async (id, controlId) => {
+        await inbox.ack(id, [controlId]);
+        await appendPending(id);
+      },
+      wake: (id) => deps.schedulePostCommit(() => deps.runStarter.start(id)),
+    }),
     threadChanged,
     async projectChanged(projectId) {
       const mutationId = crypto.randomUUID();
@@ -576,11 +694,11 @@ export function createDeliveryAdapter(
           ? { kind: "cancelled" as const, reason: "cancelled" }
           : input.cause;
         if (input.continueWith && cause.kind === "success") {
-          const pending = await inbox.selectPending(threadId);
+          const { selection } = await selectForPreparation(threadId);
           if (
-            pending.some((message) => message.intent === "message") ||
-            (pending.some((message) => message.body.kind === "work_context_refresh") &&
-              (await inbox.canMaterializeWork(threadId)))
+            !selection.control &&
+            (selection.batch.some((message) => message.intent === "message") ||
+              selection.workContext)
           ) {
             return { kind: "prepare_split" as const };
           }
@@ -593,9 +711,19 @@ export function createDeliveryAdapter(
         });
         if (
           completion.turn.status === "cancelled" ||
-          (cause.kind === "failed" && cause.acknowledgeInbox)
+          (cause.kind === "failed" &&
+            (cause.acknowledgeInbox ||
+              (completion.turn.metadata as import("@meridian/contracts/threads").JsonObject | null)
+                ?.trigger === "manual"))
         ) {
-          await inbox.ack(threadId, receipt?.ids ?? []);
+          const ids =
+            (completion.turn.metadata as import("@meridian/contracts/threads").JsonObject | null)
+              ?.trigger === "manual"
+              ? (await inbox.selectPending(threadId))
+                  .filter((row) => row.intent === "control" && receipt?.ids.includes(row.id))
+                  .map((row) => row.id)
+              : (receipt?.ids ?? []);
+          await inbox.ack(threadId, ids);
         }
         await deps.runClaim.release(input.lease);
         await appendPending(threadId);
@@ -604,7 +732,7 @@ export function createDeliveryAdapter(
       if (disposition.kind === "completed") return disposition;
 
       const boundary = input.continueWith as DeliveryBoundary;
-      const adopted = await adopt(boundary);
+      const adopted = await adopt({ ...boundary, deferControl: true });
       if (adopted.split) return { kind: "split", adopted };
       const completion = await threadLock.withThreadLock(threadId, async () => {
         const receipt = await leaseStore.lockReceipt(input.lease);

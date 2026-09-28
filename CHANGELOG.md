@@ -13,6 +13,8 @@
 
 ### Added
 - Record atomic document revisions on agent reads, searches, references, and settled writes without adding model-visible text.
+- Queue manual compaction in message order. Withdraw queued requests or stop running dividers.
+- Keep unanswered writer text and mentions verbatim across compaction. Failed optional summaries leave replies running.
 - Summarize long chats with cached requests or rolling cheap-model summaries. Keep story facts and writer preferences.
 - Default compaction to the model's usable window, pricing tier, or 400,000-token ceiling.
 - Stop a running compaction and deliver messages queued during its summary afterward.
@@ -29,6 +31,10 @@
 - Refresh search-only Work drafts before revision checks. Ignore documents removed from a Work.
 - Commit shared document pulls independently of chat transactions; preserve retries after failed pulls, including newer edits queued during a pull.
 - Settle direct-write tool results after their document commit instead of leaving successful edits marked staged.
+- Keep failed replies sweep-paced when a compact request waits behind them.
+- Withdrawing an absorbed compact request leaves the writer's reply running.
+- Refuse back-to-back manual compaction until new history arrives.
+- Stop an automatic compaction even when it absorbed a queued manual request. Retry pre-reservation failures through the sweep, not a tight loop.
 - Keep pending-placeholder roles and predicates in contracts, SQL in the database package, and interruption copy in the threads domain.
 - Retry failed warm summaries cold once. Bound summary output without changing cached thinking.
 - Preflight cold transcripts before paid calls. Excerpt large document reads and split large turns at blocks.

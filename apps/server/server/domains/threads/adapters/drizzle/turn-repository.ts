@@ -213,6 +213,20 @@ export function createDrizzleTurnRepository(
         .where(eq(schema.turns.id, id));
       return row ? mapTurn(row) : null;
     },
+    async findByControlId(threadId, controlId) {
+      const [row] = await currentDrizzleDb(db)
+        .select()
+        .from(schema.turns)
+        .where(
+          and(
+            eq(schema.turns.threadId, threadId),
+            sql`(${schema.turns.metadata}->>'controlMessageId' = ${controlId} OR ${schema.turns.metadata}->>'satisfiesControlId' = ${controlId})`,
+          ),
+        )
+        .orderBy(desc(schema.turns.position))
+        .limit(1);
+      return row ? mapTurn(row) : null;
+    },
     async listByThread(threadId) {
       const rows = await currentDrizzleDb(db)
         .select()

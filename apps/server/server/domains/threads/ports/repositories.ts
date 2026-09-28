@@ -432,6 +432,8 @@ export interface TurnRepository {
   /** Inserts a turn row, or returns the existing row when replaying the same turn id. */
   create(input: CreateTurnInput): Promise<Turn>;
   findById(id: TurnId): Promise<Turn | null>;
+  /** Latest execution or automatic satisfaction of one inbox control. */
+  findByControlId(threadId: ThreadId, controlId: string): Promise<Turn | null>;
   listByThread(threadId: ThreadId): Promise<Turn[]>;
   /** Targeted run-start and under-lock re-read for one thread's pending placeholders. */
   listPendingPlaceholdersForThread(threadId: ThreadId): Promise<Turn[]>;

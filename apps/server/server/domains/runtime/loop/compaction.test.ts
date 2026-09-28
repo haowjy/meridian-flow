@@ -149,7 +149,7 @@ function compactionTurn(
     status,
     metadata: compactionTurnMetadata({
       compactedThrough: { turnId: cutTurnId },
-      pinnedRequestTurnId,
+      pinnedRequestTurnIds: [pinnedRequestTurnId],
     }),
     ...extra,
   });
@@ -271,7 +271,7 @@ describe("classifyHistoryItem", () => {
       kind: "compaction",
       metadata: {
         compactedThrough: { turnId: "old" },
-        pinnedRequestTurnId: "request",
+        pinnedRequestTurnIds: ["request"],
       },
     });
     expect(classifyHistoryItem(undo)).toEqual({
@@ -519,7 +519,8 @@ describe("planCompaction", () => {
     const plan = planCompaction({
       turns: [request, assistantTurn],
       blocks,
-      triggerTokens: 100,
+      fitLimitTokens: 100,
+      tailBudgetBaseTokens: 100,
       summaryReserveTokens: 10,
       fixedOverheadTokens: 0,
       tokenizer: "anthropic",
@@ -527,7 +528,7 @@ describe("planCompaction", () => {
     });
 
     expect(plan.compactedThrough).toEqual({ turnId: assistantTurn.id, blockSequence: 2 });
-    expect(plan.pinnedRequest?.id).toBe(request.id);
+    expect(plan.pinnedRequests.at(-1)?.id).toBe(request.id);
     expect(plan.retainedSuffix.map(({ blocks: kept }) => kept.map(({ id }) => id))).toEqual([
       [],
       ["tool-use-2", "tool-result-2", "new-text"],
@@ -547,7 +548,8 @@ describe("planCompaction", () => {
     const plan = planCompaction({
       turns,
       blocks,
-      triggerTokens: 100,
+      fitLimitTokens: 100,
+      tailBudgetBaseTokens: 100,
       summaryReserveTokens: 5,
       fixedOverheadTokens: 0,
       tokenizer: "anthropic",
@@ -573,7 +575,8 @@ describe("planCompaction", () => {
     const plan = planCompaction({
       turns: [request, answer],
       blocks,
-      triggerTokens: 30,
+      fitLimitTokens: 30,
+      tailBudgetBaseTokens: 30,
       summaryReserveTokens: 5,
       fixedOverheadTokens: 15,
       tokenizer: "anthropic",
@@ -640,7 +643,8 @@ describe("planCompaction", () => {
     const plan = planCompaction({
       turns,
       blocks,
-      triggerTokens: 20_000,
+      fitLimitTokens: 20_000,
+      tailBudgetBaseTokens: 20_000,
       summaryReserveTokens: 2_000,
       fixedOverheadTokens: 500,
       tokenizer: "anthropic",
@@ -651,7 +655,7 @@ describe("planCompaction", () => {
       "old-tool-compaction",
       position,
       plan.compactedThrough?.turnId ?? oldAnswer.id,
-      plan.pinnedRequest?.id ?? turns.at(-2)?.id ?? oldRequest.id,
+      plan.pinnedRequests.at(-1)?.id ?? turns.at(-2)?.id ?? oldRequest.id,
     );
     const projected = projectActiveHistory(
       [...turns, compaction],
@@ -690,12 +694,13 @@ describe("planCompaction", () => {
     const plan = planCompaction({
       turns,
       blocks,
-      triggerTokens: 1_000_000,
+      fitLimitTokens: 1_000_000,
+      tailBudgetBaseTokens: 1_000_000,
       summaryReserveTokens: 1_000,
       fixedOverheadTokens: 5_000,
       tokenizer: "anthropic",
     });
-    expect(plan.pinnedRequest?.id).toBe("turn-1998");
+    expect(plan.pinnedRequests.at(-1)?.id).toBe("turn-1998");
     expect(performance.now() - startedAt).toBeLessThan(1_500);
   });
 
@@ -760,7 +765,8 @@ describe("planCompaction", () => {
     const plan = planCompaction({
       turns,
       blocks,
-      triggerTokens,
+      fitLimitTokens: triggerTokens,
+      tailBudgetBaseTokens: triggerTokens,
       summaryReserveTokens,
       fixedOverheadTokens,
       tokenizer: "anthropic",
@@ -773,7 +779,7 @@ describe("planCompaction", () => {
       "planned-compaction",
       turns.length + 1,
       plan.compactedThrough.turnId,
-      plan.pinnedRequest.id,
+      (plan.pinnedRequests.at(-1) as Turn).id,
     );
     const projected = projectActiveHistory(
       [...turns, compaction],
@@ -798,14 +804,15 @@ describe("planCompaction", () => {
     const plan = planCompaction({
       turns: [onlyAssistant],
       blocks: [],
-      triggerTokens: 100,
+      fitLimitTokens: 100,
+      tailBudgetBaseTokens: 100,
       summaryReserveTokens: 10,
       fixedOverheadTokens: 10,
       tokenizer: "anthropic",
     });
     expect(plan).toMatchObject({
       outcome: "no_compaction",
-      pinnedRequest: null,
+      pinnedRequests: [],
       compactedThrough: null,
       minimalTailFits: false,
     });
@@ -828,7 +835,8 @@ describe("planCompaction", () => {
     const plan = planCompaction({
       turns,
       blocks,
-      triggerTokens: 10_000,
+      fitLimitTokens: 10_000,
+      tailBudgetBaseTokens: 10_000,
       summaryReserveTokens: 100,
       fixedOverheadTokens: 100,
       tokenizer: "anthropic",
@@ -847,7 +855,7 @@ describe("planCompaction", () => {
       "second-compaction",
       6,
       plan.compactedThrough.turnId,
-      plan.pinnedRequest.id,
+      (plan.pinnedRequests.at(-1) as Turn).id,
     );
     expect(() =>
       projectActiveHistory(
@@ -974,7 +982,7 @@ describe("projectActiveHistory", () => {
     const compaction = compactionTurn("c", 5, current.id, pinned.id, "complete", {
       metadata: {
         compactedThrough: { turnId: current.id, blockSequence: 2 },
-        pinnedRequestTurnId: pinned.id,
+        pinnedRequestTurnIds: [pinned.id],
       },
     });
     const turns = [oldRequest, oldAnswer, pinned, current, compaction];
@@ -1144,7 +1152,7 @@ it("summarizes only the cut blocks plus the prior summary, not the lifted pin or
   ];
   const plan = {
     outcome: "planned" as const,
-    pinnedRequest: pin,
+    pinnedRequests: [pin],
     compactedThrough: { turnId: assistant.id, blockSequence: 0 },
     retainedSuffix: [
       { turn: pin, blocks: [blocks[1]] },

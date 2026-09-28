@@ -127,7 +127,7 @@ else {
             blocks: [],
             metadata: compactionTurnMetadata({
               compactedThrough: { turnId: boundary.id },
-              pinnedRequestTurnId: boundary.id,
+              pinnedRequestTurnIds: [boundary.id],
             }),
             modelResponses: [
               {

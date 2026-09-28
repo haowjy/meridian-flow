@@ -122,6 +122,7 @@ export {
 } from "./loop/run-turn-port.js";
 export type { DeliveryProducer, RuntimeDelivery } from "./loop/runtime-delivery.js";
 export { sweepWakes } from "./loop/sweep-wakes.js";
+export { ThreadControlError } from "./loop/thread-controls.js";
 export {
   THREAD_LOCK_SEED,
   type ThreadLock,

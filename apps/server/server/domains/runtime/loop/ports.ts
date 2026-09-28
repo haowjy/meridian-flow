@@ -7,6 +7,7 @@
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
+  ControlBody,
   CurrentToolCall,
   MessageIntent,
   MessageProvenance,
@@ -32,6 +33,7 @@ export type { ThreadPhase, ThreadStatus };
 export type ContextPart = { source: string; text: string };
 
 export type MessageBody =
+  | ControlBody
   | { kind: "text"; text: string }
   | { kind: "context"; parts: ContextPart[] }
   | { kind: "work_context_refresh" };
@@ -45,7 +47,7 @@ export interface MessageDraft {
   /**
    * Producer-supplied durable id. The writer producer sets it to the user turn it
    * persisted at enqueue so the drain reuses the same turn id and skips the
-   * re-persist; every other producer lets storage mint one.
+   * re-persist. Controls use their client-minted id; other producers let storage mint one.
    */
   id?: string;
 }

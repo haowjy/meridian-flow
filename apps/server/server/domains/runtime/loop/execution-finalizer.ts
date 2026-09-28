@@ -114,12 +114,14 @@ export async function finalizeExecution(
       ) {
         throw new Error("Terminal turn is unavailable");
       }
-      const existingReport = await deps.repos.executionReports.findByTurn(
+      const ancestorReport = await deps.repos.executionReports.findByTurn(
         input.threadId,
         input.turnId,
       );
+      const existingReport =
+        turn.role === "compaction" && ancestorReport?.outcome !== null ? null : ancestorReport;
       const thread = await deps.repos.threads.lockByIdIncludingDeleted(input.threadId);
-      if (thread?.kind === "subagent" && !existingReport) {
+      if (thread?.kind === "subagent" && !existingReport && turn.role === "assistant") {
         throw new Error("Subagent execution was not admitted");
       }
       if (isTerminalTurnStatus(turn.status)) {
@@ -137,6 +139,14 @@ export async function finalizeExecution(
           : null;
       const updated: Turn = {
         ...turn,
+        ...(turn.role === "compaction" && input.cause.kind === "failed"
+          ? {
+              metadata: {
+                ...(turn.metadata as import("@meridian/contracts/threads").JsonObject),
+                reason: input.cause.reason === "orphaned" ? "interrupted" : input.cause.reason,
+              },
+            }
+          : {}),
         status:
           input.cause.kind === "success"
             ? "complete"
@@ -160,7 +170,7 @@ export async function finalizeExecution(
     {
       async afterEvents(turn) {
         const admitted = await deps.repos.executionReports.findByTurn(input.threadId, input.turnId);
-        if (!admitted) return;
+        if (!admitted || (turn.role === "compaction" && admitted.outcome !== null)) return;
         if (admitted.outcome !== null) {
           report = admitted;
           return;

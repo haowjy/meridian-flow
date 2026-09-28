@@ -16,27 +16,26 @@ export function retainedTail(input: {
   turns: readonly Turn[];
   blocksByTurn: ReadonlyMap<string, readonly Block[]>;
   cut: CompactionCut;
-  pinnedRequest: Turn | null;
+  pinnedRequests: readonly Turn[];
   canRetain: (turn: Turn) => boolean;
 }): RetainedTurnSlice[] {
-  const { turns, blocksByTurn, cut, pinnedRequest, canRetain } = input;
+  const { turns, blocksByTurn, cut, pinnedRequests, canRetain } = input;
   const cutIndex = turns.findIndex((turn) => turn.id === cut.turnId);
   if (cutIndex < 0) throw new Error(`Compaction cut turn not found: ${cut.turnId}`);
 
-  const pinnedIndex = pinnedRequest ? turns.findIndex((turn) => turn.id === pinnedRequest.id) : -1;
-  const pinnedMustMove = pinnedRequest !== null && pinnedIndex >= 0 && pinnedIndex <= cutIndex;
-  const result: RetainedTurnSlice[] = [];
-  if (pinnedMustMove && canRetain(pinnedRequest)) {
-    result.push({
-      turn: pinnedRequest,
-      blocks: [...(blocksByTurn.get(pinnedRequest.id) ?? [])],
-    });
-  }
+  const pins = new Set(pinnedRequests.map((turn) => turn.id));
+  const lifted = turns
+    .slice(0, cutIndex + 1)
+    .filter((turn) => pins.has(turn.id) && canRetain(turn));
+  const liftedIds = new Set(lifted.map((turn) => turn.id));
+  const result: RetainedTurnSlice[] = lifted.map((turn) => ({
+    turn,
+    blocks: [...(blocksByTurn.get(turn.id) ?? [])],
+  }));
 
   for (let index = cutIndex; index < turns.length; index++) {
     const turn = turns[index];
-    if (!turn || !canRetain(turn) || turn.id === (pinnedMustMove ? pinnedRequest?.id : null))
-      continue;
+    if (!turn || !canRetain(turn) || liftedIds.has(turn.id)) continue;
     if (index === cutIndex && cut.blockSequence === undefined) continue;
 
     const turnBlocks = [...(blocksByTurn.get(turn.id) ?? [])];

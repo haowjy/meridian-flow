@@ -4,6 +4,7 @@ import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads
 import type { Notice } from "../../notices/index.js";
 import type { WorkContextNotices } from "../../projects/index.js";
 import type { CompactionDecision } from "./compaction/decision.js";
+import type { ControlMessage } from "./control-barrier.js";
 import type { FinalizedExecution, TerminalCause } from "./execution-finalizer.js";
 import type { drainInbox, InboxDrain } from "./inbox-context.js";
 import type { InboxMessage, InboxReader, Lease, MessageDraft } from "./ports.js";
@@ -14,6 +15,7 @@ export type DeliveryTransaction = {
   materializePrefix(): Promise<void>;
 };
 export type DeliveryProducer = Pick<RuntimeDelivery, "enqueue" | "withThreadLock">;
+export type ThreadControls = Pick<RuntimeDelivery, "enqueueControl" | "withdrawControl">;
 export type DeliveryBoundary<TCurrent = undefined> = Pick<
   Parameters<typeof drainInbox>[0],
   "knownTurnIds" | "expectedLeafTurnId" | "prepareAdoptedTurn"
@@ -21,6 +23,10 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
   lease: Lease;
   currentTurn: Turn;
   signal?: AbortSignal;
+  continueTask?: boolean;
+  deferControl?: boolean;
+  satisfyPendingCompact?: boolean;
+  admit?: (turn: Turn) => Promise<void>;
   /** Prepare the current placeholder before late arrivals; retried with the same selection. */
   prepareCurrent?: () => Promise<TCurrent>;
   /** Completes a placeholder in the same transaction as late adoption and reservation. */
@@ -28,12 +34,17 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
     | { kind: "assistant" }
     | {
         kind: "placeholder";
-        complete: (prepared: TCurrent | undefined, failure: unknown | undefined) => Promise<Turn>;
+        complete: (
+          prepared: TCurrent | undefined,
+          failure: unknown | undefined,
+          selection: DeliverySelection,
+        ) => Promise<Turn>;
       };
   /** Prepare image decisions/breaks before the next assistant turn is reserved. */
   prepareNextContext: (
     drain: InboxDrain,
     current: TCurrent | undefined,
+    selection: DeliverySelection,
   ) => Promise<{
     events: OrchestratorEvent[];
     turns: Turn[];
@@ -45,6 +56,10 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
 };
 export type DeliverySelection = {
   batch: InboxMessage[];
+  control: ControlMessage | null;
+  satisfiesControlId?: string;
+  headControl: ControlMessage | null;
+  outstanding: InboxMessage[];
   workContext?: import("./work-context.js").RenderedWorkContext;
   notices: Notice[];
   activeLeafTurnId: TurnId | null;
@@ -53,6 +68,7 @@ export type AdoptedBatch<TCurrent = undefined> = {
   drain: InboxDrain;
   next: Turn;
   split: boolean;
+  terminal?: boolean;
   completed?: Turn;
   compaction?: Extract<CompactionDecision, { kind: "compact" }>;
   preparationFailure?: unknown;
@@ -62,6 +78,19 @@ export type AdoptedBatch<TCurrent = undefined> = {
 export interface RuntimeDelivery
   extends WorkContextNotices,
     Pick<InboxReader, "selectPending" | "readPendingProjection" | "pendingMessageThreads"> {
+  enqueueControl(input: {
+    threadId: ThreadId;
+    actorId: string;
+    id: string;
+    control: import("@meridian/contracts/threads").ControlBody;
+  }): Promise<{
+    created: boolean;
+    response: import("@meridian/contracts/threads").EnqueueThreadControlResponse;
+  }>;
+  withdrawControl(
+    threadId: ThreadId,
+    controlId: string,
+  ): Promise<import("@meridian/contracts/threads").WithdrawThreadControlResponse>;
   /** Reclassify expired leases after recovery or a backstop release. */
   refreshPending(threadId: ThreadId): Promise<void>;
   enqueue(draft: MessageDraft): Promise<InboxMessage>;

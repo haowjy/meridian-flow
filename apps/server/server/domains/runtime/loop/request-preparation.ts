@@ -31,6 +31,8 @@ export async function prepareRequestContext(input: {
   skipCompaction?: boolean;
   forcedDecision?: ForcedCompactionDecision;
   imageProjectionMode?: CompactionImageProjectionMode;
+  controlMessageId?: string;
+  pinnedRequestTurnIds?: ReadonlySet<string>;
   promptBakes?: OrchestratorRepositories["promptBakes"];
   signal?: AbortSignal;
 }): Promise<{
@@ -103,7 +105,9 @@ export async function prepareRequestContext(input: {
         });
   const compactionNeeded =
     !input.skipCompaction &&
-    (input.forcedDecision !== undefined || assembled.compactionTriggerTokens !== null);
+    (input.controlMessageId !== undefined ||
+      input.forcedDecision !== undefined ||
+      assembled.compactionTriggerTokens !== null);
   let compaction: CompactionDecision;
   if (!compactionNeeded) {
     compaction = { kind: "generate" };
@@ -117,7 +121,15 @@ export async function prepareRequestContext(input: {
       turns: [...input.turns, ...assembled.imageContextUpdates.turns],
       blocks: [...blocks, ...assembled.imageContextUpdates.blocks],
       thresholdTokens: assembled.compactionTriggerTokens,
-      forcedDecision: input.forcedDecision,
+      forcedDecision: input.controlMessageId
+        ? {
+            kind: "compact",
+            trigger: "manual",
+            fitLimitTokens: assembled.compactionUsableWindowTokens as number,
+          }
+        : input.forcedDecision,
+      controlMessageId: input.controlMessageId,
+      pinnedRequestTurnIds: input.pinnedRequestTurnIds,
       summaryReserveTokens: input.deps.summarizer.maxOutputTokens,
       baseline,
       tokenizer,

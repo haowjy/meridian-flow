@@ -2,7 +2,7 @@
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { SummaryOutcome, SummaryResponse } from "../ports/conversation-summarizer.js";
-import type { CompactionDecision } from "./compaction/decision.js";
+import { type CompactionDecision, CompactionPreparationError } from "./compaction/decision.js";
 import { changedDocuments, collectRecordedDocuments } from "./compaction/elide.js";
 import { projectActiveHistory, projectCompactedHistory } from "./compaction/index.js";
 import { queryCompactionRevisions } from "./compaction-revisions.js";
@@ -13,6 +13,7 @@ import {
   prepareCompactionSuccessor,
 } from "./compaction-successor.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
+import { prepareRequestContext } from "./request-preparation.js";
 import type { RunLoopInput } from "./run-turn-port.js";
 import type { DeliveryBoundary } from "./runtime-delivery.js";
 
@@ -62,16 +63,24 @@ export async function executeCompaction({
   let summary: SummaryOutcome;
   try {
     input.signal?.throwIfAborted();
-    summary = await deps.summarizer.summarize({
-      threadId: input.threadId,
-      turnId: currentTurn.id,
-      instruction: "compaction",
-      changedDocuments: changed,
-      requestInHand: decision.requestInHand,
-      forceCold: decision.path === "cold",
-      projection: projectCompactedHistory(projection, decision.plan),
-      signal: input.signal ?? new AbortController().signal,
-    });
+    summary =
+      decision.plan.outcome !== "planned" || decision.refusal
+        ? {
+            kind: "failed",
+            error: new CompactionPreparationError(decision.refusal ?? "nothing_to_compact"),
+            modelResponses: [],
+            summarizer: { path: "cold", segments: 0 },
+          }
+        : await deps.summarizer.summarize({
+            threadId: input.threadId,
+            turnId: currentTurn.id,
+            instruction: "compaction",
+            changedDocuments: changed,
+            requestInHand: decision.requestInHand,
+            forceCold: decision.path === "cold",
+            projection: projectCompactedHistory(projection, decision.plan),
+            signal: input.signal ?? new AbortController().signal,
+          });
   } catch (error) {
     if (!input.signal?.aborted)
       emitEvent(deps.eventSink, {
@@ -88,20 +97,26 @@ export async function executeCompaction({
       summarizer: { path: "cold", segments: 0 },
     };
   }
-  recordResponses(summary.modelResponses, summary.summarizer);
+  if (!decision.refusal) recordResponses(summary.modelResponses, summary.summarizer);
   input.signal?.throwIfAborted();
   const outcome = summary;
-  const complete = (prepared: PreparedCompaction | undefined, failure: unknown) =>
+  const complete = (
+    prepared: PreparedCompaction | undefined,
+    failure: unknown,
+    selection: import("./runtime-delivery.js").DeliverySelection,
+  ) =>
     completeCompactionCurrent({
       deps,
       threadId: input.threadId,
       placeholder: currentTurn,
+      satisfiesControlId: selection.satisfiesControlId,
       prepared,
       failure,
       settleResponses: () => settleResponses(outcome.modelResponses),
     });
   const successorBoundary = {
     ...boundary,
+    satisfyPendingCompact: decision.trigger === "auto" && !decision.satisfiesControlId,
     current: { kind: "placeholder" as const, complete },
     prepareCurrent: () =>
       prepareCompactionSuccessor({
@@ -116,7 +131,52 @@ export async function executeCompaction({
         outcome,
         projection,
       }),
-    prepareNextContext: prepareCompactionContext,
+    prepareNextContext: async (
+      drain: import("./inbox-context.js").InboxDrain,
+      prepared: PreparedCompaction | undefined,
+      selection: import("./runtime-delivery.js").DeliverySelection,
+    ) => {
+      if (prepared?.kind === "failed" && decision.required) throw prepared.reason;
+      if (prepared?.kind === "usable" && !selection.control)
+        return prepareCompactionContext(drain, prepared);
+      const completed =
+        prepared?.kind === "usable"
+          ? {
+              ...currentTurn,
+              status: "complete" as const,
+              promptBakeId: prepared.provisionalBakeId,
+            }
+          : { ...currentTurn, status: "error" as const };
+      const next =
+        prepared?.kind === "usable"
+          ? await prepared.assemble(drain.turns, drain.blocks, selection)
+          : await prepareRequestContext({
+              deps,
+              thread,
+              threadId: input.threadId,
+              referenceTurnId: currentTurn.id,
+              currentTurnId: currentTurn.id,
+              turns: [
+                ...allTurns.map((turn) => (turn.id === currentTurn.id ? completed : turn)),
+                ...drain.turns,
+              ],
+              blocks: [...allBlocks, ...drain.blocks],
+              baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
+              readReferences: false,
+              skipCompaction: !selection.control,
+              controlMessageId: selection.control?.id,
+              pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
+              signal: input.signal,
+            });
+      return {
+        events: next.events,
+        turns: next.assembled.imageContextUpdates.turns,
+        blocks: next.assembled.imageContextUpdates.blocks,
+        requiresSplit: true,
+        context: next.assembled,
+        compaction: next.compaction,
+      };
+    },
   };
   const successor = await deps.delivery.splitAndContinue(successorBoundary);
   return {

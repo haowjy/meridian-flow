@@ -160,7 +160,8 @@ const messageProvenanceSchema: z.ZodType<import("../threads/index.js").MessagePr
 const pendingInboxItemSchema: z.ZodType<import("../threads/index.js").PendingInboxItem> = z.object({
   id: z.string().min(1),
   seq: z.number().int(),
-  intent: z.enum(["message", "notice"]),
+  intent: z.enum(["message", "notice", "control"]),
+  control: z.object({ kind: z.literal("compact") }).optional(),
   provenance: messageProvenanceSchema,
   deliveryState: z.enum(["awaiting_run", "waiting"]),
   summary: z.string(),
