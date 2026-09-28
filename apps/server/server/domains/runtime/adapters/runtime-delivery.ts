@@ -36,7 +36,7 @@ import type { ThreadLock } from "../loop/thread-lock.js";
 
 /** Adapter-private storage primitives; never injected into the model loop or producers. */
 export interface DeliveryStore extends InboxReader {
-  findMessage(threadId: ThreadId, id: string): Promise<InboxMessage | null>;
+  findMessage(id: string): Promise<InboxMessage | null>;
   workNoticeTargets(projectId: ProjectId): Promise<ThreadId[]>;
   canMaterializeWork(threadId: ThreadId): Promise<boolean>;
   pendingWorkThreads(limit: number, afterThreadId?: ThreadId): Promise<ThreadId[]>;
@@ -714,13 +714,13 @@ export function createDeliveryAdapter(
         if (
           completion.turn.status === "cancelled" ||
           (cause.kind === "failed" &&
-            (cause.acknowledgeInbox || completion.turn.role === "compaction"))
+            (cause.acknowledgeInbox ||
+              (completion.turn.metadata as import("@meridian/contracts/threads").JsonObject | null)
+                ?.trigger === "manual"))
         ) {
           const ids =
             (completion.turn.metadata as import("@meridian/contracts/threads").JsonObject | null)
-              ?.trigger === "manual" ||
-            (completion.turn.metadata as import("@meridian/contracts/threads").JsonObject | null)
-              ?.satisfiesControlId
+              ?.trigger === "manual"
               ? (await inbox.selectPending(threadId))
                   .filter((row) => row.intent === "control" && receipt?.ids.includes(row.id))
                   .map((row) => row.id)

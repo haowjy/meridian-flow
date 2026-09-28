@@ -93,16 +93,11 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
         .limit(limit);
       return rows.map(({ id }) => id as ThreadId);
     },
-    async findMessage(threadId, id) {
+    async findMessage(id) {
       const [row] = await db_()
         .select()
         .from(schema.threadInboxMessages)
-        .where(
-          and(
-            eq(schema.threadInboxMessages.threadId, threadId),
-            eq(schema.threadInboxMessages.id, id),
-          ),
-        )
+        .where(eq(schema.threadInboxMessages.id, id))
         .limit(1);
       return row ? toInboxMessage(row) : null;
     },

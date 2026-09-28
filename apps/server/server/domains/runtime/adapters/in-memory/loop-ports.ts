@@ -38,8 +38,8 @@ export function createInMemoryInbox(): DeliveryStore {
         .filter((id) => !afterThreadId || id > afterThreadId)
         .slice(0, limit);
     },
-    async findMessage(threadId, id) {
-      return messages.find((row) => row.threadId === threadId && row.id === id) ?? null;
+    async findMessage(id) {
+      return messages.find((row) => row.id === id) ?? null;
     },
     async enqueue(draft) {
       const existing = messages.find(

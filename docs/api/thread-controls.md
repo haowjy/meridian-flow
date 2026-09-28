@@ -26,7 +26,7 @@ retired: retrying enqueue never schedules a withdrawn or completed control.
 A crash may retry an unacknowledged control on a new divider.
 
 Invalid bodies return 400 (`invalid_control`). An id belonging to an ordinary
-message returns 409 (`control_id_conflict`).
+message or a row in another thread returns 409 (`control_id_conflict`).
 
 ## Withdraw
 
@@ -40,8 +40,9 @@ Withdrawal acknowledges an unbound pending row. If a live run already bound
 it, withdrawal requests Stop for that run instead. A finished or withdrawn row
 returns `already_finished`. An unknown control returns 404
 (`control_not_found`). Withdrawal and reservation share the thread lock, so
-exactly one wins. Stop preserves unanswered messages adopted by the control;
-the owner's post-release wake delivers them.
+exactly one wins. Stop on a manual divider preserves unanswered messages adopted by the control;
+the owner's post-release wake delivers them. Stop on an automatic compaction
+retires its entire receipt, including any manual request it absorbed.
 
 ## CLI probe
 

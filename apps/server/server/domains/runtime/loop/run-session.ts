@@ -83,7 +83,7 @@ export function createRunSessions(deps: {
     let lease: Lease | null = null;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     let restartPendingAfterCompletion = false;
-    async function cleanup(restartPending = false) {
+    async function cleanup(restartPending = false, releaseUnanswered = false) {
       clearInterval(heartbeat);
       parentSignal?.removeEventListener("abort", abort);
       running.delete(threadId);
@@ -95,11 +95,10 @@ export function createRunSessions(deps: {
           await deps.delivery.refreshPending(threadId);
           const pending = await deps.delivery.selectPending(threadId);
           if (
-            pending.some((message) => message.intent === "control") ||
-            (session.currentTurn &&
-              (session.currentTurn.kind === "compaction" ||
-                (restartPending && !session.controller.signal.aborted)) &&
-              pending.some((message) => message.intent === "message"))
+            session.currentTurn &&
+            (pending.some((message) => message.intent === "control") ||
+              ((releaseUnanswered || (restartPending && !session.controller.signal.aborted)) &&
+                pending.some((message) => message.intent === "message")))
           ) {
             restartPendingAfterCompletion = true;
           }
@@ -183,7 +182,13 @@ export function createRunSessions(deps: {
           observe(threadId, "terminal_fallback.failed", error);
           outcome = { status: "failed", error };
         }
-        await cleanup(outcome.status === "complete");
+        await cleanup(
+          outcome.status === "complete",
+          outcome.status !== "failed" &&
+            outcome.turn.role === "compaction" &&
+            (outcome.turn.metadata as import("@meridian/contracts/threads").JsonObject | null)
+              ?.trigger === "manual",
+        );
         return outcome;
       }
       return {

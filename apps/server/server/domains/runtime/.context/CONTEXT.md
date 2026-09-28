@@ -694,7 +694,8 @@ Writer enqueue keeps writer turns visible immediately. Its prefix materializer
 uses the barrier but never reserves a control. Idle materialization holds a
 claim, finalizes orphan placeholders first, and then uses the same selection.
 A normal assistant close defers an executable control to the post-release wake;
-a tool boundary executes it inline. Both durable wake sweeps include controls.
+a tool boundary executes it inline. Both durable wake sweeps include controls. Pre-reservation failures retry through
+the sweep, not a hot post-release loop.
 
 Manual decisions fit against the usable window; their tail budget base is
 `min(trigger, tokensBefore)`. Automatic and overflow decisions use their fit
@@ -705,8 +706,7 @@ records an error divider without calling the summarizer or opening an epoch.
 A control's ending commit acknowledges its row, then reserves/binds the next
 due control, reserves B for an outstanding message or ongoing task, or releases
 the lease atomically. A control-only idle compaction creates no B. A failed
-optional manual summary continues the ordinary request. Stop on a manual or
-satisfying C acknowledges controls only, leaving unanswered messages for the
+optional manual summary continues the ordinary request. Stop on a manual C acknowledges controls only, leaving unanswered messages for the
 owner's post-release wake; ordinary autocompaction Stop retains its old receipt
 semantics. A crash leaves K pending for redelivery after orphan finalization.
 

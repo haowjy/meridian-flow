@@ -47,7 +47,7 @@ export interface MessageDraft {
   /**
    * Producer-supplied durable id. The writer producer sets it to the user turn it
    * persisted at enqueue so the drain reuses the same turn id and skips the
-   * re-persist; every other producer lets storage mint one.
+   * re-persist. Controls use their client-minted id; other producers let storage mint one.
    */
   id?: string;
 }

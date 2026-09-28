@@ -137,6 +137,9 @@ else
         control: { kind: "compact" as const },
       };
       expect((await rig.delivery.enqueueControl(input)).created).toBe(true);
+      await expect(
+        rig.delivery.enqueueControl({ ...input, threadId: rig.ids.child }),
+      ).rejects.toMatchObject({ statusCode: 409 });
       expect((await rig.delivery.enqueueControl(input)).created).toBe(false);
       await drainControls(rig);
       const retry = await rig.delivery.enqueueControl(input);
@@ -623,5 +626,24 @@ else
       expect(JSON.stringify(rig.gateway.requests.at(-1))).toContain(
         "reply survives failure landing",
       );
+    });
+    it("C6 Stop on an auto C that absorbed K stops its reply, not only K", async () => {
+      let rig: Awaited<ReturnType<typeof fixture>>;
+      const summarizer = scriptedSummarizer(async ({ turnId }, call) => {
+        if (call === 1) await rig.runClaim.cancelExecution(rig.threadId, turnId);
+        return {
+          kind: "complete",
+          text: "Earlier context.",
+          model: "summary-model",
+          modelResponses: [],
+        };
+      });
+      rig = await fixture({ summarizer, gateway: scriptedGateway({ usage: lowUsage }) });
+      await rig.send(rig.threadId, "M ahead of K");
+      await compactControl(rig);
+      expect((await drainControls(rig)).status).toBe("cancelled");
+      const turns = await settled(rig);
+      expect(turns.filter((turn) => turn.role === "compaction")).toHaveLength(1);
+      expect(rig.gateway.requests).toHaveLength(0);
     });
   });

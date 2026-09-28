@@ -16,7 +16,7 @@ export class ThreadControlError extends Error {
 
 export function createThreadControls(deps: {
   withThreadLock: ThreadLock["withThreadLock"];
-  findMessage(threadId: ThreadId, id: string): Promise<InboxMessage | null>;
+  findMessage(id: string): Promise<InboxMessage | null>;
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   turns(threadId: ThreadId): Promise<Turn[]>;
   pending(threadId: ThreadId): Promise<ThreadPendingInbox>;
@@ -28,7 +28,9 @@ export function createThreadControls(deps: {
   return {
     enqueueControl: (input) =>
       deps.withThreadLock(input.threadId, async () => {
-        const existing = await deps.findMessage(input.threadId, input.id);
+        const existing = await deps.findMessage(input.id);
+        if (existing && (existing.threadId !== input.threadId || existing.intent !== "control"))
+          throw new ThreadControlError(409, "control_id_conflict");
         const row =
           existing ??
           (await deps.enqueue({
@@ -39,7 +41,6 @@ export function createThreadControls(deps: {
             provenance: { kind: "writer", actorId: input.actorId },
             idempotencyKey: input.id,
           }));
-        if (row.intent !== "control") throw new ThreadControlError(409, "control_id_conflict");
         const turn = (await deps.turns(input.threadId)).reverse().find((turn) => {
           const metadata = turn.metadata as JsonObject | null;
           return metadata?.controlMessageId === row.id || metadata?.satisfiesControlId === row.id;
@@ -51,8 +52,9 @@ export function createThreadControls(deps: {
     withdrawControl: (threadId, controlId) =>
       deps.withThreadLock(threadId, async () => {
         const receipt = await deps.lockReceipt(threadId);
-        const row = await deps.findMessage(threadId, controlId);
-        if (row?.intent !== "control") throw new ThreadControlError(404, "control_not_found");
+        const row = await deps.findMessage(controlId);
+        if (row?.threadId !== threadId || row.intent !== "control")
+          throw new ThreadControlError(404, "control_not_found");
         if (row.deliveredAt) return { outcome: "already_finished" };
         if (
           receipt?.ids.includes(controlId) &&
