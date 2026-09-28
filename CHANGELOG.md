@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Preserve undo-before-Retry order in expanded control batches; only brief-only batches skip control history.
+
 - Stage activated skills through one boundary owner. Retry briefs defer skill bodies until the successor commits.
 
 - Skip destination control-history preparation while a handoff brief owns the boundary.

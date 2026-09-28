@@ -156,6 +156,7 @@ import { writerFacingPreparationError } from "./preparation-failure.js";
 import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
 import {
   type PreparedControlHistory,
+  prepareControlHistory,
   prepareFailedUndoHistory,
   prepareRequestContext,
   UndoRequestPreparationError,
@@ -582,7 +583,11 @@ async function runDrainTurn(
         reservedTurnId;
       let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
       let controlHistory: PreparedControlHistory | null = null;
-      if (!preparationError && !briefControl) {
+      // An expanded undo prefix can precede Retry; only that prefix needs preparation.
+      if (
+        !preparationError &&
+        (!briefControl || selection.controls?.some((c) => c.body.kind === "compaction_undo"))
+      ) {
         try {
           const previousBlocks = await deps.repos.blocks.listByThread(input.threadId);
           const prepareInput = {
@@ -612,7 +617,8 @@ async function runDrainTurn(
             baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
             signal: input.signal,
           };
-          preflight = await prepareRequestContext(prepareInput);
+          if (briefControl) controlHistory = await prepareControlHistory(prepareInput);
+          else preflight = await prepareRequestContext(prepareInput);
         } catch (error) {
           if (input.signal?.aborted) throw error;
           preparationError = asError(error);
@@ -1718,7 +1724,22 @@ async function executeLoop({
           briefPending,
         });
         if (briefPending) {
-          return { events: [], turns: [], blocks: [], requiresSplit: true };
+          const predecessors = selection.controls?.some((c) => c.body.kind === "compaction_undo")
+            ? await prepareControlHistory({
+                deps,
+                thread,
+                threadId: thread.id,
+                referenceTurnId: currentTurn.id,
+                currentTurnId: currentTurn.id,
+                turns: [...allTurns, ...drain.turns],
+                blocks: [...allBlocks, ...drain.blocks],
+                controls: selection.controls,
+                followingBatches: selection.followingBatches,
+                failedUndoIds: selection.failedUndoIds,
+                signal: input.signal,
+              })
+            : { events: [], turns: [], blocks: [] };
+          return { ...predecessors, requiresSplit: true };
         }
         const latestUserTurn =
           [...drain.turns].reverse().find((turn) => turn.role === "user") ??
