@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Seed browser-test conversations with their lineage root.
+
 - Find connected conversations and read their history with document pointers and dated edit records.
 - Keep history pages stable across compaction and undo; preserve old prompt-bake bytes.
 
