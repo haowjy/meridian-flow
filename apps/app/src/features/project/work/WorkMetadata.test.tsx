@@ -55,7 +55,7 @@ describe("WorkMetadata", () => {
   it("saves the name on blur and requires a non-empty value", async () => {
     const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
     await withReactRoot(<Harness saveWork={saveWork} />, async () => {
-      await click(document.querySelector("h1 button"));
+      await click(document.querySelector('[aria-label="Rename Work"]'));
       const input = document.querySelector<HTMLInputElement>("input");
       expect(input).not.toBeNull();
       if (!input) throw new Error("Name editor did not open");
@@ -105,7 +105,7 @@ describe("WorkMetadata", () => {
       await act(async () => {
         setValue(textarea, "A changed description");
       });
-      await click(document.querySelector("h1 button"));
+      await click(document.querySelector('[aria-label="Rename Work"]'));
       expect(document.querySelectorAll("textarea")).toHaveLength(1);
       expect(document.querySelectorAll("input")).toHaveLength(0);
       expect(document.querySelector("textarea")).not.toBeNull();

@@ -3376,6 +3376,10 @@ msgstr "Rename project: {title}"
 msgid "Rename this document or move it somewhere else in your project."
 msgstr "Rename this document or move it somewhere else in your project."
 
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Rename Work"
+msgstr "Rename Work"
+
 #: src/features/chat/ChatThreadHeader.tsx
 msgid "Renamed to {confirmed}"
 msgstr "Renamed to {confirmed}"

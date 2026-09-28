@@ -2,8 +2,10 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
+import { Pencil } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -193,7 +195,7 @@ function useEditorFocus(c: WorkMetadataController, field: MetadataField) {
   }, [c.field, c.editorRef, field]);
 }
 
-/** The Work name as the page heading; click to edit in place. */
+/** The Work name as the page heading; the pencil beside it edits in place. */
 export function WorkName({ controller: c }: { controller: WorkMetadataController }) {
   const { keyDown, displayRef } = useFieldKeys(c);
   useEditorFocus(c, "name");
@@ -205,22 +207,18 @@ export function WorkName({ controller: c }: { controller: WorkMetadataController
       {c.field === "name" ? (
         <Editor field="name" controller={c} keyDown={keyDown} />
       ) : (
-        <h1 className="min-w-0 max-w-full text-xl font-semibold [overflow-wrap:anywhere]">
-          <button
-            type="button"
+        <span className="flex min-w-0 max-w-full items-center gap-1">
+          <h1 className="min-w-0 text-xl font-semibold [overflow-wrap:anywhere]">{c.work.name}</h1>
+          <IconButton
             ref={displayRef("name")}
+            size="xs"
+            aria-label={t`Rename Work`}
             onClick={() => c.activate("name")}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === "F2") {
-                event.preventDefault();
-                c.activate("name");
-              }
-            }}
-            className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring rounded-sm text-left"
+            className="shrink-0 [@media(pointer:coarse)]:size-11"
           >
-            {c.work.name}
-          </button>
-        </h1>
+            <Pencil aria-hidden className="size-3.5" />
+          </IconButton>
+        </span>
       )}
     </>
   );
@@ -309,7 +307,7 @@ function Editor({
           ref={c.editorRef as React.Ref<HTMLInputElement>}
           {...common}
           aria-label={t`Work name`}
-          className="h-9 text-xl font-semibold"
+          className="h-9 px-2 text-xl font-semibold md:text-xl"
           onBlur={() => void c.save()}
         />
       ) : (
@@ -317,7 +315,7 @@ function Editor({
           ref={c.editorRef as React.Ref<HTMLTextAreaElement>}
           {...common}
           aria-label={t`Description`}
-          className="min-h-28 resize-none p-0 text-body"
+          className="-mx-2 -my-1.5 min-h-28 w-[calc(100%+1rem)] max-w-none resize-none px-2 py-1.5 text-body md:text-body"
           onInput={(event) => {
             event.currentTarget.style.height = "auto";
             event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`;
@@ -330,7 +328,7 @@ function Editor({
         </p>
       ) : null}
       {field === "goal" ? (
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-3.5 flex flex-wrap gap-2">
           <Button size="sm" disabled={c.saving} onClick={() => void c.save()}>
             {c.saving ? (
               <Trans>Saving…</Trans>
