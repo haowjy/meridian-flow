@@ -1,6 +1,5 @@
 /**
- * Shared behavior contract for `ProjectChatFeedRepository` and
- * `WorkChatFeedRepository`, run against both the in-memory and Drizzle
+ * Shared behavior contract for `ProjectChatFeedRepository`, run against both the in-memory and Drizzle
  * adapters. The in-memory adapter's search/favorite filters are plain
  * JS predicates; the Drizzle adapter's are ILIKE and a real join. These
  * scenarios exist to keep both honest, especially search metacharacters and
@@ -11,10 +10,7 @@ import { expect } from "vitest";
 import type { ThreadRepositories } from "../../ports/repositories.js";
 
 export type ChatFeedConformanceHarness = {
-  repos: Pick<
-    ThreadRepositories,
-    "threads" | "threadUserState" | "threadWorks" | "chatFeed" | "workChatFeed"
-  >;
+  repos: Pick<ThreadRepositories, "threads" | "threadUserState" | "threadWorks" | "chatFeed">;
   projectId: string;
   userId: string;
   /** Returns a Work id valid as a primary-membership target in this project. */
@@ -45,6 +41,7 @@ async function pageIds(
     limit: 50,
     favorite: options.favorite ?? false,
     search: options.search ?? null,
+    workId: null,
   });
   return page.map((item) => item.id);
 }
@@ -66,6 +63,7 @@ export async function expectChatFeedTiesContract(h: ChatFeedConformanceHarness):
     limit: 2,
     favorite: false,
     search: null,
+    workId: null,
   });
   expect(firstPage.map((item) => item.id)).toEqual(expectedOrder.slice(0, 2));
 
@@ -78,6 +76,7 @@ export async function expectChatFeedTiesContract(h: ChatFeedConformanceHarness):
     limit: 2,
     favorite: false,
     search: null,
+    workId: null,
   });
   expect(secondPage.map((item) => item.id)).toEqual(expectedOrder.slice(2));
 }
@@ -153,6 +152,7 @@ export async function expectChatFeedCursorAcrossFilterContract(
     limit: 2,
     favorite: true,
     search: "sect",
+    workId: null,
   });
   expect(firstPage.map((item) => item.id)).toEqual(expectedOrder.slice(0, 2));
   const last = firstPage[1];
@@ -165,6 +165,7 @@ export async function expectChatFeedCursorAcrossFilterContract(
     limit: 2,
     favorite: true,
     search: "sect",
+    workId: null,
   });
   expect(secondPage.map((item) => item.id)).toEqual(expectedOrder.slice(2));
 }
@@ -176,14 +177,18 @@ export async function expectChatFeedWorkFilterContract(
   const inWorkFavorite = "00000000-0000-4000-8000-00000000f001";
   const inWorkOther = "00000000-0000-4000-8000-00000000f002";
   const inOtherWork = "00000000-0000-4000-8000-00000000f003";
+  const archivedMember = "00000000-0000-4000-8000-00000000f004";
   await createTitledThread(h, inWorkFavorite, "Sect favorite");
   await createTitledThread(h, inWorkOther, "Sect other");
   await createTitledThread(h, inOtherWork, "Sect other Work");
+  await createTitledThread(h, archivedMember, "Archived Work chat");
+  await h.repos.threads.updateStatus(archivedMember as ThreadId, "archived");
   const workId = await h.createWork();
   const otherWorkId = await h.createWork();
   await h.repos.threadWorks.addMembership(inWorkFavorite as ThreadId, workId as WorkId, true);
   await h.repos.threadWorks.addMembership(inWorkOther as ThreadId, workId as WorkId, true);
   await h.repos.threadWorks.addMembership(inOtherWork as ThreadId, otherWorkId as WorkId, true);
+  await h.repos.threadWorks.addMembership(archivedMember as ThreadId, workId as WorkId, true);
   await h.repos.threadUserState.update({
     threadId: inWorkFavorite as ThreadId,
     userId: h.userId as UserId,
@@ -233,46 +238,4 @@ export async function expectChatFeedWorkFilterContract(
     workId: workId as WorkId,
   });
   expect([...first, ...rest].map((item) => item.id)).toEqual([inWorkFavorite]);
-}
-
-/** The Work feed shares the Project feed's row shape and activity order, scoped to membership. */
-export async function expectWorkChatFeedContract(h: ChatFeedConformanceHarness): Promise<void> {
-  const memberA = "00000000-0000-4000-8000-00000000e001";
-  const memberB = "00000000-0000-4000-8000-00000000e002";
-  const nonMember = "00000000-0000-4000-8000-00000000e003";
-  await createTitledThread(h, memberA, "Work chat A");
-  await createTitledThread(h, memberB, "Work chat B");
-  await createTitledThread(h, nonMember, "Not in this Work");
-  const workId = await h.createWork();
-  await h.repos.threadWorks.addMembership(memberA as ThreadId, workId as WorkId, true);
-  await h.repos.threadWorks.addMembership(memberB as ThreadId, workId as WorkId, true);
-
-  const page = await h.repos.workChatFeed.queryPage({
-    projectId: h.projectId,
-    workId: workId as WorkId,
-    userId: h.userId,
-    after: null,
-    limit: 50,
-  });
-  expect(page.map((item) => item.id).sort()).toEqual([memberA, memberB].sort());
-
-  const first = await h.repos.workChatFeed.queryPage({
-    projectId: h.projectId,
-    workId: workId as WorkId,
-    userId: h.userId,
-    after: null,
-    limit: 1,
-  });
-  expect(first).toHaveLength(1);
-  const only = first[0];
-  if (!only) throw new Error("Expected one Work-feed row");
-  const rest = await h.repos.workChatFeed.queryPage({
-    projectId: h.projectId,
-    workId: workId as WorkId,
-    userId: h.userId,
-    after: { sortAt: only.lastActivityAt, threadId: only.id as ThreadId },
-    limit: 50,
-  });
-  expect(rest.map((item) => item.id)).not.toContain(only.id);
-  expect([only.id, ...rest.map((item) => item.id)].sort()).toEqual([memberA, memberB].sort());
 }

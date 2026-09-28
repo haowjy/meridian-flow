@@ -1,11 +1,9 @@
-/** Bounded canonical candidate scope for threads historically associated with a Work. */
+/** Bounded candidates for the Work switcher's recent-summary query. */
 import { type SQL, sql } from "drizzle-orm";
 
 /**
- * `sortColumn` is the caller's ordering/cursor column on `threads` (for
- * example `t.updated_at` for the Work switcher's recent-summary port, or
- * `t.last_activity_at` for the Work chat feed, which pages by the same
- * stored conversational-activity column as the Project chat feed).
+ * `sortColumn` is the caller's ordering/cursor column, currently `t.updated_at`
+ * for the Work switcher's recent-summary port.
  */
 export function workAssociationCandidatesSql(input: {
   projectId: string;

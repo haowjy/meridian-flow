@@ -258,8 +258,8 @@ export interface ThreadRepository {
   // reversible intent that needs wiring here:
   //   - archive(id)/unarchive(id) — set/clear status:"archived" (or fold into
   //     updateStatus) so a chat can be filed away and brought back.
-  //   - exclude status:"archived" from listByProject / Work feeds by default, and
-  //     add a listing path for the "Archived" view to read them back.
+  //   - add a listing path for the "Archived" view; listByProject and the chat
+  //     feed already omit archived chats by default.
   /** Applies a changed trash state; lifecycle commands must first hold the thread row lock. */
   setTrashState(id: ThreadId, target: "deleted" | "visible"): Promise<Thread>;
 }
@@ -318,17 +318,6 @@ export interface ProjectChatCursorKey {
   threadId: ThreadId;
 }
 
-export interface WorkChatFeedRepository {
-  /** Same row shape and stored-activity sort as ProjectChatFeedRepository. */
-  queryPage(input: {
-    projectId: ProjectId;
-    workId: WorkId;
-    userId: UserId;
-    after: ProjectChatCursorKey | null;
-    limit: number;
-  }): Promise<ProjectChatItem[]>;
-}
-
 export interface ProjectChatFeedRepository {
   queryPage(input: {
     projectId: ProjectId;
@@ -336,7 +325,7 @@ export interface ProjectChatFeedRepository {
     after: ProjectChatCursorKey | null;
     limit: number;
     favorite: boolean;
-    workId?: WorkId | null;
+    workId: WorkId | null;
     /** Case-insensitive title substring; null lists every chat. */
     search: string | null;
   }): Promise<ProjectChatItem[]>;
@@ -473,7 +462,6 @@ export interface TurnDocumentTouchRepository {
 export type ThreadRepositories = {
   threads: ThreadRepository;
   chatFeed: ProjectChatFeedRepository;
-  workChatFeed: WorkChatFeedRepository;
   threadUserState: ThreadUserStateRepository;
   threadWorks: ThreadWorksRepository;
   turns: TurnRepository;
