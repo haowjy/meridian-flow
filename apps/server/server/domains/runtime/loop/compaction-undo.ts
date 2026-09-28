@@ -8,6 +8,7 @@ import {
   bakeIdAt,
   CompactionMetadataCodec,
   type CompactionUndoFailureReason,
+  CompactionUndoMetadataCodec,
   compactionUndoMetadata,
   ImageInclusionMetadataCodec,
   promptEpochMetadata,
@@ -58,6 +59,39 @@ function wouldRecompact(tokens: number, trigger: number | null): boolean {
   return trigger !== null && tokens >= trigger;
 }
 
+function latestPostCompactionInputTokens(compaction: Turn, turns: Turn[]): number | null {
+  const response = turns
+    .filter((turn) => turn.role === "assistant" && turn.position > compaction.position)
+    .flatMap((turn) => turn.responses.map((response) => ({ position: turn.position, response })))
+    .sort((a, b) => a.position - b.position || a.response.sequence - b.response.sequence)
+    .at(-1)?.response;
+  return response && response.inputTokens > 0 ? response.inputTokens : null;
+}
+
+function latestUndoRefusedAtTrigger(
+  compaction: Turn,
+  turns: Turn[],
+  triggerTokens: number,
+): boolean {
+  const latestUndo = [...turns]
+    .sort((a, b) => b.position - a.position)
+    .find((turn) => {
+      const metadata = CompactionUndoMetadataCodec.safeParse(turn.metadata);
+      return (
+        turn.role === "system" &&
+        metadata.success &&
+        metadata.data.revertsCompactionTurnId === compaction.id
+      );
+    });
+  if (latestUndo?.status !== "error") return false;
+  const metadata = CompactionUndoMetadataCodec.safeParse(latestUndo.metadata);
+  return (
+    metadata.success &&
+    metadata.data.reason === "would_recompact" &&
+    metadata.data.compactionTriggerTokens === triggerTokens
+  );
+}
+
 export async function prepareCompactionUndo(input: {
   deps: OrchestratorDeps;
   thread: import("@meridian/contracts/threads").Thread;
@@ -82,7 +116,10 @@ export async function prepareCompactionUndo(input: {
     status: "complete",
     metadata: compactionUndoMetadata(targetId, control.id),
   });
-  const refused = (reason: CompactionUndoFailureReason): PreparedUndo => {
+  const refused = (
+    reason: CompactionUndoFailureReason,
+    compactionTriggerTokens?: number | null,
+  ): PreparedUndo => {
     const message = undoFailureMessage(reason);
     return {
       controlId: control.id,
@@ -91,7 +128,12 @@ export async function prepareCompactionUndo(input: {
         ...turn,
         status: "error",
         promptBakeId: null,
-        metadata: compactionUndoMetadata(targetId, control.id, reason),
+        metadata: compactionUndoMetadata(
+          targetId,
+          control.id,
+          reason,
+          compactionTriggerTokens ?? undefined,
+        ),
         error: message,
         completedAt: new Date().toISOString(),
       },
@@ -206,7 +248,7 @@ export async function prepareCompactionUndo(input: {
       tokenizer,
     });
     if (wouldRecompact(tokens, assembled.compactionTriggerTokens))
-      return refused("would_recompact");
+      return refused("would_recompact", assembled.compactionTriggerTokens);
     return { controlId: control.id, turn, block };
   } catch (error) {
     if (input.signal?.aborted) throw error;
@@ -257,6 +299,13 @@ export function createCompactionUndoReader(
     thread: import("@meridian/contracts/threads").Thread,
     turns: Turn[],
   ): Promise<import("@meridian/contracts/threads").CompactionUndoAvailability> => {
+    if (
+      turns.some(
+        (turn) =>
+          turn.threadId === thread.id && turn.role === "compaction" && turn.status === "pending",
+      )
+    )
+      return null;
     const compaction = activeCompaction(turns);
     if (!compaction || compaction.threadId !== thread.id) return null;
     const context = await resolveAgentThreadTurnContext({ ...deps, thread, baseTools: undefined });
@@ -271,11 +320,19 @@ export function createCompactionUndoReader(
     });
     const summary = compaction.blocks.find((block) => block.blockType === "custom");
     const props = CompactionBlockContentCodec.parse(summary?.content).props;
+    const postCompactionInputTokens = latestPostCompactionInputTokens(compaction, turns);
+    const growthSinceCompaction =
+      postCompactionInputTokens === null
+        ? 0
+        : Math.max(0, postCompactionInputTokens - props.tokensAfter);
+    const restoredEstimate = props.tokensBefore + growthSinceCompaction;
     return {
       turnId: compaction.id,
-      availability: wouldRecompact(props.tokensBefore, trigger.thresholdTokens)
-        ? "would_recompact"
-        : "likely",
+      availability:
+        latestUndoRefusedAtTrigger(compaction, turns, trigger.thresholdTokens) ||
+        wouldRecompact(restoredEstimate, trigger.thresholdTokens)
+          ? "would_recompact"
+          : "likely",
     };
   };
 }

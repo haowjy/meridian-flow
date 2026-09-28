@@ -63,6 +63,36 @@ else
       [...turns]
         .reverse()
         .find((t) => (t.metadata as { kind?: string })?.kind === "compaction_undo")!;
+    async function summaryProps(rig: Rig, compaction: Turn) {
+      const { CompactionBlockContentCodec } = await import("./compaction/index.js");
+      const summary = (await rig.repos.blocks.listByTurn(compaction.id)).find(
+        (block) => block.blockType === "custom",
+      );
+      return CompactionBlockContentCodec.parse(summary?.content).props;
+    }
+    async function snapshotUndoAvailability(rig: Rig) {
+      const { buildThreadSnapshot, createThreadEventHub, createDrizzleEventJournalReader } =
+        await import("../../threads/index.js");
+      const hub = createThreadEventHub({
+        journalWriter: rig.eventWriter,
+        journalReader: createDrizzleEventJournalReader(db),
+        eventSink: rig.deps.eventSink,
+      });
+      return (
+        await buildThreadSnapshot(
+          rig.repos,
+          hub,
+          {
+            ...rig.runClaim,
+            readPending: async () => ({ items: [] }),
+            readCompactionUndo: (
+              await import("./compaction-undo.js")
+            ).createCompactionUndoReader(rig.deps),
+          },
+          rig.threadId,
+        )
+      ).compactionUndo;
+    }
 
     it("C6b sixth pinned request restores pre-C messages and prior bake", async () => {
       const rig = await fixture();
@@ -484,34 +514,117 @@ else
     });
 
     it("C6b snapshot advisory follows current trigger and active local C", async () => {
-      const { createCompactionUndoReader } = await import("./compaction-undo.js");
-      const { buildThreadSnapshot, createThreadEventHub, createDrizzleEventJournalReader } =
-        await import("../../threads/index.js");
       const rig = await fixture();
       const c = await compact(rig);
-      const hub = createThreadEventHub({
-        journalWriter: rig.eventWriter,
-        journalReader: createDrizzleEventJournalReader(db),
-        eventSink: rig.deps.eventSink,
+      expect(await snapshotUndoAvailability(rig)).toEqual({
+        turnId: c.id,
+        availability: "likely",
       });
-      const readers = {
-        ...rig.runClaim,
-        readPending: async () => ({ items: [] }),
-        readCompactionUndo: createCompactionUndoReader(rig.deps),
-      };
-      expect(
-        (await buildThreadSnapshot(rig.repos, hub, readers, rig.threadId)).compactionUndo,
-      ).toEqual({ turnId: c.id, availability: "likely" });
       rig.setThreshold(100);
-      expect(
-        (await buildThreadSnapshot(rig.repos, hub, readers, rig.threadId)).compactionUndo,
-      ).toEqual({ turnId: c.id, availability: "would_recompact" });
+      expect(await snapshotUndoAvailability(rig)).toEqual({
+        turnId: c.id,
+        availability: "would_recompact",
+      });
       rig.setThreshold(100000);
       await undo(rig, c);
       await drain(rig);
-      expect(
-        (await buildThreadSnapshot(rig.repos, hub, readers, rig.threadId)).compactionUndo,
-      ).toBeNull();
+      expect(await snapshotUndoAvailability(rig)).toBeNull();
+    });
+    it("C6b snapshot advisory includes growth since C and agrees with execution", async () => {
+      const rig = await fixture({ history: "Earlier scene. ".repeat(1500) });
+      const c = await compact(rig);
+      await (
+        await rig.orchestrator.prepare({
+          threadId: rig.threadId,
+          userText: "Post-compaction growth. ".repeat(1000),
+        })
+      ).execute();
+      const props = await summaryProps(rig, c);
+      const latest = (await rig.repos.turns.listByThread(rig.threadId)).at(-1);
+      if (!latest) throw new Error("Expected the post-compaction assistant turn");
+      const responses = await rig.repos.modelResponses.listByTurn(latest.id);
+      const response = responses.at(-1);
+      if (!response) throw new Error("Expected the post-compaction response");
+      const { eq } = await import("drizzle-orm");
+      await db
+        .update(schema.modelResponses)
+        .set({ inputTokens: props.tokensAfter + 8000 })
+        .where(eq(schema.modelResponses.id, response.id));
+      rig.setThreshold(props.tokensBefore + 1000);
+
+      expect(await snapshotUndoAvailability(rig)).toEqual({
+        turnId: c.id,
+        availability: "would_recompact",
+      });
+      await undo(rig, c);
+      expect(marker(await drain(rig))).toMatchObject({
+        status: "error",
+        metadata: { reason: "would_recompact" },
+      });
+    });
+    it("C6b snapshot advisory stays likely for small growth that execution accepts", async () => {
+      const rig = await fixture();
+      const c = await compact(rig);
+      await (
+        await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "A small addition." })
+      ).execute();
+      const props = await summaryProps(rig, c);
+      rig.setThreshold(props.tokensBefore + 2000);
+
+      expect(await snapshotUndoAvailability(rig)).toEqual({
+        turnId: c.id,
+        availability: "likely",
+      });
+      await undo(rig, c);
+      expect(marker(await drain(rig)).status).toBe("complete");
+    });
+    it("C6b snapshot advisory is null while a newer compaction is pending", async () => {
+      const rig = await fixture();
+      const c = await compact(rig);
+      await rig.repos.turns.create({
+        threadId: rig.threadId,
+        prevTurnId: c.id,
+        role: "compaction",
+        origin: "system",
+        status: "pending",
+        metadata: {},
+      });
+
+      expect(await snapshotUndoAvailability(rig)).toBeNull();
+    });
+    it("C6b snapshot advisory remembers a same-trigger would_recompact refusal", async () => {
+      const rig = await fixture();
+      const c = await compact(rig);
+      const props = await summaryProps(rig, c);
+      const growth = await rig.repos.turns.create({
+        threadId: rig.threadId,
+        prevTurnId: c.id,
+        role: "user",
+        origin: "writer",
+        status: "complete",
+      });
+      await rig.repos.blocks.create({
+        turnId: growth.id,
+        blockType: "text",
+        sequence: 0,
+        textContent: "Unanswered growth. ".repeat(1500),
+        content: "Unanswered growth. ".repeat(1500),
+        status: "complete",
+      });
+      rig.setThreshold(props.tokensBefore + 500);
+      await undo(rig, c);
+      expect(marker(await drain(rig))).toMatchObject({
+        status: "error",
+        metadata: {
+          reason: "would_recompact",
+          compactionTriggerTokens: props.tokensBefore + 500,
+        },
+      });
+
+      expect(await snapshotUndoAvailability(rig)).toEqual({
+        turnId: c.id,
+        availability: "would_recompact",
+      });
     });
 
     it("C6b live undo commit failure rolls back and lands undo_failed with M answered", async () => {
