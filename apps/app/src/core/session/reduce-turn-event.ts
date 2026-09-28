@@ -51,7 +51,6 @@ type StoreEventTarget = {
     opts?: { createdAt?: string; writeMode?: Turn["writeMode"] },
   ): void;
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
-  removeAssistantBlock(threadId: string, blockId: string): void;
   invalidateThreadSnapshot(threadId: string): void;
   patchTurnStatus(
     threadId: string,
