@@ -211,7 +211,11 @@ owns only the SQL predicate beside its partial index.
 ## Mutation lock order
 
 The shared `server/shared/thread-work-lock.ts` owns **thread row (`NO KEY
-UPDATE`) → participating Work rows (sorted by id)**. `lockThreadAndWorks`
+UPDATE`) → participating Work rows (sorted by id, `NO KEY UPDATE` through
+`work-lifecycle-lock.ts`)**. Both modes admit FK `KEY SHARE`, so an
+independently committed insert referencing a locked row (a Work notice marker,
+collab's root-committed branch infrastructure) never waits on the lock
+holder. `lockThreadAndWorks`
 stabilizes the primary membership under the thread lock before acquiring the
 primary and any target/fallback Works together. Membership and restore use it;
 turn creation, thread-peer creation, publication, trash, runtime and admission

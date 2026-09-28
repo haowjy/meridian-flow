@@ -84,12 +84,15 @@ export function createResponseWriteFinalizer(input: {
   return {
     async finalizeResponseCommit(responseId, ctx, beforeTransactionCommit) {
       const direct = ctx.execution?.draftOwner === null;
-      const core = direct ? input.liveAgentEdit : input.agentEdit;
-      const result = await core.commitResponse(responseId, {
-        beforeTransactionCommit: async (commitResult) => {
-          await beforeTransactionCommit?.(mapResult(commitResult));
-        },
-      });
+      const result = direct
+        ? await input.liveAgentEdit.commitResponse(responseId)
+        : await input.agentEdit.commitResponse(responseId, {
+            beforeTransactionCommit: async (commitResult) => {
+              await beforeTransactionCommit?.(mapResult(commitResult));
+            },
+          });
+      // Live journals commit inside the core; only branch cores own a host transaction.
+      if (direct) await beforeTransactionCommit?.(mapResult(result));
       if (result.awarenessDegraded) {
         const documentIds = result.documents.map((document) => document.documentId);
         await input.notices.recordAwarenessDegraded({

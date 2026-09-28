@@ -27,6 +27,7 @@ import {
   meridianErrorFromTool,
   parseAskUserToolInput,
 } from "@meridian/contracts/interrupt";
+import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type {
   ThreadExecutionContext,
@@ -113,7 +114,7 @@ type ModelDocumentWriteCommand = {
 }[DocumentWriteCommand["command"]];
 type ModelWriteCommand = DiffWriteCommand | ModelDocumentWriteCommand;
 
-type ResolvedDocumentAddress = DocumentAddress & { created?: boolean };
+type ResolvedDocumentAddress = DocumentAddress & { uri: string; created?: boolean };
 
 type ModelWork = Pick<
   Work,
@@ -423,6 +424,7 @@ async function resolveDocumentAddress(
     }
     return {
       documentId: ensured.value.documentId,
+      uri: ensured.value.uri,
       filePath: basePath,
       ...(fragment === undefined ? {} : { fragment }),
       created: ensured.value.created,
@@ -445,6 +447,7 @@ async function resolveDocumentAddress(
   }
   return {
     documentId: ref.value.documentId,
+    uri: ref.value.uri,
     filePath: basePath,
     ...(fragment === undefined ? {} : { fragment }),
   };
@@ -617,22 +620,28 @@ export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
   return {
     async read(reference, ctx) {
       const execution = await resolveExecutionContext(deps, ctx.threadId);
-      if ("isError" in execution) return JSON.parse(JSON.stringify(execution.output));
+      if ("isError" in execution)
+        return { result: JSON.parse(JSON.stringify(execution.output)), revision: null };
       const context = await resolveContextPort(deps, ctx.threadId);
-      if ("isError" in context) return JSON.parse(JSON.stringify(context.output));
+      if ("isError" in context)
+        return { result: JSON.parse(JSON.stringify(context.output)), revision: null };
       const command = { command: "read" as const, path: reference.uri, format: "auto" as const };
       const address = await resolveDocumentAddress(context, command);
-      if (isToolError(address)) return JSON.parse(JSON.stringify(address.output));
+      if (isToolError(address))
+        return { result: JSON.parse(JSON.stringify(address.output)), revision: null };
       if (address.documentId !== reference.documentId) {
-        return JSON.parse(
-          JSON.stringify(
-            writeToolError(
-              "read",
-              "Referenced document is no longer available at this URI.",
-              "document_not_found",
-            ).output,
+        return {
+          revision: null,
+          result: JSON.parse(
+            JSON.stringify(
+              writeToolError(
+                "read",
+                "Referenced document is no longer available at this URI.",
+                "document_not_found",
+              ).output,
+            ),
           ),
-        );
+        };
       }
       const outcome = await deps.documentSync
         .agentEdit(execution)
@@ -642,7 +651,7 @@ export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
           turnId: ctx.turnId,
         });
       if (!outcome.isError) recordTouchInBackground(deps, address.documentId, ctx);
-      return JSON.parse(JSON.stringify(outcome.result));
+      return { result: JSON.parse(JSON.stringify(outcome.result)), revision: outcome.revision };
     },
   };
 }
@@ -675,9 +684,18 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         responseId: ctx.responseId,
         tool_use_id: ctx.toolCallId,
       });
-      return outcome.isError
-        ? { isError: true, output: outcome.result }
-        : { output: outcome.result };
+      return {
+        ...(outcome.isError ? { isError: true } : {}),
+        output: outcome.result,
+        metadata: {
+          documentRevisions: [
+            ...new Set(outcome.result.diff?.changes.map((change) => change.documentId) ?? []),
+          ].map(
+            (documentId) =>
+              ({ documentId, uri: null, revision: null }) satisfies DocumentRevisionEvidence,
+          ),
+        },
+      };
     }
 
     const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
@@ -747,16 +765,23 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     }
     return {
       output: outcome.result,
-      ...(stagedWrite
-        ? {
-            metadata: {
+      metadata: {
+        documentRevisions: [
+          {
+            documentId: address.documentId,
+            uri: address.uri,
+            revision: outcome.revision,
+          } satisfies DocumentRevisionEvidence,
+        ],
+        ...(stagedWrite
+          ? {
               documentId: address.documentId,
               stagedWrite: true,
               ...(outcome.writeId ? { writeId: outcome.writeId } : {}),
               ...(outcome.settlementId ? { settlementId: outcome.settlementId } : {}),
-            },
-          }
-        : {}),
+            }
+          : {}),
+      },
     };
   };
 
@@ -962,7 +987,22 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       if ("isError" in portOrError) return portOrError;
       const result = await portOrError.port.search(pattern, scope);
       if (!result.ok) return modelContextError(result.error, portOrError);
-      return modelContextResults(result.value, portOrError);
+      return {
+        output: modelContextResults(
+          result.value.map(({ documentId: _id, revision: _revision, ...hit }) => hit),
+          portOrError,
+        ),
+        metadata: {
+          documentRevisions: result.value.map(
+            ({ documentId, uri, revision }) =>
+              ({
+                documentId,
+                uri,
+                revision,
+              }) satisfies DocumentRevisionEvidence,
+          ),
+        },
+      };
     },
     ask_user: askUserHandler,
   });

@@ -499,7 +499,7 @@ describe("inbox drain", () => {
       },
       referenceReader: {
         async read(reference) {
-          return { uri: reference.uri, pages: [1] };
+          return { result: { uri: reference.uri, pages: [1] }, revision: null };
         },
       },
       onStream: async (call) => {

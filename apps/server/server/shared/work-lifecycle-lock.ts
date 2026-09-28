@@ -6,6 +6,7 @@ import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
 
 export type LockedWorkLifecycle = "active" | "archived" | "deleted" | "missing";
 
+/** Serialize lifecycle mutations without blocking root collab infrastructure FK references. */
 export async function lockWorkLifecycle(
   db: DrizzleDb,
   workId: string,
@@ -15,7 +16,7 @@ export async function lockWorkLifecycle(
     .from(works)
     .where(eq(works.id, workId))
     .limit(1)
-    .for("update");
+    .for("no key update");
   if (!work) return "missing";
   return work.deletedAt ? "deleted" : work.status === "archived" ? "archived" : "active";
 }

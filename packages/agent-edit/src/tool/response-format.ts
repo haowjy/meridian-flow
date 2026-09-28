@@ -24,6 +24,7 @@ import type {
 } from "./types.js";
 
 export interface ApplySuccessResponseInput {
+  revision?: string | null;
   phase: WriteSuccessPhase;
   writeId?: string;
   settlementId?: string;
@@ -139,6 +140,7 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
   return {
     status: "success",
     phase: input.phase,
+    revision: input.revision ?? null,
     text,
     model: {
       ...(input.writeId || (input.deletedBlocks && input.deletedBlocks.length > 0)
@@ -179,6 +181,7 @@ export function formatReversalSuccess(input: ReversalSuccessResponseInput): Inte
   );
   return {
     status: input.status,
+    revision: input.sync.revision ?? null,
     text,
     model: {
       reversal: {
@@ -271,6 +274,7 @@ export function toOutcome(command: WriteCommandName, result: InternalWriteResult
         });
   const base = {
     command,
+    revision: result.revision ?? null,
     isError: isWriteErrorStatus(result.status),
     ...(result.writeId ? { writeId: result.writeId } : {}),
     ...(result.settlementId ? { settlementId: result.settlementId } : {}),

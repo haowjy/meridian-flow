@@ -25,6 +25,7 @@ export const {
   runAfterDrizzleCommit,
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
+  runOutsideDrizzleTransaction,
 } = await import("../../../shared/drizzle-transaction.js");
 export const { deleteDrizzleRows, truncateDrizzleTables } = await import(
   "../../../test-support/drizzle-reset.js"
@@ -311,6 +312,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     },
   };
   const branchPulls = createBranchPullService({
+    outsideTransaction: runOutsideDrizzleTransaction,
+    rootTransaction: (operation) => runInRootDrizzleTransaction(db, operation),
     liveCoordinator,
     branchCoordinator,
     branches: branchStore,
@@ -1699,6 +1702,9 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     seedCheckpointRestoredExplicitDelete,
     seedDiscardedDependencyPush,
     crossWorkProbeFixture: () => ({
+      runtime,
+      branchPulls,
+      branchPush,
       db,
       schema,
       persistence,

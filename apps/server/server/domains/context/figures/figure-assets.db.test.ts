@@ -6,6 +6,7 @@ import { contextSources, documents, folders, projects, users } from "@meridian/d
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { truncateDrizzleTables } from "../../../test-support/drizzle-reset.js";
+import { createInMemoryCollabDomain } from "../../collab/index.js";
 import { createObjectStorageUrl } from "../../storage/object-storage-url.js";
 import type { ObjectStorePort } from "../../storage/ports/object-store.js";
 import { createDrizzleAssetPathResolver } from "../adapters/asset-path-resolver.js";
@@ -90,7 +91,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const rememberedPaths = new Map<string, string>();
       const contextPorts = createProductionUnifiedContextPortFactory({
         db,
-        documentSync: {} as never,
+        documentSync: createInMemoryCollabDomain(),
         manifestMembership: {
           async recordManifestDocumentCreated() {},
           async recordManifestDocumentDeleted() {},
