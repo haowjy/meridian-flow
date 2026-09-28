@@ -64,7 +64,20 @@ export function createDrizzleRuntimeDelivery(
         .returning({ threadId: schema.threadRunLeases.threadId });
       return rows.length > 0;
     },
-    async lockThreadReceipt(threadId) {
+    async cancelThreadReceipt(threadId, turnId) {
+      const rows = await db_()
+        .update(schema.threadRunLeases)
+        .set({ cancelRequested: true })
+        .where(
+          and(
+            eq(schema.threadRunLeases.threadId, threadId),
+            eq(schema.threadRunLeases.turnId, turnId),
+          ),
+        )
+        .returning({ turnId: schema.threadRunLeases.turnId });
+      return rows.length > 0;
+    },
+    async lockThreadReceipt(threadId, liveOnly) {
       const [row] = await db_()
         .select({
           ids: schema.threadRunLeases.adoptedMessageIds,
@@ -74,7 +87,7 @@ export function createDrizzleRuntimeDelivery(
         .where(
           and(
             eq(schema.threadRunLeases.threadId, threadId),
-            gt(schema.threadRunLeases.expiresAt, new Date()),
+            liveOnly ? gt(schema.threadRunLeases.expiresAt, new Date()) : undefined,
           ),
         )
         .for("update");

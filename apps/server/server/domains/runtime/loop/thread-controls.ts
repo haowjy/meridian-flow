@@ -21,7 +21,10 @@ export function createThreadControls(deps: {
   findTurn(id: TurnId): Promise<Turn | null>;
   findControlTurn(threadId: ThreadId, controlId: string): Promise<Turn | null>;
   pending(threadId: ThreadId): Promise<ThreadPendingInbox>;
-  lockReceipt(threadId: ThreadId): Promise<{ ids: string[]; turnId: TurnId | null } | null>;
+  lockReceipt(
+    threadId: ThreadId,
+    liveOnly: boolean,
+  ): Promise<{ ids: string[]; turnId: TurnId | null } | null>;
   cancel(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
   acknowledge(threadId: ThreadId, id: string): Promise<void>;
   wake(threadId: ThreadId): void;
@@ -37,7 +40,7 @@ export function createThreadControls(deps: {
   return {
     cancelPendingSeed: (threadId, turnId) =>
       deps.withThreadLock(threadId, async () => {
-        const receipt = await deps.lockReceipt(threadId);
+        const receipt = await deps.lockReceipt(threadId, true);
         const row = (await deps.pendingRows(threadId)).find(
           (row) =>
             row.intent === "control" &&
@@ -77,11 +80,14 @@ export function createThreadControls(deps: {
       }),
     withdrawControl: (threadId, controlId) =>
       deps.withThreadLock(threadId, async () => {
-        const receipt = await deps.lockReceipt(threadId);
         const row = await deps.findMessage(controlId);
         if (row?.threadId !== threadId || row.intent !== "control")
           throw new ThreadControlError(404, "control_not_found");
         if (row.deliveredAt) return { outcome: "already_finished" };
+        const receipt = await deps.lockReceipt(
+          threadId,
+          row.body.kind === "handoff_brief" && !!row.body.seedTurnId,
+        );
         if (receipt?.ids.includes(controlId) && receipt.turnId) {
           const turn = await deps.findTurn(receipt.turnId);
           if ((turn?.metadata as JsonObject | null)?.satisfiesControlId === controlId)

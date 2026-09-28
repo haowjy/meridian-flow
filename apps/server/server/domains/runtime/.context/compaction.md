@@ -264,7 +264,9 @@ semantics. A crash leaves K pending for redelivery after orphan finalization.
 `thread-controls.ts` owns writer enqueue and withdrawal, separately from the
 message producer port. Client ids remain taken after execution or withdrawal.
 The thread lock serializes withdrawal with reservation. A manual control bound
-as `controlMessageId` becomes Stop. An absorbed `satisfiesControlId` returns
+as `controlMessageId` becomes Stop, even after receipt expiry: withdrawal marks
+the locked receipt cancelled so a stalled owner cannot resume the compaction.
+Only row-owned handoff seeds ignore expired receipts and settle directly. An absorbed `satisfiesControlId` returns
 `already_finished`: the automatic C still retires it and answers its messages.
 `absorbPendingCompact` owns satisfaction selection for initial and mid-run
 reservation. Control enqueue finds the latest matching turn by control id,

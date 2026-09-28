@@ -583,6 +583,58 @@ else
       expect(JSON.stringify(r.gateway.requests.at(-1))).toContain("after two controls");
     });
 
+    it.each([
+      "handoff_brief",
+      "compact",
+    ] as const)("C7 expired %s receipt keeps its withdrawal semantics", async (kind) => {
+      const r = await fixture();
+      let [control] = await r.delivery.selectPending(r.thread.id);
+      let turn = r.seed;
+      if (kind === "compact") {
+        await r.orchestrator.cancel(r.thread.id, r.seed.id);
+        const id = crypto.randomUUID();
+        await r.delivery.enqueueControl({
+          threadId: r.thread.id,
+          id,
+          actorId: ids.userId,
+          control: { kind },
+        });
+        [control] = await r.delivery.selectPending(r.thread.id);
+        turn = await repos.turns.create({
+          threadId: r.thread.id,
+          prevTurnId: r.seed.id,
+          role: "compaction",
+          origin: "system",
+          status: "pending",
+          metadata: { trigger: "manual", controlMessageId: id },
+        });
+      }
+      await db.insert(schema.threadRunLeases).values({
+        threadId: r.thread.id,
+        runId: "stalled-run",
+        holderId: "stalled-holder",
+        turnId: turn.id,
+        adoptedMessageIds: [control.id],
+        boundTurnIds: [turn.id],
+        phase: kind === "compact" ? "compacting" : "briefing",
+        expiresAt: new Date(0),
+      });
+      expect(await r.delivery.withdrawControl(r.thread.id, control.id)).toEqual({
+        outcome: kind === "compact" ? "stopping" : "withdrawn",
+      });
+      if (kind === "compact") {
+        expect(await r.delivery.selectPending(r.thread.id)).toHaveLength(1);
+        const [lease] = await db
+          .select()
+          .from(schema.threadRunLeases)
+          .where(eq(schema.threadRunLeases.threadId, r.thread.id));
+        expect(lease.cancelRequested).toBe(true);
+      } else {
+        expect(await r.delivery.selectPending(r.thread.id)).toEqual([]);
+        expect((await repos.turns.findById(turn.id))?.status).toBe("cancelled");
+      }
+    });
+
     it("C7 Stop after an expired briefing lease retires the row-owned seed", async () => {
       const r = await fixture();
       const pending = await r.delivery.selectPending(r.thread.id);

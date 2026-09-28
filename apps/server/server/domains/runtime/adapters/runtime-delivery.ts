@@ -51,7 +51,11 @@ export interface DeliveryStore extends InboxReader {
 }
 
 export interface DeliveryLeaseStore {
-  lockThreadReceipt(threadId: ThreadId): Promise<{ ids: string[]; turnId: TurnId | null } | null>;
+  cancelThreadReceipt(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
+  lockThreadReceipt(
+    threadId: ThreadId,
+    liveOnly: boolean,
+  ): Promise<{ ids: string[]; turnId: TurnId | null } | null>;
   bindTurn(
     lease: Lease,
     turnId: TurnId,
@@ -644,7 +648,7 @@ export function createDeliveryAdapter(
       findControlTurn: (id, controlId) => deps.repos.turns.findByControlId(id, controlId),
       pending: (id) => readPendingInbox(inbox, id),
       lockReceipt: leaseStore.lockThreadReceipt,
-      cancel: deps.runClaim.cancelExecution,
+      cancel: leaseStore.cancelThreadReceipt,
       acknowledge: async (id, controlId) => {
         await inbox.ack(id, [controlId]);
         await appendPending(id);
