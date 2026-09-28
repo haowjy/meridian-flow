@@ -3,6 +3,15 @@ export type WorkStatus = "active" | "archived";
 
 export const AI_WRITE_MODE_VALUES: readonly AiWriteMode[] = ["direct", "draft"];
 
+/** Deleted Works remain restorable until this many days after deletion. */
+export const WORK_DELETE_RETENTION_DAYS = 30;
+
+export function workPurgeAt(deletedAt: Date | string): Date {
+  const timestamp = deletedAt instanceof Date ? deletedAt.getTime() : Date.parse(deletedAt);
+  if (!Number.isFinite(timestamp)) throw new RangeError("Invalid Work deletion timestamp");
+  return new Date(timestamp + WORK_DELETE_RETENTION_DAYS * 24 * 60 * 60 * 1_000);
+}
+
 import type { ProjectId, ThreadId, UserId, WorkId } from "../ids.js";
 import type { WorkBindingReceiptState } from "./receipts.js";
 import type { WorkSlug } from "./work-slug.js";

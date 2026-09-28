@@ -3,7 +3,7 @@
  * project) plus its input/option types. The boundary both the drizzle and
  * in-memory work adapters implement.
  */
-import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Work, WorkStatus } from "@meridian/contracts/works";
 
 export interface CreateWorkInput {
@@ -28,19 +28,6 @@ export interface ListWorksOptions {
   status?: WorkStatus;
   /** Include the locked No Work row. Defaults to false. */
   includeNoWork?: boolean;
-}
-
-export class WorkDeleteBlockedError extends Error {
-  constructor(public readonly reason: "threads" | "drafts" | "documents" | "folders") {
-    const messages = {
-      threads: "Work cannot be deleted while it has conversations",
-      drafts: "Work cannot be deleted while it has an unreviewed draft",
-      documents: "Work cannot be deleted while its scratch or uploads contain files",
-      folders: "Work cannot be deleted while its scratch or uploads contain folders",
-    } as const;
-    super(messages[reason]);
-    this.name = "WorkDeleteBlockedError";
-  }
 }
 
 export class WorkNameConflictError extends Error {
@@ -69,6 +56,36 @@ export class WorkLockedError extends Error {
   }
 }
 
+export class WorkRestoreExpiredError extends Error {
+  readonly code = "work_restore_expired" as const;
+
+  constructor() {
+    super("This Work can no longer be restored because its 30-day retention period has ended.");
+    this.name = "WorkRestoreExpiredError";
+  }
+}
+
+/** Internal transaction retry when a thread joined the Work after the lock set was read. */
+export class WorkDeleteRetryError extends Error {
+  constructor() {
+    super("Work membership changed during deletion");
+    this.name = "WorkDeleteRetryError";
+  }
+}
+
+export type WorkDeletion = {
+  before: Work | null;
+  after: Work | null;
+  /** Threads hidden by this deletion, returned for the runtime's cancel path. */
+  threadIds: ThreadId[];
+};
+
+export type WorkRestoration = {
+  before: Work;
+  after: Work;
+  changed: boolean;
+};
+
 /**
  * Work-item CRUD for the projects domain. Backed by the `schema` `works`
  * table; rows map to the JSON-natural {@link Work} contract.
@@ -95,9 +112,9 @@ export interface WorkRepository {
   archive(id: WorkId): Promise<Work>;
   unarchive(id: WorkId): Promise<Work>;
   hasUnreviewedDraft(id: WorkId): Promise<boolean>;
-  /** Soft-deletes only when no live thread membership, draft, file, or folder remains. */
-  softDelete(id: WorkId): Promise<void>;
-  /** Restores a soft-deleted Work when its stable name and slug remain available. */
-  restore(id: WorkId): Promise<Work>;
+  /** Soft-deletes the Work and marks its live children in the same transaction. */
+  softDelete(id: WorkId): Promise<WorkDeletion>;
+  /** Restores a soft-deleted Work and exactly its marked children, with an exact receipt. */
+  restore(id: WorkId): Promise<WorkRestoration>;
   touch(id: WorkId): Promise<void>;
 }

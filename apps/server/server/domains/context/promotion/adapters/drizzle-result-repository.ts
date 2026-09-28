@@ -1,10 +1,16 @@
+import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   agentDefinitionRevisions,
   projectResults,
   threadAgentBindings,
 } from "@meridian/database/schema";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import {
+  currentDrizzleDb,
+  runInDrizzleTransaction,
+} from "../../../../shared/drizzle-transaction.js";
+import { lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
 import type {
   CreateProjectResultInput,
   ProjectResultRecord,
@@ -33,55 +39,71 @@ function mapRow(row: typeof projectResults.$inferSelect): ProjectResultRecord {
 export class DrizzleResultRepository implements ResultRepository {
   constructor(private readonly db: Database) {}
   async createOrConverge(input: CreateProjectResultInput) {
-    const insert = () =>
-      this.db
-        .insert(projectResults)
-        .values({
-          id: input.id,
-          projectId: input.projectId,
-          sourcePath: input.sourcePath,
-          resultsUri: input.resultsUri,
-          storageUrl: input.storageUrl,
-          mimeType: input.mimeType,
-          sizeBytes: input.sizeBytes,
-          rootThreadId: input.provenance.rootThreadId,
-          threadId: input.provenance.threadId,
-          turnId: input.provenance.turnId,
-          toolCallId: input.provenance.toolCallId,
-        })
-        .onConflictDoNothing()
-        .returning();
-    try {
-      await insert();
-    } catch {
-      // Retrying the identical caller-owned ID is the reconciliation boundary.
-      try {
-        await insert();
-      } catch (cause) {
+    return runInDrizzleTransaction(this.db, async () => {
+      const activeDb = currentDrizzleDb(this.db);
+      let threadUnavailable = false;
+      const threadIds = [
+        ...new Set([input.provenance.rootThreadId, input.provenance.threadId]),
+      ].sort();
+      for (const threadId of threadIds) {
+        const thread = await lockThreadForMutation(this.db, threadId as ThreadId);
+        if (!thread || thread.deletedAt || thread.projectId !== input.projectId) {
+          threadUnavailable = true;
+        }
+      }
+
+      const [existing] = await activeDb
+        .select()
+        .from(projectResults)
+        .where(eq(projectResults.id, input.id))
+        .limit(1);
+      if (!existing && threadUnavailable) {
         return {
-          kind: "unknown" as const,
-          error: cause instanceof Error ? cause.message : "Result reconciliation failed",
+          kind: "definitely_not_committed" as const,
+          error: "Thread is no longer available",
         };
       }
-    }
-    const [row] = await this.db
-      .select()
-      .from(projectResults)
-      .where(eq(projectResults.id, input.id))
-      .limit(1);
-    if (!row) return { kind: "unknown" as const, error: "Result outcome remains unknown" };
-    const record = mapRow(row);
-    const exact =
-      record.projectId === input.projectId &&
-      record.sourcePath === input.sourcePath &&
-      record.resultsUri === input.resultsUri &&
-      record.storageUrl === input.storageUrl &&
-      record.mimeType === input.mimeType &&
-      record.sizeBytes === input.sizeBytes &&
-      JSON.stringify(record.provenance) === JSON.stringify(input.provenance);
-    return exact
-      ? { kind: "committed" as const, record }
-      : { kind: "unknown" as const, error: "Result ID already has different payload" };
+
+      if (!existing) {
+        await activeDb
+          .insert(projectResults)
+          .values({
+            id: input.id,
+            projectId: input.projectId,
+            sourcePath: input.sourcePath,
+            resultsUri: input.resultsUri,
+            storageUrl: input.storageUrl,
+            mimeType: input.mimeType,
+            sizeBytes: input.sizeBytes,
+            rootThreadId: input.provenance.rootThreadId,
+            threadId: input.provenance.threadId,
+            turnId: input.provenance.turnId,
+            toolCallId: input.provenance.toolCallId,
+          })
+          .onConflictDoNothing();
+      }
+
+      const [row] = await activeDb
+        .select()
+        .from(projectResults)
+        .where(eq(projectResults.id, input.id))
+        .limit(1);
+      if (!row || row.deletedByWorkId || threadUnavailable) {
+        return { kind: "unknown" as const, error: "Result outcome remains unknown" };
+      }
+      const record = mapRow(row);
+      const exact =
+        record.projectId === input.projectId &&
+        record.sourcePath === input.sourcePath &&
+        record.resultsUri === input.resultsUri &&
+        record.storageUrl === input.storageUrl &&
+        record.mimeType === input.mimeType &&
+        record.sizeBytes === input.sizeBytes &&
+        JSON.stringify(record.provenance) === JSON.stringify(input.provenance);
+      return exact
+        ? { kind: "committed" as const, record }
+        : { kind: "unknown" as const, error: "Result ID already has different payload" };
+    });
   }
   async listByProject(projectId: string): Promise<ProjectResultRecord[]> {
     const rows = await this.db
@@ -98,7 +120,7 @@ export class DrizzleResultRepository implements ResultRepository {
         agentDefinitionRevisions,
         eq(agentDefinitionRevisions.id, threadAgentBindings.definitionRevisionId),
       )
-      .where(eq(projectResults.projectId, projectId))
+      .where(and(eq(projectResults.projectId, projectId), isNull(projectResults.deletedByWorkId)))
       .orderBy(desc(projectResults.createdAt));
     return rows.map((row) => ({
       ...mapRow(row.result),

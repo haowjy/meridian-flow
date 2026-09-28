@@ -86,6 +86,7 @@ import {
   createDrizzleProjectWorkAuthorityResolver,
   createDrizzleProjectWorkRepository,
   createDrizzleUserRepository,
+  createDrizzleWorkPurger,
   createWorkProjectionMutation,
   type ProjectBootstrapRepository,
   type ProjectRepository,
@@ -244,6 +245,7 @@ export type AppServices = {
     scanWakes(): Promise<number>;
     repairOrphans(): Promise<number>;
     publishReports(): Promise<number>;
+    purgeWorks(): Promise<number>;
   };
   userTurnAdmission: UserTurnAdmission;
   runClaim: Pick<RunClaim, "withExclusiveThread">;
@@ -619,6 +621,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workAuthorityResolver: ports.workAuthorityResolver,
     drafts: ports.documentSync,
     workContextNotices,
+    async stopThreadRun(threadId: ThreadId) {
+      const turnId = await ports.runClaim.readRunningTurnId(threadId);
+      if (turnId) await runner.cancel(threadId, turnId);
+    },
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
     transaction: ports.threadRepos.transaction,
@@ -674,6 +680,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     delivery,
     eventSink: ports.eventSink,
   });
+  const workPurger = createDrizzleWorkPurger({ db: ports.db, objectStore: ports.objectStore });
   const orphanRepair = createOrphanReportRepair({
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
@@ -698,6 +705,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     },
     repairOrphans: () => orphanRepair.sweep(WAKE_SWEEP_LIMIT),
     publishReports: () => reportPublisher.sweep(WAKE_SWEEP_LIMIT),
+    purgeWorks: () => workPurger.sweep(),
   };
   const admissionRecords = createDrizzleAdmissionRecords(ports.db);
   const imageAssets = createContextImageAssetPort({
@@ -947,6 +955,9 @@ export function createInMemoryAppServices(): AppServices {
       return 0;
     },
     async publishReports() {
+      return 0;
+    },
+    async purgeWorks() {
       return 0;
     },
   };

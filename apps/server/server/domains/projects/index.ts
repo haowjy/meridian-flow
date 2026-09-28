@@ -28,6 +28,7 @@ import type { ContextCatalogLifecyclePort } from "./ports/context-catalog-lifecy
 export const DEFAULT_BOOTSTRAP_URI = MANUSCRIPT_URI;
 
 export { createDrizzleProjectWorkAuthorityResolver } from "./adapters/drizzle-work-authority.js";
+export { createDrizzleWorkPurger } from "./adapters/drizzle-work-purge.js";
 export {
   type ProjectWorkAuthorityResolver,
   resolvedWorkAuthority,
@@ -341,11 +342,14 @@ export {
   type CreateWorkInput,
   type ListWorksOptions,
   type UpdateWorkInput,
-  WorkDeleteBlockedError,
+  WorkDeleteRetryError,
+  type WorkDeletion,
   WorkLockedError,
   WorkNameConflictError,
   type WorkRepository,
+  type WorkRestoration,
   WorkRestoreConflictError,
+  WorkRestoreExpiredError,
 } from "./ports/work-repository.js";
 export { type RequireProjectOwnerOptions, requireProjectOwner } from "./project-access.js";
 export {

@@ -1,29 +1,33 @@
 import { catalogScopeKey } from "@meridian/contracts/protocol";
-import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import {
   type AiWriteMode,
   decodeWorkSlug,
   type Work,
   type WorkStatus,
+  workPurgeAt,
 } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
   contextAvailabilityHeads,
   contextCatalogScopeHeads,
   contextSources,
+  documentBranches,
   documents,
   folders,
+  projectResults,
   projects,
   threads,
   threadWorks,
   works,
 } from "@meridian/database/schema";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
   runInRootDrizzleReadSnapshot,
 } from "../../../../shared/drizzle-transaction.js";
+import { lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import { lockWorkLifecycle } from "../../../../shared/work-lifecycle-lock.js";
 import type {
@@ -31,12 +35,14 @@ import type {
   ListWorksOptions,
   UpdateWorkInput,
   WorkRepository,
+  WorkRestoration,
 } from "../../ports/work-repository.js";
 import {
-  WorkDeleteBlockedError,
+  WorkDeleteRetryError,
   WorkLockedError,
   WorkNameConflictError,
   WorkRestoreConflictError,
+  WorkRestoreExpiredError,
 } from "../../ports/work-repository.js";
 import type { WorkProjectionMutation } from "../work-projection-mutation.js";
 import { NO_WORK_NAME, nextWorkSlug } from "./shared.js";
@@ -125,6 +131,45 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       await projectionMutation.publishWorks([row.id]);
       return mapWork(row);
     });
+  }
+
+  async function findPrimaryThreadTree(workId: WorkId): Promise<{
+    threadIds: ThreadId[];
+    liveThreadIds: ThreadId[];
+  }> {
+    const activeDb = currentDrizzleDb(db);
+    const roots = await activeDb
+      .select({ id: threads.id, deletedAt: threads.deletedAt })
+      .from(threadWorks)
+      .innerJoin(threads, eq(threadWorks.threadId, threads.id))
+      .where(and(eq(threadWorks.workId, workId), eq(threadWorks.isPrimary, true)));
+    const allIds = new Set<ThreadId>();
+    const liveIds = new Set<ThreadId>();
+    let frontier: ThreadId[] = [];
+    for (const row of roots) {
+      allIds.add(row.id);
+      if (!row.deletedAt) liveIds.add(row.id);
+      frontier.push(row.id);
+    }
+
+    while (frontier.length > 0) {
+      const children = await activeDb
+        .select({ id: threads.id, deletedAt: threads.deletedAt })
+        .from(threads)
+        .where(inArray(threads.parentThreadId, frontier));
+      frontier = [];
+      for (const child of children) {
+        if (allIds.has(child.id)) continue;
+        allIds.add(child.id);
+        if (!child.deletedAt) liveIds.add(child.id);
+        frontier.push(child.id);
+      }
+    }
+
+    return {
+      threadIds: [...allIds].sort(),
+      liveThreadIds: [...liveIds].sort(),
+    };
   }
 
   return {
@@ -297,77 +342,151 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       if (!isUuid(id)) return false;
       return hasUnreviewedDraft(id);
     },
-    async softDelete(id: WorkId): Promise<void> {
-      const existing = await findWorkById(id);
-      if (!existing || existing.deletedAt) return;
-      if (existing.isNoWork) throw new WorkLockedError();
-
-      await runInDrizzleTransaction(db, async () => {
+    async softDelete(id: WorkId) {
+      return runInDrizzleTransaction(db, async () => {
         const activeDb = currentDrizzleDb(db);
+        const initialTree = await findPrimaryThreadTree(id);
+        for (const threadId of initialTree.threadIds) await lockThreadForMutation(db, threadId);
+
         const lifecycle = await lockWorkLifecycle(db, id);
-        if (lifecycle === "missing" || lifecycle === "deleted") return;
-        if (await hasUnreviewedDraft(id)) throw new WorkDeleteBlockedError("drafts");
+        const before = await findWorkById(id);
+        if (lifecycle === "missing" || lifecycle === "deleted" || !before) {
+          return { before, after: before, threadIds: [] };
+        }
+        if (before.isNoWork) throw new WorkLockedError();
 
-        const [membership] = await activeDb
-          .select({ threadId: threadWorks.threadId })
-          .from(threadWorks)
-          .innerJoin(threads, eq(threadWorks.threadId, threads.id))
-          .where(and(eq(threadWorks.workId, id), isNull(threads.deletedAt)))
-          .limit(1);
-        if (membership) throw new WorkDeleteBlockedError("threads");
+        const currentTree = await findPrimaryThreadTree(id);
+        if (currentTree.threadIds.some((threadId) => !initialTree.threadIds.includes(threadId))) {
+          throw new WorkDeleteRetryError();
+        }
+        const liveThreadIds = currentTree.liveThreadIds;
 
-        const [document] = await activeDb
-          .select({ id: documents.id })
+        const deletedAt = new Date();
+        const deletedThreads = liveThreadIds.length
+          ? await activeDb
+              .update(threads)
+              .set({ deletedAt, deletedByWorkId: id, updatedAt: deletedAt })
+              .where(and(inArray(threads.id, liveThreadIds), isNull(threads.deletedAt)))
+              .returning({ id: threads.id })
+          : [];
+        if (currentTree.threadIds.length > 0) {
+          await activeDb
+            .update(projectResults)
+            .set({ deletedByWorkId: id })
+            .where(
+              and(
+                or(
+                  inArray(projectResults.threadId, currentTree.threadIds),
+                  inArray(projectResults.rootThreadId, currentTree.threadIds),
+                ),
+                isNull(projectResults.deletedByWorkId),
+              ),
+            );
+        }
+        const sources = await activeDb
+          .select({ id: contextSources.id })
           .from(contextSources)
-          .innerJoin(documents, eq(documents.contextSourceId, contextSources.id))
+          .where(and(eq(contextSources.workId, id), isNull(contextSources.deletedAt)));
+        const sourceIds = sources.map(({ id: sourceId }) => sourceId);
+        if (sourceIds.length > 0) {
+          await activeDb
+            .update(documents)
+            .set({ deletedAt, deletedByWorkId: id })
+            .where(and(inArray(documents.contextSourceId, sourceIds), isNull(documents.deletedAt)));
+          await activeDb
+            .update(folders)
+            .set({ deletedAt, deletedByWorkId: id })
+            .where(and(inArray(folders.contextSourceId, sourceIds), isNull(folders.deletedAt)));
+          await activeDb
+            .update(contextSources)
+            .set({ deletedAt, deletedByWorkId: id })
+            .where(and(inArray(contextSources.id, sourceIds), isNull(contextSources.deletedAt)));
+        }
+        await activeDb
+          .update(documentBranches)
+          .set({ status: "closed", deletedByWorkId: id, updatedAt: deletedAt })
           .where(
             and(
-              eq(contextSources.workId, id),
-              isNull(documents.deletedAt),
-              eq(documents.kind, "content"),
+              eq(documentBranches.workId, id),
+              eq(documentBranches.kind, "work_draft"),
+              eq(documentBranches.status, "active"),
             ),
-          )
-          .limit(1);
-        if (document) throw new WorkDeleteBlockedError("documents");
-
-        const [folder] = await activeDb
-          .select({ id: folders.id })
-          .from(contextSources)
-          .innerJoin(folders, eq(folders.contextSourceId, contextSources.id))
-          .where(and(eq(contextSources.workId, id), isNull(folders.deletedAt)))
-          .limit(1);
-        if (folder) throw new WorkDeleteBlockedError("folders");
-
+          );
         await activeDb
           .update(works)
           .set({
-            deletedAt: new Date(),
+            deletedAt,
             entityRevision: sql`${works.entityRevision} + 1`,
-            updatedAt: new Date(),
+            updatedAt: deletedAt,
           })
           .where(and(eq(works.id, id), isNull(works.deletedAt)));
         await projectionMutation.publishWorks([id]);
+        const after = await findWorkById(id);
+        return {
+          before,
+          after,
+          threadIds: deletedThreads.map(({ id: threadId }) => threadId),
+        };
       });
     },
-    async restore(id: WorkId): Promise<Work> {
-      const existing = await findWorkById(id);
-      if (!existing) throw new Error(`Work not found: ${id}`);
-      if (!existing.deletedAt) return existing;
+    async restore(id: WorkId): Promise<WorkRestoration> {
       try {
         return await runInDrizzleTransaction(db, async () => {
+          const activeDb = currentDrizzleDb(db);
+          const deletedThreads = await activeDb
+            .select({ id: threads.id })
+            .from(threads)
+            .where(eq(threads.deletedByWorkId, id))
+            .orderBy(threads.id);
+          for (const { id: threadId } of deletedThreads) {
+            await lockThreadForMutation(db, threadId);
+          }
           await lockWorkLifecycle(db, id);
+          const existing = await findWorkById(id);
+          if (!existing) throw new Error(`Work not found: ${id}`);
+          if (!existing.deletedAt) {
+            return { before: existing, after: existing, changed: false };
+          }
+          if (workPurgeAt(existing.deletedAt).getTime() <= Date.now()) {
+            throw new WorkRestoreExpiredError();
+          }
+          const restoredAt = new Date();
           const [row] = await currentDrizzleDb(db)
             .update(works)
             .set({
               deletedAt: null,
               entityRevision: sql`${works.entityRevision} + 1`,
-              updatedAt: new Date(),
+              updatedAt: restoredAt,
             })
             .where(eq(works.id, id))
             .returning();
           if (!row) throw new Error(`Work not found: ${id}`);
+          await activeDb
+            .update(threads)
+            .set({ deletedAt: null, deletedByWorkId: null, updatedAt: restoredAt })
+            .where(eq(threads.deletedByWorkId, id));
+          await activeDb
+            .update(projectResults)
+            .set({ deletedByWorkId: null })
+            .where(eq(projectResults.deletedByWorkId, id));
+          await activeDb
+            .update(documents)
+            .set({ deletedAt: null, deletedByWorkId: null })
+            .where(eq(documents.deletedByWorkId, id));
+          await activeDb
+            .update(folders)
+            .set({ deletedAt: null, deletedByWorkId: null })
+            .where(eq(folders.deletedByWorkId, id));
+          await activeDb
+            .update(contextSources)
+            .set({ deletedAt: null, deletedByWorkId: null })
+            .where(eq(contextSources.deletedByWorkId, id));
+          await activeDb
+            .update(documentBranches)
+            .set({ status: "active", deletedByWorkId: null, updatedAt: restoredAt })
+            .where(eq(documentBranches.deletedByWorkId, id));
           await projectionMutation.publishWorks([row.id]);
-          return mapWork(row);
+          return { before: existing, after: mapWork(row), changed: true };
         });
       } catch (cause) {
         const constraint = workUniqueConstraint(cause);

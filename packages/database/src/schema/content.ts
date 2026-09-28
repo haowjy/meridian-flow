@@ -145,8 +145,14 @@ export const contextSources = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
+    deletedByWorkId: uuid("deleted_by_work_id")
+      .$type<WorkId>()
+      .references(() => works.id, { onDelete: "cascade" }),
   },
   (table) => [
+    index("context_sources_deleted_by_work_idx")
+      .on(table.deletedByWorkId)
+      .where(sql`${table.deletedByWorkId} IS NOT NULL`),
     uniqueIndex("context_sources_project_slug")
       .on(table.projectId, table.slug)
       .where(sql`${table.workId} IS NULL AND ${table.deletedAt} IS NULL`),
@@ -191,8 +197,14 @@ export const folders = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
+    deletedByWorkId: uuid("deleted_by_work_id")
+      .$type<WorkId>()
+      .references(() => works.id, { onDelete: "cascade" }),
   },
   (table) => [
+    index("folders_deleted_by_work_idx")
+      .on(table.deletedByWorkId)
+      .where(sql`${table.deletedByWorkId} IS NOT NULL`),
     index("folders_context_parent_active")
       .on(table.contextSourceId, table.parentId)
       .where(sql`${table.deletedAt} IS NULL`),
@@ -232,8 +244,14 @@ export const documents = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
+    deletedByWorkId: uuid("deleted_by_work_id")
+      .$type<WorkId>()
+      .references(() => works.id, { onDelete: "cascade" }),
   },
   (table) => [
+    index("documents_deleted_by_work_idx")
+      .on(table.deletedByWorkId)
+      .where(sql`${table.deletedByWorkId} IS NOT NULL`),
     index("documents_context_folder_active")
       .on(table.contextSourceId, table.folderId)
       .where(sql`${table.deletedAt} IS NULL`),

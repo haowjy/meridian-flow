@@ -78,6 +78,13 @@
       "when": 1790532168122,
       "tag": "0010_drop_work_description",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790564727510,
+      "tag": "0011_work_delete_cascade",
+      "breakpoints": true
     }
   ]
 }
