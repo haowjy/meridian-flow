@@ -31,6 +31,7 @@ import {
   WorkDescription,
   type WorkMetadataController,
 } from "./WorkMetadata";
+import { WorkHeading } from "./WorkTitles";
 
 export type WorkDetailScreenProps = {
   projectId: string;
@@ -134,7 +135,12 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
     <div ref={scrollOwner} className="app-scroll">
       <article className="project-screen-column min-w-0 gap-5 pb-12">
         <WorkScreenHeader
-          description={<WorkDescription controller={controller} />}
+          description={
+            <>
+              <WorkHeading projectId={projectId} work={work} />
+              <WorkDescription controller={controller} />
+            </>
+          }
           view={view}
           onViewChange={setView}
           tools={

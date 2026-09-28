@@ -77,7 +77,9 @@ The Work band copies the Chat pane's grammar (`useWorkChrome`): an All Work
 and renamed inside it (`WorkTitleTab` over `TabTitleField`, no dropdown), and the
 Work's `…` menu at the far right. The phone top bar shows the same pieces as a
 `Work › <name>` trail. Delete state (`useWorkDeletion`) lives above the screen so
-the band's menu and the collection's Undo row share it. The page body starts at
+the band's menu and the collection's Undo row share it. The page body starts with
+the Work's heading (`WorkHeading`), renamed in place like the tab; both titles
+show a rename at once through one shared pending name (`useWorkRename`). Then
 the description: clicking a clamped description shows all of it, Show less folds
 it, and a right-aligned Edit edits it in place without moving (see DESIGN.md),
 with Cancel and Save right-aligned below. The last opened Work is remembered

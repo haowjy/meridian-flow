@@ -23,6 +23,7 @@ import type { WorkDeletion } from "./useWorkDeletion";
 import { WorkActionsMenu } from "./WorkActionsMenu";
 import { WorkDetailScreen, WorkScreenHeader } from "./WorkDetailScreen";
 import { WorkRow } from "./WorkRow";
+import { PendingWorkHeading } from "./WorkTitles";
 import { emptyWorkDeleteState, type WorkDeleteState } from "./work-delete-state";
 import { takeWorkCollectionFocus, type WorkCollectionFocusIntent } from "./work-focus-intent";
 
@@ -79,6 +80,7 @@ export function WorkScreen(props: WorkScreenProps & { deletion: WorkDeletion }) 
   ) {
     return (
       <WorkCreationDestination
+        name={creation.name}
         goal={creation.goal}
         failed={creation.status === "failed"}
         onRetry={creation.retry}
@@ -441,13 +443,15 @@ function DeletedWorkRow({
   );
 }
 
-/** A Work still being created: its name is in the band; the page shows its state. */
+/** A Work still being created: its titles, its state, and Retry or Discard on failure. */
 export function WorkCreationDestination({
+  name,
   goal,
   failed,
   onRetry,
   onDiscard,
 }: {
+  name: string;
   goal: string | null;
   failed: boolean;
   onRetry: () => void;
@@ -459,6 +463,7 @@ export function WorkCreationDestination({
         <WorkScreenHeader
           description={
             <>
+              <PendingWorkHeading name={name} />
               <p
                 className={`flex items-center gap-2 text-xs ${failed ? "text-destructive" : "text-muted-foreground"}`}
                 role="status"

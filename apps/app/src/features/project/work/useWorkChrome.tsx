@@ -14,7 +14,7 @@ import { IndexTabChip, ReturnTabChip } from "../shell/IndexTabChip";
 import { useWorkCreationRecords } from "./useWorkCreation";
 import type { WorkDeletion } from "./useWorkDeletion";
 import { WorkActionsMenu } from "./WorkActionsMenu";
-import { PendingWorkTitleTab, WorkTitleTab } from "./WorkTitleTab";
+import { PendingWorkTitleTab, WorkTitleTab } from "./WorkTitles";
 import { holdWorkCollectionFocus } from "./work-focus-intent";
 
 /** The Work destination's chrome pieces, shared by the desktop band and the phone top bar. */

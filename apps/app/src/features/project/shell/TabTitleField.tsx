@@ -15,6 +15,7 @@ export function TabTitleField({
   maxLength,
   onCommit,
   onCancel,
+  className = "pane-title flex min-w-0 px-1",
 }: {
   initial: string;
   label: string;
@@ -22,6 +23,8 @@ export function TabTitleField({
   /** Receives the trimmed draft; an empty or unchanged draft cancels instead. */
   onCommit: (title: string) => void;
   onCancel: () => void;
+  /** Wrapper typography and inset; defaults to the pane band's title. */
+  className?: string;
 }) {
   const [draft, setDraft] = useState(initial);
   const input = useRef<HTMLInputElement>(null);
@@ -38,7 +41,7 @@ export function TabTitleField({
     else onCancel();
   };
   return (
-    <span className="pane-title flex min-w-0 px-1">
+    <span className={className}>
       <InlineEditInput
         ref={input}
         value={draft}

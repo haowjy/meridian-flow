@@ -16,12 +16,14 @@ describe("pending Work destination", () => {
   it("renders the pending state and retry surface after creation failure", () => {
     const html = renderToStaticMarkup(
       <WorkCreationDestination
+        name="Revise arc 3"
         goal="Tighten the midpoint."
         failed
         onRetry={vi.fn()}
         onDiscard={vi.fn()}
       />,
     );
+    expect(html).toContain("Revise arc 3");
     expect(html).toContain("Tighten the midpoint.");
     expect(html).toContain("Not created");
     expect(html).not.toContain("Creating");

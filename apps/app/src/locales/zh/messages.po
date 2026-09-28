@@ -1414,7 +1414,7 @@ msgstr ""
 msgid "Couldn't rename this document. Try another name."
 msgstr ""
 
-#: src/features/project/work/WorkTitleTab.tsx
+#: src/features/project/work/WorkTitles.tsx
 msgid "Couldn’t rename this Work. Try again."
 msgstr ""
 
@@ -3381,6 +3381,7 @@ msgstr ""
 #: src/features/project/context/DocumentIdentityBar.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/InlineProjectTitle.tsx
+#: src/features/project/work/WorkTitles.tsx
 msgid "Rename"
 msgstr ""
 
@@ -3406,13 +3407,18 @@ msgstr ""
 msgid "Rename this document or move it somewhere else in your project."
 msgstr ""
 
-#: src/features/project/work/WorkTitleTab.tsx
+#: src/features/project/work/WorkTitles.tsx
 msgid "Rename Work"
 msgstr ""
 
-#: src/features/project/work/WorkTitleTab.tsx
-msgid "Rename Work: {name}"
+#. placeholder {0}: title.name
+#: src/features/project/work/WorkTitles.tsx
+msgid "Rename Work: {0}"
 msgstr ""
+
+#: src/features/project/work/WorkTitleTab.tsx
+#~ msgid "Rename Work: {name}"
+#~ msgstr ""
 
 #: src/features/chat/ChatThreadHeader.tsx
 msgid "Renamed to {confirmed}"
