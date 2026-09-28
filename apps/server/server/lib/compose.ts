@@ -1,4 +1,3 @@
-import { createCompactionUndoReader } from "../domains/runtime/index.js";
 /**
  * Composition root: wires production adapters into AppServices and owns the pure
  * runtime service graph. App startup supplies process-level resources; this file
@@ -108,6 +107,7 @@ import { MODEL_REGISTRY, type MockScriptQueue } from "../domains/runtime/gateway
 import {
   createChildRunCoordinator,
   createChildRunDriver,
+  createCompactionUndoReader,
   createContextImageAssetPort,
   createConversationSummarizer,
   createDrizzleAdmissionRecords,

@@ -5,7 +5,7 @@ import { isPendingPlaceholder } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
 import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
-import { completePreparedUndos } from "../loop/compaction-undo.js";
+import { persistPreparedControlEvents } from "../loop/compaction-undo.js";
 import {
   absorbPendingCompact,
   type ControlMessage,
@@ -30,6 +30,7 @@ import type {
   RunStarter,
 } from "../loop/ports.js";
 import { writerFacingPreparationError } from "../loop/preparation-failure.js";
+import { UndoRequestPreparationError } from "../loop/request-preparation.js";
 import type {
   AdoptedBatch,
   DeliveryBoundary,
@@ -86,7 +87,11 @@ export function createDeliveryAdapter(
       pending: await readPendingInbox(inbox, threadId),
     });
   };
-  async function selectForPreparation(threadId: ThreadId, satisfyPendingCompact?: boolean) {
+  async function selectForPreparation(
+    threadId: ThreadId,
+    satisfyPendingCompact?: boolean,
+    expandUndos = true,
+  ) {
     const pendingBatch = await inbox.selectPending(threadId);
     const projection = await inbox.readPendingProjection(threadId);
     const headControl = pendingBatch.find(
@@ -109,22 +114,32 @@ export function createDeliveryAdapter(
       chainedIds: new Set(chained.flatMap((turn) => (turn ? [turn.id] : []))),
     });
     const controls: ControlMessage[] = [];
+    const work = await workBatch(threadId, barrier.batch);
+    const followingBatches: NonNullable<DeliverySelection["followingBatches"]> = [];
     let nextBarrier = barrier;
     const selectedIds = new Set(boundIds);
     while (nextBarrier.execute) {
       controls.push(nextBarrier.execute);
-      if (nextBarrier.execute.body.kind !== "compaction_undo") break;
-      selectedIds.add(nextBarrier.execute.id);
+      if (!expandUndos || nextBarrier.execute.body.kind !== "compaction_undo") break;
+      const afterControlId = nextBarrier.execute.id;
+      selectedIds.add(afterControlId);
       for (const row of nextBarrier.batch) selectedIds.add(row.id);
       nextBarrier = planControlBarrier({
         pending: pendingBatch,
         boundIds: selectedIds,
         chainedIds: new Set(chained.flatMap((turn) => (turn ? [turn.id] : []))),
       });
-      for (const row of nextBarrier.batch)
-        if (!barrier.batch.some((b) => b.id === row.id)) barrier.batch.push(row);
+      const following = await workBatch(threadId, nextBarrier.batch);
+      followingBatches.push({
+        afterControlId,
+        batch: following.batch,
+        ackIds: [...new Set([...following.ids, ...following.batch.map((row) => row.id)])],
+        workContext: following.workContext,
+      });
     }
-    const work = await workBatch(threadId, barrier.batch);
+    const adoptedIds = new Set(
+      [...barrier.batch, ...followingBatches.flatMap((s) => s.batch)].map((row) => row.id),
+    );
     const [notices, thread] = await Promise.all([
       deps.notices.peek(threadId),
       deps.repos.threads.findById(threadId),
@@ -134,15 +149,17 @@ export function createDeliveryAdapter(
       batch: work.batch,
       control: barrier.execute,
       controls,
+      followingBatches,
       satisfiesControlId,
       headControl:
-        (pendingBatch.find((row) => row.intent === "control" && !boundIds.has(row.id)) as
-          | ControlMessage
-          | undefined) ?? null,
+        (pendingBatch.find(
+          (row) =>
+            row.intent === "control" &&
+            !boundIds.has(row.id) &&
+            !controls.some((c) => c.id === row.id && c.body.kind === "compaction_undo"),
+        ) as ControlMessage | undefined) ?? null,
       outstanding: pendingBatch.filter(
-        (row) =>
-          row.intent === "message" &&
-          (boundIds.has(row.id) || barrier.batch.some((selected) => selected.id === row.id)),
+        (row) => row.intent === "message" && (boundIds.has(row.id) || adoptedIds.has(row.id)),
       ),
       workContext: work.workContext,
       notices,
@@ -266,7 +283,7 @@ export function createDeliveryAdapter(
     };
   }
   async function materializePrefix(threadId: ThreadId) {
-    const { selection, work } = await selectForPreparation(threadId);
+    const { selection, work } = await selectForPreparation(threadId, false, false);
     const turns = await Promise.all(
       work.batch.map((message) => deps.repos.turns.findById(message.id)),
     );
@@ -415,7 +432,10 @@ export function createDeliveryAdapter(
         batch: orderedBatch,
         workContext: work.workContext,
       });
-      prepared = await input.prepareNextContext(drain, preparedCurrent, selection);
+      prepared = await input.prepareNextContext(drain, preparedCurrent, {
+        ...selection,
+        continueTask: input.continueTask,
+      });
       if (prepared.compaction)
         prepared.compaction = absorbPendingCompact(prepared.compaction, selection.headControl);
     } catch (error) {
@@ -432,7 +452,10 @@ export function createDeliveryAdapter(
         knownTurnIds: input.knownTurnIds,
         expectedLeafTurnId: expectedLeaf,
       });
-      prepared = { events: [], turns: [], blocks: [], requiresSplit: false };
+      prepared =
+        error instanceof UndoRequestPreparationError
+          ? { ...error.after(drain.turns.at(-1) ?? expectedLeafTurn), requiresSplit: true }
+          : { events: [], turns: [], blocks: [], requiresSplit: false };
     }
     return {
       batch: orderedBatch,
@@ -481,7 +504,9 @@ export function createDeliveryAdapter(
     const compaction = prepared.compaction?.kind === "compact" ? prepared.compaction : undefined;
 
     const receipt = await leaseStore.lockReceipt(lease);
-    drain.ackIds = [...new Set([...(receipt?.ids ?? []), ...drain.ackIds])];
+    drain.ackIds = [
+      ...new Set([...(receipt?.ids ?? []), ...drain.ackIds, ...(prepared.adoptedIds ?? [])]),
+    ];
     let terminal = false;
     if (split) {
       completed =
@@ -527,21 +552,20 @@ export function createDeliveryAdapter(
         !compaction &&
         !adoption.selection.outstanding.length;
       if (terminal) {
-        await persistAndAppendTurnStartEvents(
-          deps,
-          threadId,
-          expectedLeaf,
-          async () => ({
-            result: undefined,
-            events: [
+        await persistAndAppendTurnStartEvents(deps, threadId, expectedLeaf, async () => ({
+          result: undefined,
+          events: await persistPreparedControlEvents(
+            deps,
+            threadId,
+            [
               ...(input.current.kind === "assistant"
                 ? [{ type: "turn.completed" as const, turn: completed! }]
                 : []),
               ...events,
             ],
-          }),
-          { afterEvents: () => completePreparedUndos(deps, threadId, prepared.undos ?? []) },
-        );
+            prepared.undos ?? [],
+          ),
+        }));
         await inbox.ack(threadId, drain.ackIds);
         drain.ackIds = [];
         await deps.runClaim.release(lease);
@@ -568,17 +592,21 @@ export function createDeliveryAdapter(
           expectedLeaf,
           async () => ({
             result: undefined,
-            events: [
-              ...(input.current.kind === "assistant"
-                ? [{ type: "turn.completed" as const, turn: completedTurn }]
-                : []),
-              ...events,
-              { type: "turn.created", turn: next },
-            ],
+            events: await persistPreparedControlEvents(
+              deps,
+              threadId,
+              [
+                ...(input.current.kind === "assistant"
+                  ? [{ type: "turn.completed" as const, turn: completedTurn }]
+                  : []),
+                ...events,
+                { type: "turn.created", turn: next },
+              ],
+              prepared.undos ?? [],
+            ),
           }),
           {
             afterEvents: async () => {
-              await completePreparedUndos(deps, threadId, prepared.undos ?? []);
               await leaseStore.bindTurn(lease, next.id, drain.ackIds, currentTurnKind(next));
               if (adoption.selection.outstanding.length > 0) await input.admit?.(next);
             },
@@ -729,8 +757,10 @@ export function createDeliveryAdapter(
           await prepared.persist?.();
           await inbox.ack(lease.threadId, work.ids);
           await inbox.ack(lease.threadId, prepared.completedControlIds ?? []);
-          if (prepared.terminal) await deps.runClaim.release(lease);
-          else
+          if (prepared.terminal) {
+            await inbox.ack(lease.threadId, [...prepared.messageIds]);
+            await deps.runClaim.release(lease);
+          } else
             await leaseStore.bindTurn(
               lease,
               prepared.turnId,

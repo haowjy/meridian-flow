@@ -1,7 +1,7 @@
 /** Prepare restored history without writes; complete U with its reused bake in the boundary commit. */
 
 import type { PromptBakeId, ThreadId } from "@meridian/contracts/runtime";
-import type { Block, Turn } from "@meridian/contracts/threads";
+import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
 import {
   activeCompaction,
   bakeIdAt,
@@ -19,6 +19,7 @@ import { queryCompactionRevisions } from "./compaction-revisions.js";
 import type { ControlMessage } from "./control-barrier.js";
 import { createLocalTurn } from "./local-turn.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
+import { persistAndAppendEvents } from "./persistence.js";
 import type { AssembledNextTurnContext } from "./turn-context-assembly.js";
 
 export const COMPACTION_UNDO_TEXT =
@@ -171,6 +172,7 @@ export async function prepareCompactionUndo(input: {
       response.model === assembled.resolvedModel?.id &&
       !imageEviction &&
       !prefixElision &&
+      !(active && active.position > candidate.position) &&
       bakeIdAt(before, candidate.id, thread.initialPromptBakeId ?? null) === bakeId
         ? { inputTokens: response.inputTokens, messageCount: response.requestMessageCount }
         : null;
@@ -190,22 +192,39 @@ export async function prepareCompactionUndo(input: {
   }
 }
 
-/** U is created pending and completed within the same delivery transaction, never reserved. */
-export async function completePreparedUndos(
+/** Persist the prepared sequence inside its delivery transaction. U is announced only complete. */
+export async function persistPreparedControlEvents(
   deps: Parameters<typeof beginPromptEpoch>[0],
   threadId: ThreadId,
+  events: OrchestratorEvent[],
   undos: readonly PreparedUndo[],
-): Promise<void> {
-  for (const undo of undos) {
-    if (undo.turn.status !== "complete") continue;
+): Promise<OrchestratorEvent[]> {
+  if (undos.length === 0) return events;
+  const complete = new Map(
+    undos.filter((u) => u.turn.status === "complete").map((u) => [u.turn.id, u]),
+  );
+  let prefix: OrchestratorEvent[] = [];
+  for (const event of events) {
+    const undo = event.type === "turn.created" ? complete.get(event.turn.id) : undefined;
+    if (!undo) {
+      prefix.push(event);
+      continue;
+    }
+    await persistAndAppendEvents(deps, threadId, async () => ({
+      result: undefined,
+      events: prefix,
+    }));
+    prefix = [];
+    await deps.repos.turns.create({ ...undo.turn, status: "pending", promptBakeId: null });
     await beginPromptEpoch(deps, {
       threadId,
       cause: "compaction_undo",
       boundaryTurnId: undo.turn.id,
       bake: { reuse: undo.turn.promptBakeId as PromptBakeId },
-      completion: { blocks: [undo.block!], metadata: undo.turn.metadata },
+      completion: { blocks: [undo.block!], metadata: undo.turn.metadata, announceBoundary: true },
     });
   }
+  return prefix;
 }
 
 /** Advisory only: execution measures the fully restored request with today's trigger. */
@@ -225,7 +244,7 @@ export function createCompactionUndoReader(
     const context = await resolveAgentThreadTurnContext({ ...deps, thread, baseTools: undefined });
     const modelId = context.gatewayParams.model ?? deps.gateway.getDefaultModel();
     const model = deps.gateway.listModels?.().find((model) => model.id === modelId);
-    if (!model) throw new Error("Undo availability requires the current model");
+    if (!model) return null;
     const trigger = resolveCompactionTrigger({
       ...context.compaction,
       contextWindow: model.contextWindow,

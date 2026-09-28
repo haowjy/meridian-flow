@@ -13,6 +13,7 @@
 
 ### Added
 - Undo local compactions under the prior prompt. Refuse restores that would compact again.
+- Keep queued replies running after failed undo. Undo markers appear settled, never pending.
 - Record atomic document revisions on agent reads, searches, references, and settled writes without adding model-visible text.
 - Queue manual compaction in message order. Withdraw queued requests or stop running dividers.
 - Keep unanswered writer text and mentions verbatim across compaction. Failed optional summaries leave replies running.

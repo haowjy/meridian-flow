@@ -156,7 +156,9 @@ export async function prepareCompactionSuccessor(args: {
         skipCompaction: !selection?.control,
         assertNoResponseScope: args.assertNoResponseScope,
         controls: selection?.controls,
+        followingBatches: selection?.followingBatches,
         failedUndoIds: selection?.failedUndoIds,
+        continueAfterControls: !!selection?.outstanding.length || !!selection?.continueTask,
         pinnedRequestTurnIds: new Set(selection?.outstanding.map((row) => row.id)),
         signal: input.signal,
         promptBakes: {
@@ -212,6 +214,7 @@ export async function prepareCompactionContext(
   return {
     events: next.events,
     undos: next.undos,
+    adoptedIds: next.adoptedIds,
     turns: next.turns,
     blocks: next.blocks,
     requiresSplit: true,

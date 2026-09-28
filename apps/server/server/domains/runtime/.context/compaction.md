@@ -282,7 +282,10 @@ or an elision inside that response's prefix removes the baseline.
 
 U has no reservation or model phase. Delivery inserts and completes it through
 `beginPromptEpoch` in the same transaction as adoption, control acknowledgement,
-and the next control/reply binding or lease release. An idle undo reserves no
+and the next control/reply binding or lease release. Successful U is inserted
+pending privately, then announced complete in the journal; readers never receive
+a pending U. Inbox-only rows beyond U are planned after it, not folded into its
+adopted prefix. An idle undo reserves no
 assistant and admits no execution. A refused U has no blocks or bake; its reason
 is `turn.error` (`already_undone`, `not_active`, `would_recompact`, `undo_failed`).
 A failed undo commit rolls back, then retries the delivery transaction with those
@@ -294,4 +297,5 @@ blocks but excluding replacements still owned by active C. A later C ends U's
 ownership. Image inclusion selects the latest decision after filtering out all
 reverted C owners from the same effective transcript. Fork cutoffs bound both.
 Snapshot availability is advisory and compares active local C's `tokensBefore`
-with the current trigger; execution always measures again.
+with the current trigger; execution always measures again. A missing model
+catalog entry yields null availability without hiding the durable snapshot.

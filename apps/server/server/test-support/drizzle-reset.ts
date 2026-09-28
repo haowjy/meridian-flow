@@ -5,6 +5,7 @@
  * names keep both strategies aligned with table renames.
  */
 import type { Database } from "@meridian/database";
+import { promptBakes, threads } from "@meridian/database/schema";
 import { sql } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
 
@@ -203,6 +204,13 @@ export async function deleteDrizzleRows(db: Database, tables: unknown[]): Promis
     );
     await transaction.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
     for (const table of tableOrder) {
+      // Insert-only bakes permit deletion only through their owning thread's cascade.
+      // A preceding suite may leave bakes even when this suite never creates one.
+      if (
+        table.qualifiedName === quoteDrizzleTable(promptBakes) &&
+        derivedNames.has(quoteDrizzleTable(threads))
+      )
+        continue;
       await transaction.execute(sql.raw(`DELETE FROM ${table.qualifiedName}`));
     }
   });

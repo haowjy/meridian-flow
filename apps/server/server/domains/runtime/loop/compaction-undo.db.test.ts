@@ -20,7 +20,10 @@ else
     assertThrowawayDatabaseForRunDbTests(url);
     const db = createDb(url, { max: 4 });
     beforeEach(() => truncateDrizzleTables(db, [schema.users]));
-    afterAll(() => db.close());
+    afterAll(async () => {
+      await truncateDrizzleTables(db, [schema.users]);
+      await db.close();
+    });
     const makeFixture = createCompactionFixture(db);
     type Rig = Awaited<ReturnType<typeof makeFixture>>;
     async function fixture(options: Parameters<typeof makeFixture>[0] = {}) {
@@ -112,6 +115,16 @@ else
       expect(JSON.stringify(restored.messages)).toContain("Post-C turn before undo.");
       expect(restored.messages[0]).toEqual(before.messages[0]);
       expect(rig.summarizer.calls).toHaveLength(1);
+      const { createDrizzleEventJournalReader } = await import("../../threads/index.js");
+      const journal = await createDrizzleEventJournalReader(db).listByThread(rig.threadId);
+      expect(
+        journal
+          .filter(
+            (row) =>
+              row.payload.type === "turn.created" && row.payload.turn.id === marker(turns).id,
+          )
+          .map((row) => row.payload.type === "turn.created" && row.payload.turn.status),
+      ).toEqual(["complete"]);
     });
     it("C6b refusal has no block and preserves the compacted prefix", async () => {
       const rig = await fixture({ history: "Earlier scene. ".repeat(1500) });
@@ -146,7 +159,7 @@ else
     });
     it("C6b A C B undo uses A usage never B", async () => {
       const gateway = scriptedGateway({ usage: { inputTokens: 100, outputTokens: 10 } });
-      const rig = await fixture({ gateway });
+      const rig = await fixture({ gateway, history: "Large original request. ".repeat(1500) });
       await (await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "A" })).execute();
       const c = await compact(rig);
       await (await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "B" })).execute();
@@ -417,7 +430,7 @@ else
       const rig = await fixture({ child: true });
       const c = await compact(rig);
       await undo(rig, c);
-      await rig.delivery.enqueue({
+      const parentMessage = await rig.delivery.enqueue({
         threadId: rig.threadId,
         intent: "message",
         provenance: { kind: "agent", threadId: rig.ids.caller },
@@ -426,6 +439,9 @@ else
       });
       const turns = await drain(rig);
       const b = turns.at(-1)!;
+      expect(turns.find((t) => t.id === parentMessage.id)!.position).toBeGreaterThan(
+        marker(turns).position,
+      );
       expect(marker(turns).status).toBe("complete");
       expect(b.role).toBe("assistant");
       expect(await rig.repos.executionReports.findByExecution(rig.threadId, b.id)).toMatchObject({
@@ -492,5 +508,183 @@ else
       expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
       expect(rig.summarizer.calls).toHaveLength(1);
+    });
+
+    it("C6b review preparation failure leaves U not a fake C", async () => {
+      const rig = await fixture();
+      const c = await compact(rig);
+      const list = rig.deps.gateway.listModels!;
+      rig.deps.gateway.listModels = () => {
+        throw new Error("model resolver unavailable");
+      };
+      await undo(rig, c);
+      const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
+      await run.execute();
+      rig.deps.gateway.listModels = list;
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
+      expect(marker(turns)).toMatchObject({ status: "error", error: "undo_failed" });
+      expect(turns.filter((t) => t.role === "compaction")).toHaveLength(1);
+      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+    });
+    it("C6b review terminal undo acknowledges notices and settles the session", async () => {
+      const rig = await fixture();
+      const c = await compact(rig);
+      await rig.delivery.enqueue({
+        threadId: rig.threadId,
+        intent: "notice",
+        provenance: { kind: "system", source: "test" },
+        body: { kind: "context", parts: [{ source: "test", text: "Before undo notice" }] },
+        idempotencyKey: "notice",
+      });
+      await undo(rig, c);
+      await drain(rig);
+      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+      expect(rig.activeRuns()).toBe(0);
+    });
+    it("C6b review unavailable model keeps the snapshot readable", async () => {
+      const { createCompactionUndoReader } = await import("./compaction-undo.js");
+      const rig = await fixture();
+      await compact(rig);
+      const thread = (await rig.repos.threads.findById(rig.threadId))!;
+      rig.deps.gateway.listModels = () => [];
+      expect(
+        await createCompactionUndoReader(rig.deps)(
+          thread,
+          await rig.repos.turns.listByThread(rig.threadId),
+        ),
+      ).toBeNull();
+    });
+    it("C6b review refused undo still compacts the ordinary oversized continuation", async () => {
+      const rig = await fixture();
+      const c = await compact(rig);
+      await undo(rig, c);
+      const grown = await rig.repos.turns.create({
+        threadId: rig.threadId,
+        prevTurnId: c.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      await rig.repos.blocks.create({
+        turnId: grown.id,
+        blockType: "text",
+        sequence: 0,
+        textContent: "Long generated answer. ".repeat(1500),
+        content: "Long generated answer. ".repeat(1500),
+        status: "complete",
+      });
+      await rig.send(rig.threadId, "Continue");
+      rig.setThreshold(3000);
+      const turns = await drain(rig);
+      expect(marker(turns)).toMatchObject({ status: "error", error: "would_recompact" });
+      expect(turns.filter((t) => t.role === "compaction")).toHaveLength(2);
+    });
+    it("C6b review immediate undo does not readmit C images", async () => {
+      let rig: Rig;
+      rig = await fixture({
+        summarizer: scriptedSummarizer(async ({ turnId }) => {
+          await enqueue(rig, { kind: "compaction_undo", compactionTurnId: turnId });
+          await rig.send(rig.threadId, "Continue without excluded image");
+          return { kind: "complete", text: "Summary", model: "summary-model", modelResponses: [] };
+        }),
+      });
+      const previous = (await rig.repos.turns.listByThread(rig.threadId)).at(-1)!;
+      const user = await rig.repos.turns.create({
+        threadId: rig.threadId,
+        prevTurnId: previous.id,
+        role: "user",
+        origin: "writer",
+        status: "complete",
+      });
+      await rig.repos.blocks.create({
+        turnId: user.id,
+        blockType: "text",
+        sequence: 0,
+        content: "Image message",
+        textContent: "Image message",
+        status: "complete",
+      });
+      const image = await rig.repos.blocks.create({
+        turnId: user.id,
+        blockType: "image",
+        sequence: 1,
+        content: {
+          type: "image_reference",
+          documentId: crypto.randomUUID(),
+          uri: "scratch://excluded.png",
+        },
+        status: "complete",
+      });
+      await rig.repos.imageInclusions.set({
+        threadId: rig.threadId,
+        blockId: image.id,
+        decisionTurnId: user.id,
+        included: false,
+      });
+      rig.deps.imageAssets.resolve = async () => ({
+        mediaType: "image/png",
+        data: "excluded-image",
+        sizeBytes: 100,
+      });
+      await enqueue(rig, { kind: "compact" });
+      await drain(rig);
+      expect(
+        rig.gateway.requests
+          .at(-1)!
+          .messages.flatMap((m) => m.content)
+          .filter((p) => p.type === "image"),
+      ).toEqual([]);
+    });
+
+    it("C6b tool boundary undo continues the same task under restored history", async () => {
+      let rig: Rig;
+      let c: Turn;
+      const gateway = scriptedGateway({
+        onStream: async (call) => {
+          if (call === 1) await undo(rig, c);
+        },
+        results: [
+          {
+            content: [
+              {
+                type: "tool_use",
+                toolCallId: "tool-before-undo",
+                toolName: "unavailable_probe_tool",
+                input: {},
+              },
+            ],
+            toolCalls: [],
+            finishReason: "tool_use",
+            usage: { inputTokens: 100, outputTokens: 10 },
+            model: "gpt-4.1-mini",
+            provider: "openai",
+          },
+        ],
+      });
+      rig = await fixture({ gateway });
+      c = await compact(rig);
+      await (
+        await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "Continue the task" })
+      ).execute();
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
+      expect(turns.slice(-3).map((t) => (t.metadata as { kind?: string })?.kind ?? t.role)).toEqual(
+        ["assistant", "compaction_undo", "assistant"],
+      );
+      expect(marker(turns).status).toBe("complete");
+      expect(gateway.requests).toHaveLength(2);
+      expect(JSON.stringify(gateway.requests[1].messages)).toContain("Earlier scene.");
+      expect(JSON.stringify(gateway.requests[1].messages)).not.toContain("Conversation summary.");
+    });
+
+    it("C6b an oversized reply does not overwrite an undo refusal", async () => {
+      const rig = await fixture();
+      const c = await compact(rig);
+      await undo(rig, c);
+      await rig.send(rig.threadId, "Cannot fit this pin ".repeat(1000));
+      rig.setThreshold(2500);
+      await (await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true })).execute();
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
+      expect(marker(turns)).toMatchObject({ status: "error", error: "would_recompact" });
+      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "error" });
     });
   });

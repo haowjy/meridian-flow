@@ -165,13 +165,16 @@ export async function executeCompaction({
               readReferences: false,
               skipCompaction: !selection.control,
               controls: selection.controls,
+              followingBatches: selection.followingBatches,
               failedUndoIds: selection.failedUndoIds,
+              continueAfterControls: selection.outstanding.length > 0 || !!selection.continueTask,
               pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
               signal: input.signal,
             });
       return {
         events: next.events,
         undos: next.undos,
+        adoptedIds: next.adoptedIds,
         turns: next.turns,
         blocks: next.blocks,
         requiresSplit: true,

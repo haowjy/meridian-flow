@@ -117,7 +117,7 @@ import {
 import { FLOW_ABSOLUTE_CEILING } from "./compaction/index.js";
 import { executeCompaction } from "./compaction-phase.js";
 import { failCompactionSuccessor } from "./compaction-successor.js";
-import { completePreparedUndos } from "./compaction-undo.js";
+import { persistPreparedControlEvents } from "./compaction-undo.js";
 import { absorbPendingCompact } from "./control-barrier.js";
 import type { TerminalCause } from "./execution-finalizer.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
@@ -144,7 +144,12 @@ import type { RunClaim, ThreadPhase } from "./ports.js";
 import { createPrefixCacheStateService, type PrefixCacheState } from "./prefix-cache-state.js";
 import { writerFacingPreparationError } from "./preparation-failure.js";
 import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
-import { prepareRequestContext } from "./request-preparation.js";
+import {
+  type PreparedControlHistory,
+  prepareFailedUndoHistory,
+  prepareRequestContext,
+  UndoRequestPreparationError,
+} from "./request-preparation.js";
 import { createRunSessions } from "./run-session.js";
 import {
   type DrainRunLoopInput,
@@ -561,7 +566,8 @@ async function runDrainTurn(
         prevTurnId ??
         reservedTurnId;
       let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
-      if (!preparationError) {
+      let failedControls: PreparedControlHistory | null = null;
+      if (!preparationError || selection.control?.body.kind === "compaction_undo") {
         try {
           const previousBlocks = await deps.repos.blocks.listByThread(input.threadId);
           preflight = await prepareRequestContext({
@@ -571,7 +577,15 @@ async function runDrainTurn(
             referenceTurnId: referenceUserTurnId,
             currentTurnId: reservedTurnId,
             controls: selection.controls,
-            failedUndoIds: selection.failedUndoIds,
+            followingBatches: selection.followingBatches,
+            failedUndoIds: preparationError
+              ? new Set(
+                  selection.controls
+                    ?.filter((c) => c.body.kind === "compaction_undo")
+                    .map((c) => c.id),
+                )
+              : selection.failedUndoIds,
+            continueAfterControls: selection.outstanding.length > 0,
             pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
             turns: [
               ...inheritedTurns,
@@ -588,6 +602,7 @@ async function runDrainTurn(
             baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
             signal: input.signal,
           });
+          preparationError = null;
         } catch (error) {
           if (input.signal?.aborted) throw error;
           preparationError = asError(error);
@@ -597,20 +612,37 @@ async function runDrainTurn(
         preflight = null;
         skillBody = null;
         plan = makePlan([]);
+        if (preparationError instanceof UndoRequestPreparationError) {
+          failedControls = preparationError.after(plan.turns.at(-1) ?? previousTurn);
+        } else if (selection.controls?.some((c) => c.body.kind === "compaction_undo")) {
+          failedControls = await prepareFailedUndoHistory({
+            deps,
+            thread: setupThread,
+            threadId: input.threadId,
+            referenceTurnId: referenceUserTurnId,
+            currentTurnId: reservedTurnId,
+            turns: [...inheritedTurns, ...priorTurns, ...plan.turns],
+            blocks: [],
+            controls: selection.controls,
+            followingBatches: selection.followingBatches,
+            signal: input.signal,
+          });
+        }
       }
+      const controlPreparation = preflight ?? failedControls;
       if (preflight)
         preflight.compaction = absorbPendingCompact(preflight.compaction, selection.headControl);
       const controlId =
         preflight?.compaction.kind === "compact"
           ? (preflight.compaction.controlMessageId ?? preflight.compaction.satisfiesControlId)
           : undefined;
-      const imageUpdateTurn = preflight?.turns.at(-1);
+      const imageUpdateTurn = controlPreparation?.turns.at(-1);
       const terminal =
-        !!preflight?.undos.length &&
+        !!controlPreparation?.undos.length &&
         selection.outstanding.length === 0 &&
-        preflight.compaction.kind !== "compact";
+        preflight?.compaction.kind !== "compact";
       const reservedTurn = terminal
-        ? preflight!.undos.at(-1)!.turn
+        ? controlPreparation!.undos.at(-1)!.turn
         : reservationTurn(
             {
               id: reservedTurnId,
@@ -623,7 +655,7 @@ async function runDrainTurn(
             },
             preflight?.compaction,
           );
-      if (preparationError && selection.control) {
+      if (preparationError && selection.control?.body.kind === "compact") {
         reservedTurn.role = "compaction";
         reservedTurn.origin = "system";
         reservedTurn.status = "pending";
@@ -649,14 +681,14 @@ async function runDrainTurn(
             ]
           : []),
         ...plan.events,
-        ...(preflight?.events ?? []),
+        ...(controlPreparation?.events ?? []),
         ...(!terminal ? [{ type: "turn.created" as const, turn: reservedTurn }] : []),
       ];
       return {
         value,
         turnId: reservedTurn.id,
         terminal,
-        completedControlIds: preflight?.undos.map(
+        completedControlIds: controlPreparation?.undos.map(
           (u) =>
             (u.turn.metadata as import("@meridian/contracts/threads").JsonObject)
               .controlMessageId as string,
@@ -664,9 +696,10 @@ async function runDrainTurn(
         turnKind: terminal ? ("assistant" as const) : currentTurnKind(reservedTurn),
         messageIds: [
           ...batch.map(({ id }) => id),
+          ...(controlPreparation?.adoptedIds ?? []),
           ...(controlId
             ? [controlId]
-            : preparationError && selection.control
+            : preparationError && selection.control?.body.kind === "compact"
               ? [selection.control.id]
               : []),
         ],
@@ -686,11 +719,18 @@ async function runDrainTurn(
               reservedTurn.writeMode = setupThread.workId
                 ? await deps.workWriteMode.read(setupThread.workId)
                 : "direct";
-              return { result: undefined, events };
+              return {
+                result: undefined,
+                events: await persistPreparedControlEvents(
+                  deps,
+                  input.threadId,
+                  events,
+                  controlPreparation?.undos ?? [],
+                ),
+              };
             },
             {
               afterEvents: async () => {
-                await completePreparedUndos(deps, input.threadId, preflight?.undos ?? []);
                 if (selection.outstanding.length > 0)
                   await admitRunExecution(deps, input, setupThread, reservedTurn.id);
               },
@@ -1544,7 +1584,8 @@ async function executeLoop(
       lease: input.lease,
       currentTurn: currentTurn,
       current: { kind: "assistant" },
-      continueTask: continuingTask,
+      // Turn-end controls defer to a new run; an assistant boundary here has a task to continue.
+      continueTask: continuingTask || currentTurn.role === "assistant",
       admit: async (turn) => {
         if (
           thread.kind === "subagent" &&
@@ -1619,6 +1660,7 @@ async function executeLoop(
               throw new Error("Undo revision query requires no open response scope");
           },
           controls: selection.controls,
+          followingBatches: selection.followingBatches,
           failedUndoIds: selection.failedUndoIds,
           pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
         });
@@ -1627,6 +1669,7 @@ async function executeLoop(
         return {
           events: prepared.events,
           undos: prepared.undos,
+          adoptedIds: prepared.adoptedIds,
           turns: prepared.turns,
           blocks: prepared.blocks,
           requiresSplit: prepared.events.length > 0,

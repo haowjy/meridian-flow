@@ -1,8 +1,12 @@
-import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 /** Request preparation stages references and image decisions without writes, then measures compaction. */
+import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Thread, Turn } from "@meridian/contracts/threads";
-import { encodeImageInclusionMetadata, type ImageContextBreak } from "../../threads/index.js";
+import {
+  encodeImageInclusionMetadata,
+  type ImageContextBreak,
+  revertedCompactionIds,
+} from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import type { Tool } from "../gateway/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
@@ -15,10 +19,12 @@ import {
 import { type PreparedUndo, prepareCompactionUndo } from "./compaction-undo.js";
 import type { ControlMessage } from "./control-barrier.js";
 import type { CompactionImageProjectionMode, ImageInclusionDecision } from "./image-context.js";
+import { planMessageTurns } from "./inbox-context.js";
 import { createLocalTurn } from "./local-turn.js";
 import type { OrchestratorDeps, OrchestratorRepositories } from "./orchestrator.js";
 import { createPrefixCacheStateService } from "./prefix-cache-state.js";
 import { loadReferenceReads } from "./reference-context.js";
+import type { DeliverySelection } from "./runtime-delivery.js";
 import { type AssembledNextTurnContext, assembleNextTurnContext } from "./turn-context-assembly.js";
 
 export type PrepareRequestInput = {
@@ -36,6 +42,8 @@ export type PrepareRequestInput = {
   imageProjectionMode?: CompactionImageProjectionMode;
   controlMessageId?: string;
   controls?: readonly ControlMessage[];
+  continueAfterControls?: boolean;
+  followingBatches?: DeliverySelection["followingBatches"];
   failedUndoIds?: ReadonlySet<string>;
   assertNoResponseScope?: () => void;
   pinnedRequestTurnIds?: ReadonlySet<string>;
@@ -44,6 +52,7 @@ export type PrepareRequestInput = {
 };
 export type PreparedRequest = {
   undos: PreparedUndo[];
+  adoptedIds: string[];
   turns: Turn[];
   blocks: Block[];
   assembled: AssembledNextTurnContext;
@@ -51,74 +60,162 @@ export type PreparedRequest = {
   compaction: CompactionDecision;
 };
 
+export type PreparedControlHistory = Omit<PreparedRequest, "assembled" | "compaction"> & {
+  historyTurns: Turn[];
+  historyBlocks: Block[];
+};
+export class UndoRequestPreparationError extends Error {
+  constructor(
+    readonly prepared: PreparedControlHistory,
+    cause: unknown,
+  ) {
+    super("Request preparation failed after undo", { cause });
+  }
+  after(leaf: Pick<Turn, "id" | "position"> | null): PreparedControlHistory {
+    let previous = leaf;
+    for (const turn of this.prepared.turns) {
+      turn.prevTurnId = previous?.id ?? null;
+      turn.position = nextTurnPosition(previous);
+      previous = turn;
+    }
+    return this.prepared;
+  }
+}
+
+export function prepareFailedUndoHistory(
+  input: PrepareRequestInput,
+): Promise<PreparedControlHistory> {
+  return prepareControlHistory({
+    ...input,
+    failedUndoIds: new Set(
+      input.controls?.filter((c) => c.body.kind === "compaction_undo").map((c) => c.id),
+    ),
+  });
+}
+
 export async function prepareRequestContext(input: PrepareRequestInput): Promise<PreparedRequest> {
+  const history = await prepareControlHistory(input);
+  const compact = input.controls?.find((c) => c.body.kind === "compact");
+  try {
+    const prepared = await prepareBaseRequest({
+      ...input,
+      turns: history.historyTurns,
+      blocks: history.historyBlocks,
+      controlMessageId: compact?.id ?? input.controlMessageId,
+      skipCompaction:
+        !compact &&
+        history.undos.length > 0 &&
+        (history.undos.some((u) => u.turn.status === "complete") ||
+          input.continueAfterControls === false)
+          ? true
+          : input.skipCompaction,
+    });
+    return {
+      ...prepared,
+      ...history,
+      events: [...history.events, ...prepared.events],
+      turns: [...history.turns, ...prepared.assembled.imageContextUpdates.turns],
+      blocks: [...history.blocks, ...prepared.assembled.imageContextUpdates.blocks],
+    };
+  } catch (error) {
+    if (input.signal?.aborted || history.undos.length === 0) throw error;
+    if (history.undos.every((u) => u.turn.status === "error"))
+      throw new UndoRequestPreparationError(history, error);
+    const failedUndoIds = new Set(
+      history.undos.map(
+        (u) =>
+          (u.turn.metadata as import("@meridian/contracts/threads").JsonObject)
+            .controlMessageId as string,
+      ),
+    );
+    const failed = await prepareControlHistory({ ...input, failedUndoIds });
+    throw new UndoRequestPreparationError(failed, error);
+  }
+}
+
+async function prepareControlHistory(input: PrepareRequestInput): Promise<PreparedControlHistory> {
   const undos: PreparedUndo[] = [];
+  const addedTurns: Turn[] = [];
+  const addedBlocks: Block[] = [];
+  const events: OrchestratorEvent[] = [];
+  const adoptedIds: string[] = [];
   let turns = input.turns;
   let blocks = input.blocks;
   for (const control of input.controls ?? []) {
     if (control.body.kind !== "compaction_undo") continue;
+    const following = input.followingBatches?.find((s) => s.afterControlId === control.id);
+    const planFollowing = (u: Turn) =>
+      planMessageTurns({
+        threadId: input.threadId,
+        batch: following?.batch ?? [],
+        workContext: following?.workContext,
+        prevTurnId: u.id,
+        prevTurnPosition: u.position,
+        knownTurnIds: new Set(turns.map((t) => t.id)),
+      });
     const undo = await prepareCompactionUndo({
       ...input,
       turns,
       blocks,
       control,
       forceFailure: input.failedUndoIds?.has(control.id),
-      assemble: async (turns, blocks) =>
-        (
+      assemble: async (restoredTurns, restoredBlocks) => {
+        const plan = planFollowing(restoredTurns.at(-1)!);
+        return (
           await prepareBaseRequest({
             ...input,
-            turns,
-            blocks,
+            turns: [...restoredTurns, ...plan.turns],
+            blocks: [...restoredBlocks, ...plan.blocks.map(localBlockFromEvent)],
             skipCompaction: true,
             controlMessageId: undefined,
           })
-        ).assembled,
+        ).assembled;
+      },
     });
+    const { turn } = undo;
     undos.push(undo);
-    turns = [...turns, undo.turn];
-    if (undo.block) blocks = [...blocks, localBlockFromEvent(undo.block)];
+    events.push({
+      type: "turn.created",
+      turn: turn.status === "complete" ? { ...turn, status: "pending", promptBakeId: null } : turn,
+    });
+    if (turn.status === "error")
+      events.push({
+        type: "turn.error",
+        turn,
+        error: meridianErrorFromSystem(turn.error!, turn.error!),
+      });
+    const plan = planFollowing(turn);
+    events.push(...plan.events);
+    const nextTurns = [turn, ...plan.turns];
+    const nextBlocks = [
+      ...(undo.block ? [localBlockFromEvent(undo.block)] : []),
+      ...plan.blocks.map(localBlockFromEvent),
+    ];
+    addedTurns.push(...nextTurns);
+    addedBlocks.push(...nextBlocks);
+    turns = [...turns, ...nextTurns];
+    blocks = [...blocks, ...nextBlocks];
+    adoptedIds.push(...(following?.ackIds ?? []));
   }
-  const compact = input.controls?.find((c) => c.body.kind === "compact");
-  const prepared = await prepareBaseRequest({
-    ...input,
-    turns,
-    blocks,
-    controlMessageId: compact?.id ?? input.controlMessageId,
-    skipCompaction: undos.length > 0 && !compact ? true : input.skipCompaction,
-  });
   return {
-    ...prepared,
     undos,
-    events: [
-      ...undos.flatMap(({ turn }): OrchestratorEvent[] => [
-        {
-          type: "turn.created",
-          turn:
-            turn.status === "complete" ? { ...turn, status: "pending", promptBakeId: null } : turn,
-        },
-        ...(turn.status === "error"
-          ? [
-              {
-                type: "turn.error" as const,
-                turn,
-                error: meridianErrorFromSystem(turn.error!, turn.error!),
-              },
-            ]
-          : []),
-      ]),
-      ...prepared.events,
-    ],
-    turns: [...undos.map((u) => u.turn), ...prepared.assembled.imageContextUpdates.turns],
-    blocks: [
-      ...undos.flatMap((u) => (u.block ? [localBlockFromEvent(u.block)] : [])),
-      ...prepared.assembled.imageContextUpdates.blocks,
-    ],
+    adoptedIds,
+    events,
+    turns: addedTurns,
+    blocks: addedBlocks,
+    historyTurns: turns,
+    historyBlocks: blocks,
   };
 }
 
 async function prepareBaseRequest(
   input: PrepareRequestInput,
-): Promise<Omit<PreparedRequest, "undos" | "turns" | "blocks">> {
+): Promise<Omit<PreparedRequest, "undos" | "adoptedIds" | "turns" | "blocks">> {
+  const imageProjectionMode =
+    input.imageProjectionMode &&
+    revertedCompactionIds(input.turns).has(input.imageProjectionMode.decidingTurnId)
+      ? undefined
+      : input.imageProjectionMode;
   const referenceUpdates =
     input.readReferences === false
       ? []
@@ -153,7 +250,7 @@ async function prepareBaseRequest(
     gateway: input.deps.gateway,
     imageAssets: input.deps.imageAssets,
     imageInclusions: input.deps.repos.imageInclusions,
-    imageProjectionMode: input.imageProjectionMode,
+    imageProjectionMode,
     signal: input.signal,
     baseTools: input.baseTools ?? input.deps.toolExecutor.getDefinitions?.(),
     promptBakes: input.promptBakes ?? input.deps.repos.promptBakes,
