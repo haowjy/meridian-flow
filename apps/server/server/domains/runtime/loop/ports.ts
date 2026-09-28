@@ -79,7 +79,15 @@ export interface Lease {
   holderId: string;
 }
 
+/** A held thread claim without an observable run lease. */
+export interface HeldRunClaim {
+  release(): Promise<void>;
+  onLost(listener: () => void): () => void;
+}
+
 export interface RunClaim {
+  /** Takes the shared run mutex without publishing a run lease. */
+  hold(threadId: ThreadId): Promise<HeldRunClaim | null>;
   /** Short exclusive work uses the same claim without minting an observable lease. */
   withExclusiveThread<T>(threadId: ThreadId, operation: () => Promise<T>): Promise<T | null>;
   startExecution(threadId: ThreadId, runId: RunId): Promise<Lease | null>;

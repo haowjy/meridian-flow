@@ -48,6 +48,8 @@ export function createDrizzleRunClaim(
       gt(schema.threadRunLeases.expiresAt, new Date()),
     );
 
+  const hold = (threadId: ThreadId) => lock.tryAcquire(`meridian:thread-run:${threadId}`);
+
   const toThreadStatus = (row: { phase: string; cancelRequested: boolean }): ThreadStatus => ({
     kind: "awake",
     phase: row.phase as ThreadPhase,
@@ -66,8 +68,9 @@ export function createDrizzleRunClaim(
       .from(schema.threadRunLeases);
 
   return {
+    hold,
     async withExclusiveThread(threadId, operation) {
-      const claim = await lock.tryAcquire(`meridian:thread-run:${threadId}`);
+      const claim = await hold(threadId);
       if (!claim) return null;
       try {
         return await operation();
@@ -76,7 +79,7 @@ export function createDrizzleRunClaim(
       }
     },
     async startExecution(threadId, runId) {
-      const claim = await lock.tryAcquire(`meridian:thread-run:${threadId}`);
+      const claim = await hold(threadId);
       if (!claim) return null;
       const acquiredAt = new Date();
       try {

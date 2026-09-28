@@ -159,18 +159,35 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
     return lease;
   };
 
+  async function hold(threadId: ThreadId) {
+    if (shortClaims.has(threadId) || leases.has(threadId)) return null;
+    shortClaims.add(threadId);
+    let held = true;
+    return {
+      async release() {
+        if (!held) return;
+        held = false;
+        shortClaims.delete(threadId);
+      },
+      onLost() {
+        return () => undefined;
+      },
+    };
+  }
+
   return {
     readDeliveryRun(threadId) {
       const row = liveLease(threadId);
       return row ? { turnId: row.turnId, messageIds: [...row.messageIds] } : null;
     },
+    hold,
     async withExclusiveThread(threadId, operation) {
-      if (shortClaims.has(threadId) || leases.has(threadId)) return null;
-      shortClaims.add(threadId);
+      const claim = await hold(threadId);
+      if (!claim) return null;
       try {
         return await operation();
       } finally {
-        shortClaims.delete(threadId);
+        await claim.release();
       }
     },
     async startExecution(threadId, runId) {
