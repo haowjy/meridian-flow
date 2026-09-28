@@ -130,22 +130,6 @@ export function isOverflowShell(turn: Turn, next: Turn | undefined): boolean {
   );
 }
 
-/**
- * The snapshot's undo availability, while it can still be current. A running
- * compaction will replace the divider it names, and the snapshot only learns
- * that when the compaction settles: until then no divider offers Undo.
- */
-export function currentUndoAvailability(
-  turns: readonly Turn[],
-  availability: CompactionUndoAvailability,
-): CompactionUndoAvailability {
-  const compacting = turns.some(
-    (turn) =>
-      turn.role === "compaction" && (turn.status === "pending" || turn.status === "streaming"),
-  );
-  return compacting ? null : availability;
-}
-
 export type DividerState = "pending" | "complete" | "failed" | "cancelled" | "undone";
 
 export type DividerUndo =
@@ -179,7 +163,8 @@ const ACTIVE_UNDO: ReadonlySet<QueuedControl["status"]> = new Set([
 
 /**
  * One divider's view state. `failureCopyFor` supplies client-owned copy for
- * reasons whose server copy would mislead (see `compaction-copy.ts`).
+ * reasons whose server copy would mislead (`compactionFailureCopy` in
+ * `CompactionDivider.tsx`).
  */
 export function dividerView(input: {
   turn: Turn;

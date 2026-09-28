@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import {
   answeredControlIds,
   collectUndoMarkers,
-  currentUndoAvailability,
   dividerView,
   isOverflowShell,
   NO_UNDO_MARKERS,
@@ -292,19 +291,5 @@ describe("isOverflowShell (R4)", () => {
     );
     expect(isOverflowShell({ ...empty, status: "error" } as Turn, compaction())).toBe(false);
     expect(isOverflowShell(empty, undefined)).toBe(false);
-  });
-});
-
-describe("currentUndoAvailability", () => {
-  const likely = { turnId: "c", availability: "likely" } as const;
-
-  it("passes the snapshot's availability through while nothing compacts", () => {
-    expect(currentUndoAvailability([compaction()], likely)).toBe(likely);
-  });
-
-  it("withholds Undo everywhere while a newer compaction runs", () => {
-    expect(
-      currentUndoAvailability([compaction(), compaction({ id: "c2", status: "pending" })], likely),
-    ).toBeNull();
   });
 });
