@@ -154,6 +154,16 @@ describe("the handoff picker", () => {
       async () => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined))),
     );
     expect(document.querySelector('[aria-label="Hand off to an Agent"]')).not.toBeNull();
+    const critic = [...document.querySelectorAll<HTMLButtonElement>("button[aria-pressed]")].find(
+      (row) => row.textContent?.includes("Critic"),
+    );
+    await act(async () => {
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true }),
+      );
+      critic?.focus();
+    });
+    expect(document.querySelector('[role="tooltip"]')).not.toBeNull();
     await act(async () => {
       document.activeElement?.dispatchEvent(
         new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
@@ -161,6 +171,34 @@ describe("the handoff picker", () => {
     });
     expect(document.querySelector('[aria-label="Hand off to an Agent"]')).toBeNull();
     expect(value.handoff).not.toHaveBeenCalled();
+  });
+});
+
+describe("the picker's row tooltips", () => {
+  it("wait for the writer to move through the list, not the focus the picker lands on open", async () => {
+    await render(derivation());
+    const trigger = button("Hand off from here");
+    await act(async () => {
+      trigger?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+      trigger?.click();
+    });
+    await act(
+      async () => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined))),
+    );
+    const rows = [...document.querySelectorAll<HTMLButtonElement>("button[aria-pressed]")];
+    expect(document.activeElement?.textContent).toContain("General");
+    expect(document.querySelector('[role="tooltip"]')).toBeNull();
+
+    // Shift+Tab to the row above: now the writer is reading the list.
+    const general = rows.find((row) => row.textContent?.includes("General"));
+    const critic = rows.find((row) => row.textContent?.includes("Critic"));
+    await act(async () => {
+      general?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true }),
+      );
+      critic?.focus();
+    });
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain("Critic (mock)");
   });
 });
 
