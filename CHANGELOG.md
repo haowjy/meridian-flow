@@ -17,6 +17,8 @@
 - Fix: the invalid-character name warning showed a raw "{0}".
 - `server`: Works drop `description` (migration 0010); `GET /api/works/:workId/threads` is removed in favor of the project chat feed's `workId` filter.
 
+- Resolve context preview kinds once and cache signed text reads through TanStack Query.
+- Localize dock file locations, preserve the writer's explicit view around file previews, and route Open in Editor from the dock file view.
 - Keep writer messages visible after the reply starts; only machine-delivered inbox messages fold into activity rows.
 - Show only "Queued" under a writer message the model has not read yet.
 - Keep "needs your answer" on a chat when the writer sends while a question is parked.

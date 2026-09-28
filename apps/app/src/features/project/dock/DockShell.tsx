@@ -19,18 +19,15 @@
  * `inert` rather than unmounted. Changes overlays it, so nothing reflows.
  */
 
-import { Trans } from "@lingui/react/macro";
 import { type ReactNode, useEffect } from "react";
-import type { ContextTab } from "@/client/stores";
-import { Button } from "@/components/ui/button";
 
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { hasDockChanges } from "@/features/chat/docked-drafts";
 import { cn } from "@/lib/utils";
-import { ContextViewerBareHost } from "../context/ContextViewerHost";
 
 import type { ScreenKey } from "../shell/screens";
 import { DockChangesView } from "./DockChangesView";
+import { DockFileView } from "./DockFileView";
 import type { DockHeaderSlotArgs } from "./DockHeader";
 import { useDockView, withoutEmptyChanges } from "./dock-view-store";
 
@@ -40,7 +37,6 @@ export type DockShellProps = {
   screen: ScreenKey;
   /** Renders the dock's header from the current view-switch state; called only in `dock` placement. */
   renderHeader: (args: DockHeaderSlotArgs) => ReactNode;
-  onOpenFileInEditor?: (tab: Extract<ContextTab, { kind: "viewer" }>) => void;
   children: ReactNode | ((showPrimary: boolean) => ReactNode);
 };
 
@@ -49,18 +45,22 @@ export function DockShell({
   placement,
   screen,
   renderHeader,
-  onOpenFileInEditor,
   children,
 }: DockShellProps) {
   const dockView = useDockView(screen);
   const { groups } = useDraftReview();
   const hasChanges = hasDockChanges(groups);
   const { view, views, primaryView } = withoutEmptyChanges(dockView, hasChanges);
-  const { setView, file, closeFile } = dockView;
+  const { setView, file } = dockView;
   const inDock = placement === "dock";
-  const showPrimary = !inDock || view === primaryView || view === "chat";
-  const showFile = inDock && screen === "work" && view === "file" && file !== null;
-  const showChanges = inDock && view === "changes";
+  const overlay = !inDock
+    ? null
+    : view === "file" && screen === "work" && file
+      ? "file"
+      : view === "changes"
+        ? "changes"
+        : null;
+  const showPrimary = overlay === null;
 
   useEffect(() => {
     if (!hasChanges && dockView.view === "changes") {
@@ -75,51 +75,23 @@ export function DockShell({
             view,
             views,
             onSelectView: setView,
-            fileTab: file?.tab,
-            onCloseFile: closeFile,
           })
         : null}
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div
           className={cn(
             "flex min-h-0 flex-1 flex-col",
-            (!showPrimary || showFile) && "pointer-events-none opacity-0",
+            !showPrimary && "pointer-events-none opacity-0",
           )}
-          inert={!showPrimary || showFile}
-          aria-hidden={!showPrimary || showFile}
+          inert={!showPrimary}
+          aria-hidden={!showPrimary}
         >
           {typeof children === "function" ? children(showPrimary) : children}
         </div>
-        {showChanges ? <DockChangesView className="absolute inset-0" /> : null}
-        {showFile && file ? (
+        {overlay === "changes" ? <DockChangesView className="absolute inset-0" /> : null}
+        {overlay === "file" && file ? (
           <div className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
-            <ContextViewerBareHost
-              projectId={projectId}
-              editorWorkId={file.workId}
-              tab={file.tab}
-              header={{
-                location: {
-                  name: file.tab.scheme === "scratch" ? "Scratch" : "Uploads",
-                  ...(file.tab.path.split("/").filter(Boolean).length > 1
-                    ? {
-                        folder: file.tab.path.split("/").filter(Boolean).slice(0, -1).join(", "),
-                      }
-                    : {}),
-                },
-                action: onOpenFileInEditor ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      closeFile();
-                      onOpenFileInEditor(file.tab);
-                    }}
-                  >
-                    <Trans>Open in Editor</Trans>
-                  </Button>
-                ) : undefined,
-              }}
-            />
+            <DockFileView projectId={projectId} file={file} />
           </div>
         ) : null}
       </div>

@@ -1054,10 +1054,8 @@ msgstr "Choose Work for new chat, currently {unavailableLabel}"
 msgid "Close"
 msgstr "Close"
 
-#. placeholder {0}: fileTab.name
 #. placeholder {0}: tab.name
 #: src/features/project/context/ContextTabBar.tsx
-#: src/features/project/dock/DockHeader.tsx
 msgid "Close {0}"
 msgstr "Close {0}"
 
@@ -2990,7 +2988,7 @@ msgstr "Open existing"
 msgid "Open full screen"
 msgstr "Open full screen"
 
-#: src/features/project/dock/DockShell.tsx
+#: src/features/project/dock/DockFileView.tsx
 msgid "Open in Editor"
 msgstr "Open in Editor"
 
@@ -3663,6 +3661,7 @@ msgid "scene break"
 msgstr "scene break"
 
 #: src/features/project/context/context-schemes.ts
+#: src/features/project/dock/dock-view-store.ts
 #: src/features/project/work/WorkFilesView.tsx
 msgid "Scratch"
 msgstr "Scratch"
@@ -4680,6 +4679,7 @@ msgid "Uploading…"
 msgstr "Uploading…"
 
 #: src/features/project/context/context-schemes.ts
+#: src/features/project/dock/dock-view-store.ts
 #: src/features/project/work/WorkFilesView.tsx
 msgid "Uploads"
 msgstr "Uploads"

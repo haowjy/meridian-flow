@@ -4,7 +4,7 @@
 
 The right dock is a **view container** that sits in the project shell's `dock`
 grid slot. It has per-screen view sets (Chat-main: Context | Changes;
-Context-main: Chat | Changes) and a single header row with a contained
+Work/Editor-main: Chat | Changes, with transient File on Work) and a single header row with a contained
 segmented switch.
 The **Changes** view is the work-scoped settle surface: every document with
 pending AI changes, grouped into server-vended Discard-class cards carrying
@@ -45,10 +45,11 @@ finds an active draft.
    `children` when `view === "changes"` — hide it (opacity-0, inert). Chat state
    and document sessions must survive a view switch.
 
-3. **resolveDockView is a pure fallback.** `resolveDockView(screen, stored)` is
-   a pure function with no React dependency — testable in isolation. It defaults
-   to the occupant's native view when no stored choice exists, and falls back
-   when a stored choice is invalid for the current screen's set.
+3. **resolveDockView is a pure fallback.** `resolveDockView(screen, stored, hasFile)`
+   is a pure function with no React dependency — testable in isolation. It defaults
+   to the occupant's native view when no stored choice exists, falls back when a
+   stored choice is invalid for the current screen's set, and adds a transient
+   File segment only while a Work file is available.
 
 4. **Session-only view store.** `useDockViewStore` has no `persist`. A fresh
    reload starts from defaults — no stale view survives. Placement, width, and

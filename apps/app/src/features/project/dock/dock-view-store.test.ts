@@ -1,5 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { useDockViewStore } from "./dock-view-store";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { dockFileLocation, resolveDockView, useDockViewStore } from "./dock-view-store";
+
+vi.mock("@lingui/core/macro", () => ({
+  t: (strings: TemplateStringsArray) => strings[0],
+}));
 
 const tab = (path: string) => ({
   kind: "viewer" as const,
@@ -15,39 +19,84 @@ const tab = (path: string) => ({
 afterEach(() => useDockViewStore.setState({ byScreen: {}, workFile: null }));
 
 describe("Work dock file view", () => {
-  it("opens and replaces the one transient file slot", () => {
+  it("localizes its location label and joins parent folders with commas", () => {
+    expect(
+      dockFileLocation({ ...tab("/arc/volume/Note.md"), path: "/arc/volume/Note.md" }),
+    ).toEqual({
+      name: "Scratch",
+      folder: "arc, volume",
+    });
+    expect(dockFileLocation({ ...tab("/Map.png"), scheme: "uploads", path: "/Map.png" })).toEqual({
+      name: "Uploads",
+    });
+  });
+
+  it("resolves per-screen defaults and adds File only while a Work file exists", () => {
+    expect(resolveDockView("work", undefined, false)).toEqual({
+      view: "chat",
+      views: ["chat", "changes"],
+      primaryView: "chat",
+    });
+    expect(resolveDockView("work", "context", true)).toEqual({
+      view: "chat",
+      views: ["chat", "file", "changes"],
+      primaryView: "chat",
+    });
+    expect(resolveDockView("chat", "chat", true)).toEqual({
+      view: "context",
+      views: ["context", "changes"],
+      primaryView: "context",
+    });
+  });
+
+  it("opens and replaces the transient file slot without replacing the explicit view", () => {
     const store = useDockViewStore.getState();
+    store.setDockView("work", "changes");
     store.openWorkFile({ workId: "work-a", tab: tab("first.md") });
-    expect(useDockViewStore.getState().workFile?.tab.path).toBe("first.md");
+    expect(useDockViewStore.getState().workFile).toMatchObject({
+      workId: "work-a",
+      tab: { path: "first.md" },
+      active: true,
+    });
+    expect(useDockViewStore.getState().byScreen.work).toBe("changes");
+
     useDockViewStore.getState().openWorkFile({ workId: "work-a", tab: tab("second.md") });
     expect(useDockViewStore.getState().workFile?.tab.path).toBe("second.md");
-    expect(useDockViewStore.getState().byScreen.work).toBe("file");
   });
 
-  it("closes back to Chat", () => {
+  it("closes to the previous explicit view", () => {
+    useDockViewStore.getState().setDockView("work", "changes");
     useDockViewStore.getState().openWorkFile({ workId: "work-a", tab: tab("first.md") });
     useDockViewStore.getState().closeWorkFile();
-    expect(useDockViewStore.getState().workFile).toBeNull();
-    expect(useDockViewStore.getState().byScreen.work).toBe("chat");
+
+    const state = useDockViewStore.getState();
+    expect(state.workFile).toBeNull();
+    expect(state.byScreen.work).toBe("changes");
+    expect(resolveDockView("work", state.byScreen.work, false).view).toBe("changes");
   });
 
-  it("clears when navigating to another Work, the collection, or another screen", () => {
+  it("lets an explicit view choice leave the file slot available to revisit", () => {
     useDockViewStore.getState().openWorkFile({ workId: "work-a", tab: tab("first.md") });
-    useDockViewStore.getState().syncWorkDestination("work", "work-b");
-    expect(useDockViewStore.getState().workFile).toBeNull();
-    expect(useDockViewStore.getState().byScreen.work).toBe("chat");
-    useDockViewStore
-      .getState()
-      .openWorkFile({ workId: "work-b", tab: { ...tab("second.md"), workId: "work-b" } });
-    useDockViewStore.getState().syncWorkDestination("work", null);
-    expect(useDockViewStore.getState().workFile).toBeNull();
-    expect(useDockViewStore.getState().byScreen.work).toBe("chat");
+    useDockViewStore.getState().setDockView("work", "chat");
 
-    useDockViewStore
-      .getState()
-      .openWorkFile({ workId: "work-b", tab: { ...tab("third.md"), workId: "work-b" } });
-    useDockViewStore.getState().syncWorkDestination("chat", null);
-    expect(useDockViewStore.getState().workFile).toBeNull();
+    expect(useDockViewStore.getState().workFile).toMatchObject({ active: false });
     expect(useDockViewStore.getState().byScreen.work).toBe("chat");
+    useDockViewStore.getState().setDockView("work", "file");
+    expect(useDockViewStore.getState().workFile).toMatchObject({ active: true });
+  });
+
+  it("clears the slot when entering another Work or leaving the Work destination", () => {
+    useDockViewStore.getState().openWorkFile({ workId: "work-a", tab: tab("first.md") });
+    useDockViewStore.getState().enterWork("work-a");
+    expect(useDockViewStore.getState().workFile?.tab.path).toBe("first.md");
+
+    useDockViewStore.getState().enterWork("work-b");
+    expect(useDockViewStore.getState().workFile).toBeNull();
+    expect(useDockViewStore.getState().byScreen.work).toBeUndefined();
+
+    useDockViewStore.getState().openWorkFile({ workId: "work-b", tab: tab("second.md") });
+    useDockViewStore.getState().leaveWork();
+    expect(useDockViewStore.getState().workFile).toBeNull();
+    expect(useDockViewStore.getState().byScreen.work).toBeUndefined();
   });
 });

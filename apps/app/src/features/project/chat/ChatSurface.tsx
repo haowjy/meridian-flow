@@ -18,7 +18,6 @@
  */
 import type { Work } from "@meridian/contracts/protocol";
 import type { ReactNode } from "react";
-import type { ContextTab } from "@/client/stores";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
 import { cn } from "@/lib/utils";
 import { DockHeader, type DockHeaderProps } from "../dock/DockHeader";
@@ -50,7 +49,6 @@ export type ChatSurfaceProps = {
    */
   onCloseDock?: () => void;
   onOpenContextTarget?: (target: ContextRouteTarget) => void;
-  onOpenFileInEditor?: (tab: Extract<ContextTab, { kind: "viewer" }>) => void;
   /** Dock header renderer; omit for the default desktop header. The phone chat sheet supplies its own. */
   renderHeader?: (args: DockHeaderProps) => ReactNode;
 };
@@ -65,7 +63,6 @@ export function ChatSurface({
   visible,
   onCloseDock,
   onOpenContextTarget,
-  onOpenFileInEditor,
   renderHeader,
 }: ChatSurfaceProps) {
   const threadSelect = <ChatThreadTitle projectId={projectId} threadId={threadId} />;
@@ -86,7 +83,6 @@ export function ChatSurface({
         projectId={projectId}
         placement={placement}
         screen={activeScreen}
-        onOpenFileInEditor={onOpenFileInEditor}
         renderHeader={(args) => {
           const headerProps: DockHeaderProps = {
             ...args,

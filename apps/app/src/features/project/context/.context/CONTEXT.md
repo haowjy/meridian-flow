@@ -64,9 +64,14 @@ ContextPaneController
               ├─ DraftReviewHeader (review strip, above the identity bar)
               ├─ DocumentIdentityBar (breadcrumb + chips, incl. DraftReviewChip)
               ├─ ContextEditorMountHost (warm tracked + local-resource Yjs editors)
-              ├─ ContextViewerHost (active binary viewer)
+              ├─ ContextViewerHost (active read-only viewer)
               └─ RecentDocumentsLanding (empty workspace only)
 ```
+
+`ContextViewerHost` selects one read-only surface through `previewKind`. A
+tracked-classified viewer read renders as text in every host; collaborative
+editing remains in `ContextEditorMountHost`. URL-backed text previews use a
+TanStack query so reopening a signed preview can reuse its read.
 
 `RecentDocumentsLanding` is the empty pane. It lists this project's recently-opened
 documents and navigates on click. It does not open a tab on mount. The tab
