@@ -4,7 +4,7 @@ import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import type { CompactionUndoAvailability, ThreadPhase } from "@meridian/contracts/threads";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { Button } from "@/components/ui/button";
 import { AssistantTurn } from "./AssistantTurn";
@@ -16,7 +16,11 @@ import { answeredControlIds } from "./compaction/compaction-model";
 import { QueuedControlRows } from "./compaction/QueuedControlRows";
 import type { QueuedControl } from "./compaction/thread-controls";
 import type { ThreadControls } from "./compaction/useThreadControls";
-import { buildTranscriptModel, type TranscriptRow } from "./transcript-model";
+import { HandoffBriefCard } from "./derivation/HandoffBriefCard";
+import { isOptimisticSeed } from "./derivation/handoff-seed";
+import { ForkPointRule, InheritedSourceHeader } from "./derivation/InheritedMarks";
+import type { InheritedView } from "./derivation/inherited-view";
+import { buildTranscriptModel, type InheritedMark, type TranscriptRow } from "./transcript-model";
 
 export { continuesResponse } from "./transcript-model";
 
@@ -49,6 +53,8 @@ export type TurnListProps = {
   compactionUndo?: CompactionUndoAvailability;
   /** The live lease phase while the thread is awake. */
   phase?: ThreadPhase | null;
+  /** A fork's frozen prefix from its source, rendered read-only above its own turns. */
+  inherited?: InheritedView | null;
   threadUsage?: {
     inputTokens: number;
     cacheReadTokens: number;
@@ -86,14 +92,16 @@ export function TurnList({
   controls = null,
   compactionUndo = null,
   phase = null,
+  inherited = null,
   threadUsage = null,
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const navigateToChange = useChangeTrailNavigation(threadId);
   const bottomInset = useChatSurfaceBottomInset();
+  const inheritedTranscript = inherited?.transcript ?? null;
   const transcript = useMemo(
-    () => buildTranscriptModel(turns, awaitingSubagents),
-    [turns, awaitingSubagents],
+    () => buildTranscriptModel(turns, awaitingSubagents, inheritedTranscript),
+    [turns, awaitingSubagents, inheritedTranscript],
   );
   const visibleTurns = transcript.visibleTurns;
   const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
@@ -123,6 +131,10 @@ export function TurnList({
     }
     return { undoByDividerId, tailControls };
   }, [controls?.queued, transcript.rows, turns]);
+  // The server refuses a second brief while one waits, so the card hides Retry.
+  const briefRetryPending = tailControls.some(
+    (control) => control.control.kind === "handoff_brief" && isActiveControl(control),
+  );
   const listRows = useMemo<ListRow[]>(
     () =>
       tailControls.length
@@ -201,36 +213,43 @@ export function TurnList({
     enterFollow();
   }, [tailFollowRevision, enterFollow]);
 
-  const renderRow = useCallback(
-    (row: ListRow, idx: number) => {
-      if (row.kind === "queued-controls") {
-        return (
-          <QueuedControlRows
-            controls={row.controls}
-            onWithdraw={controls?.withdraw}
-            onRetry={controls?.retry}
-          />
-        );
-      }
+  const renderTranscriptRow = useCallback(
+    (row: TranscriptRow, idx: number) => {
       const turn = row.turn;
+      // Inherited rows are the source's history: read-only, and owned by the source.
+      const local = !row.inherited;
       if (row.kind === "compaction") {
         return (
           <CompactionDivider
             turn={turn}
             undo={row.undo}
-            undoAvailability={compactionUndo}
-            queuedUndo={undoByDividerId.get(turn.id) ?? null}
-            phase={phase}
-            stopping={controls?.stoppingTurnIds.has(turn.id) ?? false}
-            onStop={controls?.stop}
+            undoAvailability={local ? compactionUndo : null}
+            queuedUndo={local ? (undoByDividerId.get(turn.id) ?? null) : null}
+            phase={local ? phase : null}
+            stopping={local && (controls?.stoppingTurnIds.has(turn.id) ?? false)}
+            onStop={local ? controls?.stop : undefined}
             onUndo={
-              controls
+              local && controls
                 ? (compactionTurnId) =>
                     controls.enqueue({ kind: "compaction_undo", compactionTurnId })
                 : undefined
             }
-            onWithdraw={controls?.withdraw}
-            onRetry={controls?.retry}
+            onWithdraw={local ? controls?.withdraw : undefined}
+            onRetry={local ? controls?.retry : undefined}
+          />
+        );
+      }
+      if (row.kind === "handoff-seed") {
+        const live = local && !isOptimisticSeed(turn) && controls;
+        return (
+          <HandoffBriefCard
+            turn={turn}
+            latest={row.latest}
+            retryPending={briefRetryPending}
+            stopping={controls?.stoppingTurnIds.has(turn.id) ?? false}
+            phase={local ? phase : null}
+            onStop={live ? (turnId) => live.stop(turnId, "brief") : undefined}
+            onRetry={live ? () => live.enqueue({ kind: "handoff_brief" }) : undefined}
           />
         );
       }
@@ -238,31 +257,34 @@ export function TurnList({
         return (
           <UserTurn
             turn={turn}
-            submissionRecovery={submissionRecoveryByTurnId?.get(turn.id)}
-            queued={queuedWriterTurnIds?.has(turn.id)}
+            submissionRecovery={local ? submissionRecoveryByTurnId?.get(turn.id) : undefined}
+            queued={local && queuedWriterTurnIds?.has(turn.id)}
           />
         );
       }
       return (
         <AssistantTurn
-          threadId={threadId}
+          threadId={row.inherited?.ownerThreadId ?? threadId}
           turn={turn}
           responseParts={partsByFinalTurnId.get(turn.id)}
-          threadUsage={threadUsage}
+          threadUsage={local ? threadUsage : null}
           deliveryEvents={transcript.deliveryEventsFor(turn.id)}
           isLatestAssistant={idx === lastAssistantIdx}
           // A divider is a row: once one follows a failed reply, that failure is
           // history. The queued-controls tail is not a row and never counts.
           endsTranscript={idx === visibleTurns.length - 1}
           continuesResponse={continuing[idx] ?? false}
-          failedSendRetry={turn.id === failedSendRetry?.turnId ? failedSendRetry.retry : undefined}
-          onRespondToInterrupt={onRespondToInterrupt}
-          changeTrail={byTurnId.get(turn.id)}
+          failedSendRetry={
+            local && turn.id === failedSendRetry?.turnId ? failedSendRetry.retry : undefined
+          }
+          onRespondToInterrupt={local ? onRespondToInterrupt : undefined}
+          changeTrail={local ? byTurnId.get(turn.id) : undefined}
           navigateToChange={navigateToChange}
         />
       );
     },
     [
+      briefRetryPending,
       byTurnId,
       compactionUndo,
       controls,
@@ -275,12 +297,35 @@ export function TurnList({
       submissionRecoveryByTurnId,
       queuedWriterTurnIds,
       threadId,
-      turns,
+      threadUsage,
       transcript,
       visibleTurns.length,
       continuing,
       partsByFinalTurnId,
     ],
+  );
+
+  const renderRow = useCallback(
+    (row: ListRow, idx: number) => {
+      if (row.kind === "queued-controls") {
+        return (
+          <QueuedControlRows
+            controls={row.controls}
+            onWithdraw={controls?.withdraw}
+            onRetry={controls?.retry}
+          />
+        );
+      }
+      const content = renderTranscriptRow(row, idx);
+      return row.inherited ? (
+        <InheritedRow mark={row.inherited} owners={inherited?.owners ?? null}>
+          {content}
+        </InheritedRow>
+      ) : (
+        content
+      );
+    },
+    [controls, inherited?.owners, renderTranscriptRow],
   );
 
   return (
@@ -321,6 +366,9 @@ export function TurnList({
                   }
                   data-chat-turn-role={row.kind === "queued-controls" ? undefined : row.turn.role}
                   data-chat-turn-continues={continuing[virtualItem.index] ? "" : undefined}
+                  data-chat-turn-inherited={
+                    row.kind !== "queued-controls" && row.inherited ? "" : undefined
+                  }
                   ref={virtualizer.measureElement}
                   className="absolute inset-x-0 top-0"
                   style={{ transform: `translateY(${virtualItem.start}px)` }}
@@ -383,6 +431,39 @@ function JumpToLatestButton({
         <span className="sr-only">Scroll to latest</span>
       </Button>
     </div>
+  );
+}
+
+/** One inherited row: its source's header when a run starts, the fork point when it ends. */
+function InheritedRow({
+  mark,
+  owners,
+  children,
+}: {
+  mark: InheritedMark;
+  owners: InheritedView["owners"] | null;
+  children: ReactNode;
+}) {
+  return (
+    <div data-inherited-row>
+      {mark.startsOwner ? (
+        <InheritedSourceHeader
+          ownerThreadId={mark.ownerThreadId}
+          owner={owners?.get(mark.ownerThreadId) ?? null}
+        />
+      ) : null}
+      {children}
+      {mark.endsInherited ? <ForkPointRule /> : null}
+    </div>
+  );
+}
+
+function isActiveControl(control: QueuedControl): boolean {
+  return (
+    control.status === "queued" ||
+    control.status === "failed" ||
+    control.status === "withdrawing" ||
+    control.status === "withdraw_failed"
   );
 }
 

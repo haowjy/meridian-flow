@@ -161,6 +161,16 @@ describe("useThreadControls", () => {
     expect(invalidateQueries).toHaveBeenCalled();
   });
 
+  it("stops a generating brief through the same cancel route, in the brief's words", async () => {
+    transport.cancel.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => latest.stop("s", "brief"));
+    expect(transport.cancel).toHaveBeenCalledWith("thread-1", "s");
+    expect(announcements.announce).toHaveBeenCalledWith("Stopping the handoff brief");
+    expect(announcements.announceError).toHaveBeenCalledWith("Couldn't stop the brief. Try again.");
+    // A failed Stop gives the card its Stop back.
+    expect(latest.stoppingTurnIds.has("s")).toBe(false);
+  });
+
   it("announces a failed enqueue in its own control kind's words", async () => {
     api.enqueueThreadControl.mockRejectedValue(new Error("offline"));
     await act(async () => {

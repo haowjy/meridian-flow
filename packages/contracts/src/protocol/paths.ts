@@ -311,6 +311,16 @@ export function apiThreadSnapshotPath(
   return `${API_THREADS_PATH}/${threadId}/snapshot${query ? `?${query}` : ""}`;
 }
 
+/** POST: create-or-get a fork of the thread at a cutoff turn, under a client-minted id. */
+export function apiThreadForkPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/fork`;
+}
+
+/** POST: create-or-get a handoff from the thread at a cutoff turn, under a client-minted id. */
+export function apiThreadHandoffPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/handoff`;
+}
+
 export type TranscriptPagePathOptions = {
   order?: "newest_first" | "oldest_first";
   unit?: "item" | "turn";

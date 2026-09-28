@@ -26,9 +26,14 @@ import {
   retireChatSubmission,
 } from "@/client/chat-submissions";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
-import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
-import { announce, announceError, useThreadActions, useThreadStore } from "@/client/stores";
+import {
+  announce,
+  announceError,
+  useIsThreadPendingCreation,
+  useThreadActions,
+  useThreadStore,
+} from "@/client/stores";
 import {
   Composer,
   type ComposerChatCommand,
@@ -37,18 +42,35 @@ import {
 } from "@/components/app/composer";
 import { documentLinkTarget, type LinkTarget } from "@/core/editor/links";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
-import { useAccountId } from "@/features/project/context/account-feature-context";
+import {
+  useAccountEpochSignal,
+  useAccountId,
+} from "@/features/project/context/account-feature-context";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
+import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { answeredControlIds } from "./compaction/compaction-model";
 import { useCompactionAnnouncements } from "./compaction/useCompactionAnnouncements";
 import { useThreadControls } from "./compaction/useThreadControls";
 import { composerRun } from "./composer-run";
 import { DraftDock, useDraftDock } from "./DraftDock";
+import {
+  canDeriveFrom,
+  type TurnDerivation,
+  TurnDerivationProvider,
+} from "./derivation/DeriveTurnActions";
+import {
+  type DerivationDeps,
+  startDerivation,
+  useDerivationStatus,
+  whenDerived,
+} from "./derivation/derive-conversation";
+import { isHandoffSeed, optimisticHandoffSeed } from "./derivation/handoff-seed";
+import { optimisticForkPrefix, useInheritedView } from "./derivation/inherited-view";
 import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
@@ -121,13 +143,37 @@ export function ChatView({
   const [tailFollowRevision, requestTailFollow] = useReducer((value: number) => value + 1, 0);
 
   const controller = useMeridianAgent();
-  const transport = useThreadTransport();
   const accountId = useAccountId();
-  const turns = useThreadStore((state) => state.turnsByThread[threadId] ?? EMPTY_TURNS);
+  const accountSignal = useAccountEpochSignal();
+  const openThread = useOpenChatThread();
+  const pendingCreation = useIsThreadPendingCreation(threadId);
+  const derivation = useDerivationStatus(threadId);
+  const inherited = useInheritedView(activeThread, derivation?.inherited ?? null);
+  const storedTurns = useThreadStore((state) => state.turnsByThread[threadId] ?? EMPTY_TURNS);
+  // A handoff's brief is on its way the moment the writer lands; until the
+  // server's seed arrives the card stands in for it (it has nothing to stop yet).
+  const intent = derivation?.intent;
+  const turns = useMemo(
+    () =>
+      intent?.kind === "handoff" &&
+      derivation?.state !== "failed" &&
+      !storedTurns.some(isHandoffSeed)
+        ? [
+            optimisticHandoffSeed({
+              threadId,
+              sourceThreadId: intent.sourceThreadId,
+              cutoffTurnId: intent.originTurnId,
+              createdAt: intent.createdAt,
+            }),
+            ...storedTurns,
+          ]
+        : storedTurns,
+    [derivation?.state, intent, storedTurns, threadId],
+  );
   const latestAssistantTurn =
     [...turns].reverse().find((turn) => turn.role === "assistant") ?? null;
   const isStreaming = latestAssistantTurn?.status === "streaming";
-  const run = useMemo(() => composerRun(turns), [turns]);
+  const run = useMemo(() => composerRun(storedTurns), [storedTurns]);
   const composerAgentName = activeThread?.agentName ?? "General";
 
   const pageTitle = activeThread?.title ? displayThreadTitle(activeThread.title) : t`New chat`;
@@ -155,7 +201,7 @@ export function ChatView({
     threadId,
     pending: pendingInbox,
     answeredControlIds: answeredControls,
-    leafTurnId: turns.at(-1)?.id ?? null,
+    leafTurnId: storedTurns.at(-1)?.id ?? null,
   });
   useCompactionAnnouncements(turns);
   // The snapshot revalidates as a compaction reserves and settles, so its live
@@ -177,6 +223,72 @@ export function ChatView({
     ],
     [enqueueControl],
   );
+
+  // Only a primary the server already has can be forked or handed off; a
+  // subagent's view offers neither (the server refuses both there).
+  const canDerive = canDeriveFrom({
+    kind: activeThread?.kind ?? null,
+    pendingCreation,
+    canOpen: openThread !== null,
+  });
+  const inheritedView = inherited.view;
+  const turnDerivation = useMemo<TurnDerivation | null>(() => {
+    if (!canDerive || !activeThread || !openThread) return null;
+    const deps: DerivationDeps = { accountId, accountSignal, threadActions: actions };
+    const base = {
+      projectId,
+      sourceThreadId: threadId,
+      sourceTitle: activeThread.title,
+      workId: activeWork?.id ?? activeThread.workId,
+    };
+    return {
+      projectId,
+      sourceAgent: {
+        name: activeThread.agentName,
+        definitionRevisionId: activeThread.agentDefinitionRevisionId,
+      },
+      fork: (originTurnId) => {
+        startDerivation(
+          {
+            ...base,
+            kind: "fork",
+            originTurnId,
+            agent: null,
+            agentName: activeThread.agentName,
+          },
+          {
+            ...deps,
+            source: activeThread,
+            inherited: optimisticForkPrefix({
+              source: activeThread,
+              sourceInherited: inheritedView,
+              localTurns: storedTurns,
+              cutoffTurnId: originTurnId,
+            }),
+            open: openThread,
+          },
+        );
+      },
+      handoff: (originTurnId, agent) => {
+        startDerivation(
+          { ...base, kind: "handoff", originTurnId, agent, agentName: agent.name },
+          { ...deps, source: activeThread, inherited: null, open: openThread },
+        );
+      },
+    };
+  }, [
+    accountId,
+    accountSignal,
+    actions,
+    activeThread,
+    activeWork?.id,
+    canDerive,
+    inheritedView,
+    openThread,
+    projectId,
+    storedTurns,
+    threadId,
+  ]);
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
 
@@ -234,6 +346,17 @@ export function ChatView({
     // while the server still holds the lease must reuse it, not append a second
     // pending copy. Cleared below on acknowledgement or proved rejection.
     rememberSubmissionTurnId(accountId, envelope.submissionId, optimisticUserTurn.id);
+    // A fork or handoff opened before the server had it: the message is shown
+    // now and sent once the thread exists. If creation failed, the message
+    // fails with it and keeps Retry.
+    if (!(await whenDerived(threadId))) {
+      submissionRecovery.markRejected(envelope.submissionId, optimisticUserTurn.id);
+      return {
+        kind: "rejected" as const,
+        submissionId: envelope.submissionId,
+        acceptedRevision: envelope.acceptedRevision,
+      };
+    }
     try {
       const outcome = await controller.submit(threadId, envelope, {
         optimisticUserTurnId: optimisticUserTurn.id,
@@ -309,13 +432,9 @@ export function ChatView({
 
   function handleStop() {
     // A compaction or brief has no reply stream for the run controller to
-    // stop: cancel its bound turn, as the divider's own Stop does.
+    // stop: cancel its turn, as the divider's and the card's own Stop do.
     if (run?.kind === "placeholder") {
-      if (run.turn.role === "compaction") controls.stop(run.turn.id);
-      else
-        void transport
-          .cancel(threadId, run.turn.id)
-          .catch(() => announceError(t`Couldn't stop. Try again.`));
+      controls.stop(run.turn.id, run.turn.role === "compaction" ? "compaction" : "brief");
       return;
     }
     controller.cancel(threadId);
@@ -428,30 +547,33 @@ export function ChatView({
           </div>
         }
       >
-        <SubagentDisclosureProvider>
-          <SubagentActivityProvider nodes={activity.activity.children} turns={turns}>
-            <div className="relative flex min-h-0 flex-1 flex-col">
-              <RunningSubagentsStrip threadId={threadId} />
-              <TurnList
-                threadId={threadId}
-                turns={turns}
-                awaitingSubagents={runningBackgroundSubagents.length > 0}
-                historySettled={historySettled}
-                tailFollowRevision={tailFollowRevision}
-                ariaLabel={t`Chat`}
-                onRespondToInterrupt={handleRespondToInterrupt}
-                failedSendRetry={failedSendRetry}
-                changeTrails={changeTrails.byId}
-                submissionRecoveryByTurnId={submissionRecoveryByTurnId}
-                queuedWriterTurnIds={queuedWriterTurnIds}
-                controls={controls}
-                compactionUndo={snapshotCompactionUndo}
-                phase={livePhase}
-                threadUsage={snapshotThreadUsage}
-              />
-            </div>
-          </SubagentActivityProvider>
-        </SubagentDisclosureProvider>
+        <TurnDerivationProvider value={turnDerivation}>
+          <SubagentDisclosureProvider>
+            <SubagentActivityProvider nodes={activity.activity.children} turns={turns}>
+              <div className="relative flex min-h-0 flex-1 flex-col">
+                <RunningSubagentsStrip threadId={threadId} />
+                <TurnList
+                  threadId={threadId}
+                  turns={turns}
+                  awaitingSubagents={runningBackgroundSubagents.length > 0}
+                  historySettled={historySettled}
+                  tailFollowRevision={tailFollowRevision}
+                  ariaLabel={t`Chat`}
+                  onRespondToInterrupt={handleRespondToInterrupt}
+                  failedSendRetry={failedSendRetry}
+                  changeTrails={changeTrails.byId}
+                  submissionRecoveryByTurnId={submissionRecoveryByTurnId}
+                  queuedWriterTurnIds={queuedWriterTurnIds}
+                  controls={controls}
+                  compactionUndo={snapshotCompactionUndo}
+                  phase={livePhase}
+                  inherited={inheritedView}
+                  threadUsage={snapshotThreadUsage}
+                />
+              </div>
+            </SubagentActivityProvider>
+          </SubagentDisclosureProvider>
+        </TurnDerivationProvider>
       </ChatSurface>
     </TranscriptLinkNavigationContext.Provider>
   );

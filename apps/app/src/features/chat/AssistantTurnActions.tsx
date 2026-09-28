@@ -14,6 +14,7 @@ import {
   useDebugEnabled,
 } from "@/features/debug/use-debug-enabled";
 import { assistantTurnCopyHtml } from "./assistant-turn-copy";
+import { DeriveTurnActions } from "./derivation/DeriveTurnActions";
 import { cacheHitPercent, compactCount, turnStats } from "./turn-stats";
 
 const actionClass = "size-6 text-muted-foreground";
@@ -223,6 +224,7 @@ export function AssistantTurnActions({
         </TooltipTrigger>
         <TooltipContent>{copied ? copiedLabel : copyLabel}</TooltipContent>
       </Tooltip>
+      <DeriveTurnActions turnId={turn.id} />
       {stats.callCount > 0 ? (
         <Popover>
           <Tooltip>

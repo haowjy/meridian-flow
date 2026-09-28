@@ -14,6 +14,8 @@ import {
   apiThreadCancelPath,
   apiThreadControlsPath,
   apiThreadControlWithdrawPath,
+  apiThreadForkPath,
+  apiThreadHandoffPath,
   apiThreadMessagePath,
   apiThreadModelRequestsDebugPath,
   apiThreadPath,
@@ -21,11 +23,14 @@ import {
   apiThreadSkillsPath,
   apiThreadSnapshotPath,
   apiThreadTitlePath,
+  apiThreadTranscriptPath,
   apiThreadTurnContextPreviewDebugPath,
   apiThreadUserStatePath,
   apiThreadWorkPath,
   type CancelTurnResponse,
   type CreateThreadRequest,
+  type ForkThreadRequest,
+  type HandoffThreadRequest,
   type ListThreadRecentDocumentsResponse,
   type ListThreadsResponse,
   type ModelRequestDebugListResponse,
@@ -37,6 +42,8 @@ import {
   type ThreadAvailableSkillsResponse,
   type ThreadRecentDocumentItem,
   type ThreadSnapshotResponse,
+  type TranscriptPagePathOptions,
+  type TranscriptPageResponse,
   type TurnContextPreview,
   type UpdateThreadUserStateRequest,
   type UpdateThreadUserStateResponse,
@@ -85,6 +92,28 @@ export async function listThreads(init?: {
 
 export function createThread({ data }: { data: CreateThreadInput }): Promise<Thread> {
   return postJson(API_THREADS_PATH, data) as unknown as Promise<Thread>;
+}
+
+/** Create-or-get a fork under the client-minted `request.id`; a retry lands on the same thread. */
+export function forkThread(sourceThreadId: string, request: ForkThreadRequest): Promise<Thread> {
+  return postJson(apiThreadForkPath(sourceThreadId), request) as unknown as Promise<Thread>;
+}
+
+/** Create-or-get a handoff under the client-minted `request.id`; its brief runs in the background. */
+export function handoffThread(
+  sourceThreadId: string,
+  request: HandoffThreadRequest,
+): Promise<Thread> {
+  return postJson(apiThreadHandoffPath(sourceThreadId), request) as unknown as Promise<Thread>;
+}
+
+/** One page of a thread's effective or inherited transcript. */
+export function readThreadTranscript(
+  threadId: string,
+  options: TranscriptPagePathOptions,
+  signal?: AbortSignal,
+): Promise<TranscriptPageResponse> {
+  return getJson(apiThreadTranscriptPath(threadId, options), { signal });
 }
 
 export function appendUserMessage({
