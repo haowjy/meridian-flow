@@ -615,3 +615,15 @@ when trimming. Opt-in prompts appear only when a cursor opens a segment.
 `projectActiveHistoryWithBakes` resolves the active compaction's own bake before
 adding the history-read sentence; neither the current registry nor a later
 undo's bake may change an old summary's bytes.
+
+### Spawn context references
+
+`spawn.from` accepts one connected ref or `current`. The coordinator resolves it
+through `resolveReadableThread` before creating or driving the child. The
+source becomes a frozen `thread-reference` custom block, not Agent configuration
+or inherited history. `PreparedChild.seedBlocks` reaches the runtime run input;
+`persistWriterTurn` assigns its owning user turn and sequences after the writer
+blocks. Writer admission and `UserMessageBlock` do not accept these seeds.
+`userTurnContentParts` replays `props.text`, never live source metadata.
+`threadReferenceText` also writes the read instruction in new handoff briefs.
+`agent.spawn.fromThreadId` is a live hint only; the child's block is durable.

@@ -46,6 +46,7 @@ export function buildSubagentThreadRow(input: CreateSubagentThreadInput): Thread
     turnCount: 0,
     createdAt: now,
     updatedAt: now,
+    lastActivityAt: now,
     deletedAt: null,
   };
 }

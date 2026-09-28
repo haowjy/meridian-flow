@@ -125,6 +125,7 @@ function defaultThread(input: CreateThreadInput): Thread {
     turnCount: 0,
     createdAt: now,
     updatedAt: now,
+    lastActivityAt: now,
     deletedAt: null,
   };
 }

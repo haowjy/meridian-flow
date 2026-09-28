@@ -7,6 +7,7 @@ import {
   HandoffSeedMetadataCodec,
   handoffSeedMetadata,
 } from "../../threads/index.js";
+import { threadReferenceText } from "../spawn/thread-reference.js";
 import { contentForBlockInput } from "./block-helpers.js";
 import type { ControlMessage } from "./control-barrier.js";
 import { createLocalTurn } from "./local-turn.js";
@@ -39,12 +40,17 @@ export async function reserveHandoffSeed(
   });
 }
 
-export function handoffSeedBlock(seed: Turn, brief?: { text: string; model: string }) {
+export function handoffSeedBlock(
+  seed: Turn,
+  brief?: { text: string; model: string },
+  historyReadable = false,
+) {
   const metadata = HandoffSeedMetadataCodec.parse(seed.metadata);
   const sourceRef = metadata.sourceRef;
+  const reference = historyReadable ? `\n${threadReferenceText({ ref: sourceRef })}` : "";
   const modelText = brief
-    ? `<system_update>\n<prior-session-context source="${sourceRef}">\n${brief.text}\n</prior-session-context>\n</system_update>`
-    : `<system_update>\nThis conversation was handed off from ${sourceRef}. No brief is available.\n</system_update>`;
+    ? `<system_update>\n<prior-session-context source="${sourceRef}">\n${brief.text}\n</prior-session-context>${reference}\n</system_update>`
+    : `<system_update>\nThis conversation was handed off from ${sourceRef}. No brief is available.${reference}\n</system_update>`;
   return contentForBlockInput({
     turnId: seed.id,
     blockType: "custom",

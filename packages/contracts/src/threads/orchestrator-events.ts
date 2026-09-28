@@ -154,6 +154,8 @@ export type OrchestratorEvent =
     }
   | {
       type: "agent.spawn";
+      /** Live UI hint. The durable provenance is the child's thread-reference seed block. */
+      fromThreadId?: string;
       parentThreadId: string;
       parentTurnId: string;
       childThreadId: string;

@@ -273,6 +273,10 @@ function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
   const parts = turnBlocksToContentParts([...blocks], ["text", "image", "file"]);
   const included = new Set<string>();
   for (const block of blocks) {
+    if (block.blockType === "custom") {
+      const content = block.content as ComponentBlockContent;
+      if (content.kind === "thread-reference") parts.push(text(content.props.text as string));
+    }
     const reference = referenceOccurrenceContent(block);
     if (!reference?.read) continue;
     const key = `${reference.documentId}\0${reference.uri}`;

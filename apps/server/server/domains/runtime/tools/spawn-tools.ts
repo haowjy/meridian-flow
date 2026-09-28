@@ -29,6 +29,7 @@ const SPAWN_DESCRIPTION_EMPTY_ROSTER = `${SPAWN_DESCRIPTION} You have no named s
 export type SpawnToolArgs = {
   agent?: string;
   prompt: string;
+  from?: string;
   description?: string;
   mode: "foreground" | "background";
   append_system_prompt?: string;
@@ -43,6 +44,7 @@ export function parseSpawnToolArgs(input: unknown): SpawnToolArgs {
       : {};
   return {
     ...(typeof rec.agent === "string" ? { agent: rec.agent } : {}),
+    ...(typeof rec.from === "string" ? { from: rec.from } : {}),
     prompt: typeof rec.prompt === "string" ? rec.prompt : "",
     ...(typeof rec.description === "string" ? { description: rec.description } : {}),
     mode: rec.mode === "background" ? "background" : "foreground",
@@ -185,6 +187,11 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
               type: "string",
               description:
                 "Named subagent from your subagents roster. Omit or pass an empty string for the generic subagent.",
+            },
+            from: {
+              type: "string",
+              description:
+                'One connected conversation ref, or "current" for this conversation. The child receives a frozen reference, not its history; it can read the source with thread_history.',
             },
             prompt: { type: "string", description: "Task prompt for the child agent." },
             description: {

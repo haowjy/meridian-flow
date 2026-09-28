@@ -6,7 +6,7 @@
 import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ExecutionReportCorrelation, TreeBudget } from "@meridian/contracts/spawn";
-import type { JsonValue, Turn } from "@meridian/contracts/threads";
+import type { BlockUpsertedRow, JsonValue, Turn } from "@meridian/contracts/threads";
 import type { Tool } from "../gateway/index.js";
 import type { CurrentTurn, Lease } from "./ports.js";
 
@@ -29,6 +29,8 @@ interface RunTurnBase {
 export interface WriterRunTurnInput extends RunTurnBase {
   userText: string;
   userBlocks?: readonly UserMessageBlock[];
+  /** Runtime-only context appended after user blocks; persistence assigns turn and sequence. */
+  seedBlocks?: BlockUpsertedRow[];
   activatedSkillSlugs?: readonly string[];
   /** Hidden metadata stamped on the user turn; never model-facing here. */
   userTurnMetadata?: JsonValue | null;

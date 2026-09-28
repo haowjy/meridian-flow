@@ -652,3 +652,12 @@ cursors, segment count and opening state for bounded model projections.
 `readTranscriptPage` returns only the writer shape; routes never strip internal fields.
 `readTranscriptItem` expands a position key using the same span resolver and
 bounded repository reader, never a loaded transcript.
+
+## Frozen prior-work references
+
+The runtime may append `thread-reference` custom blocks after the user blocks
+in a spawned child's first user turn. The block owns the source ID, ref, title,
+Agent name, last activity and frozen model text; no source turns are inherited.
+`Thread.lastActivityAt` exposes the existing database activity timestamp, not
+`updatedAt` (a retitle changes metadata, not conversation activity). Later source
+changes do not rewrite the block. Writer admission cannot submit these blocks.

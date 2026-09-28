@@ -33,7 +33,12 @@ from its discarded brief.
 
 Success stores a `handoff-brief` custom block with frozen `modelText`. Failure
 and Stop store the source-naming unavailable block. Model rendering replays
-that text verbatim. Neither first-send nor Retry reads source history into the
+that text verbatim. When the brief finishes, `brief()` appends
+`threadReferenceText` inside `<system_update>` only if the bake at S advertises
+`thread_history`; without a bake it uses registration availability. It never
+resolves the destination binding for this decision. Both successful and failed
+summary outcomes get the instruction, and existing S blocks keep their bytes.
+Neither first-send nor Retry reads source history into the
 destination request. Stop releases unanswered messages. Before binding, Stop
 and withdrawal settle S themselves, under the same thread/receipt locks as
 reservation; after binding they cancel its owning run.

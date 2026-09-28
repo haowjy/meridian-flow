@@ -6,7 +6,7 @@ import type {
   SpawnResult,
   TreeBudget,
 } from "@meridian/contracts/spawn";
-import type { Thread, ThreadActivity } from "@meridian/contracts/threads";
+import type { BlockUpsertedRow, Thread, ThreadActivity } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { EventJournalWriter, ThreadRepositories } from "../../threads/index.js";
 import type { PreparedRun, RunTurnPort } from "../loop/run-turn-port.js";
@@ -28,6 +28,7 @@ export type PreparedChild = {
   handle: string;
   resolvedSlug: string;
   description?: string;
+  seedBlocks?: BlockUpsertedRow[];
   signal?: AbortSignal;
   background: boolean;
   origin: "spawn" | "message";
@@ -89,6 +90,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     const handle = await deps.orchestrator.prepare({
       threadId: prepared.child.id as ThreadId,
       userText: input.prompt,
+      seedBlocks: prepared.seedBlocks,
       signal: prepared.signal,
       child: {
         parentThreadId: input.parentThread.id as ThreadId,

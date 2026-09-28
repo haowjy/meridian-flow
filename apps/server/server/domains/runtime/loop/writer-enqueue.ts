@@ -12,7 +12,7 @@
  */
 import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { JsonValue } from "@meridian/contracts/threads";
+import type { BlockUpsertedRow, JsonValue } from "@meridian/contracts/threads";
 import { TurnStartConflictError } from "../../threads/index.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
@@ -46,6 +46,7 @@ export async function persistWriterTurn(input: {
   userTurnId: TurnId;
   userBlocks: readonly UserMessageBlock[];
   userTurnMetadata?: JsonValue | null;
+  seedBlocks?: BlockUpsertedRow[];
   origin: "system" | "writer";
   producer: DeliveryTransaction;
   draft: MessageDraft;
@@ -73,6 +74,14 @@ export async function persistWriterTurn(input: {
         metadata: input.userTurnMetadata ?? null,
       });
       const blocks = writerUserTurnBlocks(userTurn.id, input.userBlocks);
+      const userBlockCount = blocks.length;
+      blocks.push(
+        ...(input.seedBlocks ?? []).map((block, index) => ({
+          ...block,
+          turnId: userTurn.id,
+          sequence: userBlockCount + index,
+        })),
+      );
       input.afterTurnCreated?.(userTurn.id);
       return {
         result: { userTurn },

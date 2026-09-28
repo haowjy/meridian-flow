@@ -323,6 +323,7 @@ export interface Thread {
   turnCount: number;
   createdAt: string;
   updatedAt: string;
+  lastActivityAt: string;
   deletedAt: string | null;
 }
 

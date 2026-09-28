@@ -46,6 +46,7 @@ function thread(): Thread {
     deletedAt: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    lastActivityAt: new Date().toISOString(),
   };
 }
 
