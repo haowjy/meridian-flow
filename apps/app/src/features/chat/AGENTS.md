@@ -81,8 +81,13 @@ lists every direct child.
 notices by child thread, ref, and execution. A saved running card with no live
 lease is `unknown`, not running. `transcript-model.ts` classifies turns and
 derives transcript rows, response parts, delivery rows, and reveal targets in
-one pass. Compaction turns are divider rows there, never in the head; see
-[`.context/compaction-surfaces.md`](.context/compaction-surfaces.md).
+one pass. Rows have kinds (turn, compaction divider, handoff brief card,
+`from` reference) and stay index-aligned with the visible turns; grouping
+switches on row kind, never on role. Compaction turns are divider rows there,
+never in the head; see
+[`.context/compaction-surfaces.md`](.context/compaction-surfaces.md). Fork,
+handoff, the brief card, and a fork's inherited rows are in
+[`.context/fork-and-handoff.md`](.context/fork-and-handoff.md).
 
 Child completion is a separate durable transcript event: system turns with
 `metadata.kind === "subagent_update"` render as a quiet inline row at their

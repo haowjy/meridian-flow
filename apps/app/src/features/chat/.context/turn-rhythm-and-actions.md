@@ -37,7 +37,10 @@ fold-to-body and prose-to-action boundaries are separately owned by their
 inner block and inline spacing respectively. Never stack a margin, padding,
 and gap on one boundary.
 
-A finished turn has a quiet action row below all turn content. Copy takes the
+A finished turn has a quiet action row below all turn content: Copy, Fork,
+Hand off, Info, and Debug. Fork and Hand off appear only in a primary chat the
+server already has (`canDeriveFrom`); a subagent's view shows neither. See
+[fork and handoff](fork-and-handoff.md). Copy takes the
 turn's final message: the text and report items after its last process fold
 (`finalMessageItems`) plus its images, never thinking, tool rows, delivery
 events, spawn cards, or earlier prose. Images copy as Markdown images, so the
