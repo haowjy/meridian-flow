@@ -1,9 +1,32 @@
 # Runtime compaction
 
-How a run compacts: the two delivery transitions around the summary, their
-failure, cancel, and recovery rules, cost, the trigger and size estimate, the
-summarizer, document-text elision, image re-admission, context-window overflow
-recovery, and the queued controls (`/compact`) that execute at run boundaries.
+How a run shrinks its history: a compaction placeholder C is reserved at a run
+boundary, an unlocked summary call writes the summary, and a successor commit
+opens a new prompt epoch with the summary, the pinned requests, and a recent
+tail. The summary call itself is the [summarizer](summarizer.md). Manual
+`/compact` reaches this protocol through the [control barrier](controls.md),
+its reversal is [undo](undo.md), and stale document text in the retained tail
+is [elided](document-text.md). Orphaned C is repaired by
+[recovery](recovery.md). Rationale: the KB's
+[run preparation protocol][kb-run-prep] and
+[summarizer and overflow][kb-summarizer] records.
+
+| File (under `loop/`) | Role |
+|---|---|
+| `compaction/trigger.ts` | Resolves the trigger: explicit Agent limits, else the pricing-aware default. |
+| `compaction/estimate.ts` | The shared per-part estimator for planner defaults and request estimates. Every estimate receives the model's required tokenizer family, including turn planning and summary segmentation. Image parts use 1,600 tokens; file text uses the greater of its visible-string estimate or a 10,000-token floor. |
+| `compaction/plan.ts` | Takes the raw effective transcript, reserves overhead and every unanswered directed request plus the newest writer request (`pinnedRequestTurnIds`), and limits later cuts to after the active compaction's cut. A missing pinned request yields an explicit `no_compaction` plan, never persistable metadata. |
+| `compaction/tail.ts` | The shared ordered projection rule; lifts pins in order when the cut removes them. |
+| `compaction/decision.ts` | One boundary's compaction choice, its refusals, and C's failure errors. |
+| `compaction/project.ts` | Strictly decodes complete compactions, requires every pinned turn to exist, and projects the summary under the owning thread ref. |
+| `compaction/elide.ts` | Plans stale document-text replacements ([document text](document-text.md)). |
+| `request-preparation.ts` | Measures the assembled request and decides against raw history. |
+| `compaction-phase.ts` | Runs the unlocked summary, then prepares values for the successor. |
+| `compaction-successor.ts` | Retry-local successor values and the placeholder completion transaction. |
+
+`compaction/index.ts` is the pure core's public surface. History-item metadata
+classification and every turn codec, C's included, live in
+`threads/domain/turn-metadata.ts`.
 
 ## Two delivery transitions
 
@@ -44,161 +67,53 @@ write and carries no satisfaction key for it. Telemetry never renders to the
 model, so B's first request still equals the rebuild. The same assembly measures
 `tokensAfter`; the epoch, frozen elisions and successor commit atomically.
 
-## Document-text elision
+## Decisions and refusals
 
-The writer transcript stays intact. A completed compaction owns frozen
-`metadata.elisions` (block ID, treatment, affected URIs, replacement content).
-Active projection substitutes only its retained tail and pinned requests,
-not later arrivals. `projectActiveHistoryWithBakes` is its only public entry;
-the synchronous projector stays private because, without C's own bake, it
-drops the summary's bake-gated history-read sentence. Reverted, failed, pending and superseded owners do not apply.
-Forks inherit this metadata only when their cutoff includes the owner. Never
-move elisions onto block rows: a fork reads its source's blocks in place, so a
-source compaction after the cutoff would rewrite the fork's request, and undo
-could no longer restore the text by reverting C. Do not derive stubs at render
-time either: a copy change in a deploy would rewrite every compacted thread's
-prefix. `compaction/elide.ts` plans the replacements and
-`compaction-revisions.ts` queries current revisions. Rationale:
-[Compaction Elides Only Stale Document Text][kb-elision].
+A decision is automatic (the trigger), manual (a `/compact` control), or
+overflow (a provider context-window failure, below).
 
-`ToolRegistration.documentText` owns each tool's classification and replacement
-copy. `write` and `search` register policies; references use `reference-context`.
-Error pairs are outside the policy. Explicit empty `documentRevisions` means no
-document text; absent evidence, null tokens and failed lookups fail closed.
-`diff` always elides. Tool pairing, reasoning, writer words and fresh text stay.
-Stale reference reads inside pinned unanswered messages are elided; the writer
-words and mention stay verbatim. Pins retain identity and order, not stale embedded document text.
+Manual decisions fit against the usable window; their tail budget base is
+`min(trigger, tokensBefore)`. Automatic and overflow decisions use their fit
+limit as the tail budget base. Pins include the existing unacknowledged receipt
+and newly adopted directed rows, even across consecutive controls.
 
-Successor prepare independently queries current document revisions once per
-attempt and plans from raw retained blocks, never from a previous owner's
-replacements. A moved leaf re-queries, while a failed prepare writes no elisions.
-An edit made after the successor commit reaches the model as stale text until
-the next compaction; elision runs only where the prefix already breaks at
-position 0.
-The loop asserts no response scope is open: `DocumentRevisions.current` cannot
-represent response-staged overlays. Query failures become unknown tokens; the
-assertion is an invariant failure, not a lookup failure.
+`compaction/decision.ts` refuses without calling the summarizer or opening an
+epoch; the refusal is an `error` divider:
 
-## Image re-admission
+- **`nothing_to_compact`**: nothing after the active cut, no pinned request, or
+  a completed compaction as the newest completed turn (a `/compact` right after
+  a completed C refuses, because C's retained tail is not new history).
+- **The manual floor** (`nothing_to_compact` at `initial_prepare`): a manual
+  decision whose compactable range estimates strictly below the summarizer's
+  maximum output tokens. The range is `projectCompactedHistory` of the active
+  projection, the same input as the cold summary, so retained pins and tail,
+  superseded raw history, and fixed prompt and tool overhead cannot lift it
+  over the floor. No summary call, response row, or debit. Automatic and
+  overflow decisions do not use it. Rationale: a summary as long as its
+  maximum output could outweigh what it replaces.
+- **`context_too_large`**: a minimal tail over the usable window.
 
-Complete compaction is the explicit image-budget rebalance seam. It first
-projects late arrivals with the normal chronological eviction rule, then
-resolves retained excluded candidates and admits them newest-first only into
-remaining budget. Candidates never evict existing inclusions; definite missing
-assets and transient resolution failures leave their prior decisions unchanged,
-while unexpected resolution errors still fail preparation. Keep the late-arrival
-pass first: with candidates first, a re-admitted image took room a new image
-then needed, so the new image evicted an included one and the pass wrote a
-removal notice for an image that was never removed. Candidates are never
-eviction victims, and each block is decided at most once per pass.
+Refusals go through the ordinary reservation commit and then the successor
+commit at once, so clients can briefly see a pending divider, and a crash
+between the two leaves an interrupted divider before K redelivers; a single
+direct write would need a second transaction shape for the next-control and
+reply binding.
 
-Re-admission decisions belong to C, so reverting C removes their effect and a
-fork copies them only when its cutoff includes C. `tokensAfter` measures the
-prepared request; successor commit rechecks fit after late arrivals and guards
-against overflow.
+## One projection authority
 
-## Failure landing
-
-- A failed required summary errors C and fails a reply below the latest message.
-  A failed optional manual summary errors only C and continues the request.
-- Failed C metadata records the typed `reason` and `phase`; a fit rejection also
-  records `estimatedTokens` and `fitLimitTokens`. `turn.error` carries the outcome
-  in its details. Summary rejections use code `compaction_failed` while their
-  reasons distinguish `max_tokens`, `provider_error`, `tool_use`, and `empty_text`;
-  unknown summary errors stay `compaction_failed`. Orphan recovery uses the same
-  metadata writer with `reason: interrupted` and `phase: recovery`, both at run
-  preparation and during the primary/child startup sweep. These codecs are
-  C's alone: a refused undo has its own reason set (Undo below), and the
-  handoff seed's typed outcome is separate ([handoff seeds](handoff.md)).
-- If the initial successor fits but a late arrival fails the second fit check,
-  C fails with `context_too_large` at `late_arrival` instead of committing the
-  epoch. Its paid summary rows settle in the C failure transaction. The late
-  message remains durably adopted, B fails below the latest arrival, and the
-  receipt is acknowledged with C6a semantics.
-- A live unexpected error while C is current uses a fresh failure
-  transaction: C `error`, settled summary rows, failed B below the latest
-  arrivals, and receipt acknowledgment. Notices remain queued.
-- If that transaction also fails, orphan recovery owns C and this run makes
-  no further settlement attempt. Paid rows still in memory are uncommitted
-  and the orphan finalizer cannot recover them, exactly as at a process
-  crash. They are not debited; a later delivery may need another provider
-  call.
-
-## Current turn and cancellation
-
-The lease does not copy the current turn's kind: `currentTurnKind(turn)`
-derives `assistant` or `compaction` from the referenced turn's role. Writer
-admission returns an assistant ID only when the current turn is an assistant.
-
-The lease keeps `bound_turn_ids` for the live run, appended in the same
-transaction as each current-turn binding. Stop matches this membership under
-the lease update lock, whether it names a predecessor or the newly committed
-successor, and whether it reaches the owning process or a remote one.
-Membership resets with the next run, so a finished run cannot cancel a newer
-lease. The process-local session keeps no second membership map. Remote
-cancellation reaches the local signal through the lease heartbeat as well as
-boundary checks.
-
-Only the run signal or the durable cancel request authorizes cancellation. A
-summarizer that returns `cancelled` on a live signal has failed, and an
-internal `AbortError` alone is not Stop. Stop aborts the summary, and terminal
-close settles its response rows on cancelled C with the receipt
-acknowledgment. Late arrivals are not part of C's receipt and stay queued for
-the cancel wake.
-
-## Placeholders and recovery
-
-A pending placeholder is a turn with status `pending` and a role in
-`PENDING_PLACEHOLDER_ROLES` from `@meridian/contracts/threads` (`compaction` and
-the handoff seed's `system`); a pending assistant turn is not one. Test with
-`isPendingPlaceholder` or the database's `pendingPlaceholderPredicate`, never a
-local role or status check.
-
-This section is the one owner of orphan repair; other docs link here.
-
-`finalizeOrphanedTurns` (`loop/orphaned-placeholder.ts`) settles a thread's
-dead primary assistant turns (`pending`, `streaming`, `waiting_interrupt`) and
-its unowned pending placeholders. It runs under the thread lock with a held
-session claim, from exactly three callers:
-
-- `RunSession.prepare`, through `delivery.repairOrphanedTurns`, after it
-  acquires the new run's claim and before setup plans a control barrier;
-- idle materialization, under its exclusive claim, before planning;
-- the startup and periodic orphan sweep (`spawn/orphan-report-repair.ts`),
-  which pages indexed pending placeholders and unsettled primary turns so a
-  quiet thread recovers without a new wake, and claims each thread first.
-
-Delivery adoption (`adoptBatch`) never repairs. A live run keeps its claim, so
-repair cannot enter its thread; an expired lease row alone is not proof of
-death.
-
-**A pending placeholder named by a pending control row is owned, not
-orphaned.** `finalizeOrphanedTurns` reads the pending inbox once under the lock
-and skips a seed S whose `handoff_brief` control names it in `seedTurnId`, so
-a crashed brief redelivers into the same S. Put any new ownership rule in this
-function, never in one caller.
-
-`finalizeOrphanedPlaceholders` is the child-report walk's placeholder-only
-helper and carries no ownership rule; a handoff destination is never a
-subagent. Child assistant turns stay with that walk, which finalizes the report
-on C and publishes after releasing the child's lock. A late writer message
-stays unacknowledged and is redelivered rather than receiving a synthetic
-failed reply.
-
-Undo markers are system turns but never run-owned current turns: creation and
-completion share one transaction, and terminal routing precedes brief dispatch.
-Do not route a completed undo through the pending handoff-seed lifecycle.
-
-## Cost
-
-`settleSummaryResponses` writes predictions, request sizes, and debits through
-`TurnAccounting.computeAndDebit` inside whichever transaction ends its owner. It does not decode or write turn
-metadata: compaction records its own summarizer telemetry through
-`CompactionMetadataCodec`; handoffs use their seed codec.
-Retrying settlement does not count the paid call twice in the shared tree
-budget. A child report's cost sums every assistant and compaction response
-from its selector through its terminal turn, counting a C that is both once
-(`execution-finalizer.ts`).
+`projectActiveHistoryWithBakes` (`compaction/project.ts`) is the only public
+way to project a thread's active history: the latest complete, unreverted C's
+summary, its pinned requests, and its retained tail, with C's frozen elisions
+and the latest complete undo applied. It resolves C's own prompt bake before
+adding the summary's history-read sentence, so neither the current registry
+nor a later undo's bake can change an old summary's bytes
+([history tools](history-tools.md#history-guidance-follows-the-bake)). The
+synchronous projector stays private because, without that bake, it drops the
+sentence. Callers: request assembly (`turn-context-assembly.ts`), the summary
+phase (`compaction-phase.ts`), undo (`compaction-undo.ts`), and the handoff
+brief's source (`handoff-brief.ts`). `projectCompactedHistory` narrows a
+projection to the cut alone (retained pins and tail removed) for the cold
+summary and the manual floor.
 
 ## Trigger and size estimate
 
@@ -238,52 +153,54 @@ scripts/probe-compaction-estimates.ts`. The probe reports each reachable
 provider against its declared family and a per-family recommendation with 10%
 headroom, using `apps/server/scripts/fixtures/compaction-estimator-probe.json`.
 
-## Summarizer
+## Failure landing
 
-`summary/conversation-summarizer.ts` implements the port in production. The port separates owner (response rows/correlation) from source (model, cache
-and transcript); compaction supplies the same thread for both. Warm
-sends the request in hand with an appended system-origin instruction and a
-lower output cap (summary reserve plus thinking budget); it never raises the
-cap or changes other fields. Any unusable warm response or provider failure
-runs cold once; Stop does not. Both attempts return their rows for
-settlement. Cold uses `COMPACTION_SUMMARIZER_MODEL` (default DeepSeek Flash),
-or the retained thread model when that provider is disabled. Its prediction is
-always `cold/summary_transcript`, not the thread prefix's prediction.
+- A failed required summary errors C and fails a reply below the latest message.
+  A failed optional manual summary errors only C and continues the request.
+- Failed C metadata records the typed `reason` and `phase`; a fit rejection also
+  records `estimatedTokens` and `fitLimitTokens`. `turn.error` carries the outcome
+  in its details. Summary rejections use code `compaction_failed` while their
+  reasons distinguish `max_tokens`, `provider_error`, `tool_use`, and `empty_text`;
+  unknown summary errors stay `compaction_failed`. Orphan recovery uses the same
+  metadata writer with `reason: interrupted` and `phase: recovery`, both at run
+  preparation and during the primary/child startup sweep. These codecs are
+  C's alone: a refused undo has its own reason set ([undo](undo.md)), and the
+  handoff seed's typed outcome is separate ([handoff](handoff.md)).
+- If the initial successor fits but a late arrival fails the second fit check,
+  C fails with `context_too_large` at `late_arrival` instead of committing the
+  epoch. Its paid summary rows settle in the C failure transaction. The late
+  message remains durably adopted, B fails below the latest arrival, and the
+  receipt is acknowledged.
+- A live unexpected error while C is current uses a fresh failure
+  transaction: C `error`, settled summary rows, failed B below the latest
+  arrivals, and receipt acknowledgment. Notices remain queued.
+- If that transaction also fails, orphan recovery owns C and this run makes
+  no further settlement attempt. Paid rows still in memory are uncommitted
+  and the orphan finalizer cannot recover them, exactly as at a process
+  crash. They are not debited; a later delivery may need another provider
+  call.
 
-Before summarization, one settled-authority revision query over the active
-projection (the history the summarizer reads, not only the planned cut) supplies
-only the changed URIs in the instruction (appended on warm, in the system
-prompt on cold). Warm requests keep their prefix unchanged.
+## Current turn and cancellation
 
-Warm compaction appends the plan's retained pin/tail exclusions to the instruction.
-Each model-visible passage is identified by role and a quoted opening (up to
-200 characters), using the active projection's rendered content. Tool-result
-openings include call IDs; assistant passages start with text or a tool call. This handles cuts within assistant tool groups and
-lifted pins without assuming a turn is one message: adjacent user messages can
-merge, and one assistant turn can render several messages. Preservation rules
-apply only to replaced material, not retained-only document URIs, reads or next
-steps. The request prefix, tools, and cache marks remain unchanged. Handoff
-briefs have no retained tail and keep their existing instruction.
+The lease does not copy the current turn's kind: `currentTurnKind(turn)`
+derives `assistant` or `compaction` from the referenced turn's role. Writer
+admission returns an assistant ID only when the current turn is an assistant.
 
-Cold receives only the cut blocks and prior summary, excluding the retained
-pin and tail. It renders model-visible custom content, omits opaque
-reasoning and thinking, and labels prior context. Before any cold call, all
-turns are measured. Oversized turns replace re-readable tool bodies with a
-URI and short excerpt, then split at block boundaries if needed. An oversized
-indivisible block fails before any cold call. Rolling segments carry the
-running summary forward and reserve its provider-token output cap
-independently of the CJK request estimator, then recheck each assembled
-request against the usable window. Prompts preserve exact story terminology,
-quoted writer wording, and per-document done and pending edits; they forbid
-invented facts.
+The lease keeps `bound_turn_ids` for the live run, appended in the same
+transaction as each current-turn binding. Stop matches this membership under
+the lease update lock, whether it names a predecessor or the newly committed
+successor, and whether it reaches the owning process or a remote one.
+Membership resets with the next run, so a finished run cannot cancel a newer
+lease. The process-local session keeps no second membership map. Remote
+cancellation reaches the local signal through the lease heartbeat as well as
+boundary checks.
 
-Output-limit failure uses the provider finish reason, not an input-token
-estimate; the successor fit check still measures the full assembled request.
-Every attempted call returns its row, prediction, and message count, even when
-a later segment fails or Stop aborts it. Summarizer adapters never throw after
-a paid call; unexpected throws are error-level events. Settlement records
-path and segment metadata and charges those rows only in the transaction
-ending C.
+Only the run signal or the durable cancel request authorizes cancellation. A
+summarizer that returns `cancelled` on a live signal has failed, and an
+internal `AbortError` alone is not Stop. Stop aborts the summary, and terminal
+close settles its response rows on cancelled C with the receipt
+acknowledgment. Late arrivals are not part of C's receipt and stay queued for
+the cancel wake.
 
 ## Context-window overflow
 
@@ -298,129 +215,30 @@ the same request. Metered output from an overflow is billed without retaining
 the incomplete response's blocks. The WebSocket live-state codec accepts
 `compacting` so a client can join while C is pending.
 
-## Control boundaries
+## Image re-admission
 
-A control K (`intent: "control"`, a `ControlBody` of kind `compact`,
-`compaction_undo`, or `handoff_brief`; the contracts package owns that list)
-takes no transcript position at enqueue. This section covers `compact`; Undo
-below and [handoff seeds](handoff.md) cover the other two. Its C is reserved at the leaf when a run
-boundary executes it, mid-task included; writer sends keep their enqueue
-position. So `hi1`, `/compact`, `hi2` sent while one reply streams compact
-before either message is answered, and both are pinned. Never reserve a
-control's placeholder at enqueue: a run can only reserve at the leaf, so a
-message queued ahead of the control would be answered after it. Controls have
-no run kind of their own; they execute through the boundaries a run already
-has. Rationale and rejected shapes:
-[Thread Controls Take Their Position When They Execute][kb-thread-controls].
+Complete compaction is the explicit image-budget rebalance seam. It first
+projects late arrivals with the normal chronological eviction rule, then
+resolves retained excluded candidates and admits them newest-first only into
+remaining budget. Candidates never evict existing inclusions; definite missing
+assets and transient resolution failures leave their prior decisions unchanged,
+while unexpected resolution errors still fail preparation. Keep the late-arrival
+pass first: with candidates first, a re-admitted image took room a new image
+then needed, so the new image evicted an included one and the pass wrote a
+removal notice for an image that was never removed. Candidates are never
+eviction victims, and each block is decided at most once per pass.
 
-`planControlBarrier` (`control-barrier.ts`) selects the raw inbox before Work coalescing and ack-id
-calculation. A head control waits for unbound directed rows ahead unless a
-chained row lies behind it; then every chained row and the inbox-only prefix
-are adopted before C. Notices alone never delay K. Controls never enter
-`drainInbox` or `planMessageTurns`. The first request after reservation uses its
-already-prepared context, not another control boundary.
+Re-admission decisions belong to C, so reverting C removes their effect and a
+fork copies them only when its cutoff includes C. `tokensAfter` measures the
+prepared request; successor commit rechecks fit after late arrivals and guards
+against overflow.
 
-Writer enqueue keeps writer turns visible immediately. Its prefix materializer
-uses the barrier but never reserves a control. Idle materialization holds a
-claim, repairs orphaned primary assistants and pending placeholders first,
-and then uses the same selection.
-A normal assistant close defers an executable control to the post-release wake;
-a tool boundary executes it inline. Both durable wake sweeps include controls.
-Cleanup wakes only when the raw pending barrier can execute a control now,
-with no bound/chained exemptions from the released run. A directed row ahead
-of K follows the ordinary message restart rule; failed replies and failures
-before reservation retry through the sweep, not a hot post-release loop.
+## Cost
 
-Manual decisions fit against the usable window; their tail budget base is
-`min(trigger, tokensBefore)`. Automatic and overflow decisions use their fit
-limit as the tail budget base. Pins include the existing unacknowledged receipt
-and newly adopted directed rows, even across consecutive controls. A refusal
-records an error divider without calling the summarizer or opening an epoch.
-`nothing_to_compact` covers nothing after the active cut, no pinned request,
-and a completed compaction as the newest completed turn: a `/compact` right
-after completed C refuses, because C's retained tail is not new history.
-Manual decisions also refuse when the compactable active projection estimates
-below the summarizer's maximum output tokens. This uses the same cut projection
-as the cold summary, excluding retained pins/tail and superseded raw history;
-fixed prompt/tool overhead cannot pay for the floor. The typed outcome is
-`{ reason: "nothing_to_compact", phase: "initial_prepare" }`, with no summary
-call, response row, or debit. Equality clears the floor. Automatic and overflow
-decisions do not use it. A minimal tail over the usable window refuses with `context_too_large`. Refusals
-go through the ordinary reservation commit and then the successor commit at
-once, so clients can briefly see a pending divider and a crash between the two
-leaves an interrupted divider before K redelivers; a single direct write would
-need a second transaction shape for the next-control and reply binding.
+Summary rows settle through the [summarizer](summarizer.md#paid-rows-and-settlement)
+in whichever transaction ends C. A child report's cost sums every assistant
+and compaction response from its selector through its terminal turn, counting
+a C that is both once (`execution-finalizer.ts`).
 
-If run-start preparation itself fails while K executes, the run still reserves
-K's manual C, with only `trigger` and `controlMessageId` in its metadata and no
-plan, ends it `error` with the preparation failure's copy, and acknowledges K
-with the batch. Code reading a manual C's metadata must not assume a plan; the
-interrupted copy reads `trigger` directly for this reason.
-
-A control's ending commit acknowledges its row, then reserves/binds the next
-due control, reserves B for an outstanding message or ongoing task, or releases
-the lease atomically. A control-only idle compaction creates no B. A failed
-optional manual summary continues the ordinary request. Stop on a manual C
-acknowledges controls only, leaving unanswered messages for the owner's
-post-release wake; ordinary autocompaction Stop retains its old receipt
-semantics. A crash leaves K pending for redelivery after orphan finalization.
-
-`thread-controls.ts` owns writer enqueue and withdrawal, separately from the
-message producer port. Client ids remain taken after execution or withdrawal.
-The thread lock serializes withdrawal with reservation. A manual control bound
-as `controlMessageId` becomes Stop, even after receipt expiry: withdrawal marks
-the locked receipt cancelled so a stalled owner cannot resume the compaction.
-Withdrawal also retires the control immediately, preventing replay if that
-owner dies before cleanup. `stopping` still describes the bound turn.
-Only row-owned handoff seeds ignore expired receipts and settle directly. An absorbed `satisfiesControlId` returns
-`already_finished`: the automatic C still retires it and answers its messages.
-`absorbPendingCompact` owns satisfaction selection for initial and mid-run
-reservation. Control enqueue finds the latest matching turn by control id
-(`TurnRepository.findByControlId`), not by loading the transcript. See
-[HTTP contracts](../../../../../../docs/api/thread-controls.md).
-
-## Undo
-
-A boundary expands consecutive due undos, then targets the first following
-compact or handoff control. Reservation and terminal checks use that expanded
-list, not only its head. Stale seed controls are excluded throughout expansion
-and retired in the same commit as the undo and its successor.
-
-`compaction-undo.ts` prepares U over the restored raw history. Only the active,
-local completed C is eligible. Runtime eligibility returns `not_active` for an
-inherited target; the enqueue route rejects a target outside this thread with
-`compaction_not_found` before execution. U reuses `bakeIdAt` immediately before C, owns a
-fresh document-staleness pass, and measures the decorated restored request
-against today's trigger. The sole refusal predicate implements Q2: reaching the
-trigger is `would_recompact`. The baseline is the last assistant response before
-C, never a response to C's summary. Model/bake mismatch, subsequent image eviction,
-or an elision inside that response's prefix removes the baseline.
-
-U has no reservation or model phase. Delivery inserts and completes it through
-`beginPromptEpoch` in the same transaction as adoption, control acknowledgement,
-and the next control/reply binding or lease release. Successful U is inserted
-pending privately, then announced complete in the journal; readers never receive
-a pending U. Inbox-only rows beyond U are planned after it, not folded into its
-adopted prefix. An idle undo reserves no
-assistant and admits no execution. A refused U has no blocks or bake; its reason
-lives in typed undo metadata (`already_undone`, `not_active`, `would_recompact`,
-`undo_failed`), while `turn.error` carries writer copy. The journal keeps the
-existing undo error codes and includes the reason in error details.
-A failed undo commit rolls back, then retries the delivery transaction with those
-undo controls marked `undo_failed`; ordinary messages still continue.
-
-Projection applies the active C's elisions to its retained tail, followed by the
-latest complete U after C. U plans from raw blocks, including earlier U owners'
-blocks but excluding replacements still owned by active C. A later C ends U's
-ownership. Image inclusion selects the latest decision after filtering out all
-reverted C owners from the same effective transcript. Fork cutoffs bound both.
-Snapshot availability is advisory and estimates the restored size from active
-local C's `tokensBefore` plus growth since C, using the latest post-C assistant
-response's input tokens relative to C's `tokensAfter`. A pending compaction
-makes availability null. An error U refused as `would_recompact` keeps that
-advisory when its recorded trigger matches today's trigger. Execution still
-measures the fully restored request; a missing model catalog entry yields null
-availability without hiding the durable snapshot.
-
-[kb-elision]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/request-prefix/stale-document-elision.md
-[kb-thread-controls]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/thread-controls.md
+[kb-run-prep]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/run-preparation-protocol.md
+[kb-summarizer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/compaction-summarizer-and-overflow.md
