@@ -1,3 +1,5 @@
+# FUTURE: nice-to-have follow-ups (runtime)
+
 - Measure the auto-spend from a background report waking the parent: the report
   auto-starts a parent turn with no writer action (design open q2). No
   budget/billing numeric assertion records what bounds that turn; measure

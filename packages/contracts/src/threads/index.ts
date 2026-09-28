@@ -149,7 +149,8 @@ export type ThreadActivity = {
 
 /**
  * Durable inbox message intent. A directed `message` wakes the thread; a
- * `notice` supplies context without starting a run.
+ * `notice` supplies context without starting a run; a `control` is a writer
+ * command (never chat text) that wakes the thread and executes at a run boundary.
  */
 export type MessageIntent = "message" | "notice" | "control";
 

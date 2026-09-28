@@ -108,6 +108,14 @@ tools/dev/
   its template; `dev:gc-dbs` recognizes the encoded owner PID for interrupted
   runs. CI/external Postgres instances retain serial execution against their
   pre-provisioned ephemeral database.
+- **DB suites under load:** runs never share databases, but under shared
+  Postgres load a timed-out fixture hook's async work can overlap the next
+  reset inside one worker database, which looks like cross-run interference
+  (duplicate `users_pkey`, `TRUNCATE users` deadlocks). The 30-second
+  `hookTimeout` mitigates it; the harness fix is
+  [#616](https://github.com/haowjy/meridian-flow/issues/616). Do not run
+  `pnpm check` and `pnpm test:db` at once in one worktree, and do not kill a
+  run whose cleanup is waiting on a PostgreSQL checkpoint: it finishes.
 - **Root check integration:** `pnpm check` ends with `check-db-gate.ts`. A
   missing or unreachable configured Postgres server is a loud skip because the
   static CI job has no database service; a reachable server runs the same

@@ -130,7 +130,8 @@ export default defineProject({
     // Vitest's 5s default is too tight for the heavier real-Postgres suites, and a
     // timed-out test or fixture hook's async DB work is NOT cancelled — it
     // overlaps the next test's destructive reset and corrupts it. Give setup
-    // and cleanup the same 30s budget as test bodies. (#314)
+    // and cleanup the same 30s budget as test bodies. (#314) Under shared
+    // Postgres load a hook can still outlast this; the harness fix is #616.
     testTimeout: 30_000,
     hookTimeout: 30_000,
     reporters: [

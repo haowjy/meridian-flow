@@ -51,8 +51,12 @@ for the tool-freeze mechanics.
 `domain/turn-metadata.ts` is the single home for turn-metadata codecs,
 constructors, interrupted pending-placeholder copy, and `classifyHistoryItem`,
 including image-inclusion and compaction metadata. Interrupted compaction copy
-reads its trigger through `CompactionMetadataCodec` and exhaustively handles
-the pending-placeholder role set from `@meridian/contracts/threads`. Runtime
+reads only the raw `trigger` (a manual C whose run failed preparation carries no
+plan, so the full codec would not parse) and exhaustively handles the
+pending-placeholder role set from `@meridian/contracts/threads`. A completed
+compaction's metadata also carries its frozen `elisions` and ordered
+`pinnedRequestTurnIds`; the codec passes through `controlMessageId` and
+`satisfiesControlId` without declaring them. Runtime
 producers build inbox/child turns, writer sends and steers, Work/notice/skill/system
 updates, saved-report repairs, derivation seeds, image breaks, and compaction
 boundaries through its constructors. Compaction planning/projection, cache
@@ -243,8 +247,8 @@ transactions. See the [runtime contract](../../runtime/.context/CONTEXT.md).
 | `ProjectChatFeedRepository` | Flat primary-chat pages ranked by latest visible activity, with an optional Favorite filter before pagination. |
 | `WorkChatFeedRepository` | Bounded historical-Work association pages over the same primary Project-chat projection, ordered by `(threads.last_activity_at DESC, threads.id DESC)` — the same stored activity sort as `ProjectChatFeedRepository`, and the same `ProjectChatItem` row shape (`chatFeedRowsSql`). |
 | `ThreadUserStateRepository` | Per-writer favorite authority. |
-| `TurnRepository` | `create / findById / listByThread / getLatestByThread / updateStatus / recomputeRollups` |
-| `BlockRepository` | `create / findById / listByTurn / listByThread / updatePruned` |
+| `TurnRepository` | `create / findById / findByControlId / listByThread / listPendingPlaceholdersForThread / listPendingPlaceholders / getLatestByThread / findRunningAssistantId / updateStatus / recomputeRollups` |
+| `BlockRepository` | `create / upsert / replaceExisting / findById / listByTurn / listByThread`. Blocks carry no model-only state: compaction elisions live in the compaction turn's metadata, never on block rows. |
 | `ModelResponseRepository` | `create / findById / listByTurn / listByThread / findLatestByThread / sumUsageByThread / cacheResetContext` |
 | `ThreadRepositories` | aggregate of the repositories + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
 | `ThreadWorksRepository` | Adds organizational memberships and reads the primary. Its thread-before-Work primary rebind revalidates thread lifecycle under the same row lock, then demotes the old membership and promotes/upserts the target WorkId, retaining association history while preserving exactly one primary. |

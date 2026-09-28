@@ -2,7 +2,8 @@
 
 How a run compacts: the two delivery transitions around the summary, their
 failure, cancel, and recovery rules, cost, the trigger and size estimate, the
-summarizer, document-text elision, and context-window overflow recovery.
+summarizer, document-text elision, image re-admission, context-window overflow
+recovery, and the queued controls (`/compact`) that execute at run boundaries.
 
 ## Two delivery transitions
 
@@ -47,7 +48,14 @@ The writer transcript stays intact. A completed compaction owns frozen
 `metadata.elisions` (block ID, treatment, affected URIs, replacement content).
 `projectActiveHistory` substitutes only its retained tail and pinned requests,
 not later arrivals. Reverted, failed, pending and superseded owners do not apply.
-Forks inherit this metadata only when their cutoff includes the owner.
+Forks inherit this metadata only when their cutoff includes the owner. Never
+move elisions onto block rows: a fork reads its source's blocks in place, so a
+source compaction after the cutoff would rewrite the fork's request, and undo
+could no longer restore the text by reverting C. Do not derive stubs at render
+time either: a copy change in a deploy would rewrite every compacted thread's
+prefix. `compaction/elide.ts` plans the replacements and
+`compaction-revisions.ts` queries current revisions. Rationale:
+[Compaction Elides Only Stale Document Text][kb-elision].
 
 `ToolRegistration.documentText` owns each tool's classification and replacement
 copy. `write` and `search` register policies; references use `reference-context`.
@@ -60,6 +68,9 @@ words and mention stay verbatim. Pins retain identity and order, not stale embed
 Successor prepare independently queries current document revisions once per
 attempt and plans from raw retained blocks, never from a previous owner's
 replacements. A moved leaf re-queries, while a failed prepare writes no elisions.
+An edit made after the successor commit reaches the model as stale text until
+the next compaction; elision runs only where the prefix already breaks at
+position 0.
 The loop asserts no response scope is open: `DocumentRevisions.current` cannot
 represent response-staged overlays. Query failures become unknown tokens; the
 assertion is an invariant failure, not a lookup failure.
@@ -71,7 +82,11 @@ projects late arrivals with the normal chronological eviction rule, then
 resolves retained excluded candidates and admits them newest-first only into
 remaining budget. Candidates never evict existing inclusions; definite missing
 assets and transient resolution failures leave their prior decisions unchanged,
-while unexpected resolution errors still fail preparation.
+while unexpected resolution errors still fail preparation. Keep the late-arrival
+pass first: with candidates first, a re-admitted image took room a new image
+then needed, so the new image evicted an included one and the pass wrote a
+removal notice for an image that was never removed. Candidates are never
+eviction victims, and each block is decided at most once per pass.
 
 Re-admission decisions belong to C, so reverting C removes their effect and a
 fork copies them only when its cutoff includes C. `tokensAfter` measures the
@@ -190,8 +205,12 @@ always `cold/summary_transcript`, not the thread prefix's prediction.
 
 Before summarization, one settled-authority revision query over the active
 projection (the history the summarizer reads, not only the planned cut) supplies
-only the changed URIs in the appended instruction. Warm requests keep their
-prefix unchanged.
+only the changed URIs in the instruction (appended on warm, in the system
+prompt on cold). Warm requests keep their prefix unchanged.
+
+The warm summary sees the retained tail it will sit in front of and can restate
+it, so a manual `/compact` on a short thread can grow the request
+([#619](https://github.com/haowjy/meridian-flow/issues/619)).
 
 Cold receives only the cut blocks and prior summary, excluding the retained
 pin and tail. It renders model-visible custom content, omits opaque
@@ -228,7 +247,18 @@ the incomplete response's blocks. The WebSocket live-state codec accepts
 
 ## Control boundaries
 
-`planControlBarrier` selects the raw inbox before Work coalescing and ack-id
+A control K (`intent: "control"`, today only `{ kind: "compact" }`) takes no
+transcript position at enqueue. Its C is reserved at the leaf when a run
+boundary executes it, mid-task included; writer sends keep their enqueue
+position. So `hi1`, `/compact`, `hi2` sent while one reply streams compact
+before either message is answered, and both are pinned. Never reserve a
+control's placeholder at enqueue: a run can only reserve at the leaf, so a
+message queued ahead of the control would be answered after it. Controls have
+no run kind of their own; they execute through the boundaries a run already
+has. Rationale and rejected shapes:
+[Thread Controls Take Their Position When They Execute][kb-thread-controls].
+
+`planControlBarrier` (`control-barrier.ts`) selects the raw inbox before Work coalescing and ack-id
 calculation. A head control waits for unbound directed rows ahead unless a
 chained row lies behind it; then every chained row and the inbox-only prefix
 are adopted before C. Notices alone never delay K. Controls never enter
@@ -250,8 +280,20 @@ Manual decisions fit against the usable window; their tail budget base is
 limit as the tail budget base. Pins include the existing unacknowledged receipt
 and newly adopted directed rows, even across consecutive controls. A refusal
 records an error divider without calling the summarizer or opening an epoch.
-A manual control immediately after completed C refuses with `nothing_to_compact`;
-C's retained tail is not new history.
+`nothing_to_compact` covers nothing after the active cut, no pinned request,
+and a completed compaction as the newest completed turn: a `/compact` right
+after completed C refuses, because C's retained tail is not new history. A
+minimal tail over the usable window refuses with `context_too_large`. Refusals
+go through the ordinary reservation commit and then the successor commit at
+once, so clients can briefly see a pending divider and a crash between the two
+leaves an interrupted divider before K redelivers; a single direct write would
+need a second transaction shape for the next-control and reply binding.
+
+If run-start preparation itself fails while K executes, the run still reserves
+K's manual C, with only `trigger` and `controlMessageId` in its metadata and no
+plan, ends it `error` with the preparation failure's copy, and acknowledges K
+with the batch. Code reading a manual C's metadata must not assume a plan; the
+interrupted copy reads `trigger` directly for this reason.
 
 A control's ending commit acknowledges its row, then reserves/binds the next
 due control, reserves B for an outstanding message or ongoing task, or releases
@@ -262,10 +304,21 @@ post-release wake; ordinary autocompaction Stop retains its old receipt
 semantics. A crash leaves K pending for redelivery after orphan finalization.
 
 `thread-controls.ts` owns writer enqueue and withdrawal, separately from the
-message producer port. Client ids remain taken after execution or withdrawal.
-The thread lock serializes withdrawal with reservation. A manual control bound
-as `controlMessageId` becomes Stop. An absorbed `satisfiesControlId` returns
-`already_finished`: the automatic C still retires it and answers its messages.
+message producer port. Client ids remain taken after execution or withdrawal,
+so withdrawal acknowledges the row and never deletes it. The thread lock
+serializes withdrawal with reservation. Withdrawal outcomes:
+
+| K is | Outcome |
+|---|---|
+| Pending and unbound | Acknowledged, `withdrawn` |
+| Bound as the live manual C's `controlMessageId` | Stop on that C, `stopping` |
+| Absorbed by an autocompaction (`satisfiesControlId`) | `already_finished`; that C was needed for the writer's reply and retires K itself, and withdrawal never cancels the reply |
+| Already acknowledged | `already_finished` |
+
 `absorbPendingCompact` owns satisfaction selection for initial and mid-run
-reservation. Control enqueue finds the latest matching turn by control id,
-not by loading the transcript. See [HTTP contracts](../../../../../../docs/api/thread-controls.md).
+reservation. Control enqueue finds the latest matching turn by control id
+(`TurnRepository.findByControlId`), not by loading the transcript. See
+[HTTP contracts](../../../../../../docs/api/thread-controls.md).
+
+[kb-elision]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/request-prefix/stale-document-elision.md
+[kb-thread-controls]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/thread-controls.md

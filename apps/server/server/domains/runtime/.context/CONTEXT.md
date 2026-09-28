@@ -582,5 +582,7 @@ the Yjs gateway and flushing observability. Still-running lanes emit
 ## Compaction
 
 Runtime compaction covers trigger and estimator rates, summarization, delivery
-transitions, overflow recovery, cancellation, placeholder recovery, and cost. See
+transitions, stale document-text elision, image re-admission, overflow
+recovery, cancellation, placeholder recovery, cost, and the queued controls
+(`/compact`) that execute at run boundaries through `planControlBarrier`. See
 [runtime compaction context](compaction.md) for the protocol and its details.
