@@ -2,7 +2,8 @@
  * threads-api — HTTP client for thread lifecycle and snapshot endpoints.
  *
  * Typed wrappers for list/create thread, append user message, cancel turn,
- * delete thread, and fetch/deserialize a thread snapshot. Owns the thread
+ * queue or withdraw writer controls, delete thread, and fetch/deserialize a
+ * thread snapshot. Owns the thread
  * network surface the chat flow and snapshot sync build on.
  */
 import {
@@ -11,6 +12,8 @@ import {
   apiAvailableSkillsPath,
   apiThreadAdmissionPath,
   apiThreadCancelPath,
+  apiThreadControlsPath,
+  apiThreadControlWithdrawPath,
   apiThreadMessagePath,
   apiThreadModelRequestsDebugPath,
   apiThreadPath,
@@ -38,6 +41,11 @@ import {
   type UpdateThreadUserStateRequest,
   type UpdateThreadUserStateResponse,
 } from "@meridian/contracts/protocol";
+import type {
+  EnqueueThreadControlRequest,
+  EnqueueThreadControlResponse,
+  WithdrawThreadControlResponse,
+} from "@meridian/contracts/threads";
 import type { RebindThreadWorkRequest, RebindThreadWorkResponse } from "@meridian/contracts/works";
 
 import { deleteJson, deleteRequest, getJson, patchJson, postJson, putJson } from "./http-client";
@@ -119,6 +127,25 @@ export function cancelTurn({ data }: { data: CancelTurnInput }): Promise<CancelT
   return postJson(apiThreadCancelPath(data.threadId, data.turnId), {
     reason: data.reason,
   });
+}
+
+/**
+ * Queue a writer control. The id is client-minted, so a retry with the same id
+ * is a no-op on the server (201 new, 200 existing).
+ */
+export function enqueueThreadControl(
+  threadId: string,
+  request: EnqueueThreadControlRequest,
+): Promise<EnqueueThreadControlResponse> {
+  return postJson(apiThreadControlsPath(threadId), request);
+}
+
+/** Withdraw a queued control, or Stop the run that already bound it. */
+export function withdrawThreadControl(
+  threadId: string,
+  controlId: string,
+): Promise<WithdrawThreadControlResponse> {
+  return postJson(apiThreadControlWithdrawPath(threadId, controlId), {});
 }
 
 export function deleteThread({ data }: { data: { threadId: string } }): Promise<void> {
