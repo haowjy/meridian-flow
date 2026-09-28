@@ -109,6 +109,8 @@ Core shell expectations:
   typography, has no padding or border, sizes to its text, and paints its edge
   with the `inline-edit-field` box-shadow bleed. Resting text wears
   `inline-edit-trigger`. Tab titles (chat, Work) rename inside their tab.
+- Confirm/dismiss pairs sit at the right edge, dismiss first: Cancel, then the
+  primary action (Save, Create, Delete).
 - Respect reduced motion; motion should clarify location or state, not perform for its own sake.
 - Show model/thread/process depth only when it helps the writer understand or recover from a situation.
 

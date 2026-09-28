@@ -51,9 +51,8 @@ describe("WorkMetadata", () => {
     const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
     await withReactRoot(<Harness saveWork={saveWork} />, async () => {
       await click(
-        [...document.querySelectorAll("button")].find((button) =>
-          button.textContent?.startsWith("First paragraph"),
-        ) ?? null,
+        [...document.querySelectorAll("button")].find((button) => button.textContent === "Edit") ??
+          null,
       );
       const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
       expect(textarea).not.toBeNull();
@@ -75,9 +74,8 @@ describe("WorkMetadata", () => {
     const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
     await withReactRoot(<Harness saveWork={saveWork} />, async () => {
       await click(
-        [...document.querySelectorAll("button")].find((button) =>
-          button.textContent?.startsWith("First paragraph"),
-        ) ?? null,
+        [...document.querySelectorAll("button")].find((button) => button.textContent === "Edit") ??
+          null,
       );
       const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
       if (!textarea) throw new Error("Description editor did not open");

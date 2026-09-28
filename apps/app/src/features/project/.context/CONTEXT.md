@@ -78,7 +78,12 @@ and renamed inside it (`WorkTitleTab` over `TabTitleField`, no dropdown), and th
 Work's `…` menu at the far right. The phone top bar shows the same pieces as a
 `Work › <name>` trail. Delete state (`useWorkDeletion`) lives above the screen so
 the band's menu and the collection's Undo row share it. The page body starts at
-the description, which edits in place without moving (see DESIGN.md).
+the description: clicking a clamped description shows all of it, Show less folds
+it, and a right-aligned Edit edits it in place without moving (see DESIGN.md),
+with Cancel and Save right-aligned below. The last opened Work is remembered
+per device (`client/current-work`): the sidebar's Work reopens it while it
+exists, and the collection band offers it as a `ReturnTabChip`, like the
+current chat beside the chat index.
 New Work and New project are `CreationDialog` (features/creation) over their
 collection, addressed as `works/new` and `/projects/new`. Create closes the
 dialog, replaces that address with the new destination (navigate first), and

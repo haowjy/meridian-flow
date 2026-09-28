@@ -8,6 +8,7 @@ import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-quer
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getProjectDocumentAddress } from "@/client/api/projects-api";
+import { readCurrentWork, writeCurrentWork } from "@/client/current-work";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { type ProjectRouteData, seedProjectRouteData } from "@/client/query/project-route-data";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
@@ -624,10 +625,25 @@ export function ReadableProjectRoute({
     folder: destination.kind === "browse" ? `/${destination.path}` : undefined,
     results: address.results ? "" : undefined,
   };
+  const shownRouteWork = routeWorkForDestination(destination, work);
+  const shownWorkId =
+    activeScreen === "work" && shownRouteWork.status === "present" ? shownRouteWork.workId : null;
+  useEffect(() => {
+    if (shownWorkId) writeCurrentWork(user.userId, projectId, shownWorkId);
+  }, [projectId, shownWorkId, user.userId]);
   const selectScreen = (next: ScreenKey) => {
     if (next === activeScreen && next !== "chat") return Promise.resolve();
     // Chat reopens the current chat; with none, its index.
     if (next === "chat") return chat.showChatScreen();
+    // Work reopens the last opened Work while it still exists; else the collection.
+    if (next === "work") {
+      const remembered = parseRequestId(readCurrentWork(user.userId, projectId) ?? "");
+      if (remembered && works.works?.some((entry) => entry.id === remembered))
+        return routeCommands.openWork(
+          { kind: "work-detail", workId: remembered },
+          { replace: false },
+        );
+    }
     if (next === "context" && contextRemoval.getProjectSnapshot(projectId).live) {
       const workspace = getContextTabs(projectId);
       const tab = selectEditorEntryTab({
@@ -697,7 +713,7 @@ export function ReadableProjectRoute({
             chatDisplay={chat.display}
             entryHydration={entryHydration}
             addressOwnsDocumentAdmission
-            routeWork={routeWorkForDestination(destination, work)}
+            routeWork={shownRouteWork}
             editorRouteWork={routeWork(editorWork)}
             routeLocationKey={location.state.__TSR_key ?? location.href}
             routeIssues={{ main: mainIssue, editor: editorIssue }}

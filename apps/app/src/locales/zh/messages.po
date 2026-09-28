@@ -711,7 +711,7 @@ msgstr ""
 msgid "Back"
 msgstr ""
 
-#: src/features/project/chat-index/ChatIndexButton.tsx
+#: src/features/project/shell/IndexTabChip.tsx
 msgid "Back to {title}"
 msgstr ""
 
@@ -1798,6 +1798,7 @@ msgid "Earlier"
 msgstr ""
 
 #: src/features/chat/UserTurn.tsx
+#: src/features/project/work/WorkMetadata.tsx
 msgid "Edit"
 msgstr ""
 

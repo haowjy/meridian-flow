@@ -6,9 +6,11 @@
 import { t } from "@lingui/core/macro";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import { Layers } from "lucide-react";
-import { useWorkMutations } from "@/client/query/useWorks";
+import { readCurrentWork } from "@/client/current-work";
+import { useWorkMutations, useWorks } from "@/client/query/useWorks";
+import { useAccountId } from "../context/account-feature-context";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
-import { IndexTabChip } from "../shell/IndexTabChip";
+import { IndexTabChip, ReturnTabChip } from "../shell/IndexTabChip";
 import { useWorkCreationRecords } from "./useWorkCreation";
 import type { WorkDeletion } from "./useWorkDeletion";
 import { WorkActionsMenu } from "./WorkActionsMenu";
@@ -36,6 +38,14 @@ export function useWorkChrome(
     void routeCommands.closeWork({ replace: false });
   };
   const work = routeWork.status === "present" ? routeWork.work : null;
+  // On the collection, the last opened Work waits as a tab back, like the
+  // current chat beside the chat index.
+  const accountId = useAccountId();
+  const works = useWorks(projectId).works;
+  const rememberedId = onCollection ? readCurrentWork(accountId, projectId) : null;
+  const remembered = rememberedId
+    ? (works?.find((entry) => entry.id === rememberedId) ?? null)
+    : null;
   return {
     onCollection,
     openCollection,
@@ -52,6 +62,15 @@ export function useWorkChrome(
       <WorkTitleTab key={work.id} projectId={projectId} work={work} variant={variant} />
     ) : pendingName ? (
       <PendingWorkTitleTab name={pendingName} variant={variant} />
+    ) : remembered && variant === "tab" ? (
+      <ReturnTabChip
+        title={remembered.name}
+        onClick={() => {
+          const workId = parseRequestId(remembered.id);
+          if (workId)
+            void routeCommands.openWork({ kind: "work-detail", workId }, { replace: false });
+        }}
+      />
     ) : null,
     actions: work ? (
       <WorkActionsMenu

@@ -156,12 +156,13 @@ const bodyText = "max-w-3xl whitespace-pre-wrap break-words";
 const clampHeight = "max-h-[calc(var(--text-body--line-height)*3)]";
 
 /**
- * The Work description: body text clamped to three lines with Show more.
- * Clicking it edits in place; the field takes the text's exact position and
- * size, then shows everything. Save and Cancel sit below; blur never saves.
+ * The Work description: body text clamped to three lines. Clicking a clamped
+ * description shows all of it; Show less folds it again. Edit (or clicking an
+ * empty description) edits in place: the field takes the text's exact position
+ * and size. Save and Cancel sit below; blur never saves.
  */
 export function WorkDescription({ controller: c }: { controller: WorkMetadataController }) {
-  const display = useRef<HTMLButtonElement | null>(null);
+  const display = useRef<HTMLDivElement | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
   useLayoutEffect(() => {
@@ -182,6 +183,10 @@ export function WorkDescription({ controller: c }: { controller: WorkMetadataCon
     observer.observe(node);
     return () => observer.disconnect();
   }, [c.editing, c.work.goal, expanded]);
+  const clamped = overflows && !expanded;
+  const bindEditFocus = (node: HTMLButtonElement | null) => {
+    c.displayRef.current = node;
+  };
   return (
     <div className="min-w-0 text-body text-foreground">
       <p className="sr-only" aria-live="polite">
@@ -189,36 +194,65 @@ export function WorkDescription({ controller: c }: { controller: WorkMetadataCon
       </p>
       {c.editing ? (
         <DescriptionEditor controller={c} />
+      ) : !c.work.goal ? (
+        <button
+          type="button"
+          ref={bindEditFocus}
+          onClick={c.activate}
+          className={cn(
+            bodyText,
+            "inline-edit-trigger focus-ring block text-left text-muted-foreground [@media(pointer:coarse)]:min-h-11",
+          )}
+        >
+          {t`Add a description of what this Work is for`}
+        </button>
       ) : (
         <>
-          <button
-            type="button"
-            ref={(node) => {
-              display.current = node;
-              c.displayRef.current = node;
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: a pointer shortcut; the Show more button below is the keyboard path. */}
+          {/* biome-ignore lint/a11y/useKeyWithClickEvents: as above. */}
+          <div
+            ref={display}
+            onClick={() => {
+              if (clamped && !window.getSelection()?.toString()) setExpanded(true);
             }}
-            onClick={c.activate}
             className={cn(
               bodyText,
-              "inline-edit-trigger focus-ring block w-full overflow-hidden text-left [@media(pointer:coarse)]:min-h-11",
+              "overflow-hidden",
               !expanded && clampHeight,
-              overflows &&
-                !expanded &&
-                "[mask-image:linear-gradient(to_bottom,#000_55%,transparent)]",
-              !c.work.goal && "text-muted-foreground",
+              clamped &&
+                "cursor-pointer [mask-image:linear-gradient(to_bottom,#000_55%,transparent)]",
             )}
           >
-            {c.work.goal || t`Add a description of what this Work is for`}
-          </button>
-          {overflows ? (
+            {c.work.goal}
+          </div>
+          <div className="mt-1 flex max-w-3xl items-center gap-3">
+            {clamped ? (
+              <button
+                type="button"
+                className="sr-only focus-visible:not-sr-only focus-visible:text-button focus-visible:text-sm"
+                onClick={() => setExpanded(true)}
+              >
+                <Trans>Show more</Trans>
+              </button>
+            ) : null}
+            {overflows && expanded ? (
+              <button
+                type="button"
+                className="text-button min-h-6 text-sm [@media(pointer:coarse)]:min-h-11"
+                onClick={() => setExpanded(false)}
+              >
+                <Trans>Show less</Trans>
+              </button>
+            ) : null}
             <button
               type="button"
-              className="text-button mt-1 min-h-6 text-sm [@media(pointer:coarse)]:min-h-11"
-              onClick={() => setExpanded(!expanded)}
+              ref={bindEditFocus}
+              onClick={c.activate}
+              className="focus-ring ml-auto min-h-6 rounded-sm text-sm text-muted-foreground hover:text-foreground [@media(pointer:coarse)]:min-h-11"
             >
-              {expanded ? <Trans>Show less</Trans> : <Trans>Show more</Trans>}
+              <Trans>Edit</Trans>
             </button>
-          ) : null}
+          </div>
         </>
       )}
     </div>
@@ -255,7 +289,10 @@ function DescriptionEditor({ controller: c }: { controller: WorkMetadataControll
           {c.error}
         </p>
       ) : null}
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-3 flex max-w-3xl justify-end gap-2">
+        <Button size="sm" variant="ghost" disabled={c.saving} onClick={c.cancel}>
+          <Trans>Cancel</Trans>
+        </Button>
         <Button size="sm" disabled={c.saving} onClick={() => void c.save()}>
           {c.saving ? (
             <Trans>Saving…</Trans>
@@ -264,9 +301,6 @@ function DescriptionEditor({ controller: c }: { controller: WorkMetadataControll
           ) : (
             <Trans>Save</Trans>
           )}
-        </Button>
-        <Button size="sm" variant="ghost" disabled={c.saving} onClick={c.cancel}>
-          <Trans>Cancel</Trans>
         </Button>
       </div>
     </>
