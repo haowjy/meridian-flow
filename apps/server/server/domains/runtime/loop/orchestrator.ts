@@ -1717,6 +1717,12 @@ async function executeLoop(
       });
     } catch (error) {
       if (!(error instanceof HandoffSeedSettledError)) throw error;
+      await deps.delivery.withThreadLock(thread.id, async (producer) => {
+        const staleControls = (await deps.delivery.selectPending(thread.id)).filter(
+          (row) => row.body.kind === "handoff_brief" && row.body.seedTurnId === currentTurn.id,
+        );
+        await producer.acknowledge(staleControls.map((row) => row.id));
+      });
       currentTurn = error.turn;
       terminalControl = true;
       return { turns: [], blocks: [], events: [], ackIds: [] };

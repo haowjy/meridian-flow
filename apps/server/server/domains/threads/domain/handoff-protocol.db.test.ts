@@ -1,6 +1,7 @@
 /** PostgreSQL contracts for handoff creation, seed ownership, and control endings. */
 
 import * as http from "@meridian/contracts/protocol";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createDrizzleRunClaim } from "../../runtime/adapters/drizzle-run-claim.js";
@@ -200,11 +201,15 @@ else
           (await rig.orchestrator.prepare({ threadId: thread.id, drain: true })).execute(),
         async settled() {
           await expect
-            .poll(async () => (await claim.read(thread.id)).kind, { timeout: 10000 })
-            .toBe("asleep");
-          await expect
-            .poll(() => delivery.selectPending(thread.id), { timeout: 10000 })
-            .toEqual([]);
+            .poll(
+              async () => ({
+                claim: (await claim.read(thread.id)).kind,
+                pending: (await delivery.selectPending(thread.id)).length,
+                running: rig.orchestrator.getRunningTurn(thread.id) !== null,
+              }),
+              { timeout: 10000 },
+            )
+            .toEqual({ claim: "asleep", pending: 0, running: false });
           return repos.turns.listByThread(thread.id);
         },
       };
@@ -313,6 +318,68 @@ else
         props: { state: "available", brief: "Earlier context." },
       });
     });
+    it.each([
+      "drain",
+      "Stop",
+      "withdrawal",
+    ])("C7 stale seed control releases hi through %s", async (action) => {
+      const r = await fixture();
+      const [control] = await r.delivery.selectPending(r.thread.id);
+      await db.update(schema.turns).set({ status: "error" }).where(eq(schema.turns.id, r.seed.id));
+      await r.send(r.thread.id, "hi after stale seed");
+      if (action === "Stop")
+        expect(await r.orchestrator.cancel(r.thread.id, r.seed.id)).toBe("cancelled");
+      if (action === "withdrawal")
+        expect(await r.delivery.withdrawControl(r.thread.id, control.id)).toEqual({
+          outcome: "withdrawn",
+        });
+      await r.drain();
+      const turns = await r.settled();
+      expect(turns[0].status).toBe("error");
+      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
+      expect(r.summarizer.calls).toHaveLength(0);
+      expect(JSON.stringify(r.gateway.requests.at(-1))).toContain("hi after stale seed");
+    });
+
+    it.each([
+      false,
+      true,
+    ])("C7 missing seed retires its control with queued message=%s", async (message) => {
+      const r = await fixture();
+      const [control] = await r.delivery.selectPending(r.thread.id);
+      await db.update(schema.turns).set({ status: "error" }).where(eq(schema.turns.id, r.seed.id));
+      await db
+        .update(schema.threadInboxMessages)
+        .set({ body: { kind: "handoff_brief", seedTurnId: crypto.randomUUID() } })
+        .where(eq(schema.threadInboxMessages.id, control.id));
+      if (message) {
+        await r.send(r.thread.id, "hi after missing seed");
+        await r.drain();
+        expect((await r.settled()).at(-1)).toMatchObject({ role: "assistant", status: "complete" });
+      } else {
+        await expect(r.drain()).rejects.toMatchObject({ name: "NoPendingWakeError" });
+        expect(await r.delivery.selectPending(r.thread.id)).toEqual([]);
+      }
+      expect(r.summarizer.calls).toHaveLength(0);
+    });
+
+    it("C7 a seed settled during briefing releases hi without overwriting it", async () => {
+      let r: Awaited<ReturnType<typeof fixture>>;
+      r = await fixture(async () => {
+        await db
+          .update(schema.turns)
+          .set({ status: "error" })
+          .where(eq(schema.turns.id, r.seed.id));
+        return { kind: "complete", text: "must not persist", model: "script", modelResponses: [] };
+      });
+      await r.send(r.thread.id, "hi during stale brief");
+      await r.drain();
+      const turns = await r.settled();
+      expect(turns[0].status).toBe("error");
+      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
+      expect(JSON.stringify(r.gateway.requests.at(-1))).not.toContain("must not persist");
+    });
+
     it("C7 failed brief lets hi run with the fallback", async () => {
       const r = await fixture(async () => ({
         kind: "failed",

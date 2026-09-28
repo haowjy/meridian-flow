@@ -9,6 +9,12 @@ The barrier gives a row-owned seed an empty adoption batch. Messages already
 chained after it are late arrivals. Run start binds S; the slow brief call runs
 without a transaction. The ending delivery commit settles S, acknowledges K,
 adopts arrivals and binds the next control or reply (or releases a quiet lease).
+A missing or settled row-owned seed is not a barrier: delivery retires its
+control in the replacement reservation transaction, or alone when no messages
+remain. Stop and withdrawal acknowledge such controls without re-finalizing
+the seed. If a live brief discovers a settled seed, it retires its control and
+lets the normal wake answer queued messages from durable context.
+
 Retry has no seed pointer: its new seed is reserved at the execution leaf.
 The current-turn kind is `handoff_brief`; the live phase is `briefing`.
 

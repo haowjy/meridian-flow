@@ -31,7 +31,8 @@ export function createThreadControls(deps: {
 }): ThreadControls {
   async function cancelUnboundSeed(threadId: ThreadId, row: InboxMessage) {
     if (row.body.kind !== "handoff_brief" || !row.body.seedTurnId) return;
-    await deps.cancelSeed(threadId, row.body.seedTurnId);
+    const seed = await deps.findTurn(row.body.seedTurnId);
+    if (seed?.status === "pending") await deps.cancelSeed(threadId, seed.id);
   }
   return {
     cancelPendingSeed: (threadId, turnId) =>

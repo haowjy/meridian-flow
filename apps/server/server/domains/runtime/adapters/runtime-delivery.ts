@@ -30,6 +30,7 @@ import type {
   RunStarter,
 } from "../loop/ports.js";
 import { writerFacingPreparationError } from "../loop/preparation-failure.js";
+import { NoPendingWakeError } from "../loop/run-turn-port.js";
 import type {
   AdoptedBatch,
   DeliveryBoundary,
@@ -86,10 +87,21 @@ export function createDeliveryAdapter(
       pending: await readPendingInbox(inbox, threadId),
     });
   };
+  async function findStaleSeedControls(pending: InboxMessage[]) {
+    const stale: string[] = [];
+    for (const row of pending) {
+      if (row.body.kind !== "handoff_brief" || !row.body.seedTurnId) continue;
+      const seed = await deps.repos.turns.findById(row.body.seedTurnId);
+      if (!seed || !isPendingPlaceholder(seed)) stale.push(row.id);
+    }
+    return stale;
+  }
   async function selectForPreparation(threadId: ThreadId, satisfyPendingCompact?: boolean) {
     const pendingBatch = await inbox.selectPending(threadId);
+    const staleSeedControls = await findStaleSeedControls(pendingBatch);
+    const eligible = pendingBatch.filter((row) => !staleSeedControls.includes(row.id));
     const projection = await inbox.readPendingProjection(threadId);
-    const headControl = pendingBatch.find(
+    const headControl = eligible.find(
       (row) => row.intent === "control" && !projection.run?.messageIds.includes(row.id),
     );
     const satisfiesControlId =
@@ -99,12 +111,12 @@ export function createDeliveryAdapter(
       ...(satisfiesControlId ? [satisfiesControlId] : []),
     ]);
     const chained = await Promise.all(
-      pendingBatch
+      eligible
         .filter((row) => !boundIds.has(row.id))
         .map((row) => deps.repos.turns.findById(row.id)),
     );
     const barrier = planControlBarrier({
-      pending: pendingBatch,
+      pending: eligible,
       boundIds,
       chainedIds: new Set(chained.flatMap((turn) => (turn ? [turn.id] : []))),
     });
@@ -119,10 +131,10 @@ export function createDeliveryAdapter(
       control: barrier.execute,
       satisfiesControlId,
       headControl:
-        (pendingBatch.find((row) => row.intent === "control" && !boundIds.has(row.id)) as
+        (eligible.find((row) => row.intent === "control" && !boundIds.has(row.id)) as
           | ControlMessage
           | undefined) ?? null,
-      outstanding: pendingBatch.filter(
+      outstanding: eligible.filter(
         (row) =>
           row.intent === "message" &&
           (boundIds.has(row.id) || barrier.batch.some((selected) => selected.id === row.id)),
@@ -131,7 +143,7 @@ export function createDeliveryAdapter(
       notices,
       activeLeafTurnId: thread.activeLeafTurnId,
     };
-    return { selection, pendingBatch, work };
+    return { selection, pendingBatch, work, staleSeedControls };
   }
   async function selectionStillCurrent(
     threadId: ThreadId,
@@ -144,7 +156,8 @@ export function createDeliveryAdapter(
     if (!thread) throw new Error(`Thread not found: ${threadId}`);
     return (
       thread.activeLeafTurnId === selected.selection.activeLeafTurnId &&
-      sameInboxBatch(pendingBatch, selected.pendingBatch)
+      sameInboxBatch(pendingBatch, selected.pendingBatch) &&
+      (await findStaleSeedControls(pendingBatch)).join() === selected.staleSeedControls.join()
     );
   }
   async function prepareAndCommit<TPrepared, TResult>(input: {
@@ -195,6 +208,8 @@ export function createDeliveryAdapter(
       selected: Awaited<ReturnType<typeof selectForPreparation>>,
       prepared: TPrepared,
     ): Promise<TResult> {
+      // Retire invalid seed barriers in the same transaction as their replacement reservation.
+      await inbox.ack(input.threadId, selected.staleSeedControls);
       const result = await input.commit(selected.selection, selected.work, prepared);
       if (!input.hasPreparationFailure(prepared)) {
         await deps.notices.consume(selected.selection.notices.map(({ id }) => id));
@@ -681,16 +696,23 @@ export function createDeliveryAdapter(
         finalizeOrphanedPlaceholder(deps, { threadId: lease.threadId }),
       );
       await deps.publishFinalizedReports(reports);
-      return prepareAndCommit({
+      const result = await prepareAndCommit({
         threadId: lease.threadId,
         signal: options?.signal,
         validate: async () => {
           if ((await leaseStore.lockReceipt(lease))?.cancelRequested)
             throw new DOMException("The operation was aborted", "AbortError");
         },
-        prepare: (selection) => prepare(selection),
-        hasPreparationFailure: (prepared) => prepared.preparationFailure !== undefined,
+        prepare: (selection) =>
+          !selection.control && !selection.batch.some((row) => row.intent === "message")
+            ? Promise.resolve(null)
+            : prepare(selection),
+        hasPreparationFailure: (prepared) => !prepared || prepared.preparationFailure !== undefined,
         commit: async (_selection, work, prepared) => {
+          if (!prepared) {
+            await appendPending(lease.threadId);
+            return null;
+          }
           await prepared.persist?.();
           await inbox.ack(lease.threadId, work.ids);
           await leaseStore.bindTurn(
@@ -700,9 +722,11 @@ export function createDeliveryAdapter(
             prepared.turnKind,
           );
           await appendPending(lease.threadId);
-          return prepared.value;
+          return { value: prepared.value };
         },
       });
+      if (!result) throw new NoPendingWakeError(lease.threadId);
+      return result.value;
     },
     ackWithResponse: (lease, ids, persist) =>
       threadLock.withThreadLock(lease.threadId, async () => {
