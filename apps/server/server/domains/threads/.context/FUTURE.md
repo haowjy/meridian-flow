@@ -22,10 +22,12 @@ engine from a real English and Chinese relevance set.
 
 Compaction is the only caller of `beginPromptEpoch` in this checkout; undo is
 planned as the second. Other causes are deferred, not designed out: a fork
-rebake, a refresh when the provider cache is already known cold (so the
-rebake costs nothing), deliberate tool pruning, and a writer-forced refresh.
-Each must be a named, visible boundary turn through `beginPromptEpoch` (see
+with a fresh bake, a refresh when the provider cache is already known cold
+(so the rebake costs nothing), and a forced refresh. Each must be a named,
+visible boundary turn through `beginPromptEpoch` (see
 [runtime CONTEXT.md](../../runtime/.context/CONTEXT.md)). Never rebake
 silently on a model change, an idle timer, or an Agent revision update. A
 mid-thread change the model needs to learn about is a system notification in
 conversation, never a prompt or tool-list rewrite.
+Tool-result pruning is not an epoch: it keeps the bake and is a named history
+event at the first pruned block.

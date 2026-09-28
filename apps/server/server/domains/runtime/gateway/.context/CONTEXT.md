@@ -25,7 +25,7 @@ entries declare the family of the model they route to. The runtime's
 compaction estimator keys its CJK rate on this family and has no fallback. A
 family that undercounts the model lets a Chinese-heavy request cross the
 compaction trigger and price tier unseen; one that overcounts compacts early.
-Rates and their evidence live in the [runtime context](../../.context/CONTEXT.md).
+Rates and their evidence live in the [runtime compaction context](../../.context/compaction.md).
 
 ## Context-window errors
 
