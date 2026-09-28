@@ -71,6 +71,7 @@ export const HandoffSeedMetadataCodec = DerivationSeedMetadataCodec.extend({
   derivation: z.literal("handoff"),
   sourceThreadId: z.string().min(1),
   sourceRef: z.string().min(1),
+  sourceTitle: z.string().nullable(),
   cutoffTurnId: z.string().min(1),
   controlMessageId: z.string().min(1),
   summarizer: z
@@ -298,6 +299,7 @@ export function derivationSeedMetadata(derivation: "fork" | "handoff"): JsonObje
 export function handoffSeedMetadata(input: {
   sourceThreadId: string;
   sourceRef: string;
+  sourceTitle: string | null;
   cutoffTurnId: string;
   controlMessageId: string;
 }): JsonObject {

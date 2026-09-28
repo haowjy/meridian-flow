@@ -12,6 +12,7 @@
 - Show compaction in the chat: a divider for compacting, compacted (summary behind a disclosure), failed, stopped, and undone; Stop on a running compaction, from the divider or the composer; Undo only where the server expects it to hold, with refusals quiet on the divider; one-line dividers on narrow screens; hide the empty reply an overflow recovery completes before compacting. A stopped autocompaction settles without waiting for another change, and screen readers hear each control change once, in the words its row shows.
 - Add `/compact` to the composer. Queued compactions, undos, and handoff brief retries show at once at the transcript tail or on their divider, and can be withdrawn in place.
 - Point spawned agents at connected prior work without copying history; freeze reference text and read instructions, including stopped handoffs.
+- Freeze handoff source titles on seeds and brief cards, and keep spawn source provenance on durable invocation cards.
 - Treat a null spawn source as omitted.
 
 - Preserve bake-gated history guidance in cold handoff summaries; classify completed and failed briefs as system history.

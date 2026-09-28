@@ -101,8 +101,10 @@ The child's first user turn holds the task prompt followed by a
 `thread-reference` custom block. Its source ref, title, Agent, last activity and
 read instructions are frozen at spawn. No source history is copied; the child
 can call `thread_history` and `thread_ls` on the reference. Retitling the source
-does not change the child's request prefix. `agent.spawn.fromThreadId` is only
-a live UI hint; the block is the durable record.
+does not change the child's request prefix. When present, the parent's durable
+invocation card also freezes `fromThreadId`, `fromThreadRef`, and
+`fromThreadTitle` in `InvocationCardProps`; the live `agent.spawn.fromThreadId`
+event remains an additional UI hint.
 
 `./mf thread view` shows the reference and its frozen fields (`--json`);
 `./mf thread context --all` shows the actual model input. Spawn events in

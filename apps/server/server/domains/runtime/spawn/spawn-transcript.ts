@@ -135,6 +135,15 @@ export async function bindAdmittedInvocationCard(input: {
             startedAt: input.admittedAt,
             terminalAt: null,
             ...(input.props.title !== undefined ? { title: input.props.title } : {}),
+            ...(input.props.fromThreadId !== undefined
+              ? { fromThreadId: input.props.fromThreadId }
+              : {}),
+            ...(input.props.fromThreadRef !== undefined
+              ? { fromThreadRef: input.props.fromThreadRef }
+              : {}),
+            ...(input.props.fromThreadTitle !== undefined
+              ? { fromThreadTitle: input.props.fromThreadTitle }
+              : {}),
             execution: input.execution,
           }),
           status: "complete",

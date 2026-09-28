@@ -146,6 +146,7 @@ export async function handoffThreadAgent(
       metadata: handoffSeedMetadata({
         sourceThreadId: owner.id,
         sourceRef: owner.ref ?? owner.id,
+        sourceTitle: owner.title,
         controlMessageId: controlId,
         cutoffTurnId: cutoff.turn.id,
       }),
