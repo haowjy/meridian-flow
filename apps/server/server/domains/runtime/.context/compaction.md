@@ -255,9 +255,15 @@ projection (the history the summarizer reads, not only the planned cut) supplies
 only the changed URIs in the instruction (appended on warm, in the system
 prompt on cold). Warm requests keep their prefix unchanged.
 
-The warm summary sees the retained tail it will sit in front of and can restate
-it, so a manual `/compact` on a short thread can grow the request
-([#619](https://github.com/haowjy/meridian-flow/issues/619)).
+Warm compaction appends the plan's retained pin/tail exclusions to the instruction.
+Each model-visible passage is identified by role and a quoted opening (up to
+200 characters), using the active projection's rendered content. Tool-result
+openings include call IDs; assistant passages start with text or a tool call. This handles cuts within assistant tool groups and
+lifted pins without assuming a turn is one message: adjacent user messages can
+merge, and one assistant turn can render several messages. Preservation rules
+apply only to replaced material, not retained-only document URIs, reads or next
+steps. The request prefix, tools, and cache marks remain unchanged. Handoff
+briefs have no retained tail and keep their existing instruction.
 
 Cold receives only the cut blocks and prior summary, excluding the retained
 pin and tail. It renders model-visible custom content, omits opaque
@@ -332,8 +338,14 @@ and newly adopted directed rows, even across consecutive controls. A refusal
 records an error divider without calling the summarizer or opening an epoch.
 `nothing_to_compact` covers nothing after the active cut, no pinned request,
 and a completed compaction as the newest completed turn: a `/compact` right
-after completed C refuses, because C's retained tail is not new history. A
-minimal tail over the usable window refuses with `context_too_large`. Refusals
+after completed C refuses, because C's retained tail is not new history.
+Manual decisions also refuse when the compactable active projection estimates
+below the summarizer's maximum output tokens. This uses the same cut projection
+as the cold summary, excluding retained pins/tail and superseded raw history;
+fixed prompt/tool overhead cannot pay for the floor. The typed outcome is
+`{ reason: "nothing_to_compact", phase: "initial_prepare" }`, with no summary
+call, response row, or debit. Equality clears the floor. Automatic and overflow
+decisions do not use it. A minimal tail over the usable window refuses with `context_too_large`. Refusals
 go through the ordinary reservation commit and then the successor commit at
 once, so clients can briefly see a pending divider and a crash between the two
 leaves an interrupted divider before K redelivers; a single direct write would

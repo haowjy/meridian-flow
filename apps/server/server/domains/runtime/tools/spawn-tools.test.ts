@@ -30,7 +30,24 @@ describe("parseSpawnToolArgs", () => {
     );
   });
 
-  it.each([12, null, ["c1"]])("refuses malformed from %j without spawning", async (from) => {
+  it("treats null from as absent and spawns without a reference source", async () => {
+    const spawn = vi.fn(async (_args: Record<string, unknown>) => undefined);
+    const registration = createSpawnToolRegistrations().find(
+      (entry) => entry.definition.name === "spawn",
+    );
+    if (registration?.execution.type !== "server") throw new Error("missing spawn");
+
+    await registration.execution.handler({ prompt: "go", from: null }, { spawn } as never);
+
+    expect(spawn).toHaveBeenCalledWith({ prompt: "go", mode: "foreground" });
+    expect(spawn.mock.calls[0]?.[0]).not.toHaveProperty("from");
+  });
+
+  it.each([
+    12,
+    { ref: "c1" },
+    ["c1"],
+  ])("refuses malformed from %j without spawning", async (from) => {
     const spawn = vi.fn();
     const registration = createSpawnToolRegistrations().find(
       (entry) => entry.definition.name === "spawn",

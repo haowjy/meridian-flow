@@ -228,6 +228,7 @@ export function defineThreadHistoryContract(
         handoffSeedMetadata({
           sourceThreadId: f.thread.id,
           sourceRef: f.thread.ref!,
+          sourceTitle: f.thread.title,
           cutoffTurnId: crypto.randomUUID(),
           controlMessageId: crypto.randomUUID(),
         }),

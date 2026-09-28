@@ -55,6 +55,9 @@ type InvocationCardInput = {
   execution: TurnId | null;
   startedAt: string;
   terminalAt: string | null;
+  fromThreadId?: InvocationCardProps["fromThreadId"];
+  fromThreadRef?: InvocationCardProps["fromThreadRef"];
+  fromThreadTitle?: InvocationCardProps["fromThreadTitle"];
 };
 
 export function invocationCardProps(
@@ -81,6 +84,9 @@ export function invocationCardProps(input: InvocationCardInput & { outcome?: Sav
     childThreadId: input.childThreadId,
     startedAt: input.startedAt,
     ...(input.description !== undefined ? { title: input.description } : {}),
+    ...(input.fromThreadId !== undefined ? { fromThreadId: input.fromThreadId } : {}),
+    ...(input.fromThreadRef !== undefined ? { fromThreadRef: input.fromThreadRef } : {}),
+    ...(input.fromThreadTitle !== undefined ? { fromThreadTitle: input.fromThreadTitle } : {}),
   };
   if (input.outcome) {
     if (!input.execution) throw new Error("Terminal invocation card has no execution");

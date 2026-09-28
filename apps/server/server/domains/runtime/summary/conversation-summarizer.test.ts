@@ -165,10 +165,19 @@ describe("conversation summarizer", () => {
       maxTokens: 500,
       providerOptions: { anthropic: { thinking: { type: "disabled" } } },
     };
+    rig.input.retainedMessages = [
+      { role: "user", content: [{ type: "text", text: "Task", cacheBreakpoint: true }] },
+    ];
     const before = JSON.stringify(rig.input.requestInHand);
     const result = await rig.service.summarize(rig.input);
     const { signal: _signal, correlation: _correlation, ...sent } = rig.requests[0];
     expect(sent.maxTokens).toBe(300);
+    expect(sent.messages.at(-1)?.content).toMatchObject([
+      { type: "text", text: expect.stringContaining('user: "Task"') },
+    ]);
+    expect(JSON.stringify(sent.messages.at(-1))).toContain("Do not restate");
+
+    expect(sent).toMatchSnapshot("warm compaction request bytes");
     expect(JSON.stringify({ ...sent, maxTokens: 500, messages: sent.messages.slice(0, -1) })).toBe(
       before,
     );

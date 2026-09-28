@@ -54,6 +54,8 @@ Use it instead of the browser for anything that is not visual.
 ./mf thread send <id> "go" --mock @tools/dev/cli/fixtures/mock-write.json --json | tail -1
 ./mf thread view c3                                # transcript (ref, id, or id prefix)
 ./mf thread tail <id> --until-idle                 # follow a run started elsewhere
+./mf thread events <id> --child p2                 # one direct child's status, phase, tool, and target per activity frame
+./mf thread view <id> --blocks                     # persisted blocks with created time, gaps, tool name, size
 ./mf doc read manuscript://mf-scene.md
 ./mf api GET /api/threads/<id>/skills              # any route without a dedicated command
 ```
@@ -109,6 +111,7 @@ text mode shortens tool payloads), so redirect it and query with `jq`:
 ./mf thread context <id> --all --view raw --json > context.json   # what the model received: system, tools, messages, params
 ./mf thread view <id> --json > snapshot.json                      # persisted transcript
 jq -c 'select(.type | startswith("tool."))' run.ndjson             # tool calls with args and results
+jq -c 'select(.name == "meridian.subagent.activity")' run.ndjson   # one custom event kind
 ```
 
 Replays joined mid-message (`events --since`, `tail --since`) mark that

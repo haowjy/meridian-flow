@@ -31,14 +31,15 @@ normalized `originTurnId`; it contains no summary.
 ## Seed data and actions
 
 S has `metadata.kind = derivation_seed`, `derivation = handoff`,
-`sourceThreadId`, frozen `sourceRef`, `cutoffTurnId`, and `controlMessageId`. While pending its
+`sourceThreadId`, frozen `sourceRef` and `sourceTitle`, `cutoffTurnId`, and `controlMessageId`. While pending its
 current-turn kind is `handoff_brief`, and its lease phase is `briefing`.
 The first control additionally has `seedTurnId`; only creation sets this field.
 
 A terminal seed's custom block has kind `handoff-brief` and props `state`
-(`available` or `unavailable`), `brief`, `sourceThreadId`, `sourceRef`,
-`cutoffTurnId`, `model`, and frozen `modelText`. Status is `complete`, `error`,
-or `cancelled`. Stop uses the ordinary turn-cancel endpoint, even before any
+(`available` or `unavailable`), `brief`, `sourceThreadId`, `sourceRef`, frozen
+`sourceTitle`, `cutoffTurnId`, `model`, and frozen `modelText`. The display
+title is copied from the seed metadata and never enters `modelText`. Status is
+`complete`, `error`, or `cancelled`. Stop uses the ordinary turn-cancel endpoint, even before any
 run binds S. Withdrawal of the first control cancels S too.
 
 Retry enqueues `{ "id": "new-uuid", "control": { "kind": "handoff_brief" } }`

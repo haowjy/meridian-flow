@@ -37,7 +37,11 @@ import {
   type AvailableSkillListing,
   resolveThreadModelAvailableSkills,
 } from "./available-skills.js";
-import { projectActiveHistoryWithBakes, resolveCompactionTrigger } from "./compaction/index.js";
+import {
+  type ProjectedActiveHistory,
+  projectActiveHistoryWithBakes,
+  resolveCompactionTrigger,
+} from "./compaction/index.js";
 import {
   assembleComposedSystemPrompt,
   isThreadPromptFrozen,
@@ -105,6 +109,7 @@ export interface AssembledNextTurnContext {
     GenerateRequest,
     "messages" | "tools" | "model" | "reasoning" | "promptCacheKey"
   >;
+  activeHistory: ProjectedActiveHistory;
   imageContextUpdates: { turns: Turn[]; blocks: Block[] };
 }
 
@@ -249,13 +254,16 @@ export async function assembleNextTurnContext(
         })
       : { turns: [], blocks: [] };
   const imageTurnIds = new Set(imageContextUpdates.turns.map((turn) => turn.id));
-  const built = buildContext({
-    thread,
+  const modelHistory = {
     turns: [...activeHistory.turns, ...imageContextUpdates.turns],
     blocks: [
       ...imageProjection.blocks,
       ...imageContextUpdates.blocks.filter((block) => imageTurnIds.has(block.turnId)),
     ],
+  };
+  const built = buildContext({
+    thread,
+    ...modelHistory,
     frozenSystemPrompt: isThreadPromptFrozen(thread) ? systemPrompt : undefined,
     tools,
     unfrozenBasePrompt,
@@ -304,6 +312,7 @@ export async function assembleNextTurnContext(
       promptCacheKey: cacheKeyOwner,
       ...gatewayParams,
     },
+    activeHistory: modelHistory,
     imageContextUpdates,
   };
 }

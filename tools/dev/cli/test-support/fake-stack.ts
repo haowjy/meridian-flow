@@ -12,6 +12,7 @@ import { runCli } from "../main";
 export const COOKIE = "wos-session=test";
 export const THREAD_ID = "11111111-1111-4111-8111-111111111111";
 export const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
+export const CHILD_ID = "33333333-3333-4333-8333-333333333333";
 
 type Journal = { seq: string; event: AGUIEvent }[];
 
@@ -21,6 +22,8 @@ type FakeTurn = {
   status: string;
   error: string | null;
   text: string;
+  /** Extra persisted blocks ahead of the text block, with their own createdAt. */
+  blocks?: { blockType: string; content: unknown; createdAt: string }[];
 };
 
 function threadDto(): Thread {
@@ -67,18 +70,18 @@ function turnDto(turn: FakeTurn) {
     error: turn.error,
     createdAt: "2026-01-01T00:00:00.000Z",
     completedAt: null,
-    blocks: turn.text
-      ? [
-          {
-            id: `${turn.id}-b0`,
-            turnId: turn.id,
-            responseId: null,
-            blockType: "text",
-            sequence: 0,
-            content: turn.text,
-          },
-        ]
-      : [],
+    blocks: [
+      ...(turn.blocks ?? []),
+      ...(turn.text
+        ? [{ blockType: "text", content: turn.text, createdAt: "2026-01-01T00:00:03.000Z" }]
+        : []),
+    ].map((block, sequence) => ({
+      id: `${turn.id}-b${sequence}`,
+      turnId: turn.id,
+      responseId: null,
+      sequence,
+      ...block,
+    })),
     siblingIds: [],
     responses: [],
   };
@@ -92,6 +95,22 @@ function liveState(seq: string) {
     activity: { children: [] },
     pending: { items: [] },
     resumeAfterSeq: seq,
+  };
+}
+
+function childNode(status: unknown, spawnStatus: string, currentTool: unknown) {
+  return {
+    threadId: CHILD_ID,
+    parentThreadId: THREAD_ID,
+    rootThreadId: THREAD_ID,
+    depth: 1,
+    ref: "p2",
+    title: "Research",
+    agentName: "Researcher",
+    spawnStatus,
+    status,
+    originTurnId: null,
+    currentTool,
   };
 }
 
@@ -141,6 +160,50 @@ function createFake() {
         return;
       }
       if (text.includes("hang")) return;
+      if (text.includes("delegate")) {
+        const activity = (value: unknown) =>
+          publish({ type: "CUSTOM", name: "meridian.subagent.activity", value } as AGUIEvent);
+        publish({
+          type: "TOOL_CALL_START",
+          toolCallId: "call-1",
+          toolCallName: "spawn",
+        } as AGUIEvent);
+        publish({
+          type: "TOOL_CALL_ARGS",
+          toolCallId: "call-1",
+          delta: '{"agent":"r"}',
+        } as AGUIEvent);
+        publish({ type: "TOOL_CALL_END", toolCallId: "call-1" } as AGUIEvent);
+        activity({ children: [] });
+        activity({
+          children: [
+            childNode({ kind: "awake", phase: "generating", cancelRequested: false }, "running", {
+              toolCallId: "c-1",
+              toolName: "doc_read",
+              input: { uri: "manuscript://ch1.md" },
+            }),
+          ],
+        });
+        activity({ children: [childNode({ kind: "asleep" }, "succeeded", null)] });
+        publish({
+          type: "TOOL_CALL_RESULT",
+          messageId: "call-1-result",
+          toolCallId: "call-1",
+          content: "p2 done",
+        } as AGUIEvent);
+        assistant.blocks = [
+          {
+            blockType: "tool_use",
+            content: { toolCallId: "call-1", toolName: "spawn", input: { agent: "r" } },
+            createdAt: "2026-01-01T00:00:00.500Z",
+          },
+          {
+            blockType: "tool_result",
+            content: { toolCallId: "call-1", output: "p2 done" },
+            createdAt: "2026-01-01T00:00:02.000Z",
+          },
+        ];
+      }
       const messageId = `${runId}::0`;
       publish({ type: "TEXT_MESSAGE_START", messageId, role: "assistant" } as AGUIEvent);
       publish({ type: "TEXT_MESSAGE_CONTENT", messageId, delta: "Hello" } as AGUIEvent);
@@ -166,16 +229,18 @@ function createFake() {
   const server: Server = createServer(async (req, res) => {
     const send = (status: number, body: unknown) => {
       res.writeHead(status, { "content-type": "application/json" });
-      res.end(JSON.stringify(status < 300 ? serializeTransport(body) : body));
+      res.end(JSON.stringify(body));
     };
+    // Mirrors the real routes that answer through serializeTransport.
+    const sendEnveloped = (status: number, body: unknown) => send(status, serializeTransport(body));
     if (req.headers.cookie !== COOKIE) return send(401, { message: "unauthenticated" });
     const url = new URL(req.url ?? "/", "http://fake");
     const route = `${req.method} ${url.pathname}`;
-    if (route === "GET /api/threads") return send(200, { threads: [threadDto()] });
+    if (route === "GET /api/threads") return sendEnveloped(200, { threads: [threadDto()] });
     if (route === "POST /api/projects/bootstrap-default")
       return send(201, { projectId: PROJECT_ID });
     if (route === "GET /api/agents") {
-      return send(200, {
+      return sendEnveloped(200, {
         agents: [
           {
             slug: "general",
@@ -193,13 +258,13 @@ function createFake() {
     const byRef = url.pathname.match(/^\/api\/projects\/([^/]+)\/threads\/by-ref\/([^/]+)$/);
     if (req.method === "GET" && byRef) {
       return byRef[1] === PROJECT_ID && byRef[2] === "c1"
-        ? send(200, threadDto())
+        ? sendEnveloped(200, threadDto())
         : send(404, { message: "No live thread" });
     }
     if (route === "POST /api/threads") {
       const body = (await readBody(req)) as { agentSelection?: unknown };
       if (!body?.agentSelection) return send(400, { message: "agentSelection required" });
-      return send(201, threadDto());
+      return sendEnveloped(201, threadDto());
     }
     if (route === `POST /api/threads/${THREAD_ID}/messages`) {
       const body = (await readBody(req)) as { text: string; blocks: { text?: string }[] };
@@ -217,7 +282,7 @@ function createFake() {
       });
     }
     if (route === `GET /api/threads/${THREAD_ID}/snapshot`) {
-      return send(200, {
+      return sendEnveloped(200, {
         threadId: THREAD_ID,
         thread: threadDto(),
         turns: turns.map(turnDto),

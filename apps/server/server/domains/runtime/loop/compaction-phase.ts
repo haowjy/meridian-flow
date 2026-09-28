@@ -18,6 +18,7 @@ import {
   prepareCompactionContext,
   prepareCompactionSuccessor,
 } from "./compaction-successor.js";
+import { turnContextMessages } from "./context-builder.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
 import type { PersistenceDeps } from "./persistence.js";
 import { prepareRequestContext } from "./request-preparation.js";
@@ -90,6 +91,16 @@ export async function executeCompaction({
             changedDocuments: changed,
             requestInHand: decision.requestInHand,
             forceCold: decision.path === "cold",
+            retainedMessages: decision.plan.retainedSuffix.flatMap(({ turn, blocks }) =>
+              turnContextMessages(
+                turn,
+                projection.blocks.filter(
+                  (block) =>
+                    block.turnId === turn.id &&
+                    blocks.some((retained) => retained.sequence === block.sequence),
+                ),
+              ),
+            ),
             projection: projectCompactedHistory(projection, decision.plan),
             signal: input.signal ?? new AbortController().signal,
           });

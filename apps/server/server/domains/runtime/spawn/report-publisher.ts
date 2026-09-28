@@ -1,7 +1,7 @@
 /** Parent-first publication B for immutable child execution reports. */
 
 import { GENERIC_SUBAGENT_SLUG } from "@meridian/contracts/agents";
-import { buildInvocationCardContent } from "@meridian/contracts/components";
+import { buildInvocationCardContent, parseInvocationCard } from "@meridian/contracts/components";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
@@ -76,6 +76,7 @@ export function createReportPublisher(deps: {
             if (card.turnId !== report.callerTurnId || card.blockType !== "custom") {
               throw new Error("Execution report card no longer belongs to its caller turn");
             }
+            const priorProps = parseInvocationCard(card.content);
             events.push({
               type: "block.updated",
               block: contentForBlockInput({
@@ -98,6 +99,9 @@ export function createReportPublisher(deps: {
                     startedAt: report.admittedAt,
                     terminalAt: report.terminalAt,
                     outcome: report.outcome,
+                    fromThreadId: priorProps?.fromThreadId,
+                    fromThreadRef: priorProps?.fromThreadRef,
+                    fromThreadTitle: priorProps?.fromThreadTitle,
                   }),
                 ),
                 status: "complete",

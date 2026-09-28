@@ -25,13 +25,15 @@ run-owned system turns dispatch here; completed undo markers take the terminal
 route first (see [placeholder ownership](compaction.md)). A handoff anywhere
 in the expanded controls list suppresses successor compaction.
 
-The source ref is frozen in seed metadata; Stop/failure needs no source lookup.
+The source ref and display title are frozen in seed metadata; the title is
+projected to terminal `handoff-brief` props, never into `modelText`. Stop/failure needs no source lookup.
 An expired lease receipt does not block row-owned Stop. The brief ending commit
 re-reads S under the thread lock. If Stop already settled it, the stale run exits
 with that durable turn; it cannot overwrite the fallback or prepare a successor
 from its discarded brief.
 
-Success stores a `handoff-brief` custom block with frozen `modelText`. Failure
+Success stores a `handoff-brief` custom block with frozen `modelText` and the
+seed's frozen source title for display. Failure
 and Stop store the source-naming unavailable block. Model rendering replays
 that text verbatim. When a seed finishes, the brief and finalizer append
 `threadReferenceText` inside `<system_update>` only if the bake at S advertises
