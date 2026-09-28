@@ -10,3 +10,10 @@
   Evidence: agents-milestone-4/c4d-verification.md and evidence/c4d-runtime.json
   in the docs work directory. Until fixed, assert split outcomes from snapshots
   and journal events, not the send command's early terminal envelope.
+
+- Align `cli/commands/thread/transcript.ts` generic custom-block output with
+  `docs/debugging.md`'s untruncated JSON contract. `thread view --json` still
+  clips an unknown custom block's `summary` unless `--full` is also passed.
+  C9's dedicated `thread-reference` projection exposes all props, but handoff
+  cards still need `--full` for complete frozen text. Reproduce with a handoff
+  seed and compare `thread view --json` against `thread view --full --json`.
