@@ -58,6 +58,7 @@ else
         workId: ids.noWorkId,
         source: { parentThreadId: null, rootThreadId: ids.threadId, spawnDepth: 0 },
         originType: "handoff",
+        originTurnId: originTurnId as never,
       });
       expect(derived.parentThreadId).toBeNull();
       expect(await persistedRoot(derived.id)).toBe(ids.threadId);

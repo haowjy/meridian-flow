@@ -13,7 +13,10 @@ Retry has no seed pointer: its new seed is reserved at the execution leaf.
 The current-turn kind is `handoff_brief`; the live phase is `briefing`.
 
 The source ref is frozen in seed metadata; Stop/failure needs no source lookup.
-An expired lease receipt does not block row-owned Stop.
+An expired lease receipt does not block row-owned Stop. The brief ending commit
+re-reads S under the thread lock. If Stop already settled it, the stale run exits
+with that durable turn; it cannot overwrite the fallback or prepare a successor
+from its discarded brief.
 
 Success stores a `handoff-brief` custom block with frozen `modelText`. Failure
 and Stop store the source-naming unavailable block. Model rendering replays

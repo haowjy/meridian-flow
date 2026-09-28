@@ -318,7 +318,7 @@ else
         createFork(fixture.source, fixture.deps, { id, originTurnId: fixture.firstTurn.id }),
       ).rejects.toMatchObject({
         name: "DerivedThreadConflictError",
-        message: "The requested fork ID is already in use",
+        message: "The requested derivation ID is already in use",
       });
     });
 

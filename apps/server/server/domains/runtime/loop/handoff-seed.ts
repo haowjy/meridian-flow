@@ -1,9 +1,11 @@
 /** Frozen model context for a handoff seed, including the no-brief terminal states. */
+import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { Turn } from "@meridian/contracts/threads";
 import { HandoffSeedMetadataCodec, handoffSeedMetadata } from "../../threads/index.js";
 import { contentForBlockInput } from "./block-helpers.js";
 import type { ControlMessage } from "./control-barrier.js";
 import { createLocalTurn } from "./local-turn.js";
+import { type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
 
 export async function reserveHandoffSeed(
   repos: Pick<import("../../threads/index.js").ThreadRepositories, "turns" | "threads">,
@@ -54,4 +56,34 @@ export function handoffSeedBlock(seed: Turn, brief?: { text: string; model: stri
       },
     },
   });
+}
+
+export class HandoffSeedSettledError extends Error {
+  constructor(readonly turn: Turn) {
+    super("The handoff seed was settled while its brief was running");
+  }
+}
+
+/** The caller holds the thread lock. Stop can settle a seed after its lease expires. */
+export async function completeHandoffSeed(
+  deps: PersistenceDeps,
+  completed: Turn,
+  block: ReturnType<typeof handoffSeedBlock>,
+): Promise<Turn> {
+  const saved = await deps.repos.turns.findById(completed.id);
+  if (saved && saved.status !== "pending") throw new HandoffSeedSettledError(saved);
+  await persistAndAppendEvents(deps, completed.threadId, async () => ({
+    result: undefined,
+    events: [
+      { type: "block.upserted", block },
+      completed.status === "complete"
+        ? { type: "turn.completed", turn: completed }
+        : {
+            type: "turn.error",
+            turn: completed,
+            error: meridianErrorFromSystem("handoff_brief_failed", completed.error ?? ""),
+          },
+    ],
+  }));
+  return completed;
 }

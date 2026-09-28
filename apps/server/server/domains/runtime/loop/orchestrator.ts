@@ -119,7 +119,12 @@ import { executeCompaction } from "./compaction-phase.js";
 import { failCompactionSuccessor } from "./compaction-successor.js";
 import { absorbPendingCompact } from "./control-barrier.js";
 import type { TerminalCause } from "./execution-finalizer.js";
-import { handoffSeedBlock, reserveHandoffSeed } from "./handoff-seed.js";
+import {
+  completeHandoffSeed,
+  HandoffSeedSettledError,
+  handoffSeedBlock,
+  reserveHandoffSeed,
+} from "./handoff-seed.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
@@ -1701,28 +1706,21 @@ async function executeLoop(
     allBlocks.push(localBlockFromEvent(block));
     preparedContext = undefined;
     const boundary = boundaryInput();
-    const result = await deps.delivery.splitAndContinue({
-      ...boundary,
-      current: {
-        kind: "placeholder",
-        complete: async () => {
-          await persistAndAppendEvents(deps, input.threadId, async () => ({
-            result: undefined,
-            events: [
-              { type: "block.upserted", block },
-              available
-                ? { type: "turn.completed", turn: completed }
-                : {
-                    type: "turn.error",
-                    turn: completed,
-                    error: meridianErrorFromSystem("handoff_brief_failed", completed.error ?? ""),
-                  },
-            ],
-          }));
-          return completed;
+    let result: AdoptedBatch<unknown>;
+    try {
+      result = await deps.delivery.splitAndContinue({
+        ...boundary,
+        current: {
+          kind: "placeholder",
+          complete: () => completeHandoffSeed(deps, completed, block),
         },
-      },
-    });
+      });
+    } catch (error) {
+      if (!(error instanceof HandoffSeedSettledError)) throw error;
+      currentTurn = error.turn;
+      terminalControl = true;
+      return { turns: [], blocks: [], events: [], ackIds: [] };
+    }
     if (result.context) preparedContext = result.context;
     return acceptBoundary(result);
   }
