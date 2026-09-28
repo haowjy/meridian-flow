@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   getProject: vi.fn(),
   ensureProject: vi.fn(),
   navigate: vi.fn(() => Promise.resolve()),
+  account: { controller: new AbortController() },
 }));
 
 vi.mock("@lingui/react/macro", () => ({
@@ -32,6 +33,7 @@ vi.mock("@/client/stores", () => ({
 
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useAccountId: () => "account-a",
+  useAccountEpochSignal: () => mocks.account.controller.signal,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -61,6 +63,7 @@ beforeEach(() => {
   mocks.getProject.mockReset();
   mocks.ensureProject.mockReset();
   mocks.navigate.mockClear();
+  mocks.account.controller = new AbortController();
 });
 
 afterEach(async () => {
@@ -98,9 +101,11 @@ describe("NewProjectView", () => {
       params: { projectId: expect.any(String), _splat: "" },
     });
 
+    const projectId = mocks.createProject.mock.calls[0]?.[0].id;
+    if (typeof projectId !== "string") throw new Error("Project id not captured");
     creation.resolve({
-      id: crypto.randomUUID(),
-      userId: crypto.randomUUID(),
+      id: projectId,
+      userId: "account-a",
       slug: "fast-project",
       isPersonal: false,
       settings: {},
@@ -111,5 +116,39 @@ describe("NewProjectView", () => {
       title: "Fast project",
       description: null,
     });
+  });
+
+  it("does not publish a confirmed project into a later account epoch", async () => {
+    const creation = deferred<ProjectDto>();
+    mocks.createProject.mockReturnValue(creation.promise);
+
+    await act(async () => root.render(<NewProjectView />));
+    await act(async () => enterProjectName("Account A project"));
+    const form = host.querySelector("form");
+    if (!form) throw new Error("Project form not found");
+    await act(async () =>
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
+    const projectId = mocks.createProject.mock.calls[0]?.[0].id;
+    if (typeof projectId !== "string") throw new Error("Project id not captured");
+
+    mocks.account.controller.abort();
+    await act(async () =>
+      creation.resolve({
+        id: projectId,
+        userId: "account-a",
+        slug: "account-a-project",
+        isPersonal: false,
+        settings: {},
+        lastActivityAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        deletedAt: null,
+        title: "Account A project",
+        description: null,
+      }),
+    );
+
+    expect(mocks.ensureProject).not.toHaveBeenCalled();
   });
 });

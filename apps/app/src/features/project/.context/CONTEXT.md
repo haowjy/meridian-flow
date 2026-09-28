@@ -385,8 +385,9 @@ not cold offline app boot or bypassing server authorization. New project creatio
 registers one same-tab persistence attempt before navigating to its UUID route.
 Only that explicit attempt may sequence the route behind creation; afterwards the
 ordinary owner-gated project and shell-data reads still establish authority.
-Creation failure and same-identity retry stay on the destination, while the
-project-list cache receives only confirmed projects. Independent identity,
+Creation failure and same-identity retry stay on the destination and remain
+fenced to the initiating account epoch; the project-list cache receives only
+confirmed projects from that same epoch. Independent identity,
 thread, Work, and working-set reads start together. The project route bootstrap
 installs their cache snapshots and adopts working-set state in a layout commit
 before mounting `ReadableProjectRoute`; query or driver mutation during render is

@@ -70,9 +70,10 @@ export function projectCreationFailed(projectId: string): boolean {
   return attempts.get(projectId)?.status === "failed";
 }
 
-export function retryProjectCreation(projectId: string): Promise<Project> {
+export function retryProjectCreation(projectId: string, accountId: string): Promise<Project> {
   const failed = attempts.get(projectId);
-  if (failed?.status !== "failed") throw new Error("Project creation is not retryable");
+  if (failed?.status !== "failed" || failed.accountId !== accountId)
+    throw new Error("Project creation is not retryable");
   return startAttempt({
     projectId: failed.projectId,
     accountId: failed.accountId,

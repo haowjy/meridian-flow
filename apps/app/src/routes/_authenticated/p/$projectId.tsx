@@ -48,6 +48,7 @@ function PendingProject() {
 function ProjectLoadError() {
   const router = useRouter();
   const { projectId } = Route.useParams();
+  const { user } = AuthenticatedRoute.useLoaderData();
   const creationFailed = projectCreationFailed(projectId);
   const [retrying, setRetrying] = useState(false);
   const retry = async () => {
@@ -57,7 +58,7 @@ function ProjectLoadError() {
     }
     setRetrying(true);
     try {
-      await retryProjectCreation(projectId);
+      await retryProjectCreation(projectId, user.userId);
       await router.invalidate();
     } catch {
       // The creation attempt retains its failure so this destination can retry again.

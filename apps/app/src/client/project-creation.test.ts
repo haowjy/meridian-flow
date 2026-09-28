@@ -55,7 +55,9 @@ describe("project creation", () => {
     ).rejects.toBe(failure);
     expect(projectCreationFailed(projectId)).toBe(true);
 
-    await expect(retryProjectCreation(projectId)).resolves.toMatchObject({ id: projectId });
+    await expect(retryProjectCreation(projectId, accountId)).resolves.toMatchObject({
+      id: projectId,
+    });
     expect(mocks.createProject).toHaveBeenNthCalledWith(2, {
       id: projectId,
       title: "Fast project",
@@ -78,8 +80,23 @@ describe("project creation", () => {
     expect(isProjectCreationPending(projectId)).toBe(false);
   });
 
-  it("does not accept another account's project as ambiguous-create recovery", async () => {
+  it("does not retry an earlier account's failed attempt", async () => {
     const projectId = "00000000-0000-4000-8000-000000000004";
+    const failure = new Error("offline");
+    mocks.createProject.mockRejectedValueOnce(failure);
+    mocks.getProject.mockRejectedValueOnce(failure);
+    await expect(
+      beginProjectCreation({ projectId, accountId, title: "Fast project" }),
+    ).rejects.toBe(failure);
+
+    expect(() => retryProjectCreation(projectId, "00000000-0000-4000-8000-000000000099")).toThrow(
+      "Project creation is not retryable",
+    );
+    expect(mocks.createProject).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not accept another account's project as ambiguous-create recovery", async () => {
+    const projectId = "00000000-0000-4000-8000-000000000005";
     const failure = new Error("response lost");
     mocks.createProject.mockRejectedValueOnce(failure);
     mocks.getProject.mockResolvedValueOnce({

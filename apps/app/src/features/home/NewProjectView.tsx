@@ -8,12 +8,16 @@ import { useProjectActions } from "@/client/stores";
 import { MeridianMark } from "@/components/app/MeridianMark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useAccountId } from "@/features/project/context/account-feature-context";
+import {
+  useAccountEpochSignal,
+  useAccountId,
+} from "@/features/project/context/account-feature-context";
 
 export function NewProjectView() {
   const navigate = useNavigate();
   const { ensureProject } = useProjectActions();
   const accountId = useAccountId();
+  const accountEpoch = useAccountEpochSignal();
   const [projectId] = useState(() => crypto.randomUUID());
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
@@ -30,7 +34,12 @@ export function NewProjectView() {
     if (busy || !name) return;
     setBusy(true);
     const persistence = beginProjectCreation({ projectId, accountId, title: name });
-    void persistence.then(ensureProject, () => undefined);
+    void persistence.then(
+      (project) => {
+        if (!accountEpoch.aborted) ensureProject(project);
+      },
+      () => undefined,
+    );
     void navigate({ to: "/p/$projectId/$", params: { projectId, _splat: "" } });
   }
 
