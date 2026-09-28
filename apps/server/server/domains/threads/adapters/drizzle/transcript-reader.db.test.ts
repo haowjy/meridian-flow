@@ -1,7 +1,7 @@
-/** PostgreSQL index-plan and bounded-page contract over a large transcript. */
+/** Query-plan contract at scale: one 5,000-turn fixture with a per-case mutable tail. */
 
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -19,7 +19,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
     const { transcriptBoundariesSql, transcriptItemKeysSql, transcriptUnsettledTurnsSql } =
       await import("./transcript-reader.js");
@@ -36,8 +36,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const repos = createDrizzleRepositoriesForTest(db);
     const ids: TurnId[] = [];
 
-    beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users]);
+    let baselineThread: typeof schema.threads.$inferSelect;
+    let baselineTail: typeof schema.turns.$inferSelect;
+    let baselineBlock: typeof schema.turnBlocks.$inferSelect;
+
+    beforeAll(async () => {
+      await deleteDrizzleRows(db, [schema.users]);
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "transcript-plan"));
       await db.insert(schema.projects).values({
         id: PROJECT_ID,
@@ -94,8 +98,39 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           })) as never,
         );
       }
+      [baselineThread] = await db
+        .select()
+        .from(schema.threads)
+        .where(sql`${schema.threads.id} = ${THREAD_ID}`);
+      [baselineTail] = await db
+        .select()
+        .from(schema.turns)
+        .where(sql`${schema.turns.id} = ${ids.at(-1)}`);
+      [baselineBlock] = await db
+        .select()
+        .from(schema.turnBlocks)
+        .where(sql`${schema.turnBlocks.turnId} = ${ids.at(-1)}`);
       await db.execute(sql`ANALYZE turns`);
       await db.execute(sql`ANALYZE turn_blocks`);
+    });
+
+    beforeEach(async () => {
+      // Cases mutate only the tail. Reinsert it because prompt-bake assignment
+      // is write-once; the 4,999-turn prefix and 500-block turn stay immutable.
+      await db.transaction(async (tx) => {
+        await tx
+          .delete(schema.eventJournal)
+          .where(sql`${schema.eventJournal.threadId} = ${THREAD_ID}`);
+        await tx
+          .delete(schema.turns)
+          .where(sql`${schema.turns.threadId} = ${THREAD_ID} AND ${schema.turns.position} >= 5000`);
+        await tx.insert(schema.turns).values(baselineTail);
+        await tx.insert(schema.turnBlocks).values(baselineBlock);
+        await tx
+          .update(schema.threads)
+          .set(baselineThread)
+          .where(sql`${schema.threads.id} = ${THREAD_ID}`);
+      });
     });
 
     afterAll(async () => {

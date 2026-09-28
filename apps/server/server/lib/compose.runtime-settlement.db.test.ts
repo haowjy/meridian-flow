@@ -17,8 +17,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { useRollbackTestDatabase } = await import("../test-support/rollback-test-database.js");
-    const { truncateDrizzleTables } = await import("../test-support/drizzle-reset.js");
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../test-support/drizzle-reset.js"
+    );
     const { createInMemoryEventSink, createNoopEventSink } = await import(
       "../domains/observability/index.js"
     );
@@ -35,7 +36,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const RESPONSE_ID = "00000000-0000-4000-8000-000000000908";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
     });
     let db = database.current;
     beforeEach(async () => {

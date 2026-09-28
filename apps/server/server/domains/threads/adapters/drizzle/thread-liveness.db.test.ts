@@ -24,7 +24,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleRunClaim } = await import("../../../runtime/index.js");
     const { createThreadRuntimeService } = await import("../../runtime-service.js");
     const { createDrizzleThreadRepository } = await import("./thread-repository.js");
@@ -34,7 +34,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const db = createDb(DATABASE_URL, { max: 6 });
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users]);
+      await deleteDrizzleRows(db, [schema.users]);
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "thread-liveness"));
       await db.insert(schema.projects).values({
         id: PROJECT_ID,

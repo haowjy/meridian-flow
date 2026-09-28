@@ -11,10 +11,9 @@ else
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { useRollbackTestDatabase } = await import(
-      "../../../test-support/rollback-test-database.js"
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../../test-support/drizzle-reset.js"
     );
-    const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
     const { createDrizzleRepositoriesForTest } = await import(
       "../../threads/adapters/drizzle/repositories.js"
     );
@@ -22,7 +21,7 @@ else
     const { defineThreadLsContract } = await import("./thread-ls-contract.js");
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
     });
     const userId = "00000000-0000-4000-8000-000000000b01" as UserId;
     const projectId = "00000000-0000-4000-8000-000000000b02" as ProjectId;

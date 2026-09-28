@@ -7,6 +7,22 @@
 
 ## [Unreleased]
 
+- Require an explicit ownership acknowledgment before detaching test database cleanup.
+
+- Run unit tests in worker threads while preserving module isolation.
+
+- Run DB tests on eight isolated workers, with a bounded override for busy shared servers.
+
+- Build the large transcript plan fixture once; restore only the tail each case mutates.
+
+- Prove failed control runs stay sweep-paced at the lease boundary instead of sleeping fifteen seconds.
+
+- Return DB test results without waiting for database-drop checkpoints; keep owned cleanup logs and stale-run GC.
+
+- Disable synchronous commit only on runner-owned DB test connections.
+
+- Reset DB tests with rollback or FK-ordered deletes, without per-case table rewrites.
+
 - Fork or hand off a chat from any finished reply, including a reply a fork inherited. The new chat opens at once and finishes creating in the background; a reload lands on the same chat, and a failure stays on it with Retry. Hand off picks the Agent, starting from the source's. Subagent chats offer neither.
 - Show the handoff brief as a card that writes itself in place: Stop while it writes, the brief behind Show the whole brief once ready, and Retry on a brief that failed or was stopped. A queued Retry can be withdrawn; messages sent meanwhile wait behind the brief.
 - Show a fork's inherited history read-only, marked with the chat it came from and where the fork begins; it never changes when the source moves on.

@@ -7,7 +7,7 @@ import {
 import * as schema from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { truncateDrizzleTables } from "../../../../test-support/drizzle-reset.js";
+import { deleteDrizzleRows } from "../../../../test-support/drizzle-reset.js";
 import { workUpdateMetadata } from "../../index.js";
 import { createDrizzleRepositoriesForTest } from "./repositories.js";
 
@@ -25,7 +25,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
     const repos = createDrizzleRepositoriesForTest(db);
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users, schema.threads]);
+      await deleteDrizzleRows(db, [schema.users, schema.threads]);
       await db.insert(schema.users).values(conformanceUserValues(USER, "chat-activity"));
       await db
         .insert(schema.projects)

@@ -19,7 +19,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { deleteDrizzleRows, truncateDrizzleTables } = await import("./drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("./drizzle-reset.js");
 
     const testSchema = pgSchema("drizzle_reset_test");
     const parent = testSchema.table("parent", { id: integer("id").primaryKey() });
@@ -148,19 +148,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     beforeEach(async () => {
       await db.execute(
-        sql.raw(
-          'TRUNCATE "drizzle_reset_test"."parent", "drizzle_reset_test"."self_reference", "drizzle_reset_test"."unrelated" CASCADE',
-        ),
-      );
-      await db.execute(
-        sql.raw(
-          'TRUNCATE "drizzle_reset_test"."deferred_a", "drizzle_reset_test"."deferred_b" CASCADE',
-        ),
-      );
-      await db.execute(sql.raw('TRUNCATE "reset schema"."root ""table""" CASCADE'));
-      await db.execute(
         sql.raw('DROP TRIGGER IF EXISTS reject_delete ON "drizzle_reset_test"."parent"'),
       );
+      await deleteDrizzleRows(db, [
+        parent,
+        selfReference,
+        unrelated,
+        deferredA,
+        deferredB,
+        quotedRoot,
+      ]);
     });
 
     afterAll(async () => {
@@ -170,7 +167,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("derives event_journal and threads from turns and clears the deferrable cycle", async () => {
-      await truncateDrizzleTables(db, [users]);
+      await deleteDrizzleRows(db, [users]);
       const userId = randomUUID();
       const projectId = randomUUID();
       const threadId = randomUUID();
@@ -223,7 +220,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await expect(db.select().from(turns)).resolves.toEqual([]);
         await expect(db.select({ id: threads.id }).from(threads)).resolves.toEqual([]);
       } finally {
-        await truncateDrizzleTables(db, [users]);
+        await deleteDrizzleRows(db, [users]);
       }
     });
 

@@ -21,8 +21,7 @@ import {
   runInDrizzleSavepoint,
   runInDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
-import { truncateDrizzleTables } from "../../test-support/drizzle-reset.js";
-import { useRollbackTestDatabase } from "../../test-support/rollback-test-database.js";
+import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
@@ -61,7 +60,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const OTHER_DOCUMENT_ID = "00000000-0000-4000-8000-000000000917";
     const OTHER_BRANCH_ID = "branch_work_projection_owner_other_project";
     const database = useRollbackTestDatabase(DATABASE_URL, {
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
     async function fixture() {
       const db = database.current;

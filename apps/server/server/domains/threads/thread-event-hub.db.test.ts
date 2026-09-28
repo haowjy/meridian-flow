@@ -17,7 +17,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
     const { createDrizzleEventJournalReader, createDrizzleEventJournalWriter } = await import(
       "./adapters/drizzle/index.js"
     );
@@ -33,7 +33,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const journalReader = createDrizzleEventJournalReader(db);
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [
+      await deleteDrizzleRows(db, [
         schema.eventJournal,
         schema.threads,
         schema.projects,

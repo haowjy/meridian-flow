@@ -20,7 +20,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../../threads/adapters/drizzle/index.js"
     );
     const { createThreadEventHub } = await import("../../threads/thread-event-hub.js");
-    const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { createDrizzleChangeTrailDispatcher } = await import(
       "./drizzle-change-trail-dispatcher.js"
     );
@@ -39,7 +39,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const SETTLED_EVENT_ID = "00000000-0000-4000-8000-000000000a07";
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [
+      await deleteDrizzleRows(db, [
         schema.eventJournal,
         schema.changeTrailDeliveryOutbox,
         schema.changeTrailShells,

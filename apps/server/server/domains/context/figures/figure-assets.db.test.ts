@@ -5,7 +5,7 @@ import { conformanceUserValues } from "@meridian/database/__test-support__/db-fi
 import { contextSources, documents, folders, projects, users } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { truncateDrizzleTables } from "../../../test-support/drizzle-reset.js";
+import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
 import { createObjectStorageUrl } from "../../storage/object-storage-url.js";
 import type { ObjectStorePort } from "../../storage/ports/object-store.js";
@@ -57,7 +57,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     beforeEach(async () => {
       storedObjects.clear();
-      await truncateDrizzleTables(db, [documents, folders, contextSources, projects, users]);
+      await deleteDrizzleRows(db, [documents, folders, contextSources, projects, users]);
       await db.insert(users).values(conformanceUserValues(USER_ID, "figure-asset-identity"));
       await db.insert(projects).values({
         id: PROJECT_ID,

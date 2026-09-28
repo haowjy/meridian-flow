@@ -1,5 +1,5 @@
 /** Control inbox ordering, claims and acknowledgements against real PostgreSQL transactions. */
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { CompactionMetadataCodec } from "../../threads/index.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
@@ -17,11 +17,11 @@ else
     const { assertThrowawayDatabaseForRunDbTests } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
     assertThrowawayDatabaseForRunDbTests(url);
     const db = createDb(url, { max: 8 });
-    beforeEach(() => truncateDrizzleTables(db, [schema.users]));
+    beforeEach(() => deleteDrizzleRows(db, [schema.users]));
     afterAll(() => db.close());
 
     const fixture = createCompactionFixture(db);
@@ -59,12 +59,11 @@ else
       const rig = await manualFixture({ gateway });
       await rig.send(rig.threadId, "M ahead of K");
       await compactControl(rig);
+      const assertSweepPaced = observeRunStarts(rig);
       await drainControls(rig);
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+      assertSweepPaced();
       const calls = gateway.requests.length;
-      console.log(`C6 provider error gateway calls in 5s: ${calls}`);
       failing = false;
-      // Let a pre-fix hot loop finish before this test releases its database.
       if (calls === 1) await drainControls(rig);
       await settled(rig);
       expect(calls).toBe(1);
@@ -93,10 +92,10 @@ else
         }
         return read(id);
       };
+      const assertSweepPaced = observeRunStarts(rig);
       const outcome = await drainControls(rig);
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+      assertSweepPaced();
       const calls = rig.summarizer.calls.length;
-      console.log(`C6 failed auto successor (${path}) summary calls in 5s: ${calls}`);
       rig.delivery.splitAndContinue = split;
       rig.runClaim.read = read;
       if (calls === 1) await drainControls(rig);
@@ -167,6 +166,23 @@ else
       const rig = await fixture({ gateway: scriptedGateway({ usage: lowUsage }), ...options });
       rig.setThreshold(100000);
       return rig;
+    }
+    function observeRunStarts(rig: Awaited<ReturnType<typeof fixture>>) {
+      const start = rig.runClaim.startExecution.bind(rig.runClaim);
+      // Observe the lease boundary, not a wall-clock window. Refuse an unexpected
+      // second claim so a regression cannot leave a hot DB loop after this case.
+      const starts = vi
+        .spyOn(rig.runClaim, "startExecution")
+        .mockResolvedValue(null)
+        .mockImplementationOnce(start);
+      return () => {
+        // cleanup queues its wake before execute() resolves, and that wake reaches
+        // startExecution synchronously. This observes cleanup-scheduled restarts,
+        // not an arbitrary elapsed sweep interval.
+        const attempts = starts.mock.calls.length;
+        starts.mockRestore();
+        expect(attempts).toBe(1);
+      };
     }
     async function drainControls(rig: Awaited<ReturnType<typeof fixture>>) {
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });

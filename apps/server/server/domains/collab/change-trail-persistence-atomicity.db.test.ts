@@ -6,9 +6,9 @@ import {
   closeDatabase,
   createHarness,
   db,
+  deleteDrizzleRows,
   resetDatabase,
   schema,
-  truncateDrizzleTables,
 } from "./test-support/change-trail-postgres-harness.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -79,7 +79,7 @@ describe("change trail (postgres)", () => {
       navigation: { kind: "live_block_range", targetBlockId: expect.any(Object) },
     });
 
-    await truncateDrizzleTables(db, [
+    await deleteDrizzleRows(db, [
       schema.changeTrailDeliveryOutbox,
       schema.changeTrailDocumentDetails,
       schema.changeTrailShells,

@@ -33,10 +33,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createInMemoryObjectStore } = await import("../../domains/storage/index.js");
     const { handleContextReadRequest } = await import("../context-read-route.js");
     const { createDrizzleDocumentAccess } = await import("../document-access.js");
-    const { useRollbackTestDatabase } = await import(
-      "../../test-support/rollback-test-database.js"
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../test-support/drizzle-reset.js"
     );
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
     const { createContextEntry, parseCreateContextEntryBody } = await import(
       "../../routes/api/projects/[projectId]/context/[scheme]/create.post.js"
     );
@@ -46,7 +45,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const WORK_ID = "00000000-0000-4000-8000-000000000923";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
     });
     let db = database.current;
     const fixtures: Array<{

@@ -24,7 +24,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../context/adapters/project-context-availability.js"
     );
     const { WorkNameConflictError } = await import("./ports/work-repository.js");
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
 
     const db = createDb(DATABASE_URL, { max: 4 });
     const availability = createDrizzleProjectContextAvailability(db);
@@ -43,7 +43,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users, schema.projects, schema.works]);
+      await deleteDrizzleRows(db, [schema.users, schema.projects, schema.works]);
     });
     afterAll(async () => db.$client.end());
 

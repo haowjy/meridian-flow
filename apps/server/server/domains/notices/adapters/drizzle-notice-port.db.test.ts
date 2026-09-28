@@ -18,16 +18,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { useRollbackTestDatabase } = await import(
-      "../../../test-support/rollback-test-database.js"
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../../test-support/drizzle-reset.js"
     );
-    const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
     const { createDrizzleNoticePort } = await import("./drizzle-notice-port.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 1,
-      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
     });
     let db = database.current;
 

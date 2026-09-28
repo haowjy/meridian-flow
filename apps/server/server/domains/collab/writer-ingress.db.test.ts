@@ -23,7 +23,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
     const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000701";
@@ -34,7 +34,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const journal = createDrizzleJournal(db);
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [
+      await deleteDrizzleRows(db, [
         branchPushSettlementOutbox,
         documentYjsUpdates,
         pushLineage,
