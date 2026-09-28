@@ -159,6 +159,23 @@ describe("HandoffBriefCard", () => {
     expect(button("Retry the handoff brief")).toBeDefined();
   });
 
+  it("an older failed brief says it failed, never to try again: a newer brief replaced it", async () => {
+    await render({
+      turn: seed("error", { error: "This handoff brief couldn't be generated. Try again." }),
+      latest: false,
+      onRetry: vi.fn(),
+    });
+    expect(card()?.getAttribute("aria-label")).toBe("Handoff brief unavailable");
+    expect(host.textContent).toContain("This brief failed.");
+    expect(host.textContent).not.toContain("Try again");
+  });
+
+  it("an older stopped brief does not claim the chat continues without one", async () => {
+    await render({ turn: seed("cancelled"), latest: false });
+    expect(card()?.getAttribute("aria-label")).toBe("Handoff brief stopped");
+    expect(host.textContent).not.toContain("This chat continues without a brief.");
+  });
+
   it("hides Retry on an older seed, while a Retry is queued, and in a read-only view", async () => {
     await render({ turn: seed("error"), latest: false, onRetry: vi.fn() });
     expect(button("Retry the handoff brief")).toBeUndefined();

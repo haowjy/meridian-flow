@@ -92,7 +92,12 @@ describe("briefCardView", () => {
       failureCopy: "This handoff brief couldn't be generated. Try again.",
       canRetry: true,
     });
-    expect(view(failed, { latest: false }).canRetry).toBe(false);
+    // A newer seed replaced it: no Retry, and no copy asking to try again.
+    expect(view(failed, { latest: false })).toMatchObject({
+      canRetry: false,
+      failureCopy: null,
+      superseded: true,
+    });
     expect(view(failed, { retryPending: true }).canRetry).toBe(false);
   });
 

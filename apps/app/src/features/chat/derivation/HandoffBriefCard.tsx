@@ -144,7 +144,12 @@ export function HandoffBriefCard({
           {view.failureCopy ? (
             <p className="text-caption text-destructive">{view.failureCopy}</p>
           ) : null}
-          {view.state === "stopped" ? (
+          {view.state === "failed" && view.superseded ? (
+            <p className="text-caption text-muted-foreground">
+              <Trans>This brief failed.</Trans>
+            </p>
+          ) : null}
+          {view.state === "stopped" && !view.superseded ? (
             <p className="text-caption text-muted-foreground">
               <Trans>This chat continues without a brief.</Trans>
             </p>
