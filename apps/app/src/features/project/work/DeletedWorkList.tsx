@@ -1,17 +1,15 @@
 /**
- * Recently deleted Work: soft-deleted Works stay restorable, with everything
- * that went with them, until their purge date. A collapsed disclosure under
- * Archived; each row restores in place.
+ * The Work list's Deleted tab: soft-deleted Works stay restorable, with
+ * everything that went with them, until their purge date. Each row restores
+ * in place.
  */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { WORK_DELETE_RETENTION_DAYS, type Work, workPurgeAt } from "@meridian/contracts/works";
-import { ChevronRight } from "lucide-react";
-import { useCallback, useId, useState } from "react";
+import { useCallback, useState } from "react";
 import { HttpResponseError } from "@/client/api/http-client";
 import { useWorkMutations } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -50,75 +48,45 @@ export function restorableWorks(deleted: readonly Work[], now: number, exceptId?
   );
 }
 
-export function RecentlyDeletedWork({
+export function DeletedWorkList({
   works,
   now,
   restore,
-  open,
-  onOpenChange,
 }: {
   works: readonly Work[];
   now: number;
   restore: WorkRestore;
-  /** Owned by the collection so it survives the section emptying during a restore. */
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
 }) {
-  const listId = useId();
   const shown = works.filter((work) => work.id !== restore.restoringId);
-  if (!shown.length) return null;
+  if (!shown.length)
+    return (
+      <p className="px-2 py-2 text-sm text-muted-foreground">
+        <Trans>
+          Deleted Work stays here for {WORK_DELETE_RETENTION_DAYS} days, then it’s gone for good.
+        </Trans>
+      </p>
+    );
   return (
-    <section
-      data-disclosure
-      className="pt-7 [[data-disclosure]+&]:pt-1"
-      aria-label={t`Recently deleted Work`}
-    >
-      <h2>
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls={listId}
-          onClick={() => onOpenChange(!open)}
-          className="focus-ring flex min-h-8 items-center gap-1.5 rounded-sm px-2 [@media(pointer:coarse)]:min-h-11"
-        >
-          <SectionLabel variant="group">
-            <Trans>Recently deleted</Trans>
-          </SectionLabel>
-          <span className="text-meta tabular-nums text-ink-subtle">{shown.length}</span>
-          <ChevronRight
-            aria-hidden
-            className={cn(
-              "size-3.5 text-ink-subtle transition-transform motion-reduce:transition-none",
-              open && "rotate-90",
-            )}
-          />
-        </button>
-      </h2>
-      {open ? (
-        <>
-          <p className="px-2 pt-1 pb-2 text-xs text-muted-foreground">
-            <Trans>
-              Restoring brings back the Work with its chats, drafts, Scratch and Uploads.
-            </Trans>
-          </p>
-          <ul id={listId} className="min-w-0">
-            {shown.map((work, index) => (
-              <li key={work.id} className={cn("relative", index < shown.length - 1 && "row-rule")}>
-                <DeletedRow work={work} now={now} onRestore={() => restore.restore(work)} />
-                {restore.failure?.id === work.id ? (
-                  <div className="px-2">
-                    <RestoreFailure
-                      error={restore.failure.error}
-                      onRetry={() => restore.restore(work)}
-                    />
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : null}
-    </section>
+    <>
+      <p className="px-2 pb-2 text-xs text-muted-foreground">
+        <Trans>Restoring brings back a Work with its chats, drafts, Scratch and Uploads.</Trans>
+      </p>
+      <ul className="min-w-0">
+        {shown.map((work, index) => (
+          <li key={work.id} className={cn("relative", index < shown.length - 1 && "row-rule")}>
+            <DeletedRow work={work} now={now} onRestore={() => restore.restore(work)} />
+            {restore.failure?.id === work.id ? (
+              <div className="px-2">
+                <RestoreFailure
+                  error={restore.failure.error}
+                  onRetry={() => restore.restore(work)}
+                />
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 

@@ -2,7 +2,7 @@
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { ScreenKey } from "../shell/screens";
-import type { WorkView } from "./project-address";
+import type { WorksView, WorkView } from "./project-address";
 
 export type ProjectSearch = {
   screen?: ScreenKey;
@@ -15,8 +15,8 @@ export type ProjectSearch = {
   filter?: "favorites";
   /** The chat index's settled search text; owned by `features/project/chat-index`. */
   q?: string;
-  /** Work detail view; chats is the omitted default. */
-  view?: WorkView;
+  /** Work detail view (chats default) or Work list tab (active default). */
+  view?: "files" | "archived" | "deleted";
 };
 
 export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): boolean {
@@ -138,6 +138,8 @@ export type ProjectRouteCommands = {
   workHref: (target: WorkDetailTarget) => string;
   workView: WorkView;
   setWorkView: (view: WorkView) => Promise<void>;
+  worksView: WorksView;
+  setWorksView: (view: WorksView) => Promise<void>;
   closeWork: (options: NavigationOptions) => Promise<void>;
   openWorkContext: (target: WorkContextTarget, options: NavigationOptions) => Promise<void>;
   /** Editor destination with no document and no local history pointer. */

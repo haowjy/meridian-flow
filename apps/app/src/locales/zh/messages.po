@@ -328,7 +328,7 @@ msgstr ""
 msgid "{count, plural, one {# more} other {# more}}"
 msgstr ""
 
-#: src/features/project/work/RecentlyDeletedWork.tsx
+#: src/features/project/work/DeletedWorkList.tsx
 msgid "{days, plural, one {Deletes for good in # day} other {Deletes for good in # days}}"
 msgstr ""
 
@@ -510,7 +510,6 @@ msgid "Active"
 msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-#: src/features/project/work/WorkCollection.tsx
 msgid "Active Work"
 msgstr ""
 
@@ -629,7 +628,7 @@ msgstr ""
 #~ msgid "Another chat needs your answer"
 #~ msgstr ""
 
-#: src/features/project/work/RecentlyDeletedWork.tsx
+#: src/features/project/work/DeletedWorkList.tsx
 msgid "Another Work now has this name. Rename that Work, then restore this one."
 msgstr ""
 
@@ -671,7 +670,6 @@ msgid "Archived"
 msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-#: src/features/project/work/WorkCollection.tsx
 msgid "Archived Work"
 msgstr ""
 
@@ -1428,7 +1426,7 @@ msgstr ""
 msgid "Couldn’t rename this Work. Try again."
 msgstr ""
 
-#: src/features/project/work/RecentlyDeletedWork.tsx
+#: src/features/project/work/DeletedWorkList.tsx
 msgid "Couldn’t restore this Work"
 msgstr ""
 
@@ -1627,6 +1625,10 @@ msgstr ""
 msgid "Delete Work"
 msgstr ""
 
+#: src/features/project/work/WorkCollection.tsx
+msgid "Deleted"
+msgstr ""
+
 #. placeholder {0}: deleteState.deleted.name
 #: src/features/project/work/WorkScreen.tsx
 #~ msgid "Deleted {0}"
@@ -1645,7 +1647,11 @@ msgstr ""
 msgid "workReceipt.deleted"
 msgstr ""
 
-#: src/features/project/work/RecentlyDeletedWork.tsx
+#: src/features/project/work/DeletedWorkList.tsx
+msgid "Deleted Work stays here for {WORK_DELETE_RETENTION_DAYS} days, then it’s gone for good."
+msgstr ""
+
+#: src/features/project/work/DeletedWorkList.tsx
 msgid "Deletes for good within a day"
 msgstr ""
 
@@ -2730,6 +2736,10 @@ msgstr ""
 msgid "No answer"
 msgstr ""
 
+#: src/features/project/work/WorkCollection.tsx
+msgid "No archived Work."
+msgstr ""
+
 #: src/features/billing/BillingPage.tsx
 msgid "No billing activity yet."
 msgstr ""
@@ -3299,12 +3309,12 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/work/RecentlyDeletedWork.tsx
-msgid "Recently deleted"
-msgstr ""
+#~ msgid "Recently deleted"
+#~ msgstr ""
 
 #: src/features/project/work/RecentlyDeletedWork.tsx
-msgid "Recently deleted Work"
-msgstr ""
+#~ msgid "Recently deleted Work"
+#~ msgstr ""
 
 #: src/features/project/context/ContextTabBar.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
@@ -3514,12 +3524,12 @@ msgstr ""
 msgid "Response complete"
 msgstr "回复完成"
 
-#: src/features/project/work/RecentlyDeletedWork.tsx
+#: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore"
 msgstr ""
 
 #. placeholder {0}: work.name
-#: src/features/project/work/RecentlyDeletedWork.tsx
+#: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore {0}"
 msgstr ""
 
@@ -3527,9 +3537,13 @@ msgstr ""
 msgid "Restoring"
 msgstr ""
 
-#: src/features/project/work/RecentlyDeletedWork.tsx
-msgid "Restoring brings back the Work with its chats, drafts, Scratch and Uploads."
+#: src/features/project/work/DeletedWorkList.tsx
+msgid "Restoring brings back a Work with its chats, drafts, Scratch and Uploads."
 msgstr ""
+
+#: src/features/project/work/RecentlyDeletedWork.tsx
+#~ msgid "Restoring brings back the Work with its chats, drafts, Scratch and Uploads."
+#~ msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
 #~ msgid "Restoring…"
@@ -3855,6 +3869,10 @@ msgstr ""
 #: src/features/chat/SpawnReportCard.tsx
 #~ msgid "Show result"
 #~ msgstr ""
+
+#: src/features/project/work/WorkCollection.tsx
+msgid "Show Work"
+msgstr ""
 
 #: src/routes/dev-login.tsx
 msgid "Sign in as dev user"
@@ -4521,7 +4539,7 @@ msgstr ""
 msgid "This Work is unavailable."
 msgstr ""
 
-#: src/features/project/work/RecentlyDeletedWork.tsx
+#: src/features/project/work/DeletedWorkList.tsx
 msgid "This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
 msgstr ""
 

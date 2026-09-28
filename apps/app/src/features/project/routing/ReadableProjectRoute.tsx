@@ -342,6 +342,7 @@ export function ReadableProjectRoute({
       ...address,
       destination: next,
       workView: next.kind === "work" || next.kind === "work-id" ? address.workView : undefined,
+      worksView: undefined,
       results: false,
     };
   }
@@ -479,6 +480,9 @@ export function ReadableProjectRoute({
     workView: address.workView ?? "chats",
     setWorkView: (view) =>
       go({ ...address, workView: view === "files" ? "files" : undefined }, { replace: true }),
+    worksView: address.worksView ?? "active",
+    setWorksView: (view) =>
+      go({ ...address, worksView: view === "active" ? undefined : view }, { replace: true }),
     closeWork: (options) => go(toDestination({ kind: "works" }), options),
     // Selecting no document keeps every open tab. Already on the chooser is a
     // no-op. A local draft is also `/editor`; its history pointer is the
@@ -523,7 +527,7 @@ export function ReadableProjectRoute({
     path: localDocumentId ? "" : documentDestination ? `/${documentDestination.path}` : undefined,
     folder: destination.kind === "browse" ? `/${destination.path}` : undefined,
     results: address.results ? "" : undefined,
-    view: address.workView,
+    view: address.workView ?? address.worksView,
   };
   const selectScreen = (next: ScreenKey) => {
     if (next === activeScreen && next !== "chat") return Promise.resolve();

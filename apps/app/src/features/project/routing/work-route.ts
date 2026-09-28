@@ -180,7 +180,13 @@ export function useWorkRoute({
       ? { kind: "work", workSlug: work.slug }
       : { kind: "work-id", workId };
     await current.navigation.navigate(
-      { ...current.address, destination, workView: undefined, results: false },
+      {
+        ...current.address,
+        destination,
+        workView: undefined,
+        worksView: undefined,
+        results: false,
+      },
       { replace: false },
     );
   }, []);

@@ -1,21 +1,22 @@
-/** Collection surface for Work creation, lifecycle, and list rows. */
+/** Collection surface for Work creation and lifecycle: Active, Archived, and Deleted tabs. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { Work } from "@meridian/contracts/works";
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, Plus, X } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { Plus, X } from "lucide-react";
+import type { ReactNode } from "react";
+import { useEffect, useRef } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
-import { SectionLabel } from "@/components/ui/section-label";
+import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { cn } from "@/lib/utils";
 import type { ProjectRouteCommands } from "../routing/project-route";
-import { RecentlyDeletedWork, restorableWorks, useWorkRestore } from "./RecentlyDeletedWork";
+import { DeletedWorkList, restorableWorks, useWorkRestore } from "./DeletedWorkList";
 import { useArchiveFocusFollow } from "./useArchiveFocusFollow";
 import { useWorkArchiveToggle } from "./useWorkArchiveToggle";
 import { useWorkCreationRecords } from "./useWorkCreation";
@@ -35,13 +36,12 @@ export function WorkCollection({
   const { works, deleted, isError, isFetching, refetch } = useWorks(projectId);
   const creations = useWorkCreationRecords(projectId);
   const now = useMinuteClock();
-  const [archivedOpen, setArchivedOpen] = useState(false);
-  const [deletedOpen, setDeletedOpen] = useState(false);
+  const view = routeCommands.worksView;
   const restore = useWorkRestore(projectId);
   const collectionHeading = useRef<HTMLHeadingElement>(null);
   const deleteState = deletion.state;
   const archiveToggle = useWorkArchiveToggle(projectId);
-  const archiveFocus = useArchiveFocusFollow(works, archivedOpen, archiveToggle.toggle);
+  const archiveFocus = useArchiveFocusFollow(works, archiveToggle.toggle);
   const focusHandled = useRef(false);
   useEffect(() => {
     if (focusHandled.current) return;
@@ -67,7 +67,6 @@ export function WorkCollection({
   const restoring = deleted.find((work) => work.id === restore.restoringId);
   const undoableId =
     deleteState.deleted && !deleteState.restorePending ? deleteState.deleted.id : undefined;
-  const archivedListId = useId();
   const openWorkId = (id: string) => {
     const workId = parseRequestId(id);
     if (workId) void routeCommands.openWork({ kind: "work-detail", workId }, { replace: false });
@@ -83,7 +82,6 @@ export function WorkCollection({
       href={hrefForId(work.id)}
       now={now}
       onOpen={() => openWorkId(work.id)}
-      registerOpenFocus={archiveFocus.registerOpenFocus(work.id)}
       actions={
         <WorkActionsMenu
           work={work}
@@ -94,7 +92,7 @@ export function WorkCollection({
       }
     />
   );
-  const activeRows: { key: string; node: React.ReactNode }[] = [
+  const activeRows: { key: string; node: ReactNode }[] = [
     ...unfinishedCreations.map((creation) => ({
       key: `creation-${creation.workId}`,
       node: (
@@ -188,7 +186,19 @@ export function WorkCollection({
             </Link>
           </Button>
         </div>
-        <div className="mt-6 -mx-2 [--row-rule-inset:--spacing(2)]">
+        <div ref={archiveFocus.tabs} className="sticky top-0 z-10 mt-4 flex bg-background py-2">
+          <SegmentedTabs
+            label={t`Show Work`}
+            value={view}
+            onChange={(next) => void routeCommands.setWorksView(next)}
+            options={[
+              { value: "active", label: <Trans>Active</Trans> },
+              { value: "archived", label: <Trans>Archived</Trans> },
+              { value: "deleted", label: <Trans>Deleted</Trans> },
+            ]}
+          />
+        </div>
+        <div className="mt-2 -mx-2 [--row-rule-inset:--spacing(2)]">
           {isError ? (
             <div className="px-2">
               <InlineErrorRow
@@ -199,83 +209,42 @@ export function WorkCollection({
             </div>
           ) : works === null ? (
             <LoadingRows />
+          ) : view === "deleted" ? (
+            <DeletedWorkList
+              works={restorableWorks(deleted, now, undoableId)}
+              now={now}
+              restore={restore}
+            />
+          ) : view === "archived" ? (
+            <RowList
+              rows={archived.map((work) => ({ key: work.id, node: row(work) }))}
+              empty={<Trans>No archived Work.</Trans>}
+            />
           ) : (
-            <>
-              <section aria-label={t`Active Work`}>
-                <h2 className="px-2 pb-2">
-                  <SectionLabel variant="group">
-                    <Trans>Active</Trans>
-                  </SectionLabel>
-                </h2>
-                {activeRows.length ? (
-                  <ul className="min-w-0">
-                    {activeRows.map((item, index) => (
-                      <li
-                        key={item.key}
-                        className={cn("relative", index < activeRows.length - 1 && "row-rule")}
-                      >
-                        {item.node}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="px-2 py-2 text-sm text-muted-foreground">
-                    <Trans>No active Work yet.</Trans>
-                  </p>
-                )}
-              </section>
-              {archived.length ? (
-                <section data-disclosure className="pt-7" aria-label={t`Archived Work`}>
-                  <h2>
-                    <button
-                      ref={archiveFocus.archivedDisclosure}
-                      type="button"
-                      aria-expanded={archivedOpen}
-                      aria-controls={archivedListId}
-                      onClick={() => setArchivedOpen((value) => !value)}
-                      className="focus-ring flex min-h-8 items-center gap-1.5 rounded-sm px-2 [@media(pointer:coarse)]:min-h-11"
-                    >
-                      <SectionLabel variant="group">
-                        <Trans>Archived</Trans>
-                      </SectionLabel>
-                      <span className="text-meta tabular-nums text-ink-subtle">
-                        {archived.length}
-                      </span>
-                      <ChevronRight
-                        aria-hidden
-                        className={cn(
-                          "size-3.5 text-ink-subtle transition-transform motion-reduce:transition-none",
-                          archivedOpen && "rotate-90",
-                        )}
-                      />
-                    </button>
-                  </h2>
-                  {archivedOpen ? (
-                    <ul id={archivedListId} className="mt-1 min-w-0">
-                      {archived.map((work, index) => (
-                        <li
-                          key={work.id}
-                          className={cn("relative", index < archived.length - 1 && "row-rule")}
-                        >
-                          {row(work)}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </section>
-              ) : null}
-              <RecentlyDeletedWork
-                works={restorableWorks(deleted, now, undoableId)}
-                now={now}
-                restore={restore}
-                open={deletedOpen}
-                onOpenChange={setDeletedOpen}
-              />
-            </>
+            <RowList rows={activeRows} empty={<Trans>No active Work yet.</Trans>} />
           )}
         </div>
       </section>
     </div>
+  );
+}
+
+function RowList({
+  rows,
+  empty,
+}: {
+  rows: readonly { key: string; node: ReactNode }[];
+  empty: ReactNode;
+}) {
+  if (!rows.length) return <p className="px-2 py-2 text-sm text-muted-foreground">{empty}</p>;
+  return (
+    <ul className="min-w-0">
+      {rows.map((item, index) => (
+        <li key={item.key} className={cn("relative", index < rows.length - 1 && "row-rule")}>
+          {item.node}
+        </li>
+      ))}
+    </ul>
   );
 }
 

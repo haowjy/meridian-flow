@@ -62,8 +62,10 @@ snapshot from erasing that patch. The page-scoped metadata controller owns only
 the description draft, field-local failure, and the route leave decision. A dirty
 description offers Save, Discard, or Keep editing; hard unload uses the router's
 native before-unload integration rather than a second draft owner. The collection
-focuses its heading after the catalog resolves. `useArchiveFocusFollow` separately
-follows a Work row when Archive moves it between sections.
+focuses its heading after the catalog resolves. It shows one list at a time
+under Active, Archived, and Deleted tabs (lifecycle states never overlap, so
+tabs replace stacked disclosures). `useArchiveFocusFollow` moves focus to the
+destination tab when Archive or Unarchive moves a row out of the visible list.
 Detail composes identity and lifecycle, Goal, pending drafts, Scratch,
 Uploads, and associated chats. Associated chats use bounded cursor pages and the
 same virtualized, borderless project chat row as the Chat index without adding a nested
@@ -75,8 +77,8 @@ unarchive preserve the detail route; delete is optimistic from the band menu or 
 list row, lands on the collection, and shows an inline Undo row there. Delete
 never blocks: the Work's chats, drafts, Scratch and Uploads go with it, and it
 stays restorable for `WORK_DELETE_RETENTION_DAYS` (30) under the collection's
-Recently deleted disclosure (`RecentlyDeletedWork`, optimistic restore back to
-Active) until the server's purge job removes it.
+Deleted tab (`DeletedWorkList`, optimistic restore back to Active) until the
+server's purge job removes it.
 The Work band copies the Chat pane's grammar (`useWorkChrome`): an All Work
 `IndexTabChip` door, the open Work's name as the active tab the page rises into
 and renamed inside it (`WorkTitleTab` over `TabTitleField`, no dropdown), and the
@@ -365,9 +367,10 @@ recovery, and an in-flight create may be lost on reload. Project-scoped Works,
 threads, context catalogs, Results, and Agent catalog reads pause through
 selectors over that same registry until the create is confirmed.
 `routing/work-route.ts` also owns Work id-to-slug canonicalization and the
-read/write projection for remembered Work. Work detail's `?view=files` search
-parameter belongs to the project address and defaults to Chats without a URL
-parameter.
+read/write projection for remembered Work. Work detail's `?view=files` and the
+Work list's `?view=archived|deleted` belong to the project address, each only on
+its own destination; the defaults (Chats, Active) carry no URL parameter, so
+Back from an opened Work returns to the tab it was opened from.
 
 Empty Editor Work selections are stored in href-scoped browser history state.
 Only Editor-related destinations carry this marker; other screens must not

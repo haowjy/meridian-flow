@@ -13,7 +13,6 @@ export function WorkRow({
   href,
   now,
   onOpen,
-  registerOpenFocus,
   actions,
   status,
 }: {
@@ -21,7 +20,6 @@ export function WorkRow({
   href: string;
   now: number;
   onOpen: () => void;
-  registerOpenFocus?: (node: HTMLAnchorElement | null) => void;
   /** Trailing menu; absent while the Work has no server identity yet. */
   actions?: ReactNode;
   /** Replaces the age with a live state such as Creating. */
@@ -30,7 +28,6 @@ export function WorkRow({
   return (
     <div className="group relative flex min-h-12 min-w-0 items-center gap-3 rounded-md px-2 py-1.5 transition-colors motion-reduce:transition-none hover:bg-dropdown-hover">
       <a
-        ref={registerOpenFocus}
         href={href}
         onClick={(event: MouseEvent<HTMLAnchorElement>) => {
           if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)

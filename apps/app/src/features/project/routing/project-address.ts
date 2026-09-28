@@ -33,10 +33,13 @@ export type ProjectAddress = {
   work: AddressSelection;
   /** Work detail's chats view is the default and is omitted from the address. */
   workView?: "files";
+  /** The Work list's Active tab is the default and is omitted from the address. */
+  worksView?: "archived" | "deleted";
   settings?: SettingsSection;
   results: boolean;
 };
 export type WorkView = "chats" | "files";
+export type WorksView = "active" | "archived" | "deleted";
 export type ParsedProjectAddress =
   | { kind: "valid"; address: ProjectAddress; href: string }
   | { kind: "invalid"; reason: string };
@@ -152,11 +155,15 @@ export function parseProjectAddress(
     (destination.kind === "work" || destination.kind === "work-id") && query.get("view") === "files"
       ? "files"
       : undefined;
+  const view = query.get("view");
+  const worksView =
+    destination.kind === "works" && (view === "archived" || view === "deleted") ? view : undefined;
   const address: ProjectAddress = {
     projectId,
     destination,
     work,
     ...(workView ? { workView } : {}),
+    ...(worksView ? { worksView } : {}),
     ...(isSettingsSection(settings) ? { settings } : {}),
     results: (editor || destination.kind === "chat") && query.has("results"),
   };
@@ -226,6 +233,7 @@ export function projectAddressHref(address: ProjectAddress): string {
   if ((context || d.kind === "chat") && address.results) query.set("results", "");
   if ((d.kind === "work" || d.kind === "work-id") && address.workView === "files")
     query.set("view", "files");
+  if (d.kind === "works" && address.worksView) query.set("view", address.worksView);
   if (address.settings) query.set("settings", address.settings);
   const search = query.toString();
   const path = parts.join("/");

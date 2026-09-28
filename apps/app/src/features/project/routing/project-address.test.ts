@@ -74,6 +74,28 @@ describe("readable project addresses", () => {
     ).toBe("invalid");
   });
 
+  it("owns the Work list tab in the URL and omits its Active default", () => {
+    const projectId = "550e8400-e29b-41d4-a716-446655440000";
+    expect(parseProjectAddress(`/p/${projectId}/works`, "?view=archived")).toMatchObject({
+      kind: "valid",
+      address: { destination: { kind: "works" }, worksView: "archived" },
+      href: `/p/${projectId}/works?view=archived`,
+    });
+    expect(parseProjectAddress(`/p/${projectId}/works`, "?view=active")).toMatchObject({
+      kind: "valid",
+      href: `/p/${projectId}/works`,
+    });
+    // Each view value belongs to one destination.
+    expect(parseProjectAddress(`/p/${projectId}/works`, "?view=files")).toMatchObject({
+      href: `/p/${projectId}/works`,
+    });
+    expect(parseProjectAddress(`/p/${projectId}/work/@fight-scene`, "?view=deleted")).toMatchObject(
+      {
+        href: `/p/${projectId}/work/@fight-scene`,
+      },
+    );
+  });
+
   it("rejects the unused /works-new alias", () => {
     expect(parseProjectAddress("/p/550e8400-e29b-41d4-a716-446655440000/works-new").kind).toBe(
       "invalid",

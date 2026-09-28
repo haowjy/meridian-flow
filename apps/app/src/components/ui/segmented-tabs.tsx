@@ -49,6 +49,7 @@ export function SegmentedTabs<T extends string>({
             <button
               type="button"
               role="tab"
+              data-tab-value={option.value}
               aria-selected={active}
               aria-keyshortcuts={option.closeAction ? "Delete Backspace" : undefined}
               disabled={option.disabled}
