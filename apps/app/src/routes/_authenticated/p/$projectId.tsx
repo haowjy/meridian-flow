@@ -1,18 +1,16 @@
 /** Authorized project identity and persistent shell lifetime for readable child destinations. */
 import { Trans } from "@lingui/react/macro";
-import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useRouter, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useEffect } from "react";
 import { getProject } from "@/client/api/projects-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
-import {
-  pendingProject,
-  pendingProjectFromRouteState,
-  writeProjectCreation,
-} from "@/client/query/project-creation-cache";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { creationRecordKey, removeCreationRecord } from "@/client/creation/creation-registry";
 import { loadProjectRouteData } from "@/client/query/project-route-data";
-import { useProjectCreationState } from "@/client/query/useProjectCreation";
+import {
+  readPendingProjectCreation,
+  useProjectCreationState,
+} from "@/client/query/useProjectCreation";
+import { useProject } from "@/client/query/useProjectList";
 import { Button } from "@/components/ui/button";
 import { useAccountEpochSignal } from "@/features/project/context/account-feature-context";
 import { ReadableProjectRoute } from "@/features/project/routing/ReadableProjectRoute";
@@ -21,21 +19,16 @@ import { Route as AuthenticatedRoute } from "../../_authenticated";
 
 export const Route = createFileRoute("/_authenticated/p/$projectId")({
   ...PERSISTENT_SHELL_OPTIONS,
-  loader: async ({ params, location }) => {
-    const pending = pendingProjectFromRouteState(location.state, params.projectId);
-    if (pending) {
+  loader: async ({ params }) => {
+    if (readPendingProjectCreation(params.projectId)) {
       return {
-        project: pendingProject(pending.id, pending.title, pending.userId),
-        data: {
-          threads: null,
-          works: null,
-          worksStarted: 0,
-          workingSet: { status: "unavailable" as const },
-        },
+        projectId: params.projectId,
+        project: null,
+        data: null,
       };
     }
     const project = await getProject(params.projectId, ssrApiRequestInit());
-    return { project, data: await loadProjectRouteData(project.id) };
+    return { projectId: params.projectId, project, data: await loadProjectRouteData(project.id) };
   },
   pendingMs: 0,
   pendingMinMs: 0,
@@ -72,38 +65,33 @@ function ProjectLoadError() {
 }
 
 function ProjectRoute() {
-  const { project, data } = Route.useLoaderData();
+  const loaderData = Route.useLoaderData();
+  const { projectId } = Route.useParams();
   const { user } = AuthenticatedRoute.useLoaderData();
   const router = useRouter();
-  const client = useQueryClient();
-  const location = useRouterState({ select: (state) => state.location });
   const accountSignal = useAccountEpochSignal();
-  const pendingRoute = pendingProjectFromRouteState(location.state, project.id);
-  const creation = useProjectCreationState(project.id, accountSignal);
-  const restoringCreationRecord = !!pendingRoute && creation.status === "none";
+  const creation = useProjectCreationState(projectId, accountSignal);
+  const project = useProject(projectId, loaderData.project ?? creation.project);
+  const data =
+    loaderData.data ??
+    (creation.status !== "none"
+      ? {
+          threads: null,
+          works: null,
+          worksStarted: 0,
+          workingSet: { status: "unavailable" as const },
+        }
+      : null);
 
   useEffect(() => {
-    if (!pendingRoute || creation.status !== "none") return;
-    const interruptedProject = pendingProject(
-      pendingRoute.id,
-      pendingRoute.title,
-      pendingRoute.userId,
-    );
-    writeProjectCreation(client, {
-      id: pendingRoute.id,
-      title: pendingRoute.title,
-      project: interruptedProject,
-      accountSignal,
-      status: "failed",
-      error: "Creation may not have finished.",
-    });
-    client.setQueryData(projectQueryKeys.detail(pendingRoute.id), interruptedProject);
-  }, [accountSignal, client, creation.status, pendingRoute]);
+    if (creation.status !== "confirmed" || loaderData.data === null) return;
+    removeCreationRecord(creationRecordKey("project", projectId), user.userId);
+  }, [creation.status, loaderData.data, projectId, user.userId]);
 
-  if (restoringCreationRecord) return <PendingProject />;
+  if (!project || !data) return <PendingProject />;
 
   return (
-    <ProjectIdentityBoundary projectId={project.id}>
+    <ProjectIdentityBoundary projectId={projectId}>
       <div className="flex h-full min-h-0 flex-col">
         {creation.status === "pending" || creation.status === "failed" ? (
           <ProjectCreationNotice
@@ -116,7 +104,12 @@ function ProjectRoute() {
           />
         ) : null}
         <div className="min-h-0 flex-1">
-          <ReadableProjectRoute key={project.id} project={project} data={data} user={user} />
+          <ReadableProjectRoute
+            key={`${project.id}:${loaderData.data ? "ready" : "pending"}`}
+            project={project}
+            data={data}
+            user={user}
+          />
         </div>
       </div>
     </ProjectIdentityBoundary>

@@ -37,6 +37,11 @@ export type ChatDisplay =
   | { kind: "thread"; threadId: string }
   | { kind: "dock"; threadId: string | null };
 
+type NewChatRequest = {
+  id: number;
+  workId: string | null | "unchanged";
+};
+
 /** The thread the persistent chat surface renders, warm behind the index too. */
 export function chatSurfaceThreadId(display: ChatDisplay): string | null {
   return display.kind === "index" ? display.currentThreadId : display.threadId;
@@ -116,8 +121,7 @@ export function useProjectChatNavigation({
     () => surfaceThreadId !== null && readFirstSendSubmission(accountId, surfaceThreadId) !== null,
   );
   const [channels] = useState(createChannels);
-  const [newChatFocusRequestId, setNewChatFocusRequestId] = useState<number | null>(null);
-  const [newChatWorkId, setNewChatWorkId] = useState<string | null | undefined>(undefined);
+  const [newChatRequest, setNewChatRequest] = useState<NewChatRequest | null>(null);
   const nextFocusRequestId = useRef(1);
   const latest = useRef({ accountId, projectId, activeScreen, urlChatId, currentThreadId, go });
   latest.current = { accountId, projectId, activeScreen, urlChatId, currentThreadId, go };
@@ -156,8 +160,10 @@ export function useProjectChatNavigation({
         if (onChatScreen()) return openChatIndex();
         remember(null);
         channels.dockReveal.request("chat");
-        setNewChatWorkId(workId);
-        setNewChatFocusRequestId(nextFocusRequestId.current++);
+        setNewChatRequest({
+          id: nextFocusRequestId.current++,
+          workId: workId === undefined ? "unchanged" : workId,
+        });
       },
       acceptCreatedChat: (threadId: string) => {
         remember(threadId);
@@ -169,11 +175,7 @@ export function useProjectChatNavigation({
       },
       registerDockReveal: channels.dockReveal.register,
       consumeNewChatFocusRequest: (id: number) => {
-        setNewChatFocusRequestId((current) => {
-          if (current !== id) return current;
-          setNewChatWorkId(undefined);
-          return null;
-        });
+        setNewChatRequest((current) => (current?.id === id ? null : current));
       },
     };
     return { remember, commands };
@@ -191,6 +193,9 @@ export function useProjectChatNavigation({
   // dock at it and call the registered dock reveal, or navigate on the Chat
   // screen. One place, shared by every shell.
   useConversationRevealRouting(commands.openChat);
+
+  const newChatFocusRequestId = newChatRequest?.id ?? null;
+  const newChatWorkId = newChatRequest?.workId === "unchanged" ? undefined : newChatRequest?.workId;
 
   return useMemo(
     () => ({ ...commands, display, recoveringFirstSend, newChatFocusRequestId, newChatWorkId }),

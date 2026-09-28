@@ -141,6 +141,8 @@ export type ProjectViewProps = {
   chatDisplay: ChatDisplay;
   /** Explicit route Work state; loading/error never collapses into absence. */
   routeWork: RouteWorkResolution;
+  /** Validated browser-local Work offered as the collection's return destination. */
+  rememberedWork: Work | null;
   editorRouteWork?: RouteWorkResolution;
   activeLocalDocumentId?: string;
   entryHydration: WorkingSetHydrationPlan;
@@ -181,7 +183,7 @@ export function ProjectView(props: ProjectViewProps) {
     );
   }, [props.activeScreen, props.routeWork, syncWorkDestination]);
   const queryClient = useQueryClient();
-  const cachedProject = useProject(props.projectId);
+  const cachedProject = useProject(props.projectId, props.project);
   const projectTitle = cachedProject?.title ?? props.project.title;
   const renameProject = useMutation({
     mutationKey: projectQueryKeys.rename(props.projectId),
@@ -830,6 +832,7 @@ function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: Surfa
         <WorkPaneController
           projectId={props.projectId}
           routeWork={props.routeWork}
+          rememberedWork={props.rememberedWork}
           routeCommands={props.routeCommands}
           sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
           chatToggle={surfaceToggle("chat", t`Expand chat`)}

@@ -56,6 +56,30 @@ describe("readable project addresses", () => {
     expect(projectAddressHref(parsed.address)).toBe(href);
   });
 
+  it("owns the Work detail view in the URL and omits its chats default", () => {
+    const projectId = "550e8400-e29b-41d4-a716-446655440000";
+    const href = `/p/${projectId}/work/@fight-scene?view=files`;
+    expect(parseProjectAddress(`/p/${projectId}/work/@fight-scene`, "?view=files")).toMatchObject({
+      kind: "valid",
+      address: { destination: { kind: "work", workSlug: "fight-scene" }, workView: "files" },
+      href,
+    });
+    expect(parseProjectAddress(`/p/${projectId}/work/@fight-scene`, "?view=chats")).toMatchObject({
+      kind: "valid",
+      address: { destination: { kind: "work", workSlug: "fight-scene" } },
+      href: `/p/${projectId}/work/@fight-scene`,
+    });
+    expect(
+      parseProjectAddress(`/p/${projectId}/work/@fight-scene`, "?view=files&view=chats").kind,
+    ).toBe("invalid");
+  });
+
+  it("rejects the unused /works-new alias", () => {
+    expect(parseProjectAddress("/p/550e8400-e29b-41d4-a716-446655440000/works-new").kind).toBe(
+      "invalid",
+    );
+  });
+
   it.each([
     "/p/550e8400-e29b-41d4-a716-446655440000/chat/550e8400-e29b-41d4-a716-446655440000",
     "/p/550e8400-e29b-41d4-a716-446655440000/works",

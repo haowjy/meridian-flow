@@ -341,13 +341,18 @@ context-removal CAS snapshot only; it is not a second address grammar.
 
 Work creation is addressable before the catalog knows its slug through
 `/works/<work-id>`. Confirmation replaces that path with `/work/@<slug>`.
-`useWorks` keeps server Works and client creation records
-separate; a confirmed record bridges the snapshot until the next catalog read,
-then history retains the canonical address.
-Project creation similarly seeds the detail cache and carries its title in
-entry-local route state so the project shell can render before its POST settles.
-The pending-create signal disables project-scoped Works, threads, context
-catalogs, Results, and Agent catalog reads until the create is confirmed.
+The account-scoped `client/creation/creation-registry` owns Project and Work
+creation records (`pending`, `failed`, or `confirmed`); the server Works
+snapshot and confirmed Work records meet once in `routing/work-route.ts`'s
+deduplicated Work catalog. Project route loading short-circuits only while its
+creation record is pending or failed. Browser history state is not creation
+recovery, and an in-flight create may be lost on reload. Project-scoped Works,
+threads, context catalogs, Results, and Agent catalog reads pause through
+selectors over that same registry until the create is confirmed.
+`routing/work-route.ts` also owns Work id-to-slug canonicalization and the
+read/write projection for remembered Work. Work detail's `?view=files` search
+parameter belongs to the project address and defaults to Chats without a URL
+parameter.
 
 Empty Editor Work selections are stored in href-scoped browser history state.
 Only Editor-related destinations carry this marker; other screens must not

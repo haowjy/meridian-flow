@@ -9,11 +9,12 @@
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { listProjects } from "@/client/api/projects-api";
+import { getProject, listProjects } from "@/client/api/projects-api";
 import { mergeApiProjects } from "@/client/stores";
 
 import { unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
+import { useIsProjectPendingCreation } from "./useProjectCreation";
 
 function useProjectListQuery() {
   const queryClient = useQueryClient();
@@ -66,12 +67,19 @@ export function useProjectList(): Project[] | null {
   return useProjectListStatus().projects;
 }
 
-export function useProject(projectId: string): Project | undefined {
+export function useProject(
+  projectId: string,
+  initialProject?: Project | null,
+): Project | undefined {
   const projects = useProjectList();
-  const detail = useQuery<Project | null>({
+  const listProject = projects?.find((project) => project.id === projectId);
+  const isCreating = useIsProjectPendingCreation(projectId);
+  const detail = useQuery<Project>({
     queryKey: projectQueryKeys.detail(projectId),
-    queryFn: async () => null,
-    enabled: false,
+    queryFn: () => getProject(projectId),
+    enabled: !isCreating,
+    initialData: initialProject ?? listProject,
+    staleTime: 30_000,
   });
-  return projects?.find((project) => project.id === projectId) ?? detail.data ?? undefined;
+  return listProject ?? detail.data ?? initialProject ?? undefined;
 }

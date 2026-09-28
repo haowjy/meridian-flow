@@ -25,6 +25,15 @@ describe("Work dock route scope", () => {
         slug: "pending-id",
       }),
     ).toBe("pending-id");
+    expect(
+      workDockDestinationId("work", {
+        status: "creating",
+        workId,
+        name: "Fight scene",
+        goal: "Make the turn land",
+        phase: "pending",
+      }),
+    ).toBe(workId);
     expect(workDockDestinationId("work", { status: "none" })).toBeNull();
     expect(workDockDestinationId("chat", present)).toBeNull();
   });

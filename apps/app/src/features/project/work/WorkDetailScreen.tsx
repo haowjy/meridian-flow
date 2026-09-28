@@ -81,18 +81,10 @@ export function WorkScreenHeader({
   );
 }
 
-function useWorkView(): ["chats" | "files", (view: "chats" | "files") => void] {
-  const [view, setCurrentView] = useState<"chats" | "files">(() =>
-    new URLSearchParams(window.location.search).get("view") === "files" ? "files" : "chats",
-  );
-  const setView = useCallback((next: "chats" | "files") => {
-    setCurrentView(next);
-    const url = new URL(window.location.href);
-    if (next === "files") url.searchParams.set("view", "files");
-    else url.searchParams.delete("view");
-    window.history.replaceState(window.history.state, "", url);
-  }, []);
-  return [view, setView];
+function useWorkView(
+  routeCommands: ProjectRouteCommands,
+): ["chats" | "files", (view: "chats" | "files") => void] {
+  return [routeCommands.workView, routeCommands.setWorkView];
 }
 
 export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailScreenProps) {
@@ -100,7 +92,7 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
   const controller = useWorkMetadataController(work, (data) =>
     mutations.update.mutateAsync({ workId: work.id, data }),
   );
-  const [view, setView] = useWorkView();
+  const [view, setView] = useWorkView(routeCommands);
   const [searchText, setSearchText] = useState("");
   const [settledSearch, setSettledSearch] = useState<string | null>(null);
   const [filesSearch, setFilesSearch] = useState("");

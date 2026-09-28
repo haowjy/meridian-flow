@@ -1,62 +1,62 @@
 // @vitest-environment jsdom
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
-import { withReactRoot } from "@/test-support/react-dom-harness";
 import {
-  type ProjectCreationRecord,
-  pendingProject,
-  removeProjectCreation,
-  writeProjectCreation,
-} from "./project-creation-cache";
+  creationRecordKey,
+  creationRegistry,
+  removeCreationRecord,
+  scopeCreationRegistry,
+  writeCreationRecord,
+} from "@/client/creation/creation-registry";
+import { withReactRoot } from "@/test-support/react-dom-harness";
 import { useIsProjectPendingCreation } from "./useProjectCreation";
+
+const PROJECT_ID = "550e8400-e29b-41d4-a716-446655440000";
+const ACCOUNT_ID = "writer-1";
 
 function PendingProbe({ projectId }: { projectId: string }) {
   return <output>{String(useIsProjectPendingCreation(projectId))}</output>;
 }
 
-function creationRecord(projectId: string): ProjectCreationRecord {
-  return {
-    id: projectId,
-    title: "A new project",
-    project: pendingProject(projectId, "A new project", "writer-1"),
-    accountSignal: new AbortController().signal,
-    status: "pending",
-    error: null,
-  };
-}
-
 describe("useIsProjectPendingCreation", () => {
-  it("is not pending when the optional Query client is unavailable", async () => {
-    await withReactRoot(<PendingProbe projectId="project-1" />, async () => {
-      expect(document.querySelector("output")?.textContent).toBe("false");
-    });
+  beforeEach(() => {
+    creationRegistry.setState({ accountId: null, records: {} });
+    scopeCreationRegistry(ACCOUNT_ID);
   });
 
-  it("tracks creation records in the Query cache", async () => {
-    const projectId = "project-2";
-    const queryClient = new QueryClient();
+  it("tracks only unresolved project records in the active account", async () => {
+    await withReactRoot(<PendingProbe projectId={PROJECT_ID} />, async () => {
+      const output = document.querySelector("output");
+      expect(output?.textContent).toBe("false");
 
-    await withReactRoot(
-      <QueryClientProvider client={queryClient}>
-        <PendingProbe projectId={projectId} />
-      </QueryClientProvider>,
-      async () => {
-        expect(document.querySelector("output")?.textContent).toBe("false");
-
-        await act(async () => {
-          writeProjectCreation(queryClient, creationRecord(projectId));
+      await act(async () => {
+        writeCreationRecord("writer-1", {
+          key: creationRecordKey("project", PROJECT_ID),
+          payload: { id: PROJECT_ID, title: "New project", userId: "writer-1" },
+          result: null,
+          status: "pending",
+          error: null,
         });
-        expect(document.querySelector("output")?.textContent).toBe("true");
+      });
+      expect(output?.textContent).toBe("true");
 
-        await act(async () => {
-          removeProjectCreation(queryClient, projectId);
+      await act(async () => {
+        writeCreationRecord("writer-1", {
+          key: creationRecordKey("project", PROJECT_ID),
+          payload: { id: PROJECT_ID, title: "New project", userId: "writer-1" },
+          result: null,
+          status: "confirmed",
+          error: null,
         });
-        expect(document.querySelector("output")?.textContent).toBe("false");
-      },
-    );
+      });
+      expect(output?.textContent).toBe("false");
 
-    queryClient.clear();
+      await act(async () => {
+        removeCreationRecord(creationRecordKey("project", PROJECT_ID), "writer-1");
+        scopeCreationRegistry("writer-2");
+      });
+      expect(output?.textContent).toBe("false");
+    });
   });
 });

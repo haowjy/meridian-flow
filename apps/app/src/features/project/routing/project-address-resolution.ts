@@ -2,8 +2,7 @@
 import type { AddressSelection, ProjectAddress } from "./project-address";
 
 export type AddressCatalog<T> =
-  | { status: "loading" }
-  | { status: "error" }
+  | { status: "loading" | "error"; entries?: readonly T[] }
   | { status: "ready"; entries: readonly T[] };
 export type AddressResolution<T> =
   | { status: "absent" | "none" }
@@ -17,9 +16,10 @@ export function resolveAddressSelection<T extends { slug: string | null }>(
 ): AddressResolution<T> {
   if (selection.kind === "absent" || selection.kind === "none") return { status: selection.kind };
   if (selection.kind === "malformed") return { status: "malformed", value: selection.value };
+  const value = catalog.entries?.find((entry) => entry.slug === selection.slug);
+  if (value) return { status: "resolved", value };
   if (catalog.status !== "ready") return { status: catalog.status, slug: selection.slug };
-  const value = catalog.entries.find((entry) => entry.slug === selection.slug);
-  return value ? { status: "resolved", value } : { status: "unavailable", slug: selection.slug };
+  return { status: "unavailable", slug: selection.slug };
 }
 
 /** Work-owned paths pin authority, including explicitly unassigned Scratch and Uploads. */

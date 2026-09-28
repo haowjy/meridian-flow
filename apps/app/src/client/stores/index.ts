@@ -39,7 +39,6 @@ export {
 export { announce, announceError, useAnnouncement } from "./thread-store/announcements";
 export {
   ThreadStoreProvider,
-  useIsProjectPendingCreation,
   useIsThreadPendingCreation,
   useThreadActions,
   useThreadStore,

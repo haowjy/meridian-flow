@@ -6,6 +6,7 @@ export type EditorWorkScope =
 export function resolveEditorWorkScope(routeWork: RouteWorkResolution): EditorWorkScope {
   if (routeWork.status === "unresolved")
     return { status: routeWork.reason, workId: routeWork.slug };
+  if (routeWork.status === "creating") return { status: "loading", workId: routeWork.workId };
   if (routeWork.status === "new") return { status: "ready", workId: null, source: "route" };
   if (routeWork.status === "none") return { status: "ready", workId: null, source: "route" };
   if (routeWork.work.status === "archived")
