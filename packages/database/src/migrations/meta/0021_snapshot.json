@@ -2075,7 +2075,7 @@
         },
         "thread_inbox_messages_body_valid": {
           "name": "thread_inbox_messages_body_valid",
-          "value": "(CASE WHEN \"thread_inbox_messages\".\"intent\" = 'control' THEN \"thread_inbox_messages\".\"body\"->>'kind' IN ('compact','compaction_undo','handoff_brief') ELSE \"thread_inbox_messages\".\"body\"->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE"
+          "value": "(CASE WHEN \"thread_inbox_messages\".\"intent\" = 'control' THEN \"thread_inbox_messages\".\"body\"->>'kind' IN ('compact','compaction_undo') ELSE \"thread_inbox_messages\".\"body\"->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE"
         }
       },
       "isRLSEnabled": false
@@ -2201,7 +2201,7 @@
       "checkConstraints": {
         "thread_run_leases_phase_valid": {
           "name": "thread_run_leases_phase_valid",
-          "value": "\"thread_run_leases\".\"phase\" IN ('generating','waiting','compacting','briefing')"
+          "value": "\"thread_run_leases\".\"phase\" IN ('generating','waiting','compacting')"
         }
       },
       "isRLSEnabled": false

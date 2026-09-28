@@ -321,6 +321,11 @@ export function apiThreadHandoffPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/handoff`;
 }
 
+/** POST: retry the pending brief for a handoff destination under a client-minted seed id. */
+export function apiThreadHandoffBriefPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/handoff/brief`;
+}
+
 export type TranscriptPagePathOptions = {
   order?: "newest_first" | "oldest_first";
   unit?: "item" | "turn";

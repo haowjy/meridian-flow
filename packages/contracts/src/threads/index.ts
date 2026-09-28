@@ -47,7 +47,7 @@ export type JsonObject = { [key: string]: JsonValue };
 export type ThreadLifecycleStatus = "idle" | "archived";
 
 /** Lease phase published by the running loop; `generating` around the model call, `waiting` between tool waits. */
-export type ThreadPhase = "generating" | "waiting" | "compacting" | "briefing";
+export type ThreadPhase = "generating" | "waiting" | "compacting";
 
 /**
  * Derived run status: awake iff a live lease exists, with the phase the holder
@@ -174,8 +174,7 @@ export type MessageIntent = "message" | "notice" | "control";
 /** Runtime commands take their transcript position at execution, not enqueue. */
 export type ControlBody =
   | { kind: "compact" }
-  | { kind: "compaction_undo"; compactionTurnId: string }
-  | { kind: "handoff_brief"; seedTurnId?: string };
+  | { kind: "compaction_undo"; compactionTurnId: string };
 export type EnqueueThreadControlRequest = { id: string; control: ControlBody };
 export type EnqueueThreadControlResponse = {
   id: string;
@@ -265,6 +264,7 @@ export type JournalEventType =
   | "agent.run_completed" // PRODUCED NOW — ReportPublisher B, body-free metadata
   | "subagent.activity" // PRODUCED NOW — ChildRunCoordinator/Driver (direct-parent journal, direct children)
   | "inbox.changed" // PRODUCED NOW — enqueue, bind/adoption/release, and ack (full classified inbox)
+  | "thread.status" // PRODUCED NOW — non-lease work status refresh
   | "context.assembled"
   | "context.compacted"
   | "context.skill_loaded"

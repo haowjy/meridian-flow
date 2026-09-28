@@ -377,6 +377,9 @@ export const handoffThreadRequestSchema = z.strictObject({
 });
 export type HandoffThreadRequest = z.infer<typeof handoffThreadRequestSchema>;
 
+export const handoffBriefRetryRequestSchema = z.strictObject({ id: z.uuid() });
+export type HandoffBriefRetryRequest = z.infer<typeof handoffBriefRetryRequestSchema>;
+
 export type ForkThreadRequest = z.infer<typeof forkThreadRequestSchema>;
 
 export type UpdateWorkWriteModeRequest = {

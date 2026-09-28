@@ -16,6 +16,7 @@ import type {
   PriceSource,
   ThreadActivity,
   ThreadPendingInbox,
+  ThreadStatus,
   Turn,
 } from "./index.js";
 import type {
@@ -184,6 +185,13 @@ export type OrchestratorEvent =
       threadId: string;
       /** Full recomputed pending inbox, so the client replaces the tray state wholesale. */
       pending: ThreadPendingInbox;
+    }
+  | {
+      /** Ephemeral full status refresh when non-lease background work starts or settles. */
+      type: "thread.status";
+      threadId: string;
+      status: ThreadStatus;
+      runningTurnId: string | null;
     }
   | {
       type: "background.started";
