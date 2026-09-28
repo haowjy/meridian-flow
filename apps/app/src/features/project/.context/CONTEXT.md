@@ -70,8 +70,19 @@ scroll owner. The external-scroll hook measures the list in that owner's
 coordinates and owns stable keys plus focused/menu row pinning. Their membership
 is historical while the displayed Work is the
 chat's current primary Work. Resource sections fail independently. Archive and
-unarchive preserve the detail route; delete is optimistic from the header or a list
-row, lands on the collection, and shows an inline Undo row there.
+unarchive preserve the detail route; delete is optimistic from the band menu or a
+list row, lands on the collection, and shows an inline Undo row there.
+The Work band copies the Chat pane's grammar (`useWorkChrome`): an All Work
+`IndexTabChip` door, the open Work's name as the active tab the page rises into
+and renamed inside it (`WorkTitleTab` over `TabTitleField`, no dropdown), and the
+Work's `…` menu at the far right. The phone top bar shows the same pieces as a
+`Work › <name>` trail. Delete state (`useWorkDeletion`) lives above the screen so
+the band's menu and the collection's Undo row share it. The page body starts at
+the description, which edits in place without moving (see DESIGN.md).
+New Work and New project are `CreationDialog` (features/creation) over their
+collection, addressed as `works/new` and `/projects/new`. Create closes the
+dialog, replaces that address with the new destination (navigate first), and
+the destination shows pending or failed state until the server confirms.
 The collection, the Chats tab and the Files tab share the app's list grammar
 (Chat index, Editor recents): recency-rank `SectionLabel` groups, hairline
 `row-rule` rows with hover pills, a trailing age or state, and one `…` menu
