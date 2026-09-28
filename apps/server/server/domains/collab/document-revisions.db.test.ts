@@ -7,6 +7,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
   runInDrizzleTransaction,
+  runInRootDrizzleTransaction,
   runOutsideDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
 import { requireLockedActiveWork } from "../../shared/work-lifecycle-lock.js";
@@ -18,7 +19,10 @@ import { createDrizzleThreadLock } from "../runtime/adapters/drizzle-thread-lock
 import { createDrizzleThreadRepository } from "../threads/adapters/drizzle/thread-repository.js";
 import { createDrizzleThreadWorksRepository } from "../threads/adapters/drizzle/thread-works-repository.js";
 import { threadExecutionContext } from "../threads/index.js";
+import { createBranchCoordinator } from "./domain/branch-coordinator.js";
+import { createBranchPullService } from "./domain/branch-pulls.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
+import { runResponseTransaction } from "./domain/response-transaction.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -464,6 +468,50 @@ describe("document revisions (postgres and collab)", () => {
     await f.branchPulls.flushLivePull(ALPHA_ID);
     expect(blocks).toBe(1);
     expect(await f.current()).not.toBe(before);
+  });
+
+  it("publishes a root-committed pull even when its caller response aborts", async () => {
+    const f = await fixture("draft");
+    await f.read();
+    await f.writerDelete();
+    const broadcasts: string[] = [];
+    const coordinator = createBranchCoordinator({
+      store: f.branchStore,
+      onBranchUpdate: ({ branchId }) => broadcasts.push(branchId),
+    });
+    const pulls = createBranchPullService({
+      outsideTransaction: runOutsideDrizzleTransaction,
+      rootTransaction: (operation) => runInRootDrizzleTransaction(db, operation),
+      liveCoordinator: f.liveCoordinator,
+      branchCoordinator: coordinator,
+      branches: f.branchStore,
+    });
+    await expect(
+      runResponseTransaction(
+        (operation) => runInDrizzleTransaction(db, operation),
+        async () => {
+          await pulls.pullThreadPeer({ documentId: ALPHA_ID, threadId: THREAD_ID });
+          throw new Error("response aborted");
+        },
+      ),
+    ).rejects.toThrow("response aborted");
+    const peer = await f.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID);
+    const draft = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    expect(f.model.getBlocks(toDocHandle(peer.doc))).toHaveLength(1);
+    expect(broadcasts).toEqual(expect.arrayContaining([peer.branchId, draft.branchId]));
+    peer.doc.destroy();
+    draft.doc.destroy();
+  });
+
+  it("a live manifest re-read observes its caller's uncommitted membership edit", async () => {
+    const f = await fixture("draft");
+    await runInDrizzleTransaction(db, async () => {
+      await f.branchStore.recordManifestDocumentDeleted(ALPHA_ID);
+      const membership = await bounded(() =>
+        f.effective.resolveManifestMembership({ projectId: PROJECT_ID }),
+      );
+      expect(membership.members).not.toContain(ALPHA_ID);
+    });
   });
 
   it("returns null when a document is removed from the Work manifest", async () => {

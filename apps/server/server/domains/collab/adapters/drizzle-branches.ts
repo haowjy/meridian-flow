@@ -570,7 +570,10 @@ export function createDrizzleBranchStore(
     workId?: WorkId | null;
     threadId?: ThreadId | null;
   }): Promise<{ documentId: DocumentId; members: string[] }> {
-    const manifest = await ensureProjectManifest({ projectId: input.projectId });
+    const manifest =
+      input.threadId || input.workId
+        ? await ensureProjectManifest({ projectId: input.projectId })
+        : await loadProjectManifest({ projectId: input.projectId });
     let doc = manifest.doc;
     if (input.threadId) {
       const peer = await ensureThreadPeerBranch({

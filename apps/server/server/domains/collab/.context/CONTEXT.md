@@ -43,7 +43,9 @@ that safe:
   (`domain/branch-pulls.ts` `run()`) and thread-peer content pulls run in root
   transactions outside any caller's ambient transaction. A shared pull promise
   therefore resolves only on committed state, and a caller's rollback cannot
-  undo it. Reruns and timer callbacks also leave the initiating context.
+  undo it. Pulls also leave the response transaction context, so root-committed
+  cache updates and broadcasts cannot be deferred to an aborting response.
+  Reruns and timer callbacks leave both initiating contexts.
 - **Joiners wait for the next run.** A caller that joins an in-flight live pull
   awaits one coalesced run that starts after its call. The in-flight snapshot
   may predate a writer edit the caller must observe.

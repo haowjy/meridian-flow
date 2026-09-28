@@ -10,6 +10,7 @@ import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchConcurrentJournalWatermarks } from "./branch-agent-edit.js";
 import type { BranchCoordinator } from "./branch-coordinator.js";
+import { runOutsideResponseTransaction } from "./response-transaction.js";
 
 export type WorkDraftLookup = {
   listActiveWorkDraftBranchIds(documentId: DocumentId): Promise<string[]>;
@@ -64,6 +65,10 @@ export function createBranchPullService(input: {
     }
   >();
 
+  function outsideCallerTransactions<T>(operation: () => T): T {
+    return input.outsideTransaction(() => runOutsideResponseTransaction(operation));
+  }
+
   async function liveSnapshot(documentId: DocumentId): Promise<Y.Doc> {
     const state = await input.liveCoordinator
       .withDocument(documentId, async (liveDoc) => Y.encodeStateAsUpdate(liveDoc))
@@ -83,7 +88,7 @@ export function createBranchPullService(input: {
       // A joiner needs a snapshot captured after its call, not the in-flight
       // snapshot that may predate a writer edit. Coalesce joins into one rerun.
       const running = current.running;
-      current.queued ??= input.outsideTransaction(() => {
+      current.queued ??= outsideCallerTransactions(() => {
         const rerun = () => {
           current.queued = undefined;
           return run(documentId);
@@ -93,7 +98,7 @@ export function createBranchPullService(input: {
       return current.queued;
     }
     const entry = current ?? {};
-    const running = input.outsideTransaction(() =>
+    const running = outsideCallerTransactions(() =>
       input
         .rootTransaction(async () => {
           const liveDoc = await liveSnapshot(documentId);
@@ -112,7 +117,7 @@ export function createBranchPullService(input: {
           entry.max = undefined;
         })
         .finally(() =>
-          input.outsideTransaction(() => {
+          outsideCallerTransactions(() => {
             entry.running = undefined;
             if (!entry.queued && !entry.debounce && !entry.max) timers.delete(documentId);
           }),
@@ -149,58 +154,62 @@ export function createBranchPullService(input: {
       return run(documentId);
     },
 
-    async pullThreadPeer(inputPeer) {
-      const beforePullLive = await liveSnapshot(inputPeer.documentId);
-      const attributionBaseline = await (async () => {
-        try {
-          const existingPeer = await input.branches.ensureThreadPeerBranch({
-            ...inputPeer,
-            liveDoc: beforePullLive,
-          });
-          return input.branchCoordinator.readBranch(existingPeer.branchId, (doc) =>
-            Promise.resolve(Y.encodeStateAsUpdate(doc)),
-          );
-        } finally {
-          beforePullLive.destroy();
-        }
-      })();
-      await run(inputPeer.documentId);
-      const liveJournalSeq = input.liveJournal
-        ? (await input.liveJournal.readForReconstruction(inputPeer.documentId)).updates.reduce(
-            (latest, update) => Math.max(latest, update.seq),
-            0,
-          )
-        : undefined;
-      const liveDoc = await liveSnapshot(inputPeer.documentId);
-      try {
-        const peer = await input.branches.ensureThreadPeerBranch({ ...inputPeer, liveDoc });
-        const captured = await input.branchCoordinator.readBranch(peer.branchId, (_doc, snapshot) =>
-          Promise.resolve({
-            peerGeneration: snapshot?.generation,
-            upstreamBranchId: snapshot?.upstreamBranchId,
-          }),
-        );
-        const afterJournalId = input.concurrentJournalWatermarks?.current(
-          inputPeer.threadId,
-          inputPeer.documentId,
-        );
-        const upstream = captured.upstreamBranchId
-          ? await input.branchCoordinator.readBranch(captured.upstreamBranchId, (doc, snapshot) =>
-              Promise.resolve({
-                generation: snapshot.generation,
-                state: Y.encodeStateAsUpdate(doc),
-              }),
+    pullThreadPeer(inputPeer) {
+      return runOutsideResponseTransaction(async () => {
+        const beforePullLive = await liveSnapshot(inputPeer.documentId);
+        const attributionBaseline = await (async () => {
+          try {
+            const existingPeer = await input.branches.ensureThreadPeerBranch({
+              ...inputPeer,
+              liveDoc: beforePullLive,
+            });
+            return input.branchCoordinator.readBranch(existingPeer.branchId, (doc) =>
+              Promise.resolve(Y.encodeStateAsUpdate(doc)),
+            );
+          } finally {
+            beforePullLive.destroy();
+          }
+        })();
+        await run(inputPeer.documentId);
+        const liveJournalSeq = input.liveJournal
+          ? (await input.liveJournal.readForReconstruction(inputPeer.documentId)).updates.reduce(
+              (latest, update) => Math.max(latest, update.seq),
+              0,
             )
           : undefined;
-        await input.rootTransaction(async () => {
-          if (upstream) await pullPeerFromCapturedUpstream(peer.branchId, upstream.state);
-          else await input.branchCoordinator.pullFromBranch(peer.branchId);
-        });
-        const branchGeneration = upstream?.generation ?? captured.peerGeneration;
-        return { branchGeneration, afterJournalId, liveJournalSeq, attributionBaseline };
-      } finally {
-        liveDoc.destroy();
-      }
+        const liveDoc = await liveSnapshot(inputPeer.documentId);
+        try {
+          const peer = await input.branches.ensureThreadPeerBranch({ ...inputPeer, liveDoc });
+          const captured = await input.branchCoordinator.readBranch(
+            peer.branchId,
+            (_doc, snapshot) =>
+              Promise.resolve({
+                peerGeneration: snapshot?.generation,
+                upstreamBranchId: snapshot?.upstreamBranchId,
+              }),
+          );
+          const afterJournalId = input.concurrentJournalWatermarks?.current(
+            inputPeer.threadId,
+            inputPeer.documentId,
+          );
+          const upstream = captured.upstreamBranchId
+            ? await input.branchCoordinator.readBranch(captured.upstreamBranchId, (doc, snapshot) =>
+                Promise.resolve({
+                  generation: snapshot.generation,
+                  state: Y.encodeStateAsUpdate(doc),
+                }),
+              )
+            : undefined;
+          await input.rootTransaction(async () => {
+            if (upstream) await pullPeerFromCapturedUpstream(peer.branchId, upstream.state);
+            else await input.branchCoordinator.pullFromBranch(peer.branchId);
+          });
+          const branchGeneration = upstream?.generation ?? captured.peerGeneration;
+          return { branchGeneration, afterJournalId, liveJournalSeq, attributionBaseline };
+        } finally {
+          liveDoc.destroy();
+        }
+      });
     },
   };
 

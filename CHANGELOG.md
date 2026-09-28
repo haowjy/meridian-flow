@@ -18,6 +18,7 @@
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
 
 ### Fixed
+- Publish committed pulls even if the caller response aborts. Preserve live manifest read-your-writes.
 - Keep cold project bootstrap atomic while committing peer manifest dependencies independently.
 - Refresh search-only Work drafts before revision checks. Ignore documents removed from a Work.
 - Commit shared document pulls independently of chat transactions; preserve retries after failed pulls.

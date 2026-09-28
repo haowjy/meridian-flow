@@ -194,20 +194,22 @@ export function createEffectiveDocumentReader(input: {
       ) as Promise<Result<{ content: string[]; revision: string | null }, SyncError>>;
     },
     async resolveManifestMembership(command) {
-      const manifest = await input.branches.ensureProjectManifest({
-        projectId: command.projectId,
-      });
-      try {
-        if (command.threadId) {
-          await input.branchPulls.pullThreadPeer({
-            documentId: manifest.documentId,
-            threadId: command.threadId,
-          });
-        } else if (command.workId) {
-          await input.branchPulls.flushLivePull(manifest.documentId);
+      if (command.threadId || command.workId) {
+        const manifest = await input.branches.ensureProjectManifest({
+          projectId: command.projectId,
+        });
+        try {
+          if (command.threadId) {
+            await input.branchPulls.pullThreadPeer({
+              documentId: manifest.documentId,
+              threadId: command.threadId,
+            });
+          } else if (command.workId) {
+            await input.branchPulls.flushLivePull(manifest.documentId);
+          }
+        } finally {
+          manifest.doc.destroy();
         }
-      } finally {
-        manifest.doc.destroy();
       }
       const membership = await input.branches.resolveManifestMembership(command);
       if (!command.responseId || !command.threadId) return membership;
