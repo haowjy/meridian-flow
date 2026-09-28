@@ -3,6 +3,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
+import { journalEventsByThread } from "../../../test-support/journal-events.js";
 
 const runDb = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const databaseUrl = process.env.DATABASE_URL;
@@ -101,10 +102,7 @@ else
         },
       });
       expect(JSON.stringify(card?.content)).not.toContain("secret report body");
-      const events = await db
-        .select()
-        .from(schema.eventJournal)
-        .where(eq(schema.eventJournal.threadId, ids.caller));
+      const events = await journalEventsByThread(db, ids.caller);
       expect(events.map((row) => row.eventType)).toEqual([
         "block.updated",
         "agent.run_completed",
@@ -357,10 +355,7 @@ else
       await publisher.publish(ids.child, ids.execution);
       const terminalCard = await repos.blocks.findById(ids.card);
       if (!terminalCard) throw new Error("missing terminal card");
-      const priorEvents = await db
-        .select()
-        .from(schema.eventJournal)
-        .where(eq(schema.eventJournal.threadId, ids.caller));
+      const priorEvents = await journalEventsByThread(db, ids.caller);
       await bindAdmittedInvocationCard({
         transcript: {
           persistence: { repos, eventWriter },
@@ -388,10 +383,7 @@ else
         admittedAt: "2026-01-01T00:00:00.000Z",
       });
       expect((await repos.blocks.findById(ids.card))?.content).toEqual(terminalCard.content);
-      const afterEvents = await db
-        .select()
-        .from(schema.eventJournal)
-        .where(eq(schema.eventJournal.threadId, ids.caller));
+      const afterEvents = await journalEventsByThread(db, ids.caller);
       expect(afterEvents).toHaveLength(priorEvents.length);
     });
 
@@ -431,8 +423,7 @@ else
         "failure after publication marker",
       );
       expect(wakes).toBe(0);
-      const parentEvents = () =>
-        db.select().from(schema.eventJournal).where(eq(schema.eventJournal.threadId, ids.caller));
+      const parentEvents = () => journalEventsByThread(db, ids.caller);
       expect(await parentEvents()).toEqual([]);
       expect((await repos.blocks.findById(ids.card))?.content).toMatchObject({
         kind: "helper-result",
@@ -501,10 +492,7 @@ else
       expect(outcomes.sort()).toEqual(["already", "published"]);
       expect(await repos.blocks.findById(ids.card)).toBeNull();
       expect(await inbox.selectPending(ids.caller)).toHaveLength(1);
-      const events = await db
-        .select()
-        .from(schema.eventJournal)
-        .where(eq(schema.eventJournal.threadId, ids.caller));
+      const events = await journalEventsByThread(db, ids.caller);
       expect(events.map((row) => row.eventType)).toEqual(["agent.run_completed", "inbox.changed"]);
     });
 
@@ -1068,10 +1056,7 @@ else
         publication: "published",
       });
       expect(await publisher.sweep(10)).toBe(0);
-      const parentEvents = await db
-        .select()
-        .from(schema.eventJournal)
-        .where(eq(schema.eventJournal.threadId, ids.caller));
+      const parentEvents = await journalEventsByThread(db, ids.caller);
       expect(
         parentEvents.filter((event) => event.eventType === "agent.run_completed"),
       ).toHaveLength(1);

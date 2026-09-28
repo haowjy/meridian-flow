@@ -4,6 +4,7 @@ import * as http from "@meridian/contracts/protocol";
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createDrizzleRunClaim } from "../../runtime/adapters/drizzle-run-claim.js";
 import { createDrizzleThreadLock } from "../../runtime/adapters/drizzle-thread-lock.js";
@@ -345,10 +346,7 @@ else
       expect(JSON.stringify(first.messages)).toContain("Check the chapter");
       expect(JSON.stringify(first.messages)).toContain("thread_reference");
       expect(JSON.stringify(first.messages)).not.toContain("Source-only transcript");
-      const events = await db
-        .select()
-        .from(schema.eventJournal)
-        .where(eq(schema.eventJournal.threadId, r.source.id));
+      const events = await journalEventsByThread(db, r.source.id);
       expect(events.find((row) => row.eventType === "agent.spawn")?.payload).toMatchObject({
         fromThreadId: target.id,
       });
