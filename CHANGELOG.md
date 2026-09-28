@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Skip destination control-history preparation while a handoff brief owns the boundary.
+
 - Keep internal ending-commit failures out of handoff brief writer copy. Retain diagnostic causes in error details.
 
 - Fall back to cold briefs when source preview fails. Preserve queued skill activations through Retry and winning seed metadata through late paid responses.

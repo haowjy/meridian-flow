@@ -126,9 +126,7 @@ export async function prepareRequestContext(input: PrepareRequestInput): Promise
   }
 }
 
-export async function prepareControlHistory(
-  input: PrepareRequestInput,
-): Promise<PreparedControlHistory> {
+async function prepareControlHistory(input: PrepareRequestInput): Promise<PreparedControlHistory> {
   const undos: PreparedUndo[] = [];
   const addedTurns: Turn[] = [];
   const addedBlocks: Block[] = [];

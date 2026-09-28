@@ -156,7 +156,6 @@ import { writerFacingPreparationError } from "./preparation-failure.js";
 import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
 import {
   type PreparedControlHistory,
-  prepareControlHistory,
   prepareFailedUndoHistory,
   prepareRequestContext,
   UndoRequestPreparationError,
@@ -582,7 +581,7 @@ async function runDrainTurn(
         reservedTurnId;
       let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
       let controlHistory: PreparedControlHistory | null = null;
-      if (!preparationError) {
+      if (!preparationError && !briefControl) {
         try {
           const previousBlocks = await deps.repos.blocks.listByThread(input.threadId);
           const prepareInput = {
@@ -612,8 +611,7 @@ async function runDrainTurn(
             baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
             signal: input.signal,
           };
-          if (briefControl) controlHistory = await prepareControlHistory(prepareInput);
-          else preflight = await prepareRequestContext(prepareInput);
+          preflight = await prepareRequestContext(prepareInput);
         } catch (error) {
           if (input.signal?.aborted) throw error;
           preparationError = asError(error);
@@ -1681,22 +1679,7 @@ async function executeLoop(
           return { events: [], turns: [], blocks: [], requiresSplit: false };
         }
         if (selection.controls?.some((c) => c.body.kind === "handoff_brief")) {
-          return {
-            ...(await prepareControlHistory({
-              deps,
-              thread,
-              threadId: thread.id,
-              referenceTurnId: currentTurn.id,
-              currentTurnId: currentTurn.id,
-              turns: [...allTurns, ...drain.turns],
-              blocks: [...allBlocks, ...drain.blocks],
-              controls: selection.controls,
-              followingBatches: selection.followingBatches,
-              failedUndoIds: selection.failedUndoIds,
-              signal: input.signal,
-            })),
-            requiresSplit: true,
-          };
+          return { events: [], turns: [], blocks: [], requiresSplit: true };
         }
         const latestUserTurn =
           [...drain.turns].reverse().find((turn) => turn.role === "user") ??
