@@ -98,9 +98,12 @@ against overflow.
 - A failed required summary errors C and fails a reply below the latest message.
   A failed optional manual summary errors only C and continues the request.
 - Failed C metadata records the typed `reason` and `phase`; a fit rejection also
-  records `estimatedTokens` and `fitLimitTokens`. `turn.error` uses that same
-  reason code. Summary rejections distinguish `max_tokens`, `provider_error`,
-  `tool_use`, and `empty_text`; unknown summary errors stay `compaction_failed`.
+  records `estimatedTokens` and `fitLimitTokens`. `turn.error` carries the outcome
+  in its details. Summary rejections use code `compaction_failed` while their
+  reasons distinguish `max_tokens`, `provider_error`, `tool_use`, and `empty_text`;
+  unknown summary errors stay `compaction_failed`. Orphan recovery uses the same
+  metadata writer with `reason: interrupted` and `phase: recovery`, both at run
+  preparation and during the primary/child startup sweep.
 - If the initial successor fits but a late arrival fails the second fit check,
   C fails with `context_too_large` at `late_arrival` instead of committing the
   epoch. Its paid summary rows settle in the C failure transaction. The late

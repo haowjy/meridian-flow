@@ -13,7 +13,7 @@ import {
   ThreadConversationContextError,
   type ThreadConversationContextErrorCode,
 } from "./thread-conversation-context.js";
-import { CompactionMetadataCodec, classifyHistoryItem } from "./turn-metadata.js";
+import { CompactionPlanMetadataCodec, classifyHistoryItem } from "./turn-metadata.js";
 
 export type TranscriptOrder = "newest_first" | "oldest_first";
 export type TranscriptUnit = "item" | "turn";
@@ -316,8 +316,8 @@ function segmentHeader(
         : "other";
   const metadata =
     kind === "compaction"
-      ? CompactionMetadataCodec.safeParse(opening.metadata)
-      : CompactionMetadataCodec.safeParse(null);
+      ? CompactionPlanMetadataCodec.safeParse(opening.metadata)
+      : CompactionPlanMetadataCodec.safeParse(null);
   return {
     index: segmentFor(position, boundaries),
     bakeId: opening.promptBakeId,

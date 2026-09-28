@@ -29,6 +29,8 @@
 - Re-admit retained excluded images into budget left after normal late-arrival handling during complete compaction; compaction-owned decisions remain reversible, and forks preserve decision history.
 
 ### Fixed
+- Keep interrupted compaction metadata parseable across run-start and startup recovery.
+- Read transcript segment cuts with the planned-compaction codec; failed dividers stay ordinary items.
 - Settle orphaned primary assistant turns at startup and after a new run acquires its claim, keeping transcript anchors and fork cutoffs movable.
 - Reset change-trail Postgres fixtures with truncation so insert-only prompt bakes do not block cleanup.
 - Give database fixture hooks the same timeout budget as test bodies to avoid overlapping resets.

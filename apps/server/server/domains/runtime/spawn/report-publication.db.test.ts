@@ -34,9 +34,8 @@ else
     const { createDrizzleRepositoriesForTest } = await import(
       "../../threads/adapters/drizzle/repositories.js"
     );
-    const { createDrizzleEventJournalWriter, readTranscriptPage } = await import(
-      "../../threads/index.js"
-    );
+    const { CompactionMetadataCodec, createDrizzleEventJournalWriter, readTranscriptPage } =
+      await import("../../threads/index.js");
     const { createInMemoryEventSink } = await import("../../observability/index.js");
     const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
     const { createDrizzleThreadLock } = await import("../adapters/drizzle-thread-lock.js");
@@ -663,14 +662,17 @@ else
 
       expect(await repair.sweep(10)).toBe(2);
       expect(eventSink.events.filter((event) => event.name === "placeholder.failed")).toEqual([]);
-      expect(await repos.turns.findById(primaryC.id)).toMatchObject({
-        status: "error",
-        error: "This compaction was interrupted.",
-      });
-      expect(await repos.turns.findById(childC.id)).toMatchObject({
-        status: "error",
-        error: "This compaction was interrupted.",
-      });
+      for (const turnId of [primaryC.id, childC.id]) {
+        const repaired = await repos.turns.findById(turnId);
+        expect(repaired).toMatchObject({
+          status: "error",
+          error: "This compaction was interrupted.",
+        });
+        expect(CompactionMetadataCodec.parse(repaired?.metadata)).toMatchObject({
+          reason: "interrupted",
+          phase: "recovery",
+        });
+      }
       expect(await repos.executionReports.findByExecution(ids.child, ids.execution)).toMatchObject({
         outcome: "failed",
         reason: "orphaned",
@@ -831,7 +833,12 @@ else
       if (!lease) throw new Error("failed to acquire run claim");
       await runDelivery.repairOrphanedTurns(lease);
       expect((await repos.turns.findById(orphanAssistant.id))?.status).toBe("error");
-      expect((await repos.turns.findById(c.id))?.status).toBe("error");
+      const repaired = await repos.turns.findById(c.id);
+      expect(repaired?.status).toBe("error");
+      expect(CompactionMetadataCodec.parse(repaired?.metadata)).toMatchObject({
+        reason: "interrupted",
+        phase: "recovery",
+      });
       const assistantId = crypto.randomUUID() as TurnId;
       await runDelivery.adoptBatch(lease, async (selection) => {
         expect(selection.batch.map(({ id }) => id)).toEqual([message.id]);
@@ -1012,9 +1019,14 @@ else
       const lease = await authority.startExecution(ids.child, crypto.randomUUID());
       if (!lease) throw new Error("failed to acquire child run claim");
       await runDelivery.repairOrphanedTurns(lease);
-      expect(await repos.turns.findById(c.id)).toMatchObject({
+      const repaired = await repos.turns.findById(c.id);
+      expect(repaired).toMatchObject({
         status: "error",
         error: "This compaction was interrupted.",
+      });
+      expect(CompactionMetadataCodec.parse(repaired?.metadata)).toMatchObject({
+        reason: "interrupted",
+        phase: "recovery",
       });
       const assistantId = crypto.randomUUID() as TurnId;
 
