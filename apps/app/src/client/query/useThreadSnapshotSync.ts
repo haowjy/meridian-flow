@@ -30,20 +30,6 @@ import { threadQueryKeys } from "./thread-query-keys";
 
 type DeserializedThreadSnapshot = ReturnType<typeof deserializeThreadSnapshot>;
 
-/** The inbox frame lists a writer control. */
-function hasControl(event: { type: string; name?: string; value?: unknown }): boolean {
-  const pending = pendingInboxFromEvent(event);
-  return pending?.items.some((item) => item.intent === "control") ?? false;
-}
-
-/** An inbox frame that adds, keeps, or just cleared a writer control. */
-function involvesControl(
-  event: { type: string; name?: string; value?: unknown },
-  controlsPending: boolean,
-): boolean {
-  return pendingInboxFromEvent(event) !== null && (controlsPending || hasControl(event));
-}
-
 class StaleThreadSnapshot extends Error {}
 
 export type ThreadSnapshotSyncStatus = {
@@ -115,7 +101,6 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
     let unsubscribe: (() => void) | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let generation = 0;
-    let controlsPending = false;
     let refreshQuery: () => void = () => undefined;
     const current = (expected: number) =>
       mounted && !accountSignal.aborted && generation === expected;
@@ -153,12 +138,12 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
                   refresh(expected);
                 if (event.type === EventType.CUSTOM && event.name === "meridian.usage")
                   refresh(expected);
-                // Compaction turns have no stream of their own: a divider
-                // reserves, settles and is undone behind control inbox changes.
-                if (involvesControl(event, controlsPending)) {
-                  controlsPending = hasControl(event);
-                  refresh(expected);
-                }
+                // Compaction and brief turns have no stream of their own, and
+                // a cancelled one ends without RUN_FINISHED. The server sends
+                // an inbox frame after every lease release, so every inbox
+                // frame revalidates: that is when a divider reserves, settles,
+                // stops, or is undone.
+                if (pendingInboxFromEvent(event)) refresh(expected);
                 if (
                   !isDurableBlockEvent(event) ||
                   !isWellFormedDurableBlockEvent(event) ||
