@@ -25,6 +25,7 @@ import type { Gateway, Message, ModelInfo, Tool } from "../../gateway/index.js";
 import type { ImageAssetPort } from "../../ports/image-asset.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
 import { createConversationSummarizer } from "../../summary/conversation-summarizer.js";
+import { isSkillBodyTurn } from "../activated-skills.js";
 import { createWorkContextReader } from "../work-context.js";
 import { createRuntimeHarness } from "./runtime-harness.js";
 import { scriptedSummarizer } from "./scripted-summarizer.js";
@@ -841,6 +842,14 @@ describe("frozen prompt provider requests", () => {
     await rig.send(thread.id, "And continue");
     await (await rig.orchestrator.prepare({ threadId: thread.id, drain: true })).execute();
     expect(JSON.stringify(rig.requests.at(-1))).toContain("Preserve the jade gate rhythm.");
+    const turns = await rig.repos.turns.listByThread(thread.id);
+    const seeds = turns.filter(
+      (turn) => (turn.metadata as { derivation?: string } | null)?.derivation === "handoff",
+    );
+    const skillBodies = turns.filter(isSkillBodyTurn);
+    expect(skillBodies).toHaveLength(1);
+    expect(skillBodies[0].position).toBeGreaterThan(seeds.at(-1)!.position);
+    expect(turns.at(-1)).toMatchObject({ role: "assistant", prevTurnId: skillBodies[0].id });
   });
 
   it("C7b a preview-only image loss runs cold without writing source decisions or turns", async () => {

@@ -539,7 +539,7 @@ async function runDrainTurn(
         ...inheritedTurns.map((turn) => turn.id as TurnId),
         ...priorTurns.map((turn) => turn.id as TurnId),
       ]);
-      let skillBody: Awaited<ReturnType<typeof createSkillBodyTurn>> = null;
+      let skillBody: ReturnType<typeof createSkillBodyArtifacts> | null = null;
       const makePlan = (notices: typeof selection.notices) =>
         planMessageTurns({
           threadId: input.threadId,
@@ -558,15 +558,16 @@ async function runDrainTurn(
           }),
         ),
       ];
-      if (!preparationError && !briefControl) {
+      const skillBodies = createSkillBodyPreparation(activatedSkillSlugs);
+      if (!preparationError) {
         try {
-          skillBody = await createSkillBodyTurn({
+          skillBody = await skillBodies.prepare({
             deps,
             thread: setupThread,
             threadId: input.threadId,
             invokingTurnId: prevTurnId,
             invokingTurnPosition: previousTurn?.position ?? null,
-            slugs: activatedSkillSlugs,
+            briefPending: !!briefControl,
           });
         } catch (error) {
           if (input.signal?.aborted) throw error;
@@ -678,7 +679,7 @@ async function runDrainTurn(
       }
       const value = {
         thread: setupThread,
-        deferredSkillSlugs: briefControl ? activatedSkillSlugs : [],
+        skillBodies,
         controlTurns: controlPreparation?.turns ?? [],
         reservedTurn,
         terminal,
@@ -770,6 +771,7 @@ async function runDrainTurn(
     inheritedTurns,
     inheritedBlocks,
   } = setup;
+  setup.skillBodies.committed(skillBody ? [skillBody.turn] : []);
   return {
     userTurnId: referenceUserTurnId,
     terminalTurnId: setup.terminal ? reservedTurn.id : undefined,
@@ -784,12 +786,12 @@ async function runDrainTurn(
       if (preparationError) throw new RequestPreparationError(preparationError);
       if (!preflight && reservedTurn.role !== "system")
         throw new Error("Request context is unavailable after preparation failed");
-      return executeLoop(
+      return executeLoop({
         deps,
         input,
-        preflight?.assembled.thread ?? setup.thread,
+        thread: preflight?.assembled.thread ?? setup.thread,
         reservedTurn,
-        [
+        initialTurns: [
           ...inheritedTurns,
           ...priorTurns,
           ...(skillBody ? [skillBody.turn] : []),
@@ -797,13 +799,14 @@ async function runDrainTurn(
           ...setup.controlTurns,
         ],
         inheritedBlocks,
-        preflight?.assembled,
-        preflight?.compaction ?? { kind: "generate" },
-        setup.executionAdmitted,
-        input.treeBudget ??
+        initialContext: preflight?.assembled,
+        initialCompaction: preflight?.compaction ?? { kind: "generate" },
+        initialExecutionAdmitted: setup.executionAdmitted,
+        treeBudget:
+          input.treeBudget ??
           createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
-        setup.deferredSkillSlugs,
-      );
+        skillBodies: setup.skillBodies,
+      });
     },
   };
 }
@@ -1307,33 +1310,46 @@ async function prepareSkillBodies(input: {
   return { kind: "created", turn: artifacts.turn, block: localBlockFromEvent(artifacts.block) };
 }
 
-async function createSkillBodyTurn(input: {
-  deps: OrchestratorDeps;
-  thread: Thread;
-  threadId: ThreadId;
-  invokingTurnId: TurnId | null;
-  invokingTurnPosition: number | null;
-  slugs: readonly string[];
-}): Promise<{ turn: Turn; block: ReturnType<typeof contentForBlockInput> } | null> {
-  if (input.slugs.length === 0) return null;
-  if (!input.invokingTurnId || input.invokingTurnPosition === null)
-    throw new Error("Activated skill body has no invoking turn");
-  const skills = await Promise.all(
-    input.slugs.map((slug) =>
-      loadUserSkillBody({
-        thread: input.thread,
-        slug,
-        agentRevisions: input.deps.agentRevisions,
-        accountSkillInstalls: input.deps.accountSkillInstalls,
-      }),
-    ),
-  );
-  return createSkillBodyArtifacts(
-    input.threadId,
-    input.invokingTurnId,
-    nextTurnPosition({ position: input.invokingTurnPosition }),
-    skills,
-  );
+/** Stage once per boundary attempt; only a committed body consumes the pending activations. */
+function createSkillBodyPreparation(slugs: readonly string[]) {
+  let pending = slugs;
+  let stagedTurnId: TurnId | undefined;
+  return {
+    async prepare(input: {
+      deps: OrchestratorDeps;
+      thread: Thread;
+      threadId: ThreadId;
+      invokingTurnId: TurnId | null;
+      invokingTurnPosition: number | null;
+      briefPending: boolean;
+    }) {
+      // A brief must not resolve destination skills. Its successor stages them instead.
+      if (input.briefPending || pending.length === 0) return null;
+      if (!input.invokingTurnId || input.invokingTurnPosition === null)
+        throw new Error("Activated skill body has no invoking turn");
+      const skills = await Promise.all(
+        pending.map((slug) =>
+          loadUserSkillBody({
+            thread: input.thread,
+            slug,
+            agentRevisions: input.deps.agentRevisions,
+            accountSkillInstalls: input.deps.accountSkillInstalls,
+          }),
+        ),
+      );
+      const body = createSkillBodyArtifacts(
+        input.threadId,
+        input.invokingTurnId,
+        nextTurnPosition({ position: input.invokingTurnPosition }),
+        skills,
+      );
+      stagedTurnId = body.turn.id;
+      return body;
+    },
+    committed(turns: readonly Turn[]) {
+      if (turns.some((turn) => turn.id === stagedTurnId)) pending = [];
+    },
+  };
 }
 
 function createSkillBodyArtifacts(
@@ -1536,20 +1552,32 @@ function createResponseScope(input: {
   };
 }
 
-async function executeLoop(
-  deps: OrchestratorDeps,
-  input: RunLoopInput,
-  thread: Thread,
-  reservedTurn: Turn,
+async function executeLoop({
+  deps,
+  input,
+  thread,
+  reservedTurn,
+  initialTurns,
+  inheritedBlocks,
+  initialContext,
+  initialCompaction,
+  initialExecutionAdmitted,
+  treeBudget,
+  skillBodies,
+}: {
+  deps: OrchestratorDeps;
+  input: RunLoopInput;
+  thread: Thread;
+  reservedTurn: Turn;
   /** Full ordered history before the assistant container, including drained messages. */
-  initialTurns: Turn[],
-  inheritedBlocks: Block[],
-  initialContext: AssembledNextTurnContext | undefined,
-  initialCompaction: CompactionDecision,
-  initialExecutionAdmitted: boolean,
-  treeBudget: TreeBudget,
-  deferredSkillSlugs: readonly string[],
-): Promise<Turn> {
+  initialTurns: Turn[];
+  inheritedBlocks: Block[];
+  initialContext: AssembledNextTurnContext | undefined;
+  initialCompaction: CompactionDecision;
+  initialExecutionAdmitted: boolean;
+  treeBudget: TreeBudget;
+  skillBodies: ReturnType<typeof createSkillBodyPreparation>;
+}): Promise<Turn> {
   const { gateway, repos, eventWriter } = deps;
   const eventSink = deps.eventSink;
   const turnAccounting = createTurnAccounting({ billingUsage: deps.billingUsage });
@@ -1678,21 +1706,23 @@ async function executeLoop(
         ) {
           return { events: [], turns: [], blocks: [], requiresSplit: false };
         }
-        if (selection.controls?.some((c) => c.body.kind === "handoff_brief")) {
-          return { events: [], turns: [], blocks: [], requiresSplit: true };
-        }
-        const latestUserTurn =
-          [...drain.turns].reverse().find((turn) => turn.role === "user") ??
-          [...allTurns].reverse().find((turn) => turn.role === "user");
+        const briefPending =
+          selection.controls?.some((c) => c.body.kind === "handoff_brief") ?? false;
         const leaf = drain.turns.at(-1) ?? allTurns.at(-1);
-        const deferredSkillBody = await createSkillBodyTurn({
+        const deferredSkillBody = await skillBodies.prepare({
           deps,
           thread,
           threadId: thread.id,
           invokingTurnId: leaf?.id ?? null,
           invokingTurnPosition: leaf?.position ?? null,
-          slugs: deferredSkillSlugs,
+          briefPending,
         });
+        if (briefPending) {
+          return { events: [], turns: [], blocks: [], requiresSplit: true };
+        }
+        const latestUserTurn =
+          [...drain.turns].reverse().find((turn) => turn.role === "user") ??
+          [...allTurns].reverse().find((turn) => turn.role === "user");
         const skillEvents: OrchestratorEvent[] = deferredSkillBody
           ? [
               { type: "turn.created", turn: deferredSkillBody.turn },
@@ -1755,6 +1785,7 @@ async function executeLoop(
       )
     )
       retriedContextOverflow = false;
+    skillBodies.committed(result.drain.turns);
     allTurns.push(...result.drain.turns);
     for (const block of result.drain.blocks) {
       const index = allBlocks.findIndex((existing) => existing.id === block.id);
@@ -1847,7 +1878,6 @@ async function executeLoop(
     }
     pendingSummaryResponses = [];
     pendingSummary = undefined;
-    deferredSkillSlugs = [];
     if (result.context) preparedContext = result.context;
     return acceptBoundary(result);
   }

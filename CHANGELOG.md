@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Stage activated skills through one boundary owner. Retry briefs defer skill bodies until the successor commits.
+
 - Skip destination control-history preparation while a handoff brief owns the boundary.
 
 - Keep internal ending-commit failures out of handoff brief writer copy. Retain diagnostic causes in error details.
