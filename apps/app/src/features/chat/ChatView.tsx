@@ -26,6 +26,7 @@ import {
   retireChatSubmission,
 } from "@/client/chat-submissions";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
+import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { announce, announceError, useThreadActions, useThreadStore } from "@/client/stores";
 import {
@@ -46,6 +47,7 @@ import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { answeredControlIds } from "./compaction/compaction-model";
 import { useCompactionAnnouncements } from "./compaction/useCompactionAnnouncements";
 import { useThreadControls } from "./compaction/useThreadControls";
+import { composerRun } from "./composer-run";
 import { DraftDock, useDraftDock } from "./DraftDock";
 import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
@@ -119,11 +121,13 @@ export function ChatView({
   const [tailFollowRevision, requestTailFollow] = useReducer((value: number) => value + 1, 0);
 
   const controller = useMeridianAgent();
+  const transport = useThreadTransport();
   const accountId = useAccountId();
   const turns = useThreadStore((state) => state.turnsByThread[threadId] ?? EMPTY_TURNS);
   const latestAssistantTurn =
     [...turns].reverse().find((turn) => turn.role === "assistant") ?? null;
   const isStreaming = latestAssistantTurn?.status === "streaming";
+  const run = useMemo(() => composerRun(turns), [turns]);
   const composerAgentName = activeThread?.agentName ?? "General";
 
   const pageTitle = activeThread?.title ? displayThreadTitle(activeThread.title) : t`New chat`;
@@ -304,6 +308,16 @@ export function ChatView({
   );
 
   function handleStop() {
+    // A compaction or brief has no reply stream for the run controller to
+    // stop: cancel its bound turn, as the divider's own Stop does.
+    if (run?.kind === "placeholder") {
+      if (run.turn.role === "compaction") controls.stop(run.turn.id);
+      else
+        void transport
+          .cancel(threadId, run.turn.id)
+          .catch(() => announceError(t`Couldn't stop. Try again.`));
+      return;
+    }
     controller.cancel(threadId);
   }
 
@@ -388,7 +402,7 @@ export function ChatView({
               }}
               ref={composerRef}
               variant="pinned"
-              streaming={isStreaming}
+              running={run !== null}
               referenceCatalog={referenceCatalog}
               availableSkills={availableSkills.skills}
               commands={chatCommands}

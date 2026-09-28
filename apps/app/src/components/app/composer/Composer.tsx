@@ -103,7 +103,11 @@ export type ComposerProps = {
   onCheckSubmission?: (envelope: ComposerSubmitEnvelope) => Promise<ComposerSubmitOutcome>;
   onRetireSubmission?: (envelope: ComposerSubmitEnvelope) => Promise<ComposerSubmitOutcome>;
   onStop?: () => void;
-  streaming?: boolean;
+  /**
+   * A run is active on this thread (a reply streaming, a compaction, a brief).
+   * Stop replaces an empty Send, Escape stops, and a send queues behind it.
+   */
+  running?: boolean;
   placeholder?: string;
   autoFocus?: boolean;
   variant?: "hero" | "pinned";
@@ -149,7 +153,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     onCheckSubmission,
     onRetireSubmission,
     onStop,
-    streaming = false,
+    running = false,
     placeholder,
     autoFocus,
     variant = "hero",
@@ -163,7 +167,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     availableSkills = null,
     commands = null,
   } = props;
-  const rotatingPlaceholder = useComposerPlaceholder(streaming);
+  const rotatingPlaceholder = useComposerPlaceholder(running);
   const [initialDraft] = useState(props.initialDraft);
   const revision = useRef(initialDraft?.revision ?? 0);
   const restored = useRef(new Set<string>());
@@ -570,12 +574,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       )
     )
       return;
-    if (event.key === "Escape" && streaming) {
+    if (event.key === "Escape" && running) {
       event.preventDefault();
       onStop?.();
     }
   };
-  const showStop = streaming && !hasContent;
+  const showStop = running && !hasContent;
   return (
     <div
       data-composer=""
@@ -650,14 +654,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           disabled={!showStop && (!hasContent || submitDisabled || pending > 0 || locked)}
           aria-label={showStop ? t`Stop` : t`Send message`}
           aria-describedby={!showStop && submitDisabledReason ? disabledReasonId : undefined}
-          className={streaming ? "relative rounded-full" : "rounded-field"}
+          className={running ? "relative rounded-full" : "rounded-field"}
         >
           {showStop ? (
             <span className="size-2.5 rounded-[3px] bg-primary-foreground" />
           ) : (
             <ArrowUp className="size-4" />
           )}
-          {streaming && hasContent ? (
+          {running && hasContent ? (
             <span
               aria-hidden="true"
               className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
