@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Verify spawn, fork and handoff preserve the original lineage root through real entry points.
+
 - Batch history tool pairs by page, including pairs outside the page.
 
 - Keep model projection cursors out of writer transcript pages.
