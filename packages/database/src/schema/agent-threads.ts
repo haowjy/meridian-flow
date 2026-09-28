@@ -62,7 +62,7 @@ export const threads = pgTable(
       .$type<PromptBakeId>()
       .references((): PgColumn => promptBakes.id),
     parentThreadId: uuid("parent_thread_id").$type<ThreadId>(),
-    rootThreadId: uuid("root_thread_id").$type<ThreadId>(),
+    rootThreadId: uuid("root_thread_id").$type<ThreadId>().notNull(),
     originTurnId: uuid("origin_turn_id")
       .$type<TurnId>()
       .references((): PgColumn => turns.id),
@@ -98,15 +98,14 @@ export const threads = pgTable(
     index("threads_parent_created_active")
       .on(table.parentThreadId, table.createdAt.desc())
       .where(sql`${table.parentThreadId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
+    index("threads_lineage_derivations")
+      .on(table.rootThreadId)
+      .where(sql`${table.originType} IN ('fork', 'handoff')`),
     foreignKey({
       columns: [table.projectId, table.rootThreadId],
       foreignColumns: [table.projectId, table.id],
       name: "threads_spawn_root_same_project_fk",
     }).onDelete("cascade"),
-    check(
-      "threads_spawn_root_required",
-      sql`${table.kind} != 'subagent' OR ${table.rootThreadId} IS NOT NULL`,
-    ),
     check("threads_no_self_parent", sql`${table.id} != ${table.parentThreadId}`),
     check("threads_spawn_depth_nonneg", sql`${table.spawnDepth} >= 0`),
     check("threads_next_seq_nonneg", sql`${table.nextSeq} >= 0`),

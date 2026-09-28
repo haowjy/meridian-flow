@@ -37,9 +37,13 @@ export async function executionScenario(db?: Database, ids = executionIds()) {
       .insert(schema.projects)
       .values({ id: ids.project, userId: ids.user, name: "Reports", slug: "reports" });
     if (ids.root) {
-      await db
-        .insert(schema.threads)
-        .values({ id: ids.root, projectId: ids.project, createdByUserId: ids.user, ref: "c1" });
+      await db.insert(schema.threads).values({
+        rootThreadId: ids.root,
+        id: ids.root,
+        projectId: ids.project,
+        createdByUserId: ids.user,
+        ref: "c1",
+      });
       await db.insert(schema.turns).values({
         id: ids.rootTurn,
         threadId: ids.root,
@@ -50,6 +54,7 @@ export async function executionScenario(db?: Database, ids = executionIds()) {
       });
     }
     await db.insert(schema.threads).values({
+      rootThreadId: ids.caller,
       id: ids.caller,
       projectId: ids.project,
       createdByUserId: ids.user,

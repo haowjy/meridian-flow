@@ -46,6 +46,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "transcript-plan",
       });
       await db.insert(schema.threads).values({
+        rootThreadId: THREAD_ID,
         id: THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,

@@ -248,6 +248,7 @@ else
       const _r = await setupSource();
       await expect(
         db.insert(schema.threads).values({
+          rootThreadId: ids.threadId,
           projectId: ids.projectId,
           createdByUserId: ids.userId,
           originType: "handoff",

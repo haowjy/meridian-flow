@@ -56,7 +56,7 @@ export function mapThread(
     parentThreadId: row.parentThreadId,
     originType: row.originType as Thread["originType"],
     originTurnId: row.originTurnId,
-    rootThreadId: row.rootThreadId ?? row.id,
+    rootThreadId: row.rootThreadId,
     spawnDepth: row.spawnDepth,
     spawnStatus: row.spawnStatus as Thread["spawnStatus"],
     totalCostUsd: decimalString(row.totalCostUsd),

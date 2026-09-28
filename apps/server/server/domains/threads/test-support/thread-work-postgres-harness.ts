@@ -53,6 +53,7 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
     },
   ]);
   await db.insert(schema.threads).values({
+    rootThreadId: ids.threadId,
     id: ids.threadId,
     projectId: ids.projectId,
     createdByUserId: ids.userId,

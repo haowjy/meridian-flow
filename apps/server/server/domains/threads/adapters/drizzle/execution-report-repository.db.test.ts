@@ -53,8 +53,15 @@ else
         .insert(schema.projects)
         .values({ id: ids.otherProject, userId: ids.otherUser, name: "Other", slug: "other" });
       await db.insert(schema.threads).values([
-        { id: ids.otherRoot, projectId: ids.project, createdByUserId: ids.user, ref: "c2" },
         {
+          rootThreadId: ids.otherRoot,
+          id: ids.otherRoot,
+          projectId: ids.project,
+          createdByUserId: ids.user,
+          ref: "c2",
+        },
+        {
+          rootThreadId: ids.otherProjectRoot,
           id: ids.otherProjectRoot,
           projectId: ids.otherProject,
           createdByUserId: ids.otherUser,

@@ -288,6 +288,7 @@ describe("document revisions (postgres and collab)", () => {
         if (source === "other-thread") {
           const other = "00000000-0000-4000-8000-000000000889" as ThreadId;
           await db.insert(schema.threads).values({
+            rootThreadId: other,
             id: other,
             projectId: PROJECT_ID,
             createdByUserId: USER_ID,

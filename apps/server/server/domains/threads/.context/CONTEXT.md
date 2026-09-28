@@ -631,3 +631,11 @@ held, a dead primary assistant becomes an interrupted reply; pending
 placeholders keep their existing interruption copy, and child turns keep the
 execution-report repair path. The held session claim protects live turns;
 there is no separate `liveTurnId` guard.
+
+## Connected conversation authority
+
+Every thread persists a non-null `rootThreadId`. Organic primaries root at
+themselves; spawn, fork, and handoff creation copy the source root. A fork's
+up-edge is the owner of its cutoff turn, which may be an inherited owner;
+a handoff's cutoff points to its source. `threads_lineage_derivations` indexes
+fork/handoff rows by root. Mappers never invent a missing root.
