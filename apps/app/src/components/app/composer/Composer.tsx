@@ -30,8 +30,10 @@ import { ComposerReferenceMenu } from "./ComposerReferenceMenu";
 import { ComposerSkillAtom } from "./ComposerSkillAtom";
 import {
   type ComposerAvailableSkill,
+  type ComposerChatCommand,
   ComposerCommandExtension,
   ComposerCommandMenu,
+  composerChatCommandItems,
   composerSkillCommandItems,
 } from "./command";
 import {
@@ -113,6 +115,8 @@ export type ComposerProps = {
   uploadPort?: ComposerUploadPort;
   referenceCatalog?: AtReferenceCatalog | null;
   availableSkills?: readonly ComposerAvailableSkill[] | null;
+  /** Chat verbs (`/compact`) the owning surface can run on its thread. */
+  commands?: readonly ComposerChatCommand[] | null;
 };
 export type ComposerHandle = {
   focus: () => void;
@@ -157,6 +161,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     uploadPort,
     referenceCatalog = null,
     availableSkills = null,
+    commands = null,
   } = props;
   const rotatingPlaceholder = useComposerPlaceholder(streaming);
   const [initialDraft] = useState(props.initialDraft);
@@ -173,6 +178,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   referenceCatalogRef.current = referenceCatalog;
   const availableSkillsRef = useRef(availableSkills);
   availableSkillsRef.current = availableSkills;
+  const commandsRef = useRef(commands);
+  commandsRef.current = commands;
   const resolvedUploadPort = uploadPort;
   const suppressDraftChangeRef = useRef(false);
   const [pending, setPending] = useState(0);
@@ -242,11 +249,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       ComposerCommandExtension.configure({
         catalog: () => {
           const skills = availableSkillsRef.current;
-          if (!skills) return null;
+          const chatCommands = commandsRef.current ?? [];
+          if (!skills && chatCommands.length === 0) return null;
           return {
             menuLabel: t`Commands`,
             groupLabels: { skills: t`Skills`, chat: t`Chat` },
-            items: composerSkillCommandItems(skills),
+            items: [
+              ...composerSkillCommandItems(skills ?? []),
+              ...composerChatCommandItems(chatCommands),
+            ],
+            runCommand: (slug) =>
+              commandsRef.current?.find((command) => command.slug === slug)?.run(),
           };
         },
         suggestionHost: (current) => editorSuggestionHost(current, "prose"),

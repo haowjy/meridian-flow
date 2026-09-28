@@ -14,4 +14,5 @@ export {
   type ComposerUploadScope,
   serializeComposerDraft,
 } from "./Composer";
+export type { ComposerChatCommand } from "./command";
 export { mergeComposerDraftSnapshots } from "./composer-document";
