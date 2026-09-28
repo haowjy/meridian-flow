@@ -115,7 +115,8 @@ owns only the SQL predicate beside its partial index.
   module owns identity, capture and terminal comparisons and the delivery-to-publication
   policy for both adapters. Storage decodes typed captures once; outcome discriminates
   admitted rows from complete terminal content. Admission validates
-  the child handle, assistant role, caller ownership, turn, and card before
+  the child handle, assistant role, caller ownership, lineage (`sameLineage`),
+  turn, and card before
   persisting correlation. Finalization derives a pending publication obligation
   from admitted delivery mode; publication remains separate bookkeeping. The
   bounded discovery query skips soft-deleted callers and projects while retaining

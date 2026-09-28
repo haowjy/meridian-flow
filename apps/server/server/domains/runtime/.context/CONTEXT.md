@@ -600,7 +600,10 @@ recovery, cancellation, placeholder recovery, cost, and the queued controls
 `spawn/resolve-readable-thread.ts` is the owner/project/lineage authority for
 `thread_ls`, `thread_history` and `thread_report`. New callers (including spawn
 references) reuse it. Inspection registrations take repository and tokenizer
-ports at composition, not privileged run-loop callbacks.
+ports at composition, not privileged run-loop callbacks. Domain refusals leave
+handlers through `toolFailureResult`, keeping their code (a caller whose bound
+model the gateway does not list gets `model_unavailable`, not generic
+`tool_error`).
 
 History projects the shared `readTranscriptPageForProjection` and bounded expansion read;
 there is no second fork walker. Tool pairs load once per raw page, keyed by turn
