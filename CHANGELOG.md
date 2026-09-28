@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Authorize execution reports through the canonical lineage predicate.
+
 - Seed browser-test conversations with their lineage root.
 
 - Find connected conversations and read their history with document pointers and dated edit records.
