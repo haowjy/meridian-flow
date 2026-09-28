@@ -328,6 +328,10 @@ msgstr "{count, plural, one {# match} other {# matches}}"
 msgid "{count, plural, one {# more} other {# more}}"
 msgstr "{count, plural, one {# more} other {# more}}"
 
+#: src/features/project/work/RecentlyDeletedWork.tsx
+msgid "{days, plural, one {Deletes for good in # day} other {Deletes for good in # days}}"
+msgstr "{days, plural, one {Deletes for good in # day} other {Deletes for good in # days}}"
+
 #: src/lib/date-groups.ts
 msgid "{days}d"
 msgstr "{days}d"
@@ -624,6 +628,10 @@ msgstr "Alt text"
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #~ msgid "Another chat needs your answer"
 #~ msgstr "Another chat needs your answer"
+
+#: src/features/project/work/RecentlyDeletedWork.tsx
+msgid "Another Work now has this name. Rename that Work, then restore this one."
+msgstr "Another Work now has this name. Rename that Work, then restore this one."
 
 #: src/features/chat/TextBlock.tsx
 msgid "Answer the question"
@@ -1420,6 +1428,10 @@ msgstr "Couldn't rename this document. Try another name."
 msgid "Couldn’t rename this Work. Try again."
 msgstr "Couldn’t rename this Work. Try again."
 
+#: src/features/project/work/RecentlyDeletedWork.tsx
+msgid "Couldn’t restore this Work"
+msgstr "Couldn’t restore this Work"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't run that skill"
 msgstr "Couldn't run that skill"
@@ -1632,6 +1644,10 @@ msgstr "Deleted a Work"
 #: src/features/chat/work-receipt-copy.ts
 msgid "workReceipt.deleted"
 msgstr "Deleted Work {name}"
+
+#: src/features/project/work/RecentlyDeletedWork.tsx
+msgid "Deletes for good within a day"
+msgstr "Deletes for good within a day"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Deleting a Work…"
@@ -3286,6 +3302,14 @@ msgstr "Recent activity"
 #~ msgid "Recent projects"
 #~ msgstr "Recent projects"
 
+#: src/features/project/work/RecentlyDeletedWork.tsx
+msgid "Recently deleted"
+msgstr "Recently deleted"
+
+#: src/features/project/work/RecentlyDeletedWork.tsx
+msgid "Recently deleted Work"
+msgstr "Recently deleted Work"
+
 #: src/features/project/context/ContextTabBar.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Recently opened"
@@ -3493,6 +3517,23 @@ msgstr "Resize sidebar"
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Response complete"
 msgstr "Response complete"
+
+#: src/features/project/work/RecentlyDeletedWork.tsx
+msgid "Restore"
+msgstr "Restore"
+
+#. placeholder {0}: work.name
+#: src/features/project/work/RecentlyDeletedWork.tsx
+msgid "Restore {0}"
+msgstr "Restore {0}"
+
+#: src/features/project/work/WorkCollection.tsx
+msgid "Restoring"
+msgstr "Restoring"
+
+#: src/features/project/work/RecentlyDeletedWork.tsx
+msgid "Restoring brings back the Work with its chats, drafts, Scratch and Uploads."
+msgstr "Restoring brings back the Work with its chats, drafts, Scratch and Uploads."
 
 #: src/features/project/work/WorkScreen.tsx
 #~ msgid "Restoring…"
@@ -4483,6 +4524,10 @@ msgstr "This Work has {count, plural, one {# AI change} other {# AI changes}} in
 #: src/features/project/EditorWorkRecovery.tsx
 msgid "This Work is unavailable."
 msgstr "This Work is unavailable."
+
+#: src/features/project/work/RecentlyDeletedWork.tsx
+msgid "This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
+msgstr "This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Thread"

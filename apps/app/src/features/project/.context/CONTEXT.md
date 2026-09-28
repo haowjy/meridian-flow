@@ -72,7 +72,11 @@ coordinates and owns stable keys plus focused/menu row pinning. Their membership
 is historical while the displayed Work is the
 chat's current primary Work. Resource sections fail independently. Archive and
 unarchive preserve the detail route; delete is optimistic from the band menu or a
-list row, lands on the collection, and shows an inline Undo row there.
+list row, lands on the collection, and shows an inline Undo row there. Delete
+never blocks: the Work's chats, drafts, Scratch and Uploads go with it, and it
+stays restorable for `WORK_DELETE_RETENTION_DAYS` (30) under the collection's
+Recently deleted disclosure (`RecentlyDeletedWork`, optimistic restore back to
+Active) until the server's purge job removes it.
 The Work band copies the Chat pane's grammar (`useWorkChrome`): an All Work
 `IndexTabChip` door, the open Work's name as the active tab the page rises into
 and renamed inside it (`WorkTitleTab` over `TabTitleField`, no dropdown), and the

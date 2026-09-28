@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { cn } from "@/lib/utils";
 import type { ProjectRouteCommands } from "../routing/project-route";
+import { RecentlyDeletedWork, restorableWorks, useWorkRestore } from "./RecentlyDeletedWork";
 import { useArchiveFocusFollow } from "./useArchiveFocusFollow";
 import { useWorkArchiveToggle } from "./useWorkArchiveToggle";
 import { useWorkCreationRecords } from "./useWorkCreation";
@@ -31,10 +32,12 @@ export function WorkCollection({
   routeCommands: ProjectRouteCommands;
   deletion: WorkDeletion;
 }) {
-  const { works, isError, isFetching, refetch } = useWorks(projectId);
+  const { works, deleted, isError, isFetching, refetch } = useWorks(projectId);
   const creations = useWorkCreationRecords(projectId);
   const now = useMinuteClock();
   const [archivedOpen, setArchivedOpen] = useState(false);
+  const [deletedOpen, setDeletedOpen] = useState(false);
+  const restore = useWorkRestore(projectId);
   const collectionHeading = useRef<HTMLHeadingElement>(null);
   const deleteState = deletion.state;
   const archiveToggle = useWorkArchiveToggle(projectId);
@@ -61,6 +64,9 @@ export function WorkCollection({
   const archived =
     works?.filter((work) => work.status === "archived" && !unfinishedIds.has(work.id)) ?? [];
   const failedWork = deleteState.failed;
+  const restoring = deleted.find((work) => work.id === restore.restoringId);
+  const undoableId =
+    deleteState.deleted && !deleteState.restorePending ? deleteState.deleted.id : undefined;
   const archivedListId = useId();
   const openWorkId = (id: string) => {
     const workId = parseRequestId(id);
@@ -146,6 +152,26 @@ export function WorkCollection({
           },
         ]
       : []),
+    ...(restoring
+      ? [
+          {
+            key: restoring.id,
+            node: (
+              <WorkRow
+                work={restoring}
+                href={hrefForId(restoring.id)}
+                now={now}
+                onOpen={() => openWorkId(restoring.id)}
+                status={
+                  <span role="status">
+                    <Trans>Restoring</Trans>
+                  </span>
+                }
+              />
+            ),
+          },
+        ]
+      : []),
     ...active.map((work) => ({ key: work.id, node: row(work) })),
   ];
   return (
@@ -199,7 +225,7 @@ export function WorkCollection({
                 )}
               </section>
               {archived.length ? (
-                <section className="pt-7" aria-label={t`Archived Work`}>
+                <section data-disclosure className="pt-7" aria-label={t`Archived Work`}>
                   <h2>
                     <button
                       ref={archiveFocus.archivedDisclosure}
@@ -238,6 +264,13 @@ export function WorkCollection({
                   ) : null}
                 </section>
               ) : null}
+              <RecentlyDeletedWork
+                works={restorableWorks(deleted, now, undoableId)}
+                now={now}
+                restore={restore}
+                open={deletedOpen}
+                onOpenChange={setDeletedOpen}
+              />
             </>
           )}
         </div>

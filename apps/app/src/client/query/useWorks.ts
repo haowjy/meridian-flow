@@ -44,6 +44,14 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
     () => list.data?.works.filter((work) => work.deletedAt === null) ?? (list.isError ? [] : null),
     [list.data?.works, list.isError],
   );
+  // Soft-deleted Works stay restorable until their purge date; newest first.
+  const deleted = useMemo(
+    () =>
+      (list.data?.works.filter((work) => work.deletedAt !== null) ?? []).sort((a, b) =>
+        (b.deletedAt ?? "").localeCompare(a.deletedAt ?? ""),
+      ),
+    [list.data?.works],
+  );
   const noWork = list.data?.noWork ?? null;
   const refetch = useCallback(() => void list.refetch(), [list.refetch]);
   const status = !enabled
@@ -57,6 +65,7 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
           : "ready";
   return {
     works,
+    deleted,
     noWork,
     isError: list.isError,
     isFetching: list.isFetching,
