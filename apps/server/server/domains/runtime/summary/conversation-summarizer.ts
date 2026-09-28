@@ -228,7 +228,22 @@ export function createConversationSummarizer(
                         type: "text",
                         text:
                           "This is a system instruction, not a new request from the writer.\n" +
-                          prompt,
+                          prompt +
+                          (input.instruction === "compaction" && input.retainedMessages?.length
+                            ? "\nCompaction scope: the following passages are kept verbatim after your summary, NOT replaced by it. All preservation rules above apply ONLY to the material being replaced. Do not restate the retained passages. Exclude facts, document URIs, requests, and tool activity introduced only there, even from document-status or next-steps sections. Do not use retained replies to claim that a replaced request was completed. The summary must end at the compaction cut, not at the end of the conversation.\nRetained passages in conversation order (role and quoted opening; a passage may start within a message):\n" +
+                              input.retainedMessages
+                                .map((message) => {
+                                  const opening = message.content
+                                    .filter((part) => part.type !== "reasoning")
+                                    .map((part) =>
+                                      part.type === "text" ? part.text : JSON.stringify(part),
+                                    )
+                                    .join("\n")
+                                    .slice(0, 200);
+                                  return `${message.role}: ${JSON.stringify(opening)}`;
+                                })
+                                .join("\n")
+                            : ""),
                       },
                     ],
                   },

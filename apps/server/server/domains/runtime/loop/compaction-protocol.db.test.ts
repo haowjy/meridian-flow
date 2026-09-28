@@ -489,6 +489,10 @@ else
       expect(secondC.role).toBe("compaction");
       expect(rig.summarizer.calls[1].changedDocuments).not.toContain("kb://old-chapter");
       expect(rig.summarizer.calls[1].changedDocuments).not.toContain("chapter");
+      const retained = JSON.stringify(rig.summarizer.calls[1].retainedMessages);
+      expect(retained).toContain("Cleared at compaction");
+      expect(retained).not.toContain("STALE-READ TEXT");
+      expect(retained).not.toContain("DIFF TEXT");
       const secondElisions = (secondC.metadata as JsonObject).elisions as JsonObject[];
       expect(secondElisions.some((elision) => elision.blockId === results[1].id)).toBe(true);
       expect(secondElisions.some((elision) => elision.blockId === results[0].id)).toBe(false);
@@ -2014,6 +2018,38 @@ else
         props: { excludedTurnCount: 3 },
       });
       expect(rig.summarizer.calls).toHaveLength(1);
+      expect(rig.summarizer.calls[0].retainedMessages).toEqual([
+        { role: "user", content: [{ type: "text", text: "Continue." }] },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "Latest group." },
+            {
+              type: "tool_use",
+              toolCallId: "last-tool",
+              toolName: "unavailable_probe_tool",
+              input: {},
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool_result",
+              toolCallId: "last-tool",
+              output: {
+                error: "permission_denied",
+                reason: 'Tool "unavailable_probe_tool" is not enabled.',
+              },
+              isError: true,
+            },
+          ],
+        },
+      ]);
+      const coldSource = JSON.stringify(rig.summarizer.calls[0].projection);
+      expect(coldSource).not.toContain("Latest group.");
+      expect(coldSource).not.toContain("Continue.");
       const request = rig.gateway.requests[2];
       expect(rig.gateway.requests).toHaveLength(4);
       const later = rig.gateway.requests[3];

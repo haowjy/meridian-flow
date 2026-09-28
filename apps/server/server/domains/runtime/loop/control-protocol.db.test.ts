@@ -121,8 +121,12 @@ else
     });
 
     it("C6 idle compact ends on C without reserving B", async () => {
-      const rig = await fixture();
-      rig.setThreshold(100000);
+      const rig = await manualFixture();
+      await (
+        await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "Continue." })
+      ).execute();
+      await settled(rig);
+      const requestsBefore = rig.gateway.requests.length;
       const control = await compactControl(rig);
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
       expect((await run.execute()).status).toBe("complete");
@@ -132,7 +136,7 @@ else
         status: "complete",
         metadata: { controlMessageId: control.id, trigger: "manual" },
       });
-      expect(rig.gateway.requests).toHaveLength(0);
+      expect(rig.gateway.requests).toHaveLength(requestsBefore);
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
       expect(await rig.runClaim.read(rig.threadId)).toEqual({ kind: "asleep" });
     });
@@ -297,6 +301,63 @@ else
       expect(cs[0].metadata).toMatchObject({ trigger: "auto", satisfiesControlId: controlId });
     });
 
+    it.each([
+      { history: "A short planning note.", refuses: true },
+      { history: "Established story facts. ".repeat(100), refuses: false },
+    ])("#619 manual compact floor: refuses=$refuses", async ({ history, refuses }) => {
+      const rig = await manualFixture({
+        history,
+        summarizer: scriptedSummarizer(async ({ owner: { turnId } }) => ({
+          kind: "complete",
+          text: "Earlier context.",
+          model: "gpt-4.1-mini",
+          modelResponses: [
+            {
+              id: crypto.randomUUID(),
+              turnId,
+              sequence: 0,
+              provider: "openai",
+              model: "gpt-4.1-mini",
+              inputTokens: 100,
+              outputTokens: 10,
+              requestMessageCount: 2,
+              predictedCacheState: "cold",
+              predictedCacheReason: "summary_transcript",
+            },
+          ],
+        })),
+      });
+      // A later writer/reply pair leaves the first pair as the compactable range.
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        userText: "Read the latest chapter.",
+      });
+      await run.execute();
+      await settled(rig);
+      const balance = await rig.creditLedger.getBalance({ userId: rig.ids.user });
+      await compactControl(rig);
+      await drainControls(rig);
+      const turn = (await settled(rig)).at(-1);
+      if (!turn) throw new Error("Missing compaction turn");
+      expect(turn).toMatchObject({
+        role: "compaction",
+        status: refuses ? "error" : "complete",
+        ...(refuses
+          ? { metadata: { reason: "nothing_to_compact", phase: "initial_prepare" } }
+          : {}),
+      });
+      expect(rig.summarizer.calls).toHaveLength(refuses ? 0 : 1);
+      if (refuses) {
+        expect(await rig.repos.modelResponses.listByTurn(turn.id)).toEqual([]);
+        expect(await rig.creditLedger.getBalance({ userId: rig.ids.user })).toBe(balance);
+      } else {
+        expect(await rig.repos.modelResponses.listByTurn(turn.id)).toHaveLength(1);
+        expect(BigInt(await rig.creditLedger.getBalance({ userId: rig.ids.user }))).toBeLessThan(
+          BigInt(balance),
+        );
+      }
+    });
+
     it("C6 no history writes nothing_to_compact without a summary or response", async () => {
       const rig = await manualFixture({ empty: true });
       await compactControl(rig);
@@ -360,6 +421,10 @@ else
 
     it("C6 a dead summary is repaired and the same control redelivers", async () => {
       const rig = await manualFixture();
+      await (
+        await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "Continue." })
+      ).execute();
+      await settled(rig);
       const row = await compactControl(rig);
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
       // Disconnecting the owning claim simulates death without the run's cleanup.

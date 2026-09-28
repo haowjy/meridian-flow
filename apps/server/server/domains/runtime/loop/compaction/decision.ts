@@ -10,8 +10,9 @@ import type {
 } from "../../../threads/index.js";
 import { orderTurnsByPosition } from "../../../threads/order-turns.js";
 import type { GenerateRequest, TokenizerFamily } from "../../gateway/index.js";
-import { estimateRequestTokens } from "./estimate.js";
+import { estimateRequestTokens, estimateTurnTokens } from "./estimate.js";
 import { type CompactionPlan, planCompaction } from "./plan.js";
+import { type ProjectedActiveHistory, projectCompactedHistory } from "./project.js";
 
 /** A boundary-owned forced preparation, never a replacement for its prepare callback. */
 export interface ForcedCompactionDecision {
@@ -104,6 +105,7 @@ export function summaryCompactionFailure(
 export function decideCompaction(input: {
   request: GenerateRequest;
   turns: Turn[];
+  activeHistory: ProjectedActiveHistory;
   blocks: Block[];
   thresholdTokens: number | null;
   forcedDecision?: ForcedCompactionDecision;
@@ -137,6 +139,22 @@ export function decideCompaction(input: {
     }),
     tokenizer: input.tokenizer,
   });
+  const compactable =
+    plan.outcome === "planned" && input.forcedDecision?.trigger === "manual"
+      ? projectCompactedHistory(input.activeHistory, plan)
+      : null;
+  const belowSummaryFloor =
+    compactable !== null &&
+    compactable.turns.reduce(
+      (tokens, turn) =>
+        tokens +
+        estimateTurnTokens(
+          turn,
+          compactable.blocks.filter((block) => block.turnId === turn.id),
+          input.tokenizer,
+        ),
+      0,
+    ) < input.summaryReserveTokens;
   // A retained tail is not new history: consecutive manual controls cannot
   // repeatedly summarize it without an intervening completed turn.
   const immediatelyAfterCompaction =
@@ -158,7 +176,7 @@ export function decideCompaction(input: {
           input.forcedDecision?.trigger !== "manual" ||
           (input.thresholdTokens !== null && tokensBefore >= input.thresholdTokens),
         ...(input.controlMessageId ? { controlMessageId: input.controlMessageId } : {}),
-        ...(immediatelyAfterCompaction || plan.outcome === "no_compaction"
+        ...(immediatelyAfterCompaction || plan.outcome === "no_compaction" || belowSummaryFloor
           ? { refusal: "nothing_to_compact" as const }
           : !plan.minimalTailFits
             ? { refusal: "context_too_large" as const }
