@@ -14,6 +14,7 @@
 - Compaction undo preserves paged transcript segments and restores the pre-compaction prompt bake.
 
 ### Changed
+- Regenerate handoff migration after undo; accept all three queued control kinds.
 - Preserve handoff seeds during idle and startup repair; keep undo and handoff controls ordered together.
 - Preserve Work-context delivery while recovering stranded handoff controls.
 - Withdrawn controls cannot replay if their owner crashes before stopping.
