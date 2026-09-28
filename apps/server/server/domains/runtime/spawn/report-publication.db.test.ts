@@ -34,7 +34,9 @@ else
     const { createDrizzleRepositoriesForTest } = await import(
       "../../threads/adapters/drizzle/repositories.js"
     );
-    const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
+    const { createDrizzleEventJournalWriter, readTranscriptPage } = await import(
+      "../../threads/index.js"
+    );
     const { createInMemoryEventSink } = await import("../../observability/index.js");
     const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
     const { createDrizzleThreadLock } = await import("../adapters/drizzle-thread-lock.js");
@@ -711,6 +713,44 @@ else
         error: "This reply was interrupted.",
       });
       expect(await repos.turns.listUnsettledForThread(ids.root)).toEqual([]);
+
+      const after = await repos.turns.create({
+        threadId: ids.root,
+        prevTurnId: orphan.id,
+        role: "user",
+        origin: "writer",
+        status: "complete",
+      });
+      const root = await repos.threads.findById(ids.root);
+      if (!root) throw new Error("Orphan sweep root thread missing");
+      const page = await readTranscriptPage(repos, root, {
+        order: "newest_first",
+        unit: "turn",
+        limit: 1,
+      });
+      const cursor = JSON.parse(
+        Buffer.from(page.nextCursor as string, "base64url").toString("utf8"),
+      ) as { a: [number, number] };
+      expect(cursor.a[0]).toBe(after.position);
+
+      const fork = (
+        await repos.threads.createDerivedPrimary({
+          id: crypto.randomUUID() as ThreadId,
+          userId: root.userId,
+          projectId: root.projectId,
+          workId: null,
+          source: root,
+          originType: "fork",
+          originTurnId: orphan.id,
+        })
+      ).thread;
+      const inherited = await readTranscriptPage(repos, fork, {
+        order: "oldest_first",
+        unit: "turn",
+        limit: 10,
+        range: "inherited",
+      });
+      expect(inherited.entries.map((entry) => entry.turn.id)).toContain(orphan.id);
     });
 
     it("leaves a pending C alone while the session claim is held, even when its lease expired", async () => {

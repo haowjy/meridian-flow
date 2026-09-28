@@ -507,9 +507,8 @@ export function createDeliveryAdapter(
     refreshPending: (threadId) =>
       threadLock.withThreadLock(threadId, () => appendPending(threadId)),
     repairOrphanedTurns: async (lease) => {
-      const liveTurnId = await deps.runClaim.readRunningTurnId(lease.threadId);
       const reports = await threadLock.withThreadLock(lease.threadId, () =>
-        finalizeOrphanedTurns(deps, { threadId: lease.threadId, liveTurnId }),
+        finalizeOrphanedTurns(deps, { threadId: lease.threadId }),
       );
       await deps.publishFinalizedReports(reports);
     },
