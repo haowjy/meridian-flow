@@ -87,6 +87,30 @@ describe("model prompt-cache descriptors", () => {
   });
 });
 
+describe("model tokenizer families", () => {
+  it("requires and carries each model's declared family, including OpenRouter models", () => {
+    const registered = MODEL_REGISTRY.providers.flatMap((provider) => provider.models);
+    const built = buildFromRegistry(MODEL_REGISTRY, {
+      ANTHROPIC_API_KEY: "anthropic-key",
+      OPENAI_API_KEY: "openai-key",
+      DEEPSEEK_API_KEY: "deepseek-key",
+      OPENROUTER_API_KEY: "openrouter-key",
+    });
+    const resolved = built.providers.flatMap((provider) => provider.models);
+
+    expect(registered.every((model) => model.tokenizer.length > 0)).toBe(true);
+    expect(resolved.map(({ id, tokenizer }) => [id, tokenizer])).toEqual(
+      registered.map(({ id, tokenizer }) => [id, tokenizer]),
+    );
+    expect(registered.find((model) => model.id === "anthropic/claude-sonnet-4")?.tokenizer).toBe(
+      "anthropic",
+    );
+    expect(registered.find((model) => model.id === "google/gemini-2.5-flash")?.tokenizer).toBe(
+      "gemini",
+    );
+  });
+});
+
 describe("input pricing tiers", () => {
   it.each([
     0,

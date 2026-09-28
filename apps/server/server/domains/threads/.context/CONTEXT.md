@@ -37,8 +37,8 @@ and history stay fixed across deployments, Agent revision updates, model
 changes, and idle/cache-TTL changes. The named breaks are prompt-epoch
 boundaries and image removals; compaction uses the explicit rebalance seam.
 `beginPromptEpoch` hashes or reuses a bake and completes the reserved
-boundary through `persistAndAppendEvents`; it has no production caller until
-C4. `bakeAt` and
+boundary through `persistAndAppendEvents`; the compaction successor commit is
+its caller. `bakeAt` and
 `bakeInEffect` resolve owner-local completed boundaries in write-once
 `turns.position` order. Position is assigned under the existing thread mutation
 lock; fork-local turns continue after their cutoff position.
@@ -211,7 +211,11 @@ owns only the SQL predicate beside its partial index.
 ## Mutation lock order
 
 The shared `server/shared/thread-work-lock.ts` owns **thread row (`NO KEY
-UPDATE`) → participating Work rows (sorted by id)**. `lockThreadAndWorks`
+UPDATE`) → participating Work rows (sorted by id, `NO KEY UPDATE` through
+`work-lifecycle-lock.ts`)**. Both modes admit FK `KEY SHARE`, so an
+independently committed insert referencing a locked row (a Work notice marker,
+collab's root-committed branch infrastructure) never waits on the lock
+holder. `lockThreadAndWorks`
 stabilizes the primary membership under the thread lock before acquiring the
 primary and any target/fallback Works together. Membership and restore use it;
 turn creation, thread-peer creation, publication, trash, runtime and admission

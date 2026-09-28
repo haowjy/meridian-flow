@@ -4,6 +4,23 @@ The agentic execution engine. It takes a user message, streams it through an LLM
 with tool use, persists side effects through thread repositories, and emits
 `OrchestratorEvent`s that the threads domain fans out to clients.
 
+## Document revision metadata
+
+Document reads, search hits, and settled writes persist
+`tool_result.content.metadata.documentRevisions` entries. Writer-reference reads
+persist `read.revision` beside `read.result`. The model projection consumes only
+the result, never these tokens. Entries use the shared `DocumentRevisionEvidence` contract:
+URI is canonical at observation time, or null for ID-only folded diffs. Null
+revision means unverifiable (including diff, binary
+references, failed writes, and unverified recovery).
+
+Staged mutation results start with null. The response-settlement receipt supplies
+the token captured at apply; `persistCommittedWriteResult` copies it without a
+second document read. Re-reading here would misattribute a writer's intervening
+edit to the agent write. Future compaction queries current tokens through the
+context domain's `DocumentRevisions` port.
+
+
 ## gateway — multi-provider LLM abstraction
 
 Normalizes Anthropic, OpenAI, and OpenAI-compatible providers behind a single
@@ -19,7 +36,7 @@ streaming `Gateway` port.
 | Deadline | per attempt, two timers on one derived `AbortSignal`: an inactivity (stall) timer re-armed by every stream event (`GatewayConfig.attemptStallMs`, env `MODEL_CALL_STALL_MS`, default 60s; never kills a slow-but-streaming model) and an absolute ceiling backstop (`GatewayConfig.attemptCeilingMs`, env `MODEL_CALL_TIMEOUT_MS`, default 15 min / 900s, 0 disables). Per-model `stallTimeoutMs`/`ceilingTimeoutMs` override the gateway values. Retry/deadline driver lives in `attempt-stream.ts`; the signal lives in `deadline.ts` |
 | Cancel drain | After partial output, a parent cancel may drain usage/end events, but one absolute five-second deadline from abort bounds that drain even after a rejected read. `attempt-stream.ts` owns one abort listener per attempt and clears its timer/listener on exit; iterator `return()` is observed without awaiting it, so a hostile adapter cannot hold cancellation or retry hostage. |
 | Config | `GatewayConfig` with provider list, default model, retry/fallback/`attemptStallMs`/`attemptCeilingMs` policy; `createGatewayFromEnv` for env-driven setup |
-| Registry | `MODEL_REGISTRY` in `config/registry.ts` — single-source for config + pinned pricing. `buildFromRegistry` composes providers. Flat `MODEL_TOKEN_RATES` table is **deleted**. |
+| Registry | `MODEL_REGISTRY` in `config/registry.ts` is the single source for each model's config, pinned pricing, cache descriptor, and required tokenizer family. `buildFromRegistry` composes providers. |
 | Collision warning | `onWarning` callback on registry construction warns on duplicate model IDs (was last-writer-wins silently). |
 | Usage normalization | Adapters own the conversion into canonical `Usage` and call `assertValidUsage` before returning. Providers disagree on what `inputTokens` counts: OpenAI reports an inclusive total, Anthropic reports uncached input and each cache counter as separate additive categories. An adapter that passes additive counters through unchanged underbills every cached turn — see issue [#356](https://github.com/haowjy/meridian-flow/issues/356). |
 | OpenRouter | `openrouter` adapter reuses the OpenAI-compatible wire shape and owns provider-reported cost enrichment via `/generation`. |
@@ -50,11 +67,11 @@ skeleton and delegates the moving parts.
 | `interrupt-session.ts` | Same-turn interrupt suspend/resume mechanics and component-block updates. |
 | `tool-dispatch.ts` | Live output, spawn/thread_message/returnResult callback wiring, and durable tool_result persistence. Dispatch does not apply policy. return_result settlement is spawn-owned: dispatch honors the typed `ReturnResultOutcome` and does not parse arguments or reconstruct the envelope from JSON. |
 | `run-turn-port.ts` | `prepare(input)` returns a `PreparedRun` with run/initial assistant identity, pre-setup replay cursor, post-setup snapshot floor, and one-shot `execute(): Promise<RunOutcome>`. Setup commits before returning; only execute enters the model loop. The journal/hub is the sole event consumer, not an orchestrator generator. |
-| `run-session.ts` | One owner for writer and child claims, AbortController, current-turn registry, heartbeat, cancel, terminal fallback, and best-effort release. After acquiring a run claim and before setup selects context, it repairs orphaned primary assistants and placeholders; a turn already bound to this live lease is excluded. `execute` settles after cleanup; child report publication B follows it. A primary completion aborts foreground descendants only; a child invocation bounds its whole subtree and aborts background descendants too. Explicit cancellation includes background descendants. |
-| `orphaned-placeholder.ts` | `finalizeOrphanedTurns` repairs unsettled primary assistant turns and C4 placeholders under the thread lock and an already-held session claim; `finalizeOrphanedPlaceholders` keeps child-report recovery on the placeholder-only path. Writer-facing interrupted copy comes from `threads/domain/turn-metadata.ts`. Callers publish finalized child reports after releasing the child lock. |
+| `run-session.ts` | One owner for writer and child claims, AbortController, current-turn registry, heartbeat, cancel, terminal fallback, and best-effort release. `execute` settles after cleanup; child report publication B follows it. A primary completion aborts foreground descendants only; a child invocation bounds its whole subtree and aborts background descendants too. Explicit cancellation includes background descendants. |
+| `orphaned-placeholder.ts` | `finalizeOrphanedPlaceholder` uses the pure `@meridian/contracts/threads` placeholder predicate and targeted per-thread query under the thread lock and an already-held session claim. Writer-facing interrupted copy comes from `threads/domain/turn-metadata.ts`, through its compaction metadata codec. The helper returns reports it finalizes, and callers publish them only after releasing the child lock. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; receives the frozen system prompt from the immutable bake row when the thread has an initial pointer; renders every persisted turn, including durable notices, skill-body, and subagent-update turns. Child-provenance system text contains a compact exact `thread_report` call, never the report body; the parent model may fetch that report with the authorized tool. Assistant custom blocks stay UI-only to preserve tool_use→tool_result adjacency. |
-| `compaction/{trigger,estimate,plan,project,tail}.ts` | Pure C4a core. `trigger.ts` resolves explicit Agent limits; `estimate.ts` owns the shared per-part estimator for planner defaults and request estimates. CJK strings use a 0.8-token/code-point multiplier (10% headroom over the measured DeepSeek V4 Flash CJK corpus); image parts use 1,600 tokens, and file text uses the greater of its measured visible-string estimate or the 10,000-token floor. Refresh evidence with `apps/server/scripts/probe-compaction-estimates.ts` against `apps/server/scripts/fixtures/compaction-estimator-probe.json`. `plan.ts` takes the raw effective transcript, reserves overhead and the pinned request, and limits later cuts to after the active compaction cut. A missing pinned request yields an explicit `no_compaction` plan, never persistable metadata; `tail.ts` is the shared ordered projection rule, lifting the pin only when the cut removes it; `project.ts` strictly decodes complete compactions, requires the pinned turn to exist, and projects the summary under the owning thread ref. The folder's `index.ts` is the runtime public surface. History-item metadata classification and its codecs live in `threads/domain/turn-metadata.ts`. |
+| `compaction/{trigger,estimate,plan,project,tail}.ts` | Pure compaction core. `trigger.ts` resolves explicit Agent limits; `estimate.ts` owns the shared per-part estimator for planner defaults and request estimates. Every estimate receives the model registry's required tokenizer family, including turn planning and summary segmentation. CJK family rates and evidence are recorded in [CJK estimator rates](compaction.md). Image parts use 1,600 tokens, and file text uses the greater of its visible-string estimate or the 10,000-token floor. `plan.ts` takes the raw effective transcript, reserves overhead and the pinned request, and limits later cuts to after the active compaction cut. A missing pinned request yields an explicit `no_compaction` plan, never persistable metadata; `tail.ts` is the shared ordered projection rule, lifting the pin only when the cut removes it; `project.ts` strictly decodes complete compactions, requires the pinned turn to exist, and projects the summary under the owning thread ref. The folder's `index.ts` is the runtime public surface. History-item metadata classification and its codecs live in `threads/domain/turn-metadata.ts`. |
 | `turn-context-assembly.ts` | Resolves the retained Agent and bake, then projects active compaction history with `thread.ref` before stable image inclusion and `buildContext`; this keeps old pre-cut images out of the rebuilt model request while leaving un-compacted requests byte-identical. |
 | `composed-system-prompt.ts` | Assembles the first gateway system prompt in a fixed layer order: immutable agent body (revision body or the host-owned empty default), the invocation overlay's additive `appendSystemPrompt`, frozen Work context, available skill slugs (name when it differs) and descriptions, named subagent slug/name/description from the bound roster, core document dialect, runtime URI instruction, and, for subagent threads only, the mandatory closing report instruction as the last layer. An empty or absent append adds nothing, and the guidance string is a module constant (`SUBAGENT_GUIDANCE`). Freeze sentinel is `thread.initialPromptBakeId !== null`. The first bake commits with a successfully prepared run start before model execution; a later gateway failure or cancellation leaves it in place. |
 | `work-context.ts` / delivery adapter | Renders authoritative Work state. Mutations enqueue immutable system-provenance refresh notices in the business transaction. The delivery boundary coalesces a batch into one durable system update and event and acknowledges its notice IDs atomically. Idle recovery uses a short run claim; notices never wake a model. |
@@ -204,7 +221,8 @@ list. A code deploy, Agent revision update, model change, or idle/cache-TTL
 timer never rebakes a live thread. `beginPromptEpoch` is the named transactional
 operation for a reserved boundary: it hashes composed live parts, reuses the
 current row when bytes match, and completes the turn through
-`persistAndAppendEvents`. It has no production caller until C4. `bakeAt` and
+`persistAndAppendEvents`. The compaction successor commit is its caller
+(`compaction-successor.ts`). `bakeAt` and
 `bakeInEffect` use complete owner-local boundary turns in write-once
 `turns.position` order. Turn positions are assigned under the existing thread
 mutation lock, and fork-local turns begin after their cutoff. When the model
@@ -284,18 +302,16 @@ with `kind: "inbox_message"`, which hides them from the bubble list; the client
 renders them as delivery rows inside the preceding assistant turn. Tagging a
 writer turn `inbox_message` makes the writer's own message vanish once a run
 drains it.
-`spawn/orphan-report-repair.ts` pages primary unsettled assistant turns through
-`turns_unsettled` and C4 pending placeholders through `turns_pending_placeholders`,
-then re-reads under the thread lock. `@meridian/contracts/threads` owns the
-placeholder role set and pure TypeScript predicate; the database package owns
-its SQL predicate beside the partial index, and `threads/domain/turn-metadata.ts`
-owns placeholder-specific interruption copy. Startup scans and run-start
-repair require the real session claim; expired lease rows are not proof of
-death. The generic lane settles primary assistant turns and placeholders, not
-child assistant turns. Child recovery first settles placeholders, then walks
-the child chain and treats any admitted execution selector as a barrier,
-including compaction selectors. Placeholder finalizers return child reports
-for publication after releasing the child lock. The process scheduler
+`spawn/orphan-report-repair.ts` pages pending placeholder turns through the
+`turns_pending_placeholders` partial index and uses the same targeted per-thread
+query as run start for its under-lock re-read. `@meridian/contracts/threads`
+owns the role set and pure TypeScript predicates; the database package owns the
+SQL predicate beside the partial index, and `threads/domain/turn-metadata.ts`
+owns role/metadata-specific interrupted copy through the compaction codec. Both repairs require the real session claim and thread lock; expired
+lease rows are not proof of death. It finalizes pending placeholders before
+walking the child chain and treats any admitted execution selector as a walk
+barrier, including compaction selectors. Placeholder finalizers return child
+reports for publication after releasing the child lock. The process scheduler
 runs wake, repair, and publication lanes independently. The coordinator consumes `RunTurnPort` through its driver,
 immutable Agent revisions, and the threads repository's
 `SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` parses the patch with the canonical `invocationPatchSchema` and translates a `ZodError` to `InvocationPatchError`, so an unknown key or wrong value reaches `spawn_invocation_patch_invalid` before any child row is created. It then merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, present list replaces, empty clears, tool map patches one entry, scalar `model`/`effort` replace) through the compile-time-exhaustive `PATCH_MERGES` table, one entry per patch key; `tools` and `disallowed-tools` are coupled and each returns the full `patchTools` result so a map `allow` lifts the baseline denial. Overrides fold tool-name aliases like authoring. Added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. The patch applies to named and generic children alike. The effective configuration plus the raw `invocation_overlay` persist on the thread binding and are reused on later turns; the saved Agent definition is never mutated. A spawn-time `append_system_prompt` is an additive overlay layer appended after the immutable Agent body; spawn never replaces the body. Route-facing
@@ -562,106 +578,8 @@ paging cursors. Shutdown stops timers and awaits passes for up to five seconds b
 the Yjs gateway and flushing observability. Still-running lanes emit
 `shutdown.abandoned`; their promises retain observed rejection handlers.
 
-## Compaction request boundaries
+## Compaction
 
-`loop/request-preparation.ts` measures the assembled request and plans against raw
-history. The token baseline comes from the cache service's reusable-prefix
-selection with TTL ignored; missing/zero usage estimates the whole request.
-Without an explicit Agent limit, the trigger is floor(90% × min(input pricing
-tier ?? usable window, usable window)), capped at 400,000 tokens. Explicit Agent
-token and percentage limits are not scaled. Mars defines no off switch.
-
-| Models | Default trigger tokens |
-|---|---:|
-| Sonnet 4 (direct and OpenRouter) | 165,254 |
-| Sonnet 4.6, GPT-4.1, GPT-4.1 mini, Gemini 2.5 Flash, DeepSeek V4 Flash | 400,000 |
-| Haiku 4.5 | 122,400 |
-| Haiku 3.5 | 172,627 |
-| GPT-4o (direct and OpenRouter), GPT-4o mini | 100,454 |
-
-`summary/conversation-summarizer.ts` implements the port in production. Warm
-sends the request in hand with an appended system-origin instruction and a lower
-output cap (summary reserve plus thinking budget), never increases its cap or
-changes its other fields. Any unusable warm response or provider failure runs
-cold once; Stop does not. Both attempts return their rows for settlement.
-Cold uses `COMPACTION_SUMMARIZER_MODEL` (default DeepSeek Flash), or the retained
-thread model when that provider is disabled. Its prediction is always
-`cold/summary_transcript`, not the thread prefix's prediction.
-
-Cold receives only the cut blocks and prior summary, excluding the retained pin
-and tail. It renders model-visible custom content, omits opaque reasoning and
-thinking, and labels prior context. Before any cold call, all turns are measured.
-Oversized turns replace re-readable tool bodies with a URI and short excerpt,
-then split at block boundaries if needed. An oversized indivisible block fails
-before any cold call. Rolling segments carry the running summary forward and
-reserve its provider-token output cap independently of the CJK request estimator,
-then recheck each assembled request against the usable window. Prompts preserve exact
-story terminology, quoted writer wording and per-document done/pending edits;
-they forbid invented facts.
-
-Output-limit failure uses the provider finish reason, not an input-token estimate;
-the successor fit check still measures the full assembled request.
-Every attempted call returns its row, prediction and message count, even when a
-later segment fails or Stop aborts it. Settlement records path/segment metadata
-and charges those rows only in the transaction ending C.
-
-The gateway normalizes provider context-window failures to `context_overflow`.
-The loop completes A at its last persisted tool group (empty is legal), then
-prepares a forced `compact` decision with a cold path and an independent usable
-window fit limit from the resolved usable window. It retries generation once per
-reply (not once per tool iteration); a split adopting new input renews that
-budget, while the compaction successor preserves it. A second overflow fails with
-`context_window_exceeded` and acknowledges the receipt rather than re-sweeping
-the same request. Metered output from an overflow is billed without retaining
-the incomplete response's blocks. The WebSocket live-state codec accepts
-`compacting` so a client can join while C is pending.
-
-Compaction is two delivery transitions around an unlocked `ConversationSummarizer`
-call. The first reserves pending C instead of an assistant. `compaction-phase.ts`
-then prepares a live rebake over provisional completed C before late arrivals.
-compaction-successor.ts returns one retry-local usable/failed value; the delivery
-adoption carries that value into its explicit placeholder completion mode. The
-complete summary block is immutable, and its fit limit comes from the decision,
-independently of the automatic trigger. A usable value's token count describes
-the compacted base before late arrivals. Its successor commit joins `beginPromptEpoch`, adoption, notice consumption and B's
-reservation. A moved leaf repeats only successor preparation, never summarization.
-An impossible tail reserves no C. A failed summary errors C and replies below the
-latest message. A live unexpected error while C is current uses a fresh failure
-transaction: C error, settled summary rows, failed B below the latest arrivals,
-and receipt acknowledgment. Notices remain queued. If that transaction also
-fails, orphan recovery owns C; this run makes no further settlement attempt.
-Paid rows still in memory are uncommitted and cannot be recovered by the orphan
-finalizer, exactly as at a process crash. They are not debited; a later delivery
-may need another provider call. A usable epoch still commits when a late arrival fails context
-preparation (including an oversized late paste); only B fails. `composeLivePromptBake` serves initial bakes and rebakes
-alike. Reference reads during this prepare belong to current C; B does not exist
-until commit. Summary responses never supply the conversation token baseline.
-
-The lease does not copy current-turn kind; currentTurnKind(turn) derives
-assistant or compaction from the referenced turn's role. Both reservation sites use
-reservationTurn, including the decision's trigger. The lease retains bound_turn_ids for this live run, appended in the same
-transaction as each current-turn binding. Stop matches this membership under
-the lease update lock, whether it names a predecessor or the newly committed
-successor and whether it reaches the owning process or a remote process.
-Membership resets with the next run, so a finished run cannot cancel a newer
-lease. The process-local session does not keep a second membership map. Writer admission returns an assistant ID only for the former. Stop
-aborts the summary, and terminal close settles its response rows on cancelled C
-with the receipt acknowledgment. settleSummaryResponses writes predictions,
-request sizes and debits through TurnAccounting.computeAndDebit inside whichever
-transaction ends C. Retrying settlement does not count the paid call twice in
-the shared tree budget. Late arrivals are not part of C's receipt and
-remain queued for the cancel wake. Remote cancellation reaches the local signal
-through the lease heartbeat as well as boundary checks. Only the run signal or
-durable cancel request authorizes cancellation: a returned cancelled summary
-on a live signal is failed, and an internal AbortError alone is not Stop.
-Summarizer adapters return every attempted paid response in their outcome and
-never throw after a paid call; unexpected throws are error-level events.
-
-Run start repairs a dead primary assistant and stale placeholders before context
-selection using the new run's held claim. Startup also pages the same indexed
-primary assistant and placeholder candidates, so quiet threads recover without
-a new wake. Child reports are finalized on C and published after releasing the
-child lock. A late writer message stays unacknowledged and is redelivered rather
-than receiving a synthetic failed reply. Compaction responses count when the
-compaction is the orphaned execution's terminal turn; accounting completed
-compaction ancestors remains C4e.
+Runtime compaction covers trigger and estimator rates, summarization, delivery
+transitions, overflow recovery, cancellation, placeholder recovery, and cost. See
+[runtime compaction context](compaction.md) for the protocol and its details.

@@ -9,7 +9,7 @@ export interface ReferenceReader {
       threadId: string;
       turnId: string;
     },
-  ): Promise<JsonValue>;
+  ): Promise<{ result: JsonValue; revision: string | null }>;
 }
 
 export async function loadReferenceReads(input: {
@@ -33,7 +33,7 @@ export async function loadReferenceReads(input: {
           : [];
       }),
   );
-  const reads = new Map<string, JsonValue>();
+  const reads = new Map<string, { result: JsonValue; revision: string | null }>();
   const updated: Block[] = [];
   for (const block of input.blocks) {
     if (block.turnId !== input.userTurnId) continue;
@@ -50,7 +50,7 @@ export async function loadReferenceReads(input: {
       reads.set(key, result);
     }
     input.signal?.throwIfAborted();
-    updated.push({ ...block, content: { ...reference, read: { result } } });
+    updated.push({ ...block, content: { ...reference, read: result } });
   }
   return updated;
 }

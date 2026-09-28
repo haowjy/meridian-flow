@@ -12,6 +12,7 @@ import type {
   ModelInfo,
   PromptCacheDescriptor,
   ProviderConfig,
+  TokenizerFamily,
 } from "../domain/index.js";
 
 export interface ModelPricing {
@@ -31,6 +32,7 @@ export interface ModelPricing {
 
 export interface RegisteredModel {
   id: string;
+  tokenizer: TokenizerFamily;
   displayName: string;
   contextWindow: number;
   maxOutputTokens: number;
@@ -155,6 +157,7 @@ const DEEPSEEK_FLASH_PRICING: ModelPricing = {
 
 const CLAUDE_SONNET_4_MODEL = {
   id: "claude-sonnet-4-20250514",
+  tokenizer: "anthropic",
   displayName: "Claude Sonnet 4",
   contextWindow: 200_000,
   maxOutputTokens: 16_384,
@@ -166,6 +169,7 @@ const CLAUDE_SONNET_4_MODEL = {
 
 const CLAUDE_SONNET_4_6_MODEL = {
   id: "claude-sonnet-4-6",
+  tokenizer: "anthropic",
   displayName: "Claude Sonnet 4.6",
   contextWindow: 1_000_000,
   maxOutputTokens: 64_000,
@@ -177,6 +181,7 @@ const CLAUDE_SONNET_4_6_MODEL = {
 
 const CLAUDE_HAIKU_4_5_MODEL = {
   id: "claude-haiku-4-5-20251001",
+  tokenizer: "anthropic",
   displayName: "Claude Haiku 4.5",
   contextWindow: 200_000,
   maxOutputTokens: 64_000,
@@ -188,6 +193,7 @@ const CLAUDE_HAIKU_4_5_MODEL = {
 
 const CLAUDE_3_5_HAIKU_MODEL = {
   id: "claude-3-5-haiku-latest",
+  tokenizer: "anthropic",
   displayName: "Claude 3.5 Haiku",
   contextWindow: 200_000,
   maxOutputTokens: 8_192,
@@ -199,6 +205,7 @@ const CLAUDE_3_5_HAIKU_MODEL = {
 
 const GPT_4_1_MODEL = {
   id: "gpt-4.1",
+  tokenizer: "o200k",
   displayName: "GPT-4.1",
   contextWindow: 1_047_576,
   maxOutputTokens: 32_768,
@@ -216,6 +223,7 @@ const GPT_4_1_MODEL = {
 
 const GPT_4_1_MINI_MODEL = {
   id: "gpt-4.1-mini",
+  tokenizer: "o200k",
   displayName: "GPT-4.1 mini",
   contextWindow: 1_047_576,
   maxOutputTokens: 32_768,
@@ -233,6 +241,7 @@ const GPT_4_1_MINI_MODEL = {
 
 const GPT_4O_MINI_MODEL = {
   id: "gpt-4o-mini",
+  tokenizer: "o200k",
   displayName: "GPT-4o mini",
   contextWindow: 128_000,
   maxOutputTokens: 16_384,
@@ -250,6 +259,7 @@ const GPT_4O_MINI_MODEL = {
 
 const GPT_4O_MODEL = {
   id: "gpt-4o",
+  tokenizer: "o200k",
   displayName: "GPT-4o",
   contextWindow: 128_000,
   maxOutputTokens: 16_384,
@@ -268,6 +278,7 @@ const GPT_4O_MODEL = {
 
 const DEEPSEEK_V4_FLASH_MODEL = {
   id: "deepseek-v4-flash",
+  tokenizer: "deepseek",
   displayName: "DeepSeek V4 Flash",
   contextWindow: 1_048_576,
   maxOutputTokens: 16_384,
@@ -304,6 +315,7 @@ const OPENROUTER_GEMINI_FLASH_PRICING: ModelPricing = {
 
 const OPENROUTER_CLAUDE_SONNET_4_MODEL = {
   id: "anthropic/claude-sonnet-4",
+  tokenizer: "anthropic",
   displayName: "Claude Sonnet 4 (OpenRouter)",
   contextWindow: 200_000,
   maxOutputTokens: 16_384,
@@ -314,6 +326,7 @@ const OPENROUTER_CLAUDE_SONNET_4_MODEL = {
 
 const OPENROUTER_GPT_4O_MODEL = {
   id: "openai/gpt-4o",
+  tokenizer: "o200k",
   displayName: "GPT-4o (OpenRouter)",
   contextWindow: 128_000,
   maxOutputTokens: 16_384,
@@ -331,6 +344,7 @@ const OPENROUTER_GPT_4O_MODEL = {
 
 const OPENROUTER_GEMINI_FLASH_MODEL = {
   id: "google/gemini-2.5-flash",
+  tokenizer: "gemini",
   displayName: "Gemini 2.5 Flash (OpenRouter)",
   contextWindow: 1_048_576,
   maxOutputTokens: 65_536,
@@ -339,7 +353,7 @@ const OPENROUTER_GEMINI_FLASH_MODEL = {
   pricing: OPENROUTER_GEMINI_FLASH_PRICING,
 } satisfies RegisteredModel;
 
-export const MODEL_REGISTRY = {
+export const MODEL_REGISTRY: ModelRegistry = {
   defaultModel: "claude-sonnet-4-20250514",
   providers: [
     {
@@ -378,7 +392,7 @@ export const MODEL_REGISTRY = {
       ],
     },
   ],
-} as const satisfies ModelRegistry;
+};
 
 const FIVE_MINUTES_MS = 5 * 60 * 1_000;
 const ONE_HOUR_MS = 60 * 60 * 1_000;
@@ -417,6 +431,7 @@ function toModelInfo(provider: RegisteredProvider, model: RegisteredModel): Mode
     id: model.id,
     provider: provider.id,
     displayName: model.displayName,
+    tokenizer: model.tokenizer,
     contextWindow: model.contextWindow,
     inputTierTokens: model.pricing.inputTierTokens,
     maxOutputTokens: model.maxOutputTokens,

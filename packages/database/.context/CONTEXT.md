@@ -53,10 +53,12 @@ passing SQL CHECK's three-valued logic.
 
 ### Thread-domain execution reports
 
-`thread_execution_reports` stores one immutable terminal result per child
-assistant turn (`assistant_turn_id`), not a mutable latest-result slot. The
-composite child-thread/turn foreign key prevents assigning a report to a turn
-owned by another thread. Child/assistant-turn ownership cascades; nullable
+`thread_execution_reports` stores one immutable terminal result per admitted
+child execution, not a mutable latest-result slot. `execution_turn_id` is the
+first turn the run reserved, which may be a pending compaction rather than an
+assistant turn; `terminal_turn_id` is the turn the run ended on. The composite
+child-thread/turn foreign key prevents assigning a report to a turn owned by
+another thread. Child/turn ownership cascades; nullable
 caller thread/turn/card references use `SET NULL` so deleting the invocation
 does not erase the child's output. Soft deletion is enforced by live
 repository reads, not destructive report mutation. The initial table has no
@@ -228,18 +230,27 @@ The schema stays ordinary Postgres with no provider-specific auth coupling
 (identity is app-owned `public.users` keyed by WorkOS `external_id`). The Date
 vs string `mode` split is a known inconsistency, not a pattern to extend.
 
-### Frozen thread prompts
+### Prompt bakes
 
-The `threads_frozen_prompt` trigger rejects changes to any of the three bake
-fields (`composed_system_prompt`, `baked_skill_slugs`, `baked_tools`) once
-`baked_skill_slugs` is non-null (including `[]`). `baked_tools` (migration
-`0002_freeze_thread_tools.sql`) is untyped `jsonb`: the
-runtime domain (not this package) owns its shape (`Tool[]`). First bake
-remains a CAS across all three fields together; identical-value writes and
-unrelated updates remain legal. No compaction rebake exists. A future
-compaction feature must introduce one named thread-repository operation and
-its narrowly scoped database authorization together; never disable the
-trigger for ordinary thread updates.
+`prompt_bakes` rows are insert-only: the `prompt_bakes_insert_only` trigger
+rejects updates and direct deletes (a cascade from deleting the owner thread
+is allowed). `threads.initial_prompt_bake_id` and
+`turns.prompt_bake_id` are write-once pointers. A rebake inserts a new row and
+points a completed boundary turn at it; the runtime's `beginPromptEpoch` is the
+only operation that does so, and compaction is its caller. Never update a bake
+row or repoint a thread to change what a thread's requests send.
+
+### Pending placeholders
+
+A pending placeholder is a `turns` row with status `pending` and a role in
+`PENDING_PLACEHOLDER_ROLES` from `@meridian/contracts/threads` (today only
+`compaction`). [`pending-placeholder.ts`](../src/schema/pending-placeholder.ts)
+builds the SQL twin of that predicate from the contracts set, and the
+`turns_pending_placeholders` partial index uses it. The generated index SQL
+inlines the role list, so adding a placeholder role requires `pnpm
+db:generate` to rebuild the index. A pending compaction has no
+`compaction_model`; `turns_compaction_model_required` requires one only once it
+is complete.
 
 ### Retained Agent definitions
 

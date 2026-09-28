@@ -1,6 +1,6 @@
 /** A request boundary's compaction choice; committed with its selected leaf and inbox batch. */
 import type { Block, Turn } from "@meridian/contracts/threads";
-import type { GenerateRequest } from "../../gateway/index.js";
+import type { GenerateRequest, TokenizerFamily } from "../../gateway/index.js";
 import { estimateRequestTokens } from "./estimate.js";
 import { type CompactionPlan, planCompaction } from "./plan.js";
 
@@ -46,6 +46,7 @@ export function decideCompaction(input: {
   forcedDecision?: ForcedCompactionDecision;
   summaryReserveTokens: number;
   baseline: { inputTokens: number; messageCount: number } | null;
+  tokenizer: TokenizerFamily;
 }): CompactionDecision {
   const fitLimitTokens = input.forcedDecision?.fitLimitTokens ?? input.thresholdTokens;
   if (fitLimitTokens === null) return { kind: "generate" };
@@ -57,12 +58,14 @@ export function decideCompaction(input: {
     triggerTokens: fitLimitTokens,
     summaryReserveTokens: input.summaryReserveTokens,
     fixedOverheadTokens: estimateRequestTokens({
+      tokenizer: input.tokenizer,
       request: {
         ...input.request,
         messages: input.request.messages.filter((message) => message.role === "system"),
       },
       baseline: null,
     }),
+    tokenizer: input.tokenizer,
   });
   return plan.outcome === "planned" && plan.minimalTailFits
     ? {

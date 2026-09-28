@@ -124,6 +124,11 @@ export function createRuntimeHarness(
     summarizer: scriptedSummarizer(),
     gateway,
     toolExecutor: overrides.toolExecutor ?? createToolExecutor(toolRegistry),
+    documentRevisions: {
+      async current({ documentIds }) {
+        return new Map(documentIds.map((id) => [id, null]));
+      },
+    },
     referenceReader: {
       async read() {
         throw new Error("Reference reader not configured");

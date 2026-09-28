@@ -168,6 +168,7 @@ async function setup(
         {
           id: "gpt-4.1-mini",
           provider: "openai",
+          tokenizer: "o200k" as const,
           displayName: "Test model",
           contextWindow: 128_000,
           maxOutputTokens: 16_384,
@@ -498,7 +499,7 @@ describe("inbox drain", () => {
       },
       referenceReader: {
         async read(reference) {
-          return { uri: reference.uri, pages: [1] };
+          return { result: { uri: reference.uri, pages: [1] }, revision: null };
         },
       },
       onStream: async (call) => {

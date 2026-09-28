@@ -17,6 +17,16 @@ The registry validates every `explicit` model's TTL as five minutes or one hour 
 
 `ModelPricing.inputTierTokens` is the input size above which a provider reprices the whole request. The registry rejects a tier that is not positive or not below the context window. It flows to `ModelInfo`, and the runtime's default compaction trigger compacts before crossing it. No registered model sets one: every current model bills flat. Set it when registering a tiered model (GPT-6 Astra at 272k, Gemini 3.1 Pro at 200k).
 
+## Tokenizer family
+
+Every `RegisteredModel` declares a required `tokenizer` family (`anthropic`,
+`o200k`, `gemini`, or `deepseek`), carried onto `ModelInfo`. OpenRouter
+entries declare the family of the model they route to. The runtime's
+compaction estimator keys its CJK rate on this family and has no fallback. A
+family that undercounts the model lets a Chinese-heavy request cross the
+compaction trigger and price tier unseen; one that overcounts compacts early.
+Rates and their evidence live in the [runtime compaction context](../../.context/compaction.md).
+
 ## Context-window errors
 
 Every adapter normalizes a provider's context-window rejection to the one provider-neutral code `context_overflow`, non-retryable. Anthropic's `model_context_window_exceeded` stop reason is missing from the SDK union, so `anthropic/stream-collect.ts` matches the wire string and emits the error with the metered partial result; OpenAI Responses maps `context_length_exceeded`; the HTTP error mappers match context-length messages, not any message containing "token". The error event's `result` carries metered usage so the loop can bill it. The runtime turns `context_overflow` into one cold compaction and one retry per reply. With provider fallback enabled, the router yields a non-retryable error at once and only a retryable error moves to the next provider. A router that drops a non-retryable error ends the stream with no terminal event, and the loop never sees the overflow.

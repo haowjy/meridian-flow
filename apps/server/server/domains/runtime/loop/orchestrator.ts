@@ -58,6 +58,7 @@ import {
   meridianErrorFromSystem,
 } from "@meridian/contracts/interrupt";
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
+import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget, type TreeBudget } from "@meridian/contracts/spawn";
 import type {
@@ -69,6 +70,7 @@ import type {
 } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { BillingUsagePolicy } from "../../billing/index.js";
+import type { DocumentRevisions } from "../../context/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { AccountSkillInstallStore, AgentRevisionStore } from "../../packages/index.js";
 import { isCacheReset } from "../../threads/domain/cache-reset.js";
@@ -201,6 +203,7 @@ export interface OrchestratorDeps {
   gateway: LlmGateway;
   toolExecutor: ToolExecutor;
   referenceReader: ReferenceReader;
+  documentRevisions: DocumentRevisions;
   repos: OrchestratorRepositories;
   eventWriter: EventJournalWriter;
   headSeq(threadId: ThreadId): Promise<bigint>;
@@ -1074,12 +1077,14 @@ async function persistCommittedWriteResult(input: {
   threadId: ThreadId;
   block: Block;
   output: unknown;
+  documentRevision: DocumentRevisionEvidence;
 }): Promise<{ block: Block }> {
   const content = input.block.content as {
     toolCallId?: string;
     metadata?: Record<string, unknown>;
   } | null;
-  const metadata = content?.metadata ?? {};
+  const metadata = { ...content?.metadata };
+  metadata.documentRevisions = [input.documentRevision];
   const toolCallId = content?.toolCallId ?? "";
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
     const block = contentForBlockInput({
@@ -1288,7 +1293,10 @@ function createResponseScope(input: {
   allBlocks: Block[];
 }) {
   const { deps, threadId, turnId, allBlocks } = input;
-  const writes = new Map<string, Array<{ block: Block; writeId: string; settlementId: string }>>();
+  const writes = new Map<
+    string,
+    Array<{ block: Block; writeId: string; settlementId: string; uri: string | null }>
+  >();
   let id = input.responseId;
   let active = true;
   return {
@@ -1311,8 +1319,11 @@ function createResponseScope(input: {
         throw new Error(
           `Staged write result missing write or settlement id for ${metadata.documentId}.`,
         );
+      // Capture the source address before commit, not from a loosely typed block after apply.
+      const [{ uri }] = metadata.documentRevisions as [DocumentRevisionEvidence];
       const blocks = writes.get(metadata.documentId) ?? [];
       blocks.push({
+        uri,
         block: dispatched.block,
         writeId: metadata.writeId,
         settlementId: metadata.settlementId,
@@ -1333,6 +1344,12 @@ function createResponseScope(input: {
                       deps,
                       threadId,
                       block: write.block,
+                      documentRevision: {
+                        documentId,
+                        uri: write.uri,
+                        revision: settledReceipt(settled.receipts, documentId, write.settlementId)
+                          .revision,
+                      },
                       output: settledReceipt(settled.receipts, documentId, write.settlementId)
                         .result,
                     })

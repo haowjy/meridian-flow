@@ -36,6 +36,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/collab-domain.reverse-turn.db.test.ts",
   "apps/server/server/domains/collab/cross-work-merge-probe.db.test.ts",
   "apps/server/server/domains/collab/response-transaction-atomicity.db.test.ts",
+  "apps/server/server/domains/collab/document-revisions.db.test.ts",
   "apps/server/server/domains/collab/writer-ingress.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/context-fs.create-untitled.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/drizzle-store.db.test.ts",
@@ -127,10 +128,11 @@ export default defineProject({
     fileParallelism: workerDatabaseUrls.length > 0,
     maxWorkers: workerDatabaseUrls.length || 1,
     // Vitest's 5s default is too tight for the heavier real-Postgres suites, and a
-    // timed-out test's async DB work is NOT cancelled — it overlaps the next
-    // test's destructive reset and corrupts it. 30s matches the server/database
-    // unit configs. (#314)
+    // timed-out test or fixture hook's async DB work is NOT cancelled — it
+    // overlaps the next test's destructive reset and corrupts it. Give setup
+    // and cleanup the same 30s budget as test bodies. (#314)
     testTimeout: 30_000,
+    hookTimeout: 30_000,
     reporters: [
       "default",
       fileURLToPath(new URL("../../tools/ci/db-test-reporter.ts", import.meta.url)),

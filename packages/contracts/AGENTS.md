@@ -32,5 +32,10 @@ runtime shapes, and observability records.
 - `WorkSlug` proves ordinary slug grammar and field role only; UUID-shaped
   slugs are valid. Parsed URI `normalized` text is syntax, while stable
   real-Work serialization requires opaque project-resolved authority.
+- `PENDING_PLACEHOLDER_ROLES` in `threads/` is the one definition of a pending
+  placeholder (status `pending`, role in the set; today `compaction`). The
+  database's SQL predicate and partial index derive from it, and
+  `turn-metadata.ts` owns each role's interrupted copy. Add a role here, then
+  regenerate the index; never test placeholders with a local role check.
 - Keep types JSON-natural at boundaries.
 - Do not import server adapters, database clients, React, or provider SDKs.

@@ -28,6 +28,9 @@ import type { Usage } from "@meridian/contracts/runtime";
 
 export type ProviderOptions = Record<string, Record<string, unknown>>;
 
+/** Tokenizer family used for conservative model-input estimation. */
+export type TokenizerFamily = "anthropic" | "o200k" | "gemini" | "deepseek";
+
 /**
  * Declared LLM capability flags. Used by the orchestrator and context builder
  * to decide whether to include images, enable tool calling, etc. Each adapter
@@ -59,6 +62,8 @@ export interface PromptCacheDescriptor {
 export interface ModelInfo {
   /** Whole-request input repricing threshold, if the model has one. */
   inputTierTokens?: number;
+  /** Underlying tokenizer family; OpenRouter models declare their upstream family. */
+  tokenizer: TokenizerFamily;
   id: string;
   provider: string;
   displayName: string;

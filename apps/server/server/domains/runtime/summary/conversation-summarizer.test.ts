@@ -15,6 +15,7 @@ import { createConversationSummarizer } from "./conversation-summarizer.js";
 const threadModel: ModelInfo = {
   id: "writer-model",
   provider: "writer-provider",
+  tokenizer: "anthropic",
   displayName: "Writer",
   contextWindow: 10000,
   maxOutputTokens: 1000,
@@ -25,6 +26,7 @@ const cheapModel = {
   ...threadModel,
   id: "cheap-model",
   provider: "cheap-provider",
+  tokenizer: "deepseek" as const,
   contextWindow: 3400,
 };
 function reply(text = "Kept facts", changes: Partial<GenerateResult> = {}): GenerateResult {
@@ -292,7 +294,7 @@ describe("conversation summarizer", () => {
     const rig = setup({
       models: [threadModel, { ...cheapModel, contextWindow: 2400 }],
       async *events() {
-        yield { type: "end", result: reply("漢".repeat(300)) };
+        yield { type: "end", result: reply("漢".repeat(100)) };
       },
     });
     rig.input.projection = projection(["start ".repeat(225), "facts ".repeat(250)]);
@@ -432,9 +434,9 @@ describe("conversation summarizer", () => {
     });
     expect(outcome.modelResponses).toHaveLength(3);
     rig.requests.forEach((request, index) => {
-      expect(estimateRequestTokens({ request, baseline: null })).toBeLessThan(
-        cheapModel.contextWindow - 300,
-      );
+      expect(
+        estimateRequestTokens({ request, baseline: null, tokenizer: cheapModel.tokenizer }),
+      ).toBeLessThan(cheapModel.contextWindow - 300);
       if (index)
         expect(JSON.stringify(request)).toContain(
           `Prior context (running summary):\\nSummary ${index}`,

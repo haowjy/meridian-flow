@@ -140,6 +140,7 @@ describe("derivePrefixCacheState", () => {
         model: {
           id: MODEL,
           provider: "test-provider",
+          tokenizer: "o200k",
           displayName: "Writer model",
           contextWindow: 128_000,
           maxOutputTokens: 4_096,
@@ -181,6 +182,7 @@ describe("derivePrefixCacheState", () => {
         model: {
           id: MODEL,
           provider: "test",
+          tokenizer: "o200k",
           displayName: "test",
           contextWindow: 128000,
           maxOutputTokens: 4096,
@@ -224,6 +226,7 @@ describe("derivePrefixCacheState", () => {
         model: {
           id: MODEL,
           provider: "test-provider",
+          tokenizer: "o200k",
           displayName: "Writer model",
           contextWindow: 128_000,
           maxOutputTokens: 4_096,

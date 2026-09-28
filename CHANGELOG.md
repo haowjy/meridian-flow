@@ -9,6 +9,7 @@
 
 ### Added
 - Page the effective or inherited transcript by stable turn/block keys, split pages at prompt-epoch boundaries, and expose the authenticated writer transcript route.
+- Record atomic document revisions on agent reads, searches, references, and settled writes without adding model-visible text.
 - Summarize long chats with cached requests or rolling cheap-model summaries. Keep story facts and writer preferences.
 - Default compaction to the model's usable window, pricing tier, or 400,000-token ceiling.
 - Stop a running compaction and deliver messages queued during its summary afterward.
@@ -19,6 +20,12 @@
 
 ### Fixed
 - Settle orphaned primary assistant turns at startup and after a new run acquires its claim, keeping transcript anchors and fork cutoffs movable.
+- Give database fixture hooks the same timeout budget as test bodies to avoid overlapping resets.
+- Publish committed pulls even if the caller response aborts. Preserve live manifest read-your-writes.
+- Keep cold project bootstrap atomic while committing peer manifest dependencies independently.
+- Refresh search-only Work drafts before revision checks. Ignore documents removed from a Work.
+- Commit shared document pulls independently of chat transactions; preserve retries after failed pulls, including newer edits queued during a pull.
+- Settle direct-write tool results after their document commit instead of leaving successful edits marked staged.
 - Keep pending-placeholder roles and predicates in contracts, SQL in the database package, and interruption copy in the threads domain.
 - Retry failed warm summaries cold once. Bound summary output without changing cached thinking.
 - Preflight cold transcripts before paid calls. Excerpt large document reads and split large turns at blocks.
@@ -34,7 +41,7 @@
 - Leave a compaction pending for recovery when its live failure transaction cannot commit.
 - Development: reset worktree databases that already applied the earlier unreleased 0014 with `pnpm db:reset`.
 - Bill summary responses on success, failure and cancellation, once per paid call.
-- Include compaction-call costs in child reports, debit them against the shared tree budget, and probe CJK, image, and file estimates against live provider usage.
+- Include compaction-call costs in child reports and the shared tree budget; estimate CJK text with required tokenizer-family rates (Anthropic 3.0, measured `o200k` 1.1, Gemini 1.2, DeepSeek 0.8), and probe CJK, image, and file estimates against live provider usage.
 - Cache TTL starts at the provider attempt, not response persistence.
 - Saved-report repair preserves fork cutoffs and cross-thread history.
 - Dev CLI unwraps API transport responses. Thread creation and inspection work against the live stack.

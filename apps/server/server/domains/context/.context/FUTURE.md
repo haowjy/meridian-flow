@@ -1,7 +1,7 @@
 # domains/context — deferred / future work
 
-Durable scope this domain will grow into but hasn't yet. Each entry points to a
-tracking issue; details live there, not here. Delete an entry when it ships.
+Optional local improvements and future domain scope. Cross-cutting entries link
+to tracking issues. Delete an entry when it ships.
 
 ## Manuscript ordering & agent reorder tool
 
@@ -22,3 +22,9 @@ reorder port method + route, and an **agent reorder/move tool** (the AI
 co-authors the manuscript, so create/move become order-aware). Resolve the
 design question first — Scrivener-style explicit binder order for manuscript,
 and how the agent participates — via design-lead → tech-lead.
+
+## Batch revision availability lookups
+
+`document-revisions.ts` `current` calls `availability.lookup` once per
+document, though the port accepts a `documentIds` batch. Unmeasured; batch it
+if C5b's per-turn revision checks show the round trips.

@@ -21,6 +21,7 @@ describe("compaction successor measurements", () => {
         {
           id: "gpt-4.1-mini",
           provider: "openai",
+          tokenizer: "o200k" as const,
           displayName: "Fixture",
           contextWindow: 128_000,
           maxOutputTokens: 100,
@@ -114,13 +115,14 @@ describe("compaction successor measurements", () => {
       estimateRequestTokens({
         request: requestInHand as import("../gateway/index.js").GenerateRequest,
         baseline: null,
+        tokenizer: "o200k",
       }),
     );
     const successorRequest = gatewayFixture.requests[0];
     expect(successorRequest).toBeDefined();
     if (!successorRequest) throw new Error("Missing assembled successor request");
     expect(compacted.tokensAfter).toBe(
-      estimateRequestTokens({ request: successorRequest, baseline: null }),
+      estimateRequestTokens({ request: successorRequest, baseline: null, tokenizer: "o200k" }),
     );
   });
 });

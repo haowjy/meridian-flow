@@ -7,7 +7,7 @@ import { deflateSync } from "node:zlib";
 import type { GenerateRequest } from "../server/domains/runtime/gateway/index.js";
 import { createGatewayFromEnv } from "../server/domains/runtime/gateway/index.js";
 import {
-  CJK_CODE_POINT_TOKEN_MULTIPLIER,
+  CJK_CODE_POINT_TOKEN_RATES,
   estimateRequestTokens,
 } from "../server/domains/runtime/loop/compaction/index.js";
 
@@ -293,14 +293,21 @@ const requests = corpusFile.corpora.map((corpus) => ({
   corpus,
   request: buildRequest(corpus, png),
 }));
-const successes: Array<{ corpus: string; provider: string; requiredMultiplier: number }> = [];
+const successes: Array<{
+  corpus: string;
+  provider: string;
+  tokenizer: keyof typeof CJK_CODE_POINT_TOKEN_RATES;
+  requiredRate: number;
+}> = [];
 
-console.log(`CJK multiplier in source: ${CJK_CODE_POINT_TOKEN_MULTIPLIER}`);
-console.log("provider | corpus | model | estimate | reported input | estimate / report");
+console.log(`CJK token rates in source: ${JSON.stringify(CJK_CODE_POINT_TOKEN_RATES)}`);
+console.log(
+  "provider | tokenizer | corpus | model | estimate | reported input | estimate / report",
+);
 for (const [provider, key] of providerKeys) {
   if (!key) {
     for (const { corpus } of requests)
-      console.log(`${provider} | ${corpus.id} | — | — | — | no API key`);
+      console.log(`${provider} | — | ${corpus.id} | — | — | — | no API key`);
     continue;
   }
 
@@ -315,7 +322,7 @@ for (const [provider, key] of providerKeys) {
   const model = models.find((candidate) => candidate.capabilities.has("image_input")) ?? models[0];
   if (!model) {
     for (const { corpus } of requests)
-      console.log(`${provider} | ${corpus.id} | — | — | — | no registered model`);
+      console.log(`${provider} | — | ${corpus.id} | — | — | — | no registered model`);
     await cleanup?.();
     continue;
   }
@@ -331,19 +338,20 @@ for (const [provider, key] of providerKeys) {
       const estimate = estimateRequestTokens({
         request: { ...template, model: model.id },
         baseline: null,
+        tokenizer: model.tokenizer,
       });
       console.log(
-        `${provider} | ${corpus.id} | ${model.id} | ${estimate} | — | primer ${status(error)}`,
+        `${provider} | ${model.tokenizer} | ${corpus.id} | ${model.id} | ${estimate} | — | primer ${status(error)}`,
       );
       continue;
     }
-    const estimate = estimateRequestTokens({ request, baseline: null });
+    const estimate = estimateRequestTokens({ request, baseline: null, tokenizer: model.tokenizer });
     try {
       const result = await gateway.generate(request);
       const reported = result.usage.inputTokens;
       const ratio = reported === 0 ? "n/a" : (estimate / reported).toFixed(3);
       console.log(
-        `${provider} | ${corpus.id} | ${result.model} | ${estimate} | ${reported} | ${ratio}`,
+        `${provider} | ${model.tokenizer} | ${corpus.id} | ${result.model} | ${estimate} | ${reported} | ${ratio}`,
       );
       if (corpus.id === "image-heavy") {
         const withoutImages = {
@@ -360,8 +368,16 @@ for (const [provider, key] of providerKeys) {
             content: message.content.filter((part) => part.type !== "file"),
           })),
         };
-        const noImagesEstimate = estimateRequestTokens({ request: withoutImages, baseline: null });
-        const noFileEstimate = estimateRequestTokens({ request: withoutFile, baseline: null });
+        const noImagesEstimate = estimateRequestTokens({
+          request: withoutImages,
+          baseline: null,
+          tokenizer: model.tokenizer,
+        });
+        const noFileEstimate = estimateRequestTokens({
+          request: withoutFile,
+          baseline: null,
+          tokenizer: model.tokenizer,
+        });
         const [noImages, noFile] = await Promise.all([
           gateway.generate(withoutImages),
           gateway.generate(withoutFile),
@@ -382,25 +398,32 @@ for (const [provider, key] of providerKeys) {
       }
       if (corpus.id === "cjk-heavy" && reported > 0) {
         const chars = cjkCodePoints(request);
-        const base = estimate - chars * CJK_CODE_POINT_TOKEN_MULTIPLIER;
+        const currentRate = CJK_CODE_POINT_TOKEN_RATES[model.tokenizer];
+        const base = estimate - chars * currentRate;
         successes.push({
           corpus: corpus.id,
           provider,
-          requiredMultiplier: Math.max(0, (reported * 1.1 - base) / chars),
+          tokenizer: model.tokenizer,
+          requiredRate: Math.max(0, (reported * 1.1 - base) / chars),
         });
       }
     } catch (error) {
-      console.log(`${provider} | ${corpus.id} | ${model.id} | ${estimate} | — | ${status(error)}`);
+      console.log(
+        `${provider} | ${model.tokenizer} | ${corpus.id} | ${model.id} | ${estimate} | — | ${status(error)}`,
+      );
     }
   }
   await cleanup?.();
 }
 
-if (successes.length) {
-  const required = Math.max(...successes.map(({ requiredMultiplier }) => requiredMultiplier));
+for (const [tokenizer, rate] of Object.entries(CJK_CODE_POINT_TOKEN_RATES)) {
+  const measured = successes.filter((success) => success.tokenizer === tokenizer);
+  if (measured.length === 0) {
+    console.log(`${tokenizer} | current ${rate} | no live CJK usage; recommendation unavailable`);
+    continue;
+  }
+  const required = Math.max(...measured.map(({ requiredRate }) => requiredRate));
   console.log(
-    `Smallest CJK multiplier for 10% measured headroom: ${Math.ceil(required * 10) / 10}`,
+    `${tokenizer} | current ${rate} | recommended ${Math.ceil(required * 10) / 10} for 10% headroom (${measured.map(({ provider, corpus }) => `${provider}/${corpus}`).join(", ")})`,
   );
-} else {
-  console.log("No CJK provider usage was available; multiplier recommendation unavailable.");
 }

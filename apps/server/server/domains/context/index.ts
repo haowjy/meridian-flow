@@ -38,6 +38,7 @@ export {
 export * from "./corpus-import/index.js";
 export { createDocumentAddressResolver } from "./document-address.js";
 export { createDocumentLinkResolver } from "./document-link-resolution.js";
+export { createDocumentRevisions } from "./document-revisions.js";
 export * from "./figures/index.js";
 export type {
   AdapterFault,
@@ -91,6 +92,7 @@ export type {
   ResolveDocumentLinkInput,
   ResolvedDocumentLink,
 } from "./ports/document-link-resolver.js";
+export type { DocumentRevisions } from "./ports/document-revisions.js";
 export type {
   ProjectContextAvailabilityMutationPort,
   ProjectContextAvailabilityPort,

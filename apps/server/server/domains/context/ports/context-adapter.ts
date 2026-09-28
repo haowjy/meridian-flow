@@ -140,7 +140,7 @@ export interface ContextSchemeAdapter {
   ensureTrackedDocument(
     path: string,
     options?: ContextWriteOptions,
-  ): Promise<Result<ContextEnsureTrackedDocumentResult, AdapterFault>>;
+  ): Promise<Result<Omit<ContextEnsureTrackedDocumentResult, "uri">, AdapterFault>>;
   edit(
     path: string,
     command: ContextEditCommand,
