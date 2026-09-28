@@ -50,7 +50,8 @@ that safe:
   awaits one coalesced run that starts after its call. The in-flight snapshot
   may predate a writer edit the caller must observe.
 - **Timers survive failure.** Debounce and maximum timers clear only after a
-  pull commits. A failed pull leaves them armed; a fired handle is cleared so
+  pull commits with no newer run queued. An older commit cannot cancel retries
+  for newer edits. A failed pull leaves them armed; a fired handle is cleared so
   the next update re-arms the maximum bound. Background failures go to
   `BranchPullDiagnostics.backgroundFailed`.
 - **Provisioning splits authority from infrastructure.**

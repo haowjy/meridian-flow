@@ -111,6 +111,8 @@ export function createBranchPullService(input: {
           }
         })
         .then(() => {
+          // A queued snapshot may include newer edits; its retries still need these timers.
+          if (entry.queued) return;
           if (entry.debounce) clearTimeout(entry.debounce);
           if (entry.max) clearTimeout(entry.max);
           entry.debounce = undefined;

@@ -21,7 +21,7 @@
 - Publish committed pulls even if the caller response aborts. Preserve live manifest read-your-writes.
 - Keep cold project bootstrap atomic while committing peer manifest dependencies independently.
 - Refresh search-only Work drafts before revision checks. Ignore documents removed from a Work.
-- Commit shared document pulls independently of chat transactions; preserve retries after failed pulls.
+- Commit shared document pulls independently of chat transactions; preserve retries after failed pulls, including newer edits queued during a pull.
 - Settle direct-write tool results after their document commit instead of leaving successful edits marked staged.
 - Keep pending-placeholder roles and predicates in contracts, SQL in the database package, and interruption copy in the threads domain.
 - Retry failed warm summaries cold once. Bound summary output without changing cached thinking.

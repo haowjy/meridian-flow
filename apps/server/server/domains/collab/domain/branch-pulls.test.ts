@@ -167,6 +167,65 @@ describe("BranchPullService", () => {
     }
   });
 
+  it("keeps newer-update timers armed when a queued pull fails after an older pull commits", async () => {
+    vi.useFakeTimers();
+    const live = docWithText("old");
+    const draft = new Y.Doc({ gc: false });
+    try {
+      const captured = deferred();
+      const commit = deferred();
+      let pulls = 0;
+      let firstTransaction = true;
+      const service = createBranchPullService({
+        outsideTransaction: (operation) => operation(),
+        rootTransaction: async (operation) => {
+          const result = await operation();
+          if (firstTransaction) {
+            firstTransaction = false;
+            captured.resolve();
+            await commit.promise;
+          }
+          return result;
+        },
+        liveCoordinator: coordinatorFor(live),
+        branchCoordinator: {
+          pullFromDoc: async (_branchId: string, upstream: Y.Doc) => {
+            if (++pulls === 2) throw new Error("queued pull failed");
+            Y.applyUpdate(draft, Y.encodeStateAsUpdate(upstream));
+            return emptyYjsUpdate();
+          },
+        } as unknown as BranchCoordinator,
+        branches: {
+          listActiveWorkDraftBranchIds: async () => ["work"],
+          ensureWorkDraftBranch: async () => ({ branchId: "work" }),
+          ensureThreadPeerBranch: async () => ({ branchId: "peer" }),
+        },
+        diagnostics: { backgroundFailed: () => {} },
+        debounceMs: 10,
+        maxDebounceMs: 50,
+      });
+      const older = service.flushLivePull(DOCUMENT_ID);
+      await captured.promise;
+      live.getText("content").insert(3, " and newer");
+      service.scheduleLivePull(DOCUMENT_ID);
+      const queued = expect(service.flushLivePull(DOCUMENT_ID)).rejects.toThrow(
+        "queued pull failed",
+      );
+      commit.resolve();
+      await older;
+      await queued;
+      expect(draft.getText("content").toString()).toBe("old");
+      expect(vi.getTimerCount()).toBe(2);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(draft.getText("content").toString()).toBe("old and newer");
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      live.destroy();
+      draft.destroy();
+      vi.useRealTimers();
+    }
+  });
+
   it("reports timer failures and rearms the maximum debounce for later updates", async () => {
     vi.useFakeTimers();
     try {
@@ -288,4 +347,12 @@ function emptyYjsUpdate(): Uint8Array {
   } finally {
     doc.destroy();
   }
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 }
