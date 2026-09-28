@@ -31,7 +31,7 @@ export function InheritedSourceHeader({
       <GitFork aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
       <span className="flex min-w-0 items-baseline gap-1">
         <span className="shrink-0">
-          <Trans>From</Trans>
+          <Trans>From</Trans>{" "}
         </span>
         <SourceChatLink threadId={ownerThreadId} title={source.title} trashed={source.trashed} />
       </span>

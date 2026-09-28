@@ -20,7 +20,7 @@ export function ThreadReferenceChip({ reference }: { reference: ThreadReference 
     >
       <MessagesSquare aria-hidden className="size-3.5 shrink-0" />
       <span className="shrink-0">
-        <Trans>From</Trans>
+        <Trans>From</Trans>{" "}
       </span>
       <SourceChatLink threadId={reference.threadId} title={source.title} trashed={source.trashed} />
     </span>

@@ -97,7 +97,7 @@ describe("SpawnReportCard", () => {
       ),
     );
     const line = host.querySelector("[data-spawn-source]");
-    expect(line?.textContent).toBe("FromChapter 12 plan");
+    expect(line?.textContent).toBe("From Chapter 12 plan");
     await act(async () =>
       root.render(
         <TooltipProvider>

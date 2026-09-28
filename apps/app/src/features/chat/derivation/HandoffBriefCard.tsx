@@ -130,7 +130,7 @@ export function HandoffBriefCard({
           {seed ? (
             <p className="flex min-w-0 items-baseline gap-1 text-xs text-muted-foreground">
               <span className="shrink-0">
-                <Trans>Handed off from</Trans>
+                <Trans>Handed off from</Trans>{" "}
               </span>
               <SourceChatLink
                 threadId={seed.sourceThreadId}
