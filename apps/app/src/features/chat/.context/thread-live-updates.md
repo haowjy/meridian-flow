@@ -59,3 +59,14 @@ activates first:
 Do not reintroduce a mount-scoped boolean that blocks after the first run, and
 do not move the snapshot fetch behind a cache window. Either one breaks live
 updates for a background child's report.
+
+## Live CUSTOM events
+
+`core/session/reduce-turn-event.ts` reduces AG-UI `CUSTOM` frames by name.
+Every name the server's orchestrator event projector emits has an explicit
+branch there: apply it to the store, leave it to the snapshot sync above
+(`meridian.block.upserted`, `meridian.inbox.changed`, `meridian.usage`), or
+ignore it (`meridian.agent.spawn`, whose source the spawn card already carries
+in its durable props). An unmatched name falls through to an opaque custom
+block on the streaming reply and renders "Unknown component". When the server
+adds a CUSTOM name, add its branch and a reducer test in the same change.

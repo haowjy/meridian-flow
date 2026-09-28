@@ -89,6 +89,11 @@
   caches first-birth replay per checkpoint floor.
   Trail rows persist every edit without classification; missing evidence
   suppresses elevation and never blocks Apply.
+- **Only a finished turn auto-pushes**: the trail-work claim
+  (`adapters/drizzle-turn-trail-work.ts`) settles pending work `no_op` when
+  its turn ended `error` or `cancelled`, so a failed reply's draft waits for
+  the writer's Apply. This depends on the read model never rewriting a failed
+  turn's status (see the threads read-model projector).
 - **Writer Apply is branch-scoped, not preview-scoped**:
   `DraftApplyRequest` names only the draft. The server pushes the
   complete current branch, including writer rows created after preview.

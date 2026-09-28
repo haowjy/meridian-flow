@@ -9,8 +9,8 @@ Commands are writer-only, not tools.
 `PendingInboxItem.control` carries that body on control rows. `summary` is the
 writer label ("Compact conversation", "Undo compaction", or "Write handoff brief"). Snapshot pending state and
 `inbox.changed` share the same schema. A queued control has no transcript
-position. It is rendered at the transcript tail until a divider with
-`metadata.controlMessageId` replaces it. An autocompaction may satisfy the row,
+position until a divider with `metadata.controlMessageId` (or, for undo, a U
+naming it) answers it. An autocompaction may satisfy the row,
 identified by `metadata.satisfiesControlId`.
 
 Manual dividers use role `compaction`, `trigger: "manual"`, and ordinary turn
@@ -48,5 +48,8 @@ Completed U is a system turn with `metadata.kind: "compaction_undo"`,
 reason (the server's `CompactionUndoFailureReasonCodec`) and `turn.error` holds
 writer copy.
 The snapshot always carries `compactionUndo`: null, or
-`{ turnId, availability: "likely" | "would_recompact" }`. Availability compares
-C's pre-cut size with the current trigger; actual execution remeasures.
+`{ turnId, availability: "likely" | "would_recompact" }`. The server owns
+availability: it estimates the restored size from C's pre-cut size plus growth
+since C, reads null while any compaction is pending, and keeps
+`would_recompact` after a refusal at an unchanged trigger. Clients follow it
+without correction; actual execution remeasures.

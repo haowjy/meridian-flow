@@ -64,7 +64,7 @@ lock; fork-local turns continue after their cutoff position.
 When the model needs to learn about a change mid-thread, that is a system
 notification folded into conversation (the existing inbox/notice path), never
 a prompt or tool-list change — see the
-[runtime contract](../../runtime/.context/CONTEXT.md)
+[runtime request assembly](../../runtime/.context/request-assembly.md)
 for the tool-freeze mechanics.
 
 `domain/turn-metadata.ts` is the single home for turn-metadata codecs,
@@ -95,7 +95,7 @@ owns only the SQL predicate beside its partial index.
   (text, reasoning, tool_use, tool_result, image, file, custom) and model
   responses with token/cost rollups and per-call latency, time to first token,
   and generation duration (measured by the gateway attempt loop; see the
-  [runtime context](../../runtime/.context/CONTEXT.md)).
+  [gateway context](../../runtime/gateway/.context/CONTEXT.md)).
   `ModelResponseRepository.sumUsageByThread` returns prompt/cache/output token sums
   for every response billed to a thread, including all turn branches. It also
   carries the prompt total and number of calls whose provider reported cache
@@ -156,7 +156,7 @@ owns only the SQL predicate beside its partial index.
   `idempotency_key`, nullable `delivered_at`), drained by the runtime's `Inbox`
   port. The writer's own turns render inline with a live queued/waiting status
   (not a separate tray) from the runtime's [classified pending
-  projection](../../runtime/.context/CONTEXT.md), not this storage queue alone.
+  projection](../../runtime/.context/delivery.md), not this storage queue alone.
   `thread_run_leases` is the queryable run lease paired with the runtime's
   session advisory lock (`phase`, `cancel_requested`, `expires_at`, the run's
   bound `turn_id`, and its last dispatched `current_tool`). Run liveness is
@@ -202,10 +202,21 @@ owns only the SQL predicate beside its partial index.
   streaming, tool call lifecycle, usage, permissions). `subagent.activity`
   maps to the `meridian.subagent.activity` custom frame carrying the event's
   recomputed `ThreadActivity`; the producer computed it at emit time so the
-  projector stays a pure function of the journal.
+  projector stays a pure function of the journal. **Every CUSTOM name this
+  projector emits needs an explicit client decision** in the app's
+  `core/session/reduce-turn-event.ts` (apply, refetch, or ignore) and a
+  reducer test. An unknown name falls through to an opaque custom block in the
+  streaming reply, which renders "Unknown component"; a server test that the
+  event is projected does not catch that.
 - **Read-model projector** — synchronous in-transaction transform from durable
   `turn.created` / `model.response_received` / `block.upserted` events to
   `turns`, `model_responses`, `turn_blocks`, and recomputed token/cost rollups.
+  A terminal event updates only its own turn; a later turn never rewrites an
+  earlier one's status, so a failed reply stays `error` after the writer sends
+  again. Whether its error is current is a render-time derivation (the client's
+  `endsTranscript`), never a stored rewrite. Status-sensitive readers (compaction
+  plans, undo baselines, fork cutoffs, the transcript read, trail auto-push)
+  depend on this.
 - **Thread snapshot builder** — reads rows, live state, materialized watermark, and journal head in one root repeatable-read view. All participating adapters honor the ambient transaction; blocks and responses are bulk-read per thread. Assembles the full `ThreadSnapshotResponse`
   (thread + turns + blocks + responses + live state) for initial page load.
   Subagent snapshots include an `ancestors` chain ordered root-first through
@@ -261,7 +272,7 @@ rows: their thread FK `KEY SHARE` does not conflict with `NO KEY UPDATE`.
 They must not acquire a thread mutation/advisory lock or append its journal in
 that transaction. Runtime delivery's advisory lock precedes its thread row
 lock; the long-lived run claim is separate and acquired outside these DB
-transactions. See the [runtime contract](../../runtime/.context/CONTEXT.md).
+transactions. See [runtime delivery](../../runtime/.context/delivery.md).
 
 ## Contracts (ports)
 
@@ -635,7 +646,7 @@ key behind active cursors and is forbidden by the runtime's append protocol.
 The sole allowed additions are to the live unsettled turn before it joins the
 settled prefix. A dead unsettled turn joins the settled prefix only when
 runtime orphan repair finalizes it; see
-[placeholders and recovery](../../runtime/.context/compaction.md).
+[runtime recovery](../../runtime/.context/recovery.md).
 
 ## Connected conversation authority
 
