@@ -16,7 +16,7 @@ import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
 import { estimateRequestTokens } from "./compaction/estimate.js";
-import { projectActiveHistory } from "./compaction/project.js";
+import { projectActiveHistoryWithBakes } from "./compaction/project.js";
 import { createOrchestrator } from "./orchestrator.js";
 import { createPrefixCacheStateService } from "./prefix-cache-state.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
@@ -333,7 +333,12 @@ else
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
       const thread = (await rig.repos.threads.findById(rig.threadId))!;
       const context = await loadThreadConversationContext(rig.repos, thread);
-      const projected = projectActiveHistory(context.turns, context.blocks, thread.ref);
+      const projected = await projectActiveHistoryWithBakes(
+        context.turns,
+        context.blocks,
+        thread.ref,
+        rig.repos.promptBakes,
+      );
       expect(
         projected.turns
           .filter((turn) => pins.some((pin) => pin.userTurnId === turn.id))
@@ -552,7 +557,12 @@ else
       });
       async function projected(fork: typeof source) {
         const context = await loadThreadConversationContext(rig.repos, fork);
-        return projectActiveHistory(context.turns, context.blocks, fork.ref);
+        return await projectActiveHistoryWithBakes(
+          context.turns,
+          context.blocks,
+          fork.ref,
+          rig.repos.promptBakes,
+        );
       }
       const before = JSON.stringify(await projected(forkBefore));
       rig.deps.documentRevisions.current = async ({ documentIds }) =>

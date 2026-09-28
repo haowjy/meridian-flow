@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Preserve bake-gated history guidance in cold handoff summaries; classify completed and failed briefs as system history.
+
 - Preserve structured inspection errors, including unavailable bound models.
 
 - Verify spawn, fork and handoff preserve the original lineage root through real entry points.

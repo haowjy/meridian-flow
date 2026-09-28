@@ -2,8 +2,10 @@
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
+import { handoffSeedMetadata } from "../../threads/index.js";
 import type { InternalThreadRepositories } from "../../threads/ports/repositories.js";
 import { collectRecordedDocuments, planModelElisions } from "../loop/compaction/elide.js";
+import { handoffBriefFailedCopy, handoffSeedBlock } from "../loop/handoff-seed.js";
 import {
   historyDocumentText,
   searchDocumentText,
@@ -216,6 +218,52 @@ export function defineThreadHistoryContract(
       expect(all).toContain("thinking-secret");
       expect(all).toContain("system: compaction");
     });
+    it.each([
+      "complete",
+      "error",
+    ] as const)("labels C7b's %s handoff seed as system history", async (status) => {
+      const f = await fixture();
+      const seed = await f.turn(
+        "system",
+        handoffSeedMetadata({
+          sourceThreadId: f.thread.id,
+          sourceRef: f.thread.ref!,
+          cutoffTurnId: crypto.randomUUID(),
+          controlMessageId: crypto.randomUUID(),
+        }),
+        status,
+      );
+      const brief =
+        status === "complete" ? { text: "The gate is open.", model: "summary" } : undefined;
+      const card = handoffSeedBlock(seed, brief);
+      await f.block(seed, "custom", card.content);
+      if (status === "error")
+        await f.repos.turns.updateStatus(seed.id, { status, error: handoffBriefFailedCopy });
+      expect(output(await f.read())).not.toContain("handoff-brief");
+      const text = output(await f.read({ include: ["system_messages"] }));
+      expect(text).toContain(`[${seed.position}.0] system: fork_or_handoff_seed`);
+      expect(text).toContain('"kind":"handoff-brief"');
+      expect(text).toContain(
+        status === "complete" ? "The gate is open." : "No brief is available.",
+      );
+      if (status === "error") expect(text).toContain(`error: ${handoffBriefFailedCopy}`);
+    });
+
+    it("keeps a failed reply labelled assistant with its error after a later writer turn", async () => {
+      const f = await fixture();
+      const failed = await f.turn("assistant", null, "error");
+      await f.block(failed, "text", "Partial scene.");
+      await f.repos.turns.updateStatus(failed.id, {
+        status: "error",
+        error: "provider unavailable",
+      });
+      await f.block(await f.turn("user", null, "complete", "writer"), "text", "Move on.");
+      const text = output(await f.read({ order: "oldest_first" }));
+      expect(text).toContain(`[${failed.position}.0] assistant`);
+      expect(text).toContain("Partial scene.\nerror: provider unavailable");
+      expect(text).toContain("Move on.");
+    });
+
     it("segment headers identify Agent and bake, system_prompt appears once on each segment page", async () => {
       const f = await fixture();
       const t = await f.turn();

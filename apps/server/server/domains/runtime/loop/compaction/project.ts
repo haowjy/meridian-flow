@@ -107,7 +107,7 @@ function summaryTurn(
 }
 
 /** Projects the latest complete compaction using the owning thread's model-visible handle. */
-export function projectActiveHistory(
+function projectActiveHistory(
   effectiveTurns: readonly Turn[],
   effectiveBlocks: readonly Block[],
   threadRef: string | null,
