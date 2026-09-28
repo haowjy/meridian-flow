@@ -66,7 +66,10 @@ seed; until it runs it waits at the tail as a queued control, withdrawable,
 and the card hides Retry (the server refuses a second). The new seed appears
 at the leaf when the Retry runs; a sent turn is never mutated. After Stop,
 keyboard focus lands on Retry (`data-focus-landing`). The source's name links
-back to it and says when it is in the trash. A writer message sent during the
+back to it and says when it is in the trash. S freezes the source's title
+(`turn.metadata.sourceTitle`, projected to the block's `props.sourceTitle`)
+for display only, so a trashed source reads "<title> (in the trash)"; the
+optimistic seed carries the intent's title. A writer message sent during the
 brief chains after S and shows Queued.
 
 ## The inherited view
@@ -94,10 +97,13 @@ the prefix ahead of the fork's own turns and marks those rows `inherited`:
 A spawned child's seed message is an inbox delivery, never a bubble, so its
 `thread-reference` blocks get a `thread-reference` row: a chip, "From
 <source>", at the top of the child's chat. The parent's spawn card names the
-same source from `fromThreadId` on the `meridian.agent.spawn` frame, which
-`useThreadActivity` records (the subscription's catch-up replays it after a
-reload). The turn reducer skips that frame: it is read-model state, never a
-transcript block.
+same source from its own invocation-card props (`fromThreadId`,
+`fromThreadTitle`), written with the card's first write and kept by the report
+update, so a reload's snapshot renders it with no journal replay. The
+`meridian.agent.spawn` frame arrives just before the card, with nothing to
+hang its source on, so nothing on the client reads it; the turn reducer skips
+it. `fromThreadRef` is a model handle and
+never renders.
 
 `SourceChatLink` is the one door to a source chat. The current title wins over
 the frozen one. A primary in the project's chat list is live; anything else

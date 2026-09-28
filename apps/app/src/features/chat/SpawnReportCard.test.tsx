@@ -15,9 +15,16 @@ vi.mock("@/rich-content/Markdown", () => ({
   Markdown: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
+const source = vi.hoisted(() => ({ trashed: false }));
+// A trashed source's current title is unreadable, so the frozen one the card passes stands.
 vi.mock("./derivation/SourceChatLink", () => ({
-  useSourceThread: () => ({ title: "Chapter 12 plan", trashed: false }),
-  SourceChatLink: ({ title }: { title: string }) => <span data-source-link>{title}</span>,
+  useSourceThread: (_id: string, frozenTitle: string | null) => ({
+    title: source.trashed ? frozenTitle : "Chapter 12 plan",
+    trashed: source.trashed,
+  }),
+  SourceChatLink: ({ title, trashed }: { title: string | null; trashed: boolean }) => (
+    <span data-source-link>{trashed ? `${title} (in the trash)` : title}</span>
+  ),
 }));
 
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -50,6 +57,7 @@ describe("SpawnReportCard", () => {
   let root: Root;
 
   beforeEach(() => {
+    source.trashed = false;
     host = document.createElement("div");
     document.body.append(host);
     root = createRoot(host);
@@ -91,13 +99,31 @@ describe("SpawnReportCard", () => {
             title={null}
             status="running"
             childThreadId="child-1"
-            fromThreadId="source"
+            from={{ threadId: "source", title: "Chapter 12 plan" }}
           />
         </TooltipProvider>,
       ),
     );
     const line = host.querySelector("[data-spawn-source]");
     expect(line?.textContent).toBe("From Chapter 12 plan");
+    source.trashed = true;
+    await act(async () =>
+      root.render(
+        <TooltipProvider>
+          <SpawnReportCard
+            deliveryMode="direct"
+            agentName="Critic"
+            title={null}
+            status="completed"
+            childThreadId="child-1"
+            from={{ threadId: "source", title: "Chapter 12 plan" }}
+          />
+        </TooltipProvider>,
+      ),
+    );
+    expect(host.querySelector("[data-spawn-source]")?.textContent).toBe(
+      "From Chapter 12 plan (in the trash)",
+    );
     await act(async () =>
       root.render(
         <TooltipProvider>

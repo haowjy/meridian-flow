@@ -59,7 +59,8 @@ export function HandoffBriefCard({
 }: HandoffBriefCardProps) {
   const seed = readHandoffSeed(turn);
   const view = briefCardView({ turn, latest, retryPending, stopping, phase });
-  const source = useSourceThread(seed?.sourceThreadId ?? "", null);
+  // The title frozen on S stands in until the current one is known, and names a trashed source.
+  const source = useSourceThread(seed?.sourceThreadId ?? "", seed?.sourceTitle ?? null);
   const sectionRef = useRef<HTMLElement>(null);
   const focusWithin = useFocusWithinRow(sectionRef);
   // The Stop flag outlives the seed: a stopped or finished brief says what it is.
@@ -68,7 +69,7 @@ export function HandoffBriefCard({
       ? t`Stopping the handoff brief`
       : stateTitle(view.state, view.running);
   const ended = view.state === "failed" || view.state === "stopped";
-  // The seed names its source by ref only; a trashed source's title is unreadable.
+  // For a source that was untitled when S was created: refs are never writer copy.
   const sourceFallbackName = t`the source chat`;
 
   return (

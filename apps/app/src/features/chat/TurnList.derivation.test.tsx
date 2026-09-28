@@ -311,6 +311,7 @@ describe("TurnList brief card", () => {
     const optimistic = optimisticHandoffSeed({
       threadId: "fork",
       sourceThreadId: "source",
+      sourceTitle: "Chapter 12 plan",
       cutoffTurnId: "cut",
       createdAt: "2026-01-01T00:00:00Z",
     });
@@ -328,6 +329,7 @@ describe("TurnList brief card", () => {
     const optimistic = optimisticHandoffSeed({
       threadId: "fork",
       sourceThreadId: "source",
+      sourceTitle: "Chapter 12 plan",
       cutoffTurnId: "cut",
       createdAt: "2026-01-01T00:00:00Z",
     });

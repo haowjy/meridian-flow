@@ -1,11 +1,14 @@
-/** Invocation card block: joins live activity and the saved report source to the launch card. */
+/**
+ * Invocation card block: joins live activity and the saved report source to the
+ * launch card. The card's `from` source is durable on its props from the first
+ * write, so a reload renders it from the snapshot alone.
+ */
 
 import { parseInvocationCard } from "@meridian/contracts/components";
 import type { ComponentBlockProps } from "./component-registry";
 import { reportPersistedContractFailure } from "./persisted-contract-debug";
 import { SpawnReportCard } from "./SpawnReportCard";
 import { useSubagentRun } from "./subagent/ActivityContext";
-import { useSpawnSource } from "./useThreadActivity";
 
 export function HelperResultBlock({ content, invocationResult, threadId }: ComponentBlockProps) {
   const props = parseInvocationCard(content);
@@ -13,7 +16,6 @@ export function HelperResultBlock({ content, invocationResult, threadId }: Compo
     reportPersistedContractFailure({ contract: "invocation_card", threadId });
   }
   const run = useSubagentRun({ threadId: props?.childThreadId ?? "" });
-  const fromThreadId = useSpawnSource(props?.childThreadId ?? null);
   if (!props) return null;
   const liveTool = run?.liveTool ?? null;
   const savedReport =
@@ -53,7 +55,11 @@ export function HelperResultBlock({ content, invocationResult, threadId }: Compo
       directResult={invocationResult}
       savedReport={savedReport}
       run={run}
-      fromThreadId={fromThreadId}
+      from={
+        props.fromThreadId
+          ? { threadId: props.fromThreadId, title: props.fromThreadTitle ?? null }
+          : null
+      }
     />
   );
 }

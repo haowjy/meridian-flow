@@ -22,6 +22,7 @@ const seed = (status: string, extra: Record<string, unknown> = {}) =>
       derivation: "handoff",
       sourceThreadId: "source",
       sourceRef: "c1",
+      sourceTitle: "Chapter 12 plan",
       cutoffTurnId: "cut",
       controlMessageId: "k",
     },
@@ -48,6 +49,7 @@ describe("readHandoffSeed", () => {
     expect(readHandoffSeed(seed("pending"))).toEqual({
       sourceThreadId: "source",
       sourceRef: "c1",
+      sourceTitle: "Chapter 12 plan",
       cutoffTurnId: "cut",
       controlMessageId: "k",
     });
@@ -115,12 +117,16 @@ describe("optimisticHandoffSeed", () => {
     const optimistic = optimisticHandoffSeed({
       threadId: "t",
       sourceThreadId: "source",
+      sourceTitle: "Chapter 12 plan",
       cutoffTurnId: "cut",
       createdAt: "2026-01-01T00:00:00Z",
     });
     expect(isOptimisticSeed(optimistic)).toBe(true);
     expect(isOptimisticSeed(seed("pending"))).toBe(false);
-    expect(readHandoffSeed(optimistic)?.sourceThreadId).toBe("source");
+    expect(readHandoffSeed(optimistic)).toMatchObject({
+      sourceThreadId: "source",
+      sourceTitle: "Chapter 12 plan",
+    });
     expect(view(optimistic).state).toBe("generating");
   });
 });

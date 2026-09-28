@@ -18,6 +18,8 @@ import { SubagentRow, SubagentToolLine } from "./subagent/SubagentRow";
 /** Where a background run's saved report lives; read only once the writer expands the card. */
 export type SavedReportSource = { threadId: string; childThreadId: string; execution: string };
 
+export type SpawnSource = { threadId: string; title: string | null };
+
 type Props = {
   agentName: string;
   title: string | null;
@@ -32,8 +34,11 @@ type Props = {
   savedReport?: SavedReportSource | null;
   liveTool?: string | null;
   run?: SubagentRun;
-  /** The conversation the spawn named with `from`, when known. */
-  fromThreadId?: string | null;
+  /**
+   * The conversation the spawn named with `from`, and its title frozen at
+   * spawn (null for an untitled chat). The ref is a model handle, never shown.
+   */
+  from?: SpawnSource | null;
 };
 
 export function SpawnReportCard({
@@ -50,7 +55,7 @@ export function SpawnReportCard({
   savedReport = null,
   liveTool,
   run: suppliedRun,
-  fromThreadId = null,
+  from = null,
 }: Props) {
   const [expanded, setExpanded] = useSubagentDisclosure(
     childThreadId ? `run:${childThreadId}` : `execution:${savedReport?.execution ?? "unknown"}`,
@@ -102,7 +107,7 @@ export function SpawnReportCard({
           ) : undefined
         }
       />
-      {fromThreadId ? <SpawnSourceLine threadId={fromThreadId} /> : null}
+      {from ? <SpawnSourceLine source={from} /> : null}
       {expanded && expandable ? (
         <div className="mt-[var(--chat-space-block)] pl-[calc(1.5rem+var(--chat-space-row))] text-sm">
           {foreground && directResult ? (
@@ -148,8 +153,9 @@ function SavedReportBody({ source }: { source: SavedReportSource }) {
 }
 
 /** "From <source>": the earlier conversation this subagent was pointed at. */
-function SpawnSourceLine({ threadId }: { threadId: string }) {
-  const source = useSourceThread(threadId, null);
+function SpawnSourceLine({ source: { threadId, title } }: { source: SpawnSource }) {
+  // The frozen title stands in until the current one is known, and names a trashed source.
+  const source = useSourceThread(threadId, title);
   return (
     <p
       data-spawn-source={threadId}

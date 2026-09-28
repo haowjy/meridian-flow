@@ -20,6 +20,7 @@
 - Add `/compact` to the composer. Queued compactions, undos, and handoff brief retries show at once at the transcript tail or on their divider, and can be withdrawn in place.
 - Point spawned agents at connected prior work without copying history; freeze reference text and read instructions, including stopped handoffs.
 - Freeze handoff source titles on seeds and brief cards, and keep spawn source provenance on durable invocation cards.
+- A handed-off chat names a trashed source by its title, and a spawn card names its `from` chat straight from the card after a reload.
 - Treat a null spawn source as omitted.
 
 - Preserve bake-gated history guidance in cold handoff summaries; classify completed and failed briefs as system history.

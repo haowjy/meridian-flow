@@ -14,10 +14,24 @@ vi.mock("@/rich-content/Markdown", () => ({
   Markdown: ({ children }: { children: ReactNode }) => <div data-markdown>{children}</div>,
 }));
 const source = vi.hoisted(() => ({ trashed: false as boolean | null }));
+// A trashed source's current title is unreadable, so the frozen one the card passes stands.
 vi.mock("./SourceChatLink", () => ({
-  useSourceThread: () => ({ title: "Chapter 12 plan", trashed: source.trashed }),
-  SourceChatLink: ({ title, trashed }: { title: string; trashed: boolean | null }) => (
-    <span data-source-link>{trashed ? `${title} (in the trash)` : title}</span>
+  useSourceThread: (_id: string, frozenTitle: string | null) => ({
+    title: source.trashed ? frozenTitle : "Chapter 12 plan",
+    trashed: source.trashed,
+  }),
+  SourceChatLink: ({
+    title,
+    trashed,
+    fallbackName,
+  }: {
+    title: string | null;
+    trashed: boolean | null;
+    fallbackName: string;
+  }) => (
+    <span data-source-link>
+      {trashed ? `${title ?? fallbackName} (in the trash)` : (title ?? fallbackName)}
+    </span>
   ),
 }));
 
@@ -64,6 +78,7 @@ function seed(status: string, extra: Record<string, unknown> = {}): Turn {
       derivation: "handoff",
       sourceThreadId: "source",
       sourceRef: "c1",
+      sourceTitle: "Chapter 12 plan",
       cutoffTurnId: "cut",
       controlMessageId: "k",
     },
@@ -185,12 +200,26 @@ describe("HandoffBriefCard", () => {
     expect(button("Retry the handoff brief")).toBeUndefined();
   });
 
-  it("names a trashed source as in the trash", async () => {
+  it("names a trashed source by the title frozen on the seed, never its ref", async () => {
     source.trashed = true;
     await render({ turn: seed("complete") });
     expect(host.querySelector("[data-source-link]")?.textContent).toBe(
       "Chapter 12 plan (in the trash)",
     );
+    const untitled = seed("complete", {
+      metadata: {
+        kind: "derivation_seed",
+        derivation: "handoff",
+        sourceThreadId: "source",
+        sourceRef: "c1",
+        sourceTitle: null,
+      },
+    });
+    await render({ turn: untitled });
+    expect(host.querySelector("[data-source-link]")?.textContent).toBe(
+      "the source chat (in the trash)",
+    );
+    expect(host.textContent).not.toContain("c1");
   });
 
   it("carries no live region: the global announcer speaks its changes", async () => {

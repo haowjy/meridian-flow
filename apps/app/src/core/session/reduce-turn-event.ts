@@ -1057,8 +1057,8 @@ export function applyAguiEventToStore(
       if (event.name === "meridian.usage" || event.name === "meridian.permission.denied") return;
       // Subagent activity is live read-model state consumed via ThreadLiveState;
       // it is not transcript content, so it never becomes a turn block. The
-      // spawn hint is read the same way (useThreadActivity records its `from`
-      // for the spawn card); its value holds the child's whole prompt.
+      // spawn hint is not either: the invocation card carries its `from`
+      // source durably, and its value holds the child's whole prompt.
       if (event.name === "meridian.subagent.activity" || event.name === "meridian.agent.spawn")
         return;
       // Durable custom projections are consumed by live listeners — the

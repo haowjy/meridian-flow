@@ -11,6 +11,12 @@ import type { ThreadPhase } from "@meridian/contracts/threads";
 export type HandoffSeedFacts = {
   sourceThreadId: string;
   sourceRef: string | null;
+  /**
+   * The source's title when S was created, for display only: it names a
+   * source the writer can no longer read (in the trash). Null when the
+   * source was untitled.
+   */
+  sourceTitle: string | null;
   cutoffTurnId: string | null;
   /** The `handoff_brief` control this seed answers. */
   controlMessageId: string | null;
@@ -36,6 +42,7 @@ export function readHandoffSeed(turn: Turn): HandoffSeedFacts | null {
   return {
     sourceThreadId,
     sourceRef: text(metadata.sourceRef),
+    sourceTitle: text(metadata.sourceTitle),
     cutoffTurnId: text(metadata.cutoffTurnId),
     controlMessageId: text(metadata.controlMessageId),
   };
@@ -119,6 +126,7 @@ const OPTIMISTIC_SEED_PREFIX = "optimistic-seed:";
 export function optimisticHandoffSeed(input: {
   threadId: string;
   sourceThreadId: string;
+  sourceTitle: string | null;
   cutoffTurnId: string;
   createdAt: string;
 }): Turn {
@@ -143,6 +151,7 @@ export function optimisticHandoffSeed(input: {
       kind: "derivation_seed",
       derivation: "handoff",
       sourceThreadId: input.sourceThreadId,
+      sourceTitle: input.sourceTitle,
       cutoffTurnId: input.cutoffTurnId,
     },
     createdAt: input.createdAt,

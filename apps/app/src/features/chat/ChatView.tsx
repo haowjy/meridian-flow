@@ -162,6 +162,7 @@ export function ChatView({
             optimisticHandoffSeed({
               threadId,
               sourceThreadId: intent.sourceThreadId,
+              sourceTitle: intent.sourceTitle,
               cutoffTurnId: intent.originTurnId,
               createdAt: intent.createdAt,
             }),
