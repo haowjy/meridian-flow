@@ -513,6 +513,7 @@ async function runDrainTurn(
           ? await deps.repos.turns.findById(briefControl.body.seedTurnId)
           : null;
       const batch = selection.batch;
+      if (!selection.control && !batch.some((message) => message.intent === "message")) return null;
       const ctx = await loadRunStartContext(deps, setupThread);
       preparationError = ctx.contextError;
       const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;

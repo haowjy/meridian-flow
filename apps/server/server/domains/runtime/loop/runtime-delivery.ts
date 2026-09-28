@@ -108,7 +108,7 @@ export interface RuntimeDelivery
   /** Initial assistant setup and exact receipt commit before model execution. */
   adoptBatch<T>(
     lease: Lease,
-    /** Pure preparation over the selection; transactional writes belong in `persist`. */
+    /** Pure preparation; writes belong in `persist`. Null retires stale controls without a reservation. */
     prepare: (selection: DeliverySelection) => Promise<{
       value: T;
       turnId: TurnId;
@@ -118,7 +118,7 @@ export interface RuntimeDelivery
       preparationFailure?: unknown;
       /** Turn-start writes run under the lock, after external context is prepared. */
       persist?: () => Promise<void>;
-    }>,
+    } | null>,
     options?: { signal?: AbortSignal },
   ): Promise<T>;
   ackWithResponse<T>(lease: Lease, ids: string[], persist: () => Promise<T>): Promise<T>;

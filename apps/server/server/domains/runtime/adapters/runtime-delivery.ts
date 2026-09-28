@@ -714,10 +714,7 @@ export function createDeliveryAdapter(
           if ((await leaseStore.lockReceipt(lease))?.cancelRequested)
             throw new DOMException("The operation was aborted", "AbortError");
         },
-        prepare: (selection) =>
-          !selection.control && !selection.batch.some((row) => row.intent === "message")
-            ? Promise.resolve(null)
-            : prepare(selection),
+        prepare: (selection) => prepare(selection),
         hasPreparationFailure: (prepared) => !prepared || prepared.preparationFailure !== undefined,
         commit: async (_selection, work, prepared, retiredSeedControls) => {
           if (!prepared) {
