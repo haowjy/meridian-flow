@@ -68,15 +68,18 @@ export function SourceChatLink({
   threadId,
   title,
   trashed,
+  fallbackName,
   className,
 }: {
   threadId: string;
   title: string | null;
   trashed: boolean | null;
+  /** What to call a source whose title is unknown; refs are handles, never writer copy. */
+  fallbackName?: string;
   className?: string;
 }) {
   const openThread = useOpenChatThread();
-  const name = title?.trim() || t`Untitled chat`;
+  const name = title?.trim() || fallbackName || t`Untitled chat`;
   if (trashed || !openThread) {
     return (
       <span className={cn("min-w-0 truncate font-medium text-foreground", className)}>

@@ -4197,6 +4197,10 @@ msgstr "The requested passage in {name} wasn't specific enough."
 msgid "The requested passage wasn't specific enough."
 msgstr "The requested passage wasn't specific enough."
 
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+msgid "the source chat"
+msgstr "the source chat"
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "The Work did not change. Try again."

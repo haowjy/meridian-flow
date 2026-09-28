@@ -134,8 +134,10 @@ export function HandoffBriefCard({
               </span>
               <SourceChatLink
                 threadId={seed.sourceThreadId}
-                title={source.title ?? seed.sourceRef}
+                title={source.title}
                 trashed={source.trashed}
+                // The seed names its source by ref only; a trashed source's title is unreadable.
+                fallbackName={t`the source chat`}
               />
             </p>
           ) : null}
