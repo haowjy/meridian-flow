@@ -378,6 +378,8 @@ Work projection.
 - Don't gate a mount between hook calls — gate at the parent.
 - Don't add raw hex/rgba or `emerald`/`rose` — use semantic tokens.
 
+## Project entry and route lifetime
+
 Persistent root/account/project loaders acquire shell identity on entry. Child
 navigation and same-href history-state writes do not reload them; explicit router
 invalidation and re-entry still do. This permits warm local editing offline,
