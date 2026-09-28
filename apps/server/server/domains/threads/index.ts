@@ -68,6 +68,20 @@ export {
   ThreadTrashUnavailableError,
   transitionThreadTrash,
 } from "./domain/thread-trash-lifecycle.js";
+export {
+  cursorAfter,
+  InvalidTranscriptCursorError,
+  readTranscriptPage,
+  resolveTranscriptSpans,
+  type TranscriptOrder,
+  type TranscriptOwner,
+  type TranscriptPage,
+  type TranscriptPageInput,
+  type TranscriptRange,
+  type TranscriptSegment,
+  type TranscriptSpanResolution,
+  type TranscriptUnit,
+} from "./domain/transcript-page.js";
 export type {
   AgentRequestOrigin,
   AgentRequestSource,

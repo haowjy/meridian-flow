@@ -8,15 +8,17 @@
 ## [Unreleased]
 
 ### Added
+- Page the effective or inherited transcript by stable turn/block keys, split pages at prompt-epoch boundaries, and expose the authenticated writer transcript route.
 - Summarize long chats with cached requests or rolling cheap-model summaries. Keep story facts and writer preferences.
 - Default compaction to the model's usable window, pricing tier, or 400,000-token ceiling.
 - Stop a running compaction and deliver messages queued during its summary afterward.
 - Compact long conversations through reserved summary turns and atomic successor replies.
-- Recover pending compaction placeholders only after acquiring the session claim; child reports terminate on the orphaned placeholder and late inbox messages remain redeliverable.
+- Recover orphaned primary assistant turns and pending compaction placeholders under the session claim; child reports terminate on the orphaned placeholder and late inbox messages remain redeliverable.
 - Persist request sizes and turn-neutral child execution selectors for compaction.
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
 
 ### Fixed
+- Settle orphaned primary assistant turns at startup and after a new run acquires its claim, keeping transcript anchors and fork cutoffs movable.
 - Keep pending-placeholder roles and predicates in contracts, SQL in the database package, and interruption copy in the threads domain.
 - Retry failed warm summaries cold once. Bound summary output without changing cached thinking.
 - Preflight cold transcripts before paid calls. Excerpt large document reads and split large turns at blocks.

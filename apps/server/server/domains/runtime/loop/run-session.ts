@@ -34,7 +34,7 @@ export function createRunSessions(deps: {
     lease: Lease;
   }): Promise<Turn>;
   runClaim: RunClaim;
-  delivery: Pick<RuntimeDelivery, "refreshPending" | "selectPending">;
+  delivery: Pick<RuntimeDelivery, "refreshPending" | "repairOrphanedTurns" | "selectPending">;
   repos: { turns: TurnRepository };
   headSeq(threadId: ThreadId): Promise<bigint>;
   eventSink: EventSink;
@@ -143,6 +143,7 @@ export function createRunSessions(deps: {
         Math.floor(DEFAULT_LEASE_TTL_MS / 3),
       );
       heartbeat.unref();
+      await deps.delivery.repairOrphanedTurns(lease);
       const resumeAfterSeq = (await deps.headSeq(threadId)).toString();
       const loop = await deps.setup({
         ...input,

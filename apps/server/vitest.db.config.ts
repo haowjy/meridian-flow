@@ -69,6 +69,7 @@ const expectedSuites = [
   "apps/server/server/domains/threads/adapters/drizzle/execution-report-repository.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/model-response-cache-prediction.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/turn-position.db.test.ts",
+  "apps/server/server/domains/threads/adapters/drizzle/transcript-reader.db.test.ts",
   "apps/server/server/domains/threads/domain/rebind-thread-work.db.test.ts",
   "apps/server/server/domains/threads/domain/derive-conversation.db.test.ts",
   "apps/server/server/domains/threads/domain/prompt-bakes.db.test.ts",

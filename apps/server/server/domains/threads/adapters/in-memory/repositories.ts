@@ -43,6 +43,7 @@ import type {
   ThreadImageInclusionRepository,
   ThreadRepository,
   ThreadWorksRepository,
+  TranscriptItemRow,
   TurnDocumentTouch,
   TurnDocumentTouchRepository,
   TurnRepository,
@@ -77,6 +78,13 @@ function addOptionalInteger(
 ): number | null {
   if (delta == null) return current ?? null;
   return (current ?? 0) + delta;
+}
+
+function compareTranscriptKeys(
+  left: { position: number; sequence: number },
+  right: { position: number; sequence: number },
+): number {
+  return left.position - right.position || left.sequence - right.sequence;
 }
 
 function emptyTurnUsage(): TurnUsage {
@@ -583,6 +591,131 @@ export function createInMemoryRepositories(
           id,
           threadId: ownerThreadId as ThreadId,
           role,
+        }));
+    },
+    async readTranscriptItems(input) {
+      const items: TranscriptItemRow[] = [];
+      for (const span of input.spans) {
+        const localTurns = [...turns.values()].filter(
+          (turn) =>
+            turn.threadId === span.threadId &&
+            turn.position > span.afterPosition &&
+            (span.throughPosition === null || turn.position <= span.throughPosition),
+        );
+        for (const turn of localTurns) {
+          const ownedBlocks = [...blocks.values()].filter((block) => block.turnId === turn.id);
+          const turnItems: TranscriptItemRow[] =
+            input.unit === "turn"
+              ? [{ turn, block: null, sequence: -1 }]
+              : ownedBlocks.length > 0
+                ? ownedBlocks.map((block) => ({ turn, block, sequence: block.sequence }))
+                : [{ turn, block: null, sequence: -1 }];
+          for (const item of turnItems) {
+            const key = { position: item.turn.position, sequence: item.sequence };
+            if (input.unit === "turn") {
+              if (input.through && key.position > input.through.position) continue;
+              if (
+                input.after &&
+                (input.order === "newest_first"
+                  ? key.position >= input.after.position
+                  : key.position <= input.after.position)
+              )
+                continue;
+            } else {
+              if (input.through && compareTranscriptKeys(key, input.through) > 0) continue;
+              if (input.after) {
+                const comparison = compareTranscriptKeys(key, input.after);
+                if (input.order === "newest_first" ? comparison >= 0 : comparison <= 0) continue;
+              }
+            }
+            items.push(item);
+          }
+        }
+      }
+      items.sort((left, right) => {
+        const comparison = compareTranscriptKeys(
+          { position: left.turn.position, sequence: left.sequence },
+          { position: right.turn.position, sequence: right.sequence },
+        );
+        return input.order === "newest_first" ? -comparison : comparison;
+      });
+      if (input.unit === "turn") {
+        const uniqueTurns = new Map(items.map((item) => [item.turn.id, item]));
+        return [...uniqueTurns.values()].slice(0, input.limit + 1).flatMap((item) => {
+          const owned = [...blocks.values()]
+            .filter((block) => block.turnId === item.turn.id)
+            .sort((left, right) => left.sequence - right.sequence);
+          return owned.length > 0
+            ? owned.map((block) => ({ turn: item.turn, block, sequence: block.sequence }))
+            : [item];
+        });
+      }
+      return items.slice(0, input.limit + 1);
+    },
+    async findFirstUnsettledTranscriptTurn(spans) {
+      const matches = spans.flatMap((span) =>
+        [...turns.values()].filter(
+          (turn) =>
+            turn.threadId === span.threadId &&
+            turn.position > span.afterPosition &&
+            (span.throughPosition === null || turn.position <= span.throughPosition) &&
+            (turn.status === "pending" ||
+              turn.status === "streaming" ||
+              turn.status === "waiting_interrupt"),
+        ),
+      );
+      return matches.sort((left, right) => left.position - right.position)[0] ?? null;
+    },
+    async listUnsettledForThread(threadId) {
+      return orderTurnsByPosition(
+        [...turns.values()].filter(
+          (turn) =>
+            turn.threadId === threadId &&
+            (turn.status === "pending" ||
+              turn.status === "streaming" ||
+              turn.status === "waiting_interrupt"),
+        ),
+      );
+    },
+    async listTranscriptBoundaries(spans) {
+      return spans
+        .flatMap((span) =>
+          [...turns.values()].filter(
+            (turn) =>
+              turn.threadId === span.threadId &&
+              turn.position > span.afterPosition &&
+              (span.throughPosition === null || turn.position <= span.throughPosition) &&
+              turn.promptBakeId !== null &&
+              turn.status === "complete",
+          ),
+        )
+        .sort((left, right) => left.position - right.position);
+    },
+    async listUnsettledPrimaryTurns(limit, after) {
+      if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limit must be positive");
+      return [...turns.values()]
+        .filter(
+          (turn) =>
+            threads.get(turn.threadId)?.kind === "primary" &&
+            turn.role === "assistant" &&
+            (turn.status === "pending" ||
+              turn.status === "streaming" ||
+              turn.status === "waiting_interrupt") &&
+            (!after ||
+              turn.threadId.localeCompare(after.threadId) > 0 ||
+              (turn.threadId === after.threadId && turn.position > after.position)),
+        )
+        .sort(
+          (left, right) =>
+            left.threadId.localeCompare(right.threadId) || left.position - right.position,
+        )
+        .slice(0, limit)
+        .map(({ id, threadId, position, role, status }) => ({
+          id,
+          threadId: threadId as ThreadId,
+          position,
+          role,
+          status,
         }));
     },
     async getLatestByThread(threadId) {

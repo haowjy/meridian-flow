@@ -64,6 +64,8 @@ export interface RuntimeDelivery
     Pick<InboxReader, "selectPending" | "readPendingProjection" | "pendingMessageThreads"> {
   /** Reclassify expired leases after recovery or a backstop release. */
   refreshPending(threadId: ThreadId): Promise<void>;
+  /** Settle any previous primary assistant before a new run selects context. */
+  repairOrphanedTurns(lease: Lease): Promise<void>;
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   /** Parent-first business transaction; the producer does not reacquire the lock. */
   withThreadLock<T>(

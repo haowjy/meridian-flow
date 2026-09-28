@@ -50,8 +50,8 @@ skeleton and delegates the moving parts.
 | `interrupt-session.ts` | Same-turn interrupt suspend/resume mechanics and component-block updates. |
 | `tool-dispatch.ts` | Live output, spawn/thread_message/returnResult callback wiring, and durable tool_result persistence. Dispatch does not apply policy. return_result settlement is spawn-owned: dispatch honors the typed `ReturnResultOutcome` and does not parse arguments or reconstruct the envelope from JSON. |
 | `run-turn-port.ts` | `prepare(input)` returns a `PreparedRun` with run/initial assistant identity, pre-setup replay cursor, post-setup snapshot floor, and one-shot `execute(): Promise<RunOutcome>`. Setup commits before returning; only execute enters the model loop. The journal/hub is the sole event consumer, not an orchestrator generator. |
-| `run-session.ts` | One owner for writer and child claims, AbortController, current-turn registry, heartbeat, cancel, terminal fallback, and best-effort release. `execute` settles after cleanup; child report publication B follows it. A primary completion aborts foreground descendants only; a child invocation bounds its whole subtree and aborts background descendants too. Explicit cancellation includes background descendants. |
-| `orphaned-placeholder.ts` | `finalizeOrphanedPlaceholder` uses the pure `@meridian/contracts/threads` placeholder predicate and targeted per-thread query under the thread lock and an already-held session claim. Writer-facing interrupted copy comes from `threads/domain/turn-metadata.ts`, through its compaction metadata codec. The helper returns reports it finalizes, and callers publish them only after releasing the child lock. |
+| `run-session.ts` | One owner for writer and child claims, AbortController, current-turn registry, heartbeat, cancel, terminal fallback, and best-effort release. After acquiring a run claim and before setup selects context, it repairs orphaned primary assistants and placeholders; a turn already bound to this live lease is excluded. `execute` settles after cleanup; child report publication B follows it. A primary completion aborts foreground descendants only; a child invocation bounds its whole subtree and aborts background descendants too. Explicit cancellation includes background descendants. |
+| `orphaned-placeholder.ts` | `finalizeOrphanedTurns` repairs unsettled primary assistant turns and C4 placeholders under the thread lock and an already-held session claim; `finalizeOrphanedPlaceholders` keeps child-report recovery on the placeholder-only path. Writer-facing interrupted copy comes from `threads/domain/turn-metadata.ts`. Callers publish finalized child reports after releasing the child lock. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; receives the frozen system prompt from the immutable bake row when the thread has an initial pointer; renders every persisted turn, including durable notices, skill-body, and subagent-update turns. Child-provenance system text contains a compact exact `thread_report` call, never the report body; the parent model may fetch that report with the authorized tool. Assistant custom blocks stay UI-only to preserve tool_use→tool_result adjacency. |
 | `compaction/{trigger,estimate,plan,project,tail}.ts` | Pure C4a core. `trigger.ts` resolves explicit Agent limits; `estimate.ts` owns the shared per-part estimator for planner defaults and request estimates. CJK strings use a 0.8-token/code-point multiplier (10% headroom over the measured DeepSeek V4 Flash CJK corpus); image parts use 1,600 tokens, and file text uses the greater of its measured visible-string estimate or the 10,000-token floor. Refresh evidence with `apps/server/scripts/probe-compaction-estimates.ts` against `apps/server/scripts/fixtures/compaction-estimator-probe.json`. `plan.ts` takes the raw effective transcript, reserves overhead and the pinned request, and limits later cuts to after the active compaction cut. A missing pinned request yields an explicit `no_compaction` plan, never persistable metadata; `tail.ts` is the shared ordered projection rule, lifting the pin only when the cut removes it; `project.ts` strictly decodes complete compactions, requires the pinned turn to exist, and projects the summary under the owning thread ref. The folder's `index.ts` is the runtime public surface. History-item metadata classification and its codecs live in `threads/domain/turn-metadata.ts`. |
@@ -284,16 +284,18 @@ with `kind: "inbox_message"`, which hides them from the bubble list; the client
 renders them as delivery rows inside the preceding assistant turn. Tagging a
 writer turn `inbox_message` makes the writer's own message vanish once a run
 drains it.
-`spawn/orphan-report-repair.ts` pages pending placeholder turns through the
-`turns_pending_placeholders` partial index and uses the same targeted per-thread
-query as run start for its under-lock re-read. `@meridian/contracts/threads`
-owns the role set and pure TypeScript predicates; the database package owns the
-SQL predicate beside the partial index, and `threads/domain/turn-metadata.ts`
-owns role/metadata-specific interrupted copy through the compaction codec. Both repairs require the real session claim and thread lock; expired
-lease rows are not proof of death. It finalizes pending placeholders before
-walking the child chain and treats any admitted execution selector as a walk
-barrier, including compaction selectors. Placeholder finalizers return child
-reports for publication after releasing the child lock. The process scheduler
+`spawn/orphan-report-repair.ts` pages primary unsettled assistant turns through
+`turns_unsettled` and C4 pending placeholders through `turns_pending_placeholders`,
+then re-reads under the thread lock. `@meridian/contracts/threads` owns the
+placeholder role set and pure TypeScript predicate; the database package owns
+its SQL predicate beside the partial index, and `threads/domain/turn-metadata.ts`
+owns placeholder-specific interruption copy. Startup scans and run-start
+repair require the real session claim; expired lease rows are not proof of
+death. The generic lane settles primary assistant turns and placeholders, not
+child assistant turns. Child recovery first settles placeholders, then walks
+the child chain and treats any admitted execution selector as a barrier,
+including compaction selectors. Placeholder finalizers return child reports
+for publication after releasing the child lock. The process scheduler
 runs wake, repair, and publication lanes independently. The coordinator consumes `RunTurnPort` through its driver,
 immutable Agent revisions, and the threads repository's
 `SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` parses the patch with the canonical `invocationPatchSchema` and translates a `ZodError` to `InvocationPatchError`, so an unknown key or wrong value reaches `spawn_invocation_patch_invalid` before any child row is created. It then merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, present list replaces, empty clears, tool map patches one entry, scalar `model`/`effort` replace) through the compile-time-exhaustive `PATCH_MERGES` table, one entry per patch key; `tools` and `disallowed-tools` are coupled and each returns the full `patchTools` result so a map `allow` lifts the baseline denial. Overrides fold tool-name aliases like authoring. Added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. The patch applies to named and generic children alike. The effective configuration plus the raw `invocation_overlay` persist on the thread binding and are reused on later turns; the saved Agent definition is never mutated. A spawn-time `append_system_prompt` is an additive overlay layer appended after the immutable Agent body; spawn never replaces the body. Route-facing
@@ -655,10 +657,11 @@ on a live signal is failed, and an internal AbortError alone is not Stop.
 Summarizer adapters return every attempted paid response in their outcome and
 never throw after a paid call; unexpected throws are error-level events.
 
-Run start finalizes stale pending placeholders before selection using the new
-run's own held claim. The orphan-repair lane also scans indexed pending
-placeholders, so quiet primary threads recover without a new wake; child reports
-are finalized on C and published after releasing the child's lock. A late writer
-message stays unacknowledged and is redelivered rather than receiving a synthetic
-failed reply. Compaction responses count when the compaction is the orphaned
-execution's terminal turn; accounting completed compaction ancestors remains C4e.
+Run start repairs a dead primary assistant and stale placeholders before context
+selection using the new run's held claim. Startup also pages the same indexed
+primary assistant and placeholder candidates, so quiet threads recover without
+a new wake. Child reports are finalized on C and published after releasing the
+child lock. A late writer message stays unacknowledged and is redelivered rather
+than receiving a synthetic failed reply. Compaction responses count when the
+compaction is the orphaned execution's terminal turn; accounting completed
+compaction ancestors remains C4e.
