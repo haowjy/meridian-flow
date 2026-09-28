@@ -4,7 +4,7 @@ How a run shrinks its history: a compaction placeholder C is reserved at a run
 boundary, an unlocked summary call writes the summary, and a successor commit
 opens a new prompt epoch with the summary, the pinned requests, and a recent
 tail. The summary call itself is the [summarizer](summarizer.md). Manual
-`/compact` reaches this protocol through the [control barrier](controls.md),
+`/compact` is selected at run start under the [control queue](controls.md),
 its reversal is [undo](undo.md), and stale document text in the retained tail
 is [elided](document-text.md). Orphaned C is repaired by
 [recovery](recovery.md). Rationale: the KB's
@@ -61,11 +61,11 @@ metadata plus `elisions`) into provisional assembly. The commit reloads C after
 paid-summary settlement and passes `{ ...settled.metadata, ...prepared.metadata }`
 to `beginPromptEpoch`: the owner hook `recordCompactionSummary` writes C's
 summarizer telemetry during settlement, so passing the prepared value alone
-would drop it. A control absorbed during the summary
-writes `satisfiesControlId` onto settled C; the prepared metadata predates that
-write and carries no satisfaction key for it. Telemetry never renders to the
-model, so B's first request still equals the rebuild. The same assembly measures
-`tokensAfter`; the epoch, frozen elisions and successor commit atomically.
+would drop it. C's `controlMessageId` is written when the command is reserved;
+no later command is absorbed into a running summary. Telemetry never renders to
+the model, so B's first request still equals the rebuild. The same assembly
+measures `tokensAfter`; the epoch, frozen elisions and successor commit
+atomically.
 
 ## Decisions and refusals
 
@@ -74,8 +74,9 @@ overflow (a provider context-window failure, below).
 
 Manual decisions fit against the usable window; their tail budget base is
 `min(trigger, tokensBefore)`. Automatic and overflow decisions use their fit
-limit as the tail budget base. Pins include the existing unacknowledged receipt
-and newly adopted directed rows, even across consecutive controls.
+limit as the tail budget base. Pins preserve unanswered directed requests and
+the newest writer request. When Stop stamps a command, its selected waiting
+messages are adopted and pinned with that command.
 
 `compaction/decision.ts` refuses without calling the summarizer or opening an
 epoch; the refusal is an `error` divider:
@@ -93,11 +94,11 @@ epoch; the refusal is an `error` divider:
   maximum output could outweigh what it replaces.
 - **`context_too_large`**: a minimal tail over the usable window.
 
-Refusals go through the ordinary reservation commit and then the successor
-commit at once, so clients can briefly see a pending divider, and a crash
-between the two leaves an interrupted divider before K redelivers; a single
-direct write would need a second transaction shape for the next-control and
-reply binding.
+The reservation commit consumes a selected compact command by acknowledging
+its inbox row with C. Undo is acknowledged by its atomic commit. A crash after
+compact starts repairs the already-created C; a committed U is already
+complete. Neither command is redelivered. Waiting commands are not part of the
+current reservation and remain queued.
 
 ## One projection authority
 
@@ -155,22 +156,23 @@ headroom, using `apps/server/scripts/fixtures/compaction-estimator-probe.json`.
 
 ## Failure landing
 
-- A failed required summary errors C and fails a reply below the latest message.
-  A failed optional manual summary errors only C and continues the request.
+- A failed automatic summary errors C and fails the reply below the latest
+  message. A failed command summary errors only C; command failures never fail
+  a reply.
 - Failed C metadata records the typed `reason` and `phase`; a fit rejection also
   records `estimatedTokens` and `fitLimitTokens`. `turn.error` carries the outcome
   in its details. Summary rejections use code `compaction_failed` while their
-  reasons distinguish `max_tokens`, `provider_error`, `tool_use`, and `empty_text`;
+  reasons distinguish `max_tokens`, `request_too_large`, `provider_error`,
+  `tool_use`, and `empty_text`;
   unknown summary errors stay `compaction_failed`. Orphan recovery uses the same
   metadata writer with `reason: interrupted` and `phase: recovery`, both at run
   preparation and during the primary/child startup sweep. These codecs are
   C's alone: a refused undo has its own reason set ([undo](undo.md)), and the
   handoff seed's typed outcome is separate ([handoff](handoff.md)).
-- If the initial successor fits but a late arrival fails the second fit check,
-  C fails with `context_too_large` at `late_arrival` instead of committing the
-  epoch. Its paid summary rows settle in the C failure transaction. The late
-  message remains durably adopted, B fails below the latest arrival, and the
-  receipt is acknowledged.
+- If late arrivals make the successor request too large, C still commits its
+  summary and prompt epoch. B's ordinary fit check fails with
+  `context_too_large` below the latest arrival; the paid summary rows settle
+  successfully with C, and the adopted messages are acknowledged.
 - A live unexpected error while C is current uses a fresh failure
   transaction: C `error`, settled summary rows, failed B below the latest
   arrivals, and receipt acknowledgment. Notices remain queued.
@@ -206,8 +208,9 @@ the cancel wake.
 
 The gateway normalizes provider context-window failures to `context_overflow`.
 The loop completes A at its last persisted tool group (empty is legal), then
-prepares a forced `compact` decision with a cold path and a fit limit from the
-resolved usable window. It retries generation once per reply, not once per
+prepares a forced `compact` decision marked `knownTooLarge` with a fit limit
+from the resolved usable window. The shared summary rule selects rolling for a
+known-too-large request. It retries generation once per reply, not once per
 tool iteration; a split adopting new input renews that budget, while the
 compaction successor preserves it. A second overflow fails with
 `context_window_exceeded` and acknowledges the receipt rather than re-sweeping
@@ -230,8 +233,8 @@ eviction victims, and each block is decided at most once per pass.
 
 Re-admission decisions belong to C, so reverting C removes their effect and a
 fork copies them only when its cutoff includes C. `tokensAfter` measures the
-prepared request; successor commit rechecks fit after late arrivals and guards
-against overflow.
+prepared request; successor preparation checks fit after late arrivals. If
+they exceed the budget, C commits and B fails its normal request fit check.
 
 ## Cost
 

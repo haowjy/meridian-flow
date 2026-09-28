@@ -1,31 +1,31 @@
-# Controls and the barrier
+# Controls
 
-Writer controls are queued commands that act on the conversation itself:
-`/compact` and compaction undo. Handoff brief Stop and Retry are operations on
-the durable handoff seed, not inbox controls; see [handoff](handoff.md).
+`/compact` and Undo are transcript commands in the durable inbox. Handoff Stop
+and Retry act on handoff seeds, not inbox controls; see [handoff](handoff.md).
 
-## Position at execution
+## Queue order
 
-A control K (`intent: "control"`, a `ControlBody` of kind `compact` or
-`compaction_undo`) takes no transcript position at enqueue. `/compact`'s C is
-reserved at the leaf when a run boundary executes it; writer sends keep their
-enqueue position. The control barrier selects the raw inbox before Work
-coalescing and acknowledgement. A head control waits for unbound directed
-messages ahead unless a chained row lies behind it; then the chained rows and
-inbox-only prefix are adopted before K. Notices alone never delay K. Controls
-never enter ordinary message planning.
+Commands run only as the first step of a run, one per run. At a reply boundary,
+`next(pending, "boundary")` selects non-control work only. At run start,
+`next(pending, "run_start")` selects the oldest command only when no message is
+waiting; otherwise messages run first. Stop stamps pending commands, so the
+oldest stamped command runs first together with the waiting messages. Those
+messages are pinned verbatim in compaction and answered after it.
 
-Control-only runs use the ordinary boundary and run lifecycle; there is no
-row-owned placeholder exception or handoff branch. A normal assistant close
-defers an executable control to the post-release wake, while a tool boundary
-executes it inline. Inbox sweeps remain the durable wake path.
+Tool boundaries and turn close never run commands. If a turn ends with only
+commands waiting, the claim is released and the queue is re-read; the next run
+starts the command. Messages arriving while it runs are answered after it.
 
-## Withdrawal and recovery
+## Ownership and withdrawal
 
-Withdrawal acknowledges an unbound row. If a live run already bound it,
-withdrawal requests Stop for that run, even when the lease receipt is overdue.
-The transaction retires the control receipt so a crashed owner cannot replay a
-withdrawn request. Compaction undo is completed atomically and never has a
-pending phase. Pending compaction placeholders are run-owned and are recovered
-by [orphan repair](recovery.md); pending handoff seeds have their own claimed
-recovery lane.
+The start commit consumes the command: C's reservation commit acknowledges
+`/compact`, and Undo is acknowledged in its atomic commit. A crash while a
+command waits leaves it queued; a crash after `/compact` starts repairs C, and
+a committed U is already complete. Neither command is replayed.
+
+Withdrawal acknowledges a command that has not started and returns
+`withdrawn`, including on replay. If a C or U already records its id,
+withdrawal returns `already_started`; it does not stop that run. Enqueue and
+withdrawal share the thread lock with command reservation.
+
+For the shared selection and release wake contract, see [delivery](delivery.md).

@@ -33,10 +33,14 @@ Returns 201 for a new row or 200 for an existing id:
 ```
 
 A queued row carries its control body in `pending.control`. Once executed, its
-turn carries `metadata.controlMessageId`; an automatic compaction satisfying a
-`compact` request carries `satisfiesControlId`. Completed controls return their
-turn id. A withdrawn row returns both `pending` and `turnId` null. Its key stays
+turn carries `metadata.controlMessageId`. Completed controls return their turn
+id. A withdrawn row returns both `pending` and `turnId` null. Its key stays
 retired: retrying enqueue never schedules a withdrawn or completed control.
+
+Commands run only at run start, at most one per run. Waiting messages take
+priority; Stop stamps pending controls so the oldest stamped command runs first
+with the waiting messages. A command is acknowledged by the commit that starts
+it. A pending command never blocks a reply or runs at a tool boundary.
 
 Invalid bodies return 400 (`invalid_control`). An id belonging to an ordinary
 message, another control kind, or a row in another thread returns 409
@@ -47,14 +51,14 @@ message, another control kind, or a row in another thread returns 409
 `POST /api/threads/:threadId/controls/:controlId/withdraw`, no body.
 
 ```ts
-{ outcome: "withdrawn" | "stopping" | "already_finished" }
+{ outcome: "withdrawn" | "already_started" }
 ```
 
-Withdrawal acknowledges an unbound pending row. If a live run already bound
-it, withdrawal requests Stop for that run, including when the receipt lease is
-overdue. A finished or withdrawn row returns `already_finished`. An unknown
-control returns 404 (`control_not_found`). Withdrawal and reservation share the
-thread lock, so exactly one wins.
+Withdrawal acknowledges a command that has not started. If its C or U already
+records the command id, withdrawal returns `already_started` and does not stop
+the run. Replaying withdrawal of a withdrawn row still returns `withdrawn`.
+An unknown control returns 404 (`control_not_found`). Withdrawal and start
+reservation share the thread lock, so exactly one wins.
 
 ## CLI probe
 

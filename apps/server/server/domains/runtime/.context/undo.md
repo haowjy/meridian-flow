@@ -9,10 +9,10 @@ call. Rationale and the provisional refusal policy (R-C6-2):
 `loop/compaction-undo.ts` prepares and persists U and hosts the snapshot's
 availability reader (`createCompactionUndoReader`).
 
-A boundary expands consecutive due undos and may then execute a following
-compact control. Reservation and terminal checks use that expanded list, not
-only its head. Handoff seeds are outside the inbox and never participate in
-undo expansion.
+Undo is selected as one command at run start ([controls](controls.md)). A
+waiting message runs first unless Stop stamped Undo to run before the message
+batch. Consecutive Undo commands therefore execute in separate runs and queue
+order; handoff seeds are outside the inbox.
 
 `compaction-undo.ts` prepares U over the restored raw history. Only the active,
 local completed C is eligible. Runtime eligibility returns `not_active` for an
@@ -26,7 +26,7 @@ or an elision inside that response's prefix removes the baseline.
 
 U has no reservation or model phase. Delivery inserts and completes it through
 `beginPromptEpoch` in the same transaction as adoption, control acknowledgement,
-and the next control/reply binding or lease release. Successful U is inserted
+and the next reply binding or lease release. Successful U is inserted
 pending privately, then announced complete in the journal; readers never receive
 a pending U. Inbox-only rows beyond U are planned after it, not folded into its
 adopted prefix. An idle undo reserves no
@@ -34,8 +34,9 @@ assistant and admits no execution. A refused U has no blocks or bake; its reason
 lives in typed undo metadata (`already_undone`, `not_active`, `would_recompact`,
 `undo_failed`), while `turn.error` carries writer copy. The journal keeps the
 existing undo error codes and includes the reason in error details.
-A failed undo commit rolls back, then retries the delivery transaction with those
-undo controls marked `undo_failed`; ordinary messages still continue.
+A failed undo start commit rolls back, then retires that command in a fresh
+delivery transaction as a refused U marked `undo_failed`; ordinary messages
+still continue. It is not retried on a later wake.
 
 Projection applies the active C's elisions to its retained tail, followed by the
 latest complete U after C. U plans from raw blocks, including earlier U owners'

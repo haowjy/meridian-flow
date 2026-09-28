@@ -5,10 +5,29 @@ durable conversation and reaches the model. Everything the model learns
 mid-thread arrives here as a durable turn at a graph point, never as a
 live-request splice; the frozen prefix it lands after is in
 [request assembly](request-assembly.md). Compaction and undo share this inbox
-but execute through the [control barrier](controls.md). A pending handoff seed
-is not an inbox row; the runtime gates destination starts on its durable status
-and the independent brief service wakes delivery when it settles.
+but commands run only at the start of a run under the [queue rules](controls.md).
+A pending handoff seed is not an inbox row; the runtime still gates destination
+starts on its durable status, and the independent brief service wakes delivery
+when it settles.
 Rationale: [One Run Preparation Protocol][kb-run-prep].
+
+## Command selection and release wake
+
+`loop/next-inbox-work.ts` owns the pure `next(pending, at)` selector. At a
+reply boundary it selects non-control rows only when a message is waiting;
+commands never run beside a tool call or at turn close. At run start, a stamped
+command runs first with all selected non-control rows. Otherwise, waiting
+messages run before commands; if none wait, the oldest command runs without a
+message batch. Selected notices may ride a batch but do not make a notice-only
+queue runnable.
+The selector returns at most one command per run.
+
+After a run releases its claim, `wakeIfRunnable` refreshes pending state and
+uses the same run-start selector as setup. It re-reads after runs that found no
+work and after setup cancellation, so work enqueued while a claim was held is
+not lost. An empty reread cannot spin. Real setup errors skip the reread; the
+periodic wake sweep is their liveness backstop. Short exclusive claim holders
+still rely on that sweep.
 
 ## Writer admission
 
@@ -45,7 +64,27 @@ drains it.
 
 ## Prepare and commit
 
-One `prepareAndCommit` protocol serves drain start and mid-run adoption. Direct run input first persists the writer turn and matching inbox message under the thread lock, then uses the drain-start path. The protocol selects pending IDs, peeks notices, and reads the active leaf without the lock; prepares image decisions, references, skills, and turn drafts without writes; then takes the thread lock and validates the leaf and pending batch. A changed selection is discarded and retried for at most three attempts; attempt three prepares under the lock. One ambient transaction consumes exactly the selected notice IDs, persists the first prompt bake and preparation effects, adopts the batch, and reserves/binds the assistant. Preparation failure leaves notices queued but adopts the writer batch and reserves the failed reply; the existing failure finalizer acknowledges that batch. Cancellation discards preparation. Notice IDs enter durable `system_update` history at the selected graph point, so prefix bytes remain stable. Image decisions are append-only by deciding turn; when a projection emits a break, its notice turn owns those decisions and `turn.created` precedes them. A fork copies the latest decision at or before its cutoff. Final close prepares only for pending messages or materializable Work refreshes; after a successful run's cleanup, any late pending message starts another run. The concrete Drizzle adapter appends the classified pending replacement before commit; journal failure rolls back the transition and only physical wake is best-effort after commit.
+One `prepareAndCommit` protocol serves drain start and mid-run adoption. Direct
+run input first persists the writer turn and matching inbox message under the
+thread lock, then uses the drain-start path. The protocol selects pending IDs,
+peeks notices, and reads the active leaf without the lock; prepares image
+decisions, references, skills, and turn drafts without writes; then takes the
+thread lock and validates the leaf and pending batch. A changed selection is
+discarded and retried for at most three attempts; attempt three prepares under
+the lock. One ambient transaction consumes exactly the selected notice IDs,
+persists the first prompt bake and preparation effects, adopts the batch, and
+reserves/binds the assistant. Preparation failure leaves notices queued but
+adopts the writer batch and reserves the failed reply; the existing failure
+finalizer acknowledges that batch. Cancellation discards preparation. Notice
+IDs enter durable `system_update` history at the selected graph point, so
+prefix bytes remain stable. Image decisions are append-only by deciding turn;
+when a projection emits a break, its notice turn owns those decisions and
+`turn.created` precedes them. A fork copies the latest decision at or before
+its cutoff. Final close prepares only for pending messages or materializable
+Work refreshes; after claim cleanup the common wake re-reads for waiting
+messages or a queued command. The concrete Drizzle adapter appends the
+classified pending replacement before commit; journal failure rolls back the
+transition and only physical wake is best-effort after commit.
 
 `loop/preparation-failure.ts` maps a preparation error to that reply's writer-facing error. A failed reply stays
 `error`; the read model never rewrites it when the writer sends again.
