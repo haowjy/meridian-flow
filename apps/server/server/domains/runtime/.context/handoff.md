@@ -1,10 +1,10 @@
 # Handoff seeds
 
 The first seed is already in the destination chain before a run exists. Its
-pending control owns it through `body.seedTurnId`. Shared `finalizeOrphanedTurns`
-re-reads pending ownership under the thread lock at run start, idle materialization,
-and orphan scanning; a crashed
-brief redelivers into the same seed, not an interrupted replacement.
+pending control owns it through `body.seedTurnId`, so orphan repair leaves it
+pending and a crashed brief redelivers into the same seed, not an interrupted
+replacement. The ownership check lives in the one orphan finalizer; see
+[placeholders and recovery](compaction.md).
 
 The barrier gives a row-owned seed an empty adoption batch. Messages already
 chained after it are late arrivals. Run start binds S; the slow brief call runs
@@ -58,9 +58,14 @@ The instruction does not advertise `thread_history`.
 
 Destination binding/bake/fit preparation belongs to the successor after S's
 outcome is known. A destination preparation failure lands on the reply, not S.
-Skill bodies on chained messages adopted ahead of Retry are staged after the
-brief, before the reply. Due undo controls and following batches use ordinary delivery selection and
-ending-control acknowledgement, including when no reply remains.
+One skill-body staging owner serves run start and successor preparation.
+Normal runs stage bodies before fresh messages; Retry defers them until after
+S and before the reply. Only a committed body consumes its activations, so
+optimistic preparation can repeat. Brief-only batches need no control-history
+preparation; an expanded undo prefix before Retry still does. Due undo controls
+and following batches retain ordinary delivery selection and acknowledgement,
+including when no reply remains. The contracts package's `ControlBody` owns
+the control-kind list.
 
 Both successful and failed summaries return every attempted paid row.
 `settleSummaryResponses` only meters and journals rows; each owner writes its

@@ -30,10 +30,13 @@ describe("ErrorBlock", () => {
     expect(html).not.toContain("<button");
   });
 
-  it("keeps historical errors quiet", () => {
-    const html = renderToStaticMarkup(<ErrorBlock isLatest={false} />);
+  it("keeps historical errors quiet, one sentence per kind", () => {
+    const generation = renderToStaticMarkup(<ErrorBlock isLatest={false} />);
+    expect(generation).toContain("This response failed.");
+    expect(generation).not.toContain('role="alert"');
 
-    expect(html).toContain("Errored.");
-    expect(html).not.toContain('role="alert"');
+    const send = renderToStaticMarkup(<ErrorBlock isLatest={false} kind="send" />);
+    expect(send).toContain("Couldn&#x27;t send.");
+    expect(send).not.toContain("This response failed.");
   });
 });
