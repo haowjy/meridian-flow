@@ -339,6 +339,33 @@ export function createInMemoryRepositories(
       const ordered = visible.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       return Promise.all(ordered.map(toListItem));
     },
+    async listLineageChildren({ rootThreadId, parentIds, limit, after }) {
+      const nodes = [...threads.values()].flatMap((thread) => {
+        if (thread.deletedAt || thread.rootThreadId !== rootThreadId) return [];
+        const upThreadId =
+          thread.kind === "subagent"
+            ? thread.parentThreadId
+            : thread.originTurnId
+              ? turns.get(thread.originTurnId)?.threadId
+              : null;
+        return upThreadId && parentIds.includes(upThreadId)
+          ? [{ ...projectThread(thread), upThreadId }]
+          : [];
+      });
+      return nodes
+        .filter(
+          (thread) =>
+            !after ||
+            thread.createdAt < after.createdAt ||
+            (thread.createdAt === after.createdAt && thread.id < after.id),
+        )
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+        .slice(0, limit)
+        .map((thread) => ({
+          ...thread,
+          siblingCount: nodes.filter((node) => node.upThreadId === thread.upThreadId).length,
+        }));
+    },
     async listChildren(threadId) {
       return [...threads.values()]
         .filter(
@@ -851,6 +878,16 @@ export function createInMemoryRepositories(
   };
 
   const blockRepo: BlockRepository = {
+    async findToolBlock(turnId, toolCallId, type) {
+      return (
+        [...blocks.values()].find(
+          (block) =>
+            block.turnId === turnId &&
+            block.blockType === type &&
+            (block.content as { toolCallId?: string })?.toolCallId === toolCallId,
+        ) ?? null
+      );
+    },
     async create(input: CreateBlockInput) {
       const block: Block = {
         id: input.id ?? crypto.randomUUID(),

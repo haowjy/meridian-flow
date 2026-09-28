@@ -7,6 +7,9 @@
 
 ## [Unreleased]
 
+- Find connected conversations and read their history with document pointers and dated edit records.
+- Keep history pages stable across compaction and undo; preserve old prompt-bake bytes.
+
 - Require a lineage root on every conversation; index fork and handoff discovery.
 
 - Undo failures show writer copy, retain typed reasons, and expose metadata in `mf thread view --json`.

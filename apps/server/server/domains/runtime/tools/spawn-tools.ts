@@ -12,6 +12,7 @@ import {
 import { returnResultCaptureSchema, type SpawnResult } from "@meridian/contracts/spawn";
 import { ZodError } from "zod";
 import { InvocationPatchError } from "../spawn/apply-invocation-patch.js";
+import { spawnHistoryPreview, threadHistoryPreview } from "./history-previews.js";
 import type {
   ReturnResultToolHandlerContext,
   SpawnToolHandlerContext,
@@ -160,11 +161,16 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       },
       execution: {
         type: "server",
-        handler: async (input: unknown, ctx: ThreadReportToolHandlerContext) =>
-          ctx.threadReport(parseThreadReportArgs(input)),
+        handler: async (input: unknown, ctx: ThreadReportToolHandlerContext) => {
+          const result = await ctx.threadReport(parseThreadReportArgs(input));
+          return "ok" in result && !result.ok
+            ? { isError: true, output: meridianErrorToJson(result.error) }
+            : result;
+        },
       },
       sequential: true,
       capability: "thread_report",
+      historyPreview: threadHistoryPreview,
       advertise: true,
     },
     {
@@ -223,6 +229,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       },
       sequential: true,
       capability: "spawn",
+      historyPreview: spawnHistoryPreview,
       advertise: true,
     },
     {
@@ -259,6 +266,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       },
       sequential: true,
       capability: "thread_message",
+      historyPreview: threadHistoryPreview,
       advertise: true,
     },
     {

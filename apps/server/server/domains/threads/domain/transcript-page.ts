@@ -38,8 +38,14 @@ export interface TranscriptPage {
   owners: TranscriptOwner[];
   segment: TranscriptSegment;
   segmentBoundary: boolean;
+  opensSegment: boolean;
+  segmentCount: number;
   hasMore: boolean;
   nextCursor?: string;
+  /** Anchored end key even on a final page, for projections that trim it. */
+  endCursor?: string;
+  /** Start of the pinned prefix when the live preview consumes the output budget. */
+  restartCursor?: string;
   unsettledTail?: { turn: Turn; blocks: Block[] }[];
 }
 
@@ -404,6 +410,8 @@ export async function readTranscriptPage(
         owners: uniqueOwners,
         segment: segmentHeader(null, boundaries, firstBakeId),
         segmentBoundary: false,
+        opensSegment: true,
+        segmentCount: boundaries.length + 1,
         hasMore: false,
       };
     }
@@ -489,7 +497,7 @@ export async function readTranscriptPage(
       segmentBoundary || queryMore || (!cursor && Boolean(anchor) && remaining === 0);
 
     let nextCursor: string | undefined;
-    if (chainHasMore && anchor) {
+    if (anchor) {
       const last = sameSegment.at(-1);
       const key = last
         ? { position: last.turn.position, sequence: last.sequence }
@@ -509,12 +517,65 @@ export async function readTranscriptPage(
 
     return {
       entries,
+      ...(anchor && input.order === "newest_first"
+        ? {
+            restartCursor: encodeCursor({
+              v: 1,
+              t: pageThread.id,
+              o: input.order,
+              u: input.unit,
+              r: range,
+              a: anchor,
+              k: { position: anchor.position + 1, sequence: -1 },
+            }),
+          }
+        : {}),
       owners: uniqueOwners,
       segment,
       segmentBoundary,
+      opensSegment: !cursor || segmentFor(cursor.k.position, boundaries) !== pageSegmentIndex,
+      segmentCount: boundaries.length + 1,
       hasMore: chainHasMore,
-      ...(nextCursor ? { nextCursor } : {}),
+      ...(nextCursor ? { endCursor: nextCursor, ...(chainHasMore ? { nextCursor } : {}) } : {}),
       ...(tailRows.length > 0 ? { unsettledTail: unsettledTail(tailRows) } : {}),
+    };
+  });
+}
+
+/** Direct expansion uses the same spans and bounded item read, including the live tail. */
+export async function readTranscriptItem(
+  repos: ThreadRepositories,
+  thread: Thread,
+  key: { position: number; sequence?: number },
+) {
+  return repos.readSnapshot(async () => {
+    const resolution = await resolveTranscriptSpans(repos, thread);
+    const [row] = await repos.turns.readTranscriptItems({
+      spans: resolution.spans,
+      order: "oldest_first",
+      unit: "item",
+      limit: 1,
+      after: {
+        position: key.position,
+        sequence: key.sequence === undefined ? -2 : key.sequence - 1,
+      },
+    });
+    if (
+      !row ||
+      row.turn.position !== key.position ||
+      (key.sequence !== undefined && row.sequence !== key.sequence)
+    )
+      return null;
+    const boundaries = await repos.turns.listTranscriptBoundaries(resolution.spans);
+    const firstOwner = resolution.owners[0];
+    const firstBake = firstOwner
+      ? ((await repos.threads.findByIdIncludingDeleted(firstOwner.threadId))?.initialPromptBakeId ??
+        null)
+      : null;
+    return {
+      entry: { ...row, block: key.sequence === undefined ? null : row.block },
+      owners: resolution.owners,
+      segment: segmentHeader(key.position, boundaries, firstBake),
     };
   });
 }

@@ -5,7 +5,7 @@
  */
 import { z } from "zod";
 
-import type { MeridianError } from "../interrupt/index.js";
+import { type MeridianError, meridianErrorSchema } from "../interrupt/index.js";
 import { type AGUIEvent, EventSchemas } from "./agui";
 import type { ThreadLiveState } from "./http-types";
 
@@ -19,14 +19,6 @@ const jsonValueSchema: z.ZodType<import("../threads/index.js").JsonValue> = z.la
     z.record(z.string(), jsonValueSchema),
   ]),
 );
-
-const meridianErrorSchema: z.ZodType<MeridianError> = z.object({
-  code: z.string().min(1),
-  message: z.string(),
-  retryable: z.boolean(),
-  source: z.enum(["gateway", "tool", "child-agent", "system"]),
-  details: jsonValueSchema.optional(),
-});
 
 const wsEventSeqSchema = z.string().regex(/^(0|[1-9]\d*)$/);
 

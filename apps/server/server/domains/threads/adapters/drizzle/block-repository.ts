@@ -10,7 +10,7 @@
  */
 
 import * as schema from "@meridian/database/schema";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import type {
   BlockRepository,
   CreateBlockInput,
@@ -39,6 +39,20 @@ function blockValues(input: CreateBlockInput) {
 
 export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
   return {
+    async findToolBlock(turnId, toolCallId, type) {
+      const [row] = await currentDrizzleDb(db)
+        .select()
+        .from(schema.turnBlocks)
+        .where(
+          and(
+            eq(schema.turnBlocks.turnId, turnId),
+            eq(schema.turnBlocks.blockType, type),
+            sql`${schema.turnBlocks.content}->>'toolCallId' = ${toolCallId}`,
+          ),
+        )
+        .limit(1);
+      return row ? mapBlock(row) : null;
+    },
     async create(input: CreateBlockInput) {
       const [row] = await currentDrizzleDb(db)
         .insert(schema.turnBlocks)

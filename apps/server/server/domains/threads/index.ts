@@ -71,6 +71,7 @@ export {
 export {
   cursorAfter,
   InvalidTranscriptCursorError,
+  readTranscriptItem,
   readTranscriptPage,
   resolveTranscriptSpans,
   type TranscriptOrder,

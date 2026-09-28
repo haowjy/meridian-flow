@@ -8,6 +8,7 @@ export interface DocumentTextPolicy {
   elide(
     block: { input?: JsonObject; output?: JsonValue },
     changed: readonly DocumentRef[],
+    treatment: "stale" | "history",
   ): { input?: JsonObject; output?: JsonValue };
 }
 
@@ -32,10 +33,20 @@ export const writeDocumentText: DocumentTextPolicy = {
         return "none";
     }
   },
-  elide({ input = {}, output }, changed) {
+  elide({ input = {}, output }, changed, treatment) {
     const documents =
       changed.map((ref) => ref.uri ?? ref.documentId).join(", ") ||
       String(input.path ?? input.document_id ?? "This document");
+    if (treatment === "history") {
+      if (input.command === "diff")
+        return {
+          output: changed.some((ref) => ref.uri)
+            ? historyReadStub(documents)
+            : "[change summary omitted]",
+        };
+      if (input.command === "read") return { output: historyReadStub(documents) };
+      return { output: `[edit applied to ${documents} (${input.command})]` };
+    }
     if (input.command === "diff")
       return {
         output:
@@ -56,19 +67,38 @@ export const writeDocumentText: DocumentTextPolicy = {
 
 export const searchDocumentText: DocumentTextPolicy = {
   kind: () => "read",
-  elide({ output }, changed) {
+  elide({ output }, changed, treatment) {
     const uris = new Set(changed.map((ref) => ref.uri));
     return {
       output: (output as JsonObject[]).map((hit) => {
-        if (changed.length > 0 && !uris.has(hit.uri as string)) return hit;
+        if (treatment === "stale" && changed.length > 0 && !uris.has(hit.uri as string)) return hit;
         return {
           ...hit,
           matches: (hit.matches as JsonObject[]).map((match) => ({
             ...match,
-            excerpt: "[Cleared at compaction: changed since this search; read it for current text]",
+            excerpt:
+              treatment === "history"
+                ? historyReadStub(String(hit.uri))
+                : "[Cleared at compaction: changed since this search; read it for current text]",
           })),
         };
       }),
+    };
+  },
+};
+
+export function historyReadStub(documents: string): string {
+  return `[document copy omitted: ${documents}. Read it for its current text.]`;
+}
+
+export const historyDocumentText: DocumentTextPolicy = {
+  kind: () => "read",
+  elide(_block, documents, treatment) {
+    return {
+      output:
+        treatment === "history"
+          ? "[thread_history output omitted]"
+          : `[Cleared at compaction: thread_history output quoting edits to ${documents.map((ref) => ref.uri ?? ref.documentId).join(", ") || "documents"}. Call thread_history again.]`,
     };
   },
 };

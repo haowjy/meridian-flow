@@ -8,7 +8,7 @@ import {
   CompactionPreparationError,
 } from "./compaction/decision.js";
 import { changedDocuments, collectRecordedDocuments } from "./compaction/elide.js";
-import { projectActiveHistory, projectCompactedHistory } from "./compaction/index.js";
+import { projectActiveHistoryWithBakes, projectCompactedHistory } from "./compaction/index.js";
 import { queryCompactionRevisions } from "./compaction-revisions.js";
 import {
   completeCompactionCurrent,
@@ -46,7 +46,12 @@ export async function executeCompaction({
   recordResponses: (rows: SummaryResponse[], summarizer: SummaryOutcome["summarizer"]) => void;
   settleResponses: (rows: SummaryResponse[]) => Promise<void>;
 }) {
-  const projection = projectActiveHistory(allTurns, allBlocks, thread.ref);
+  const projection = await projectActiveHistoryWithBakes(
+    allTurns,
+    allBlocks,
+    thread.ref,
+    deps.repos.promptBakes,
+  );
   const policies = (name: string) => deps.toolRegistry.getRegistration(name)?.documentText;
   const recorded = collectRecordedDocuments(
     projection.turns.map((turn) => ({

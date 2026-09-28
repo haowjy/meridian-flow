@@ -1,8 +1,9 @@
 /** Projects the latest complete, non-reverted compaction over the effective transcript. */
 
-import type { Block, JsonObject, Turn } from "@meridian/contracts/threads";
+import type { Block, JsonObject, PromptBake, Turn } from "@meridian/contracts/threads";
 import { z } from "zod";
 import {
+  activeCompaction,
   type CompactionPlanMetadata,
   CompactionPlanMetadataCodec,
   CompactionUndoMetadataCodec,
@@ -11,6 +12,7 @@ import {
   revertedCompactionIds,
 } from "../../../threads/index.js";
 import { orderTurnsByPosition } from "../../../threads/order-turns.js";
+import type { PromptBakeRepository } from "../../../threads/ports/repositories.js";
 import type { CompactionPlan } from "./plan.js";
 import { type CompactionCut, retainedTail } from "./tail.js";
 
@@ -54,11 +56,12 @@ function summaryTurn(
   compaction: Turn,
   summary: string,
   threadRef: string,
+  historyReadable: boolean,
 ): { turn: Turn; block: Block } {
   const turnId = `${compaction.id}:summary`;
   const textContent = [
     "<system_update>",
-    `Conversation summary. Earlier turns of this conversation (${threadRef}) were compacted into the summary below.`,
+    `Conversation summary. Earlier turns of this conversation (${threadRef}) were compacted into the summary below.${historyReadable ? " They remain readable with thread_history." : ""}`,
     "",
     summary,
     "</system_update>",
@@ -108,6 +111,7 @@ export function projectActiveHistory(
   effectiveTurns: readonly Turn[],
   effectiveBlocks: readonly Block[],
   threadRef: string | null,
+  compactionBake?: Pick<PromptBake, "id" | "bakedTools"> | null,
 ): ProjectedActiveHistory {
   if (!effectiveTurns.some((turn) => turn.role === "compaction")) {
     return { turns: [...effectiveTurns], blocks: [...effectiveBlocks] };
@@ -196,7 +200,17 @@ export function projectActiveHistory(
     canRetain: (turn) => retainable.get(turn.id) ?? true,
   });
   const afterCompaction = turns.filter((turn) => turn.position > compaction.position);
-  const synthetic = summaryTurn(compaction, props.summary, threadRef);
+  const historyReadable =
+    compactionBake?.id === compaction.promptBakeId &&
+    Array.isArray(compactionBake?.bakedTools) &&
+    compactionBake.bakedTools.some(
+      (tool) =>
+        tool !== null &&
+        typeof tool === "object" &&
+        !Array.isArray(tool) &&
+        tool.name === "thread_history",
+    );
+  const synthetic = summaryTurn(compaction, props.summary, threadRef, historyReadable);
   const projectedTurns = [synthetic.turn, ...tail.map(({ turn }) => turn), ...afterCompaction].map(
     (turn, position) => ({ ...turn, position }),
   );
@@ -231,4 +245,18 @@ export function projectCompactedHistory(
   );
   const included = new Set(blocks.map((block) => block.turnId));
   return { turns: projection.turns.filter((turn) => included.has(turn.id)), blocks };
+}
+
+/** Resolve the summary's own bake, not today's tool registry or a later undo epoch. */
+export async function projectActiveHistoryWithBakes(
+  turns: readonly Turn[],
+  blocks: readonly Block[],
+  threadRef: string | null,
+  promptBakes: Pick<PromptBakeRepository, "findById">,
+): Promise<ProjectedActiveHistory> {
+  const compaction = activeCompaction(turns);
+  const bake = compaction?.promptBakeId
+    ? await promptBakes.findById(compaction.promptBakeId)
+    : null;
+  return projectActiveHistory(turns, blocks, threadRef, bake);
 }

@@ -102,6 +102,7 @@ export function planModelElisions(input: {
       const replacement = policy.elide(
         { input: toolInput, output: (result.content as JsonObject).output },
         changed,
+        "stale",
       );
       const treatment = kind === "write" ? "stale_write" : "stale_read";
       if (replacement.input !== undefined)
@@ -129,7 +130,7 @@ export function planModelElisions(input: {
         blockId: block.id,
         treatment: "stale_read",
         uris: [reference.uri],
-        content: elideReferenceRead(reference),
+        content: elideReferenceRead(reference, "stale"),
       });
     }
   }

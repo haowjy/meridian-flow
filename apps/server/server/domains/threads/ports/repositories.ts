@@ -77,6 +77,11 @@ export interface BlockRepository {
   replaceExisting(input: UpsertBlockInput): Promise<Block | null>;
   findById(id: string): Promise<Block | null>;
   listByTurn(turnId: TurnId): Promise<Block[]>;
+  findToolBlock(
+    turnId: TurnId,
+    toolCallId: string,
+    type: "tool_use" | "tool_result",
+  ): Promise<Block | null>;
   /** All blocks across all turns for a thread, ordered by turn creation then block sequence. */
   listByThread(threadId: ThreadId): Promise<Block[]>;
 }
@@ -282,6 +287,13 @@ export interface ThreadRepository {
   listByProject(projectId: ProjectId): Promise<ThreadListItem[]>;
   /** Direct live children of `threadId`, ordered by `(createdAt, id)`. */
   listChildren(threadId: ThreadId): Promise<ThreadChild[]>;
+  /** Bounded newest-first spawn/derivation children; derivations attach to the cutoff owner. */
+  listLineageChildren(input: {
+    rootThreadId: ThreadId;
+    parentIds: ThreadId[];
+    limit: number;
+    after?: { createdAt: string; id: string };
+  }): Promise<Array<Thread & { upThreadId: ThreadId; siblingCount: number }>>;
   /** Hard-bounded model-facing summary of primary chats historically associated with a Work. */
   listRecentByWork(
     projectId: ProjectId,

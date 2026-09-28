@@ -3,7 +3,7 @@
 import type { ReadReferenceOccurrence } from "@meridian/contracts/protocol";
 import { type ReferenceOccurrence, referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue } from "@meridian/contracts/threads";
-import { staleReadStub } from "../tools/document-text.js";
+import { historyReadStub, staleReadStub } from "../tools/document-text.js";
 
 export interface ReferenceReader {
   read(
@@ -59,6 +59,16 @@ export async function loadReferenceReads(input: {
 }
 
 /** Only the materialized document read changes; writer wording and the mention remain intact. */
-export function elideReferenceRead(reference: ReadReferenceOccurrence): JsonValue {
-  return { ...reference, read: { ...reference.read!, result: staleReadStub(reference.uri) } };
+export function elideReferenceRead(
+  reference: ReadReferenceOccurrence,
+  treatment: "stale" | "history",
+): JsonValue {
+  return {
+    ...reference,
+    read: {
+      ...reference.read!,
+      result:
+        treatment === "history" ? historyReadStub(reference.uri) : staleReadStub(reference.uri),
+    },
+  };
 }

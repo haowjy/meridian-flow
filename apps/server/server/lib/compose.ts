@@ -120,6 +120,7 @@ import {
   createInMemoryRunStarter,
   createInMemoryRuntimeDelivery,
   createInMemoryThreadLock,
+  createInspectionToolRegistrations,
   createInstrumentedGateway,
   createOrchestrator,
   createOrphanReportRepair,
@@ -654,6 +655,19 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   for (const registration of createWiredCoreToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
   }
+  for (const registration of createInspectionToolRegistrations({
+    repos: ports.threadRepos,
+    statusReader: ports.runClaim,
+    registry: toolRegistry,
+    async tokenizer(caller) {
+      const binding = await ports.agentRevisions.readThreadBinding(caller.id);
+      const modelId = binding?.configuration.model ?? ports.gateway.getDefaultModel();
+      const model = ports.gateway.listModels?.().find((model) => model.id === modelId);
+      if (!model) throw new Error(`Model not found: ${modelId}`);
+      return model.tokenizer;
+    },
+  }))
+    toolRegistry.register(registration);
   for (const registration of createSpawnToolRegistrations()) {
     toolRegistry.register(registration);
   }

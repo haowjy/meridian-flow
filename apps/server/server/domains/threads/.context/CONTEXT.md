@@ -639,3 +639,11 @@ themselves; spawn, fork, and handoff creation copy the source root. A fork's
 up-edge is the owner of its cutoff turn, which may be an inherited owner;
 a handoff's cutoff points to its source. `threads_lineage_derivations` indexes
 fork/handoff rows by root. Mappers never invent a missing root.
+
+`listLineageChildren` combines indexed spawn children with root-indexed
+derivations attached to their cutoff owner. Its creation timestamp retains
+microseconds for keyset cursors. The transcript read additionally exposes
+internal end/restart cursors, segment count and opening state for bounded
+model projections; the writer route omits these projection-only fields.
+`readTranscriptItem` expands a position key using the same span resolver and
+bounded repository reader, never a loaded transcript.

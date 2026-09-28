@@ -868,6 +868,30 @@ describe("planCompaction", () => {
 });
 
 describe("projectActiveHistory", () => {
+  it("names thread_history only when C owns a bake advertising it", () => {
+    const r = turn("r", 1, "user");
+    const a = turn("a", 2, "assistant");
+    const c = { ...compactionTurn("c", 3, a.id, r.id), promptBakeId: "new-bake" };
+    const blocks = [
+      block("r-text", r.id, 0, "text", { text: "pin" }, "pin"),
+      compactionBlock("summary", c.id),
+    ];
+    const old = projectActiveHistory([r, a, c], blocks, "c1");
+    expect(old.blocks[0]?.textContent).not.toContain("thread_history");
+    const updated = projectActiveHistory([r, a, c], blocks, "c1", {
+      id: "new-bake",
+      bakedTools: [{ type: "function", name: "thread_history" }],
+    } as never);
+    expect(updated.blocks[0]?.textContent).toContain("They remain readable with thread_history.");
+    expect(
+      updated.blocks[0]?.textContent?.replace(" They remain readable with thread_history.", ""),
+    ).toBe(old.blocks[0]?.textContent);
+    const mismatched = projectActiveHistory([r, a, c], blocks, "c1", {
+      id: "other-bake",
+      bakedTools: [{ type: "function", name: "thread_history" }],
+    } as never);
+    expect(mismatched.blocks[0]?.textContent).toBe(old.blocks[0]?.textContent);
+  });
   it("projects 2,000 compaction-free turns by identity without decoding their metadata", () => {
     const turns = Array.from({ length: 2_000 }, (_, index) =>
       turn(`identity-${index}`, index + 1, index % 2 === 0 ? "user" : "assistant", {

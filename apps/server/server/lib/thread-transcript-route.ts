@@ -65,7 +65,13 @@ export async function handleReadThreadTranscript(
     input.userId,
   );
   try {
-    const page = await readTranscriptPage(deps.repos, thread, pageInput);
+    const {
+      endCursor: _end,
+      restartCursor: _restart,
+      opensSegment: _opens,
+      segmentCount: _count,
+      ...page
+    } = await readTranscriptPage(deps.repos, thread, pageInput);
     return {
       ...page,
       entries: page.entries.map((entry) => ({
