@@ -307,6 +307,23 @@ describe("TurnList brief card", () => {
     expect(seen.briefs.get("s")?.retryPending).toBe(true);
   });
 
+  it("shows one brief when the inbox beats the snapshot: the optimistic seed owns the brief request", async () => {
+    const optimistic = optimisticHandoffSeed({
+      threadId: "fork",
+      sourceThreadId: "source",
+      cutoffTurnId: "cut",
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    const initialBrief = {
+      id: "k",
+      control: { kind: "handoff_brief" as const },
+      status: "queued" as const,
+    };
+    await render({ turns: [optimistic], controls: controls({ queued: [initialBrief] }) });
+    expect(host.querySelector("[data-queued]")).toBeNull();
+    expect(seen.briefs.get(optimistic.id)?.retryPending).toBe(false);
+  });
+
   it("gives the optimistic seed nothing to stop or retry", async () => {
     const optimistic = optimisticHandoffSeed({
       threadId: "fork",

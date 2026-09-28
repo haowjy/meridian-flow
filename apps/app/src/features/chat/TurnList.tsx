@@ -124,6 +124,9 @@ export function TurnList({
     const undoByDividerId = new Map<string, QueuedControl>();
     const tailControls: QueuedControl[] = [];
     const answered = answeredControlIds(turns);
+    // The optimistic seed stands in for the server's, whose control id it
+    // cannot know yet: every brief request is that seed's, stopped on the card.
+    const seedPending = turns.some(isOptimisticSeed);
     const dividerIds = new Set(
       transcript.rows.flatMap((row) => (row.kind === "compaction" ? [row.turn.id] : [])),
     );
@@ -140,6 +143,7 @@ export function TurnList({
         }
       }
       if (answered.has(control.id)) continue;
+      if (seedPending && control.control.kind === "handoff_brief") continue;
       tailControls.push(control);
     }
     return { undoByDividerId, tailControls };
