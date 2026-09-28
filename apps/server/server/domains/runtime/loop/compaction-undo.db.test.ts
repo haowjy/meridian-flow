@@ -26,13 +26,38 @@ else
     });
     const makeFixture = createCompactionFixture(db);
     type Rig = Awaited<ReturnType<typeof makeFixture>>;
-    async function fixture(options: Parameters<typeof makeFixture>[0] = {}) {
+    async function fixture({
+      pinLatestRequest = true,
+      ...options
+    }: Parameters<typeof makeFixture>[0] & { pinLatestRequest?: boolean } = {}) {
       const rig = await makeFixture({
         history: "Earlier scene. ".repeat(100),
         gateway: scriptedGateway({ usage: { inputTokens: 100, outputTokens: 10 } }),
         ...options,
       });
       rig.setThreshold(100000);
+      if (pinLatestRequest) {
+        // Keep the long old request compactable, not the pin retained by an idle compact.
+        let previous = (await rig.repos.turns.listByThread(rig.threadId)).at(-1);
+        for (const role of ["user", "assistant"] as const) {
+          const turn = await rig.repos.turns.create({
+            threadId: rig.threadId,
+            prevTurnId: previous?.id,
+            role,
+            origin: role === "user" ? "writer" : "assistant",
+            status: "complete",
+          });
+          await rig.repos.blocks.create({
+            turnId: turn.id,
+            blockType: "text",
+            sequence: 0,
+            content: "Latest exchange.",
+            textContent: "Latest exchange.",
+            status: "complete",
+          });
+          previous = turn;
+        }
+      }
       return rig;
     }
     async function enqueue(rig: Rig, control: ControlBody) {
@@ -95,7 +120,7 @@ else
     }
 
     it("C6b sixth pinned request restores pre-C messages and prior bake", async () => {
-      const rig = await fixture();
+      const rig = await fixture({ pinLatestRequest: false });
       const run = await rig.orchestrator.prepare({
         threadId: rig.threadId,
         userText: "Before the cut.",

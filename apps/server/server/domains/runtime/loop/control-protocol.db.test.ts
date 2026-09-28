@@ -337,7 +337,8 @@ else
       const balance = await rig.creditLedger.getBalance({ userId: rig.ids.user });
       await compactControl(rig);
       await drainControls(rig);
-      const turn = (await settled(rig)).at(-1)!;
+      const turn = (await settled(rig)).at(-1);
+      if (!turn) throw new Error("Missing compaction turn");
       expect(turn).toMatchObject({
         role: "compaction",
         status: refuses ? "error" : "complete",

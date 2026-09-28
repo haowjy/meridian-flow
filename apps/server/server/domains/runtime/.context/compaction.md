@@ -257,8 +257,8 @@ prompt on cold). Warm requests keep their prefix unchanged.
 
 Warm compaction appends the plan's retained pin/tail exclusions to the instruction.
 Each model-visible passage is identified by role and a quoted opening (up to
-200 characters), using the active projection's rendered content. Tool passages
-include their call IDs. This handles cuts within assistant tool groups and
+200 characters), using the active projection's rendered content. Tool-result
+openings include call IDs; assistant passages start with text or a tool call. This handles cuts within assistant tool groups and
 lifted pins without assuming a turn is one message: adjacent user messages can
 merge, and one assistant turn can render several messages. Preservation rules
 apply only to replaced material, not retained-only document URIs, reads or next
