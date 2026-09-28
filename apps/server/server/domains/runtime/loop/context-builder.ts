@@ -289,6 +289,7 @@ function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
 
 // Pre-admission failures are model context; saved run reports remain transcript UI.
 export function componentModelText(content: ComponentBlockContent): string | null {
+  if (content.kind === "handoff-brief") return content.props.modelText as string;
   if (content.kind !== "helper-result") return null;
   const props = parseInvocationCard(content);
   if (!props || props.terminalAt === null) return null;

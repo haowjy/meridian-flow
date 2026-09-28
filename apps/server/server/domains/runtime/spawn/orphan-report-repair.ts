@@ -15,6 +15,7 @@ import type { ReportPublisher } from "./report-publisher.js";
 
 export function createOrphanReportRepair(deps: {
   repos: ThreadRepositories;
+  inbox: Pick<import("../loop/ports.js").InboxReader, "selectPending">;
   eventWriter: EventJournalWriter;
   authority: RunClaim;
   threadLock: ThreadLock;

@@ -4,6 +4,8 @@ The agentic execution engine. It takes a user message, streams it through an LLM
 with tool use, persists side effects through thread repositories, and emits
 `OrchestratorEvent`s that the threads domain fans out to clients.
 
+See [handoff seeds](handoff.md) for row-owned placeholder liveness and the brief boundary.
+
 ## Document revision metadata
 
 Document reads, search hits, and settled writes persist

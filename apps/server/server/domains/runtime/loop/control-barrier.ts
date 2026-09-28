@@ -14,6 +14,8 @@ export function planControlBarrier(input: {
   const index = unbound.findIndex((row) => row.intent === "control");
   if (index < 0) return { batch: unbound, execute: null };
   const head = unbound[index] as ControlMessage;
+  if (head.body.kind === "handoff_brief" && head.body.seedTurnId)
+    return { batch: [], execute: head };
   const ahead = unbound.slice(0, index);
   const execute =
     !ahead.some((row) => row.intent === "message") ||

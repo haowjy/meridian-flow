@@ -21,6 +21,7 @@ import {
   type ThreadRepositories,
 } from "../../threads/index.js";
 import { compactionFailureMeridianError } from "./compaction/decision.js";
+import { handoffSeedBlock } from "./handoff-seed.js";
 import { persistAndAppendEvents } from "./persistence.js";
 
 export type TerminalCause =
@@ -196,7 +197,14 @@ export async function finalizeExecution(
       if (input.cause.kind === "success") {
         await deps.repos.threads.updateCost(input.threadId, "0", 1);
       }
-      return { result: updated, events: [turnEvent(updated, input.cause)] };
+      const events: OrchestratorEvent[] = [];
+      if (turn.role === "system") {
+        events.push({
+          type: "block.upserted",
+          block: handoffSeedBlock(turn),
+        });
+      }
+      return { result: updated, events: [...events, turnEvent(updated, input.cause)] };
     },
     {
       async afterEvents(turn) {

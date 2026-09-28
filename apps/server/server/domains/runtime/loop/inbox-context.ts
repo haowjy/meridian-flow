@@ -393,6 +393,8 @@ export function noticesTurnFor(
 
 export function inboxMessageText(message: InboxMessage): string {
   switch (message.body.kind) {
+    case "handoff_brief":
+      return "Write handoff brief";
     case "compaction_undo":
       return "Undo compaction";
     case "compact":

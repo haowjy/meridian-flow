@@ -14,6 +14,18 @@
 - Compaction undo preserves paged transcript segments and restores the pre-compaction prompt bake.
 
 ### Changed
+- Regenerate handoff migration after undo; accept all three queued control kinds.
+- Preserve handoff seeds during idle and startup repair; keep undo and handoff controls ordered together.
+- Preserve Work-context delivery while recovering stranded handoff controls.
+- Withdrawn controls cannot replay if their owner crashes before stopping.
+- Validate Agent selections consistently across handoff and thread creation.
+- Reject handoff Retry while a brief is pending or the latest brief succeeded. Replayed requests stay idempotent.
+- Withdrawing a running compaction still stops it after its lease expires.
+- Recover handoffs whose brief seed already ended. Queued replies, Stop and withdrawal no longer get stuck.
+- Handoffs create immediately with a recoverable brief seed. Stop preserves queued messages. Retry appends a new seed.
+- Stop reaches pending handoff seeds after their owner lease expires. Resumed briefs cannot overwrite Stop.
+- Handoff requests require a destination id and cutoff; client-written summaries removed.
+
 - Type compaction failure reasons, phases, fit measurements and control IDs in the durable metadata codec, including failures without a planned cut.
 - Expose compaction failure and control metadata, with token counts, in the existing `thread view --json` projection.
 - Persist typed compaction failure reasons and phases on failed C turns and their `turn.error` events; fail C on a late-arrival fit overflow while settling paid summaries.

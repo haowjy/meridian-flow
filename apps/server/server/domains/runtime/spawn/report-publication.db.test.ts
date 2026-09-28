@@ -3,6 +3,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
+import { createDrizzleInbox } from "../adapters/drizzle-inbox.js";
 
 const runDb = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const databaseUrl = process.env.DATABASE_URL;
@@ -260,6 +261,7 @@ else
       });
       const authority = createDrizzleRunClaim(db, { holderId: "json-roundtrip-repair" });
       const repair = createOrphanReportRepair({
+        inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
         authority,
@@ -581,6 +583,7 @@ else
     it("does not infer orphan death from a missing lease while the physical claim is held", async () => {
       const authority = createDrizzleRunClaim(db, { holderId: "repair-test" });
       const repair = createOrphanReportRepair({
+        inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
         authority,
@@ -652,6 +655,7 @@ else
       }
       const authority = createDrizzleRunClaim(db, { holderId: "placeholder-scan" });
       const repair = createOrphanReportRepair({
+        inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
         authority,
@@ -701,6 +705,7 @@ else
       });
       const authority = createDrizzleRunClaim(db, { holderId: "primary-stream-sweep" });
       const repair = createOrphanReportRepair({
+        inbox,
         repos,
         eventWriter,
         authority,
@@ -771,6 +776,7 @@ else
         .set({ expiresAt: new Date(0) })
         .where(eq(schema.threadRunLeases.threadId, ids.root));
       const repair = createOrphanReportRepair({
+        inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
         authority,
@@ -896,6 +902,7 @@ else
       });
       const authority = createDrizzleRunClaim(db, { holderId: "placeholder-report-walk" });
       const repair = createOrphanReportRepair({
+        inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
         authority,
@@ -961,6 +968,7 @@ else
         summary: "",
       });
       const repair = createOrphanReportRepair({
+        inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
         authority: createDrizzleRunClaim(db, { holderId: "exact-report-walk" }),

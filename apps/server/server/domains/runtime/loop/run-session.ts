@@ -35,7 +35,10 @@ export function createRunSessions(deps: {
     lease: Lease;
   }): Promise<Turn>;
   runClaim: RunClaim;
-  delivery: Pick<RuntimeDelivery, "refreshPending" | "repairOrphanedTurns" | "selectPending">;
+  delivery: Pick<
+    RuntimeDelivery,
+    "repairOrphanedTurns" | "refreshPending" | "selectPending" | "cancelPendingSeed"
+  >;
   repos: { turns: TurnRepository };
   headSeq(threadId: ThreadId): Promise<bigint>;
   eventSink: EventSink;
@@ -190,8 +193,9 @@ export function createRunSessions(deps: {
         await cleanup(
           outcome.status === "complete",
           outcome.status !== "failed" &&
-            ((outcome.turn.metadata as import("@meridian/contracts/threads").JsonObject | null)
-              ?.kind === "compaction_undo" ||
+            (outcome.turn.role === "system" ||
+              (outcome.turn.metadata as import("@meridian/contracts/threads").JsonObject | null)
+                ?.kind === "compaction_undo" ||
               (outcome.turn.role === "compaction" &&
                 (outcome.turn.metadata as import("@meridian/contracts/threads").JsonObject | null)
                   ?.trigger === "manual")),
@@ -255,6 +259,7 @@ export function createRunSessions(deps: {
       const active = running.get(threadId);
       const turn = await deps.repos.turns.findById(turnId);
       if (!turn || turn.threadId !== threadId) return "not_found";
+      if (await deps.delivery.cancelPendingSeed(threadId, turnId)) return "cancelled";
       if (!(await authority.cancelExecution(threadId, turnId)))
         return isTerminalTurnStatus(turn.status) || active ? "already_finished" : "not_found";
       if (active) {

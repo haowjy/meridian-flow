@@ -227,8 +227,14 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
       row.messageIds = [];
       return true;
     },
-    async lockThreadReceipt(threadId) {
-      const row = liveLease(threadId);
+    async cancelThreadReceipt(threadId, turnId) {
+      const row = leases.get(threadId);
+      if (!row || row.turnId !== turnId) return false;
+      row.cancelRequested = true;
+      return true;
+    },
+    async lockThreadReceipt(threadId, liveOnly) {
+      const row = liveOnly ? liveLease(threadId) : leases.get(threadId);
       return row ? { ids: [...row.messageIds], turnId: row.turnId } : null;
     },
     async lockReceipt(lease) {
@@ -264,7 +270,7 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
 
     async cancelExecution(threadId, turnId) {
       const row = liveLease(threadId);
-      if (!row || !row.boundTurnIds.has(turnId)) return false;
+      if (!row?.boundTurnIds.has(turnId)) return false;
       row.cancelRequested = true;
       return true;
     },

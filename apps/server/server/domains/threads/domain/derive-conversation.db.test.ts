@@ -349,8 +349,8 @@ else
       await expect(
         createFork(fixture.source, fixture.deps, { id, originTurnId: fixture.firstTurn.id }),
       ).rejects.toMatchObject({
-        name: "ForkThreadConflictError",
-        message: "The requested fork ID is already in use",
+        name: "DerivedThreadConflictError",
+        message: "The requested derivation ID is already in use",
       });
     });
 

@@ -12,6 +12,7 @@ import {
   planControlBarrier,
 } from "../loop/control-barrier.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
+import { reserveHandoffSeed } from "../loop/handoff-seed.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
 import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
 import { finalizeOrphanedTurns } from "../loop/orphaned-placeholder.js";
@@ -31,6 +32,7 @@ import type {
 } from "../loop/ports.js";
 import { writerFacingPreparationError } from "../loop/preparation-failure.js";
 import { UndoRequestPreparationError } from "../loop/request-preparation.js";
+import { NoPendingWakeError } from "../loop/run-turn-port.js";
 import type {
   AdoptedBatch,
   DeliveryBoundary,
@@ -51,12 +53,16 @@ export interface DeliveryStore extends InboxReader {
 }
 
 export interface DeliveryLeaseStore {
-  lockThreadReceipt(threadId: ThreadId): Promise<{ ids: string[]; turnId: TurnId | null } | null>;
+  cancelThreadReceipt(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
+  lockThreadReceipt(
+    threadId: ThreadId,
+    liveOnly: boolean,
+  ): Promise<{ ids: string[]; turnId: TurnId | null } | null>;
   bindTurn(
     lease: Lease,
     turnId: TurnId,
     ids: readonly string[],
-    kind: "assistant" | "compaction",
+    kind: "assistant" | "compaction" | "handoff_brief",
   ): Promise<void>;
   setAdoptedMessageIds(lease: Lease, ids: readonly string[]): Promise<boolean>;
   clearReceipt(lease: Lease, expectedIds: readonly string[]): Promise<boolean>;
@@ -87,14 +93,25 @@ export function createDeliveryAdapter(
       pending: await readPendingInbox(inbox, threadId),
     });
   };
+  async function findStaleSeedControls(pending: InboxMessage[]) {
+    const stale: string[] = [];
+    for (const row of pending) {
+      if (row.body.kind !== "handoff_brief" || !row.body.seedTurnId) continue;
+      const seed = await deps.repos.turns.findById(row.body.seedTurnId);
+      if (!seed || !isPendingPlaceholder(seed)) stale.push(row.id);
+    }
+    return stale;
+  }
   async function selectForPreparation(
     threadId: ThreadId,
     satisfyPendingCompact?: boolean,
     expandUndos = true,
   ) {
     const pendingBatch = await inbox.selectPending(threadId);
+    const staleSeedControls = await findStaleSeedControls(pendingBatch);
+    const eligible = pendingBatch.filter((row) => !staleSeedControls.includes(row.id));
     const projection = await inbox.readPendingProjection(threadId);
-    const headControl = pendingBatch.find(
+    const headControl = eligible.find(
       (row) => row.intent === "control" && !projection.run?.messageIds.includes(row.id),
     );
     const satisfiesControlId =
@@ -104,12 +121,12 @@ export function createDeliveryAdapter(
       ...(satisfiesControlId ? [satisfiesControlId] : []),
     ]);
     const chained = await Promise.all(
-      pendingBatch
+      eligible
         .filter((row) => !boundIds.has(row.id))
         .map((row) => deps.repos.turns.findById(row.id)),
     );
     const barrier = planControlBarrier({
-      pending: pendingBatch,
+      pending: eligible,
       boundIds,
       chainedIds: new Set(chained.flatMap((turn) => (turn ? [turn.id] : []))),
     });
@@ -125,7 +142,7 @@ export function createDeliveryAdapter(
       selectedIds.add(afterControlId);
       for (const row of nextBarrier.batch) selectedIds.add(row.id);
       nextBarrier = planControlBarrier({
-        pending: pendingBatch,
+        pending: eligible,
         boundIds: selectedIds,
         chainedIds: new Set(chained.flatMap((turn) => (turn ? [turn.id] : []))),
       });
@@ -152,20 +169,20 @@ export function createDeliveryAdapter(
       followingBatches,
       satisfiesControlId,
       headControl:
-        (pendingBatch.find(
+        (eligible.find(
           (row) =>
             row.intent === "control" &&
             !boundIds.has(row.id) &&
             !controls.some((c) => c.id === row.id && c.body.kind === "compaction_undo"),
         ) as ControlMessage | undefined) ?? null,
-      outstanding: pendingBatch.filter(
+      outstanding: eligible.filter(
         (row) => row.intent === "message" && (boundIds.has(row.id) || adoptedIds.has(row.id)),
       ),
       workContext: work.workContext,
       notices,
       activeLeafTurnId: thread.activeLeafTurnId,
     };
-    return { selection, pendingBatch, work };
+    return { selection, pendingBatch, work, staleSeedControls };
   }
   async function selectionStillCurrent(
     threadId: ThreadId,
@@ -178,7 +195,8 @@ export function createDeliveryAdapter(
     if (!thread) throw new Error(`Thread not found: ${threadId}`);
     return (
       thread.activeLeafTurnId === selected.selection.activeLeafTurnId &&
-      sameInboxBatch(pendingBatch, selected.pendingBatch)
+      sameInboxBatch(pendingBatch, selected.pendingBatch) &&
+      (await findStaleSeedControls(pendingBatch)).join() === selected.staleSeedControls.join()
     );
   }
   async function prepareAndCommit<TPrepared, TResult>(input: {
@@ -195,6 +213,7 @@ export function createDeliveryAdapter(
       selection: DeliverySelection,
       work: Awaited<ReturnType<typeof workBatch>>,
       prepared: TPrepared,
+      retiredSeedControls: readonly string[],
     ) => Promise<TResult>;
   }): Promise<TResult> {
     let committingUndoIds: string[] = [];
@@ -250,7 +269,14 @@ export function createDeliveryAdapter(
       committingUndoIds = (selected.selection.controls ?? [])
         .filter((c) => c.body.kind === "compaction_undo")
         .map((c) => c.id);
-      const result = await input.commit(selected.selection, selected.work, prepared);
+      // Retire invalid seed barriers in the same transaction as their replacement reservation.
+      await inbox.ack(input.threadId, selected.staleSeedControls);
+      const result = await input.commit(
+        selected.selection,
+        selected.work,
+        prepared,
+        selected.staleSeedControls,
+      );
       if (!input.hasPreparationFailure(prepared)) {
         await deps.notices.consume(selected.selection.notices.map(({ id }) => id));
       }
@@ -469,6 +495,7 @@ export function createDeliveryAdapter(
       prepared,
       split:
         input.current.kind === "placeholder" ||
+        selection.controls?.some((control) => control.body.kind === "handoff_brief") ||
         prepared.compaction?.kind === "compact" ||
         !!prepared.undos?.length ||
         !!preparationFailure ||
@@ -506,7 +533,7 @@ export function createDeliveryAdapter(
     const receipt = await leaseStore.lockReceipt(lease);
     drain.ackIds = [
       ...new Set([...(receipt?.ids ?? []), ...drain.ackIds, ...(prepared.adoptedIds ?? [])]),
-    ];
+    ].filter((id) => !work.ids.includes(id) && !committedWorkIds.includes(id));
     let terminal = false;
     if (split) {
       completed =
@@ -537,15 +564,18 @@ export function createDeliveryAdapter(
       const undoIds = (prepared.undos ?? []).map((u) => u.controlId);
       endingControls.push(...undoIds);
       await inbox.ack(threadId, endingControls);
-      drain.ackIds = [...new Set([...(receipt?.ids ?? []), ...drain.ackIds])].filter(
-        (id) => !endingControls.includes(id),
+      drain.ackIds = drain.ackIds.filter((id) => !endingControls.includes(id));
+      const briefControl = adoption.selection.controls?.find(
+        (control) => control.body.kind === "handoff_brief",
       );
-      const nextControlId = compaction?.controlMessageId ?? compaction?.satisfiesControlId;
+      const nextControlId =
+        briefControl?.id ?? compaction?.controlMessageId ?? compaction?.satisfiesControlId;
       if (nextControlId) drain.ackIds.push(nextControlId);
       terminal =
         (input.current.kind === "placeholder" || !!prepared.undos?.length) &&
         !input.continueTask &&
         !compaction &&
+        !briefControl &&
         !adoption.selection.outstanding.length;
       if (terminal) {
         await persistAndAppendTurnStartEvents(deps, threadId, expectedLeaf, async () => ({
@@ -580,6 +610,11 @@ export function createDeliveryAdapter(
           },
           compaction,
         );
+        if (briefControl) {
+          const thread = await deps.repos.threads.findById(threadId);
+          if (!thread) throw new Error("Handoff thread is missing");
+          next = await reserveHandoffSeed(deps.repos, next, briefControl, thread);
+        }
         const completedTurn = completed;
 
         await persistAndAppendTurnStartEvents(
@@ -615,9 +650,6 @@ export function createDeliveryAdapter(
     }
 
     await inbox.ack(threadId, work.ids);
-    drain.ackIds = drain.ackIds.filter(
-      (id) => !work.ids.includes(id) && !committedWorkIds.includes(id),
-    );
     if (
       !split &&
       batch.length > 0 &&
@@ -680,15 +712,37 @@ export function createDeliveryAdapter(
   }
 
   return {
+    async enqueueSeedBrief({ threadId, seedTurnId, controlId }) {
+      await threadLock.withThreadLock(threadId, () =>
+        enqueue({
+          id: controlId,
+          threadId,
+          intent: "control",
+          body: { kind: "handoff_brief", seedTurnId },
+          provenance: { kind: "system", source: "handoff" },
+          idempotencyKey: seedTurnId,
+        }),
+      );
+    },
     ...createThreadControls({
       withThreadLock: threadLock.withThreadLock,
       findMessage: inbox.findMessage,
+      findThread: (id) => deps.repos.threads.findById(id),
+      pendingRows: inbox.selectPending,
+      cancelSeed: async (threadId, turnId) => {
+        await finalizeExecution(deps, {
+          threadId,
+          turnId,
+          cause: { kind: "cancelled", reason: "cancelled" },
+        });
+      },
       enqueue,
       findTurn: (id) => deps.repos.turns.findById(id),
       findControlTurn: (id, controlId) => deps.repos.turns.findByControlId(id, controlId),
+      findLatestHandoffSeed: (id) => deps.repos.turns.findLatestHandoffSeed(id),
       pending: (id) => readPendingInbox(inbox, id),
       lockReceipt: leaseStore.lockThreadReceipt,
-      cancel: deps.runClaim.cancelExecution,
+      cancel: leaseStore.cancelThreadReceipt,
       acknowledge: async (id, controlId) => {
         await inbox.ack(id, [controlId]);
         await appendPending(id);
@@ -740,7 +794,7 @@ export function createDeliveryAdapter(
         }),
       ),
     adoptBatch: async (lease, prepare, options) => {
-      return prepareAndCommit({
+      const result = await prepareAndCommit({
         threadId: lease.threadId,
         signal: options?.signal,
         validate: async () => {
@@ -748,8 +802,12 @@ export function createDeliveryAdapter(
             throw new DOMException("The operation was aborted", "AbortError");
         },
         prepare: (selection) => prepare(selection),
-        hasPreparationFailure: (prepared) => prepared.preparationFailure !== undefined,
-        commit: async (_selection, work, prepared) => {
+        hasPreparationFailure: (prepared) => !prepared || prepared.preparationFailure !== undefined,
+        commit: async (_selection, work, prepared, retiredSeedControls) => {
+          if (!prepared) {
+            if (retiredSeedControls.length > 0) await appendPending(lease.threadId);
+            return null;
+          }
           await prepared.persist?.();
           await inbox.ack(lease.threadId, work.ids);
           await inbox.ack(lease.threadId, prepared.completedControlIds ?? []);
@@ -766,9 +824,11 @@ export function createDeliveryAdapter(
               prepared.turnKind,
             );
           await appendPending(lease.threadId);
-          return prepared.value;
+          return { value: prepared.value };
         },
       });
+      if (!result) throw new NoPendingWakeError(lease.threadId);
+      return result.value;
     },
     ackWithResponse: (lease, ids, persist) =>
       threadLock.withThreadLock(lease.threadId, async () => {
@@ -810,10 +870,12 @@ export function createDeliveryAdapter(
           completion.turn.status === "cancelled" ||
           (cause.kind === "failed" &&
             (cause.acknowledgeInbox ||
+              completion.turn.role === "system" ||
               (completion.turn.metadata as import("@meridian/contracts/threads").JsonObject | null)
                 ?.trigger === "manual"))
         ) {
           const ids =
+            completion.turn.role === "system" ||
             (completion.turn.metadata as import("@meridian/contracts/threads").JsonObject | null)
               ?.trigger === "manual"
               ? (await inbox.selectPending(threadId))

@@ -76,6 +76,7 @@ const expectedSuites = [
   "apps/server/server/domains/threads/domain/rebind-thread-work.db.test.ts",
   "apps/server/server/domains/threads/domain/transcript-page.db.test.ts",
   "apps/server/server/domains/threads/domain/derive-conversation.db.test.ts",
+  "apps/server/server/domains/threads/domain/handoff-protocol.db.test.ts",
   "apps/server/server/domains/threads/domain/prompt-bakes.db.test.ts",
   "apps/server/server/lib/thread-work-rebind-route.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/turn-start-race.db.test.ts",

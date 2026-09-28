@@ -110,7 +110,7 @@ const threadStatusSchema: z.ZodType<import("../threads/index.js").ThreadStatus> 
   z.object({ kind: z.literal("asleep") }),
   z.object({
     kind: z.literal("awake"),
-    phase: z.enum(["generating", "waiting", "compacting"]),
+    phase: z.enum(["generating", "waiting", "compacting", "briefing"]),
     cancelRequested: z.boolean(),
   }),
 ]);
@@ -165,6 +165,7 @@ const pendingInboxItemSchema: z.ZodType<import("../threads/index.js").PendingInb
     .discriminatedUnion("kind", [
       z.object({ kind: z.literal("compact") }),
       z.object({ kind: z.literal("compaction_undo"), compactionTurnId: z.string().uuid() }),
+      z.object({ kind: z.literal("handoff_brief"), seedTurnId: z.uuid().optional() }),
     ])
     .optional(),
   provenance: messageProvenanceSchema,

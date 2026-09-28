@@ -168,7 +168,9 @@ export async function executeCompaction({
               blocks: [...allBlocks, ...drain.blocks],
               baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
               readReferences: false,
-              skipCompaction: !selection.control,
+              skipCompaction:
+                !selection.control ||
+                selection.controls?.some((control) => control.body.kind === "handoff_brief"),
               controls: selection.controls,
               followingBatches: selection.followingBatches,
               failedUndoIds: selection.failedUndoIds,

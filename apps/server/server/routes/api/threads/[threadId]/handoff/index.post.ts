@@ -1,7 +1,6 @@
-/** POST /api/threads/[threadId]/handoff: create a new primary thread with a summary brief. */
+/** POST /api/threads/[threadId]/handoff: create a new primary thread with a pending brief seed. */
 
-import type { AgentSelection } from "@meridian/contracts/agents";
-import { serializeTransport } from "@meridian/contracts/protocol";
+import { handoffThreadRequestSchema, serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import {
   handoffThreadAgent,
@@ -9,16 +8,18 @@ import {
 } from "../../../../../domains/threads/index.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import { deriveConversationErrorStatus } from "../../../../../lib/derive-conversation-route-errors.js";
-import { requireAgentSelection, requireRequestId } from "../../../../../lib/request-id.js";
+import { requireRequestId } from "../../../../../lib/request-id.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const threadId = requireRequestId(getRouterParam(event, "threadId"), "threadId");
-  const body =
-    (await readBody<{ agentSelection?: AgentSelection; summary?: string | null }>(event)) ?? {};
+  const parsed = handoffThreadRequestSchema.safeParse(await readBody(event));
+  if (!parsed.success) throw createError({ statusCode: 400, message: "Invalid handoff request" });
+  const body = parsed.data;
   try {
-    const thread = await handoffThreadAgent(
+    const result = await handoffThreadAgent(
       {
+        delivery: app.delivery,
         threads: app.repos.threads as ThreadAgentSwapDeps["threads"],
         threadWorks: app.repos.threadWorks,
         turns: app.repos.turns,
@@ -35,14 +36,15 @@ export default defineEventHandler(async (event) => {
         eventWriter: app.journalWriter,
       },
       {
+        id: body.id,
+        originTurnId: body.originTurnId,
         threadId,
         userId: user.userId,
-        agentSelection: requireAgentSelection(body.agentSelection),
-        summary: body.summary,
+        agentSelection: body.agentSelection,
       },
     );
-    event.res.status = 201;
-    return serializeTransport(thread);
+    event.res.status = result.created ? 201 : 200;
+    return serializeTransport(result.thread);
   } catch (error) {
     const statusCode = deriveConversationErrorStatus(error);
     if (statusCode !== null && error instanceof Error)

@@ -120,6 +120,12 @@ import { failCompactionSuccessor } from "./compaction-successor.js";
 import { persistPreparedControlEvents } from "./compaction-undo.js";
 import { absorbPendingCompact } from "./control-barrier.js";
 import type { TerminalCause } from "./execution-finalizer.js";
+import {
+  completeHandoffSeed,
+  HandoffSeedSettledError,
+  handoffSeedBlock,
+  reserveHandoffSeed,
+} from "./handoff-seed.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
@@ -154,7 +160,6 @@ import { createRunSessions } from "./run-session.js";
 import {
   type DrainRunLoopInput,
   isDrainRun,
-  NoPendingWakeError,
   type PreparedLoop,
   type RunLoopInput,
 } from "./run-turn-port.js";
@@ -207,6 +212,7 @@ export interface OrchestratorRepositories {
 
 export interface OrchestratorDeps {
   summarizer: ConversationSummarizer;
+  handoffSummarizer: ConversationSummarizer;
   gateway: LlmGateway;
   toolExecutor: ToolExecutor;
   referenceReader: ReferenceReader;
@@ -506,7 +512,15 @@ async function runDrainTurn(
     async (selection) => {
       const setupThread = await deps.repos.threads.findById(input.threadId);
       if (!setupThread) throw new Error(`Thread not found: ${input.threadId}`);
+      const briefControl = selection.controls?.find(
+        (control) => control.body.kind === "handoff_brief",
+      );
+      const existingSeed =
+        briefControl?.body.kind === "handoff_brief" && briefControl.body.seedTurnId
+          ? await deps.repos.turns.findById(briefControl.body.seedTurnId)
+          : null;
       const batch = selection.batch;
+      if (!selection.control && !batch.some((message) => message.intent === "message")) return null;
       const ctx = await loadRunStartContext(deps, setupThread);
       preparationError = ctx.contextError;
       const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;
@@ -515,9 +529,6 @@ async function runDrainTurn(
         ? (existingTurns.find((turn) => turn.id === prevTurnId) ?? null)
         : null;
       if (prevTurnId && !previousTurn) throw new Error(`Missing causal turn: ${prevTurnId}`);
-      if (!selection.control && !batch.some((message) => message.intent === "message")) {
-        throw new NoPendingWakeError(input.threadId);
-      }
       const turnById = new Map(
         [...inheritedTurns, ...priorTurns].map((turn) => [turn.id as string, turn]),
       );
@@ -576,6 +587,7 @@ async function runDrainTurn(
             threadId: input.threadId,
             referenceTurnId: referenceUserTurnId,
             currentTurnId: reservedTurnId,
+            skipCompaction: selection.controls?.some((c) => c.body.kind === "handoff_brief"),
             controls: selection.controls,
             followingBatches: selection.followingBatches,
             failedUndoIds: selection.failedUndoIds,
@@ -626,15 +638,17 @@ async function runDrainTurn(
       if (preflight)
         preflight.compaction = absorbPendingCompact(preflight.compaction, selection.headControl);
       const controlId =
-        preflight?.compaction.kind === "compact"
+        briefControl?.id ??
+        (preflight?.compaction.kind === "compact"
           ? (preflight.compaction.controlMessageId ?? preflight.compaction.satisfiesControlId)
-          : undefined;
+          : undefined);
       const imageUpdateTurn = controlPreparation?.turns.at(-1);
       const terminal =
         !!controlPreparation?.undos.length &&
         selection.outstanding.length === 0 &&
+        !briefControl &&
         preflight?.compaction.kind !== "compact";
-      const reservedTurn = terminal
+      let reservedTurn = terminal
         ? controlPreparation!.undos.at(-1)!.turn
         : reservationTurn(
             {
@@ -648,6 +662,10 @@ async function runDrainTurn(
             },
             preflight?.compaction,
           );
+      if (briefControl)
+        reservedTurn =
+          existingSeed ??
+          (await reserveHandoffSeed(deps.repos, reservedTurn, briefControl, setupThread));
       if (preparationError && selection.control?.body.kind === "compact") {
         reservedTurn.role = "compaction";
         reservedTurn.origin = "system";
@@ -661,7 +679,9 @@ async function runDrainTurn(
         referenceUserTurnId,
         preflight,
         messageTurns: plan.turns,
-        priorTurns,
+        priorTurns: existingSeed
+          ? priorTurns.filter((turn) => turn.position < existingSeed.position)
+          : priorTurns,
         inheritedTurns,
         inheritedBlocks,
         executionAdmitted: selection.outstanding.length > 0,
@@ -675,7 +695,9 @@ async function runDrainTurn(
           : []),
         ...plan.events,
         ...(controlPreparation?.events ?? []),
-        ...(!terminal ? [{ type: "turn.created" as const, turn: reservedTurn }] : []),
+        ...(!terminal && !existingSeed
+          ? [{ type: "turn.created" as const, turn: reservedTurn }]
+          : []),
       ];
       return {
         value,
@@ -1644,6 +1666,7 @@ async function executeLoop(
           readReferences: false,
           signal: input.signal,
           forcedDecision,
+          skipCompaction: selection.controls?.some((c) => c.body.kind === "handoff_brief"),
           assertNoResponseScope: () => {
             if (responseScope)
               throw new Error("Undo revision query requires no open response scope");
@@ -1711,8 +1734,60 @@ async function executeLoop(
     if (result.preparationFailure !== undefined) {
       throw new RequestPreparationError(result.preparationFailure);
     }
+    if (result.next.role === "system") return brief();
     if (result.compaction) return compact(result.compaction);
     return result.drain;
+  }
+
+  async function brief() {
+    await publishPhase("briefing");
+    input.signal?.throwIfAborted();
+    // C7b owns source transcript/cache preparation and paid response settlement.
+    const outcome = await deps.handoffSummarizer.summarize({
+      threadId: thread.id,
+      turnId: currentTurn.id,
+      instruction: "handoff_brief",
+      requestInHand: null,
+      projection: { turns: [], blocks: [] },
+      signal: input.signal ?? new AbortController().signal,
+    });
+    input.signal?.throwIfAborted();
+    const available = outcome.kind === "complete" ? outcome : undefined;
+    const block = handoffSeedBlock(currentTurn, available);
+    const completed = {
+      ...currentTurn,
+      status: available ? ("complete" as const) : ("error" as const),
+      error: available ? null : "This handoff brief couldn't be generated. Try again.",
+      completedAt: new Date().toISOString(),
+    };
+    const index = allTurns.findIndex((turn) => turn.id === currentTurn.id);
+    allTurns[index] = completed;
+    allBlocks.push(localBlockFromEvent(block));
+    preparedContext = undefined;
+    const boundary = boundaryInput();
+    let result: AdoptedBatch<unknown>;
+    try {
+      result = await deps.delivery.splitAndContinue({
+        ...boundary,
+        current: {
+          kind: "placeholder",
+          complete: () => completeHandoffSeed(deps, completed, block),
+        },
+      });
+    } catch (error) {
+      if (!(error instanceof HandoffSeedSettledError)) throw error;
+      await deps.delivery.withThreadLock(thread.id, async (producer) => {
+        const staleControls = (await deps.delivery.selectPending(thread.id)).filter(
+          (row) => row.body.kind === "handoff_brief" && row.body.seedTurnId === currentTurn.id,
+        );
+        await producer.acknowledge(staleControls.map((row) => row.id));
+      });
+      currentTurn = error.turn;
+      terminalControl = true;
+      return { turns: [], blocks: [], events: [], ackIds: [] };
+    }
+    if (result.context) preparedContext = result.context;
+    return acceptBoundary(result);
   }
 
   async function compact(decision: Extract<CompactionDecision, { kind: "compact" }>) {
@@ -1817,6 +1892,7 @@ async function executeLoop(
 
   for (;;) {
     try {
+      if (currentTurn.role === "system") queuedDrain = await brief();
       if (initialCompaction.kind === "compact") {
         const firstDecision = initialCompaction;
         initialCompaction = { kind: "generate" };
