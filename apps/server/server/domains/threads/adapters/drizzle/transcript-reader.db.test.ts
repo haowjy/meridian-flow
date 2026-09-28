@@ -27,7 +27,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleThreadLock } = await import(
       "../../../runtime/adapters/drizzle-thread-lock.js"
     );
-    const { createDrizzleInbox } = await import("../../../runtime/adapters/drizzle-inbox.js");
     const { createDrizzleEventJournalWriter } = await import("../../index.js");
     const { finalizeOrphanedTurns } = await import("../../../runtime/loop/orphaned-placeholder.js");
 
@@ -382,7 +381,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await finalizeOrphanedTurns(
           {
             repos: observedRepos,
-            inbox: createDrizzleInbox(db),
             eventWriter: createDrizzleEventJournalWriter(db),
           },
           { threadId: THREAD_ID },

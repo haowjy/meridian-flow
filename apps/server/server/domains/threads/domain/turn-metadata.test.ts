@@ -1,4 +1,9 @@
-import { isPendingPlaceholder, isPlaceholderRole } from "@meridian/contracts/threads";
+import {
+  isPendingPlaceholder,
+  isPlaceholderRole,
+  isRunOwnedPlaceholder,
+  isRunOwnedPlaceholderRole,
+} from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import {
   CompactionMetadataCodec,
@@ -10,10 +15,15 @@ import {
 describe("pending placeholders", () => {
   it("classifies only pending turns with a placeholder role", () => {
     expect(isPlaceholderRole("compaction")).toBe(true);
+    expect(isPlaceholderRole("system")).toBe(true);
     expect(isPlaceholderRole("assistant")).toBe(false);
     expect(isPendingPlaceholder({ role: "compaction", status: "pending" })).toBe(true);
     expect(isPendingPlaceholder({ role: "compaction", status: "complete" })).toBe(false);
     expect(isPendingPlaceholder({ role: "assistant", status: "pending" })).toBe(false);
+    expect(isRunOwnedPlaceholderRole("compaction")).toBe(true);
+    expect(isRunOwnedPlaceholderRole("system")).toBe(false);
+    expect(isRunOwnedPlaceholder({ role: "compaction", status: "pending" })).toBe(true);
+    expect(isRunOwnedPlaceholder({ role: "system", status: "pending" })).toBe(false);
   });
 
   it("uses manual interruption copy, including a refusal without a cut", () => {

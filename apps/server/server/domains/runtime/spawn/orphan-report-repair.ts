@@ -1,7 +1,7 @@
 /** Bounded crash repair for admitted child turns without terminal truth. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
-import { isPlaceholderRole, isTerminalTurnStatus } from "@meridian/contracts/threads";
+import { isRunOwnedPlaceholderRole, isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { EventJournalWriter, ThreadRepositories } from "../../threads/index.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
@@ -52,11 +52,11 @@ export function createOrphanReportRepair(deps: {
           // Every admitted selector begins a separate execution, regardless of turn role.
           if (await deps.repos.executionReports.findByExecution(childThreadId, next.id)) break;
           leaf = next;
-          if (next.role === "assistant" || isPlaceholderRole(next.role)) terminal = next;
+          if (next.role === "assistant" || isRunOwnedPlaceholderRole(next.role)) terminal = next;
         }
         if (
           !terminal ||
-          (terminal.role !== "assistant" && !isPlaceholderRole(terminal.role)) ||
+          (terminal.role !== "assistant" && !isRunOwnedPlaceholderRole(terminal.role)) ||
           isTerminalTurnStatus(terminal.status)
         )
           return;

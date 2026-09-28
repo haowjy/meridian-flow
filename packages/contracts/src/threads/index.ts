@@ -83,6 +83,10 @@ export const PENDING_PLACEHOLDER_ROLES = [
 ] as const satisfies readonly TurnRole[];
 export type PendingPlaceholderRole = (typeof PENDING_PLACEHOLDER_ROLES)[number];
 
+/** Pending placeholders owned by a runtime execution and eligible for orphan repair. */
+export const RUN_OWNED_PLACEHOLDER_ROLES = ["compaction"] as const satisfies readonly TurnRole[];
+export type RunOwnedPlaceholderRole = (typeof RUN_OWNED_PLACEHOLDER_ROLES)[number];
+
 export function isPlaceholderRole(role: TurnRole): role is PendingPlaceholderRole {
   return PENDING_PLACEHOLDER_ROLES.some((placeholderRole) => placeholderRole === role);
 }
@@ -91,6 +95,16 @@ export function isPendingPlaceholder<T extends Pick<Turn, "role" | "status">>(
   turn: T,
 ): turn is T & { role: PendingPlaceholderRole; status: "pending" } {
   return turn.status === "pending" && isPlaceholderRole(turn.role);
+}
+
+export function isRunOwnedPlaceholderRole(role: TurnRole): role is RunOwnedPlaceholderRole {
+  return RUN_OWNED_PLACEHOLDER_ROLES.some((placeholderRole) => placeholderRole === role);
+}
+
+export function isRunOwnedPlaceholder<T extends Pick<Turn, "role" | "status">>(
+  turn: T,
+): turn is T & { role: RunOwnedPlaceholderRole; status: "pending" } {
+  return turn.status === "pending" && isRunOwnedPlaceholderRole(turn.role);
 }
 
 /**

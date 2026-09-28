@@ -32,11 +32,11 @@ runtime shapes, and observability records.
 - `WorkSlug` proves ordinary slug grammar and field role only; UUID-shaped
   slugs are valid. Parsed URI `normalized` text is syntax, while stable
   real-Work serialization requires opaque project-resolved authority.
-- `PENDING_PLACEHOLDER_ROLES` in `threads/` is the one definition of a pending
-  placeholder (status `pending`, role in the set; `compaction` and the handoff seed’s `system`). The
-  database's SQL predicate and partial index derive from it, and
-  `turn-metadata.ts` owns each role's interrupted copy. Add a role here, then
-  regenerate the index; never test placeholders with a local role check.
+- `PENDING_PLACEHOLDER_ROLES` in `threads/` defines pending transcript
+  placeholders (`compaction` and handoff seed `system`); the database partial
+  index derives from it. `RUN_OWNED_PLACEHOLDER_ROLES` defines the subset
+  orphan repair may settle (`compaction` only). Keep their SQL predicates and
+  runtime checks aligned with these sets.
 - `ControlBody` in `threads/` is the one list of thread control kinds
   (`compact`, `compaction_undo`, `handoff_brief`). Four restatements do not
   fail to compile when a kind is missing, so change them with it: the
