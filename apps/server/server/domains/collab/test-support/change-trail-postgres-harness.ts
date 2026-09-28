@@ -111,8 +111,19 @@ export const BETA_ID = "00000000-0000-4000-8000-000000000806" as DocumentId;
 export const THREAD_ID = "00000000-0000-4000-8000-000000000807" as ThreadId;
 export const TURN_ID = "00000000-0000-4000-8000-000000000808" as TurnId;
 
+export const DEFAULT_SCENARIO_IDS = {
+  PROJECT_ID,
+  SOURCE_ID,
+  WORK_ID,
+  ALPHA_ID,
+  BETA_ID,
+  THREAD_ID,
+  TURN_ID,
+};
+export type ChangeTrailScenarioIds = typeof DEFAULT_SCENARIO_IDS;
+
 export async function resetDatabase(): Promise<void> {
-  // Prompt bakes reject row deletion; test resets clear the fixture graph by truncation.
+  // Reset only this suite's owned graph using the shared FK-ordered delete seam.
   await deleteDrizzleRows(db, [
     schema.branchPushOutboxUpdates,
     schema.branchPushSettlementOutbox,
@@ -142,17 +153,26 @@ export async function resetDatabase(): Promise<void> {
     schema.projects,
     schema.users,
   ]);
+  await seedDatabase();
+}
+
+/** Independent rows let warm and cold runs coexist without wiping durable evidence. */
+export async function seedDatabase(
+  ids: ChangeTrailScenarioIds = DEFAULT_SCENARIO_IDS,
+): Promise<void> {
+  const { PROJECT_ID, SOURCE_ID, WORK_ID, ALPHA_ID, BETA_ID, THREAD_ID, TURN_ID } = ids;
   await db
     .insert(schema.users)
     .values([
       conformanceUserValues(USER_ID, "response-atomicity"),
       conformanceUserValues(OTHER_USER_ID, "response-atomicity-other"),
-    ]);
+    ])
+    .onConflictDoNothing();
   await db.insert(schema.projects).values({
     id: PROJECT_ID,
     userId: USER_ID,
     name: "Atomicity",
-    slug: "atomicity",
+    slug: `atomicity-${PROJECT_ID}`,
   });
   await db.insert(schema.works).values({
     id: WORK_ID,
@@ -224,8 +244,7 @@ export function markdownFromUpdate(update: Uint8Array): string {
   }
 }
 export type ChangeTrailHarnessOptions = {
-  /** Suspends the real transition after its awaited preparation reads, while the live lock is held. */
-  duringAwaitedPreparation?: () => Promise<void>;
+  ids?: ChangeTrailScenarioIds;
   afterDurableCommit?: (input: {
     documentIds: readonly DocumentId[];
     appendWriterPrefix(documentId: DocumentId, prefix: string): Promise<void>;
@@ -234,7 +253,6 @@ export type ChangeTrailHarnessOptions = {
   afterSettlement?: (input: {
     documentId: DocumentId;
     deleteWriterPrefix(documentId: DocumentId, length: number): Promise<void>;
-    stateVector(documentId: DocumentId): Uint8Array;
   }) => Promise<void>;
   afterLiveApply?: () => void;
 };
@@ -249,6 +267,8 @@ export type MatrixDraftStep = {
 };
 
 export function createHarness(options: ChangeTrailHarnessOptions = {}) {
+  const { PROJECT_ID, SOURCE_ID, WORK_ID, ALPHA_ID, BETA_ID, THREAD_ID, TURN_ID } =
+    options.ids ?? DEFAULT_SCENARIO_IDS;
   const persistence = createDrizzleCollabPersistence(db);
   const hocuspocus = fakeHocuspocus();
   const liveCoordinator = createHocuspocusCoordinator({
@@ -390,11 +410,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         await options.afterSettlement?.({
           documentId: input.push.documentId,
           deleteWriterPrefix,
-          stateVector(documentId) {
-            const doc = hocuspocus.documents.get(documentId);
-            if (!doc) throw new Error("warm live document is unavailable after settlement");
-            return Y.encodeStateVector(doc);
-          },
         });
       }
       return settled;
@@ -432,7 +447,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     model,
     codec: markupCodec,
     resolveDocumentTitle: async (documentId) => {
-      await options.duringAwaitedPreparation?.();
       return documentId === ALPHA_ID ? "alpha" : "beta";
     },
     hooks: options.afterDurableCommit
@@ -1799,7 +1813,10 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       kind: "warm" | "recovery";
       leaseExpiresAt: Date;
     }) {
-      const [row] = await db.select().from(schema.branchPushSettlementOutbox);
+      const [row] = await db
+        .select()
+        .from(schema.branchPushSettlementOutbox)
+        .where(eq(schema.branchPushSettlementOutbox.documentId, ALPHA_ID));
       if (!row) throw new Error("settlement row is unavailable");
       let completionCallbackRan = false;
       const renewed = await durableSettlementStore.renewClaim({
@@ -1824,21 +1841,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         },
       );
       return { renewed, failureRecorded, completion, completionCallbackRan };
-    },
-    async handoffPendingSettlement() {
-      const [row] = await db.select().from(schema.branchPushSettlementOutbox);
-      if (!row?.claimToken || !row.claimKind || !row.claimedAt || !row.leaseExpiresAt) {
-        throw new Error("owned settlement claim is unavailable for handoff");
-      }
-      return settlementStore.handoffClaim({
-        pushId: row.pushId,
-        claim: {
-          token: row.claimToken,
-          epoch: Number(row.claimEpoch),
-          kind: row.claimKind,
-          leaseExpiresAt: row.leaseExpiresAt,
-        },
-      });
     },
     async attemptSnapshotReplacement() {
       const [checkpoint] = await db

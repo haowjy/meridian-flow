@@ -7,6 +7,9 @@
 
 ## [Unreleased]
 
+- Run settlement transitions in memory; preserve scoped PostgreSQL durability proofs.
+- Catalog runtime control, compaction, handoff, and history probes.
+
 - Remove duplicate runtime checks; test editor undo and stream recovery through behavior.
 
 - Require an explicit ownership acknowledgment before detaching test database cleanup.

@@ -20,7 +20,7 @@ export type SettlementOracleOutput = {
 export type DurableSettlementFixture = {
   /** Runs a fresh fixture through commit and ordinary warm completion. */
   runWarm(): Promise<SettlementOracleOutput>;
-  /** Runs the same fresh fixture only through its PostgreSQL commit boundary. */
+  /** Runs an equivalent independent fixture through its PostgreSQL commit boundary. */
   commitColdSubject(): Promise<void>;
   /** Destroys coordinators, Y.Docs, transitions, and all process-local caches. */
   destroyWarmState(): Promise<void>;
@@ -34,8 +34,8 @@ export type SettlementOracleResult = {
 };
 
 /**
- * The fixture owns database isolation because warm and cold runs need identical,
- * fixture-defined durable inputs. This function owns the mandatory kill boundary
+ * The fixture owns independent row identities for equivalent warm and cold
+ * inputs, and normalizes only those fixture namespaces in its observations. This function owns the mandatory kill boundary
  * and the one normalized comparison used by every settlement regression.
  */
 export async function settlementOracle(

@@ -1290,6 +1290,7 @@ else
       { compaction: true, remote: false, successor: true },
       { compaction: false, remote: false, successor: true },
       { compaction: true, remote: true, successor: true },
+      { compaction: false, remote: true, successor: false },
     ])("stops across a committed successor window ($compaction, $remote, $successor)", async ({
       compaction,
       remote,
