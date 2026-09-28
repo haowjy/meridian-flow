@@ -117,7 +117,7 @@ export function TurnList({
     [turns, awaitingSubagents, inheritedTranscript],
   );
   const visibleTurns = transcript.visibleTurns;
-  const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
+  const lastAssistantIdx = findLastLocalAssistantIndex(transcript.rows);
   // Undo items render on the divider they target; everything else still
   // waiting sits at the tail, after the newest turn (R5: no position yet).
   const { undoByDividerId, tailControls } = useMemo(() => {
@@ -299,8 +299,9 @@ export function TurnList({
           deliveryEvents={transcript.deliveryEventsFor(turn.id)}
           isLatestAssistant={idx === lastAssistantIdx}
           // A divider is a row: once one follows a failed reply, that failure is
-          // history. The queued-controls tail is not a row and never counts.
-          endsTranscript={idx === visibleTurns.length - 1}
+          // history. The queued-controls tail is not a row and never counts. An
+          // inherited reply is the source's history, even with nothing below it.
+          endsTranscript={local && idx === visibleTurns.length - 1}
           continuesResponse={continuing[idx] ?? false}
           failedSendRetry={
             local && turn.id === failedSendRetry?.turnId ? failedSendRetry.retry : undefined
@@ -514,11 +515,12 @@ function isSettledControl(control: QueuedControl): boolean {
   );
 }
 
-/** Index of the last assistant turn in `turns`, or -1 if none. */
-function findLastAssistantIndex(turns: Turn[]): number {
-  for (let i = turns.length - 1; i >= 0; i--) {
-    const turn = turns[i];
-    if (turn?.role === "assistant" && isTerminalTurnStatus(turn.status)) return i;
+/** Index of this thread's own last settled assistant turn, or -1 if none; inherited rows never count. */
+function findLastLocalAssistantIndex(rows: readonly TranscriptRow[]): number {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i];
+    if (!row || row.inherited) continue;
+    if (row.turn.role === "assistant" && isTerminalTurnStatus(row.turn.status)) return i;
   }
   return -1;
 }

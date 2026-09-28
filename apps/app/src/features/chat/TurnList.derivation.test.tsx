@@ -211,6 +211,32 @@ describe("TurnList inherited rows", () => {
     expect(seen.assistants.get("own")?.endsTranscript).toBe(true);
   });
 
+  it("keeps an inherited failed reply historical in a fresh fork: never the latest, never an active error", async () => {
+    const failedCut: InheritedView = {
+      transcript: {
+        turns: [turn("u1", "user"), turn("a1", "assistant", { status: "error" })],
+        ownerByTurnId: new Map([
+          ["u1", "source"],
+          ["a1", "source"],
+        ]),
+      },
+      owners: inherited.owners,
+    };
+    await render({ turns: [], inherited: failedCut, controls: controls() });
+    expect(seen.assistants.get("a1")).toMatchObject({
+      endsTranscript: false,
+      isLatestAssistant: false,
+    });
+
+    // The fork's own reply below it is the latest.
+    await render({ turns: [turn("own", "assistant")], inherited: failedCut, controls: controls() });
+    expect(seen.assistants.get("own")).toMatchObject({
+      endsTranscript: true,
+      isLatestAssistant: true,
+    });
+    expect(seen.assistants.get("a1")?.isLatestAssistant).toBe(false);
+  });
+
   it("renders an inherited divider read-only: no Stop, Undo, withdrawal or undo advice", async () => {
     await render({ turns: [], inherited, controls: controls() });
     const divider = seen.dividers.get("c");
