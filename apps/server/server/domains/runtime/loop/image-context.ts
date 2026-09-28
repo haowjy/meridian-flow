@@ -71,7 +71,7 @@ export async function projectImageBlocksForModel(input: {
 
   for (const [index, block] of input.blocks.entries()) {
     const includedDecision = input.inclusions?.get(block.id);
-    if (block.blockType !== "image" || block.pruned || includedDecision === false) continue;
+    if (block.blockType !== "image" || includedDecision === false) continue;
     const identity = reference(block.content);
     if (!identity) {
       decisionById.set(block.id, { blockId: block.id, included: false });

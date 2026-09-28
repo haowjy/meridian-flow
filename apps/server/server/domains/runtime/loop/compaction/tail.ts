@@ -29,7 +29,7 @@ export function retainedTail(input: {
   if (pinnedMustMove && canRetain(pinnedRequest)) {
     result.push({
       turn: pinnedRequest,
-      blocks: (blocksByTurn.get(pinnedRequest.id) ?? []).filter((block) => !block.pruned),
+      blocks: [...(blocksByTurn.get(pinnedRequest.id) ?? [])],
     });
   }
 
@@ -39,7 +39,7 @@ export function retainedTail(input: {
       continue;
     if (index === cutIndex && cut.blockSequence === undefined) continue;
 
-    const turnBlocks = (blocksByTurn.get(turn.id) ?? []).filter((block) => !block.pruned);
+    const turnBlocks = [...(blocksByTurn.get(turn.id) ?? [])];
     const blockSequence = cut.blockSequence;
     const selectedBlocks =
       index === cutIndex && blockSequence !== undefined

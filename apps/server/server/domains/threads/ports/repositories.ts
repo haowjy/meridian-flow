@@ -80,7 +80,6 @@ export interface BlockRepository {
   /** All blocks across all turns for a thread, ordered by turn creation then block sequence. */
   listByThread(threadId: ThreadId): Promise<Block[]>;
   /** Sets the prune flag. A missing row is a no-op (`null`), not an error. */
-  updatePruned(id: string, pruned: boolean): Promise<Block | null>;
 }
 
 export interface ThreadImageInclusion {

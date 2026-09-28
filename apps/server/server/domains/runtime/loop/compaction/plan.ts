@@ -89,7 +89,6 @@ function toolGroupsIn(turnBlocks: readonly Block[]): ToolGroup[] {
   const groups: ToolGroup[] = [];
   let groupStart: number | null = null;
   for (const block of turnBlocks) {
-    if (block.pruned) continue;
     if (block.blockType === "tool_use") {
       const parsed = toolCallIdCodec(block.content);
       if (!parsed) continue;
@@ -146,10 +145,7 @@ function candidatesFor(
   const candidates: CutCandidate[] = [];
   turns.forEach(({ turn }, turnIndex) => {
     const turnBlocks = blocksByTurn.get(turn.id) ?? [];
-    const lastSequence = turnBlocks.reduce(
-      (last, block) => (block.pruned ? last : block.sequence),
-      -1,
-    );
+    const lastSequence = turnBlocks.reduce((_last, block) => block.sequence, -1);
     for (const group of groupsByIndex.get(turnIndex) ?? []) {
       if (lastSequence > group.endSequence) {
         candidates.push({ turnId: turn.id, turnIndex, blockSequence: group.endSequence });
@@ -207,7 +203,7 @@ function turnCostsFor(
   estimate: (turn: Turn, blocks: readonly Block[]) => number,
 ): TurnCost[] {
   return turns.map(({ turn }) => {
-    const blocks = (blocksByTurn.get(turn.id) ?? []).filter((block) => !block.pruned);
+    const blocks = blocksByTurn.get(turn.id) ?? [];
     const base = Math.max(0, estimate(turn, []));
     const trailingBlockCosts = new Map<number, number>();
     const trailingBlockCounts = new Map<number, number>();

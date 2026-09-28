@@ -114,13 +114,5 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
         .orderBy(asc(schema.turns.position), asc(schema.turnBlocks.sequence));
       return rows.map((row) => mapBlock(row.block));
     },
-    async updatePruned(id, pruned) {
-      const [row] = await currentDrizzleDb(db)
-        .update(schema.turnBlocks)
-        .set({ pruned })
-        .where(eq(schema.turnBlocks.id, id))
-        .returning();
-      return row ? mapBlock(row) : null;
-    },
   };
 }

@@ -6,8 +6,3 @@
   `write` call hits the cap and ends as `Model exhausted its output tokens`
   (`loop/orchestrator.ts`). Raise the cap to the provider maximum, or recover
   from a `max_tokens` stop mid tool call instead of failing the run.
-
-- C5b successor preparation must assert no response write scope is open before
-  calling `DocumentRevisions.current`. The port observes settled authority, not
-  a response's staged overlay (`context/document-revisions.ts` and
-  `loop/orchestrator.ts`).

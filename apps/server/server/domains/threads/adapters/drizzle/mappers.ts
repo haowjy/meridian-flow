@@ -129,7 +129,6 @@ export function mapBlock(row: typeof schema.turnBlocks.$inferSelect): Block {
     content: row.content as Block["content"],
     modelText,
     compact: row.compact ?? "",
-    pruned: row.pruned,
     provider: row.provider,
     providerData: row.providerData as Block["providerData"],
     executionSide: row.executionSide as Block["executionSide"],

@@ -90,9 +90,7 @@ export async function buildThreadSnapshot(
 
     const turns = orderTurnsByPosition(await repos.turns.listByThread(threadId));
     const blocksByTurn = groupBy(
-      (await repos.blocks.listByThread(threadId))
-        .filter((block) => block.pruned !== true)
-        .map(toClientSafeBlock),
+      (await repos.blocks.listByThread(threadId)).map(toClientSafeBlock),
       (block) => block.turnId,
     );
     const responsesByTurn = groupBy(

@@ -556,3 +556,21 @@ describe("conversation summarizer", () => {
     expect(result.modelResponses[1]).toMatchObject({ inputTokens: 42, outputTokens: 3 });
   });
 });
+
+it.each([
+  true,
+  false,
+])("appends changed-document guidance on warm=%s without rewriting the prefix", async (warm) => {
+  const rig = setup({ warm });
+  const before = JSON.stringify(rig.input.requestInHand);
+  rig.input.changedDocuments = ["manuscript://chapter-12.md"];
+  expect((await rig.service.summarize(rig.input)).kind).toBe("complete");
+  const sent = rig.requests[0];
+  expect(JSON.stringify(sent.messages)).toContain(
+    "These documents changed after they were read; name them, do not restate their earlier text.",
+  );
+  expect(JSON.stringify(sent.messages)).toContain("manuscript://chapter-12.md");
+  expect(JSON.stringify(sent.messages)).not.toContain("thread_history");
+  expect(JSON.stringify(rig.input.requestInHand)).toBe(before);
+  if (warm) expect(sent.messages.slice(0, -1)).toEqual(rig.input.requestInHand!.messages);
+});

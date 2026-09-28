@@ -1,6 +1,9 @@
 /** Loads explicit references for a turn the run will send; history replays saved results. */
+
+import type { ReadReferenceOccurrence } from "@meridian/contracts/protocol";
 import { type ReferenceOccurrence, referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue } from "@meridian/contracts/threads";
+import { staleReadStub } from "../tools/document-text.js";
 
 export interface ReferenceReader {
   read(
@@ -53,4 +56,9 @@ export async function loadReferenceReads(input: {
     updated.push({ ...block, content: { ...reference, read: result } });
   }
   return updated;
+}
+
+/** Only the materialized document read changes; writer wording and the mention remain intact. */
+export function elideReferenceRead(reference: ReadReferenceOccurrence): JsonValue {
+  return { ...reference, read: { ...reference.read!, result: staleReadStub(reference.uri) } };
 }

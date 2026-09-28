@@ -17,8 +17,9 @@ references, failed writes, and unverified recovery).
 Staged mutation results start with null. The response-settlement receipt supplies
 the token captured at apply; `persistCommittedWriteResult` copies it without a
 second document read. Re-reading here would misattribute a writer's intervening
-edit to the agent write. Future compaction queries current tokens through the
-context domain's `DocumentRevisions` port.
+edit to the agent write. Compaction compares these tokens with current ones from
+the context domain's `DocumentRevisions` port (see
+[runtime compaction context](compaction.md)).
 
 
 ## gateway — multi-provider LLM abstraction

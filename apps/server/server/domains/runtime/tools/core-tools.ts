@@ -16,6 +16,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import { ASK_USER_TOOL_INPUT_SCHEMA } from "@meridian/contracts/components";
 import { z } from "zod";
+import { searchDocumentText, writeDocumentText } from "./document-text.js";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
 import { writeToolDescription } from "./write-tool-description.js";
 
@@ -148,6 +149,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         inputSchema: writeToolInputSchema(),
       },
       execution: { type: "server", handler: handlers.write },
+      documentText: writeDocumentText,
       sequential: true,
       timeoutMs: 30_000,
       formatExecutionError: formatWriteExecutionError,
@@ -212,6 +214,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         },
       },
       execution: { type: "server", handler: handlers.search },
+      documentText: searchDocumentText,
       timeoutMs: 30_000,
     },
     {

@@ -231,7 +231,6 @@ export type JournalEventType =
   | "agent.run_completed" // PRODUCED NOW — ReportPublisher B, body-free metadata
   | "subagent.activity" // PRODUCED NOW — ChildRunCoordinator/Driver (direct-parent journal, direct children)
   | "inbox.changed" // PRODUCED NOW — enqueue, bind/adoption/release, and ack (full classified inbox)
-  | "block.pruned" // PRODUCED NOW — generic block lifecycle; child run cards are replaced in place
   | "context.assembled"
   | "context.compacted"
   | "context.skill_loaded"
@@ -380,7 +379,6 @@ export interface Block {
   content: JsonValue;
   modelText?: string;
   compact?: string;
-  pruned?: boolean;
   provider?: string | null;
   providerData?: JsonValue | null;
   executionSide?: ExecutionSide | null;

@@ -762,7 +762,7 @@ async function reconcileOrphanedPendingWrites(
 ): Promise<void> {
   const blocks = await deps.repos.blocks.listByThread(threadId);
   for (const block of blocks) {
-    if (block.blockType !== "tool_result" || block.pruned) continue;
+    if (block.blockType !== "tool_result") continue;
     const content = block.content as {
       output?: unknown;
       metadata?: { stagedWrite?: unknown };
@@ -1600,6 +1600,10 @@ async function executeLoop(
     await publishPhase("compacting");
     const result = await executeCompaction({
       deps,
+      assertNoResponseScope: () => {
+        if (responseScope)
+          throw new Error("Compaction revision query requires no open response scope");
+      },
       input,
       thread,
       currentTurn: currentTurn,

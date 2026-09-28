@@ -29,5 +29,3 @@ visible boundary turn through `beginPromptEpoch` (see
 silently on a model change, an idle timer, or an Agent revision update. A
 mid-thread change the model needs to learn about is a system notification in
 conversation, never a prompt or tool-list rewrite.
-Tool-result pruning is not an epoch: it keeps the bake and is a named history
-event at the first pruned block.

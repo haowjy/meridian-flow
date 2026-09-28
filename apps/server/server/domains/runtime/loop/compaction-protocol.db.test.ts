@@ -1,17 +1,20 @@
 /** Compaction's two commits exercise real inbox, lease, epoch, and journal transactions. */
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
-
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import type { JsonObject } from "@meridian/contracts/threads";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
 import type { NoticePort } from "../../notices/index.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
+import { loadThreadConversationContext } from "../../threads/index.js";
 import { ImageAssetResolutionError } from "../ports/image-asset.js";
 import { createConversationSummarizer } from "../summary/conversation-summarizer.js";
+import { searchDocumentText, writeDocumentText } from "../tools/document-text.js";
 import { createTestAgentBinding } from "./__tests__/runtime-fixtures.js";
 import { createRuntimeHarness } from "./__tests__/runtime-harness.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
+import { projectActiveHistory } from "./compaction/project.js";
 import { createOrchestrator } from "./orchestrator.js";
 import { createPrefixCacheStateService } from "./prefix-cache-state.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
@@ -152,6 +155,7 @@ else
       rig.deps.toolExecutor.getDefinitions = () => [];
       return {
         ...rig,
+        repos,
         threadId,
         gateway,
         summarizer,
@@ -161,6 +165,329 @@ else
         },
       };
     }
+
+    async function documentTail(rig: Awaited<ReturnType<typeof fixture>>, allKinds = false) {
+      for (const [name, documentText] of [
+        ["write", writeDocumentText],
+        ["search", searchDocumentText],
+      ] as const)
+        rig.deps.toolRegistry.register({
+          source: "core",
+          definition: { type: "function", name, description: name, inputSchema: {} },
+          execution: { type: "server", handler: async () => null },
+          documentText,
+        });
+      const answer = (await rig.repos.turns.listByThread(rig.threadId)).at(-1)!;
+      const records = allKinds
+        ? [
+            { id: "stale-read", command: "read", revision: "old" },
+            { id: "fresh-read", command: "read", revision: "new" },
+            { id: "stale-write", command: "replace", revision: "old" },
+            { id: "fresh-write", command: "replace", revision: "new" },
+            { id: "search", command: "search", revision: "old" },
+            { id: "diff", command: "diff", revision: null },
+            { id: "failed-write", command: "replace", revision: "old" },
+          ]
+        : [{ id: "stale-read", command: "read", revision: "old" }];
+      let sequence = 1;
+      const results = [];
+      for (const record of records) {
+        const uri = "manuscript://chapter.md";
+        const isSearch = record.command === "search";
+        const toolName = isSearch ? "search" : "write";
+        const staleText = `${record.id.toUpperCase()} TEXT`;
+        await rig.repos.blocks.create({
+          turnId: answer.id,
+          blockType: "tool_use",
+          sequence: sequence++,
+          status: "complete",
+          content: {
+            toolCallId: record.id,
+            toolName,
+            input: isSearch
+              ? { pattern: "dragon" }
+              : {
+                  command: record.command,
+                  path: uri,
+                  ...(record.command === "replace"
+                    ? { content: staleText, find: staleText, in: "b41" }
+                    : {}),
+                },
+          },
+        });
+        results.push(
+          await rig.repos.blocks.create({
+            turnId: answer.id,
+            blockType: "tool_result",
+            sequence: sequence++,
+            status: "complete",
+            content: {
+              toolCallId: record.id,
+              toolName,
+              output: isSearch
+                ? [
+                    {
+                      uri,
+                      matches: [{ excerpt: "STALE SEARCH TEXT", blockHash: "b42" }],
+                      matchCount: 7,
+                    },
+                    {
+                      uri: "kb://fresh",
+                      matches: [{ excerpt: "FRESH SEARCH TEXT" }],
+                      matchCount: 1,
+                    },
+                  ]
+                : record.id === "failed-write"
+                  ? "Write did not land"
+                  : staleText,
+              isError: record.id === "failed-write",
+              metadata: {
+                documentRevisions: [
+                  {
+                    documentId: "chapter",
+                    uri: record.command === "diff" ? null : uri,
+                    revision: record.revision,
+                  },
+                  ...(isSearch
+                    ? [{ documentId: "fresh", uri: "kb://fresh", revision: "new" }]
+                    : []),
+                ],
+              },
+            },
+          }),
+        );
+      }
+      return { answer, results };
+    }
+
+    it("freezes stale text elisions with the epoch and preserves successor request bytes", async () => {
+      const usage = { inputTokens: 100, outputTokens: 10 };
+      const rig = await fixture({ gateway: scriptedGateway({ usage }) });
+      rig.setThreshold(12_000);
+      // Enough old prose to cross the higher trigger while keeping every document fixture.
+      const turnsBefore = await rig.repos.turns.listByThread(rig.threadId);
+      const old = turnsBefore.at(-2)!;
+      const [oldBlock] = await rig.repos.blocks.listByTurn(old.id);
+      await rig.repos.blocks.upsert({
+        ...oldBlock,
+        content: "old history ".repeat(9000),
+        textContent: "old history ".repeat(9000),
+      });
+      await rig.repos.blocks.create({
+        turnId: old.id,
+        blockType: "text",
+        sequence: 1,
+        status: "complete",
+        content: {
+          type: "reference",
+          text: "Old chapter",
+          documentId: "00000000-0000-4000-8000-000000000099",
+          uri: "kb://old-chapter",
+          read: { result: "OLD SUMMARIZED CHAPTER", revision: "old" },
+        },
+      });
+      const { results } = await documentTail(rig, true);
+      const current = vi.fn(
+        async ({ documentIds }: { documentIds: readonly string[] }) =>
+          new Map(documentIds.map((id) => [id, "new"])),
+      );
+      rig.deps.documentRevisions.current = current;
+      rig.deps.referenceReader.read = async () => ({
+        result: "STALE REFERENCE TEXT",
+        revision: "old",
+      });
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue Chapter",
+        userBlocks: [
+          { type: "text", text: "Continue " },
+          {
+            type: "reference",
+            text: "Chapter",
+            documentId: "00000000-0000-4000-8000-000000000012",
+            uri: "manuscript://chapter.md",
+          },
+        ],
+      });
+      expect((await run.execute()).status).toBe("complete");
+      expect(current).toHaveBeenCalledTimes(2);
+      expect(rig.summarizer.calls[0].changedDocuments).toEqual([
+        "kb://old-chapter",
+        "manuscript://chapter.md",
+      ]);
+      const c = await rig.repos.turns.findById(run.executionTurnId);
+      expect(c).toMatchObject({
+        role: "compaction",
+        status: "complete",
+        metadata: { elisions: expect.any(Array) },
+      });
+      expect(c!.promptBakeId).not.toBeNull();
+      expect((c!.metadata as JsonObject).elisions).toHaveLength(6);
+      const first = rig.gateway.requests[0];
+      const before = rig.summarizer.calls[0].requestInHand!;
+      expect(first.messages[0]).toEqual(before.messages[0]);
+      expect(first.messages[1]).not.toEqual(before.messages[1]);
+      expect(JSON.stringify(first.messages[1])).toContain("Conversation summary");
+      const bytes = promptBytes(first);
+      for (const text of [
+        "STALE-READ TEXT",
+        "STALE-WRITE TEXT",
+        "STALE SEARCH TEXT",
+        "STALE REFERENCE TEXT",
+        "DIFF TEXT",
+      ])
+        expect(bytes).not.toContain(text);
+      for (const text of [
+        "FRESH-READ TEXT",
+        "FRESH-WRITE TEXT",
+        "FRESH SEARCH TEXT",
+        "FAILED-WRITE TEXT",
+        "Write did not land",
+      ])
+        expect(bytes).toContain(text);
+      expect(promptBytes({ ...first, promptCacheKey: "<thread-id>" })).toMatchSnapshot(
+        "elided compacted request bytes",
+      );
+      const thread = (await rig.repos.threads.findById(rig.threadId))!;
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
+      const blocks = await rig.repos.blocks.listByThread(rig.threadId);
+      const rebuilt = await assembleNextTurnContext({
+        thread,
+        turns: turns.filter((t) => t.position <= c!.position),
+        blocks: blocks.filter((b) => turns.find((t) => t.id === b.turnId)!.position <= c!.position),
+        agentRevisions: rig.deps.agentRevisions,
+        toolRegistry: rig.deps.toolRegistry,
+        baseTools: [],
+        gateway: rig.deps.gateway,
+        promptBakes: rig.repos.promptBakes,
+        workContext: rig.deps.workContext,
+      });
+      expect(promptBytes(rebuilt.generateRequest)).toBe(bytes);
+      expect((await rig.repos.blocks.findById(results[0].id))!.content).toMatchObject({
+        output: "STALE-READ TEXT",
+      });
+      usage.inputTokens = 50_000;
+      rig.setThreshold(100_000);
+      await (
+        await rig.orchestrator.prepare({
+          threadId: rig.threadId,
+          tools: [],
+          userText: "Continue further.",
+        })
+      ).execute();
+      expect(JSON.stringify(rig.gateway.requests[1].messages.slice(0, first.messages.length))).toBe(
+        JSON.stringify(first.messages),
+      );
+      expect(promptBytes(rig.gateway.requests[1])).not.toContain("STALE-READ TEXT");
+      rig.setThreshold(12_000);
+      rig.deps.documentRevisions.current = async ({ documentIds }) =>
+        new Map(documentIds.map((id) => [id, "newer"]));
+      const secondRun = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue again.",
+      });
+      expect((await secondRun.execute()).status).toBe("complete");
+      const secondC = (await rig.repos.turns.findById(secondRun.executionTurnId))!;
+      expect(secondC.role).toBe("compaction");
+      expect(rig.summarizer.calls[1].changedDocuments).not.toContain("kb://old-chapter");
+      expect(rig.summarizer.calls[1].changedDocuments).not.toContain("chapter");
+      const secondElisions = (secondC.metadata as JsonObject).elisions as JsonObject[];
+      expect(secondElisions.some((elision) => elision.blockId === results[1].id)).toBe(true);
+      expect(secondElisions.some((elision) => elision.blockId === results[0].id)).toBe(false);
+      expect(promptBytes(rig.gateway.requests[2])).not.toContain("FRESH-READ TEXT");
+      expect((await rig.repos.blocks.findById(results[1].id))!.content).toMatchObject({
+        output: "FRESH-READ TEXT",
+      });
+    });
+
+    it("re-queries after a moved leaf and catches an edit between successor attempts", async () => {
+      const rig = await fixture();
+      await documentTail(rig);
+      let revision = "old";
+      const seen: string[] = [];
+      rig.deps.documentRevisions.current = async ({ documentIds }) => {
+        seen.push(revision);
+        return new Map(documentIds.map((id) => [id, revision]));
+      };
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      const render = rig.deps.workContext.renderForThread;
+      let attempts = 0;
+      rig.deps.workContext.renderForThread = async (...args) => {
+        if (++attempts === 1) {
+          revision = "new";
+          await rig.send(rig.threadId, "moved leaf");
+        }
+        return render(...args);
+      };
+      expect((await run.execute()).status).toBe("complete");
+      expect(seen).toEqual(["old", "old", "new"]);
+      expect(promptBytes(rig.gateway.requests[0])).not.toContain("STALE-READ TEXT");
+      expect(rig.summarizer.calls).toHaveLength(1);
+    });
+
+    it("a failed revision query fails closed without failing a paid compaction", async () => {
+      const rig = await fixture();
+      await documentTail(rig);
+      rig.deps.documentRevisions.current = async () => {
+        throw new Error("authority unavailable");
+      };
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      expect((await run.execute()).status).toBe("complete");
+      expect(promptBytes(rig.gateway.requests[0])).not.toContain("STALE-READ TEXT");
+    });
+
+    it("fork cutoffs inherit only their own C", async () => {
+      const rig = await fixture();
+      const { answer, results } = await documentTail(rig);
+      const source = (await rig.repos.threads.findById(rig.threadId))!;
+      const { thread: forkBefore } = await rig.repos.threads.createDerivedPrimary({
+        id: crypto.randomUUID(),
+        source,
+        workId: source.workId,
+        userId: source.userId,
+        projectId: source.projectId,
+        originType: "fork",
+        originTurnId: answer.id,
+      });
+      async function projected(fork: typeof source) {
+        const context = await loadThreadConversationContext(rig.repos, fork);
+        return projectActiveHistory(context.turns, context.blocks, fork.ref);
+      }
+      const before = JSON.stringify(await projected(forkBefore));
+      rig.deps.documentRevisions.current = async ({ documentIds }) =>
+        new Map(documentIds.map((id) => [id, "new"]));
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      await run.execute();
+      const c = (await rig.repos.turns.findById(run.executionTurnId))!;
+      const { thread: forkAfter } = await rig.repos.threads.createDerivedPrimary({
+        id: crypto.randomUUID(),
+        source,
+        workId: source.workId,
+        userId: source.userId,
+        projectId: source.projectId,
+        originType: "fork",
+        originTurnId: c.id,
+      });
+      expect(JSON.stringify(await projected(forkBefore))).toBe(before);
+      expect(JSON.stringify(await projected(forkAfter))).not.toContain("STALE-READ TEXT");
+      expect(
+        (await projected(forkAfter)).blocks.find((b) => b.id === results[0].id)?.content,
+      ).toMatchObject({ output: expect.stringContaining("Cleared at compaction") });
+    });
 
     it("settles both rows when a warm overflow falls back cold", async () => {
       const gateway = scriptedGateway();
@@ -1366,11 +1693,18 @@ else
     it("rolls back consumed notices with the successor, then settles the summary on failed C", async () => {
       const port = createDrizzleNoticePort(db);
       let armed = false;
+      let observedElisions: unknown;
       const notices = {
         ...port,
         async consume(ids: readonly number[]) {
           await port.consume(ids);
-          if (armed && ids.length) throw new Error("successor notice commit failed");
+          if (armed && ids.length) {
+            const turns = await rig.repos.turns.listByThread(rig.threadId);
+            observedElisions = (
+              turns.find((turn) => turn.role === "compaction")?.metadata as JsonObject
+            )?.elisions;
+            throw new Error("successor notice commit failed");
+          }
         },
       };
       let rig: Awaited<ReturnType<typeof fixture>>;
@@ -1405,6 +1739,7 @@ else
         };
       });
       rig = await fixture({ summarizer, notices });
+      await documentTail(rig);
       const treeBudget = createDefaultTreeBudget();
       const run = await rig.orchestrator.prepare({
         treeBudget,
@@ -1415,6 +1750,8 @@ else
       expect((await run.execute()).status).toBe("error");
       const c = await rig.repos.turns.findById(run.executionTurnId);
       expect(c).toMatchObject({ status: "error", promptBakeId: null });
+      expect((c!.metadata as JsonObject).elisions).toBeUndefined();
+      expect(observedElisions).toHaveLength(1);
       expect(await port.peek(rig.threadId)).toHaveLength(1);
       expect(await rig.repos.modelResponses.listByTurn(run.executionTurnId)).toMatchObject([
         { requestMessageCount: 7 },

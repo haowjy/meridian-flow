@@ -170,9 +170,7 @@ export async function projectReadModelEvent(
       if (!(await repos.blocks.replaceExisting(blockToUpsertInput(event.block))))
         throw new Error(`Cannot replace missing block ${event.block.id}`);
       return null;
-    case "block.pruned":
-      await repos.blocks.updatePruned(event.blockId, true);
-      return null;
+
     case "image.inclusion_decided":
       await projectImageInclusionDecision(repos, event);
       return null;

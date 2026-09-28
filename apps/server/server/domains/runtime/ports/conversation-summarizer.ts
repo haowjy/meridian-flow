@@ -24,6 +24,7 @@ export interface ConversationSummarizer {
     threadId: ThreadId;
     turnId: TurnId;
     instruction: "compaction" | "handoff_brief";
+    changedDocuments?: readonly string[];
     requestInHand: GenerateRequest | null;
     forceCold?: boolean;
     /** Cold source: only the cut (excluding the retained pin/tail), plus prior summary context. */

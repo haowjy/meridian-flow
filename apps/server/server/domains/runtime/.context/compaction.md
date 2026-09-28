@@ -2,7 +2,7 @@
 
 How a run compacts: the two delivery transitions around the summary, their
 failure, cancel, and recovery rules, cost, the trigger and size estimate, the
-summarizer, and context-window overflow recovery.
+summarizer, document-text elision, and context-window overflow recovery.
 
 ## Two delivery transitions
 
@@ -29,6 +29,35 @@ The complete summary block is immutable. Its fit limit comes from the
 decision, independently of the automatic trigger. A usable value's token
 count describes the compacted base before late arrivals. Summary responses
 never supply the conversation token baseline.
+
+The usable prepared value carries metadata (the placeholder's reservation
+metadata plus `elisions`) into provisional assembly. The commit reloads C after
+paid-summary settlement and passes `{ ...settled.metadata, ...prepared.metadata }`
+to `beginPromptEpoch`: settlement appends summarizer telemetry to C, so passing
+the prepared value alone would drop it. Telemetry never renders to the model, so
+B's first request still equals the rebuild. The same assembly measures
+`tokensAfter`; the epoch, frozen elisions and successor commit atomically.
+
+## Document-text elision
+
+The writer transcript stays intact. A completed compaction owns frozen
+`metadata.elisions` (block ID, treatment, affected URIs, replacement content).
+`projectActiveHistory` substitutes only its retained tail and pinned request,
+not later arrivals. Reverted, failed, pending and superseded owners do not apply.
+Forks inherit this metadata only when their cutoff includes the owner.
+
+`ToolRegistration.documentText` owns each tool's classification and replacement
+copy. `write` and `search` register policies; references use `reference-context`.
+Error pairs are outside the policy. Explicit empty `documentRevisions` means no
+document text; absent evidence, null tokens and failed lookups fail closed.
+`diff` always elides. Tool pairing, reasoning, writer words and fresh text stay.
+
+Successor prepare independently queries current document revisions once per
+attempt and plans from raw retained blocks, never from a previous owner's
+replacements. A moved leaf re-queries, while a failed prepare writes no elisions.
+The loop asserts no response scope is open: `DocumentRevisions.current` cannot
+represent response-staged overlays. Query failures become unknown tokens; the
+assertion is an invariant failure, not a lookup failure.
 
 ## Failure landing
 
@@ -98,7 +127,8 @@ reusable-prefix selection with TTL ignored; missing or zero usage estimates
 the whole request. Without an explicit Agent limit, the trigger is
 floor(90% × min(input pricing tier ?? usable window, usable window)), capped
 at 400,000 tokens. Explicit Agent token and percentage limits are not scaled.
-Mars defines no off switch.
+Mars defines no off switch. The estimator excludes elision payloads from C's
+header because only the summary renders there.
 
 | Models | Default trigger tokens |
 |---|---:|
@@ -137,6 +167,11 @@ runs cold once; Stop does not. Both attempts return their rows for
 settlement. Cold uses `COMPACTION_SUMMARIZER_MODEL` (default DeepSeek Flash),
 or the retained thread model when that provider is disabled. Its prediction is
 always `cold/summary_transcript`, not the thread prefix's prediction.
+
+Before summarization, one settled-authority revision query over the active
+projection (the history the summarizer reads, not only the planned cut) supplies
+only the changed URIs in the appended instruction. Warm requests keep their
+prefix unchanged.
 
 Cold receives only the cut blocks and prior summary, excluding the retained
 pin and tail. It renders model-visible custom content, omits opaque

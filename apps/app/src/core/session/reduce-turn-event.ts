@@ -37,10 +37,6 @@ type CustomBlockUpsertPayload = {
   };
 };
 
-type BlockPrunedPayload = {
-  blockId: string;
-};
-
 type PositionalBlockIdentity = {
   id: string;
   turnId: string;
@@ -55,7 +51,6 @@ type StoreEventTarget = {
     opts?: { createdAt?: string; writeMode?: Turn["writeMode"] },
   ): void;
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
-  removeAssistantBlock(threadId: string, blockId: string): void;
   invalidateThreadSnapshot(threadId: string): void;
   patchTurnStatus(
     threadId: string,
@@ -375,13 +370,6 @@ function parseCustomBlockUpsertPayload(value: unknown): CustomBlockUpsertPayload
   };
 }
 
-function parseBlockPrunedPayload(value: unknown): BlockPrunedPayload | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const blockId = (value as Record<string, unknown>).blockId;
-  if (typeof blockId !== "string" || blockId.length === 0) return null;
-  return { blockId };
-}
-
 function blockFromCustomUpsertPayload(payload: CustomBlockUpsertPayload): Block {
   return baseBlock({
     id: payload.block.id,
@@ -621,17 +609,12 @@ function writeModeFromRunStarted(rawEvent: unknown): Turn["writeMode"] | undefin
 
 /** The addressed block vocabulary has one reducer owner, independent of a run. */
 export function isDurableBlockEvent(event: AGUIEvent): boolean {
-  return (
-    event.type === EventType.CUSTOM &&
-    (event.name === "meridian.block.upserted" || event.name === "meridian.block.pruned")
-  );
+  return event.type === EventType.CUSTOM && event.name === "meridian.block.upserted";
 }
 
 export function isWellFormedDurableBlockEvent(event: AGUIEvent): boolean {
   if (!isDurableBlockEvent(event) || event.type !== EventType.CUSTOM) return false;
-  return event.name === "meridian.block.upserted"
-    ? parseCustomBlockUpsertPayload(event.value) !== null
-    : parseBlockPrunedPayload(event.value) !== null;
+  return parseCustomBlockUpsertPayload(event.value) !== null;
 }
 
 /** False means the owned vocabulary was malformed, not an opaque CUSTOM event. */
@@ -642,23 +625,9 @@ export function applyDurableBlockEvent(
 ): boolean {
   if (!isDurableBlockEvent(event) || (eventH(event) && event.threadId !== threadId)) return false;
   if (event.type !== EventType.CUSTOM) return false;
-  if (event.name === "meridian.block.upserted") {
-    const payload = parseCustomBlockUpsertPayload(event.value);
-    if (!payload) return false;
-    applyCustomBlockUpsertEvent(store, threadId, payload);
-    return true;
-  }
-  const payload = parseBlockPrunedPayload(event.value);
+  const payload = parseCustomBlockUpsertPayload(event.value);
   if (!payload) return false;
-  if (
-    !(store.turns(threadId) ?? []).some((turn) =>
-      turn.blocks.some((block) => block.id === payload.blockId),
-    )
-  ) {
-    store.invalidateThreadSnapshot(threadId);
-    return true;
-  }
-  store.removeAssistantBlock(threadId, payload.blockId);
+  applyCustomBlockUpsertEvent(store, threadId, payload);
   return true;
 }
 

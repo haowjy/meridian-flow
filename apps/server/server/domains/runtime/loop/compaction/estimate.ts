@@ -141,15 +141,17 @@ export function estimateTurnTokens(
   blocks: readonly Block[],
   tokenizer: TokenizerFamily,
 ): number {
+  const { elisions: _elisions, ...metadata } = (turn.metadata ?? {}) as Record<string, unknown>;
   const headerTokens = estimateModelJsonTokens(
-    { role: turn.role, metadata: turn.metadata },
+    { role: turn.role, metadata: turn.role === "compaction" ? metadata : turn.metadata },
     tokenizer,
   );
   return (
     headerTokens +
-    blocks
-      .filter((block) => !block.pruned)
-      .reduce((sum, block) => sum + estimateModelPartTokens(blockModelPart(block), tokenizer), 0)
+    blocks.reduce(
+      (sum, block) => sum + estimateModelPartTokens(blockModelPart(block), tokenizer),
+      0,
+    )
   );
 }
 

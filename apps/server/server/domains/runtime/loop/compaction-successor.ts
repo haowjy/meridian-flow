@@ -1,14 +1,16 @@
 /** Retry-local compaction values and the reusable placeholder completion transaction. */
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { Block, Thread, Turn } from "@meridian/contracts/threads";
+import type { Block, JsonObject, Thread, Turn } from "@meridian/contracts/threads";
 import { promptEpochMetadata } from "../../threads/index.js";
 import type { SummaryOutcome } from "../ports/conversation-summarizer.js";
 import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
 import { beginPromptEpoch } from "./begin-prompt-epoch.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import { type CompactionDecision, CompactionPreparationError } from "./compaction/decision.js";
+import { collectRecordedDocuments, planModelElisions } from "./compaction/elide.js";
 import { estimateRequestTokens, type projectActiveHistory } from "./compaction/index.js";
+import { queryCompactionRevisions } from "./compaction-revisions.js";
 import type { InboxDrain } from "./inbox-context.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
 import { persistAndAppendEvents } from "./persistence.js";
@@ -21,6 +23,7 @@ export type PreparedCompaction =
   | { kind: "failed"; reason: CompactionPreparationError }
   | {
       kind: "usable";
+      metadata: JsonObject;
       composition: Awaited<ReturnType<typeof composeLivePromptBake>>;
       summaryBlock: ReturnType<typeof contentForBlockInput>;
       tokensAfter: number;
@@ -43,6 +46,7 @@ function fittingTokens(context: AssembledNextTurnContext, fitLimitTokens: number
 
 export async function prepareCompactionSuccessor(args: {
   deps: OrchestratorDeps;
+  assertNoResponseScope: () => void;
   input: RunLoopInput;
   thread: Thread;
   placeholder: Turn;
@@ -56,7 +60,22 @@ export async function prepareCompactionSuccessor(args: {
     args;
   if (outcome.kind !== "complete")
     return { kind: "failed", reason: new CompactionPreparationError("compaction_failed") };
+  const policies = (name: string) => deps.toolRegistry.getRegistration(name)?.documentText;
+  const recorded = collectRecordedDocuments(decision.plan.retainedSuffix, policies);
+  const current = await queryCompactionRevisions({
+    threadId: input.threadId,
+    recorded,
+    revisions: deps.documentRevisions,
+    assertNoResponseScope: args.assertNoResponseScope,
+  });
   try {
+    const elisions = planModelElisions({
+      retainedSuffix: decision.plan.retainedSuffix,
+      recorded,
+      current,
+      policies,
+    });
+    const metadata = { ...(placeholder.metadata as JsonObject), elisions };
     const contextInput = {
       thread,
       turns: allTurns,
@@ -74,7 +93,7 @@ export async function prepareCompactionSuccessor(args: {
       ...placeholder,
       status: "complete" as const,
       promptBakeId: provisionalBakeId,
-      metadata: promptEpochMetadata(placeholder.metadata, "compaction"),
+      metadata: promptEpochMetadata(metadata, "compaction"),
     };
     const blockInput = {
       turnId: placeholder.id,
@@ -137,6 +156,7 @@ export async function prepareCompactionSuccessor(args: {
     });
     return {
       kind: "usable",
+      metadata,
       composition,
       summaryBlock,
       tokensAfter,
@@ -195,7 +215,7 @@ export async function completeCompactionCurrent(input: {
       completion: {
         blocks: [prepared.summaryBlock],
         compactionModel: prepared.model,
-        metadata: promptEpochMetadata(settled.metadata, "compaction"),
+        metadata: { ...(settled.metadata as JsonObject), ...prepared.metadata },
         events: (bakeId) => [
           {
             type: "context.compacted",

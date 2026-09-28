@@ -26,5 +26,7 @@ and how the agent participates — via design-lead → tech-lead.
 ## Batch revision availability lookups
 
 `document-revisions.ts` `current` calls `availability.lookup` once per
-document, though the port accepts a `documentIds` batch. Unmeasured; batch it
-if C5b's per-turn revision checks show the round trips.
+document, though the port accepts a `documentIds` batch. Compaction calls it
+twice (before the summary and once per successor-prepare attempt) over every
+document recorded in the history it checks. Unmeasured; batch it if those
+round trips show in compaction latency.

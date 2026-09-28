@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Compaction clears stale document reads, write text, search excerpts and references from model context. Fresh text and writer transcripts stay intact.
+
 ### Added
 - Record atomic document revisions on agent reads, searches, references, and settled writes without adding model-visible text.
 - Summarize long chats with cached requests or rolling cheap-model summaries. Keep story facts and writer preferences.

@@ -439,7 +439,6 @@ export const turnBlocks = pgTable(
     modelText: text("model_text"),
     content: jsonb("content"),
     compact: text("compact"),
-    pruned: boolean("pruned").notNull().default(false),
     executionSide: text("execution_side"),
     createdAt: createdAt(),
   },
