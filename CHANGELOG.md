@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Keep source image decisions unchanged when handoff preview discovers a lost asset; generate the brief cold.
+
 - Generate handoff briefs from the source model’s warm prefix or the cheap cold summarizer. Meter every returned attempt on the destination seed.
 - Keep brief failures typed, preserve queued replies, and exclude brief calls from future cache baselines.
 

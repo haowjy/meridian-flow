@@ -775,6 +775,64 @@ describe("frozen prompt provider requests", () => {
     ).toBe(true);
   });
 
+  it("C7b a preview-only image loss runs cold without writing source decisions or turns", async () => {
+    const gateway = Object.assign(
+      scriptedGateway({ usage: { inputTokens: 1000, outputTokens: 100 } }),
+      {
+        listModels: () => [
+          {
+            id: "gpt-4.1-mini",
+            provider: "openai",
+            tokenizer: "o200k" as const,
+            displayName: "Fixture",
+            contextWindow: 100000,
+            maxOutputTokens: 4096,
+            promptCache: { kind: "automatic" as const, ttlMs: 60000 },
+            capabilities: new Set(["image_input" as const]),
+          },
+        ],
+      },
+    );
+    let available = true;
+    const rig = await fixture(undefined, undefined, gateway, {
+      async resolve() {
+        return available ? { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 5 } : null;
+      },
+    });
+    await rig.send(rig.thread.id, "remember the map", {
+      blocks: [
+        { type: "text", text: "remember the map" },
+        {
+          type: "image",
+          documentId: "44444444-4444-4444-8444-000000000101",
+          uri: "uploads://@/map.png",
+        },
+      ],
+    });
+    await (await rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true })).execute();
+    const turns = await rig.repos.turns.listByThread(rig.thread.id);
+    const decisions = await rig.repos.imageInclusions.findByThread(rig.thread.id);
+    const cutoff = turns.at(-1)!;
+    const { thread } = await handoffThreadAgent(
+      { ...rig.derive, delivery: rig.delivery },
+      {
+        id: crypto.randomUUID(),
+        threadId: rig.thread.id,
+        userId: rig.thread.userId,
+        originTurnId: cutoff.id,
+        agentSelection: rig.original.selection,
+      },
+    );
+    available = false;
+    const summarizer = scriptedSummarizer();
+    rig.deps.summarizer = summarizer;
+    await (await rig.orchestrator.prepare({ threadId: thread.id, drain: true })).execute();
+    expect(summarizer.calls).toHaveLength(1);
+    expect(summarizer.calls[0].requestInHand).toBeNull();
+    expect(await rig.repos.turns.listByThread(rig.thread.id)).toEqual(turns);
+    expect(await rig.repos.imageInclusions.findByThread(rig.thread.id)).toEqual(decisions);
+  });
+
   it("C7b previews exactly the source request and settles brief rows without parsing compaction metadata", async () => {
     const rig = await fixture();
     await rig.run();
