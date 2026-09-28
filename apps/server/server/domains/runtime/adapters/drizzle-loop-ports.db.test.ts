@@ -51,12 +51,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "loop-ports",
       });
       await db.insert(schema.threads).values({
+        rootThreadId: THREAD_A,
         id: THREAD_A,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         title: "Thread A",
       });
       await db.insert(schema.threads).values({
+        rootThreadId: THREAD_B,
         id: THREAD_B,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,

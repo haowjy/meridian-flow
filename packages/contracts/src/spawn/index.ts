@@ -7,7 +7,12 @@
 
 import { z } from "zod";
 import { parseContextUri } from "../context-uri.js";
-import { type ArtifactRef, artifactRefSchema, type MeridianError } from "../interrupt/index.js";
+import {
+  type ArtifactRef,
+  artifactRefSchema,
+  type MeridianError,
+  meridianErrorSchema,
+} from "../interrupt/index.js";
 import type { ThreadId, TurnBlockId, TurnId } from "../runtime/index.js";
 import type { JsonValue } from "../threads/index.js";
 
@@ -120,6 +125,7 @@ export type SavedExecutionReport = {
 );
 
 export type ThreadReportResult =
+  | { ok: false; error: MeridianError }
   | {
       childThreadId: ThreadId;
       ref: string;
@@ -136,6 +142,7 @@ export type ThreadReportResult =
   | { childThreadId: ThreadId; ref: string; status: "not_ready" | "unavailable" };
 
 const threadReportResultSchema = z.union([
+  z.object({ ok: z.literal(false), error: meridianErrorSchema }),
   z.object({
     childThreadId: z.string(),
     ref: z.string(),
@@ -175,7 +182,7 @@ export function parseThreadReportResult(value: unknown): ThreadReportResult | nu
 export function toReportContentValue(
   report: ThreadReportResult | null,
 ): SavedReportContentValue | null {
-  if (!report || "status" in report) return null;
+  if (!report || "status" in report || "error" in report) return null;
   return {
     summary: report.summary,
     ...(report.payload === undefined ? {} : { payload: report.payload }),

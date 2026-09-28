@@ -79,8 +79,8 @@ export async function seedProjectFixture(
       VALUES (${workId}, ${projectId}, ${input.userId}, 'Main Arc', 'main-arc')
     `;
     await tx`
-      INSERT INTO threads (id, project_id, created_by_user_id, title, kind, status)
-      VALUES (${threadId}, ${projectId}, ${input.userId}, ${title}, 'primary', 'active')
+      INSERT INTO threads (id, root_thread_id, project_id, created_by_user_id, title, kind, status)
+      VALUES (${threadId}, ${threadId}, ${projectId}, ${input.userId}, ${title}, 'primary', 'idle')
     `;
     await tx`
       INSERT INTO thread_works (thread_id, work_id, project_id, is_primary)

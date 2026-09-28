@@ -366,6 +366,51 @@ export function createDrizzleThreadRepository(
         mapThreadListRow(row, leaseStates?.get(row.id as ThreadId)?.runningTurnId ?? null),
       );
     },
+    async listLineageChildren({ rootThreadId, parentIds, limit, after }) {
+      const ids = sql.join(
+        parentIds.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      );
+      const edges = sql`(
+        SELECT id, parent_thread_id AS up_thread_id FROM threads
+        WHERE parent_thread_id IN (${ids}) AND deleted_at IS NULL
+        UNION ALL
+        SELECT t.id, cut.thread_id AS up_thread_id FROM threads t
+        JOIN turns cut ON cut.id = t.origin_turn_id
+        WHERE t.root_thread_id = ${rootThreadId} AND t.origin_type IN ('fork','handoff')
+          AND t.deleted_at IS NULL AND cut.thread_id IN (${ids})
+      )`;
+      const rows = await currentDrizzleDb(db)
+        .select({
+          ...threadColumns,
+          workId: schema.threadWorks.workId,
+          upThreadId: sql<ThreadId>`edges.up_thread_id`,
+          cursorCreatedAt: sql<string>`to_char(${schema.threads.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+          siblingCount: sql<number>`edges.sibling_count::int`,
+        })
+        .from(schema.threads)
+        .innerJoin(
+          sql`(SELECT *, count(*) OVER (PARTITION BY up_thread_id) AS sibling_count FROM ${edges} e) edges`,
+          sql`edges.id = ${schema.threads.id}`,
+        )
+        .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
+        .where(
+          and(
+            eq(schema.threads.rootThreadId, rootThreadId),
+            after
+              ? sql`(${schema.threads.createdAt}, ${schema.threads.id}) < (${after.createdAt}::timestamptz, ${after.id}::uuid)`
+              : undefined,
+          ),
+        )
+        .orderBy(desc(schema.threads.createdAt), desc(schema.threads.id))
+        .limit(limit);
+      return rows.map((row) => ({
+        ...mapThread(row),
+        createdAt: row.cursorCreatedAt,
+        upThreadId: row.upThreadId,
+        siblingCount: row.siblingCount,
+      }));
+    },
     async listChildren(threadId: ThreadId) {
       const rows = await currentDrizzleDb(db)
         .select({

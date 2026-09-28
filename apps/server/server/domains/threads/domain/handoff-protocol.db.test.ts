@@ -1,6 +1,7 @@
 /** PostgreSQL contracts for handoff creation, seed ownership, and control endings. */
 
 import * as http from "@meridian/contracts/protocol";
+import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
@@ -11,7 +12,11 @@ import { scriptedSummarizer } from "../../runtime/loop/__tests__/scripted-summar
 import { createTestDrizzleDelivery } from "../../runtime/loop/__tests__/test-drizzle-delivery.js";
 import { scriptedGateway } from "../../runtime/loop/__tests__/test-gateway.js";
 import { createPrefixCacheStateService } from "../../runtime/loop/prefix-cache-state.js";
+import { createChildRunCoordinator } from "../../runtime/spawn/child-run-coordinator.js";
+import { createChildRunDriver } from "../../runtime/spawn/child-run-driver.js";
 import { createOrphanReportRepair } from "../../runtime/spawn/orphan-report-repair.js";
+import { createReportPublisher } from "../../runtime/spawn/report-publisher.js";
+import { readThreadActivity } from "../index.js";
 import {
   resetThreadWorkRaceFixture,
   THREAD_WORK_RACE,
@@ -522,6 +527,7 @@ else
       const _r = await setupSource();
       await expect(
         db.insert(schema.threads).values({
+          rootThreadId: ids.threadId,
           projectId: ids.projectId,
           createdByUserId: ids.userId,
           originType: "handoff",
@@ -929,6 +935,122 @@ else
       expect(request).toContain("before remote Stop");
       expect(request).toContain("during remote Stop");
       expect(request).not.toContain("must not persist");
+    });
+
+    it.each([
+      "fork",
+      "handoff",
+    ] as const)("keeps the lineage root when deriving a %s from a fork", async (kind) => {
+      const r = await setupSource();
+      const fork = await forkThreadAgent(r.deps, {
+        id: crypto.randomUUID(),
+        threadId: r.source.id,
+        userId: ids.userId,
+        originTurnId: r.firstTurn.id,
+      });
+      const input = {
+        id: crypto.randomUUID(),
+        threadId: fork.thread.id,
+        userId: ids.userId,
+        originTurnId: r.firstTurn.id,
+        agentSelection: r.agent.selection,
+      };
+      const derived =
+        kind === "fork"
+          ? await forkThreadAgent(r.deps, input)
+          : await handoffThreadAgent(r.deps, input);
+      expect(fork.thread.id).not.toBe(r.source.id);
+      for (const thread of [fork.thread, derived.thread]) {
+        expect((await repos.threads.findById(thread.id))?.rootThreadId).toBe(r.source.id);
+      }
+    });
+
+    it("keeps the lineage root when the coordinator spawns from a fork", async () => {
+      const r = await fixture();
+      const { thread: parent } = await forkThreadAgent(r.derive, {
+        id: crypto.randomUUID(),
+        threadId: r.source.id,
+        userId: ids.userId,
+        originTurnId: r.firstTurn.id,
+      });
+      const parentTurn = await repos.turns.create({
+        threadId: parent.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+        prevTurnId: r.firstTurn.id,
+      });
+      const eventSink = createInMemoryEventSink();
+      const readActivity = (threadId: string) =>
+        readThreadActivity(
+          {
+            threads: repos.threads,
+            statusReader: r.runClaim,
+            executionReports: repos.executionReports,
+          },
+          threadId,
+        );
+      const publisher = createReportPublisher({
+        repos,
+        eventWriter,
+        delivery: r.delivery,
+        eventSink,
+      });
+      const driver = createChildRunDriver({
+        orchestrator: r.orchestrator,
+        repos,
+        eventWriter,
+        readActivity,
+        publisher,
+        eventSink,
+      });
+      const coordinator = createChildRunCoordinator({
+        driver,
+        repos: {
+          threads: repos.threads,
+          subagentThreads: repos.threads,
+          transaction: repos.transaction,
+        },
+        async resolveWorkMembership({ threadId }) {
+          await repos.threadWorks.addMembership(threadId, ids.noWorkId, true);
+          return ids.noWorkId;
+        },
+        eventWriter,
+        readActivity,
+        delivery: r.delivery,
+        agentRevisions: revisions,
+        defaultModel: () => "gpt-4.1-mini",
+        unavailableReasons: () => [],
+        modelUnavailable: () => [],
+        eventSink,
+      });
+      const result = await coordinator.runChild(
+        {
+          kind: "spawn",
+          parentThread: parent,
+          parentTurnId: parentTurn.id,
+          prompt: "Check the chapter",
+          budget: createDefaultTreeBudget(),
+          reportCorrelation: {
+            callerThreadId: parent.id,
+            callerTurnId: parentTurn.id,
+            toolCallId: "lineage-spawn",
+            cardBlockId: null,
+            origin: "spawn",
+            deliveryMode: "direct",
+          },
+        },
+        { mode: "foreground" },
+      );
+      expect(result.status).toBe("completed");
+      if (result.status !== "completed") throw new Error(JSON.stringify(result));
+      const child = await repos.threads.findById(result.report.threadId);
+      expect(child).toMatchObject({
+        kind: "subagent",
+        parentThreadId: parent.id,
+        rootThreadId: r.source.id,
+      });
+      expect(child?.rootThreadId).not.toBe(parent.id);
     });
 
     it("C7 inherited cutoff records its owner and refuses a subagent", async () => {

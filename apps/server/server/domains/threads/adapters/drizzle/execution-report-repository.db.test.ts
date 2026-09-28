@@ -53,8 +53,15 @@ else
         .insert(schema.projects)
         .values({ id: ids.otherProject, userId: ids.otherUser, name: "Other", slug: "other" });
       await db.insert(schema.threads).values([
-        { id: ids.otherRoot, projectId: ids.project, createdByUserId: ids.user, ref: "c2" },
         {
+          rootThreadId: ids.otherRoot,
+          id: ids.otherRoot,
+          projectId: ids.project,
+          createdByUserId: ids.user,
+          ref: "c2",
+        },
+        {
+          rootThreadId: ids.otherProjectRoot,
           id: ids.otherProjectRoot,
           projectId: ids.otherProject,
           createdByUserId: ids.otherUser,
@@ -218,7 +225,7 @@ else
 
             repos,
           }),
-        ).rejects.toThrow();
+        ).resolves.toMatchObject({ ok: false, error: { code: "thread_not_found" } });
         const { eq } = await import("drizzle-orm");
         await db.update(schema.threads).set({ ref: "p5" }).where(eq(schema.threads.id, ids.caller));
         await expect(
@@ -228,7 +235,7 @@ else
 
             repos,
           }),
-        ).rejects.toThrow();
+        ).resolves.toMatchObject({ ok: false, error: { code: "thread_not_found" } });
         await db.update(schema.threads).set({ ref: "c1" }).where(eq(schema.threads.id, ids.caller));
         await expect(
           readThreadReport({
@@ -494,7 +501,7 @@ else
 
             repos,
           }),
-        ).rejects.toThrow();
+        ).resolves.toMatchObject({ ok: false, error: { code: "thread_not_found" } });
       });
 
       it("uses a fresh authorized root snapshot instead of the caller's uncommitted transaction", async () => {
@@ -636,7 +643,7 @@ else
 
             repos,
           }),
-        ).rejects.toThrow();
+        ).resolves.toMatchObject({ ok: false, error: { code: "thread_not_found" } });
         await expect(
           readThreadReport({
             callerThreadId: ids.caller,
@@ -644,7 +651,7 @@ else
 
             repos,
           }),
-        ).rejects.toThrow();
+        ).resolves.toMatchObject({ ok: false, error: { code: "thread_not_connected" } });
         await expect(
           readThreadReport({
             callerThreadId: ids.caller,
@@ -652,7 +659,7 @@ else
 
             repos,
           }),
-        ).rejects.toThrow();
+        ).resolves.toMatchObject({ ok: false, error: { code: "thread_not_found" } });
         await db
           .update(schema.threads)
           .set({ deletedAt: new Date() })
@@ -664,7 +671,7 @@ else
 
             repos,
           }),
-        ).rejects.toThrow();
+        ).resolves.toMatchObject({ ok: false, error: { code: "thread_not_found" } });
         expect(
           (await repos.executionReports.findByExecution(ids.child, ids.execution))?.summary,
         ).toBe("kept");
@@ -691,7 +698,7 @@ else
 
             repos,
           }),
-        ).rejects.toThrow();
+        ).resolves.toMatchObject({ ok: false, error: { code: "thread_not_found" } });
         await db
           .update(schema.threads)
           .set({ deletedAt: null })
@@ -707,7 +714,7 @@ else
 
             repos,
           }),
-        ).rejects.toThrow();
+        ).resolves.toMatchObject({ ok: false, error: { code: "thread_not_found" } });
         await db
           .update(schema.projects)
           .set({ deletedAt: null })

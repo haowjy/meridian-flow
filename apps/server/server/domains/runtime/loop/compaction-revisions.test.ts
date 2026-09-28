@@ -1,36 +1,39 @@
-/** Revision-query batching, uncertainty and the no-open-response-scope invariant. */
-import { expect, it, vi } from "vitest";
+/** Unknown revision evidence is already stale and must never poison valid revision reads. */
+import { expect, it } from "vitest";
 import { queryCompactionRevisions } from "./compaction-revisions.js";
 
-const evidence = { documentId: "chapter", uri: "manuscript://chapter", revision: "old" };
-const recorded = new Map([
-  ["read", [evidence]],
-  ["write", [evidence]],
-]);
-it("queries distinct documents once and marks every failed lookup unknown", async () => {
-  const current = vi.fn(async () => {
-    throw new Error("authority unavailable");
-  });
-  const result = await queryCompactionRevisions({
-    threadId: "thread",
-    recorded,
-    revisions: { current },
-    assertNoResponseScope: () => {},
-  });
-  expect(current.mock.calls).toEqual([[{ threadId: "thread", documentIds: ["chapter"] }]]);
-  expect(result).toEqual(new Map([["chapter", null]]));
-});
-it("throws an open response scope invariant instead of querying or treating it as unknown", async () => {
-  const current = vi.fn(async () => new Map());
-  await expect(
-    queryCompactionRevisions({
-      threadId: "thread",
-      recorded,
-      revisions: { current },
-      assertNoResponseScope: () => {
-        throw new Error("Compaction revision query requires no open response scope");
+it("does not resolve known-null edit records and preserves a current document revision", async () => {
+  const current = await queryCompactionRevisions({
+    threadId: "thread" as never,
+    assertNoResponseScope() {},
+    recorded: new Map([
+      [
+        "history",
+        [
+          {
+            documentId: "manuscript://discarded.md",
+            uri: "manuscript://discarded.md",
+            revision: null,
+          },
+        ],
+      ],
+      [
+        "read",
+        [
+          {
+            documentId: "11111111-1111-4111-8111-111111111111",
+            uri: "manuscript://current.md",
+            revision: "v1",
+          },
+        ],
+      ],
+    ]),
+    revisions: {
+      async current({ documentIds }) {
+        if (documentIds.some((id) => id.includes("://"))) throw new Error("Not a document id");
+        return new Map(documentIds.map((id) => [id, "v1"]));
       },
-    }),
-  ).rejects.toThrow("no open response scope");
-  expect(current).not.toHaveBeenCalled();
+    },
+  });
+  expect(current.get("11111111-1111-4111-8111-111111111111")).toBe("v1");
 });

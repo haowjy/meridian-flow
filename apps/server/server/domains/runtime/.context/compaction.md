@@ -48,8 +48,10 @@ model, so B's first request still equals the rebuild. The same assembly measures
 
 The writer transcript stays intact. A completed compaction owns frozen
 `metadata.elisions` (block ID, treatment, affected URIs, replacement content).
-`projectActiveHistory` substitutes only its retained tail and pinned requests,
-not later arrivals. Reverted, failed, pending and superseded owners do not apply.
+Active projection substitutes only its retained tail and pinned requests,
+not later arrivals. `projectActiveHistoryWithBakes` is its only public entry;
+the synchronous projector stays private because, without C's own bake, it
+drops the summary's bake-gated history-read sentence. Reverted, failed, pending and superseded owners do not apply.
 Forks inherit this metadata only when their cutoff includes the owner. Never
 move elisions onto block rows: a fork reads its source's blocks in place, so a
 source compaction after the cutoff would rewrite the fork's request, and undo

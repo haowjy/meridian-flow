@@ -287,7 +287,7 @@ else
 
     it("C6b inherited C is not_active and fork cutoffs isolate U", async () => {
       const { loadThreadConversationContext } = await import("../../threads/index.js");
-      const { projectActiveHistory } = await import("./compaction/index.js");
+      const { projectActiveHistoryWithBakes } = await import("./compaction/index.js");
       const { prepareCompactionUndo } = await import("./compaction-undo.js");
       const rig = await fixture();
       const c = await compact(rig);
@@ -313,13 +313,34 @@ else
       const beforeView = await loadThreadConversationContext(rig.repos, between);
       const afterView = await loadThreadConversationContext(rig.repos, after);
       expect(
-        JSON.stringify(projectActiveHistory(beforeView.turns, beforeView.blocks, between.ref)),
+        JSON.stringify(
+          await projectActiveHistoryWithBakes(
+            beforeView.turns,
+            beforeView.blocks,
+            between.ref,
+            rig.repos.promptBakes,
+          ),
+        ),
       ).toContain("Conversation summary.");
       expect(
-        JSON.stringify(projectActiveHistory(afterView.turns, afterView.blocks, after.ref)),
+        JSON.stringify(
+          await projectActiveHistoryWithBakes(
+            afterView.turns,
+            afterView.blocks,
+            after.ref,
+            rig.repos.promptBakes,
+          ),
+        ),
       ).toContain("Earlier scene.");
       expect(
-        JSON.stringify(projectActiveHistory(afterView.turns, afterView.blocks, after.ref)),
+        JSON.stringify(
+          await projectActiveHistoryWithBakes(
+            afterView.turns,
+            afterView.blocks,
+            after.ref,
+            rig.repos.promptBakes,
+          ),
+        ),
       ).not.toContain("Conversation summary.");
       const control = {
         id: crypto.randomUUID(),
@@ -401,7 +422,7 @@ else
 
     it("C6b a document edited after C is elided by U from raw restored history", async () => {
       const { writeDocumentText } = await import("../tools/document-text.js");
-      const { projectActiveHistory } = await import("./compaction/index.js");
+      const { projectActiveHistoryWithBakes } = await import("./compaction/index.js");
       const rig = await fixture();
       rig.deps.toolRegistry.register({
         source: "core",
@@ -449,9 +470,11 @@ else
         metadata: { elisions: [expect.objectContaining({ blockId: read.id })] },
       });
       const blocks = await rig.repos.blocks.listByThread(rig.threadId);
-      expect(JSON.stringify(projectActiveHistory(turns, blocks, "p1"))).not.toContain(
-        "STALE CHAPTER TEXT",
-      );
+      expect(
+        JSON.stringify(
+          await projectActiveHistoryWithBakes(turns, blocks, "p1", rig.repos.promptBakes),
+        ),
+      ).not.toContain("STALE CHAPTER TEXT");
       expect((await rig.repos.blocks.findById(read.id))?.content).toMatchObject({
         output: "STALE CHAPTER TEXT",
       });

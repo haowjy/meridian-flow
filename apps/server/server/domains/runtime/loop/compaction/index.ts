@@ -21,7 +21,7 @@ export type {
 export {
   CompactionBlockContentCodec,
   CompactionPropsCodec,
-  projectActiveHistory,
+  projectActiveHistoryWithBakes,
   projectCompactedHistory,
 } from "./project.js";
 export type {

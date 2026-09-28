@@ -125,6 +125,22 @@ export function defineTranscriptPageContract(
   }
 
   describe("readTranscriptPage adapter contract", () => {
+    it("returns only writer page fields", async () => {
+      const { repos, root, turn } = await fixture();
+      await turn(root.id as ThreadId, "writer-shape");
+      const page = await readTranscriptPage(repos, root, {
+        order: "newest_first",
+        unit: "item",
+        limit: 1,
+      });
+      expect(Object.keys(page).sort()).toEqual([
+        "entries",
+        "hasMore",
+        "owners",
+        "segment",
+        "segmentBoundary",
+      ]);
+    });
     it.each([
       ["oldest_first", "item"],
       ["oldest_first", "turn"],

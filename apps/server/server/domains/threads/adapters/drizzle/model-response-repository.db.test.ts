@@ -37,9 +37,12 @@ else
       await db
         .insert(schema.projects)
         .values({ id: ids.project, userId: ids.user, name: "Timing", slug: "timing" });
-      await db
-        .insert(schema.threads)
-        .values({ id: ids.thread, projectId: ids.project, createdByUserId: ids.user });
+      await db.insert(schema.threads).values({
+        rootThreadId: ids.thread,
+        id: ids.thread,
+        projectId: ids.project,
+        createdByUserId: ids.user,
+      });
       await repos.turns.create({
         id: ids.turn,
         threadId: ids.thread,

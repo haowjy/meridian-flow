@@ -21,7 +21,7 @@ import { collectRecordedDocuments, planModelElisions } from "./compaction/elide.
 import {
   CompactionBlockContentCodec,
   estimateRequestTokens,
-  projectActiveHistory,
+  projectActiveHistoryWithBakes,
   resolveCompactionTrigger,
 } from "./compaction/index.js";
 import { queryCompactionRevisions } from "./compaction-revisions.js";
@@ -126,7 +126,12 @@ export async function prepareCompactionUndo(input: {
           }
         : t,
     );
-    const projection = projectActiveHistory(withoutUndoElisions, blocks, thread.ref);
+    const projection = await projectActiveHistoryWithBakes(
+      withoutUndoElisions,
+      blocks,
+      thread.ref,
+      deps.repos.promptBakes,
+    );
     const active = activeCompaction(restored);
     const excluded = new Set(
       active ? CompactionMetadataCodec.parse(active.metadata).elisions?.map((e) => e.blockId) : [],

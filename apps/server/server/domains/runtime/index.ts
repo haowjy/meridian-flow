@@ -61,7 +61,6 @@ export {
   FLOW_ABSOLUTE_CEILING,
   IMAGE_PART_TOKEN_ESTIMATE,
   planCompaction,
-  projectActiveHistory,
   resolveCompactionTrigger,
 } from "./loop/compaction/index.js";
 export { createCompactionUndoReader } from "./loop/compaction-undo.js";

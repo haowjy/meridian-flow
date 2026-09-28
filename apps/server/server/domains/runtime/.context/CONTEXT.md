@@ -588,3 +588,30 @@ recovery, cancellation, orphan repair, cost, and the queued controls
 `planControlBarrier`. See [runtime compaction context](compaction.md) for the
 protocol and its details, and [handoff seeds](handoff.md) for the
 `handoff_brief` control.
+
+## Connected history inspection
+
+`spawn/resolve-readable-thread.ts` is the owner/project/lineage authority for
+`thread_ls`, `thread_history` and `thread_report`. New callers (including spawn
+references) reuse it. Inspection registrations take repository and tokenizer
+ports at composition, not privileged run-loop callbacks. Domain refusals leave
+handlers through `toolFailureResult`, keeping their code (a caller whose bound
+model the gateway does not list gets `model_unavailable`, not generic
+`tool_error`).
+
+History projects the shared `readTranscriptPageForProjection` and bounded expansion read;
+there is no second fork walker. Tool pairs load once per raw page, keyed by turn
+and tool-call ID, including partners outside the page. `history-item.ts` filters and elides document
+copies before token trimming. Tool registrations own `historyPreview` and
+`DocumentTextPolicy`. The policy treatment is explicit: `stale` preserves C5
+stub bytes; `history` preserves mutation inputs as dated records and stubs
+copies regardless of revision. Results without edit records persist an explicit
+empty revision list; quoted edits use null revisions. Known-null evidence is
+never resolved against current documents, including failed edits with only a
+historical path. Missing tool pairing/registration fails closed on result text.
+
+Pages cap scan work at 2,000 raw items and carry the settled anchor forward
+when trimming. Opt-in prompts appear only when a cursor opens a segment.
+`projectActiveHistoryWithBakes` resolves the active compaction's own bake before
+adding the history-read sentence; neither the current registry nor a later
+undo's bake may change an old summary's bytes.

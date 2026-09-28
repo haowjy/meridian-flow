@@ -30,13 +30,15 @@ import {
   FLOW_ABSOLUTE_CEILING,
   IMAGE_PART_TOKEN_ESTIMATE,
   planCompaction,
-  projectActiveHistory,
+  projectActiveHistoryWithBakes,
   projectCompactedHistory,
   resolveCompactionTrigger,
 } from "./compaction/index.js";
 import { buildContext } from "./context-builder.js";
 import { messageTurnFor, noticesTurnFor } from "./inbox-context.js";
 import type { InboxMessage } from "./ports.js";
+
+const noPromptBakes = { findById: async () => null };
 
 const THREAD_ID = "thread-1" as ThreadId;
 
@@ -587,7 +589,7 @@ describe("planCompaction", () => {
     expect(plan.minimalTailFits).toBe(false);
   });
 
-  it("does not let an old tool group make forty later chat exchanges too large", () => {
+  it("does not let an old tool group make forty later chat exchanges too large", async () => {
     const turns: Turn[] = [];
     const blocks: Block[] = [];
     const oldRequest = messageTurnFor(
@@ -657,10 +659,11 @@ describe("planCompaction", () => {
       plan.compactedThrough?.turnId ?? oldAnswer.id,
       plan.pinnedRequests.at(-1)?.id ?? turns.at(-2)?.id ?? oldRequest.id,
     );
-    const projected = projectActiveHistory(
+    const projected = await projectActiveHistoryWithBakes(
       [...turns, compaction],
       [...blocks, compactionBlock("summary", compaction.id)],
       "c20",
+      noPromptBakes,
     );
     const context = buildContext({ thread: thread("c20"), ...projected });
     expect(context.messages.at(-1)?.role).toBe("assistant");
@@ -713,7 +716,7 @@ describe("planCompaction", () => {
       images: 0,
       toolGroups: true,
     },
-  ])("keeps projected request estimates within the trigger for $name", ({
+  ])("keeps projected request estimates within the trigger for $name", async ({
     characters,
     images,
     toolGroups,
@@ -781,10 +784,11 @@ describe("planCompaction", () => {
       plan.compactedThrough.turnId,
       (plan.pinnedRequests.at(-1) as Turn).id,
     );
-    const projected = projectActiveHistory(
+    const projected = await projectActiveHistoryWithBakes(
       [...turns, compaction],
       [...blocks, compactionBlock("planned-summary", compaction.id)],
       "c99",
+      noPromptBakes,
     );
     const modelMessages = buildContext({ thread: thread("c99"), ...projected }).messages.filter(
       (message) => message.role !== "system",
@@ -818,7 +822,7 @@ describe("planCompaction", () => {
     });
   });
 
-  it("plans a second compaction only after the active compaction cut", () => {
+  it("plans a second compaction only after the active compaction cut", async () => {
     const firstRequest = turn("first-request", 1, "user");
     const firstAnswer = turn("first-answer", 2, "assistant");
     const secondRequest = turn("second-request", 3, "user");
@@ -857,18 +861,49 @@ describe("planCompaction", () => {
       plan.compactedThrough.turnId,
       (plan.pinnedRequests.at(-1) as Turn).id,
     );
-    expect(() =>
-      projectActiveHistory(
+    await expect(
+      projectActiveHistoryWithBakes(
         [...turns, secondCompaction],
         [...blocks, compactionBlock("second-summary", secondCompaction.id)],
         "c100",
+        noPromptBakes,
       ),
-    ).not.toThrow();
+    ).resolves.toHaveProperty("turns");
   });
 });
 
-describe("projectActiveHistory", () => {
-  it("projects 2,000 compaction-free turns by identity without decoding their metadata", () => {
+describe("projectActiveHistoryWithBakes", () => {
+  it("names thread_history only when C owns a bake advertising it", async () => {
+    const r = turn("r", 1, "user");
+    const a = turn("a", 2, "assistant");
+    const c = { ...compactionTurn("c", 3, a.id, r.id), promptBakeId: "new-bake" };
+    const blocks = [
+      block("r-text", r.id, 0, "text", { text: "pin" }, "pin"),
+      compactionBlock("summary", c.id),
+    ];
+    const old = await projectActiveHistoryWithBakes([r, a, c], blocks, "c1", noPromptBakes);
+    expect(old.blocks[0]?.textContent).not.toContain("thread_history");
+    const updated = await projectActiveHistoryWithBakes([r, a, c], blocks, "c1", {
+      findById: async () =>
+        ({
+          id: "new-bake",
+          bakedTools: [{ type: "function", name: "thread_history" }],
+        }) as never,
+    });
+    expect(updated.blocks[0]?.textContent).toContain("They remain readable with thread_history.");
+    expect(
+      updated.blocks[0]?.textContent?.replace(" They remain readable with thread_history.", ""),
+    ).toBe(old.blocks[0]?.textContent);
+    const mismatched = await projectActiveHistoryWithBakes([r, a, c], blocks, "c1", {
+      findById: async () =>
+        ({
+          id: "other-bake",
+          bakedTools: [{ type: "function", name: "thread_history" }],
+        }) as never,
+    });
+    expect(mismatched.blocks[0]?.textContent).toBe(old.blocks[0]?.textContent);
+  });
+  it("projects 2,000 compaction-free turns by identity without decoding their metadata", async () => {
     const turns = Array.from({ length: 2_000 }, (_, index) =>
       turn(`identity-${index}`, index + 1, index % 2 === 0 ? "user" : "assistant", {
         metadata: { unrelated: { deeply: { nested: "metadata" } } },
@@ -878,13 +913,13 @@ describe("projectActiveHistory", () => {
       block(`identity-block-${index}`, entry.id, 0, "text", { text: "content" }, "content"),
     );
     const startedAt = performance.now();
-    const projected = projectActiveHistory(turns, blocks, "c12");
+    const projected = await projectActiveHistoryWithBakes(turns, blocks, "c12", noPromptBakes);
     expect(performance.now() - startedAt).toBeLessThan(50);
     expect(projected.turns).toEqual(turns);
     expect(projected.blocks).toEqual(blocks);
   });
 
-  it("keeps a pinned request in place when it already follows the cut", () => {
+  it("keeps a pinned request in place when it already follows the cut", async () => {
     const r1 = turn("r1", 1, "user");
     const a1 = turn("a1", 2, "assistant");
     const r2 = messageTurnFor(
@@ -915,7 +950,7 @@ describe("projectActiveHistory", () => {
       block("a2-text", a2.id, 4, "text", { text: "second reply" }, "second reply"),
       compactionBlock("c-summary", compaction.id),
     ];
-    const projected = projectActiveHistory(turns, blocks, "p4");
+    const projected = await projectActiveHistoryWithBakes(turns, blocks, "p4", noPromptBakes);
     expect(projected.turns.map(({ id }) => id)).toEqual(["c:summary", "a1", "r2", "a2"]);
     expect(projected.blocks.map(({ turnId }) => turnId)).toEqual([
       "c:summary",
@@ -974,7 +1009,7 @@ describe("projectActiveHistory", () => {
     ).toHaveLength(1);
   });
 
-  it("cuts inside an assistant turn only after a whole tool group and keeps signed reasoning intact", () => {
+  it("cuts inside an assistant turn only after a whole tool group and keeps signed reasoning intact", async () => {
     const oldRequest = turn("old-request", 1, "user");
     const oldAnswer = turn("old-answer", 2, "assistant");
     const pinned = turn("pinned", 3, "user");
@@ -1014,7 +1049,7 @@ describe("projectActiveHistory", () => {
       block("current-text", current.id, 7, "text", { text: "current answer" }, "current answer"),
       compactionBlock("c-summary", compaction.id),
     ];
-    const projected = projectActiveHistory(turns, blocks, "c12");
+    const projected = await projectActiveHistoryWithBakes(turns, blocks, "c12", noPromptBakes);
     expect(projected.turns.map(({ id }) => id)).toEqual(["c:summary", pinned.id, current.id]);
     const context = buildContext({ thread: thread(), ...projected });
     const messages = context.messages;
@@ -1044,7 +1079,7 @@ describe("projectActiveHistory", () => {
     "pending",
     "error",
     "cancelled",
-  ] as const)("treats a %s compaction as identity", (status) => {
+  ] as const)("treats a %s compaction as identity", async (status) => {
     const first = turn("request", 1, "user");
     const answer = turn("answer", 2, "assistant");
     const candidate = compactionTurn("c", 3, first.id, first.id, status);
@@ -1054,11 +1089,11 @@ describe("projectActiveHistory", () => {
       compactionBlock("c-summary", candidate.id),
     ];
     const baseline = buildContext({ thread: thread(), turns, blocks });
-    const projected = projectActiveHistory(turns, blocks, "c12");
+    const projected = await projectActiveHistoryWithBakes(turns, blocks, "c12", noPromptBakes);
     expect(buildContext({ thread: thread(), ...projected }).messages).toEqual(baseline.messages);
   });
 
-  it("treats reverted and inherited fork compactions correctly", () => {
+  it("treats reverted and inherited fork compactions correctly", async () => {
     const oldRequest = turn("old-request", 1, "user");
     const request = turn("request", 2, "user");
     const answer = turn("answer", 3, "assistant");
@@ -1072,49 +1107,63 @@ describe("projectActiveHistory", () => {
       compactionBlock("c-summary", compaction.id),
     ];
     const baseline = buildContext({ thread: thread(), turns, blocks });
-    const revertedProjection = projectActiveHistory(turns, blocks, "c12");
+    const revertedProjection = await projectActiveHistoryWithBakes(
+      turns,
+      blocks,
+      "c12",
+      noPromptBakes,
+    );
     expect(buildContext({ thread: thread(), ...revertedProjection }).messages).toEqual(
       baseline.messages,
     );
 
     const forkLocal = turn("fork-local", 5, "user", { threadId: "fork-thread", origin: "writer" });
-    const inherited = projectActiveHistory(
+    const inherited = await projectActiveHistoryWithBakes(
       [...turns.slice(0, 3), compaction, forkLocal],
       [...blocks, block("fork-text", forkLocal.id, 0, "text", "continue")],
       "c13",
+      noPromptBakes,
     );
     expect(inherited.turns.map(({ id }) => id)).toContain("c:summary");
     expect(inherited.turns.map(({ id }) => id)).not.toContain(oldRequest.id);
     expect(inherited.turns.map(({ id }) => id)).toContain("fork-local");
   });
 
-  it("throws instead of hiding malformed completed compactions", () => {
+  it("throws instead of hiding malformed completed compactions", async () => {
     const malformed = compactionTurn("broken", 3, "request", "request", "complete", {
       metadata: { malformed: true } as JsonObject,
     });
-    expect(() =>
-      projectActiveHistory([malformed], [compactionBlock("bad-props", malformed.id)], "c12"),
-    ).toThrow();
+    await expect(
+      projectActiveHistoryWithBakes(
+        [malformed],
+        [compactionBlock("bad-props", malformed.id)],
+        "c12",
+        noPromptBakes,
+      ),
+    ).rejects.toThrow();
 
     const validMetadata = compactionTurn("bad-block", 3, "request", "request");
     const badProps = block("bad-props", validMetadata.id, 0, "custom", {
       kind: "compaction",
       props: { summary: "missing fields" },
     });
-    expect(() => projectActiveHistory([validMetadata], [badProps], "c12")).toThrow();
+    await expect(
+      projectActiveHistoryWithBakes([validMetadata], [badProps], "c12", noPromptBakes),
+    ).rejects.toThrow();
   });
 
-  it("throws when a complete compaction's pinned request is missing", () => {
+  it("throws when a complete compaction's pinned request is missing", async () => {
     const request = turn("request", 1, "user");
     const answer = turn("answer", 2, "assistant");
     const compaction = compactionTurn("c", 3, request.id, "deleted-request");
-    expect(() =>
-      projectActiveHistory(
+    await expect(
+      projectActiveHistoryWithBakes(
         [request, answer, compaction],
         [compactionBlock("summary", compaction.id)],
         "c12",
+        noPromptBakes,
       ),
-    ).toThrow(/missing pinned request deleted-request/);
+    ).rejects.toThrow(/missing pinned request deleted-request/);
   });
 
   it("decodes only well-shaped compaction props and block envelopes", () => {
@@ -1170,7 +1219,7 @@ it("summarizes only the cut blocks plus the prior summary, not the lifted pin or
 });
 
 describe("compaction-owned elisions", () => {
-  it("substitutes only the active complete C retained tail, never later blocks", () => {
+  it("substitutes only the active complete C retained tail, never later blocks", async () => {
     const old = turn("old", 0, "user");
     const pin = turn("pin", 1, "user");
     const reply = turn("reply", 2, "assistant");
@@ -1195,24 +1244,46 @@ describe("compaction-owned elisions", () => {
       block("late-read", "late", 0, "tool_result", raw),
       compactionBlock("summary", c.id, "Summary"),
     ];
-    const projected = projectActiveHistory([old, pin, reply, c, late], blocks, "c1");
+    const projected = await projectActiveHistoryWithBakes(
+      [old, pin, reply, c, late],
+      blocks,
+      "c1",
+      noPromptBakes,
+    );
     expect(projected.blocks.find((b) => b.id === "read")?.content).toEqual(replacement);
     expect(projected.blocks.find((b) => b.id === "late-read")?.content).toEqual(raw);
     for (const status of ["pending", "error", "cancelled"] as const) {
       expect(
-        projectActiveHistory([old, pin, reply, { ...c, status }, late], blocks, "c1").blocks,
+        (
+          await projectActiveHistoryWithBakes(
+            [old, pin, reply, { ...c, status }, late],
+            blocks,
+            "c1",
+            noPromptBakes,
+          )
+        ).blocks,
       ).toEqual(blocks);
     }
     const undo = turn("undo", 5, "user", { metadata: compactionUndoMetadata(c.id) });
-    expect(projectActiveHistory([old, pin, reply, c, late, undo], blocks, "c1").blocks).toEqual(
-      blocks,
-    );
+    expect(
+      (
+        await projectActiveHistoryWithBakes(
+          [old, pin, reply, c, late, undo],
+          blocks,
+          "c1",
+          noPromptBakes,
+        )
+      ).blocks,
+    ).toEqual(blocks);
     const next = compactionTurn("next", 6, "old", "pin");
     expect(
-      projectActiveHistory(
-        [old, pin, reply, c, late, next],
-        [...blocks, compactionBlock("next-summary", next.id, "Next summary")],
-        "c1",
+      (
+        await projectActiveHistoryWithBakes(
+          [old, pin, reply, c, late, next],
+          [...blocks, compactionBlock("next-summary", next.id, "Next summary")],
+          "c1",
+          noPromptBakes,
+        )
       ).blocks.find((b) => b.id === "read")?.content,
     ).toEqual(raw);
   });

@@ -185,6 +185,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           slug: `reset-graph-${randomUUID()}`,
         });
         await db.insert(threads).values({
+          rootThreadId: threadId,
           id: threadId,
           projectId,
           createdByUserId: userId,

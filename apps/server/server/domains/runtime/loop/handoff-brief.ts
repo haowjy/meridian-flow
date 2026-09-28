@@ -8,7 +8,7 @@ import {
 } from "../../threads/index.js";
 import type { GenerateRequest } from "../gateway/index.js";
 import type { SummaryOutcome } from "../ports/conversation-summarizer.js";
-import { projectActiveHistory } from "./compaction/index.js";
+import { projectActiveHistoryWithBakes } from "./compaction/index.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
 import { prepareRequestContext } from "./request-preparation.js";
 
@@ -56,7 +56,12 @@ export async function generateHandoffBrief(
       instruction: "handoff_brief",
       incomingAgentName: thread.agentName ?? "the selected Agent",
       requestInHand,
-      projection: projectActiveHistory(context.turns, context.blocks, source.ref),
+      projection: await projectActiveHistoryWithBakes(
+        context.turns,
+        context.blocks,
+        source.ref,
+        deps.repos.promptBakes,
+      ),
       signal,
     });
     return {

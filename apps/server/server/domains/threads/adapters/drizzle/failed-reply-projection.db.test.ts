@@ -62,9 +62,12 @@ else
       await db
         .insert(schema.projects)
         .values({ id: ids.project, userId: ids.user, name: "Failure", slug: "failure" });
-      await db
-        .insert(schema.threads)
-        .values({ id: ids.thread, projectId: ids.project, createdByUserId: ids.user });
+      await db.insert(schema.threads).values({
+        id: ids.thread,
+        rootThreadId: ids.thread,
+        projectId: ids.project,
+        createdByUserId: ids.user,
+      });
       await failedAssistant(ids.failed, null, "provider unavailable");
     });
     afterAll(async () => db.close());

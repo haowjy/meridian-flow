@@ -7,6 +7,24 @@
 
 ## [Unreleased]
 
+- Preserve bake-gated history guidance in cold handoff summaries; classify completed and failed briefs as system history.
+
+- Preserve structured inspection errors, including unavailable bound models.
+
+- Verify spawn, fork and handoff preserve the original lineage root through real entry points.
+
+- Batch history tool pairs by page, including pairs outside the page.
+
+- Keep model projection cursors out of writer transcript pages.
+
+- Authorize execution reports through the canonical lineage predicate.
+
+- Seed browser-test conversations with their lineage root.
+
+- Find connected conversations and read their history with document pointers and dated edit records.
+- Keep history pages stable across compaction and undo; preserve old prompt-bake bytes.
+
+- Require a lineage root on every conversation; index fork and handoff discovery.
 - Accept failed replies as handoff cutoffs without changing the source warmth rule or rewriting their failed status on later sends.
 
 - Preserve undo-before-Retry order in expanded control batches; only brief-only batches skip control history.

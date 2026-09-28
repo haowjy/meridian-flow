@@ -2,6 +2,7 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ThreadReportResult } from "@meridian/contracts/spawn";
 import { describe, expect, it, vi } from "vitest";
+import { threadReadError } from "../spawn/resolve-readable-thread.js";
 import { createSpawnToolRegistrations } from "./spawn-tools.js";
 import { createToolExecutor } from "./tool-executor.js";
 import { createToolRegistry } from "./tool-registry.js";
@@ -49,4 +50,17 @@ describe("thread_report capability plumbing", () => {
     expect(threadReportFn).toHaveBeenCalledWith({ ref: "p1" });
     expect(result.output).toEqual(expected);
   });
+});
+
+it("marks a structured thread-report refusal as an error result", async () => {
+  const result = await executorFor("thread_report").executeTool(
+    { id: "call-denied", name: "thread_report", arguments: { ref: "p9" } },
+    {
+      ...executionBase,
+      agentSlug: null,
+      threadReport: async () => threadReadError("thread_not_connected", "Not connected"),
+    },
+  );
+  expect(result.isError).toBe(true);
+  expect(result.output).toMatchObject({ code: "thread_not_connected" });
 });
