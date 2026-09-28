@@ -435,6 +435,9 @@ export function createInMemoryRepositories(
       threads.set(id, updated);
       return projectThread(updated);
     },
+    async isDeletedByWork() {
+      return false;
+    },
   };
 
   const threadWorksRepo: ThreadWorksRepository = {

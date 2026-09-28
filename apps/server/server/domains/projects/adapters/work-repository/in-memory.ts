@@ -1,25 +1,23 @@
 /** In-memory WorkRepository for tests: Map-backed work CRUD implementing the port. Shares the default-title constant with the drizzle adapter via shared.ts. */
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
-import type { Work } from "@meridian/contracts/works";
+import { type Work, workPurgeAt } from "@meridian/contracts/works";
 import type {
   CreateWorkInput,
   ListWorksOptions,
   UpdateWorkInput,
   WorkRepository,
+  WorkRestoration,
 } from "../../ports/work-repository.js";
 import {
-  WorkDeleteBlockedError,
   WorkLockedError,
   WorkNameConflictError,
   WorkRestoreConflictError,
+  WorkRestoreExpiredError,
 } from "../../ports/work-repository.js";
 import { NO_WORK_NAME, nextWorkSlug } from "./shared.js";
 
 export interface InMemoryWorkRepositoryOptions {
-  hasLiveThreads?: (workId: WorkId) => boolean | Promise<boolean>;
   hasUnreviewedDrafts?: (workId: WorkId) => boolean | Promise<boolean>;
-  hasDocuments?: (workId: WorkId) => boolean | Promise<boolean>;
-  hasFolders?: (workId: WorkId) => boolean | Promise<boolean>;
 }
 
 /** In-memory {@link WorkRepository} for tests. */
@@ -236,24 +234,34 @@ export function createInMemoryWorkRepository(
       return (await options.hasUnreviewedDrafts?.(id)) ?? false;
     },
 
-    async softDelete(id: WorkId): Promise<void> {
+    async softDelete(id: WorkId) {
       const row = rows.get(id);
-      if (!row || row.deletedAt) return;
+      if (!row || row.deletedAt) {
+        return {
+          before: row ? { ...row } : null,
+          after: row ? { ...row } : null,
+          threadIds: [],
+        };
+      }
       if (row.isNoWork) throw new WorkLockedError();
-      if (await options.hasLiveThreads?.(id)) throw new WorkDeleteBlockedError("threads");
-      if (await repo.hasUnreviewedDraft(id)) throw new WorkDeleteBlockedError("drafts");
-      if (await options.hasDocuments?.(id)) throw new WorkDeleteBlockedError("documents");
-      if (await options.hasFolders?.(id)) throw new WorkDeleteBlockedError("folders");
+      const before = { ...row };
       row.deletedAt = now();
       row.updatedAt = row.deletedAt;
       row.lastActivityAt = row.updatedAt;
       advance(row);
+      return { before, after: { ...row }, threadIds: [] };
     },
 
-    async restore(id: WorkId): Promise<Work> {
+    async restore(id: WorkId): Promise<WorkRestoration> {
       const row = rows.get(id);
       if (!row) throw new Error(`Work not found: ${id}`);
-      if (!row.deletedAt) return { ...row };
+      if (!row.deletedAt) {
+        const existing = { ...row };
+        return { before: existing, after: existing, changed: false };
+      }
+      if (workPurgeAt(row.deletedAt).getTime() <= Date.now()) {
+        throw new WorkRestoreExpiredError();
+      }
       if (nameIsTaken(row.projectId, row.name, row.id)) {
         throw new WorkRestoreConflictError("name");
       }
@@ -265,11 +273,12 @@ export function createInMemoryWorkRepository(
           other.slug === row.slug,
       );
       if (slugIsTaken) throw new WorkRestoreConflictError("slug");
+      const before = { ...row };
       row.deletedAt = null;
       row.updatedAt = now();
       row.lastActivityAt = row.updatedAt;
       advance(row);
-      return { ...row };
+      return { before, after: { ...row }, changed: true };
     },
 
     async touch(id: WorkId): Promise<void> {

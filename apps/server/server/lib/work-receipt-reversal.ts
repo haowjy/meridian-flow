@@ -10,7 +10,11 @@ import {
   type WorkReceipt,
   type WorkReceiptState,
 } from "@meridian/contracts/works";
-import type { WorkContextNotices, WorkRepository } from "../domains/projects/index.js";
+import {
+  type WorkContextNotices,
+  WorkDeleteRetryError,
+  type WorkRepository,
+} from "../domains/projects/index.js";
 import type {
   BlockRepository,
   ThreadRepository,
@@ -23,6 +27,7 @@ type WorkReceiptReversalDeps = {
   threads: Pick<ThreadRepository, "findById">;
   works: WorkRepository;
   workContextNotices: Pick<WorkContextNotices, "projectChanged">;
+  stopThreadRun?: (threadId: ThreadId) => Promise<void>;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
 };
 
@@ -69,41 +74,60 @@ export async function reverseWorkReceipts(
   if (!context) return [];
   const ordered = orderReceipts(context.receipts, input.direction);
   const changedProjects = new Set<string>();
+  let threadIdsToStop: ThreadId[] = [];
   try {
-    const results = await deps.transaction(async () => {
-      await lockReceiptState(deps, ordered);
-      const plan = await planReceipts(deps, ordered, context.thread, input.direction);
-      const applied: WorkReceiptReversal[] = [];
-      for (const step of plan) {
-        if (!step.executable) {
-          applied.push(
-            result(
-              step.receipt,
-              context.thread.projectId,
-              step.command,
-              "unavailable",
-              step.message,
+    let results: WorkReceiptReversal[] | undefined;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        const transactionResult = await deps.transaction(async () => {
+          await lockReceiptState(deps, ordered);
+          const plan = await planReceipts(deps, ordered, context.thread, input.direction);
+          const applied: WorkReceiptReversal[] = [];
+          const deletedThreadIds = new Set<ThreadId>();
+          for (const step of plan) {
+            if (!step.executable) {
+              applied.push(
+                result(
+                  step.receipt,
+                  context.thread.projectId,
+                  step.command,
+                  "unavailable",
+                  step.message,
+                ),
+              );
+              continue;
+            }
+            for (const threadId of await applyStep(deps, step.receipt, input.direction)) {
+              deletedThreadIds.add(threadId);
+            }
+            changedProjects.add(context.thread.projectId);
+            applied.push(
+              result(
+                step.receipt,
+                context.thread.projectId,
+                step.command,
+                input.direction === "undo" ? "reversed" : "redone",
+              ),
+            );
+          }
+          await Promise.all(
+            [...changedProjects].map((projectId) =>
+              deps.workContextNotices.projectChanged(projectId),
             ),
           );
-          continue;
-        }
-        await applyStep(deps, step.receipt, input.direction);
-        changedProjects.add(context.thread.projectId);
-        applied.push(
-          result(
-            step.receipt,
-            context.thread.projectId,
-            step.command,
-            input.direction === "undo" ? "reversed" : "redone",
-          ),
-        );
+          return { applied, deletedThreadIds: [...deletedThreadIds] };
+        });
+        results = transactionResult.applied;
+        threadIdsToStop = transactionResult.deletedThreadIds;
+        break;
+      } catch (error) {
+        if (!(error instanceof WorkDeleteRetryError) || attempt === 4) throw error;
       }
-      await Promise.all(
-        [...changedProjects].map((projectId) => deps.workContextNotices.projectChanged(projectId)),
-      );
-      return applied;
-    });
-    return results;
+    }
+    if (deps.stopThreadRun) {
+      await Promise.all(threadIdsToStop.map(deps.stopThreadRun));
+    }
+    return results ?? [];
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return ordered.map((receipt) =>
@@ -251,10 +275,10 @@ async function applyStep(
   deps: Pick<WorkReceiptReversalDeps, "works">,
   receipt: WorkMutationReceipt,
   direction: Direction,
-): Promise<void> {
+): Promise<ThreadId[]> {
   if (receipt.operation === "create") {
     if (direction === "undo") {
-      await deps.works.softDelete(receipt.workId);
+      return (await deps.works.softDelete(receipt.workId)).threadIds;
     } else {
       await deps.works.restore(receipt.workId);
     }
@@ -264,8 +288,9 @@ async function applyStep(
     await applyState(deps.works, receipt.workId, state);
   } else if (receipt.operation === "delete") {
     if (direction === "undo") await deps.works.restore(receipt.workId);
-    else await deps.works.softDelete(receipt.workId);
+    else return (await deps.works.softDelete(receipt.workId)).threadIds;
   }
+  return [];
 }
 
 async function applyState(works: WorkRepository, workId: WorkId, state: WorkReceiptState) {

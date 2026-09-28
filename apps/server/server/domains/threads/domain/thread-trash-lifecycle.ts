@@ -26,7 +26,7 @@ export interface ThreadTrashTransition {
 interface TransitionThreadTrashDeps {
   repos: Pick<ThreadRepositories, "threads" | "threadWorks" | "transaction">;
   projects: Pick<ProjectRepository, "findById">;
-  works: Pick<WorkRepository, "findNoWork">;
+  works: Pick<WorkRepository, "findById" | "findNoWork">;
   workContextNotices: Pick<WorkContextNotices, "threadChanged">;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }
@@ -52,9 +52,16 @@ export async function transitionThreadTrash(
         throw new ThreadTrashUnavailableError(input.threadId);
       }
       if (!before.deletedAt) return { thread: before, changed: false };
-      const primary = await deps.repos.threadWorks.findPrimary(input.threadId);
-      const availableAuthority = primary
-        ? await deps.workAuthorityResolver.lockById(before.projectId, primary.workId)
+      if (await deps.repos.threads.isDeletedByWork(input.threadId)) {
+        throw new ThreadTrashUnavailableError(input.threadId);
+      }
+      const rootThreadId = before.rootThreadId ?? before.id;
+      const primary = await deps.repos.threadWorks.findPrimary(rootThreadId);
+      const primaryWork = primary ? await deps.works.findById(primary.workId) : null;
+      if (primaryWork?.deletedAt) throw new ThreadTrashUnavailableError(input.threadId);
+      const threadPrimary = await deps.repos.threadWorks.findPrimary(input.threadId);
+      const availableAuthority = threadPrimary
+        ? await deps.workAuthorityResolver.lockById(before.projectId, threadPrimary.workId)
         : null;
       if (!availableAuthority) {
         await deps.workAuthorityResolver.lockById(before.projectId, noWork.id);

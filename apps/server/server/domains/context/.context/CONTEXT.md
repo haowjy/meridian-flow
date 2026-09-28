@@ -96,6 +96,12 @@ router resolves to exact project-scoped Work authority before dispatch.
   object put. The result repository owns same-ID terminal reconciliation;
   compensation occurs only for `definitely_not_committed`, while unknown
   outcomes retain bytes and emit diagnostics.
+- **Work deletion** atomically soft-deletes live Work-owned context sources,
+  documents, and folders with `deletedByWorkId`. Existing catalog and
+  filesystem live-row predicates hide those rows; Work restore clears only
+  those marked by that deletion. Separately deleted content stays deleted.
+  Upload intake metadata is retained through the 30-day restore window, then
+  the projects `work-purge` job removes the Work's upload objects and rows.
 
 ## Contracts
 

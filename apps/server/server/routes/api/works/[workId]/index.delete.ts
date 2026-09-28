@@ -1,10 +1,6 @@
-/** Soft-deletes an empty Work, preserving D17's conversation and draft guards. */
-import { createError, defineEventHandler, getRouterParam, setResponseStatus } from "nitro/h3";
-import {
-  deleteWork,
-  requireWorkOwner,
-  WorkDeleteBlockedError,
-} from "../../../../domains/projects/index.js";
+/** Soft-deletes a Work and its live children for the retention window. */
+import { defineEventHandler, getRouterParam, setResponseStatus } from "nitro/h3";
+import { deleteWork, requireWorkOwner } from "../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../lib/request-id.js";
 
@@ -18,14 +14,17 @@ export default defineEventHandler(async (event) => {
     { includeSoftDeleted: true },
   );
   if (!work.deletedAt) {
-    try {
-      await deleteWork({ works: app.workRepo, workContextNotices: app.workContextNotices }, workId);
-    } catch (error) {
-      if (error instanceof WorkDeleteBlockedError) {
-        throw createError({ statusCode: 409, message: error.message });
-      }
-      throw error;
-    }
+    await deleteWork(
+      {
+        works: app.workRepo,
+        workContextNotices: app.workContextNotices,
+        async stopThreadRun(threadId) {
+          const turnId = await app.threadRuntime.readRunningTurnId(threadId);
+          if (turnId) await app.runner.cancel(threadId, turnId);
+        },
+      },
+      workId,
+    );
   }
   setResponseStatus(event, 204);
 });

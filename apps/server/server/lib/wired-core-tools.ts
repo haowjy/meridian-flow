@@ -27,6 +27,7 @@ import {
   meridianErrorFromTool,
   parseAskUserToolInput,
 } from "@meridian/contracts/interrupt";
+import type { ThreadId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type {
   ThreadExecutionContext,
@@ -57,7 +58,6 @@ import {
   deleteWorkTransition,
   updateWorkTransition,
   type WorkContextNotices,
-  WorkDeleteBlockedError,
   WorkNameRequiredError,
   type WorkRepository,
 } from "../domains/projects/index.js";
@@ -93,6 +93,7 @@ export interface ToolWiringDeps {
   works: WorkRepository;
   workAuthorityResolver: import("../domains/projects/index.js").ProjectWorkAuthorityResolver;
   workContextNotices: Pick<WorkContextNotices, "projectChanged" | "threadChanged">;
+  stopThreadRun(threadId: ThreadId): Promise<void>;
   drafts: Pick<CollabDrafts, "draftReview">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
@@ -898,7 +899,11 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
 
         if (command.command === "delete") {
           const transition = await deleteWorkTransition(
-            { works: deps.works, workContextNotices: deps.workContextNotices },
+            {
+              works: deps.works,
+              workContextNotices: deps.workContextNotices,
+              stopThreadRun: deps.stopThreadRun,
+            },
             selected.id,
           );
           const before = transition.before ?? selected;
@@ -929,13 +934,6 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         }
         if (error instanceof WorkNameRequiredError) {
           return toolError({ code: "invalid_work_name", message: error.message });
-        }
-        if (error instanceof WorkDeleteBlockedError) {
-          return toolError({
-            code: "work_delete_blocked",
-            message: error.message,
-            blockingContentKind: error.reason,
-          });
         }
         return toolError({ message: error instanceof Error ? error.message : String(error) });
       }

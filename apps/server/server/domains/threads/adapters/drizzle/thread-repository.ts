@@ -503,5 +503,13 @@ export function createDrizzleThreadRepository(
         .limit(1);
       return mapThread({ ...row, workId: primary[0]?.workId ?? null });
     },
+    async isDeletedByWork(id) {
+      const [row] = await currentDrizzleDb(db)
+        .select({ id: schema.threads.id })
+        .from(schema.threads)
+        .where(and(eq(schema.threads.id, id), isNotNull(schema.threads.deletedByWorkId)))
+        .limit(1);
+      return row !== undefined;
+    },
   };
 }

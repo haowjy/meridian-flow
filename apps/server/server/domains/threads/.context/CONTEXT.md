@@ -119,6 +119,14 @@ for the tool-freeze mechanics.
   from `threads`.
 - **Thread↔Work membership** — `thread_works` join table (exactly one primary per live thread; No Work is a real row). `threads.workId` column is **dropped**. Membership is organizational;
   same-project Work-authority URIs do not require membership.
+- **Work-deletion visibility** — deleting a named Work marks each live primary
+  chat and every live descendant/subagent with `threads.deletedByWorkId` in the
+  same transaction as the Work. The
+  ordinary soft-delete predicates hide it from feeds, refs, recents, and direct
+  lookups; its Work marker preserves exact restore ownership. Independently
+  trashed chats are not marked, and a cascaded chat cannot be restored to
+  visibility until its Work is restored. Expired Work purge hard-deletes its
+  marked chats and their thread-owned rows.
 - **Thread Work rebind** — `rebindThreadWork` is the canonical mutation for
   explicitly changing an existing thread's primary Work. It owns lifecycle validation,
   the transaction-composable binding transition, the exact binding receipt, idempotent no-op behavior, and the

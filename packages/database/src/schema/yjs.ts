@@ -64,6 +64,9 @@ export const documentBranches = pgTable(
     workId: uuid("work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "restrict" }),
+    deletedByWorkId: uuid("deleted_by_work_id")
+      .$type<WorkId>()
+      .references(() => works.id, { onDelete: "cascade" }),
     threadId: uuid("thread_id")
       .$type<ThreadId>()
       .references(() => threads.id, { onDelete: "cascade" }),
@@ -86,6 +89,9 @@ export const documentBranches = pgTable(
     index("document_branches_active_work_draft_by_work")
       .on(table.workId, table.id, table.generation)
       .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
+    index("document_branches_deleted_by_work_idx")
+      .on(table.deletedByWorkId)
+      .where(sql`${table.deletedByWorkId} IS NOT NULL`),
     uniqueIndex("document_branches_active_thread_peer")
       .on(table.documentId, table.threadId)
       .where(sql`${table.kind} = 'thread_peer' AND ${table.status} = 'active'`),
