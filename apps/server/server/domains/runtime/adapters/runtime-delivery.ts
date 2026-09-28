@@ -1,19 +1,16 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
 import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
-import type { NoticePort } from "../../notices/index.js";
 import { isRunOwnedPlaceholder } from "@meridian/contracts/threads";
+import type { NoticePort } from "../../notices/index.js";
 import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import { persistPreparedControlEvents } from "../loop/compaction-undo.js";
-import {
-  absorbPendingCompact,
-  type ControlMessage,
-  planControlBarrier,
-} from "../loop/control-barrier.js";
+import { absorbPendingCompact } from "../loop/control-barrier.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
 import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
+import { next } from "../loop/next-inbox-work.js";
 import { finalizeOrphanedTurns } from "../loop/orphaned-placeholder.js";
 import { readPendingInbox } from "../loop/pending-inbox.js";
 import {
@@ -92,78 +89,38 @@ export function createDeliveryAdapter(
   };
   async function selectForPreparation(
     threadId: ThreadId,
+    at: "run_start" | "boundary",
     satisfyPendingCompact?: boolean,
-    expandUndos = true,
   ) {
     const pendingBatch = await inbox.selectPending(threadId);
-    const eligible = pendingBatch;
     const projection = await inbox.readPendingProjection(threadId);
-    const headControl = eligible.find(
-      (row) => row.intent === "control" && !projection.run?.messageIds.includes(row.id),
-    );
+    const boundIds = new Set(projection.run?.messageIds ?? []);
+    const eligible = pendingBatch.filter((row) => !boundIds.has(row.id));
+    const nextWork = next(eligible, at);
+    const headControl = nextWork.kind === "control" ? nextWork.control : null;
     const satisfiesControlId =
       satisfyPendingCompact && headControl?.body.kind === "compact" ? headControl.id : undefined;
-    const boundIds = new Set([
-      ...(projection.run?.messageIds ?? []),
-      ...(satisfiesControlId ? [satisfiesControlId] : []),
+    const rows = nextWork.kind === "none" ? [] : nextWork.rows;
+    const selectedIds = new Set([
+      ...rows.map((row) => row.id),
+      ...(headControl ? [headControl.id] : []),
     ]);
-    const chained = await Promise.all(
-      eligible
-        .filter((row) => !boundIds.has(row.id))
-        .map((row) => deps.repos.turns.findById(row.id)),
-    );
-    const barrier = planControlBarrier({
-      pending: eligible,
-      boundIds,
-      chainedIds: new Set(chained.flatMap((turn) => (turn ? [turn.id] : []))),
-    });
-    const controls: ControlMessage[] = [];
-    const work = await workBatch(threadId, barrier.batch);
-    const followingBatches: NonNullable<DeliverySelection["followingBatches"]> = [];
-    let nextBarrier = barrier;
-    const selectedIds = new Set(boundIds);
-    while (nextBarrier.execute) {
-      controls.push(nextBarrier.execute);
-      if (!expandUndos || nextBarrier.execute.body.kind !== "compaction_undo") break;
-      const afterControlId = nextBarrier.execute.id;
-      selectedIds.add(afterControlId);
-      for (const row of nextBarrier.batch) selectedIds.add(row.id);
-      nextBarrier = planControlBarrier({
-        pending: eligible,
-        boundIds: selectedIds,
-        chainedIds: new Set(chained.flatMap((turn) => (turn ? [turn.id] : []))),
-      });
-      const following = await workBatch(threadId, nextBarrier.batch);
-      followingBatches.push({
-        afterControlId,
-        batch: following.batch,
-        ackIds: [...new Set([...following.ids, ...following.batch.map((row) => row.id)])],
-        workContext: following.workContext,
-      });
-    }
-    const adoptedIds = new Set(
-      [...barrier.batch, ...followingBatches.flatMap((s) => s.batch)].map((row) => row.id),
-    );
+    const work = await workBatch(threadId, rows);
     const [notices, thread] = await Promise.all([
       deps.notices.peek(threadId),
       deps.repos.threads.findById(threadId),
     ]);
     if (!thread) throw new Error(`Thread not found: ${threadId}`);
     const selection: DeliverySelection = {
+      next: nextWork,
       batch: work.batch,
-      control: barrier.execute,
-      controls,
-      followingBatches,
+      control: headControl,
+      controls: headControl ? [headControl] : [],
+      followingBatches: [],
       satisfiesControlId,
-      headControl:
-        (eligible.find(
-          (row) =>
-            row.intent === "control" &&
-            !boundIds.has(row.id) &&
-            !controls.some((c) => c.id === row.id && c.body.kind === "compaction_undo"),
-        ) as ControlMessage | undefined) ?? null,
-      outstanding: eligible.filter(
-        (row) => row.intent === "message" && (boundIds.has(row.id) || adoptedIds.has(row.id)),
+      headControl,
+      outstanding: pendingBatch.filter(
+        (row) => row.intent === "message" && (boundIds.has(row.id) || selectedIds.has(row.id)),
       ),
       workContext: work.workContext,
       notices,
@@ -187,6 +144,7 @@ export function createDeliveryAdapter(
   }
   async function prepareAndCommit<TPrepared, TResult>(input: {
     threadId: ThreadId;
+    at: "run_start" | "boundary";
     signal?: AbortSignal;
     satisfyPendingCompact?: boolean;
     validate?: () => Promise<void>;
@@ -219,6 +177,7 @@ export function createDeliveryAdapter(
           return threadLock.withThreadLock(input.threadId, async () => {
             const selected = await selectForPreparation(
               input.threadId,
+              input.at,
               input.satisfyPendingCompact,
             );
             selected.selection.failedUndoIds = failedUndoIds;
@@ -230,7 +189,11 @@ export function createDeliveryAdapter(
           });
         }
 
-        const selected = await selectForPreparation(input.threadId, input.satisfyPendingCompact);
+        const selected = await selectForPreparation(
+          input.threadId,
+          input.at,
+          input.satisfyPendingCompact,
+        );
         selected.selection.failedUndoIds = failedUndoIds;
         input.signal?.throwIfAborted();
         const prepared = await input.prepare(selected.selection, selected.work);
@@ -256,11 +219,7 @@ export function createDeliveryAdapter(
       committingUndoIds = (selected.selection.controls ?? [])
         .filter((c) => c.body.kind === "compaction_undo")
         .map((c) => c.id);
-      const result = await input.commit(
-        selected.selection,
-        selected.work,
-        prepared,
-      );
+      const result = await input.commit(selected.selection, selected.work, prepared);
       if (!input.hasPreparationFailure(prepared)) {
         await deps.notices.consume(selected.selection.notices.map(({ id }) => id));
       }
@@ -293,7 +252,7 @@ export function createDeliveryAdapter(
     };
   }
   async function materializePrefix(threadId: ThreadId) {
-    const { selection, work } = await selectForPreparation(threadId, false, false);
+    const { selection, work } = await selectForPreparation(threadId, "boundary");
     const turns = await Promise.all(
       work.batch.map((message) => deps.repos.turns.findById(message.id)),
     );
@@ -671,6 +630,7 @@ export function createDeliveryAdapter(
   ): Promise<AdoptedBatch<TCurrent>> {
     return prepareAndCommit({
       threadId: input.lease.threadId,
+      at: "boundary",
       signal: input.signal,
       satisfyPendingCompact: input.satisfyPendingCompact,
       validate: async () => {
@@ -754,6 +714,7 @@ export function createDeliveryAdapter(
     adoptBatch: async (lease, prepare, options) => {
       const result = await prepareAndCommit({
         threadId: lease.threadId,
+        at: "run_start",
         signal: options?.signal,
         validate: async () => {
           if ((await leaseStore.lockReceipt(lease))?.cancelRequested)
@@ -806,7 +767,7 @@ export function createDeliveryAdapter(
           ? { kind: "cancelled" as const, reason: "cancelled" }
           : input.cause;
         if (input.continueWith && cause.kind === "success") {
-          const { selection } = await selectForPreparation(threadId);
+          const { selection } = await selectForPreparation(threadId, "boundary");
           if (
             !selection.control &&
             (selection.batch.some((message) => message.intent === "message") ||

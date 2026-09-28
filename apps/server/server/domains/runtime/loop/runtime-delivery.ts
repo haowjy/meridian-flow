@@ -4,9 +4,9 @@ import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads
 import type { Notice } from "../../notices/index.js";
 import type { WorkContextNotices } from "../../projects/index.js";
 import type { CompactionDecision } from "./compaction/decision.js";
-import type { ControlMessage } from "./control-barrier.js";
 import type { FinalizedExecution, TerminalCause } from "./execution-finalizer.js";
 import type { drainInbox, InboxDrain } from "./inbox-context.js";
+import type { ControlMessage, InboxWorkSelection } from "./next-inbox-work.js";
 import type { InboxMessage, InboxReader, Lease, MessageDraft } from "./ports.js";
 
 export type DeliveryTransaction = {
@@ -15,10 +15,7 @@ export type DeliveryTransaction = {
   materializePrefix(): Promise<void>;
 };
 export type DeliveryProducer = Pick<RuntimeDelivery, "enqueue" | "withThreadLock">;
-export type ThreadControls = Pick<
-  RuntimeDelivery,
-  "enqueueControl" | "withdrawControl"
->;
+export type ThreadControls = Pick<RuntimeDelivery, "enqueueControl" | "withdrawControl">;
 export type DeliveryBoundary<TCurrent = undefined> = Pick<
   Parameters<typeof drainInbox>[0],
   "knownTurnIds" | "expectedLeafTurnId" | "prepareAdoptedTurn"
@@ -60,6 +57,7 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
   }>;
 };
 export type DeliverySelection = {
+  next: InboxWorkSelection;
   batch: InboxMessage[];
   continueTask?: boolean;
   controls?: ControlMessage[];

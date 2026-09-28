@@ -3,7 +3,6 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
-import { planControlBarrier } from "./control-barrier.js";
 import { type CurrentTurn, DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
 import { createRunStarter } from "./run-starter.js";
 import {
@@ -17,6 +16,7 @@ import {
   UnsettledPlaceholderError,
 } from "./run-turn-port.js";
 import type { RuntimeDelivery } from "./runtime-delivery.js";
+import { createWakeIfRunnable } from "./wake-if-runnable.js";
 
 type RunSession = {
   controller: AbortController;
@@ -46,6 +46,8 @@ export function createRunSessions(deps: {
 }) {
   const running = new Map<ThreadId, RunSession>();
   const authority = deps.runClaim;
+  const runStarter = createRunStarter({ startDrain }, deps.eventSink);
+  const wakeIfRunnable = createWakeIfRunnable({ delivery: deps.delivery, runStarter });
   function observe(threadId: ThreadId, name: string, error: unknown) {
     emitEvent(deps.eventSink, {
       level: "error",
@@ -85,34 +87,24 @@ export function createRunSessions(deps: {
     else parentSignal?.addEventListener("abort", abort, { once: true });
     let lease: Lease | null = null;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
-    let restartPendingAfterCompletion = false;
     let preparedRun = false;
     let handoffGatedStart = false;
-    async function cleanup(restartPending = false, releaseUnanswered = false) {
+    let setupMayWake = false;
+    async function cleanup() {
       clearInterval(heartbeat);
       parentSignal?.removeEventListener("abort", abort);
       running.delete(threadId);
       // A child invocation bounds its whole subtree; a primary may detach background children.
       abortChildrenOf(threadId, !!input.child);
+      let claimReleased = !lease;
+      let wakeAfterRelease = false;
       try {
-        if (lease) await authority.release(lease);
         if (lease) {
-          await deps.delivery.refreshPending(threadId);
-          const pending = await deps.delivery.selectPending(threadId);
-          const runnableInput =
-            planControlBarrier({ pending, chainedIds: new Set(), boundIds: new Set() }).execute !==
-              null || pending.some((message) => message.intent === "message");
-          const seedSettled = !(await deps.repos.turns.hasPendingHandoffSeed(threadId));
-          if (
-            (preparedRun &&
-              (planControlBarrier({ pending, chainedIds: new Set(), boundIds: new Set() }).execute !==
-                null ||
-                ((releaseUnanswered || (restartPending && !session.controller.signal.aborted)) &&
-                  pending.some((message) => message.intent === "message")))) ||
-            (handoffGatedStart && seedSettled && runnableInput)
-          ) {
-            restartPendingAfterCompletion = true;
-          }
+          await authority.release(lease);
+          claimReleased = true;
+          wakeAfterRelease = preparedRun || setupMayWake;
+          if (handoffGatedStart && !(await deps.repos.turns.hasPendingHandoffSeed(threadId)))
+            wakeAfterRelease = true;
         }
       } catch (error) {
         observe(threadId, "lease_release.failed", error);
@@ -123,9 +115,9 @@ export function createRunSessions(deps: {
         } catch (error) {
           observe(threadId, "settled.failed", error);
         }
-        if (restartPendingAfterCompletion) {
+        if (claimReleased && wakeAfterRelease) {
           void session.completion
-            .then(() => createRunStarter({ startDrain }, deps.eventSink).start(threadId))
+            .then(() => wakeIfRunnable(threadId))
             .catch((error) => observe(threadId, "cleanup_wake.failed", error));
         }
       }
@@ -195,15 +187,7 @@ export function createRunSessions(deps: {
           observe(threadId, "terminal_fallback.failed", error);
           outcome = { status: "failed", error };
         }
-        await cleanup(
-          outcome.status === "complete",
-          outcome.status !== "failed" &&
-            ((outcome.turn.metadata as import("@meridian/contracts/threads").JsonObject | null)
-              ?.kind === "compaction_undo" ||
-              (outcome.turn.role === "compaction" &&
-                (outcome.turn.metadata as import("@meridian/contracts/threads").JsonObject | null)
-                  ?.trigger === "manual")),
-        );
+        await cleanup();
         return outcome;
       }
       return {
@@ -216,6 +200,7 @@ export function createRunSessions(deps: {
       };
     } catch (error) {
       handoffGatedStart = error instanceof PendingHandoffSeedError;
+      setupMayWake = error instanceof NoPendingWakeError || isAbortError(error);
       if (lease && session.currentTurn) {
         try {
           await deps.finalizeFailure({
@@ -240,7 +225,8 @@ export function createRunSessions(deps: {
       const run = await prepare({ threadId, drain: true });
       void run.execute();
     } catch (error) {
-      if (!(error instanceof NoPendingWakeError || error instanceof PendingHandoffSeedError)) throw error;
+      if (!(error instanceof NoPendingWakeError || error instanceof PendingHandoffSeedError))
+        throw error;
     }
   }
   return {
@@ -271,13 +257,14 @@ export function createRunSessions(deps: {
       if (active) {
         abortChildrenOf(threadId, true);
         active.controller.abort();
-        void active.completion
-          .then(() => createRunStarter({ startDrain }, deps.eventSink).start(threadId))
-          .catch((error) => observe(threadId, "cancel_wake.failed", error));
       }
       return "cancelled";
     },
   };
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
 }
 
 export type TurnRunner = ReturnType<typeof createRunSessions>;

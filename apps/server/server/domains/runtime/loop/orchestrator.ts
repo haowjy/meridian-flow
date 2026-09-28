@@ -511,7 +511,7 @@ async function runDrainTurn(
       const setupThread = await deps.repos.threads.findById(input.threadId);
       if (!setupThread) throw new Error(`Thread not found: ${input.threadId}`);
       const batch = selection.batch;
-      if (!selection.control && !batch.some((message) => message.intent === "message")) return null;
+      if (selection.next.kind === "none") return null;
       const ctx = await loadRunStartContext(deps, setupThread);
       preparationError = ctx.contextError;
       const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;
