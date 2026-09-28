@@ -29,8 +29,9 @@ Compaction is two delivery transitions around an unlocked
 
 The complete summary block is immutable. Its fit limit comes from the
 decision, independently of the automatic trigger. A usable value's token
-count describes the compacted base before late arrivals. Only assistant response rows can supply a reusable baseline. Summary responses
-never supply the conversation token baseline.
+count describes the compacted base before late arrivals. Only assistant response
+rows can supply a reusable baseline; summary rows never supply the conversation
+token baseline.
 
 The usable prepared value carries metadata (the placeholder's reservation
 metadata plus `elisions`) into provisional assembly. The commit reloads C after
