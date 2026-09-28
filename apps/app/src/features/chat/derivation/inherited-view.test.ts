@@ -92,6 +92,21 @@ describe("optimisticForkPrefix", () => {
     expect(prefix?.owners.get("source")?.title).toBe("Chapter 12 plan");
   });
 
+  it("carries no model responses, as the server's read has none: Info never flickers", () => {
+    const reply = {
+      ...turn("s1", "source", "assistant"),
+      responses: [{ id: "r1" }],
+    } as unknown as Turn;
+    const prefix = optimisticForkPrefix({
+      source: { id: "source", title: null },
+      sourceInherited: null,
+      localTurns: [reply],
+      cutoffTurnId: "s1",
+    });
+    expect(prefix?.transcript.turns[0]?.responses).toEqual([]);
+    expect(reply.responses).toHaveLength(1);
+  });
+
   it("cuts at an inherited turn of a fork, inheriting only above it", () => {
     const sourceInherited = inheritedViewFromPages([
       page([entry("g1", "grand"), entry("g2", "grand")]),

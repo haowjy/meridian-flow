@@ -122,7 +122,9 @@ export function useInheritedView(
 /**
  * What a new fork cut at `cutoffTurnId` inherits from the chat on screen: its
  * inherited rows and its own turns through the cutoff. Shown at once, then
- * replaced by the server's read, which has the same turns.
+ * replaced by the server's read, which has the same turns. That read carries
+ * no model responses, so neither does this: a reply's Info would otherwise
+ * appear, then vanish when the read lands.
  */
 export function optimisticForkPrefix(input: {
   source: Pick<Thread, "id" | "title">;
@@ -135,7 +137,9 @@ export function optimisticForkPrefix(input: {
   const all = [...inheritedTurns, ...localTurns];
   const cutoff = all.findIndex((turn) => turn.id === cutoffTurnId);
   if (cutoff < 0) return null;
-  const turns = all.slice(0, cutoff + 1);
+  const turns = all
+    .slice(0, cutoff + 1)
+    .map((turn) => (turn.responses?.length ? { ...turn, responses: [] } : turn));
   const ownerByTurnId = new Map<string, string>();
   for (const turn of turns)
     ownerByTurnId.set(
