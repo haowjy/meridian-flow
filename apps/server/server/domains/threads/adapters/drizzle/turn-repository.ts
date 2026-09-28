@@ -215,6 +215,22 @@ export function createDrizzleTurnRepository(
         .where(eq(schema.turns.id, id));
       return row ? mapTurn(row) : null;
     },
+    async findLatestHandoffSeed(threadId) {
+      const [row] = await currentDrizzleDb(db)
+        .select()
+        .from(schema.turns)
+        .where(
+          and(
+            eq(schema.turns.threadId, threadId),
+            eq(schema.turns.role, "system"),
+            sql`${schema.turns.metadata}->>'kind' = 'derivation_seed'`,
+            sql`${schema.turns.metadata}->>'derivation' = 'handoff'`,
+          ),
+        )
+        .orderBy(desc(schema.turns.position))
+        .limit(1);
+      return row ? mapTurn(row) : null;
+    },
     async findByControlId(threadId, controlId) {
       const [row] = await currentDrizzleDb(db)
         .select()

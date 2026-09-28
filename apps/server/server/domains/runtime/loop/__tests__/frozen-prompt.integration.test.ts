@@ -24,6 +24,7 @@ import type { ImageAssetPort } from "../../ports/image-asset.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
 import { createWorkContextReader } from "../work-context.js";
 import { createRuntimeHarness } from "./runtime-harness.js";
+import { scriptedSummarizer } from "./scripted-summarizer.js";
 import { scriptedGateway } from "./test-gateway.js";
 
 function systemHash(messages: Message[]) {
@@ -99,7 +100,8 @@ async function fixture(
   };
   async function run(threadId = thread.id, tools?: Tool[]) {
     const run = await rig.orchestrator.prepare({ threadId, userText: "Continue.", tools });
-    expect((await run.execute()).status).toBe("complete");
+    const outcome = await run.execute();
+    expect(outcome.status, JSON.stringify(outcome)).toBe("complete");
     return run;
   }
   return {
@@ -738,12 +740,16 @@ describe("frozen prompt provider requests", () => {
         ),
       ).toBe(true);
     }
-    const handoff = await handoffThreadAgent(rig.derive, {
-      threadId: rig.thread.id,
-      userId: rig.thread.userId,
-      agentSelection: rig.original.selection,
-      summary: "Continue the revision.",
-    });
+    const { thread: handoff } = await handoffThreadAgent(
+      { ...rig.derive, delivery: rig.delivery },
+      {
+        id: crypto.randomUUID(),
+        originTurnId: (await rig.repos.turns.getLatestByThread(rig.thread.id))!.id,
+        threadId: rig.thread.id,
+        userId: rig.thread.userId,
+        agentSelection: rig.original.selection,
+      },
+    );
     expect(handoff.initialPromptBakeId).toBe(parent?.initialPromptBakeId);
     await rig.run(handoff.id);
     const request = rig.requests[rig.requests.length - 1];
@@ -761,9 +767,47 @@ describe("frozen prompt provider requests", () => {
     expect(
       request.messages.some(
         (message) =>
-          message.role === "user" && JSON.stringify(message.content).includes("Handoff brief"),
+          message.role === "user" && JSON.stringify(message.content).includes("Earlier context."),
       ),
     ).toBe(true);
+  });
+
+  it("does not overwrite a row-owned Stop when an expired live brief resumes", async () => {
+    const rig = await fixture();
+    await rig.run();
+    const cutoff = await rig.repos.turns.getLatestByThread(rig.thread.id);
+    if (!cutoff) throw new Error("missing cutoff");
+    const { thread } = await handoffThreadAgent(
+      { ...rig.derive, delivery: rig.delivery },
+      {
+        id: crypto.randomUUID(),
+        threadId: rig.thread.id,
+        userId: rig.thread.userId,
+        originTurnId: cutoff.id,
+        agentSelection: rig.original.selection,
+      },
+    );
+    const seed = (await rig.repos.turns.listByThread(thread.id))[0];
+    rig.deps.handoffSummarizer = scriptedSummarizer(async () => {
+      const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60000);
+      const stopped = await rig.orchestrator.cancel(thread.id, seed.id);
+      clock.mockRestore();
+      expect(stopped).toBe("cancelled");
+      return {
+        kind: "complete",
+        text: "stale brief must not win",
+        model: "script",
+        modelResponses: [],
+      };
+    });
+    await rig.send(thread.id, "hi after expired Stop");
+    const run = await rig.orchestrator.prepare({ threadId: thread.id, drain: true });
+    expect((await run.execute()).status).toBe("cancelled");
+    await expect.poll(() => JSON.stringify(rig.requests.at(-1))).toContain("hi after expired Stop");
+    expect((await rig.repos.turns.findById(seed.id))?.status).toBe("cancelled");
+    const context = JSON.stringify(rig.requests.at(-1));
+    expect(context).toContain("No brief is available.");
+    expect(context).not.toContain("stale brief must not win");
   });
 
   it("starts a different-Agent handoff without carrying the source bake", async () => {
@@ -773,11 +817,16 @@ describe("frozen prompt provider requests", () => {
       slug: "new-writer",
       content: "---\nname: New Writer\nmode: primary\n---\n\nNew writer prompt.",
     });
-    const handoff = await handoffThreadAgent(rig.derive, {
-      threadId: rig.thread.id,
-      userId: rig.thread.userId,
-      agentSelection: nextAgent.selection,
-    });
+    const { thread: handoff } = await handoffThreadAgent(
+      { ...rig.derive, delivery: rig.delivery },
+      {
+        id: crypto.randomUUID(),
+        originTurnId: (await rig.repos.turns.getLatestByThread(rig.thread.id))!.id,
+        threadId: rig.thread.id,
+        userId: rig.thread.userId,
+        agentSelection: nextAgent.selection,
+      },
+    );
     expect(handoff.agentDefinitionRevisionId).toBe(nextAgent.selection.definitionRevisionId);
     expect(handoff.initialPromptBakeId).toBeNull();
   });
@@ -820,11 +869,16 @@ describe("frozen prompt provider requests", () => {
       }),
     ).rejects.toBeInstanceOf(SubagentDerivationError);
     await expect(
-      handoffThreadAgent(rig.derive, {
-        threadId: child.id,
-        userId: child.userId,
-        agentSelection: rig.original.selection,
-      }),
+      handoffThreadAgent(
+        { ...rig.derive, delivery: rig.delivery },
+        {
+          id: crypto.randomUUID(),
+          originTurnId: parentTurn.id,
+          threadId: child.id,
+          userId: child.userId,
+          agentSelection: rig.original.selection,
+        },
+      ),
     ).rejects.toBeInstanceOf(SubagentDerivationError);
   });
 

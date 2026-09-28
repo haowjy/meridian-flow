@@ -80,6 +80,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           trigger: "manual",
           controlMessageId: controls[0].id,
           reason: "nothing_to_compact",
+          phase: "initial_prepare",
         },
       });
       const writer = await repos.turns.create({

@@ -7,6 +7,18 @@ instead of the N:1 `threads.workId` column.
 
 `domain/bound-conversation.ts` owns atomic thread creation, retained Agent configuration and optional Work membership. Root and child creation and the `derive-conversation.ts` handoff/fork operations use it. A fork has no Agent selection: it keeps the source's retained revision, resolved configuration, invocation overlay, and bake in effect at its cutoff, independent of catalog changes. Its client-minted id is create-or-get by the row alone: the same owner and project plus `originType = fork` and `kind = primary` returns the existing row; any other existing row conflicts. Same-revision handoff points to the acted-on thread's current bake; a different Agent and a spawned child start unbaked. Each derivation includes required history and provenance writes in its outer transaction. Spawn execution begins only after commit.
 
+## Handoff creation
+
+Handoff requires a client destination id, selected cutoff and Agent selection.
+It shares fork's settled-cutoff normalization and row-only create-or-get rule
+(with `originType = handoff`). The cutoff owner is its recorded source, including
+an inherited fork cutoff. A subagent cannot be a derivation source.
+The create transaction writes one pending system seed, its `handoff_brief`
+control and the source event (cutoff, no summary). Delivery schedules the wake
+after commit. The control's `seedTurnId` owns the first seed even across a
+process death. See [runtime handoff](../../runtime/.context/handoff.md) and
+[HTTP contract](../../../../../../docs/api/thread-handoff.md).
+
 ## Prompt lifetime
 
 A thread's system prompt **and its advertised tool list** are frozen together
@@ -55,8 +67,12 @@ reads only the raw `trigger` (a manual C whose run failed preparation carries no
 plan, so the full codec would not parse) and exhaustively handles the
 pending-placeholder role set from `@meridian/contracts/threads`. A completed
 compaction's metadata also carries its frozen `elisions` and ordered
-`pinnedRequestTurnIds`; the codec passes through `controlMessageId` and
-`satisfiesControlId` without declaring them. Runtime
+`pinnedRequestTurnIds`; the codec declares `trigger`, `controlMessageId`, and
+`satisfiesControlId`. `CompactionMetadataCodec` accepts either a planned cut or
+a failure without one; failure fields (`reason` and `phase` together, plus
+optional `estimatedTokens`/`fitLimitTokens`) are written only by
+`compactionFailureMetadata`, shared by live failure landing and orphan
+finalization. Runtime
 producers build inbox/child turns, writer sends and steers, Work/notice/skill/system
 updates, saved-report repairs, derivation seeds, image breaks, and compaction
 boundaries through its constructors. Compaction planning/projection, cache
@@ -558,8 +574,27 @@ Manual compaction controls hold no transcript position until execution. Divider
 metadata links `controlMessageId` (manual) or `satisfiesControlId` (automatic).
 Completed compactions require ordered `pinnedRequestTurnIds`, including every
 unanswered directed message in the run receipt and adoption batch. Failed
-manual dividers carry their reason in metadata and writer copy in `turn.error`.
+dividers, manual or automatic, carry typed `reason` and `phase` metadata and
+writer copy in `turn.error`. A failed C gets no bake pointer, so it stays an
+ordinary transcript item and opens no history segment.
 Control acknowledgement commits with the divider's ending, never B's response.
+
+### Compaction undo projection
+
+Complete undo markers identify reverted compactions and carry their own frozen
+model-only elisions. The active compaction is the latest complete C not reverted
+in the effective transcript. Runtime projects its tail, then applies the latest
+complete undo after it; refused markers have no blocks or bake and do not alter
+that projection. Their typed metadata carries the refusal reason; `turn.error`
+carries writer copy. A fork cutoff includes or excludes U with the rest of its
+prefix. Image inclusion reads filter reverted deciding C IDs before selecting
+the latest decision per block, so pre-C exclusions can take effect again.
+
+`ThreadSnapshotResponse.compactionUndo` is null without an active local C or
+when the retained model is absent from the runtime catalog; otherwise the runtime
+reader supplies `{ turnId, availability }` using today's Agent trigger. `likely`
+is advisory, not a promise of admission. Missing bindings and corrupt compaction
+metadata remain invariant errors, not null availability.
 
 ## Paged effective transcript
 

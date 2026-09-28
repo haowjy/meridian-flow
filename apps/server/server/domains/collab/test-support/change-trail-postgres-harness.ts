@@ -27,9 +27,7 @@ export const {
   runInRootDrizzleTransaction,
   runOutsideDrizzleTransaction,
 } = await import("../../../shared/drizzle-transaction.js");
-export const { deleteDrizzleRows, truncateDrizzleTables } = await import(
-  "../../../test-support/drizzle-reset.js"
-);
+export const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
 const {
   createDrizzleBranchJournalReadStore,
   createDrizzleWorkDraftPendingStore,
@@ -114,7 +112,8 @@ export const THREAD_ID = "00000000-0000-4000-8000-000000000807" as ThreadId;
 export const TURN_ID = "00000000-0000-4000-8000-000000000808" as TurnId;
 
 export async function resetDatabase(): Promise<void> {
-  await deleteDrizzleRows(db, [
+  // Prompt bakes reject row deletion; test resets clear the fixture graph by truncation.
+  await truncateDrizzleTables(db, [
     schema.branchPushOutboxUpdates,
     schema.branchPushSettlementOutbox,
     schema.turnTrailWork,

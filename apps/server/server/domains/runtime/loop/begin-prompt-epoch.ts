@@ -23,6 +23,8 @@ type ComposePromptBake = Omit<PromptBakeContent, "contentHash">;
 
 export interface BoundaryCompletion {
   blocks: BlockUpsertedRow[];
+  /** A one-commit boundary is first announced complete, never as a pending placeholder. */
+  announceBoundary?: boolean;
   compactionModel?: string;
   metadata?: JsonValue | null;
   modelResponses?: ModelResponseReceivedRow[];
@@ -76,6 +78,9 @@ export async function beginPromptEpoch(
       metadata: promptEpochMetadata(completionMetadata, input.cause),
     };
     const events: OrchestratorEvent[] = [
+      ...(input.completion.announceBoundary
+        ? [{ type: "turn.created" as const, turn: completedTurn }]
+        : []),
       ...input.completion.blocks.map(
         (block): OrchestratorEvent => ({ type: "block.upserted", block }),
       ),

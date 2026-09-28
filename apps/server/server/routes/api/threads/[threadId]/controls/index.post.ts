@@ -12,7 +12,16 @@ import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../../lib/request-id.js";
 
 const request = z
-  .object({ id: z.string().uuid(), control: z.object({ kind: z.literal("compact") }).strict() })
+  .object({
+    id: z.string().uuid(),
+    control: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("compact") }).strict(),
+      z
+        .object({ kind: z.literal("compaction_undo"), compactionTurnId: z.string().uuid() })
+        .strict(),
+      z.object({ kind: z.literal("handoff_brief") }).strict(),
+    ]),
+  })
   .strict();
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);

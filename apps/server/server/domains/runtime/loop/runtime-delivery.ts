@@ -3,6 +3,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
 import type { Notice } from "../../notices/index.js";
 import type { WorkContextNotices } from "../../projects/index.js";
+import type { HandoffControlQueue } from "../../threads/index.js";
 import type { CompactionDecision } from "./compaction/decision.js";
 import type { ControlMessage } from "./control-barrier.js";
 import type { FinalizedExecution, TerminalCause } from "./execution-finalizer.js";
@@ -15,7 +16,10 @@ export type DeliveryTransaction = {
   materializePrefix(): Promise<void>;
 };
 export type DeliveryProducer = Pick<RuntimeDelivery, "enqueue" | "withThreadLock">;
-export type ThreadControls = Pick<RuntimeDelivery, "enqueueControl" | "withdrawControl">;
+export type ThreadControls = Pick<
+  RuntimeDelivery,
+  "enqueueControl" | "withdrawControl" | "cancelPendingSeed"
+>;
 export type DeliveryBoundary<TCurrent = undefined> = Pick<
   Parameters<typeof drainInbox>[0],
   "knownTurnIds" | "expectedLeafTurnId" | "prepareAdoptedTurn"
@@ -47,6 +51,8 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
     selection: DeliverySelection,
   ) => Promise<{
     events: OrchestratorEvent[];
+    undos?: import("./compaction-undo.js").PreparedUndo[];
+    adoptedIds?: string[];
     turns: Turn[];
     blocks: Block[];
     requiresSplit: boolean;
@@ -56,6 +62,15 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
 };
 export type DeliverySelection = {
   batch: InboxMessage[];
+  continueTask?: boolean;
+  controls?: ControlMessage[];
+  failedUndoIds?: ReadonlySet<string>;
+  followingBatches?: {
+    afterControlId: string;
+    ackIds: string[];
+    batch: InboxMessage[];
+    workContext?: import("./work-context.js").RenderedWorkContext;
+  }[];
   control: ControlMessage | null;
   satisfiesControlId?: string;
   headControl: ControlMessage | null;
@@ -77,7 +92,9 @@ export type AdoptedBatch<TCurrent = undefined> = {
 };
 export interface RuntimeDelivery
   extends WorkContextNotices,
+    HandoffControlQueue,
     Pick<InboxReader, "selectPending" | "readPendingProjection" | "pendingMessageThreads"> {
+  cancelPendingSeed(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
   enqueueControl(input: {
     threadId: ThreadId;
     actorId: string;
@@ -104,17 +121,19 @@ export interface RuntimeDelivery
   /** Initial assistant setup and exact receipt commit before model execution. */
   adoptBatch<T>(
     lease: Lease,
-    /** Pure preparation over the selection; transactional writes belong in `persist`. */
+    /** Pure preparation; writes belong in `persist`. Null retires stale controls without a reservation. */
     prepare: (selection: DeliverySelection) => Promise<{
       value: T;
+      terminal?: boolean;
+      completedControlIds?: string[];
       turnId: TurnId;
-      turnKind: "assistant" | "compaction";
+      turnKind: "assistant" | "compaction" | "handoff_brief";
       messageIds: readonly string[];
       /** Preparation failures still adopt messages and reserve a failed assistant turn. */
       preparationFailure?: unknown;
       /** Turn-start writes run under the lock, after external context is prepared. */
       persist?: () => Promise<void>;
-    }>,
+    } | null>,
     options?: { signal?: AbortSignal },
   ): Promise<T>;
   ackWithResponse<T>(lease: Lease, ids: string[], persist: () => Promise<T>): Promise<T>;

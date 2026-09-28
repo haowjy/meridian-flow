@@ -107,6 +107,7 @@ import { MODEL_REGISTRY, type MockScriptQueue } from "../domains/runtime/gateway
 import {
   createChildRunCoordinator,
   createChildRunDriver,
+  createCompactionUndoReader,
   createContextImageAssetPort,
   createConversationSummarizer,
   createDrizzleAdmissionRecords,
@@ -136,6 +137,7 @@ import {
   type DeliveryProducer,
   type Gateway,
   InvalidAdmissionError,
+  pendingHandoffSummarizer,
   type RunClaim,
   type RunStarter,
   type RunTurnPort,
@@ -241,7 +243,9 @@ export type AppServices = {
   orchestrator: RunTurnPort;
   runner: TurnRunner;
   runStarter: RunStarter;
-  delivery: DeliveryProducer & import("../domains/runtime/loop/runtime-delivery.js").ThreadControls;
+  delivery: DeliveryProducer &
+    import("../domains/runtime/loop/runtime-delivery.js").ThreadControls &
+    import("../domains/threads/index.js").HandoffControlQueue;
   /** Startup/interval recovery for threads with a pending message and no live run. */
   recovery: {
     scanWakes(): Promise<number>;
@@ -697,6 +701,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
   publishReport = reportPublisher.publish;
   const orphanRepair = createOrphanReportRepair({
+    inbox: delivery,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     authority: ports.runClaim,
@@ -807,6 +812,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
   });
   const orchestrator = createOrchestrator({
+    handoffSummarizer: pendingHandoffSummarizer,
     summarizer: createConversationSummarizer({
       gateway: ports.gateway,
       agentRevisions: ports.agentRevisions,
@@ -875,6 +881,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       threads: ports.threadRepos.threads,
       executionReports: ports.threadRepos.executionReports,
       readPending,
+      readCompactionUndo: createCompactionUndoReader({
+        agentRevisions: ports.agentRevisions,
+        toolRegistry,
+        gateway: ports.gateway,
+      }),
     }),
     documentSync: ports.documentSync,
     contextPorts: ports.contextPorts,
@@ -1092,6 +1103,7 @@ export function createInMemoryAppServices(): AppServices {
     threadEventHub: inMemoryThreadEventHub,
     hub: inMemoryThreadEventHub,
     threadRuntime: {
+      readCompactionUndo: undefined,
       async requireOwnedThread() {
         throw new Error("in-memory thread runtime is not implemented");
       },

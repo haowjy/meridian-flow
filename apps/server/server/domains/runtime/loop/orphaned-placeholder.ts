@@ -7,15 +7,28 @@ import { finalizeExecution } from "./execution-finalizer.js";
 
 /** Call under the thread lock and the caller's already-held session claim. */
 export async function finalizeOrphanedTurns(
-  deps: Parameters<typeof finalizeExecution>[0],
+  deps: Parameters<typeof finalizeExecution>[0] & {
+    inbox: Pick<import("./ports.js").InboxReader, "selectPending">;
+  },
   input: { threadId: ThreadId },
 ): Promise<SavedExecutionReport[]> {
   const reports: SavedExecutionReport[] = [];
   const unsettled = await deps.repos.turns.listUnsettledForThread(input.threadId);
   const thread = await deps.repos.threads.findByIdIncludingDeleted(input.threadId);
+  const pendingControls = await deps.inbox.selectPending(input.threadId);
   for (const turn of unsettled) {
     if (isTerminalTurnStatus(turn.status)) continue;
     const placeholder = isPendingPlaceholder(turn);
+    if (
+      placeholder &&
+      pendingControls.some(
+        (row) =>
+          row.intent === "control" &&
+          row.body.kind === "handoff_brief" &&
+          row.body.seedTurnId === turn.id,
+      )
+    )
+      continue;
     if (!placeholder && (turn.role !== "assistant" || thread?.kind === "subagent")) continue;
     const completion = await finalizeExecution(deps, {
       threadId: input.threadId,

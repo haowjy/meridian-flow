@@ -571,6 +571,23 @@ export function createInMemoryRepositories(
     async findById(id) {
       return turns.get(id) ?? null;
     },
+    async findLatestHandoffSeed(threadId) {
+      return (
+        orderTurnsByPosition(
+          [...turns.values()].filter((turn) => {
+            const metadata = turn.metadata as
+              | import("@meridian/contracts/threads").JsonObject
+              | null;
+            return (
+              turn.threadId === threadId &&
+              turn.role === "system" &&
+              metadata?.kind === "derivation_seed" &&
+              metadata?.derivation === "handoff"
+            );
+          }),
+        ).at(-1) ?? null
+      );
+    },
     async findByControlId(threadId, controlId) {
       return (
         orderTurnsByPosition(
@@ -1143,7 +1160,7 @@ export function createInMemoryRepositories(
   );
 
   const imageInclusionsRepo: ThreadImageInclusionRepository = {
-    async findByThread(threadId) {
+    async findByThread(threadId, revertedCompactions) {
       const latest = new Map<string, ThreadImageInclusion>();
       const history = [...imageInclusions.values()]
         .filter((row) => row.threadId === threadId)
@@ -1152,7 +1169,8 @@ export function createInMemoryRepositories(
             (turns.get(left.decisionTurnId)?.position ?? 0) -
             (turns.get(right.decisionTurnId)?.position ?? 0),
         );
-      for (const row of history) latest.set(row.blockId, row);
+      for (const row of history)
+        if (!revertedCompactions?.has(row.decisionTurnId)) latest.set(row.blockId, row);
       return [...latest.values()].map((row) => ({ ...row }));
     },
     async listByThread(threadId) {

@@ -4,6 +4,7 @@ import type { JsonObject } from "@meridian/contracts/threads";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import {
+  CompactionMetadataCodec,
   decodeImageInclusionMetadata,
   encodeImageInclusionMetadata,
   loadThreadConversationContext,
@@ -1101,8 +1102,24 @@ else
       const c = await rig.repos.turns.findById(run.executionTurnId);
       expect(c).toMatchObject({
         status: ending === "failed" ? "error" : ending,
-        metadata: { summarizer: { path: "cold", segments: 1 } },
+        metadata: {
+          summarizer: { path: "cold", segments: 1 },
+          ...(ending === "failed" ? { reason: "max_tokens", phase: "summary" } : {}),
+        },
       });
+      if (ending === "failed") {
+        const turns = await rig.repos.turns.listByThread(rig.threadId);
+        const failedReply = turns.at(-1);
+        expect(failedReply).toMatchObject({ role: "assistant", status: "error" });
+        const events = await db
+          .select({ payload: schema.eventJournal.payload })
+          .from(schema.eventJournal);
+        const serializedEvents = JSON.stringify(events);
+        expect(serializedEvents).toContain('"code":"compaction_failed"');
+        expect(serializedEvents).not.toContain('"code":"max_tokens"');
+        expect(serializedEvents).toContain('"reason":"max_tokens"');
+        expect(serializedEvents).toContain('"phase":"summary"');
+      }
       const rows = await rig.repos.modelResponses.listByTurn(run.executionTurnId);
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({
@@ -1682,15 +1699,29 @@ else
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
     });
 
-    it("keeps a usable epoch when a late paste exceeds the successor budget", async () => {
+    it("fails C when a late paste exceeds the successor budget and settles its paid summary", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
-      const summarizer = scriptedSummarizer(async () => {
+      const summarizer = scriptedSummarizer(async ({ turnId }) => {
         await rig.send(rig.threadId, "Late long paste. ".repeat(5000));
+        await rig.send(rig.threadId, "A second late direction.");
         return {
           kind: "complete",
           text: "Usable summary.",
           model: "summary-model",
-          modelResponses: [],
+          modelResponses: [
+            {
+              id: crypto.randomUUID(),
+              turnId,
+              sequence: 0,
+              provider: "openai",
+              model: "gpt-4.1-mini",
+              inputTokens: 100,
+              outputTokens: 10,
+              requestMessageCount: 2,
+              predictedCacheState: "cold",
+              predictedCacheReason: "summary_transcript",
+            },
+          ],
         };
       });
       rig = await fixture({ summarizer });
@@ -1700,15 +1731,46 @@ else
         userText: "Continue.",
       });
       expect((await run.execute()).status).toBe("error");
-      const tail = (await rig.repos.turns.listByThread(rig.threadId)).slice(-3);
+      const tail = (await rig.repos.turns.listByThread(rig.threadId)).slice(-4);
       expect(tail.map((turn) => [turn.role, turn.status])).toEqual([
-        ["compaction", "complete"],
+        ["compaction", "error"],
+        ["user", "complete"],
         ["user", "complete"],
         ["assistant", "error"],
       ]);
-      expect(tail[0].promptBakeId).toBeTruthy();
-      expect(tail[2].error).toBe("This message is too long for this chat's model.");
+      expect(tail[0]).toMatchObject({
+        promptBakeId: null,
+        error: "This message is too long for this chat's model.",
+        metadata: {
+          reason: "context_too_large",
+          phase: "late_arrival",
+          estimatedTokens: expect.any(Number),
+          fitLimitTokens: 2_500,
+        },
+      });
+      expect(CompactionMetadataCodec.safeParse(tail[0].metadata).success).toBe(true);
+      expect(tail[0].metadata).toMatchObject({
+        estimatedTokens: expect.any(Number),
+        fitLimitTokens: 2_500,
+      });
+      expect((tail[0].metadata as JsonObject).estimatedTokens as number).toBeGreaterThan(
+        (tail[0].metadata as JsonObject).fitLimitTokens as number,
+      );
+      expect(tail[3].error).toBe("This message is too long for this chat's model.");
+      expect(tail[3].prevTurnId).toBe(tail[2].id);
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
+      const rows = await rig.repos.modelResponses.listByTurn(tail[0].id);
+      expect(rows).toHaveLength(1);
+      expect(BigInt(rows[0].millicredits ?? "0")).toBeGreaterThan(0n);
+      const debits = (await db.select().from(schema.creditTransactions)).filter(
+        (row) => row.usageEventId === rows[0].id,
+      );
+      expect(debits).toHaveLength(1);
+      const events = await db
+        .select({ payload: schema.eventJournal.payload })
+        .from(schema.eventJournal);
+      expect(JSON.stringify(events)).toContain('"code":"context_too_large"');
+      expect(JSON.stringify(events)).toContain('"phase":"late_arrival"');
     });
 
     it("compacts at close with a pending writer message, completing A before C and B", async () => {

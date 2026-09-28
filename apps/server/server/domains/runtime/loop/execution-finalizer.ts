@@ -13,7 +13,15 @@ import {
   type Turn,
 } from "@meridian/contracts/threads";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
-import type { EventJournalWriter, ThreadRepositories } from "../../threads/index.js";
+import {
+  CompactionFailureOutcomeCodec,
+  CompactionFailureReasonCodec,
+  compactionFailureMetadata,
+  type EventJournalWriter,
+  type ThreadRepositories,
+} from "../../threads/index.js";
+import { compactionFailureMeridianError } from "./compaction/decision.js";
+import { handoffSeedBlock } from "./handoff-seed.js";
 import { persistAndAppendEvents } from "./persistence.js";
 
 export type TerminalCause =
@@ -69,11 +77,35 @@ async function resolveReportContent(
 function turnEvent(turn: Turn, cause: TerminalCause): OrchestratorEvent {
   if (cause.kind === "success") return { type: "turn.completed", turn };
   if (cause.kind === "cancelled") return { type: "turn.cancelled", turn };
+  if (turn.role === "compaction") {
+    return {
+      type: "turn.error",
+      turn,
+      error: compactionFailureMeridianError(
+        compactionFailureForFinalizer(cause),
+        typeof cause.error === "string" ? cause.error : cause.error.message,
+      ),
+    };
+  }
   const error =
     typeof cause.error === "string"
       ? meridianErrorFromSystem("runtime_error", cause.error)
       : cause.error;
   return { type: "turn.error", turn, error };
+}
+
+function compactionFailureForFinalizer(cause: Extract<TerminalCause, { kind: "failed" }>) {
+  if (cause.reason === "orphaned")
+    return { reason: "interrupted" as const, phase: "recovery" as const };
+  if (typeof cause.error !== "string") {
+    const details = CompactionFailureOutcomeCodec.safeParse(cause.error.details);
+    if (details.success) return details.data;
+  }
+  const reason = CompactionFailureReasonCodec.safeParse(cause.reason);
+  return {
+    reason: reason.success ? reason.data : ("compaction_failed" as const),
+    phase: "delivery" as const,
+  };
 }
 
 /** Call under the thread lock; nested persistence joins its transaction. */
@@ -141,10 +173,10 @@ export async function finalizeExecution(
         ...turn,
         ...(turn.role === "compaction" && input.cause.kind === "failed"
           ? {
-              metadata: {
-                ...(turn.metadata as import("@meridian/contracts/threads").JsonObject),
-                reason: input.cause.reason === "orphaned" ? "interrupted" : input.cause.reason,
-              },
+              metadata: compactionFailureMetadata(
+                turn.metadata,
+                compactionFailureForFinalizer(input.cause),
+              ),
             }
           : {}),
         status:
@@ -165,7 +197,14 @@ export async function finalizeExecution(
       if (input.cause.kind === "success") {
         await deps.repos.threads.updateCost(input.threadId, "0", 1);
       }
-      return { result: updated, events: [turnEvent(updated, input.cause)] };
+      const events: OrchestratorEvent[] = [];
+      if (turn.role === "system") {
+        events.push({
+          type: "block.upserted",
+          block: handoffSeedBlock(turn),
+        });
+      }
+      return { result: updated, events: [...events, turnEvent(updated, input.cause)] };
     },
     {
       async afterEvents(turn) {

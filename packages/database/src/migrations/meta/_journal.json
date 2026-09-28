@@ -141,6 +141,20 @@
       "when": 1790570003420,
       "tag": "0019_brave_sauron",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790578437082,
+      "tag": "0020_solid_cable",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790579758044,
+      "tag": "0021_wonderful_drax",
+      "breakpoints": true
     }
   ]
 }

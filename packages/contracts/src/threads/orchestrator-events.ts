@@ -196,7 +196,7 @@ export type OrchestratorEvent =
       sourceThreadId: string;
       targetThreadId: string;
       targetAgentSlug: string | null;
-      summary: string;
+      originTurnId: string;
     }
   | {
       type: "agent.fork";

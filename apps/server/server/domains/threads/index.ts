@@ -16,9 +16,9 @@ export { createBoundConversation } from "./domain/bound-conversation.js";
 export { ForkCutoffOwnerNotFoundError, findCutoffOwnerThreadId } from "./domain/cutoff-owner.js";
 export {
   DerivedSourceNotFoundError,
+  DerivedThreadConflictError,
   ForkCutoffError,
   type ForkCutoffErrorCode,
-  ForkThreadConflictError,
   forkThreadAgent,
   handoffThreadAgent,
   SubagentDerivationError,
@@ -85,20 +85,31 @@ export {
 export type {
   AgentRequestOrigin,
   AgentRequestSource,
+  CompactionFailureOutcome,
+  CompactionFailurePhase,
+  CompactionFailureReason,
   CompactionMetadata,
+  CompactionPlanMetadata,
+  CompactionUndoFailureReason,
   HistoryItemClass,
   ImageContextBreak,
   ImageInclusionMetadata,
 } from "./domain/turn-metadata.js";
 export {
+  activeCompaction,
   agentRequestMetadata,
   ChildCompletionMetadataCodec,
   ChildCompletionMetadataTagCodec,
+  CompactionFailureOutcomeCodec,
+  CompactionFailurePhaseCodec,
+  CompactionFailureReasonCodec,
   CompactionMetadataCodec,
+  CompactionPlanMetadataCodec,
   CompactionUndoMetadataCodec,
   childCompletionMetadata,
   childSeedMetadata,
   classifyHistoryItem,
+  compactionFailureMetadata,
   compactionSummaryMetadata,
   compactionTurnMetadata,
   compactionUndoMetadata,
@@ -107,6 +118,8 @@ export {
   derivationSeedMetadata,
   encodeImageInclusionMetadata,
   foregroundMessageMetadata,
+  HandoffSeedMetadataCodec,
+  handoffSeedMetadata,
   ImageContextBreakCodec,
   ImageInclusionMetadataCodec,
   InboxMessageMetadataCodec,
@@ -117,6 +130,7 @@ export {
   noticesMetadata,
   PromptEpochMetadataCodec,
   promptEpochMetadata,
+  revertedCompactionIds,
   SavedSubagentReportMetadataCodec,
   SteerMetadataCodec,
   SystemUpdateMetadataCodec,
@@ -130,6 +144,7 @@ export {
   TurnStartConflictError,
   type TurnStartConflictReason,
 } from "./domain/turn-start-transition.js";
+export type { HandoffControlQueue } from "./ports/handoff-control-queue.js";
 export * from "./ports/index.js";
 export { createThreadRuntimeService, type ThreadRuntimeService } from "./runtime-service.js";
 export {

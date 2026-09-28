@@ -15,12 +15,13 @@ import {
   type WorkRepository,
 } from "../../projects/index.js";
 import type { EventJournalWriter } from "../ports/event-journal.js";
+import type { HandoffControlQueue } from "../ports/handoff-control-queue.js";
 import type { InternalThreadRepositories, ThreadImageInclusion } from "../ports/repositories.js";
 import { createBoundConversation } from "./bound-conversation.js";
 import { bakeAt, bakeInEffect } from "./prompt-epochs.js";
 import { projectImageInclusionDecision } from "./read-model-projector.js";
 import { loadThreadConversationContext } from "./thread-conversation-context.js";
-import { derivationSeedMetadata } from "./turn-metadata.js";
+import { derivationSeedMetadata, handoffSeedMetadata } from "./turn-metadata.js";
 
 export interface ThreadAgentSwapDeps {
   threads: InternalThreadRepositories["threads"];
@@ -50,10 +51,10 @@ export class SubagentDerivationError extends Error {
   }
 }
 
-export class ForkThreadConflictError extends Error {
+export class DerivedThreadConflictError extends Error {
   constructor() {
-    super("The requested fork ID is already in use");
-    this.name = "ForkThreadConflictError";
+    super("The requested derivation ID is already in use");
+    this.name = "DerivedThreadConflictError";
   }
 }
 
@@ -81,48 +82,84 @@ export class ForkCutoffError extends Error {
 }
 
 export async function handoffThreadAgent(
-  deps: ThreadAgentSwapDeps,
+  deps: ThreadAgentSwapDeps & { delivery: HandoffControlQueue },
   input: {
+    id: string;
     threadId: string;
     userId: string;
+    originTurnId: string;
     agentSelection: AgentSelection;
-    summary?: string | null;
   },
-): Promise<Thread> {
+): Promise<{ thread: Thread; created: boolean }> {
+  const existing = await findExistingDerivationBeforeSourceLoad(deps, input, "handoff");
+  if (existing) return { thread: existing, created: false };
   const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
   if (source.kind === "subagent") throw new SubagentDerivationError(source.id, "handoff");
-  const sourceWorkId = await requirePrimaryWorkId(deps, source.id, source.projectId);
-  const binding = await resolveDerivedBinding(deps, source, input.userId, input.agentSelection);
-  const summary = input.summary?.trim() || (await programmaticSummary(deps, source.id));
   return deps.transaction(async () => {
-    // The source journal is mutated after the new thread acquires its Work membership.
     const lockedSource = await deps.threads.lockByIdIncludingDeleted(source.id as ThreadId);
-    if (!lockedSource || lockedSource.deletedAt) throw new Error("Source thread no longer exists");
+    if (!lockedSource || lockedSource.deletedAt) throw new DerivedSourceNotFoundError();
+    const existing = await findIdempotentDerivation(deps, lockedSource.projectId, input, "handoff");
+    if (existing) return { thread: existing, created: false };
+    const cutoff = await normalizeForkCutoff(deps, lockedSource, input.originTurnId);
+    const owner = await deps.threads.findByIdIncludingDeleted(cutoff.turn.threadId);
+    if (!owner) throw new DerivedSourceNotFoundError();
+    const workId = await requirePrimaryWorkId(deps, lockedSource.id, lockedSource.projectId);
+    const binding = await resolveDerivedBinding(
+      deps,
+      lockedSource,
+      input.userId,
+      input.agentSelection,
+    );
     const sameRevision = (binding.revision?.id ?? null) === lockedSource.agentDefinitionRevisionId;
     const inheritedBake = sameRevision ? await bakeInEffect(deps, lockedSource) : null;
     const result = await deps.threads.createDerivedPrimary({
-      id: crypto.randomUUID() as ThreadId,
-      userId: source.userId,
-      projectId: source.projectId,
-      workId: sourceWorkId,
-      source: lockedSource,
+      id: input.id as ThreadId,
+      userId: lockedSource.userId,
+      projectId: lockedSource.projectId,
+      workId,
+      source: owner,
       initialPromptBakeId: inheritedBake?.id ?? null,
       originType: "handoff",
-      originTurnId: (await latestTurnId(deps, source.id)) as TurnId | null,
-      title: `Handoff from ${source.title ?? "thread"}`,
+      originTurnId: cutoff.turn.id as TurnId,
+      title: `Handoff from ${lockedSource.title ?? "thread"}`,
     });
-    if (!result.created) throw new Error("Failed to create handoff thread with a fresh ID");
-    const target = await bindDerivedPrimary(deps, result.thread, sourceWorkId, binding);
-    await inheritEditingDocuments(deps, source, target);
-    await seedSystemTurn(deps, target, `Handoff brief\n\n${summary}`, "handoff");
-    await deps.eventWriter.appendEvent(source.id as ThreadId, {
+    if (!result.created)
+      return {
+        thread: requireIdempotentDerivation(
+          result.thread,
+          lockedSource.projectId,
+          input,
+          "handoff",
+        ),
+        created: false,
+      };
+    const target = await bindDerivedPrimary(deps, result.thread, workId, binding);
+    await inheritEditingDocuments(deps, lockedSource, target);
+    const seedId = crypto.randomUUID();
+    const controlId = crypto.randomUUID();
+    const seed = await deps.turns.create({
+      id: seedId,
+      threadId: target.id,
+      role: "system",
+      origin: "system",
+      status: "pending",
+      metadata: handoffSeedMetadata({
+        sourceThreadId: owner.id,
+        sourceRef: owner.ref ?? owner.id,
+        controlMessageId: controlId,
+        cutoffTurnId: cutoff.turn.id,
+      }),
+    });
+    await deps.eventWriter.appendEvent(target.id, { type: "turn.created", turn: seed });
+    await deps.delivery.enqueueSeedBrief({ threadId: target.id, seedTurnId: seed.id, controlId });
+    await deps.eventWriter.appendEvent(lockedSource.id, {
       type: "agent.handoff",
-      sourceThreadId: source.id,
+      sourceThreadId: owner.id,
       targetThreadId: target.id,
       targetAgentSlug: binding.revision?.slug ?? null,
-      summary,
+      originTurnId: cutoff.turn.id,
     });
-    return target;
+    return { thread: target, created: true };
   });
 }
 
@@ -135,7 +172,7 @@ export async function forkThreadAgent(
     originTurnId?: string | null;
   },
 ): Promise<{ thread: Thread; created: boolean }> {
-  const existing = await findExistingForkBeforeSourceLoad(deps, input);
+  const existing = await findExistingDerivationBeforeSourceLoad(deps, input);
   if (existing) return { thread: existing, created: false };
 
   const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
@@ -145,7 +182,7 @@ export async function forkThreadAgent(
     const lockedSource = await deps.threads.lockByIdIncludingDeleted(source.id as ThreadId);
     if (!lockedSource || lockedSource.deletedAt) throw new Error("Source thread no longer exists");
 
-    const existing = await findIdempotentFork(deps, lockedSource.projectId, input);
+    const existing = await findIdempotentDerivation(deps, lockedSource.projectId, input);
     if (existing) return { thread: existing, created: false };
 
     const cutoff = await normalizeForkCutoff(deps, lockedSource, input.originTurnId);
@@ -165,7 +202,7 @@ export async function forkThreadAgent(
     });
     if (!result.created) {
       return {
-        thread: requireIdempotentFork(result.thread, lockedSource.projectId, input),
+        thread: requireIdempotentDerivation(result.thread, lockedSource.projectId, input),
         created: false,
       };
     }
@@ -194,12 +231,7 @@ export async function forkThreadAgent(
       await deps.eventWriter.appendEvent(target.id as ThreadId, event);
     }
     await inheritEditingDocuments(deps, lockedSource, target);
-    await seedSystemTurn(
-      deps,
-      target,
-      `Forked conversation through turn ${cutoff.turn.id}.`,
-      "fork",
-    );
+    await seedSystemTurn(deps, target, `Forked conversation through turn ${cutoff.turn.id}.`);
     await deps.eventWriter.appendEvent(source.id as ThreadId, {
       type: "agent.fork",
       sourceThreadId: source.id,
@@ -280,42 +312,45 @@ async function normalizeForkCutoff(
   };
 }
 
-async function findIdempotentFork(
+async function findIdempotentDerivation(
   deps: ThreadAgentSwapDeps,
   projectId: string,
   input: { id: string; userId: string },
+  kind: "fork" | "handoff" = "fork",
 ): Promise<Thread | null> {
   const candidate = await deps.threads.findByIdIncludingDeleted(input.id as ThreadId);
   if (!candidate) return null;
-  return requireIdempotentFork(candidate, projectId, input);
+  return requireIdempotentDerivation(candidate, projectId, input, kind);
 }
 
-function requireIdempotentFork(
+function requireIdempotentDerivation(
   existing: Thread,
   projectId: string,
   input: { userId: string },
+  kind: "fork" | "handoff" = "fork",
 ): Thread {
   if (
     existing.userId !== input.userId ||
     existing.projectId !== projectId ||
-    existing.originType !== "fork" ||
+    existing.originType !== kind ||
     existing.kind !== "primary"
   ) {
-    throw new ForkThreadConflictError();
+    throw new DerivedThreadConflictError();
   }
   return existing;
 }
 
-async function findExistingForkBeforeSourceLoad(
+async function findExistingDerivationBeforeSourceLoad(
   deps: ThreadAgentSwapDeps,
   input: { id: string; threadId: string; userId: string },
+  kind: "fork" | "handoff" = "fork",
 ): Promise<Thread | null> {
   const candidate = await deps.threads.findByIdIncludingDeleted(input.id as ThreadId);
   if (!candidate) return null;
 
   const source = await deps.threads.findByIdIncludingDeleted(input.threadId as ThreadId);
-  if (!source) throw new ForkThreadConflictError();
-  const existing = requireIdempotentFork(candidate, source.projectId, input);
+  if (!source) throw new DerivedThreadConflictError();
+  const existing = requireIdempotentDerivation(candidate, source.projectId, input, kind);
   await requireProjectOwner({ projects: deps.projects }, source.projectId, input.userId);
   return existing;
 }
@@ -367,11 +402,6 @@ async function requireOwnedSourceThread(
   return thread;
 }
 
-async function latestTurnId(deps: ThreadAgentSwapDeps, threadId: string): Promise<string | null> {
-  const turn = await deps.turns.getLatestByThread(threadId as ThreadId);
-  return turn?.id ?? null;
-}
-
 async function inheritEditingDocuments(
   deps: ThreadAgentSwapDeps,
   source: Thread,
@@ -387,33 +417,13 @@ async function inheritEditingDocuments(
   );
 }
 
-async function programmaticSummary(deps: ThreadAgentSwapDeps, threadId: string): Promise<string> {
-  const turns = await deps.turns.listByThread(threadId as ThreadId);
-  const snippets = [];
-  for (const turn of turns.slice(-6)) {
-    const blocks = await deps.blocks.listByTurn(turn.id);
-    const text = blocks
-      .map((block) => block.textContent)
-      .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
-      .join("\n")
-      .trim();
-    if (text) snippets.push(`${turn.role}: ${text.slice(0, 600)}`);
-  }
-  return snippets.join("\n\n") || "No prior conversation content was available.";
-}
-
-async function seedSystemTurn(
-  deps: ThreadAgentSwapDeps,
-  thread: Thread,
-  text: string,
-  derivation: "fork" | "handoff",
-) {
+async function seedSystemTurn(deps: ThreadAgentSwapDeps, thread: Thread, text: string) {
   const turn = await deps.turns.create({
     threadId: thread.id as ThreadId,
     role: "system",
     origin: "system",
     status: "complete",
-    metadata: derivationSeedMetadata(derivation),
+    metadata: derivationSeedMetadata("fork"),
   });
   await deps.blocks.create({
     turnId: turn.id,

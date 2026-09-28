@@ -97,8 +97,18 @@ against overflow.
 
 - A failed required summary errors C and fails a reply below the latest message.
   A failed optional manual summary errors only C and continues the request.
-- A usable epoch still commits when a late arrival fails context preparation,
-  including an oversized late paste; only B fails.
+- Failed C metadata records the typed `reason` and `phase`; a fit rejection also
+  records `estimatedTokens` and `fitLimitTokens`. `turn.error` carries the outcome
+  in its details. Summary rejections use code `compaction_failed` while their
+  reasons distinguish `max_tokens`, `provider_error`, `tool_use`, and `empty_text`;
+  unknown summary errors stay `compaction_failed`. Orphan recovery uses the same
+  metadata writer with `reason: interrupted` and `phase: recovery`, both at run
+  preparation and during the primary/child startup sweep.
+- If the initial successor fits but a late arrival fails the second fit check,
+  C fails with `context_too_large` at `late_arrival` instead of committing the
+  epoch. Its paid summary rows settle in the C failure transaction. The late
+  message remains durably adopted, B fails below the latest arrival, and the
+  receipt is acknowledged with C6a semantics.
 - A live unexpected error while C is current uses a fresh failure
   transaction: C `error`, settled summary rows, failed B below the latest
   arrivals, and receipt acknowledgment. Notices remain queued.
@@ -133,13 +143,16 @@ the cancel wake.
 ## Placeholders and recovery
 
 A pending placeholder is a turn with status `pending` and a role in
-`PENDING_PLACEHOLDER_ROLES` from `@meridian/contracts/threads` (today only
-`compaction`); a pending assistant turn is not one. Test with
+`PENDING_PLACEHOLDER_ROLES` from `@meridian/contracts/threads` (`compaction` and
+the handoff seed's `system`); a pending assistant turn is not one. Test with
 `isPendingPlaceholder` or the database's `pendingPlaceholderPredicate`, never a
 local role or status check.
 
-RunSession.prepare repairs stale turns before setup can plan a control barrier,
+`finalizeOrphanedTurns` repairs stale turns from RunSession.prepare before setup
+can plan a control barrier,
 using the new run's own held claim. Delivery adoption does not repair again.
+Pending controls own their `seedTurnId` placeholders, which this repair preserves
+in run preparation, idle materialization, and the orphan sweep.
 The orphan-repair lane also scans indexed pending placeholders, so quiet primary
 threads recover without a new wake. Child reports are finalized on C and
 published after releasing the child's lock. A late writer message stays
@@ -151,6 +164,10 @@ held session claim before context selection, while startup recovery pages
 indexed unsettled primary turns and claims each thread before repair. A live
 run keeps its claim, preventing repair from entering its thread. Subagent assistant turns remain owned by
 child-report recovery; the primary repair does not finalize them.
+
+Undo markers are system turns but never run-owned current turns: creation and
+completion share one transaction, and terminal routing precedes brief dispatch.
+Do not route a completed undo through the pending handoff-seed lifecycle.
 
 ## Cost
 
@@ -312,21 +329,57 @@ post-release wake; ordinary autocompaction Stop retains its old receipt
 semantics. A crash leaves K pending for redelivery after orphan finalization.
 
 `thread-controls.ts` owns writer enqueue and withdrawal, separately from the
-message producer port. Client ids remain taken after execution or withdrawal,
-so withdrawal acknowledges the row and never deletes it. The thread lock
-serializes withdrawal with reservation. Withdrawal outcomes:
-
-| K is | Outcome |
-|---|---|
-| Pending and unbound | Acknowledged, `withdrawn` |
-| Bound as the live manual C's `controlMessageId` | Stop on that C, `stopping` |
-| Absorbed by an autocompaction (`satisfiesControlId`) | `already_finished`; that C was needed for the writer's reply and retires K itself, and withdrawal never cancels the reply |
-| Already acknowledged | `already_finished` |
-
+message producer port. Client ids remain taken after execution or withdrawal.
+The thread lock serializes withdrawal with reservation. A manual control bound
+as `controlMessageId` becomes Stop, even after receipt expiry: withdrawal marks
+the locked receipt cancelled so a stalled owner cannot resume the compaction.
+Withdrawal also retires the control immediately, preventing replay if that
+owner dies before cleanup. `stopping` still describes the bound turn.
+Only row-owned handoff seeds ignore expired receipts and settle directly. An absorbed `satisfiesControlId` returns
+`already_finished`: the automatic C still retires it and answers its messages.
 `absorbPendingCompact` owns satisfaction selection for initial and mid-run
 reservation. Control enqueue finds the latest matching turn by control id
 (`TurnRepository.findByControlId`), not by loading the transcript. See
 [HTTP contracts](../../../../../../docs/api/thread-controls.md).
+
+## Undo
+
+A boundary expands consecutive due undos, then targets the first following
+compact or handoff control. Reservation and terminal checks use that expanded
+list, not only its head. Stale seed controls are excluded throughout expansion
+and retired in the same commit as the undo and its successor.
+
+`compaction-undo.ts` prepares U over the restored raw history. Only the active,
+local completed C is eligible. Runtime eligibility returns `not_active` for an
+inherited target; the enqueue route rejects a target outside this thread with
+`compaction_not_found` before execution. U reuses `bakeIdAt` immediately before C, owns a
+fresh document-staleness pass, and measures the decorated restored request
+against today's trigger. The sole refusal predicate implements Q2: reaching the
+trigger is `would_recompact`. The baseline is the last assistant response before
+C, never a response to C's summary. Model/bake mismatch, subsequent image eviction,
+or an elision inside that response's prefix removes the baseline.
+
+U has no reservation or model phase. Delivery inserts and completes it through
+`beginPromptEpoch` in the same transaction as adoption, control acknowledgement,
+and the next control/reply binding or lease release. Successful U is inserted
+pending privately, then announced complete in the journal; readers never receive
+a pending U. Inbox-only rows beyond U are planned after it, not folded into its
+adopted prefix. An idle undo reserves no
+assistant and admits no execution. A refused U has no blocks or bake; its reason
+lives in typed undo metadata (`already_undone`, `not_active`, `would_recompact`,
+`undo_failed`), while `turn.error` carries writer copy. The journal keeps the
+existing undo error codes and includes the reason in error details.
+A failed undo commit rolls back, then retries the delivery transaction with those
+undo controls marked `undo_failed`; ordinary messages still continue.
+
+Projection applies the active C's elisions to its retained tail, followed by the
+latest complete U after C. U plans from raw blocks, including earlier U owners'
+blocks but excluding replacements still owned by active C. A later C ends U's
+ownership. Image inclusion selects the latest decision after filtering out all
+reverted C owners from the same effective transcript. Fork cutoffs bound both.
+Snapshot availability is advisory and compares active local C's `tokensBefore`
+with the current trigger; execution always measures again. A missing model
+catalog entry yields null availability without hiding the durable snapshot.
 
 [kb-elision]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/request-prefix/stale-document-elision.md
 [kb-thread-controls]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/thread-controls.md

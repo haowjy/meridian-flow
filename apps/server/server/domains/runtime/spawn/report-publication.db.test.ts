@@ -3,6 +3,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
+import { createDrizzleInbox } from "../adapters/drizzle-inbox.js";
 
 const runDb = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const databaseUrl = process.env.DATABASE_URL;
@@ -34,9 +35,8 @@ else
     const { createDrizzleRepositoriesForTest } = await import(
       "../../threads/adapters/drizzle/repositories.js"
     );
-    const { createDrizzleEventJournalWriter, readTranscriptPage } = await import(
-      "../../threads/index.js"
-    );
+    const { CompactionMetadataCodec, createDrizzleEventJournalWriter, readTranscriptPage } =
+      await import("../../threads/index.js");
     const { createInMemoryEventSink } = await import("../../observability/index.js");
     const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
     const { createDrizzleThreadLock } = await import("../adapters/drizzle-thread-lock.js");
@@ -261,6 +261,7 @@ else
       });
       const authority = createDrizzleRunClaim(db, { holderId: "json-roundtrip-repair" });
       const repair = createOrphanReportRepair({
+        inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
         authority,
@@ -582,6 +583,7 @@ else
     it("does not infer orphan death from a missing lease while the physical claim is held", async () => {
       const authority = createDrizzleRunClaim(db, { holderId: "repair-test" });
       const repair = createOrphanReportRepair({
+        inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
         authority,
@@ -653,6 +655,7 @@ else
       }
       const authority = createDrizzleRunClaim(db, { holderId: "placeholder-scan" });
       const repair = createOrphanReportRepair({
+        inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
         authority,
@@ -663,14 +666,17 @@ else
 
       expect(await repair.sweep(10)).toBe(2);
       expect(eventSink.events.filter((event) => event.name === "placeholder.failed")).toEqual([]);
-      expect(await repos.turns.findById(primaryC.id)).toMatchObject({
-        status: "error",
-        error: "This compaction was interrupted.",
-      });
-      expect(await repos.turns.findById(childC.id)).toMatchObject({
-        status: "error",
-        error: "This compaction was interrupted.",
-      });
+      for (const turnId of [primaryC.id, childC.id]) {
+        const repaired = await repos.turns.findById(turnId);
+        expect(repaired).toMatchObject({
+          status: "error",
+          error: "This compaction was interrupted.",
+        });
+        expect(CompactionMetadataCodec.parse(repaired?.metadata)).toMatchObject({
+          reason: "interrupted",
+          phase: "recovery",
+        });
+      }
       expect(await repos.executionReports.findByExecution(ids.child, ids.execution)).toMatchObject({
         outcome: "failed",
         reason: "orphaned",
@@ -699,6 +705,7 @@ else
       });
       const authority = createDrizzleRunClaim(db, { holderId: "primary-stream-sweep" });
       const repair = createOrphanReportRepair({
+        inbox,
         repos,
         eventWriter,
         authority,
@@ -769,6 +776,7 @@ else
         .set({ expiresAt: new Date(0) })
         .where(eq(schema.threadRunLeases.threadId, ids.root));
       const repair = createOrphanReportRepair({
+        inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
         authority,
@@ -831,7 +839,12 @@ else
       if (!lease) throw new Error("failed to acquire run claim");
       await runDelivery.repairOrphanedTurns(lease);
       expect((await repos.turns.findById(orphanAssistant.id))?.status).toBe("error");
-      expect((await repos.turns.findById(c.id))?.status).toBe("error");
+      const repaired = await repos.turns.findById(c.id);
+      expect(repaired?.status).toBe("error");
+      expect(CompactionMetadataCodec.parse(repaired?.metadata)).toMatchObject({
+        reason: "interrupted",
+        phase: "recovery",
+      });
       const assistantId = crypto.randomUUID() as TurnId;
       await runDelivery.adoptBatch(lease, async (selection) => {
         expect(selection.batch.map(({ id }) => id)).toEqual([message.id]);
@@ -889,6 +902,7 @@ else
       });
       const authority = createDrizzleRunClaim(db, { holderId: "placeholder-report-walk" });
       const repair = createOrphanReportRepair({
+        inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
         authority,
@@ -954,6 +968,7 @@ else
         summary: "",
       });
       const repair = createOrphanReportRepair({
+        inbox: createDrizzleInbox(db),
         repos,
         eventWriter,
         authority: createDrizzleRunClaim(db, { holderId: "exact-report-walk" }),
@@ -1012,9 +1027,14 @@ else
       const lease = await authority.startExecution(ids.child, crypto.randomUUID());
       if (!lease) throw new Error("failed to acquire child run claim");
       await runDelivery.repairOrphanedTurns(lease);
-      expect(await repos.turns.findById(c.id)).toMatchObject({
+      const repaired = await repos.turns.findById(c.id);
+      expect(repaired).toMatchObject({
         status: "error",
         error: "This compaction was interrupted.",
+      });
+      expect(CompactionMetadataCodec.parse(repaired?.metadata)).toMatchObject({
+        reason: "interrupted",
+        phase: "recovery",
       });
       const assistantId = crypto.randomUUID() as TurnId;
 

@@ -1,6 +1,11 @@
 import { isPendingPlaceholder, isPlaceholderRole } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
-import { interruptedPlaceholderError } from "./turn-metadata.js";
+import {
+  CompactionMetadataCodec,
+  CompactionPlanMetadataCodec,
+  CompactionUndoMetadataCodec,
+  interruptedPlaceholderError,
+} from "./turn-metadata.js";
 
 describe("pending placeholders", () => {
   it("classifies only pending turns with a placeholder role", () => {
@@ -41,4 +46,47 @@ describe("pending placeholders", () => {
       "This compaction was interrupted.",
     );
   });
+});
+
+describe("compaction metadata", () => {
+  it("parses typed failure, control, and fit fields even without a compaction plan", () => {
+    const metadata = CompactionMetadataCodec.parse({
+      trigger: "auto",
+      controlMessageId: "control-1",
+      satisfiesControlId: "satisfied-1",
+      reason: "context_too_large",
+      phase: "late_arrival",
+      estimatedTokens: 4_321,
+      fitLimitTokens: 2_500,
+    });
+
+    expect(metadata).toMatchObject({
+      trigger: "auto",
+      controlMessageId: "control-1",
+      satisfiesControlId: "satisfied-1",
+      reason: "context_too_large",
+      phase: "late_arrival",
+      estimatedTokens: 4_321,
+      fitLimitTokens: 2_500,
+    });
+    expect(CompactionPlanMetadataCodec.safeParse(metadata).success).toBe(false);
+  });
+
+  it("requires failure reason and phase together on planned metadata", () => {
+    expect(
+      CompactionMetadataCodec.safeParse({
+        compactedThrough: { turnId: "turn-1" },
+        pinnedRequestTurnIds: ["request-1"],
+        reason: "context_too_large",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+it("rejects unknown undo refusal reasons but accepts successful markers", () => {
+  const metadata = { kind: "compaction_undo", revertsCompactionTurnId: "c" };
+  expect(CompactionUndoMetadataCodec.safeParse(metadata).success).toBe(true);
+  expect(
+    CompactionUndoMetadataCodec.safeParse({ ...metadata, reason: "provider_error" }).success,
+  ).toBe(false);
 });
