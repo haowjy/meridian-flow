@@ -602,8 +602,9 @@ recovery, cancellation, placeholder recovery, cost, and the queued controls
 references) reuse it. Inspection registrations take repository and tokenizer
 ports at composition, not privileged run-loop callbacks.
 
-History projects the shared `readTranscriptPage` and bounded expansion read;
-there is no second fork walker. `history-item.ts` filters and elides document
+History projects the shared `readTranscriptPageForProjection` and bounded expansion read;
+there is no second fork walker. Tool pairs load once per raw page, keyed by turn
+and tool-call ID, including partners outside the page. `history-item.ts` filters and elides document
 copies before token trimming. Tool registrations own `historyPreview` and
 `DocumentTextPolicy`. The policy treatment is explicit: `stale` preserves C5
 stub bytes; `history` preserves mutation inputs as dated records and stubs

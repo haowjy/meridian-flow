@@ -13,6 +13,7 @@ import { returnResultCaptureSchema, type SpawnResult } from "@meridian/contracts
 import { ZodError } from "zod";
 import { InvocationPatchError } from "../spawn/apply-invocation-patch.js";
 import { spawnHistoryPreview, threadHistoryPreview } from "./history-previews.js";
+import { toolFailureResult } from "./tool-executor.js";
 import type {
   ReturnResultToolHandlerContext,
   SpawnToolHandlerContext,
@@ -163,9 +164,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
         type: "server",
         handler: async (input: unknown, ctx: ThreadReportToolHandlerContext) => {
           const result = await ctx.threadReport(parseThreadReportArgs(input));
-          return "ok" in result && !result.ok
-            ? { isError: true, output: meridianErrorToJson(result.error) }
-            : result;
+          return "ok" in result && !result.ok ? toolFailureResult(result) : result;
         },
       },
       sequential: true,

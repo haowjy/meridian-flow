@@ -95,6 +95,36 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
+    it("returns a structured history tool error for a removed bound model", async () => {
+      const runtime = await composeRuntime();
+      try {
+        await runtime.app.agentRevisions.bindThread(
+          THREAD_ID,
+          null,
+          {
+            model: "removed-history-model",
+            skills: { load: [], available: [] },
+            namedTargets: [],
+          },
+          null,
+        );
+        const result = await runtime.app.toolExecutor.executeTool(
+          {
+            id: "history-unavailable",
+            name: "thread_history",
+            arguments: {},
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, agentSlug: null },
+        );
+        expect(result).toMatchObject({
+          isError: true,
+          output: { code: "model_unavailable", message: "Model not found: removed-history-model" },
+        });
+      } finally {
+        await unloadRuntime(runtime.hocuspocus);
+      }
+    });
+
     it("S10 hard-delete evidence survives cold composition", () => runScenario(true));
 
     it("reports writer prose overwritten without a concurrent edit", () => runScenario(false));

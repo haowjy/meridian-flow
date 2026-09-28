@@ -4,6 +4,7 @@
  * chooses concrete server adapters and assembles domain services behind ports.
  */
 
+import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
@@ -663,7 +664,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       const binding = await ports.agentRevisions.readThreadBinding(caller.id);
       const modelId = binding?.configuration.model ?? ports.gateway.getDefaultModel();
       const model = ports.gateway.listModels?.().find((model) => model.id === modelId);
-      if (!model) throw new Error(`Model not found: ${modelId}`);
+      if (!model)
+        return {
+          ok: false,
+          error: meridianErrorFromSystem("model_unavailable", `Model not found: ${modelId}`),
+        };
       return model.tokenizer;
     },
   }))

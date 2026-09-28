@@ -1,5 +1,5 @@
 /** Read-only connected-conversation tools wired with repositories at composition. */
-import { meridianErrorFromSystem, meridianErrorToJson } from "@meridian/contracts/interrupt";
+import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import { z } from "zod";
@@ -9,12 +9,13 @@ import { readThreadHistory, ThreadHistoryInputSchema } from "../spawn/thread-his
 import { listReadableThreads, ThreadLsInputSchema } from "../spawn/thread-ls.js";
 import { historyDocumentText } from "./document-text.js";
 import { threadHistoryPreview } from "./history-previews.js";
+import { toolFailureResult } from "./tool-executor.js";
 import type { ToolHandlerContext, ToolRegistration, ToolRegistry } from "./types.js";
 export function createInspectionToolRegistrations(deps: {
   repos: ThreadRepositories;
   statusReader: ThreadStatusReader;
   registry: ToolRegistry;
-  tokenizer: (caller: Thread) => Promise<TokenizerFamily>;
+  tokenizer: (caller: Thread) => Promise<TokenizerFamily | { ok: false; error: MeridianError }>;
 }): ToolRegistration[] {
   return [
     {
@@ -33,20 +34,16 @@ export function createInspectionToolRegistrations(deps: {
         handler: async (input: unknown, ctx: ToolHandlerContext) => {
           const caller = await deps.repos.threads.findById(ctx.threadId as ThreadId);
           if (!caller)
-            return {
-              isError: true,
-              output: meridianErrorToJson(
-                meridianErrorFromSystem("thread_not_found", "Thread not found"),
-              ),
-            };
+            return toolFailureResult({
+              ok: false,
+              error: meridianErrorFromSystem("thread_not_found", "Thread not found"),
+            });
           const result = await listReadableThreads({
             ...deps,
             caller,
             input: ThreadLsInputSchema.parse(input),
           });
-          return typeof result !== "string"
-            ? { isError: true, output: meridianErrorToJson(result.error) }
-            : result;
+          return typeof result !== "string" ? toolFailureResult(result) : result;
         },
       },
     },
@@ -67,21 +64,19 @@ export function createInspectionToolRegistrations(deps: {
         handler: async (input: unknown, ctx: ToolHandlerContext) => {
           const caller = await deps.repos.threads.findById(ctx.threadId as ThreadId);
           if (!caller)
-            return {
-              isError: true,
-              output: meridianErrorToJson(
-                meridianErrorFromSystem("thread_not_found", "Thread not found"),
-              ),
-            };
+            return toolFailureResult({
+              ok: false,
+              error: meridianErrorFromSystem("thread_not_found", "Thread not found"),
+            });
+          const tokenizer = await deps.tokenizer(caller);
+          if (typeof tokenizer !== "string") return toolFailureResult(tokenizer);
           const result = await readThreadHistory({
             ...deps,
             caller,
             input: ThreadHistoryInputSchema.parse(input),
-            tokenizer: await deps.tokenizer(caller),
+            tokenizer,
           });
-          return "ok" in result && !result.ok
-            ? { isError: true, output: meridianErrorToJson(result.error) }
-            : result;
+          return "ok" in result && !result.ok ? toolFailureResult(result) : result;
         },
       },
     },
