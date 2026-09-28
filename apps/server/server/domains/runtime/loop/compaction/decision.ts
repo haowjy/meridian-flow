@@ -66,7 +66,9 @@ export function compactionFailureMessage(reason: CompactionFailureReason): strin
 /** Keep rejection reasons in details instead of expanding the system error-code family. */
 export function compactionFailureMeridianError(failure: CompactionFailureOutcome, message: string) {
   const code =
-    failure.reason === "context_too_large" || failure.reason === "nothing_to_compact"
+    failure.reason === "context_too_large" ||
+    failure.reason === "nothing_to_compact" ||
+    failure.reason === "context_window_exceeded"
       ? failure.reason
       : "compaction_failed";
   return {

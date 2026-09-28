@@ -14,7 +14,9 @@ export function writerFacingPreparationError(
     return compactionFailureMeridianError(error.outcome, error.message);
   if (error instanceof CompactionPreparationError)
     return meridianErrorFromSystem(
-      error.reason === "context_too_large" || error.reason === "nothing_to_compact"
+      error.reason === "context_too_large" ||
+        error.reason === "nothing_to_compact" ||
+        error.reason === "context_window_exceeded"
         ? error.reason
         : "compaction_failed",
       error.message,

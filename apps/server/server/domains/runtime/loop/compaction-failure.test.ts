@@ -93,4 +93,13 @@ describe("compaction failure outcomes", () => {
       details: { reason: "context_too_large", phase: "late_arrival" },
     });
   });
+
+  it("keeps the post-compaction context-window error code", () => {
+    expect(
+      compactionFailureMeridianError(
+        { reason: "context_window_exceeded", phase: "delivery" },
+        "Still too large.",
+      ),
+    ).toMatchObject({ code: "context_window_exceeded" });
+  });
 });
