@@ -61,9 +61,10 @@ that safe:
 - **Referenced rows commit first.** `ensureProjectManifest` creates manifest
   identity and its durable live head in a root transaction, so a root-committed
   peer never references a row only the caller's transaction can see. Live
-  manifest mutation/bootstrap instead uses the ambient loader: its project and
-  source may themselves be uncommitted, and identity, content, and membership
-  must roll back together. This path does not provision a root peer.
+  manifest writes (`mutateLiveManifest`, `reconcileProjectManifest`) instead
+  call `loadProjectManifest` in the caller's transaction: during cold project
+  bootstrap the project and source are uncommitted, and identity, content, and
+  membership must roll back together. These writes provision no root peer.
 - **FK references must not wait on the caller's locks.** A root insert that
   references a row the caller locked waits on a transaction that is itself
   awaiting the root in JavaScript; Postgres never detects that cycle. Work
