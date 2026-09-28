@@ -15,6 +15,7 @@
 - Recover pending compaction placeholders only after acquiring the session claim; child reports terminate on the orphaned placeholder and late inbox messages remain redeliverable.
 - Persist request sizes and turn-neutral child execution selectors for compaction.
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
+- Re-admit retained excluded images into free budget during complete compaction; compaction-owned decisions remain reversible, and forks preserve decision history.
 
 ### Fixed
 - Keep pending-placeholder roles and predicates in contracts, SQL in the database package, and interruption copy in the threads domain.

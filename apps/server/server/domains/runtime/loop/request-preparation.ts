@@ -11,7 +11,7 @@ import {
   decideCompaction,
   type ForcedCompactionDecision,
 } from "./compaction/decision.js";
-import type { ImageInclusionDecision } from "./image-context.js";
+import type { CompactionImageProjectionMode, ImageInclusionDecision } from "./image-context.js";
 import { createLocalTurn } from "./local-turn.js";
 import type { OrchestratorDeps, OrchestratorRepositories } from "./orchestrator.js";
 import { createPrefixCacheStateService } from "./prefix-cache-state.js";
@@ -30,6 +30,7 @@ export async function prepareRequestContext(input: {
   readReferences?: boolean;
   skipCompaction?: boolean;
   forcedDecision?: ForcedCompactionDecision;
+  imageProjectionMode?: CompactionImageProjectionMode;
   promptBakes?: OrchestratorRepositories["promptBakes"];
   signal?: AbortSignal;
 }): Promise<{
@@ -71,6 +72,7 @@ export async function prepareRequestContext(input: {
     gateway: input.deps.gateway,
     imageAssets: input.deps.imageAssets,
     imageInclusions: input.deps.repos.imageInclusions,
+    imageProjectionMode: input.imageProjectionMode,
     baseTools: input.baseTools ?? input.deps.toolExecutor.getDefinitions?.(),
     promptBakes: input.promptBakes ?? input.deps.repos.promptBakes,
     persistBake: false,
@@ -82,6 +84,7 @@ export async function prepareRequestContext(input: {
         threadId: input.threadId,
         afterTurnId: projection.afterTurnId,
         afterTurnPosition: projection.afterTurnPosition,
+        imageProjectionMode: projection.imageProjectionMode,
         decisions: projection.decisions,
         breaks: projection.breaks,
       });
@@ -116,6 +119,7 @@ function buildImageProjectionEvents(input: {
   threadId: ThreadId;
   afterTurnId: TurnId | null;
   afterTurnPosition: number | null;
+  imageProjectionMode?: CompactionImageProjectionMode;
   decisions: readonly ImageInclusionDecision[];
   breaks: readonly ImageContextBreak[];
 }): { turns: Turn[]; blocks: Block[]; events: OrchestratorEvent[] } {
@@ -151,15 +155,19 @@ function buildImageProjectionEvents(input: {
   if (input.decisions.length > 0 && !decisionTurnId) {
     throw new Error("Image inclusion decisions require a deciding turn");
   }
-  events.push(
-    ...input.decisions.map(({ blockId, included }) => ({
-      type: "image.inclusion_decided" as const,
+  for (const { blockId, included, decidedByCompaction } of input.decisions) {
+    const decidingTurnId = decidedByCompaction
+      ? input.imageProjectionMode?.decidingTurnId
+      : decisionTurnId;
+    if (!decidingTurnId) throw new Error("Image inclusion decision has no deciding turn");
+    events.push({
+      type: "image.inclusion_decided",
       threadId: input.threadId,
       blockId,
-      decisionTurnId: decisionTurnId as TurnId,
+      decisionTurnId: decidingTurnId as TurnId,
       included,
-    })),
-  );
+    });
+  }
   return { turns, blocks, events };
 }
 

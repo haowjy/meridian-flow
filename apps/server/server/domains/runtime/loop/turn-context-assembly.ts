@@ -43,7 +43,11 @@ import {
   type PromptInventoryListing,
 } from "./composed-system-prompt.js";
 import { buildContext } from "./context-builder.js";
-import { type ImageInclusionDecision, projectImageBlocksForModel } from "./image-context.js";
+import {
+  type CompactionImageProjectionMode,
+  type ImageInclusionDecision,
+  projectImageBlocksForModel,
+} from "./image-context.js";
 import type { EffectiveToolPolicy } from "./permissions/project-tool-policy.js";
 import { applyPromptCacheMarks } from "./prompt-cache-marks.js";
 import type { WorkContextReader } from "./work-context.js";
@@ -62,9 +66,11 @@ export interface AssembleNextTurnContextInput {
   gateway?: Pick<Gateway, "getDefaultModel" | "listModels">;
   imageAssets?: ImageAssetPort;
   imageInclusions?: Pick<ThreadImageInclusionRepository, "findByThread">;
+  imageProjectionMode?: CompactionImageProjectionMode;
   persistImageProjection?: (input: {
     afterTurnId: TurnId | null;
     afterTurnPosition: number | null;
+    imageProjectionMode?: CompactionImageProjectionMode;
     decisions: readonly ImageInclusionDecision[];
     breaks: readonly ImageContextBreak[];
   }) => Promise<{ turns: Turn[]; blocks: Block[] }>;
@@ -217,6 +223,7 @@ export async function assembleNextTurnContext(
         return null;
       },
     },
+    mode: input.imageProjectionMode,
   });
   const imageContextUpdates =
     input.persistImageProjection &&
@@ -224,6 +231,7 @@ export async function assembleNextTurnContext(
       ? await input.persistImageProjection({
           afterTurnId: (input.turns.at(-1)?.id as TurnId | undefined) ?? null,
           afterTurnPosition: input.turns.at(-1)?.position ?? null,
+          imageProjectionMode: input.imageProjectionMode,
           decisions: imageProjection.decisions,
           breaks: imageProjection.breaks,
         })

@@ -1,4 +1,6 @@
 /** Stable request-time projection of durable image occurrences into gateway bytes. */
+
+import type { TurnId } from "@meridian/contracts/runtime";
 import type { Block, Thread } from "@meridian/contracts/threads";
 import type { ImageContextBreak } from "../../threads/index.js";
 import type { ImageAssetPort, PersistedImageReference } from "../ports/image-asset.js";
@@ -11,6 +13,13 @@ export const MAX_MODEL_IMAGE_CONTEXT_BYTES = 20 * 1024 * 1024;
 export interface ImageInclusionDecision {
   blockId: string;
   included: boolean;
+  decidedByCompaction?: true;
+}
+
+export interface CompactionImageProjectionMode {
+  kind: "compaction";
+  candidates: ReadonlySet<string>;
+  decidingTurnId: TurnId;
 }
 
 export interface ImageContextProjection {
@@ -29,8 +38,8 @@ function reference(content: Block["content"]): PersistedImageReference | null {
 }
 
 /**
- * Project included images, deciding each undecided occurrence once and explicitly naming breaks.
- * Compaction rebalancing stays outside this per-request projection.
+ * Project stable image decisions and named breaks; a compaction can fill free budget by
+ * re-admitting excluded images without changing any existing inclusion.
  */
 export async function projectImageBlocksForModel(input: {
   thread: Pick<Thread, "id" | "projectId" | "userId">;
@@ -38,6 +47,7 @@ export async function projectImageBlocksForModel(input: {
   inclusions?: ReadonlyMap<string, boolean>;
   supportsImageInput: boolean;
   imageAssets: ImageAssetPort;
+  mode?: CompactionImageProjectionMode;
 }): Promise<ImageContextProjection> {
   const imageBlocks = input.blocks.filter((block) => block.blockType === "image");
   if (!input.supportsImageInput) {
@@ -62,8 +72,10 @@ export async function projectImageBlocksForModel(input: {
     uri: string;
     image: ResolvedImage;
     included: boolean;
+    reAdmissionCandidate: boolean;
   }> = [];
   const decisionById = new Map<string, ImageInclusionDecision>();
+  const reAdmissionDecisionById = new Map<string, ImageInclusionDecision>();
   const breaks: ImageContextBreak[] = [];
   let diagnosedOmission = false;
   const unavailableReason = (included: boolean | undefined) =>
@@ -71,9 +83,19 @@ export async function projectImageBlocksForModel(input: {
 
   for (const [index, block] of input.blocks.entries()) {
     const includedDecision = input.inclusions?.get(block.id);
-    if (block.blockType !== "image" || block.pruned || includedDecision === false) continue;
+    const reAdmissionCandidate =
+      input.mode?.kind === "compaction" &&
+      includedDecision === false &&
+      input.mode.candidates.has(block.id);
+    if (
+      block.blockType !== "image" ||
+      block.pruned ||
+      (includedDecision === false && !reAdmissionCandidate)
+    )
+      continue;
     const identity = reference(block.content);
     if (!identity) {
+      if (reAdmissionCandidate) continue;
       decisionById.set(block.id, { blockId: block.id, included: false });
       breaks.push({
         blockId: block.id,
@@ -87,19 +109,25 @@ export async function projectImageBlocksForModel(input: {
     const key = `${identity.documentId}\0${identity.uri}`;
     let image = reads.get(key);
     if (image === undefined) {
-      image = await input.imageAssets.resolve(
-        {
-          threadId: input.thread.id,
-          projectId: input.thread.projectId,
-          actorUserId: input.thread.userId,
-        },
-        identity,
-        { maxBytes: MAX_MODEL_IMAGE_BYTES },
-      );
+      try {
+        image = await input.imageAssets.resolve(
+          {
+            threadId: input.thread.id,
+            projectId: input.thread.projectId,
+            actorUserId: input.thread.userId,
+          },
+          identity,
+          { maxBytes: MAX_MODEL_IMAGE_BYTES },
+        );
+      } catch (error) {
+        if (!reAdmissionCandidate) throw error;
+        continue;
+      }
       reads.set(key, image);
     }
 
     if (!image || !Number.isFinite(image.sizeBytes) || image.sizeBytes < 0) {
+      if (reAdmissionCandidate) continue;
       decisionById.set(block.id, { blockId: block.id, included: false });
       breaks.push({
         blockId: block.id,
@@ -117,6 +145,7 @@ export async function projectImageBlocksForModel(input: {
       uri: identity.uri,
       image: resolvedImage,
       included: includedDecision === true,
+      reAdmissionCandidate,
     });
   }
 
@@ -134,7 +163,24 @@ export async function projectImageBlocksForModel(input: {
     }
   }
 
+  for (const entry of entries
+    .filter((candidate) => candidate.reAdmissionCandidate)
+    .sort((left, right) => right.index - left.index)) {
+    if (entry.image.sizeBytes > MAX_MODEL_IMAGE_BYTES) continue;
+    if (usedBytes + entry.image.sizeBytes > MAX_MODEL_IMAGE_CONTEXT_BYTES) continue;
+    entry.included = true;
+    usedBytes += entry.image.sizeBytes;
+    reAdmissionDecisionById.set(entry.block.id, {
+      blockId: entry.block.id,
+      included: true,
+      decidedByCompaction: true,
+    });
+  }
+
+  // A new late-arrival image retains the ordinary chronological eviction rule. A
+  // candidate that did not fit is never allowed through this eviction path.
   for (const entry of entries) {
+    if (entry.reAdmissionCandidate) continue;
     if (input.inclusions?.get(entry.block.id) !== true) {
       if (entry.image.sizeBytes > MAX_MODEL_IMAGE_BYTES) {
         decisionById.set(entry.block.id, { blockId: entry.block.id, included: false });
@@ -191,7 +237,10 @@ export async function projectImageBlocksForModel(input: {
       const modelBlock = projected.get(index);
       return modelBlock ? [modelBlock] : [];
     }),
-    decisions: [...decisionById.values()],
+    decisions:
+      input.mode?.kind === "compaction"
+        ? [...reAdmissionDecisionById.values(), ...decisionById.values()]
+        : [...decisionById.values()],
     breaks,
   };
 }

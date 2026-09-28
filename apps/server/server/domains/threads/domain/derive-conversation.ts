@@ -172,16 +172,17 @@ export async function forkThreadAgent(
     const target = await bindDerivedPrimary(deps, result.thread, sourceWorkId, binding);
     const inheritedBlockIds = new Set(cutoff.blocks.map((block) => block.id));
     const turnOrder = new Map(cutoff.turns.map((turn, index) => [turn.id, index]));
-    const decisionsAtCutoff = new Map<string, { decision: ThreadImageInclusion; rank: number }>();
+    const decisionsAtCutoff: ThreadImageInclusion[] = [];
     for (const decision of await deps.imageInclusions.listByThread(lockedSource.id as ThreadId)) {
       const rank = turnOrder.get(decision.decisionTurnId);
       if (!inheritedBlockIds.has(decision.blockId) || rank === undefined) continue;
-      const previous = decisionsAtCutoff.get(decision.blockId);
-      if (!previous || rank > previous.rank) {
-        decisionsAtCutoff.set(decision.blockId, { decision, rank });
-      }
+      decisionsAtCutoff.push(decision);
     }
-    for (const { decision } of decisionsAtCutoff.values()) {
+    decisionsAtCutoff.sort(
+      (left, right) =>
+        (turnOrder.get(left.decisionTurnId) ?? -1) - (turnOrder.get(right.decisionTurnId) ?? -1),
+    );
+    for (const decision of decisionsAtCutoff) {
       const event = {
         type: "image.inclusion_decided" as const,
         threadId: target.id,

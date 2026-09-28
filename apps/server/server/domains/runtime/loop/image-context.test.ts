@@ -1,7 +1,7 @@
 import type { Block, Thread } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import type { ImageAssetPort } from "../ports/image-asset.js";
-import { projectImageBlocksForModel } from "./image-context.js";
+import { MAX_MODEL_IMAGE_CONTEXT_BYTES, projectImageBlocksForModel } from "./image-context.js";
 
 const thread: Pick<Thread, "id" | "projectId" | "userId"> = {
   id: "thread-1",
@@ -28,6 +28,32 @@ const missingImageAsset: ImageAssetPort = {
     return null;
   },
 };
+
+function image(id: string): Block {
+  return {
+    ...imageBlock,
+    id,
+    content: {
+      type: "image_reference",
+      documentId: `document-${id}`,
+      uri: `scratch://${id}.png`,
+    },
+  };
+}
+
+function assets(sizes: ReadonlyMap<string, number>): ImageAssetPort {
+  return {
+    async resolve(_context, identity) {
+      const sizeBytes = sizes.get(identity.documentId);
+      if (sizeBytes === undefined) return null;
+      return { mediaType: "image/png", data: identity.uri, sizeBytes };
+    },
+  };
+}
+
+function imageIds(blocks: readonly Block[]) {
+  return blocks.map((block) => block.id);
+}
 
 describe("projectImageBlocksForModel", () => {
   it("names a missing asset according to whether it was previously included", async () => {
@@ -59,5 +85,131 @@ describe("projectImageBlocksForModel", () => {
         reason: "asset_unavailable_first_sight",
       },
     ]);
+  });
+
+  it("fills free budget with excluded retained candidates, newest first", async () => {
+    const mib = 1024 * 1024;
+    const candidates = [image("old"), image("middle"), image("new")];
+    const projection = await projectImageBlocksForModel({
+      thread,
+      blocks: candidates,
+      inclusions: new Map(candidates.map((block) => [block.id, false])),
+      supportsImageInput: true,
+      imageAssets: assets(
+        new Map(
+          candidates.map((block) => [
+            `document-${block.id}`,
+            block.id === "old" ? 7 * mib : block.id === "middle" ? 8 * mib : 9 * mib,
+          ]),
+        ),
+      ),
+      mode: {
+        kind: "compaction",
+        candidates: new Set(candidates.map((block) => block.id)),
+        decidingTurnId: "turn-c",
+      },
+    });
+
+    expect(imageIds(projection.blocks)).toEqual(["middle", "new"]);
+    expect(projection.decisions).toEqual([
+      { blockId: "new", included: true, decidedByCompaction: true },
+      { blockId: "middle", included: true, decidedByCompaction: true },
+    ]);
+    expect(17 * mib).toBeLessThanOrEqual(MAX_MODEL_IMAGE_CONTEXT_BYTES);
+  });
+
+  it("does not evict included images for a candidate and keeps late-arrival eviction", async () => {
+    const mib = 1024 * 1024;
+    const protectedImage = image("protected");
+    const protectedImage2 = image("protected-2");
+    const blockedCandidate = image("blocked");
+    const protectedProjection = await projectImageBlocksForModel({
+      thread,
+      blocks: [protectedImage, protectedImage2, blockedCandidate],
+      inclusions: new Map([
+        [protectedImage.id, true],
+        [protectedImage2.id, true],
+        [blockedCandidate.id, false],
+      ]),
+      supportsImageInput: true,
+      imageAssets: assets(
+        new Map([
+          [`document-${protectedImage.id}`, 8 * mib],
+          [`document-${protectedImage2.id}`, 8 * mib],
+          [`document-${blockedCandidate.id}`, 5 * mib],
+        ]),
+      ),
+      mode: {
+        kind: "compaction",
+        candidates: new Set([blockedCandidate.id]),
+        decidingTurnId: "turn-c",
+      },
+    });
+
+    expect(imageIds(protectedProjection.blocks)).toEqual(["protected", "protected-2"]);
+    expect(protectedProjection.decisions).toEqual([]);
+    expect(protectedProjection.breaks).toEqual([]);
+
+    const included = image("included");
+    const candidate = image("candidate");
+    const lateArrival = image("late");
+    const blocks = [included, candidate, lateArrival];
+    const projection = await projectImageBlocksForModel({
+      thread,
+      blocks,
+      inclusions: new Map([
+        [included.id, true],
+        [candidate.id, false],
+      ]),
+      supportsImageInput: true,
+      imageAssets: assets(
+        new Map([
+          [`document-${included.id}`, 10 * mib],
+          [`document-${candidate.id}`, 8 * mib],
+          [`document-${lateArrival.id}`, 9 * mib],
+        ]),
+      ),
+      mode: {
+        kind: "compaction",
+        candidates: new Set([candidate.id]),
+        decidingTurnId: "turn-c",
+      },
+    });
+
+    // The candidate fits alongside the included image. The genuinely late image then
+    // uses the ordinary eviction rule and evicts the older included image.
+    expect(imageIds(projection.blocks)).toEqual(["candidate", "late"]);
+    expect(projection.decisions).toEqual([
+      { blockId: "candidate", included: true, decidedByCompaction: true },
+      { blockId: "included", included: false },
+      { blockId: "late", included: true },
+    ]);
+  });
+
+  it("skips a transient candidate failure without deciding or failing", async () => {
+    const candidate = image("candidate");
+    let attempts = 0;
+    const projection = await projectImageBlocksForModel({
+      thread,
+      blocks: [candidate],
+      inclusions: new Map([[candidate.id, false]]),
+      supportsImageInput: true,
+      imageAssets: {
+        async resolve() {
+          attempts++;
+          throw new Error("object store timed out");
+        },
+      },
+      mode: {
+        kind: "compaction",
+        candidates: new Set([candidate.id]),
+        decidingTurnId: "turn-c",
+      },
+    });
+
+    expect(projection.blocks).toEqual([]);
+    expect(attempts).toBe(1);
+    expect(projection.decisions).toEqual([]);
+    expect(projection.breaks).toEqual([]);
   });
 });
