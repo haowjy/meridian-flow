@@ -84,4 +84,43 @@ else
         },
       );
     });
+
+    it("selects a cutoff response only from the supplied ancestor chain", async () => {
+      const firstTurn = await repos.turns.create({
+        threadId: ids.threadId as never,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      const cutoffTurn = await repos.turns.create({
+        threadId: ids.threadId as never,
+        prevTurnId: firstTurn.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      const abandonedSibling = await repos.turns.create({
+        threadId: ids.threadId as never,
+        prevTurnId: firstTurn.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      const base = {
+        provider: "test-provider",
+        model: "test-model",
+        priceSource: "unknown" as const,
+        requestMessageCount: 1,
+        predictedCacheState: "cold" as const,
+        predictedCacheReason: "facts_unavailable" as const,
+      };
+      await repos.modelResponses.create({ ...base, turnId: firstTurn.id, sequence: 0 });
+      await repos.modelResponses.create({ ...base, turnId: cutoffTurn.id, sequence: 0 });
+      await repos.modelResponses.create({ ...base, turnId: abandonedSibling.id, sequence: 9 });
+
+      await expect(
+        repos.modelResponses.findLatestForTurns([firstTurn.id, cutoffTurn.id]),
+      ).resolves.toMatchObject({ turnId: cutoffTurn.id, sequence: 0 });
+      await expect(repos.modelResponses.findLatestForTurns([])).resolves.toBeNull();
+    });
   });

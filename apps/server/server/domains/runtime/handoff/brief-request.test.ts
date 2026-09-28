@@ -1,7 +1,8 @@
 /** Branch preparation stays read-only and stops at the selected source turn. */
+
+import type { JsonValue } from "@meridian/contracts/threads";
 import { expect, it } from "vitest";
 import type { ModelInfo, Tool } from "../gateway/index.js";
-import type { JsonValue } from "@meridian/contracts/threads";
 import { createRuntimeHarness } from "../loop/__tests__/runtime-harness.js";
 import { scriptedSummarizer } from "../loop/__tests__/scripted-summarizer.js";
 import { createInertGateway } from "../loop/__tests__/test-gateway.js";
@@ -24,6 +25,11 @@ const bakedTool: Tool = {
   description: "Read a chapter",
   inputSchema: { type: "object", properties: { uri: { type: "string" } } },
 };
+
+function required<T>(value: T | null | undefined): T {
+  if (value == null) throw new Error("Expected a value");
+  return value;
+}
 
 async function prepareBrief(input: { userCutoff: boolean }) {
   let sourceId = "";
@@ -124,7 +130,7 @@ async function prepareBrief(input: { userCutoff: boolean }) {
       kind: "derivation_seed",
       derivation: "handoff",
       sourceThreadId: source.id,
-      sourceRef: source.ref!,
+      sourceRef: required(source.ref),
       sourceTitle: source.title,
       cutoffTurnId: cutoff.id,
       launches: 0,
@@ -141,28 +147,30 @@ async function prepareBrief(input: { userCutoff: boolean }) {
   return { result, calls: summarizer.calls, beforeTurns, beforeBlocks, rig, source };
 }
 
-it.each([true, false])(
-  "branches from the source through the selected turn (user cutoff=%s)",
-  async (userCutoff) => {
-    const { result, calls, beforeTurns, beforeBlocks, rig, source } = await prepareBrief({
-      userCutoff,
-    });
-    const call = calls[0];
-    const request = call?.requestInHand;
+it.each([
+  true,
+  false,
+])("branches from the source through the selected turn (user cutoff=%s)", async (userCutoff) => {
+  const { result, calls, beforeTurns, beforeBlocks, rig, source } = await prepareBrief({
+    userCutoff,
+  });
+  const call = calls[0];
+  const request = call?.requestInHand;
 
-    expect(result.outcome.kind).toBe("complete");
-    expect(call).toMatchObject({
-      instruction: "handoff",
-      path: "branch",
-      source: { threadId: source.id },
-    });
-    expect(request?.model).toBe(model.id);
-    expect(request?.tools).toEqual([bakedTool]);
-    expect(JSON.stringify(request?.messages)).toContain(
-      userCutoff ? "What should I do about the silver gate?" : "Earlier scene decision.",
-    );
-    expect(JSON.stringify(request?.messages)).not.toContain("This reply is beyond the selected cutoff.");
-    expect(await rig.repos.turns.listByThread(source.id)).toEqual(beforeTurns);
-    expect(await rig.repos.blocks.listByThread(source.id)).toEqual(beforeBlocks);
-  },
-);
+  expect(result.outcome.kind).toBe("complete");
+  expect(call).toMatchObject({
+    instruction: "handoff",
+    path: "branch",
+    source: { threadId: source.id },
+  });
+  expect(request?.model).toBe(model.id);
+  expect(request?.tools).toEqual([bakedTool]);
+  expect(JSON.stringify(request?.messages)).toContain(
+    userCutoff ? "What should I do about the silver gate?" : "Earlier scene decision.",
+  );
+  expect(JSON.stringify(request?.messages)).not.toContain(
+    "This reply is beyond the selected cutoff.",
+  );
+  expect(await rig.repos.turns.listByThread(source.id)).toEqual(beforeTurns);
+  expect(await rig.repos.blocks.listByThread(source.id)).toEqual(beforeBlocks);
+});

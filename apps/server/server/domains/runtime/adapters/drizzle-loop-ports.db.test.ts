@@ -37,6 +37,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../loop/__tests__/test-drizzle-delivery.js"
     );
     const { createDrizzleRunClaim } = await import("./drizzle-run-claim.js");
+    const { createDrizzleRepositoriesForTest } = await import(
+      "../../threads/adapters/drizzle/repositories.js"
+    );
     const { runInDrizzleTransaction } = await import("../../../shared/drizzle-transaction.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
@@ -184,6 +187,43 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await inbox.pendingMessageThreads(10)).toEqual([THREAD_A, THREAD_B]);
       expect(await inbox.pendingMessageThreads(1, THREAD_A)).toEqual([THREAD_B]);
       expect(await inbox.pendingMessageThreads(1, THREAD_B)).toEqual([]);
+    });
+
+    it("keeps a queued message asleep while a handoff seed is pending", async () => {
+      const repos = createDrizzleRepositoriesForTest(db);
+      const runClaim = createDrizzleRunClaim(db, { holderId: "handoff-gate" });
+      const inbox = createDrizzleInbox(db);
+      const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
+      const seed = await repos.turns.create({
+        threadId: THREAD_A,
+        role: "system",
+        origin: "system",
+        status: "pending",
+        metadata: {
+          kind: "derivation_seed",
+          derivation: "handoff",
+          sourceThreadId: THREAD_B,
+          sourceRef: "p1",
+          sourceTitle: "Source",
+          cutoffTurnId: crypto.randomUUID(),
+          launches: 1,
+        },
+      });
+      const waiting = await inbox.enqueue(message("wait-for-seed", THREAD_A));
+      await inbox.enqueue(message("other-thread", THREAD_B));
+
+      expect(await delivery.pendingMessageThreads(10)).toEqual([THREAD_B]);
+      expect(await inbox.selectPending(THREAD_A)).toMatchObject([{ id: waiting.id }]);
+      expect(await runClaim.holder(THREAD_A)).toBeNull();
+      const repairLease = required(await runClaim.startExecution(THREAD_A, "placeholder-repair"));
+      await delivery.repairOrphanedTurns(repairLease);
+      expect(await repos.turns.findById(seed.id)).toMatchObject({ status: "pending" });
+      await runClaim.release(repairLease);
+
+      await repos.turns.updateStatus(seed.id, { status: "complete" });
+
+      expect(await delivery.pendingMessageThreads(10)).toEqual([THREAD_A, THREAD_B]);
+      expect(await inbox.selectPending(THREAD_A)).toMatchObject([{ id: waiting.id }]);
     });
 
     it("wakes a pending-message thread and skips one with a live lease", async () => {

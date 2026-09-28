@@ -2,9 +2,11 @@
 import { describe, expect, it } from "vitest";
 import {
   forkThreadRequestSchema,
+  handoffBriefRetryRequestSchema,
   parseWorkingSetRoute,
   parseWorkingSetRouteList,
 } from "./http-types.js";
+import { apiThreadHandoffBriefPath } from "./paths.js";
 
 describe("fork request schema", () => {
   it("requires a client id and rejects removed Agent selection input", () => {
@@ -18,6 +20,22 @@ describe("fork request schema", () => {
         },
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("handoff brief retry route contract", () => {
+  it("requires one client-minted seed id and rejects extra fields", () => {
+    expect(handoffBriefRetryRequestSchema.safeParse({ id: crypto.randomUUID() }).success).toBe(
+      true,
+    );
+    expect(
+      handoffBriefRetryRequestSchema.safeParse({ id: crypto.randomUUID(), control: {} }).success,
+    ).toBe(false);
+    expect(handoffBriefRetryRequestSchema.safeParse({ id: "not-a-uuid" }).success).toBe(false);
+  });
+
+  it("builds the canonical direct retry path", () => {
+    expect(apiThreadHandoffBriefPath("thread-id")).toBe("/api/threads/thread-id/handoff/brief");
   });
 });
 
