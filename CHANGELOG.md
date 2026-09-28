@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Build the large transcript plan fixture once; restore only the tail each case mutates.
+
 - Prove failed control runs stay sweep-paced at the lease boundary instead of sleeping fifteen seconds.
 
 - Return DB test results without waiting for database-drop checkpoints; keep owned cleanup logs and stale-run GC.
