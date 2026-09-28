@@ -48,6 +48,9 @@ through-cutoff effective transcripts; handoffs never inherit those turns.
 `handoff-brief.ts` previews the source request through the cutoff without
 persisting a bake, reference reads, image decisions or pre-generation turns.
 New image/pre-generation events make the preview ineligible for warmth.
+Preview-only failures also go cold; a missing transcript still fails the brief.
+With the cheap model available, cold needs neither a source bake nor a resolved
+source binding. Without that provider, it falls back to the retained source model.
 An older cutoff is `cold/fork_cutoff`; a current warm prefix uses the source
 model, unchanged tools, and one appended instruction naming the incoming
 Agent. Cold rolls the active source projection through the cheap summarizer.
@@ -55,7 +58,8 @@ The instruction does not advertise `thread_history`.
 
 Destination binding/bake/fit preparation belongs to the successor after S's
 outcome is known. A destination preparation failure lands on the reply, not S.
-Due undo controls and following batches use ordinary delivery selection and
+Skill bodies on chained messages adopted ahead of Retry are staged after the
+brief, before the reply. Due undo controls and following batches use ordinary delivery selection and
 ending-control acknowledgement, including when no reply remains.
 
 Both successful and failed summaries return every attempted paid row.
@@ -72,4 +76,9 @@ A process kill during the provider call leaves the row-owned S and K pending.
 Recovery preserves S and retries the brief. Paid calls still held only in
 memory are lost and cannot be debited, as for compaction. A live stale brief
 that returns after row-owned Stop preserves the cancelled fallback and settles
-its returned rows without reviving S.
+its returned rows without reviving S or replacing the winning telemetry.
+Telemetry is written only by the pending owner’s ending transaction.
+
+Warm preparation intentionally does not compact the source or enforce the
+destination’s fit limits. If the source-shaped request exceeds the provider
+window, the shared summarizer retains that attempt and falls back cold.

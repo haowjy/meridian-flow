@@ -329,6 +329,63 @@ else
       expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
     });
 
+    it("C7b a successful undo behind Retry restores its bake after the new brief", async () => {
+      const r = await fixture();
+      let briefCalls = 0;
+      r.deps.summarizer = scriptedSummarizer(async (input) => {
+        if (input.instruction === "handoff_brief" && ++briefCalls === 1)
+          return { kind: "failed", error: new Error("first brief failed"), modelResponses: [] };
+        return {
+          kind: "complete",
+          text: "Continued context",
+          model: "summary-model",
+          modelResponses: [],
+        };
+      });
+      await r.drain();
+      await r.settled();
+      await r.send(r.thread.id, "Earlier scene. ".repeat(100));
+      await r.drain();
+      await r.settled();
+      const beforeBake = (await repos.threads.findById(r.thread.id))?.initialPromptBakeId;
+      await r.delivery.enqueueControl({
+        id: crypto.randomUUID(),
+        threadId: r.thread.id,
+        actorId: ids.userId,
+        control: { kind: "compact" },
+      });
+      await r.drain();
+      const compaction = (await r.settled()).at(-1)!;
+      expect(compaction).toMatchObject({ role: "compaction", status: "complete" });
+      const retry = await r.delivery.enqueueControl({
+        id: crypto.randomUUID(),
+        threadId: r.thread.id,
+        actorId: ids.userId,
+        control: { kind: "handoff_brief" },
+      });
+      const undo = await r.delivery.enqueueControl({
+        id: crypto.randomUUID(),
+        threadId: r.thread.id,
+        actorId: ids.userId,
+        control: { kind: "compaction_undo", compactionTurnId: compaction.id },
+      });
+      await r.send(r.thread.id, "hi after restored bake");
+      await r.drain();
+      const turns = await r.settled();
+      const byControl = (id: string) =>
+        turns.find(
+          (t) => (t.metadata as { controlMessageId?: string } | null)?.controlMessageId === id,
+        );
+      const seed = byControl(retry.response.id)!;
+      const marker = byControl(undo.response.id)!;
+      expect(seed).toMatchObject({ role: "system", status: "complete" });
+      expect(marker).toMatchObject({ status: "complete", promptBakeId: beforeBake });
+      expect(marker.position).toBeGreaterThan(seed.position);
+      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
+      expect(JSON.stringify(r.gateway.requests.at(-1))).toContain("hi after restored bake");
+      expect(briefCalls).toBe(2);
+    });
+
     it("C7 create-or-get is idempotent and mismatched reuse conflicts", async () => {
       const r = await fixture();
       expect(r.created.created).toBe(true);

@@ -49,7 +49,8 @@ execution leaf; no sent turn changes. Non-handoff destinations return 409.
 
 The server generates the brief from the source's effective transcript through
 the cutoff. Warm current cutoffs reuse the source model's prefix; older cutoffs
-use the cheap rolling summarizer. The incoming Agent is named in the instruction.
+use the cheap rolling summarizer. A failed source preview also goes cold when
+the transcript is available. The incoming Agent is named in the instruction.
 Only the frozen brief and source reference enter the destination request.
 
 Seed metadata additionally carries `summarizer: { path: "warm" | "cold", segments }`.

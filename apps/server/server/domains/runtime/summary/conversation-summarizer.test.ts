@@ -625,3 +625,16 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
     expect.objectContaining({ threadId: "thread", throughTurnId: "cutoff" }),
   );
 });
+
+it("C7b a cold transcript needs no source model when the cheap model is enabled", async () => {
+  const rig = setup({ models: [cheapModel] });
+  const outcome = await rig.service.summarize({
+    ...rig.input,
+    instruction: "handoff_brief",
+    incomingAgentName: "Editor",
+    requestInHand: null,
+  });
+  expect(outcome.kind).toBe("complete");
+  expect(rig.requests[0].model).toBe(cheapModel.id);
+  expect(rig.prefixCacheStateFor).not.toHaveBeenCalled();
+});

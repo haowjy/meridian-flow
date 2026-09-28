@@ -100,6 +100,8 @@ export async function recordHandoffSummary(
   turn: Turn,
   summarizer: import("../ports/conversation-summarizer.js").SummaryOutcome["summarizer"],
 ): Promise<void> {
+  // Terminal seed telemetry belongs to its winning completion, not a stale paid attempt.
+  if (turn.status !== "pending") return;
   await deps.repos.turns.updateStatus(turn.id, {
     status: turn.status,
     metadata: { ...HandoffSeedMetadataCodec.parse(turn.metadata), summarizer },

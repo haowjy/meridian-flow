@@ -160,7 +160,6 @@ export function selectReusablePrefixResponse(input: DerivePrefixCacheStateInput)
     )
       return unavailable("fork_cutoff");
     const cutoffTurnId = history.thread.originTurnId;
-    if (!cutoffTurnId || !input.forkOwner) return unavailable("fork_cutoff");
     const latestForkTurn = [...history.turns]
       .sort((left, right) => left.position - right.position)
       .at(-1);

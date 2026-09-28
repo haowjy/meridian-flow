@@ -76,11 +76,10 @@ export async function loadThreadConversationContext(
     throw new ThreadConversationContextError("missing_cutoff_owner", thread.id, originTurnId);
   }
 
-  const sourceContext = await loadThreadConversationContext(
-    deps,
-    sourceThread,
+  const sourceContext = throughCutoff(
+    await loadThreadConversationContext(deps, sourceThread, undefined, nextVisiting),
+    thread,
     originTurnId,
-    nextVisiting,
   );
   return throughCutoff(
     {

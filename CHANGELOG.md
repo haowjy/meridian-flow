@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Fall back to cold briefs when source preview fails. Preserve queued skill activations through Retry and winning seed metadata through late paid responses.
+
 - Keep source image decisions unchanged when handoff preview discovers a lost asset; generate the brief cold.
 
 - Generate handoff briefs from the source model’s warm prefix or the cheap cold summarizer. Meter every returned attempt on the destination seed.

@@ -24,7 +24,7 @@ import {
 import type { Gateway, Message, ModelInfo, Tool } from "../../gateway/index.js";
 import type { ImageAssetPort } from "../../ports/image-asset.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
-import { prepareRequestContext } from "../request-preparation.js";
+import { createConversationSummarizer } from "../../summary/conversation-summarizer.js";
 import { createWorkContextReader } from "../work-context.js";
 import { createRuntimeHarness } from "./runtime-harness.js";
 import { scriptedSummarizer } from "./scripted-summarizer.js";
@@ -775,6 +775,74 @@ describe("frozen prompt provider requests", () => {
     ).toBe(true);
   });
 
+  it("C7b falls back cold when only source preview fails", async () => {
+    const rig = await fixture();
+    await rig.run();
+    const cutoff = await rig.repos.turns.getLatestByThread(rig.thread.id);
+    if (!cutoff) throw new Error("missing cutoff");
+    const { thread } = await handoffThreadAgent(
+      { ...rig.derive, delivery: rig.delivery },
+      {
+        id: crypto.randomUUID(),
+        threadId: rig.thread.id,
+        userId: rig.thread.userId,
+        originTurnId: cutoff.id,
+        agentSelection: rig.original.selection,
+      },
+    );
+    const read = rig.deps.agentRevisions.readThreadBinding.bind(rig.deps.agentRevisions);
+    rig.deps.agentRevisions.readThreadBinding = async (id) => {
+      if (id === rig.thread.id) throw new Error("source binding unavailable");
+      return read(id);
+    };
+    const summarizer = scriptedSummarizer();
+    rig.deps.summarizer = summarizer;
+    await (await rig.orchestrator.prepare({ threadId: thread.id, drain: true })).execute();
+    expect(summarizer.calls).toHaveLength(1);
+    expect(summarizer.calls[0].requestInHand).toBeNull();
+    expect((await rig.repos.turns.listByThread(thread.id))[0].status).toBe("complete");
+  });
+
+  it("C7b preserves a skill activation ahead of Retry until the reply", async () => {
+    const rig = await fixture();
+    await rig.run();
+    const cutoff = await rig.repos.turns.getLatestByThread(rig.thread.id);
+    if (!cutoff) throw new Error("missing cutoff");
+    await rig.accountSkillInstalls.insert({
+      ownerUserId: rig.thread.userId,
+      slug: "craft",
+      name: "Craft",
+      description: "Craft.",
+      body: "Preserve the jade gate rhythm.",
+    });
+    const { thread } = await handoffThreadAgent(
+      { ...rig.derive, delivery: rig.delivery },
+      {
+        id: crypto.randomUUID(),
+        threadId: rig.thread.id,
+        userId: rig.thread.userId,
+        originTurnId: cutoff.id,
+        agentSelection: rig.original.selection,
+      },
+    );
+    rig.deps.summarizer = scriptedSummarizer(async (_, call) =>
+      call === 1
+        ? { kind: "failed", error: new Error("failed"), modelResponses: [] }
+        : { kind: "complete", text: "Recovered brief", model: "summary-model", modelResponses: [] },
+    );
+    await (await rig.orchestrator.prepare({ threadId: thread.id, drain: true })).execute();
+    await rig.send(thread.id, "Use craft", { activatedSkillSlugs: ["craft"] });
+    await rig.delivery.enqueueControl({
+      id: crypto.randomUUID(),
+      threadId: thread.id,
+      actorId: thread.userId,
+      control: { kind: "handoff_brief" },
+    });
+    await rig.send(thread.id, "And continue");
+    await (await rig.orchestrator.prepare({ threadId: thread.id, drain: true })).execute();
+    expect(JSON.stringify(rig.requests.at(-1))).toContain("Preserve the jade gate rhythm.");
+  });
+
   it("C7b a preview-only image loss runs cold without writing source decisions or turns", async () => {
     const gateway = Object.assign(
       scriptedGateway({ usage: { inputTokens: 1000, outputTokens: 100 } }),
@@ -834,23 +902,33 @@ describe("frozen prompt provider requests", () => {
   });
 
   it("C7b previews exactly the source request and settles brief rows without parsing compaction metadata", async () => {
-    const rig = await fixture();
-    await rig.run();
+    const gateway = Object.assign(
+      scriptedGateway({ usage: { inputTokens: 1000, outputTokens: 100 } }),
+      {
+        listModels: () => [
+          {
+            id: "gpt-4.1-mini",
+            provider: "openai",
+            tokenizer: "o200k" as const,
+            displayName: "Fixture",
+            contextWindow: 100000,
+            maxOutputTokens: 4096,
+            promptCache: { kind: "explicit" as const, ttlMs: 60000 },
+            capabilities: new Set<never>(),
+          },
+        ],
+      },
+    );
+    const rig = await fixture(undefined, undefined, gateway);
+    await rig.run(rig.thread.id, [
+      { type: "function", name: "search", description: "Search", inputSchema: {} },
+    ]);
+    const sourceRequest = rig.requests[0];
     const cutoff = await rig.repos.turns.getLatestByThread(rig.thread.id);
     if (!cutoff) throw new Error("missing cutoff");
     const source = await rig.repos.threads.findById(rig.thread.id);
     if (!source) throw new Error("missing source");
     const history = await loadThreadConversationContext(rig.repos, source);
-    const expected = await prepareRequestContext({
-      deps: rig.deps,
-      thread: source,
-      threadId: source.id,
-      referenceTurnId: cutoff.id,
-      currentTurnId: cutoff.id,
-      ...history,
-      skipCompaction: true,
-      readReferences: false,
-    });
     const { thread } = await handoffThreadAgent(
       { ...rig.derive, delivery: rig.delivery },
       {
@@ -862,44 +940,38 @@ describe("frozen prompt provider requests", () => {
       },
     );
     const seed = (await rig.repos.turns.listByThread(thread.id))[0];
-    const responseId = crypto.randomUUID();
-    const summary = scriptedSummarizer(async (input) => {
-      expect(input).toMatchObject({
-        owner: { threadId: thread.id, turnId: seed.id },
-        source: { threadId: source.id, throughTurnId: cutoff.id },
-        incomingAgentName: "Writer",
-      });
-      expect(input.requestInHand).toEqual(expected.assembled.generateRequest);
-      expect(input.requestInHand?.tools).toEqual(expected.assembled.generateRequest.tools);
-      return {
-        kind: "complete",
-        text: "Paid source brief",
-        model: "gpt-4.1-mini",
-        modelResponses: [
-          {
-            id: responseId,
-            turnId: seed.id,
-            sequence: 0,
-            provider: "openai",
-            model: "gpt-4.1-mini",
-            inputTokens: 100,
-            outputTokens: 10,
-            priceSource: "unknown",
-            requestMessageCount: 3,
-            predictedCacheState: "warm",
-            predictedCacheReason: "reusable_prefix",
-            finishReason: "end_turn",
-          },
-        ],
-      };
+    rig.deps.summarizer = createConversationSummarizer({
+      gateway,
+      agentRevisions: rig.deps.agentRevisions,
+      prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
+      config: { model: "gpt-4.1-mini", maxOutputTokens: 100 },
     });
-    rig.deps.summarizer = summary;
     const parse = vi.spyOn(CompactionMetadataCodec, "parse");
     try {
       await (await rig.orchestrator.prepare({ threadId: thread.id, drain: true })).execute();
-      expect(await rig.repos.modelResponses.findById(responseId)).toMatchObject({
-        turnId: seed.id,
+      const briefRequest = rig.requests[1];
+      expect(briefRequest.messages.slice(0, -2)).toEqual(sourceRequest.messages);
+      expect(briefRequest.messages.at(-2)).toMatchObject({ role: "assistant" });
+      expect(
+        briefRequest.messages
+          .at(-2)
+          ?.content.filter((p) => p.type === "text")
+          .map((p) => p.text)
+          .join(""),
+      ).toBe(
+        history.blocks
+          .filter((b) => b.turnId === cutoff.id && b.blockType === "text")
+          .map((b) => b.textContent)
+          .join(""),
+      );
+      expect(briefRequest.messages.at(-1)).toMatchObject({
+        role: "user",
+        content: [{ type: "text", text: expect.stringContaining("Writer, the incoming Agent") }],
       });
+      expect(briefRequest.tools).toEqual(sourceRequest.tools);
+      expect(briefRequest.promptCacheKey).toBe(sourceRequest.promptCacheKey);
+      expect(briefRequest.correlation).toMatchObject({ threadId: thread.id, turnId: seed.id });
+      expect(await rig.repos.modelResponses.listByTurn(seed.id)).toHaveLength(1);
       expect(parse).not.toHaveBeenCalled();
       expect(await rig.repos.turns.listByThread(source.id)).toEqual(history.turns);
       expect(await rig.repos.blocks.listByThread(source.id)).toEqual(history.blocks);
@@ -908,7 +980,10 @@ describe("frozen prompt provider requests", () => {
     }
   });
 
-  it("does not overwrite a row-owned Stop when an expired live brief resumes", async () => {
+  it.each([
+    false,
+    true,
+  ])("C7b settles paid Stop rows without overwriting an expired=%s seed", async (expired) => {
     const rig = await fixture();
     await rig.run();
     const cutoff = await rig.repos.turns.getLatestByThread(rig.thread.id);
@@ -924,16 +999,33 @@ describe("frozen prompt provider requests", () => {
       },
     );
     const seed = (await rig.repos.turns.listByThread(thread.id))[0];
+    const responseId = crypto.randomUUID();
     rig.deps.summarizer = scriptedSummarizer(async () => {
-      const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60000);
+      const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + (expired ? 60000 : 0));
       const stopped = await rig.orchestrator.cancel(thread.id, seed.id);
       clock.mockRestore();
       expect(stopped).toBe("cancelled");
       return {
         kind: "complete",
         text: "stale brief must not win",
-        model: "script",
-        modelResponses: [],
+        model: "gpt-4.1-mini",
+        summarizer: { path: "warm", segments: 1 },
+        modelResponses: [
+          {
+            id: responseId,
+            turnId: seed.id,
+            sequence: 0,
+            provider: "openai",
+            model: "gpt-4.1-mini",
+            inputTokens: 100,
+            outputTokens: 20,
+            priceSource: "unknown",
+            finishReason: "end_turn",
+            requestMessageCount: 4,
+            predictedCacheState: "warm",
+            predictedCacheReason: "reusable_prefix",
+          },
+        ],
       };
     });
     await rig.send(thread.id, "hi after expired Stop");
@@ -944,6 +1036,12 @@ describe("frozen prompt provider requests", () => {
     const context = JSON.stringify(rig.requests.at(-1));
     expect(context).toContain("No brief is available.");
     expect(context).not.toContain("stale brief must not win");
+    const rows = await rig.repos.modelResponses.listByTurn(seed.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(responseId);
+    expect(Number(rows[0].costUsd)).toBeGreaterThan(0);
+    if (expired)
+      expect((await rig.repos.turns.findById(seed.id))?.metadata).not.toHaveProperty("summarizer");
   });
 
   it("starts a different-Agent handoff without carrying the source bake", async () => {

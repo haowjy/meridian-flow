@@ -550,16 +550,16 @@ async function runDrainTurn(
           workContext: selection.workContext,
           notices,
         });
+      const activatedSkillSlugs = [
+        ...new Set(
+          batch.flatMap((message) => {
+            const turn = turnById.get(message.id);
+            return turn ? readActivatedSkillSlugs(turn) : [];
+          }),
+        ),
+      ];
       if (!preparationError && !briefControl) {
         try {
-          const activatedSkillSlugs = [
-            ...new Set(
-              batch.flatMap((message) => {
-                const turn = turnById.get(message.id);
-                return turn ? readActivatedSkillSlugs(turn) : [];
-              }),
-            ),
-          ];
           skillBody = await createSkillBodyTurn({
             deps,
             thread: setupThread,
@@ -679,6 +679,7 @@ async function runDrainTurn(
       }
       const value = {
         thread: setupThread,
+        deferredSkillSlugs: briefControl ? activatedSkillSlugs : [],
         controlTurns: controlPreparation?.turns ?? [],
         reservedTurn,
         terminal,
@@ -802,6 +803,7 @@ async function runDrainTurn(
         setup.executionAdmitted,
         input.treeBudget ??
           createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
+        setup.deferredSkillSlugs,
       );
     },
   };
@@ -1547,6 +1549,7 @@ async function executeLoop(
   initialCompaction: CompactionDecision,
   initialExecutionAdmitted: boolean,
   treeBudget: TreeBudget,
+  deferredSkillSlugs: readonly string[],
 ): Promise<Turn> {
   const { gateway, repos, eventWriter } = deps;
   const eventSink = deps.eventSink;
@@ -1697,19 +1700,35 @@ async function executeLoop(
         const latestUserTurn =
           [...drain.turns].reverse().find((turn) => turn.role === "user") ??
           [...allTurns].reverse().find((turn) => turn.role === "user");
+        const leaf = drain.turns.at(-1) ?? allTurns.at(-1);
+        const deferredSkillBody = await createSkillBodyTurn({
+          deps,
+          thread,
+          threadId: thread.id,
+          invokingTurnId: leaf?.id ?? null,
+          invokingTurnPosition: leaf?.position ?? null,
+          slugs: deferredSkillSlugs,
+        });
+        const skillEvents: OrchestratorEvent[] = deferredSkillBody
+          ? [
+              { type: "turn.created", turn: deferredSkillBody.turn },
+              { type: "block.upserted", block: deferredSkillBody.block },
+            ]
+          : [];
+        const skillTurns = deferredSkillBody ? [deferredSkillBody.turn] : [];
+        const skillBlocks = deferredSkillBody ? [localBlockFromEvent(deferredSkillBody.block)] : [];
         const prepared = await prepareRequestContext({
           deps,
           thread,
           threadId: input.threadId,
           referenceTurnId: latestUserTurn?.id ?? currentTurn.id,
           currentTurnId: currentTurn.id,
-          turns: [...allTurns, ...drain.turns],
-          blocks: [...allBlocks, ...drain.blocks],
+          turns: [...allTurns, ...drain.turns, ...skillTurns],
+          blocks: [...allBlocks, ...drain.blocks, ...skillBlocks],
           baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
           readReferences: false,
           signal: input.signal,
           forcedDecision,
-          skipCompaction: selection.controls?.some((c) => c.body.kind === "handoff_brief"),
           assertNoResponseScope: () => {
             if (responseScope)
               throw new Error("Undo revision query requires no open response scope");
@@ -1723,12 +1742,12 @@ async function executeLoop(
         thread = prepared.assembled.thread;
         preparedContext = prepared.assembled;
         return {
-          events: prepared.events,
+          events: [...skillEvents, ...prepared.events],
           undos: prepared.undos,
           adoptedIds: prepared.adoptedIds,
-          turns: prepared.turns,
-          blocks: prepared.blocks,
-          requiresSplit: prepared.events.length > 0,
+          turns: [...skillTurns, ...prepared.turns],
+          blocks: [...skillBlocks, ...prepared.blocks],
+          requiresSplit: skillEvents.length + prepared.events.length > 0,
           compaction: prepared.compaction,
         };
       },
@@ -1844,6 +1863,7 @@ async function executeLoop(
     }
     pendingSummaryResponses = [];
     pendingSummary = undefined;
+    deferredSkillSlugs = [];
     if (result.context) preparedContext = result.context;
     return acceptBoundary(result);
   }
