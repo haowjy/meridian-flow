@@ -21,12 +21,17 @@ export type PreparedCompaction =
   | { kind: "failed"; reason: CompactionPreparationError }
   | {
       kind: "usable";
+      provisionalBakeId: string;
       composition: Awaited<ReturnType<typeof composeLivePromptBake>>;
       summaryBlock: ReturnType<typeof contentForBlockInput>;
       tokensAfter: number;
       model: string;
       decision: Decision;
-      assemble: (turns: Turn[], blocks: Block[]) => ReturnType<typeof prepareRequestContext>;
+      assemble: (
+        turns: Turn[],
+        blocks: Block[],
+        selection?: import("./runtime-delivery.js").DeliverySelection,
+      ) => ReturnType<typeof prepareRequestContext>;
     };
 
 function fittingTokens(context: AssembledNextTurnContext, fitLimitTokens: number) {
@@ -54,6 +59,8 @@ export async function prepareCompactionSuccessor(args: {
 }): Promise<PreparedCompaction> {
   const { deps, input, thread, placeholder, allTurns, allBlocks, decision, outcome, projection } =
     args;
+  if (decision.refusal)
+    return { kind: "failed", reason: new CompactionPreparationError(decision.refusal) };
   if (outcome.kind !== "complete")
     return { kind: "failed", reason: new CompactionPreparationError("compaction_failed") };
   try {
@@ -100,7 +107,11 @@ export async function prepareCompactionSuccessor(args: {
         content: { kind: "compaction", props: { ...props, tokensAfter: 0 } },
       }),
     );
-    const assemble = (lateTurns: Turn[], lateBlocks: Block[]) =>
+    const assemble = (
+      lateTurns: Turn[],
+      lateBlocks: Block[],
+      selection?: import("./runtime-delivery.js").DeliverySelection,
+    ) =>
       prepareRequestContext({
         deps,
         thread,
@@ -114,7 +125,9 @@ export async function prepareCompactionSuccessor(args: {
         blocks: [...allBlocks, projectedSummary, ...lateBlocks],
         baseTools: contextInput.baseTools,
         readReferences: false,
-        skipCompaction: true,
+        skipCompaction: !selection?.control,
+        controlMessageId: selection?.control?.id,
+        pinnedRequestTurnIds: new Set(selection?.outstanding.map((row) => row.id)),
         signal: input.signal,
         promptBakes: {
           ...deps.repos.promptBakes,
@@ -137,6 +150,7 @@ export async function prepareCompactionSuccessor(args: {
     });
     return {
       kind: "usable",
+      provisionalBakeId,
       composition,
       summaryBlock,
       tokensAfter,
@@ -181,11 +195,22 @@ export async function completeCompactionCurrent(input: {
   prepared: PreparedCompaction | undefined;
   failure: unknown;
   settleResponses: () => Promise<void>;
+  satisfiesControlId?: string;
 }): Promise<Turn> {
   const { deps, threadId, placeholder, prepared } = input;
   await input.settleResponses();
   const settled = await deps.repos.turns.findById(placeholder.id);
   if (!settled) throw new Error("Compaction placeholder disappeared");
+  if (input.satisfiesControlId) {
+    settled.metadata = {
+      ...(settled.metadata as import("@meridian/contracts/threads").JsonObject),
+      satisfiesControlId: input.satisfiesControlId,
+    };
+    await deps.repos.turns.updateStatus(settled.id, {
+      status: settled.status,
+      metadata: settled.metadata,
+    });
+  }
   if (prepared?.kind === "usable") {
     await beginPromptEpoch(deps, {
       threadId,
@@ -200,7 +225,9 @@ export async function completeCompactionCurrent(input: {
           {
             type: "context.compacted",
             compactionTurnId: placeholder.id,
-            compactedThrough: prepared.decision.plan.compactedThrough,
+            compactedThrough: prepared.decision.plan.compactedThrough as NonNullable<
+              Decision["plan"]["compactedThrough"]
+            >,
             bakeId,
             model: prepared.model,
             tokensBefore: prepared.decision.tokensBefore,
@@ -213,7 +240,14 @@ export async function completeCompactionCurrent(input: {
     const failed = {
       ...settled,
       status: "error" as const,
-      error: "This conversation couldn't be compacted. Try again.",
+      error:
+        prepared?.kind === "failed"
+          ? prepared.reason.message
+          : "This conversation couldn't be compacted. Try again.",
+      metadata: {
+        ...(settled.metadata as import("@meridian/contracts/threads").JsonObject),
+        reason: prepared?.kind === "failed" ? prepared.reason.reason : "compaction_failed",
+      },
       completedAt: new Date().toISOString(),
     };
     await persistAndAppendEvents(deps, threadId, async () => ({
@@ -245,6 +279,7 @@ export async function failCompactionSuccessor(input: {
   threadId: ThreadId;
   placeholder: Turn;
   boundary: import("./runtime-delivery.js").DeliveryBoundary;
+  optional?: boolean;
   settleResponses: () => Promise<void>;
 }) {
   const reason = new CompactionPreparationError("compaction_failed");
@@ -252,7 +287,10 @@ export async function failCompactionSuccessor(input: {
     return await input.deps.delivery.splitAndContinue<PreparedCompaction>({
       ...input.boundary,
       prepareCurrent: async () => ({ kind: "failed", reason }),
-      prepareNextContext: prepareCompactionContext,
+      prepareNextContext: input.optional
+        ? (drain, _prepared, selection) =>
+            input.boundary.prepareNextContext(drain, undefined, selection)
+        : prepareCompactionContext,
       current: {
         kind: "placeholder",
         complete: (prepared, failure) => completeCompactionCurrent({ ...input, prepared, failure }),

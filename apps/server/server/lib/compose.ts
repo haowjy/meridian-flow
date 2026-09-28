@@ -240,7 +240,7 @@ export type AppServices = {
   orchestrator: RunTurnPort;
   runner: TurnRunner;
   runStarter: RunStarter;
-  delivery: DeliveryProducer;
+  delivery: DeliveryProducer & import("../domains/runtime/loop/runtime-delivery.js").ThreadControls;
   /** Startup/interval recovery for threads with a pending message and no live run. */
   recovery: {
     scanWakes(): Promise<number>;

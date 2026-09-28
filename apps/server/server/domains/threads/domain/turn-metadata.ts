@@ -68,7 +68,7 @@ const compactedThroughCodec = z.object({
 export const CompactionMetadataCodec = z
   .object({
     compactedThrough: compactedThroughCodec,
-    pinnedRequestTurnId: z.string().min(1),
+    pinnedRequestTurnIds: z.array(z.string().min(1)).min(1),
     trigger: z.enum(["auto", "manual"]).optional(),
   })
   .passthrough();
@@ -187,7 +187,7 @@ export function compactionUndoMetadata(revertsCompactionTurnId: string): JsonObj
 export function compactionTurnMetadata(metadata: CompactionMetadata): JsonObject {
   return {
     compactedThrough: { ...metadata.compactedThrough },
-    pinnedRequestTurnId: metadata.pinnedRequestTurnId,
+    pinnedRequestTurnIds: metadata.pinnedRequestTurnIds,
     ...(metadata.trigger ? { trigger: metadata.trigger } : {}),
   };
 }
@@ -198,8 +198,7 @@ export function interruptedPlaceholderError(
 ): string {
   switch (turn.role) {
     case "compaction": {
-      const metadata = CompactionMetadataCodec.safeParse(turn.metadata);
-      return metadata.success && metadata.data.trigger === "manual"
+      return (turn.metadata as JsonObject | null)?.trigger === "manual"
         ? "This manual compaction was interrupted."
         : "This compaction was interrupted.";
     }

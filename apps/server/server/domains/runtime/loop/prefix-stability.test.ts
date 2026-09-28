@@ -397,7 +397,7 @@ describe("prefix stability across a growing thread", () => {
       metadata: compactionTurnMetadata({
         trigger: "auto",
         compactedThrough: { turnId: toolExchange.turn.id },
-        pinnedRequestTurnId: nextTurn.turn.id,
+        pinnedRequestTurnIds: [nextTurn.turn.id],
       }),
     });
     const late = userTurn("late", "A late direction.", 9);

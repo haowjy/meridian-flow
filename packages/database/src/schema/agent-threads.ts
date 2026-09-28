@@ -221,14 +221,17 @@ export const threadInboxMessages = pgTable(
     index("thread_inbox_messages_pending")
       .on(table.threadId, table.seq)
       .where(sql`${table.deliveredAt} IS NULL`),
-    check("thread_inbox_messages_intent_valid", sql`${table.intent} IN ('message','notice')`),
+    check(
+      "thread_inbox_messages_intent_valid",
+      sql`${table.intent} IN ('message','notice','control')`,
+    ),
     check(
       "thread_inbox_messages_provenance_valid",
       sql`(${table.provenance}->>'kind' IN ('writer','agent','child','system')) IS TRUE`,
     ),
     check(
       "thread_inbox_messages_body_valid",
-      sql`(${table.body}->>'kind' IN ('text','context','work_context_refresh')) IS TRUE`,
+      sql`(CASE WHEN ${table.intent} = 'control' THEN ${table.body}->>'kind' IN ('compact') ELSE ${table.body}->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE`,
     ),
   ],
 );

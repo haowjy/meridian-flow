@@ -151,7 +151,19 @@ export type ThreadActivity = {
  * Durable inbox message intent. A directed `message` wakes the thread; a
  * `notice` supplies context without starting a run.
  */
-export type MessageIntent = "message" | "notice";
+export type MessageIntent = "message" | "notice" | "control";
+
+/** Runtime commands take their transcript position at execution, not enqueue. */
+export type ControlBody = { kind: "compact" };
+export type EnqueueThreadControlRequest = { id: string; control: ControlBody };
+export type EnqueueThreadControlResponse = {
+  id: string;
+  pending: PendingInboxItem | null;
+  turnId: string | null;
+};
+export type WithdrawThreadControlResponse = {
+  outcome: "withdrawn" | "stopping" | "already_finished";
+};
 
 /** Who authored a durable inbox message. JSON-natural; ids are plain strings at the wire. */
 export type MessageProvenance =
@@ -175,6 +187,7 @@ export type PendingInboxItem = {
   id: string;
   seq: number;
   intent: MessageIntent;
+  control?: ControlBody;
   provenance: MessageProvenance;
   deliveryState: "awaiting_run" | "waiting";
   /** Body text, or a report/notice summary. */

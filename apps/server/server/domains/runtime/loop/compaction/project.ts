@@ -7,7 +7,6 @@ import {
   CompactionMetadataCodec,
   classifyHistoryItem,
   compactionSummaryMetadata,
-  isSystemUpdateMetadata,
 } from "../../../threads/index.js";
 import { orderTurnsByPosition } from "../../../threads/order-turns.js";
 import type { CompactionPlan } from "./plan.js";
@@ -149,17 +148,14 @@ export function projectActiveHistory(
 
   const { turn: compaction, metadata, props } = activeCompaction;
   const beforeCompaction = turns.filter((turn) => turn.position < compaction.position);
-  const pinnedRequest = beforeCompaction.find(
-    (turn) =>
-      turn.id === metadata.pinnedRequestTurnId &&
-      turn.role === "user" &&
-      !isSystemUpdateMetadata(turn.metadata),
-  );
-  if (!pinnedRequest) {
-    throw new Error(
-      `Complete compaction ${compaction.id} has a missing pinned request ${metadata.pinnedRequestTurnId}`,
+  const pinnedRequests = metadata.pinnedRequestTurnIds.map((id) => {
+    const turn = beforeCompaction.find(
+      (turn) => turn.id === id && (turn.role === "user" || turn.role === "system"),
     );
-  }
+    if (!turn)
+      throw new Error(`Complete compaction ${compaction.id} has a missing pinned request ${id}`);
+    return turn;
+  });
   const cutTurn = turns.find((turn) => turn.id === metadata.compactedThrough.turnId);
   if (!cutTurn || cutTurn.position >= compaction.position) {
     throw new Error(`Complete compaction ${compaction.id} has an invalid cut turn`);
@@ -183,7 +179,7 @@ export function projectActiveHistory(
     turns: beforeCompaction,
     blocksByTurn,
     cut,
-    pinnedRequest,
+    pinnedRequests,
     canRetain: (turn) => retainable.get(turn.id) ?? true,
   });
   const afterCompaction = turns.filter((turn) => turn.position > compaction.position);

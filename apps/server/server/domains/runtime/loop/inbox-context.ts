@@ -145,23 +145,14 @@ export async function drainInbox(input: {
     }
     fresh.push(message);
   }
-  // Every non-message, non-work-refresh batch entry is itself a request-only
-  // notice (an `inbox_notice`); fold it in with the `NoticePort` peek so
-  // both become the same durable turn.
-  const notices: Notice[] = [
-    ...input.notices,
-    ...batch
-      .filter(
-        (message) => message.intent !== "message" && message.body.kind !== "work_context_refresh",
-      )
-      .map(inboxMessageNotice),
-  ];
   // Chain fresh messages (and the notices turn) from the durable leaf so a
   // pre-persisted writer turn (adopted above) is not forked past.
   const needsAppend =
     fresh.some(
       (message) => message.intent === "message" || message.body.kind === "work_context_refresh",
-    ) || notices.length > 0;
+    ) ||
+    input.notices.length > 0 ||
+    fresh.some((message) => message.intent === "notice");
   const activeLeaf = needsAppend
     ? ((await input.persistence.repos.threads.findById(input.threadId))?.activeLeafTurnId ?? null)
     : input.expectedLeafTurnId;
@@ -173,7 +164,7 @@ export async function drainInbox(input: {
     threadId: input.threadId,
     batch: fresh,
     workContext: input.workContext,
-    notices,
+    notices: input.notices,
     prevTurnId: activeLeaf,
     prevTurnPosition: activeLeafTurn?.position ?? null,
     knownTurnIds: new Set(),
@@ -285,10 +276,18 @@ export function planMessageTurns(input: {
     leafPosition = turn.position;
   }
   let noticesTurnId: TurnId | null = null;
-  if (input.notices?.length) {
+  const notices = [
+    ...(input.notices ?? []),
+    ...input.batch
+      .filter(
+        (message) => message.intent === "notice" && message.body.kind !== "work_context_refresh",
+      )
+      .map(inboxMessageNotice),
+  ];
+  if (notices.length) {
     const { turn, block } = noticesTurnFor(
       input.threadId,
-      input.notices,
+      notices,
       leafTurnId,
       nextTurnPosition(leafPosition === null ? null : { position: leafPosition }),
     );
@@ -394,6 +393,8 @@ export function noticesTurnFor(
 
 export function inboxMessageText(message: InboxMessage): string {
   switch (message.body.kind) {
+    case "compact":
+      return "Compact conversation";
     case "work_context_refresh":
       return "";
     case "text":

@@ -269,7 +269,7 @@ describe("assembleNextTurnContext prompt epochs", () => {
         origin: "system" as const,
         metadata: compactionTurnMetadata({
           compactedThrough: { turnId: "old-answer" },
-          pinnedRequestTurnId: "pinned-request",
+          pinnedRequestTurnIds: ["pinned-request"],
         }),
       },
     ];

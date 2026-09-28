@@ -93,13 +93,13 @@ export function createRunSessions(deps: {
         if (lease) await authority.release(lease);
         if (lease) {
           await deps.delivery.refreshPending(threadId);
+          const pending = await deps.delivery.selectPending(threadId);
           if (
-            session.currentTurn &&
-            restartPending &&
-            !session.controller.signal.aborted &&
-            (await deps.delivery.selectPending(threadId)).some(
-              (message) => message.intent === "message",
-            )
+            pending.some((message) => message.intent === "control") ||
+            (session.currentTurn &&
+              (session.currentTurn.kind === "compaction" ||
+                (restartPending && !session.controller.signal.aborted)) &&
+              pending.some((message) => message.intent === "message"))
           ) {
             restartPendingAfterCompletion = true;
           }

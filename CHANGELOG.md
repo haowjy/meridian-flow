@@ -8,6 +8,8 @@
 ## [Unreleased]
 
 ### Added
+- Queue manual compaction in message order. Withdraw queued requests or stop running dividers.
+- Keep every unanswered message verbatim across compaction. Failed optional summaries leave replies running.
 - Summarize long chats with cached requests or rolling cheap-model summaries. Keep story facts and writer preferences.
 - Default compaction to the model's usable window, pricing tier, or 400,000-token ceiling.
 - Stop a running compaction and deliver messages queued during its summary afterward.

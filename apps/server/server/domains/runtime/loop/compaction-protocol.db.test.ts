@@ -2,15 +2,11 @@
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { executionScenario } from "../../../test-support/execution-scenario.js";
-import type { NoticePort } from "../../notices/index.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { ImageAssetResolutionError } from "../ports/image-asset.js";
 import { createConversationSummarizer } from "../summary/conversation-summarizer.js";
-import { createTestAgentBinding } from "./__tests__/runtime-fixtures.js";
-import { createRuntimeHarness } from "./__tests__/runtime-harness.js";
+import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
-import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
 import { createOrchestrator } from "./orchestrator.js";
 import { createPrefixCacheStateService } from "./prefix-cache-state.js";
@@ -47,7 +43,6 @@ else
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
-    const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
     const { createDrizzleNoticePort } = await import(
       "../../notices/adapters/drizzle-notice-port.js"
     );
@@ -57,110 +52,7 @@ else
     beforeEach(() => truncateDrizzleTables(db, [schema.users]));
     afterAll(() => db.close());
 
-    async function fixture(
-      options: {
-        notices?: NoticePort;
-        history?: string;
-        child?: boolean;
-        summarizer?: ReturnType<typeof scriptedSummarizer>;
-        gateway?: ReturnType<typeof scriptedGateway>;
-      } = {},
-    ) {
-      const { repos, ids } = await executionScenario(db);
-      const threadId = options.child ? ids.child : ids.caller;
-      const claim = createDrizzleRunClaim(db);
-      const eventWriter = createDrizzleEventJournalWriter(db);
-      let threshold: number | undefined = 2500;
-      const source = createTestAgentBinding("gpt-4.1-mini", "Write stories.", () => [threadId]);
-      const binding = {
-        ...source,
-        async readThreadBinding(id: string) {
-          const result = await source.readThreadBinding(id);
-          if (result?.revision) result.revision.definition.metadata.autocompact = threshold;
-          return result;
-        },
-      };
-      const gateway = options.gateway ?? scriptedGateway();
-      const summarizer = options.summarizer ?? scriptedSummarizer();
-      const { createDrizzleCreditLedger } = await import("../../billing/index.js");
-      const rig = createRuntimeHarness({
-        creditLedger: createDrizzleCreditLedger(db),
-        repos,
-        eventWriter,
-        runClaim: claim,
-        agentRevisions: binding,
-        summarizer,
-        gateway: {
-          ...gateway,
-          listModels: () => [
-            {
-              id: "gpt-4.1-mini",
-              provider: "openai",
-              tokenizer: "o200k" as const,
-              displayName: "Fixture",
-              contextWindow: 128000,
-              maxOutputTokens: 100,
-              promptCache: { kind: "automatic", ttlMs: 60000 },
-              capabilities: new Set(["image_input"]),
-            },
-          ],
-        },
-        delivery: createTestDrizzleDelivery(db, {
-          repos,
-          eventWriter,
-          runClaim: claim,
-          notices: options.notices ?? createDrizzleNoticePort(db),
-        }),
-      });
-      await rig.creditLedger.grant({
-        userId: ids.user,
-        source: "manual",
-        amountMillicredits: "1000000000",
-        reason: "fixture",
-      });
-      const previous = (await repos.turns.listByThread(threadId)).at(-1);
-      const history = await repos.turns.create({
-        threadId,
-        prevTurnId: previous?.id,
-        role: "user",
-        origin: "writer",
-        status: "complete",
-      });
-      await repos.blocks.create({
-        turnId: history.id,
-        blockType: "text",
-        sequence: 0,
-        content: options.history ?? "old history ".repeat(1500),
-        textContent: options.history ?? "old history ".repeat(1500),
-        status: "complete",
-      });
-      const answer = await repos.turns.create({
-        threadId,
-        prevTurnId: history.id,
-        role: "assistant",
-        origin: "assistant",
-        status: "complete",
-      });
-      await repos.blocks.create({
-        turnId: answer.id,
-        blockType: "text",
-        sequence: 0,
-        content: "old answer",
-        textContent: "old answer",
-        status: "complete",
-      });
-      rig.deps.toolExecutor.getDefinitions = () => [];
-      return {
-        ...rig,
-        threadId,
-        gateway,
-        summarizer,
-        ids,
-        setThreshold(value: number | undefined) {
-          threshold = value;
-        },
-      };
-    }
+    const fixture = createCompactionFixture(db);
 
     it("settles both rows when a warm overflow falls back cold", async () => {
       const gateway = scriptedGateway();

@@ -7,6 +7,7 @@
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
+  ControlBody,
   CurrentToolCall,
   MessageIntent,
   MessageProvenance,
@@ -32,6 +33,7 @@ export type { ThreadPhase, ThreadStatus };
 export type ContextPart = { source: string; text: string };
 
 export type MessageBody =
+  | ControlBody
   | { kind: "text"; text: string }
   | { kind: "context"; parts: ContextPart[] }
   | { kind: "work_context_refresh" };

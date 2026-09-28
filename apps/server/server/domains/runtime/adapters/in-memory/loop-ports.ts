@@ -38,6 +38,9 @@ export function createInMemoryInbox(): DeliveryStore {
         .filter((id) => !afterThreadId || id > afterThreadId)
         .slice(0, limit);
     },
+    async findMessage(threadId, id) {
+      return messages.find((row) => row.threadId === threadId && row.id === id) ?? null;
+    },
     async enqueue(draft) {
       const existing = messages.find(
         (message) =>
@@ -89,7 +92,11 @@ export function createInMemoryInbox(): DeliveryStore {
       return [
         ...new Set(
           messages
-            .filter((message) => message.intent === "message" && message.deliveredAt === null)
+            .filter(
+              (message) =>
+                (message.intent === "message" || message.intent === "control") &&
+                message.deliveredAt === null,
+            )
             .map((message) => message.threadId),
         ),
       ]
@@ -219,6 +226,10 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
         return false;
       row.messageIds = [];
       return true;
+    },
+    async lockThreadReceipt(threadId) {
+      const row = liveLease(threadId);
+      return row ? { ids: [...row.messageIds], turnId: row.turnId } : null;
     },
     async lockReceipt(lease) {
       const row = leases.get(lease.threadId);

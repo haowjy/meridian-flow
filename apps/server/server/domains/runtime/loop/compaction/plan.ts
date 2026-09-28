@@ -21,7 +21,9 @@ export interface PlanCompactionInput {
   /** Raw effective transcript, not a projected history containing a synthetic summary turn. */
   turns: readonly Turn[];
   blocks: readonly Block[];
-  triggerTokens: number;
+  fitLimitTokens: number;
+  tailBudgetBaseTokens: number;
+  pinnedRequestTurnIds?: ReadonlySet<string>;
   summaryReserveTokens: number;
   fixedOverheadTokens: number;
   tokenizer: TokenizerFamily;
@@ -31,8 +33,8 @@ export interface PlanCompactionInput {
 }
 
 interface CompactionPlanBase {
-  /** A null pin is legal only on a no-compaction result and is never persisted. */
-  pinnedRequest: Turn | null;
+  /** Every outstanding directed request, plus the newest writer request. */
+  pinnedRequests: Turn[];
   /** The ordered retained tail after the summary; it contains the pin at its original or lifted place. */
   retainedSuffix: RetainedTurnSlice[];
   minimalTailFits: boolean;
@@ -45,7 +47,6 @@ interface CompactionPlanBase {
 export type CompactionPlan =
   | (CompactionPlanBase & {
       outcome: "planned";
-      pinnedRequest: Turn;
       compactedThrough: CompactedThrough;
     })
   | (CompactionPlanBase & {
@@ -235,14 +236,14 @@ function turnCostsFor(
 function suffixCostsExcludingPin(
   turns: readonly ClassifiedTurn[],
   costs: readonly TurnCost[],
-  pinnedRequest: Turn | null,
+  pinnedIds: ReadonlySet<string>,
 ): number[] {
   const suffix = Array.from({ length: turns.length + 1 }, () => 0);
   for (let index = turns.length - 1; index >= 0; index--) {
     const item = turns[index];
     const cost = costs[index];
     suffix[index] =
-      (item?.retainable && item.turn.id !== pinnedRequest?.id ? (cost?.full ?? 0) : 0) +
+      (item?.retainable && !pinnedIds.has(item.turn.id) ? (cost?.full ?? 0) : 0) +
       (suffix[index + 1] ?? 0);
   }
   return suffix;
@@ -329,15 +330,15 @@ function materializeTail(input: {
   turns: readonly ClassifiedTurn[];
   blocksByTurn: ReadonlyMap<string, Block[]>;
   candidate: CutCandidate;
-  pinnedRequest: Turn | null;
+  pinnedRequests: Turn[];
 }): RetainedTurnSlice[] {
-  const { turns, blocksByTurn, candidate, pinnedRequest } = input;
+  const { turns, blocksByTurn, candidate, pinnedRequests } = input;
   const canRetain = new Map(turns.map(({ turn, retainable }) => [turn.id, retainable]));
   return retainedTail({
     turns: turns.map(({ turn }) => turn),
     blocksByTurn,
     cut: candidate,
-    pinnedRequest,
+    pinnedRequests,
     canRetain: (turn) => canRetain.get(turn.id) ?? true,
   });
 }
@@ -358,13 +359,13 @@ function retainedSlicesCost(
 }
 
 function noCompactionPlan(input: {
-  pinnedRequest: Turn | null;
+  pinnedRequests: Turn[];
   minimalTailTokens: number;
   tailBudgetTokens: number;
 }): CompactionPlan {
   return {
     outcome: "no_compaction",
-    pinnedRequest: input.pinnedRequest,
+    pinnedRequests: input.pinnedRequests,
     retainedSuffix: [],
     compactedThrough: null,
     minimalTailFits: false,
@@ -393,24 +394,30 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
     input.estimateTurnTokens ??
     ((turn: Turn, blocks: readonly Block[]) => estimateTurnTokens(turn, blocks, input.tokenizer));
   const costs = turnCostsFor(classifiedTurns, blocksByTurn, estimate);
-  const pinnedIndex = pinnedRequest ? turns.findIndex((turn) => turn.id === pinnedRequest.id) : -1;
-  const pinnedCost = pinnedIndex >= 0 ? (costs[pinnedIndex]?.full ?? 0) : 0;
+  const pinnedRequests = turns.filter(
+    (turn) => turn.id === pinnedRequest?.id || input.pinnedRequestTurnIds?.has(turn.id),
+  );
+  const pinnedIds = new Set(pinnedRequests.map((turn) => turn.id));
+  const pinnedCost = turns.reduce(
+    (sum, turn, index) => sum + (pinnedIds.has(turn.id) ? (costs[index]?.full ?? 0) : 0),
+    0,
+  );
   const summaryReserveTokens = Math.max(0, input.summaryReserveTokens);
   const fixedOverheadTokens = Math.max(0, input.fixedOverheadTokens);
-  const triggerTokens = Math.max(0, input.triggerTokens);
+  const triggerTokens = Math.max(0, input.fitLimitTokens);
   const tailBudgetTokens = Math.max(
     0,
     Math.floor(
       Math.min(
-        triggerTokens * (input.tailBudgetFraction ?? DEFAULT_COMPACTION_TAIL_FRACTION),
+        input.tailBudgetBaseTokens * (input.tailBudgetFraction ?? DEFAULT_COMPACTION_TAIL_FRACTION),
         triggerTokens - summaryReserveTokens - fixedOverheadTokens - pinnedCost,
       ),
     ),
   );
 
-  if (!pinnedRequest) {
+  if (pinnedRequests.length === 0) {
     return noCompactionPlan({
-      pinnedRequest: null,
+      pinnedRequests,
       minimalTailTokens: summaryReserveTokens + fixedOverheadTokens,
       tailBudgetTokens,
     });
@@ -418,20 +425,22 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
 
   const groupsByIndex = toolGroupsByTurn(classifiedTurns, blocksByTurn);
   const candidates = candidatesAfterCut(
-    candidatesFor(classifiedTurns, groupsByIndex, blocksByTurn),
+    candidatesFor(classifiedTurns, groupsByIndex, blocksByTurn).filter(
+      (candidate) => classifiedTurns[candidate.turnIndex]?.retainable,
+    ),
     classifiedTurns,
     activeCompactionCut(classifiedTurns),
   );
   if (candidates.length === 0) {
     const minimalTailTokens = summaryReserveTokens + fixedOverheadTokens + pinnedCost;
     return noCompactionPlan({
-      pinnedRequest,
+      pinnedRequests,
       minimalTailTokens,
       tailBudgetTokens,
     });
   }
 
-  const suffixCosts = suffixCostsExcludingPin(classifiedTurns, costs, pinnedRequest);
+  const suffixCosts = suffixCostsExcludingPin(classifiedTurns, costs, pinnedIds);
   const candidateCosts = candidates.map((candidate) =>
     candidateTailCost(candidate, costs, suffixCosts),
   );
@@ -439,7 +448,7 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
     turns: classifiedTurns,
     candidates,
     groupsByIndex,
-    pinnedRequest,
+    pinnedRequest: pinnedRequests.at(-1) ?? null,
   });
   const minimumCandidate = candidates[minimumIndex] ?? candidates.at(-1);
   if (!minimumCandidate) throw new Error("Compaction candidate list unexpectedly became empty");
@@ -448,7 +457,7 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
     turns: classifiedTurns,
     blocksByTurn,
     candidate: minimumCandidate,
-    pinnedRequest,
+    pinnedRequests,
   });
   const costsById = new Map(turns.map((turn, index) => [turn.id, costs[index]]));
   const minimumRetainedTokens = retainedSlicesCost(minimumTail, costsById);
@@ -475,7 +484,7 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
     turns: classifiedTurns,
     blocksByTurn,
     candidate: selectedCut,
-    pinnedRequest,
+    pinnedRequests,
   });
   const retainedSuffixTokens = Math.max(
     0,
@@ -490,7 +499,7 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
 
   return {
     outcome: "planned",
-    pinnedRequest,
+    pinnedRequests,
     retainedSuffix,
     compactedThrough,
     minimalTailFits: minimalTailTokens < triggerTokens,

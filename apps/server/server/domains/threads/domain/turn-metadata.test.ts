@@ -11,30 +11,33 @@ describe("pending placeholders", () => {
     expect(isPendingPlaceholder({ role: "assistant", status: "pending" })).toBe(false);
   });
 
-  it("uses the compaction codec for manual interruption copy", () => {
+  it("uses manual interruption copy, including a refusal without a cut", () => {
     const turn = {
       role: "compaction" as const,
       metadata: {
         compactedThrough: { turnId: "turn-1" },
-        pinnedRequestTurnId: "turn-2",
+        pinnedRequestTurnIds: ["turn-2"],
         trigger: "manual",
       },
     };
 
     expect(interruptedPlaceholderError(turn)).toBe("This manual compaction was interrupted.");
+    expect(interruptedPlaceholderError({ ...turn, metadata: { trigger: "manual" } })).toBe(
+      "This manual compaction was interrupted.",
+    );
   });
 
-  it("uses the compaction interruption copy for auto or malformed metadata", () => {
+  it("uses automatic interruption copy only for non-manual metadata", () => {
     const base = {
       role: "compaction" as const,
       metadata: {
         compactedThrough: { turnId: "turn-1" },
-        pinnedRequestTurnId: "turn-2",
+        pinnedRequestTurnIds: ["turn-2"],
         trigger: "auto",
       },
     };
     expect(interruptedPlaceholderError(base)).toBe("This compaction was interrupted.");
-    expect(interruptedPlaceholderError({ ...base, metadata: { trigger: "manual" } })).toBe(
+    expect(interruptedPlaceholderError({ ...base, metadata: { trigger: "unknown" } })).toBe(
       "This compaction was interrupted.",
     );
   });
