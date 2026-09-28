@@ -121,6 +121,12 @@ describe("HandoffBriefCard", () => {
     expect(onStop).not.toHaveBeenCalled();
   });
 
+  it("a settled brief drops the stopping words even while the Stop flag lingers", async () => {
+    await render({ turn: seed("cancelled"), stopping: true, onRetry: vi.fn() });
+    expect(card()?.getAttribute("aria-label")).toBe("Handoff brief stopped");
+    expect(button("Retry the handoff brief")?.hasAttribute("data-focus-landing")).toBe(true);
+  });
+
   it("generating before the thread exists: no Stop, since there is no turn to stop yet", async () => {
     await render({ turn: seed("pending") });
     expect(button("Stop the handoff brief")).toBeUndefined();

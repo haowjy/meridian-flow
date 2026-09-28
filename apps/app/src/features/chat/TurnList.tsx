@@ -365,6 +365,7 @@ export function TurnList({
                     row.kind === "queued-controls" ? "queued-controls" : "settled"
                   }
                   data-chat-turn-role={row.kind === "queued-controls" ? undefined : row.turn.role}
+                  data-chat-turn-kind={row.kind}
                   data-chat-turn-continues={continuing[virtualItem.index] ? "" : undefined}
                   data-chat-turn-inherited={
                     row.kind !== "queued-controls" && row.inherited ? "" : undefined

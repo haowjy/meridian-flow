@@ -62,7 +62,11 @@ export function HandoffBriefCard({
   const source = useSourceThread(seed?.sourceThreadId ?? "", null);
   const sectionRef = useRef<HTMLElement>(null);
   const focusWithin = useFocusWithinRow(sectionRef);
-  const title = stopping ? t`Stopping the handoff brief` : stateTitle(view.state, view.running);
+  // The Stop flag outlives the seed: a stopped or finished brief says what it is.
+  const title =
+    stopping && view.state === "generating"
+      ? t`Stopping the handoff brief`
+      : stateTitle(view.state, view.running);
   const ended = view.state === "failed" || view.state === "stopped";
 
   return (
@@ -101,6 +105,7 @@ export function HandoffBriefCard({
                 // drop keyboard focus to the page.
                 aria-disabled={!view.canStop || undefined}
                 aria-label={t`Stop the handoff brief`}
+                data-focus-landing
                 onClick={() => {
                   if (view.canStop) onStop(turn.id);
                 }}
@@ -114,6 +119,8 @@ export function HandoffBriefCard({
                 variant="quiet"
                 size="meta"
                 aria-label={t`Retry the handoff brief`}
+                // Stop gives way to Retry: keyboard focus follows it there.
+                data-focus-landing
                 onClick={onRetry}
               >
                 <Trans>Retry</Trans>
