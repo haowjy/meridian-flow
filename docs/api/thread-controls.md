@@ -19,9 +19,10 @@ Undo names a local compaction turn (pending is allowed at enqueue):
 
 A missing, inherited or non-compaction target returns 404 (`compaction_not_found`).
 Active-target and size checks happen at execution. A refusal appends an empty
-system marker with `turn.error`: `already_undone`, `not_active`,
-`would_recompact`, or `undo_failed`. Successful undo restores pre-cut history
-under the pre-C bake. It is refused if the restored request reaches the current
+system marker whose `metadata.reason` is `already_undone`, `not_active`,
+`would_recompact`, or `undo_failed`; its `error` is writer copy. The
+`turn.error` event uses the reason as its code and in `details.reason`.
+Successful undo restores pre-cut history under the pre-C bake. It is refused if the restored request reaches the current
 Agent trigger. It makes no model call. Undo withdrawal returns `withdrawn` or
 `already_finished`, never `stopping`: U commits atomically without a pending phase.
 

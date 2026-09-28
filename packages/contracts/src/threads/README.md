@@ -33,7 +33,9 @@ are separate from these transport contracts.
 It shares the controls route, idempotency and pending WS projection with compact.
 Completed U is a system turn with `metadata.kind: "compaction_undo"`,
 `revertsCompactionTurnId`, `controlMessageId`, a reused `promptBakeId`, and frozen
-`elisions`. Refused U has no blocks or bake and puts its reason in `turn.error`.
+`elisions`. Refused U has no blocks or bake; `metadata.reason` holds its typed
+reason (the server's `CompactionUndoFailureReasonCodec`) and `turn.error` holds
+writer copy.
 The snapshot always carries `compactionUndo`: null, or
 `{ turnId, availability: "likely" | "would_recompact" }`. Availability compares
 C's pre-cut size with the current trigger; actual execution remeasures.
