@@ -568,6 +568,7 @@ export function ChatView({
                   compactionUndo={snapshotCompactionUndo}
                   phase={livePhase}
                   inherited={inheritedView}
+                  onRetryInherited={inherited.failed ? inherited.retry : null}
                   threadUsage={snapshotThreadUsage}
                 />
               </div>

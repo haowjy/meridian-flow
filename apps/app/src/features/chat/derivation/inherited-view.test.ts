@@ -1,6 +1,9 @@
+// @vitest-environment jsdom
 /** A fork's inherited view: pages folded into owned turns, the optimistic prefix, and paging. */
 import type { TranscriptPageResponse, Turn } from "@meridian/contracts/protocol";
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ readThreadTranscript: vi.fn() }));
@@ -8,10 +11,15 @@ vi.mock("@/client/api/threads-api", () => api);
 vi.mock("@/client/stores", () => ({ useIsThreadPendingCreation: () => false }));
 
 import {
+  type InheritedView,
+  type InheritedViewState,
   inheritedQueryOptions,
   inheritedViewFromPages,
   optimisticForkPrefix,
+  useInheritedView,
 } from "./inherited-view";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const turn = (id: string, threadId: string, role = "user") =>
   ({ id, threadId, role, status: "complete", blocks: [] }) as unknown as Turn;
@@ -106,5 +114,44 @@ describe("optimisticForkPrefix", () => {
         cutoffTurnId: "missing",
       }),
     ).toBeNull();
+  });
+});
+
+describe("useInheritedView", () => {
+  async function mountFork(optimistic: InheritedView | null) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const latest: { current: InheritedViewState | null } = { current: null };
+    function Probe() {
+      latest.current = useInheritedView({ id: "fork", originType: "fork" }, optimistic);
+      return null;
+    }
+    const root = createRoot(document.createElement("div"));
+    await act(async () =>
+      root.render(createElement(QueryClientProvider, { client }, createElement(Probe))),
+    );
+    return { latest, unmount: () => act(async () => root.unmount()) };
+  }
+
+  it("says the history is missing when the read fails and nothing stands in, and Retry reads again", async () => {
+    api.readThreadTranscript.mockRejectedValueOnce(new Error("offline"));
+    const { latest, unmount } = await mountFork(null);
+    await vi.waitFor(() => expect(latest.current?.failed).toBe(true));
+    expect(latest.current?.view).toBeNull();
+
+    api.readThreadTranscript.mockResolvedValueOnce(page([entry("s1", "source")]));
+    await act(async () => latest.current?.retry());
+    await vi.waitFor(() => expect(latest.current?.failed).toBe(false));
+    expect(latest.current?.view?.transcript.turns.map((t) => t.id)).toEqual(["s1"]);
+    await unmount();
+  });
+
+  it("keeps the optimistic prefix on screen when the read fails, so nothing is missing", async () => {
+    api.readThreadTranscript.mockRejectedValueOnce(new Error("offline"));
+    const optimistic = inheritedViewFromPages([page([entry("s1", "source")])]);
+    const { latest, unmount } = await mountFork(optimistic);
+    await vi.waitFor(() => expect(api.readThreadTranscript).toHaveBeenCalled());
+    await act(async () => undefined);
+    expect(latest.current).toMatchObject({ failed: false, view: optimistic });
+    await unmount();
   });
 });

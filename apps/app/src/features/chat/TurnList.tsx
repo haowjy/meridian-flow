@@ -1,11 +1,13 @@
 /** Renders the transcript and owns its scroll viewport. */
 
+import { t } from "@lingui/core/macro";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import type { CompactionUndoAvailability, ThreadPhase } from "@meridian/contracts/threads";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { AssistantTurn } from "./AssistantTurn";
 import { ChatColumn } from "./ChatColumn";
@@ -56,6 +58,8 @@ export type TurnListProps = {
   phase?: ThreadPhase | null;
   /** A fork's frozen prefix from its source, rendered read-only above its own turns. */
   inherited?: InheritedView | null;
+  /** The fork's inherited read failed: its history is missing, so say so where it would start. */
+  onRetryInherited?: (() => void) | null;
   threadUsage?: {
     inputTokens: number;
     cacheReadTokens: number;
@@ -67,10 +71,17 @@ export type TurnListProps = {
   } | null;
 };
 
-/** A virtual row: a transcript row, or the queued controls at the tail. */
-type ListRow = TranscriptRow | { kind: "queued-controls"; controls: readonly QueuedControl[] };
+/**
+ * A virtual row: a transcript row, the missing-history alert above them, or the
+ * queued controls at the tail.
+ */
+type ListRow =
+  | TranscriptRow
+  | { kind: "inherited-failed" }
+  | { kind: "queued-controls"; controls: readonly QueuedControl[] };
 
 const QUEUED_CONTROLS_KEY = "queued-controls";
+const INHERITED_FAILED_KEY = "inherited-failed";
 const NO_CONTROLS: readonly QueuedControl[] = [];
 
 /** Estimated row height before measurement; corrected by `measureElement`. */
@@ -94,6 +105,7 @@ export function TurnList({
   compactionUndo = null,
   phase = null,
   inherited = null,
+  onRetryInherited = null,
   threadUsage = null,
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -136,12 +148,17 @@ export function TurnList({
   const briefRetryPending = tailControls.some(
     (control) => control.control.kind === "handoff_brief" && isActiveControl(control),
   );
+  // List rows are transcript rows shifted down by the alert, when it shows.
+  const rowOffset = onRetryInherited ? 1 : 0;
   const listRows = useMemo<ListRow[]>(
-    () =>
-      tailControls.length
-        ? [...transcript.rows, { kind: "queued-controls", controls: tailControls }]
-        : transcript.rows,
-    [tailControls, transcript.rows],
+    () => [
+      ...(onRetryInherited ? [{ kind: "inherited-failed" as const }] : []),
+      ...transcript.rows,
+      ...(tailControls.length
+        ? [{ kind: "queued-controls" as const, controls: tailControls }]
+        : []),
+    ],
+    [onRetryInherited, tailControls, transcript.rows],
   );
   const { continuing, partsByFinalTurnId } = transcript;
   const byTurnId = useMemo(() => {
@@ -159,6 +176,7 @@ export function TurnList({
     getItemKey: (index) => {
       const row = listRows[index];
       if (!row) return index;
+      if (row.kind === "inherited-failed") return INHERITED_FAILED_KEY;
       return row.kind === "queued-controls" ? QUEUED_CONTROLS_KEY : row.turn.id;
     },
     overscan: 8,
@@ -193,7 +211,7 @@ export function TurnList({
         : turnId,
     historySettled,
     viewportRef,
-    scrollToIndex: (index) => virtualizer.scrollToIndex(index, { align: "center" }),
+    scrollToIndex: (index) => virtualizer.scrollToIndex(index + rowOffset, { align: "center" }),
   });
 
   // Follow policy. `getTotalSize()` is the content height AND the revision: it is
@@ -317,6 +335,16 @@ export function TurnList({
 
   const renderRow = useCallback(
     (row: ListRow, idx: number) => {
+      if (row.kind === "inherited-failed") {
+        return (
+          <div data-inherited-failed className="pb-[var(--chat-space-turn)]">
+            <InlineErrorRow
+              message={t`Couldn't load the conversation this fork continues.`}
+              onRetry={onRetryInherited ?? undefined}
+            />
+          </div>
+        );
+      }
       if (row.kind === "queued-controls") {
         return (
           <QueuedControlRows
@@ -326,7 +354,7 @@ export function TurnList({
           />
         );
       }
-      const content = renderTranscriptRow(row, idx);
+      const content = renderTranscriptRow(row, idx - rowOffset);
       return row.inherited ? (
         <InheritedRow mark={row.inherited} owners={inherited?.owners ?? null}>
           {content}
@@ -335,7 +363,7 @@ export function TurnList({
         content
       );
     },
-    [controls, inherited?.owners, renderTranscriptRow],
+    [controls, inherited?.owners, onRetryInherited, renderTranscriptRow, rowOffset],
   );
 
   return (
@@ -367,19 +395,19 @@ export function TurnList({
             {virtualizer.getVirtualItems().map((virtualItem) => {
               const row = listRows[virtualItem.index];
               if (!row) return null;
+              const transcriptRow =
+                row.kind === "queued-controls" || row.kind === "inherited-failed" ? null : row;
               return (
                 <li
                   key={virtualItem.key}
                   data-index={virtualItem.index}
-                  data-chat-turn-row={
-                    row.kind === "queued-controls" ? "queued-controls" : "settled"
-                  }
-                  data-chat-turn-role={row.kind === "queued-controls" ? undefined : row.turn.role}
+                  data-chat-turn-row={transcriptRow ? "settled" : row.kind}
+                  data-chat-turn-role={transcriptRow?.turn.role}
                   data-chat-turn-kind={row.kind}
-                  data-chat-turn-continues={continuing[virtualItem.index] ? "" : undefined}
-                  data-chat-turn-inherited={
-                    row.kind !== "queued-controls" && row.inherited ? "" : undefined
+                  data-chat-turn-continues={
+                    continuing[virtualItem.index - rowOffset] ? "" : undefined
                   }
+                  data-chat-turn-inherited={transcriptRow?.inherited ? "" : undefined}
                   ref={virtualizer.measureElement}
                   className="absolute inset-x-0 top-0"
                   style={{ transform: `translateY(${virtualItem.start}px)` }}

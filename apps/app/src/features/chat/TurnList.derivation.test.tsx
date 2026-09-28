@@ -135,6 +135,7 @@ function controls(overrides: Partial<ThreadControls> = {}): ThreadControls {
 async function render(props: {
   turns: Turn[];
   inherited?: InheritedView | null;
+  onRetryInherited?: (() => void) | null;
   controls?: ThreadControls;
 }) {
   await act(async () =>
@@ -192,6 +193,22 @@ describe("TurnList inherited rows", () => {
     ]);
     // The fork point closes the last inherited row, above the fork's own turn.
     expect(rows[3]?.querySelector("[data-fork-point]")).not.toBeNull();
+  });
+
+  it("says a fork's history failed to load, with Retry, where the inherited rows would start", async () => {
+    const retry = vi.fn();
+    await render({ turns: [turn("own", "assistant")], onRetryInherited: retry });
+    const rows = [...host.querySelectorAll("[data-chat-turn-row]")];
+    expect(rows.map((row) => row.getAttribute("data-chat-turn-kind"))).toEqual([
+      "inherited-failed",
+      "turn",
+    ]);
+    const alert = rows[0]?.querySelector("[role=alert]");
+    expect(alert?.textContent).toContain("Couldn't load the conversation this fork continues.");
+    alert?.querySelector("button")?.click();
+    expect(retry).toHaveBeenCalledTimes(1);
+    // The fork's own reply keeps its transcript index: it still ends the transcript.
+    expect(seen.assistants.get("own")?.endsTranscript).toBe(true);
   });
 
   it("renders an inherited divider read-only: no Stop, Undo, withdrawal or undo advice", async () => {

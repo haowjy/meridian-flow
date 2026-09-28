@@ -9,6 +9,7 @@
  */
 import type { Thread, TranscriptPageResponse, Turn } from "@meridian/contracts/protocol";
 import { queryOptions, useQuery } from "@tanstack/react-query";
+import { useCallback } from "react";
 import { readThreadTranscript } from "@/client/api/threads-api";
 import { useIsThreadPendingCreation } from "@/client/stores";
 import type { InheritedTranscript } from "../transcript-model";
@@ -83,6 +84,15 @@ export function inheritedQueryOptions(threadId: string) {
   });
 }
 
+export type InheritedViewState = {
+  view: InheritedView | null;
+  /** The read failed and nothing stands in: the fork's history is missing, not empty. */
+  failed: boolean;
+  retry: () => void;
+};
+
+const NOT_A_FORK: InheritedViewState = { view: null, failed: false, retry: () => undefined };
+
 /**
  * The inherited view for a fork, or null for any other thread. Until the
  * server can read it (the fork is still being created), `optimistic` stands
@@ -91,18 +101,21 @@ export function inheritedQueryOptions(threadId: string) {
 export function useInheritedView(
   thread: Pick<Thread, "id" | "originType"> | null,
   optimistic: InheritedView | null,
-): { view: InheritedView | null; isError: boolean; refetch: () => void } {
+): InheritedViewState {
   const isFork = thread?.originType === "fork";
   const pendingCreation = useIsThreadPendingCreation(thread?.id ?? null);
   const query = useQuery({
     ...inheritedQueryOptions(thread?.id ?? ""),
     enabled: isFork && !pendingCreation,
   });
-  if (!isFork) return { view: null, isError: false, refetch: () => undefined };
+  const { refetch } = query;
+  const retry = useCallback(() => void refetch(), [refetch]);
+  if (!isFork) return NOT_A_FORK;
+  const view = query.data ?? optimistic;
   return {
-    view: query.data ?? optimistic,
-    isError: query.isError,
-    refetch: () => void query.refetch(),
+    view,
+    failed: query.isError && view === null,
+    retry,
   };
 }
 
