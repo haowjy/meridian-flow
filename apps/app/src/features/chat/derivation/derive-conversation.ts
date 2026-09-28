@@ -11,11 +11,7 @@ import { t } from "@lingui/core/macro";
 import type { Thread } from "@meridian/contracts/protocol";
 import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { forkThread, handoffThread } from "@/client/api/threads-api";
-import {
-  announceError,
-  type ThreadStoreActions,
-  useIsThreadPendingCreation,
-} from "@/client/stores";
+import { type ThreadStoreActions, useIsThreadPendingCreation } from "@/client/stores";
 import type { CreationAgent } from "@/features/agents/creation-agent";
 import { makeOptimisticThread, runExclusiveThreadCreation } from "@/lib/send-project-chat";
 import type { InheritedView } from "./inherited-view";
@@ -167,8 +163,8 @@ function create(intent: DerivationIntent, deps: DerivationDeps) {
       if (deps.accountSignal.aborted) return;
       const latest = statuses.get(threadId);
       setStatus(threadId, { intent, state: "failed", inherited: latest?.inherited ?? null });
+      // The destination's alert row says so; the writer is already there.
       settle(threadId, false);
-      announceError(derivationFailureCopy(intent.kind));
     },
   );
 }

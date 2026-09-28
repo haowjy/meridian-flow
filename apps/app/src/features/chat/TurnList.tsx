@@ -20,6 +20,7 @@ import { HandoffBriefCard } from "./derivation/HandoffBriefCard";
 import { isOptimisticSeed } from "./derivation/handoff-seed";
 import { ForkPointRule, InheritedSourceHeader } from "./derivation/InheritedMarks";
 import type { InheritedView } from "./derivation/inherited-view";
+import { ThreadReferenceChip } from "./derivation/ThreadReferenceChip";
 import { buildTranscriptModel, type InheritedMark, type TranscriptRow } from "./transcript-model";
 
 export { continuesResponse } from "./transcript-model";
@@ -237,6 +238,15 @@ export function TurnList({
             onWithdraw={local ? controls?.withdraw : undefined}
             onRetry={local ? controls?.retry : undefined}
           />
+        );
+      }
+      if (row.kind === "thread-reference") {
+        return (
+          <div data-thread-references className="flex flex-wrap gap-[var(--chat-space-inline)]">
+            {row.references.map((reference) => (
+              <ThreadReferenceChip key={reference.threadId} reference={reference} />
+            ))}
+          </div>
         );
       }
       if (row.kind === "handoff-seed") {

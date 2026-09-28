@@ -4,14 +4,16 @@
  * A control takes no transcript position until it runs (R5), so a queued
  * `/compact` sits after the newest turn as a dashed rule: the divider it will
  * become, not yet drawn. Withdraw is right after the words; the withdrawal's
- * outcome replaces the words on the same row. A handoff brief Retry renders
- * minimally here; its card is the handoff surface's. The rows carry no live
+ * outcome replaces the words on the same row. A queued handoff brief Retry
+ * waits here too, withdrawable, until it runs and its new card takes the
+ * row's place; a brief that already has its seed is stopped on its card and
+ * never listed here. The rows carry no live
  * region: `useThreadControls` announces each change through the global polite
  * announcer, which also reaches a row scrolled out of the virtualized list.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { CircleAlert, FoldVertical } from "lucide-react";
+import { CircleAlert, FoldVertical, Forward } from "lucide-react";
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -80,6 +82,8 @@ function QueuedControlRow({
       <span className="flex min-w-0 items-center gap-[var(--chat-space-block)]">
         {failed ? (
           <CircleAlert aria-hidden className="size-3.5 shrink-0 text-destructive" />
+        ) : control.control.kind === "handoff_brief" ? (
+          <Forward aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
         ) : (
           <FoldVertical aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
         )}

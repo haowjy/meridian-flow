@@ -143,3 +143,38 @@ describe("inherited rows", () => {
     ]);
   });
 });
+
+describe("thread-reference rows", () => {
+  it("gives a child's seed references a row of their own; the seed stays a delivery", () => {
+    const seedMessage = turn("seed", "user", {
+      origin: "system",
+      metadata: { kind: "inbox_message", agentRequestKind: "child_seed" },
+      blocks: [
+        { id: "t", blockType: "text", sequence: 0 },
+        {
+          id: "r",
+          blockType: "custom",
+          sequence: 1,
+          content: {
+            kind: "thread-reference",
+            props: { threadId: "source", ref: "c3", title: "Plan" },
+          },
+        },
+      ],
+    });
+    const model = buildTranscriptModel([seedMessage, turn("a", "assistant")], false);
+    expect(kinds(model)).toEqual(["thread-reference:seed", "turn:a"]);
+    const row = model.rows[0];
+    expect(row?.kind === "thread-reference" && row.references).toEqual([
+      { threadId: "source", ref: "c3", title: "Plan" },
+    ]);
+  });
+
+  it("gives a delivery with no references no row", () => {
+    const seedMessage = turn("seed", "user", {
+      metadata: { kind: "inbox_message" },
+      blocks: [{ id: "t", blockType: "text", sequence: 0 }],
+    });
+    expect(kinds(buildTranscriptModel([seedMessage], false))).toEqual([]);
+  });
+});

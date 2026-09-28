@@ -137,7 +137,8 @@ describe("startDerivation", () => {
     expect(await whenDerived(threadId)).toBe(false);
     expect(log).not.toContain(`clear:${threadId}`);
     expect(open).toHaveBeenCalledOnce();
-    expect(announcer.announceError).toHaveBeenCalledWith("Couldn't create this fork.");
+    // The destination's alert row speaks the failure; no second announcement.
+    expect(announcer.announceError).not.toHaveBeenCalled();
 
     api.forkThread.mockResolvedValueOnce({ ...source, id: threadId, originType: "fork" });
     retryDerivation(threadId, deps);

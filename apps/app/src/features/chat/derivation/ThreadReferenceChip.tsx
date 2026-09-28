@@ -1,44 +1,15 @@
 /**
- * The `thread-reference` block a spawned child's first message carries when
- * its parent pointed it at an earlier conversation (`spawn.from`).
+ * The `from` source of a spawned child: a chip at the top of the child's chat
+ * naming the conversation its parent pointed it at (`spawn.from`).
  *
- * A chip names the source; the name opens it, and a trashed source says so.
- * The block's title is frozen at spawn, so the chat's current title wins.
+ * The name opens that chat, and a trashed source says so. The block's title is
+ * frozen at spawn, so the chat's current title wins.
  */
 
 import { Trans } from "@lingui/react/macro";
-import type { Block } from "@meridian/contracts/protocol";
 import { MessagesSquare } from "lucide-react";
 import { SourceChatLink, useSourceThread } from "./SourceChatLink";
-
-export type ThreadReference = { threadId: string; title: string | null; ref: string | null };
-
-function record(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-/** The references a turn's blocks carry, in block order. */
-export function readThreadReferences(blocks: readonly Block[]): ThreadReference[] {
-  return [...blocks]
-    .sort((a, b) => a.sequence - b.sequence)
-    .flatMap((block) => {
-      if (block.blockType !== "custom") return [];
-      const content = record(block.content);
-      if (content?.kind !== "thread-reference") return [];
-      const props = record(content.props);
-      const threadId = typeof props?.threadId === "string" ? props.threadId : null;
-      if (!threadId) return [];
-      return [
-        {
-          threadId,
-          title: typeof props?.title === "string" ? props.title : null,
-          ref: typeof props?.ref === "string" ? props.ref : null,
-        },
-      ];
-    });
-}
+import type { ThreadReference } from "./thread-reference";
 
 export function ThreadReferenceChip({ reference }: { reference: ThreadReference }) {
   const source = useSourceThread(reference.threadId, reference.title ?? reference.ref);

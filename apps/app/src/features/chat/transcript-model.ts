@@ -10,6 +10,7 @@ import {
   undoMarkerTarget,
 } from "./compaction/compaction-model";
 import { isHandoffSeed } from "./derivation/handoff-seed";
+import { readThreadReferences, type ThreadReference } from "./derivation/thread-reference";
 import { reportPersistedContractFailure } from "./persisted-contract-debug";
 import { readSubagentUpdateMetadata } from "./subagent/update";
 
@@ -57,7 +58,17 @@ export type TranscriptRow =
       inherited: InheritedMark | null;
     }
   /** A handoff seed S: the brief card. Only the newest local seed can be retried. */
-  | { kind: "handoff-seed"; turn: Turn; latest: boolean; inherited: InheritedMark | null };
+  | { kind: "handoff-seed"; turn: Turn; latest: boolean; inherited: InheritedMark | null }
+  /**
+   * The `from` sources a spawned child's seed message names. The seed itself
+   * is a delivery, never a bubble, so its references get a row of their own.
+   */
+  | {
+      kind: "thread-reference";
+      turn: Turn;
+      references: readonly ThreadReference[];
+      inherited: InheritedMark | null;
+    };
 
 export function classifyTurn(turn: Turn): TurnClass {
   const metadata =
@@ -111,7 +122,13 @@ export function buildTranscriptModel(
     // An undo marker renders on the divider it names, never as its own row.
     if (undoMarkerTarget(turn)) return;
     if (isOverflowShell(turn, nextByPrev.get(turn.id) ?? turns[index + 1])) return;
-    if (classifyTurn(turn) === "bubble") rows.push({ kind: "turn", turn, inherited: mark });
+    if (classifyTurn(turn) === "bubble") {
+      rows.push({ kind: "turn", turn, inherited: mark });
+      return;
+    }
+    const references = readThreadReferences(turn.blocks ?? []);
+    if (references.length)
+      rows.push({ kind: "thread-reference", turn, references, inherited: mark });
   });
   const latestSeed = rows[latestSeedIndex];
   if (latestSeed?.kind === "handoff-seed") rows[latestSeedIndex] = { ...latestSeed, latest: true };
@@ -252,6 +269,7 @@ function responseGroups(rows: readonly TranscriptRow[], awaitingSubagents: boole
       case "compaction":
         continue;
       case "handoff-seed":
+      case "thread-reference":
         finish();
         continue;
       case "turn":

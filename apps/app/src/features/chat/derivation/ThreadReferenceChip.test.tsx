@@ -27,7 +27,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ChatThreadNavigationProvider } from "../ChatThreadNavigation";
-import { readThreadReferences, ThreadReferenceChip } from "./ThreadReferenceChip";
+import { ThreadReferenceChip } from "./ThreadReferenceChip";
+import { readThreadReferences } from "./thread-reference";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 const previousActEnvironment = actGlobal.IS_REACT_ACT_ENVIRONMENT;
