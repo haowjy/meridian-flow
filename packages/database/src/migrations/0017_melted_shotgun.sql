@@ -1,1 +1,1 @@
-ALTER TABLE "turn_blocks" DROP COLUMN "pruned";
+ALTER TABLE "turn_blocks" DROP COLUMN "pruned"; -- migration-lint: skip DROP_COLUMN (all reads and writes of turn_blocks.pruned were removed in this same change)
