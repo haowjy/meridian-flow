@@ -113,11 +113,16 @@ describe("Work title rename", () => {
             await started.promise;
           });
 
-          expect(
-            [...document.querySelectorAll("button")].filter(
-              (button) => button.textContent === "Revised arc",
+          // Query cache notifications flush on a timer, outside the act() scope.
+          await act(() =>
+            vi.waitFor(() =>
+              expect(
+                [...document.querySelectorAll("button")].filter(
+                  (button) => button.textContent === "Revised arc",
+                ),
+              ).toHaveLength(2),
             ),
-          ).toHaveLength(2);
+          );
 
           await act(async () => {
             request.reject(new Error("Rejected"));
@@ -128,11 +133,15 @@ describe("Work title rename", () => {
             document.querySelector<HTMLInputElement>('input[aria-label="Rename Work"]')?.value,
           ).toBe("Revised arc");
           expect(document.body.textContent).toContain("Couldn’t rename this Work. Try again.");
-          expect(
-            [...document.querySelectorAll("button")].filter(
-              (button) => button.textContent === "Arc",
+          await act(() =>
+            vi.waitFor(() =>
+              expect(
+                [...document.querySelectorAll("button")].filter(
+                  (button) => button.textContent === "Arc",
+                ),
+              ).toHaveLength(1),
             ),
-          ).toHaveLength(1);
+          );
         },
       );
     } finally {
