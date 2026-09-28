@@ -2,7 +2,7 @@
 
 import * as http from "@meridian/contracts/protocol";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createDrizzleRunClaim } from "../../runtime/adapters/drizzle-run-claim.js";
 import { createDrizzleThreadLock } from "../../runtime/adapters/drizzle-thread-lock.js";
@@ -280,6 +280,48 @@ else
           },
         });
         expect(JSON.stringify(r.gateway.requests.at(-1))).toContain("No brief is available.");
+      }
+    });
+
+    it("C7b ending commit failure keeps internal causes out of seed writer copy", async () => {
+      const r = await fixture();
+      const split = r.delivery.splitAndContinue.bind(r.delivery);
+      const failure = "database ending commit failed: private internal detail";
+      const spy = vi.spyOn(r.delivery, "splitAndContinue").mockImplementationOnce((input) =>
+        split({
+          ...input,
+          current: {
+            kind: "placeholder",
+            complete: async (...args) => {
+              if (input.current.kind !== "placeholder") throw new Error("Expected brief seed");
+              await input.current.complete(...args);
+              throw new Error(failure);
+            },
+          },
+        }),
+      );
+      try {
+        await r.drain();
+        await r.settled();
+        expect(await repos.turns.findById(r.seed.id)).toMatchObject({
+          status: "error",
+          error: "This handoff brief couldn't be generated. Try again.",
+          metadata: {
+            reason: "handoff_brief_failed",
+            phase: "delivery",
+            summarizer: { path: "cold", segments: 1 },
+          },
+        });
+        const errors = await eventReader.listByType(r.thread.id, "turn.error");
+        expect(errors[0].payload).toMatchObject({
+          error: {
+            code: "handoff_brief_failed",
+            message: "This handoff brief couldn't be generated. Try again.",
+            details: { reason: "handoff_brief_failed", phase: "delivery", cause: failure },
+          },
+        });
+      } finally {
+        spy.mockRestore();
       }
     });
 

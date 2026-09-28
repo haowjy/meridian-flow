@@ -11,6 +11,8 @@ import type { ControlMessage } from "./control-barrier.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
 
+export const handoffBriefFailedCopy = "This handoff brief couldn't be generated. Try again.";
+
 export async function reserveHandoffSeed(
   repos: Pick<import("../../threads/index.js").ThreadRepositories, "turns" | "threads">,
   input: Turn,

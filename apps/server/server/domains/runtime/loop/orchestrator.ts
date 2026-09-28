@@ -125,6 +125,7 @@ import { generateHandoffBrief } from "./handoff-brief.js";
 import {
   completeHandoffSeed,
   HandoffSeedSettledError,
+  handoffBriefFailedCopy,
   handoffSeedBlock,
   recordHandoffSummary,
   reserveHandoffSeed,
@@ -1822,7 +1823,7 @@ async function executeLoop(
     const completed = {
       ...currentTurn,
       status: available ? ("complete" as const) : ("error" as const),
-      error: available ? null : "This handoff brief couldn't be generated. Try again.",
+      error: available ? null : handoffBriefFailedCopy,
       metadata: {
         ...HandoffSeedMetadataCodec.parse(currentTurn.metadata),
         summarizer: outcome.summarizer,
@@ -2471,6 +2472,13 @@ async function executeLoop(
       ) {
         throw err instanceof RequestPreparationError ? err : new RequestPreparationError(err);
       } else {
+        emitEvent(eventSink, {
+          level: "error",
+          source: "runtime.orchestrator",
+          name: "execution.failed",
+          correlation: { threadId: input.threadId, turnId: currentTurn.id },
+          payload: unknownToEventPayload(err),
+        });
         await exitRun(
           false,
           errorTerminal(err instanceof Error ? err.message : String(err), "execution_error"),

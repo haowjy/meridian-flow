@@ -20,10 +20,11 @@ import {
   type EventJournalWriter,
   HandoffFailureOutcomeCodec,
   HandoffSeedMetadataCodec,
+  interruptedPlaceholderError,
   type ThreadRepositories,
 } from "../../threads/index.js";
 import { compactionFailureMeridianError } from "./compaction/decision.js";
-import { handoffSeedBlock } from "./handoff-seed.js";
+import { handoffBriefFailedCopy, handoffSeedBlock } from "./handoff-seed.js";
 import { persistAndAppendEvents } from "./persistence.js";
 
 export type TerminalCause =
@@ -95,7 +96,10 @@ function turnEvent(turn: Turn, cause: TerminalCause): OrchestratorEvent {
       turn,
       error: {
         ...meridianErrorFromSystem("handoff_brief_failed", turn.error ?? ""),
-        details: HandoffFailureOutcomeCodec.parse(turn.metadata),
+        details: {
+          ...HandoffFailureOutcomeCodec.parse(turn.metadata),
+          cause: typeof cause.error === "string" ? cause.error : cause.error.message,
+        },
       },
     };
   }
@@ -177,9 +181,13 @@ export async function finalizeExecution(
       const completedAt = toIsoString(new Date());
       const error =
         input.cause.kind === "failed"
-          ? typeof input.cause.error === "string"
-            ? input.cause.error
-            : input.cause.error.message
+          ? turn.role === "system"
+            ? input.cause.reason === "orphaned"
+              ? interruptedPlaceholderError({ ...turn, role: turn.role })
+              : handoffBriefFailedCopy
+            : typeof input.cause.error === "string"
+              ? input.cause.error
+              : input.cause.error.message
           : null;
       const updated: Turn = {
         ...turn,
