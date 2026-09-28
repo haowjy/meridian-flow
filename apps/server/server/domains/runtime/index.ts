@@ -64,6 +64,7 @@ export {
   projectActiveHistory,
   resolveCompactionTrigger,
 } from "./loop/compaction/index.js";
+export { createCompactionUndoReader } from "./loop/compaction-undo.js";
 export {
   createNoopInterruptArtifactFlushPort,
   type InterruptArtifactFlushPort,
@@ -74,7 +75,7 @@ export {
   EXPIRED_INTERRUPT_VALUE,
 } from "./loop/interrupts.js";
 export { createOrchestrator } from "./loop/orchestrator.js";
-export { finalizeOrphanedPlaceholder } from "./loop/orphaned-placeholder.js";
+export { finalizeOrphanedTurns } from "./loop/orphaned-placeholder.js";
 export {
   projectPendingInbox,
   readPendingInbox,

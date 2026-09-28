@@ -79,7 +79,6 @@ export interface BlockRepository {
   listByTurn(turnId: TurnId): Promise<Block[]>;
   /** All blocks across all turns for a thread, ordered by turn creation then block sequence. */
   listByThread(threadId: ThreadId): Promise<Block[]>;
-  /** Sets the prune flag. A missing row is a no-op (`null`), not an error. */
 }
 
 export interface ThreadImageInclusion {
@@ -91,7 +90,10 @@ export interface ThreadImageInclusion {
 
 export interface ThreadImageInclusionRepository {
   /** Latest decision per block, ordered by the deciding turn's transcript position. */
-  findByThread(threadId: ThreadId): Promise<ThreadImageInclusion[]>;
+  findByThread(
+    threadId: ThreadId,
+    revertedCompactions?: ReadonlySet<string>,
+  ): Promise<ThreadImageInclusion[]>;
   /** Append-only decision history, used to reconstruct forks at their cutoff. */
   listByThread(threadId: ThreadId): Promise<ThreadImageInclusion[]>;
   set(input: ThreadImageInclusion): Promise<void>;
@@ -347,7 +349,12 @@ export interface ThreadPendingInboxReader {
 }
 
 /** The derived live reads the snapshot builder and WS `subscribed` state share. */
-export interface ThreadLiveReaders extends ThreadStatusReader, ThreadPendingInboxReader {}
+export interface ThreadLiveReaders extends ThreadStatusReader, ThreadPendingInboxReader {
+  readCompactionUndo?: (
+    thread: Thread,
+    turns: Turn[],
+  ) => Promise<import("@meridian/contracts/threads").CompactionUndoAvailability>;
+}
 
 export interface ProjectChatCursorKey {
   sortAt: string;
@@ -428,6 +435,33 @@ export interface UpdateTurnStatusInput {
   metadata?: JsonValue | null;
 }
 
+/** One owner-local slice of an effective transcript. Bounds are exclusive/inclusive. */
+export interface TranscriptSpan {
+  threadId: ThreadId;
+  afterPosition: number;
+  throughPosition: number | null;
+}
+
+export interface TranscriptKey {
+  position: number;
+  sequence: number;
+}
+
+export interface TranscriptItemRow {
+  turn: Turn;
+  block: Block | null;
+  sequence: number;
+}
+
+export interface ReadTranscriptItemsInput {
+  spans: readonly TranscriptSpan[];
+  order: "newest_first" | "oldest_first";
+  unit: "item" | "turn";
+  limit: number;
+  after?: TranscriptKey;
+  through?: TranscriptKey;
+}
+
 export interface TurnRepository {
   /** Inserts a turn row, or returns the existing row when replaying the same turn id. */
   create(input: CreateTurnInput): Promise<Turn>;
@@ -436,13 +470,26 @@ export interface TurnRepository {
   findByControlId(threadId: ThreadId, controlId: string): Promise<Turn | null>;
   findLatestHandoffSeed(threadId: ThreadId): Promise<Turn | null>;
   listByThread(threadId: ThreadId): Promise<Turn[]>;
-  /** Targeted run-start and under-lock re-read for one thread's pending placeholders. */
+  /** C4's pending-placeholder recovery scan. */
   listPendingPlaceholdersForThread(threadId: ThreadId): Promise<Turn[]>;
-  /** Keyset page of pending placeholders for bounded orphan recovery. */
+  /** Keyset page of C4's pending placeholders. */
   listPendingPlaceholders(
     limit: number,
     afterTurnId?: TurnId,
   ): Promise<Array<Pick<Turn, "id" | "threadId" | "role">>>;
+  /** Reads bounded transcript items by `(position, sequence)` across owner spans. */
+  readTranscriptItems(input: ReadTranscriptItemsInput): Promise<TranscriptItemRow[]>;
+  /** Finds the first unsettled turn across owner spans using the partial index. */
+  findFirstUnsettledTranscriptTurn(spans: readonly TranscriptSpan[]): Promise<Turn | null>;
+  /** Unsettled turns in one claimed thread, ordered by transcript position. */
+  listUnsettledForThread(threadId: ThreadId): Promise<Turn[]>;
+  /** Complete epoch boundaries in the supplied transcript spans. */
+  listTranscriptBoundaries(spans: readonly TranscriptSpan[]): Promise<Turn[]>;
+  /** Bounded global discovery for startup orphan repair, ordered by owner and position. */
+  listUnsettledPrimaryTurns(
+    limit: number,
+    after?: { threadId: ThreadId; position: number },
+  ): Promise<Array<Pick<Turn, "id" | "threadId" | "position" | "role" | "status">>>;
   getLatestByThread(threadId: ThreadId): Promise<Turn | null>;
   /**
    * The assistant container of a run that the caller has already proven live

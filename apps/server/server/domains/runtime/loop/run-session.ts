@@ -35,7 +35,10 @@ export function createRunSessions(deps: {
     lease: Lease;
   }): Promise<Turn>;
   runClaim: RunClaim;
-  delivery: Pick<RuntimeDelivery, "refreshPending" | "selectPending" | "cancelPendingSeed">;
+  delivery: Pick<
+    RuntimeDelivery,
+    "repairOrphanedTurns" | "refreshPending" | "selectPending" | "cancelPendingSeed"
+  >;
   repos: { turns: TurnRepository };
   headSeq(threadId: ThreadId): Promise<bigint>;
   eventSink: EventSink;
@@ -84,6 +87,7 @@ export function createRunSessions(deps: {
     let lease: Lease | null = null;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     let restartPendingAfterCompletion = false;
+    let preparedRun = false;
     async function cleanup(restartPending = false, releaseUnanswered = false) {
       clearInterval(heartbeat);
       parentSignal?.removeEventListener("abort", abort);
@@ -96,7 +100,7 @@ export function createRunSessions(deps: {
           await deps.delivery.refreshPending(threadId);
           const pending = await deps.delivery.selectPending(threadId);
           if (
-            session.currentTurn &&
+            preparedRun &&
             (planControlBarrier({ pending, chainedIds: new Set(), boundIds: new Set() }).execute !==
               null ||
               ((releaseUnanswered || (restartPending && !session.controller.signal.aborted)) &&
@@ -110,7 +114,7 @@ export function createRunSessions(deps: {
       } finally {
         complete();
         try {
-          if (session.currentTurn) deps.onRunSettled?.(threadId);
+          if (preparedRun) deps.onRunSettled?.(threadId);
         } catch (error) {
           observe(threadId, "settled.failed", error);
         }
@@ -144,6 +148,7 @@ export function createRunSessions(deps: {
         Math.floor(DEFAULT_LEASE_TTL_MS / 3),
       );
       heartbeat.unref();
+      await deps.delivery.repairOrphanedTurns(lease);
       const resumeAfterSeq = (await deps.headSeq(threadId)).toString();
       const loop = await deps.setup({
         ...input,
@@ -155,6 +160,7 @@ export function createRunSessions(deps: {
         },
       });
       session.currentTurn = loop.currentTurn;
+      preparedRun = true;
       const snapshotFloorNextSeq = ((await deps.headSeq(threadId)) + 1n).toString();
       try {
         deps.onRunStarted?.(threadId);
@@ -173,7 +179,7 @@ export function createRunSessions(deps: {
             if (error instanceof UnsettledPlaceholderError) throw error;
             turn = await deps.finalizeFailure({
               threadId,
-              turnId: session.currentTurn?.id ?? loop.currentTurn.id,
+              turnId: session.currentTurn?.id ?? loop.currentTurn?.id ?? loop.terminalTurnId!,
               error,
               signal: controller.signal,
               lease: heldLease,
@@ -188,6 +194,8 @@ export function createRunSessions(deps: {
           outcome.status === "complete",
           outcome.status !== "failed" &&
             (outcome.turn.role === "system" ||
+              (outcome.turn.metadata as import("@meridian/contracts/threads").JsonObject | null)
+                ?.kind === "compaction_undo" ||
               (outcome.turn.role === "compaction" &&
                 (outcome.turn.metadata as import("@meridian/contracts/threads").JsonObject | null)
                   ?.trigger === "manual")),
@@ -197,7 +205,7 @@ export function createRunSessions(deps: {
       return {
         runId: lease.runId,
         userTurnId: loop.userTurnId,
-        executionTurnId: loop.currentTurn.id,
+        executionTurnId: loop.currentTurn?.id ?? loop.terminalTurnId!,
         resumeAfterSeq,
         snapshotFloorNextSeq,
         execute: () => (execution ??= execute()),

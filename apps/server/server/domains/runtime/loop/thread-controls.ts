@@ -79,6 +79,11 @@ export function createThreadControls(deps: {
           )
             throw new ThreadControlError(409, "handoff_retry_unavailable");
         }
+        if (!existing && input.control.kind === "compaction_undo") {
+          const target = await deps.findTurn(input.control.compactionTurnId);
+          if (!target || target.threadId !== input.threadId || target.role !== "compaction")
+            throw new ThreadControlError(404, "compaction_not_found");
+        }
         const row =
           existing ??
           (await deps.enqueue({

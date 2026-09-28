@@ -51,6 +51,8 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
     selection: DeliverySelection,
   ) => Promise<{
     events: OrchestratorEvent[];
+    undos?: import("./compaction-undo.js").PreparedUndo[];
+    adoptedIds?: string[];
     turns: Turn[];
     blocks: Block[];
     requiresSplit: boolean;
@@ -60,6 +62,15 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
 };
 export type DeliverySelection = {
   batch: InboxMessage[];
+  continueTask?: boolean;
+  controls?: ControlMessage[];
+  failedUndoIds?: ReadonlySet<string>;
+  followingBatches?: {
+    afterControlId: string;
+    ackIds: string[];
+    batch: InboxMessage[];
+    workContext?: import("./work-context.js").RenderedWorkContext;
+  }[];
   control: ControlMessage | null;
   satisfiesControlId?: string;
   headControl: ControlMessage | null;
@@ -99,6 +110,8 @@ export interface RuntimeDelivery
   ): Promise<import("@meridian/contracts/threads").WithdrawThreadControlResponse>;
   /** Reclassify expired leases after recovery or a backstop release. */
   refreshPending(threadId: ThreadId): Promise<void>;
+  /** Settle any previous primary assistant before a new run selects context. */
+  repairOrphanedTurns(lease: Lease): Promise<void>;
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   /** Parent-first business transaction; the producer does not reacquire the lock. */
   withThreadLock<T>(
@@ -111,6 +124,8 @@ export interface RuntimeDelivery
     /** Pure preparation; writes belong in `persist`. Null retires stale controls without a reservation. */
     prepare: (selection: DeliverySelection) => Promise<{
       value: T;
+      terminal?: boolean;
+      completedControlIds?: string[];
       turnId: TurnId;
       turnKind: "assistant" | "compaction" | "handoff_brief";
       messageIds: readonly string[];

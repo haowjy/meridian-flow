@@ -3,10 +3,12 @@
 import type { Block, JsonObject, Turn } from "@meridian/contracts/threads";
 import { z } from "zod";
 import {
-  type CompactionMetadata,
-  CompactionMetadataCodec,
+  type CompactionPlanMetadata,
+  CompactionPlanMetadataCodec,
+  CompactionUndoMetadataCodec,
   classifyHistoryItem,
   compactionSummaryMetadata,
+  revertedCompactionIds,
 } from "../../../threads/index.js";
 import { orderTurnsByPosition } from "../../../threads/order-turns.js";
 import type { CompactionPlan } from "./plan.js";
@@ -44,18 +46,8 @@ function compactionPropsForTurn(turnId: string, blocks: readonly Block[]): Compa
   return envelope.props as CompactionProps;
 }
 
-function compactionMetadata(turn: Turn): CompactionMetadata {
-  return CompactionMetadataCodec.parse(turn.metadata);
-}
-
-function revertedCompactionIds(turns: readonly Turn[]): Set<string> {
-  const reverted = new Set<string>();
-  for (const turn of turns) {
-    if (turn.status !== "complete") continue;
-    const historyItem = classifyHistoryItem(turn);
-    if (historyItem.kind === "undo_marker") reverted.add(historyItem.compactionTurnId);
-  }
-  return reverted;
+function compactionMetadata(turn: Turn): CompactionPlanMetadata {
+  return CompactionPlanMetadataCodec.parse(turn.metadata);
 }
 
 function summaryTurn(
@@ -142,7 +134,28 @@ export function projectActiveHistory(
   for (const candidate of completeCompactions) {
     if (!reverted.has(candidate.turn.id)) activeCompaction = candidate;
   }
-  if (!activeCompaction) return { turns: [...effectiveTurns], blocks: [...effectiveBlocks] };
+  const undo = [...turns]
+    .reverse()
+    .find(
+      (turn) =>
+        turn.status === "complete" &&
+        turn.position > (activeCompaction?.turn.position ?? -1) &&
+        CompactionUndoMetadataCodec.safeParse(turn.metadata).success,
+    );
+  const undoElisions = new Map(
+    undo
+      ? CompactionUndoMetadataCodec.parse(undo.metadata).elisions?.map((e) => [
+          e.blockId,
+          e.content,
+        ])
+      : [],
+  );
+  const applyUndo = (blocks: Block[]) =>
+    blocks.map((block) =>
+      undoElisions.has(block.id) ? { ...block, content: undoElisions.get(block.id)! } : block,
+    );
+  if (!activeCompaction)
+    return { turns: [...effectiveTurns], blocks: applyUndo([...effectiveBlocks]) };
   if (!threadRef)
     throw new Error(`Thread ${activeCompaction.turn.threadId} has no ref for compaction summary`);
 
@@ -199,7 +212,7 @@ export function projectActiveHistory(
       : (blocksByTurn.get(turn.id) ?? []);
   });
 
-  return { turns: projectedTurns, blocks: projectedBlocks };
+  return { turns: projectedTurns, blocks: applyUndo(projectedBlocks) };
 }
 
 /** The cold summary replaces only the cut, never the pin or the verbatim retained tail. */

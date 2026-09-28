@@ -441,6 +441,7 @@ export type ThreadSnapshotAncestor = {
 };
 
 export type ThreadSnapshotResponse = {
+  compactionUndo: import("../threads/index.js").CompactionUndoAvailability;
   threadId: string;
   thread: Thread;
   turns: Turn[];
@@ -460,6 +461,24 @@ export type ThreadSnapshotResponse = {
   nextSeq: string;
   /** Point-looked-up spawn path, ordered root → direct parent; no ancestor conversations. */
   ancestors: ThreadSnapshotAncestor[];
+};
+
+/** GET /api/threads/:threadId/transcript: one keyset page of the effective or inherited transcript. */
+export type TranscriptPageResponse = {
+  /** Page entries are chronological, even when requested newest-first. */
+  entries: Array<{ turn: Turn; blocks: Block[]; ownerThreadId: string }>;
+  owners: Array<{ threadId: string; ref: string; title: string | null; trashed: boolean }>;
+  segment: {
+    index: number;
+    bakeId: string | null;
+    openedBy: { turnId: string; kind: "compaction" | "undo_marker" | "other" } | null;
+    compactedThrough?: { turnId: string; blockSequence?: number };
+  };
+  segmentBoundary: boolean;
+  hasMore: boolean;
+  nextCursor?: string;
+  /** A live, non-cursor preview returned only on the first effective newest-first page. */
+  unsettledTail?: Array<{ turn: Turn; blocks: Block[] }>;
 };
 
 /** Dev-only: per-request model context captured by the orchestrator. */

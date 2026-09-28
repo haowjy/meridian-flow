@@ -2,7 +2,11 @@
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { SummaryOutcome, SummaryResponse } from "../ports/conversation-summarizer.js";
-import { type CompactionDecision, CompactionPreparationError } from "./compaction/decision.js";
+import {
+  type CompactionDecision,
+  CompactionFailureError,
+  CompactionPreparationError,
+} from "./compaction/decision.js";
 import { changedDocuments, collectRecordedDocuments } from "./compaction/elide.js";
 import { projectActiveHistory, projectCompactedHistory } from "./compaction/index.js";
 import { queryCompactionRevisions } from "./compaction-revisions.js";
@@ -136,7 +140,8 @@ export async function executeCompaction({
       prepared: PreparedCompaction | undefined,
       selection: import("./runtime-delivery.js").DeliverySelection,
     ) => {
-      if (prepared?.kind === "failed" && decision.required) throw prepared.reason;
+      if (prepared?.kind === "failed" && decision.required)
+        throw new CompactionFailureError(prepared.failure);
       if (prepared?.kind === "usable" && !selection.control)
         return prepareCompactionContext(drain, prepared);
       const completed =
@@ -163,16 +168,22 @@ export async function executeCompaction({
               blocks: [...allBlocks, ...drain.blocks],
               baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
               readReferences: false,
-              skipCompaction: selection.control?.body.kind !== "compact",
-              controlMessageId:
-                selection.control?.body.kind === "compact" ? selection.control.id : undefined,
+              skipCompaction:
+                !selection.control ||
+                selection.controls?.some((control) => control.body.kind === "handoff_brief"),
+              controls: selection.controls,
+              followingBatches: selection.followingBatches,
+              failedUndoIds: selection.failedUndoIds,
+              continueAfterControls: selection.outstanding.length > 0 || !!selection.continueTask,
               pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
               signal: input.signal,
             });
       return {
         events: next.events,
-        turns: next.assembled.imageContextUpdates.turns,
-        blocks: next.assembled.imageContextUpdates.blocks,
+        undos: next.undos,
+        adoptedIds: next.adoptedIds,
+        turns: next.turns,
+        blocks: next.blocks,
         requiresSplit: true,
         context: next.assembled,
         compaction: next.compaction,

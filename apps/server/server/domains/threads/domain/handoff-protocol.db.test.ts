@@ -341,6 +341,115 @@ else
       expect(JSON.stringify(r.gateway.requests.at(-1))).toContain("hi after stale seed");
     });
 
+    it("C7 stale seed releases a due undo and its following message", async () => {
+      const r = await fixture();
+      await db.update(schema.turns).set({ status: "error" }).where(eq(schema.turns.id, r.seed.id));
+      const compaction = await repos.turns.create({
+        threadId: r.thread.id,
+        prevTurnId: r.seed.id,
+        role: "compaction",
+        origin: "system",
+        status: "error",
+      });
+      const undo = await r.delivery.enqueueControl({
+        id: crypto.randomUUID(),
+        threadId: r.thread.id,
+        actorId: ids.userId,
+        control: { kind: "compaction_undo", compactionTurnId: compaction.id },
+      });
+      await r.send(r.thread.id, "hi behind undo");
+      await r.drain();
+      const turns = await r.settled();
+      expect(turns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: "system",
+            status: "error",
+            metadata: expect.objectContaining({
+              kind: "compaction_undo",
+              controlMessageId: undo.response.id,
+              reason: "not_active",
+            }),
+          }),
+        ]),
+      );
+      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
+      expect(r.summarizer.calls).toHaveLength(0);
+      expect(JSON.stringify(r.gateway.requests.at(-1))).toContain("hi behind undo");
+    });
+
+    it.each(["stale seed", "Retry"])("C7 successful undo composes with %s", async (mode) => {
+      const r = await fixture(async () => ({
+        kind: "failed",
+        error: new Error("brief unavailable"),
+        modelResponses: [],
+      }));
+      r.deps.summarizer = scriptedSummarizer();
+      const [firstControl] = await r.delivery.selectPending(r.thread.id);
+      await r.drain();
+      await r.settled();
+      await r.send(r.thread.id, "Earlier scene. ".repeat(100));
+      await r.drain();
+      await r.settled();
+      await r.delivery.enqueueControl({
+        id: crypto.randomUUID(),
+        threadId: r.thread.id,
+        actorId: ids.userId,
+        control: { kind: "compact" },
+      });
+      await r.drain();
+      const compacted = await r.settled();
+      const initialBake = (await repos.threads.findById(r.thread.id))?.initialPromptBakeId;
+      expect(initialBake).toBeTruthy();
+      const compaction = compacted.at(-1)!;
+      expect(compaction).toMatchObject({ role: "compaction", status: "complete" });
+      if (mode === "stale seed") {
+        await db
+          .update(schema.threadInboxMessages)
+          .set({ deliveredAt: null })
+          .where(eq(schema.threadInboxMessages.id, firstControl.id));
+      }
+      const undo = await r.delivery.enqueueControl({
+        id: crypto.randomUUID(),
+        threadId: r.thread.id,
+        actorId: ids.userId,
+        control: { kind: "compaction_undo", compactionTurnId: compaction.id },
+      });
+      const retry =
+        mode === "Retry"
+          ? await r.delivery.enqueueControl({
+              id: crypto.randomUUID(),
+              threadId: r.thread.id,
+              actorId: ids.userId,
+              control: { kind: "handoff_brief" },
+            })
+          : null;
+      await r.send(r.thread.id, "hi after successful undo");
+      await r.drain();
+      const turns = await r.settled();
+      const marker = turns.find(
+        (turn) =>
+          (turn.metadata as { controlMessageId?: string } | null)?.controlMessageId ===
+          undo.response.id,
+      );
+      expect(marker).toMatchObject({
+        role: "system",
+        status: "complete",
+        promptBakeId: initialBake,
+      });
+      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
+      expect(JSON.stringify(r.gateway.requests.at(-1))).toContain("hi after successful undo");
+      expect(r.summarizer.calls).toHaveLength(retry ? 2 : 1);
+      if (retry) {
+        const seed = turns.find(
+          (turn) =>
+            (turn.metadata as { controlMessageId?: string } | null)?.controlMessageId ===
+            retry.response.id,
+        );
+        expect(seed).toMatchObject({ role: "system", status: "error", prevTurnId: marker?.id });
+      }
+    });
+
     it.each([
       false,
       true,
@@ -477,6 +586,8 @@ else
         },
         eventSink: createInMemoryEventSink(),
       });
+      await r.delivery.materializeIdle(r.thread.id);
+      expect((await repos.turns.findById(r.seed.id))?.status).toBe("pending");
       await repair.sweep(100);
       expect((await repos.turns.findById(r.seed.id))?.status).toBe("pending");
       await r.drain();

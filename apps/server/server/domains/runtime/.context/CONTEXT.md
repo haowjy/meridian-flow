@@ -71,7 +71,7 @@ skeleton and delegates the moving parts.
 | `tool-dispatch.ts` | Live output, spawn/thread_message/returnResult callback wiring, and durable tool_result persistence. Dispatch does not apply policy. return_result settlement is spawn-owned: dispatch honors the typed `ReturnResultOutcome` and does not parse arguments or reconstruct the envelope from JSON. |
 | `run-turn-port.ts` | `prepare(input)` returns a `PreparedRun` with run/initial assistant identity, pre-setup replay cursor, post-setup snapshot floor, and one-shot `execute(): Promise<RunOutcome>`. Setup commits before returning; only execute enters the model loop. The journal/hub is the sole event consumer, not an orchestrator generator. |
 | `run-session.ts` | One owner for writer and child claims, AbortController, current-turn registry, heartbeat, cancel, terminal fallback, and best-effort release. `execute` settles after cleanup; child report publication B follows it. A primary completion aborts foreground descendants only; a child invocation bounds its whole subtree and aborts background descendants too. Explicit cancellation includes background descendants. |
-| `orphaned-placeholder.ts` | `finalizeOrphanedPlaceholder` uses the pure `@meridian/contracts/threads` placeholder predicate and targeted per-thread query under the thread lock and an already-held session claim. Writer-facing interrupted copy comes from `threads/domain/turn-metadata.ts`, from its trigger metadata. The helper returns reports it finalizes, and callers publish them only after releasing the child lock. |
+| `orphaned-placeholder.ts` | `finalizeOrphanedTurns` repairs primary assistant turns and pending placeholders under the thread lock and an already-held session claim. `finalizeOrphanedPlaceholders` is the child-report walk's placeholder-only helper. Both finalize through `finalizeExecution`, which stamps a failed compaction with `reason: interrupted`, `phase: recovery` via `compactionFailureMetadata`. Interrupted placeholder copy comes from `threads/domain/turn-metadata.ts`; finalized child reports publish after releasing the child lock. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; receives the frozen system prompt from the immutable bake row when the thread has an initial pointer; renders every persisted turn, including durable notices, skill-body, and subagent-update turns. Child-provenance system text contains a compact exact `thread_report` call, never the report body; the parent model may fetch that report with the authorized tool. Assistant custom blocks stay UI-only to preserve tool_use→tool_result adjacency. |
 | `compaction/{trigger,estimate,plan,project,tail}.ts` | Pure compaction core. `trigger.ts` resolves explicit Agent limits; `estimate.ts` owns the shared per-part estimator for planner defaults and request estimates. Every estimate receives the model registry's required tokenizer family, including turn planning and summary segmentation. CJK family rates and evidence are recorded in [CJK estimator rates](compaction.md). Image parts use 1,600 tokens, and file text uses the greater of its visible-string estimate or the 10,000-token floor. `plan.ts` takes the raw effective transcript, reserves overhead and all unanswered directed requests plus the newest writer request, and limits later cuts to after the active compaction cut. A missing pinned request yields an explicit `no_compaction` plan, never persistable metadata; `tail.ts` is the shared ordered projection rule, lifting pins in order when the cut removes them; `project.ts` strictly decodes complete compactions, requires every pinned turn to exist, and projects the summary under the owning thread ref. The folder's `index.ts` is the runtime public surface. History-item metadata classification and its codecs live in `threads/domain/turn-metadata.ts`. |
@@ -305,17 +305,23 @@ with `kind: "inbox_message"`, which hides them from the bubble list; the client
 renders them as delivery rows inside the preceding assistant turn. Tagging a
 writer turn `inbox_message` makes the writer's own message vanish once a run
 drains it.
-`spawn/orphan-report-repair.ts` pages pending placeholder turns through the
-`turns_pending_placeholders` partial index and uses the same targeted per-thread
-query as run start for its under-lock re-read. `@meridian/contracts/threads`
-owns the role set and pure TypeScript predicates; the database package owns the
-SQL predicate beside the partial index, and `threads/domain/turn-metadata.ts`
-owns role/metadata-specific interrupted copy through the compaction codec. Both repairs require the real session claim and thread lock; expired
-lease rows are not proof of death. It finalizes pending placeholders before
-walking the child chain and treats any admitted execution selector as a walk
-barrier, including compaction selectors. Placeholder finalizers return child
-reports for publication after releasing the child lock. The process scheduler
-runs wake, repair, and publication lanes independently. The coordinator consumes `RunTurnPort` through its driver,
+`spawn/orphan-report-repair.ts` pages pending placeholders through
+`turns_pending_placeholders` and unsettled primary assistants through
+`turns_unsettled`. Both scans claim the thread, then re-read its unsettled turns
+under the thread lock. `RunSession.prepare` owns run-start repair under its
+new claim, before setup and control/barrier planning; `adoptBatch` does not
+repair again. A held claim protects live turns; an expired lease row alone is
+not proof of death.
+
+`@meridian/contracts/threads` owns the placeholder role set and pure predicates;
+the database owns the SQL predicate beside its partial index. Interrupted
+placeholder copy comes from `threads/domain/turn-metadata.ts`. Child-report
+repair finalizes placeholders before walking the child chain, treating every
+admitted execution selector as a barrier, including compaction selectors.
+It retains ownership of child assistant repair; the primary scan does not
+finalize those turns. Finalized child reports publish after releasing the
+child lock. The scheduler runs wake, repair, and publication lanes independently.
+The coordinator consumes `RunTurnPort` through its driver,
 immutable Agent revisions, and the threads repository's
 `SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` parses the patch with the canonical `invocationPatchSchema` and translates a `ZodError` to `InvocationPatchError`, so an unknown key or wrong value reaches `spawn_invocation_patch_invalid` before any child row is created. It then merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, present list replaces, empty clears, tool map patches one entry, scalar `model`/`effort` replace) through the compile-time-exhaustive `PATCH_MERGES` table, one entry per patch key; `tools` and `disallowed-tools` are coupled and each returns the full `patchTools` result so a map `allow` lifts the baseline denial. Overrides fold tool-name aliases like authoring. Added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. The patch applies to named and generic children alike. The effective configuration plus the raw `invocation_overlay` persist on the thread binding and are reused on later turns; the saved Agent definition is never mutated. A spawn-time `append_system_prompt` is an additive overlay layer appended after the immutable Agent body; spawn never replaces the body. Route-facing
 thread creation still goes through public thread creation normalization; only the
@@ -584,5 +590,7 @@ the Yjs gateway and flushing observability. Still-running lanes emit
 ## Compaction
 
 Runtime compaction covers trigger and estimator rates, summarization, delivery
-transitions, overflow recovery, cancellation, placeholder recovery, and cost. See
+transitions, stale document-text elision, image re-admission, overflow
+recovery, cancellation, placeholder recovery, cost, and the queued controls
+(`/compact`) that execute at run boundaries through `planControlBarrier`. See
 [runtime compaction context](compaction.md) for the protocol and its details.

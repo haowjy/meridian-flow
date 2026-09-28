@@ -26,6 +26,7 @@ import type {
 } from "../../ports/repositories.js";
 import { mapTurn } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
+import { createDrizzleTranscriptReader } from "./transcript-reader.js";
 
 export async function lockThreadForTurnTransition(db: DrizzleDb, threadId: ThreadId) {
   const thread = await lockThreadForMutation(db, threadId);
@@ -85,6 +86,7 @@ export function createDrizzleTurnRepository(
   workActivity: Pick<WorkProjectionMutation, "touchWorks"> | null,
 ): TurnRepository {
   return {
+    ...createDrizzleTranscriptReader(db),
     async create(input: CreateTurnInput) {
       return runInDrizzleTransaction(db, async () => {
         await lockThreadForTurnTransition(db, input.threadId);

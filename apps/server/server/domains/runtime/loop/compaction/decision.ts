@@ -1,5 +1,12 @@
 /** A request boundary's compaction choice; committed with its selected leaf and inbox batch. */
+
+import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { Block, Turn } from "@meridian/contracts/threads";
+import type {
+  CompactionFailureOutcome,
+  CompactionFailurePhase,
+  CompactionFailureReason,
+} from "../../../threads/index.js";
 import { orderTurnsByPosition } from "../../../threads/order-turns.js";
 import type { GenerateRequest, TokenizerFamily } from "../../gateway/index.js";
 import { estimateRequestTokens } from "./estimate.js";
@@ -29,24 +36,68 @@ export type CompactionDecision =
     }
   | { kind: "too_large"; plan: CompactionPlan };
 
+export type { CompactionFailureOutcome, CompactionFailurePhase, CompactionFailureReason };
+
 export class CompactionPreparationError extends Error {
-  constructor(
-    readonly reason:
-      | "nothing_to_compact"
-      | "context_too_large"
-      | "compaction_failed"
-      | "context_window_exceeded",
-  ) {
-    super(
-      reason === "nothing_to_compact"
-        ? "There is nothing to compact yet."
-        : reason === "context_too_large"
-          ? "This message is too long for this chat's model."
-          : reason === "context_window_exceeded"
-            ? "This conversation still exceeds the model's context window after compaction. Try a smaller request."
-            : "This conversation couldn't be compacted. Try again.",
-    );
+  constructor(readonly reason: CompactionFailureReason) {
+    super(compactionFailureMessage(reason));
   }
+}
+
+export class CompactionFailureError extends CompactionPreparationError {
+  constructor(readonly outcome: CompactionFailureOutcome) {
+    super(outcome.reason);
+  }
+}
+
+export function compactionFailureMessage(reason: CompactionFailureReason): string {
+  switch (reason) {
+    case "nothing_to_compact":
+      return "There is nothing to compact yet.";
+    case "context_too_large":
+      return "This message is too long for this chat's model.";
+    case "context_window_exceeded":
+      return "This conversation still exceeds the model's context window after compaction. Try a smaller request.";
+    default:
+      return "This conversation couldn't be compacted. Try again.";
+  }
+}
+
+/** Keep rejection reasons in details instead of expanding the system error-code family. */
+export function compactionFailureMeridianError(failure: CompactionFailureOutcome, message: string) {
+  const code =
+    failure.reason === "context_too_large" ||
+    failure.reason === "nothing_to_compact" ||
+    failure.reason === "context_window_exceeded"
+      ? failure.reason
+      : "compaction_failed";
+  return {
+    ...meridianErrorFromSystem(code, message),
+    details: {
+      reason: failure.reason,
+      phase: failure.phase,
+      ...(failure.estimatedTokens === undefined
+        ? {}
+        : { estimatedTokens: failure.estimatedTokens }),
+      ...(failure.fitLimitTokens === undefined ? {} : { fitLimitTokens: failure.fitLimitTokens }),
+    },
+  };
+}
+
+/** Preserve known outcomes across async preparation and the delivery transaction. */
+export function compactionFailureFrom(
+  error: unknown,
+  phase: CompactionFailurePhase,
+): CompactionFailureOutcome {
+  if (error instanceof CompactionFailureError) return error.outcome;
+  if (error instanceof CompactionPreparationError) return { reason: error.reason, phase };
+  return { reason: "compaction_failed", phase };
+}
+
+export function summaryCompactionFailure(
+  reason: "max_tokens" | "provider_error" | "tool_use" | "empty_text" | undefined,
+): CompactionFailureOutcome {
+  return { reason: reason ?? "compaction_failed", phase: "summary" };
 }
 
 export function decideCompaction(input: {

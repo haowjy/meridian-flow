@@ -78,7 +78,8 @@ export class UnsettledPlaceholderError extends Error {
 
 export interface PreparedLoop {
   userTurnId: TurnId;
-  currentTurn: CurrentTurn;
+  currentTurn: CurrentTurn | null;
+  terminalTurnId?: TurnId;
   execute(): Promise<Turn>;
 }
 

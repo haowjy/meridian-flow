@@ -1,0 +1,2 @@
+CREATE INDEX "turns_epoch_boundaries" ON "turns" USING btree ("thread_id","position") WHERE "turns"."prompt_bake_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "turns_unsettled" ON "turns" USING btree ("thread_id","position") WHERE "turns"."status" IN ('pending','streaming','waiting_interrupt');

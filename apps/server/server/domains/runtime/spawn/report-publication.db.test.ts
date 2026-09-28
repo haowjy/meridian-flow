@@ -35,7 +35,8 @@ else
     const { createDrizzleRepositoriesForTest } = await import(
       "../../threads/adapters/drizzle/repositories.js"
     );
-    const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
+    const { CompactionMetadataCodec, createDrizzleEventJournalWriter, readTranscriptPage } =
+      await import("../../threads/index.js");
     const { createInMemoryEventSink } = await import("../../observability/index.js");
     const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
     const { createDrizzleThreadLock } = await import("../adapters/drizzle-thread-lock.js");
@@ -665,14 +666,17 @@ else
 
       expect(await repair.sweep(10)).toBe(2);
       expect(eventSink.events.filter((event) => event.name === "placeholder.failed")).toEqual([]);
-      expect(await repos.turns.findById(primaryC.id)).toMatchObject({
-        status: "error",
-        error: "This compaction was interrupted.",
-      });
-      expect(await repos.turns.findById(childC.id)).toMatchObject({
-        status: "error",
-        error: "This compaction was interrupted.",
-      });
+      for (const turnId of [primaryC.id, childC.id]) {
+        const repaired = await repos.turns.findById(turnId);
+        expect(repaired).toMatchObject({
+          status: "error",
+          error: "This compaction was interrupted.",
+        });
+        expect(CompactionMetadataCodec.parse(repaired?.metadata)).toMatchObject({
+          reason: "interrupted",
+          phase: "recovery",
+        });
+      }
       expect(await repos.executionReports.findByExecution(ids.child, ids.execution)).toMatchObject({
         outcome: "failed",
         reason: "orphaned",
@@ -689,6 +693,71 @@ else
       expect((await repos.blocks.findById(ids.card))?.content).toMatchObject({
         props: { outcome: "failed", execution: ids.execution },
       });
+    });
+
+    it("settles an orphaned primary streaming reply during the startup sweep", async () => {
+      const orphan = await repos.turns.create({
+        threadId: ids.root,
+        prevTurnId: ids.rootTurn,
+        role: "assistant",
+        origin: "assistant",
+        status: "streaming",
+      });
+      const authority = createDrizzleRunClaim(db, { holderId: "primary-stream-sweep" });
+      const repair = createOrphanReportRepair({
+        inbox,
+        repos,
+        eventWriter,
+        authority,
+        threadLock,
+        publisher,
+        eventSink,
+      });
+
+      expect(await repair.sweep(10)).toBeGreaterThanOrEqual(1);
+      expect(await repos.turns.findById(orphan.id)).toMatchObject({
+        status: "error",
+        error: "This reply was interrupted.",
+      });
+      expect(await repos.turns.listUnsettledForThread(ids.root)).toEqual([]);
+
+      const after = await repos.turns.create({
+        threadId: ids.root,
+        prevTurnId: orphan.id,
+        role: "user",
+        origin: "writer",
+        status: "complete",
+      });
+      const root = await repos.threads.findById(ids.root);
+      if (!root) throw new Error("Orphan sweep root thread missing");
+      const page = await readTranscriptPage(repos, root, {
+        order: "newest_first",
+        unit: "turn",
+        limit: 1,
+      });
+      const cursor = JSON.parse(
+        Buffer.from(page.nextCursor as string, "base64url").toString("utf8"),
+      ) as { a: [number, number] };
+      expect(cursor.a[0]).toBe(after.position);
+
+      const fork = (
+        await repos.threads.createDerivedPrimary({
+          id: crypto.randomUUID() as ThreadId,
+          userId: root.userId,
+          projectId: root.projectId,
+          workId: null,
+          source: root,
+          originType: "fork",
+          originTurnId: orphan.id,
+        })
+      ).thread;
+      const inherited = await readTranscriptPage(repos, fork, {
+        order: "oldest_first",
+        unit: "turn",
+        limit: 10,
+        range: "inherited",
+      });
+      expect(inherited.entries.map((entry) => entry.turn.id)).toContain(orphan.id);
     });
 
     it("leaves a pending C alone while the session claim is held, even when its lease expired", async () => {
@@ -725,9 +794,16 @@ else
     });
 
     it("finalizes a stale C before run-start selection and redelivers the late writer message", async () => {
-      const c = await repos.turns.create({
+      const orphanAssistant = await repos.turns.create({
         threadId: ids.root,
         prevTurnId: ids.rootTurn,
+        role: "assistant",
+        origin: "assistant",
+        status: "streaming",
+      });
+      const c = await repos.turns.create({
+        threadId: ids.root,
+        prevTurnId: orphanAssistant.id,
         role: "compaction",
         origin: "system",
         status: "pending",
@@ -761,9 +837,16 @@ else
       });
       const lease = await authority.startExecution(ids.root, crypto.randomUUID());
       if (!lease) throw new Error("failed to acquire run claim");
+      await runDelivery.repairOrphanedTurns(lease);
+      expect((await repos.turns.findById(orphanAssistant.id))?.status).toBe("error");
+      const repaired = await repos.turns.findById(c.id);
+      expect(repaired?.status).toBe("error");
+      expect(CompactionMetadataCodec.parse(repaired?.metadata)).toMatchObject({
+        reason: "interrupted",
+        phase: "recovery",
+      });
       const assistantId = crypto.randomUUID() as TurnId;
       await runDelivery.adoptBatch(lease, async (selection) => {
-        expect((await repos.turns.findById(c.id))?.status).toBe("error");
         expect(selection.batch.map(({ id }) => id)).toEqual([message.id]);
         return {
           value: assistantId,
@@ -795,6 +878,7 @@ else
         cause: { kind: "success", finishReason: "end_turn" },
       });
       expect(await inbox.selectPending(ids.root)).toEqual([]);
+      expect(await repos.turns.listUnsettledForThread(ids.root)).toEqual([]);
     });
 
     it("stops the orphan report walk at a newer compaction execution selector", async () => {
@@ -942,14 +1026,20 @@ else
       });
       const lease = await authority.startExecution(ids.child, crypto.randomUUID());
       if (!lease) throw new Error("failed to acquire child run claim");
+      await runDelivery.repairOrphanedTurns(lease);
+      const repaired = await repos.turns.findById(c.id);
+      expect(repaired).toMatchObject({
+        status: "error",
+        error: "This compaction was interrupted.",
+      });
+      expect(CompactionMetadataCodec.parse(repaired?.metadata)).toMatchObject({
+        reason: "interrupted",
+        phase: "recovery",
+      });
       const assistantId = crypto.randomUUID() as TurnId;
 
       try {
         await runDelivery.adoptBatch(lease, async (selection) => {
-          expect(await repos.turns.findById(c.id)).toMatchObject({
-            status: "error",
-            error: "This compaction was interrupted.",
-          });
           expect(selection.batch.map(({ id }) => id)).toEqual([message.id]);
           return {
             value: assistantId,

@@ -152,12 +152,16 @@ export type ThreadActivity = {
 
 /**
  * Durable inbox message intent. A directed `message` wakes the thread; a
- * `notice` supplies context without starting a run.
+ * `notice` supplies context without starting a run; a `control` is a writer
+ * command (never chat text) that wakes the thread and executes at a run boundary.
  */
 export type MessageIntent = "message" | "notice" | "control";
 
 /** Runtime commands take their transcript position at execution, not enqueue. */
-export type ControlBody = { kind: "compact" } | { kind: "handoff_brief"; seedTurnId?: string };
+export type ControlBody =
+  | { kind: "compact" }
+  | { kind: "compaction_undo"; compactionTurnId: string }
+  | { kind: "handoff_brief"; seedTurnId?: string };
 export type EnqueueThreadControlRequest = { id: string; control: ControlBody };
 export type EnqueueThreadControlResponse = {
   id: string;
@@ -481,3 +485,8 @@ export type {
   TurnContextPreview,
   TurnContextPreviewFunctionTool,
 } from "./turn-context-preview.js";
+
+export type CompactionUndoAvailability = {
+  turnId: string;
+  availability: "likely" | "would_recompact";
+} | null;

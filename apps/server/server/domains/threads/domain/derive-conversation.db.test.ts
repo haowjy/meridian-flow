@@ -17,9 +17,13 @@ else
     const { createBoundAgentCatalog, createDrizzleAgentRevisionStore } = await import(
       "../../packages/index.js"
     );
-    const { createDrizzleEventJournalReader, createDrizzleEventJournalWriter } = await import(
-      "../index.js"
-    );
+    const {
+      compactionUndoMetadata,
+      createDrizzleEventJournalReader,
+      createDrizzleEventJournalWriter,
+      loadThreadConversationContext,
+      revertedCompactionIds,
+    } = await import("../index.js");
     const { hashPromptBakeContent } = await import("./prompt-bake-hash.js");
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { DerivedSourceNotFoundError, forkThreadAgent } = await import(
@@ -174,7 +178,7 @@ else
       expect(binding?.invocationOverlay).toEqual(fixture.invocationOverlay);
     });
 
-    it("copies every image decision through the fork cutoff", async () => {
+    it("copies image decisions and scopes compaction undo to the fork cutoff", async () => {
       const fixture = await setupSource();
       const image = await repos.blocks.create({
         turnId: fixture.firstTurn.id,
@@ -204,7 +208,7 @@ else
           kind: "prompt_epoch_boundary",
           cause: "compaction",
           compactedThrough: { turnId: fixture.firstTurn.id },
-          pinnedRequestTurnId: fixture.firstTurn.id,
+          pinnedRequestTurnIds: [fixture.firstTurn.id],
         },
       });
       await repos.imageInclusions.set({
@@ -256,6 +260,34 @@ else
           { decisionTurnId: compaction.id, included: true },
         ].sort((left, right) => left.decisionTurnId.localeCompare(right.decisionTurnId)),
       );
+      const undo = await repos.turns.create({
+        threadId: fixture.source.id,
+        prevTurnId: compaction.id,
+        role: "system",
+        origin: "system",
+        status: "complete",
+        metadata: compactionUndoMetadata(compaction.id),
+      });
+      const afterUndo = await createFork(fixture.source, fixture.deps, {
+        originTurnId: undo.id,
+      });
+      const betweenCompactionAndUndo = await createFork(fixture.source, fixture.deps, {
+        originTurnId: compaction.id,
+      });
+      for (const [fork, expected] of [
+        [afterUndo, { included: false, decisionTurnId: fixture.firstTurn.id }],
+        [betweenCompactionAndUndo, { included: true, decisionTurnId: compaction.id }],
+      ] as const) {
+        const history = await loadThreadConversationContext(repos, fork.thread);
+        expect(
+          (
+            await repos.imageInclusions.findByThread(
+              fork.thread.id,
+              revertedCompactionIds(history.turns),
+            )
+          ).find((row) => row.blockId === image.id),
+        ).toMatchObject(expected);
+      }
     });
 
     it("reuses repeated client IDs by the existing fork row", async () => {
