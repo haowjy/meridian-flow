@@ -7,6 +7,16 @@
 
 ## [Unreleased]
 
+- Work screen: the Work's name sits in the pane band as a tab beside an All Work door; rename it in the tab or the page heading, which stay in sync.
+- Work description clamps to three lines; click it to show more, Edit to change it in place.
+- Create Work and Create project open as dialogs over their list; Back after creating returns to the list.
+- Work reopens the last Work opened on this device.
+- Work Chats tab lists that Work's chats from the project chat feed (archived chats hidden). Files tab groups Drafts, Scratch and Uploads with new notes, uploads, rename and delete in place; an opened file shows in the dock.
+- Editing text in place never moves or resizes it. One protocol everywhere: Enter or blur saves, Escape or an empty name cancels, failures stay open with their message. Chat titles rename inside their tab.
+- Confirm/dismiss button pairs sit right-aligned, Cancel first.
+- Fix: the invalid-character name warning showed a raw "{0}".
+- `server`: Works drop `description` (migration 0010); `GET /api/works/:workId/threads` is removed in favor of the project chat feed's `workId` filter.
+
 - Keep writer messages visible after the reply starts; only machine-delivered inbox messages fold into activity rows.
 - Show only "Queued" under a writer message the model has not read yet.
 - Keep "needs your answer" on a chat when the writer sends while a question is parked.
