@@ -7,6 +7,18 @@ instead of the N:1 `threads.workId` column.
 
 `domain/bound-conversation.ts` owns atomic thread creation, retained Agent configuration and optional Work membership. Root and child creation and the `derive-conversation.ts` handoff/fork operations use it. A fork has no Agent selection: it keeps the source's retained revision, resolved configuration, invocation overlay, and bake in effect at its cutoff, independent of catalog changes. Its client-minted id is create-or-get by the row alone: the same owner and project plus `originType = fork` and `kind = primary` returns the existing row; any other existing row conflicts. Same-revision handoff points to the acted-on thread's current bake; a different Agent and a spawned child start unbaked. Each derivation includes required history and provenance writes in its outer transaction. Spawn execution begins only after commit.
 
+## Handoff creation
+
+Handoff requires a client destination id, selected cutoff and Agent selection.
+It shares fork's settled-cutoff normalization and row-only create-or-get rule
+(with `originType = handoff`). The cutoff owner is its recorded source, including
+an inherited fork cutoff. A subagent cannot be a derivation source.
+The create transaction writes one pending system seed, its `handoff_brief`
+control and the source event (cutoff, no summary). Delivery schedules the wake
+after commit. The control's `seedTurnId` owns the first seed even across a
+process death. See [runtime handoff](../../runtime/.context/handoff.md) and
+[HTTP contract](../../../../../../docs/api/thread-handoff.md).
+
 ## Prompt lifetime
 
 A thread's system prompt **and its advertised tool list** are frozen together

@@ -123,7 +123,7 @@ A pending placeholder is a turn with status `pending` and a role in
 `isPendingPlaceholder` or the database's `pendingPlaceholderPredicate`, never a
 local role or status check.
 
-Run start finalizes stale pending placeholders before selection, using the
+Run start preserves placeholders named by a pending control’s `seedTurnId` and finalizes other stale pending placeholders before selection, using the
 new run's own held claim. The orphan-repair lane also scans indexed pending
 placeholders, so quiet primary threads recover without a new wake; child
 reports are finalized on C and published after releasing the child's lock. A

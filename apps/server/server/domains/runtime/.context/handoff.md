@@ -1,0 +1,30 @@
+# Handoff seeds
+
+The first seed is already in the destination chain before a run exists. Its
+pending control owns it through `body.seedTurnId`. Both run-start repair and
+the orphan scan re-read pending ownership under the thread lock; a crashed
+brief redelivers into the same seed, not an interrupted replacement.
+
+The barrier gives a row-owned seed an empty adoption batch. Messages already
+chained after it are late arrivals. Run start binds S; the slow brief call runs
+without a transaction. The ending delivery commit settles S, acknowledges K,
+adopts arrivals and binds the next control or reply (or releases a quiet lease).
+Retry has no seed pointer: its new seed is reserved at the execution leaf.
+The current-turn kind is `handoff_brief`; the live phase is `briefing`.
+
+The source ref is frozen in seed metadata; Stop/failure needs no source lookup.
+An expired lease receipt does not block row-owned Stop.
+
+Success stores a `handoff-brief` custom block with frozen `modelText`. Failure
+and Stop store the source-naming unavailable block. Model rendering replays
+that text verbatim. Neither first-send nor Retry reads source history into the
+destination request. Stop releases unanswered messages. Before binding, Stop
+and withdrawal settle S themselves, under the same thread/receipt locks as
+reservation; after binding they cancel its owning run.
+
+C7a injects `handoffSummarizer` using the existing summary outcome, with scripts
+in protocol tests. The composition root deliberately supplies an unavailable
+adapter, not a fabricated brief. C7b replaces this seam with the shared
+owner/source-aware summarizer and owns source projection/cache preparation,
+response settlement, costs and typed failure metadata. No paid response rows
+are produced by the C7a adapter.

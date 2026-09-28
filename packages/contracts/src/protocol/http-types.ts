@@ -370,6 +370,13 @@ export const forkThreadRequestSchema = z
   })
   .strict();
 
+export const handoffThreadRequestSchema = z.strictObject({
+  id: z.uuid(),
+  originTurnId: z.uuid(),
+  agentSelection: z.strictObject({ catalogEntryId: z.uuid(), definitionRevisionId: z.uuid() }),
+});
+export type HandoffThreadRequest = z.infer<typeof handoffThreadRequestSchema>;
+
 export type ForkThreadRequest = z.infer<typeof forkThreadRequestSchema>;
 
 export type UpdateWorkWriteModeRequest = {

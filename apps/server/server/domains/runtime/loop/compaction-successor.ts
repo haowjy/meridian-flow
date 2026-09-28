@@ -153,8 +153,9 @@ export async function prepareCompactionSuccessor(args: {
           ),
           decidingTurnId: placeholder.id as TurnId,
         },
-        skipCompaction: !selection?.control,
-        controlMessageId: selection?.control?.id,
+        skipCompaction: selection?.control?.body.kind !== "compact",
+        controlMessageId:
+          selection?.control?.body.kind === "compact" ? selection.control.id : undefined,
         pinnedRequestTurnIds: new Set(selection?.outstanding.map((row) => row.id)),
         signal: input.signal,
         promptBakes: {

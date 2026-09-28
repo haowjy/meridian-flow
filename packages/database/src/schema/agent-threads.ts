@@ -126,13 +126,17 @@ export const threads = pgTable(
       sql`${table.originType} != 'spawn' OR (${table.kind} = 'subagent' AND ${table.parentThreadId} IS NOT NULL AND ${table.originTurnId} IS NOT NULL AND ${table.spawnStatus} IS NOT NULL)`,
     ),
     check(
+      "threads_handoff_origin_turn_required",
+      sql`${table.originType} <> 'handoff' OR ${table.originTurnId} IS NOT NULL`,
+    ),
+    check(
       "threads_handoff_fork_primary",
       sql`${table.originType} NOT IN ('handoff', 'fork') OR ${table.kind} = 'primary'`,
     ),
     // A fork/handoff is a SIBLING of its source (shares its parentThreadId,
     // which is null when the source is itself a root), never the source's
     // child, so `parentThreadId` is not required here. `threads_handoff_fork_primary`
-    // already requires kind='primary' for both; handoff has no other required field.
+    // requires kind='primary' for both; each derivation requires its cutoff.
     check(
       "threads_fork_origin_required_fields",
       sql`${table.originType} != 'fork' OR ${table.originTurnId} IS NOT NULL`,
@@ -231,7 +235,7 @@ export const threadInboxMessages = pgTable(
     ),
     check(
       "thread_inbox_messages_body_valid",
-      sql`(CASE WHEN ${table.intent} = 'control' THEN ${table.body}->>'kind' IN ('compact') ELSE ${table.body}->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE`,
+      sql`(CASE WHEN ${table.intent} = 'control' THEN ${table.body}->>'kind' IN ('compact', 'handoff_brief') ELSE ${table.body}->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE`,
     ),
   ],
 );
@@ -265,7 +269,7 @@ export const threadRunLeases = pgTable(
   (table) => [
     check(
       "thread_run_leases_phase_valid",
-      sql`${table.phase} IN ('generating','waiting','compacting')`,
+      sql`${table.phase} IN ('generating','waiting','compacting','briefing')`,
     ),
     index("thread_run_leases_expiry").on(table.expiresAt),
   ],

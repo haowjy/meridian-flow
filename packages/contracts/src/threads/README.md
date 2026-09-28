@@ -2,7 +2,9 @@
 
 `MessageIntent` distinguishes directed `message`, context-only `notice`, and
 runtime `control`. A control is not model-visible chat text. Its current body
-is `{ kind: "compact" }`; commands are writer-only, not tools.
+is `{ kind: "compact" }` or `{ kind: "handoff_brief", seedTurnId?: string }`.
+The seed pointer is internal to handoff creation; public Retry omits it.
+Commands are writer-only, not tools.
 
 `PendingInboxItem.control` carries that body on control rows. `summary` is the
 writer label ("Compact conversation"). Snapshot pending state and
@@ -21,3 +23,9 @@ plus the newest writer request; ids may identify user or directed system turns.
 See [the HTTP control API](../../../../docs/api/thread-controls.md) for enqueue
 idempotency and withdrawal outcomes. Frontend commands and divider rendering
 are separate from these transport contracts.
+
+Handoff seeds are pending `system` placeholders with current-turn kind
+`handoff_brief` and phase `briefing`. The first seed is owned by its pending
+control row, so crash recovery completes that same seed. Its custom block
+carries frozen `modelText` and available/unavailable brief data. See
+[handoff API](../../../../docs/api/thread-handoff.md).

@@ -2,8 +2,8 @@
 import { AgentSelectionError } from "../domains/packages/index.js";
 import {
   DerivedSourceNotFoundError,
+  DerivedThreadConflictError,
   ForkCutoffError,
-  ForkThreadConflictError,
   SubagentDerivationError,
 } from "../domains/threads/index.js";
 
@@ -16,6 +16,6 @@ export function deriveConversationErrorStatus(error: unknown): number | null {
   ) {
     return 400;
   }
-  if (error instanceof ForkThreadConflictError) return 409;
+  if (error instanceof DerivedThreadConflictError) return 409;
   return null;
 }

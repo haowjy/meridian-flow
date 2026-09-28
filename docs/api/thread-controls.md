@@ -1,8 +1,8 @@
 # Thread control API
 
 Both routes authenticate the writer and require ownership of the thread.
-Controls are durable inbox entries, not chat text. Only `compact` is supported;
-undo and handoff commands are separate checkpoints.
+Controls are durable inbox entries, not chat text. `compact` and `handoff_brief` Retry are supported; undo is a separate checkpoint.
+See [handoff creation and seed data](thread-handoff.md).
 
 ## Enqueue
 

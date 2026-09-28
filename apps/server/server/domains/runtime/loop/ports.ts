@@ -17,7 +17,7 @@ import type {
 } from "@meridian/contracts/threads";
 
 export type RunId = string;
-export type CurrentTurn = { id: TurnId; kind: "assistant" | "compaction" };
+export type CurrentTurn = { id: TurnId; kind: "assistant" | "compaction" | "handoff_brief" };
 
 /** Lease lifetime; a held lease is renewed at a third of this interval. */
 export const DEFAULT_LEASE_TTL_MS = 30_000;

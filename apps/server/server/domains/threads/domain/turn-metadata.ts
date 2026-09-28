@@ -55,6 +55,14 @@ export const DerivationSeedMetadataCodec = z.object({
   derivation: z.enum(["fork", "handoff"]),
 });
 
+export const HandoffSeedMetadataCodec = DerivationSeedMetadataCodec.extend({
+  derivation: z.literal("handoff"),
+  sourceThreadId: z.string().min(1),
+  sourceRef: z.string().min(1),
+  cutoffTurnId: z.string().min(1),
+  controlMessageId: z.string().min(1),
+}).passthrough();
+
 export const CompactionUndoMetadataCodec = z.object({
   kind: z.literal("compaction_undo"),
   revertsCompactionTurnId: z.string().min(1),
@@ -190,6 +198,15 @@ export function derivationSeedMetadata(derivation: "fork" | "handoff"): JsonObje
   return { kind: "derivation_seed", derivation };
 }
 
+export function handoffSeedMetadata(input: {
+  sourceThreadId: string;
+  sourceRef: string;
+  cutoffTurnId: string;
+  controlMessageId: string;
+}): JsonObject {
+  return { ...derivationSeedMetadata("handoff"), ...input };
+}
+
 export function compactionUndoMetadata(revertsCompactionTurnId: string): JsonObject {
   return { kind: "compaction_undo", revertsCompactionTurnId };
 }
@@ -207,6 +224,8 @@ export function interruptedPlaceholderError(
   turn: Pick<Turn, "metadata"> & { role: PendingPlaceholderRole },
 ): string {
   switch (turn.role) {
+    case "system":
+      return "This handoff brief was interrupted.";
     case "compaction": {
       return (turn.metadata as JsonObject | null)?.trigger === "manual"
         ? "This manual compaction was interrupted."

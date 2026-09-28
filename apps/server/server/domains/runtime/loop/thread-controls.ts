@@ -25,10 +25,37 @@ export function createThreadControls(deps: {
   cancel(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
   acknowledge(threadId: ThreadId, id: string): Promise<void>;
   wake(threadId: ThreadId): void;
+  findThread(id: ThreadId): Promise<import("@meridian/contracts/threads").Thread | null>;
+  pendingRows(id: ThreadId): Promise<InboxMessage[]>;
+  cancelSeed(threadId: ThreadId, turnId: TurnId): Promise<void>;
 }): ThreadControls {
+  async function cancelUnboundSeed(threadId: ThreadId, row: InboxMessage) {
+    if (row.body.kind !== "handoff_brief" || !row.body.seedTurnId) return;
+    await deps.cancelSeed(threadId, row.body.seedTurnId);
+  }
   return {
+    cancelPendingSeed: (threadId, turnId) =>
+      deps.withThreadLock(threadId, async () => {
+        const receipt = await deps.lockReceipt(threadId);
+        const row = (await deps.pendingRows(threadId)).find(
+          (row) =>
+            row.intent === "control" &&
+            row.body.kind === "handoff_brief" &&
+            row.body.seedTurnId === turnId,
+        );
+        if (!row || receipt?.ids.includes(row.id)) return false;
+        await cancelUnboundSeed(threadId, row);
+        await deps.acknowledge(threadId, row.id);
+        deps.wake(threadId);
+        return true;
+      }),
     enqueueControl: (input) =>
       deps.withThreadLock(input.threadId, async () => {
+        if (input.control.kind === "handoff_brief") {
+          const thread = await deps.findThread(input.threadId);
+          if (thread?.originType !== "handoff" || input.control.seedTurnId)
+            throw new ThreadControlError(409, "not_a_handoff_retry");
+        }
         const existing = await deps.findMessage(input.id);
         if (existing && (existing.threadId !== input.threadId || existing.intent !== "control"))
           throw new ThreadControlError(409, "control_id_conflict");
@@ -60,6 +87,7 @@ export function createThreadControls(deps: {
             return { outcome: "already_finished" };
           if (await deps.cancel(threadId, receipt.turnId)) return { outcome: "stopping" };
         }
+        await cancelUnboundSeed(threadId, row);
         await deps.acknowledge(threadId, controlId);
         deps.wake(threadId);
         return { outcome: "withdrawn" };

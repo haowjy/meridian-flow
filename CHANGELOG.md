@@ -8,6 +8,10 @@
 ## [Unreleased]
 
 ### Changed
+- Handoffs create immediately with a recoverable brief seed. Stop preserves queued messages. Retry appends a new seed.
+- Handoff requests require a destination id and cutoff; client-written summaries removed.
+
+### Changed
 
 - Compaction clears stale document reads, write text, search excerpts and references from model context. Fresh text and writer transcripts stay intact.
 

@@ -7,13 +7,25 @@ import { finalizeExecution } from "./execution-finalizer.js";
 
 /** Call under the thread lock and the caller's already-held session claim. */
 export async function finalizeOrphanedPlaceholder(
-  deps: Parameters<typeof finalizeExecution>[0],
+  deps: Parameters<typeof finalizeExecution>[0] & {
+    inbox: Pick<import("./ports.js").InboxReader, "selectPending">;
+  },
   input: { threadId: ThreadId },
 ): Promise<SavedExecutionReport[]> {
   const reports: SavedExecutionReport[] = [];
   const pending = await deps.repos.turns.listPendingPlaceholdersForThread(input.threadId);
+  const pendingControls = await deps.inbox.selectPending(input.threadId);
   for (const placeholder of pending) {
     if (!isPendingPlaceholder(placeholder)) continue;
+    if (
+      pendingControls.some(
+        (row) =>
+          row.intent === "control" &&
+          row.body.kind === "handoff_brief" &&
+          row.body.seedTurnId === placeholder.id,
+      )
+    )
+      continue;
     const completion = await finalizeExecution(deps, {
       threadId: input.threadId,
       turnId: placeholder.id,

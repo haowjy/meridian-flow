@@ -99,7 +99,8 @@ async function fixture(
   };
   async function run(threadId = thread.id, tools?: Tool[]) {
     const run = await rig.orchestrator.prepare({ threadId, userText: "Continue.", tools });
-    expect((await run.execute()).status).toBe("complete");
+    const outcome = await run.execute();
+    expect(outcome.status, JSON.stringify(outcome)).toBe("complete");
     return run;
   }
   return {
@@ -738,12 +739,16 @@ describe("frozen prompt provider requests", () => {
         ),
       ).toBe(true);
     }
-    const handoff = await handoffThreadAgent(rig.derive, {
-      threadId: rig.thread.id,
-      userId: rig.thread.userId,
-      agentSelection: rig.original.selection,
-      summary: "Continue the revision.",
-    });
+    const { thread: handoff } = await handoffThreadAgent(
+      { ...rig.derive, delivery: rig.delivery },
+      {
+        id: crypto.randomUUID(),
+        originTurnId: (await rig.repos.turns.getLatestByThread(rig.thread.id))!.id,
+        threadId: rig.thread.id,
+        userId: rig.thread.userId,
+        agentSelection: rig.original.selection,
+      },
+    );
     expect(handoff.initialPromptBakeId).toBe(parent?.initialPromptBakeId);
     await rig.run(handoff.id);
     const request = rig.requests[rig.requests.length - 1];
@@ -761,7 +766,7 @@ describe("frozen prompt provider requests", () => {
     expect(
       request.messages.some(
         (message) =>
-          message.role === "user" && JSON.stringify(message.content).includes("Handoff brief"),
+          message.role === "user" && JSON.stringify(message.content).includes("Earlier context."),
       ),
     ).toBe(true);
   });
@@ -773,11 +778,16 @@ describe("frozen prompt provider requests", () => {
       slug: "new-writer",
       content: "---\nname: New Writer\nmode: primary\n---\n\nNew writer prompt.",
     });
-    const handoff = await handoffThreadAgent(rig.derive, {
-      threadId: rig.thread.id,
-      userId: rig.thread.userId,
-      agentSelection: nextAgent.selection,
-    });
+    const { thread: handoff } = await handoffThreadAgent(
+      { ...rig.derive, delivery: rig.delivery },
+      {
+        id: crypto.randomUUID(),
+        originTurnId: (await rig.repos.turns.getLatestByThread(rig.thread.id))!.id,
+        threadId: rig.thread.id,
+        userId: rig.thread.userId,
+        agentSelection: nextAgent.selection,
+      },
+    );
     expect(handoff.agentDefinitionRevisionId).toBe(nextAgent.selection.definitionRevisionId);
     expect(handoff.initialPromptBakeId).toBeNull();
   });
@@ -820,11 +830,16 @@ describe("frozen prompt provider requests", () => {
       }),
     ).rejects.toBeInstanceOf(SubagentDerivationError);
     await expect(
-      handoffThreadAgent(rig.derive, {
-        threadId: child.id,
-        userId: child.userId,
-        agentSelection: rig.original.selection,
-      }),
+      handoffThreadAgent(
+        { ...rig.derive, delivery: rig.delivery },
+        {
+          id: crypto.randomUUID(),
+          originTurnId: parentTurn.id,
+          threadId: child.id,
+          userId: child.userId,
+          agentSelection: rig.original.selection,
+        },
+      ),
     ).rejects.toBeInstanceOf(SubagentDerivationError);
   });
 

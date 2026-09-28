@@ -74,6 +74,7 @@ function emptyTurnUsage(): NonNullable<Turn["usage"]> {
 
 /** The role-to-kind rule for run-owned turns; SQL bindTurn mirrors this rule. */
 export function currentTurnKind(turn: Pick<Turn, "role">): CurrentTurn["kind"] {
+  if (turn.role === "system") return "handoff_brief";
   if (turn.role === "assistant" || turn.role === "compaction") return turn.role;
   throw new Error(`Not a current execution turn: ${turn.role}`);
 }

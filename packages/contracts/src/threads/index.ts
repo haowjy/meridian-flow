@@ -47,7 +47,7 @@ export type JsonObject = { [key: string]: JsonValue };
 export type ThreadLifecycleStatus = "idle" | "archived";
 
 /** Lease phase published by the running loop; `generating` around the model call, `waiting` between tool waits. */
-export type ThreadPhase = "generating" | "waiting" | "compacting";
+export type ThreadPhase = "generating" | "waiting" | "compacting" | "briefing";
 
 /**
  * Derived run status: awake iff a live lease exists, with the phase the holder
@@ -77,7 +77,10 @@ export type CurrentToolCall = {
 export type TurnRole = "user" | "assistant" | "system" | "compaction";
 
 /** Roles that can reserve a pending placeholder turn before execution completes. */
-export const PENDING_PLACEHOLDER_ROLES = ["compaction"] as const satisfies readonly TurnRole[];
+export const PENDING_PLACEHOLDER_ROLES = [
+  "compaction",
+  "system",
+] as const satisfies readonly TurnRole[];
 export type PendingPlaceholderRole = (typeof PENDING_PLACEHOLDER_ROLES)[number];
 
 export function isPlaceholderRole(role: TurnRole): role is PendingPlaceholderRole {
@@ -154,7 +157,7 @@ export type ThreadActivity = {
 export type MessageIntent = "message" | "notice" | "control";
 
 /** Runtime commands take their transcript position at execution, not enqueue. */
-export type ControlBody = { kind: "compact" };
+export type ControlBody = { kind: "compact" } | { kind: "handoff_brief"; seedTurnId?: string };
 export type EnqueueThreadControlRequest = { id: string; control: ControlBody };
 export type EnqueueThreadControlResponse = {
   id: string;
