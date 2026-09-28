@@ -27,6 +27,7 @@
 - Disable synchronous commit only on runner-owned DB test connections.
 
 - Reset DB tests with rollback or FK-ordered deletes, without per-case table rewrites.
+- Resolve guarded worktree DB targets for `db:apply-functions`; make `db:migrate` finish by applying functions so migrated databases are complete.
 
 - Fork or hand off a chat from any finished reply, including a reply a fork inherited. The new chat opens at once and finishes creating in the background; a reload lands on the same chat, and a failure stays on it with Retry. Hand off picks the Agent, starting from the source's. Subagent chats offer neither.
 - Show the handoff brief as a card that writes itself in place: Stop while it writes, the brief behind Show the whole brief once ready, and Retry on a brief that failed or was stopped. A queued Retry can be withdrawn; messages sent meanwhile wait behind the brief.

@@ -9,7 +9,7 @@ Local-dev-only utilities. Not loaded by the application runtime.
 - **Environment resolution** — `lib/dev-env.ts` (`DEV_DATABASES`, worktree URL rewrite, `applyDevEnvToProcess`, `ensureDirenvAllowed`)
 - **Database admin** — `lib/dev-db.ts` (ensure/create/drop/reset against local Postgres)
 - **Infra lifecycle** — `lib/dev-infra.ts` + `docker-compose.yml` (`postgres:16` on `:54422`)
-- **Schema application** — `bootstrap.ts`, `prepare-db.ts` (migrate + `db:apply-functions`)
+- **Schema application** — `bootstrap.ts`, `prepare-db.ts` (ensure DB + extensions; `db:migrate` applies migrations and SQL functions)
 - **Dev orchestration** — `dev-tmux.ts` (worktree-scoped tmux + portless routes)
 - **Session planning** — `dev-session-plan.ts` (canonical env, redacted commands, internal API origin)
 - **Readiness** — `dev-readiness.ts` (real HTTP probes before reporting started)

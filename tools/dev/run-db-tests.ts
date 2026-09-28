@@ -73,10 +73,6 @@ async function main(): Promise<void> {
       );
       if (migrationExit !== 0)
         throw new Error(`DB migrations exited with status ${migrationExit}.`);
-      const functionsExit = await run(repoRoot, ["db:apply-functions"], databaseUrl);
-      if (functionsExit !== 0) {
-        throw new Error(`DB function installation exited with status ${functionsExit}.`);
-      }
       await Promise.all(
         workerDatabaseUrls.map(async (workerDatabaseUrl) => {
           const { targetDb: workerDb } = await cloneDatabaseForUrl(databaseUrl, workerDatabaseUrl);
