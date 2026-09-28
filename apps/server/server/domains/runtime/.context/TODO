@@ -7,4 +7,4 @@
   (`loop/orchestrator.ts`). Raise the cap to the provider maximum, or recover
   from a `max_tokens` stop mid tool call instead of failing the run.
 
-- C7b (`loop/orchestrator.ts`, `summary/pending-handoff-summarizer.ts`): replace and delete the separate `handoffSummarizer` dependency and unavailable adapter when owner/source-aware paid summaries land. Separate brief setup from destination reply preflight, moving initial bake persistence to its successor for unbaked destinations. C7a alone must not ship to main/staging.
+- C7b (`loop/orchestrator.ts`, `summary/pending-handoff-summarizer.ts`): replace and delete the separate `handoffSummarizer` dependency and unavailable adapter when owner/source-aware paid summaries land. Separate brief setup from destination reply preflight, moving initial bake persistence to its successor for unbaked destinations. Give a failed seed its own typed outcome codec composing `SummaryRejectionReason` (`ports/conversation-summarizer.ts`), not the compaction codecs. C7a alone must not ship to main/staging.

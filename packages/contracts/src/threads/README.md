@@ -29,8 +29,8 @@ idempotency and withdrawal outcomes. Frontend commands and divider rendering
 are separate from these transport contracts.
 
 Handoff seeds are pending `system` placeholders with current-turn kind
-`handoff_brief` and phase `briefing`. The first seed is owned by its pending
-control row, so crash recovery completes that same seed. Its custom block
+`handoff_brief` and phase `briefing`. After a crash the first seed is
+completed in place; clients never see a replacement seed for it. Its custom block
 carries frozen `modelText` and available/unavailable brief data. See
 [handoff API](../../../../docs/api/thread-handoff.md).
 

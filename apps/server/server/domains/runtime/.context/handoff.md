@@ -1,10 +1,10 @@
 # Handoff seeds
 
 The first seed is already in the destination chain before a run exists. Its
-pending control owns it through `body.seedTurnId`. Shared `finalizeOrphanedTurns`
-re-reads pending ownership under the thread lock at run start, idle materialization,
-and orphan scanning; a crashed
-brief redelivers into the same seed, not an interrupted replacement.
+pending control owns it through `body.seedTurnId`, so orphan repair leaves it
+pending and a crashed brief redelivers into the same seed, not an interrupted
+replacement. The ownership check lives in the one orphan finalizer; see
+[placeholders and recovery](compaction.md).
 
 The barrier gives a row-owned seed an empty adoption batch. Messages already
 chained after it are late arrivals. Run start binds S; the slow brief call runs
@@ -44,3 +44,11 @@ adapter, not a fabricated brief. C7b replaces this seam with the shared
 owner/source-aware summarizer and owns source projection/cache preparation,
 response settlement, costs and typed failure metadata. No paid response rows
 are produced by the C7a adapter.
+
+A failed S today stores writer copy in `turn.error` and emits the event code
+`handoff_brief_failed`; it has no typed failure metadata yet. Do not reuse
+`compactionFailureMetadata` or `CompactionFailureReasonCodec` for S: those
+describe C, and the finalizer applies them only to `role: "compaction"`. The
+brief's typed outcome is its own codec that composes the shared summarizer
+reasons (`SummaryRejectionReason` in `ports/conversation-summarizer.ts`,
+today carved out of the compaction reasons); C7b adds it.

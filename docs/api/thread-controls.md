@@ -33,8 +33,9 @@ Returns 201 for a new row or 200 for an existing id:
 { id: string; pending: PendingInboxItem | null; turnId: string | null }
 ```
 
-A queued row has `pending.control.kind: "compact"`. Once reserved, its turn
-carries `metadata.controlMessageId`; an automatic compaction satisfying the
+A queued row carries its body in `pending.control` (`kind` is `compact`,
+`compaction_undo`, or `handoff_brief`). Once executed, its turn carries
+`metadata.controlMessageId`; an automatic compaction satisfying a `compact`
 request carries `satisfiesControlId` instead. Completed controls return their
 turn id. A withdrawn row returns both `pending` and `turnId` null. Its key stays
 retired: retrying enqueue never schedules a withdrawn or completed control.

@@ -19,7 +19,9 @@ Drizzle schema, migrations, functions, and Postgres connection helpers for the M
 - Migrations: fresh-install baseline `0000_baseline.sql` (no
   `auth.users` references) plus additive migrations listed in
   `src/migrations/meta/_journal.json`. `pnpm db:generate` appends the next
-  migration.
+  migration. When merging branches whose migrations collide, delete the
+  incoming migration and regenerate it from the merged schema; never renumber
+  or rename by hand (see `.context/CONTEXT.md`).
 - Existing dev databases from the old chain must be reset with `pnpm db:reset`
   (destroys local data); the new baseline is not an incremental upgrade. Never
   reset another developer's database. Legacy imports are a separate ETL.
