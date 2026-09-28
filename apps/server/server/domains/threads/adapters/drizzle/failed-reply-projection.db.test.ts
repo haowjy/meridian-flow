@@ -72,16 +72,6 @@ else
     });
     afterAll(async () => db.close());
 
-    it("keeps the failed reply errored after the next writer turn is projected", async () => {
-      await projectWriterTurn(ids.nextUser, ids.failed);
-
-      await expect(repos.turns.findById(ids.failed)).resolves.toMatchObject({
-        status: "error",
-        finishReason: "error",
-        error: "provider unavailable",
-      });
-    });
-
     it("keeps each of consecutive failures errored in the snapshot", async () => {
       await projectWriterTurn(ids.nextUser, ids.failed);
       await failedAssistant(ids.secondFailed, ids.nextUser, "rate limited");

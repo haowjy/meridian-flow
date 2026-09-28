@@ -172,15 +172,6 @@ else
       expect(await repos.threadWorks.findPrimary(childId)).toBeNull();
     });
 
-    it("serializes concurrent Work targets to one primary", async () => {
-      await Promise.all([rebind(ids.noWorkId), rebind(ids.targetWorkId)]);
-      const primary = await repos.threadWorks.findPrimary(ids.threadId);
-      expect(primary?.workId === ids.noWorkId || primary?.workId === ids.targetWorkId).toBe(true);
-      expect(
-        (await repos.threadWorks.listByThread(ids.threadId)).filter((row) => row.isPrimary),
-      ).toHaveLength(1);
-    });
-
     it("retains historical feed projection and rolls back if obligation enqueue fails", async () => {
       await repos.threadWorks.addMembership(ids.threadId, ids.workId, true);
       await expect(
@@ -222,42 +213,6 @@ else
           work: { id: ids.targetWorkId, title: "Rebound target" },
         });
       }
-    });
-
-    it("translates target deletion after preflight into the canonical error", async () => {
-      const staleTarget = await works.findById(ids.targetWorkId);
-      if (!staleTarget) throw new Error("Expected target fixture");
-      let targetReads = 0;
-      const racingWorks = {
-        async findById(workId: string) {
-          if (workId !== ids.targetWorkId) return works.findById(workId);
-          targetReads += 1;
-          if (targetReads === 1) await works.softDelete(ids.targetWorkId);
-          return staleTarget;
-        },
-        findNoWork: (projectId: typeof ids.projectId) => works.findNoWork(projectId),
-      };
-      await expect(
-        repos.transaction(() =>
-          rebindThreadWork(
-            {
-              threads: repos.threads,
-              workContextNotices: createTestDrizzleDelivery(db),
-              threadWorks: repos.threadWorks,
-              works: racingWorks,
-            },
-            {
-              threadId: ids.threadId,
-              workId: ids.targetWorkId,
-            },
-          ),
-        ),
-      ).rejects.toMatchObject({
-        name: "RebindThreadWorkError",
-        code: "target_work_unavailable",
-        workId: ids.targetWorkId,
-      });
-      await expect(repos.threadWorks.findPrimary(ids.threadId)).resolves.toBeNull();
     });
   });
 

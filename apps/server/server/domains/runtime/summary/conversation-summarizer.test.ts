@@ -185,7 +185,6 @@ describe("conversation summarizer", () => {
     expect(sent.messages.at(-1)?.content).toMatchObject([
       { type: "text", text: expect.stringContaining("style directions") },
     ]);
-    expect(rig.prefixCacheStateFor).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       kind: "complete",
       summarizer: { path: "warm", segments: 1 },

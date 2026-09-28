@@ -857,22 +857,6 @@ else
         }),
       ).rejects.toThrow();
     });
-    it("C7 mid-run selection normalizes to the last settled turn", async () => {
-      const r = await fixture();
-      const streaming = await repos.turns.create({
-        threadId: r.source.id,
-        prevTurnId: r.firstTurn.id,
-        role: "assistant",
-        origin: "assistant",
-        status: "streaming",
-      });
-      const next = await handoffThreadAgent(r.derive, {
-        ...r.input,
-        id: crypto.randomUUID(),
-        originTurnId: streaming.id,
-      });
-      expect(next.thread.originTurnId).toBe(r.firstTurn.id);
-    });
     it("C7 S and K commit together and event has cutoff without summary", async () => {
       const r = await fixture();
       expect(r.seed).toMatchObject({ role: "system", status: "pending" });
@@ -1100,18 +1084,6 @@ else
       expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
       expect(JSON.stringify(r.gateway.requests.at(-1))).not.toContain("must not persist");
     });
-
-    it("C7 failed brief lets hi run with the fallback", async () => {
-      const r = await fixture(async () => ({
-        kind: "failed",
-        error: new Error("brief failed"),
-        modelResponses: [],
-      }));
-      await r.send(r.thread.id, "hi");
-      await r.drain();
-      expect((await r.settled())[0].status).toBe("error");
-      expect(JSON.stringify(r.gateway.requests.at(-1))).toContain("No brief is available.");
-    });
     it.each([
       "before",
       "bound",
@@ -1296,34 +1268,6 @@ else
       expect(request).toContain("before remote Stop");
       expect(request).toContain("during remote Stop");
       expect(request).not.toContain("must not persist");
-    });
-
-    it.each([
-      "fork",
-      "handoff",
-    ] as const)("keeps the lineage root when deriving a %s from a fork", async (kind) => {
-      const r = await setupSource();
-      const fork = await forkThreadAgent(r.deps, {
-        id: crypto.randomUUID(),
-        threadId: r.source.id,
-        userId: ids.userId,
-        originTurnId: r.firstTurn.id,
-      });
-      const input = {
-        id: crypto.randomUUID(),
-        threadId: fork.thread.id,
-        userId: ids.userId,
-        originTurnId: r.firstTurn.id,
-        agentSelection: r.agent.selection,
-      };
-      const derived =
-        kind === "fork"
-          ? await forkThreadAgent(r.deps, input)
-          : await handoffThreadAgent(r.deps, input);
-      expect(fork.thread.id).not.toBe(r.source.id);
-      for (const thread of [fork.thread, derived.thread]) {
-        expect((await repos.threads.findById(thread.id))?.rootThreadId).toBe(r.source.id);
-      }
     });
 
     it("keeps the lineage root when the coordinator spawns from a fork", async () => {

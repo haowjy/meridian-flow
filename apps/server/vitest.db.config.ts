@@ -32,6 +32,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/adapters/drizzle-turn-diff-query.db.test.ts",
   "apps/server/server/domains/collab/branch-push-projection.db.test.ts",
   "apps/server/server/domains/collab/branch-push-settlement-oracle.db.test.ts",
+  "apps/server/server/domains/collab/branch-push-durable-projection.db.test.ts",
   "apps/server/server/domains/collab/change-trail-lifecycle.db.test.ts",
   "apps/server/server/domains/collab/change-trail-persistence-atomicity.db.test.ts",
   "apps/server/server/domains/collab/collab-domain.reverse-turn.db.test.ts",

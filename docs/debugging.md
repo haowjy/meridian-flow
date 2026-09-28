@@ -42,6 +42,8 @@ Start from your symptom in [Strategies](#strategies), or scan the
 
 ## Drive the App from the CLI
 
+Repeatable verification recipes live in the [runtime probe catalog](qa/README.md).
+
 `./mf` (repo root) is a thin wrapper over this worktree's own API: every command
 maps to an existing HTTP route or thread-socket message, authenticated exactly
 like the browser through dev login. Run `./mf` for the command tree with the

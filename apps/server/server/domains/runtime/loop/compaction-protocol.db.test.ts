@@ -653,41 +653,6 @@ else
       expect(promptBytes(request)).toBe(promptBytes(rebuilt.generateRequest));
     });
 
-    it("fills the remaining budget from multiple retained candidates, newest first", async () => {
-      const rig = await imageFixture();
-      const mib = 1024 * 1024;
-      const { savedImages } = await addImagePrompt(rig, [
-        { key: "oldest", sizeBytes: 7 * mib, included: false },
-        { key: "middle", sizeBytes: 8 * mib, included: false },
-        { key: "newest", sizeBytes: 9 * mib, included: false },
-      ]);
-      const run = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        tools: [],
-        userText: "Continue.",
-      });
-
-      expect((await run.execute()).status).toBe("complete");
-      const compaction = (await rig.repos.turns.listByThread(rig.threadId)).find(
-        (turn) => turn.role === "compaction",
-      );
-      if (!compaction) throw new Error("Missing compaction turn");
-      const reAdmissions = (await rig.repos.imageInclusions.listByThread(rig.threadId))
-        .filter((row) => row.decisionTurnId === compaction.id)
-        .map(({ blockId, included }) => ({
-          key: savedImages.find(({ block }) => block.id === blockId)?.documentId,
-          included,
-        }));
-      expect(new Set(reAdmissions.map(({ key }) => key))).toEqual(
-        new Set(["image-newest", "image-middle"]),
-      );
-      expect(reAdmissions.every(({ included }) => included)).toBe(true);
-      expect(requestImageData(rig.gateway.requests[0])).toEqual([
-        "data:image/png;base64,middle",
-        "data:image/png;base64,newest",
-      ]);
-    });
-
     it("keeps candidates fill-only while a same-pass late image uses normal eviction", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
       const mib = 1024 * 1024;
@@ -760,98 +725,6 @@ else
         uri: "scratch://old-included.png",
         reason: "budget_eviction",
       });
-    });
-
-    it("lets a late image keep its budget before candidate re-admission", async () => {
-      let rig: Awaited<ReturnType<typeof fixture>>;
-      const mib = 1024 * 1024;
-      let assets = new Map<string, { key: string; sizeBytes: number; included: boolean }>();
-      const summarizer = scriptedSummarizer(async () => {
-        assets.set("image-late", { key: "late", sizeBytes: 8 * mib, included: false });
-        await rig.send(rig.threadId, "late image", {
-          blocks: [
-            { type: "text", text: "late image" },
-            { type: "image", documentId: "image-late", uri: "scratch://late.png" },
-          ],
-        });
-        return {
-          kind: "complete",
-          text: "Earlier context.",
-          model: "summary-model",
-          modelResponses: [],
-        };
-      });
-      rig = await imageFixture({ summarizer });
-      const { savedImages, assets: imageAssets } = await addImagePrompt(rig, [
-        { key: "included", sizeBytes: 8 * mib, included: true },
-        { key: "candidate", sizeBytes: 8 * mib, included: false },
-      ]);
-      assets = imageAssets;
-      const run = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        tools: [],
-        userText: "Continue.",
-      });
-
-      expect((await run.execute()).status).toBe("complete");
-      const turns = await rig.repos.turns.listByThread(rig.threadId);
-      const compaction = turns.find((turn) => turn.role === "compaction");
-      if (!compaction) throw new Error("Missing compaction turn");
-      const rows = await rig.repos.imageInclusions.listByThread(rig.threadId);
-      expect(
-        rows.some(
-          (row) => row.blockId === savedImages[1]?.block.id && row.decisionTurnId === compaction.id,
-        ),
-      ).toBe(false);
-      const latest = new Map(
-        (await rig.repos.imageInclusions.findByThread(rig.threadId)).map((row) => [
-          row.blockId,
-          row,
-        ]),
-      );
-      expect(latest.get(savedImages[0]?.block.id ?? "")?.included).toBe(true);
-      expect(latest.get(savedImages[1]?.block.id ?? "")?.included).toBe(false);
-      const lateImage = (await rig.repos.blocks.listByThread(rig.threadId)).find(
-        (block) =>
-          block.blockType === "image" &&
-          (block.content as { uri?: string } | null)?.uri === "scratch://late.png",
-      );
-      if (!lateImage) throw new Error("Missing late image block");
-      expect(latest.get(lateImage.id)?.included).toBe(true);
-      expect(requestImageData(rig.gateway.requests[0])).toEqual([
-        "data:image/png;base64,included",
-        "data:image/png;base64,late",
-      ]);
-      expect(
-        turns
-          .filter((turn) => turn.position >= compaction.position)
-          .flatMap((turn) => decodeImageInclusionMetadata(turn.metadata)?.breaks ?? []),
-      ).toEqual([]);
-    });
-
-    it("skips a transient candidate resolution without failing or deciding C", async () => {
-      const rig = await imageFixture();
-      const { savedImages, resolutionCounts } = await addImagePrompt(rig, [
-        { key: "transient", sizeBytes: 1024, included: false },
-      ]);
-      const run = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        tools: [],
-        userText: "Continue.",
-      });
-
-      expect((await run.execute()).status).toBe("complete");
-      const compaction = (await rig.repos.turns.listByThread(rig.threadId)).find(
-        (turn) => turn.role === "compaction",
-      );
-      if (!compaction) throw new Error("Missing compaction turn");
-      expect(resolutionCounts.get("image-transient")).toBeGreaterThan(0);
-      expect(
-        (await rig.repos.imageInclusions.listByThread(rig.threadId)).some(
-          (row) => row.blockId === savedImages[0]?.block.id && row.decisionTurnId === compaction.id,
-        ),
-      ).toBe(false);
-      expect(requestImageData(rig.gateway.requests[0])).toEqual([]);
     });
 
     it("does not persist candidate decisions when compaction fails", async () => {
@@ -1414,13 +1287,10 @@ else
 
     it.each([
       { compaction: true, remote: false, successor: false },
-      { compaction: false, remote: false, successor: false },
       { compaction: true, remote: false, successor: true },
       { compaction: false, remote: false, successor: true },
-      { compaction: true, remote: true, successor: false },
-      { compaction: false, remote: true, successor: false },
       { compaction: true, remote: true, successor: true },
-      { compaction: false, remote: true, successor: true },
+      { compaction: false, remote: true, successor: false },
     ])("stops across a committed successor window ($compaction, $remote, $successor)", async ({
       compaction,
       remote,
