@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Keep M4 compaction and reference metadata in `./mf`; inspect direct-child activity and block timing with the main CLI updates.
+
 - Skip paid manual compaction when too little context can be removed. Tell warm summaries not to repeat retained conversation.
 
 - Show compaction in the chat: a divider for compacting, compacted (summary behind a disclosure), failed, stopped, and undone; Stop on a running compaction, from the divider or the composer; Undo only where the server expects it to hold, with refusals quiet on the divider; one-line dividers on narrow screens; hide the empty reply an overflow recovery completes before compacting. A stopped autocompaction settles without waiting for another change, and screen readers hear each control change once, in the words its row shows.

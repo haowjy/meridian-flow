@@ -179,6 +179,12 @@ export async function runCli(argv: string[], deps: RunDeps): Promise<ExitCode> {
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 async function main(): Promise<void> {
+  // The reader left (`./mf ... | head`): nothing more can be delivered, so stop
+  // quietly instead of crashing on the unhandled EPIPE mid-stream.
+  process.stdout.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code !== "EPIPE") throw error;
+    process.exit(process.exitCode ?? 0);
+  });
   // exitCode, never process.exit(): exiting early truncates piped stdout.
   process.exitCode = await runCli(process.argv.slice(2), {
     io: { stdout: process.stdout, stderr: process.stderr },
