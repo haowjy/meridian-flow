@@ -16,7 +16,9 @@ neither action.
 
 Fork takes no Agent choice. Hand off opens the shared `AgentPickerPanel` in a
 popover with the source's Agent selected and focused (by revision, then by
-name), so Enter hands off to the same Agent. One Escape closes the picker even
+name), so Enter hands off to the same Agent. A row's tooltip waits until the
+writer moves through the list (the focus the picker lands on opens none) and
+opens below the row, inside the screen. One Escape closes the picker even
 while a focused row's tooltip is open.
 
 ## Navigate first
@@ -28,12 +30,15 @@ create-or-get route. Nothing waits on the server to change the screen:
 
 - A fork shows its inherited prefix at once, cut from the rows the source
   chat already has (`optimisticForkPrefix`), then the server's read replaces
-  it with the same turns.
+  it with the same turns. The prefix drops model responses, which the read
+  lacks, so a reply's Info never appears and then vanishes.
 - A handoff shows a generating brief card at once (`optimisticHandoffSeed`),
-  which has nothing to stop until the server's seed arrives.
+  which has nothing to stop until the server's seed arrives. While it stands
+  in, every `handoff_brief` control is that seed's, never a queued row.
 - A message sent before the thread exists shows at once and is sent when
   creation settles (`whenDerived`); if creation failed, the message fails with
-  it and keeps Retry.
+  it and keeps Retry. Submission recovery waits the same way, so a reload
+  during creation never looks up or replays the message early.
 - A reload during creation re-issues the journaled request with the same id
   before the chat reads its snapshot (`useDerivationResume` in `ChatScreen`).
 - A failure stays on the destination: an alert row with Retry, which re-posts
@@ -50,6 +55,10 @@ The seed S is a `handoff-seed` row rendered by `HandoffBriefCard`:
 | `complete` | The brief from the `handoff-brief` block, clipped with "Show the whole brief" |
 | `error` | "Handoff brief unavailable", `turn.error` as copy, Retry on the newest seed |
 | `cancelled` | "Handoff brief stopped", "This chat continues without a brief.", Retry on the newest seed |
+
+An older seed (a newer one replaced it, or it is inherited) is superseded: a
+failed one says "This brief failed." instead of the server's "Try again."
+copy, and a stopped one drops "This chat continues without a brief."
 
 A brief whose seed exists is stopped, never withdrawn: its control counts as
 answered, so it is never a queued row. Retry enqueues `handoff_brief` with no
@@ -68,9 +77,14 @@ server clips the source at the cutoff, so later source turns, compactions, and
 undos never appear. Each entry names its owner. `buildTranscriptModel` takes
 the prefix ahead of the fork's own turns and marks those rows `inherited`:
 
-- the first row of each owner's run opens with "From <source>" (a link, or
+- the first row of each owner's run opens with "From <source>" (one message
+  with the link as a placeholder, so translations can move it; a link, or
   "(in the trash)" from the owners' `trashed` flag);
 - the last inherited row closes with the fork point, "This fork continues here";
+- a failed read with nothing standing in shows an alert with Retry where the
+  inherited rows would start, never a fork whose history silently vanished;
+- inherited rows never end the transcript or count as the latest reply, so a
+  cutoff at a failed reply stays the quiet historical marker;
 - inherited dividers are read-only (no Undo, Stop, withdrawal, or undo
   advice); inherited replies render as their owner's (lineage and receipts)
   with no interrupt answers; they keep Copy, Fork, and Hand off.
