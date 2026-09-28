@@ -10,6 +10,7 @@
 ### Changed
 
 - Keep undo metadata and queued-control acknowledgments on one typed path.
+- Load undo advisory dependencies statically; keep the retained Agent and current model lookup.
 
 - Compaction clears stale document reads, write text, search excerpts and references from model context. Fresh text and writer transcripts stay intact.
 

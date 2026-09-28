@@ -12,10 +12,16 @@ import {
   revertedCompactionIds,
 } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
+import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
 import { beginPromptEpoch } from "./begin-prompt-epoch.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import { collectRecordedDocuments, planModelElisions } from "./compaction/elide.js";
-import { estimateRequestTokens, projectActiveHistory } from "./compaction/index.js";
+import {
+  CompactionBlockContentCodec,
+  estimateRequestTokens,
+  projectActiveHistory,
+  resolveCompactionTrigger,
+} from "./compaction/index.js";
 import { queryCompactionRevisions } from "./compaction-revisions.js";
 import type { ControlMessage } from "./control-barrier.js";
 import { createLocalTurn } from "./local-turn.js";
@@ -235,10 +241,6 @@ export function createCompactionUndoReader(
   ): Promise<import("@meridian/contracts/threads").CompactionUndoAvailability> => {
     const compaction = activeCompaction(turns);
     if (!compaction || compaction.threadId !== thread.id) return null;
-    const { resolveAgentThreadTurnContext } = await import("../tools/agent-thread-context.js");
-    const { resolveCompactionTrigger, CompactionBlockContentCodec } = await import(
-      "./compaction/index.js"
-    );
     const context = await resolveAgentThreadTurnContext({ ...deps, thread, baseTools: undefined });
     const modelId = context.gatewayParams.model ?? deps.gateway.getDefaultModel();
     const model = deps.gateway.listModels?.().find((model) => model.id === modelId);
