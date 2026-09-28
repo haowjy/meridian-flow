@@ -40,6 +40,13 @@ describe("compaction failure outcomes", () => {
     expect(compactionFailureFrom(new CompactionFailureError(failure), "delivery")).toEqual(failure);
   });
 
+  it("maps unknown late-arrival exceptions to the late-arrival phase", () => {
+    expect(compactionFailureFrom(new Error("successor overflow"), "late_arrival")).toEqual({
+      reason: "compaction_failed",
+      phase: "late_arrival",
+    });
+  });
+
   it("keeps a non-fit delivery failure in the delivery phase", () => {
     expect(compactionFailureFrom(new Error("late image lookup failed"), "delivery")).toEqual({
       reason: "compaction_failed",
