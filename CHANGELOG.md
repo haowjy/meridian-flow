@@ -25,6 +25,7 @@
 - Re-admit retained excluded images into budget left after normal late-arrival handling during complete compaction; compaction-owned decisions remain reversible, and forks preserve decision history.
 
 ### Fixed
+- Reset change-trail Postgres fixtures with truncation so insert-only prompt bakes do not block cleanup.
 - Give database fixture hooks the same timeout budget as test bodies to avoid overlapping resets.
 - Publish committed pulls even if the caller response aborts. Preserve live manifest read-your-writes.
 - Keep cold project bootstrap atomic while committing peer manifest dependencies independently.
