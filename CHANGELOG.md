@@ -14,8 +14,9 @@
 - Work Chats tab lists that Work's chats from the project chat feed (archived chats hidden). Files tab groups Drafts, Scratch and Uploads with new notes, uploads, rename and delete in place; an opened file shows in the dock.
 - Editing text in place never moves or resizes it. One protocol everywhere: Enter or blur saves, Escape or an empty name cancels, failures stay open with their message. Chat titles rename inside their tab.
 - Confirm/dismiss button pairs sit right-aligned, Cancel first.
+- Deleting a Work never blocks: its chats, drafts, Scratch and Uploads go with it. Recently deleted lists it for 30 days with Restore, which brings everything back; after that it is purged.
 - Fix: the invalid-character name warning showed a raw "{0}".
-- `server`: Works drop `description` (migration 0010); `GET /api/works/:workId/threads` is removed in favor of the project chat feed's `workId` filter.
+- `server`: Work delete cascade-marks children (`deleted_by_work_id`, migration 0011) and an hourly `work-purge` job removes Works past 30 days with their rows and blobs; restore past the window returns 410 `work_restore_expired`. Works drop `description` (migration 0010); `GET /api/works/:workId/threads` is removed in favor of the project chat feed's `workId` filter.
 
 - Keep writer messages visible after the reply starts; only machine-delivered inbox messages fold into activity rows.
 - Show only "Queued" under a writer message the model has not read yet.
