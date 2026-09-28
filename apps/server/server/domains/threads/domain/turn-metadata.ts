@@ -194,8 +194,15 @@ export function derivationSeedMetadata(derivation: "fork" | "handoff"): JsonObje
   return { kind: "derivation_seed", derivation };
 }
 
-export function compactionUndoMetadata(revertsCompactionTurnId: string): JsonObject {
-  return { kind: "compaction_undo", revertsCompactionTurnId };
+export function compactionUndoMetadata(
+  revertsCompactionTurnId: string,
+  controlMessageId?: string,
+): JsonObject {
+  return {
+    kind: "compaction_undo",
+    revertsCompactionTurnId,
+    ...(controlMessageId ? { controlMessageId } : {}),
+  };
 }
 
 export function compactionTurnMetadata(metadata: CompactionMetadata): JsonObject {

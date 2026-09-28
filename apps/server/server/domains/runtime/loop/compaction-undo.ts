@@ -6,6 +6,7 @@ import {
   activeCompaction,
   bakeIdAt,
   CompactionMetadataCodec,
+  compactionUndoMetadata,
   ImageInclusionMetadataCodec,
   promptEpochMetadata,
   revertedCompactionIds,
@@ -24,7 +25,11 @@ import type { AssembledNextTurnContext } from "./turn-context-assembly.js";
 
 export const COMPACTION_UNDO_TEXT =
   "The writer undid the compaction here. The earlier conversation above is restored.";
-export type PreparedUndo = { turn: Turn; block?: ReturnType<typeof contentForBlockInput> };
+export type PreparedUndo = {
+  controlId: string;
+  turn: Turn;
+  block?: ReturnType<typeof contentForBlockInput>;
+};
 
 /** Q2/R-C6-2: keep the refusal in one place pending the user's ruling. */
 function wouldRecompact(tokens: number, trigger: number | null): boolean {
@@ -53,24 +58,17 @@ export async function prepareCompactionUndo(input: {
     role: "system",
     origin: "system",
     status: "complete",
-    metadata: {
-      kind: "compaction_undo",
-      revertsCompactionTurnId: targetId,
-      controlMessageId: control.id,
-    },
+    metadata: compactionUndoMetadata(targetId, control.id),
   });
   const refused = (
     reason: "already_undone" | "not_active" | "would_recompact" | "undo_failed",
   ): PreparedUndo => ({
+    controlId: control.id,
     turn: {
       ...turn,
       status: "error",
       promptBakeId: null,
-      metadata: {
-        kind: "compaction_undo",
-        revertsCompactionTurnId: targetId,
-        controlMessageId: control.id,
-      },
+      metadata: compactionUndoMetadata(targetId, control.id),
       error: reason,
       completedAt: new Date().toISOString(),
     },
@@ -185,7 +183,7 @@ export async function prepareCompactionUndo(input: {
     });
     if (wouldRecompact(tokens, assembled.compactionTriggerTokens))
       return refused("would_recompact");
-    return { turn, block };
+    return { controlId: control.id, turn, block };
   } catch (error) {
     if (input.signal?.aborted) throw error;
     return refused("undo_failed");

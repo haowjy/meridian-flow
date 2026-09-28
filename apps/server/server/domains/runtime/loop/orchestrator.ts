@@ -681,11 +681,7 @@ async function runDrainTurn(
         value,
         turnId: reservedTurn.id,
         terminal,
-        completedControlIds: controlPreparation?.undos.map(
-          (u) =>
-            (u.turn.metadata as import("@meridian/contracts/threads").JsonObject)
-              .controlMessageId as string,
-        ),
+        completedControlIds: controlPreparation?.undos.map((u) => u.controlId),
         turnKind: terminal ? ("assistant" as const) : currentTurnKind(reservedTurn),
         messageIds: [
           ...batch.map(({ id }) => id),

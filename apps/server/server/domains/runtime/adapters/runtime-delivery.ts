@@ -534,11 +534,7 @@ export function createDeliveryAdapter(
               )
               .map((row) => row.id)
           : [];
-      const undoIds = (prepared.undos ?? []).map(
-        (u) =>
-          (u.turn.metadata as import("@meridian/contracts/threads").JsonObject)
-            .controlMessageId as string,
-      );
+      const undoIds = (prepared.undos ?? []).map((u) => u.controlId);
       endingControls.push(...undoIds);
       await inbox.ack(threadId, endingControls);
       drain.ackIds = [...new Set([...(receipt?.ids ?? []), ...drain.ackIds])].filter(

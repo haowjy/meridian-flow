@@ -121,13 +121,7 @@ export async function prepareRequestContext(input: PrepareRequestInput): Promise
     if (input.signal?.aborted || history.undos.length === 0) throw error;
     if (history.undos.every((u) => u.turn.status === "error"))
       throw new UndoRequestPreparationError(history, error);
-    const failedUndoIds = new Set(
-      history.undos.map(
-        (u) =>
-          (u.turn.metadata as import("@meridian/contracts/threads").JsonObject)
-            .controlMessageId as string,
-      ),
-    );
+    const failedUndoIds = new Set(history.undos.map((u) => u.controlId));
     const failed = await prepareControlHistory({ ...input, failedUndoIds });
     throw new UndoRequestPreparationError(failed, error);
   }
