@@ -96,3 +96,7 @@ Telemetry is written only by the pending owner’s ending transaction.
 Warm preparation intentionally does not compact the source or enforce the
 destination’s fit limits. If the source-shaped request exceeds the provider
 window, the shared summarizer retains that attempt and falls back cold.
+
+The delivery and orphan-repair compositions must pass the same registered-tool
+reader as the loop. Omitting it means a tool-less runtime, not automatic
+production defaults; a missing reader on a fresh seed freezes no read line.
