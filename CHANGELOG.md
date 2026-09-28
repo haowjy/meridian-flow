@@ -9,6 +9,7 @@
 
 ### Changed
 - Handoffs create immediately with a recoverable brief seed. Stop preserves queued messages. Retry appends a new seed.
+- Stop reaches pending handoff seeds after their owner lease expires.
 - Handoff requests require a destination id and cutoff; client-written summaries removed.
 
 ### Changed

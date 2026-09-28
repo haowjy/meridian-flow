@@ -2,7 +2,7 @@
 import type { Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
 import { pendingPlaceholderPredicate } from "@meridian/database/schema/pending-placeholder";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, gt, isNotNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runAfterDrizzleCommit } from "../../../../shared/drizzle-transaction.js";
 import type { Lease } from "../../loop/ports.js";
 import { createDrizzleInbox } from "../drizzle-inbox.js";
@@ -74,7 +74,7 @@ export function createDrizzleRuntimeDelivery(
         .where(
           and(
             eq(schema.threadRunLeases.threadId, threadId),
-            sql`${schema.threadRunLeases.expiresAt} > now()`,
+            gt(schema.threadRunLeases.expiresAt, new Date()),
           ),
         )
         .for("update");
