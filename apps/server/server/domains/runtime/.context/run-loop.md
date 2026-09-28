@@ -19,7 +19,7 @@ run shrinks its history is [compaction](compaction.md).
 | `partial-tool-activity.ts` | Reads only the top-level string fields used by live labels from partial tool-call JSON; it tolerates an unfinished object and ignores nested arguments. |
 | `interrupt-session.ts` | Same-turn interrupt suspend/resume mechanics and component-block updates. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
-| `turn-accounting.ts` / `settle-summary-responses.ts` | One `computeAndDebit` path records summary-call cost against the shared tree budget and credits ledger in the transaction that completes, fails, or cancels C or a handoff seed. Row settlement is metadata-neutral; each summary owner writes its own typed metadata. Summary calls do not spend model iterations or the turn budget; the successor's next pre-iteration check sees any exhausted tree cost budget. |
+| `turn-accounting.ts` / `settle-summary-responses.ts` | One `computeAndDebit` path records summary-call cost against the shared tree budget and credits ledger in the transaction that completes, fails, or cancels C or a handoff seed. Row settlement is metadata-neutral; each summary owner writes its own typed metadata. Summary calls do not spend model iterations or the turn budget; the successor's next pre-iteration check sees any exhausted tree cost budget. Handoff settlement is owned outside this loop by the [handoff service](handoff.md). |
 | `block-helpers.ts` | Content block conversion and local accumulator helpers. |
 | `local-turn.ts` | The one builder for turns that carry no model response (run skeleton, drained messages), so the read model and context projection see a single turn contract. |
 | `model-response-timing.ts` | Flattens per-attempt gateway timing into persisted model-response fields. |
@@ -32,6 +32,10 @@ is an explicit adapter (for example a no-op sink), never an omitted dep. Do
 not re-add a global permission gate here; names and per-tool command sets are
 gated per turn from advertised policy ([tools](tools.md)). Provider-specific
 model-call behavior stays behind the gateway port.
+
+Handoff brief generation is not a run: the orchestrator only delegates Stop
+for a pending seed to `HandoffBriefs`. Launch, provider calls, seed settlement,
+and recovery live in the independent [handoff service](handoff.md).
 
 ## Invariants
 

@@ -905,7 +905,7 @@ else
       const result = await run.execute();
       expect(calls).toBe(scenario === "new_reply" ? 4 : 2);
       expect(summaries).toBe(scenario === "new_reply" ? 2 : 1);
-      expect(inputs[0].forceCold).toBe(true);
+      expect(inputs[0].path).toBe("rolling");
       expect(inputs[0].projection.blocks.some((block) => block.textContent === "Continue.")).toBe(
         false,
       );
@@ -916,7 +916,7 @@ else
       expect(await rig.repos.blocks.listByTurn(a.id)).toEqual([]);
       expect(c).toMatchObject({
         status: "complete",
-        metadata: { summarizer: { path: "cold", segments: 1 } },
+        metadata: { summarizer: { path: "rolling", segments: 1 } },
       });
       expect(result.status).toBe(secondOverflow ? "error" : "complete");
       if (secondOverflow) {
@@ -990,7 +990,7 @@ else
       expect(c).toMatchObject({
         status: ending === "failed" ? "error" : ending,
         metadata: {
-          summarizer: { path: "cold", segments: 1 },
+          summarizer: { path: "rolling", segments: 1 },
           ...(ending === "failed" ? { reason: "max_tokens", phase: "summary" } : {}),
         },
       });

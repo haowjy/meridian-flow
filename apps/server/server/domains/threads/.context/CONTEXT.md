@@ -11,12 +11,13 @@ instead of the N:1 `threads.workId` column.
 
 Handoff requires a client destination id, selected cutoff and Agent selection.
 It shares fork's settled-cutoff normalization and row-only create-or-get rule
-(with `originType = handoff`). The cutoff owner is its recorded source, including
-an inherited fork cutoff. A subagent cannot be a derivation source.
-The create transaction writes one pending system seed, its `handoff_brief`
-control (naming the seed in `seedTurnId`) and the source event (cutoff, no
-summary). Delivery schedules the wake after commit. Runtime owns the seed from
-there, including its crash recovery: see
+(with `originType = handoff`). A delivered user turn is an accepted cutoff
+while its source reply streams; queued turns remain beyond the cutoff. The
+cutoff owner is its recorded source, including an inherited fork cutoff. A
+subagent cannot be a derivation source. The create transaction writes one
+pending system seed and the source event (cutoff, no summary), then invokes the
+runtime launch port after commit. The seed is not an inbox control or run turn.
+Runtime owns its brief, gate, Stop, Retry and crash recovery: see
 [runtime handoff](../../runtime/.context/handoff.md) and
 [HTTP contract](../../../../../../docs/api/thread-handoff.md).
 
@@ -24,7 +25,9 @@ The seed codec owns summarizer telemetry and typed brief failure reason/phase;
 the shared summary rejection codec is in `@meridian/contracts/runtime`.
 Response rows on system seeds never supply prefix warmth or token baselines.
 The effective-transcript loader accepts an optional through-cutoff selection,
-sharing the exact prefix slicing used for fork inheritance.
+sharing the exact prefix slicing used for fork inheritance. The source-shaped
+brief branches at every cutoff; the shared rolling summarizer is its failure
+fallback.
 
 ## Prompt lifetime
 

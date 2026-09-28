@@ -159,6 +159,7 @@ export function createRuntimeHarness(
     eventSink: createInMemoryEventSink(),
     modelRequestDebug: createInMemoryModelRequestDebugStore(),
     runClaim,
+    handoffBriefs: { async stop() { return false; } },
     delivery:
       overrides.delivery ??
       createInMemoryRuntimeDelivery({

@@ -233,8 +233,8 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
       row.cancelRequested = true;
       return true;
     },
-    async lockThreadReceipt(threadId, liveOnly) {
-      const row = liveOnly ? liveLease(threadId) : leases.get(threadId);
+    async lockThreadReceipt(threadId) {
+      const row = leases.get(threadId);
       return row ? { ids: [...row.messageIds], turnId: row.turnId } : null;
     },
     async lockReceipt(lease) {

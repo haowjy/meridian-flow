@@ -148,7 +148,7 @@ export {
   TurnStartConflictError,
   type TurnStartConflictReason,
 } from "./domain/turn-start-transition.js";
-export type { HandoffControlQueue } from "./ports/handoff-control-queue.js";
+export type { HandoffBriefLauncher } from "./ports/handoff-brief-launcher.js";
 export * from "./ports/index.js";
 export { createThreadRuntimeService, type ThreadRuntimeService } from "./runtime-service.js";
 export {

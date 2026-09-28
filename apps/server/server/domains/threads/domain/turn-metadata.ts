@@ -60,10 +60,11 @@ export const HandoffFailureReasonCodec = z.enum([
   ...SummaryRejectionReasonCodec.options,
   "handoff_brief_failed",
   "interrupted",
+  "credits_exhausted",
 ]);
 export const HandoffFailureOutcomeCodec = z.object({
   reason: HandoffFailureReasonCodec,
-  phase: z.enum(["source_prepare", "summary", "delivery", "recovery"]),
+  phase: z.enum(["launch", "source_prepare", "summary", "settle", "recovery"]),
 });
 export type HandoffFailureOutcome = z.infer<typeof HandoffFailureOutcomeCodec>;
 
@@ -73,9 +74,9 @@ export const HandoffSeedMetadataCodec = DerivationSeedMetadataCodec.extend({
   sourceRef: z.string().min(1),
   sourceTitle: z.string().nullable(),
   cutoffTurnId: z.string().min(1),
-  controlMessageId: z.string().min(1),
+  launches: z.number().int().nonnegative().default(0),
   summarizer: z
-    .object({ path: z.enum(["warm", "cold"]), segments: z.number().int().nonnegative() })
+    .object({ path: z.enum(["branch", "rolling"]), segments: z.number().int().nonnegative() })
     .optional(),
   reason: HandoffFailureOutcomeCodec.shape.reason.optional(),
   phase: HandoffFailureOutcomeCodec.shape.phase.optional(),
@@ -301,9 +302,9 @@ export function handoffSeedMetadata(input: {
   sourceRef: string;
   sourceTitle: string | null;
   cutoffTurnId: string;
-  controlMessageId: string;
+  launches?: number;
 }): JsonObject {
-  return { ...derivationSeedMetadata("handoff"), ...input };
+  return { ...derivationSeedMetadata("handoff"), ...input, launches: input.launches ?? 0 };
 }
 
 export function compactionUndoMetadata(

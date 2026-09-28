@@ -111,7 +111,7 @@ nor a later undo's bake can change an old summary's bytes
 synchronous projector stays private because, without that bake, it drops the
 sentence. Callers: request assembly (`turn-context-assembly.ts`), the summary
 phase (`compaction-phase.ts`), undo (`compaction-undo.ts`), and the handoff
-brief's source (`handoff-brief.ts`). `projectCompactedHistory` narrows a
+request (`runtime/handoff/brief-request.ts`). `projectCompactedHistory` narrows a
 projection to the cut alone (retained pins and tail removed) for the cold
 summary and the manual floor.
 

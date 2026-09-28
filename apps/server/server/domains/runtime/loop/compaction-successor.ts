@@ -189,9 +189,7 @@ export async function prepareCompactionSuccessor(args: {
           ),
           decidingTurnId: placeholder.id as TurnId,
         },
-        skipCompaction:
-          !selection?.control ||
-          selection.controls?.some((control) => control.body.kind === "handoff_brief"),
+        skipCompaction: !selection?.control,
         assertNoResponseScope: args.assertNoResponseScope,
         controls: selection?.controls,
         followingBatches: selection?.followingBatches,

@@ -113,6 +113,8 @@ import {
   createConversationSummarizer,
   createDrizzleAdmissionRecords,
   createDrizzleRunClaim,
+  createDrizzleHandoffBriefClaim,
+  createDrizzleHandoffStatusReader,
   createDrizzleRuntimeDelivery,
   createDrizzleThreadLock,
   createGatewayFromEnv,
@@ -151,6 +153,9 @@ import {
   type WorkContextNotices,
   type WorkContextReader,
 } from "../domains/runtime/index.js";
+import { createHandoffBriefs, type HandoffBriefs } from "../domains/runtime/handoff/brief-service.js";
+import { generateHandoffBrief } from "../domains/runtime/handoff/brief-request.js";
+import type { HandoffBriefStopper } from "../domains/runtime/ports/handoff-briefs.js";
 import {
   loadModelSkillBody,
   resolveThreadUserInvocableSkills,
@@ -183,6 +188,7 @@ import type {
   EventJournalWriter,
   InternalThreadRepositories,
   ThreadRepositories,
+  ThreadStatusReader,
 } from "../domains/threads/ports/index.js";
 import {
   createThreadRuntimeService,
@@ -245,13 +251,14 @@ export type AppServices = {
   runner: TurnRunner;
   runStarter: RunStarter;
   delivery: DeliveryProducer &
-    import("../domains/runtime/loop/runtime-delivery.js").ThreadControls &
-    import("../domains/threads/index.js").HandoffControlQueue;
+    import("../domains/runtime/loop/runtime-delivery.js").ThreadControls;
+  handoffBriefs: HandoffBriefs;
   /** Startup/interval recovery for threads with a pending message and no live run. */
   recovery: {
     scanWakes(): Promise<number>;
     repairOrphans(): Promise<number>;
     publishReports(): Promise<number>;
+    handoffBriefs(): Promise<number>;
   };
   userTurnAdmission: UserTurnAdmission;
   runClaim: Pick<RunClaim, "withExclusiveThread">;
@@ -320,6 +327,7 @@ export type ProductionAppPorts = {
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
   runClaim: RunClaim;
+  statusReader: ThreadStatusReader;
 };
 
 const CONCURRENT_RENDER_SAFETY_TOKENS = 16_000;
@@ -408,7 +416,8 @@ export async function createProductionAppPorts(input: {
   const runClaim = createDrizzleRunClaim(db, {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
   });
-  const threadRepos = createDrizzleRepositories(db, workProjectionMutation, runClaim);
+  const statusReader = createDrizzleHandoffStatusReader(db, runClaim);
+  const threadRepos = createDrizzleRepositories(db, workProjectionMutation, statusReader);
   const activeDocuments = createActiveDocumentResolver(threadRepos);
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
@@ -538,6 +547,7 @@ export async function createProductionAppPorts(input: {
   return {
     db,
     runClaim,
+    statusReader,
     gateway,
     summarizerConfig: {
       model: summarizerModel,
@@ -658,7 +668,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   }
   for (const registration of createInspectionToolRegistrations({
     repos: ports.threadRepos,
-    statusReader: ports.runClaim,
+    statusReader: ports.statusReader,
     registry: toolRegistry,
     async tokenizer(caller) {
       const binding = await ports.agentRevisions.readThreadBinding(caller.id);
@@ -694,7 +704,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     readThreadActivity(
       {
         threads: ports.threadRepos.threads,
-        statusReader: ports.runClaim,
+        statusReader: ports.statusReader,
         executionReports: ports.threadRepos.executionReports,
       },
       threadId,
@@ -745,6 +755,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     },
     repairOrphans: () => orphanRepair.sweep(WAKE_SWEEP_LIMIT),
     publishReports: () => reportPublisher.sweep(WAKE_SWEEP_LIMIT),
+    handoffBriefs: () => handoffBriefs.sweep(WAKE_SWEEP_LIMIT),
   };
   const admissionRecords = createDrizzleAdmissionRecords(ports.db);
   const imageAssets = createContextImageAssetPort({
@@ -831,7 +842,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     agentRevisions: ports.agentRevisions,
     eventSink: ports.eventSink,
   });
-  const orchestrator = createOrchestrator({
+  let handoffBriefs!: HandoffBriefs;
+  const handoffBriefStopper: HandoffBriefStopper = {
+    stop: (threadId, seedTurnId) => handoffBriefs.stop(threadId, seedTurnId),
+  };
+  const orchestratorDeps = {
     summarizer: createConversationSummarizer({
       gateway: ports.gateway,
       agentRevisions: ports.agentRevisions,
@@ -839,9 +854,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
         .prefixCacheStateFor,
       config: ports.summarizerConfig,
     }),
-    headSeq: (id) => threadEventHub.headSeq(id),
+    headSeq: (id: ThreadId) => threadEventHub.headSeq(id),
     onRunStarted: refreshSubagentActivity,
-    onRunSettled(threadId) {
+    onRunSettled(threadId: ThreadId) {
       refreshSubagentActivity(threadId);
     },
     gateway: ports.gateway,
@@ -861,7 +876,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     toolRegistry,
     projectPreferences: ports.preferences,
     workWriteMode: {
-      async read(workId) {
+      async read(workId: string) {
         const work = await ports.workRepo.findById(workId as import("@meridian/contracts").WorkId);
         if (!work) throw new Error(`Work not found: ${workId}`);
         return work.aiWriteMode;
@@ -880,11 +895,37 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     responseWrites,
     delivery,
     runClaim: ports.runClaim,
+    handoffBriefs: handoffBriefStopper,
     activeDocuments: ports.activeDocuments,
     imageAssets,
     concurrentRenderBudgetBytes,
-  });
+  };
+  const orchestrator = createOrchestrator(orchestratorDeps);
   runner = orchestrator;
+  handoffBriefs = createHandoffBriefs({
+    repos: ports.threadRepos,
+    eventWriter: threadEventHub,
+    eventSink: ports.eventSink,
+    threadLock,
+    claim: createDrizzleHandoffBriefClaim(ports.db),
+    runClaim: ports.runClaim,
+    runStarter,
+    billingUsage: ports.billingUsage,
+    toolRegistry,
+    generate: ({ destination, seed, signal }) =>
+      generateHandoffBrief(orchestratorDeps, destination, seed, signal),
+    async publishStatus(threadId) {
+      const status = await ports.statusReader.read(threadId);
+      const runningTurnId = await ports.statusReader.readRunningTurnId(threadId);
+      await threadEventHub.appendEvent(threadId, {
+        type: "thread.status",
+        threadId,
+        status,
+        runningTurnId,
+      });
+    },
+    schedulePostCommit: runAfterDrizzleCommit,
+  });
 
   return {
     gateway: ports.gateway,
@@ -896,7 +937,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     hub: threadEventHub,
     threadRuntime: createThreadRuntimeService({
       db: ports.db,
-      statusReader: ports.runClaim,
+      statusReader: ports.statusReader,
       threads: ports.threadRepos.threads,
       executionReports: ports.threadRepos.executionReports,
       readPending,
@@ -942,6 +983,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     runStarter,
     delivery,
     recovery,
+    handoffBriefs,
     userTurnAdmission,
     runClaim: ports.runClaim,
     toolRegistry,
@@ -1006,6 +1048,13 @@ export function createInMemoryAppServices(): AppServices {
       void task();
     },
   });
+  const handoffBriefs: HandoffBriefs = {
+    async launch() {},
+    launchAfterCommit() {},
+    async stop() { return false; },
+    async retry() { throw new Error("in-memory handoff retry is not implemented"); },
+    async sweep() { return 0; },
+  };
   const recovery = {
     async scanWakes() {
       return 0;
@@ -1014,6 +1063,9 @@ export function createInMemoryAppServices(): AppServices {
       return 0;
     },
     async publishReports() {
+      return 0;
+    },
+    async handoffBriefs() {
       return 0;
     },
   };
@@ -1360,6 +1412,7 @@ export function createInMemoryAppServices(): AppServices {
     runStarter,
     delivery,
     recovery,
+    handoffBriefs,
     userTurnAdmission: {
       async admit(input) {
         return { kind: "rejected", submissionId: input.submissionId, code: "invalid_message" };

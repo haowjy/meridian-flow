@@ -3,7 +3,6 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
 import type { Notice } from "../../notices/index.js";
 import type { WorkContextNotices } from "../../projects/index.js";
-import type { HandoffControlQueue } from "../../threads/index.js";
 import type { CompactionDecision } from "./compaction/decision.js";
 import type { ControlMessage } from "./control-barrier.js";
 import type { FinalizedExecution, TerminalCause } from "./execution-finalizer.js";
@@ -18,7 +17,7 @@ export type DeliveryTransaction = {
 export type DeliveryProducer = Pick<RuntimeDelivery, "enqueue" | "withThreadLock">;
 export type ThreadControls = Pick<
   RuntimeDelivery,
-  "enqueueControl" | "withdrawControl" | "cancelPendingSeed"
+  "enqueueControl" | "withdrawControl"
 >;
 export type DeliveryBoundary<TCurrent = undefined> = Pick<
   Parameters<typeof drainInbox>[0],
@@ -92,9 +91,7 @@ export type AdoptedBatch<TCurrent = undefined> = {
 };
 export interface RuntimeDelivery
   extends WorkContextNotices,
-    HandoffControlQueue,
     Pick<InboxReader, "selectPending" | "readPendingProjection" | "pendingMessageThreads"> {
-  cancelPendingSeed(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
   enqueueControl(input: {
     threadId: ThreadId;
     actorId: string;
@@ -127,7 +124,7 @@ export interface RuntimeDelivery
       terminal?: boolean;
       completedControlIds?: string[];
       turnId: TurnId;
-      turnKind: "assistant" | "compaction" | "handoff_brief";
+      turnKind: "assistant" | "compaction";
       messageIds: readonly string[];
       /** Preparation failures still adopt messages and reserve a failed assistant turn. */
       preparationFailure?: unknown;

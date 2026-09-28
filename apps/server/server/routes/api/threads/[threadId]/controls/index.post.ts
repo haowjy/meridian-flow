@@ -19,7 +19,6 @@ const request = z
       z
         .object({ kind: z.literal("compaction_undo"), compactionTurnId: z.string().uuid() })
         .strict(),
-      z.object({ kind: z.literal("handoff_brief") }).strict(),
     ]),
   })
   .strict();

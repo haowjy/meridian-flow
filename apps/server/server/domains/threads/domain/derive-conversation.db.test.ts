@@ -26,7 +26,7 @@ else
     } = await import("../index.js");
     const { hashPromptBakeContent } = await import("./prompt-bake-hash.js");
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
-    const { DerivedSourceNotFoundError, forkThreadAgent } = await import(
+    const { DerivedSourceNotFoundError, forkThreadAgent, handoffThreadAgent } = await import(
       "./derive-conversation.js"
     );
     const db = createDb(DATABASE_URL, { max: 6 });
@@ -570,6 +570,38 @@ else
       });
 
       expect(fork.originTurnId).toBe(fixture.firstTurn.id);
+    });
+
+    it("accepts a delivered user turn as handoff cutoff while its reply streams", async () => {
+      const fixture = await setupSource();
+      const assistant = await repos.turns.create({
+        threadId: fixture.source.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "streaming",
+        prevTurnId: fixture.firstTurn.id,
+      });
+      const launches: Array<{ threadId: string; seedTurnId: string }> = [];
+      const { thread: handoff } = await handoffThreadAgent(
+        {
+          ...fixture.deps,
+          handoffBriefs: { launchAfterCommit(input) { launches.push(input); } },
+        },
+        {
+          id: crypto.randomUUID(),
+          threadId: fixture.source.id,
+          userId: ids.userId,
+          originTurnId: fixture.firstTurn.id,
+          agentSelection: fixture.agent.selection,
+        },
+      );
+      const seed = (await repos.turns.listByThread(handoff.id))[0];
+
+      expect(assistant.status).toBe("streaming");
+      expect(handoff.originTurnId).toBe(fixture.firstTurn.id);
+      expect(seed.metadata).toMatchObject({ cutoffTurnId: fixture.firstTurn.id });
+      expect(seed.status).toBe("pending");
+      expect(launches).toEqual([{ threadId: handoff.id, seedTurnId: seed.id }]);
     });
 
     it.each([

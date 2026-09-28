@@ -27,7 +27,6 @@ export function projectPendingInbox(
           seq: message.seq,
           intent: message.intent,
           ...(message.body.kind === "compact" ||
-          message.body.kind === "handoff_brief" ||
           message.body.kind === "compaction_undo"
             ? { control: message.body }
             : {}),

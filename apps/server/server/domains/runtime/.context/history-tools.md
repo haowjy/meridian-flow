@@ -88,8 +88,8 @@ tool registration only when the thread has no bake yet. Two places use it:
   ([compaction](compaction.md#one-projection-authority)), so a later undo or
   registry change never rewrites an old summary;
 - a settled handoff seed's read line, `threadReferenceText` appended inside
-  `<system_update>` when `historyReadableAt(S)` holds, from both the live brief
-  (`orchestrator.ts`) and the finalizer (`execution-finalizer.ts`)
+  `<system_update>` when `historyReadableAt(S)` holds, from the independent
+  brief service's terminal seed projection
   ([handoff](handoff.md)).
 
 A runtime composed without a registered-tool reader (tests, a tool-less

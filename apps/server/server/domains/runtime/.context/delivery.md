@@ -4,8 +4,10 @@ How a writer send, a subagent report, a Work change, or a notice becomes
 durable conversation and reaches the model. Everything the model learns
 mid-thread arrives here as a durable turn at a graph point, never as a
 live-request splice; the frozen prefix it lands after is in
-[request assembly](request-assembly.md). Controls (`/compact`, undo, brief)
-share this inbox but execute through the [control barrier](controls.md).
+[request assembly](request-assembly.md). Compaction and undo share this inbox
+but execute through the [control barrier](controls.md). A pending handoff seed
+is not an inbox row; the runtime gates destination starts on its durable status
+and the independent brief service wakes delivery when it settles.
 Rationale: [One Run Preparation Protocol][kb-run-prep].
 
 ## Writer admission

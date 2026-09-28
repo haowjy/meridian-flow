@@ -6,7 +6,7 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { MessageIntent, MessageProvenance } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
-import { and, asc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, ne, notExists, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDatabase } from "../../../shared/drizzle-transaction.js";
 import type { InboxMessage, MessageBody } from "../loop/ports.js";
 import type { DeliveryStore } from "./runtime-delivery.js";
@@ -187,6 +187,18 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
     },
 
     async pendingMessageThreads(limit, afterThreadId) {
+      const pendingHandoffSeed = db_()
+        .select({ id: schema.turns.id })
+        .from(schema.turns)
+        .where(
+          and(
+            eq(schema.turns.threadId, schema.threadInboxMessages.threadId),
+            eq(schema.turns.role, "system"),
+            eq(schema.turns.status, "pending"),
+            sql`${schema.turns.metadata}->>'kind' = 'derivation_seed'`,
+            sql`${schema.turns.metadata}->>'derivation' = 'handoff'`,
+          ),
+        );
       const rows = await db_()
         .select({ threadId: schema.threadInboxMessages.threadId })
         .from(schema.threadInboxMessages)
@@ -195,6 +207,7 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
             inArray(schema.threadInboxMessages.intent, ["message", "control"]),
             afterThreadId ? gt(schema.threadInboxMessages.threadId, afterThreadId) : undefined,
             isNull(schema.threadInboxMessages.deliveredAt),
+            notExists(pendingHandoffSeed),
           ),
         )
         .groupBy(schema.threadInboxMessages.threadId)

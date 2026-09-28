@@ -9,10 +9,10 @@ call. Rationale and the provisional refusal policy (R-C6-2):
 `loop/compaction-undo.ts` prepares and persists U and hosts the snapshot's
 availability reader (`createCompactionUndoReader`).
 
-A boundary expands consecutive due undos, then targets the first following
-compact or handoff control. Reservation and terminal checks use that expanded
-list, not only its head. Stale seed controls are excluded throughout expansion
-and retired in the same commit as the undo and its successor.
+A boundary expands consecutive due undos and may then execute a following
+compact control. Reservation and terminal checks use that expanded list, not
+only its head. Handoff seeds are outside the inbox and never participate in
+undo expansion.
 
 `compaction-undo.ts` prepares U over the restored raw history. Only the active,
 local completed C is eligible. Runtime eligibility returns `not_active` for an

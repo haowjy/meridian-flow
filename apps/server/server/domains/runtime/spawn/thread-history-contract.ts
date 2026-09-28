@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { handoffSeedMetadata } from "../../threads/index.js";
 import type { InternalThreadRepositories } from "../../threads/ports/repositories.js";
 import { collectRecordedDocuments, planModelElisions } from "../loop/compaction/elide.js";
-import { handoffBriefFailedCopy, handoffSeedBlock } from "../loop/handoff-seed.js";
+import { handoffBriefFailedCopy, handoffSeedBlock } from "../handoff/seed.js";
 import {
   historyDocumentText,
   searchDocumentText,
@@ -230,7 +230,6 @@ export function defineThreadHistoryContract(
           sourceRef: f.thread.ref!,
           sourceTitle: f.thread.title,
           cutoffTurnId: crypto.randomUUID(),
-          controlMessageId: crypto.randomUUID(),
         }),
         status,
       );

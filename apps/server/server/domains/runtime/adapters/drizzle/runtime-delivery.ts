@@ -1,8 +1,8 @@
 /** PostgreSQL delivery boundary: inbox, guarded receipt, turn graph and journal share one ambient transaction. */
 import type { Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
-import { pendingPlaceholderPredicate } from "@meridian/database/schema/pending-placeholder";
-import { and, eq, gt, isNotNull, sql } from "drizzle-orm";
+import { runOwnedPlaceholderPredicate } from "@meridian/database/schema/pending-placeholder";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runAfterDrizzleCommit } from "../../../../shared/drizzle-transaction.js";
 import type { Lease } from "../../loop/ports.js";
 import { createDrizzleInbox } from "../drizzle-inbox.js";
@@ -37,7 +37,7 @@ export function createDrizzleRuntimeDelivery(
           and(
             eq(schema.threadRunLeases.cancelRequested, false),
             sql`EXISTS (SELECT 1 FROM ${schema.turns} WHERE ${schema.turns.id} = ${turnId}
-                AND ${schema.turns.threadId} = ${lease.threadId} AND ${schema.turns.role} = ${kind === "handoff_brief" ? "system" : kind} AND (${schema.turns.role} = 'assistant' OR ${pendingPlaceholderPredicate({ role: schema.turns.role, status: schema.turns.status })}))`,
+                AND ${schema.turns.threadId} = ${lease.threadId} AND ${schema.turns.role} = ${kind} AND (${schema.turns.role} = 'assistant' OR ${runOwnedPlaceholderPredicate({ role: schema.turns.role, status: schema.turns.status })}))`,
             ownedLease(lease),
           ),
         )
@@ -77,7 +77,7 @@ export function createDrizzleRuntimeDelivery(
         .returning({ turnId: schema.threadRunLeases.turnId });
       return rows.length > 0;
     },
-    async lockThreadReceipt(threadId, liveOnly) {
+    async lockThreadReceipt(threadId) {
       const [row] = await db_()
         .select({
           ids: schema.threadRunLeases.adoptedMessageIds,
@@ -87,7 +87,6 @@ export function createDrizzleRuntimeDelivery(
         .where(
           and(
             eq(schema.threadRunLeases.threadId, threadId),
-            liveOnly ? gt(schema.threadRunLeases.expiresAt, new Date()) : undefined,
           ),
         )
         .for("update");

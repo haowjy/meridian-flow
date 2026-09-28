@@ -8,6 +8,8 @@ export { MANUSCRIPT_URI as UNIFIED_MANUSCRIPT_URI } from "../context/manuscript-
 export type { WorkContextNotices } from "../projects/index.js";
 export { createContextImageAssetPort } from "./adapters/context-image-assets.js";
 export { createDrizzleRuntimeDelivery } from "./adapters/drizzle/runtime-delivery.js";
+export { createDrizzleHandoffBriefClaim } from "./adapters/drizzle-handoff-brief-claim.js";
+export { createDrizzleHandoffStatusReader } from "./adapters/drizzle-handoff-status-reader.js";
 export {
   createDrizzleRunClaim,
   type DrizzleRunClaimOptions,
@@ -22,6 +24,7 @@ export {
   type InMemoryRunClaimOptions,
   type InMemoryRunStarter,
 } from "./adapters/in-memory/loop-ports.js";
+export { createInMemoryHandoffBriefClaim } from "./adapters/in-memory/handoff-brief-claim.js";
 export {
   type AdmissionPersistencePort,
   createDrizzleAdmissionRecords,
@@ -74,6 +77,8 @@ export {
   EXPIRED_INTERRUPT_VALUE,
 } from "./loop/interrupts.js";
 export { createOrchestrator } from "./loop/orchestrator.js";
+export { createHandoffBriefs, HandoffRetryError, type HandoffBriefs } from "./handoff/brief-service.js";
+export type { HandoffBriefClaim } from "./ports/handoff-brief-claim.js";
 export { finalizeOrphanedTurns } from "./loop/orphaned-placeholder.js";
 export {
   projectPendingInbox,
@@ -136,6 +141,7 @@ export {
 } from "./loop/work-context.js";
 export type { ConversationSummarizer, SummaryOutcome } from "./ports/conversation-summarizer.js";
 export type { ImageAssetPort } from "./ports/image-asset.js";
+export type { HandoffBriefStopper } from "./ports/handoff-briefs.js";
 export { unavailableImageAssetPort } from "./ports/image-asset.js";
 export {
   appendSubagentActivity,

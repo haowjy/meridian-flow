@@ -82,7 +82,7 @@ export async function executeCompaction({
             kind: "failed",
             error: new CompactionPreparationError(decision.refusal ?? "nothing_to_compact"),
             modelResponses: [],
-            summarizer: { path: "cold", segments: 0 },
+            summarizer: { path: "rolling", segments: 0 },
           }
         : await deps.summarizer.summarize({
             owner: { threadId: input.threadId, turnId: currentTurn.id },
@@ -90,7 +90,7 @@ export async function executeCompaction({
             instruction: "compaction",
             changedDocuments: changed,
             requestInHand: decision.requestInHand,
-            forceCold: decision.path === "cold",
+            path: decision.path === "cold" ? "rolling" : "branch_if_warm",
             retainedMessages: decision.plan.retainedSuffix.flatMap(({ turn, blocks }) =>
               turnContextMessages(
                 turn,
@@ -117,7 +117,7 @@ export async function executeCompaction({
       kind: input.signal?.aborted ? "cancelled" : "failed",
       error,
       modelResponses: [],
-      summarizer: { path: "cold", segments: 0 },
+      summarizer: { path: "rolling", segments: 0 },
     };
   }
   if (!decision.refusal) recordResponses(summary.modelResponses, summary.summarizer);
@@ -187,9 +187,7 @@ export async function executeCompaction({
               blocks: [...allBlocks, ...drain.blocks],
               baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
               readReferences: false,
-              skipCompaction:
-                !selection.control ||
-                selection.controls?.some((control) => control.body.kind === "handoff_brief"),
+              skipCompaction: !selection.control,
               controls: selection.controls,
               followingBatches: selection.followingBatches,
               failedUndoIds: selection.failedUndoIds,

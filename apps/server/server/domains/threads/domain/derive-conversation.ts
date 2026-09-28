@@ -15,7 +15,7 @@ import {
   type WorkRepository,
 } from "../../projects/index.js";
 import type { EventJournalWriter } from "../ports/event-journal.js";
-import type { HandoffControlQueue } from "../ports/handoff-control-queue.js";
+import type { HandoffBriefLauncher } from "../ports/handoff-brief-launcher.js";
 import type { InternalThreadRepositories, ThreadImageInclusion } from "../ports/repositories.js";
 import { createBoundConversation } from "./bound-conversation.js";
 import { bakeAt, bakeInEffect } from "./prompt-epochs.js";
@@ -82,7 +82,7 @@ export class ForkCutoffError extends Error {
 }
 
 export async function handoffThreadAgent(
-  deps: ThreadAgentSwapDeps & { delivery: HandoffControlQueue },
+  deps: ThreadAgentSwapDeps & { handoffBriefs: HandoffBriefLauncher },
   input: {
     id: string;
     threadId: string;
@@ -136,7 +136,6 @@ export async function handoffThreadAgent(
     const target = await bindDerivedPrimary(deps, result.thread, workId, binding);
     await inheritEditingDocuments(deps, lockedSource, target);
     const seedId = crypto.randomUUID();
-    const controlId = crypto.randomUUID();
     const seed = await deps.turns.create({
       id: seedId,
       threadId: target.id,
@@ -147,12 +146,11 @@ export async function handoffThreadAgent(
         sourceThreadId: owner.id,
         sourceRef: owner.ref ?? owner.id,
         sourceTitle: owner.title,
-        controlMessageId: controlId,
         cutoffTurnId: cutoff.turn.id,
       }),
     });
     await deps.eventWriter.appendEvent(target.id, { type: "turn.created", turn: seed });
-    await deps.delivery.enqueueSeedBrief({ threadId: target.id, seedTurnId: seed.id, controlId });
+    deps.handoffBriefs.launchAfterCommit({ threadId: target.id, seedTurnId: seed.id });
     await deps.eventWriter.appendEvent(lockedSource.id, {
       type: "agent.handoff",
       sourceThreadId: owner.id,

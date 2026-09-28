@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
   try {
     const result = await handoffThreadAgent(
       {
-        delivery: app.delivery,
+        handoffBriefs: app.handoffBriefs,
         threads: app.repos.threads as ThreadAgentSwapDeps["threads"],
         threadWorks: app.repos.threadWorks,
         turns: app.repos.turns,
