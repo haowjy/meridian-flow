@@ -17,8 +17,9 @@ references, failed writes, and unverified recovery).
 Staged mutation results start with null. The response-settlement receipt supplies
 the token captured at apply; `persistCommittedWriteResult` copies it without a
 second document read. Re-reading here would misattribute a writer's intervening
-edit to the agent write. Future compaction queries current tokens through the
-context domain's `DocumentRevisions` port.
+edit to the agent write. Compaction compares these tokens with current ones from
+the context domain's `DocumentRevisions` port (see
+[Document text at compaction](#document-text-at-compaction)).
 
 
 ## gateway — multi-provider LLM abstraction
@@ -698,7 +699,6 @@ message stays unacknowledged and is redelivered rather than receiving a syntheti
 failed reply. Compaction responses count when the compaction is the orphaned
 execution's terminal turn; accounting completed compaction ancestors remains C4e.
 
-
 ### Document text at compaction
 
 The writer transcript is never pruned. A completed compaction owns frozen
@@ -713,16 +713,21 @@ Error pairs are outside the policy. Explicit empty `documentRevisions` means no
 document text; absent evidence, null tokens and failed lookups fail closed.
 `diff` always elides. Tool pairing, reasoning, writer words and fresh text stay.
 
-Before summarization, one settled-authority revision query supplies the changed
-URIs in the appended instruction (including warm requests, whose prefix stays
-unchanged). Successor prepare independently queries once per attempt and plans
+Before summarization, one settled-authority revision query over the active
+projection (the history the summarizer reads, not only the planned cut) supplies
+only the changed URIs in the appended instruction (including warm requests, whose
+prefix stays unchanged). Successor prepare independently queries once per attempt and plans
 from raw retained blocks, never from a previous owner's replacements. The loop
 asserts no response scope is open: `DocumentRevisions.current` cannot represent
 response-staged overlays. Query failures become unknown tokens; the assertion
 is an invariant failure, not a lookup failure.
 
-The usable prepared value carries metadata into both provisional assembly and
-`beginPromptEpoch`. The same assembly measures `tokensAfter`; the epoch, frozen
+The usable prepared value carries metadata (the placeholder's reservation
+metadata plus `elisions`) into provisional assembly. The commit reloads C after
+paid-summary settlement and passes `{ ...settled.metadata, ...prepared.metadata }`
+to `beginPromptEpoch`: settlement appends summarizer telemetry to C, so passing
+the prepared value alone would drop it. Telemetry never renders to the model, so
+B's first request still equals the rebuild. The same assembly measures `tokensAfter`; the epoch, frozen
 elisions and successor commit atomically. A moved leaf re-queries, while a failed
 prepare writes no elisions. The estimator excludes elision payloads from C's
 header because only the summary renders there.

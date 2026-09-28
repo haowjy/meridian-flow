@@ -17,7 +17,7 @@ the authoritative history fetch:
   behind them; navigate-first is preserved.
 - The hook owns one mounted-thread transport subscription. It refetches
   (debounced 250 ms) on `RUN_STARTED` and gap, and directly applies addressed
-  custom block upserts/prunes even after the parent run ends. Missing turns
+  custom block upserts even after the parent run ends. Missing turns
   request authoritative history, never a synthetic streaming turn. The store's
   durable wire cursor and snapshot floor reject replay rewinds and old HTTP
   responses. A server-initiated run has no local submit to learn it from, so
