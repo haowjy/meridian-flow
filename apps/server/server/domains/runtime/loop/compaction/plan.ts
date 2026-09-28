@@ -2,7 +2,7 @@
 
 import type { Block, Turn } from "@meridian/contracts/threads";
 import {
-  CompactionMetadataCodec,
+  CompactionPlanMetadataCodec,
   classifyHistoryItem,
   isSystemUpdateMetadata,
 } from "../../../threads/index.js";
@@ -171,7 +171,7 @@ function activeCompactionCut(turns: readonly ClassifiedTurn[]): CompactionCut | 
     );
   if (!active) return null;
 
-  const metadata = CompactionMetadataCodec.parse(active.turn.metadata);
+  const metadata = CompactionPlanMetadataCodec.parse(active.turn.metadata);
   const cutTurn = turns.find(({ turn }) => turn.id === metadata.compactedThrough.turnId)?.turn;
   if (!cutTurn || cutTurn.position >= active.turn.position) {
     throw new Error(`Complete compaction ${active.turn.id} has an invalid cut turn`);

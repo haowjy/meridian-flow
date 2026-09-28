@@ -1,5 +1,6 @@
 /** A request boundary's compaction choice; committed with its selected leaf and inbox batch. */
 import type { Block, Turn } from "@meridian/contracts/threads";
+import type { CompactionFailurePhase, CompactionFailureReason } from "../../../threads/index.js";
 import { orderTurnsByPosition } from "../../../threads/order-turns.js";
 import type { GenerateRequest, TokenizerFamily } from "../../gateway/index.js";
 import { estimateRequestTokens } from "./estimate.js";
@@ -29,17 +30,7 @@ export type CompactionDecision =
     }
   | { kind: "too_large"; plan: CompactionPlan };
 
-export type CompactionFailureReason =
-  | "nothing_to_compact"
-  | "context_too_large"
-  | "compaction_failed"
-  | "context_window_exceeded"
-  | "max_tokens"
-  | "provider_error"
-  | "tool_use"
-  | "empty_text";
-
-export type CompactionFailurePhase = "summary" | "initial_prepare" | "late_arrival" | "delivery";
+export type { CompactionFailurePhase, CompactionFailureReason };
 
 export type CompactionFailureOutcome = {
   reason: CompactionFailureReason;

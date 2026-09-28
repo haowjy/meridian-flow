@@ -1,12 +1,16 @@
 /** A summary call runs outside delivery locks; every attempted response settles on its placeholder. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ModelResponseReceivedRow } from "@meridian/contracts/threads";
+import type { CompactionFailureReason } from "../../threads/index.js";
 import type { GenerateRequest } from "../gateway/index.js";
 import type { ProjectedActiveHistory } from "../loop/compaction/index.js";
 
 /** Provider metering data is passed to the shared debit path, not persisted in the row. */
 export type SummaryResponse = ModelResponseReceivedRow & { providerData?: unknown };
-export type SummaryRejectionReason = "max_tokens" | "provider_error" | "tool_use" | "empty_text";
+export type SummaryRejectionReason = Extract<
+  CompactionFailureReason,
+  "max_tokens" | "provider_error" | "tool_use" | "empty_text"
+>;
 export type SummaryOutcome = {
   modelResponses: SummaryResponse[];
   summarizer: { path: "warm" | "cold"; segments: number };
