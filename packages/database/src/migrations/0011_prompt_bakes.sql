@@ -14,14 +14,14 @@ CREATE TABLE "prompt_bakes" (
 --> statement-breakpoint
 ALTER TABLE "threads" ADD COLUMN "initial_prompt_bake_id" uuid;--> statement-breakpoint
 ALTER TABLE "turns" ADD COLUMN "prompt_bake_id" uuid;--> statement-breakpoint
-ALTER TABLE "prompt_bakes" ADD CONSTRAINT "prompt_bakes_owner_thread_id_threads_id_fk" FOREIGN KEY ("owner_thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "prompt_bakes_owner_created" ON "prompt_bakes" USING btree ("owner_thread_id","created_at");--> statement-breakpoint
-ALTER TABLE "threads" ADD CONSTRAINT "threads_initial_prompt_bake_id_prompt_bakes_id_fk" FOREIGN KEY ("initial_prompt_bake_id") REFERENCES "public"."prompt_bakes"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "turns" ADD CONSTRAINT "turns_prompt_bake_id_prompt_bakes_id_fk" FOREIGN KEY ("prompt_bake_id") REFERENCES "public"."prompt_bakes"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "threads" DROP COLUMN "composed_system_prompt";--> statement-breakpoint
-ALTER TABLE "threads" DROP COLUMN "baked_skill_slugs";--> statement-breakpoint
-ALTER TABLE "threads" DROP COLUMN "baked_tools";--> statement-breakpoint
-ALTER TABLE "threads" DROP COLUMN "system_prompt_hash";
+ALTER TABLE "prompt_bakes" ADD CONSTRAINT "prompt_bakes_owner_thread_id_threads_id_fk" FOREIGN KEY ("owner_thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action; -- migration-lint: skip ADD_FOREIGN_KEY_NOT_VALID (pre-launch prompt_bakes has no deployed rows to scan)--> statement-breakpoint
+CREATE INDEX "prompt_bakes_owner_created" ON "prompt_bakes" USING btree ("owner_thread_id","created_at"); -- migration-lint: skip INDEX_NOT_CONCURRENTLY (pre-launch table has no deployed rows; Drizzle runs migrations transactionally, so CONCURRENTLY is unavailable)--> statement-breakpoint
+ALTER TABLE "threads" ADD CONSTRAINT "threads_initial_prompt_bake_id_prompt_bakes_id_fk" FOREIGN KEY ("initial_prompt_bake_id") REFERENCES "public"."prompt_bakes"("id") ON DELETE no action ON UPDATE no action; -- migration-lint: skip ADD_FOREIGN_KEY_NOT_VALID (pre-launch threads have no deployed prompt-bake references to scan)--> statement-breakpoint
+ALTER TABLE "turns" ADD CONSTRAINT "turns_prompt_bake_id_prompt_bakes_id_fk" FOREIGN KEY ("prompt_bake_id") REFERENCES "public"."prompt_bakes"("id") ON DELETE no action ON UPDATE no action; -- migration-lint: skip ADD_FOREIGN_KEY_NOT_VALID (pre-launch turns have no deployed prompt-bake references to scan)--> statement-breakpoint
+ALTER TABLE "threads" DROP COLUMN "composed_system_prompt"; -- migration-lint: skip DROP_COLUMN (prompt reads and writes now use prompt_bakes.composed_system_prompt; none target threads.composed_system_prompt)--> statement-breakpoint
+ALTER TABLE "threads" DROP COLUMN "baked_skill_slugs"; -- migration-lint: skip DROP_COLUMN (prompt reads and writes now use prompt_bakes.baked_skill_slugs; none target threads.baked_skill_slugs)--> statement-breakpoint
+ALTER TABLE "threads" DROP COLUMN "baked_tools"; -- migration-lint: skip DROP_COLUMN (prompt reads and writes now use prompt_bakes.baked_tools; none target threads.baked_tools)--> statement-breakpoint
+ALTER TABLE "threads" DROP COLUMN "system_prompt_hash"; -- migration-lint: skip DROP_COLUMN (prompt hash reads and writes now use prompt_bakes.content_hash; none target threads.system_prompt_hash)
 --> statement-breakpoint
 ALTER TABLE "threads" ALTER CONSTRAINT "threads_initial_prompt_bake_id_prompt_bakes_id_fk" DEFERRABLE INITIALLY DEFERRED;
 --> statement-breakpoint

@@ -74,9 +74,9 @@ BEGIN
   END LOOP;
 END;
 $$;--> statement-breakpoint
-ALTER TABLE "turns" ALTER COLUMN "position" SET NOT NULL;--> statement-breakpoint
-CREATE UNIQUE INDEX "turns_thread_position_unique" ON "turns" USING btree ("thread_id","position");--> statement-breakpoint
-CREATE INDEX "turns_parent_position" ON "turns" USING btree ("parent_turn_id","position" DESC NULLS LAST) WHERE "turns"."parent_turn_id" IS NOT NULL;--> statement-breakpoint
+ALTER TABLE "turns" ALTER COLUMN "position" SET NOT NULL; -- migration-lint: skip SET_NOT_NULL_UNSAFE (the fork-aware turn-position backfill above assigns a positive position to every existing turn)--> statement-breakpoint
+CREATE UNIQUE INDEX "turns_thread_position_unique" ON "turns" USING btree ("thread_id","position"); -- migration-lint: skip INDEX_NOT_CONCURRENTLY (pre-launch turns has no deployed rows; Drizzle runs migrations transactionally, so CONCURRENTLY is unavailable)--> statement-breakpoint
+CREATE INDEX "turns_parent_position" ON "turns" USING btree ("parent_turn_id","position" DESC NULLS LAST) WHERE "turns"."parent_turn_id" IS NOT NULL; -- migration-lint: skip INDEX_NOT_CONCURRENTLY (pre-launch turns has no deployed rows; Drizzle runs migrations transactionally, so CONCURRENTLY is unavailable)--> statement-breakpoint
 ALTER TABLE "turns" ADD CONSTRAINT "turns_position_positive" CHECK ("turns"."position" > 0);--> statement-breakpoint
 CREATE FUNCTION enforce_turn_position_write_once() RETURNS trigger
 LANGUAGE plpgsql AS $$
@@ -101,6 +101,6 @@ CREATE TABLE "thread_image_inclusions" (
 	CONSTRAINT "thread_image_inclusions_thread_id_block_id_decision_turn_id_pk" PRIMARY KEY("thread_id","block_id","decision_turn_id")
 );
 --> statement-breakpoint
-ALTER TABLE "thread_image_inclusions" ADD CONSTRAINT "thread_image_inclusions_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "thread_image_inclusions" ADD CONSTRAINT "thread_image_inclusions_block_id_turn_blocks_id_fk" FOREIGN KEY ("block_id") REFERENCES "public"."turn_blocks"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "thread_image_inclusions" ADD CONSTRAINT "thread_image_inclusions_decision_turn_id_turns_id_fk" FOREIGN KEY ("decision_turn_id") REFERENCES "public"."turns"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "thread_image_inclusions" ADD CONSTRAINT "thread_image_inclusions_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action; -- migration-lint: skip ADD_FOREIGN_KEY_NOT_VALID (thread_image_inclusions is created empty in this pre-launch migration)--> statement-breakpoint
+ALTER TABLE "thread_image_inclusions" ADD CONSTRAINT "thread_image_inclusions_block_id_turn_blocks_id_fk" FOREIGN KEY ("block_id") REFERENCES "public"."turn_blocks"("id") ON DELETE cascade ON UPDATE no action; -- migration-lint: skip ADD_FOREIGN_KEY_NOT_VALID (thread_image_inclusions is created empty in this pre-launch migration)--> statement-breakpoint
+ALTER TABLE "thread_image_inclusions" ADD CONSTRAINT "thread_image_inclusions_decision_turn_id_turns_id_fk" FOREIGN KEY ("decision_turn_id") REFERENCES "public"."turns"("id") ON DELETE cascade ON UPDATE no action; -- migration-lint: skip ADD_FOREIGN_KEY_NOT_VALID (thread_image_inclusions is created empty in this pre-launch migration)
