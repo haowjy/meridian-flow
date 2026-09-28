@@ -15,7 +15,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { and, eq } = await import("drizzle-orm");
-    const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { createDrizzleDocumentProjectionEffects } = await import(
       "./drizzle-document-activity.js"
     );
@@ -45,7 +45,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     async function truncateAll(): Promise<void> {
-      await truncateDrizzleTables(db, [
+      await deleteDrizzleRows(db, [
         threadDocuments,
         threads,
         documents,

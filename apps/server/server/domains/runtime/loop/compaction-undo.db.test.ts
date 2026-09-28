@@ -16,12 +16,12 @@ else
     const { assertThrowawayDatabaseForRunDbTests } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     assertThrowawayDatabaseForRunDbTests(url);
     const db = createDb(url, { max: 4 });
-    beforeEach(() => truncateDrizzleTables(db, [schema.users]));
+    beforeEach(() => deleteDrizzleRows(db, [schema.users]));
     afterAll(async () => {
-      await truncateDrizzleTables(db, [schema.users]);
+      await deleteDrizzleRows(db, [schema.users]);
       await db.close();
     });
     const makeFixture = createCompactionFixture(db);

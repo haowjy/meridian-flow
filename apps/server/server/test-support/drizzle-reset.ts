@@ -1,13 +1,9 @@
-/**
- * Purpose: Safe destructive reset helpers for Drizzle/Postgres conformance suites.
- * Key decision: Broad suites use TRUNCATE CASCADE; focused suites may delete an
- * FK-closed table set derived from the live Postgres catalog. Schema-derived
- * names keep both strategies aligned with table renames.
- */
-import type { Database } from "@meridian/database";
+/** Rollback isolation by default; catalog-derived DELETE for committed, multi-connection suites. */
+import { createDb, type Database } from "@meridian/database";
 import { promptBakes, threads } from "@meridian/database/schema";
-import { sql } from "drizzle-orm";
+import { sql, TransactionRollbackError } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
+import { afterAll, aroundEach, beforeAll } from "vitest";
 
 type CatalogTableRow = {
   table_oid: string;
@@ -124,13 +120,6 @@ async function assertThrowawayDatabase(db: Database): Promise<void> {
   }
 }
 
-export async function truncateDrizzleTables(db: Database, tables: unknown[]): Promise<void> {
-  await assertThrowawayDatabase(db);
-  const tableList = tables.map(quoteDrizzleTable).join(", ");
-  // Drizzle has no TRUNCATE builder, so the raw fragment is limited to schema-derived identifiers.
-  await db.execute(sql.raw(`TRUNCATE ${tableList} CASCADE`));
-}
-
 /**
  * Fast reset for focused suites. Supplied tables are scope anchors, not an
  * exhaustive ordering: the live Postgres FK graph recursively adds every
@@ -215,4 +204,54 @@ export async function deleteDrizzleRows(db: Database, tables: unknown[]): Promis
       await transaction.execute(sql.raw(`DELETE FROM ${table.qualifiedName}`));
     }
   });
+}
+
+export interface RollbackTestDatabase {
+  readonly current: Database;
+}
+
+/**
+ * Register transaction isolation for the current suite.
+ *
+ * Read `current` inside `beforeEach` or the test body. It points at the active
+ * transaction while the case runs and at the root connection outside a case.
+ */
+export function useRollbackTestDatabase(
+  databaseUrl: string,
+  options?: {
+    max?: number;
+    /** Durable worker baseline; must be safe for later suites sharing the worker DB. */
+    prepareSuite?: (db: Database) => Promise<void>;
+  },
+): RollbackTestDatabase {
+  const root = createDb(databaseUrl, options);
+  let current = root;
+
+  if (options?.prepareSuite) {
+    beforeAll(() => options.prepareSuite?.(root));
+  }
+
+  aroundEach(async (runTest) => {
+    try {
+      await root.transaction(async (transaction) => {
+        current = transaction as unknown as Database;
+        await runTest();
+        transaction.rollback();
+      });
+    } catch (error) {
+      if (!(error instanceof TransactionRollbackError)) throw error;
+    } finally {
+      current = root;
+    }
+  });
+
+  afterAll(async () => {
+    await root.close();
+  });
+
+  return {
+    get current() {
+      return current;
+    },
+  };
 }

@@ -34,7 +34,7 @@ else
     const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
     const { readThreadReport } = await import("../../../runtime/spawn/read-thread-report.js");
     assertThrowawayDatabaseForRunDbTests(databaseUrl);
@@ -42,7 +42,7 @@ else
     const repos = createDrizzleRepositoriesForTest(db);
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users]);
+      await deleteDrizzleRows(db, [schema.users]);
     });
     async function seedOwnershipGraph() {
       await executionScenario(db, ids);

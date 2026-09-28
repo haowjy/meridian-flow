@@ -33,10 +33,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { useRollbackTestDatabase } = await import(
-      "../../../../test-support/rollback-test-database.js"
-    );
-    const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
+    const { useRollbackTestDatabase } = await import("../../../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleBranchStore } = await import("../drizzle-branches.js");
     const { createHocuspocusPersistenceService } = await import("../../hocuspocus-persistence.js");
     const {
@@ -88,7 +86,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
     let db = database.current;
     let livePersistence = createDrizzleCollabPersistence(db);

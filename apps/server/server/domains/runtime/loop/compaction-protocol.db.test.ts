@@ -51,14 +51,14 @@ else
     const { assertThrowawayDatabaseForRunDbTests } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { createDrizzleNoticePort } = await import(
       "../../notices/adapters/drizzle-notice-port.js"
     );
     const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
     assertThrowawayDatabaseForRunDbTests(url);
     const db = createDb(url, { max: 8 });
-    beforeEach(() => truncateDrizzleTables(db, [schema.users]));
+    beforeEach(() => deleteDrizzleRows(db, [schema.users]));
     afterAll(() => db.close());
 
     const fixture = createCompactionFixture(db);
