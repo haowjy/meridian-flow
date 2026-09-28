@@ -48,6 +48,7 @@ Local-dev-only utilities. Never imported by the application runtime.
 - **`./mf` wraps the API; it never reimplements it.** Before changing `cli/`, read the `./mf` section of [`.context/CONTEXT.md`](.context/CONTEXT.md).
 - **WS 426 is not a warning.** Plain HTTP hits to `/api/threads/ws` and `/ws/yjs` produce expected 426 responses. `routeStatusEvent` in `apps/server/server/lib/request-observability.ts` suppresses these. When adding a new WebSocket route, add it to `isExpectedWsPlainHttpStatus`.
 
+- **DB test concurrency:** eight owned workers by default; `DB_TEST_WORKERS=1..8` lowers concurrency under shared-server load. Do not use CPU-count scaling against the shared 100-connection server.
 - **Test cleanup:** hand off only this invocation’s managed DBs to `cleanup-test-databases.ts`; it checks parent ownership before the runner exits. Drops are detached because PostgreSQL forces a checkpoint. Inspect `.meridian/db-test-cleanup/` for failures; stale-run `dev:gc-dbs` remains the fallback.
 - **Test durability:** only managed worker URLs receive `synchronous_commit=off` as a session startup setting. Never change shared server settings or dev database durability.
 - **DB fixture isolation:** use the shared [test-support reset policy](../../apps/server/server/test-support/AGENTS.md). Never add per-case TRUNCATE; rollback is the default, FK-ordered DELETE the committed-data escape hatch.

@@ -50,8 +50,16 @@ async function main(): Promise<void> {
   }
   const testArgs = process.argv.slice(2);
   if (testArgs[0] === "--") testArgs.shift();
+  const workerCount = Number(process.env.DB_TEST_WORKERS ?? "8");
+  if (!Number.isInteger(workerCount) || workerCount < 1 || workerCount > 8) {
+    throw new Error(
+      "DB_TEST_WORKERS must be an integer from 1 to 8 (shared Postgres connection budget).",
+    );
+  }
   const workerDatabaseUrls = local
-    ? Array.from({ length: 4 }, (_, index) => managedTestDatabaseWorkerUrl(databaseUrl, index + 1))
+    ? Array.from({ length: workerCount }, (_, index) =>
+        managedTestDatabaseWorkerUrl(databaseUrl, index + 1),
+      )
     : [];
 
   try {

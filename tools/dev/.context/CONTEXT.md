@@ -101,8 +101,10 @@ tools/dev/
 - One Postgres server (`:54422`), many databases. Main checkout: **`meridian`** (reserved). Worktrees: **`meridian_<slug>`**.
 - **Garbage collection:** `pnpm dev:gc-dbs -- --yes` considers every database prefixed by a registered main-checkout name (for example, `meridian_*`). It preserves live worktrees, active managed test runs, explicit `<base>_test-manual-*` databases, and reserved names. It drops stale worktree databases and managed test databases whose owner process has stopped.
 - **DB test lifecycle:** against local Postgres, `pnpm test:db` creates and
-  migrates one `<base>_test-run-<pid>-<timestamp>` template, clones four
+  migrates one `<base>_test-run-<pid>-<timestamp>` template, clones eight
   `-worker-<n>` databases, and routes each Vitest worker to its own clone.
+  `DB_TEST_WORKERS=1..8` can lower concurrency when sharing a busy server; the
+  cap leaves connection headroom rather than scaling with host CPU count.
   Migration catalog assertions run against those fresh clones instead of
   replaying migrations in a nested process. After Vitest exits, the runner hands only its own clone/template URLs to
   a detached cleanup child over IPC. Ownership is checked against the live
