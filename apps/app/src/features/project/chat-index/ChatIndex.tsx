@@ -287,7 +287,7 @@ function ChatIndexBody({
  * observer exists only while a page can be requested, and each page it loads
  * re-observes, so a tall viewport keeps filling until the sentinel leaves it.
  */
-function NextPage({ feed }: { feed: Feed }) {
+export function NextPage({ feed }: { feed: Feed }) {
   const sentinel = useRef<HTMLDivElement>(null);
   const { fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError } = feed;
   const pages = feed.data?.pages.length;
