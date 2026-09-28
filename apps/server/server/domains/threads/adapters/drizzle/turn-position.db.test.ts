@@ -40,6 +40,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "turn-positions",
       });
       await db.insert(schema.threads).values({
+        rootThreadId: SOURCE_THREAD_ID,
         id: SOURCE_THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
@@ -135,6 +136,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "complete",
       });
       await db.insert(schema.threads).values({
+        rootThreadId: FORK_THREAD_ID,
         id: FORK_THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,

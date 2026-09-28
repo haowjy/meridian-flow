@@ -12,9 +12,12 @@ export async function queryCompactionRevisions(input: {
   // An open response has staged text that settled authority cannot represent. This is
   // a programming error, not an unavailable revision, and must escape the fail-closed catch.
   input.assertNoResponseScope();
+  // Null revisions are already stale, including edit records for discarded or rejected paths.
   const documentIds = [
     ...new Set(
-      [...input.recorded.values()].flatMap((refs) => refs?.map((ref) => ref.documentId) ?? []),
+      [...input.recorded.values()].flatMap(
+        (refs) => refs?.filter((ref) => ref.revision !== null).map((ref) => ref.documentId) ?? [],
+      ),
     ),
   ];
   try {

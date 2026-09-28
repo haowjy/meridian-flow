@@ -4,6 +4,7 @@
  * chooses concrete server adapters and assembles domain services behind ports.
  */
 
+import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
@@ -120,6 +121,7 @@ import {
   createInMemoryRunStarter,
   createInMemoryRuntimeDelivery,
   createInMemoryThreadLock,
+  createInspectionToolRegistrations,
   createInstrumentedGateway,
   createOrchestrator,
   createOrphanReportRepair,
@@ -137,7 +139,6 @@ import {
   type DeliveryProducer,
   type Gateway,
   InvalidAdmissionError,
-  pendingHandoffSummarizer,
   type RunClaim,
   type RunStarter,
   type RunTurnPort,
@@ -654,6 +655,23 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   for (const registration of createWiredCoreToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
   }
+  for (const registration of createInspectionToolRegistrations({
+    repos: ports.threadRepos,
+    statusReader: ports.runClaim,
+    registry: toolRegistry,
+    async tokenizer(caller) {
+      const binding = await ports.agentRevisions.readThreadBinding(caller.id);
+      const modelId = binding?.configuration.model ?? ports.gateway.getDefaultModel();
+      const model = ports.gateway.listModels?.().find((model) => model.id === modelId);
+      if (!model)
+        return {
+          ok: false,
+          error: meridianErrorFromSystem("model_unavailable", `Model not found: ${modelId}`),
+        };
+      return model.tokenizer;
+    },
+  }))
+    toolRegistry.register(registration);
   for (const registration of createSpawnToolRegistrations()) {
     toolRegistry.register(registration);
   }
@@ -812,7 +830,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
   });
   const orchestrator = createOrchestrator({
-    handoffSummarizer: pendingHandoffSummarizer,
     summarizer: createConversationSummarizer({
       gateway: ports.gateway,
       agentRevisions: ports.agentRevisions,

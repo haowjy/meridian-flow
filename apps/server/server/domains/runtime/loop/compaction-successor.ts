@@ -17,7 +17,7 @@ import {
   summaryCompactionFailure,
 } from "./compaction/decision.js";
 import { collectRecordedDocuments, planModelElisions } from "./compaction/elide.js";
-import { estimateRequestTokens, type projectActiveHistory } from "./compaction/index.js";
+import { estimateRequestTokens, type ProjectedActiveHistory } from "./compaction/index.js";
 import { queryCompactionRevisions } from "./compaction-revisions.js";
 import type { InboxDrain } from "./inbox-context.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
@@ -77,7 +77,7 @@ export async function prepareCompactionSuccessor(args: {
   allBlocks: Block[];
   decision: Decision;
   outcome: SummaryOutcome;
-  projection: ReturnType<typeof projectActiveHistory>;
+  projection: ProjectedActiveHistory;
 }): Promise<PreparedCompaction> {
   const { deps, input, thread, placeholder, allTurns, allBlocks, decision, outcome, projection } =
     args;

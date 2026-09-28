@@ -43,6 +43,16 @@ export interface TranscriptPage {
   unsettledTail?: { turn: Turn; blocks: Block[] }[];
 }
 
+/** Internal model-projection bookkeeping, never returned by the writer read. */
+export interface TranscriptProjectionPage extends TranscriptPage {
+  opensSegment: boolean;
+  segmentCount: number;
+  /** Anchored end key even on a final page, for projections that trim it. */
+  endCursor?: string;
+  /** Start of the pinned prefix when the live preview consumes the output budget. */
+  restartCursor?: string;
+}
+
 export interface TranscriptPageInput {
   order: TranscriptOrder;
   unit: TranscriptUnit;
@@ -353,12 +363,40 @@ function unsettledTail(
     .map(({ turn, blocks }) => ({ turn, blocks }));
 }
 
-/** Reads one bounded page and, only on the first newest-first call, a marked live tail. */
+async function firstPromptBakeId(
+  repos: TranscriptReadDeps,
+  owners: readonly TranscriptOwner[],
+  thread: Thread,
+): Promise<string | null> {
+  const owner = owners[0];
+  if (!owner) return null;
+  return owner.threadId === thread.id
+    ? thread.initialPromptBakeId
+    : ((await repos.threads.findByIdIncludingDeleted(owner.threadId))?.initialPromptBakeId ?? null);
+}
+
+/** Writer-facing page shape; projection bookkeeping stays behind this boundary. */
 export async function readTranscriptPage(
   repos: Pick<ThreadRepositories, "readSnapshot" | "threads" | "turns" | "blocks">,
   thread: Thread,
   input: TranscriptPageInput,
 ): Promise<TranscriptPage> {
+  const {
+    endCursor: _end,
+    restartCursor: _restart,
+    opensSegment: _opens,
+    segmentCount: _count,
+    ...page
+  } = await readTranscriptPageForProjection(repos, thread, input);
+  return page;
+}
+
+/** Reads one bounded page and, only on the first newest-first call, a marked live tail. */
+export async function readTranscriptPageForProjection(
+  repos: Pick<ThreadRepositories, "readSnapshot" | "threads" | "turns" | "blocks">,
+  thread: Thread,
+  input: TranscriptPageInput,
+): Promise<TranscriptProjectionPage> {
   const range = input.range ?? "effective";
   if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 200) {
     throw new RangeError("Transcript page limit must be between 1 and 200");
@@ -390,13 +428,7 @@ export async function readTranscriptPage(
           });
     const uniqueOwners = [...new Map(owners.map((owner) => [owner.threadId, owner])).values()];
     const boundaries = await repos.turns.listTranscriptBoundaries(spans);
-    const firstOwner = uniqueOwners[0];
-    const firstBakeId = firstOwner
-      ? firstOwner.threadId === pageThread.id
-        ? pageThread.initialPromptBakeId
-        : ((await repos.threads.findByIdIncludingDeleted(firstOwner.threadId))
-            ?.initialPromptBakeId ?? null)
-      : null;
+    const firstBakeId = await firstPromptBakeId(repos, uniqueOwners, pageThread);
 
     if (spans.length === 0) {
       return {
@@ -404,6 +436,8 @@ export async function readTranscriptPage(
         owners: uniqueOwners,
         segment: segmentHeader(null, boundaries, firstBakeId),
         segmentBoundary: false,
+        opensSegment: true,
+        segmentCount: boundaries.length + 1,
         hasMore: false,
       };
     }
@@ -489,7 +523,7 @@ export async function readTranscriptPage(
       segmentBoundary || queryMore || (!cursor && Boolean(anchor) && remaining === 0);
 
     let nextCursor: string | undefined;
-    if (chainHasMore && anchor) {
+    if (anchor) {
       const last = sameSegment.at(-1);
       const key = last
         ? { position: last.turn.position, sequence: last.sequence }
@@ -509,12 +543,61 @@ export async function readTranscriptPage(
 
     return {
       entries,
+      ...(anchor && input.order === "newest_first"
+        ? {
+            restartCursor: encodeCursor({
+              v: 1,
+              t: pageThread.id,
+              o: input.order,
+              u: input.unit,
+              r: range,
+              a: anchor,
+              k: { position: anchor.position + 1, sequence: -1 },
+            }),
+          }
+        : {}),
       owners: uniqueOwners,
       segment,
       segmentBoundary,
+      opensSegment: !cursor || segmentFor(cursor.k.position, boundaries) !== pageSegmentIndex,
+      segmentCount: boundaries.length + 1,
       hasMore: chainHasMore,
-      ...(nextCursor ? { nextCursor } : {}),
+      ...(nextCursor ? { endCursor: nextCursor, ...(chainHasMore ? { nextCursor } : {}) } : {}),
       ...(tailRows.length > 0 ? { unsettledTail: unsettledTail(tailRows) } : {}),
+    };
+  });
+}
+
+/** Direct expansion uses the same spans and bounded item read, including the live tail. */
+export async function readTranscriptItem(
+  repos: ThreadRepositories,
+  thread: Thread,
+  key: { position: number; sequence?: number },
+) {
+  return repos.readSnapshot(async () => {
+    const resolution = await resolveTranscriptSpans(repos, thread);
+    const [row] = await repos.turns.readTranscriptItems({
+      spans: resolution.spans,
+      order: "oldest_first",
+      unit: "item",
+      limit: 1,
+      after: {
+        position: key.position,
+        sequence: key.sequence === undefined ? -2 : key.sequence - 1,
+      },
+    });
+    if (
+      !row ||
+      row.turn.position !== key.position ||
+      (key.sequence !== undefined && row.sequence !== key.sequence)
+    )
+      return null;
+    const boundaries = await repos.turns.listTranscriptBoundaries(resolution.spans);
+    const firstBake = await firstPromptBakeId(repos, resolution.owners, thread);
+    return {
+      entry: { ...row, block: key.sequence === undefined ? null : row.block },
+      owners: resolution.owners,
+      segment: segmentHeader(key.position, boundaries, firstBake),
     };
   });
 }

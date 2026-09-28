@@ -1,5 +1,6 @@
 /** Typed metadata codecs, constructors, and history classification for durable turns. */
 
+import { SummaryRejectionReasonCodec } from "@meridian/contracts/runtime";
 import type {
   JsonObject,
   JsonValue,
@@ -55,12 +56,28 @@ export const DerivationSeedMetadataCodec = z.object({
   derivation: z.enum(["fork", "handoff"]),
 });
 
+export const HandoffFailureReasonCodec = z.enum([
+  ...SummaryRejectionReasonCodec.options,
+  "handoff_brief_failed",
+  "interrupted",
+]);
+export const HandoffFailureOutcomeCodec = z.object({
+  reason: HandoffFailureReasonCodec,
+  phase: z.enum(["source_prepare", "summary", "delivery", "recovery"]),
+});
+export type HandoffFailureOutcome = z.infer<typeof HandoffFailureOutcomeCodec>;
+
 export const HandoffSeedMetadataCodec = DerivationSeedMetadataCodec.extend({
   derivation: z.literal("handoff"),
   sourceThreadId: z.string().min(1),
   sourceRef: z.string().min(1),
   cutoffTurnId: z.string().min(1),
   controlMessageId: z.string().min(1),
+  summarizer: z
+    .object({ path: z.enum(["warm", "cold"]), segments: z.number().int().nonnegative() })
+    .optional(),
+  reason: HandoffFailureOutcomeCodec.shape.reason.optional(),
+  phase: HandoffFailureOutcomeCodec.shape.phase.optional(),
 }).passthrough();
 
 const modelElisionsCodec = z.array(
@@ -101,10 +118,7 @@ export const CompactionFailureReasonCodec = z.enum([
   "context_too_large",
   "compaction_failed",
   "context_window_exceeded",
-  "max_tokens",
-  "provider_error",
-  "tool_use",
-  "empty_text",
+  ...SummaryRejectionReasonCodec.options,
   "interrupted",
 ]);
 export const CompactionFailurePhaseCodec = z.enum([

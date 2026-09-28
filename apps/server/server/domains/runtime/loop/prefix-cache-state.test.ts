@@ -27,8 +27,8 @@ function turn(id: string, position: number, values: Partial<Turn> = {}): Turn {
     position,
     prevTurnId: null,
     parentTurnId: null,
-    role: "user",
-    origin: "writer",
+    role: "assistant",
+    origin: "assistant",
     writeMode: null,
     status: "complete",
     promptBakeId: null,
@@ -532,4 +532,64 @@ it.each([
     requestMessageCount: 2,
   });
   expect(derivePrefixCacheState(input)).toEqual({ state: "warm", reason: "reusable_prefix" });
+});
+
+it("C7b an explicit older source cutoff is cold and supplies no baseline", async () => {
+  const h = history({ turns: [turn("turn-1", 1), turn("turn-2", 2)] });
+  const service = createPrefixCacheStateService({
+    repos: {
+      threads: {
+        async findByIdIncludingDeleted() {
+          return h.thread as Thread;
+        },
+      },
+      turns: {
+        async findById() {
+          return null;
+        },
+        async listByThread() {
+          return [...h.turns];
+        },
+      },
+      modelResponses: {
+        async findLatestByThread() {
+          return response("turn-2");
+        },
+      },
+    },
+  });
+  const input = {
+    threadId: "thread-1",
+    throughTurnId: "turn-1",
+    now: NOW_MS,
+    model: {
+      id: MODEL,
+      provider: "test",
+      tokenizer: "o200k" as const,
+      displayName: "Test",
+      contextWindow: 10000,
+      maxOutputTokens: 100,
+      promptCache: CACHE,
+      capabilities: new Set<never>(),
+    },
+  };
+  expect(await service.prefixCacheStateFor(input)).toEqual({
+    state: "cold",
+    reason: "fork_cutoff",
+  });
+  expect(await service.reusableResponseFor(input)).toBeNull();
+});
+
+it("C7b brief rows cannot warm a destination or supply its token baseline", () => {
+  const input = {
+    model: MODEL,
+    promptCache: CACHE,
+    nowMs: NOW_MS,
+    history: history({
+      turns: [turn("seed", 1, { role: "system", origin: "system" })],
+      responses: [response("seed")],
+    }),
+  };
+  expect(derivePrefixCacheState(input)).toEqual({ state: "cold", reason: "no_response" });
+  expect(selectReusablePrefixResponse(input).response).toBeNull();
 });

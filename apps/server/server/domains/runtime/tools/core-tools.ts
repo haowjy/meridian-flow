@@ -17,6 +17,7 @@ import {
 import { ASK_USER_TOOL_INPUT_SCHEMA } from "@meridian/contracts/components";
 import { z } from "zod";
 import { searchDocumentText, writeDocumentText } from "./document-text.js";
+import { writeHistoryPreview } from "./history-previews.js";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
 import { writeToolDescription } from "./write-tool-description.js";
 
@@ -150,6 +151,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       },
       execution: { type: "server", handler: handlers.write },
       documentText: writeDocumentText,
+      historyPreview: writeHistoryPreview,
       sequential: true,
       timeoutMs: 30_000,
       formatExecutionError: formatWriteExecutionError,
@@ -215,6 +217,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       },
       execution: { type: "server", handler: handlers.search },
       documentText: searchDocumentText,
+      historyPreview: (input) => String(input.pattern ?? ""),
       timeoutMs: 30_000,
     },
     {

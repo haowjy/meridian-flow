@@ -29,14 +29,16 @@ Compaction is two delivery transitions around an unlocked
 
 The complete summary block is immutable. Its fit limit comes from the
 decision, independently of the automatic trigger. A usable value's token
-count describes the compacted base before late arrivals. Summary responses
-never supply the conversation token baseline.
+count describes the compacted base before late arrivals. Only assistant response
+rows can supply a reusable baseline; summary rows never supply the conversation
+token baseline.
 
 The usable prepared value carries metadata (the placeholder's reservation
 metadata plus `elisions`) into provisional assembly. The commit reloads C after
 paid-summary settlement and passes `{ ...settled.metadata, ...prepared.metadata }`
-to `beginPromptEpoch`: settlement appends summarizer telemetry to C, so passing
-the prepared value alone would drop it. A control absorbed during the summary
+to `beginPromptEpoch`: the owner hook `recordCompactionSummary` writes C's
+summarizer telemetry during settlement, so passing the prepared value alone
+would drop it. A control absorbed during the summary
 writes `satisfiesControlId` onto settled C; the prepared metadata predates that
 write and carries no satisfaction key for it. Telemetry never renders to the
 model, so B's first request still equals the rebuild. The same assembly measures
@@ -46,8 +48,10 @@ model, so B's first request still equals the rebuild. The same assembly measures
 
 The writer transcript stays intact. A completed compaction owns frozen
 `metadata.elisions` (block ID, treatment, affected URIs, replacement content).
-`projectActiveHistory` substitutes only its retained tail and pinned requests,
-not later arrivals. Reverted, failed, pending and superseded owners do not apply.
+Active projection substitutes only its retained tail and pinned requests,
+not later arrivals. `projectActiveHistoryWithBakes` is its only public entry;
+the synchronous projector stays private because, without C's own bake, it
+drops the summary's bake-gated history-read sentence. Reverted, failed, pending and superseded owners do not apply.
 Forks inherit this metadata only when their cutoff includes the owner. Never
 move elisions onto block rows: a fork reads its source's blocks in place, so a
 source compaction after the cutoff would rewrite the fork's request, and undo
@@ -188,7 +192,9 @@ Do not route a completed undo through the pending handoff-seed lifecycle.
 ## Cost
 
 `settleSummaryResponses` writes predictions, request sizes, and debits through
-`TurnAccounting.computeAndDebit` inside whichever transaction ends C.
+`TurnAccounting.computeAndDebit` inside whichever transaction ends its owner. It does not decode or write turn
+metadata: compaction records its own summarizer telemetry through
+`CompactionMetadataCodec`; handoffs use their seed codec.
 Retrying settlement does not count the paid call twice in the shared tree
 budget. A child report's cost sums every assistant and compaction response
 from its selector through its terminal turn, counting a C that is both once
@@ -234,7 +240,8 @@ headroom, using `apps/server/scripts/fixtures/compaction-estimator-probe.json`.
 
 ## Summarizer
 
-`summary/conversation-summarizer.ts` implements the port in production. Warm
+`summary/conversation-summarizer.ts` implements the port in production. The port separates owner (response rows/correlation) from source (model, cache
+and transcript); compaction supplies the same thread for both. Warm
 sends the request in hand with an appended system-origin instruction and a
 lower output cap (summary reserve plus thinking budget); it never raises the
 cap or changes other fields. Any unusable warm response or provider failure

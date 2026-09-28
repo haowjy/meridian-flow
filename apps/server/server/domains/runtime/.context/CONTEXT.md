@@ -66,7 +66,7 @@ skeleton and delegates the moving parts.
 | `run-starter.ts` / `sweep-wakes.ts` | The wake actuation seam. `createRunStarter` maps `RunStarter.start` to the turn runner's `startDrain`, handling `TurnStartConflictError` quietly and reporting unexpected failures once through EventSink because a wake is best-effort. `sweepWakes` is the durable recovery: it keyset-pages pending threads in stable thread-ID order, batch-reads live leases, and starts eligible threads with bounded concurrency. Its caller retains the returned cursor across sweeps; an empty suffix wraps to the first page. One candidate’s failure is reported without stranding the rest. `app.ts` registers the sweep with the process recovery scheduler at boot, then rearms it after completion with `WAKE_SWEEP_INTERVAL_MS` (default 30s). The `enqueue` wake is the latency path; the sweep is the guarantee. |
 | `thread-lock.ts` | Short per-thread transaction serialization, distinct from the session run claim. Delivery acquires the advisory lock, then the shared `NO KEY UPDATE` thread row lock before enqueue or consumption/close. Work rows follow the thread row in sorted id order through `shared/thread-work-lock.ts`; publication parent locking and writer admission use the same order. Work-only notice insertion takes no thread mutation/advisory lock, only compatible FK `KEY SHARE`. No provider call runs under these locks. |
 | `block-helpers.ts` | Content block conversion and local accumulator helpers. |
-| `turn-accounting.ts` / `settle-summary-responses.ts` | One `computeAndDebit` path records summary-call cost against the shared tree budget and credits ledger in the transaction that completes, fails, or cancels C. Summary calls do not spend model iterations or the turn budget; the successor's next pre-iteration check sees any exhausted tree cost budget. |
+| `turn-accounting.ts` / `settle-summary-responses.ts` | One `computeAndDebit` path records summary-call cost against the shared tree budget and credits ledger in the transaction that completes, fails, or cancels C or a handoff seed. Row settlement is metadata-neutral; each summary owner writes its own typed metadata. Summary calls do not spend model iterations or the turn budget; the successor's next pre-iteration check sees any exhausted tree cost budget. |
 | `interrupt-session.ts` | Same-turn interrupt suspend/resume mechanics and component-block updates. |
 | `tool-dispatch.ts` | Live output, spawn/thread_message/returnResult callback wiring, and durable tool_result persistence. Dispatch does not apply policy. return_result settlement is spawn-owned: dispatch honors the typed `ReturnResultOutcome` and does not parse arguments or reconstruct the envelope from JSON. |
 | `run-turn-port.ts` | `prepare(input)` returns a `PreparedRun` with run/initial assistant identity, pre-setup replay cursor, post-setup snapshot floor, and one-shot `execute(): Promise<RunOutcome>`. Setup commits before returning; only execute enters the model loop. The journal/hub is the sole event consumer, not an orchestrator generator. |
@@ -588,3 +588,30 @@ recovery, cancellation, orphan repair, cost, and the queued controls
 `planControlBarrier`. See [runtime compaction context](compaction.md) for the
 protocol and its details, and [handoff seeds](handoff.md) for the
 `handoff_brief` control.
+
+## Connected history inspection
+
+`spawn/resolve-readable-thread.ts` is the owner/project/lineage authority for
+`thread_ls`, `thread_history` and `thread_report`. New callers (including spawn
+references) reuse it. Inspection registrations take repository and tokenizer
+ports at composition, not privileged run-loop callbacks. Domain refusals leave
+handlers through `toolFailureResult`, keeping their code (a caller whose bound
+model the gateway does not list gets `model_unavailable`, not generic
+`tool_error`).
+
+History projects the shared `readTranscriptPageForProjection` and bounded expansion read;
+there is no second fork walker. Tool pairs load once per raw page, keyed by turn
+and tool-call ID, including partners outside the page. `history-item.ts` filters and elides document
+copies before token trimming. Tool registrations own `historyPreview` and
+`DocumentTextPolicy`. The policy treatment is explicit: `stale` preserves C5
+stub bytes; `history` preserves mutation inputs as dated records and stubs
+copies regardless of revision. Results without edit records persist an explicit
+empty revision list; quoted edits use null revisions. Known-null evidence is
+never resolved against current documents, including failed edits with only a
+historical path. Missing tool pairing/registration fails closed on result text.
+
+Pages cap scan work at 2,000 raw items and carry the settled anchor forward
+when trimming. Opt-in prompts appear only when a cursor opens a segment.
+`projectActiveHistoryWithBakes` resolves the active compaction's own bake before
+adding the history-read sentence; neither the current registry nor a later
+undo's bake may change an old summary's bytes.

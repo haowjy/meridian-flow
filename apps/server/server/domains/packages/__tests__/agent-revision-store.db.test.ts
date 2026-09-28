@@ -48,9 +48,12 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       await db
         .insert(schema.projects)
         .values({ id: PROJECT, userId: USER, name: "Agents", slug: "agents" });
-      await db
-        .insert(schema.threads)
-        .values({ id: THREAD, projectId: PROJECT, createdByUserId: USER });
+      await db.insert(schema.threads).values({
+        rootThreadId: THREAD,
+        id: THREAD,
+        projectId: PROJECT,
+        createdByUserId: USER,
+      });
     });
     afterAll(() => db.close());
 

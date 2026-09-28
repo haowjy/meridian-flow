@@ -173,8 +173,10 @@ if (!enabled || !databaseUrl) {
             VALUES (${project.id}, ${user.id}, 'Another No Work', true)`,
             ),
           ).rejects.toMatchObject({ constraint_name: "works_project_no_work_active" });
-          const [thread] = await tx`INSERT INTO threads (project_id, created_by_user_id)
-            VALUES (${project.id}, ${user.id}) RETURNING id`;
+          const threadId = crypto.randomUUID();
+          const [thread] =
+            await tx`INSERT INTO threads (id, root_thread_id, project_id, created_by_user_id)
+            VALUES (${threadId}, ${threadId}, ${project.id}, ${user.id}) RETURNING id`;
           await tx`INSERT INTO thread_works (thread_id, work_id, project_id, is_primary)
             VALUES (${thread.id}, ${work.id}, ${project.id}, true)`;
           expect(

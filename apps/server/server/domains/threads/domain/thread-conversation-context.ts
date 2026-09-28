@@ -45,6 +45,7 @@ export class ThreadConversationContextError extends Error {
 export async function loadThreadConversationContext(
   deps: ThreadConversationContextDeps,
   thread: Thread,
+  throughTurnId?: TurnId,
   visiting: ReadonlySet<ThreadId> = new Set(),
 ): Promise<ThreadConversationContext> {
   const threadId = thread.id as ThreadId;
@@ -57,7 +58,8 @@ export async function loadThreadConversationContext(
   const localTurns = orderTurnsByPosition(await deps.turns.listByThread(threadId));
   const localBlocks = await deps.blocks.listByThread(threadId);
 
-  if (thread.originType !== "fork") return { turns: localTurns, blocks: localBlocks };
+  if (thread.originType !== "fork")
+    return throughCutoff({ turns: localTurns, blocks: localBlocks }, thread, throughTurnId);
 
   const originTurnId = thread.originTurnId;
   if (!originTurnId) {
@@ -74,20 +76,31 @@ export async function loadThreadConversationContext(
     throw new ThreadConversationContextError("missing_cutoff_owner", thread.id, originTurnId);
   }
 
-  const sourceContext = await loadThreadConversationContext(deps, sourceThread, nextVisiting);
-  const originIndex = sourceContext.turns.findIndex((turn) => turn.id === originTurnId);
-  if (originIndex < 0) {
-    throw new ThreadConversationContextError("cutoff_not_in_transcript", thread.id, originTurnId);
-  }
-
-  const inheritedTurns = orderTurnsByPosition(sourceContext.turns.slice(0, originIndex + 1));
-  const inheritedTurnIds = new Set(inheritedTurns.map((turn) => turn.id));
-  const inheritedBlocks = sourceContext.blocks.filter((block) =>
-    inheritedTurnIds.has(block.turnId),
+  const sourceContext = throughCutoff(
+    await loadThreadConversationContext(deps, sourceThread, undefined, nextVisiting),
+    thread,
+    originTurnId,
   );
+  return throughCutoff(
+    {
+      turns: orderTurnsByPosition([...sourceContext.turns, ...localTurns]),
+      blocks: [...sourceContext.blocks, ...localBlocks],
+    },
+    thread,
+    throughTurnId,
+  );
+}
 
-  return {
-    turns: orderTurnsByPosition([...inheritedTurns, ...localTurns]),
-    blocks: [...inheritedBlocks, ...localBlocks],
-  };
+function throughCutoff(
+  context: ThreadConversationContext,
+  thread: Thread,
+  throughTurnId?: TurnId,
+): ThreadConversationContext {
+  if (!throughTurnId) return context;
+  const index = context.turns.findIndex((turn) => turn.id === throughTurnId);
+  if (index < 0)
+    throw new ThreadConversationContextError("cutoff_not_in_transcript", thread.id, throughTurnId);
+  const turns = context.turns.slice(0, index + 1);
+  const ids = new Set(turns.map((turn) => turn.id));
+  return { turns, blocks: context.blocks.filter((block) => ids.has(block.turnId)) };
 }

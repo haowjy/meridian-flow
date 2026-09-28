@@ -4,7 +4,7 @@
  * returns the existing row instead of clobbering or duplicating it.
  */
 import * as schema from "@meridian/database/schema";
-import { and, asc, desc, eq, gt, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, or, sql } from "drizzle-orm";
 import type {
   CreateModelResponseInput,
   CreateModelResponseResult,
@@ -86,7 +86,7 @@ export function createDrizzleModelResponseRepository(db: DrizzleDb): ModelRespon
         })
         .from(schema.modelResponses)
         .innerJoin(schema.turns, eq(schema.turns.id, schema.modelResponses.turnId))
-        .where(and(eq(schema.turns.threadId, threadId), ne(schema.turns.role, "compaction")))
+        .where(and(eq(schema.turns.threadId, threadId), eq(schema.turns.role, "assistant")))
         .orderBy(desc(schema.turns.position), desc(schema.modelResponses.sequence))
         .limit(1);
       return row

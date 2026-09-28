@@ -16,7 +16,7 @@ import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
 import { estimateRequestTokens } from "./compaction/estimate.js";
-import { projectActiveHistory } from "./compaction/project.js";
+import { projectActiveHistoryWithBakes } from "./compaction/project.js";
 import { createOrchestrator } from "./orchestrator.js";
 import { createPrefixCacheStateService } from "./prefix-cache-state.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
@@ -333,7 +333,12 @@ else
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
       const thread = (await rig.repos.threads.findById(rig.threadId))!;
       const context = await loadThreadConversationContext(rig.repos, thread);
-      const projected = projectActiveHistory(context.turns, context.blocks, thread.ref);
+      const projected = await projectActiveHistoryWithBakes(
+        context.turns,
+        context.blocks,
+        thread.ref,
+        rig.repos.promptBakes,
+      );
       expect(
         projected.turns
           .filter((turn) => pins.some((pin) => pin.userTurnId === turn.id))
@@ -552,7 +557,12 @@ else
       });
       async function projected(fork: typeof source) {
         const context = await loadThreadConversationContext(rig.repos, fork);
-        return projectActiveHistory(context.turns, context.blocks, fork.ref);
+        return await projectActiveHistoryWithBakes(
+          context.turns,
+          context.blocks,
+          fork.ref,
+          rig.repos.promptBakes,
+        );
       }
       const before = JSON.stringify(await projected(forkBefore));
       rig.deps.documentRevisions.current = async ({ documentIds }) =>
@@ -1249,7 +1259,7 @@ else
     });
 
     it("stops the successor iteration when settled compaction cost exhausts the tree budget", async () => {
-      const summarizer = scriptedSummarizer(async ({ turnId }) => ({
+      const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => ({
         kind: "complete",
         text: "Earlier facts.",
         model: "gpt-4.1-mini",
@@ -1521,7 +1531,7 @@ else
       let rig: Awaited<ReturnType<typeof fixture>>;
       let writerId = "";
       let agentId = "";
-      const summarizer = scriptedSummarizer(async ({ turnId }) => {
+      const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => {
         expect(await rig.runClaim.readRunningTurnId(rig.threadId)).toBe(turnId);
         expect(await rig.runClaim.read(rig.threadId)).toMatchObject({ phase: "compacting" });
         writerId = (await rig.send(rig.threadId, "late writer")).userTurnId;
@@ -1701,7 +1711,7 @@ else
 
     it("fails C when a late paste exceeds the successor budget and settles its paid summary", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
-      const summarizer = scriptedSummarizer(async ({ turnId }) => {
+      const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => {
         await rig.send(rig.threadId, "Late long paste. ".repeat(5000));
         await rig.send(rig.threadId, "A second late direction.");
         return {
@@ -1836,7 +1846,7 @@ else
     ])("cancels C, settles its response, and wakes the late message (child=%s)", async (child) => {
       let rig: Awaited<ReturnType<typeof fixture>>;
       let lateId = "";
-      const summarizer = scriptedSummarizer(async ({ turnId, signal }) => {
+      const summarizer = scriptedSummarizer(async ({ owner: { turnId }, signal }) => {
         expect(rig.orchestrator.getRunningTurn(rig.threadId)).toMatchObject({
           turnId,
           kind: "compaction",
@@ -1950,7 +1960,7 @@ else
         model: "gpt-4.1-mini",
         provider: "openai",
       });
-      const summarizer = scriptedSummarizer(async ({ turnId }) => {
+      const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => {
         expect(await rig.runClaim.readRunningTurnId(rig.threadId)).toBe(turnId);
         expect(await rig.runClaim.read(rig.threadId)).toMatchObject({
           kind: "awake",
@@ -2033,7 +2043,7 @@ else
     });
 
     it("settles the paid summary when Stop races the live failure landing", async () => {
-      const summarizer = scriptedSummarizer(async ({ turnId }) => ({
+      const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => ({
         kind: "complete",
         text: "Summary.",
         model: "gpt-4.1-mini",
@@ -2085,7 +2095,7 @@ else
       true,
     ])("leaves C pending without debiting uncommitted paid rows if failure landing fails (lease read fails=%s)", async (readFails) => {
       const responseId = crypto.randomUUID();
-      const summarizer = scriptedSummarizer(async ({ turnId }) => ({
+      const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => ({
         kind: "complete",
         text: "Summary.",
         model: "gpt-4.1-mini",
@@ -2151,7 +2161,7 @@ else
         },
       };
       let rig: Awaited<ReturnType<typeof fixture>>;
-      const summarizer = scriptedSummarizer(async ({ turnId }) => {
+      const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => {
         await port.record({
           kind: "awareness_degraded",
           scope: { kind: "thread", threadId: rig.threadId },

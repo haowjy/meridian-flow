@@ -20,6 +20,12 @@ there, including its crash recovery: see
 [runtime handoff](../../runtime/.context/handoff.md) and
 [HTTP contract](../../../../../../docs/api/thread-handoff.md).
 
+The seed codec owns summarizer telemetry and typed brief failure reason/phase;
+the shared summary rejection codec is in `@meridian/contracts/runtime`.
+Response rows on system seeds never supply prefix warmth or token baselines.
+The effective-transcript loader accepts an optional through-cutoff selection,
+sharing the exact prefix slicing used for fork inheritance.
+
 ## Prompt lifetime
 
 A thread's system prompt **and its advertised tool list** are frozen together
@@ -116,7 +122,8 @@ owns only the SQL predicate beside its partial index.
   module owns identity, capture and terminal comparisons and the delivery-to-publication
   policy for both adapters. Storage decodes typed captures once; outcome discriminates
   admitted rows from complete terminal content. Admission validates
-  the child handle, assistant role, caller ownership, turn, and card before
+  the child handle, assistant role, caller ownership, lineage (`sameLineage`),
+  turn, and card before
   persisting correlation. Finalization derives a pending publication obligation
   from admitted delivery mode; publication remains separate bookkeeping. The
   bounded discovery query skips soft-deleted callers and projects while retaining
@@ -629,3 +636,19 @@ The sole allowed additions are to the live unsettled turn before it joins the
 settled prefix. A dead unsettled turn joins the settled prefix only when
 runtime orphan repair finalizes it; see
 [placeholders and recovery](../../runtime/.context/compaction.md).
+
+## Connected conversation authority
+
+Every thread persists a non-null `rootThreadId`. Organic primaries root at
+themselves; spawn, fork, and handoff creation copy the source root. A fork's
+up-edge is the owner of its cutoff turn, which may be an inherited owner;
+a handoff's cutoff points to its source. `threads_lineage_derivations` indexes
+fork/handoff rows by root. Mappers never invent a missing root.
+
+`listLineageChildren` combines indexed spawn children with root-indexed
+derivations attached to their cutoff owner. Its creation timestamp retains
+microseconds for keyset cursors. `readTranscriptPageForProjection` additionally exposes internal end/restart
+cursors, segment count and opening state for bounded model projections.
+`readTranscriptPage` returns only the writer shape; routes never strip internal fields.
+`readTranscriptItem` expands a position key using the same span resolver and
+bounded repository reader, never a loaded transcript.

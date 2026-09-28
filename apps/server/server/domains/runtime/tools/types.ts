@@ -239,6 +239,7 @@ export type ToolHandler<TContext extends ToolHandlerContext = ToolHandlerContext
  */
 export interface ToolRegistration {
   documentText?: DocumentTextPolicy;
+  historyPreview?: (input: JsonObject, output?: JsonValue) => string;
   /**
    * Provenance of the registration, used for collision policy. Skill
    * resolution must never bind a package skill slug to a non-skill tool.

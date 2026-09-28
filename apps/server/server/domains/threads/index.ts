@@ -71,7 +71,9 @@ export {
 export {
   cursorAfter,
   InvalidTranscriptCursorError,
+  readTranscriptItem,
   readTranscriptPage,
+  readTranscriptPageForProjection,
   resolveTranscriptSpans,
   type TranscriptOrder,
   type TranscriptOwner,
@@ -118,6 +120,8 @@ export {
   derivationSeedMetadata,
   encodeImageInclusionMetadata,
   foregroundMessageMetadata,
+  type HandoffFailureOutcome,
+  HandoffFailureOutcomeCodec,
   HandoffSeedMetadataCodec,
   handoffSeedMetadata,
   ImageContextBreakCodec,

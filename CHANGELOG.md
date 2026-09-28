@@ -9,6 +9,41 @@
 
 - Show compaction in the chat: a divider for compacting, compacted (summary behind a disclosure), failed, stopped, and undone; Stop on a running compaction, from the divider or the composer; Undo only where the server expects it to hold, with refusals quiet on the divider; one-line dividers on narrow screens; hide the empty reply an overflow recovery completes before compacting. A stopped autocompaction settles without waiting for another change, and screen readers hear each control change once, in the words its row shows.
 - Add `/compact` to the composer. Queued compactions, undos, and handoff brief retries show at once at the transcript tail or on their divider, and can be withdrawn in place.
+- Preserve bake-gated history guidance in cold handoff summaries; classify completed and failed briefs as system history.
+
+- Preserve structured inspection errors, including unavailable bound models.
+
+- Verify spawn, fork and handoff preserve the original lineage root through real entry points.
+
+- Batch history tool pairs by page, including pairs outside the page.
+
+- Keep model projection cursors out of writer transcript pages.
+
+- Authorize execution reports through the canonical lineage predicate.
+
+- Seed browser-test conversations with their lineage root.
+
+- Find connected conversations and read their history with document pointers and dated edit records.
+- Keep history pages stable across compaction and undo; preserve old prompt-bake bytes.
+
+- Require a lineage root on every conversation; index fork and handoff discovery.
+- Accept failed replies as handoff cutoffs without changing the source warmth rule or rewriting their failed status on later sends.
+
+- Preserve undo-before-Retry order in expanded control batches; only brief-only batches skip control history.
+- Record brief telemetry and failure metadata through one pending-owner writer; late paid attempts cannot replace the winning outcome.
+
+- Stage activated skills through one boundary owner. Retry briefs defer skill bodies until the successor commits.
+
+- Skip destination control-history preparation while a handoff brief owns the boundary.
+
+- Keep internal ending-commit failures out of handoff brief writer copy. Retain diagnostic causes in error details.
+
+- Fall back to cold briefs when source preview fails. Preserve queued skill activations through Retry and winning seed metadata through late paid responses.
+
+- Keep source image decisions unchanged when handoff preview discovers a lost asset; generate the brief cold.
+
+- Generate handoff briefs from the source model’s warm prefix or the cheap cold summarizer. Meter every returned attempt on the destination seed.
+- Keep brief failures typed, preserve queued replies, and exclude brief calls from future cache baselines.
 
 - Undo failures show writer copy, retain typed reasons, and expose metadata in `mf thread view --json`.
 
