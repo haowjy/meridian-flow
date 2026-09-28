@@ -204,7 +204,7 @@ else
           kind: "prompt_epoch_boundary",
           cause: "compaction",
           compactedThrough: { turnId: fixture.firstTurn.id },
-          pinnedRequestTurnId: fixture.firstTurn.id,
+          pinnedRequestTurnIds: [fixture.firstTurn.id],
         },
       });
       await repos.imageInclusions.set({

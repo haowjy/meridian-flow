@@ -12,6 +12,7 @@
 - Compaction clears stale document reads, write text, search excerpts and references from model context. Fresh text and writer transcripts stay intact.
 
 ### Added
+- Page the effective or inherited transcript by stable turn/block keys, split pages at prompt-epoch boundaries, and expose the authenticated writer transcript route.
 - Record atomic document revisions on agent reads, searches, references, and settled writes without adding model-visible text.
 - Queue manual compaction in message order. Withdraw queued requests or stop running dividers.
 - Keep unanswered writer text and mentions verbatim across compaction. Failed optional summaries leave replies running.
@@ -19,12 +20,13 @@
 - Default compaction to the model's usable window, pricing tier, or 400,000-token ceiling.
 - Stop a running compaction and deliver messages queued during its summary afterward.
 - Compact long conversations through reserved summary turns and atomic successor replies.
-- Recover pending compaction placeholders only after acquiring the session claim; child reports terminate on the orphaned placeholder and late inbox messages remain redeliverable.
+- Recover orphaned primary assistant turns and pending compaction placeholders under the session claim; child reports terminate on the orphaned placeholder and late inbox messages remain redeliverable.
 - Persist request sizes and turn-neutral child execution selectors for compaction.
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
 - Re-admit retained excluded images into budget left after normal late-arrival handling during complete compaction; compaction-owned decisions remain reversible, and forks preserve decision history.
 
 ### Fixed
+- Settle orphaned primary assistant turns at startup and after a new run acquires its claim, keeping transcript anchors and fork cutoffs movable.
 - Give database fixture hooks the same timeout budget as test bodies to avoid overlapping resets.
 - Publish committed pulls even if the caller response aborts. Preserve live manifest read-your-writes.
 - Keep cold project bootstrap atomic while committing peer manifest dependencies independently.

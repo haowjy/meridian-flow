@@ -560,3 +560,39 @@ Completed compactions require ordered `pinnedRequestTurnIds`, including every
 unanswered directed message in the run receipt and adoption batch. Failed
 manual dividers carry their reason in metadata and writer copy in `turn.error`.
 Control acknowledgement commits with the divider's ending, never B's response.
+
+## Paged effective transcript
+
+`domain/transcript-page.ts` resolves a fork's effective transcript into
+owner-local `(afterPosition, throughPosition]` spans by following cutoff turns;
+it never loads the transcript to resolve lineage. `readTranscriptPage` reads
+those spans under one repeatable-read snapshot and pages by `(position,
+sequence)`. The Drizzle keyset query unions one index-bounded branch per span,
+then fetches only selected turn/block rows. Every Drizzle reader query resolves
+the ambient connection per call, so anchor, unsettled, boundary, and item reads
+stay inside the same snapshot. The in-memory adapter implements the same
+contract. `turns_thread_position_unique` and
+`turn_blocks_turn_sequence` serve item pages. `turns_epoch_boundaries` serves
+complete bake boundaries, and `turns_unsettled` finds the settled-prefix
+anchor and orphan candidates. Cursors pin that anchor; only the first
+newest-first effective page carries a separate unsettled-tail preview. When
+that preview fills the page, its cursor uses `(anchor position + 1, -1)` to
+restart at the settled prefix. This is the only permitted key above the anchor.
+
+Complete turns with a bake pointer open history segments, including undo
+markers. A page remains in one segment; segment 0 uses the first owner's
+initial bake. `GET /api/threads/:threadId/transcript` is the authenticated
+writer contract for effective or inherited raw turns and sanitized blocks.
+Inherited reads keep trashed source owners available to a live fork and report
+that fact in `owners[].trashed`.
+
+**Settled turns never gain blocks.** A settled turn may have existing block
+content replaced in place, but adding a block after settlement would create a
+key behind active cursors and is forbidden by the runtime's append protocol.
+The sole allowed additions are to the live unsettled turn before it joins the
+settled prefix. Orphan repair reuses the placeholder module and C4 scan, and
+adds a primary-assistant scan at startup and run claim. With the session claim
+held, a dead primary assistant becomes an interrupted reply; pending
+placeholders keep their existing interruption copy, and child turns keep the
+execution-report repair path. The held session claim protects live turns;
+there is no separate `liveTurnId` guard.

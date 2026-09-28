@@ -311,6 +311,12 @@ export const turns = pgTable(
   (table) => [
     unique("turns_thread_id_id_unique").on(table.threadId, table.id),
     uniqueIndex("turns_thread_position_unique").on(table.threadId, table.position),
+    index("turns_epoch_boundaries")
+      .on(table.threadId, table.position)
+      .where(sql`${table.promptBakeId} IS NOT NULL`),
+    index("turns_unsettled")
+      .on(table.threadId, table.position)
+      .where(sql`${table.status} IN ('pending','streaming','waiting_interrupt')`),
     index("turns_parent_position")
       .on(table.parentTurnId, table.position.desc())
       .where(sql`${table.parentTurnId} IS NOT NULL`),

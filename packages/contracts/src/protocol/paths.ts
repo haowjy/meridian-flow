@@ -302,6 +302,29 @@ export function apiThreadSnapshotPath(
   return `${API_THREADS_PATH}/${threadId}/snapshot${query ? `?${query}` : ""}`;
 }
 
+export type TranscriptPagePathOptions = {
+  order?: "newest_first" | "oldest_first";
+  unit?: "item" | "turn";
+  limit?: number;
+  cursor?: string;
+  range?: "effective" | "inherited";
+};
+
+/** Builds a paged transcript read URL; omitted query values use the server defaults. */
+export function apiThreadTranscriptPath(
+  threadId: string,
+  opts?: TranscriptPagePathOptions,
+): string {
+  const query = new URLSearchParams();
+  if (opts?.order) query.set("order", opts.order);
+  if (opts?.unit) query.set("unit", opts.unit);
+  if (opts?.limit !== undefined) query.set("limit", String(opts.limit));
+  if (opts?.cursor) query.set("cursor", opts.cursor);
+  if (opts?.range) query.set("range", opts.range);
+  const search = query.toString();
+  return `${API_THREADS_PATH}/${threadId}/transcript${search ? `?${search}` : ""}`;
+}
+
 export function apiThreadsWsPath(): string {
   return API_THREADS_WS_PATH;
 }

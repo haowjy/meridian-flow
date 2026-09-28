@@ -138,12 +138,19 @@ A pending placeholder is a turn with status `pending` and a role in
 `isPendingPlaceholder` or the database's `pendingPlaceholderPredicate`, never a
 local role or status check.
 
-Run start finalizes stale pending placeholders before selection, using the
-new run's own held claim. The orphan-repair lane also scans indexed pending
-placeholders, so quiet primary threads recover without a new wake; child
-reports are finalized on C and published after releasing the child's lock. A
-late writer message stays unacknowledged and is redelivered rather than
-receiving a synthetic failed reply.
+RunSession.prepare repairs stale turns before setup can plan a control barrier,
+using the new run's own held claim. Delivery adoption does not repair again.
+The orphan-repair lane also scans indexed pending placeholders, so quiet primary
+threads recover without a new wake. Child reports are finalized on C and
+published after releasing the child's lock. A late writer message stays
+unacknowledged and is redelivered rather than receiving a synthetic failed reply.
+
+The same repair lane settles orphaned primary assistant turns in
+`pending`, `streaming`, or `waiting_interrupt`: run start repairs under its
+held session claim before context selection, while startup recovery pages
+indexed unsettled primary turns and claims each thread before repair. A live
+run keeps its claim, preventing repair from entering its thread. Subagent assistant turns remain owned by
+child-report recovery; the primary repair does not finalize them.
 
 ## Cost
 
@@ -267,7 +274,8 @@ already-prepared context, not another control boundary.
 
 Writer enqueue keeps writer turns visible immediately. Its prefix materializer
 uses the barrier but never reserves a control. Idle materialization holds a
-claim, finalizes orphan placeholders first, and then uses the same selection.
+claim, repairs orphaned primary assistants and pending placeholders first,
+and then uses the same selection.
 A normal assistant close defers an executable control to the post-release wake;
 a tool boundary executes it inline. Both durable wake sweeps include controls.
 Cleanup wakes only when the raw pending barrier can execute a control now,
