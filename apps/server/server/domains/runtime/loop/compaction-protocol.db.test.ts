@@ -5,7 +5,11 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
 import type { NoticePort } from "../../notices/index.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
-import { loadThreadConversationContext } from "../../threads/index.js";
+import {
+  decodeImageInclusionMetadata,
+  encodeImageInclusionMetadata,
+  loadThreadConversationContext,
+} from "../../threads/index.js";
 import { ImageAssetResolutionError } from "../ports/image-asset.js";
 import { createConversationSummarizer } from "../summary/conversation-summarizer.js";
 import { searchDocumentText, writeDocumentText } from "../tools/document-text.js";
@@ -14,6 +18,7 @@ import { createRuntimeHarness } from "./__tests__/runtime-harness.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
+import { estimateRequestTokens } from "./compaction/estimate.js";
 import { projectActiveHistory } from "./compaction/project.js";
 import { createOrchestrator } from "./orchestrator.js";
 import { createPrefixCacheStateService } from "./prefix-cache-state.js";
@@ -164,6 +169,110 @@ else
           threshold = value;
         },
       };
+    }
+
+    async function addImagePrompt(
+      rig: Awaited<ReturnType<typeof fixture>>,
+      images: Array<{ key: string; sizeBytes: number; included: boolean }>,
+    ) {
+      const previous = (await rig.repos.turns.listByThread(rig.threadId)).at(-1);
+      const userTurn = await rig.repos.turns.create({
+        threadId: rig.threadId,
+        prevTurnId: previous?.id,
+        role: "user",
+        origin: "writer",
+        status: "complete",
+      });
+      await rig.repos.blocks.create({
+        turnId: userTurn.id,
+        blockType: "text",
+        sequence: 0,
+        content: "Image references.",
+        textContent: "Image references.",
+        status: "complete",
+      });
+      const savedImages = await Promise.all(
+        images.map(async ({ key }, sequence) => {
+          const documentId = `image-${key}`;
+          const uri = `scratch://${key}.png`;
+          const block = await rig.repos.blocks.create({
+            turnId: userTurn.id,
+            blockType: "image",
+            sequence: sequence + 1,
+            content: { type: "image_reference", documentId, uri },
+            status: "complete",
+          });
+          return { block, documentId, uri };
+        }),
+      );
+      const excluded = savedImages.filter((_, index) => !images[index]?.included);
+      let exclusionTurnId = userTurn.id;
+      if (excluded.length > 0) {
+        const breaks = excluded.map(({ block, uri }) => ({
+          blockId: block.id,
+          uri,
+          reason: "budget_eviction" as const,
+        }));
+        const notice = await rig.repos.turns.create({
+          threadId: rig.threadId,
+          prevTurnId: userTurn.id,
+          role: "system",
+          origin: "system",
+          status: "complete",
+          metadata: encodeImageInclusionMetadata(breaks),
+        });
+        await rig.repos.blocks.create({
+          turnId: notice.id,
+          blockType: "text",
+          sequence: 0,
+          content: `<system_update>\nImage context changed.\n${breaks.map(({ uri }) => `Removed ${uri} to fit the image context budget.`).join("\n")}\n</system_update>`,
+          textContent: `<system_update>\nImage context changed.\n${breaks.map(({ uri }) => `Removed ${uri} to fit the image context budget.`).join("\n")}\n</system_update>`,
+          status: "complete",
+        });
+        exclusionTurnId = notice.id;
+      }
+      for (const [index, { block }] of savedImages.entries()) {
+        await rig.repos.imageInclusions.set({
+          threadId: rig.threadId,
+          blockId: block.id,
+          decisionTurnId: images[index]?.included ? userTurn.id : exclusionTurnId,
+          included: images[index]?.included ?? false,
+        });
+      }
+      const assets = new Map(images.map((image) => [`image-${image.key}`, image]));
+      const resolutionCounts = new Map<string, number>();
+      rig.deps.imageAssets = {
+        async resolve(_context, reference) {
+          resolutionCounts.set(
+            reference.documentId,
+            (resolutionCounts.get(reference.documentId) ?? 0) + 1,
+          );
+          const asset = assets.get(reference.documentId);
+          if (asset?.key === "transient") throw new ImageAssetResolutionError("retry later");
+          if (!asset) return null;
+          return {
+            mediaType: "image/png",
+            data: `data:image/png;base64,${asset.key}`,
+            sizeBytes: asset.sizeBytes,
+          };
+        },
+      };
+      return { userTurn, savedImages, assets, resolutionCounts };
+    }
+
+    function requestImageData(request: import("../gateway/index.js").GenerateRequest) {
+      return request.messages
+        .flatMap((message) => message.content)
+        .filter((part) => part.type === "image")
+        .map((part) => part.data);
+    }
+
+    async function imageFixture(
+      options: { summarizer?: ReturnType<typeof scriptedSummarizer> } = {},
+    ) {
+      const rig = await fixture({ history: "old history ".repeat(8000), ...options });
+      rig.setThreshold(8000);
+      return rig;
     }
 
     async function documentTail(rig: Awaited<ReturnType<typeof fixture>>, allKinds = false) {
@@ -487,6 +596,297 @@ else
       expect(
         (await projected(forkAfter)).blocks.find((b) => b.id === results[0].id)?.content,
       ).toMatchObject({ output: expect.stringContaining("Cleared at compaction") });
+    });
+
+    it("re-admits a retained eviction on C and makes B match its stored rebuild", async () => {
+      const rig = await imageFixture();
+      const { savedImages } = await addImagePrompt(rig, [
+        { key: "retained", sizeBytes: 1024 * 1024, included: false },
+      ]);
+      const imageData = "data:image/png;base64,retained";
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+
+      expect((await run.execute()).status).toBe("complete");
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
+      const compaction = turns.find((turn) => turn.role === "compaction");
+      if (!compaction) throw new Error("Missing compaction turn");
+      expect(
+        (await rig.repos.imageInclusions.listByThread(rig.threadId)).filter(
+          (row) => row.blockId === savedImages[0]?.block.id && row.decisionTurnId === compaction.id,
+        ),
+      ).toEqual([
+        {
+          threadId: rig.threadId,
+          blockId: savedImages[0]?.block.id,
+          decisionTurnId: compaction.id,
+          included: true,
+        },
+      ]);
+
+      const request = rig.gateway.requests[0];
+      expect(requestImageData(request)).toContain(imageData);
+      const summary = (await rig.repos.blocks.listByTurn(compaction.id)).find(
+        (block) => block.blockType === "custom",
+      );
+      const tokensAfter = (summary?.content as { props?: { tokensAfter?: unknown } } | null)?.props
+        ?.tokensAfter;
+      expect(tokensAfter).toBe(
+        estimateRequestTokens({ request, baseline: null, tokenizer: "o200k" }),
+      );
+      const thread = await rig.repos.threads.findById(rig.threadId);
+      if (!thread) throw new Error("Missing thread");
+      const rebuilt = await assembleNextTurnContext({
+        thread,
+        turns: turns.slice(0, -1),
+        blocks: (await rig.repos.blocks.listByThread(rig.threadId)).filter(
+          (block) => block.turnId !== turns.at(-1)?.id,
+        ),
+        agentRevisions: rig.deps.agentRevisions,
+        toolRegistry: rig.deps.toolRegistry,
+        baseTools: [],
+        gateway: rig.deps.gateway,
+        imageAssets: rig.deps.imageAssets,
+        imageInclusions: rig.repos.imageInclusions,
+        promptBakes: rig.repos.promptBakes,
+        workContext: rig.deps.workContext,
+      });
+      expect(promptBytes(request)).toBe(promptBytes(rebuilt.generateRequest));
+    });
+
+    it("fills the remaining budget from multiple retained candidates, newest first", async () => {
+      const rig = await imageFixture();
+      const mib = 1024 * 1024;
+      const { savedImages } = await addImagePrompt(rig, [
+        { key: "oldest", sizeBytes: 7 * mib, included: false },
+        { key: "middle", sizeBytes: 8 * mib, included: false },
+        { key: "newest", sizeBytes: 9 * mib, included: false },
+      ]);
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+
+      expect((await run.execute()).status).toBe("complete");
+      const compaction = (await rig.repos.turns.listByThread(rig.threadId)).find(
+        (turn) => turn.role === "compaction",
+      );
+      if (!compaction) throw new Error("Missing compaction turn");
+      const reAdmissions = (await rig.repos.imageInclusions.listByThread(rig.threadId))
+        .filter((row) => row.decisionTurnId === compaction.id)
+        .map(({ blockId, included }) => ({
+          key: savedImages.find(({ block }) => block.id === blockId)?.documentId,
+          included,
+        }));
+      expect(new Set(reAdmissions.map(({ key }) => key))).toEqual(
+        new Set(["image-newest", "image-middle"]),
+      );
+      expect(reAdmissions.every(({ included }) => included)).toBe(true);
+      expect(requestImageData(rig.gateway.requests[0])).toEqual([
+        "data:image/png;base64,middle",
+        "data:image/png;base64,newest",
+      ]);
+    });
+
+    it("keeps candidates fill-only while a same-pass late image uses normal eviction", async () => {
+      let rig: Awaited<ReturnType<typeof fixture>>;
+      const mib = 1024 * 1024;
+      let assets = new Map<string, { key: string; sizeBytes: number; included: boolean }>();
+      const summarizer = scriptedSummarizer(async () => {
+        assets.set("image-late", { key: "late", sizeBytes: 9 * mib, included: false });
+        await rig.send(rig.threadId, "late image", {
+          blocks: [
+            { type: "text", text: "late image" },
+            { type: "image", documentId: "image-late", uri: "scratch://late.png" },
+          ],
+        });
+        return {
+          kind: "complete",
+          text: "Earlier context.",
+          model: "summary-model",
+          modelResponses: [],
+        };
+      });
+      rig = await imageFixture({ summarizer });
+      const { savedImages, assets: imageAssets } = await addImagePrompt(rig, [
+        { key: "old-included", sizeBytes: 8 * mib, included: true },
+        { key: "new-included", sizeBytes: 6 * mib, included: true },
+        { key: "candidate", sizeBytes: 5 * mib, included: false },
+      ]);
+      assets = imageAssets;
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+
+      expect((await run.execute()).status).toBe("complete");
+      const compaction = (await rig.repos.turns.listByThread(rig.threadId)).find(
+        (turn) => turn.role === "compaction",
+      );
+      if (!compaction) throw new Error("Missing compaction turn");
+      const rows = await rig.repos.imageInclusions.listByThread(rig.threadId);
+      expect(
+        rows.some(
+          (row) =>
+            row.blockId === savedImages[2]?.block.id &&
+            row.decisionTurnId === compaction.id &&
+            row.included,
+        ),
+      ).toBe(true);
+      const latest = new Map(
+        (await rig.repos.imageInclusions.findByThread(rig.threadId)).map((row) => [
+          row.blockId,
+          row,
+        ]),
+      );
+      expect(latest.get(savedImages[0]?.block.id ?? "")?.included).toBe(false);
+      expect(latest.get(savedImages[1]?.block.id ?? "")?.included).toBe(true);
+      expect(latest.get(savedImages[2]?.block.id ?? "")?.included).toBe(true);
+      expect(requestImageData(rig.gateway.requests[0])).toEqual([
+        "data:image/png;base64,new-included",
+        "data:image/png;base64,candidate",
+        "data:image/png;base64,late",
+      ]);
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
+      const evictionNotice = turns
+        .map((turn) => ({ turn, metadata: decodeImageInclusionMetadata(turn.metadata) }))
+        .find(({ metadata }) =>
+          metadata?.breaks.some((entry) => entry.blockId === savedImages[0]?.block.id),
+        );
+      expect(evictionNotice?.turn.position).toBeGreaterThan(compaction.position);
+      expect(evictionNotice?.metadata?.breaks).toContainEqual({
+        blockId: savedImages[0]?.block.id,
+        uri: "scratch://old-included.png",
+        reason: "budget_eviction",
+      });
+    });
+
+    it("lets a late image keep its budget before candidate re-admission", async () => {
+      let rig: Awaited<ReturnType<typeof fixture>>;
+      const mib = 1024 * 1024;
+      let assets = new Map<string, { key: string; sizeBytes: number; included: boolean }>();
+      const summarizer = scriptedSummarizer(async () => {
+        assets.set("image-late", { key: "late", sizeBytes: 8 * mib, included: false });
+        await rig.send(rig.threadId, "late image", {
+          blocks: [
+            { type: "text", text: "late image" },
+            { type: "image", documentId: "image-late", uri: "scratch://late.png" },
+          ],
+        });
+        return {
+          kind: "complete",
+          text: "Earlier context.",
+          model: "summary-model",
+          modelResponses: [],
+        };
+      });
+      rig = await imageFixture({ summarizer });
+      const { savedImages, assets: imageAssets } = await addImagePrompt(rig, [
+        { key: "included", sizeBytes: 8 * mib, included: true },
+        { key: "candidate", sizeBytes: 8 * mib, included: false },
+      ]);
+      assets = imageAssets;
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+
+      expect((await run.execute()).status).toBe("complete");
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
+      const compaction = turns.find((turn) => turn.role === "compaction");
+      if (!compaction) throw new Error("Missing compaction turn");
+      const rows = await rig.repos.imageInclusions.listByThread(rig.threadId);
+      expect(
+        rows.some(
+          (row) => row.blockId === savedImages[1]?.block.id && row.decisionTurnId === compaction.id,
+        ),
+      ).toBe(false);
+      const latest = new Map(
+        (await rig.repos.imageInclusions.findByThread(rig.threadId)).map((row) => [
+          row.blockId,
+          row,
+        ]),
+      );
+      expect(latest.get(savedImages[0]?.block.id ?? "")?.included).toBe(true);
+      expect(latest.get(savedImages[1]?.block.id ?? "")?.included).toBe(false);
+      const lateImage = (await rig.repos.blocks.listByThread(rig.threadId)).find(
+        (block) =>
+          block.blockType === "image" &&
+          (block.content as { uri?: string } | null)?.uri === "scratch://late.png",
+      );
+      if (!lateImage) throw new Error("Missing late image block");
+      expect(latest.get(lateImage.id)?.included).toBe(true);
+      expect(requestImageData(rig.gateway.requests[0])).toEqual([
+        "data:image/png;base64,included",
+        "data:image/png;base64,late",
+      ]);
+      expect(
+        turns
+          .filter((turn) => turn.position >= compaction.position)
+          .flatMap((turn) => decodeImageInclusionMetadata(turn.metadata)?.breaks ?? []),
+      ).toEqual([]);
+    });
+
+    it("skips a transient candidate resolution without failing or deciding C", async () => {
+      const rig = await imageFixture();
+      const { savedImages, resolutionCounts } = await addImagePrompt(rig, [
+        { key: "transient", sizeBytes: 1024, included: false },
+      ]);
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+
+      expect((await run.execute()).status).toBe("complete");
+      const compaction = (await rig.repos.turns.listByThread(rig.threadId)).find(
+        (turn) => turn.role === "compaction",
+      );
+      if (!compaction) throw new Error("Missing compaction turn");
+      expect(resolutionCounts.get("image-transient")).toBeGreaterThan(0);
+      expect(
+        (await rig.repos.imageInclusions.listByThread(rig.threadId)).some(
+          (row) => row.blockId === savedImages[0]?.block.id && row.decisionTurnId === compaction.id,
+        ),
+      ).toBe(false);
+      expect(requestImageData(rig.gateway.requests[0])).toEqual([]);
+    });
+
+    it("does not persist candidate decisions when compaction fails", async () => {
+      const rig = await imageFixture({
+        summarizer: scriptedSummarizer(async () => ({
+          kind: "failed",
+          error: new Error("summary failed"),
+          modelResponses: [],
+        })),
+      });
+      const { savedImages } = await addImagePrompt(rig, [
+        { key: "retained", sizeBytes: 1024 * 1024, included: false },
+      ]);
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+
+      expect((await run.execute()).status).toBe("error");
+      const compaction = (await rig.repos.turns.listByThread(rig.threadId)).find(
+        (turn) => turn.role === "compaction",
+      );
+      if (!compaction) throw new Error("Missing compaction turn");
+      expect(
+        (await rig.repos.imageInclusions.listByThread(rig.threadId)).filter(
+          (row) => row.blockId === savedImages[0]?.block.id,
+        ),
+      ).toHaveLength(1);
+      expect(rig.gateway.requests).toEqual([]);
+      expect(compaction.status).toBe("error");
     });
 
     it("settles both rows when a warm overflow falls back cold", async () => {

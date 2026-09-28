@@ -59,6 +59,20 @@ The loop asserts no response scope is open: `DocumentRevisions.current` cannot
 represent response-staged overlays. Query failures become unknown tokens; the
 assertion is an invariant failure, not a lookup failure.
 
+## Image re-admission
+
+Complete compaction is the explicit image-budget rebalance seam. It first
+projects late arrivals with the normal chronological eviction rule, then
+resolves retained excluded candidates and admits them newest-first only into
+remaining budget. Candidates never evict existing inclusions; definite missing
+assets and transient resolution failures leave their prior decisions unchanged,
+while unexpected resolution errors still fail preparation.
+
+Re-admission decisions belong to C, so reverting C removes their effect and a
+fork copies them only when its cutoff includes C. `tokensAfter` measures the
+prepared request; successor commit rechecks fit after late arrivals and guards
+against overflow.
+
 ## Failure landing
 
 - A failed summary errors C and fails a reply below the latest message.

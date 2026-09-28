@@ -174,6 +174,90 @@ else
       expect(binding?.invocationOverlay).toEqual(fixture.invocationOverlay);
     });
 
+    it("copies every image decision through the fork cutoff", async () => {
+      const fixture = await setupSource();
+      const image = await repos.blocks.create({
+        turnId: fixture.firstTurn.id,
+        blockType: "image",
+        sequence: 0,
+        content: {
+          type: "image_reference",
+          documentId: crypto.randomUUID(),
+          uri: "scratch://fork-history.png",
+        },
+        status: "complete",
+      });
+      await repos.imageInclusions.set({
+        threadId: fixture.source.id,
+        blockId: image.id,
+        decisionTurnId: fixture.firstTurn.id,
+        included: false,
+      });
+      const compaction = await repos.turns.create({
+        threadId: fixture.source.id,
+        prevTurnId: fixture.firstTurn.id,
+        role: "compaction",
+        origin: "system",
+        status: "complete",
+        compactionModel: "gpt-4.1-mini",
+        metadata: {
+          kind: "prompt_epoch_boundary",
+          cause: "compaction",
+          compactedThrough: { turnId: fixture.firstTurn.id },
+          pinnedRequestTurnId: fixture.firstTurn.id,
+        },
+      });
+      await repos.imageInclusions.set({
+        threadId: fixture.source.id,
+        blockId: image.id,
+        decisionTurnId: compaction.id,
+        included: true,
+      });
+
+      const beforeCompaction = await createFork(fixture.source, fixture.deps, {
+        originTurnId: fixture.firstTurn.id,
+      });
+      expect(await repos.imageInclusions.listByThread(beforeCompaction.thread.id)).toEqual([
+        {
+          threadId: beforeCompaction.thread.id,
+          blockId: image.id,
+          decisionTurnId: fixture.firstTurn.id,
+          included: false,
+        },
+      ]);
+
+      const afterCompaction = await createFork(fixture.source, fixture.deps, {
+        originTurnId: compaction.id,
+      });
+      expect(
+        (await repos.imageInclusions.listByThread(afterCompaction.thread.id))
+          .map(({ decisionTurnId, included }) => ({ decisionTurnId, included }))
+          .sort((left, right) => left.decisionTurnId.localeCompare(right.decisionTurnId)),
+      ).toEqual(
+        [
+          { decisionTurnId: fixture.firstTurn.id, included: false },
+          { decisionTurnId: compaction.id, included: true },
+        ].sort((left, right) => left.decisionTurnId.localeCompare(right.decisionTurnId)),
+      );
+      expect(
+        (await repos.imageInclusions.findByThread(afterCompaction.thread.id)).find(
+          (row) => row.blockId === image.id,
+        )?.included,
+      ).toBe(true);
+
+      const forkOfFork = await createFork(afterCompaction.thread, fixture.deps);
+      expect(
+        (await repos.imageInclusions.listByThread(forkOfFork.thread.id))
+          .map(({ decisionTurnId, included }) => ({ decisionTurnId, included }))
+          .sort((left, right) => left.decisionTurnId.localeCompare(right.decisionTurnId)),
+      ).toEqual(
+        [
+          { decisionTurnId: fixture.firstTurn.id, included: false },
+          { decisionTurnId: compaction.id, included: true },
+        ].sort((left, right) => left.decisionTurnId.localeCompare(right.decisionTurnId)),
+      );
+    });
+
     it("reuses repeated client IDs by the existing fork row", async () => {
       const fixture = await setupSource();
       const secondTurn = await repos.turns.create({

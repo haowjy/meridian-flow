@@ -1,6 +1,6 @@
 /** Retry-local compaction values and the reusable placeholder completion transaction. */
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, Thread, Turn } from "@meridian/contracts/threads";
 import { promptEpochMetadata } from "../../threads/index.js";
 import type { SummaryOutcome } from "../ports/conversation-summarizer.js";
@@ -134,6 +134,15 @@ export async function prepareCompactionSuccessor(args: {
         baseTools: contextInput.baseTools,
         readReferences: false,
         skipCompaction: true,
+        imageProjectionMode: {
+          kind: "compaction",
+          candidates: new Set(
+            decision.plan.retainedSuffix.flatMap(({ blocks }) =>
+              blocks.filter((block) => block.blockType === "image").map((block) => block.id),
+            ),
+          ),
+          decidingTurnId: placeholder.id as TurnId,
+        },
         signal: input.signal,
         promptBakes: {
           ...deps.repos.promptBakes,
