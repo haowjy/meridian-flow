@@ -2,7 +2,7 @@
 import { t } from "@lingui/core/macro";
 import { Loader2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Input } from "@/components/ui/input";
+import { InlineEditInput } from "@/components/ui/inline-edit";
 import { cn } from "@/lib/utils";
 
 export type ProjectTitleEdit = {
@@ -23,7 +23,9 @@ export function InlineProjectTitle({
   showRenameHint = false,
 }: ProjectTitleEdit & {
   title: string;
+  /** The resting button: geometry, typography, hover. */
   className?: string;
+  /** The same geometry and typography without the hover, so editing moves nothing. */
   inputClassName?: string;
   showRenameHint?: boolean;
 }) {
@@ -79,31 +81,31 @@ export function InlineProjectTitle({
     <div className="relative flex min-w-0 flex-1 items-center">
       {editing ? (
         <>
-          <Input
-            ref={inputRef}
-            type="text"
-            value={draft}
-            disabled={pending}
-            aria-label={t`Project title`}
-            aria-invalid={Boolean(validationError || error)}
-            aria-describedby={validationError || error ? "project-title-inline-error" : undefined}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              setValidationError(null);
-            }}
-            onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing) return;
-              if (event.key === "Enter") {
-                event.preventDefault();
-                void save();
-              } else if (event.key === "Escape" && !pending && !submitting.current) {
-                event.preventDefault();
-                stop();
-              }
-            }}
-            onBlur={() => void save()}
-            className={cn("min-w-0 flex-1", inputClassName)}
-          />
+          <div className={cn("flex min-w-0 flex-1 items-center", inputClassName)}>
+            <InlineEditInput
+              ref={inputRef}
+              value={draft}
+              disabled={pending}
+              aria-label={t`Project title`}
+              aria-invalid={Boolean(validationError || error)}
+              aria-describedby={validationError || error ? "project-title-inline-error" : undefined}
+              onChange={(event) => {
+                setDraft(event.target.value);
+                setValidationError(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing) return;
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void save();
+                } else if (event.key === "Escape" && !pending && !submitting.current) {
+                  event.preventDefault();
+                  stop();
+                }
+              }}
+              onBlur={() => void save()}
+            />
+          </div>
           {pending ? (
             <Loader2
               role="status"

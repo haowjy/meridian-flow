@@ -3,12 +3,13 @@ import { t } from "@lingui/core/macro";
 import type { Thread } from "@meridian/contracts/protocol";
 import { THREAD_TITLE_MAX_LENGTH } from "@meridian/contracts/protocol";
 import { Loader2 } from "lucide-react";
-import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 import { useRenameThread } from "@/client/query/useRenameThread";
 import { announce } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
+import { TabTitleField, titleChipClass } from "@/features/project/shell/TabTitleField";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { ThreadSwitcherPopover } from "./ThreadSwitcherPopover";
 
@@ -87,11 +88,18 @@ function ExistingThreadTitle({
   return (
     <>
       {editing ? (
-        <RenameField
-          initialTitle={title}
-          onSubmit={rename.submit}
-          onDone={() => setEditing(false)}
-        />
+        <div className={titleChipClass(variant ?? "quiet")}>
+          <TabTitleField
+            initial={title}
+            label={t`Rename chat`}
+            maxLength={THREAD_TITLE_MAX_LENGTH}
+            onCommit={(next) => {
+              setEditing(false);
+              rename.submit(next);
+            }}
+            onCancel={() => setEditing(false)}
+          />
+        </div>
       ) : (
         <ThreadSwitcherPopover
           projectId={projectId}
@@ -112,68 +120,5 @@ function ExistingThreadTitle({
         <InlineErrorRow message={t`Couldn't rename chat.`} onRetry={rename.retry} />
       ) : null}
     </>
-  );
-}
-
-/* ── Inline rename ─────────────────────────────────────────────────── */
-
-function RenameField({
-  initialTitle,
-  onSubmit,
-  onDone,
-}: {
-  initialTitle: string;
-  onSubmit: (title: string) => void;
-  onDone: () => void;
-}) {
-  const [draft, setDraft] = useState(initialTitle);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const closedRef = useRef(false);
-
-  useEffect(() => {
-    const input = inputRef.current;
-    if (!input) return;
-    input.focus();
-    input.select();
-  }, []);
-
-  const commit = useCallback(() => {
-    if (closedRef.current) return;
-    closedRef.current = true;
-    const trimmed = draft.trim();
-    if (trimmed) onSubmit(trimmed);
-    onDone();
-  }, [onSubmit, draft, onDone]);
-
-  const cancel = useCallback(() => {
-    if (closedRef.current) return;
-    closedRef.current = true;
-    onDone();
-  }, [onDone]);
-
-  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      commit();
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      cancel();
-    }
-  }
-
-  return (
-    <input
-      ref={inputRef}
-      type="text"
-      value={draft}
-      maxLength={THREAD_TITLE_MAX_LENGTH}
-      aria-label={t`Rename chat`}
-      onChange={(e) => setDraft(e.target.value)}
-      onKeyDown={handleKeyDown}
-      onBlur={commit}
-      // min-w-0 beats the UA's intrinsic min-width on inputs, so flex-1 can
-      // actually shrink the field to the slot instead of overflowing it.
-      className="pane-title focus-ring min-w-0 flex-1 rounded-md border border-border-focus bg-background px-3 py-1 outline-none"
-    />
   );
 }

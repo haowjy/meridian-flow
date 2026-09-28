@@ -1,9 +1,14 @@
-/** WorkPaneController — desktop chrome for the dedicated Work destination. */
-import { Trans } from "@lingui/react/macro";
-
-import { PaneTitle } from "./PaneTitle";
+/**
+ * WorkPaneController — desktop chrome for the dedicated Work destination.
+ *
+ * The band follows the Chat pane's grammar: an All Work door chip, then the
+ * open Work's name as the active tab the page rises into (renamed in place),
+ * and the Work's `…` actions at the far right.
+ */
 import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
 import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
+import { useWorkChrome } from "./work/useWorkChrome";
+import { useWorkDeletion } from "./work/useWorkDeletion";
 import { WorkScreen } from "./work/WorkScreen";
 
 export type WorkPaneControllerProps = {
@@ -21,19 +26,24 @@ export function WorkPaneController({
   routeWork,
   routeCommands,
 }: WorkPaneControllerProps) {
+  const deletion = useWorkDeletion(projectId, routeWork, routeCommands);
+  const chrome = useWorkChrome(projectId, routeWork, routeCommands, deletion.remove, "tab");
   return (
     <main className="main-pane flex min-h-0 flex-1 flex-col">
       <PaneHeader
-        title={
-          <PaneTitle>
-            <Trans>Work</Trans>
-          </PaneTitle>
-        }
+        leading={chrome.door}
+        title={chrome.title}
+        actions={chrome.actions}
         left={sidebarToggle}
         right={chatToggle}
       />
       <div className="page-sheet">
-        <WorkScreen projectId={projectId} routeWork={routeWork} routeCommands={routeCommands} />
+        <WorkScreen
+          projectId={projectId}
+          routeWork={routeWork}
+          routeCommands={routeCommands}
+          deletion={deletion}
+        />
       </div>
     </main>
   );

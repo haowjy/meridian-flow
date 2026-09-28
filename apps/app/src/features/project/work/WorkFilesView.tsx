@@ -18,7 +18,7 @@ import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { InlineEditInput } from "@/components/ui/inline-edit";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -464,7 +464,7 @@ function CatalogFileRow({
   const folder = file.path.includes("/") ? file.path.replace(/\/[^/]+$/, "") : "";
   if (renaming)
     return (
-      <div className="flex min-h-10 items-center gap-3 px-2 py-1.5">
+      <div className="flex min-h-10 items-center gap-3 px-2 py-1.5 text-sm font-medium text-foreground">
         <RowIcon icon={fileKindIcon(file)} />
         <InlineRename
           projectId={projectId}
@@ -600,15 +600,19 @@ function InlineRename({
     onDone,
   });
   return (
-    <Input
-      ref={form.inputRef}
-      value={form.name}
-      onChange={form.onChange}
-      onKeyDown={form.onKeyDown}
-      onBlur={form.onBlur}
-      aria-label={t`File name`}
-      className="h-7 flex-1 text-sm"
-    />
+    <span className="flex min-w-0 flex-1">
+      <InlineEditInput
+        ref={form.inputRef}
+        value={form.name}
+        onChange={form.onChange}
+        onKeyDown={form.onKeyDown}
+        onBlur={form.onBlur}
+        aria-label={t`File name`}
+        autoCapitalize="off"
+        autoCorrect="off"
+        spellCheck={false}
+      />
+    </span>
   );
 }
 

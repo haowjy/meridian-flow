@@ -3,12 +3,11 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
-import { ChevronLeft, MessageSquarePlus, Search } from "lucide-react";
+import { MessageSquarePlus, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import { useWorkMutations } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,42 +25,34 @@ import { useChatRowCommands } from "../chat-list/useChatRowCommands";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { useProjectLeaveGuard } from "../routing/ProjectNavigationContext";
 import type { ProjectRouteCommands } from "../routing/project-route";
-import { WorkActionsMenu } from "./WorkActionsMenu";
 import { useWorkFiles, WorkFilesActions, WorkFilesView } from "./WorkFilesView";
 import {
   useWorkMetadataController,
   WorkDescription,
   type WorkMetadataController,
-  WorkName,
 } from "./WorkMetadata";
-import { holdWorkCollectionFocus } from "./work-focus-intent";
 
 export type WorkDetailScreenProps = {
   projectId: string;
   work: Work;
   routeCommands: ProjectRouteCommands;
-  onDeleteWork?: (work: Work) => void;
 };
 
 /**
  * One compact header block: back link, name and status share the top row with
  * the actions menu pinned right; the description sits directly beneath.
  */
+/**
+ * The Work page's own header block under the band: the description (or a
+ * pending Work's state), then one sticky toolbar row.
+ */
 export function WorkScreenHeader({
-  onBack,
-  title,
-  status,
-  actions,
   description,
   view,
   onViewChange,
   tools,
   pending = false,
 }: {
-  onBack: () => void;
-  title: React.ReactNode;
-  status: React.ReactNode;
-  actions?: React.ReactNode;
   description?: React.ReactNode;
   view: "chats" | "files";
   onViewChange: (view: "chats" | "files") => void;
@@ -70,28 +61,9 @@ export function WorkScreenHeader({
 }) {
   return (
     <>
-      <header className="flex min-w-0 flex-col gap-1.5">
-        <div className="flex min-w-0 items-start gap-2">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onBack}
-              aria-label={t`All Work`}
-              className="-ml-2 w-fit [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
-            >
-              <ChevronLeft className="size-4" />
-              <span className="max-sm:hidden" aria-hidden>
-                <Trans>All Work</Trans>
-              </span>
-            </Button>
-            {title}
-            {status}
-          </div>
-          {actions}
-        </div>
-        {description}
-      </header>
+      {description ? (
+        <header className="flex min-w-0 flex-col gap-1.5">{description}</header>
+      ) : null}
       <div className="sticky top-0 z-10 -my-2 flex min-w-0 items-center gap-2 bg-background py-2 sm:gap-3">
         <SegmentedTabs
           label={t`Work view`}
@@ -122,12 +94,7 @@ function useWorkView(): ["chats" | "files", (view: "chats" | "files") => void] {
   return [view, setView];
 }
 
-export function WorkDetailScreen({
-  projectId,
-  work,
-  routeCommands,
-  onDeleteWork,
-}: WorkDetailScreenProps) {
+export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailScreenProps) {
   const mutations = useWorkMutations(projectId);
   const controller = useWorkMetadataController(work, (data) =>
     mutations.update.mutateAsync({ workId: work.id, data }),
@@ -167,37 +134,7 @@ export function WorkDetailScreen({
     <div ref={scrollOwner} className="app-scroll">
       <article className="project-screen-column min-w-0 gap-5 pb-12">
         <WorkScreenHeader
-          onBack={() => {
-            holdWorkCollectionFocus(projectId, { kind: "heading" });
-            void routeCommands.closeWork({ replace: true });
-          }}
-          title={<WorkName controller={controller} />}
           description={<WorkDescription controller={controller} />}
-          actions={
-            <WorkActionsMenu
-              work={controller.work}
-              disabled={mutations.isPending}
-              onToggleArchive={() =>
-                (controller.work.status === "archived"
-                  ? mutations.unarchive
-                  : mutations.archive
-                ).mutate(controller.work.id)
-              }
-              onDelete={() => onDeleteWork?.(controller.work)}
-            />
-          }
-          status={
-            <div className="flex items-center gap-2 text-xs text-ink-subtle">
-              {controller.work.status === "archived" ? (
-                <Badge>
-                  <Trans>Archived</Trans>
-                </Badge>
-              ) : null}
-              <span>
-                <Trans>Updated</Trans> {relativeUpdated(controller.work.updatedAt)}
-              </span>
-            </div>
-          }
           view={view}
           onViewChange={setView}
           tools={
@@ -262,13 +199,6 @@ export function WorkDetailScreen({
       </article>
     </div>
   );
-}
-function relativeUpdated(value: string) {
-  const elapsed = Math.max(0, Date.now() - new Date(value).getTime());
-  if (elapsed < 60_000) return t`just now`;
-  if (elapsed < 3_600_000) return t`${Math.floor(elapsed / 60_000)}m ago`;
-  if (elapsed < 86_400_000) return t`${Math.floor(elapsed / 3_600_000)}h ago`;
-  return t`${Math.floor(elapsed / 86_400_000)}d ago`;
 }
 function WorkChatList({
   projectId,

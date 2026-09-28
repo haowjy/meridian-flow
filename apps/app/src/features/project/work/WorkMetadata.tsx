@@ -1,25 +1,24 @@
-/** Page-scoped Work name and description editing lifecycle. */
+/**
+ * Page-scoped Work description editing lifecycle. The name is renamed in the
+ * band's title tab; this owns the description, which never saves on blur and
+ * so guards navigation while a draft is dirty.
+ */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
-import { Pencil } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { InlineEditTextarea } from "@/components/ui/inline-edit";
+import { cn } from "@/lib/utils";
 
-export type MetadataField = "name" | "goal";
 type HeldIntent = { run: () => void; cancel?: () => void; label: string } | null;
-const normalize = (field: MetadataField, value: string) =>
-  field === "name" ? value.trim() : value.trim() || "";
 
 export function useWorkMetadataController(
   initial: Work,
   saveWork: (data: UpdateWorkRequest) => Promise<Work>,
 ) {
   const [work, setWork] = useState(initial);
-  const [field, setField] = useState<MetadataField | null>(null);
+  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,59 +38,50 @@ export function useWorkMetadataController(
     [],
   );
   const [announcement, setAnnouncement] = useState("");
-  const displayRefs = useRef(new Map<MetadataField, HTMLElement>());
-  const editorRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const displayRef = useRef<HTMLElement | null>(null);
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const initialRef = useRef(initial);
-  const baseline = field ? normalize(field, work[field] ?? "") : "";
-  const normalizedDraft = field ? normalize(field, draft) : "";
-  const dirty = field !== null && normalizedDraft !== baseline;
+  const dirty = editing && draft.trim() !== (work.goal ?? "").trim();
   useEffect(() => {
     if (sameMetadata(initialRef.current, initial)) return;
     initialRef.current = initial;
     setWork(initial);
   }, [initial]);
   useEffect(() => {
-    if (!saving && !field && held) takeHeld()?.run();
-  }, [field, held, saving, takeHeld]);
+    if (!saving && !editing && held) takeHeld()?.run();
+  }, [editing, held, saving, takeHeld]);
   const focusDisplay = useCallback(
-    (target: MetadataField) =>
-      requestAnimationFrame(() => displayRefs.current.get(target)?.focus()),
+    () => requestAnimationFrame(() => displayRef.current?.focus()),
     [],
   );
   const cancel = useCallback(() => {
-    if (!field || saving) return;
-    const target = field;
-    setField(null);
+    if (!editing || saving) return;
+    setEditing(false);
     setError(null);
     takeHeld()?.cancel?.();
-    setAnnouncement(t`${fieldLabel(target)} edit canceled`);
-    focusDisplay(target);
-  }, [field, focusDisplay, saving, takeHeld]);
+    setAnnouncement(t`Description edit canceled`);
+    focusDisplay();
+  }, [editing, focusDisplay, saving, takeHeld]);
   const save = useCallback(async (): Promise<boolean> => {
-    if (!field) return true;
+    if (!editing) return true;
     if (saving) return false;
-    if (field === "name" && !normalizedDraft) {
-      setError(t`Work name is required`);
-      return false;
-    }
     if (!dirty) {
-      const target = field;
-      setField(null);
+      setEditing(false);
       setError(null);
-      focusDisplay(target);
+      focusDisplay();
       return true;
     }
-    const target = field;
+    const goal = draft.trim();
     const previous = work;
-    setWork({ ...work, [target]: normalizedDraft, updatedAt: new Date().toISOString() });
+    setWork({ ...work, goal, updatedAt: new Date().toISOString() });
     setSaving(true);
     setError(null);
     try {
-      const returned = await saveWork({ [target]: normalizedDraft });
+      const returned = await saveWork({ goal });
       setWork(returned);
-      setField(null);
-      setAnnouncement(t`${fieldLabel(target)} saved`);
-      focusDisplay(target);
+      setEditing(false);
+      setAnnouncement(t`Description saved`);
+      focusDisplay();
       return true;
     } catch (cause) {
       setWork(previous);
@@ -100,7 +90,7 @@ export function useWorkMetadataController(
     } finally {
       setSaving(false);
     }
-  }, [dirty, field, focusDisplay, normalizedDraft, saveWork, saving, work]);
+  }, [dirty, draft, editing, focusDisplay, saveWork, saving, work]);
   const request = useCallback(
     (intent: NonNullable<HeldIntent>) => {
       const previous = heldRef.current;
@@ -112,12 +102,12 @@ export function useWorkMetadataController(
     [dirty, saving, takeHeld],
   );
   const activate = useCallback(
-    (next: MetadataField) =>
+    () =>
       request({
-        label: t`Edit ${fieldLabel(next)}`,
+        label: t`Edit Description`,
         run: () => {
-          setField(next);
-          setDraft(work[next] ?? "");
+          setEditing(true);
+          setDraft(work.goal ?? "");
           setError(null);
         },
       }),
@@ -129,7 +119,7 @@ export function useWorkMetadataController(
   }, [save, takeHeld]);
   const discardAndResume = useCallback(() => {
     if (!heldRef.current || saving) return;
-    setField(null);
+    setEditing(false);
     setError(null);
     takeHeld()?.run();
   }, [saving, takeHeld]);
@@ -139,7 +129,7 @@ export function useWorkMetadataController(
   }, [takeHeld]);
   return {
     work,
-    field,
+    editing,
     draft,
     setDraft,
     dirty,
@@ -148,7 +138,7 @@ export function useWorkMetadataController(
     held,
     announcement,
     editorRef,
-    displayRefs,
+    displayRef,
     activate,
     cancel,
     save,
@@ -160,80 +150,29 @@ export function useWorkMetadataController(
 }
 export type WorkMetadataController = ReturnType<typeof useWorkMetadataController>;
 
-function useFieldKeys(c: WorkMetadataController) {
-  const keyDown = (event: React.KeyboardEvent) => {
-    if (event.nativeEvent.isComposing) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      c.cancel();
-    }
-    if (
-      (c.field === "name" && event.key === "Enter") ||
-      (c.field === "goal" && event.key === "Enter" && (event.metaKey || event.ctrlKey))
-    ) {
-      event.preventDefault();
-      void c.save();
-    }
-  };
-  const displayRef = (field: MetadataField) => (node: HTMLElement | null) => {
-    if (node) c.displayRefs.current.set(field, node);
-    else c.displayRefs.current.delete(field);
-  };
-  return { keyDown, displayRef };
-}
+// Typography lives on the wrapper so the resting button and the editing field
+// both inherit it; the field then sets no font of its own.
+const bodyText = "max-w-3xl whitespace-pre-wrap break-words";
+const clampHeight = "max-h-[calc(var(--text-body--line-height)*3)]";
 
-function useEditorFocus(c: WorkMetadataController, field: MetadataField) {
-  useLayoutEffect(() => {
-    if (c.field !== field) return;
-    const editor = c.editorRef.current;
-    editor?.focus();
-    if (field === "name" && editor instanceof HTMLInputElement) editor.select();
-    if (field === "goal" && editor instanceof HTMLTextAreaElement) {
-      editor.style.height = "auto";
-      editor.style.height = `${editor.scrollHeight}px`;
-    }
-  }, [c.field, c.editorRef, field]);
-}
-
-/** The Work name as the page heading; the pencil beside it edits in place. */
-export function WorkName({ controller: c }: { controller: WorkMetadataController }) {
-  const { keyDown, displayRef } = useFieldKeys(c);
-  useEditorFocus(c, "name");
-  return (
-    <>
-      <p className="sr-only" aria-live="polite">
-        {c.announcement}
-      </p>
-      {c.field === "name" ? (
-        <Editor field="name" controller={c} keyDown={keyDown} />
-      ) : (
-        <span className="flex min-w-0 max-w-full items-center gap-1">
-          <h1 className="min-w-0 text-xl font-semibold [overflow-wrap:anywhere]">{c.work.name}</h1>
-          <IconButton
-            ref={displayRef("name")}
-            size="xs"
-            aria-label={t`Rename Work`}
-            onClick={() => c.activate("name")}
-            className="shrink-0 [@media(pointer:coarse)]:size-11"
-          >
-            <Pencil aria-hidden className="size-3.5" />
-          </IconButton>
-        </span>
-      )}
-    </>
-  );
-}
-
-/** The Work description: clamped body text with Show more, edited in a box. */
+/**
+ * The Work description: body text clamped to three lines with Show more.
+ * Clicking it edits in place; the field takes the text's exact position and
+ * size, then shows everything. Save and Cancel sit below; blur never saves.
+ */
 export function WorkDescription({ controller: c }: { controller: WorkMetadataController }) {
-  const { keyDown, displayRef } = useFieldKeys(c);
-  useEditorFocus(c, "goal");
-  const description = useRef<HTMLDivElement>(null);
+  const display = useRef<HTMLButtonElement | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
+  useLayoutEffect(() => {
+    if (!c.editing) return;
+    const editor = c.editorRef.current;
+    editor?.focus();
+    editor?.setSelectionRange(editor.value.length, editor.value.length);
+  }, [c.editing, c.editorRef]);
   useEffect(() => {
-    const node = description.current;
-    if (c.field || !node || typeof ResizeObserver === "undefined") return;
+    const node = display.current;
+    if (c.editing || !node || typeof ResizeObserver === "undefined") return;
     const measure = () => {
       if (!expanded) setOverflows(node.scrollHeight > node.clientHeight + 1);
     };
@@ -242,113 +181,98 @@ export function WorkDescription({ controller: c }: { controller: WorkMetadataCon
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [c.field, c.work.goal, expanded]);
-  if (c.field === "goal") return <Editor field="goal" controller={c} keyDown={keyDown} />;
+  }, [c.editing, c.work.goal, expanded]);
   return (
-    <div className="max-w-3xl">
-      <div
-        ref={description}
-        className={`relative overflow-hidden text-body text-foreground ${expanded ? "max-h-none" : "max-h-[calc(var(--text-body--line-height)*3)]"} ${overflows && !expanded ? "[mask-image:linear-gradient(to_bottom,#000_55%,transparent)]" : ""}`}
-      >
-        <button
-          type="button"
-          ref={displayRef("goal")}
-          onClick={() => c.activate("goal")}
-          className={`focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring min-h-6 w-full rounded-sm text-left [@media(pointer:coarse)]:min-h-11 ${c.work.goal ? "" : "text-muted-foreground"}`}
-        >
-          {c.work.goal
-            ? c.work.goal.split(/\n\s*\n/).map((paragraph, index) => (
-                <span
-                  className="block [&+span]:mt-[0.45em]"
-                  key={`${index}-${paragraph.slice(0, 16)}`}
-                >
-                  {paragraph}
-                </span>
-              ))
-            : t`Add a description of what this Work is for`}
-        </button>
-      </div>
-      {overflows ? (
-        <button
-          type="button"
-          className="text-button mt-1 min-h-6 text-sm [@media(pointer:coarse)]:min-h-11"
-          onClick={() => setExpanded(!expanded)}
-        >
-          {expanded ? <Trans>Show less</Trans> : <Trans>Show more</Trans>}
-        </button>
-      ) : null}
+    <div className="min-w-0 text-body text-foreground">
+      <p className="sr-only" aria-live="polite">
+        {c.announcement}
+      </p>
+      {c.editing ? (
+        <DescriptionEditor controller={c} />
+      ) : (
+        <>
+          <button
+            type="button"
+            ref={(node) => {
+              display.current = node;
+              c.displayRef.current = node;
+            }}
+            onClick={c.activate}
+            className={cn(
+              bodyText,
+              "inline-edit-trigger focus-ring block w-full overflow-hidden text-left [@media(pointer:coarse)]:min-h-11",
+              !expanded && clampHeight,
+              overflows &&
+                !expanded &&
+                "[mask-image:linear-gradient(to_bottom,#000_55%,transparent)]",
+              !c.work.goal && "text-muted-foreground",
+            )}
+          >
+            {c.work.goal || t`Add a description of what this Work is for`}
+          </button>
+          {overflows ? (
+            <button
+              type="button"
+              className="text-button mt-1 min-h-6 text-sm [@media(pointer:coarse)]:min-h-11"
+              onClick={() => setExpanded(!expanded)}
+            >
+              {expanded ? <Trans>Show less</Trans> : <Trans>Show more</Trans>}
+            </button>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }
 
-function Editor({
-  field,
-  controller: c,
-  keyDown,
-}: {
-  field: MetadataField;
-  controller: WorkMetadataController;
-  keyDown: (event: React.KeyboardEvent) => void;
-}) {
-  const errorId = `work-${field}-error`;
-  const common = {
-    value: c.draft,
-    disabled: c.saving,
-    "aria-invalid": Boolean(c.error),
-    "aria-describedby": c.error ? errorId : undefined,
-    onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-      c.setDraft(event.target.value),
-    onKeyDown: keyDown,
-  };
+function DescriptionEditor({ controller: c }: { controller: WorkMetadataController }) {
+  const errorId = "work-description-error";
   return (
-    <div className={field === "name" ? "min-w-48 max-w-md flex-1" : "min-w-0 w-full max-w-3xl"}>
-      {field === "name" ? (
-        <Input
-          ref={c.editorRef as React.Ref<HTMLInputElement>}
-          {...common}
-          aria-label={t`Work name`}
-          className="h-9 px-2 text-xl font-semibold md:text-xl"
-          onBlur={() => void c.save()}
-        />
-      ) : (
-        <Textarea
-          ref={c.editorRef as React.Ref<HTMLTextAreaElement>}
-          {...common}
-          aria-label={t`Description`}
-          className="-mx-2 -my-1.5 min-h-28 w-[calc(100%+1rem)] max-w-none resize-none px-2 py-1.5 text-body md:text-body"
-          onInput={(event) => {
-            event.currentTarget.style.height = "auto";
-            event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`;
-          }}
-        />
-      )}
+    <>
+      <InlineEditTextarea
+        ref={c.editorRef}
+        value={c.draft}
+        disabled={c.saving}
+        aria-label={t`Description`}
+        aria-invalid={Boolean(c.error)}
+        aria-describedby={c.error ? errorId : undefined}
+        placeholder={t`Add a description of what this Work is for`}
+        onChange={(event) => c.setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing) return;
+          if (event.key === "Escape") {
+            event.preventDefault();
+            c.cancel();
+          } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault();
+            void c.save();
+          }
+        }}
+        className={bodyText}
+      />
       {c.error ? (
-        <p id={errorId} role="alert" className="mt-1 text-sm text-destructive">
+        <p id={errorId} role="alert" className="mt-2 text-sm text-destructive">
           {c.error}
         </p>
       ) : null}
-      {field === "goal" ? (
-        <div className="mt-3.5 flex flex-wrap gap-2">
-          <Button size="sm" disabled={c.saving} onClick={() => void c.save()}>
-            {c.saving ? (
-              <Trans>Saving…</Trans>
-            ) : c.error ? (
-              <Trans>Retry save</Trans>
-            ) : (
-              <Trans>Save</Trans>
-            )}
-          </Button>
-          <Button size="sm" variant="ghost" disabled={c.saving} onClick={c.cancel}>
-            <Trans>Cancel</Trans>
-          </Button>
-        </div>
-      ) : null}
-    </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button size="sm" disabled={c.saving} onClick={() => void c.save()}>
+          {c.saving ? (
+            <Trans>Saving…</Trans>
+          ) : c.error ? (
+            <Trans>Retry save</Trans>
+          ) : (
+            <Trans>Save</Trans>
+          )}
+        </Button>
+        <Button size="sm" variant="ghost" disabled={c.saving} onClick={c.cancel}>
+          <Trans>Cancel</Trans>
+        </Button>
+      </div>
+    </>
   );
 }
-function fieldLabel(field: MetadataField) {
-  return field === "name" ? t`Work name` : t`Description`;
-}
+
 function sameMetadata(a: Work, b: Work) {
   return (
     a.id === b.id &&

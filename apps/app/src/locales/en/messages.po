@@ -170,8 +170,8 @@ msgstr "{0} documents"
 
 #. placeholder {0}: fieldLabel(target)
 #: src/features/project/work/WorkMetadata.tsx
-msgid "{0} edit canceled"
-msgstr "{0} edit canceled"
+#~ msgid "{0} edit canceled"
+#~ msgstr "{0} edit canceled"
 
 #. placeholder {0}: list(names)
 #: src/features/chat/subagent/DeliveryEventRows.tsx
@@ -240,8 +240,8 @@ msgstr "{0} s"
 
 #. placeholder {0}: fieldLabel(target)
 #: src/features/project/work/WorkMetadata.tsx
-msgid "{0} saved"
-msgstr "{0} saved"
+#~ msgid "{0} saved"
+#~ msgstr "{0} saved"
 
 #. placeholder {0}: provider.name
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
@@ -303,18 +303,18 @@ msgstr "{0}, Archived"
 
 #. placeholder {0}: Math.floor(elapsed / 86_400_000)
 #: src/features/project/work/WorkDetailScreen.tsx
-msgid "{0}d ago"
-msgstr "{0}d ago"
+#~ msgid "{0}d ago"
+#~ msgstr "{0}d ago"
 
 #. placeholder {0}: Math.floor(elapsed / 3_600_000)
 #: src/features/project/work/WorkDetailScreen.tsx
-msgid "{0}h ago"
-msgstr "{0}h ago"
+#~ msgid "{0}h ago"
+#~ msgstr "{0}h ago"
 
 #. placeholder {0}: Math.floor(elapsed / 60_000)
 #: src/features/project/work/WorkDetailScreen.tsx
-msgid "{0}m ago"
-msgstr "{0}m ago"
+#~ msgid "{0}m ago"
+#~ msgstr "{0}m ago"
 
 #: src/features/project/work/WorkDetailScreen.tsx
 #~ msgid "{count, plural, one {# item} other {# items}}"
@@ -609,7 +609,7 @@ msgstr "All chats"
 #~ msgid "All projects"
 #~ msgstr "All projects"
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/useWorkChrome.tsx
 msgid "All Work"
 msgstr "All Work"
 
@@ -654,7 +654,6 @@ msgstr "Archive"
 #~ msgid "Archive Work"
 #~ msgstr "Archive Work"
 
-#: src/features/project/work/WorkDetailScreen.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Archived"
 msgstr "Archived"
@@ -1410,6 +1409,10 @@ msgstr "Couldn't rename this document. Try again."
 msgid "Couldn't rename this document. Try another name."
 msgstr "Couldn't rename this document. Try another name."
 
+#: src/features/project/work/WorkTitleTab.tsx
+msgid "Couldn’t rename this Work. Try again."
+msgstr "Couldn’t rename this Work. Try again."
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't run that skill"
 msgstr "Couldn't run that skill"
@@ -1636,6 +1639,14 @@ msgstr "Describe the picture for a reader who cannot see it"
 msgid "Description"
 msgstr "Description"
 
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Description edit canceled"
+msgstr "Description edit canceled"
+
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Description saved"
+msgstr "Description saved"
+
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Destination"
 msgstr "Destination"
@@ -1782,8 +1793,12 @@ msgstr "Edit"
 
 #. placeholder {0}: fieldLabel(next)
 #: src/features/project/work/WorkMetadata.tsx
-msgid "Edit {0}"
-msgstr "Edit {0}"
+#~ msgid "Edit {0}"
+#~ msgstr "Edit {0}"
+
+#: src/features/project/work/WorkMetadata.tsx
+msgid "Edit Description"
+msgstr "Edit Description"
 
 #: src/components/app/composer/ComposerReferenceMenu.tsx
 msgid "Edit display text"
@@ -2260,8 +2275,8 @@ msgid "Jump to in chat"
 msgstr "Jump to in chat"
 
 #: src/features/project/work/WorkDetailScreen.tsx
-msgid "just now"
-msgstr "just now"
+#~ msgid "just now"
+#~ msgstr "just now"
 
 #: src/features/chat/DraftDock.tsx
 msgid "Keep"
@@ -3376,9 +3391,13 @@ msgstr "Rename project: {title}"
 msgid "Rename this document or move it somewhere else in your project."
 msgstr "Rename this document or move it somewhere else in your project."
 
-#: src/features/project/work/WorkMetadata.tsx
+#: src/features/project/work/WorkTitleTab.tsx
 msgid "Rename Work"
 msgstr "Rename Work"
+
+#: src/features/project/work/WorkTitleTab.tsx
+msgid "Rename Work: {name}"
+msgstr "Rename Work: {name}"
 
 #: src/features/chat/ChatThreadHeader.tsx
 msgid "Renamed to {confirmed}"
@@ -4572,8 +4591,8 @@ msgid "Untitled project"
 msgstr "Untitled project"
 
 #: src/features/project/work/WorkDetailScreen.tsx
-msgid "Updated"
-msgstr "Updated"
+#~ msgid "Updated"
+#~ msgstr "Updated"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Updated a Work"
@@ -4728,9 +4747,9 @@ msgstr "Why this is marked merged"
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
+#: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/screens.ts
 #: src/features/project/work/WorkScreen.tsx
-#: src/features/project/WorkPaneController.tsx
 msgid "Work"
 msgstr "Work"
 
@@ -4763,12 +4782,12 @@ msgstr "Work couldn’t load"
 #~ msgstr "Work identity"
 
 #: src/features/project/work/WorkMetadata.tsx
-msgid "Work name"
-msgstr "Work name"
+#~ msgid "Work name"
+#~ msgstr "Work name"
 
 #: src/features/project/work/WorkMetadata.tsx
-msgid "Work name is required"
-msgstr "Work name is required"
+#~ msgid "Work name is required"
+#~ msgstr "Work name is required"
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
 #~ msgid "Work unavailable"

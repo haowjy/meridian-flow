@@ -20,19 +20,12 @@ import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { cn } from "@/lib/utils";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
 import { useCreateWork, useWorkCreationRecords, useWorkCreationState } from "./useWorkCreation";
+import type { WorkDeletion } from "./useWorkDeletion";
 import { WorkActionsMenu } from "./WorkActionsMenu";
 import { WorkDetailScreen, WorkScreenHeader } from "./WorkDetailScreen";
 import { WorkRow } from "./WorkRow";
-import {
-  emptyWorkDeleteState,
-  type WorkDeleteState,
-  workDeleteTransition,
-} from "./work-delete-state";
-import {
-  holdWorkCollectionFocus,
-  takeWorkCollectionFocus,
-  type WorkCollectionFocusIntent,
-} from "./work-focus-intent";
+import { emptyWorkDeleteState, type WorkDeleteState } from "./work-delete-state";
+import { takeWorkCollectionFocus, type WorkCollectionFocusIntent } from "./work-focus-intent";
 
 export type WorkScreenProps = {
   projectId: string;
@@ -40,59 +33,16 @@ export type WorkScreenProps = {
   routeCommands: ProjectRouteCommands;
 };
 
-export function WorkScreen(props: WorkScreenProps) {
+export function WorkScreen(props: WorkScreenProps & { deletion: WorkDeletion }) {
   const createWork = useCreateWork(props.projectId, props.routeCommands);
   const catalog = useWorks(props.projectId);
-  const mutations = useWorkMutations(props.projectId);
-  const [deleteState, setDeleteState] = useState<WorkDeleteState>(emptyWorkDeleteState);
-  const deleteWork = (work: Work, from: "detail" | "list") => {
-    setDeleteState((state) => workDeleteTransition(state, { type: "delete", work }));
-    if (from === "detail") {
-      holdWorkCollectionFocus(props.projectId, { kind: "heading" });
-      void props.routeCommands.closeWork({ replace: true });
-    }
-    mutations.delete.mutate(work.id, {
-      onError: () =>
-        setDeleteState((state) => workDeleteTransition(state, { type: "delete-failed" })),
-    });
-  };
-  const retryDelete = () => {
-    const work = deleteState.failed;
-    if (!work) return;
-    setDeleteState((state) => workDeleteTransition(state, { type: "retry" }));
-    mutations.delete.mutate(work.id, {
-      onError: () =>
-        setDeleteState((state) => workDeleteTransition(state, { type: "delete-failed" })),
-    });
-  };
-  const undoDelete = () => {
-    const work = deleteState.deleted;
-    if (!work) return;
-    setDeleteState((state) => workDeleteTransition(state, { type: "undo" }));
-    mutations.restore.mutate(work.id, {
-      onSuccess: () => setDeleteState(emptyWorkDeleteState()),
-      onError: () =>
-        setDeleteState((state) => workDeleteTransition(state, { type: "restore-failed" })),
-    });
-  };
+  const { deletion } = props;
   const routeWorkId =
     props.routeWork.status === "present"
       ? props.routeWork.workId
       : props.routeWork.status === "unresolved"
         ? parseRequestId(props.routeWork.slug)
         : null;
-  useEffect(() => {
-    if (props.routeWork.status === "new") {
-      setDeleteState(emptyWorkDeleteState());
-      return;
-    }
-    if (
-      props.routeWork.status === "present" &&
-      (deleteState.failed || (deleteState.deleted && routeWorkId !== deleteState.deleted.id))
-    ) {
-      setDeleteState(emptyWorkDeleteState());
-    }
-  }, [deleteState.deleted, deleteState.failed, props.routeWork.status, routeWorkId]);
   const creation = useWorkCreationState(props.projectId, routeWorkId, props.routeCommands);
   if (props.routeWork.status === "new") {
     return (
@@ -107,24 +57,15 @@ export function WorkScreen(props: WorkScreenProps) {
   ) {
     return (
       <WorkCreationDestination
-        projectId={props.projectId}
-        name={creation.name}
         goal={creation.goal}
         failed={creation.status === "failed"}
-        routeCommands={props.routeCommands}
         onRetry={creation.retry}
         onDiscard={creation.discard}
       />
     );
   }
   if (props.routeWork.status === "present") {
-    return (
-      <WorkDetailScreen
-        {...props}
-        work={props.routeWork.work}
-        onDeleteWork={(work) => deleteWork(work, "detail")}
-      />
-    );
+    return <WorkDetailScreen {...props} work={props.routeWork.work} />;
   }
   if (props.routeWork.status === "unresolved" && props.routeWork.reason === "error") {
     return (
@@ -153,11 +94,11 @@ export function WorkScreen(props: WorkScreenProps) {
   return (
     <WorkCollectionScreen
       {...props}
-      deleteState={deleteState}
-      onDeleteWork={(work) => deleteWork(work, "list")}
-      onUndoDelete={undoDelete}
-      onDismissDelete={() => setDeleteState(emptyWorkDeleteState())}
-      onRetryDelete={retryDelete}
+      deleteState={deletion.state}
+      onDeleteWork={(work) => deletion.remove(work, "list")}
+      onUndoDelete={deletion.undo}
+      onDismissDelete={deletion.dismiss}
+      onRetryDelete={deletion.retry}
     />
   );
 }
@@ -478,20 +419,15 @@ function DeletedWorkRow({
   );
 }
 
+/** A Work still being created: its name is in the band; the page shows its state. */
 export function WorkCreationDestination({
-  projectId,
-  name,
   goal,
   failed,
-  routeCommands,
   onRetry,
   onDiscard,
 }: {
-  projectId: string;
-  name: string;
   goal: string | null;
   failed: boolean;
-  routeCommands: ProjectRouteCommands;
   onRetry: () => void;
   onDiscard: () => void;
 }) {
@@ -499,28 +435,19 @@ export function WorkCreationDestination({
     <div className="app-scroll">
       <article className="project-screen-column min-w-0 gap-5 pb-12">
         <WorkScreenHeader
-          onBack={() => {
-            holdWorkCollectionFocus(projectId, { kind: "heading" });
-            void routeCommands.closeWork({ replace: true });
-          }}
-          title={
-            <h1 className="min-w-0 max-w-full text-xl font-semibold [overflow-wrap:anywhere]">
-              {name}
-            </h1>
-          }
           description={
-            goal ? <p className="max-w-3xl whitespace-pre-line text-body">{goal}</p> : null
-          }
-          status={
-            <div
-              className={`flex items-center gap-2 text-xs ${failed ? "text-destructive" : "text-muted-foreground"}`}
-              role="status"
-            >
-              {!failed ? (
-                <span className="size-2 animate-pulse rounded-full bg-jade-text" aria-hidden />
-              ) : null}
-              {failed ? <Trans>Not created</Trans> : <Trans>Creating</Trans>}
-            </div>
+            <>
+              <p
+                className={`flex items-center gap-2 text-xs ${failed ? "text-destructive" : "text-muted-foreground"}`}
+                role="status"
+              >
+                {!failed ? (
+                  <span className="size-2 animate-pulse rounded-full bg-jade-text" aria-hidden />
+                ) : null}
+                {failed ? <Trans>Not created</Trans> : <Trans>Creating</Trans>}
+              </p>
+              {goal ? <p className="max-w-3xl whitespace-pre-wrap text-body">{goal}</p> : null}
+            </>
           }
           view="chats"
           onViewChange={() => {}}

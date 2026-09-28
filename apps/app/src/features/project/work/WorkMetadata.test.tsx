@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-/** Work metadata edit safety and clamped description behavior. */
+/** Work description edit safety and clamped display behavior. */
 import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { useWorkMetadataController, WorkDescription, WorkName } from "./WorkMetadata";
+import { useWorkMetadataController, WorkDescription } from "./WorkMetadata";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -33,12 +33,7 @@ const WORK: Work = {
 };
 function Harness({ saveWork }: { saveWork: (data: UpdateWorkRequest) => Promise<Work> }) {
   const controller = useWorkMetadataController(WORK, saveWork);
-  return (
-    <>
-      <WorkName controller={controller} />
-      <WorkDescription controller={controller} />
-    </>
-  );
+  return <WorkDescription controller={controller} />;
 }
 function setValue(node: HTMLInputElement | HTMLTextAreaElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(node), "value")?.set;
@@ -52,21 +47,6 @@ async function click(node: Element | null) {
 }
 
 describe("WorkMetadata", () => {
-  it("saves the name on blur and requires a non-empty value", async () => {
-    const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
-    await withReactRoot(<Harness saveWork={saveWork} />, async () => {
-      await click(document.querySelector('[aria-label="Rename Work"]'));
-      const input = document.querySelector<HTMLInputElement>("input");
-      expect(input).not.toBeNull();
-      if (!input) throw new Error("Name editor did not open");
-      await act(async () => {
-        setValue(input, "Renamed arc");
-        input.blur();
-      });
-      expect(saveWork).toHaveBeenCalledWith({ name: "Renamed arc" });
-    });
-  });
-
   it("does not save the description on blur and cancels on Escape", async () => {
     const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
     await withReactRoot(<Harness saveWork={saveWork} />, async () => {
@@ -91,7 +71,7 @@ describe("WorkMetadata", () => {
     });
   });
 
-  it("keeps only one field in edit mode while guarding a dirty description", async () => {
+  it("saves the edited description with Save", async () => {
     const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
     await withReactRoot(<Harness saveWork={saveWork} />, async () => {
       await click(
@@ -100,15 +80,16 @@ describe("WorkMetadata", () => {
         ) ?? null,
       );
       const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
-      expect(textarea).not.toBeNull();
       if (!textarea) throw new Error("Description editor did not open");
       await act(async () => {
-        setValue(textarea, "A changed description");
+        setValue(textarea, "  A changed description  ");
       });
-      await click(document.querySelector('[aria-label="Rename Work"]'));
-      expect(document.querySelectorAll("textarea")).toHaveLength(1);
-      expect(document.querySelectorAll("input")).toHaveLength(0);
-      expect(document.querySelector("textarea")).not.toBeNull();
+      await click(
+        [...document.querySelectorAll("button")].find((button) => button.textContent === "Save") ??
+          null,
+      );
+      expect(saveWork).toHaveBeenCalledWith({ goal: "A changed description" });
+      expect(document.querySelector("textarea")).toBeNull();
     });
   });
 

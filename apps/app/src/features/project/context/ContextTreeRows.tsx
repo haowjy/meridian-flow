@@ -16,6 +16,7 @@ import type {
   CatalogFile as ContextFile,
   CatalogNode as ContextNode,
 } from "@/client/query/context-catalog-projection";
+import { InlineEditInput } from "@/components/ui/inline-edit";
 import { cn } from "@/lib/utils";
 import {
   ContextEntryMenu,
@@ -336,13 +337,15 @@ function RenameRow({
     onDone,
   });
   return (
-    <div className="mx-2 flex h-7 items-center pr-1" style={{ paddingLeft: rowPaddingLeft(depth) }}>
+    <div
+      className={cn("mx-2 flex items-center pr-1 text-sm text-foreground", contextTreeRowClassName)}
+      style={{ paddingLeft: rowPaddingLeft(depth) }}
+    >
       <span className="h-7 w-4 shrink-0" aria-hidden />
       <RowIcon icon={icon} />
       <div className="relative ml-0.5 flex min-w-0 flex-1 items-center">
-        <input
+        <InlineEditInput
           ref={form.inputRef}
-          type="text"
           value={form.name}
           onChange={form.onChange}
           onKeyDown={form.onKeyDown}
@@ -352,7 +355,6 @@ function RenameRow({
           autoCapitalize="off"
           autoCorrect="off"
           spellCheck={false}
-          className="focus-ring h-[22px] w-full min-w-0 rounded-sm border border-border bg-sidebar-accent px-1 text-base text-foreground outline-none disabled:opacity-60 md:text-sm"
         />
         <InlineValidationOverlay anchorRef={form.inputRef} severity={form.severity} />
       </div>

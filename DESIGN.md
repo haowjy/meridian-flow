@@ -104,6 +104,11 @@ Core shell expectations:
 - Prefer optimistic local state where the server can reconcile safely.
 - Use skeletons or stable live-status rows instead of spinner-first waiting states.
 - Keep keyboard focus visible, quiet, and consistent.
+- Editing text in place never moves or resizes it. Use `components/ui/inline-edit`
+  (`InlineEditInput`, `InlineEditTextarea`): the field inherits the text's
+  typography, has no padding or border, sizes to its text, and paints its edge
+  with the `inline-edit-field` box-shadow bleed. Resting text wears
+  `inline-edit-trigger`. Tab titles (chat, Work) rename inside their tab.
 - Respect reduced motion; motion should clarify location or state, not perform for its own sake.
 - Show model/thread/process depth only when it helps the writer understand or recover from a situation.
 
