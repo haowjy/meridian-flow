@@ -250,7 +250,7 @@ export function WorkDescription({ controller: c }: { controller: WorkMetadataCon
     <div className="max-w-3xl">
       <div
         ref={description}
-        className={`relative overflow-hidden text-base leading-6 text-foreground ${expanded ? "max-h-none" : "max-h-[4.5rem]"} ${overflows && !expanded ? "[mask-image:linear-gradient(to_bottom,#000_55%,transparent)]" : ""}`}
+        className={`relative overflow-hidden text-body text-foreground ${expanded ? "max-h-none" : "max-h-[calc(var(--text-body--line-height)*3)]"} ${overflows && !expanded ? "[mask-image:linear-gradient(to_bottom,#000_55%,transparent)]" : ""}`}
       >
         <button
           type="button"
@@ -317,7 +317,7 @@ function Editor({
           ref={c.editorRef as React.Ref<HTMLTextAreaElement>}
           {...common}
           aria-label={t`Description`}
-          className="min-h-28 resize-none p-0 text-base leading-6"
+          className="min-h-28 resize-none p-0 text-body"
           onInput={(event) => {
             event.currentTarget.style.height = "auto";
             event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`;

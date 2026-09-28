@@ -104,7 +104,7 @@ msgstr "{0, plural, one {# call} other {# calls}}"
 #~ msgstr "{0, plural, one {# more item} other {# more items}}"
 
 #. placeholder {0}: group.drafts.length
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkFilesView.tsx
 msgid "{0, plural, one {# pending draft} other {# pending drafts}}"
 msgstr "{0, plural, one {# pending draft} other {# pending drafts}}"
 
@@ -298,8 +298,8 @@ msgstr "{0}, Archived"
 #. placeholder {0}: item.name
 #. placeholder {1}: item.error ?? "Upload failed"
 #: src/features/project/work/WorkDetailScreen.tsx
-msgid "{0}: {1}"
-msgstr "{0}: {1}"
+#~ msgid "{0}: {1}"
+#~ msgstr "{0}: {1}"
 
 #. placeholder {0}: Math.floor(elapsed / 86_400_000)
 #: src/features/project/work/WorkDetailScreen.tsx
@@ -493,8 +493,8 @@ msgid "Actions for {title}"
 msgstr "Actions for {title}"
 
 #: src/features/project/work/WorkDetailScreen.tsx
-msgid "Active"
-msgstr "Active"
+#~ msgid "Active"
+#~ msgstr "Active"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/project/work/WorkScreen.tsx
@@ -1450,6 +1450,10 @@ msgstr "Couldn't undo"
 msgid "Couldn't update that Work"
 msgstr "Couldn't update that Work"
 
+#: src/features/project/work/WorkFilesView.tsx
+msgid "Couldn’t upload"
+msgstr "Couldn’t upload"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't write"
 msgstr "Couldn't write"
@@ -1549,14 +1553,13 @@ msgstr "Default alignment"
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/project/chat-list/DeleteChatDialog.tsx
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Delete"
 msgstr "Delete"
 
 #. placeholder {0}: file.name
 #: src/features/project/work/WorkDetailScreen.tsx
-msgid "Delete {0}?"
-msgstr "Delete {0}?"
+#~ msgid "Delete {0}?"
+#~ msgstr "Delete {0}?"
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Delete chat"
@@ -1663,6 +1666,7 @@ msgid "Discard changes"
 msgstr "Discard changes"
 
 #: src/features/editor/SchemaRepairNotice.tsx
+#: src/features/project/work/WorkFilesView.tsx
 msgid "Dismiss"
 msgstr "Dismiss"
 
@@ -1741,11 +1745,11 @@ msgstr "Drafting"
 msgid "Drafts are waiting"
 msgstr "Drafts are waiting"
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkFilesView.tsx
 msgid "Drafts to review"
 msgstr "Drafts to review"
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkFilesView.tsx
 msgid "Drop files here or choose from your device"
 msgstr "Drop files here or choose from your device"
 
@@ -1951,11 +1955,11 @@ msgid "Figure could not be loaded."
 msgstr "Figure could not be loaded."
 
 #: src/features/project/work/WorkDetailScreen.tsx
-msgid "File actions"
-msgstr "File actions"
+#~ msgid "File actions"
+#~ msgstr "File actions"
 
 #: src/features/project/context/use-create-entry-form.ts
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkFilesView.tsx
 msgid "File name"
 msgstr "File name"
 
@@ -2339,6 +2343,10 @@ msgstr "Live view"
 #~ msgid "Load more chats"
 #~ msgstr "Load more chats"
 
+#: src/features/project/work/WorkFilesView.tsx
+msgid "Loading"
+msgstr "Loading"
+
 #. placeholder {0}: tab.name
 #: src/features/project/context/ContextTabBar.tsx
 msgid "Loading {0}"
@@ -2418,7 +2426,6 @@ msgid "Loading Work…"
 msgstr "Loading Work…"
 
 #: src/features/billing/UsageCard.tsx
-#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Loading…"
 msgstr "Loading…"
 
@@ -2626,9 +2633,13 @@ msgstr "New file"
 msgid "New folder"
 msgstr "New folder"
 
+#: src/features/project/work/WorkFilesView.tsx
+msgid "New note"
+msgstr "New note"
+
 #: src/features/project/work/WorkDetailScreen.tsx
-msgid "New scratch note"
-msgstr "New scratch note"
+#~ msgid "New scratch note"
+#~ msgstr "New scratch note"
 
 #: src/features/project/context/ContextTabBar.tsx
 msgid "New tab"
@@ -2769,13 +2780,25 @@ msgstr "No report text was returned."
 msgid "No results yet."
 msgstr "No results yet."
 
-#: src/features/project/work/WorkDetailScreen.tsx
-msgid "No scratch notes yet"
-msgstr "No scratch notes yet"
+#: src/features/project/work/WorkFilesView.tsx
+msgid "No scratch notes match “{search}”."
+msgstr "No scratch notes match “{search}”."
 
 #: src/features/project/work/WorkDetailScreen.tsx
-msgid "No uploads yet"
-msgstr "No uploads yet"
+#~ msgid "No scratch notes yet"
+#~ msgstr "No scratch notes yet"
+
+#: src/features/project/work/WorkFilesView.tsx
+msgid "No scratch notes yet."
+msgstr "No scratch notes yet."
+
+#: src/features/project/work/WorkFilesView.tsx
+msgid "No uploads match “{search}”."
+msgstr "No uploads match “{search}”."
+
+#: src/features/project/work/WorkDetailScreen.tsx
+#~ msgid "No uploads yet"
+#~ msgstr "No uploads yet"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
@@ -3033,7 +3056,7 @@ msgstr "Paste"
 #~ msgid "Pending drafts"
 #~ msgstr "Pending drafts"
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkFilesView.tsx
 msgid "Pending drafts couldn’t load"
 msgstr "Pending drafts couldn’t load"
 
@@ -3321,7 +3344,6 @@ msgstr "Removed"
 #: src/features/project/context/DocumentIdentityBar.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/InlineProjectTitle.tsx
-#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Rename"
 msgstr "Rename"
 
@@ -3454,7 +3476,7 @@ msgstr "Retry"
 msgid "Retry loading"
 msgstr "Retry loading"
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkFilesView.tsx
 msgid "Retry Pending drafts"
 msgstr "Retry Pending drafts"
 
@@ -3581,11 +3603,11 @@ msgid "scene break"
 msgstr "scene break"
 
 #: src/features/project/context/context-schemes.ts
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkFilesView.tsx
 msgid "Scratch"
 msgstr "Scratch"
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkFilesView.tsx
 msgid "Scratch couldn’t load"
 msgstr "Scratch couldn’t load"
 
@@ -4530,7 +4552,7 @@ msgstr "Untitled"
 msgid "Untitled document"
 msgstr "Untitled document"
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkFilesView.tsx
 msgid "Untitled manuscript"
 msgstr "Untitled manuscript"
 
@@ -4559,9 +4581,17 @@ msgstr "Updating a Work…"
 msgid "upload"
 msgstr "upload"
 
+#: src/features/project/work/WorkFilesView.tsx
+msgid "Upload"
+msgstr "Upload"
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Upload figure"
 msgstr "Upload figure"
+
+#: src/features/project/work/WorkFilesView.tsx
+msgid "Upload files"
+msgstr "Upload files"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Upload or paste"
@@ -4573,9 +4603,7 @@ msgid "Uploading {0} ({percent}%)"
 msgstr "Uploading {0} ({percent}%)"
 
 #. placeholder {0}: entry.filename
-#. placeholder {0}: item.name
 #: src/core/editor/images/ImageNodeView.tsx
-#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Uploading {0}…"
 msgstr "Uploading {0}…"
 
@@ -4583,12 +4611,16 @@ msgstr "Uploading {0}…"
 msgid "Uploading elsewhere…"
 msgstr "Uploading elsewhere…"
 
+#: src/features/project/work/WorkFilesView.tsx
+msgid "Uploading…"
+msgstr "Uploading…"
+
 #: src/features/project/context/context-schemes.ts
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkFilesView.tsx
 msgid "Uploads"
 msgstr "Uploads"
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkFilesView.tsx
 msgid "Uploads couldn’t load"
 msgstr "Uploads couldn’t load"
 
@@ -4716,8 +4748,8 @@ msgstr "Work creation"
 
 #: src/features/project/work/WorkMetadata.tsx
 #: src/features/project/work/WorkScreen.tsx
-msgid "Work identity"
-msgstr "Work identity"
+#~ msgid "Work identity"
+#~ msgstr "Work identity"
 
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Work name"

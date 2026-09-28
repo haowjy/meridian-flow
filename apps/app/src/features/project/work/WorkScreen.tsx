@@ -565,9 +565,7 @@ export function WorkCreationDestination({
             </h1>
           }
           description={
-            goal ? (
-              <p className="max-w-3xl whitespace-pre-line text-base leading-6">{goal}</p>
-            ) : null
+            goal ? <p className="max-w-3xl whitespace-pre-line text-body">{goal}</p> : null
           }
           status={
             <div
@@ -585,7 +583,7 @@ export function WorkCreationDestination({
           pending
           tools={
             <>
-              <div className="relative min-w-0 flex-1 basis-40 sm:max-w-[260px]">
+              <div className="relative min-w-0 flex-1">
                 <Input
                   type="search"
                   aria-label={t`Search chats`}
