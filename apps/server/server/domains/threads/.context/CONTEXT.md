@@ -567,6 +567,8 @@ that projection. A fork cutoff includes or excludes U with the rest of its
 prefix. Image inclusion reads filter reverted deciding C IDs before selecting
 the latest decision per block, so pre-C exclusions can take effect again.
 
-`ThreadSnapshotResponse.compactionUndo` is null without an active local C;
-otherwise the runtime reader supplies `{ turnId, availability }` using today's
-Agent trigger. `likely` is advisory, not a promise of admission.
+`ThreadSnapshotResponse.compactionUndo` is null without an active local C or
+when the retained model is absent from the runtime catalog; otherwise the runtime
+reader supplies `{ turnId, availability }` using today's Agent trigger. `likely`
+is advisory, not a promise of admission. Missing bindings and corrupt compaction
+metadata remain invariant errors, not null availability.

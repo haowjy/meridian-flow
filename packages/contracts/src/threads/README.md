@@ -1,11 +1,12 @@
 # Thread inbox controls
 
 `MessageIntent` distinguishes directed `message`, context-only `notice`, and
-runtime `control`. A control is not model-visible chat text. Its current body
-is `{ kind: "compact" }`; commands are writer-only, not tools.
+runtime `control`. A control is not model-visible chat text. Its body is
+`{ kind: "compact" }` or `{ kind: "compaction_undo", compactionTurnId }`;
+commands are writer-only, not tools.
 
 `PendingInboxItem.control` carries that body on control rows. `summary` is the
-writer label ("Compact conversation"). Snapshot pending state and
+writer label ("Compact conversation" or "Undo compaction"). Snapshot pending state and
 `inbox.changed` share the same schema. A queued control has no transcript
 position. It is rendered at the transcript tail until a divider with
 `metadata.controlMessageId` replaces it. An autocompaction may satisfy the row,

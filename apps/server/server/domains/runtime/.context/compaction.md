@@ -273,7 +273,9 @@ not by loading the transcript. See [HTTP contracts](../../../../../../docs/api/t
 ## Undo
 
 `compaction-undo.ts` prepares U over the restored raw history. Only the active,
-local completed C is eligible. U reuses `bakeIdAt` immediately before C, owns a
+local completed C is eligible. Runtime eligibility returns `not_active` for an
+inherited target; the enqueue route rejects a target outside this thread with
+`compaction_not_found` before execution. U reuses `bakeIdAt` immediately before C, owns a
 fresh document-staleness pass, and measures the decorated restored request
 against today's trigger. The sole refusal predicate implements Q2: reaching the
 trigger is `would_recompact`. The baseline is the last assistant response before
