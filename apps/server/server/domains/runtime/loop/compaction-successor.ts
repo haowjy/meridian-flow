@@ -10,7 +10,7 @@ import {
   type CompactionDecision,
   CompactionFailureError,
   type CompactionFailureOutcome,
-  type CompactionFailurePhase,
+  CompactionPreparationError,
   compactionFailureFrom,
   compactionFailureMeridianError,
   compactionFailureMessage,
@@ -45,13 +45,10 @@ export type PreparedCompaction =
       ) => ReturnType<typeof prepareRequestContext>;
     };
 
-function fittingTokens(
-  context: AssembledNextTurnContext,
-  fitLimitTokens: number,
-  phase: CompactionFailurePhase,
-) {
+function fittingTokens(context: AssembledNextTurnContext, fitLimitTokens: number) {
   const tokenizer = context.resolvedModel?.tokenizer;
-  if (!tokenizer) throw new CompactionFailureError({ reason: "compaction_failed", phase });
+  if (!tokenizer)
+    throw new CompactionFailureError({ reason: "compaction_failed", phase: "initial_prepare" });
   const tokens = estimateRequestTokens({
     request: context.generateRequest,
     baseline: null,
@@ -60,7 +57,7 @@ function fittingTokens(
   if (tokens >= fitLimitTokens)
     throw new CompactionFailureError({
       reason: "context_too_large",
-      phase,
+      phase: "initial_prepare",
       estimatedTokens: tokens,
       fitLimitTokens,
     });
@@ -209,7 +206,7 @@ export async function prepareCompactionSuccessor(args: {
         },
       });
     const base = await assemble([], []);
-    const tokensAfter = fittingTokens(base.assembled, decision.fitLimitTokens, "initial_prepare");
+    const tokensAfter = fittingTokens(base.assembled, decision.fitLimitTokens);
     const summaryBlock = contentForBlockInput({
       ...blockInput,
       content: { kind: "compaction", props: { ...props, tokensAfter } },
@@ -234,11 +231,18 @@ export async function prepareCompactionSuccessor(args: {
 export async function prepareCompactionContext(
   drain: InboxDrain,
   prepared: PreparedCompaction | undefined,
+  selection: import("./runtime-delivery.js").DeliverySelection,
 ) {
   if (!prepared) throw new Error("Missing prepared compaction");
   if (prepared.kind === "failed") throw new CompactionFailureError(prepared.failure);
-  const next = await prepared.assemble(drain.turns, drain.blocks);
-  fittingTokens(next.assembled, prepared.decision.fitLimitTokens, "late_arrival");
+  const next = await prepared.assemble(drain.turns, drain.blocks, selection);
+  const tokenizer = next.assembled.resolvedModel?.tokenizer;
+  if (!tokenizer) throw new Error("Cannot fit-check the successor without a resolved tokenizer");
+  const tokens = estimateRequestTokens({
+    request: next.assembled.generateRequest,
+    baseline: null,
+    tokenizer,
+  });
   return {
     events: next.events,
     undos: next.undos,
@@ -246,6 +250,9 @@ export async function prepareCompactionContext(
     blocks: next.blocks,
     requiresSplit: true,
     context: next.assembled,
+    ...(tokens >= prepared.decision.fitLimitTokens
+      ? { successorFailure: new CompactionPreparationError("context_too_large") }
+      : {}),
   };
 }
 

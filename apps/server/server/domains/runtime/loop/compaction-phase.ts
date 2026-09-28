@@ -163,7 +163,7 @@ export async function executeCompaction({
       if (prepared?.kind === "failed" && decision.trigger === "auto")
         throw new CompactionFailureError(prepared.failure);
       if (prepared?.kind === "usable" && !selection.control)
-        return prepareCompactionContext(drain, prepared);
+        return prepareCompactionContext(drain, prepared, selection);
       const completed =
         prepared?.kind === "usable"
           ? {

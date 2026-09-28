@@ -1474,7 +1474,7 @@ else
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
     });
 
-    it("fails C when a late paste exceeds the successor budget and settles its paid summary", async () => {
+    it("keeps C complete when late messages exceed the successor reply budget", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
       const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => {
         await rig.send(rig.threadId, "Late long paste. ".repeat(5000));
@@ -1508,29 +1508,20 @@ else
       expect((await run.execute()).status).toBe("error");
       const tail = (await rig.repos.turns.listByThread(rig.threadId)).slice(-4);
       expect(tail.map((turn) => [turn.role, turn.status])).toEqual([
-        ["compaction", "error"],
+        ["compaction", "complete"],
         ["user", "complete"],
         ["user", "complete"],
         ["assistant", "error"],
       ]);
       expect(tail[0]).toMatchObject({
-        promptBakeId: null,
-        error: "This message is too long for this chat's model.",
-        metadata: {
-          reason: "context_too_large",
-          phase: "late_arrival",
-          estimatedTokens: expect.any(Number),
-          fitLimitTokens: 2_500,
-        },
+        status: "complete",
+        promptBakeId: expect.any(String),
+        error: null,
+        metadata: { trigger: "auto" },
       });
+      expect(tail[0].metadata).not.toHaveProperty("phase");
+      expect(tail[0].metadata).not.toHaveProperty("reason");
       expect(CompactionMetadataCodec.safeParse(tail[0].metadata).success).toBe(true);
-      expect(tail[0].metadata).toMatchObject({
-        estimatedTokens: expect.any(Number),
-        fitLimitTokens: 2_500,
-      });
-      expect((tail[0].metadata as JsonObject).estimatedTokens as number).toBeGreaterThan(
-        (tail[0].metadata as JsonObject).fitLimitTokens as number,
-      );
       expect(tail[3].error).toBe("This message is too long for this chat's model.");
       expect(tail[3].prevTurnId).toBe(tail[2].id);
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
@@ -1545,7 +1536,6 @@ else
         .select({ payload: schema.eventJournal.payload })
         .from(schema.eventJournal);
       expect(JSON.stringify(events)).toContain('"code":"context_too_large"');
-      expect(JSON.stringify(events)).toContain('"phase":"late_arrival"');
     });
 
     it("compacts at close with a pending writer message, completing A before C and B", async () => {

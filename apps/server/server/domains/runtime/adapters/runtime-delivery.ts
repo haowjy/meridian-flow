@@ -368,6 +368,7 @@ export function createDeliveryAdapter(
         ...selection,
         continueTask: input.continueTask,
       });
+      preparationFailure = prepared.successorFailure;
     } catch (error) {
       if (input.signal?.aborted) throw error;
       preparationFailure = error;
@@ -443,7 +444,7 @@ export function createDeliveryAdapter(
         input.current.kind === "placeholder"
           ? await input.current.complete(
               adoption.preparedCurrent,
-              preparationFailure,
+              prepared.successorFailure === undefined ? preparationFailure : undefined,
               adoption.selection,
             )
           : {

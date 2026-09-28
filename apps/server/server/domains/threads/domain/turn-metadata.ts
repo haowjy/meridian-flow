@@ -126,7 +126,6 @@ export const CompactionFailureReasonCodec = z.enum([
 export const CompactionFailurePhaseCodec = z.enum([
   "summary",
   "initial_prepare",
-  "late_arrival",
   "delivery",
   "recovery",
 ]);

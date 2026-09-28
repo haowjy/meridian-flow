@@ -51,6 +51,7 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
     requiresSplit: boolean;
     compaction?: CompactionDecision;
     context?: import("./turn-context-assembly.js").AssembledNextTurnContext;
+    successorFailure?: unknown;
   }>;
 };
 export type DeliverySelection = {

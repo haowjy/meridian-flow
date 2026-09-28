@@ -6,6 +6,7 @@ import {
 } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import {
+  CompactionFailurePhaseCodec,
   CompactionMetadataCodec,
   CompactionPlanMetadataCodec,
   CompactionUndoMetadataCodec,
@@ -59,12 +60,16 @@ describe("pending placeholders", () => {
 });
 
 describe("compaction metadata", () => {
+  it("does not expose the removed late-arrival failure phase", () => {
+    expect(CompactionFailurePhaseCodec.safeParse("late_arrival").success).toBe(false);
+  });
+
   it("parses typed failure, control, and fit fields even without a compaction plan", () => {
     const metadata = CompactionMetadataCodec.parse({
       trigger: "auto",
       controlMessageId: "control-1",
       reason: "context_too_large",
-      phase: "late_arrival",
+      phase: "initial_prepare",
       estimatedTokens: 4_321,
       fitLimitTokens: 2_500,
     });
@@ -73,7 +78,7 @@ describe("compaction metadata", () => {
       trigger: "auto",
       controlMessageId: "control-1",
       reason: "context_too_large",
-      phase: "late_arrival",
+      phase: "initial_prepare",
       estimatedTokens: 4_321,
       fitLimitTokens: 2_500,
     });
