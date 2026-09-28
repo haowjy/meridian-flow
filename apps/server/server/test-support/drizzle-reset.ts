@@ -205,6 +205,7 @@ export async function deleteDrizzleRows(db: Database, tables: unknown[]): Promis
     await transaction.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
     for (const table of tableOrder) {
       // Insert-only bakes permit deletion only through their owning thread's cascade.
+      // This exemption requires the owner in the reset set; standalone bake deletes still fail.
       // A preceding suite may leave bakes even when this suite never creates one.
       if (
         table.qualifiedName === quoteDrizzleTable(promptBakes) &&

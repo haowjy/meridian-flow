@@ -687,4 +687,19 @@ else
       expect(marker(turns)).toMatchObject({ status: "error", error: "would_recompact" });
       expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "error" });
     });
+
+    it("C6b a queued undo cannot hide a missing activated skill", async () => {
+      const rig = await fixture();
+      const c = await compact(rig);
+      await undo(rig, c);
+      await rig.send(rig.threadId, "Use the selected skill", {
+        activatedSkillSlugs: ["missing-skill"],
+      });
+      const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
+      await run.execute();
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
+      expect(marker(turns)).toMatchObject({ status: "error", error: "undo_failed" });
+      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "error" });
+      expect(rig.gateway.requests).toHaveLength(0);
+    });
   });

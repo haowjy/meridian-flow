@@ -567,7 +567,7 @@ async function runDrainTurn(
         reservedTurnId;
       let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
       let failedControls: PreparedControlHistory | null = null;
-      if (!preparationError || selection.control?.body.kind === "compaction_undo") {
+      if (!preparationError) {
         try {
           const previousBlocks = await deps.repos.blocks.listByThread(input.threadId);
           preflight = await prepareRequestContext({
@@ -578,13 +578,7 @@ async function runDrainTurn(
             currentTurnId: reservedTurnId,
             controls: selection.controls,
             followingBatches: selection.followingBatches,
-            failedUndoIds: preparationError
-              ? new Set(
-                  selection.controls
-                    ?.filter((c) => c.body.kind === "compaction_undo")
-                    .map((c) => c.id),
-                )
-              : selection.failedUndoIds,
+            failedUndoIds: selection.failedUndoIds,
             continueAfterControls: selection.outstanding.length > 0,
             pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
             turns: [
@@ -602,7 +596,6 @@ async function runDrainTurn(
             baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
             signal: input.signal,
           });
-          preparationError = null;
         } catch (error) {
           if (input.signal?.aborted) throw error;
           preparationError = asError(error);
@@ -1662,6 +1655,7 @@ async function executeLoop(
           controls: selection.controls,
           followingBatches: selection.followingBatches,
           failedUndoIds: selection.failedUndoIds,
+          continueAfterControls: selection.outstanding.length > 0 || !!selection.continueTask,
           pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
         });
         thread = prepared.assembled.thread;
