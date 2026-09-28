@@ -68,6 +68,8 @@ export function HandoffBriefCard({
       ? t`Stopping the handoff brief`
       : stateTitle(view.state, view.running);
   const ended = view.state === "failed" || view.state === "stopped";
+  // The seed names its source by ref only; a trashed source's title is unreadable.
+  const sourceFallbackName = t`the source chat`;
 
   return (
     <section
@@ -129,16 +131,16 @@ export function HandoffBriefCard({
           </div>
           {seed ? (
             <p className="flex min-w-0 items-baseline gap-1 text-xs text-muted-foreground">
-              <span className="shrink-0">
-                <Trans>Handed off from</Trans>{" "}
-              </span>
-              <SourceChatLink
-                threadId={seed.sourceThreadId}
-                title={source.title}
-                trashed={source.trashed}
-                // The seed names its source by ref only; a trashed source's title is unreadable.
-                fallbackName={t`the source chat`}
-              />
+              {/* One message, so a translation can put the source's name first. */}
+              <Trans>
+                <span className="shrink-0">Handed off from </span>
+                <SourceChatLink
+                  threadId={seed.sourceThreadId}
+                  title={source.title}
+                  trashed={source.trashed}
+                  fallbackName={sourceFallbackName}
+                />
+              </Trans>
             </p>
           ) : null}
           {view.failureCopy ? (

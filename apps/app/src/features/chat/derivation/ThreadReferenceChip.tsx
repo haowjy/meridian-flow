@@ -19,10 +19,15 @@ export function ThreadReferenceChip({ reference }: { reference: ThreadReference 
       className="inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full border border-border-subtle bg-background px-2.5 py-0.5 text-xs text-muted-foreground"
     >
       <MessagesSquare aria-hidden className="size-3.5 shrink-0" />
-      <span className="shrink-0">
-        <Trans>From</Trans>{" "}
-      </span>
-      <SourceChatLink threadId={reference.threadId} title={source.title} trashed={source.trashed} />
+      {/* One message, so a translation can put the source's name first. */}
+      <Trans>
+        <span className="shrink-0">From </span>
+        <SourceChatLink
+          threadId={reference.threadId}
+          title={source.title}
+          trashed={source.trashed}
+        />
+      </Trans>
     </span>
   );
 }

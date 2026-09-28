@@ -399,6 +399,16 @@ msgstr "<0>{0}</0> and its messages will be deleted."
 msgid "<0>{0}</0> will be permanently deleted."
 msgstr "<0>{0}</0> will be permanently deleted."
 
+#: src/features/chat/derivation/InheritedMarks.tsx
+#: src/features/chat/derivation/ThreadReferenceChip.tsx
+#: src/features/chat/SpawnReportCard.tsx
+msgid "<0>From </0><1/>"
+msgstr "<0>From </0><1/>"
+
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+msgid "<0>Handed off from </0><1/>"
+msgstr "<0>Handed off from </0><1/>"
+
 #: src/features/chat/PendingInboxTray.tsx
 #~ msgid "1 message queued"
 #~ msgstr "1 message queued"
@@ -1366,6 +1376,10 @@ msgstr "Couldn't load references."
 msgid "Couldn't load results."
 msgstr "Couldn't load results."
 
+#: src/features/chat/TurnList.tsx
+msgid "Couldn't load the conversation this fork continues."
+msgstr "Couldn't load the conversation this fork continues."
+
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "Couldn't load this file."
 msgstr "Couldn't load this file."
@@ -2055,12 +2069,6 @@ msgstr "Fork from here"
 msgid "Form payload is malformed."
 msgstr "Form payload is malformed."
 
-#: src/features/chat/derivation/InheritedMarks.tsx
-#: src/features/chat/derivation/ThreadReferenceChip.tsx
-#: src/features/chat/SpawnReportCard.tsx
-msgid "From"
-msgstr "From"
-
 #: src/features/chat/ThreadStatusLabel.tsx
 #~ msgid "Generating"
 #~ msgstr "Generating"
@@ -2110,10 +2118,6 @@ msgstr "Hand off to"
 #: src/features/chat/derivation/DeriveTurnActions.tsx
 msgid "Hand off to an Agent"
 msgstr "Hand off to an Agent"
-
-#: src/features/chat/derivation/HandoffBriefCard.tsx
-msgid "Handed off from"
-msgstr "Handed off from"
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Handoff brief"
@@ -4226,6 +4230,10 @@ msgstr "Thinking out loud?"
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking part {0}"
 msgstr "Thinking part {0}"
+
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+msgid "This brief failed."
+msgstr "This brief failed."
 
 #: src/features/project/context/viewers/PdfViewer.tsx
 msgid "This browser cannot display the PDF inline."

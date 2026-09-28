@@ -399,6 +399,16 @@ msgstr ""
 msgid "<0>{0}</0> will be permanently deleted."
 msgstr ""
 
+#: src/features/chat/derivation/InheritedMarks.tsx
+#: src/features/chat/derivation/ThreadReferenceChip.tsx
+#: src/features/chat/SpawnReportCard.tsx
+msgid "<0>From </0><1/>"
+msgstr ""
+
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+msgid "<0>Handed off from </0><1/>"
+msgstr ""
+
 #: src/features/chat/PendingInboxTray.tsx
 #~ msgid "1 message queued"
 #~ msgstr ""
@@ -1366,6 +1376,10 @@ msgstr ""
 msgid "Couldn't load results."
 msgstr ""
 
+#: src/features/chat/TurnList.tsx
+msgid "Couldn't load the conversation this fork continues."
+msgstr ""
+
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "Couldn't load this file."
 msgstr ""
@@ -2055,12 +2069,6 @@ msgstr ""
 msgid "Form payload is malformed."
 msgstr ""
 
-#: src/features/chat/derivation/InheritedMarks.tsx
-#: src/features/chat/derivation/ThreadReferenceChip.tsx
-#: src/features/chat/SpawnReportCard.tsx
-msgid "From"
-msgstr ""
-
 #: src/features/chat/ThreadStatusLabel.tsx
 #~ msgid "Generating"
 #~ msgstr ""
@@ -2109,10 +2117,6 @@ msgstr ""
 
 #: src/features/chat/derivation/DeriveTurnActions.tsx
 msgid "Hand off to an Agent"
-msgstr ""
-
-#: src/features/chat/derivation/HandoffBriefCard.tsx
-msgid "Handed off from"
 msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
@@ -4221,6 +4225,10 @@ msgstr "边想边说？"
 #. placeholder {0}: processIndex + 1
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking part {0}"
+msgstr ""
+
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+msgid "This brief failed."
 msgstr ""
 
 #: src/features/project/context/viewers/PdfViewer.tsx

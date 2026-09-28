@@ -155,10 +155,11 @@ function SpawnSourceLine({ threadId }: { threadId: string }) {
       data-spawn-source={threadId}
       className="mt-[var(--chat-space-inline)] flex min-w-0 items-baseline gap-1 pl-[calc(1.5rem+var(--chat-space-row))] text-xs text-muted-foreground"
     >
-      <span className="shrink-0">
-        <Trans>From</Trans>{" "}
-      </span>
-      <SourceChatLink threadId={threadId} title={source.title} trashed={source.trashed} />
+      {/* One message, so a translation can put the source's name first. */}
+      <Trans>
+        <span className="shrink-0">From </span>
+        <SourceChatLink threadId={threadId} title={source.title} trashed={source.trashed} />
+      </Trans>
     </p>
   );
 }
