@@ -28,13 +28,12 @@ function promptText(value: string): string {
 }
 
 function boundedPromptText(value: string, limit: number, marker: string): string {
-  const escaped = promptText(value);
-  if (escaped.length <= limit) return escaped;
+  if (value.length <= limit) return promptText(value);
 
   const contentLimit = limit - marker.length;
   let end = contentLimit;
-  if (end > 0 && /[\uD800-\uDBFF]/.test(escaped[end - 1] ?? "")) end -= 1;
-  return `${escaped.slice(0, end).trimEnd()}${marker}`;
+  if (end > 0 && /[\uD800-\uDBFF]/.test(value[end - 1] ?? "")) end -= 1;
+  return promptText(`${value.slice(0, end).trimEnd()}${marker}`);
 }
 
 function normalizedGoal(value: string | null): string | null {

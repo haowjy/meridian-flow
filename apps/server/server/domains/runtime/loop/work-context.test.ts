@@ -151,6 +151,21 @@ describe("renderWorkContext", () => {
     expect(rendered).toContain(`${currentPrefix}${currentMarker}`);
     expect(rendered).toContain(`${otherPrefix}${otherMarker}`);
   });
+
+  it("truncates raw goal text before escaping ampersands", () => {
+    const marker = "… [truncated]";
+    const prefix = "g".repeat(WORK_CONTEXT_GOAL_LIMIT - marker.length - 1);
+    const current = work({
+      id: WORK_ID,
+      name: "Arc",
+      goal: `${prefix}&tail${"x".repeat(WORK_CONTEXT_GOAL_LIMIT)}`,
+    });
+
+    const rendered = renderWorkContext({ current, activeWorks: [current] });
+
+    expect(rendered).toContain(`${prefix}&amp;${marker}`);
+    expect(rendered).not.toContain("&a…");
+  });
 });
 
 describe("createWorkContextReader", () => {
