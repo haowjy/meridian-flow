@@ -1,6 +1,13 @@
-/** One indexed interpretation of visibility, response boundaries, delivery rows, and reveal targets. */
+/** One indexed interpretation of transcript rows, response boundaries, delivery rows, and reveal targets. */
 import { parseInvocationCard } from "@meridian/contracts/components";
 import type { Turn } from "@meridian/contracts/protocol";
+import {
+  type CompactionUndoMarkers,
+  collectUndoMarkers,
+  isOverflowShell,
+  NO_UNDO_MARKERS,
+  undoMarkerTarget,
+} from "./compaction/compaction-model";
 import { reportPersistedContractFailure } from "./persisted-contract-debug";
 import { readSubagentUpdateMetadata } from "./subagent/update";
 
@@ -13,6 +20,16 @@ export type DeliveryEvent = {
   title?: string;
   subagentUpdate: ReturnType<typeof readSubagentUpdateMetadata>;
 };
+
+/**
+ * One rendered transcript row. The conversational classification above stays
+ * the head's policy (compaction is plumbing there); the transcript adds rows
+ * of its own on top of it. New row kinds (handoff brief, inherited source
+ * marker) extend this union.
+ */
+export type TranscriptRow =
+  | { kind: "turn"; turn: Turn }
+  | { kind: "compaction"; turn: Turn; undo: CompactionUndoMarkers };
 
 export function classifyTurn(turn: Turn): TurnClass {
   const metadata =
@@ -33,9 +50,26 @@ export function classifyTurn(turn: Turn): TurnClass {
 }
 
 export function buildTranscriptModel(turns: Turn[], awaitingSubagents: boolean) {
-  const visibleTurns = turns.filter((turn) => classifyTurn(turn) === "bubble");
   const nextByPrev = new Map<string, Turn>();
   for (const turn of turns) if (turn.prevTurnId) nextByPrev.set(turn.prevTurnId, turn);
+  const undoByCompactionId = collectUndoMarkers(turns);
+  const rows: TranscriptRow[] = [];
+  turns.forEach((turn, index) => {
+    if (turn.role === "compaction") {
+      rows.push({
+        kind: "compaction",
+        turn,
+        undo: undoByCompactionId.get(turn.id) ?? NO_UNDO_MARKERS,
+      });
+      return;
+    }
+    // An undo marker renders on the divider it names, never as its own row.
+    if (undoMarkerTarget(turn)) return;
+    if (isOverflowShell(turn, nextByPrev.get(turn.id) ?? turns[index + 1])) return;
+    if (classifyTurn(turn) === "bubble") rows.push({ kind: "turn", turn });
+  });
+  // Index-aligned with `rows`: response grouping and reveal landing read turns.
+  const visibleTurns = rows.map((row) => row.turn);
   const subagentUpdateByTurnId = new Map<string, ReturnType<typeof readSubagentUpdateMetadata>>();
   const invocationByExecution = new Map<
     string,
@@ -107,7 +141,7 @@ export function buildTranscriptModel(turns: Turn[], awaitingSubagents: boolean) 
           ...(invocation?.title ? { title: invocation.title } : {}),
         });
         if (childThreadId) latestRevealTurnByChildThreadId.set(childThreadId, turn.id);
-      } else if (kind === "bubble") break;
+      } else if (kind === "bubble" || next.role === "compaction") break;
       cursor = next.id;
     }
     if (events.length) deliveryEventsByAssistantTurnId.set(turn.id, events);
@@ -115,6 +149,7 @@ export function buildTranscriptModel(turns: Turn[], awaitingSubagents: boolean) 
 
   const { partsByFinalTurnId, continuing } = responseGroups(visibleTurns, awaitingSubagents);
   return {
+    rows,
     visibleTurns,
     deliveryEventsByAssistantTurnId,
     invocationByExecution,
@@ -140,6 +175,8 @@ function responseGroups(turns: readonly Turn[], awaitingSubagents: boolean) {
   for (let index = 0; index < turns.length; index++) {
     const turn = turns[index];
     if (!turn) continue;
+    // A divider inside a reply (autocompaction mid-task) does not end it.
+    if (turn.role === "compaction") continue;
     if (turn.role === "assistant") {
       parts.push(turn);
       continuing[index] = continuesResponse(turns, index, awaitingSubagents);
@@ -157,7 +194,10 @@ export function continuesResponse(
 ) {
   const turn = turns[index];
   if (turn?.role !== "assistant" || turn.status !== "complete") return false;
-  const next = turns[index + 1];
+  // Look past dividers: a compaction between two parts of one reply is part of the work.
+  let nextIndex = index + 1;
+  while (turns[nextIndex]?.role === "compaction") nextIndex += 1;
+  const next = turns[nextIndex];
   if (!next) return awaitingSubagents;
   if (next.role === "assistant") return true;
   return (

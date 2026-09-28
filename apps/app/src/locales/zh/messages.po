@@ -583,6 +583,10 @@ msgstr ""
 msgid "All Work"
 msgstr ""
 
+#: src/features/chat/compaction/useThreadControls.ts
+msgid "Already ran"
+msgstr ""
+
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
 msgstr ""
@@ -639,8 +643,8 @@ msgstr ""
 #~ msgstr "用日常语言描述你的数据、方法或下一步即可。"
 
 #: src/features/chat/ThreadStatusLabel.tsx
-msgid "Asleep"
-msgstr ""
+#~ msgid "Asleep"
+#~ msgstr ""
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
@@ -1098,6 +1102,35 @@ msgstr ""
 msgid "Commands"
 msgstr ""
 
+#: src/features/chat/ChatView.tsx
+msgid "Compact conversation"
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/compaction/useCompactionAnnouncements.ts
+msgid "Compacting conversation"
+msgstr ""
+
+#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/compaction/useThreadControls.ts
+msgid "Compaction queued"
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/compaction/useCompactionAnnouncements.ts
+msgid "Compaction stopped"
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/compaction/useCompactionAnnouncements.ts
+msgid "Compaction undone"
+msgstr ""
+
+#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/compaction/useThreadControls.ts
+msgid "Compaction withdrawn"
+msgstr ""
+
 #: src/features/project/lifecycle.ts
 #~ msgid "Completed"
 #~ msgstr ""
@@ -1138,6 +1171,19 @@ msgstr ""
 #: src/features/chat/CreationComposer.tsx
 #~ msgid "Continue the saved creation attempt."
 #~ msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/compaction/useCompactionAnnouncements.ts
+msgid "Conversation compacted"
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Conversation compacted automatically"
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Conversation not compacted"
+msgstr ""
 
 #: src/components/app/CopyTextButton.tsx
 #: src/features/chat/AssistantTurnActions.tsx
@@ -1200,6 +1246,10 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't check Work"
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Couldn't compact"
 msgstr ""
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
@@ -1323,6 +1373,21 @@ msgstr ""
 msgid "Couldn't open this document."
 msgstr ""
 
+#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/compaction/useThreadControls.ts
+msgid "Couldn't queue the compaction."
+msgstr ""
+
+#: src/features/chat/compaction/QueuedControlRows.tsx
+msgid "Couldn't queue the handoff brief."
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/compaction/useThreadControls.ts
+msgid "Couldn't queue the undo."
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't read"
 msgstr ""
@@ -1396,6 +1461,10 @@ msgstr ""
 msgid "Couldn't send. Your message was not lost."
 msgstr ""
 
+#: src/features/chat/compaction/useThreadControls.ts
+msgid "Couldn't stop the compaction. Try again."
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't switch Work"
 msgstr ""
@@ -1406,6 +1475,15 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't update that Work"
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Couldn't withdraw the undo."
+msgstr ""
+
+#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/compaction/useThreadControls.ts
+msgid "Couldn't withdraw. Try again."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1797,6 +1875,10 @@ msgstr ""
 #~ msgid "Errored."
 #~ msgstr ""
 
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Even compacted, this conversation is too large for its model."
+msgstr ""
+
 #: src/features/chat/DraftDock.tsx
 msgid "Expand changes"
 msgstr ""
@@ -1943,8 +2025,8 @@ msgid "Form payload is malformed."
 msgstr ""
 
 #: src/features/chat/ThreadStatusLabel.tsx
-msgid "Generating"
-msgstr ""
+#~ msgid "Generating"
+#~ msgstr ""
 
 #: src/components/app/composer/placeholders.ts
 msgid "Go ahead"
@@ -1978,6 +2060,16 @@ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "h3"
+msgstr ""
+
+#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/compaction/useThreadControls.ts
+msgid "Handoff brief queued"
+msgstr ""
+
+#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/compaction/useThreadControls.ts
+msgid "Handoff brief withdrawn"
 msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -3013,6 +3105,10 @@ msgstr ""
 msgid "Queued"
 msgstr ""
 
+#: src/features/chat/compaction/QueuedControlRows.tsx
+msgid "Queued commands"
+msgstr ""
+
 #: src/components/app/composer/placeholders.ts
 msgid "Quick thought"
 msgstr "突然想到"
@@ -3299,6 +3395,8 @@ msgstr ""
 #: src/core/editor/FigureNodeView.tsx
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
+#: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/compaction/QueuedControlRows.tsx
 #: src/features/chat/DraftDock.tsx
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/UserTurn.tsx
@@ -3327,12 +3425,20 @@ msgstr ""
 msgid "Retry Pending drafts"
 msgstr ""
 
+#: src/features/chat/compaction/QueuedControlRows.tsx
+msgid "Retry queueing"
+msgstr ""
+
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Retry save"
 msgstr ""
 
 #: src/routes/dev-login.tsx
 msgid "Retry sign-in"
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Retry undo"
 msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
@@ -3662,10 +3768,15 @@ msgid "Status unknown"
 msgstr "状态未知"
 
 #: src/components/app/composer/Composer.tsx
+#: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Stop"
 msgstr "停止"
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Stop compaction"
+msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Stop run"
@@ -3683,6 +3794,16 @@ msgstr "已取消"
 #: src/features/chat/AssistantTurn.tsx
 #~ msgid "Stopped."
 #~ msgstr "已取消。"
+
+#: src/features/chat/compaction/QueuedControlRows.tsx
+msgid "Stopping"
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/compaction/useThreadControls.ts
+msgid "Stopping compaction"
+msgstr ""
 
 #: src/features/home/RecentProjects.tsx
 #~ msgid "Streaming"
@@ -3733,6 +3854,14 @@ msgstr ""
 #. placeholder {0}: String(field.defaultValue)
 #: src/features/chat/FormBlock.tsx
 msgid "Suggested: {0}"
+msgstr ""
+
+#: src/features/chat/ChatView.tsx
+msgid "Summarize earlier messages so the model has room to keep going"
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Summary"
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
@@ -3900,6 +4029,10 @@ msgstr ""
 #~ msgid "The child run stopped"
 #~ msgstr ""
 
+#: src/features/chat/compaction/useCompactionAnnouncements.ts
+msgid "The compaction couldn't be undone."
+msgstr ""
+
 #: src/features/chat/CreationComposer.tsx
 #~ msgid "The created destination didn’t match your choices."
 #~ msgstr ""
@@ -3916,6 +4049,14 @@ msgstr ""
 msgid "The entry changed. Refresh the tree and try again."
 msgstr ""
 
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "The full conversation is back in context."
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "The full conversation may be too long to restore."
+msgstr ""
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row does not merge into the body."
 msgstr ""
@@ -3926,6 +4067,12 @@ msgstr ""
 
 #: src/features/project/context/use-rename-entry-form.ts
 msgid "The location changed. Try again."
+msgstr ""
+
+#. placeholder {0}: formatTokens(view.tokens.before)
+#. placeholder {1}: formatTokens(view.tokens.after)
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "The model's context went from {0} to {1} tokens."
 msgstr ""
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
@@ -4064,6 +4211,14 @@ msgstr ""
 msgid "This column is already at the edge."
 msgstr ""
 
+#: src/features/chat/compaction/QueuedControlRows.tsx
+msgid "This compaction already ran."
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "This conversation couldn't be compacted."
+msgstr ""
+
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
 msgid "workReceipt.alreadyCurrent"
@@ -4159,6 +4314,10 @@ msgstr ""
 msgid "This folder no longer exists."
 msgstr ""
 
+#: src/features/chat/compaction/QueuedControlRows.tsx
+msgid "This handoff brief already ran."
+msgstr ""
+
 #: src/core/editor/images/ImageNodeView.tsx
 msgid "This image never finished uploading."
 msgstr ""
@@ -4201,6 +4360,10 @@ msgstr ""
 
 #: src/core/editor/asset-image-render-state.ts
 msgid "This stored figure needs a project before it can be rendered."
+msgstr ""
+
+#: src/features/chat/compaction/QueuedControlRows.tsx
+msgid "This undo already ran."
 msgstr ""
 
 #: src/lib/date-groups.ts
@@ -4325,10 +4488,15 @@ msgstr ""
 msgid "Undid change to Work {0}."
 msgstr ""
 
+#: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Undo"
 msgstr "撤销"
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Undo compaction"
+msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undo didn't go through. Try again."
@@ -4336,6 +4504,21 @@ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undo is no longer available."
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/compaction/useThreadControls.ts
+msgid "Undo queued"
+msgstr ""
+
+#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/compaction/useThreadControls.ts
+msgid "Undo withdrawn"
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Undo withdrawn."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -4447,8 +4630,8 @@ msgid "Wait for this response to finish, then try again."
 msgstr ""
 
 #: src/features/chat/ThreadStatusLabel.tsx
-msgid "Waiting"
-msgstr ""
+#~ msgid "Waiting"
+#~ msgstr ""
 
 #: src/features/chat/UserTurn.tsx
 #~ msgid "Waiting for response"
@@ -4461,6 +4644,10 @@ msgstr ""
 #: src/features/chat/RunningSubagentsStrip.tsx
 #~ msgid "Waiting on {0}"
 #~ msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Waiting to compact"
+msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."
@@ -4500,6 +4687,32 @@ msgstr "我们说到哪儿了？"
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Why this is marked merged"
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/compaction/QueuedControlRows.tsx
+msgid "Withdraw"
+msgstr ""
+
+#: src/features/chat/compaction/QueuedControlRows.tsx
+msgid "Withdraw compaction"
+msgstr ""
+
+#: src/features/chat/compaction/QueuedControlRows.tsx
+msgid "Withdraw handoff brief"
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/compaction/QueuedControlRows.tsx
+msgid "Withdraw undo"
+msgstr ""
+
+#: src/features/chat/compaction/QueuedControlRows.tsx
+msgid "Withdrawing"
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Withdrawing undo"
 msgstr ""
 
 #: src/features/chat/ComposerWorkControl.tsx

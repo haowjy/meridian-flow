@@ -16,7 +16,11 @@ the authoritative history fetch:
   every activation refetches. Cached turns render first and the fetch reconciles
   behind them; navigate-first is preserved.
 - The hook owns one mounted-thread transport subscription. It refetches
-  (debounced 250 ms) on `RUN_STARTED` and gap, and directly applies addressed
+  (debounced 250 ms) on `RUN_STARTED`, `RUN_FINISHED`, `RUN_ERROR`,
+  `meridian.usage`, an inbox frame that lists a writer control (or clears the
+  last one), and gap. Compaction and undo turns have no stream of their own;
+  those frames are when a divider reserves, settles, or is undone. It directly
+  applies addressed
   custom block upserts even after the parent run ends. Missing turns
   request authoritative history, never a synthetic streaming turn. The store's
   durable wire cursor and snapshot floor reject replay rewinds and old HTTP

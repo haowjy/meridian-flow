@@ -7,6 +7,9 @@
 
 ## [Unreleased]
 
+- Show compaction in the chat: a divider for compacting, compacted (summary behind a disclosure), failed, stopped, and undone; Stop on a running compaction; Undo with its advisory and refusals on the divider; hide the empty reply an overflow recovery completes before compacting.
+- Add `/compact` to the composer. Queued compactions, undos, and handoff brief retries show at once at the transcript tail or on their divider, and can be withdrawn in place.
+
 - Undo failures show writer copy, retain typed reasons, and expose metadata in `mf thread view --json`.
 
 - Regenerate compaction undo migration after transcript indexes; keep both database changes.

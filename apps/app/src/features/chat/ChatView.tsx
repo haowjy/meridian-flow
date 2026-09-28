@@ -16,6 +16,7 @@
  */
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
+import type { CompactionUndoAvailability } from "@meridian/contracts/threads";
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { resolveDocumentLink } from "@/client/api/document-links-api";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
@@ -29,6 +30,7 @@ import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { announce, announceError, useThreadActions, useThreadStore } from "@/client/stores";
 import {
   Composer,
+  type ComposerChatCommand,
   type ComposerHandle,
   type ComposerSubmitEnvelope,
 } from "@/components/app/composer";
@@ -41,6 +43,9 @@ import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptRefere
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
+import { answeredControlIds } from "./compaction/compaction-model";
+import { useCompactionAnnouncements } from "./compaction/useCompactionAnnouncements";
+import { useThreadControls } from "./compaction/useThreadControls";
 import { DraftDock, useDraftDock } from "./DraftDock";
 import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
@@ -83,6 +88,8 @@ export type ChatViewProps = {
     outputTokens: number;
     cacheResets: number;
   } | null;
+  /** Which local compaction can be undone, and whether undo will likely hold. */
+  snapshotCompactionUndo?: CompactionUndoAvailability;
   /**
    * Whether the thread snapshot request has resolved. Feeds the transcript's
    * conversation-reveal ownership: only a settled history can say a named turn
@@ -100,6 +107,7 @@ export function ChatView({
   snapshotLiveState = null,
   snapshotNextSeq = null,
   snapshotThreadUsage = null,
+  snapshotCompactionUndo = null,
   historySettled,
   activateProjection,
 }: ChatViewProps) {
@@ -137,6 +145,33 @@ export function ChatView({
   const queuedWriterTurnIds = useMemo(
     () => selectQueuedWriterTurnIds(pendingInbox),
     [pendingInbox],
+  );
+  const answeredControls = useMemo(() => answeredControlIds(turns), [turns]);
+  const controls = useThreadControls({
+    threadId,
+    pending: pendingInbox,
+    answeredControlIds: answeredControls,
+    leafTurnId: turns.at(-1)?.id ?? null,
+  });
+  useCompactionAnnouncements(turns);
+  // The snapshot revalidates as a compaction reserves and settles, so its live
+  // state is fresher here than the subscription seed for the divider's phase.
+  const liveStatus = snapshotLiveState?.status ?? activity.status;
+  const livePhase = liveStatus.kind === "awake" ? liveStatus.phase : null;
+  const { enqueue: enqueueControl } = controls;
+  const chatCommands = useMemo<readonly ComposerChatCommand[]>(
+    () => [
+      {
+        slug: "compact",
+        name: t`Compact conversation`,
+        description: t`Summarize earlier messages so the model has room to keep going`,
+        run: () => {
+          requestTailFollow();
+          enqueueControl({ kind: "compact" });
+        },
+      },
+    ],
+    [enqueueControl],
   );
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
@@ -356,6 +391,7 @@ export function ChatView({
               streaming={isStreaming}
               referenceCatalog={referenceCatalog}
               availableSkills={availableSkills.skills}
+              commands={chatCommands}
               uploadPort={uploadIntakePort}
               uploadScope={
                 activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
@@ -394,6 +430,9 @@ export function ChatView({
                 changeTrails={changeTrails.byId}
                 submissionRecoveryByTurnId={submissionRecoveryByTurnId}
                 queuedWriterTurnIds={queuedWriterTurnIds}
+                controls={controls}
+                compactionUndo={snapshotCompactionUndo}
+                phase={livePhase}
                 threadUsage={snapshotThreadUsage}
               />
             </div>
