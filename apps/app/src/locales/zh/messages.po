@@ -488,13 +488,18 @@ msgstr ""
 msgid "Actions"
 msgstr ""
 
+#. placeholder {0}: work.name
+#: src/features/project/work/WorkActionsMenu.tsx
+msgid "Actions for {0}"
+msgstr ""
+
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Actions for {title}"
 msgstr ""
 
-#: src/features/project/work/WorkDetailScreen.tsx
-#~ msgid "Active"
-#~ msgstr ""
+#: src/features/project/work/WorkScreen.tsx
+msgid "Active"
+msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/project/work/WorkScreen.tsx
@@ -641,15 +646,16 @@ msgstr ""
 msgid "Applying…"
 msgstr ""
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkActionsMenu.tsx
 msgid "Archive"
 msgstr ""
 
 #: src/features/project/work/WorkDialog.tsx
-msgid "Archive Work"
-msgstr ""
+#~ msgid "Archive Work"
+#~ msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Archived"
 msgstr ""
 
@@ -809,7 +815,6 @@ msgstr ""
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/project/chat-list/DeleteChatDialog.tsx
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/work/WorkDialog.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Cancel"
 msgstr ""
@@ -1488,8 +1493,8 @@ msgid "Create the document"
 msgstr ""
 
 #: src/features/project/work/WorkDialog.tsx
-msgid "Create Work"
-msgstr ""
+#~ msgid "Create Work"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Created a Work"
@@ -1521,8 +1526,8 @@ msgid "Creating…"
 msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
-msgid "Creation failed"
-msgstr ""
+#~ msgid "Creation failed"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/blocks/BlockMenu.tsx
 msgid "Current block type"
@@ -1589,14 +1594,17 @@ msgstr ""
 msgid "Delete table"
 msgstr ""
 
-#: src/features/project/work/WorkDetailScreen.tsx
-#: src/features/project/work/WorkDialog.tsx
+#: src/features/project/work/WorkActionsMenu.tsx
 msgid "Delete Work"
 msgstr ""
 
 #. placeholder {0}: deleteState.deleted.name
 #: src/features/project/work/WorkScreen.tsx
-msgid "Deleted {0}"
+#~ msgid "Deleted {0}"
+#~ msgstr ""
+
+#: src/features/project/work/WorkScreen.tsx
+msgid "Deleted {name}"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1667,12 +1675,13 @@ msgstr ""
 
 #: src/features/editor/SchemaRepairNotice.tsx
 #: src/features/project/work/WorkFilesView.tsx
+#: src/features/project/work/WorkScreen.tsx
 msgid "Dismiss"
 msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
-msgid "Dismiss deleted Work"
-msgstr ""
+#~ msgid "Dismiss deleted Work"
+#~ msgstr ""
 
 #: src/components/app/composer/ComposerReferenceMenu.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
@@ -2040,8 +2049,8 @@ msgid "Go ahead"
 msgstr "说吧"
 
 #: src/features/project/work/WorkDialog.tsx
-msgid "Goal"
-msgstr ""
+#~ msgid "Goal"
+#~ msgstr ""
 
 #. placeholder {0}: work.goal
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
@@ -2439,16 +2448,16 @@ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/project/work/WorkCard.tsx
-msgid "Manage {0}"
-msgstr ""
+#~ msgid "Manage {0}"
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Manage billing"
 msgstr ""
 
 #: src/features/project/work/WorkDialog.tsx
-msgid "Manage Work"
-msgstr ""
+#~ msgid "Manage Work"
+#~ msgstr ""
 
 #: src/features/project/context/context-schemes.ts
 msgid "Manuscript"
@@ -2570,7 +2579,6 @@ msgstr ""
 msgid "Must be at most {value}"
 msgstr ""
 
-#: src/features/project/work/WorkDialog.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Name"
 msgstr ""
@@ -2645,7 +2653,6 @@ msgstr ""
 msgid "New tab"
 msgstr ""
 
-#: src/features/project/work/WorkDialog.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "New Work"
 msgstr ""
@@ -2880,7 +2887,7 @@ msgid "Open \"{name}\""
 msgstr "打开“{name}”"
 
 #. placeholder {0}: work.name
-#: src/features/project/work/WorkCard.tsx
+#: src/features/project/work/WorkRow.tsx
 msgid "Open {0}"
 msgstr ""
 
@@ -3426,8 +3433,8 @@ msgid "Response complete"
 msgstr "回复完成"
 
 #: src/features/project/work/WorkScreen.tsx
-msgid "Restoring…"
-msgstr ""
+#~ msgid "Restoring…"
+#~ msgstr ""
 
 #: src/features/chat/SpawnReportCard.tsx
 #~ msgid "Result unavailable"
@@ -4392,12 +4399,12 @@ msgid "This Work has {count, plural, one {# AI change} other {# AI changes}} in 
 msgstr ""
 
 #: src/features/project/work/WorkDialog.tsx
-msgid "This Work is active."
-msgstr ""
+#~ msgid "This Work is active."
+#~ msgstr ""
 
 #: src/features/project/work/WorkDialog.tsx
-msgid "This Work is archived."
-msgstr ""
+#~ msgid "This Work is archived."
+#~ msgstr ""
 
 #: src/features/project/EditorWorkRecovery.tsx
 msgid "This Work is unavailable."
@@ -4479,13 +4486,13 @@ msgstr ""
 msgid "Unable to render diagram"
 msgstr ""
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkActionsMenu.tsx
 msgid "Unarchive"
 msgstr ""
 
 #: src/features/project/work/WorkDialog.tsx
-msgid "Unarchive Work"
-msgstr ""
+#~ msgid "Unarchive Work"
+#~ msgstr ""
 
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
@@ -4725,8 +4732,8 @@ msgid "workReceipt.upToDate"
 msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
-msgid "Work actions"
-msgstr ""
+#~ msgid "Work actions"
+#~ msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
 msgid "Work couldn’t be deleted"
@@ -4739,8 +4746,8 @@ msgid "Work couldn’t load"
 msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
-msgid "Work creation"
-msgstr ""
+#~ msgid "Work creation"
+#~ msgstr ""
 
 #: src/features/project/work/WorkMetadata.tsx
 #: src/features/project/work/WorkScreen.tsx

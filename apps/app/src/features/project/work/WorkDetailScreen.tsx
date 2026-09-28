@@ -3,7 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
-import { Archive, ArchiveRestore, ChevronLeft, MessageSquarePlus, Search } from "lucide-react";
+import { ChevronLeft, MessageSquarePlus, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import { useWorkMutations } from "@/client/query/useWorks";
@@ -17,9 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { ChatIndexList, type ChatIndexRowProps } from "../chat-index/ChatIndexList";
@@ -28,6 +26,7 @@ import { useChatRowCommands } from "../chat-list/useChatRowCommands";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { useProjectLeaveGuard } from "../routing/ProjectNavigationContext";
 import type { ProjectRouteCommands } from "../routing/project-route";
+import { WorkActionsMenu } from "./WorkActionsMenu";
 import { useWorkFiles, WorkFilesActions, WorkFilesView } from "./WorkFilesView";
 import {
   useWorkMetadataController,
@@ -175,39 +174,17 @@ export function WorkDetailScreen({
           title={<WorkName controller={controller} />}
           description={<WorkDescription controller={controller} />}
           actions={
-            <OverflowMenu
-              label={t`Work actions`}
-              triggerClassName="[@media(pointer:coarse)]:size-11"
-            >
-              <DropdownMenuItem
-                disabled={mutations.isPending}
-                onSelect={() =>
-                  (controller.work.status === "archived"
-                    ? mutations.unarchive
-                    : mutations.archive
-                  ).mutate(controller.work.id)
-                }
-              >
-                {controller.work.status === "archived" ? (
-                  <ArchiveRestore className="size-4" />
-                ) : (
-                  <Archive className="size-4" />
-                )}
-                {controller.work.status === "archived" ? (
-                  <Trans>Unarchive</Trans>
-                ) : (
-                  <Trans>Archive</Trans>
-                )}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                variant="destructive"
-                disabled={mutations.isPending}
-                onSelect={() => onDeleteWork?.(controller.work)}
-              >
-                <Trans>Delete Work</Trans>
-              </DropdownMenuItem>
-            </OverflowMenu>
+            <WorkActionsMenu
+              work={controller.work}
+              disabled={mutations.isPending}
+              onToggleArchive={() =>
+                (controller.work.status === "archived"
+                  ? mutations.unarchive
+                  : mutations.archive
+                ).mutate(controller.work.id)
+              }
+              onDelete={() => onDeleteWork?.(controller.work)}
+            />
           }
           status={
             <div className="flex items-center gap-2 text-xs text-ink-subtle">

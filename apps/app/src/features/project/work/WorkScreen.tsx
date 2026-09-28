@@ -4,29 +4,31 @@ import { Trans } from "@lingui/react/macro";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { Work } from "@meridian/contracts/works";
 import { Link } from "@tanstack/react-router";
-import { ChevronDown, Plus } from "lucide-react";
+import { ChevronRight, Plus, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { useWorkMutations, useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
+import { SectionLabel } from "@/components/ui/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { CreationPage } from "@/features/creation/CreationPage";
+import { useMinuteClock } from "@/hooks/use-minute-clock";
+import { cn } from "@/lib/utils";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
 import { useCreateWork, useWorkCreationRecords, useWorkCreationState } from "./useWorkCreation";
-import { WorkCard } from "./WorkCard";
+import { WorkActionsMenu } from "./WorkActionsMenu";
 import { WorkDetailScreen, WorkScreenHeader } from "./WorkDetailScreen";
-import { WorkDialog, type WorkDialogAction } from "./WorkDialog";
+import { WorkRow } from "./WorkRow";
 import {
   emptyWorkDeleteState,
   type WorkDeleteState,
   workDeleteTransition,
 } from "./work-delete-state";
 import {
-  focusAfterDelete,
   holdWorkCollectionFocus,
   takeWorkCollectionFocus,
   type WorkCollectionFocusIntent,
@@ -43,10 +45,12 @@ export function WorkScreen(props: WorkScreenProps) {
   const catalog = useWorks(props.projectId);
   const mutations = useWorkMutations(props.projectId);
   const [deleteState, setDeleteState] = useState<WorkDeleteState>(emptyWorkDeleteState);
-  const deleteWork = (work: Work) => {
+  const deleteWork = (work: Work, from: "detail" | "list") => {
     setDeleteState((state) => workDeleteTransition(state, { type: "delete", work }));
-    holdWorkCollectionFocus(props.projectId, { kind: "heading" });
-    void props.routeCommands.closeWork({ replace: true });
+    if (from === "detail") {
+      holdWorkCollectionFocus(props.projectId, { kind: "heading" });
+      void props.routeCommands.closeWork({ replace: true });
+    }
     mutations.delete.mutate(work.id, {
       onError: () =>
         setDeleteState((state) => workDeleteTransition(state, { type: "delete-failed" })),
@@ -114,7 +118,13 @@ export function WorkScreen(props: WorkScreenProps) {
     );
   }
   if (props.routeWork.status === "present") {
-    return <WorkDetailScreen {...props} work={props.routeWork.work} onDeleteWork={deleteWork} />;
+    return (
+      <WorkDetailScreen
+        {...props}
+        work={props.routeWork.work}
+        onDeleteWork={(work) => deleteWork(work, "detail")}
+      />
+    );
   }
   if (props.routeWork.status === "unresolved" && props.routeWork.reason === "error") {
     return (
@@ -144,6 +154,7 @@ export function WorkScreen(props: WorkScreenProps) {
     <WorkCollectionScreen
       {...props}
       deleteState={deleteState}
+      onDeleteWork={(work) => deleteWork(work, "list")}
       onUndoDelete={undoDelete}
       onDismissDelete={() => setDeleteState(emptyWorkDeleteState())}
       onRetryDelete={retryDelete}
@@ -155,11 +166,13 @@ export function WorkCollectionScreen({
   projectId,
   routeCommands,
   deleteState = emptyWorkDeleteState(),
+  onDeleteWork,
   onUndoDelete,
   onDismissDelete,
   onRetryDelete,
 }: WorkScreenProps & {
   deleteState?: WorkDeleteState;
+  onDeleteWork?: (work: Work) => void;
   onUndoDelete?: () => void;
   onDismissDelete?: () => void;
   onRetryDelete?: () => void;
@@ -167,20 +180,15 @@ export function WorkCollectionScreen({
   const { works, isError, isFetching, refetch } = useWorks(projectId);
   const mutation = useWorkMutations(projectId);
   const creations = useWorkCreationRecords(projectId);
-  const [dialog, setDialog] = useState<Work | null>(null);
-  const [activeCommand, setActiveCommand] = useState<Exclude<
-    WorkDialogAction["type"],
-    "create"
-  > | null>(null);
+  const now = useMinuteClock();
   const [archivedOpen, setArchivedOpen] = useState(false);
   const collectionHeading = useRef<HTMLHeadingElement>(null);
-  const newWorkButton = useRef<HTMLButtonElement>(null);
+  const newWorkButton = useRef<HTMLAnchorElement>(null);
   const openRefs = useRef(new Map<string, HTMLAnchorElement>());
-  const lifecycleRefs = useRef(new Map<string, HTMLButtonElement>());
   const archivedDisclosure = useRef<HTMLButtonElement>(null);
   const lifecycleFocus = useRef<{ workId: string; status: Work["status"] } | null>(null);
   const focusHandled = useRef(false);
-  const [focusIntent, setFocusIntent] = useState<WorkCollectionFocusIntent | null>(() =>
+  const [focusIntent] = useState<WorkCollectionFocusIntent | null>(() =>
     takeWorkCollectionFocus(projectId),
   );
   useEffect(() => {
@@ -207,6 +215,7 @@ export function WorkCollectionScreen({
       focusHandled.current = true;
     }
   }, [archivedOpen, focusIntent, works]);
+  // After Archive or Unarchive, focus follows the row to its new section.
   useEffect(() => {
     const intent = lifecycleFocus.current;
     if (!intent || works === null) return;
@@ -215,7 +224,7 @@ export function WorkCollectionScreen({
     const target =
       intent.status === "archived" && !archivedOpen
         ? archivedDisclosure.current
-        : lifecycleRefs.current.get(intent.workId);
+        : openRefs.current.get(intent.workId);
     if (!target) return;
     target.focus();
     lifecycleFocus.current = null;
@@ -235,301 +244,236 @@ export function WorkCollectionScreen({
   const archived =
     works?.filter((work) => work.status === "archived" && !unfinishedIds.has(work.id)) ?? [];
   const failedWork = deleteState.failed;
-  const headingId = useId();
+  const archivedListId = useId();
   const openWorkId = (id: string) => {
     const workId = parseRequestId(id);
     if (workId) void routeCommands.openWork({ kind: "work-detail", workId }, { replace: false });
-  };
-  const openWork = (work: Work) => {
-    openWorkId(work.id);
-  };
-  const openDialog = (work: Work) => {
-    setActiveCommand(null);
-    setDialog(work);
-  };
-  const hrefFor = (work: Work) => {
-    return hrefForId(work.id);
   };
   const hrefForId = (id: string) => {
     const workId = parseRequestId(id);
     if (!workId) throw new Error("Invalid persisted Work identity");
     return routeCommands.workHref({ kind: "work-detail", workId });
   };
+  const registerOpen = (id: string) => (node: HTMLAnchorElement | null) => {
+    if (node) openRefs.current.set(id, node);
+    else openRefs.current.delete(id);
+  };
+  const toggleArchive = (work: Work) => {
+    const archiving = work.status !== "archived";
+    lifecycleFocus.current = { workId: work.id, status: archiving ? "archived" : "active" };
+    (archiving ? mutation.archive : mutation.unarchive).mutate(work.id, {
+      onError: () => {
+        lifecycleFocus.current = null;
+      },
+    });
+  };
+  const row = (work: Work) => (
+    <WorkRow
+      work={work}
+      href={hrefForId(work.id)}
+      now={now}
+      onOpen={() => openWorkId(work.id)}
+      registerOpenFocus={registerOpen(work.id)}
+      actions={
+        <WorkActionsMenu
+          work={work}
+          disabled={mutation.isPending}
+          onToggleArchive={() => toggleArchive(work)}
+          onDelete={() => onDeleteWork?.(work)}
+        />
+      }
+    />
+  );
+  const activeRows: { key: string; node: React.ReactNode }[] = [
+    ...unfinishedCreations.map((creation) => ({
+      key: `creation-${creation.workId}`,
+      node: (
+        <WorkRow
+          work={{
+            name: creation.request.name,
+            goal: creation.request.goal ?? null,
+            lastActivityAt: "",
+          }}
+          href={hrefForId(creation.workId)}
+          now={now}
+          onOpen={() => openWorkId(creation.workId)}
+          status={
+            creation.status === "failed" ? (
+              <span role="alert" className="text-destructive">
+                <Trans>Not created</Trans>
+              </span>
+            ) : (
+              <span role="status">
+                <Trans>Creating</Trans>
+              </span>
+            )
+          }
+        />
+      ),
+    })),
+    ...(deleteState.deleted && !deleteState.restorePending
+      ? [
+          {
+            key: `deleted-${deleteState.deleted.id}`,
+            node: (
+              <DeletedWorkRow
+                name={deleteState.deleted.name}
+                onUndo={onUndoDelete}
+                onDismiss={onDismissDelete}
+              />
+            ),
+          },
+        ]
+      : []),
+    ...(failedWork
+      ? [
+          {
+            key: `failed-${failedWork.id}`,
+            node: (
+              <>
+                {row(failedWork)}
+                <InlineErrorRow
+                  message={t`Work couldn’t be deleted`}
+                  onRetry={onRetryDelete}
+                  actionLabel={t`Retry`}
+                />
+              </>
+            ),
+          },
+        ]
+      : []),
+    ...active.map((work) => ({ key: work.id, node: row(work) })),
+  ];
   return (
     <div className="app-scroll" aria-busy={isFetching}>
-      <section className="project-screen-column gap-8">
+      <section className="project-screen-column">
         <div className="flex items-center justify-between gap-4">
           <h1 ref={collectionHeading} tabIndex={-1} className="text-xl font-semibold">
             <Trans>Work</Trans>
           </h1>
-          <Button
-            ref={newWorkButton}
-            asChild
-            size="sm"
-            className="[@media(pointer:coarse)]:min-h-11"
-          >
-            <Link to="/p/$projectId/$" params={{ projectId, _splat: "works/new" }}>
-              <Plus className="size-4" />
+          <Button asChild size="sm" className="[@media(pointer:coarse)]:min-h-11">
+            <Link
+              ref={newWorkButton}
+              to="/p/$projectId/$"
+              params={{ projectId, _splat: "works/new" }}
+            >
+              <Plus aria-hidden />
               <Trans>New Work</Trans>
             </Link>
           </Button>
         </div>
-        {unfinishedCreations.length ? (
-          <ul className="grid gap-2" aria-label={t`Work creation`}>
-            {unfinishedCreations.map((creation) => (
-              <li key={creation.workId} className="flex items-center justify-between gap-3">
-                <Link
-                  to={hrefForId(creation.workId)}
-                  onClick={(event) => {
-                    if (
-                      event.button ||
-                      event.metaKey ||
-                      event.ctrlKey ||
-                      event.shiftKey ||
-                      event.altKey
-                    )
-                      return;
-                    event.preventDefault();
-                    openWorkId(creation.workId);
-                  }}
-                  className="focus-ring min-w-0 truncate rounded-sm text-sm font-medium hover:underline"
-                >
-                  {creation.request.name}
-                </Link>
-                <span
-                  className="shrink-0 text-sm text-muted-foreground"
-                  role={creation.status === "failed" ? "alert" : "status"}
-                >
-                  {creation.status === "failed" ? (
-                    <Trans>Creation failed</Trans>
-                  ) : (
-                    <Trans>Creating</Trans>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {isError ? (
-          <InlineErrorRow
-            message={t`Work couldn’t load`}
-            onRetry={refetch}
-            actionLabel={t`Retry Work`}
-          />
-        ) : works === null ? (
-          <LoadingCards />
-        ) : (
-          <>
-            {deleteState.deleted ? (
-              <div
-                className="flex min-h-10 items-center gap-3 rounded-md border border-border-subtle px-3 text-sm"
-                role="status"
-              >
-                <span className="min-w-0 flex-1 truncate">
-                  <Trans>Deleted {deleteState.deleted.name}</Trans>
-                </span>
-                {deleteState.restorePending ? (
-                  <span className="text-xs text-muted-foreground">
-                    <Trans>Restoring…</Trans>
-                  </span>
-                ) : (
-                  <button type="button" className="text-button" onClick={onUndoDelete}>
-                    <Trans>Undo</Trans>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="focus-ring rounded-sm text-muted-foreground hover:text-foreground"
-                  aria-label={t`Dismiss deleted Work`}
-                  onClick={onDismissDelete}
-                >
-                  ×
-                </button>
-              </div>
-            ) : null}
-            <section aria-labelledby="active-work-heading">
-              <h2 id="active-work-heading" className="mb-3 text-sm font-medium">
-                <Trans>Active Work</Trans>
-              </h2>
-              {active.length || deleteState.failed ? (
-                <ul className="grid gap-4 @2xl/project-screen:grid-cols-2">
-                  {failedWork ? (
-                    <li key={`failed-${failedWork.id}`}>
-                      <WorkCard
-                        work={failedWork}
-                        href={hrefFor(failedWork)}
-                        pending={mutation.isPending}
-                        onOpen={(event) => {
-                          if (
-                            event.button ||
-                            event.metaKey ||
-                            event.ctrlKey ||
-                            event.shiftKey ||
-                            event.altKey
-                          )
-                            return;
-                          event.preventDefault();
-                          openWork(failedWork);
-                        }}
-                        onLifecycle={() => openDialog(failedWork)}
-                        registerOpenFocus={() => undefined}
-                        registerLifecycleFocus={() => undefined}
-                      />
-                      <InlineErrorRow
-                        message={t`Work couldn’t be deleted`}
-                        onRetry={onRetryDelete}
-                        actionLabel={t`Retry`}
-                      />
-                    </li>
-                  ) : null}
-                  {active.map((work) => (
-                    <li key={work.id}>
-                      <WorkCard
-                        work={work}
-                        href={hrefFor(work)}
-                        pending={mutation.isPending}
-                        onOpen={(event) => {
-                          if (
-                            event.button ||
-                            event.metaKey ||
-                            event.ctrlKey ||
-                            event.shiftKey ||
-                            event.altKey
-                          )
-                            return;
-                          event.preventDefault();
-                          openWork(work);
-                        }}
-                        onLifecycle={() => openDialog(work)}
-                        registerOpenFocus={(node) => {
-                          if (node) openRefs.current.set(work.id, node);
-                          else openRefs.current.delete(work.id);
-                        }}
-                        registerLifecycleFocus={(node) => {
-                          if (node) lifecycleRefs.current.set(work.id, node);
-                          else lifecycleRefs.current.delete(work.id);
-                        }}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  <Trans>No active Work yet.</Trans>
-                </p>
-              )}
-            </section>
-            {archived.length ? (
-              <section className="border-t border-border-subtle pt-3" aria-labelledby={headingId}>
-                <h2 id={headingId}>
-                  <button
-                    ref={archivedDisclosure}
-                    type="button"
-                    aria-expanded={archivedOpen}
-                    onClick={() => setArchivedOpen((value) => !value)}
-                    className="focus-ring flex min-h-11 w-full items-center justify-between rounded-sm text-sm font-medium"
-                  >
-                    <span>
-                      <Trans>Archived Work</Trans>{" "}
-                      <span className="font-normal text-muted-foreground">({archived.length})</span>
-                    </span>
-                    <ChevronDown
-                      className={`size-4 transition-transform ${archivedOpen ? "rotate-180" : ""}`}
-                    />
-                  </button>
+        <div className="mt-6 -mx-2 [--row-rule-inset:--spacing(2)]">
+          {isError ? (
+            <div className="px-2">
+              <InlineErrorRow
+                message={t`Work couldn’t load`}
+                onRetry={refetch}
+                actionLabel={t`Retry Work`}
+              />
+            </div>
+          ) : works === null ? (
+            <LoadingRows />
+          ) : (
+            <>
+              <section aria-label={t`Active Work`}>
+                <h2 className="px-2 pb-2">
+                  <SectionLabel variant="group">
+                    <Trans>Active</Trans>
+                  </SectionLabel>
                 </h2>
-                {archivedOpen ? (
-                  <ul className="mt-3 grid gap-4 @2xl/project-screen:grid-cols-2">
-                    {archived.map((work) => (
-                      <li key={work.id}>
-                        <WorkCard
-                          work={work}
-                          href={hrefFor(work)}
-                          pending={mutation.isPending}
-                          onOpen={(event) => {
-                            if (
-                              event.button ||
-                              event.metaKey ||
-                              event.ctrlKey ||
-                              event.shiftKey ||
-                              event.altKey
-                            )
-                              return;
-                            event.preventDefault();
-                            openWork(work);
-                          }}
-                          onLifecycle={() => openDialog(work)}
-                          registerOpenFocus={(node) => {
-                            if (node) openRefs.current.set(work.id, node);
-                            else openRefs.current.delete(work.id);
-                          }}
-                          registerLifecycleFocus={(node) => {
-                            if (node) lifecycleRefs.current.set(work.id, node);
-                            else lifecycleRefs.current.delete(work.id);
-                          }}
-                        />
+                {activeRows.length ? (
+                  <ul className="min-w-0">
+                    {activeRows.map((item, index) => (
+                      <li
+                        key={item.key}
+                        className={cn("relative", index < activeRows.length - 1 && "row-rule")}
+                      >
+                        {item.node}
                       </li>
                     ))}
                   </ul>
-                ) : null}
+                ) : (
+                  <p className="px-2 py-2 text-sm text-muted-foreground">
+                    <Trans>No active Work yet.</Trans>
+                  </p>
+                )}
               </section>
-            ) : null}
-          </>
-        )}
-        {dialog ? (
-          <WorkDialog
-            work={dialog}
-            pending={mutation.isPending}
-            error={activeCommand ? mutation[activeCommand].error : null}
-            onClose={() => {
-              setActiveCommand(null);
-              setDialog(null);
-            }}
-            onAction={(action) => {
-              if (action.type === "create") return;
-              setActiveCommand(action.type);
-              const deletionFocus =
-                action.type === "delete" ? focusAfterDelete(works ?? [], action.workId) : null;
-              if (action.type === "archive" || action.type === "unarchive") {
-                lifecycleFocus.current = {
-                  workId: action.workId,
-                  status: action.type === "archive" ? "archived" : "active",
-                };
-              }
-              const onLifecycleSuccess = () => {
-                setDialog(null);
-                if (deletionFocus) {
-                  focusHandled.current = false;
-                  setFocusIntent(deletionFocus);
-                }
-              };
-              const onError = () => {
-                lifecycleFocus.current = null;
-              };
-              switch (action.type) {
-                case "archive":
-                  mutation.archive.mutate(action.workId, {
-                    onSuccess: onLifecycleSuccess,
-                    onError,
-                  });
-                  break;
-                case "unarchive":
-                  mutation.unarchive.mutate(action.workId, {
-                    onSuccess: onLifecycleSuccess,
-                    onError,
-                  });
-                  break;
-                case "delete":
-                  mutation.delete.mutate(action.workId, {
-                    onSuccess: onLifecycleSuccess,
-                    onError,
-                  });
-                  break;
-              }
-            }}
-          />
-        ) : null}
+              {archived.length ? (
+                <section className="pt-7" aria-label={t`Archived Work`}>
+                  <h2>
+                    <button
+                      ref={archivedDisclosure}
+                      type="button"
+                      aria-expanded={archivedOpen}
+                      aria-controls={archivedListId}
+                      onClick={() => setArchivedOpen((value) => !value)}
+                      className="focus-ring flex min-h-8 items-center gap-1.5 rounded-sm px-2 [@media(pointer:coarse)]:min-h-11"
+                    >
+                      <SectionLabel variant="group">
+                        <Trans>Archived</Trans>
+                      </SectionLabel>
+                      <span className="text-meta tabular-nums text-ink-subtle">
+                        {archived.length}
+                      </span>
+                      <ChevronRight
+                        aria-hidden
+                        className={cn(
+                          "size-3.5 text-ink-subtle transition-transform motion-reduce:transition-none",
+                          archivedOpen && "rotate-90",
+                        )}
+                      />
+                    </button>
+                  </h2>
+                  {archivedOpen ? (
+                    <ul id={archivedListId} className="mt-1 min-w-0">
+                      {archived.map((work, index) => (
+                        <li
+                          key={work.id}
+                          className={cn("relative", index < archived.length - 1 && "row-rule")}
+                        >
+                          {row(work)}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </section>
+              ) : null}
+            </>
+          )}
+        </div>
       </section>
+    </div>
+  );
+}
+
+function DeletedWorkRow({
+  name,
+  onUndo,
+  onDismiss,
+}: {
+  name: string;
+  onUndo?: () => void;
+  onDismiss?: () => void;
+}) {
+  return (
+    <div
+      role="status"
+      className="flex min-h-12 min-w-0 items-center gap-3 px-2 py-1.5 text-sm text-muted-foreground"
+    >
+      <span className="min-w-0 truncate">
+        <Trans>Deleted {name}</Trans>
+      </span>
+      <button type="button" className="text-button shrink-0 text-sm" onClick={onUndo}>
+        <Trans>Undo</Trans>
+      </button>
+      <IconButton
+        size="sm"
+        className="ml-auto shrink-0 [@media(pointer:coarse)]:size-11"
+        aria-label={t`Dismiss`}
+        onClick={onDismiss}
+      >
+        <X aria-hidden className="size-4" />
+      </IconButton>
     </div>
   );
 }
@@ -684,18 +628,14 @@ function NewWorkPage({
   );
 }
 
-function LoadingCards() {
+function LoadingRows() {
   return (
-    <div
-      role="status"
-      aria-label={t`Loading Work`}
-      className="grid gap-4 @2xl/project-screen:grid-cols-2"
-    >
-      {[0, 1].map((key) => (
-        <Card key={key} className="gap-3 px-5 py-5">
+    <div role="status" aria-label={t`Loading Work`} className="space-y-5 px-2 py-2">
+      {[0, 1, 2].map((key) => (
+        <div key={key} className="space-y-1.5">
           <Skeleton className="h-4 w-2/5" />
-          <Skeleton className="h-3 w-4/5" />
-        </Card>
+          <Skeleton className="h-3 w-3/5" />
+        </div>
       ))}
     </div>
   );

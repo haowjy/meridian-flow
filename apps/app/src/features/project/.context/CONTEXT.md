@@ -53,7 +53,7 @@ desktop shell grammar.
 Work is the dedicated collection/detail management destination. The collection reads
 active and archived Work and owns creation and lifecycle entry points; it never selects
   a project-wide Work or rebinds a chat. Its response contains only named catalog
-  Works and never lists No Work as a card. Route-owned detail and inline metadata consume
+  Works and never lists No Work as a row. Route-owned detail and inline metadata consume
 the typed catalog, PATCH mutation, and filtered chat-feed query seams.
 Work detail owns one page-scoped metadata controller. It coordinates the active field,
 authoritative returned Work, field-local failure, and an awaited Save/Discard/Keep
@@ -70,8 +70,14 @@ scroll owner. The external-scroll hook measures the list in that owner's
 coordinates and owns stable keys plus focused/menu row pinning. Their membership
 is historical while the displayed Work is the
 chat's current primary Work. Resource sections fail independently. Archive and
-unarchive preserve the detail route; delete replaces to collection and restores focus
-to an adjacent row. Both shells share this route-owned module. At phone geometry, text
+unarchive preserve the detail route; delete is optimistic from the header or a list
+row, lands on the collection, and shows an inline Undo row there.
+The collection, the Chats tab and the Files tab share the app's list grammar
+(Chat index, Editor recents): recency-rank `SectionLabel` groups, hairline
+`row-rule` rows with hover pills, a trailing age or state, and one `…` menu
+(`WorkActionsMenu` for Work, the tree's `ContextEntryActions` for files). The
+Work toolbar is one sticky row: view switch, full-width search, then the view's
+jade action. Both shells share this route-owned module. At phone geometry, text
 must wrap without horizontal overflow and product controls retain coarse-pointer touch
 targets.
 
