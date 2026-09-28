@@ -38,12 +38,26 @@ function plan(
   blocks: Block[],
   current = new Map([["00000000-0000-4000-8000-000000000001", "new"]]),
 ) {
-  return planModelElisions({
+  const before = JSON.stringify(blocks);
+  const elisions = planModelElisions({
     retainedSuffix: [{ turn: { id: "turn" } as Turn, blocks }],
     recorded: collectRecordedDocuments([{ turn: { id: "turn" } as Turn, blocks }], policies),
     current,
     policies,
   });
+  expect(JSON.stringify(blocks)).toBe(before);
+  for (const elision of elisions) {
+    const original = blocks.find((block) => block.id === elision.blockId);
+    expect(original?.blockType).not.toBe("reasoning");
+    if (original?.blockType === "tool_use" || original?.blockType === "tool_result") {
+      const content = original.content as JsonObject;
+      expect(elision.content).toMatchObject({
+        toolCallId: content.toolCallId,
+        toolName: content.toolName,
+      });
+    }
+  }
+  return elisions;
 }
 function pair(command: string, extra: JsonObject = {}, toolName = "write") {
   return [
@@ -94,6 +108,14 @@ describe("document text elisions", () => {
       expect(
         plan(pair(command), new Map([["00000000-0000-4000-8000-000000000001", "old"]])),
       ).toEqual([]);
+    const duplicate = pair("read").map((block) => ({
+      ...block,
+      id: `second-${block.id}`,
+      content: { ...(block.content as JsonObject), toolCallId: "second-call" },
+    }));
+    expect(plan([...pair("read"), ...duplicate], new Map([[evidence.documentId, "old"]]))).toEqual(
+      [],
+    );
   });
   it("diff is always stale even if a recorded token happens to match", () => {
     expect(
