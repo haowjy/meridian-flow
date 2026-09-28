@@ -1,0 +1,5 @@
+# Server typecheck
+
+Command: `pnpm --filter @meridian/server typecheck`
+
+Result: exit 0 (`tsc --noEmit -p tsconfig.json`).

@@ -80,7 +80,9 @@ lists every direct child.
 `subagent/ActivityContext.tsx` indexes activity, invocation cards, and completion
 notices by child thread, ref, and execution. A saved running card with no live
 lease is `unknown`, not running. `transcript-model.ts` classifies turns and
-derives response parts, delivery rows, and reveal targets in one pass.
+derives transcript rows, response parts, delivery rows, and reveal targets in
+one pass. Compaction turns are divider rows there, never in the head; see
+[`.context/compaction-surfaces.md`](.context/compaction-surfaces.md).
 
 Child completion is a separate durable transcript event: system turns with
 `metadata.kind === "subagent_update"` render as a quiet inline row at their

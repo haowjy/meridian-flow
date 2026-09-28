@@ -7,9 +7,12 @@ export {
 export { ComposerCommandMenu } from "./ComposerCommandMenu";
 export {
   type ComposerAvailableSkill,
+  type ComposerChatCommand,
+  type ComposerChatCommandSlug,
   type ComposerCommandCatalog,
   type ComposerCommandGroupId,
   type ComposerCommandItem,
+  composerChatCommandItems,
   composerSkillCommandItems,
   filterComposerCommandItems,
   RESERVED_COMPOSER_COMMAND_SLUGS,

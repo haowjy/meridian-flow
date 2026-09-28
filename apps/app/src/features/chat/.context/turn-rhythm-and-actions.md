@@ -26,7 +26,8 @@ render no action row and pad only the 8px block gap: the next visible turn is
 another assistant turn (a subagent notification woke the model), the next turn
 is a writer turn the server stamped `metadata.delivery: "steer"` (enqueued while
 this run was live), or this is the latest turn while background subagents still
-run. Read the steer stamp; never compare client and server timestamps. Stopped
+run. Read the steer stamp; never compare client and server timestamps. A compaction divider between two parts
+never ends the reply; the rule looks past it. Stopped
 and failed turns are always finished. The
 hidden action row still reserves its compact height to prevent hover layout
 shift. Do not add vertical margins to `UserTurn` or the `AssistantTurn` root;

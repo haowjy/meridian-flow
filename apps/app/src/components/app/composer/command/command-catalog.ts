@@ -1,5 +1,6 @@
 /**
- * Composer `/` catalog: commands, grouped. Skills now; session verbs reserved.
+ * Composer `/` catalog: commands, grouped. Skills, plus the chat verbs a
+ * surface registers (`/compact` today; `handoff` and `clear` stay reserved).
  *
  * Manuscript slash insertion is a different catalog. This one never offers
  * headings, tables, or images.
@@ -13,21 +14,58 @@ export const RESERVED_COMPOSER_COMMAND_SLUGS: ReadonlySet<string> = new Set([
 
 export type ComposerCommandGroupId = "skills" | "chat";
 
-export type ComposerCommandItem = {
-  id: string;
-  group: ComposerCommandGroupId;
-  kind: "skill";
-  slug: string;
-  label: string;
+/** A chat verb the composer can run. Only reserved slugs qualify. */
+export type ComposerChatCommandSlug = "compact";
+
+/** A chat verb registered by the surface that owns the thread. */
+export type ComposerChatCommand = {
+  slug: ComposerChatCommandSlug;
   name: string;
   description: string;
+  run: () => void;
 };
+
+export type ComposerCommandItem =
+  | {
+      id: string;
+      group: "skills";
+      kind: "skill";
+      slug: string;
+      label: string;
+      name: string;
+      description: string;
+    }
+  | {
+      id: string;
+      group: "chat";
+      kind: "command";
+      slug: ComposerChatCommandSlug;
+      label: string;
+      name: string;
+      description: string;
+    };
 
 export type ComposerCommandCatalog = {
   items: readonly ComposerCommandItem[];
   menuLabel: string;
   groupLabels: Record<ComposerCommandGroupId, string>;
+  /** Runs a chosen chat verb. Absent when the surface registers none. */
+  runCommand?: (slug: ComposerChatCommandSlug) => void;
 };
+
+export function composerChatCommandItems(
+  commands: readonly ComposerChatCommand[],
+): ComposerCommandItem[] {
+  return commands.map((command) => ({
+    id: `command:${command.slug}`,
+    group: "chat",
+    kind: "command",
+    slug: command.slug,
+    label: `/${command.slug}`,
+    name: command.name,
+    description: command.description,
+  }));
+}
 
 export type ComposerAvailableSkill = {
   slug: string;

@@ -16,6 +16,7 @@
  */
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
+import type { CompactionUndoAvailability } from "@meridian/contracts/threads";
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { resolveDocumentLink } from "@/client/api/document-links-api";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
@@ -25,10 +26,12 @@ import {
   retireChatSubmission,
 } from "@/client/chat-submissions";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
+import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { announce, announceError, useThreadActions, useThreadStore } from "@/client/stores";
 import {
   Composer,
+  type ComposerChatCommand,
   type ComposerHandle,
   type ComposerSubmitEnvelope,
 } from "@/components/app/composer";
@@ -41,6 +44,10 @@ import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptRefere
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
+import { answeredControlIds } from "./compaction/compaction-model";
+import { useCompactionAnnouncements } from "./compaction/useCompactionAnnouncements";
+import { useThreadControls } from "./compaction/useThreadControls";
+import { composerRun } from "./composer-run";
 import { DraftDock, useDraftDock } from "./DraftDock";
 import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
@@ -83,6 +90,8 @@ export type ChatViewProps = {
     outputTokens: number;
     cacheResets: number;
   } | null;
+  /** Which local compaction can be undone, and whether undo will likely hold. */
+  snapshotCompactionUndo?: CompactionUndoAvailability;
   /**
    * Whether the thread snapshot request has resolved. Feeds the transcript's
    * conversation-reveal ownership: only a settled history can say a named turn
@@ -100,6 +109,7 @@ export function ChatView({
   snapshotLiveState = null,
   snapshotNextSeq = null,
   snapshotThreadUsage = null,
+  snapshotCompactionUndo = null,
   historySettled,
   activateProjection,
 }: ChatViewProps) {
@@ -111,11 +121,13 @@ export function ChatView({
   const [tailFollowRevision, requestTailFollow] = useReducer((value: number) => value + 1, 0);
 
   const controller = useMeridianAgent();
+  const transport = useThreadTransport();
   const accountId = useAccountId();
   const turns = useThreadStore((state) => state.turnsByThread[threadId] ?? EMPTY_TURNS);
   const latestAssistantTurn =
     [...turns].reverse().find((turn) => turn.role === "assistant") ?? null;
   const isStreaming = latestAssistantTurn?.status === "streaming";
+  const run = useMemo(() => composerRun(turns), [turns]);
   const composerAgentName = activeThread?.agentName ?? "General";
 
   const pageTitle = activeThread?.title ? displayThreadTitle(activeThread.title) : t`New chat`;
@@ -137,6 +149,33 @@ export function ChatView({
   const queuedWriterTurnIds = useMemo(
     () => selectQueuedWriterTurnIds(pendingInbox),
     [pendingInbox],
+  );
+  const answeredControls = useMemo(() => answeredControlIds(turns), [turns]);
+  const controls = useThreadControls({
+    threadId,
+    pending: pendingInbox,
+    answeredControlIds: answeredControls,
+    leafTurnId: turns.at(-1)?.id ?? null,
+  });
+  useCompactionAnnouncements(turns);
+  // The snapshot revalidates as a compaction reserves and settles, so its live
+  // state is fresher here than the subscription seed for the divider's phase.
+  const liveStatus = snapshotLiveState?.status ?? activity.status;
+  const livePhase = liveStatus.kind === "awake" ? liveStatus.phase : null;
+  const { enqueue: enqueueControl } = controls;
+  const chatCommands = useMemo<readonly ComposerChatCommand[]>(
+    () => [
+      {
+        slug: "compact",
+        name: t`Compact conversation`,
+        description: t`Summarize earlier messages so the model has room to keep going`,
+        run: () => {
+          requestTailFollow();
+          enqueueControl({ kind: "compact" });
+        },
+      },
+    ],
+    [enqueueControl],
   );
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
@@ -269,6 +308,16 @@ export function ChatView({
   );
 
   function handleStop() {
+    // A compaction or brief has no reply stream for the run controller to
+    // stop: cancel its bound turn, as the divider's own Stop does.
+    if (run?.kind === "placeholder") {
+      if (run.turn.role === "compaction") controls.stop(run.turn.id);
+      else
+        void transport
+          .cancel(threadId, run.turn.id)
+          .catch(() => announceError(t`Couldn't stop. Try again.`));
+      return;
+    }
     controller.cancel(threadId);
   }
 
@@ -353,9 +402,10 @@ export function ChatView({
               }}
               ref={composerRef}
               variant="pinned"
-              streaming={isStreaming}
+              running={run !== null}
               referenceCatalog={referenceCatalog}
               availableSkills={availableSkills.skills}
+              commands={chatCommands}
               uploadPort={uploadIntakePort}
               uploadScope={
                 activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
@@ -394,6 +444,9 @@ export function ChatView({
                 changeTrails={changeTrails.byId}
                 submissionRecoveryByTurnId={submissionRecoveryByTurnId}
                 queuedWriterTurnIds={queuedWriterTurnIds}
+                controls={controls}
+                compactionUndo={snapshotCompactionUndo}
+                phase={livePhase}
                 threadUsage={snapshotThreadUsage}
               />
             </div>

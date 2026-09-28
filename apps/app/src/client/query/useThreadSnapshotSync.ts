@@ -21,6 +21,7 @@ import {
   isDurableBlockEvent,
   isWellFormedDurableBlockEvent,
 } from "@/core/session/reduce-turn-event";
+import { pendingInboxFromEvent } from "@/features/chat/pending-inbox";
 import {
   useAccountEpochSignal,
   useAccountId,
@@ -129,9 +130,20 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
               onEvent: ({ event, seq, sourceThreadId }) => {
                 if (!current(expected) || (sourceThreadId && sourceThreadId !== threadId)) return;
                 if ("threadId" in event && event.threadId !== threadId) return;
-                if (event.type === EventType.RUN_STARTED) refresh(expected);
+                if (
+                  event.type === EventType.RUN_STARTED ||
+                  event.type === EventType.RUN_FINISHED ||
+                  event.type === EventType.RUN_ERROR
+                )
+                  refresh(expected);
                 if (event.type === EventType.CUSTOM && event.name === "meridian.usage")
                   refresh(expected);
+                // Compaction and brief turns have no stream of their own, and
+                // a cancelled one ends without RUN_FINISHED. The server sends
+                // an inbox frame after every lease release, so every inbox
+                // frame revalidates: that is when a divider reserves, settles,
+                // stops, or is undone.
+                if (pendingInboxFromEvent(event)) refresh(expected);
                 if (
                   !isDurableBlockEvent(event) ||
                   !isWellFormedDurableBlockEvent(event) ||

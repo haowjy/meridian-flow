@@ -31,9 +31,7 @@ function draft(text: string) {
   };
 }
 
-async function render(
-  props: { streaming?: boolean; initialDraft?: ReturnType<typeof draft> } = {},
-) {
+async function render(props: { running?: boolean; initialDraft?: ReturnType<typeof draft> } = {}) {
   const onSubmit = vi.fn(
     (envelope: ComposerSubmitEnvelope): ComposerSubmitOutcome => ({
       kind: "accepted",
@@ -43,11 +41,7 @@ async function render(
   );
   await act(() => {
     root.render(
-      <Composer
-        streaming={props.streaming}
-        initialDraft={props.initialDraft}
-        onSubmit={onSubmit}
-      />,
+      <Composer running={props.running} initialDraft={props.initialDraft} onSubmit={onSubmit} />,
     );
   });
   return onSubmit;
@@ -71,7 +65,7 @@ afterEach(async () => {
 
 describe("Composer during a live run", () => {
   it("turns Stop into Send while drafting, sends on Enter, then returns to Stop", async () => {
-    const onSubmit = await render({ streaming: true, initialDraft: draft("Follow up") });
+    const onSubmit = await render({ running: true, initialDraft: draft("Follow up") });
     expect(button()?.getAttribute("aria-label")).toBe("Send message");
     const editor = host.querySelector<HTMLElement>(".composer-input");
     await act(async () => {

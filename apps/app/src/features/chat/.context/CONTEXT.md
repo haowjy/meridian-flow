@@ -20,6 +20,9 @@ draft-control changes can be understood independently.
   composer sizing.
 - [Draft review](draft-review.md) — inline review session, pending projection,
   freshness, and draft-only tabs.
+- [Compaction surfaces](compaction-surfaces.md) — divider rows, undo markers
+  and R4 shells that never render, `endsTranscript` with a divider, Undo, and
+  optimistic writer controls (`/compact`, withdrawal).
 - [Thread live updates](thread-live-updates.md) — snapshot revalidation on
   activation and on a new run, and the per-run resume that renders a
   server-initiated continuation live.

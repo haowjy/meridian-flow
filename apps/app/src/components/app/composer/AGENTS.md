@@ -14,5 +14,8 @@ This directory owns authored text, reference atoms, skill atoms, and pending/fai
   Skills appear as `/<slug>` atoms in the document. Send copies that spelling
   into the message text as a skill occurrence block and reads unique slugs from
   the atoms; typed `/slug` prose is not an activation. Session verbs (`compact`,
-  later handoff/clear) are reserved. Manuscript slash insertion is a different
+  `handoff`, `clear`) are reserved slugs a skill can never take. A surface that
+  owns a thread registers the verbs it can run through `commands`; choosing one
+  deletes the trigger text and runs it, never inserting message content. Only
+  `/compact` is registered today. Manuscript slash insertion is a different
   catalog.

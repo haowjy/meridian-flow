@@ -242,6 +242,15 @@ export function apiThreadCancelPath(threadId: string, turnId: string): string {
   return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/cancel`;
 }
 
+/** Writer controls (`/compact`, compaction undo, handoff brief Retry) queued on a thread's inbox. */
+export function apiThreadControlsPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/controls`;
+}
+
+export function apiThreadControlWithdrawPath(threadId: string, controlId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/controls/${encodeURIComponent(controlId)}/withdraw`;
+}
+
 export function apiThreadRecentDocumentsPath(threadId: string, opts?: { limit?: number }): string {
   const search = new URLSearchParams();
   if (opts?.limit != null) {

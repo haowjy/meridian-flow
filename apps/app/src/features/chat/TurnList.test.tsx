@@ -202,8 +202,43 @@ describe("TurnList failed replies", () => {
       },
       blocks: [],
     };
-    const compaction = { id: "compaction", role: "compaction", status: "complete", blocks: [] };
-    await renderTurns([user("u1"), assistant("b", "error"), delivery, compaction]);
+    const undoMarker = {
+      id: "undo",
+      role: "system",
+      status: "error",
+      error: "This compaction has already been undone.",
+      metadata: { kind: "compaction_undo", revertsCompactionTurnId: "elsewhere" },
+      blocks: [],
+    };
+    await renderTurns([user("u1"), assistant("b", "error"), delivery, undoMarker]);
+    expect(rendered.assistants.get("b")).toEqual({ endsTranscript: true, failedSend: false });
+  });
+
+  // A divider is a transcript row: once the conversation compacted after a
+  // failed reply, the writer has moved on and that failure is history.
+  it("makes a failure historical once a compaction divider follows it", async () => {
+    const compaction = {
+      id: "compaction",
+      role: "compaction",
+      status: "complete",
+      metadata: { trigger: "manual", controlMessageId: "control-1" },
+      blocks: [],
+    };
+    await renderTurns([user("u1"), assistant("b", "error"), compaction]);
+    expect(rendered.assistants.get("b")).toEqual({ endsTranscript: false, failedSend: false });
+    expect(host.querySelector("[data-compaction-divider]")).not.toBeNull();
+  });
+
+  it("keeps the failed reply after a failed autocompaction current (R3)", async () => {
+    const compaction = {
+      id: "compaction",
+      role: "compaction",
+      status: "error",
+      error: "This conversation couldn't be compacted. Try again.",
+      metadata: { trigger: "auto", reason: "provider_error", phase: "summary" },
+      blocks: [],
+    };
+    await renderTurns([user("u1"), compaction, assistant("b", "error")]);
     expect(rendered.assistants.get("b")).toEqual({ endsTranscript: true, failedSend: false });
   });
 });

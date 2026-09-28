@@ -402,9 +402,13 @@ latest complete U after C. U plans from raw blocks, including earlier U owners'
 blocks but excluding replacements still owned by active C. A later C ends U's
 ownership. Image inclusion selects the latest decision after filtering out all
 reverted C owners from the same effective transcript. Fork cutoffs bound both.
-Snapshot availability is advisory and compares active local C's `tokensBefore`
-with the current trigger; execution always measures again. A missing model
-catalog entry yields null availability without hiding the durable snapshot.
+Snapshot availability is advisory and estimates the restored size from active
+local C's `tokensBefore` plus growth since C, using the latest post-C assistant
+response's input tokens relative to C's `tokensAfter`. A pending compaction
+makes availability null. An error U refused as `would_recompact` keeps that
+advisory when its recorded trigger matches today's trigger. Execution still
+measures the fully restored request; a missing model catalog entry yields null
+availability without hiding the durable snapshot.
 
 [kb-elision]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/request-prefix/stale-document-elision.md
 [kb-thread-controls]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/thread-controls.md

@@ -102,6 +102,7 @@ export const CompactionUndoMetadataCodec = z
     kind: z.literal("compaction_undo"),
     revertsCompactionTurnId: z.string().min(1),
     reason: CompactionUndoFailureReasonCodec.optional(),
+    compactionTriggerTokens: z.number().int().nonnegative().optional(),
     controlMessageId: z.string().optional(),
     elisions: modelElisionsCodec.optional(),
   })
@@ -307,11 +308,13 @@ export function compactionUndoMetadata(
   revertsCompactionTurnId: string,
   controlMessageId?: string,
   reason?: CompactionUndoFailureReason,
+  compactionTriggerTokens?: number,
 ): JsonObject {
   return {
     kind: "compaction_undo",
     revertsCompactionTurnId,
     ...(reason ? { reason } : {}),
+    ...(compactionTriggerTokens === undefined ? {} : { compactionTriggerTokens }),
     ...(controlMessageId ? { controlMessageId } : {}),
   };
 }

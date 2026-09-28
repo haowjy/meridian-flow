@@ -1,6 +1,7 @@
 /** Renders the transcript and owns its scroll viewport. */
 
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
+import type { CompactionUndoAvailability, ThreadPhase } from "@meridian/contracts/threads";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -10,7 +11,12 @@ import { AssistantTurn } from "./AssistantTurn";
 import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
-import { buildTranscriptModel } from "./transcript-model";
+import { CompactionDivider } from "./compaction/CompactionDivider";
+import { answeredControlIds } from "./compaction/compaction-model";
+import { QueuedControlRows } from "./compaction/QueuedControlRows";
+import type { QueuedControl } from "./compaction/thread-controls";
+import type { ThreadControls } from "./compaction/useThreadControls";
+import { buildTranscriptModel, type TranscriptRow } from "./transcript-model";
 
 export { continuesResponse } from "./transcript-model";
 
@@ -37,6 +43,12 @@ export type TurnListProps = {
   /** Recovered ambiguous submissions, keyed by the restored user turn id. */
   submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
   queuedWriterTurnIds?: ReadonlySet<string>;
+  /** Writer controls: queued `/compact` and undo, withdrawal, and Stop on a pending divider. */
+  controls?: ThreadControls | null;
+  /** Snapshot advice for the one local divider that can be undone. */
+  compactionUndo?: CompactionUndoAvailability;
+  /** The live lease phase while the thread is awake. */
+  phase?: ThreadPhase | null;
   threadUsage?: {
     inputTokens: number;
     cacheReadTokens: number;
@@ -47,6 +59,12 @@ export type TurnListProps = {
     cacheResets: number;
   } | null;
 };
+
+/** A virtual row: a transcript row, or the queued controls at the tail. */
+type ListRow = TranscriptRow | { kind: "queued-controls"; controls: readonly QueuedControl[] };
+
+const QUEUED_CONTROLS_KEY = "queued-controls";
+const NO_CONTROLS: readonly QueuedControl[] = [];
 
 /** Estimated row height before measurement; corrected by `measureElement`. */
 const ESTIMATED_TURN_HEIGHT = 160;
@@ -65,6 +83,9 @@ export function TurnList({
   changeTrails = {},
   submissionRecoveryByTurnId,
   queuedWriterTurnIds,
+  controls = null,
+  compactionUndo = null,
+  phase = null,
   threadUsage = null,
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -76,6 +97,39 @@ export function TurnList({
   );
   const visibleTurns = transcript.visibleTurns;
   const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
+  // Undo items render on the divider they target; everything else still
+  // waiting sits at the tail, after the newest turn (R5: no position yet).
+  const { undoByDividerId, tailControls } = useMemo(() => {
+    const undoByDividerId = new Map<string, QueuedControl>();
+    const tailControls: QueuedControl[] = [];
+    const answered = answeredControlIds(turns);
+    const dividerIds = new Set(
+      transcript.rows.flatMap((row) => (row.kind === "compaction" ? [row.turn.id] : [])),
+    );
+    for (const control of controls?.queued ?? NO_CONTROLS) {
+      if (control.control.kind === "compaction_undo") {
+        const target = control.control.compactionTurnId;
+        if (dividerIds.has(target)) {
+          // The marker U tells an answered undo's story; an active request
+          // outranks a settled withdrawal note on the same divider.
+          const current = undoByDividerId.get(target);
+          if (!answered.has(control.id) && (!current || !isSettledControl(control)))
+            undoByDividerId.set(target, control);
+          continue;
+        }
+      }
+      if (answered.has(control.id)) continue;
+      tailControls.push(control);
+    }
+    return { undoByDividerId, tailControls };
+  }, [controls?.queued, transcript.rows, turns]);
+  const listRows = useMemo<ListRow[]>(
+    () =>
+      tailControls.length
+        ? [...transcript.rows, { kind: "queued-controls", controls: tailControls }]
+        : transcript.rows,
+    [tailControls, transcript.rows],
+  );
   const { continuing, partsByFinalTurnId } = transcript;
   const byTurnId = useMemo(() => {
     const byTurnId = new Map<string, ChangeTrailShell>();
@@ -86,10 +140,14 @@ export function TurnList({
   }, [changeTrails]);
 
   const virtualizer = useVirtualizer({
-    count: visibleTurns.length,
+    count: listRows.length,
     getScrollElement: () => viewportRef.current,
     estimateSize: () => ESTIMATED_TURN_HEIGHT,
-    getItemKey: (index) => visibleTurns[index]?.id ?? index,
+    getItemKey: (index) => {
+      const row = listRows[index];
+      if (!row) return index;
+      return row.kind === "queued-controls" ? QUEUED_CONTROLS_KEY : row.turn.id;
+    },
     overscan: 8,
     paddingStart: TOP_INSET,
     // Clear the pinned composer AND align the true scroll end with the last turn.
@@ -143,8 +201,39 @@ export function TurnList({
     enterFollow();
   }, [tailFollowRevision, enterFollow]);
 
-  const renderTurn = useCallback(
-    (turn: Turn, idx: number) => {
+  const renderRow = useCallback(
+    (row: ListRow, idx: number) => {
+      if (row.kind === "queued-controls") {
+        return (
+          <QueuedControlRows
+            controls={row.controls}
+            onWithdraw={controls?.withdraw}
+            onRetry={controls?.retry}
+          />
+        );
+      }
+      const turn = row.turn;
+      if (row.kind === "compaction") {
+        return (
+          <CompactionDivider
+            turn={turn}
+            undo={row.undo}
+            undoAvailability={compactionUndo}
+            queuedUndo={undoByDividerId.get(turn.id) ?? null}
+            phase={phase}
+            stopping={controls?.stoppingTurnIds.has(turn.id) ?? false}
+            onStop={controls?.stop}
+            onUndo={
+              controls
+                ? (compactionTurnId) =>
+                    controls.enqueue({ kind: "compaction_undo", compactionTurnId })
+                : undefined
+            }
+            onWithdraw={controls?.withdraw}
+            onRetry={controls?.retry}
+          />
+        );
+      }
       if (turn.role === "user") {
         return (
           <UserTurn
@@ -162,6 +251,8 @@ export function TurnList({
           threadUsage={threadUsage}
           deliveryEvents={transcript.deliveryEventsFor(turn.id)}
           isLatestAssistant={idx === lastAssistantIdx}
+          // A divider is a row: once one follows a failed reply, that failure is
+          // history. The queued-controls tail is not a row and never counts.
           endsTranscript={idx === visibleTurns.length - 1}
           continuesResponse={continuing[idx] ?? false}
           failedSendRetry={turn.id === failedSendRetry?.turnId ? failedSendRetry.retry : undefined}
@@ -173,6 +264,10 @@ export function TurnList({
     },
     [
       byTurnId,
+      compactionUndo,
+      controls,
+      phase,
+      undoByDividerId,
       failedSendRetry,
       lastAssistantIdx,
       navigateToChange,
@@ -215,20 +310,22 @@ export function TurnList({
             style={{ height: virtualizer.getTotalSize() }}
           >
             {virtualizer.getVirtualItems().map((virtualItem) => {
-              const turn = visibleTurns[virtualItem.index];
-              if (!turn) return null;
+              const row = listRows[virtualItem.index];
+              if (!row) return null;
               return (
                 <li
                   key={virtualItem.key}
                   data-index={virtualItem.index}
-                  data-chat-turn-row="settled"
-                  data-chat-turn-role={turn.role}
+                  data-chat-turn-row={
+                    row.kind === "queued-controls" ? "queued-controls" : "settled"
+                  }
+                  data-chat-turn-role={row.kind === "queued-controls" ? undefined : row.turn.role}
                   data-chat-turn-continues={continuing[virtualItem.index] ? "" : undefined}
                   ref={virtualizer.measureElement}
                   className="absolute inset-x-0 top-0"
                   style={{ transform: `translateY(${virtualItem.start}px)` }}
                 >
-                  {renderTurn(turn, virtualItem.index)}
+                  {renderRow(row, virtualItem.index)}
                 </li>
               );
             })}
@@ -286,6 +383,14 @@ function JumpToLatestButton({
         <span className="sr-only">Scroll to latest</span>
       </Button>
     </div>
+  );
+}
+
+function isSettledControl(control: QueuedControl): boolean {
+  return (
+    control.status === "withdrawn" ||
+    control.status === "stopping" ||
+    control.status === "already_finished"
   );
 }
 
