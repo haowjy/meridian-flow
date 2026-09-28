@@ -15,12 +15,13 @@ import { Trans } from "@lingui/react/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 import type { CompactionUndoAvailability, ThreadPhase } from "@meridian/contracts/threads";
 import { ChevronRight, CircleAlert, FoldVertical, UnfoldVertical } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { type CompactionUndoMarkers, type DividerView, dividerView } from "./compaction-model";
 import type { QueuedControl } from "./thread-controls";
+import { useFocusWithinRow } from "./useFocusWithinRow";
 
 export type CompactionDividerProps = {
   turn: Turn;
@@ -92,6 +93,8 @@ export function CompactionDivider({
   });
   const [open, setOpen] = useState(false);
   const panelId = useId();
+  const sectionRef = useRef<HTMLElement>(null);
+  const focusWithin = useFocusWithinRow(sectionRef);
   const label = stateLabel(view, phase, stopping);
   const loud = view.state === "failed" && view.failureCopy !== null;
 
@@ -104,7 +107,8 @@ export function CompactionDivider({
       tone: "muted",
     });
   if (view.refusalCopy) notes.push({ key: "refusal", text: view.refusalCopy, tone: "error" });
-  if (view.undo?.kind === "offer" && view.undo.advisory)
+  // A refusal already says more than the advice would.
+  if (view.undo?.kind === "offer" && view.undo.advisory && !view.refusalCopy)
     notes.push({
       key: "advisory",
       text: t`The full conversation may be too long to restore.`,
@@ -119,11 +123,14 @@ export function CompactionDivider({
 
   return (
     <section
+      ref={sectionRef}
+      tabIndex={-1}
+      {...focusWithin}
       data-compaction-divider
       data-compaction-state={view.state}
       data-compaction-trigger={view.trigger}
       aria-label={label}
-      className="flex flex-col gap-[var(--chat-space-inline)] py-[var(--chat-space-block)]"
+      className="flex flex-col gap-[var(--chat-space-inline)] py-[var(--chat-space-block)] outline-none"
     >
       <div className="flex min-w-0 flex-wrap items-center gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-inline)]">
         <span className="flex min-w-0 items-center gap-[var(--chat-space-block)]">
@@ -160,9 +167,13 @@ export function CompactionDivider({
             type="button"
             variant="quiet"
             size="meta"
-            disabled={stopping}
+            // aria-disabled, not disabled: disabling the focused button would
+            // drop keyboard focus to the page.
+            aria-disabled={stopping || undefined}
             aria-label={t`Stop compaction`}
-            onClick={() => onStop(turn.id)}
+            onClick={() => {
+              if (!stopping) onStop(turn.id);
+            }}
           >
             <Trans>Stop</Trans>
           </Button>
@@ -247,7 +258,7 @@ function QueuedUndoControls({
   const withdrawing = control.status === "withdrawing";
   return (
     <>
-      <span role="status" className="text-caption text-muted-foreground">
+      <span role="status" className="text-meta text-muted-foreground">
         {withdrawing ? t`Withdrawing undo` : t`Undo queued`}
       </span>
       {onWithdraw ? (
@@ -255,9 +266,11 @@ function QueuedUndoControls({
           type="button"
           variant="quiet"
           size="meta"
-          disabled={withdrawing}
+          aria-disabled={withdrawing || undefined}
           aria-label={t`Withdraw undo`}
-          onClick={() => onWithdraw(control)}
+          onClick={() => {
+            if (!withdrawing) onWithdraw(control);
+          }}
         >
           <Trans>Withdraw</Trans>
         </Button>

@@ -96,15 +96,19 @@ describe("CompactionDivider", () => {
     expect(onStop).toHaveBeenCalledWith("c");
   });
 
-  it("pending while stopping: says so and disables Stop", async () => {
+  it("pending while stopping: says so and ignores Stop without dropping focus", async () => {
+    const onStop = vi.fn();
     await render({
       turn: divider({ status: "pending", blocks: [] }),
       phase: "compacting",
       stopping: true,
-      onStop: vi.fn(),
+      onStop,
     });
     expect(host.textContent).toContain("Stopping compaction");
-    expect(button("Stop compaction")?.disabled).toBe(true);
+    const stop = button("Stop compaction");
+    expect(stop?.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => stop?.click());
+    expect(onStop).not.toHaveBeenCalled();
   });
 
   it("complete: the summary sits behind a disclosure wired to its panel", async () => {
@@ -160,6 +164,25 @@ describe("CompactionDivider", () => {
     expect(host.querySelector('[role="status"]')?.textContent).toBe("Undo queued");
     await act(async () => button("Withdraw undo")?.click());
     expect(onWithdraw).toHaveBeenCalledWith(queued);
+  });
+
+  it("keeps keyboard focus in the divider when Undo gives way to Withdraw", async () => {
+    const queued: QueuedControl = {
+      id: "u-k",
+      control: { kind: "compaction_undo", compactionTurnId: "c" },
+      status: "queued",
+    };
+    const props = {
+      turn: divider(),
+      undoAvailability: { turnId: "c", availability: "likely" } as const,
+      onUndo: vi.fn(),
+      onWithdraw: vi.fn(),
+    };
+    await render(props);
+    button("Undo compaction")?.focus();
+    expect(document.activeElement).toBe(button("Undo compaction"));
+    await render({ ...props, queuedUndo: queued });
+    expect(document.activeElement).toBe(button("Withdraw undo"));
   });
 
   it("refused undo: the U's copy shows on this divider", async () => {

@@ -1,11 +1,12 @@
 /** One indexed interpretation of transcript rows, response boundaries, delivery rows, and reveal targets. */
 import { parseInvocationCard } from "@meridian/contracts/components";
-import type { Turn } from "@meridian/contracts/protocol";
+import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import {
   type CompactionUndoMarkers,
   collectUndoMarkers,
   isOverflowShell,
   NO_UNDO_MARKERS,
+  readCompactionFacts,
   undoMarkerTarget,
 } from "./compaction/compaction-model";
 import { reportPersistedContractFailure } from "./persisted-contract-debug";
@@ -196,9 +197,20 @@ export function continuesResponse(
   if (turn?.role !== "assistant" || turn.status !== "complete") return false;
   // Look past dividers: a compaction between two parts of one reply is part of the work.
   let nextIndex = index + 1;
-  while (turns[nextIndex]?.role === "compaction") nextIndex += 1;
+  let autocompacting = false;
+  while (turns[nextIndex]?.role === "compaction") {
+    const divider = turns[nextIndex];
+    // A running autocompaction is the same run: the reply resumes after it.
+    if (
+      divider &&
+      !isTerminalTurnStatus(divider.status) &&
+      readCompactionFacts(divider).trigger === "auto"
+    )
+      autocompacting = true;
+    nextIndex += 1;
+  }
   const next = turns[nextIndex];
-  if (!next) return awaitingSubagents;
+  if (!next) return autocompacting || awaitingSubagents;
   if (next.role === "assistant") return true;
   return (
     next.role === "user" &&

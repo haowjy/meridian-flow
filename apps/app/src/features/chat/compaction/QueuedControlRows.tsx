@@ -10,9 +10,11 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { CircleAlert, FoldVertical } from "lucide-react";
+import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { QueuedControl } from "./thread-controls";
+import { useFocusWithinRow } from "./useFocusWithinRow";
 
 export type QueuedControlRowsProps = {
   controls: readonly QueuedControl[];
@@ -64,12 +66,17 @@ function withdrawLabel(control: QueuedControl): string {
 }
 
 export function QueuedControlRows({ controls, onWithdraw, onRetry }: QueuedControlRowsProps) {
+  const listRef = useRef<HTMLUListElement>(null);
+  const focusWithin = useFocusWithinRow(listRef);
   if (controls.length === 0) return null;
   return (
     <ul
+      ref={listRef}
+      tabIndex={-1}
+      {...focusWithin}
       aria-label={t`Queued commands`}
       data-queued-controls
-      className="flex flex-col gap-[var(--chat-space-inline)] py-[var(--chat-space-block)]"
+      className="flex flex-col gap-[var(--chat-space-inline)] py-[var(--chat-space-block)] outline-none"
     >
       {controls.map((control) => (
         <QueuedControlRow

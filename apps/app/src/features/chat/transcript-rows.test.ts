@@ -52,6 +52,23 @@ describe("transcript rows", () => {
     expect(model.partsByFinalTurnId.get("b")?.map((part) => part.id)).toEqual(["a", "b"]);
   });
 
+  it("keeps the reply open while its autocompaction runs, not while a manual one does", () => {
+    const pendingAuto = compaction("c", "pending");
+    expect(
+      buildTranscriptModel([turn("u", "user"), turn("a", "assistant"), pendingAuto], false)
+        .continuing,
+    ).toEqual([false, true, false]);
+    const pendingManual = turn("c", "compaction", {
+      status: "pending",
+      blocks: [],
+      metadata: { trigger: "manual", controlMessageId: "k" },
+    });
+    expect(
+      buildTranscriptModel([turn("u", "user"), turn("a", "assistant"), pendingManual], false)
+        .continuing,
+    ).toEqual([false, false, false]);
+  });
+
   it("ends a reply at a manual compaction with nothing after it", () => {
     const model = buildTranscriptModel(
       [turn("u", "user"), turn("a", "assistant"), compaction("c")],
