@@ -28,7 +28,8 @@ export interface ConversationSummarizer {
     incomingAgentName?: string;
     changedDocuments?: readonly string[];
     requestInHand: GenerateRequest | null;
-    path: "branch" | "branch_if_warm" | "rolling";
+    /** Overflow means the provider already rejected a request of this size. */
+    knownTooLarge?: boolean;
     /** Warm compaction exclusions, rendered from the plan's retained pin/tail slices. */
     retainedMessages?: readonly Message[];
     /** Cold source: only the cut (excluding the retained pin/tail), plus prior summary context. */

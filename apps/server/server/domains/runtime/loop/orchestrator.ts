@@ -637,7 +637,7 @@ async function runDrainTurn(
         !!controlPreparation?.undos.length &&
         selection.outstanding.length === 0 &&
         preflight?.compaction.kind !== "compact";
-      let reservedTurn = terminal
+      const reservedTurn = terminal
         ? controlPreparation!.undos.at(-1)!.turn
         : reservationTurn(
             {
@@ -2114,7 +2114,7 @@ async function executeLoop({
                   boundaryInput({
                     kind: "compact",
                     trigger: "auto",
-                    path: "cold",
+                    knownTooLarge: true,
                     fitLimitTokens: Math.min(usableWindowTokens, FLOW_ABSOLUTE_CEILING),
                   }),
                 ),

@@ -84,7 +84,6 @@ function setup(
     owner: { threadId: "thread", turnId: "summary" },
     source: { threadId: "thread" },
     instruction: "compaction",
-    path: "branch_if_warm",
     requestInHand: {
       model: threadModel.id,
       messages: [{ role: "user", content: [{ type: "text", text: "Task" }] }],
@@ -201,10 +200,10 @@ describe("conversation summarizer", () => {
   });
 
   it.each([
-    "overflow",
-    "timeout",
-    "empty",
-  ])("falls back once after warm %s and keeps both rows", async (failure) => {
+    ["overflow", "request_too_large"],
+    ["timeout", "provider_error"],
+    ["empty", "empty_text"],
+  ] as const)("fails a warm %s branch once and keeps its paid row", async (failure, reason) => {
     const rig = setup({
       warm: true,
       async *events(_request, call) {
@@ -226,15 +225,12 @@ describe("conversation summarizer", () => {
     });
     const outcome = await rig.service.summarize(rig.input);
     expect(outcome).toMatchObject({
-      kind: "complete",
-      summarizer: { path: "rolling", segments: 1 },
+      kind: "failed",
+      rejectionReason: reason,
+      summarizer: { path: "branch", segments: 1 },
     });
-    expect(outcome.modelResponses).toHaveLength(2);
-    expect(outcome.modelResponses[1]).toMatchObject({
-      predictedCacheState: "cold",
-      predictedCacheReason: "summary_transcript",
-    });
-    expect(rig.requests).toHaveLength(2);
+    expect(outcome.modelResponses).toHaveLength(1);
+    expect(rig.requests).toHaveLength(1);
   });
 
   it("compacts a Sonnet 4.6 assistant turn with four 100 KB document results on a 128k summarizer", async () => {
@@ -387,7 +383,7 @@ describe("conversation summarizer", () => {
       expect(prompt).toContain(phrase);
   });
 
-  it("does not retry the cold fallback if both calls fail", async () => {
+  it("fails once when a warm branch throws", async () => {
     const rig = setup({
       warm: true,
       async *events() {
@@ -397,8 +393,8 @@ describe("conversation summarizer", () => {
     });
     const outcome = await rig.service.summarize(rig.input);
     expect(outcome.kind).toBe("failed");
-    expect(outcome.modelResponses).toHaveLength(2);
-    expect(rig.requests).toHaveLength(2);
+    expect(outcome.modelResponses).toHaveLength(1);
+    expect(rig.requests).toHaveLength(1);
   });
 
   it("does not take the cold fallback after Stop during the warm call", async () => {
@@ -417,7 +413,7 @@ describe("conversation summarizer", () => {
     expect(rig.requests).toHaveLength(1);
   });
 
-  it("discards warm tool use and falls back to cold exactly once", async () => {
+  it("fails on warm tool use without making a rolling call", async () => {
     const rig = setup({
       warm: true,
       async *events(_request, call) {
@@ -434,13 +430,12 @@ describe("conversation summarizer", () => {
     });
     const outcome = await rig.service.summarize(rig.input);
     expect(outcome).toMatchObject({
-      kind: "complete",
-      model: cheapModel.id,
-      summarizer: { path: "rolling", segments: 1 },
+      kind: "failed",
+      rejectionReason: "tool_use",
+      summarizer: { path: "branch", segments: 1 },
     });
-    expect(outcome.modelResponses).toHaveLength(2);
-    expect(rig.requests.map((r) => r.model)).toEqual([threadModel.id, cheapModel.id]);
-    expect(rig.requests[1].tools).toBeUndefined();
+    expect(outcome.modelResponses).toHaveLength(1);
+    expect(rig.requests.map((r) => r.model)).toEqual([threadModel.id]);
   });
 
   it("segments only at turns and carries the running summary into each bounded request", async () => {
@@ -498,9 +493,9 @@ describe("conversation summarizer", () => {
     expect(JSON.stringify(rig.requests[0])).toContain("handoff brief");
   });
 
-  it("forces cold despite warm state and renders images as URI and prior summaries as context", async () => {
+  it("uses rolling when the request is known too large and renders images as URI", async () => {
     const rig = setup({ warm: true });
-    rig.input.path = "rolling";
+    rig.input.knownTooLarge = true;
     rig.input.projection = projection([
       "Conversation summary. Earlier turns were compacted. Established story facts.",
     ]);
@@ -561,28 +556,40 @@ describe("conversation summarizer", () => {
     });
   });
 
-  it("cancellation returns every attempted row including a discarded warm reply", async () => {
-    const controller = new AbortController();
+  it("returns a too-large rejection from the provider event", async () => {
     const rig = setup({
       warm: true,
-      async *events(_request, call) {
-        if (call === 1)
-          yield {
-            type: "end",
-            result: reply("", { toolCalls: [{ id: "x", name: "read", arguments: {} }] }),
-          };
-        else {
-          yield { type: "usage", usage: { inputTokens: 42, outputTokens: 3 } };
-          controller.abort();
-          throw new DOMException("Aborted", "AbortError");
-        }
+      async *events() {
+        yield {
+          type: "error",
+          code: "context_overflow",
+          message: "Too many tokens",
+          retryable: false,
+        };
       },
     });
-    rig.input.signal = controller.signal;
-    const result = await rig.service.summarize(rig.input);
-    expect(result.kind).toBe("cancelled");
-    expect(result.modelResponses).toHaveLength(2);
-    expect(result.modelResponses[1]).toMatchObject({ inputTokens: 42, outputTokens: 3 });
+    expect(await rig.service.summarize(rig.input)).toMatchObject({
+      kind: "failed",
+      rejectionReason: "request_too_large",
+      modelResponses: [{ finishReason: "error" }],
+    });
+    expect(rig.requests).toHaveLength(1);
+  });
+
+  it("maps a thrown gateway context overflow to too large", async () => {
+    const rig = setup({
+      warm: true,
+      async *events() {
+        yield { type: "start", model: threadModel.id, provider: threadModel.provider };
+        throw Object.assign(new Error("Too many tokens"), { code: "context_overflow" });
+      },
+    });
+    expect(await rig.service.summarize(rig.input)).toMatchObject({
+      kind: "failed",
+      rejectionReason: "request_too_large",
+      modelResponses: [{ finishReason: "error" }],
+    });
+    expect(rig.requests).toHaveLength(1);
   });
 });
 
@@ -643,7 +650,7 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
   );
 });
 
-it("branches at a cold cutoff with the source model and byte-identical tools", async () => {
+it("uses rolling at a cold cutoff", async () => {
   const rig = setup({ warm: false });
   const tools = [
     {
@@ -663,15 +670,12 @@ it("branches at a cold cutoff with the source model and byte-identical tools", a
   const outcome = await rig.service.summarize({
     ...rig.input,
     instruction: "handoff",
-    path: "branch",
     requestInHand: sourceRequest,
   });
 
-  expect(outcome).toMatchObject({ kind: "complete", summarizer: { path: "branch", segments: 1 } });
-  expect(rig.requests).toHaveLength(1);
-  expect(rig.requests[0].model).toBe(threadModel.id);
-  expect(rig.requests[0].tools).toEqual(tools);
-  expect(rig.requests[0].reasoning).toEqual({ effort: "high" });
+  expect(outcome).toMatchObject({ kind: "complete", summarizer: { path: "rolling" } });
+  expect(rig.requests.length).toBeGreaterThan(0);
+  expect(rig.requests[0].model).toBe(cheapModel.id);
   expect(rig.prefixCacheStateFor).toHaveBeenCalled();
 });
 

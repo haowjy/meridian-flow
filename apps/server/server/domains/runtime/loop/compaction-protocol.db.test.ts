@@ -758,7 +758,7 @@ else
       expect(compaction.status).toBe("error");
     });
 
-    it("settles both rows when a warm overflow falls back cold", async () => {
+    it("fails a warm summary overflow once and records the too-large rejection", async () => {
       const gateway = scriptedGateway();
       const original = gateway.stream;
       let summaries = 0;
@@ -773,26 +773,12 @@ else
           return;
         }
         summaries++;
-        if (summaries === 1) {
-          yield { type: "usage", usage: { inputTokens: 100, outputTokens: 1 } };
-          yield {
-            type: "error",
-            code: "context_overflow",
-            message: "input length and max_tokens exceed context limit",
-            retryable: false,
-          };
-          return;
-        }
+        yield { type: "usage", usage: { inputTokens: 100, outputTokens: 1 } };
         yield {
-          type: "end",
-          result: {
-            content: [{ type: "text", text: "The earlier work is complete." }],
-            toolCalls: [],
-            finishReason: "end_turn",
-            usage: { inputTokens: 100, outputTokens: 10 },
-            model: "gpt-4.1-mini",
-            provider: "openai",
-          },
+          type: "error",
+          code: "context_overflow",
+          message: "input length and max_tokens exceed context limit",
+          retryable: false,
         };
       };
       const rig = await fixture({ gateway });
@@ -807,16 +793,22 @@ else
         tools: [],
         userText: "Continue.",
       });
-      expect((await run.execute()).status).toBe("complete");
-      expect(summaries).toBe(2);
+      expect((await run.execute()).status).toBe("error");
+      expect(summaries).toBe(1);
       const rows = await rig.repos.modelResponses.listByTurn(run.executionTurnId);
-      expect(rows).toHaveLength(2);
-      expect(
-        rows.map((row) => [row.finishReason, row.predictedCacheState, row.predictedCacheReason]),
-      ).toEqual([
-        ["error", "warm", "reusable_prefix"],
-        ["end_turn", "cold", "summary_transcript"],
-      ]);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        finishReason: "error",
+        predictedCacheState: "warm",
+        predictedCacheReason: "reusable_prefix",
+      });
+      const compaction = (await rig.repos.turns.listByThread(rig.threadId)).find(
+        (turn) => turn.role === "compaction",
+      );
+      expect(compaction).toMatchObject({
+        status: "error",
+        metadata: { reason: "request_too_large", phase: "summary" },
+      });
       const debits = await db.select().from(schema.creditTransactions);
       for (const row of rows) {
         expect(BigInt(row.millicredits ?? "0")).toBeGreaterThan(0n);
@@ -828,7 +820,7 @@ else
       "recovered",
       "second_overflow",
       "new_reply",
-    ])("forces cold after provider overflow and retries once (%s)", async (scenario) => {
+    ])("uses rolling after provider overflow and retries the reply once (%s)", async (scenario) => {
       const secondOverflow = scenario === "second_overflow";
       let rig: Awaited<ReturnType<typeof fixture>>;
       const gateway = scriptedGateway();
@@ -905,7 +897,7 @@ else
       const result = await run.execute();
       expect(calls).toBe(scenario === "new_reply" ? 4 : 2);
       expect(summaries).toBe(scenario === "new_reply" ? 2 : 1);
-      expect(inputs[0].path).toBe("rolling");
+      expect(inputs[0].knownTooLarge).toBe(true);
       expect(inputs[0].projection.blocks.some((block) => block.textContent === "Continue.")).toBe(
         false,
       );
@@ -1023,7 +1015,7 @@ else
       expect(debits).toHaveLength(1);
     });
 
-    it("includes discarded warm and every cold segment response in a child report's cost", async () => {
+    it("includes every cold segment response in a child report's cost", async () => {
       const rig = await fixture({ child: true, history: "short history ".repeat(100) });
       const model = {
         id: "gpt-4.1-mini",
@@ -1054,13 +1046,9 @@ else
         yield {
           type: "end",
           result: {
-            content:
-              summaryCalls === 1
-                ? [{ type: "tool_use", toolCallId: "discarded-warm", toolName: "read", input: {} }]
-                : [{ type: "text", text: `Cold segment ${summaryCalls - 1} summary.` }],
-            toolCalls:
-              summaryCalls === 1 ? [{ id: "discarded-warm", name: "read", arguments: {} }] : [],
-            finishReason: summaryCalls === 1 ? "tool_use" : "end_turn",
+            content: [{ type: "text", text: `Cold segment ${summaryCalls} summary.` }],
+            toolCalls: [],
+            finishReason: "end_turn",
             usage: { inputTokens: 100, outputTokens: 10 },
             model: model.id,
             provider: model.provider,
@@ -1070,7 +1058,7 @@ else
       rig.deps.summarizer = createConversationSummarizer({
         gateway: rig.deps.gateway,
         agentRevisions: rig.deps.agentRevisions,
-        prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
+        prefixCacheStateFor: async () => ({ state: "cold", reason: "ttl_expired" }),
         config: { model: model.id, maxOutputTokens: 100 },
       });
 
@@ -1110,13 +1098,11 @@ else
       if (!compaction) throw new Error("Missing compaction turn");
       const summaryRows = await rig.repos.modelResponses.listByTurn(compaction.id);
       expect(summaryRows).toHaveLength(summaryCalls);
-      expect(summaryRows[0]).toMatchObject({
-        predictedCacheState: "warm",
-        predictedCacheReason: "reusable_prefix",
-        finishReason: "tool_use",
-      });
       expect(
-        summaryRows.slice(1).every((row) => row.predictedCacheReason === "summary_transcript"),
+        summaryRows.every(
+          (row) =>
+            row.predictedCacheState === "cold" && row.predictedCacheReason === "summary_transcript",
+        ),
       ).toBe(true);
 
       const report = await rig.repos.executionReports.findByExecution(

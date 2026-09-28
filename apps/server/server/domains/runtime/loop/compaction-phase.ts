@@ -4,6 +4,7 @@ import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { CompactionMetadataCodec } from "../../threads/index.js";
 import type { SummaryOutcome, SummaryResponse } from "../ports/conversation-summarizer.js";
+import { previousAttemptRejectedAsTooLarge } from "../summary/summary-path.js";
 import {
   type CompactionDecision,
   CompactionFailureError,
@@ -90,7 +91,9 @@ export async function executeCompaction({
             instruction: "compaction",
             changedDocuments: changed,
             requestInHand: decision.requestInHand,
-            path: decision.path === "cold" ? "rolling" : "branch_if_warm",
+            knownTooLarge:
+              decision.knownTooLarge ??
+              previousAttemptRejectedAsTooLarge(allTurns, currentTurn.id, "compaction"),
             retainedMessages: decision.plan.retainedSuffix.flatMap(({ turn, blocks }) =>
               turnContextMessages(
                 turn,

@@ -19,7 +19,7 @@ export interface ForcedCompactionDecision {
   kind: "compact";
   trigger: "auto" | "manual";
   fitLimitTokens: number;
-  path?: "cold";
+  knownTooLarge?: boolean;
 }
 export type CompactionDecision =
   | { kind: "generate" }
@@ -34,7 +34,7 @@ export type CompactionDecision =
       trigger: "auto" | "manual";
       fitLimitTokens: number;
       tokensBefore: number;
-      path?: "cold";
+      knownTooLarge?: boolean;
     }
   | { kind: "too_large"; plan: CompactionPlan };
 
@@ -170,7 +170,9 @@ export function decideCompaction(input: {
         requestInHand: input.request,
         trigger: input.forcedDecision?.trigger ?? "auto",
         fitLimitTokens,
-        ...(input.forcedDecision ? { path: input.forcedDecision.path } : {}),
+        ...(input.forcedDecision?.knownTooLarge
+          ? { knownTooLarge: input.forcedDecision.knownTooLarge }
+          : {}),
         tokensBefore,
         required:
           input.forcedDecision?.trigger !== "manual" ||

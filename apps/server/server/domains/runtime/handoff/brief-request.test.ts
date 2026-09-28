@@ -31,7 +31,7 @@ function required<T>(value: T | null | undefined): T {
   return value;
 }
 
-async function prepareBrief(input: { userCutoff: boolean }) {
+async function prepareBrief(input: { userCutoff: boolean; previousTooLarge?: boolean }) {
   let sourceId = "";
   const summarizer = scriptedSummarizer();
   const gateway = {
@@ -121,8 +121,27 @@ async function prepareBrief(input: { userCutoff: boolean }) {
     userId: source.userId,
     projectId: source.projectId,
   });
+  const priorSeed = input.previousTooLarge
+    ? await rig.repos.turns.create({
+        threadId: destination.id,
+        role: "system",
+        origin: "system",
+        status: "error",
+        metadata: {
+          kind: "derivation_seed",
+          derivation: "handoff",
+          sourceThreadId: source.id,
+          sourceRef: required(source.ref),
+          sourceTitle: source.title,
+          cutoffTurnId: cutoff.id,
+          reason: "request_too_large",
+          phase: "summary",
+        },
+      })
+    : null;
   const seed = await rig.repos.turns.create({
     threadId: destination.id,
+    ...(priorSeed ? { prevTurnId: priorSeed.id } : {}),
     role: "system",
     origin: "system",
     status: "pending",
@@ -150,7 +169,7 @@ async function prepareBrief(input: { userCutoff: boolean }) {
 it.each([
   true,
   false,
-])("branches from the source through the selected turn (user cutoff=%s)", async (userCutoff) => {
+])("prepares a source-shaped request through the selected turn (user cutoff=%s)", async (userCutoff) => {
   const { result, calls, beforeTurns, beforeBlocks, rig, source } = await prepareBrief({
     userCutoff,
   });
@@ -160,7 +179,6 @@ it.each([
   expect(result.outcome.kind).toBe("complete");
   expect(call).toMatchObject({
     instruction: "handoff",
-    path: "branch",
     source: { threadId: source.id },
   });
   expect(request?.model).toBe(model.id);
@@ -173,4 +191,10 @@ it.each([
   );
   expect(await rig.repos.turns.listByThread(source.id)).toEqual(beforeTurns);
   expect(await rig.repos.blocks.listByThread(source.id)).toEqual(beforeBlocks);
+});
+
+it("marks a retry after a too-large brief rejection as known too large", async () => {
+  const { result, calls } = await prepareBrief({ userCutoff: false, previousTooLarge: true });
+  expect(result.outcome.kind).toBe("complete");
+  expect(calls[0]).toMatchObject({ knownTooLarge: true });
 });

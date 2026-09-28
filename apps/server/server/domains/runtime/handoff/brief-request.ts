@@ -1,4 +1,4 @@
-/** Read-only source preparation and source-shaped branch with the summarizer fallback. */
+/** Read-only source preparation and a single source-shaped summary attempt. */
 import type { Thread, Turn } from "@meridian/contracts/threads";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import {
@@ -7,10 +7,11 @@ import {
   loadThreadConversationContext,
 } from "../../threads/index.js";
 import type { GenerateRequest } from "../gateway/index.js";
-import type { SummaryOutcome } from "../ports/conversation-summarizer.js";
 import { projectActiveHistoryWithBakes } from "../loop/compaction/index.js";
 import type { OrchestratorDeps } from "../loop/orchestrator.js";
 import { prepareRequestContext } from "../loop/request-preparation.js";
+import type { SummaryOutcome } from "../ports/conversation-summarizer.js";
+import { previousAttemptRejectedAsTooLarge } from "../summary/summary-path.js";
 
 export async function generateHandoffBrief(
   deps: OrchestratorDeps,
@@ -22,8 +23,7 @@ export async function generateHandoffBrief(
   const source = await deps.repos.threads.findByIdIncludingDeleted(metadata.sourceThreadId);
   if (!source) throw new Error("Handoff source is missing");
   const context = await loadThreadConversationContext(deps.repos, source, metadata.cutoffTurnId);
-  let requestInHand: GenerateRequest | null = null;
-  let preparationFailed = false;
+  let requestInHand: GenerateRequest;
   try {
     const prepared = await prepareRequestContext({
       deps,
@@ -39,14 +39,22 @@ export async function generateHandoffBrief(
     requestInHand = prepared.assembled.generateRequest;
   } catch (error) {
     signal.throwIfAborted();
-    preparationFailed = true;
     emitEvent(deps.eventSink, {
       level: "warn",
       source: "runtime.handoff",
-      name: "source_prepare.fallback",
+      name: "source_prepare.failed",
       correlation: { threadId: destination.id, turnId: seed.id },
       payload: unknownToEventPayload(error),
     });
+    return {
+      outcome: {
+        kind: "failed",
+        error,
+        modelResponses: [],
+        summarizer: { path: "rolling", segments: 0 },
+      },
+      failure: { reason: "handoff_brief_failed", phase: "source_prepare" },
+    };
   }
   const outcome = await deps.summarizer.summarize({
     owner: { threadId: destination.id, turnId: seed.id },
@@ -54,7 +62,11 @@ export async function generateHandoffBrief(
     instruction: "handoff",
     incomingAgentName: destination.agentName ?? "the selected Agent",
     requestInHand,
-    path: requestInHand ? "branch" : "rolling",
+    knownTooLarge: previousAttemptRejectedAsTooLarge(
+      await deps.repos.turns.listByThread(destination.id),
+      seed.id,
+      "handoff_seed",
+    ),
     projection: await projectActiveHistoryWithBakes(
       context.turns,
       context.blocks,
@@ -68,7 +80,7 @@ export async function generateHandoffBrief(
     outcome,
     failure: {
       reason: outcome.rejectionReason ?? "handoff_brief_failed",
-      phase: preparationFailed ? "source_prepare" : "summary",
+      phase: "summary",
     },
   };
 }
