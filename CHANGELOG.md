@@ -7,6 +7,7 @@
 
 ## [Unreleased]
 
+- Resolve context preview kinds once and cache signed text reads through TanStack Query.
 - Localize dock file locations, preserve the writer's explicit view around file previews, and route Open in Editor from the dock file view.
 - Keep writer messages visible after the reply starts; only machine-delivered inbox messages fold into activity rows.
 - Show only "Queued" under a writer message the model has not read yet.
