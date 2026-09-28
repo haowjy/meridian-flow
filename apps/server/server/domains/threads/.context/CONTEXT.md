@@ -215,8 +215,7 @@ transactions. See the [runtime contract](../../runtime/.context/CONTEXT.md).
 | Port | Surface |
 |---|---|
 | `ThreadRepository` | Thread lifecycle plus writer-facing project lists (`kind: "primary"` only) and the hard-bounded `listRecentByWork` model summary. It does not expose an unbounded Work list. Get-by-id still returns subagents. |
-| `ProjectChatFeedRepository` | Flat primary-chat pages ranked by latest visible activity, with optional Favorite, title-search, and Work-association filters before pagination. |
-| `WorkChatFeedRepository` | Bounded historical-Work association pages over the same primary Project-chat projection, ordered by `(threads.last_activity_at DESC, threads.id DESC)` — the same stored activity sort as `ProjectChatFeedRepository`, and the same `ProjectChatItem` row shape (`chatFeedRowsSql`). |
+| `ProjectChatFeedRepository` | Flat primary-chat pages ranked by latest visible activity, with Favorite, title-search, and nullable Work-association filters before pagination. Project and Work Chats hide archived chats. |
 | `ThreadUserStateRepository` | Per-writer favorite authority. |
 | `TurnRepository` | `create / findById / listByThread / getLatestByThread / updateStatus / recomputeRollups` |
 | `BlockRepository` | `create / findById / listByTurn / listByThread / updatePruned` |
@@ -448,23 +447,20 @@ key off `role`/`metadata`, not this column.
 - Project chat pages use the strict shared keyset codec over
   `(lastActivityAt DESC, threadId DESC)` (`domain/project-chat-cursor.ts`).
   `domain/chat-feed-page.ts` owns the shared decode/fetch-one-past-limit/encode
-  policy and the one `InvalidChatFeedCursorError`; `chat-feed.ts` and
-  `work-chat-feed.ts` each supply only their repository call and page size.
-  Favorites filtering happens before the cursor and limit. Project feed,
-  switcher (`listByProject`), and Work-associated chats list primary threads
-  only. Subagent Open is get-by-id.
-- Work-associated chat pages use the same codec and the same
-  `last_activity_at` sort as the Project feed, over thread ID as the tiebreak.
-  The association filter is M:N history among primary threads; row Work
-  identity always comes from the current primary membership. Bound Agent name
-  is projected from the same binding join as thread list (`metadata.name` or
-  slug, or `Subagent` when the binding has no revision) and is the
-  writer-facing row identity. `adapters/drizzle/visible-conversation-sql.ts`'s
-  `chatFeedRowsSql` is the one full chat-row builder both
-  `chat-feed-repository.ts` and `work-chat-feed-repository.ts` call, supplying
-  only their candidate-thread-id CTE and letting the shared builder join
-  primary Work, Agent name, favorite, head turn, and preview.
-  Projection and serialization are bounded to 50 rows per page.
+  policy and the one `InvalidChatFeedCursorError`; `chat-feed.ts` supplies the
+  Work, Favorite, and title-search filters to the same repository query.
+  Favorites and Work membership filter before cursor pagination. Project and
+  Work Chats hide archived chats and list primary threads only; Subagent Open
+  is get-by-id.
+- The Work Chats tab is the Project feed with its Work filter set. That filter
+  uses M:N membership history, while each row's Work identity comes from the
+  current primary membership. Bound Agent name is projected from the same
+  binding join as thread list (`metadata.name` or slug, or `Subagent` when the
+  binding has no revision) and is the writer-facing row identity.
+  `adapters/drizzle/visible-conversation-sql.ts`'s `chatFeedRowsSql` is the one
+  full chat-row builder used by `chat-feed-repository.ts` to join primary
+  Work, Agent name, favorite, head turn, and preview. Domain fetch and
+  serialization remain bounded to one page plus its look-ahead row.
 - Project chat lists have no read/unread state. The user-state route and
   repository persist Favorite only; opening a chat performs no state mutation.
 - Draft-review action-required state remains an extension point. Establishing it requires

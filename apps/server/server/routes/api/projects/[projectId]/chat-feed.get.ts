@@ -8,19 +8,20 @@ import {
 } from "../../../../domains/threads/domain/chat-feed.js";
 import { InvalidChatFeedCursorError } from "../../../../domains/threads/domain/chat-feed-page.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
-import { isUuid } from "../../../../shared/uuid.js";
+import { isUuid, parseRequestId } from "../../../../shared/uuid.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const projectId = getRouterParam(event, "projectId") ?? "";
   const { cursor: cursorValue, favorite, q, workId } = getQuery(event);
+  const parsedWorkId = typeof workId === "string" ? parseRequestId(workId) : null;
   if (favorite !== undefined && favorite !== "true") {
     throw createError({ statusCode: 400, statusMessage: "Invalid Favorites filter" });
   }
   if (q !== undefined && typeof q !== "string") {
     throw createError({ statusCode: 400, statusMessage: "Invalid chat search" });
   }
-  if (workId !== undefined && (typeof workId !== "string" || !isUuid(workId))) {
+  if (workId !== undefined && !parsedWorkId) {
     throw createError({ statusCode: 400, statusMessage: "Invalid Work ID" });
   }
   if (!isUuid(projectId)) {
@@ -40,7 +41,7 @@ export default defineEventHandler(async (event) => {
         cursor: cursorValue,
         favorite: favorite === "true",
         search: q ?? null,
-        workId: workId ?? null,
+        workId: parsedWorkId,
       }),
     );
   } catch (cause) {

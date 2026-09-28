@@ -57,11 +57,6 @@ export function apiProjectThreadByRefPath(projectId: string, ref: string): strin
   return `${apiProjectThreadsPath(projectId)}/by-ref/${encodeURIComponent(ref)}`;
 }
 
-export function apiWorkThreadsPath(workId: string, cursor?: string | null): string {
-  const path = `/api/works/${workId}/threads`;
-  return cursor ? `${path}?cursor=${encodeURIComponent(cursor)}` : path;
-}
-
 export type ProjectChatFeedRequestOptions = {
   cursor?: string | null;
   favorite?: boolean;

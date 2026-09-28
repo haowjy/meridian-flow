@@ -23,7 +23,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expectChatFeedSearchSemanticsContract,
       expectChatFeedTiesContract,
       expectChatFeedWorkFilterContract,
-      expectWorkChatFeedContract,
     } = await import("../__conformance__/chat-feed-contract.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000901";
@@ -85,10 +84,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("composes Work membership with search, Favorites, and cursor pagination", async () => {
       await expectChatFeedWorkFilterContract(harness());
-    });
-
-    it("scopes the Work feed to membership and shares the Project feed's row shape", async () => {
-      await expectWorkChatFeedContract(harness());
     });
   });
 }

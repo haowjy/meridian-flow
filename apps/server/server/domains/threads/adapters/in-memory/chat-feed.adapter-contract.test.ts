@@ -8,7 +8,6 @@ import {
   expectChatFeedSearchSemanticsContract,
   expectChatFeedTiesContract,
   expectChatFeedWorkFilterContract,
-  expectWorkChatFeedContract,
 } from "../__conformance__/chat-feed-contract.js";
 import { createInMemoryRepositories } from "./repositories.js";
 
@@ -52,9 +51,5 @@ describe("in-memory chat feed adapter contract", () => {
 
   it("composes Work membership with search, Favorites, and cursor pagination", async () => {
     await expectChatFeedWorkFilterContract(harness());
-  });
-
-  it("scopes the Work feed to membership and shares the Project feed's row shape", async () => {
-    await expectWorkChatFeedContract(harness());
   });
 });

@@ -2,7 +2,7 @@
 
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { ProjectChatFeedPage } from "@meridian/contracts/threads";
-import type { WorkRepository } from "../../projects/ports/work-repository.js";
+import type { WorkRepository } from "../../projects/index.js";
 import type { ProjectChatFeedRepository } from "../ports/repositories.js";
 import { getChatFeedPage } from "./chat-feed-page.js";
 
@@ -18,17 +18,17 @@ export class ProjectChatFeedWorkUnavailableError extends Error {
 
 export async function getProjectChatFeedPage(input: {
   repository: ProjectChatFeedRepository;
-  works?: Pick<WorkRepository, "findById">;
+  works: Pick<WorkRepository, "findById">;
   projectId: string;
   userId: string;
   cursor?: string | null;
   favorite?: boolean;
   search?: string | null;
-  workId?: string | null;
+  workId: WorkId | null;
 }): Promise<ProjectChatFeedPage> {
-  const workId = input.workId?.trim() || null;
+  const workId = input.workId;
   if (workId) {
-    const work = await input.works?.findById(workId as WorkId);
+    const work = await input.works.findById(workId);
     if (!work || work.projectId !== input.projectId || work.deletedAt) {
       throw new ProjectChatFeedWorkUnavailableError();
     }
@@ -45,7 +45,7 @@ export async function getProjectChatFeedPage(input: {
         after,
         limit,
         favorite: input.favorite ?? false,
-        workId: workId as WorkId | null,
+        workId,
         search,
       }),
   });

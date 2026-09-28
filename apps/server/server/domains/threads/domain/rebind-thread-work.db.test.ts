@@ -197,12 +197,14 @@ else
 
       await rebind(ids.targetWorkId);
       for (const workId of [ids.workId, ids.targetWorkId]) {
-        const feed = await repos.workChatFeed.queryPage({
+        const feed = await repos.chatFeed.queryPage({
           projectId: ids.projectId,
           workId,
           userId: ids.userId,
           after: null,
           limit: 2,
+          favorite: false,
+          search: null,
         });
         expect(feed).toHaveLength(1);
         expect(feed[0]).toMatchObject({
