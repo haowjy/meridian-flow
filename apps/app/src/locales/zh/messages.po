@@ -1107,6 +1107,18 @@ msgid "Compact conversation"
 msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Compacted"
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+#~ msgid "Compacted automatically"
+#~ msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Compacting"
+msgstr ""
+
+#: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/compaction/useCompactionAnnouncements.ts
 msgid "Compacting conversation"
 msgstr ""
@@ -1463,6 +1475,10 @@ msgstr ""
 
 #: src/features/chat/compaction/useThreadControls.ts
 msgid "Couldn't stop the compaction. Try again."
+msgstr ""
+
+#: src/features/chat/ChatView.tsx
+msgid "Couldn't stop. Try again."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -2772,6 +2788,10 @@ msgstr ""
 msgid "No Work yet."
 msgstr ""
 
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Not compacted"
+msgstr ""
+
 #: src/routes/__root.tsx
 msgid "Not Found"
 msgstr "未找到"
@@ -3795,6 +3815,7 @@ msgstr "已取消"
 #~ msgid "Stopped."
 #~ msgstr "已取消。"
 
+#: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/compaction/QueuedControlRows.tsx
 msgid "Stopping"
 msgstr ""
@@ -4054,8 +4075,8 @@ msgid "The full conversation is back in context."
 msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "The full conversation may be too long to restore."
-msgstr ""
+#~ msgid "The full conversation may be too long to restore."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row does not merge into the body."

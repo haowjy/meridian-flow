@@ -130,11 +130,27 @@ export function isOverflowShell(turn: Turn, next: Turn | undefined): boolean {
   );
 }
 
+/**
+ * The snapshot's undo availability, while it can still be current. A running
+ * compaction will replace the divider it names, and the snapshot only learns
+ * that when the compaction settles: until then no divider offers Undo.
+ */
+export function currentUndoAvailability(
+  turns: readonly Turn[],
+  availability: CompactionUndoAvailability,
+): CompactionUndoAvailability {
+  const compacting = turns.some(
+    (turn) =>
+      turn.role === "compaction" && (turn.status === "pending" || turn.status === "streaming"),
+  );
+  return compacting ? null : availability;
+}
+
 export type DividerState = "pending" | "complete" | "failed" | "cancelled" | "undone";
 
 export type DividerUndo =
-  /** Undo is offered; `advisory` means execution will likely refuse it. */
-  | { kind: "offer"; advisory: boolean }
+  /** Undo is offered: the server marks it likely to succeed on this divider. */
+  | { kind: "offer" }
   /** An undo control is on its way to the inbox, waiting there, or being withdrawn. */
   | { kind: "queued"; control: QueuedControl }
   | null;
@@ -199,9 +215,10 @@ export function dividerView(input: {
   let undo: DividerUndo = null;
   if (state === "complete") {
     if (activeUndo) undo = { kind: "queued", control: activeUndo };
-    // Availability is advisory: reflect it, never block on it.
-    else if (undoAvailability?.turnId === turn.id)
-      undo = { kind: "offer", advisory: undoAvailability.availability === "would_recompact" };
+    // R-C6-2: offer Undo only where it is likely to succeed. `would_recompact`
+    // means restoring the history would compact it again at once.
+    else if (undoAvailability?.turnId === turn.id && undoAvailability.availability === "likely")
+      undo = { kind: "offer" };
   }
   const refusalCopy = state === "complete" && !activeUndo ? (markers.refusal?.error ?? null) : null;
   return {

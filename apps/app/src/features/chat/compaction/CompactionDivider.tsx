@@ -52,23 +52,34 @@ export function compactionFailureCopy(
   return serverCopy ?? t`This conversation couldn't be compacted.`;
 }
 
-function stateLabel(view: DividerView, phase: ThreadPhase | null, stopping: boolean): string {
+type StateLabel = {
+  /** The divider's state in words; also the section's accessible name. */
+  full: string;
+  /** What a narrow chat column shows, so the divider stays on one line. */
+  short: string;
+};
+
+function stateLabel(view: DividerView, phase: ThreadPhase | null, stopping: boolean): StateLabel {
+  const same = (label: string) => ({ full: label, short: label });
   switch (view.state) {
     case "pending":
-      if (stopping) return t`Stopping compaction`;
+      if (stopping) return { full: t`Stopping compaction`, short: t`Stopping` };
       return phase === "compacting" || phase === null
-        ? t`Compacting conversation`
-        : t`Waiting to compact`;
+        ? { full: t`Compacting conversation`, short: t`Compacting` }
+        : same(t`Waiting to compact`);
     case "complete":
+      // Narrow, the trigger yields to the controls; the section's name keeps it.
       return view.trigger === "manual"
-        ? t`Conversation compacted`
-        : t`Conversation compacted automatically`;
+        ? { full: t`Conversation compacted`, short: t`Compacted` }
+        : { full: t`Conversation compacted automatically`, short: t`Compacted` };
     case "failed":
-      return view.trigger === "manual" ? t`Couldn't compact` : t`Conversation not compacted`;
+      return view.trigger === "manual"
+        ? same(t`Couldn't compact`)
+        : { full: t`Conversation not compacted`, short: t`Not compacted` };
     case "cancelled":
-      return t`Compaction stopped`;
+      return same(t`Compaction stopped`);
     case "undone":
-      return t`Compaction undone`;
+      return same(t`Compaction undone`);
   }
 }
 
@@ -106,14 +117,8 @@ export function CompactionDivider({
       text: t`The full conversation is back in context.`,
       tone: "muted",
     });
-  if (view.refusalCopy) notes.push({ key: "refusal", text: view.refusalCopy, tone: "error" });
-  // A refusal already says more than the advice would.
-  if (view.undo?.kind === "offer" && view.undo.advisory && !view.refusalCopy)
-    notes.push({
-      key: "advisory",
-      text: t`The full conversation may be too long to restore.`,
-      tone: "muted",
-    });
+  // A refused undo loses nothing: it reads like a historical error, not an alarm.
+  if (view.refusalCopy) notes.push({ key: "refusal", text: view.refusalCopy, tone: "muted" });
   if (view.undoNote === "withdrawn")
     notes.push({ key: "withdrawn", text: t`Undo withdrawn.`, tone: "muted" });
   if (view.undo?.kind === "queued" && view.undo.control.status === "failed")
@@ -129,19 +134,22 @@ export function CompactionDivider({
       data-compaction-divider
       data-compaction-state={view.state}
       data-compaction-trigger={view.trigger}
-      aria-label={label}
-      className="flex flex-col gap-[var(--chat-space-inline)] py-[var(--chat-space-block)] outline-none"
+      aria-label={label.full}
+      className="@container/divider flex flex-col gap-[var(--chat-space-inline)] py-[var(--chat-space-block)] outline-none"
     >
-      <div className="flex min-w-0 flex-wrap items-center gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-inline)]">
+      {/* One line at every width: a narrow column shows the short label, and
+          the label truncates before a control or the rule would wrap. */}
+      <div className="flex min-w-0 items-center gap-[var(--chat-space-block)]">
         <span className="flex min-w-0 items-center gap-[var(--chat-space-block)]">
           <DividerMark state={view.state} loud={loud} />
           <span
             className={cn(
-              "text-caption font-medium",
+              "min-w-0 truncate text-caption font-medium",
               view.state === "failed" && !loud ? "text-ink-subtle" : "text-ink-muted",
             )}
           >
-            {label}
+            <span className="hidden @lg/divider:inline">{label.full}</span>
+            <span className="@lg/divider:hidden">{label.short}</span>
           </span>
         </span>
 
@@ -199,7 +207,7 @@ export function CompactionDivider({
           />
         ) : null}
 
-        <span aria-hidden className="h-px min-w-6 flex-1 bg-border" />
+        <span aria-hidden className="h-px min-w-3 flex-1 bg-border" />
       </div>
 
       {notes.map((note) => (
@@ -258,7 +266,7 @@ function QueuedUndoControls({
   const withdrawing = control.status === "withdrawing";
   return (
     <>
-      <span role="status" className="text-meta text-muted-foreground">
+      <span role="status" className="shrink-0 whitespace-nowrap text-meta text-muted-foreground">
         {withdrawing ? t`Withdrawing undo` : t`Undo queued`}
       </span>
       {onWithdraw ? (

@@ -40,8 +40,27 @@ failed, cancelled, undone. A manual failure says why on the divider, with
 writer's message; the client owns that sentence. An autocompaction's failure
 stays quiet (R3): the failed reply under the newest message carries it.
 
-Undo is offered only on the divider `snapshot.compactionUndo` names.
-`would_recompact` is advice, shown beside Undo, never a block.
+Undo is offered only where it is likely to succeed (R-C6-2): on the divider
+`snapshot.compactionUndo` names with `availability: "likely"`. With
+`would_recompact` there is no Undo. While any compaction runs, no divider
+offers Undo (`currentUndoAvailability`): the snapshot still names the divider
+the running compaction will replace. A queued undo stays on its divider
+whatever the availability says, and a refused undo's copy stays on the divider
+it targeted, in the quiet muted tone of a historical error (it lost nothing).
+
+The divider is one line at every width. Its section is a container: below
+`@lg` the state label switches to a short form ("Compacted") and truncates
+last; the section's accessible name keeps the full label.
+
+## Composer during a run
+
+`composerRun(turns)` decides what the composer's Stop acts on. A run is active
+while its reply streams and while it works on a run-owned placeholder with no
+stream: a pending compaction (`compacting`) or a pending brief (`briefing`).
+Stop on a compaction goes through `useThreadControls.stop` (the divider shows
+Stopping); a brief cancels its bound turn. A send meanwhile queues like any
+send during a run. Turns, not the snapshot's phase, carry this: the phase can
+trail the run's end.
 
 ## Writer controls
 

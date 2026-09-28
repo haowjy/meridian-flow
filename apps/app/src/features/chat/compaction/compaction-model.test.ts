@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   answeredControlIds,
   collectUndoMarkers,
+  currentUndoAvailability,
   dividerView,
   isOverflowShell,
   NO_UNDO_MARKERS,
@@ -124,7 +125,7 @@ describe("dividerView", () => {
       state: "complete",
       summary: "S",
       tokens: { before: 40_000, after: 9_000 },
-      undo: { kind: "offer", advisory: false },
+      undo: { kind: "offer" },
     });
   });
 
@@ -150,10 +151,19 @@ describe("dividerView", () => {
     ).toBeNull();
   });
 
-  it("reflects would_recompact as advice without withholding Undo", () => {
+  it("offers Undo only where the server marks it likely to succeed", () => {
     expect(
       view(compaction(), { undo: { turnId: "c", availability: "would_recompact" } }).undo,
-    ).toEqual({ kind: "offer", advisory: true });
+    ).toBeNull();
+  });
+
+  it("still shows an undo already queued when availability turns to would_recompact", () => {
+    expect(
+      view(compaction(), {
+        undo: { turnId: "c", availability: "would_recompact" },
+        queued: queuedUndo("queued"),
+      }).undo,
+    ).toMatchObject({ kind: "queued", control: { id: "undo-k", status: "queued" } });
   });
 
   it("failed manual: says why, with client copy where the server's would blame the writer", () => {
@@ -213,7 +223,7 @@ describe("dividerView", () => {
     ).toMatchObject({
       state: "complete",
       refusalCopy: "Undo would make this conversation compact again immediately.",
-      undo: { kind: "offer", advisory: true },
+      undo: null,
     });
   });
 
@@ -282,5 +292,19 @@ describe("isOverflowShell (R4)", () => {
     );
     expect(isOverflowShell({ ...empty, status: "error" } as Turn, compaction())).toBe(false);
     expect(isOverflowShell(empty, undefined)).toBe(false);
+  });
+});
+
+describe("currentUndoAvailability", () => {
+  const likely = { turnId: "c", availability: "likely" } as const;
+
+  it("passes the snapshot's availability through while nothing compacts", () => {
+    expect(currentUndoAvailability([compaction()], likely)).toBe(likely);
+  });
+
+  it("withholds Undo everywhere while a newer compaction runs", () => {
+    expect(
+      currentUndoAvailability([compaction(), compaction({ id: "c2", status: "pending" })], likely),
+    ).toBeNull();
   });
 });

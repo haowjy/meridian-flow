@@ -12,7 +12,7 @@ import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { CompactionDivider } from "./compaction/CompactionDivider";
-import { answeredControlIds } from "./compaction/compaction-model";
+import { answeredControlIds, currentUndoAvailability } from "./compaction/compaction-model";
 import { QueuedControlRows } from "./compaction/QueuedControlRows";
 import type { QueuedControl } from "./compaction/thread-controls";
 import type { ThreadControls } from "./compaction/useThreadControls";
@@ -97,6 +97,10 @@ export function TurnList({
   );
   const visibleTurns = transcript.visibleTurns;
   const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
+  const undoAvailability = useMemo(
+    () => currentUndoAvailability(turns, compactionUndo),
+    [turns, compactionUndo],
+  );
   // Undo items render on the divider they target; everything else still
   // waiting sits at the tail, after the newest turn (R5: no position yet).
   const { undoByDividerId, tailControls } = useMemo(() => {
@@ -218,7 +222,7 @@ export function TurnList({
           <CompactionDivider
             turn={turn}
             undo={row.undo}
-            undoAvailability={compactionUndo}
+            undoAvailability={undoAvailability}
             queuedUndo={undoByDividerId.get(turn.id) ?? null}
             phase={phase}
             stopping={controls?.stoppingTurnIds.has(turn.id) ?? false}
@@ -264,7 +268,7 @@ export function TurnList({
     },
     [
       byTurnId,
-      compactionUndo,
+      undoAvailability,
       controls,
       phase,
       undoByDividerId,

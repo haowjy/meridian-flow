@@ -1107,6 +1107,18 @@ msgid "Compact conversation"
 msgstr "Compact conversation"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Compacted"
+msgstr "Compacted"
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+#~ msgid "Compacted automatically"
+#~ msgstr "Compacted automatically"
+
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Compacting"
+msgstr "Compacting"
+
+#: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/compaction/useCompactionAnnouncements.ts
 msgid "Compacting conversation"
 msgstr "Compacting conversation"
@@ -1464,6 +1476,10 @@ msgstr "Couldn't send. Your message was not lost."
 #: src/features/chat/compaction/useThreadControls.ts
 msgid "Couldn't stop the compaction. Try again."
 msgstr "Couldn't stop the compaction. Try again."
+
+#: src/features/chat/ChatView.tsx
+msgid "Couldn't stop. Try again."
+msgstr "Couldn't stop. Try again."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't switch Work"
@@ -2776,6 +2792,10 @@ msgstr "No Work matches your search."
 msgid "No Work yet."
 msgstr "No Work yet."
 
+#: src/features/chat/compaction/CompactionDivider.tsx
+msgid "Not compacted"
+msgstr "Not compacted"
+
 #: src/routes/__root.tsx
 msgid "Not Found"
 msgstr "Not Found"
@@ -3799,6 +3819,7 @@ msgstr "Stopped"
 #~ msgid "Stopped."
 #~ msgstr "Stopped."
 
+#: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/compaction/QueuedControlRows.tsx
 msgid "Stopping"
 msgstr "Stopping"
@@ -4058,8 +4079,8 @@ msgid "The full conversation is back in context."
 msgstr "The full conversation is back in context."
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "The full conversation may be too long to restore."
-msgstr "The full conversation may be too long to restore."
+#~ msgid "The full conversation may be too long to restore."
+#~ msgstr "The full conversation may be too long to restore."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row does not merge into the body."

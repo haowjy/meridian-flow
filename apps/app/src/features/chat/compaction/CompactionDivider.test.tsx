@@ -133,17 +133,26 @@ describe("CompactionDivider", () => {
     });
     await act(async () => button("Undo compaction")?.click());
     expect(onUndo).toHaveBeenCalledWith("c");
-    expect(host.textContent).not.toContain("may be too long");
   });
 
-  it("would_recompact: Undo stays, with the advice beside it", async () => {
+  it("names the section in full and keeps a short label for a narrow column", async () => {
+    await render({ turn: divider({ metadata: { trigger: "auto" } }) });
+    const section = host.querySelector("[data-compaction-divider]");
+    expect(section?.getAttribute("aria-label")).toBe("Conversation compacted automatically");
+    const labels = [...(section?.querySelectorAll("span.truncate > span") ?? [])].map(
+      (node) => node.textContent,
+    );
+    expect(labels).toEqual(["Conversation compacted automatically", "Compacted"]);
+  });
+
+  it("would_recompact: no Undo, since it would compact again at once", async () => {
     await render({
       turn: divider(),
       undoAvailability: { turnId: "c", availability: "would_recompact" },
       onUndo: vi.fn(),
     });
-    expect(button("Undo compaction")).toBeDefined();
-    expect(host.textContent).toContain("The full conversation may be too long to restore.");
+    expect(button("Undo compaction")).toBeUndefined();
+    expect(button("Summary")).toBeDefined();
   });
 
   it("queued undo: shows at once with Withdraw", async () => {
@@ -200,10 +209,19 @@ describe("CompactionDivider", () => {
         blocks: [],
       } as unknown as Turn,
     ]).get("c");
-    await render({ turn: divider(), undo, undoAvailability: null });
-    expect(host.textContent).toContain(
-      "Undo would make this conversation compact again immediately.",
+    await render({
+      turn: divider(),
+      undo,
+      undoAvailability: { turnId: "c", availability: "would_recompact" },
+      onUndo: vi.fn(),
+    });
+    const refusal = [...host.querySelectorAll("p")].find((node) =>
+      node.textContent?.includes("Undo would make this conversation compact again immediately."),
     );
+    // A refused undo loses nothing: quiet, like a historical error.
+    expect(refusal?.className).toContain("text-muted-foreground");
+    expect(refusal?.className).not.toContain("text-destructive");
+    expect(button("Undo compaction")).toBeUndefined();
   });
 
   it("undone: reads as undone and keeps the summary", async () => {
