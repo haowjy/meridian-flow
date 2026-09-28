@@ -16,7 +16,6 @@
  */
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
-import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { resolveDocumentLink } from "@/client/api/document-links-api";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
@@ -26,7 +25,6 @@ import {
   retireChatSubmission,
 } from "@/client/chat-submissions";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
-import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { announce, announceError, useThreadActions, useThreadStore } from "@/client/stores";
 import {
@@ -108,7 +106,6 @@ export function ChatView({
   const openReferenceDocument = useOpenProjectDocument(projectId);
   const actions = useThreadActions();
   const { changeTrails } = useThreadDurableProjections({ threadId, projectId });
-  const queryClient = useQueryClient();
   const composerRef = useRef<ComposerHandle>(null);
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
   const [tailFollowRevision, requestTailFollow] = useReducer((value: number) => value + 1, 0);
@@ -221,14 +218,6 @@ export function ChatView({
         submissionId: envelope.submissionId,
         acceptedRevision: envelope.acceptedRevision,
       };
-    } finally {
-      // The PRIOR assistant turn may have errored and the projector clears it
-      // off `status:error` when the next user turn arrives — a side-effect with
-      // no journal/WS event. Refresh only after submit settles so this fetch
-      // cannot race ahead of a persisted user turn. Ambiguous transport failures
-      // retain the row until a later acknowledgement or reload can reconcile;
-      // a proved rejection keeps the failed row for edit/retry recovery.
-      void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
     }
   }
 
