@@ -16,7 +16,9 @@ import {
 import type { ThreadLock } from "../../loop/thread-lock.js";
 import { createDeliveryAdapter, type DeliveryStore } from "../runtime-delivery.js";
 
-export function createInMemoryInbox(): DeliveryStore {
+export function createInMemoryInbox(): DeliveryStore & {
+  prioritizePendingControls(threadId: ThreadId): Promise<void>;
+} {
   const messages: InboxMessage[] = [];
   let nextSeq = 0;
   return {
@@ -54,6 +56,7 @@ export function createInMemoryInbox(): DeliveryStore {
         seq: nextSeq,
         enqueuedAt: new Date().toISOString(),
         deliveredAt: null,
+        runsFirst: false,
       };
       messages.push(message);
       return message;
@@ -85,6 +88,17 @@ export function createInMemoryInbox(): DeliveryStore {
         ) {
           message.deliveredAt = deliveredAt;
         }
+      }
+    },
+
+    async prioritizePendingControls(threadId) {
+      for (const message of messages) {
+        if (
+          message.threadId === threadId &&
+          message.intent === "control" &&
+          message.deliveredAt === null
+        )
+          message.runsFirst = true;
       }
     },
 
@@ -125,6 +139,8 @@ export interface InMemoryRunClaimOptions {
   leaseTtlMs?: number;
   /** Injected clock (ms since epoch) so expiry is deterministic in tests. */
   now?: () => number;
+  /** Mirrors Stop's atomic inbox priority update for the in-memory adapter. */
+  prioritizePendingControls?: (threadId: ThreadId) => Promise<void>;
 }
 
 export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): RunClaim &
@@ -271,6 +287,7 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
     async cancelExecution(threadId, turnId) {
       const row = liveLease(threadId);
       if (!row?.boundTurnIds.has(turnId)) return false;
+      await options.prioritizePendingControls?.(threadId);
       row.cancelRequested = true;
       return true;
     },

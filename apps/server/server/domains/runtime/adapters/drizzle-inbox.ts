@@ -26,6 +26,7 @@ function toInboxMessage(row: typeof schema.threadInboxMessages.$inferSelect): In
     idempotencyKey: row.idempotencyKey,
     enqueuedAt: toIso(row.enqueuedAt),
     deliveredAt: row.deliveredAt ? toIso(row.deliveredAt) : null,
+    runsFirst: row.runsFirst,
   };
 }
 

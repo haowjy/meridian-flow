@@ -57,6 +57,7 @@ export interface InboxMessage extends MessageDraft {
   seq: number;
   enqueuedAt: string;
   deliveredAt: string | null;
+  runsFirst: boolean;
 }
 
 /** Read-only durable queue view. Mutations are owned by RuntimeDelivery. */
@@ -101,8 +102,9 @@ export interface RunClaim {
    * {@link read}, never from the turns table.
    */
   readRunningTurnId(threadId: ThreadId): Promise<TurnId | null>;
-  /** Flag the live run that has bound this turn, matching membership under the
-   * lease row lock. This accepts both predecessors and a just-committed successor.
+  /** Stop the live run that has bound this turn, matching membership under the
+   * lease row lock. Pending commands are stamped to run first in the same
+   * transaction so the release wake adopts them ahead of waiting messages.
    */
   cancelExecution(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
   /**

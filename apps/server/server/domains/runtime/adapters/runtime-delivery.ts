@@ -329,6 +329,7 @@ export function createDeliveryAdapter(
           idempotencyKey: turn.id,
           enqueuedAt: turn.createdAt,
           deliveredAt: turn.createdAt,
+          runsFirst: false,
         });
       }
       leaf = (turn.prevTurnId as TurnId | null | undefined) ?? null;

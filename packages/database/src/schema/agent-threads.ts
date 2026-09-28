@@ -218,6 +218,7 @@ export const threadInboxMessages = pgTable(
     idempotencyKey: text("idempotency_key").notNull(),
     enqueuedAt: timestamp("enqueued_at", { withTimezone: true }).notNull().defaultNow(),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    runsFirst: boolean("runs_first").notNull().default(false),
   },
   (table) => [
     unique("thread_inbox_messages_idem_unique").on(table.threadId, table.idempotencyKey),

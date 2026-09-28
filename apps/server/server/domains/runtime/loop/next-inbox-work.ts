@@ -20,9 +20,7 @@ export function next(
     return hasMessages ? { kind: "messages", rows: [...rows] } : { kind: "none" };
 
   const controls = pending.filter((row) => row.intent === "control") as ControlMessage[];
-  const runsFirst = controls.find(
-    (control) => (control as ControlMessage & { runsFirst?: boolean }).runsFirst === true,
-  );
+  const runsFirst = controls.find((control) => control.runsFirst);
   if (runsFirst) return { kind: "control", control: runsFirst, rows: [...rows] };
   if (hasMessages) return { kind: "messages", rows: [...rows] };
   const control = controls[0];

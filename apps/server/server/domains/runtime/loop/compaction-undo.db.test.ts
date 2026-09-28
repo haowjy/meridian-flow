@@ -369,6 +369,7 @@ else
         idempotencyKey: "inherited",
         enqueuedAt: new Date().toISOString(),
         deliveredAt: null,
+        runsFirst: false,
       };
       const prepared = await prepareCompactionUndo({
         deps: rig.deps,

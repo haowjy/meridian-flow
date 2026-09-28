@@ -24,6 +24,7 @@ function message(
     enqueuedAt: "2026-01-01T00:00:00.000Z",
     deliveredAt: null,
     ...overrides,
+    runsFirst: overrides.runsFirst ?? false,
   };
 }
 

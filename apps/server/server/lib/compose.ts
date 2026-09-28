@@ -105,6 +105,11 @@ import {
   agentModelUnavailableReasons,
 } from "../domains/runtime/agent-definition-support.js";
 import { MODEL_REGISTRY, type MockScriptQueue } from "../domains/runtime/gateway/index.js";
+import { generateHandoffBrief } from "../domains/runtime/handoff/brief-request.js";
+import {
+  createHandoffBriefs,
+  type HandoffBriefs,
+} from "../domains/runtime/handoff/brief-service.js";
 import {
   createChildRunCoordinator,
   createChildRunDriver,
@@ -112,9 +117,9 @@ import {
   createContextImageAssetPort,
   createConversationSummarizer,
   createDrizzleAdmissionRecords,
-  createDrizzleRunClaim,
   createDrizzleHandoffBriefClaim,
   createDrizzleHandoffStatusReader,
+  createDrizzleRunClaim,
   createDrizzleRuntimeDelivery,
   createDrizzleThreadLock,
   createGatewayFromEnv,
@@ -153,9 +158,6 @@ import {
   type WorkContextNotices,
   type WorkContextReader,
 } from "../domains/runtime/index.js";
-import { createHandoffBriefs, type HandoffBriefs } from "../domains/runtime/handoff/brief-service.js";
-import { generateHandoffBrief } from "../domains/runtime/handoff/brief-request.js";
-import type { HandoffBriefStopper } from "../domains/runtime/ports/handoff-briefs.js";
 import {
   loadModelSkillBody,
   resolveThreadUserInvocableSkills,
@@ -171,6 +173,7 @@ import {
   createInMemoryModelRequestDebugStore,
   createModelRequestDebugStore,
 } from "../domains/runtime/model-request-debug/index.js";
+import type { HandoffBriefStopper } from "../domains/runtime/ports/handoff-briefs.js";
 import type { LocalObjectStoreAdapter, ObjectStorePort } from "../domains/storage/index.js";
 import { createDrizzleEventJournalReader } from "../domains/threads/adapters/drizzle/event-reader.js";
 import { createDrizzleEventJournalWriter } from "../domains/threads/adapters/drizzle/event-writer.js";
@@ -250,8 +253,7 @@ export type AppServices = {
   orchestrator: RunTurnPort;
   runner: TurnRunner;
   runStarter: RunStarter;
-  delivery: DeliveryProducer &
-    import("../domains/runtime/loop/runtime-delivery.js").ThreadControls;
+  delivery: DeliveryProducer & import("../domains/runtime/loop/runtime-delivery.js").ThreadControls;
   handoffBriefs: HandoffBriefs;
   /** Startup/interval recovery for threads with a pending message and no live run. */
   recovery: {
@@ -1028,7 +1030,10 @@ export function createInMemoryAppServices(): AppServices {
     },
     env: {},
   });
-  const runClaim = createInMemoryRunClaim();
+  const inbox = createInMemoryInbox();
+  const runClaim = createInMemoryRunClaim({
+    prioritizePendingControls: inbox.prioritizePendingControls,
+  });
   const runStarter = createInMemoryRunStarter();
   const delivery = createInMemoryRuntimeDelivery({
     workContext: {
@@ -1040,7 +1045,7 @@ export function createInMemoryAppServices(): AppServices {
     eventWriter: createInMemoryEventJournalWriter(),
     notices,
     runClaim,
-    inbox: createInMemoryInbox(),
+    inbox,
     threadLock: createInMemoryThreadLock(),
     runStarter,
     async publishFinalizedReports() {},
@@ -1051,9 +1056,15 @@ export function createInMemoryAppServices(): AppServices {
   const handoffBriefs: HandoffBriefs = {
     async launch() {},
     launchAfterCommit() {},
-    async stop() { return false; },
-    async retry() { throw new Error("in-memory handoff retry is not implemented"); },
-    async sweep() { return 0; },
+    async stop() {
+      return false;
+    },
+    async retry() {
+      throw new Error("in-memory handoff retry is not implemented");
+    },
+    async sweep() {
+      return 0;
+    },
   };
   const recovery = {
     async scanWakes() {

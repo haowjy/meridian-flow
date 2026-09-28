@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 import { next } from "./next-inbox-work.js";
 import type { InboxMessage } from "./ports.js";
 
-type TestInboxMessage = InboxMessage & { runsFirst?: boolean };
-
 function row(input: Pick<InboxMessage, "id" | "intent" | "body"> & { runsFirst?: boolean }) {
   return {
     threadId: "thread",
@@ -13,7 +11,8 @@ function row(input: Pick<InboxMessage, "id" | "intent" | "body"> & { runsFirst?:
     deliveredAt: null,
     idempotencyKey: input.id,
     ...input,
-  } as TestInboxMessage;
+    runsFirst: input.runsFirst ?? false,
+  } satisfies InboxMessage;
 }
 
 const message = row({ id: "message", intent: "message", body: { kind: "text", text: "hello" } });

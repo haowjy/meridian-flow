@@ -10,7 +10,11 @@ import type { CurrentToolCall, ThreadLeaseState, ThreadStatus } from "@meridian/
 import type { Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
 import { and, eq, gt, inArray, sql } from "drizzle-orm";
-import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  deferUntilDrizzleCommit,
+  runInDrizzleTransaction,
+} from "../../../shared/drizzle-transaction.js";
 import {
   DEFAULT_LEASE_TTL_MS,
   type RunClaim,
@@ -202,18 +206,32 @@ export function createDrizzleRunClaim(
     },
 
     async cancelExecution(threadId, turnId) {
-      const rows = await db_()
-        .update(schema.threadRunLeases)
-        .set({ cancelRequested: true })
-        .where(
-          and(
-            eq(schema.threadRunLeases.threadId, threadId),
-            sql`${turnId} = ANY(${schema.threadRunLeases.boundTurnIds})`,
-            gt(schema.threadRunLeases.expiresAt, new Date()),
-          ),
-        )
-        .returning({ turnId: schema.threadRunLeases.turnId });
-      return rows.length > 0;
+      return runInDrizzleTransaction(db, async () => {
+        const rows = await db_()
+          .update(schema.threadRunLeases)
+          .set({ cancelRequested: true })
+          .where(
+            and(
+              eq(schema.threadRunLeases.threadId, threadId),
+              sql`${turnId} = ANY(${schema.threadRunLeases.boundTurnIds})`,
+              gt(schema.threadRunLeases.expiresAt, new Date()),
+            ),
+          )
+          .returning({ turnId: schema.threadRunLeases.turnId });
+        if (rows.length === 0) return false;
+        // Esc priority and cancellation must commit together before the release wake reads the queue.
+        await db_()
+          .update(schema.threadInboxMessages)
+          .set({ runsFirst: true })
+          .where(
+            and(
+              eq(schema.threadInboxMessages.threadId, threadId),
+              eq(schema.threadInboxMessages.intent, "control"),
+              sql`${schema.threadInboxMessages.deliveredAt} IS NULL`,
+            ),
+          );
+        return true;
+      });
     },
 
     async release(lease) {

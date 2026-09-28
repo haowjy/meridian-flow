@@ -84,6 +84,86 @@ else
       expect(tail.at(-1)?.metadata).toMatchObject({ trigger: "manual" });
     });
 
+    it("Stop runs the queued command first with waiting messages pinned verbatim", async () => {
+      const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
+      const rig = await manualFixture({ gateway });
+      const active = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        userText: "reply to stop",
+      });
+      const execution = active.execute();
+      await gateway.untilGatewayBoundary(1);
+
+      const control = await compactControl(rig);
+      const waitingText = "Keep this exact message after Esc.";
+      const waiting = await rig.send(rig.threadId, waitingText);
+      expect(await rig.orchestrator.cancel(rig.threadId, active.executionTurnId)).toBe("cancelled");
+
+      gateway.release(1);
+      await execution;
+      const turns = await settled(rig);
+      const command = turns.find(
+        (turn) =>
+          turn.role === "compaction" &&
+          (turn.metadata as { controlMessageId?: string } | null)?.controlMessageId === control.id,
+      );
+
+      expect(command).toMatchObject({
+        status: "complete",
+        metadata: {
+          trigger: "manual",
+          pinnedRequestTurnIds: [waiting.userTurnId],
+        },
+      });
+      expect(JSON.stringify(gateway.requests.at(-1))).toContain(waitingText);
+      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+    });
+
+    it("retires a Stop-stamped compact after a failed start commit and answers its messages", async () => {
+      const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
+      const rig = await manualFixture({ gateway });
+      const active = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        userText: "reply to stop",
+      });
+      const execution = active.execute();
+      await gateway.untilGatewayBoundary(1);
+
+      const control = await compactControl(rig);
+      const waitingText = "Answer me after the failed compact.";
+      const waiting = await rig.send(rig.threadId, waitingText);
+      expect(await rig.orchestrator.cancel(rig.threadId, active.executionTurnId)).toBe("cancelled");
+      const transition = rig.repos.runTurnStartTransition.bind(rig.repos);
+      let failed = false;
+      rig.repos.runTurnStartTransition = async (threadId, expectedLeafTurnId, operation) => {
+        if (!failed) {
+          failed = true;
+          throw new Error("compact start commit failed");
+        }
+        return transition(threadId, expectedLeafTurnId, operation);
+      };
+
+      gateway.release(1);
+      await execution;
+      const turns = await settled(rig);
+      const compact = turns.find(
+        (turn) =>
+          turn.role === "compaction" &&
+          (turn.metadata as { controlMessageId?: string } | null)?.controlMessageId === control.id,
+      );
+
+      expect(failed).toBe(true);
+      expect(compact).toMatchObject({
+        status: "error",
+        metadata: { reason: "compaction_failed", phase: "delivery" },
+      });
+      expect(turns.some((turn) => turn.id === waiting.userTurnId && turn.role === "user")).toBe(
+        true,
+      );
+      expect(JSON.stringify(gateway.requests.at(-1))).toContain(waitingText);
+      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+    });
+
     it("runs queued controls one per run and in their queue order", async () => {
       const rig = await manualFixture();
       const first = await compactControl(rig);

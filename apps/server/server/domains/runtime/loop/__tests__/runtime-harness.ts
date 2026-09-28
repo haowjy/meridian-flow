@@ -92,8 +92,13 @@ export function createRuntimeHarness(
   const eventWriter = overrides.eventWriter ?? journal;
   const toolRegistry = overrides.toolRegistry ?? createToolRegistry();
   const notices = suppliedNotices ?? createTestNoticePort();
-  const runClaim = overrides.runClaim ?? createInMemoryRunClaim();
   const inbox = suppliedInbox ?? createInMemoryInbox();
+  const runClaim =
+    overrides.runClaim ??
+    createInMemoryRunClaim({
+      prioritizePendingControls: (inbox as Partial<ReturnType<typeof createInMemoryInbox>>)
+        .prioritizePendingControls,
+    });
   const threadLock = suppliedLock ?? createInMemoryThreadLock();
   const workContext = overrides.workContext ?? {
     async renderForThread() {
@@ -159,7 +164,11 @@ export function createRuntimeHarness(
     eventSink: createInMemoryEventSink(),
     modelRequestDebug: createInMemoryModelRequestDebugStore(),
     runClaim,
-    handoffBriefs: { async stop() { return false; } },
+    handoffBriefs: {
+      async stop() {
+        return false;
+      },
+    },
     delivery:
       overrides.delivery ??
       createInMemoryRuntimeDelivery({
