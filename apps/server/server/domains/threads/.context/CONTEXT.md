@@ -20,6 +20,12 @@ there, including its crash recovery: see
 [runtime handoff](../../runtime/.context/handoff.md) and
 [HTTP contract](../../../../../../docs/api/thread-handoff.md).
 
+The seed codec owns summarizer telemetry and typed brief failure reason/phase;
+the shared summary rejection codec is in `@meridian/contracts/runtime`.
+Response rows on system seeds never supply prefix warmth or token baselines.
+The effective-transcript loader accepts an optional through-cutoff selection,
+sharing the exact prefix slicing used for fork inheritance.
+
 ## Prompt lifetime
 
 A thread's system prompt **and its advertised tool list** are frozen together

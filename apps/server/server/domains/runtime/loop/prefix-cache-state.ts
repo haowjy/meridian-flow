@@ -1,6 +1,6 @@
 /** Pure cache-warmth rule and repository-backed runtime service. */
 
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   ModelResponse,
   PrefixCachePredictionReason,
@@ -63,7 +63,7 @@ function lastResponse(history: PrefixCacheHistory): LastResponse | null {
   const turnsById = new Map(history.turns.map((turn) => [turn.id, turn]));
   const responses = history.responses.flatMap((response) => {
     const turn = turnsById.get(response.turnId);
-    return turn && turn.role !== "compaction" ? [{ ...response, turn }] : [];
+    return turn && turn.role === "assistant" ? [{ ...response, turn }] : [];
   });
   responses.sort(
     (left, right) => left.turn.position - right.turn.position || left.sequence - right.sequence,
@@ -119,16 +119,9 @@ function responseBakeChanged(history: PrefixCacheHistory, response: LastResponse
   return responseBake !== currentBake;
 }
 
-function isForkCutoffCurrent(input: DerivePrefixCacheStateInput): boolean {
-  const { history, forkOwner } = input;
-  const cutoffTurnId = history.thread.originTurnId;
-  if (!cutoffTurnId || !forkOwner) return false;
-  const cutoffTurn = forkOwner.turns.find((turn) => turn.id === cutoffTurnId);
-  if (!cutoffTurn || cutoffTurn.threadId !== forkOwner.thread.id) return false;
-  const sourceLatestTurn = [...forkOwner.turns]
-    .sort((left, right) => left.position - right.position)
-    .at(-1);
-  return sourceLatestTurn?.id === cutoffTurnId;
+function isForkCutoffCurrent(history: PrefixCacheHistory, cutoffTurnId: string): boolean {
+  const latest = [...history.turns].sort((a, b) => a.position - b.position).at(-1);
+  return latest?.id === cutoffTurnId && latest.threadId === history.thread.id;
 }
 
 function forkBoundary(history: PrefixCacheHistory): PrefixCacheStateReason | null {
@@ -160,9 +153,13 @@ export function selectReusablePrefixResponse(input: DerivePrefixCacheStateInput)
     if (boundary) return unavailable(boundary);
   }
   if (!response && history.thread.originType === "fork") {
-    if (!isForkCutoffCurrent(input)) return unavailable("fork_cutoff");
+    if (
+      !input.forkOwner ||
+      !history.thread.originTurnId ||
+      !isForkCutoffCurrent(input.forkOwner, history.thread.originTurnId)
+    )
+      return unavailable("fork_cutoff");
     const cutoffTurnId = history.thread.originTurnId;
-    if (!cutoffTurnId || !input.forkOwner) return unavailable("fork_cutoff");
     const latestForkTurn = [...history.turns]
       .sort((left, right) => left.position - right.position)
       .at(-1);
@@ -218,6 +215,7 @@ export interface PrefixCacheStateServiceDeps {
 
 export interface PrefixCacheStateRequest {
   threadId: ThreadId;
+  throughTurnId?: TurnId;
   /** The model resolved during context assembly, including its cache descriptor. */
   model: ModelInfo | null;
   now?: Date | number;
@@ -239,6 +237,10 @@ export function createPrefixCacheStateService(deps: PrefixCacheStateServiceDeps)
       turns,
       responses: latestResponse ? [latestResponse] : [],
     };
+
+    if (input.throughTurnId && !isForkCutoffCurrent(history, input.throughTurnId)) {
+      return cold("fork_cutoff");
+    }
 
     let forkOwner: PrefixCacheHistory | undefined;
     if (thread.originType === "fork" && !latestResponse) {

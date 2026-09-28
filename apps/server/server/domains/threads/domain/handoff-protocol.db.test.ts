@@ -2,7 +2,7 @@
 
 import * as http from "@meridian/contracts/protocol";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createDrizzleRunClaim } from "../../runtime/adapters/drizzle-run-claim.js";
 import { createDrizzleThreadLock } from "../../runtime/adapters/drizzle-thread-lock.js";
@@ -10,6 +10,7 @@ import { createRuntimeHarness } from "../../runtime/loop/__tests__/runtime-harne
 import { scriptedSummarizer } from "../../runtime/loop/__tests__/scripted-summarizer.js";
 import { createTestDrizzleDelivery } from "../../runtime/loop/__tests__/test-drizzle-delivery.js";
 import { scriptedGateway } from "../../runtime/loop/__tests__/test-gateway.js";
+import { createPrefixCacheStateService } from "../../runtime/loop/prefix-cache-state.js";
 import { createOrphanReportRepair } from "../../runtime/spawn/orphan-report-repair.js";
 import {
   resetThreadWorkRaceFixture,
@@ -168,7 +169,7 @@ else
         delivery,
         agentRevisions: revisions,
         gateway,
-        handoffSummarizer: summarizer,
+        summarizer: summarizer,
       });
       await rig.creditLedger.grant({
         userId: ids.userId,
@@ -214,6 +215,279 @@ else
         },
       };
     }
+
+    it.each([
+      "complete",
+      "failed",
+    ] as const)("C7b settles paid %s brief rows on S without compaction metadata", async (kind) => {
+      let r: Awaited<ReturnType<typeof fixture>>;
+      const responseId = crypto.randomUUID();
+      r = await fixture(async () => ({
+        kind,
+        text: "Paid brief",
+        model: "gpt-4.1-mini",
+        error: new Error("provider failed"),
+        rejectionReason: "provider_error",
+        modelResponses: [
+          {
+            id: responseId,
+            turnId: r.seed.id,
+            sequence: 0,
+            model: "gpt-4.1-mini",
+            provider: "openai",
+            inputTokens: 200,
+            outputTokens: 20,
+            cacheReadTokens: 100,
+            priceSource: "unknown",
+            requestMessageCount: 4,
+            predictedCacheState: "warm",
+            predictedCacheReason: "reusable_prefix",
+            requestStartedAt: new Date().toISOString(),
+            finishReason: kind === "complete" ? "end_turn" : "error",
+          },
+        ],
+        summarizer: { path: "warm", segments: 1 },
+      }));
+      await r.send(r.thread.id, "hi");
+      await r.drain();
+      const turns = await r.settled();
+      expect(await repos.modelResponses.findById(responseId)).toMatchObject({
+        turnId: r.seed.id,
+        predictedCacheState: "warm",
+        predictedCacheReason: "reusable_prefix",
+        requestMessageCount: 4,
+      });
+      const response = await repos.modelResponses.findById(responseId);
+      expect(Number(response?.costUsd)).toBeGreaterThan(0);
+      expect(Number(response?.millicredits)).toBeGreaterThan(0);
+      expect(turns[0]).toMatchObject({
+        status: kind === "complete" ? "complete" : "error",
+        metadata: { kind: "derivation_seed", summarizer: { path: "warm", segments: 1 } },
+      });
+      expect(turns[0].metadata).not.toHaveProperty("compactedThrough");
+      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
+      const replyRows = await repos.modelResponses.listByTurn(turns.at(-1)!.id);
+      expect(replyRows[0]).toMatchObject({
+        predictedCacheState: "cold",
+        predictedCacheReason: "no_response",
+      });
+      if (kind === "failed") {
+        expect(turns[0].metadata).toMatchObject({ reason: "provider_error", phase: "summary" });
+        const errors = await eventReader.listByType(r.thread.id, "turn.error");
+        expect(errors[0].payload).toMatchObject({
+          error: {
+            code: "handoff_brief_failed",
+            details: { reason: "provider_error", phase: "summary" },
+          },
+        });
+        expect(JSON.stringify(r.gateway.requests.at(-1))).toContain("No brief is available.");
+      }
+    });
+
+    it("C7b accepts a failed reply cutoff with ordinary source warmth after M4", async () => {
+      const r = await fixture();
+      const stream = vi.spyOn(r.gateway, "stream").mockImplementationOnce(async function* () {
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "text", text: "Partial scene decision." }],
+            toolCalls: [],
+            finishReason: "error",
+            timing: {
+              requestStartedAt: new Date().toISOString(),
+              latencyMs: 1,
+              timeToFirstTokenMs: 1,
+              generationMs: 0,
+            },
+            usage: { inputTokens: 100, outputTokens: 10 },
+            model: "gpt-4.1-mini",
+            provider: "openai",
+          },
+        };
+      });
+      try {
+        await r.send(r.source.id, "Plan the jade gate scene.");
+        await (await r.orchestrator.prepare({ threadId: r.source.id, drain: true })).execute();
+      } finally {
+        stream.mockRestore();
+      }
+      const failed = await repos.turns.getLatestByThread(r.source.id);
+      expect(failed).toMatchObject({ role: "assistant", status: "error" });
+      if (!failed) throw new Error("Missing source reply");
+      const { prefixCacheStateFor } = createPrefixCacheStateService({ repos });
+      expect(
+        await prefixCacheStateFor({
+          threadId: r.source.id,
+          throughTurnId: failed.id,
+          model: r.gateway.listModels()[0],
+        }),
+      ).toEqual({ state: "warm", reason: "reusable_prefix" });
+      const { thread } = await handoffThreadAgent(r.derive, {
+        ...r.input,
+        id: crypto.randomUUID(),
+        originTurnId: failed.id,
+      });
+      await (await r.orchestrator.prepare({ threadId: thread.id, drain: true })).execute();
+      expect((await repos.turns.listByThread(thread.id))[0]).toMatchObject({
+        status: "complete",
+        metadata: { cutoffTurnId: failed.id },
+      });
+      expect(r.summarizer.calls[0].requestInHand).not.toBeNull();
+      expect(r.summarizer.calls[0].source).toEqual({
+        threadId: r.source.id,
+        throughTurnId: failed.id,
+      });
+      await r.send(r.source.id, "Move on to the next scene.");
+      expect(await repos.turns.findById(failed.id)).toMatchObject({
+        status: "error",
+        error: failed.error,
+      });
+    });
+
+    it("C7b ending commit failure keeps internal causes out of seed writer copy", async () => {
+      const r = await fixture();
+      const split = r.delivery.splitAndContinue.bind(r.delivery);
+      const failure = "database ending commit failed: private internal detail";
+      const spy = vi.spyOn(r.delivery, "splitAndContinue").mockImplementationOnce((input) =>
+        split({
+          ...input,
+          current: {
+            kind: "placeholder",
+            complete: async (...args) => {
+              if (input.current.kind !== "placeholder") throw new Error("Expected brief seed");
+              await input.current.complete(...args);
+              throw new Error(failure);
+            },
+          },
+        }),
+      );
+      try {
+        await r.drain();
+        await r.settled();
+        expect(await repos.turns.findById(r.seed.id)).toMatchObject({
+          status: "error",
+          error: "This handoff brief couldn't be generated. Try again.",
+          metadata: {
+            reason: "handoff_brief_failed",
+            phase: "delivery",
+            summarizer: { path: "cold", segments: 1 },
+          },
+        });
+        const errors = await eventReader.listByType(r.thread.id, "turn.error");
+        expect(errors[0].payload).toMatchObject({
+          error: {
+            code: "handoff_brief_failed",
+            message: "This handoff brief couldn't be generated. Try again.",
+            details: { reason: "handoff_brief_failed", phase: "delivery", cause: failure },
+          },
+        });
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("C7b briefs before a broken destination binding and fails only its reply", async () => {
+      const r = await fixture();
+      const read = revisions.readThreadBinding.bind(revisions);
+      revisions.readThreadBinding = async (id) => {
+        if (id === r.thread.id) throw new Error("destination binding unavailable");
+        return read(id);
+      };
+      try {
+        await r.send(r.thread.id, "hi");
+        await r.drain();
+        const turns = await r.settled();
+        expect(turns[0]).toMatchObject({ id: r.seed.id, status: "complete" });
+        expect(r.summarizer.calls).toHaveLength(1);
+        expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "error" });
+      } finally {
+        revisions.readThreadBinding = read;
+      }
+    });
+
+    it("C7b a due undo behind K follows the completed brief", async () => {
+      const r = await fixture();
+      const target = await repos.turns.create({
+        threadId: r.thread.id,
+        prevTurnId: r.seed.id,
+        role: "compaction",
+        origin: "system",
+        status: "error",
+      });
+      await r.delivery.enqueueControl({
+        id: crypto.randomUUID(),
+        threadId: r.thread.id,
+        actorId: ids.userId,
+        control: { kind: "compaction_undo", compactionTurnId: target.id },
+      });
+      await r.send(r.thread.id, "hi after undo");
+      await r.drain();
+      const turns = await r.settled();
+      const undo = turns.find(
+        (t) => (t.metadata as { kind?: string } | null)?.kind === "compaction_undo",
+      );
+      expect(turns[0].status).toBe("complete");
+      expect(undo).toMatchObject({ status: "error", metadata: { reason: "not_active" } });
+      expect(undo!.position).toBeGreaterThan(r.seed.position);
+      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
+    });
+
+    it("C7b a successful undo behind Retry restores its bake after the new brief", async () => {
+      const r = await fixture();
+      let briefCalls = 0;
+      r.deps.summarizer = scriptedSummarizer(async (input) => {
+        if (input.instruction === "handoff_brief" && ++briefCalls === 1)
+          return { kind: "failed", error: new Error("first brief failed"), modelResponses: [] };
+        return {
+          kind: "complete",
+          text: "Continued context",
+          model: "summary-model",
+          modelResponses: [],
+        };
+      });
+      await r.drain();
+      await r.settled();
+      await r.send(r.thread.id, "Earlier scene. ".repeat(100));
+      await r.drain();
+      await r.settled();
+      const beforeBake = (await repos.threads.findById(r.thread.id))?.initialPromptBakeId;
+      await r.delivery.enqueueControl({
+        id: crypto.randomUUID(),
+        threadId: r.thread.id,
+        actorId: ids.userId,
+        control: { kind: "compact" },
+      });
+      await r.drain();
+      const compaction = (await r.settled()).at(-1)!;
+      expect(compaction).toMatchObject({ role: "compaction", status: "complete" });
+      const retry = await r.delivery.enqueueControl({
+        id: crypto.randomUUID(),
+        threadId: r.thread.id,
+        actorId: ids.userId,
+        control: { kind: "handoff_brief" },
+      });
+      const undo = await r.delivery.enqueueControl({
+        id: crypto.randomUUID(),
+        threadId: r.thread.id,
+        actorId: ids.userId,
+        control: { kind: "compaction_undo", compactionTurnId: compaction.id },
+      });
+      await r.send(r.thread.id, "hi after restored bake");
+      await r.drain();
+      const turns = await r.settled();
+      const byControl = (id: string) =>
+        turns.find(
+          (t) => (t.metadata as { controlMessageId?: string } | null)?.controlMessageId === id,
+        );
+      const seed = byControl(retry.response.id)!;
+      const marker = byControl(undo.response.id)!;
+      expect(seed).toMatchObject({ role: "system", status: "complete" });
+      expect(marker).toMatchObject({ status: "complete", promptBakeId: beforeBake });
+      expect(marker.position).toBeGreaterThan(seed.position);
+      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
+      expect(JSON.stringify(r.gateway.requests.at(-1))).toContain("hi after restored bake");
+      expect(briefCalls).toBe(2);
+    });
 
     it("C7 create-or-get is idempotent and mismatched reuse conflicts", async () => {
       const r = await fixture();
@@ -384,7 +658,17 @@ else
         error: new Error("brief unavailable"),
         modelResponses: [],
       }));
-      r.deps.summarizer = scriptedSummarizer();
+      const briefSummarizer = r.summarizer;
+      r.deps.summarizer = scriptedSummarizer(async (input) =>
+        input.instruction === "handoff_brief"
+          ? briefSummarizer.summarize(input)
+          : {
+              kind: "complete",
+              text: "Earlier context.",
+              model: "summary-model",
+              modelResponses: [],
+            },
+      );
       const [firstControl] = await r.delivery.selectPending(r.thread.id);
       await r.drain();
       await r.settled();
@@ -595,6 +879,8 @@ else
       expect(await repos.turns.listByThread(r.thread.id)).toMatchObject([
         { id: r.seed.id, status: "complete" },
       ]);
+      expect(r.summarizer.calls).toHaveLength(1);
+      expect(await r.delivery.selectPending(r.thread.id)).toEqual([]);
     });
 
     it("C7 Stop wins an optimistic binding prepare without losing hi", async () => {
@@ -608,17 +894,18 @@ else
       const resumed = new Promise<void>((resolve) => {
         release = resolve;
       });
-      const render = r.deps.workContext.renderForThread;
-      r.deps.workContext.renderForThread = async (...args) => {
+      const list = repos.blocks.listByThread.bind(repos.blocks);
+      repos.blocks.listByThread = async (...args) => {
         entered();
         await resumed;
-        return render(...args);
+        return list(...args);
       };
       const preparation = r.orchestrator.prepare({ threadId: r.thread.id, drain: true });
       await preparing;
       expect(await r.orchestrator.cancel(r.thread.id, r.seed.id)).toBe("cancelled");
       release();
       const run = await preparation;
+      repos.blocks.listByThread = list;
       expect((await run.execute()).status).toBe("complete");
       expect((await r.settled())[0].status).toBe("cancelled");
       expect(r.summarizer.calls).toHaveLength(0);

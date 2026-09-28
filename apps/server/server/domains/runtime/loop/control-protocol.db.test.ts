@@ -569,7 +569,7 @@ else
     it("C6 remote Stop during a manual summary wakes the owner after release", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
       const remote = createDrizzleRunClaim(db, { holderId: "remote-controller" });
-      const summarizer = scriptedSummarizer(async ({ turnId }) => {
+      const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => {
         expect(await remote.cancelExecution(rig.threadId, turnId)).toBe(true);
         return { kind: "failed", error: new Error("stopped elsewhere"), modelResponses: [] };
       });
@@ -727,7 +727,7 @@ else
     });
     it("C6 Stop on an auto C that absorbed K stops its reply, not only K", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
-      const summarizer = scriptedSummarizer(async ({ turnId }, call) => {
+      const summarizer = scriptedSummarizer(async ({ owner: { turnId } }, call) => {
         if (call === 1) await rig.runClaim.cancelExecution(rig.threadId, turnId);
         return {
           kind: "complete",

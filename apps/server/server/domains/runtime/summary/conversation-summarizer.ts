@@ -29,11 +29,15 @@ export interface ConversationSummarizerDeps {
   config: { model: string; maxOutputTokens: number };
 }
 
-function instructionText(instruction: "compaction" | "handoff_brief", maxTokens: number): string {
+function instructionText(
+  instruction: "compaction" | "handoff_brief",
+  maxTokens: number,
+  incomingAgentName?: string,
+): string {
   return [
     instruction === "compaction"
       ? "Summarize this conversation so the writer's task can continue from the summary."
-      : "Write a handoff brief so another agent can continue the writer's task.",
+      : `Write a handoff brief for ${incomingAgentName}, the incoming Agent, so it can continue the writer's task.`,
     "Return only the summary, without calling tools or continuing the task.",
     "Preserve the objective, decisions made, open questions, unfinished work and next steps.",
     "For each document, distinguish edits already made from edits still pending.",
@@ -85,19 +89,25 @@ export function createConversationSummarizer(
       try {
         input.signal.throwIfAborted();
         const models = gateway.listModels?.() ?? [];
+        const cheapModel = models.find((model) => model.id === config.model);
         const threadModelId =
           input.requestInHand?.model ??
-          (await deps.agentRevisions.readThreadBinding(input.threadId))?.configuration.model ??
-          gateway.getDefaultModel();
+          (!input.requestInHand && cheapModel
+            ? cheapModel.id
+            : ((await deps.agentRevisions.readThreadBinding(input.source.threadId))?.configuration
+                .model ?? gateway.getDefaultModel()));
         const threadModel = models.find((model) => model.id === threadModelId);
         if (!threadModel) throw new Error("Summary thread model is unavailable");
-        const prediction = await deps.prefixCacheStateFor({
-          threadId: input.threadId,
-          model: threadModel,
-          now: Date.now(),
-        });
+        const prediction: PrefixCacheState = input.requestInHand
+          ? await deps.prefixCacheStateFor({
+              threadId: input.source.threadId,
+              throughTurnId: input.source.throughTurnId,
+              model: threadModel,
+              now: Date.now(),
+            })
+          : { state: "cold", reason: "summary_transcript" };
         const prompt = [
-          instructionText(input.instruction, config.maxOutputTokens),
+          instructionText(input.instruction, config.maxOutputTokens, input.incomingAgentName),
           ...(input.changedDocuments?.length
             ? [
                 "These documents changed after they were read; name them, do not restate their earlier text.",
@@ -117,7 +127,7 @@ export function createConversationSummarizer(
           let failure: unknown;
           const row: SummaryResponse = {
             id: crypto.randomUUID(),
-            turnId: input.turnId,
+            turnId: input.owner.turnId,
             sequence: modelResponses.length,
             provider: model.provider,
             model: model.id,
@@ -136,7 +146,7 @@ export function createConversationSummarizer(
             for await (const event of gateway.stream({
               ...request,
               signal: input.signal,
-              correlation: { threadId: input.threadId, turnId: input.turnId },
+              correlation: input.owner,
             })) {
               if (event.type === "start") {
                 row.model = event.model;
@@ -237,7 +247,7 @@ export function createConversationSummarizer(
 
         summarizer.path = "cold";
         summarizer.segments = 0;
-        const model = models.find((candidate) => candidate.id === config.model) ?? threadModel;
+        const model = cheapModel ?? threadModel;
         const usableWindow =
           model.contextWindow - Math.min(config.maxOutputTokens, model.maxOutputTokens);
         let running = "";

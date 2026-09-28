@@ -81,8 +81,8 @@ function setup(
     config: { model: cheapModel.id, maxOutputTokens: 300 },
   });
   const input: Parameters<typeof service.summarize>[0] = {
-    threadId: "thread",
-    turnId: "summary",
+    owner: { threadId: "thread", turnId: "summary" },
+    source: { threadId: "thread" },
     instruction: "compaction",
     requestInHand: {
       model: threadModel.id,
@@ -590,4 +590,51 @@ it.each([
   expect(JSON.stringify(sent.messages)).not.toContain("thread_history");
   expect(JSON.stringify(rig.input.requestInHand)).toBe(before);
   if (warm) expect(sent.messages.slice(0, -1)).toEqual(rig.input.requestInHand!.messages);
+});
+
+it("C7b warm brief preserves the source request and tools, correlating rows to the owner", async () => {
+  const rig = setup({ warm: true });
+  const sourceRequest = {
+    ...rig.input.requestInHand!,
+    tools: [
+      {
+        type: "function" as const,
+        name: "read",
+        description: "Read",
+        inputSchema: { type: "object" },
+      },
+    ],
+  };
+  const outcome = await rig.service.summarize({
+    ...rig.input,
+    owner: { threadId: "destination", turnId: "seed" },
+    source: { threadId: "thread", throughTurnId: "cutoff" },
+    instruction: "handoff_brief",
+    incomingAgentName: "Editor",
+    requestInHand: sourceRequest,
+  });
+  const request = rig.requests[0];
+  expect(request.messages.slice(0, -1)).toEqual(sourceRequest.messages);
+  expect(request.tools).toEqual(sourceRequest.tools);
+  expect(request.messages).toHaveLength(sourceRequest.messages.length + 1);
+  expect(JSON.stringify(request.messages.at(-1))).toContain("Editor");
+  expect(JSON.stringify(request.messages.at(-1))).not.toContain("thread_history");
+  expect(request.correlation).toEqual({ threadId: "destination", turnId: "seed" });
+  expect(outcome.modelResponses[0].turnId).toBe("seed");
+  expect(rig.prefixCacheStateFor).toHaveBeenCalledWith(
+    expect.objectContaining({ threadId: "thread", throughTurnId: "cutoff" }),
+  );
+});
+
+it("C7b a cold transcript needs no source model when the cheap model is enabled", async () => {
+  const rig = setup({ models: [cheapModel] });
+  const outcome = await rig.service.summarize({
+    ...rig.input,
+    instruction: "handoff_brief",
+    incomingAgentName: "Editor",
+    requestInHand: null,
+  });
+  expect(outcome.kind).toBe("complete");
+  expect(rig.requests[0].model).toBe(cheapModel.id);
+  expect(rig.prefixCacheStateFor).not.toHaveBeenCalled();
 });

@@ -7,6 +7,24 @@
 
 ## [Unreleased]
 
+- Accept failed replies as handoff cutoffs without changing the source warmth rule or rewriting their failed status on later sends.
+
+- Preserve undo-before-Retry order in expanded control batches; only brief-only batches skip control history.
+- Record brief telemetry and failure metadata through one pending-owner writer; late paid attempts cannot replace the winning outcome.
+
+- Stage activated skills through one boundary owner. Retry briefs defer skill bodies until the successor commits.
+
+- Skip destination control-history preparation while a handoff brief owns the boundary.
+
+- Keep internal ending-commit failures out of handoff brief writer copy. Retain diagnostic causes in error details.
+
+- Fall back to cold briefs when source preview fails. Preserve queued skill activations through Retry and winning seed metadata through late paid responses.
+
+- Keep source image decisions unchanged when handoff preview discovers a lost asset; generate the brief cold.
+
+- Generate handoff briefs from the source model’s warm prefix or the cheap cold summarizer. Meter every returned attempt on the destination seed.
+- Keep brief failures typed, preserve queued replies, and exclude brief calls from future cache baselines.
+
 - Undo failures show writer copy, retain typed reasons, and expose metadata in `mf thread view --json`.
 
 - Regenerate compaction undo migration after transcript indexes; keep both database changes.

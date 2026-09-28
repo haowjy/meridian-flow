@@ -38,17 +38,54 @@ destination request. Stop releases unanswered messages. Before binding, Stop
 and withdrawal settle S themselves, under the same thread/receipt locks as
 reservation; after binding they cancel its owning run.
 
-C7a injects `handoffSummarizer` using the existing summary outcome, with scripts
-in protocol tests. The composition root deliberately supplies an unavailable
-adapter, not a fabricated brief. C7b replaces this seam with the shared
-owner/source-aware summarizer and owns source projection/cache preparation,
-response settlement, costs and typed failure metadata. No paid response rows
-are produced by the C7a adapter.
+## Source preparation and metering
 
-A failed S today stores writer copy in `turn.error` and emits the event code
-`handoff_brief_failed`; it has no typed failure metadata yet. Do not reuse
-`compactionFailureMetadata` or `CompactionFailureReasonCodec` for S: those
-describe C, and the finalizer applies them only to `role: "compaction"`. The
-brief's typed outcome is its own codec that composes the shared summarizer
-reasons (`SummaryRejectionReason` in `ports/conversation-summarizer.ts`,
-today carved out of the compaction reasons); C7b adds it.
+The shared summarizer separates `owner` (destination and S, for gateway
+correlation and response rows) from `source` (cutoff owner and cutoff, for the
+binding, model, cache and transcript). The fork loader also loads arbitrary
+through-cutoff effective transcripts; handoffs never inherit those turns.
+
+`handoff-brief.ts` previews the source request through the cutoff without
+persisting a bake, reference reads, image decisions or pre-generation turns.
+New image/pre-generation events make the preview ineligible for warmth.
+Preview-only failures also go cold; a missing transcript still fails the brief.
+With the cheap model available, cold needs neither a source bake nor a resolved
+source binding. Without that provider, it falls back to the retained source model.
+An older cutoff is `cold/fork_cutoff`; a current warm prefix uses the source
+model, unchanged tools, and one appended instruction naming the incoming
+Agent. Cold rolls the active source projection through the cheap summarizer.
+The instruction does not advertise `thread_history`.
+
+Destination binding/bake/fit preparation belongs to the successor after S's
+outcome is known. A destination preparation failure lands on the reply, not S.
+One skill-body staging owner serves run start and successor preparation.
+Normal runs stage bodies before fresh messages; a pending brief defers them until after
+S and before the reply. Only a committed body consumes its activations, so
+optimistic preparation can repeat. Brief-only batches need no control-history
+preparation; an expanded undo prefix before Retry still does. Due undo controls
+and following batches retain ordinary delivery selection and acknowledgement,
+including when no reply remains. The contracts package's `ControlBody` owns
+the control-kind list.
+
+Both successful and failed summaries return every attempted paid row.
+`settleSummaryResponses` only meters and journals rows; each owner writes its
+own telemetry. `recordHandoffSeedOutcome` owns brief telemetry and failure
+metadata through `HandoffSeedMetadataCodec`, never the compaction codec. Summary rejection reasons are shared contracts; each
+owner composes its own failure phases. Failed S records reason and phase in
+metadata and `handoff_brief_failed` details, with writer copy in `turn.error`.
+Ending-commit exceptions retain their internal cause in the event’s
+`details.cause`; operational logs use the sanitized error payload.
+Rows attach to S, debit the destination run's shared tree budget and source
+root, and retain source-evaluated predictions. Only assistant responses supply
+future prefix warmth or token baselines.
+
+A process kill during the provider call leaves the row-owned S and K pending.
+Recovery preserves S and retries the brief. Paid calls still held only in
+memory are lost and cannot be debited, as for compaction. A live stale brief
+that returns after row-owned Stop preserves the cancelled fallback and settles
+its returned rows without reviving S or replacing the winning telemetry.
+Telemetry is written only by the pending owner’s ending transaction.
+
+Warm preparation intentionally does not compact the source or enforce the
+destination’s fit limits. If the source-shaped request exceeds the provider
+window, the shared summarizer retains that attempt and falls back cold.
