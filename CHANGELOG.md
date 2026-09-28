@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+- Fork or hand off a chat from any finished reply, including a reply a fork inherited. The new chat opens at once and finishes creating in the background; a reload lands on the same chat, and a failure stays on it with Retry. Hand off picks the Agent, starting from the source's. Subagent chats offer neither.
+- Show the handoff brief as a card that writes itself in place: Stop while it writes, the brief behind Show the whole brief once ready, and Retry on a brief that failed or was stopped. A queued Retry can be withdrawn; messages sent meanwhile wait behind the brief.
+- Show a fork's inherited history read-only, marked with the chat it came from and where the fork begins; it never changes when the source moves on.
+- Name the chat a subagent was pointed at with `from`, on its spawn card and at the top of its chat, and say when that chat is in the trash. Spawns no longer flash an "Unknown component" note in the reply.
+- A fork whose history fails to load says so with Retry; a fork cut at a failed reply shows it as history; a message sent while a fork or handoff is still being created survives a reload; an older failed brief says it failed instead of asking to try again; the Agent picker's row tooltip stays on screen on phones and no longer covers the list as it opens.
 - Keep M4 compaction and reference metadata in `./mf`; inspect direct-child activity and block timing with the main CLI updates.
 
 - Skip paid manual compaction when too little context can be removed. Tell warm summaries not to repeat retained conversation.
@@ -15,6 +20,7 @@
 - Add `/compact` to the composer. Queued compactions, undos, and handoff brief retries show at once at the transcript tail or on their divider, and can be withdrawn in place.
 - Point spawned agents at connected prior work without copying history; freeze reference text and read instructions, including stopped handoffs.
 - Freeze handoff source titles on seeds and brief cards, and keep spawn source provenance on durable invocation cards.
+- A handed-off chat names a trashed source by its title, and a spawn card names its `from` chat straight from the card after a reload.
 - Treat a null spawn source as omitted.
 
 - Preserve bake-gated history guidance in cold handoff summaries; classify completed and failed briefs as system history.

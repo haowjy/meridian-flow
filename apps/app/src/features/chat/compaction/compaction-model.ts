@@ -9,6 +9,7 @@
  */
 import type { Turn } from "@meridian/contracts/protocol";
 import type { CompactionUndoAvailability } from "@meridian/contracts/threads";
+import { readHandoffSeed } from "../derivation/handoff-seed";
 import type { QueuedControl } from "./thread-controls";
 
 export type CompactionTrigger = "auto" | "manual";
@@ -88,7 +89,9 @@ export function undoMarkerControlId(turn: Turn): string | null {
 
 /**
  * Every writer control a turn already answers: a divider that ran or absorbed
- * it, or an undo marker. A queued item for one of these is no longer queued.
+ * it, an undo marker, or a handoff seed (its brief card owns it from then on,
+ * and it is stopped there, never withdrawn). A queued item for one of these is
+ * no longer queued.
  */
 export function answeredControlIds(turns: readonly Turn[]): ReadonlySet<string> {
   const ids = new Set<string>();
@@ -97,6 +100,9 @@ export function answeredControlIds(turns: readonly Turn[]): ReadonlySet<string> 
       for (const id of readCompactionFacts(turn).controlIds) ids.add(id);
     else if (undoMarkerTarget(turn)) {
       const id = undoMarkerControlId(turn);
+      if (id) ids.add(id);
+    } else {
+      const id = readHandoffSeed(turn)?.controlMessageId;
       if (id) ids.add(id);
     }
   }

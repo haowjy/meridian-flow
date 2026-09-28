@@ -1,7 +1,9 @@
 /**
- * useCompactionAnnouncements — speaks divider state changes to screen readers.
+ * useControlTurnAnnouncements — speaks the state changes of turns a writer
+ * control runs as: compaction dividers, their undo markers, and handoff brief
+ * seeds.
  *
- * Divider rows are virtualized and may be off-screen, so the announcement is
+ * Those rows are virtualized and may be off-screen, so the announcement is
  * driven from the turns, not from a mounted row. History present at mount is
  * seeded silently; only changes the writer can witness are announced. An
  * autocompaction's failure stays silent (R3): the failed reply announces it.
@@ -10,6 +12,7 @@ import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 import { useEffect, useRef } from "react";
 import { announce } from "@/client/stores";
+import { isHandoffSeed } from "../derivation/handoff-seed";
 import { compactionFailureCopy } from "./CompactionDivider";
 import { readCompactionFacts, undoMarkerTarget } from "./compaction-model";
 
@@ -36,17 +39,36 @@ function announcementFor(turn: Turn): string | null {
     if (turn.status === "complete") return t`Compaction undone`;
     if (turn.status === "error") return turn.error ?? t`The compaction couldn't be undone.`;
   }
+  if (isHandoffSeed(turn)) {
+    switch (turn.status) {
+      case "pending":
+      case "streaming":
+        return t`Writing the handoff brief`;
+      case "complete":
+        return t`Handoff brief ready`;
+      case "cancelled":
+        return t`Handoff brief stopped`;
+      case "error":
+        return turn.error ?? t`Handoff brief unavailable`;
+      default:
+        return null;
+    }
+  }
   return null;
 }
 
-export function useCompactionAnnouncements(turns: readonly Turn[]): void {
+function isControlTurn(turn: Turn): boolean {
+  return turn.role === "compaction" || undoMarkerTarget(turn) !== null || isHandoffSeed(turn);
+}
+
+export function useControlTurnAnnouncements(turns: readonly Turn[]): void {
   const seen = useRef<{ statuses: Map<string, string>; tail: number } | null>(null);
   useEffect(() => {
     const previous = seen.current;
     const statuses = new Map<string, string>();
     let message: string | null = null;
     for (const turn of turns) {
-      if (turn.role !== "compaction" && !undoMarkerTarget(turn)) continue;
+      if (!isControlTurn(turn)) continue;
       statuses.set(turn.id, turn.status);
       const known = previous?.statuses.get(turn.id);
       // A known row that changed, or one appended after what the writer saw.

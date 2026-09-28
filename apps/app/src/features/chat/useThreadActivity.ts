@@ -30,7 +30,6 @@ type SharedActivity = {
   seeded: boolean;
 };
 const shared = new Map<string, SharedActivity>();
-
 function stateFor(threadId: string): SharedActivity {
   let state = shared.get(threadId);
   if (!state) {
@@ -80,8 +79,8 @@ export function useThreadActivity(input: {
     if (state.refs === 1)
       state.release = transport.subscribe(threadId, {
         onEvent: ({ event }) => {
-          if (event.type !== EventType.CUSTOM || event.name !== "meridian.subagent.activity")
-            return;
+          if (event.type !== EventType.CUSTOM) return;
+          if (event.name !== "meridian.subagent.activity") return;
           if (!isThreadActivity(event.value)) return;
           // The server scopes frames to this thread's direct children.
           state.seeded = true;

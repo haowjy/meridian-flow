@@ -3,8 +3,9 @@
  * disappears: Undo becomes "Undo queued", Withdraw becomes an outcome, Stop
  * becomes a finished divider. Browsers drop focus to <body> when a focused
  * element unmounts, which strands a keyboard or screen-reader writer at the
- * top of the page. Focus moves to the row's last remaining control (the one
- * that replaced it), else to the row itself (it carries `tabIndex={-1}`).
+ * top of the page. Focus moves to the control the row marks
+ * `data-focus-landing` (the one that replaced it), else the row's last
+ * remaining control, else the row itself (it carries `tabIndex={-1}`).
  */
 import { type FocusEvent, type RefObject, useLayoutEffect, useRef } from "react";
 
@@ -22,9 +23,10 @@ export function useFocusWithinRow<T extends HTMLElement>(
       return;
     }
     // Controls replace each other at the end of the row (Undo, then Withdraw).
-    const next = [
-      ...row.querySelectorAll<HTMLElement>('button:not([disabled]):not([aria-disabled="true"])'),
-    ].at(-1);
+    const enabled = 'button:not([disabled]):not([aria-disabled="true"])';
+    const next =
+      row.querySelector<HTMLElement>(`${enabled}[data-focus-landing]`) ??
+      [...row.querySelectorAll<HTMLElement>(enabled)].at(-1);
     (next ?? row).focus({ preventScroll: true });
   });
   return {

@@ -3,8 +3,8 @@
  *
  * Mints control ids, shows the queued item before the network answers,
  * enqueues and withdraws through the threads API, stops a pending divider
- * through the existing cancel route, and asks the snapshot to revalidate so a
- * divider's new state reaches the transcript. Announces each state change the
+ * or a generating handoff brief through the existing cancel route, and asks
+ * the snapshot to revalidate so the new state reaches the transcript. Announces each state change the
  * writer caused.
  */
 import { t } from "@lingui/core/macro";
@@ -31,8 +31,17 @@ export type ThreadControls = {
   enqueue: (control: ControlBody) => string;
   retry: (controlId: string) => void;
   withdraw: (control: QueuedControl) => void;
-  stop: (turnId: string) => void;
+  /** Stop a run-owned placeholder: a pending divider, or a generating handoff brief. */
+  stop: (turnId: string, target?: StopTarget) => void;
 };
+
+export type StopTarget = "compaction" | "brief";
+
+function stopCopy(target: StopTarget) {
+  return target === "compaction"
+    ? { stopping: t`Stopping compaction`, failed: t`Couldn't stop the compaction. Try again.` }
+    : { stopping: t`Stopping the handoff brief`, failed: t`Couldn't stop the brief. Try again.` };
+}
 
 export function useThreadControls(input: {
   threadId: string;
@@ -130,16 +139,17 @@ export function useThreadControls(input: {
   );
 
   const stop = useCallback(
-    (turnId: string) => {
+    (turnId: string, target: StopTarget = "compaction") => {
+      const copy = stopCopy(target);
       setStoppingTurnIds((current) => new Set(current).add(turnId));
-      announce(t`Stopping compaction`);
+      announce(copy.stopping);
       transport.cancel(threadId, turnId).then(revalidate, () => {
         setStoppingTurnIds((current) => {
           const next = new Set(current);
           next.delete(turnId);
           return next;
         });
-        announceError(t`Couldn't stop the compaction. Try again.`);
+        announceError(copy.failed);
       });
     },
     [revalidate, threadId, transport],
