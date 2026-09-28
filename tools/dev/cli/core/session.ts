@@ -206,7 +206,9 @@ async function devLogin(appUrl: string, ca: string[] | undefined): Promise<strin
     throw new CliError(
       "unavailable",
       `Dev login failed with HTTP ${response.status}: ${response.body.slice(0, 200)}`,
-      { hint: "Dev login needs WORKOS_DEV_AUTOLOGIN=1 and a non-production app." },
+      {
+        hint: "Dev login needs WORKOS_DEV_AUTOLOGIN=1, a non-production app, and WORKOS_DEV_LOGIN_EMAIL/PASSWORD for a WorkOS password user whose email domain no SSO connection claims (see the WorkOS error above).",
+      },
     );
   }
   return sessionCookie(response.headers);

@@ -55,8 +55,9 @@ export function blockTimings(threadId: string, selected: Turn[]): BlockTable {
   return { threadId, blocks, turns: selected.length };
 }
 
+/** Signed seconds: a block can be stamped a few ms before its turn's own createdAt. */
 function seconds(ms: number): string {
-  return `${(ms / 1000).toFixed(2)}s`;
+  return `${ms < 0 ? "-" : "+"}${(Math.abs(ms) / 1000).toFixed(2)}s`;
 }
 
 function size(bytes: number): string {
@@ -75,7 +76,7 @@ export function renderBlocks(table: BlockTable): string {
     const partial = row.status === "partial" ? " (partial)" : "";
     const tool = row.tool ? ` ${row.tool}` : "";
     lines.push(
-      `  #${row.sequence} ${row.createdAt} +${seconds(row.offsetMs)} (gap ${seconds(row.gapMs)}) ${row.type}${tool} ${size(row.bytes)}${partial}`,
+      `  #${row.sequence} ${row.createdAt} ${seconds(row.offsetMs)} (gap ${seconds(row.gapMs)}) ${row.type}${tool} ${size(row.bytes)}${partial}`,
     );
   }
   return lines.join("\n");

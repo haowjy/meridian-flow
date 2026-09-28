@@ -177,7 +177,7 @@ describe("thread", () => {
     ]);
     const text = await mf(["thread", "view", THREAD_ID, "--blocks", "--last", "1"]);
     expect(text.stdout).toContain(
-      "#1 2026-01-01T00:00:02.000Z +2.00s (gap 1.50s) tool_result spawn",
+      "#1 2026-01-01T00:00:02.000Z +2.00s (gap +1.50s) tool_result spawn",
     );
   });
 
