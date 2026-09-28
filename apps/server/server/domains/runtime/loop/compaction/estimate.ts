@@ -1,15 +1,19 @@
 /** Shared per-part and request-level token estimates for planning and delivery checks. */
 
 import type { Block, Turn } from "@meridian/contracts/threads";
-import type { GenerateRequest } from "../../gateway/index.js";
+import type { GenerateRequest, TokenizerFamily } from "../../gateway/index.js";
 
 const TOKEN_BYTES_PER_TOKEN = 3;
 const encoder = new TextEncoder();
 export const IMAGE_PART_TOKEN_ESTIMATE = 1_600;
 export const FILE_PART_TOKEN_ESTIMATE = 10_000;
-// DeepSeek V4 Flash's repeatable C4e probe supports 0.8 with 10% headroom.
-// Refresh the evidence with apps/server/scripts/probe-compaction-estimates.ts.
-export const CJK_CODE_POINT_TOKEN_MULTIPLIER = 0.8;
+/** Conservative CJK code-point rates; refresh from published or live probe evidence. */
+export const CJK_CODE_POINT_TOKEN_RATES: Record<TokenizerFamily, number> = {
+  anthropic: 3.0,
+  o200k: 1.1,
+  gemini: 1.2,
+  deepseek: 0.8,
+};
 
 function encodedBytes(value: unknown): number {
   return encoder.encode(JSON.stringify(value) ?? "").byteLength;
@@ -30,7 +34,7 @@ function isCjkCodePoint(point: number): boolean {
   );
 }
 
-function textTokens(text: string): number {
+function textTokens(text: string, tokenizer: TokenizerFamily): number {
   let cjkBytes = 0;
   let cjkCodePoints = 0;
   for (const character of text) {
@@ -41,7 +45,7 @@ function textTokens(text: string): number {
     }
   }
   const bytes = encoder.encode(text).byteLength;
-  return tokensForBytes(bytes - cjkBytes) + cjkCodePoints * CJK_CODE_POINT_TOKEN_MULTIPLIER;
+  return tokensForBytes(bytes - cjkBytes) + cjkCodePoints * CJK_CODE_POINT_TOKEN_RATES[tokenizer];
 }
 
 function blankStrings(value: unknown): unknown {
@@ -55,43 +59,47 @@ function blankStrings(value: unknown): unknown {
   return value;
 }
 
-function stringTokens(value: unknown): number {
-  if (typeof value === "string") return textTokens(value);
-  if (Array.isArray(value)) return value.reduce((sum, entry) => sum + stringTokens(entry), 0);
+function stringTokens(value: unknown, tokenizer: TokenizerFamily): number {
+  if (typeof value === "string") return textTokens(value, tokenizer);
+  if (Array.isArray(value))
+    return value.reduce((sum, entry) => sum + stringTokens(entry, tokenizer), 0);
   if (value !== null && typeof value === "object") {
-    return Object.values(value).reduce((sum, entry) => sum + stringTokens(entry), 0);
+    return Object.values(value).reduce((sum, entry) => sum + stringTokens(entry, tokenizer), 0);
   }
   return 0;
 }
 
 /** Estimates JSON-visible strings with the shared CJK policy plus their structural bytes. */
-export function estimateModelJsonTokens(value: unknown): number {
-  return Math.ceil(stringTokens(value) + tokensForBytes(encodedBytes(blankStrings(value))));
+export function estimateModelJsonTokens(value: unknown, tokenizer: TokenizerFamily): number {
+  return Math.ceil(
+    stringTokens(value, tokenizer) + tokensForBytes(encodedBytes(blankStrings(value))),
+  );
 }
 
 /** Estimates one model content part; image/file payload bytes are replaced by fixed costs. */
-export function estimateModelPartTokens(part: unknown): number {
+export function estimateModelPartTokens(part: unknown, tokenizer: TokenizerFamily): number {
   if (part === null || typeof part !== "object" || Array.isArray(part))
-    return estimateModelJsonTokens(part);
+    return estimateModelJsonTokens(part, tokenizer);
 
   const record = part as Record<string, unknown>;
   if (record.type === "image") {
     const { data: _payload, ...withoutPayload } = record;
-    return IMAGE_PART_TOKEN_ESTIMATE + estimateModelJsonTokens(withoutPayload);
+    return IMAGE_PART_TOKEN_ESTIMATE + estimateModelJsonTokens(withoutPayload, tokenizer);
   }
   if (record.type === "file") {
     const { data: _payload, ...withoutPayload } = record;
     const fileTextTokens =
       typeof record.data === "string"
-        ? estimateModelJsonTokens(record.data)
+        ? estimateModelJsonTokens(record.data, tokenizer)
         : record.data instanceof URL
-          ? estimateModelJsonTokens(record.data.href)
+          ? estimateModelJsonTokens(record.data.href, tokenizer)
           : 0;
     return (
-      Math.max(FILE_PART_TOKEN_ESTIMATE, fileTextTokens) + estimateModelJsonTokens(withoutPayload)
+      Math.max(FILE_PART_TOKEN_ESTIMATE, fileTextTokens) +
+      estimateModelJsonTokens(withoutPayload, tokenizer)
     );
   }
-  return estimateModelJsonTokens(record);
+  return estimateModelJsonTokens(record, tokenizer);
 }
 
 function blockModelPart(block: Block): unknown {
@@ -128,26 +136,36 @@ function blockModelPart(block: Block): unknown {
 }
 
 /** Default planner estimate for durable turn/block rows, using request per-part rules. */
-export function estimateTurnTokens(turn: Turn, blocks: readonly Block[]): number {
-  const headerTokens = estimateModelJsonTokens({ role: turn.role, metadata: turn.metadata });
+export function estimateTurnTokens(
+  turn: Turn,
+  blocks: readonly Block[],
+  tokenizer: TokenizerFamily,
+): number {
+  const headerTokens = estimateModelJsonTokens(
+    { role: turn.role, metadata: turn.metadata },
+    tokenizer,
+  );
   return (
     headerTokens +
     blocks
       .filter((block) => !block.pruned)
-      .reduce((sum, block) => sum + estimateModelPartTokens(blockModelPart(block)), 0)
+      .reduce((sum, block) => sum + estimateModelPartTokens(blockModelPart(block), tokenizer), 0)
   );
 }
 
-function messageTokens(message: GenerateRequest["messages"][number]): number {
+function messageTokens(
+  message: GenerateRequest["messages"][number],
+  tokenizer: TokenizerFamily,
+): number {
   const { content, ...envelope } = message;
   return (
-    estimateModelJsonTokens(envelope) +
-    content.reduce((sum, part) => sum + estimateModelPartTokens(part), 0)
+    estimateModelJsonTokens(envelope, tokenizer) +
+    content.reduce((sum, part) => sum + estimateModelPartTokens(part, tokenizer), 0)
   );
 }
 
-function messagesTokens(messages: GenerateRequest["messages"]): number {
-  return messages.reduce((sum, message) => sum + messageTokens(message), 0);
+function messagesTokens(messages: GenerateRequest["messages"], tokenizer: TokenizerFamily): number {
+  return messages.reduce((sum, message) => sum + messageTokens(message, tokenizer), 0);
 }
 
 /**
@@ -155,6 +173,7 @@ function messagesTokens(messages: GenerateRequest["messages"]): number {
  * Both this check and compaction planning use estimateModelPartTokens for content parts.
  */
 export function estimateRequestTokens(input: {
+  tokenizer: TokenizerFamily;
   request: Pick<GenerateRequest, "messages"> &
     Partial<Pick<GenerateRequest, "tools" | "responseFormat">>;
   baseline: { inputTokens: number; messageCount: number } | null;
@@ -163,15 +182,18 @@ export function estimateRequestTokens(input: {
     const messageCount = Math.max(0, Math.floor(input.baseline.messageCount));
     return (
       Math.max(0, input.baseline.inputTokens) +
-      messagesTokens(input.request.messages.slice(messageCount))
+      messagesTokens(input.request.messages.slice(messageCount), input.tokenizer)
     );
   }
 
   return (
-    messagesTokens(input.request.messages) +
-    estimateModelJsonTokens({
-      tools: input.request.tools ?? [],
-      responseFormat: input.request.responseFormat ?? null,
-    })
+    messagesTokens(input.request.messages, input.tokenizer) +
+    estimateModelJsonTokens(
+      {
+        tools: input.request.tools ?? [],
+        responseFormat: input.request.responseFormat ?? null,
+      },
+      input.tokenizer,
+    )
   );
 }

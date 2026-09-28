@@ -97,17 +97,28 @@ export async function prepareRequestContext(input: {
           model: assembled.resolvedModel,
           knownLocalTurns: input.turns,
         });
-  const compaction = input.skipCompaction
-    ? { kind: "generate" as const }
-    : decideCompaction({
-        request: assembled.generateRequest,
-        turns: [...input.turns, ...assembled.imageContextUpdates.turns],
-        blocks: [...blocks, ...assembled.imageContextUpdates.blocks],
-        thresholdTokens: assembled.compactionTriggerTokens,
-        forcedDecision: input.forcedDecision,
-        summaryReserveTokens: input.deps.summarizer.maxOutputTokens,
-        baseline,
-      });
+  const compactionNeeded =
+    !input.skipCompaction &&
+    (input.forcedDecision !== undefined || assembled.compactionTriggerTokens !== null);
+  let compaction: CompactionDecision;
+  if (!compactionNeeded) {
+    compaction = { kind: "generate" };
+  } else {
+    const tokenizer = assembled.resolvedModel?.tokenizer;
+    if (!tokenizer) {
+      throw new Error("Cannot estimate compaction without the resolved thread model tokenizer");
+    }
+    compaction = decideCompaction({
+      request: assembled.generateRequest,
+      turns: [...input.turns, ...assembled.imageContextUpdates.turns],
+      blocks: [...blocks, ...assembled.imageContextUpdates.blocks],
+      thresholdTokens: assembled.compactionTriggerTokens,
+      forcedDecision: input.forcedDecision,
+      summaryReserveTokens: input.deps.summarizer.maxOutputTokens,
+      baseline,
+      tokenizer,
+    });
+  }
   if (compaction.kind === "too_large") throw new CompactionPreparationError("context_too_large");
   return { assembled, events, compaction };
 }

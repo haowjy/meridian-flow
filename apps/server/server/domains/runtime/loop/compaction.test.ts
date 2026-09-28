@@ -19,8 +19,9 @@ import {
   writerSendMetadata,
 } from "../../threads/index.js";
 import { SKILL_BODY_METADATA } from "./activated-skills.js";
+import { decideCompaction } from "./compaction/decision.js";
 import {
-  CJK_CODE_POINT_TOKEN_MULTIPLIER,
+  CJK_CODE_POINT_TOKEN_RATES,
   CompactionBlockContentCodec,
   CompactionPropsCodec,
   estimateRequestTokens,
@@ -374,16 +375,27 @@ describe("estimateRequestTokens", () => {
     const next = requestMessage("Now continue from the fresh message.");
     const request = { messages: [first, next], tools: [] };
     const delta = estimateRequestTokens({
+      tokenizer: "anthropic",
       request: { messages: [next] },
       baseline: { inputTokens: 0, messageCount: 0 },
     });
 
-    expect(estimateRequestTokens({ request, baseline: null })).toBeGreaterThan(0);
     expect(
-      estimateRequestTokens({ request, baseline: { inputTokens: 400, messageCount: 1 } }),
+      estimateRequestTokens({ request, baseline: null, tokenizer: "anthropic" }),
+    ).toBeGreaterThan(0);
+    expect(
+      estimateRequestTokens({
+        request,
+        baseline: { inputTokens: 400, messageCount: 1 },
+        tokenizer: "anthropic",
+      }),
     ).toBe(400 + delta);
     expect(
-      estimateRequestTokens({ request, baseline: { inputTokens: 400, messageCount: 2 } }),
+      estimateRequestTokens({
+        request,
+        baseline: { inputTokens: 400, messageCount: 2 },
+        tokenizer: "anthropic",
+      }),
     ).toBe(400);
   });
 
@@ -395,10 +407,12 @@ describe("estimateRequestTokens", () => {
     const largeImage = estimateRequestTokens({
       request: { messages: [image("x".repeat(1_400_000))] },
       baseline: null,
+      tokenizer: "anthropic",
     });
     const smallImage = estimateRequestTokens({
       request: { messages: [image("x")] },
       baseline: null,
+      tokenizer: "anthropic",
     });
     expect(largeImage).toBe(smallImage);
     expect(largeImage).toBeGreaterThanOrEqual(IMAGE_PART_TOKEN_ESTIMATE);
@@ -410,25 +424,32 @@ describe("estimateRequestTokens", () => {
     const longFile = estimateRequestTokens({
       request: { messages: [file("中".repeat(20_000))] },
       baseline: null,
+      tokenizer: "anthropic",
     });
     const shortFile = estimateRequestTokens({
       request: { messages: [file("中")] },
       baseline: null,
+      tokenizer: "anthropic",
     });
     expect(shortFile).toBeGreaterThanOrEqual(FILE_PART_TOKEN_ESTIMATE);
     expect(longFile).toBeGreaterThan(shortFile);
   });
 
-  it("uses a conservative CJK code-point multiplier", () => {
+  it("uses the selected tokenizer family's CJK code-point rate", () => {
     const text = "中".repeat(100);
-    const estimated = estimateRequestTokens({
-      request: { messages: [requestMessage(text)] },
-      baseline: null,
-    });
-    expect(estimated).toBeGreaterThanOrEqual(text.length * CJK_CODE_POINT_TOKEN_MULTIPLIER);
+    const request = { messages: [requestMessage(text)] };
+    const estimates = Object.keys(CJK_CODE_POINT_TOKEN_RATES).map((tokenizer) =>
+      estimateRequestTokens({
+        request,
+        baseline: null,
+        tokenizer: tokenizer as keyof typeof CJK_CODE_POINT_TOKEN_RATES,
+      }),
+    );
+    expect(new Set(estimates).size).toBe(estimates.length);
+    expect(estimates[0]).toBeGreaterThanOrEqual(text.length * CJK_CODE_POINT_TOKEN_RATES.anthropic);
   });
 
-  it("applies the CJK multiplier to reasoning and nested tool input/output strings", () => {
+  it("applies the CJK family rate to reasoning and nested tool input/output strings", () => {
     const text = "中".repeat(100);
     const estimated = estimateRequestTokens({
       request: {
@@ -449,8 +470,24 @@ describe("estimateRequestTokens", () => {
         ],
       },
       baseline: null,
+      tokenizer: "deepseek",
     });
-    expect(estimated).toBeGreaterThanOrEqual(3 * text.length * CJK_CODE_POINT_TOKEN_MULTIPLIER);
+    expect(estimated).toBeGreaterThanOrEqual(3 * text.length * CJK_CODE_POINT_TOKEN_RATES.deepseek);
+  });
+
+  it("makes Claude and DeepSeek trigger different decisions for the same Chinese read", () => {
+    const request = { messages: [requestMessage("中".repeat(200))] };
+    const common = {
+      request,
+      turns: [],
+      blocks: [],
+      thresholdTokens: 400,
+      summaryReserveTokens: 100,
+      baseline: null,
+    };
+
+    expect(decideCompaction({ ...common, tokenizer: "anthropic" }).kind).toBe("too_large");
+    expect(decideCompaction({ ...common, tokenizer: "deepseek" }).kind).toBe("generate");
   });
 });
 
@@ -484,6 +521,7 @@ describe("planCompaction", () => {
       triggerTokens: 100,
       summaryReserveTokens: 10,
       fixedOverheadTokens: 0,
+      tokenizer: "anthropic",
       estimateTurnTokens: estimate,
     });
 
@@ -511,6 +549,7 @@ describe("planCompaction", () => {
       triggerTokens: 100,
       summaryReserveTokens: 5,
       fixedOverheadTokens: 0,
+      tokenizer: "anthropic",
       tailBudgetFraction: 0.4,
       estimateTurnTokens: estimate,
     });
@@ -536,6 +575,7 @@ describe("planCompaction", () => {
       triggerTokens: 30,
       summaryReserveTokens: 5,
       fixedOverheadTokens: 15,
+      tokenizer: "anthropic",
       estimateTurnTokens: estimate,
     });
 
@@ -602,6 +642,7 @@ describe("planCompaction", () => {
       triggerTokens: 20_000,
       summaryReserveTokens: 2_000,
       fixedOverheadTokens: 500,
+      tokenizer: "anthropic",
     });
     expect(plan.minimalTailFits).toBe(true);
 
@@ -651,6 +692,7 @@ describe("planCompaction", () => {
       triggerTokens: 1_000_000,
       summaryReserveTokens: 1_000,
       fixedOverheadTokens: 5_000,
+      tokenizer: "anthropic",
     });
     expect(plan.pinnedRequest?.id).toBe("turn-1998");
     expect(performance.now() - startedAt).toBeLessThan(1_500);
@@ -720,6 +762,7 @@ describe("planCompaction", () => {
       triggerTokens,
       summaryReserveTokens,
       fixedOverheadTokens,
+      tokenizer: "anthropic",
     });
     expect(plan.minimalTailFits).toBe(true);
     expect(plan.outcome).toBe("planned");
@@ -742,6 +785,7 @@ describe("planCompaction", () => {
     const projectedEstimate = estimateRequestTokens({
       request: { messages: modelMessages, tools: [] },
       baseline: null,
+      tokenizer: "anthropic",
     });
     expect(projectedEstimate + fixedOverheadTokens + summaryReserveTokens).toBeLessThanOrEqual(
       triggerTokens,
@@ -756,6 +800,7 @@ describe("planCompaction", () => {
       triggerTokens: 100,
       summaryReserveTokens: 10,
       fixedOverheadTokens: 10,
+      tokenizer: "anthropic",
     });
     expect(plan).toMatchObject({
       outcome: "no_compaction",
@@ -785,6 +830,7 @@ describe("planCompaction", () => {
       triggerTokens: 10_000,
       summaryReserveTokens: 100,
       fixedOverheadTokens: 100,
+      tokenizer: "anthropic",
     });
     expect(plan.outcome).toBe("planned");
     if (plan.outcome !== "planned") return;

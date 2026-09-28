@@ -96,6 +96,7 @@ else
             {
               id: "gpt-4.1-mini",
               provider: "openai",
+              tokenizer: "o200k" as const,
               displayName: "Fixture",
               contextWindow: 128000,
               maxOutputTokens: 100,
@@ -415,6 +416,7 @@ else
       const model = {
         id: "gpt-4.1-mini",
         provider: "openai",
+        tokenizer: "o200k" as const,
         displayName: "Fixture",
         contextWindow: 6_000,
         maxOutputTokens: 100,

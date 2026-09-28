@@ -1,7 +1,7 @@
 /** Model-visible transcript with preflight sizing, document excerpts and block-boundary splits. */
 import type { Block } from "@meridian/contracts/threads";
 import { SystemUpdateMetadataCodec } from "../../threads/index.js";
-import type { ContentPart, ToolUsePart } from "../gateway/index.js";
+import type { ContentPart, TokenizerFamily, ToolUsePart } from "../gateway/index.js";
 import { estimateModelJsonTokens } from "../loop/compaction/estimate.js";
 import type { ProjectedActiveHistory } from "../loop/compaction/index.js";
 import { turnContextMessages } from "../loop/context-builder.js";
@@ -34,7 +34,11 @@ ${rendered.slice(0, EXCERPT_CHARACTERS)}`
 }
 
 /** All blocks are measured before the caller can start paying for any cold segment. */
-export function transcriptSegments(projection: ProjectedActiveHistory, budget: number): string[] {
+export function transcriptSegments(
+  projection: ProjectedActiveHistory,
+  budget: number,
+  tokenizer: TokenizerFamily,
+): string[] {
   const byTurn = new Map<string, Block[]>();
   for (const block of projection.blocks) {
     const blocks = byTurn.get(block.turnId) ?? [];
@@ -51,7 +55,7 @@ export function transcriptSegments(projection: ProjectedActiveHistory, budget: n
         ? "Prior context (previous conversation summary)"
         : turn.role;
     const wrap = (parts: string[]) => `[${label}]\n${parts.join("\n")}`;
-    const fits = (value: string) => estimateModelJsonTokens(`\n\n${value}`) < budget;
+    const fits = (value: string) => estimateModelJsonTokens(`\n\n${value}`, tokenizer) < budget;
     let content = turnContextMessages(turn, blocks)
       .flatMap((message) => message.content)
       .filter((part) => part.type !== "reasoning");
@@ -79,12 +83,12 @@ export function transcriptSegments(projection: ProjectedActiveHistory, budget: n
       continue;
     }
     let chunk: string[] = [];
-    const headerTokens = estimateModelJsonTokens(`\n\n${wrap([])}`);
+    const headerTokens = estimateModelJsonTokens(`\n\n${wrap([])}`, tokenizer);
     let chunkTokens = headerTokens;
     for (const part of parts.filter(Boolean)) {
       if (!fits(wrap([part])))
         throw new Error("A single conversation block exceeds the summarizer's usable window");
-      const partTokens = estimateModelJsonTokens(`\n${part}`);
+      const partTokens = estimateModelJsonTokens(`\n${part}`, tokenizer);
       if (chunk.length && chunkTokens + partTokens >= budget) {
         result.push(wrap(chunk));
         chunk = [];

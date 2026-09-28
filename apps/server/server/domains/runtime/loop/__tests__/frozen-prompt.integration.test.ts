@@ -127,6 +127,7 @@ describe("frozen prompt provider requests", () => {
     const model: ModelInfo = {
       id: "gpt-4.1-mini",
       provider: "openai",
+      tokenizer: "o200k" as const,
       displayName: "Fixture",
       contextWindow: 100_000,
       maxOutputTokens: 4_096,
@@ -195,6 +196,7 @@ describe("frozen prompt provider requests", () => {
           {
             id: "gpt-4.1-mini",
             provider: "openai" as const,
+            tokenizer: "o200k" as const,
             displayName: "Fixture",
             contextWindow: 100_000,
             maxOutputTokens: 4_096,
@@ -265,6 +267,7 @@ describe("frozen prompt provider requests", () => {
           {
             id: "gpt-4.1-mini",
             provider: "openai" as const,
+            tokenizer: "o200k" as const,
             displayName: "Fixture",
             contextWindow: 100_000,
             maxOutputTokens: 4_096,
@@ -363,6 +366,7 @@ describe("frozen prompt provider requests", () => {
           {
             id: "gpt-4.1-mini",
             provider: "openai" as const,
+            tokenizer: "o200k" as const,
             displayName: "Fixture",
             contextWindow: 100_000,
             maxOutputTokens: 4_096,
@@ -435,6 +439,7 @@ describe("frozen prompt provider requests", () => {
     const model: ModelInfo = {
       id: "gpt-4.1-mini",
       provider: "openai",
+      tokenizer: "o200k" as const,
       displayName: "Fixture",
       contextWindow: 100_000,
       maxOutputTokens: 4_096,

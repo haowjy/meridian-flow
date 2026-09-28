@@ -33,6 +33,7 @@ function cachingGateway(): Pick<Gateway, "getDefaultModel" | "listModels"> {
   const model: ModelInfo = {
     id: MODEL_ID,
     provider: "test",
+    tokenizer: "o200k",
     displayName: "Fixture",
     contextWindow: 100_000,
     maxOutputTokens: 4_096,
@@ -484,6 +485,7 @@ describe("prefix stability across a growing thread", () => {
           {
             id: "no-caching-model",
             provider: "test",
+            tokenizer: "o200k" as const,
             displayName: "No caching",
             contextWindow: 1000,
             maxOutputTokens: 100,

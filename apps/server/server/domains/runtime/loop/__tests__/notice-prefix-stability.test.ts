@@ -63,6 +63,7 @@ async function setup() {
         {
           id: "gpt-4.1-mini",
           provider: "openai",
+          tokenizer: "o200k" as const,
           timing: {
             requestStartedAt: new Date().toISOString(),
             latencyMs: 1,

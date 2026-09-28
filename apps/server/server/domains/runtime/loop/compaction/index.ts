@@ -1,7 +1,7 @@
 /** Public surface of the pure compaction policy modules. */
 
 export {
-  CJK_CODE_POINT_TOKEN_MULTIPLIER,
+  CJK_CODE_POINT_TOKEN_RATES,
   estimateRequestTokens,
   FILE_PART_TOKEN_ESTIMATE,
   IMAGE_PART_TOKEN_ESTIMATE,

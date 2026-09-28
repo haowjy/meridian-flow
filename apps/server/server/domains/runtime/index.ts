@@ -52,7 +52,7 @@ export type {
   RetainedTurnSlice,
 } from "./loop/compaction/index.js";
 export {
-  CJK_CODE_POINT_TOKEN_MULTIPLIER,
+  CJK_CODE_POINT_TOKEN_RATES,
   CompactionBlockContentCodec,
   CompactionPropsCodec,
   DEFAULT_COMPACTION_TAIL_FRACTION,

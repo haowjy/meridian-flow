@@ -7,6 +7,7 @@ import {
   isSystemUpdateMetadata,
 } from "../../../threads/index.js";
 import { orderTurnsByPosition } from "../../../threads/order-turns.js";
+import type { TokenizerFamily } from "../../gateway/index.js";
 import { estimateTurnTokens } from "./estimate.js";
 import { type CompactionCut, type RetainedTurnSlice, retainedTail } from "./tail.js";
 
@@ -23,6 +24,7 @@ export interface PlanCompactionInput {
   triggerTokens: number;
   summaryReserveTokens: number;
   fixedOverheadTokens: number;
+  tokenizer: TokenizerFamily;
   tailBudgetFraction?: number;
   /** Optional assembled-token estimate; otherwise a conservative JSON bytes/3 estimate is used. */
   estimateTurnTokens?: (turn: Turn, blocks: readonly Block[]) => number;
@@ -387,7 +389,9 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
 
   const pinnedRequest =
     [...classifiedTurns].reverse().find((entry) => entry.isPinnedRequest)?.turn ?? null;
-  const estimate = input.estimateTurnTokens ?? estimateTurnTokens;
+  const estimate =
+    input.estimateTurnTokens ??
+    ((turn: Turn, blocks: readonly Block[]) => estimateTurnTokens(turn, blocks, input.tokenizer));
   const costs = turnCostsFor(classifiedTurns, blocksByTurn, estimate);
   const pinnedIndex = pinnedRequest ? turns.findIndex((turn) => turn.id === pinnedRequest.id) : -1;
   const pinnedCost = pinnedIndex >= 0 ? (costs[pinnedIndex]?.full ?? 0) : 0;

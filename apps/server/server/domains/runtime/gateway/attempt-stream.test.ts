@@ -16,6 +16,7 @@ afterEach(() => vi.useRealTimers());
 const MODEL: ModelInfo = {
   id: "test-model",
   provider: "test",
+  tokenizer: "o200k",
   displayName: "Test Model",
   contextWindow: 128_000,
   maxOutputTokens: 4_096,

@@ -242,13 +242,20 @@ export function createConversationSummarizer(
         });
         // Leave input-estimate headroom for the running summary before any paid segment.
         // Recheck each assembled call against the actual running summary as it arrives.
-        const overhead = estimateRequestTokens({ request: requestFor([]), baseline: null });
+        const overhead = estimateRequestTokens({
+          request: requestFor([]),
+          baseline: null,
+          tokenizer: model.tokenizer,
+        });
         // The configured output cap is already in provider token units, regardless of language.
         const runningReserve =
-          estimateModelJsonTokens("Prior context (running summary):") + config.maxOutputTokens;
+          estimateModelJsonTokens("Prior context (running summary):", model.tokenizer) +
+          config.maxOutputTokens;
         const segmentBudget = usableWindow - overhead - runningReserve;
-        const turns = transcriptSegments(input.projection, segmentBudget);
-        const turnTokens = turns.map((turn) => estimateModelJsonTokens(`\n\n${turn}`));
+        const turns = transcriptSegments(input.projection, segmentBudget, model.tokenizer);
+        const turnTokens = turns.map((turn) =>
+          estimateModelJsonTokens(`\n\n${turn}`, model.tokenizer),
+        );
         do {
           let end = offset;
           let segmentTokens = 0;
@@ -257,7 +264,10 @@ export function createConversationSummarizer(
             end++;
           }
           const request = requestFor(turns.slice(offset, end));
-          if (estimateRequestTokens({ request, baseline: null }) >= usableWindow)
+          if (
+            estimateRequestTokens({ request, baseline: null, tokenizer: model.tokenizer }) >=
+            usableWindow
+          )
             throw new Error("Summary prompt exceeds the summarizer's usable window");
           summarizer.segments++;
           const result = await call(request, model, {

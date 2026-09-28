@@ -21,6 +21,7 @@ function createMockGateway(mock: MockOpenAIServer): Gateway {
           {
             id: "gpt-4.1-mini",
             provider: "openai",
+            tokenizer: "o200k",
             displayName: "GPT-4.1 Mini",
             contextWindow: 128_000,
             maxOutputTokens: 4096,

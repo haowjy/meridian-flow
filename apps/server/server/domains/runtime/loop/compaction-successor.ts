@@ -30,7 +30,13 @@ export type PreparedCompaction =
     };
 
 function fittingTokens(context: AssembledNextTurnContext, fitLimitTokens: number) {
-  const tokens = estimateRequestTokens({ request: context.generateRequest, baseline: null });
+  const tokenizer = context.resolvedModel?.tokenizer;
+  if (!tokenizer) throw new Error("Cannot estimate compaction successor without a model tokenizer");
+  const tokens = estimateRequestTokens({
+    request: context.generateRequest,
+    baseline: null,
+    tokenizer,
+  });
   if (tokens >= fitLimitTokens) throw new CompactionPreparationError("context_too_large");
   return tokens;
 }

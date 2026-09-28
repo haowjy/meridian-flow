@@ -32,6 +32,8 @@ export function parseEnvMs(value: string | number | undefined): number | undefin
 const MOCK_MODEL: ModelInfo = {
   id: "mock-llm-v1",
   provider: "mock",
+  // The mock has no tokenizer; use the conservative estimation family explicitly.
+  tokenizer: "anthropic",
   displayName: "Mock LLM",
   contextWindow: 128_000,
   maxOutputTokens: 4096,

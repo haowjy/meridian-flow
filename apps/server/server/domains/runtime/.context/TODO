@@ -1,5 +1,6 @@
 # TODO: must-do follow-ups (runtime)
 
+- Measure `anthropic` and `gemini` live with `scripts/probe-compaction-estimates.ts` when working API keys are available, then tighten their provisional CJK rates.
 - DeepSeek V4 Flash caps output at `maxOutputTokens: 16_384`
   (`gateway/config/registry.ts`). A subagent that writes a long document in one
   `write` call hits the cap and ends as `Model exhausted its output tokens`
