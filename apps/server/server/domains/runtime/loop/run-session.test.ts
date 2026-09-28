@@ -68,6 +68,27 @@ async function fixture(configure?: (deps: OrchestratorDeps) => void) {
 }
 
 describe("RunSession", () => {
+  it("repairs an orphaned primary assistant after taking the run claim", async () => {
+    const f = await fixture();
+    const orphan = await f.repos.turns.create({
+      threadId: f.thread.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "streaming",
+    });
+
+    const run = await f.prepare();
+    const repaired = f.journal
+      .getEvents(f.thread.id)
+      .map(({ event }) => event)
+      .find((event) => event.type === "turn.error" && event.turn.id === orphan.id);
+    expect(repaired).toMatchObject({
+      type: "turn.error",
+      turn: { status: "error", error: "This reply was interrupted." },
+    });
+    await expect(run.execute()).resolves.toMatchObject({ status: "complete" });
+  });
+
   it("origins a writer-started run's user turn as writer, and a child run's as system", async () => {
     const f = await fixture();
     await f.prepare();

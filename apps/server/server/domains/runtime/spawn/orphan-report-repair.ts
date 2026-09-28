@@ -5,7 +5,10 @@ import { isPlaceholderRole, isTerminalTurnStatus } from "@meridian/contracts/thr
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { EventJournalWriter, ThreadRepositories } from "../../threads/index.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
-import { finalizeOrphanedPlaceholder } from "../loop/orphaned-placeholder.js";
+import {
+  finalizeOrphanedPlaceholders,
+  finalizeOrphanedTurns,
+} from "../loop/orphaned-placeholder.js";
 import type { RunClaim } from "../loop/ports.js";
 import type { ThreadLock } from "../loop/thread-lock.js";
 import type { ReportPublisher } from "./report-publisher.js";
@@ -19,6 +22,7 @@ export function createOrphanReportRepair(deps: {
   eventSink: EventSink;
 }) {
   let reportCursor: TurnId | undefined;
+  let unsettledCursor: { threadId: ThreadId; position: number } | undefined;
   let placeholderCursor: TurnId | undefined;
 
   async function repairReport(childThreadId: ThreadId, executionTurnId: TurnId): Promise<void> {
@@ -31,12 +35,11 @@ export function createOrphanReportRepair(deps: {
         );
         if (!report || report.outcome !== null) return;
 
-        const placeholderReports = await finalizeOrphanedPlaceholder(deps, {
+        const orphanReports = await finalizeOrphanedPlaceholders(deps, {
           threadId: childThreadId,
         });
-        for (const report of placeholderReports)
-          reportsToPublish.set(report.executionTurnId, report);
-        if (placeholderReports.some((report) => report.executionTurnId === executionTurnId)) return;
+        for (const report of orphanReports) reportsToPublish.set(report.executionTurnId, report);
+        if (orphanReports.some((report) => report.executionTurnId === executionTurnId)) return;
 
         const turns = await deps.repos.turns.listByThread(childThreadId);
         let terminal = turns.find((candidate) => candidate.id === executionTurnId);
@@ -73,10 +76,10 @@ export function createOrphanReportRepair(deps: {
       await deps.publisher.publish(report.childThreadId, report.executionTurnId);
   }
 
-  async function repairPlaceholder(candidate: { threadId: ThreadId; id: TurnId }): Promise<void> {
+  async function repairTurns(candidate: { threadId: ThreadId }): Promise<void> {
     const reports = await deps.authority.withExclusiveThread(candidate.threadId, () =>
       deps.threadLock.withThreadLock(candidate.threadId, () =>
-        finalizeOrphanedPlaceholder(deps, { threadId: candidate.threadId }),
+        finalizeOrphanedTurns(deps, { threadId: candidate.threadId }),
       ),
     );
     for (const report of reports ?? [])
@@ -86,6 +89,26 @@ export function createOrphanReportRepair(deps: {
   async function sweep(limit: number): Promise<number> {
     if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Repair limit must be positive");
 
+    let unsettled = await deps.repos.turns.listUnsettledPrimaryTurns(limit, unsettledCursor);
+    if (unsettled.length === 0 && unsettledCursor) {
+      unsettledCursor = undefined;
+      unsettled = await deps.repos.turns.listUnsettledPrimaryTurns(limit);
+    }
+    for (const candidate of unsettled) {
+      unsettledCursor = { threadId: candidate.threadId, position: candidate.position };
+      try {
+        await repairTurns({ threadId: candidate.threadId });
+      } catch (error) {
+        emitEvent(deps.eventSink, {
+          level: "warn",
+          source: "runtime.report-repair",
+          name: "turn.failed",
+          correlation: { threadId: candidate.threadId, turnId: candidate.id },
+          payload: unknownToEventPayload(error),
+        });
+      }
+    }
+
     let placeholders = await deps.repos.turns.listPendingPlaceholders(limit, placeholderCursor);
     if (placeholders.length === 0 && placeholderCursor) {
       placeholderCursor = undefined;
@@ -94,7 +117,7 @@ export function createOrphanReportRepair(deps: {
     for (const candidate of placeholders) {
       placeholderCursor = candidate.id;
       try {
-        await repairPlaceholder({ threadId: candidate.threadId, id: candidate.id });
+        await repairTurns({ threadId: candidate.threadId });
       } catch (error) {
         emitEvent(deps.eventSink, {
           level: "warn",
@@ -125,7 +148,7 @@ export function createOrphanReportRepair(deps: {
         });
       }
     }
-    return placeholders.length + reports.length;
+    return unsettled.length + placeholders.length + reports.length;
   }
 
   return { sweep };

@@ -2,7 +2,11 @@
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { SummaryOutcome, SummaryResponse } from "../ports/conversation-summarizer.js";
-import { type CompactionDecision, CompactionPreparationError } from "./compaction/decision.js";
+import {
+  type CompactionDecision,
+  CompactionFailureError,
+  CompactionPreparationError,
+} from "./compaction/decision.js";
 import { changedDocuments, collectRecordedDocuments } from "./compaction/elide.js";
 import { projectActiveHistory, projectCompactedHistory } from "./compaction/index.js";
 import { queryCompactionRevisions } from "./compaction-revisions.js";
@@ -136,7 +140,8 @@ export async function executeCompaction({
       prepared: PreparedCompaction | undefined,
       selection: import("./runtime-delivery.js").DeliverySelection,
     ) => {
-      if (prepared?.kind === "failed" && decision.required) throw prepared.reason;
+      if (prepared?.kind === "failed" && decision.required)
+        throw new CompactionFailureError(prepared.failure);
       if (prepared?.kind === "usable" && !selection.control)
         return prepareCompactionContext(drain, prepared);
       const completed =

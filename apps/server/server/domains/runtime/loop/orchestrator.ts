@@ -2308,6 +2308,7 @@ async function executeLoop(
             deps,
             threadId: input.threadId,
             placeholder: currentTurn,
+            failure: err,
             optional,
             boundary: boundaryInput(),
             settleResponses: () =>

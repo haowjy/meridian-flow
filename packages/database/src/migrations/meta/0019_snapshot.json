@@ -1,5 +1,5 @@
 {
-  "id": "9dacb8df-a681-4085-aec0-75ffc7a76b2f",
+  "id": "bc5eca79-73e4-4090-a6b2-52f9d5fcb989",
   "prevId": "d0867cf8-48d4-42b3-8207-1ab6f750f715",
   "version": "7",
   "dialect": "postgresql",
@@ -2075,7 +2075,7 @@
         },
         "thread_inbox_messages_body_valid": {
           "name": "thread_inbox_messages_body_valid",
-          "value": "(CASE WHEN \"thread_inbox_messages\".\"intent\" = 'control' THEN \"thread_inbox_messages\".\"body\"->>'kind' IN ('compact','compaction_undo') ELSE \"thread_inbox_messages\".\"body\"->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE"
+          "value": "(CASE WHEN \"thread_inbox_messages\".\"intent\" = 'control' THEN \"thread_inbox_messages\".\"body\"->>'kind' IN ('compact') ELSE \"thread_inbox_messages\".\"body\"->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE"
         }
       },
       "isRLSEnabled": false
@@ -3176,6 +3176,50 @@
             }
           ],
           "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "turns_epoch_boundaries": {
+          "name": "turns_epoch_boundaries",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "position",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"turns\".\"prompt_bake_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "turns_unsettled": {
+          "name": "turns_unsettled",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "position",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"turns\".\"status\" IN ('pending','streaming','waiting_interrupt')",
           "concurrently": false,
           "method": "btree",
           "with": {}

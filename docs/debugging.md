@@ -70,6 +70,14 @@ Contract:
   1 failed, 5 cancelled, 8 waiting on an interrupt (answer with
   `./mf thread respond`), 124 timeout. 2 is usage, 3 not found, 4 the stack is
   not running or dev login failed. Every wait is bounded by `--timeout`.
+  When a run splits across a compaction (for example overflow recovery), the
+  result can name the run's first turn with a null `finalText` instead of the
+  reply that answered: read the answer with `./mf thread view`
+  ([#617](https://github.com/haowjy/meridian-flow/issues/617)).
+- `thread view` prints a failed compaction's typed outcome as
+  `compaction failure: <reason> during <phase>`. With `--json`, compaction
+  turns carry `compactionMetadata` (trigger, control IDs, failure reason and
+  phase, fit tokens, `tokensBefore`/`tokensAfter`).
 - `<thread>` accepts a `cN`/`pN` ref, a full id, an app URL containing one, or
   a unique id prefix. Refs are per project: they resolve through
   `GET /api/projects/:projectId/threads/by-ref/:ref` in the default project,

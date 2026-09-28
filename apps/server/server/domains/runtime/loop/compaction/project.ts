@@ -3,8 +3,8 @@
 import type { Block, JsonObject, Turn } from "@meridian/contracts/threads";
 import { z } from "zod";
 import {
-  type CompactionMetadata,
-  CompactionMetadataCodec,
+  type CompactionPlanMetadata,
+  CompactionPlanMetadataCodec,
   CompactionUndoMetadataCodec,
   classifyHistoryItem,
   compactionSummaryMetadata,
@@ -46,8 +46,8 @@ function compactionPropsForTurn(turnId: string, blocks: readonly Block[]): Compa
   return envelope.props as CompactionProps;
 }
 
-function compactionMetadata(turn: Turn): CompactionMetadata {
-  return CompactionMetadataCodec.parse(turn.metadata);
+function compactionMetadata(turn: Turn): CompactionPlanMetadata {
+  return CompactionPlanMetadataCodec.parse(turn.metadata);
 }
 
 function summaryTurn(

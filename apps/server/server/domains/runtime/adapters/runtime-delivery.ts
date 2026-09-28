@@ -14,7 +14,7 @@ import {
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
 import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
-import { finalizeOrphanedPlaceholder } from "../loop/orphaned-placeholder.js";
+import { finalizeOrphanedTurns } from "../loop/orphaned-placeholder.js";
 import { readPendingInbox } from "../loop/pending-inbox.js";
 import {
   type PersistenceDeps,
@@ -309,7 +309,7 @@ export function createDeliveryAdapter(
   async function materializeIdle(threadId: ThreadId) {
     await deps.runClaim.withExclusiveThread(threadId, () =>
       threadLock.withThreadLock(threadId, async () => {
-        const reports = await finalizeOrphanedPlaceholder(deps, { threadId });
+        const reports = await finalizeOrphanedTurns(deps, { threadId });
         deps.schedulePostCommit(() => deps.publishFinalizedReports(reports));
         if (await inbox.canMaterializeWork(threadId)) await materializePrefix(threadId);
       }),
@@ -714,6 +714,12 @@ export function createDeliveryAdapter(
     },
     refreshPending: (threadId) =>
       threadLock.withThreadLock(threadId, () => appendPending(threadId)),
+    repairOrphanedTurns: async (lease) => {
+      const reports = await threadLock.withThreadLock(lease.threadId, () =>
+        finalizeOrphanedTurns(deps, { threadId: lease.threadId }),
+      );
+      await deps.publishFinalizedReports(reports);
+    },
     selectPending: inbox.selectPending,
     readPendingProjection: inbox.readPendingProjection,
     pendingMessageThreads: inbox.pendingMessageThreads,
@@ -734,12 +740,6 @@ export function createDeliveryAdapter(
         }),
       ),
     adoptBatch: async (lease, prepare, options) => {
-      // startExecution already owns the non-reentrant session claim. Repair its
-      // stale predecessor before selection so the new batch cannot pass C.
-      const reports = await threadLock.withThreadLock(lease.threadId, () =>
-        finalizeOrphanedPlaceholder(deps, { threadId: lease.threadId }),
-      );
-      await deps.publishFinalizedReports(reports);
       return prepareAndCommit({
         threadId: lease.threadId,
         signal: options?.signal,

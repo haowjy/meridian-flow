@@ -72,7 +72,9 @@ const expectedSuites = [
   "apps/server/server/domains/threads/adapters/drizzle/execution-report-repository.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/model-response-cache-prediction.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/turn-position.db.test.ts",
+  "apps/server/server/domains/threads/adapters/drizzle/transcript-reader.db.test.ts",
   "apps/server/server/domains/threads/domain/rebind-thread-work.db.test.ts",
+  "apps/server/server/domains/threads/domain/transcript-page.db.test.ts",
   "apps/server/server/domains/threads/domain/derive-conversation.db.test.ts",
   "apps/server/server/domains/threads/domain/prompt-bakes.db.test.ts",
   "apps/server/server/lib/thread-work-rebind-route.db.test.ts",
@@ -131,7 +133,8 @@ export default defineProject({
     // Vitest's 5s default is too tight for the heavier real-Postgres suites, and a
     // timed-out test or fixture hook's async DB work is NOT cancelled — it
     // overlaps the next test's destructive reset and corrupts it. Give setup
-    // and cleanup the same 30s budget as test bodies. (#314)
+    // and cleanup the same 30s budget as test bodies. (#314) Under shared
+    // Postgres load a hook can still outlast this; the harness fix is #616.
     testTimeout: 30_000,
     hookTimeout: 30_000,
     reporters: [

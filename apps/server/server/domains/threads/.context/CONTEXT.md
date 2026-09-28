@@ -51,8 +51,16 @@ for the tool-freeze mechanics.
 `domain/turn-metadata.ts` is the single home for turn-metadata codecs,
 constructors, interrupted pending-placeholder copy, and `classifyHistoryItem`,
 including image-inclusion and compaction metadata. Interrupted compaction copy
-reads its trigger through `CompactionMetadataCodec` and exhaustively handles
-the pending-placeholder role set from `@meridian/contracts/threads`. Runtime
+reads only the raw `trigger` (a manual C whose run failed preparation carries no
+plan, so the full codec would not parse) and exhaustively handles the
+pending-placeholder role set from `@meridian/contracts/threads`. A completed
+compaction's metadata also carries its frozen `elisions` and ordered
+`pinnedRequestTurnIds`; the codec declares `trigger`, `controlMessageId`, and
+`satisfiesControlId`. `CompactionMetadataCodec` accepts either a planned cut or
+a failure without one; failure fields (`reason` and `phase` together, plus
+optional `estimatedTokens`/`fitLimitTokens`) are written only by
+`compactionFailureMetadata`, shared by live failure landing and orphan
+finalization. Runtime
 producers build inbox/child turns, writer sends and steers, Work/notice/skill/system
 updates, saved-report repairs, derivation seeds, image breaks, and compaction
 boundaries through its constructors. Compaction planning/projection, cache
@@ -243,8 +251,8 @@ transactions. See the [runtime contract](../../runtime/.context/CONTEXT.md).
 | `ProjectChatFeedRepository` | Flat primary-chat pages ranked by latest visible activity, with an optional Favorite filter before pagination. |
 | `WorkChatFeedRepository` | Bounded historical-Work association pages over the same primary Project-chat projection, ordered by `(threads.last_activity_at DESC, threads.id DESC)` — the same stored activity sort as `ProjectChatFeedRepository`, and the same `ProjectChatItem` row shape (`chatFeedRowsSql`). |
 | `ThreadUserStateRepository` | Per-writer favorite authority. |
-| `TurnRepository` | `create / findById / listByThread / getLatestByThread / updateStatus / recomputeRollups` |
-| `BlockRepository` | `create / findById / listByTurn / listByThread / updatePruned` |
+| `TurnRepository` | `create / findById / findByControlId / listByThread / listPendingPlaceholdersForThread / listPendingPlaceholders / getLatestByThread / findRunningAssistantId / updateStatus / recomputeRollups` |
+| `BlockRepository` | `create / upsert / replaceExisting / findById / listByTurn / listByThread`. Blocks carry no model-only state: compaction elisions live in the compaction turn's metadata, never on block rows. |
 | `ModelResponseRepository` | `create / findById / listByTurn / listByThread / findLatestByThread / sumUsageByThread / cacheResetContext` |
 | `ThreadRepositories` | aggregate of the repositories + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
 | `ThreadWorksRepository` | Adds organizational memberships and reads the primary. Its thread-before-Work primary rebind revalidates thread lifecycle under the same row lock, then demotes the old membership and promotes/upserts the target WorkId, retaining association history while preserving exactly one primary. |
@@ -554,7 +562,9 @@ Manual compaction controls hold no transcript position until execution. Divider
 metadata links `controlMessageId` (manual) or `satisfiesControlId` (automatic).
 Completed compactions require ordered `pinnedRequestTurnIds`, including every
 unanswered directed message in the run receipt and adoption batch. Failed
-manual dividers carry their reason in metadata and writer copy in `turn.error`.
+dividers, manual or automatic, carry typed `reason` and `phase` metadata and
+writer copy in `turn.error`. A failed C gets no bake pointer, so it stays an
+ordinary transcript item and opens no history segment.
 Control acknowledgement commits with the divider's ending, never B's response.
 
 ### Compaction undo projection
@@ -572,3 +582,39 @@ when the retained model is absent from the runtime catalog; otherwise the runtim
 reader supplies `{ turnId, availability }` using today's Agent trigger. `likely`
 is advisory, not a promise of admission. Missing bindings and corrupt compaction
 metadata remain invariant errors, not null availability.
+
+## Paged effective transcript
+
+`domain/transcript-page.ts` resolves a fork's effective transcript into
+owner-local `(afterPosition, throughPosition]` spans by following cutoff turns;
+it never loads the transcript to resolve lineage. `readTranscriptPage` reads
+those spans under one repeatable-read snapshot and pages by `(position,
+sequence)`. The Drizzle keyset query unions one index-bounded branch per span,
+then fetches only selected turn/block rows. Every Drizzle reader query resolves
+the ambient connection per call, so anchor, unsettled, boundary, and item reads
+stay inside the same snapshot. The in-memory adapter implements the same
+contract. `turns_thread_position_unique` and
+`turn_blocks_turn_sequence` serve item pages. `turns_epoch_boundaries` serves
+complete bake boundaries, and `turns_unsettled` finds the settled-prefix
+anchor and orphan candidates. Cursors pin that anchor; only the first
+newest-first effective page carries a separate unsettled-tail preview. When
+that preview fills the page, its cursor uses `(anchor position + 1, -1)` to
+restart at the settled prefix. This is the only permitted key above the anchor.
+
+Complete turns with a bake pointer open history segments, including undo
+markers. A page remains in one segment; segment 0 uses the first owner's
+initial bake. `GET /api/threads/:threadId/transcript` is the authenticated
+writer contract for effective or inherited raw turns and sanitized blocks.
+Inherited reads keep trashed source owners available to a live fork and report
+that fact in `owners[].trashed`.
+
+**Settled turns never gain blocks.** A settled turn may have existing block
+content replaced in place, but adding a block after settlement would create a
+key behind active cursors and is forbidden by the runtime's append protocol.
+The sole allowed additions are to the live unsettled turn before it joins the
+settled prefix. Orphan repair reuses the placeholder module and C4 scan, and
+adds a primary-assistant scan at startup and run claim. With the session claim
+held, a dead primary assistant becomes an interrupted reply; pending
+placeholders keep their existing interruption copy, and child turns keep the
+execution-report repair path. The held session claim protects live turns;
+there is no separate `liveTurnId` guard.
