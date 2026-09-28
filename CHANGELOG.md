@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Keep model projection cursors out of writer transcript pages.
+
 - Authorize execution reports through the canonical lineage predicate.
 
 - Seed browser-test conversations with their lineage root.

@@ -7,7 +7,7 @@ import {
   cursorAfter,
   InvalidTranscriptCursorError,
   readTranscriptItem,
-  readTranscriptPage,
+  readTranscriptPageForProjection,
 } from "../../threads/index.js";
 import type { ThreadRepositories } from "../../threads/ports/repositories.js";
 import type { TokenizerFamily } from "../gateway/index.js";
@@ -113,7 +113,7 @@ export async function readThreadHistory({
     let scanned = 0;
     try {
       do {
-        const page = await readTranscriptPage(repos, target, {
+        const page = await readTranscriptPageForProjection(repos, target, {
           order,
           unit: "item",
           limit: 200,

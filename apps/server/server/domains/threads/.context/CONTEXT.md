@@ -642,8 +642,8 @@ fork/handoff rows by root. Mappers never invent a missing root.
 
 `listLineageChildren` combines indexed spawn children with root-indexed
 derivations attached to their cutoff owner. Its creation timestamp retains
-microseconds for keyset cursors. The transcript read additionally exposes
-internal end/restart cursors, segment count and opening state for bounded
-model projections; the writer route omits these projection-only fields.
+microseconds for keyset cursors. `readTranscriptPageForProjection` additionally exposes internal end/restart
+cursors, segment count and opening state for bounded model projections.
+`readTranscriptPage` returns only the writer shape; routes never strip internal fields.
 `readTranscriptItem` expands a position key using the same span resolver and
 bounded repository reader, never a loaded transcript.

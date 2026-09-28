@@ -73,6 +73,7 @@ export {
   InvalidTranscriptCursorError,
   readTranscriptItem,
   readTranscriptPage,
+  readTranscriptPageForProjection,
   resolveTranscriptSpans,
   type TranscriptOrder,
   type TranscriptOwner,

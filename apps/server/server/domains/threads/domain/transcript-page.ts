@@ -38,15 +38,19 @@ export interface TranscriptPage {
   owners: TranscriptOwner[];
   segment: TranscriptSegment;
   segmentBoundary: boolean;
-  opensSegment: boolean;
-  segmentCount: number;
   hasMore: boolean;
   nextCursor?: string;
+  unsettledTail?: { turn: Turn; blocks: Block[] }[];
+}
+
+/** Internal model-projection bookkeeping, never returned by the writer read. */
+export interface TranscriptProjectionPage extends TranscriptPage {
+  opensSegment: boolean;
+  segmentCount: number;
   /** Anchored end key even on a final page, for projections that trim it. */
   endCursor?: string;
   /** Start of the pinned prefix when the live preview consumes the output budget. */
   restartCursor?: string;
-  unsettledTail?: { turn: Turn; blocks: Block[] }[];
 }
 
 export interface TranscriptPageInput {
@@ -359,12 +363,40 @@ function unsettledTail(
     .map(({ turn, blocks }) => ({ turn, blocks }));
 }
 
-/** Reads one bounded page and, only on the first newest-first call, a marked live tail. */
+async function firstPromptBakeId(
+  repos: TranscriptReadDeps,
+  owners: readonly TranscriptOwner[],
+  thread: Thread,
+): Promise<string | null> {
+  const owner = owners[0];
+  if (!owner) return null;
+  return owner.threadId === thread.id
+    ? thread.initialPromptBakeId
+    : ((await repos.threads.findByIdIncludingDeleted(owner.threadId))?.initialPromptBakeId ?? null);
+}
+
+/** Writer-facing page shape; projection bookkeeping stays behind this boundary. */
 export async function readTranscriptPage(
   repos: Pick<ThreadRepositories, "readSnapshot" | "threads" | "turns" | "blocks">,
   thread: Thread,
   input: TranscriptPageInput,
 ): Promise<TranscriptPage> {
+  const {
+    endCursor: _end,
+    restartCursor: _restart,
+    opensSegment: _opens,
+    segmentCount: _count,
+    ...page
+  } = await readTranscriptPageForProjection(repos, thread, input);
+  return page;
+}
+
+/** Reads one bounded page and, only on the first newest-first call, a marked live tail. */
+export async function readTranscriptPageForProjection(
+  repos: Pick<ThreadRepositories, "readSnapshot" | "threads" | "turns" | "blocks">,
+  thread: Thread,
+  input: TranscriptPageInput,
+): Promise<TranscriptProjectionPage> {
   const range = input.range ?? "effective";
   if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 200) {
     throw new RangeError("Transcript page limit must be between 1 and 200");
@@ -396,13 +428,7 @@ export async function readTranscriptPage(
           });
     const uniqueOwners = [...new Map(owners.map((owner) => [owner.threadId, owner])).values()];
     const boundaries = await repos.turns.listTranscriptBoundaries(spans);
-    const firstOwner = uniqueOwners[0];
-    const firstBakeId = firstOwner
-      ? firstOwner.threadId === pageThread.id
-        ? pageThread.initialPromptBakeId
-        : ((await repos.threads.findByIdIncludingDeleted(firstOwner.threadId))
-            ?.initialPromptBakeId ?? null)
-      : null;
+    const firstBakeId = await firstPromptBakeId(repos, uniqueOwners, pageThread);
 
     if (spans.length === 0) {
       return {
@@ -567,11 +593,7 @@ export async function readTranscriptItem(
     )
       return null;
     const boundaries = await repos.turns.listTranscriptBoundaries(resolution.spans);
-    const firstOwner = resolution.owners[0];
-    const firstBake = firstOwner
-      ? ((await repos.threads.findByIdIncludingDeleted(firstOwner.threadId))?.initialPromptBakeId ??
-        null)
-      : null;
+    const firstBake = await firstPromptBakeId(repos, resolution.owners, thread);
     return {
       entry: { ...row, block: key.sequence === undefined ? null : row.block },
       owners: resolution.owners,
