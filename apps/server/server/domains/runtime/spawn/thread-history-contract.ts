@@ -1,7 +1,7 @@
 /** History tool contract: projection, pagination, document isolation and compaction evidence. */
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { InternalThreadRepositories } from "../../threads/ports/repositories.js";
 import { collectRecordedDocuments, planModelElisions } from "../loop/compaction/elide.js";
 import {
@@ -109,6 +109,40 @@ export function defineThreadHistoryContract(
   }
 
   describe("thread_history", () => {
+    it("batches pairs across page boundaries and scopes reused call ids to their turn", async () => {
+      const f = await fixture();
+      const first = await f.turn();
+      for (let index = 0; index < 199; index++)
+        await f.block(first, "reasoning", { text: "hidden" });
+      await f.block(first, "tool_use", {
+        toolCallId: "reused",
+        toolName: "write",
+        input: { command: "read", path: "manuscript://first.md" },
+      });
+      await f.block(first, "tool_result", { toolCallId: "reused", output: "FIRST SECRET" });
+      const second = await f.turn();
+      await f.block(second, "tool_use", {
+        toolCallId: "reused",
+        toolName: "write",
+        input: { command: "read", path: "manuscript://second.md" },
+      });
+      await f.block(second, "tool_result", { toolCallId: "reused", output: "SECOND SECRET" });
+      const batches = vi.spyOn(f.repos.blocks, "listToolBlocks");
+      const text = output(await f.read({ order: "oldest_first", include: ["tool_results"] }));
+      expect(text).toContain("manuscript://first.md");
+      expect(text).toContain("manuscript://second.md");
+      expect(text).not.toContain("FIRST SECRET");
+      expect(text).not.toContain("SECOND SECRET");
+      // The repository boundary has one pair read per raw page, never per item.
+      expect(batches).toHaveBeenCalledTimes(2);
+      expect(batches.mock.calls[0]?.[0]).toEqual([{ turnId: first.id, toolCallId: "reused" }]);
+      expect(batches.mock.calls[1]?.[0]).toEqual([
+        { turnId: first.id, toolCallId: "reused" },
+        { turnId: second.id, toolCallId: "reused" },
+      ]);
+      batches.mockRestore();
+    });
+
     it("labels writer, steer, agent request, spawn prompt, assistant, thinking, completion, seed, complete/refused undo and failed C", async () => {
       const f = await fixture();
       const cases: [Turn["role"], Turn["origin"], JsonObject | null, string][] = [

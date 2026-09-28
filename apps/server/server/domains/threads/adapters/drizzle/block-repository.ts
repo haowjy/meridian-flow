@@ -10,7 +10,7 @@
  */
 
 import * as schema from "@meridian/database/schema";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type {
   BlockRepository,
   CreateBlockInput,
@@ -39,19 +39,19 @@ function blockValues(input: CreateBlockInput) {
 
 export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
   return {
-    async findToolBlock(turnId, toolCallId, type) {
-      const [row] = await currentDrizzleDb(db)
+    async listToolBlocks(keys) {
+      if (keys.length === 0) return [];
+      const tuples = keys.map(({ turnId, toolCallId }) => sql`(${turnId}::uuid, ${toolCallId})`);
+      const rows = await currentDrizzleDb(db)
         .select()
         .from(schema.turnBlocks)
         .where(
           and(
-            eq(schema.turnBlocks.turnId, turnId),
-            eq(schema.turnBlocks.blockType, type),
-            sql`${schema.turnBlocks.content}->>'toolCallId' = ${toolCallId}`,
+            inArray(schema.turnBlocks.blockType, ["tool_use", "tool_result"]),
+            sql`(${schema.turnBlocks.turnId}, ${schema.turnBlocks.content}->>'toolCallId') IN (${sql.join(tuples, sql`, `)})`,
           ),
-        )
-        .limit(1);
-      return row ? mapBlock(row) : null;
+        );
+      return rows.map(mapBlock);
     },
     async create(input: CreateBlockInput) {
       const [row] = await currentDrizzleDb(db)

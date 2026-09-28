@@ -13,7 +13,12 @@ import type { ThreadRepositories } from "../../threads/ports/repositories.js";
 import type { TokenizerFamily } from "../gateway/index.js";
 import { estimateModelPartTokens } from "../loop/compaction/estimate.js";
 import type { ToolRegistry } from "../tools/types.js";
-import { type HistoryInclude, type HistoryItem, renderHistoryItem } from "./history-item.js";
+import {
+  type HistoryInclude,
+  type HistoryItem,
+  loadHistoryToolPairs,
+  renderHistoryItem,
+} from "./history-item.js";
 import { resolveReadableThread, threadReadError } from "./resolve-readable-thread.js";
 export const ThreadHistoryInputSchema = z
   .object({
@@ -86,10 +91,10 @@ export async function readThreadHistory({
         ...(match[2] !== undefined ? { sequence: Number(match[2]) } : {}),
       });
       if (!item) return threadReadError("item_not_found", "History item not found");
-      const rendered = await renderHistoryItem({
+      const rendered = renderHistoryItem({
         ...item.entry,
         registry,
-        blocks: repos.blocks,
+        toolPairs: await loadHistoryToolPairs(repos.blocks, [item.entry]),
         include,
         expand: true,
         ownerRef:
@@ -137,15 +142,16 @@ export async function readThreadHistory({
               : [{ turn: entry.turn, block: null }],
           )
           .reverse();
+        const toolPairs = await loadHistoryToolPairs(repos.blocks, [...tail, ...rows]);
         for (const [pending, entries] of [
           [true, tail],
           [false, rows],
         ] as const) {
           for (const entry of entries) {
-            const item = await renderHistoryItem({
+            const item = renderHistoryItem({
               ...entry,
               registry,
-              blocks: repos.blocks,
+              toolPairs,
               include,
               ownerRef:
                 entry.turn.threadId !== target.id

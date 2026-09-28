@@ -878,14 +878,16 @@ export function createInMemoryRepositories(
   };
 
   const blockRepo: BlockRepository = {
-    async findToolBlock(turnId, toolCallId, type) {
-      return (
-        [...blocks.values()].find(
-          (block) =>
-            block.turnId === turnId &&
-            block.blockType === type &&
-            (block.content as { toolCallId?: string })?.toolCallId === toolCallId,
-        ) ?? null
+    async listToolBlocks(keys) {
+      const selected = new Set(
+        keys.map(({ turnId, toolCallId }) => JSON.stringify([turnId, toolCallId])),
+      );
+      return [...blocks.values()].filter(
+        (block) =>
+          (block.blockType === "tool_use" || block.blockType === "tool_result") &&
+          selected.has(
+            JSON.stringify([block.turnId, (block.content as { toolCallId?: string })?.toolCallId]),
+          ),
       );
     },
     async create(input: CreateBlockInput) {

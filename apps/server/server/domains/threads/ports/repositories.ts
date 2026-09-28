@@ -77,11 +77,8 @@ export interface BlockRepository {
   replaceExisting(input: UpsertBlockInput): Promise<Block | null>;
   findById(id: string): Promise<Block | null>;
   listByTurn(turnId: TurnId): Promise<Block[]>;
-  findToolBlock(
-    turnId: TurnId,
-    toolCallId: string,
-    type: "tool_use" | "tool_result",
-  ): Promise<Block | null>;
+  /** Both sides of the requested tool calls, bounded by a transcript page's keys. */
+  listToolBlocks(keys: readonly { turnId: TurnId; toolCallId: string }[]): Promise<Block[]>;
   /** All blocks across all turns for a thread, ordered by turn creation then block sequence. */
   listByThread(threadId: ThreadId): Promise<Block[]>;
 }

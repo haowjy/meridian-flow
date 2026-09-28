@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Batch history tool pairs by page, including pairs outside the page.
+
 - Keep model projection cursors out of writer transcript pages.
 
 - Authorize execution reports through the canonical lineage predicate.

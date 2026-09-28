@@ -23,16 +23,39 @@ export interface HistoryItem {
 }
 const stringify = (value: JsonValue | undefined) =>
   typeof value === "string" ? value : JSON.stringify(value ?? null);
-export async function renderHistoryItem(input: {
+const toolKey = (turnId: string, toolCallId: string, type: string) =>
+  JSON.stringify([turnId, toolCallId, type]);
+
+/** Fetch pairs even when the other side lies outside the selected page. */
+export async function loadHistoryToolPairs(
+  blocks: BlockRepository,
+  entries: readonly { block: Block | null }[],
+): Promise<ReadonlyMap<string, Block>> {
+  const keys = new Map<string, { turnId: Block["turnId"]; toolCallId: string }>();
+  for (const { block } of entries) {
+    if (block?.blockType !== "tool_use" && block?.blockType !== "tool_result") continue;
+    const toolCallId = String((block.content as JsonObject).toolCallId);
+    keys.set(JSON.stringify([block.turnId, toolCallId]), { turnId: block.turnId, toolCallId });
+  }
+  const pairs = await blocks.listToolBlocks([...keys.values()]);
+  return new Map(
+    pairs.map((block) => [
+      toolKey(block.turnId, String((block.content as JsonObject).toolCallId), block.blockType),
+      block,
+    ]),
+  );
+}
+
+export function renderHistoryItem(input: {
   turn: Turn;
   block: Block | null;
   ownerRef?: string;
   include: ReadonlySet<HistoryInclude>;
   expand?: boolean;
   registry: ToolRegistry;
-  blocks: BlockRepository;
-}): Promise<HistoryItem | null> {
-  const { turn, block, ownerRef, include, expand, registry, blocks } = input;
+  toolPairs: ReadonlyMap<string, Block>;
+}): HistoryItem | null {
+  const { turn, block, ownerRef, include, expand, registry, toolPairs } = input;
   const kind = classifyHistoryItem(turn);
   const sequence = block?.sequence ?? -1;
   const handle = `${turn.position}${sequence < 0 ? "" : `.${sequence}`}`;
@@ -67,10 +90,12 @@ export async function renderHistoryItem(input: {
   } else if (block.blockType === "tool_use" || block.blockType === "tool_result") {
     if (block.blockType === "tool_result" && !expand && !include.has("tool_results")) return null;
     const content = block.content as JsonObject;
-    const pair = await blocks.findToolBlock(
-      turn.id,
-      String(content.toolCallId),
-      block.blockType === "tool_use" ? "tool_result" : "tool_use",
+    const pair = toolPairs.get(
+      toolKey(
+        turn.id,
+        String(content.toolCallId),
+        block.blockType === "tool_use" ? "tool_result" : "tool_use",
+      ),
     );
     const call = (block.blockType === "tool_use" ? content : pair?.content) as
       | JsonObject
