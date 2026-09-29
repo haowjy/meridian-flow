@@ -42,11 +42,14 @@ in the same ending transaction as S. If that transaction throws, the claim is
 released and S remains pending for ordinary orphan repair.
 
 Stop settles S as cancelled under the destination lock and aborts a local
-worker. A remote worker notices within the five-second status poll. Claim loss
-and shutdown are distinct aborts: only Stop settles cancelled; the others
-settle available paid rows while leaving S pending so repair can record it as
-interrupted. A failed source preparation or summary attempt is final and can
-be retried by the writer with a new S.
+worker. A remote worker notices within the five-second status poll. A dead
+database session is detected by the session lock only on its next query; while
+the brief is in a provider call, its five-second S status poll is the mechanism
+that notices claim loss after repair settles S. Claim loss and shutdown are
+distinct aborts: only Stop settles cancelled; the others settle available paid
+rows while leaving S pending so repair can record it as interrupted. A failed
+source preparation or summary attempt is final and can be retried by the writer
+with a new S.
 
 ## Read models and recovery
 

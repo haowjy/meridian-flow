@@ -32,8 +32,11 @@ counter or brief-specific claim.
 
 The ordinary wake sweep remains the backstop for durable inbox messages whose
 wake could not start a run. `drizzle-session-lock.ts` invalidates claims when a
-database session dies, allowing the brief or next run to release stale
-ownership without wedging later claim attempts.
+database session dies, but it detects that only on the session lock's next
+query. While a brief is inside a provider call, its five-second S status poll
+is how it notices that repair has settled S after the claim was lost; the brief
+then aborts without relaunching. This allows stale ownership to clear without
+wedging later claim attempts.
 
 Paid response rows held only in memory at process death are lost and cannot be
 debited; the next repaired or retried attempt may make a duplicate provider
