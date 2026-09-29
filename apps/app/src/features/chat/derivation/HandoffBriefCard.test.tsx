@@ -195,7 +195,7 @@ describe("HandoffBriefCard", () => {
     expect(button("Retry the handoff brief")).toBeDefined();
   });
 
-  it("Retry waits while the chat replies, and works once the reply ends", async () => {
+  it("Retry waits while the chat is busy, and works once it is free", async () => {
     const onRetry = vi.fn();
     const failed = seed("error", { error: "This handoff brief couldn't be generated. Try again." });
     await render({ turn: failed, destinationBusy: true, onRetry });
@@ -203,15 +203,15 @@ describe("HandoffBriefCard", () => {
     // aria-disabled, not disabled: keyboard focus can still land on it after Stop.
     expect(retry?.getAttribute("aria-disabled")).toBe("true");
     expect(retry?.hasAttribute("disabled")).toBe(false);
-    expect(host.textContent).toContain("You can retry when the reply finishes.");
+    expect(host.textContent).toContain("You can retry when this chat is free.");
     const waitNote = document.getElementById(retry?.getAttribute("aria-describedby") ?? "");
-    expect(waitNote?.textContent).toBe("You can retry when the reply finishes.");
+    expect(waitNote?.textContent).toBe("You can retry when this chat is free.");
     await act(async () => retry?.click());
     expect(onRetry).not.toHaveBeenCalled();
 
     await render({ turn: failed, destinationBusy: false, onRetry });
     expect(button("Retry the handoff brief")?.hasAttribute("aria-disabled")).toBe(false);
-    expect(host.textContent).not.toContain("You can retry when the reply finishes.");
+    expect(host.textContent).not.toContain("You can retry when this chat is free.");
     await act(async () => button("Retry the handoff brief")?.click());
     expect(onRetry).toHaveBeenCalledWith(failed);
   });

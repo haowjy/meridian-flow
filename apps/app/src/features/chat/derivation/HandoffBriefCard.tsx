@@ -6,8 +6,8 @@
  * offers Stop (the composer's Stop targets the same turn). A ready brief shows
  * the summary the new Agent starts from, clipped with Show more. A brief that
  * failed, was stopped, or was cut off by a restart says so, and the newest one
- * offers Retry, which adds a new card at once. Retry waits while the chat
- * replies: the server refuses a brief while anything holds the chat. The
+ * offers Retry, which adds a new card at once. Retry waits while the chat is
+ * busy (a reply or a compaction): the server refuses a brief then. The
  * source's name links back to it. State changes are spoken by the global
  * announcer, never a live region here.
  */
@@ -182,7 +182,7 @@ export function HandoffBriefCard({
           ) : null}
           {ended && view.canRetry && onRetry && destinationBusy ? (
             <p id={retryWaitId} className="text-caption text-muted-foreground">
-              <Trans>You can retry when the reply finishes.</Trans>
+              <Trans>You can retry when this chat is free.</Trans>
             </p>
           ) : null}
           {view.brief ? <BriefText brief={view.brief} /> : null}

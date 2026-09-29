@@ -85,9 +85,10 @@ copy, and a stopped one drops "This chat continues without a brief."
   and the pressed card says "Couldn't retry. Something else started in this
   chat first." A lost request instead keeps the stand-in, failed; its Retry
   re-sends under the same id, so a request that did land replays.
-- **Retry waits while the chat is busy** (a live status or a streaming
-  reply). It stays focusable (`aria-disabled`) and says "You can retry when
-  the reply finishes."; the server's 409 covers the race.
+- **Retry waits while the chat is busy** (a live status, which covers a
+  reply or a compaction, or a streaming reply). It stays focusable
+  (`aria-disabled`) and says "You can retry when this chat is free."; the
+  server's 409 covers the race.
 - **Stop** marks the seed Stopping at once and calls the turn cancel route
   with S's id (`useTurnStop`, shared with the compaction divider). A failed
   cancel clears Stopping and says "Couldn't stop the brief." on the card. A
