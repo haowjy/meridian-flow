@@ -34,6 +34,7 @@ function instructionText(
   instruction: "compaction" | "handoff",
   maxTokens: number,
   incomingAgentName?: string,
+  writerRowCutoff = false,
 ): string {
   return [
     instruction === "compaction"
@@ -41,7 +42,9 @@ function instructionText(
       : `Write a handoff brief for ${incomingAgentName}, the incoming Agent, so it can continue the writer's task.`,
     ...(instruction === "handoff"
       ? [
-          "If the conversation ends with a writer message you have not answered, report it as the open request; do not answer it.",
+          writerRowCutoff
+            ? "The writer message immediately before this system update is unanswered and is the open request to report; do not answer it."
+            : "If the conversation ends with a writer message you have not answered, report it as the open request; do not answer it.",
         ]
       : []),
     "Return only the summary, without calling tools or continuing the task.",
@@ -122,15 +125,22 @@ export function createConversationSummarizer(
                 now: Date.now(),
               })
             : { state: "cold", reason: "summary_transcript" };
-        const prompt = [
-          instructionText(input.instruction, config.maxOutputTokens, input.incomingAgentName),
-          ...(input.changedDocuments?.length
-            ? [
-                "These documents changed after they were read; name them, do not restate their earlier text.",
-                ...input.changedDocuments,
-              ]
-            : []),
-        ].join("\n");
+        const promptFor = (writerRowCutoff = false) =>
+          [
+            instructionText(
+              input.instruction,
+              config.maxOutputTokens,
+              input.incomingAgentName,
+              writerRowCutoff,
+            ),
+            ...(input.changedDocuments?.length
+              ? [
+                  "These documents changed after they were read; name them, do not restate their earlier text.",
+                  ...input.changedDocuments,
+                ]
+              : []),
+          ].join("\n");
+        const prompt = promptFor();
 
         async function call(
           request: GenerateRequest,
@@ -237,6 +247,28 @@ export function createConversationSummarizer(
         ) {
           summarizer.path = "branch";
           summarizer.segments = 1;
+          const cutoffTurn = input.source.throughTurnId
+            ? (input.projection.turns.find((turn) => turn.id === input.source.throughTurnId) ??
+              input.projection.turns.at(-1))
+            : input.projection.turns.at(-1);
+          const branchPrompt = promptFor(
+            input.instruction === "handoff" && cutoffTurn?.role === "user",
+          );
+          const retainedScope =
+            input.instruction === "compaction" && input.retainedMessages?.length
+              ? "\nCompaction scope: the following passages are kept verbatim after your summary, NOT replaced by it. All preservation rules above apply ONLY to the material being replaced. Do not restate the retained passages. Exclude facts, document URIs, requests, and tool activity introduced only there, even from document-status or next-steps sections. Do not use retained replies to claim that a replaced request was completed. The summary must end at the compaction cut, not at the end of the conversation.\nRetained passages in conversation order (role and quoted opening; a passage may start within a message):\n" +
+                input.retainedMessages
+                  .map((message) => {
+                    const opening = message.content
+                      .filter((part) => part.type !== "reasoning")
+                      .map((part) => (part.type === "text" ? part.text : JSON.stringify(part)))
+                      .join("\n")
+                      .slice(0, 200);
+                    return `${message.role}: ${JSON.stringify(opening)}`;
+                  })
+                  .join("\n")
+              : "";
+          const branchInstruction = `<system_update>\n${branchPrompt}${retainedScope}\n</system_update>`;
           const original = branchRequest.maxTokens ?? threadModel.maxOutputTokens;
           const cap =
             config.maxOutputTokens +
@@ -252,24 +284,7 @@ export function createConversationSummarizer(
                   content: [
                     {
                       type: "text",
-                      text:
-                        "This is a system instruction, not a new request from the writer.\n" +
-                        prompt +
-                        (input.instruction === "compaction" && input.retainedMessages?.length
-                          ? "\nCompaction scope: the following passages are kept verbatim after your summary, NOT replaced by it. All preservation rules above apply ONLY to the material being replaced. Do not restate the retained passages. Exclude facts, document URIs, requests, and tool activity introduced only there, even from document-status or next-steps sections. Do not use retained replies to claim that a replaced request was completed. The summary must end at the compaction cut, not at the end of the conversation.\nRetained passages in conversation order (role and quoted opening; a passage may start within a message):\n" +
-                            input.retainedMessages
-                              .map((message) => {
-                                const opening = message.content
-                                  .filter((part) => part.type !== "reasoning")
-                                  .map((part) =>
-                                    part.type === "text" ? part.text : JSON.stringify(part),
-                                  )
-                                  .join("\n")
-                                  .slice(0, 200);
-                                return `${message.role}: ${JSON.stringify(opening)}`;
-                              })
-                              .join("\n")
-                          : ""),
+                      text: branchInstruction,
                     },
                   ],
                 },

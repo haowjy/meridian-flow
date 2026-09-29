@@ -771,7 +771,7 @@ else
       expect(summaryRequests[0]?.messages.at(-1)?.content).toContainEqual(
         expect.objectContaining({
           type: "text",
-          text: expect.stringContaining("This is a system instruction"),
+          text: expect.stringMatching(/^<system_update>\n[\s\S]*\n<\/system_update>$/),
         }),
       );
       expect(summaryRequests[1]?.messages).toHaveLength(2);

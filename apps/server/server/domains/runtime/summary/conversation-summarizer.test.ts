@@ -176,6 +176,13 @@ describe("conversation summarizer", () => {
       { type: "text", text: expect.stringContaining('user: "Task"') },
     ]);
     expect(JSON.stringify(sent.messages.at(-1))).toContain("Do not restate");
+    expect(sent.messages.at(-1)?.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringMatching(/^<system_update>\n[\s\S]*\n<\/system_update>$/),
+    });
+    expect(JSON.stringify(sent.messages.at(-1))).not.toContain(
+      "immediately before this system update",
+    );
 
     expect(sent).toMatchSnapshot("warm compaction request bytes");
     expect(JSON.stringify({ ...sent, maxTokens: 500, messages: sent.messages.slice(0, -1) })).toBe(
@@ -372,8 +379,8 @@ describe("conversation summarizer", () => {
     expect(sent.messages).toHaveLength(1);
     const prompt = JSON.stringify(sent.messages);
     for (const phrase of [
-      "system instruction",
-      "not a new request from the writer",
+      "<system_update>",
+      "</system_update>",
       "edits already made",
       "edits still pending",
       "cultivation realms",
@@ -640,7 +647,13 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
   expect(request.messages).toHaveLength(sourceRequest.messages.length + 1);
   expect(JSON.stringify(request.messages.at(-1))).toContain("Editor");
   expect(JSON.stringify(request.messages.at(-1))).toContain(
-    "report it as the open request; do not answer it.",
+    "The writer message immediately before this system update is unanswered and is the open request to report; do not answer it.",
+  );
+  expect(JSON.stringify(request.messages.at(-1))).toContain("<system_update>\\n");
+  expect(JSON.stringify(request.messages.at(-1))).toContain("\\n</system_update>");
+  expect(request.messages.slice(0, -1)).toEqual(sourceRequest.messages);
+  expect(JSON.stringify(request.messages.slice(0, -1))).toBe(
+    JSON.stringify(sourceRequest.messages),
   );
   expect(JSON.stringify(request.messages.at(-1))).not.toContain("thread_history");
   expect(request.correlation).toEqual({ threadId: "destination", turnId: "seed" });
@@ -648,6 +661,28 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
   expect(rig.prefixCacheStateFor).toHaveBeenCalledWith(
     expect.objectContaining({ threadId: "thread", throughTurnId: "cutoff" }),
   );
+});
+
+it("keeps the existing conditional open-request guidance for an assistant-row handoff cutoff", async () => {
+  const rig = setup({ warm: true });
+  rig.input.instruction = "handoff";
+  rig.input.projection.turns[0].role = "assistant";
+  const requestInHand = rig.input.requestInHand;
+  if (!requestInHand) throw new Error("Expected a source request");
+  requestInHand.messages.push({ role: "assistant", content: [{ type: "text", text: "Answer" }] });
+
+  await rig.service.summarize(rig.input);
+
+  const appended = rig.requests[0].messages.at(-1);
+  const text = appended?.content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("\n");
+  expect(text).toContain(
+    "If the conversation ends with a writer message you have not answered, report it as the open request; do not answer it.",
+  );
+  expect(text).not.toContain("immediately before this system update");
+  expect(rig.requests[0].messages.slice(0, -1)).toEqual(requestInHand.messages);
 });
 
 it("uses rolling at a cold cutoff", async () => {
