@@ -1609,6 +1609,37 @@ else
       expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
     });
 
+    it("records shutdown during compaction as a recovery interruption", async () => {
+      let markStarted!: () => void;
+      const started = new Promise<void>((resolve) => {
+        markStarted = resolve;
+      });
+      const summarizer = scriptedSummarizer(async ({ signal }) => {
+        markStarted();
+        await new Promise<void>((resolve) => {
+          if (signal.aborted) resolve();
+          else signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+        return { kind: "cancelled", modelResponses: [] };
+      });
+      const rig = await fixture({ summarizer });
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Interrupt this summary during shutdown.",
+      });
+      const execution = run.execute();
+      await started;
+      rig.orchestrator.beginShutdown();
+      await expect(execution).resolves.toMatchObject({ status: "error" });
+
+      expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
+        role: "compaction",
+        status: "error",
+        metadata: { reason: "interrupted", phase: "recovery" },
+      });
+    });
+
     it("keeps a usable epoch when a late image fails preparation", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
       let writerId: string | undefined;

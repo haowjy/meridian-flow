@@ -91,7 +91,7 @@ function turnEvent(turn: Turn, cause: TerminalCause): OrchestratorEvent {
 }
 
 function compactionFailureForFinalizer(cause: Extract<TerminalCause, { kind: "failed" }>) {
-  if (cause.reason === "orphaned")
+  if (cause.reason === "orphaned" || cause.reason === "shutdown")
     return { reason: "interrupted" as const, phase: "recovery" as const };
   if (typeof cause.error !== "string") {
     const details = CompactionFailureOutcomeCodec.safeParse(cause.error.details);
