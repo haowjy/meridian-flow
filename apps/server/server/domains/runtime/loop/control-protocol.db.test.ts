@@ -1,8 +1,11 @@
 /** Control queue ordering, start consumption, and withdrawal against PostgreSQL. */
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
+import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
+import { createOrchestrator } from "./orchestrator.js";
 
 const url = process.env.DATABASE_URL;
 if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? ""))
@@ -351,5 +354,301 @@ else
         metadata: { trigger: "manual", controlMessageId: controlId },
       });
       expect(summarizer.calls).toHaveLength(2);
+    });
+
+    it("a failed manual summary does not fail a reply behind a Stop-stamped command", async () => {
+      const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
+      const summarizer = scriptedSummarizer(async () => ({
+        kind: "failed",
+        error: new Error("summary failed"),
+        modelResponses: [],
+      }));
+      const rig = await manualFixture({ gateway, summarizer });
+      const active = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        userText: "reply before Stop",
+      });
+      const execution = active.execute();
+      await gateway.untilGatewayBoundary(1);
+
+      await compactControl(rig);
+      const waiting = await rig.send(rig.threadId, "reply after failed compact");
+      expect(await rig.orchestrator.cancel(rig.threadId, active.executionTurnId)).toBe("cancelled");
+      gateway.release(1);
+      await execution;
+      const turns = await settled(rig);
+
+      expect(turns.find((turn) => turn.role === "compaction")).toMatchObject({
+        status: "error",
+        metadata: { reason: "compaction_failed", phase: "summary" },
+      });
+      expect(turns.find((turn) => turn.id === waiting.userTurnId)?.role).toBe("user");
+      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
+      expect(JSON.stringify(gateway.requests.at(-1))).toContain("reply after failed compact");
+    });
+
+    it("a manual successor exception fails C but continues the queued reply", async () => {
+      let rig: Awaited<ReturnType<typeof fixture>>;
+      const summarizer = scriptedSummarizer(async () => ({
+        kind: "complete",
+        text: "Earlier context.",
+        model: "summary-model",
+        modelResponses: [],
+      }));
+      rig = await manualFixture({ summarizer });
+      await (
+        await rig.orchestrator.prepare({
+          threadId: rig.threadId,
+          userText: "Build a compactable tail.",
+        })
+      ).execute();
+      await settled(rig);
+      const control = await compactControl(rig);
+      let queuedReplyId = "";
+      const split = rig.delivery.splitAndContinue.bind(rig.delivery);
+      let failed = false;
+      rig.delivery.splitAndContinue = async (input) => {
+        if (!failed && input.current.kind === "placeholder") {
+          failed = true;
+          throw new Error("successor unavailable once");
+        }
+        return split(input);
+      };
+      const enqueue = summarizer.summarize.bind(summarizer);
+      summarizer.summarize = async (input) => {
+        const result = await enqueue(input);
+        const queued = await rig.delivery.enqueue({
+          threadId: rig.threadId,
+          intent: "message",
+          provenance: { kind: "writer", actorId: rig.ids.user },
+          body: { kind: "text", text: "reply survives successor exception" },
+          idempotencyKey: "reply-survives-successor-exception",
+        });
+        queuedReplyId = queued.id;
+        return result;
+      };
+
+      const outcome = await drainControls(rig);
+      expect(outcome.status).toBe("complete");
+      const turns = await settled(rig);
+      expect(failed).toBe(true);
+      const queuedReply = turns.find((turn) => turn.id === queuedReplyId);
+      const answer = turns.find(
+        (turn) => turn.role === "assistant" && turn.prevTurnId === queuedReply?.id,
+      );
+      expect(turns.find((turn) => turn.role === "compaction")).toMatchObject({
+        status: "error",
+        metadata: { controlMessageId: control.id },
+      });
+      expect(queuedReply).toMatchObject({ role: "user", status: "complete" });
+      expect(answer).toMatchObject({ role: "assistant", status: "complete" });
+      expect(JSON.stringify(rig.gateway.requests.at(-1))).toContain(
+        "reply survives successor exception",
+      );
+    });
+
+    it("enqueueing the same command id is a no-op before and after execution", async () => {
+      const rig = await manualFixture();
+      const input = {
+        threadId: rig.threadId,
+        actorId: rig.ids.user,
+        id: crypto.randomUUID(),
+        control: { kind: "compact" as const },
+      };
+      expect((await rig.delivery.enqueueControl(input)).created).toBe(true);
+      await expect(
+        rig.delivery.enqueueControl({ ...input, threadId: rig.ids.child }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect((await rig.delivery.enqueueControl(input)).created).toBe(false);
+
+      await drainControls(rig);
+
+      const retry = await rig.delivery.enqueueControl(input);
+      expect(retry).toMatchObject({ created: false, response: { id: input.id, pending: null } });
+      expect(retry.response.turnId).toBeTruthy();
+      expect(
+        (await rig.repos.turns.listByThread(rig.threadId)).filter(
+          (turn) => turn.role === "compaction",
+        ),
+      ).toHaveLength(1);
+    });
+
+    it("#619 refuses manual compaction below the compactable floor without billing", async () => {
+      const rig = await manualFixture({ history: "A short planning note." });
+      await (
+        await rig.orchestrator.prepare({
+          threadId: rig.threadId,
+          userText: "Read the latest chapter.",
+        })
+      ).execute();
+      await settled(rig);
+      const balance = await rig.creditLedger.getBalance({ userId: rig.ids.user });
+      await compactControl(rig);
+      await drainControls(rig);
+      const turn = (await settled(rig)).at(-1);
+      if (!turn) throw new Error("Expected the manual compaction turn");
+      expect(turn).toMatchObject({
+        role: "compaction",
+        status: "error",
+        metadata: { reason: "nothing_to_compact", phase: "initial_prepare" },
+      });
+      expect(rig.summarizer.calls).toHaveLength(0);
+      expect(await rig.repos.modelResponses.listByTurn(turn.id)).toEqual([]);
+      expect(await rig.creditLedger.getBalance({ userId: rig.ids.user })).toBe(balance);
+    });
+
+    it("a control-only sweep starts an idle thread", async () => {
+      const rig = await manualFixture();
+      await compactControl(rig);
+      const starts: string[] = [];
+      const { sweepWakes } = await import("./sweep-wakes.js");
+      await sweepWakes({
+        delivery: rig.delivery,
+        authority: rig.runClaim,
+        runStarter: {
+          async start(id) {
+            starts.push(id);
+          },
+        },
+        eventSink: rig.deps.eventSink,
+        limit: 100,
+      });
+      expect(starts).toContain(rig.threadId);
+    });
+
+    it("a manual minimal tail over the usable window calls no summarizer", async () => {
+      const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
+      const rig = await manualFixture({ gateway });
+      const active = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        userText: "reply before compact",
+      });
+      const execution = active.execute();
+      await gateway.untilGatewayBoundary(1);
+      rig.deps.gateway.listModels = () => [
+        {
+          id: "gpt-4.1-mini",
+          provider: "openai",
+          displayName: "small",
+          contextWindow: 1000,
+          maxOutputTokens: 100,
+          tokenizer: "o200k",
+          promptCache: { kind: "none", ttlMs: null },
+          capabilities: new Set(),
+        },
+      ];
+      const control = await compactControl(rig);
+      await rig.send(rig.threadId, "unanswered ".repeat(1000));
+      expect(await rig.orchestrator.cancel(rig.threadId, active.executionTurnId)).toBe("cancelled");
+      gateway.release(1);
+      await execution;
+      await settled(rig);
+
+      const c = (await rig.repos.turns.listByThread(rig.threadId)).find(
+        (turn) =>
+          turn.role === "compaction" &&
+          (turn.metadata as { controlMessageId?: string } | null)?.controlMessageId === control.id,
+      );
+      expect(c).toMatchObject({
+        status: "error",
+        metadata: { reason: "context_too_large", phase: "initial_prepare" },
+      });
+      expect(rig.summarizer.calls).toHaveLength(0);
+    });
+
+    it("materializing idle work finalizes an orphan before touching the inbox", async () => {
+      const rig = await manualFixture();
+      const previous = (await rig.repos.turns.listByThread(rig.threadId)).at(-1);
+      const stale = await rig.repos.turns.create({
+        threadId: rig.threadId,
+        prevTurnId: previous?.id,
+        role: "compaction",
+        origin: "system",
+        status: "pending",
+        metadata: { trigger: "manual" },
+      });
+      const control = await compactControl(rig);
+
+      await rig.delivery.materializeIdle(rig.threadId);
+
+      expect(await rig.repos.turns.findById(stale.id)).toMatchObject({
+        status: "error",
+        metadata: { reason: "interrupted" },
+      });
+      expect(await rig.delivery.selectPending(rig.threadId)).toContainEqual(
+        expect.objectContaining({ id: control.id }),
+      );
+    });
+
+    it("a remote Stop during manual summary wakes the owner after release", async () => {
+      let rig: Awaited<ReturnType<typeof fixture>>;
+      const remote = createDrizzleRunClaim(db, { holderId: "remote-controller" });
+      const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => {
+        await rig.delivery.enqueue({
+          threadId: rig.threadId,
+          intent: "message",
+          provenance: { kind: "writer", actorId: rig.ids.user },
+          body: { kind: "text", text: "hi after remote Stop" },
+          idempotencyKey: "hi-after-remote-stop",
+        });
+        expect(await remote.cancelExecution(rig.threadId, turnId)).toBe(true);
+        return {
+          kind: "complete",
+          text: "Earlier context.",
+          model: "summary-model",
+          modelResponses: [],
+        };
+      });
+      rig = await manualFixture({ summarizer });
+      await (
+        await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "Continue." })
+      ).execute();
+      await settled(rig);
+      await compactControl(rig);
+
+      const outcome = await drainControls(rig);
+      expect(outcome.status).toBe("cancelled");
+      const turns = await settled(rig);
+      expect(turns.find((turn) => turn.role === "compaction")?.status).toBe("cancelled");
+      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
+      expect(JSON.stringify(rig.gateway.requests.at(-1))).toContain("hi after remote Stop");
+    });
+
+    it("a crash while a command runs leaves one interrupted divider and does not rerun it", async () => {
+      const rig = await manualFixture();
+      await (
+        await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "Continue." })
+      ).execute();
+      await settled(rig);
+      const control = await compactControl(rig);
+      const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
+
+      // Drop the owning DB session after the command's start commit, as a process crash does.
+      await rig.runClaim.release({
+        threadId: rig.threadId,
+        runId: run.runId,
+        holderId: "fixture-owner",
+      });
+      const replacement = createDrizzleRunClaim(db);
+      const delivery = createTestDrizzleDelivery(db, {
+        repos: rig.repos,
+        eventWriter: rig.eventWriter,
+        runClaim: replacement,
+      });
+      const recovery = createOrchestrator({ ...rig.deps, runClaim: replacement, delivery });
+
+      await expect(recovery.prepare({ threadId: rig.threadId, drain: true })).rejects.toThrow(
+        "no_pending_wake",
+      );
+      const compactions = (await rig.repos.turns.listByThread(rig.threadId)).filter(
+        (turn) => turn.role === "compaction",
+      );
+      expect(compactions).toHaveLength(1);
+      expect(compactions[0]).toMatchObject({
+        status: "error",
+        error: "This manual compaction was interrupted.",
+        metadata: { reason: "interrupted", phase: "recovery", controlMessageId: control.id },
+      });
+      expect(await delivery.selectPending(rig.threadId)).toEqual([]);
     });
   });

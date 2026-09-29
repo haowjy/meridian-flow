@@ -663,10 +663,11 @@ else
       expect(compaction.status).toBe("error");
     });
 
-    it("fails a warm summary overflow once and records the too-large rejection", async () => {
+    it("rolls the next real compaction after a warm branch summary is rejected as too large", async () => {
       const gateway = scriptedGateway();
       const original = gateway.stream;
       let summaries = 0;
+      const summaryRequests: import("../gateway/index.js").GenerateRequest[] = [];
       gateway.stream = async function* (request) {
         const isSummary = request.messages.some((message) =>
           message.content.some(
@@ -678,13 +679,27 @@ else
           return;
         }
         summaries++;
+        summaryRequests.push(request);
         yield { type: "usage", usage: { inputTokens: 100, outputTokens: 1 } };
-        yield {
-          type: "error",
-          code: "context_overflow",
-          message: "input length and max_tokens exceed context limit",
-          retryable: false,
-        };
+        if (summaries === 1)
+          yield {
+            type: "error",
+            code: "context_overflow",
+            message: "input length and max_tokens exceed context limit",
+            retryable: false,
+          };
+        else
+          yield {
+            type: "end",
+            result: {
+              content: [{ type: "text", text: "The story's earlier work is complete." }],
+              toolCalls: [],
+              finishReason: "end_turn",
+              usage: { inputTokens: 100, outputTokens: 10 },
+              model: "gpt-4.1-mini",
+              provider: "openai",
+            },
+          };
       };
       const rig = await fixture({ gateway });
       rig.deps.summarizer = createConversationSummarizer({
@@ -693,6 +708,15 @@ else
         prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
         config: { model: "gpt-4.1-mini", maxOutputTokens: 100 },
       });
+      const realSummarizer = rig.deps.summarizer;
+      const summaryInputs: Parameters<typeof realSummarizer.summarize>[0][] = [];
+      rig.deps.summarizer = {
+        ...realSummarizer,
+        async summarize(input) {
+          summaryInputs.push(input);
+          return realSummarizer.summarize(input);
+        },
+      };
       const run = await rig.orchestrator.prepare({
         threadId: rig.threadId,
         tools: [],
@@ -712,13 +736,51 @@ else
       );
       expect(compaction).toMatchObject({
         status: "error",
-        metadata: { reason: "request_too_large", phase: "summary" },
+        metadata: {
+          reason: "request_too_large",
+          phase: "summary",
+          summarizer: { path: "branch" },
+        },
       });
       const debits = await db.select().from(schema.creditTransactions);
       for (const row of rows) {
         expect(BigInt(row.millicredits ?? "0")).toBeGreaterThan(0n);
         expect(debits.filter((debit) => debit.usageEventId === row.id)).toHaveLength(1);
       }
+
+      // A new run crosses the previous C through its actual prevTurnId chain.
+      // The second compaction is a normal auto-trigger, so only that history walk
+      // can make the summarizer know the previous request was too large.
+      rig.setThreshold(2500);
+      const retry = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Try again after the rejected summary.",
+      });
+      expect((await retry.execute()).status).toBe("complete");
+
+      const compactions = (await rig.repos.turns.listByThread(rig.threadId)).filter(
+        (turn) => turn.role === "compaction",
+      );
+      expect(compactions).toHaveLength(2);
+      expect(compactions[1]).toMatchObject({
+        status: "complete",
+        metadata: { summarizer: { path: "rolling" } },
+      });
+      expect(summaryInputs.map((input) => input.knownTooLarge)).toEqual([false, true]);
+      expect(summaryRequests[0]?.messages.at(-1)?.content).toContainEqual(
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringContaining("This is a system instruction"),
+        }),
+      );
+      expect(summaryRequests[1]?.messages).toHaveLength(2);
+      expect(summaryRequests[1]?.messages[1]?.content).toContainEqual(
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringContaining("Conversation transcript:"),
+        }),
+      );
     });
 
     it.each([
