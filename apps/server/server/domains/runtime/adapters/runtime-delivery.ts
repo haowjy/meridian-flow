@@ -5,6 +5,7 @@ import { isPendingPlaceholder } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
 import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
+import { type DetachedWorkTracker, processDetachedWork } from "../detached-work.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
 import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
@@ -66,6 +67,7 @@ const PREPARATION_ATTEMPTS = 3;
 
 export function createDeliveryAdapter(
   deps: PersistenceDeps & {
+    backgroundTasks?: DetachedWorkTracker;
     repos: import("../../threads/index.js").ThreadRepositories;
     toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
     inbox: DeliveryStore;
@@ -81,6 +83,9 @@ export function createDeliveryAdapter(
   },
 ): RuntimeDelivery {
   const { inbox, leaseStore, threadLock } = deps;
+  const backgroundTasks = deps.backgroundTasks ?? processDetachedWork;
+  const schedulePostCommit = (task: () => Promise<void>) =>
+    deps.schedulePostCommit(() => backgroundTasks.track(Promise.resolve().then(task)));
   const appendPending = async (threadId: ThreadId) => {
     await deps.eventWriter.appendEvent(threadId, {
       type: "inbox.changed",
@@ -229,7 +234,7 @@ export function createDeliveryAdapter(
     const message = await inbox.enqueue(draft);
     await appendPending(draft.threadId);
     if (draft.intent === "message" || draft.intent === "control")
-      deps.schedulePostCommit(() => deps.runStarter.start(draft.threadId));
+      schedulePostCommit(() => deps.runStarter.start(draft.threadId));
     return message;
   };
   let workCursor: ThreadId | undefined;
@@ -278,7 +283,7 @@ export function createDeliveryAdapter(
     await deps.runClaim.withExclusiveThread(threadId, () =>
       threadLock.withThreadLock(threadId, async () => {
         const reports = await finalizeOrphanedTurns(deps, { threadId });
-        deps.schedulePostCommit(() => deps.publishFinalizedReports(reports));
+        schedulePostCommit(() => deps.publishFinalizedReports(reports));
         if (await inbox.canMaterializeWork(threadId)) await materializePrefix(threadId);
       }),
     );
@@ -605,7 +610,7 @@ export function createDeliveryAdapter(
         await inbox.ack(id, [controlId]);
         await appendPending(id);
       },
-      wake: (id) => deps.schedulePostCommit(() => deps.runStarter.start(id)),
+      wake: (id) => schedulePostCommit(() => deps.runStarter.start(id)),
     }),
     threadChanged,
     async projectChanged(projectId) {

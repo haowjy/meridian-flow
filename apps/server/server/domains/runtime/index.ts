@@ -34,6 +34,8 @@ export {
   type UserTurnAdmission,
 } from "./admission/user-turn-admission.js";
 export { createWriterTurnProducer } from "./admission/writer-turn-producer.js";
+export type { DetachedWorkTracker } from "./detached-work.js";
+export { createDetachedWorkTracker } from "./detached-work.js";
 export * from "./gateway/index.js";
 export {
   createHandoffBriefs,

@@ -91,6 +91,7 @@ import {
   writerSendMetadata,
 } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
+import type { DetachedWorkTracker } from "../detached-work.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
@@ -206,6 +207,8 @@ export interface OrchestratorRepositories {
 }
 
 export interface OrchestratorDeps {
+  /** One app-owned lifecycle tracker shared by every detached runtime caller. */
+  backgroundTasks?: DetachedWorkTracker;
   summarizer: ConversationSummarizer;
   gateway: LlmGateway;
   toolExecutor: ToolExecutor;

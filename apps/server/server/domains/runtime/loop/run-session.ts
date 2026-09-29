@@ -3,6 +3,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
+import { processDetachedWork } from "../detached-work.js";
 import { type CurrentTurn, DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
 import { createRunStarter } from "./run-starter.js";
 import {
@@ -26,6 +27,7 @@ type RunSession = {
 };
 
 export function createRunSessions(deps: {
+  backgroundTasks?: import("../detached-work.js").DetachedWorkTracker;
   setup(input: RunLoopInput): Promise<PreparedLoop>;
   finalizeFailure(input: {
     threadId: ThreadId;
@@ -47,6 +49,7 @@ export function createRunSessions(deps: {
   onRunSettled?: (threadId: ThreadId) => void;
 }) {
   const running = new Map<ThreadId, RunSession>();
+  const backgroundTasks = deps.backgroundTasks ?? processDetachedWork;
   const authority = deps.runClaim;
   const runStarter = createRunStarter({ startDrain }, deps.eventSink);
   const wakeIfRunnable = createWakeIfRunnable({ delivery: deps.delivery, runStarter });
@@ -124,9 +127,11 @@ export function createRunSessions(deps: {
           observe(threadId, "settled.failed", error);
         }
         if (claimReleased && wakeAfterRelease) {
-          void session.completion
-            .then(() => wakeIfRunnable(threadId, [...unacknowledgedReceiptIds]))
-            .catch((error) => observe(threadId, "cleanup_wake.failed", error));
+          backgroundTasks.track(
+            session.completion
+              .then(() => wakeIfRunnable(threadId, [...unacknowledgedReceiptIds]))
+              .catch((error) => observe(threadId, "cleanup_wake.failed", error)),
+          );
         }
       }
     }
@@ -136,19 +141,21 @@ export function createRunSessions(deps: {
       const heldLease = lease;
       heartbeat = setInterval(
         () => {
-          void authority
-            .renew(heldLease)
-            .then(async (held) => {
-              if (!held) {
-                clearInterval(heartbeat);
-                observe(threadId, "lease.lost", new Error("Run lease lost"));
-                controller.abort();
-              } else {
-                const state = await authority.read(threadId);
-                if (state.kind === "awake" && state.cancelRequested) controller.abort();
-              }
-            })
-            .catch((error) => observe(threadId, "lease_renew.failed", error));
+          backgroundTasks.track(
+            authority
+              .renew(heldLease)
+              .then(async (held) => {
+                if (!held) {
+                  clearInterval(heartbeat);
+                  observe(threadId, "lease.lost", new Error("Run lease lost"));
+                  controller.abort();
+                } else {
+                  const state = await authority.read(threadId);
+                  if (state.kind === "awake" && state.cancelRequested) controller.abort();
+                }
+              })
+              .catch((error) => observe(threadId, "lease_renew.failed", error)),
+          );
         },
         Math.floor(DEFAULT_LEASE_TTL_MS / 3),
       );
@@ -231,7 +238,7 @@ export function createRunSessions(deps: {
   async function startDrain(threadId: ThreadId): Promise<void> {
     try {
       const run = await prepare({ threadId, drain: true });
-      void run.execute();
+      backgroundTasks.track(run.execute());
     } catch (error) {
       if (!(error instanceof NoPendingWakeError)) throw error;
     }

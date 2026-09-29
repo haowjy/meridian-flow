@@ -16,6 +16,7 @@ import type {
   HandoffBriefHold,
   HandoffBriefLauncher,
 } from "../../threads/ports/handoff-brief-launcher.js";
+import { type DetachedWorkTracker, processDetachedWork } from "../detached-work.js";
 import { historyReadableAt } from "../loop/history-tool-availability.js";
 import { createLocalTurn } from "../loop/local-turn.js";
 import type { PersistenceDeps } from "../loop/persistence.js";
@@ -31,7 +32,6 @@ import type { HandoffBriefOutcome } from "./brief-request.js";
 import { completeHandoffSeed, handoffBriefFailedCopy, handoffSeedBlock } from "./seed.js";
 
 const REMOTE_STOP_POLL_MS = 5_000;
-const SHUTDOWN_TIMEOUT_MS = 10_000;
 
 export type HandoffRetryErrorCode =
   | "not_a_handoff_retry"
@@ -54,6 +54,7 @@ type BriefGeneration = (input: {
 }) => Promise<{ outcome: HandoffBriefOutcome; failure?: HandoffFailureOutcome }>;
 
 type HandoffBriefServiceDeps = {
+  backgroundTasks?: DetachedWorkTracker;
   repos: ThreadRepositories;
   eventWriter: EventJournalWriter;
   eventSink: EventSink;
@@ -71,7 +72,7 @@ type LiveBrief = { controller: AbortController; threadId: ThreadId };
 
 export interface HandoffBriefs extends HandoffBriefStopper, HandoffBriefLauncher {
   retry(input: { threadId: ThreadId; seedId: TurnId }): Promise<{ turn: Turn; created: boolean }>;
-  shutdown(): Promise<void>;
+  beginShutdown(): void;
 }
 
 export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBriefs {
@@ -80,16 +81,19 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     eventWriter: deps.eventWriter,
   };
   const live = new Map<TurnId, LiveBrief>();
-  const launches = new Set<Promise<void>>();
+  const backgroundTasks = deps.backgroundTasks ?? processDetachedWork;
   let shuttingDown = false;
-  let shutdownTask: Promise<void> | undefined;
   const accounting = createTurnAccounting({
     billingUsage: deps.billingUsage as BillingUsagePolicy,
   });
   const treeBudget = createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) });
 
+  function schedulePostCommit(task: () => Promise<void>) {
+    deps.schedulePostCommit(() => backgroundTasks.track(Promise.resolve().then(task)));
+  }
+
   function publishStatus(threadId: ThreadId) {
-    deps.schedulePostCommit(async () => {
+    schedulePostCommit(async () => {
       try {
         await deps.publishStatus(threadId);
       } catch (error) {
@@ -259,22 +263,24 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
         return;
       }
       poll = setInterval(() => {
-        void deps.repos.turns
-          .findById(input.seedTurnId)
-          .then((seed) => {
-            if (!seed) controller.abort("lost_claim");
-            else if (seed.status !== "pending")
-              controller.abort(seed.status === "cancelled" ? "stop" : "lost_claim");
-          })
-          .catch((error) => {
-            emitEvent(deps.eventSink, {
-              level: "warn",
-              source: "runtime.handoff",
-              name: "stop_poll.failed",
-              correlation: { threadId: input.threadId, turnId: input.seedTurnId },
-              payload: unknownToEventPayload(error),
-            });
-          });
+        backgroundTasks.track(
+          deps.repos.turns
+            .findById(input.seedTurnId)
+            .then((seed) => {
+              if (!seed) controller.abort("lost_claim");
+              else if (seed.status !== "pending")
+                controller.abort(seed.status === "cancelled" ? "stop" : "lost_claim");
+            })
+            .catch((error) => {
+              emitEvent(deps.eventSink, {
+                level: "warn",
+                source: "runtime.handoff",
+                name: "stop_poll.failed",
+                correlation: { threadId: input.threadId, turnId: input.seedTurnId },
+                payload: unknownToEventPayload(error),
+              });
+            }),
+        );
       }, REMOTE_STOP_POLL_MS);
       poll.unref();
 
@@ -332,9 +338,13 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     }
   }
 
-  function startLaunch(input: { threadId: ThreadId; seedTurnId: TurnId; claim: HandoffBriefHold }) {
+  function startLaunch(input: {
+    threadId: ThreadId;
+    seedTurnId: TurnId;
+    claim: HandoffBriefHold;
+  }): Promise<void> {
     if (shuttingDown) {
-      void input.claim.release().catch((error) => {
+      return input.claim.release().catch((error) => {
         emitEvent(deps.eventSink, {
           level: "error",
           source: "runtime.handoff",
@@ -343,9 +353,8 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
           payload: unknownToEventPayload(error),
         });
       });
-      return;
     }
-    const task = launch(input).catch((error) => {
+    return launch(input).catch((error) => {
       emitEvent(deps.eventSink, {
         level: "error",
         source: "runtime.handoff",
@@ -354,8 +363,6 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
         payload: unknownToEventPayload(error),
       });
     });
-    launches.add(task);
-    void task.finally(() => launches.delete(task));
   }
 
   function launchAfterCommit(input: {
@@ -364,7 +371,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     claim: HandoffBriefHold;
   }) {
     deps.schedulePostCommit(async () => {
-      startLaunch(input);
+      backgroundTasks.track(startLaunch(input));
     });
   }
 
@@ -404,7 +411,8 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     if (stopped) {
       live.get(seedTurnId)?.controller.abort("stop");
       publishStatus(threadId);
-      deps.schedulePostCommit(async () => {
+      schedulePostCommit(async () => {
+        if (shuttingDown) return;
         try {
           await deps.wakeIfRunnable(threadId);
         } catch (error) {
@@ -490,30 +498,10 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     }
   }
 
-  function shutdown(): Promise<void> {
-    if (shutdownTask) return shutdownTask;
+  function beginShutdown(): void {
+    if (shuttingDown) return;
     shuttingDown = true;
     for (const brief of live.values()) brief.controller.abort("shutdown");
-    const active = [...launches];
-    shutdownTask = (async () => {
-      if (active.length === 0) return;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const timeout = new Promise<"timeout">((resolve) => {
-        timer = setTimeout(() => resolve("timeout"), SHUTDOWN_TIMEOUT_MS);
-      });
-      const finished = Promise.allSettled(active).then(() => "finished" as const);
-      const result = await Promise.race([finished, timeout]);
-      if (timer) clearTimeout(timer);
-      if (result === "timeout") {
-        emitEvent(deps.eventSink, {
-          level: "warn",
-          source: "runtime.handoff",
-          name: "shutdown.briefs_timed_out",
-          payload: { count: active.length, timeoutMs: SHUTDOWN_TIMEOUT_MS },
-        });
-      }
-    })();
-    return shutdownTask;
   }
 
   return {
@@ -521,6 +509,6 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     launchAfterCommit,
     stop,
     retry,
-    shutdown,
+    beginShutdown,
   };
 }

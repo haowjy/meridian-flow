@@ -5,6 +5,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
 import { createDrizzleThreadLock } from "../adapters/drizzle-thread-lock.js";
+import { processDetachedWork } from "../detached-work.js";
 import { createHandoffBriefs } from "./brief-service.js";
 
 const url = process.env.DATABASE_URL;
@@ -440,7 +441,8 @@ else
       expect(startAttempts).toBe(1);
       expect(startedRuns).toBe(0);
 
-      await service.shutdown();
+      service.beginShutdown();
+      await processDetachedWork.drain();
 
       expect(providerSignal?.reason).toBe("shutdown");
       expect(await fixture.repos.turns.findById(fixture.seed.id)).toMatchObject({

@@ -104,6 +104,7 @@ import {
   agentExecutionUnavailableReasons,
   agentModelUnavailableReasons,
 } from "../domains/runtime/agent-definition-support.js";
+import { createDetachedWorkTracker } from "../domains/runtime/detached-work.js";
 import { MODEL_REGISTRY, type MockScriptQueue } from "../domains/runtime/gateway/index.js";
 import { generateHandoffBrief } from "../domains/runtime/handoff/brief-request.js";
 import {
@@ -255,6 +256,7 @@ export type AppServices = {
   runStarter: RunStarter;
   delivery: DeliveryProducer & import("../domains/runtime/loop/runtime-delivery.js").ThreadControls;
   handoffBriefs: HandoffBriefs;
+  shutdown(): Promise<void>;
   /** Startup/interval recovery for threads with a pending message and no live run. */
   recovery: {
     scanWakes(): Promise<number>;
@@ -601,6 +603,7 @@ export async function createProductionAppPorts(input: {
 
 /** Pure wiring — no env reads and no concrete adapter construction. */
 export function composeAppServices(ports: ProductionAppPorts): AppServices {
+  const backgroundTasks = createDetachedWorkTracker();
   const threadEventHub = createThreadEventHub({
     journalReader: ports.journalReader,
     journalWriter: ports.journalWriter,
@@ -641,6 +644,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     | ((childThreadId: ThreadId, executionTurnId: TurnId) => Promise<unknown>)
     | undefined;
   const delivery = createDrizzleRuntimeDelivery(ports.db, {
+    backgroundTasks,
     toolRegistry,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
@@ -818,6 +822,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     producer: admissionProducer,
   });
   const childRunDriver = createChildRunDriver({
+    backgroundTasks,
     orchestrator: { prepare: (input) => runner.prepare(input) },
     repos: { executionReports: ports.threadRepos.executionReports },
     // The live hub, not the bare journal writer: background lifecycle must reach
@@ -860,6 +865,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     stop: (threadId, seedTurnId) => handoffBriefs.stop(threadId, seedTurnId),
   };
   const orchestratorDeps = {
+    backgroundTasks,
     summarizer: createConversationSummarizer({
       gateway: ports.gateway,
       agentRevisions: ports.agentRevisions,
@@ -916,6 +922,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const orchestrator = createOrchestrator(orchestratorDeps);
   runner = orchestrator;
   handoffBriefs = createHandoffBriefs({
+    backgroundTasks,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     eventSink: ports.eventSink,
@@ -1003,6 +1010,18 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     notices: ports.notices,
     changeTrails,
     changeTrailDelivery,
+    async shutdown() {
+      handoffBriefs.beginShutdown();
+      const timeoutMs = 10_000;
+      const drained = await backgroundTasks.drain(timeoutMs);
+      if (!drained)
+        emitEvent(ports.eventSink, {
+          level: "warn",
+          source: "runtime.background-work",
+          name: "shutdown.drain_timed_out",
+          payload: { pendingCount: backgroundTasks.pendingCount, timeoutMs },
+        });
+    },
   };
 }
 
@@ -1065,7 +1084,7 @@ export function createInMemoryAppServices(): AppServices {
     async retry() {
       throw new Error("in-memory handoff retry is not implemented");
     },
-    async shutdown() {},
+    beginShutdown() {},
   };
   const recovery = {
     async scanWakes() {
@@ -1536,6 +1555,7 @@ export function createInMemoryAppServices(): AppServices {
         return 0;
       },
     },
+    async shutdown() {},
   };
 }
 
