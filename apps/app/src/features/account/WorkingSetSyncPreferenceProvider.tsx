@@ -57,10 +57,9 @@ function WorkingSetSyncPreferenceOwner({
   children: React.ReactNode;
 }) {
   const preference = useWorkingSetSyncPreference(serverValue);
-  // Configure during render, ahead of descendant hydration: `ReadableProjectRoute`
-  // seeds the working set in a render-time `useState` initializer and the driver
-  // must already know its enabled state. `configure` is idempotent for an
-  // unchanged account/value pair.
+  // Configure during render, ahead of the descendant project-route bootstrap's
+  // hydration layout commit. The driver must already know its enabled state;
+  // `configure` is idempotent for an unchanged account/value pair.
   configureWorkingSetSync(accountId, preference.confirmed);
   return (
     <WorkingSetSyncPreferenceContext.Provider value={preference}>

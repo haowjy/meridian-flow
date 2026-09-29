@@ -1463,7 +1463,7 @@ msgstr ""
 #~ msgid "Creating chat"
 #~ msgstr ""
 
-#: src/features/home/NewProjectView.tsx
+#: src/routes/_authenticated/p/$projectId.tsx
 msgid "Creating project…"
 msgstr ""
 
@@ -2836,8 +2836,8 @@ msgid "Open producing turn in {agentName}"
 msgstr ""
 
 #: src/features/home/NewProjectView.tsx
-msgid "Open project"
-msgstr ""
+#~ msgid "Open project"
+#~ msgstr ""
 
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "Open result {name}"
@@ -2863,6 +2863,10 @@ msgstr ""
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Opening document…"
 msgstr ""
+
+#: src/features/home/NewProjectView.tsx
+#~ msgid "Opening project…"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Opening the link"
@@ -2958,8 +2962,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/home/NewProjectView.tsx
-msgid "Project created, but it couldn’t open. Try again."
-msgstr ""
+#~ msgid "Project created, but it couldn’t open. Try again."
+#~ msgstr ""
 
 #: src/features/home/NewProjectView.tsx
 msgid "Project name"
@@ -2978,8 +2982,8 @@ msgid "Project title could not be saved. Try again."
 msgstr ""
 
 #: src/features/home/NewProjectView.tsx
-msgid "Project wasn’t confirmed. Retry creation."
-msgstr ""
+#~ msgid "Project wasn’t confirmed. Retry creation."
+#~ msgstr ""
 
 #: src/features/home/ProjectLibrary.tsx
 #~ msgid "projects"
@@ -4169,6 +4173,10 @@ msgstr ""
 
 #: src/routes/dev-login.tsx
 msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
+msgstr ""
+
+#: src/routes/_authenticated/p/$projectId.tsx
+msgid "This project couldn’t be created."
 msgstr ""
 
 #: src/routes/_authenticated/p/$projectId.tsx

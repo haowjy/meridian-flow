@@ -1463,7 +1463,7 @@ msgstr "Creating a Work…"
 #~ msgid "Creating chat"
 #~ msgstr "Creating chat"
 
-#: src/features/home/NewProjectView.tsx
+#: src/routes/_authenticated/p/$projectId.tsx
 msgid "Creating project…"
 msgstr "Creating project…"
 
@@ -2840,8 +2840,8 @@ msgid "Open producing turn in {agentName}"
 msgstr "Open producing turn in {agentName}"
 
 #: src/features/home/NewProjectView.tsx
-msgid "Open project"
-msgstr "Open project"
+#~ msgid "Open project"
+#~ msgstr "Open project"
 
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "Open result {name}"
@@ -2867,6 +2867,10 @@ msgstr "Opening checkout…"
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Opening document…"
 msgstr "Opening document…"
+
+#: src/features/home/NewProjectView.tsx
+#~ msgid "Opening project…"
+#~ msgstr "Opening project…"
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Opening the link"
@@ -2962,8 +2966,8 @@ msgstr "Profile"
 #~ msgstr "Project couldn’t be created. Try again."
 
 #: src/features/home/NewProjectView.tsx
-msgid "Project created, but it couldn’t open. Try again."
-msgstr "Project created, but it couldn’t open. Try again."
+#~ msgid "Project created, but it couldn’t open. Try again."
+#~ msgstr "Project created, but it couldn’t open. Try again."
 
 #: src/features/home/NewProjectView.tsx
 msgid "Project name"
@@ -2982,8 +2986,8 @@ msgid "Project title could not be saved. Try again."
 msgstr "Project title could not be saved. Try again."
 
 #: src/features/home/NewProjectView.tsx
-msgid "Project wasn’t confirmed. Retry creation."
-msgstr "Project wasn’t confirmed. Retry creation."
+#~ msgid "Project wasn’t confirmed. Retry creation."
+#~ msgstr "Project wasn’t confirmed. Retry creation."
 
 #: src/features/home/ProjectLibrary.tsx
 #~ msgid "projects"
@@ -4174,6 +4178,10 @@ msgstr "This link can no longer be edited. Close the form and try again."
 #: src/routes/dev-login.tsx
 msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
 msgstr "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
+
+#: src/routes/_authenticated/p/$projectId.tsx
+msgid "This project couldn’t be created."
+msgstr "This project couldn’t be created."
 
 #: src/routes/_authenticated/p/$projectId.tsx
 msgid "This project couldn’t load. It may be unavailable."
