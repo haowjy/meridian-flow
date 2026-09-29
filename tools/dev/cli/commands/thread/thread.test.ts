@@ -106,6 +106,16 @@ describe("thread", () => {
     expect(asked.stderr).toContain("./mf thread respond");
   });
 
+  it("send waits for its queued reply after the running turn fails", async () => {
+    const result = await mf(["thread", "send", THREAD_ID, "wait behind cancelled run", "--json"]);
+    expect(result.code).toBe(EXIT.ok);
+    expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
+      type: "result",
+      status: "complete",
+      finalText: "Answered the queued message",
+    });
+  });
+
   it("send times out with exit 124 instead of hanging", async () => {
     const result = await mf(["thread", "send", THREAD_ID, "hang", "--timeout", "300ms", "--json"]);
     expect(result.code).toBe(EXIT.timeout);
