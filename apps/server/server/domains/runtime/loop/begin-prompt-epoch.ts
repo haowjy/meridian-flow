@@ -23,21 +23,16 @@ type ComposePromptBake = Omit<PromptBakeContent, "contentHash">;
 
 export interface BoundaryCompletion {
   blocks: BlockUpsertedRow[];
-  /** A one-commit boundary is first announced complete, never as a pending placeholder. */
-  announceBoundary?: boolean;
   compactionModel?: string;
   metadata?: JsonValue | null;
   modelResponses?: ModelResponseReceivedRow[];
-  completedAt?: string;
-  finishReason?: Turn["finishReason"];
   /** Caller-owned visible history event, such as `context.compacted`. */
-  events?: OrchestratorEvent[] | ((bakeId: PromptBakeId) => OrchestratorEvent[]);
+  events?: (bakeId: PromptBakeId) => OrchestratorEvent[];
 }
 
 export type BeginPromptEpochInput = {
   threadId: ThreadId;
-  cause: "compaction";
-  bake: { compose: ComposePromptBake } | { reuse: PromptBakeId };
+  bake: { compose: ComposePromptBake };
   boundaryTurnId: TurnId;
   completion: BoundaryCompletion;
 };
@@ -46,7 +41,7 @@ type BeginPromptEpochDeps = Omit<PersistenceDeps, "repos"> & {
   repos: PersistenceDeps["repos"] & Pick<ThreadRepositories, "promptBakes">;
 };
 
-/** Hashes or reuses a bake and completes the pending boundary in one journaled transaction. */
+/** Hashes a bake and completes the pending boundary in one journaled transaction. */
 export async function beginPromptEpoch(
   deps: BeginPromptEpochDeps,
   input: BeginPromptEpochInput,
@@ -64,23 +59,19 @@ export async function beginPromptEpoch(
       throw new Error(`Boundary turn ${input.boundaryTurnId} already has a prompt bake`);
 
     const bake = await resolveBake(deps, input, thread);
-    const completedAt = input.completion.completedAt ?? new Date().toISOString();
     const completionMetadata =
       input.completion.metadata === undefined ? boundary.metadata : input.completion.metadata;
     const completedTurn: Turn = {
       ...boundary,
       status: "complete",
-      finishReason: input.completion.finishReason ?? "end_turn",
-      completedAt,
+      finishReason: "end_turn",
+      completedAt: new Date().toISOString(),
       error: null,
       promptBakeId: bake.id,
       compactionModel: input.completion.compactionModel ?? null,
-      metadata: promptEpochMetadata(completionMetadata, input.cause),
+      metadata: promptEpochMetadata(completionMetadata),
     };
     const events: OrchestratorEvent[] = [
-      ...(input.completion.announceBoundary
-        ? [{ type: "turn.created" as const, turn: completedTurn }]
-        : []),
       ...input.completion.blocks.map(
         (block): OrchestratorEvent => ({ type: "block.upserted", block }),
       ),
@@ -88,9 +79,7 @@ export async function beginPromptEpoch(
       ...(input.completion.modelResponses ?? []).map(
         (response): OrchestratorEvent => ({ type: "model.response_received", response }),
       ),
-      ...(typeof input.completion.events === "function"
-        ? input.completion.events(bake.id)
-        : (input.completion.events ?? [])),
+      ...(input.completion.events?.(bake.id) ?? []),
     ];
     return { result: { bakeId: bake.id }, events };
   });
@@ -102,12 +91,6 @@ async function resolveBake(
   input: BeginPromptEpochInput,
   thread: Thread,
 ): Promise<PromptBake> {
-  if ("reuse" in input.bake) {
-    const bake = await deps.repos.promptBakes.findById(input.bake.reuse);
-    if (!bake) throw new Error(`Prompt bake not found: ${input.bake.reuse}`);
-    return bake;
-  }
-
   const content = input.bake.compose;
   const contentHash = hashPromptBakeContent(content);
   const current = await bakeInEffect(

@@ -320,14 +320,15 @@ export function decodeImageInclusionMetadata(value: unknown): ImageInclusionMeta
   return parsed.success ? parsed.data : null;
 }
 
-export function promptEpochMetadata(
-  metadata: JsonValue | null | undefined,
-  cause: "compaction",
-): JsonObject {
+export function promptEpochMetadata(metadata: JsonValue | null | undefined): JsonObject {
   if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
-    return { ...(metadata as JsonObject), promptEpoch: { cause } };
+    return { ...(metadata as JsonObject), promptEpoch: { cause: "compaction" } };
   }
-  return { kind: "prompt_epoch_boundary", cause, previousMetadata: metadata ?? null };
+  return {
+    kind: "prompt_epoch_boundary",
+    cause: "compaction",
+    previousMetadata: metadata ?? null,
+  };
 }
 
 export function isSystemUpdateMetadata(metadata: Turn["metadata"]): boolean {

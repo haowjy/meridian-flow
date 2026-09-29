@@ -1,4 +1,4 @@
-/** Projects the latest complete, non-reverted compaction over the effective transcript. */
+/** Projects the latest complete compaction over the effective transcript. */
 
 import type { Block, JsonObject, PromptBake, Turn } from "@meridian/contracts/threads";
 import { z } from "zod";

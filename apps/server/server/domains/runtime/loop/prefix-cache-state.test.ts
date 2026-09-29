@@ -286,7 +286,7 @@ describe("derivePrefixCacheState", () => {
     const epoch = turn("epoch", 2, {
       role: "system",
       origin: "system",
-      metadata: promptEpochMetadata(workUpdateMetadata(), "compaction"),
+      metadata: promptEpochMetadata(workUpdateMetadata()),
     });
     expect(derive({ history: history({ turns: [turn("turn-1", 1), epoch] }) })).toEqual({
       state: "cold",
@@ -299,7 +299,7 @@ describe("derivePrefixCacheState", () => {
       role: "system",
       origin: "system",
       promptBakeId: "bake-2" as Turn["promptBakeId"],
-      metadata: promptEpochMetadata(workUpdateMetadata(), "compaction"),
+      metadata: promptEpochMetadata(workUpdateMetadata()),
     });
     expect(bakeIdAt([boundary, turn("turn-1", 1)], "epoch", "bake-1")).toBe("bake-2");
   });

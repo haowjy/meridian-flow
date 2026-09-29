@@ -35,7 +35,6 @@ export type PrepareRequestInput = {
   imageProjectionMode?: CompactionImageProjectionMode;
   controlMessageId?: string;
   control?: ControlMessage | null;
-  failedControlIds?: ReadonlySet<string>;
   assertNoResponseScope?: () => void;
   pinnedRequestTurnIds?: ReadonlySet<string>;
   promptBakes?: OrchestratorRepositories["promptBakes"];

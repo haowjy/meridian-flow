@@ -590,7 +590,6 @@ async function runDrainTurn(
             referenceTurnId: referenceUserTurnId,
             currentTurnId: input.replyTurnId ?? reservedTurnId,
             control,
-            failedControlIds: selection.failedControlIds,
             pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
             turns: [
               ...inheritedTurns,

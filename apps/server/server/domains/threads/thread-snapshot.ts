@@ -13,9 +13,10 @@ import { orderTurnsByPosition } from "./order-turns.js";
 import type {
   BlockRepository,
   ModelResponseRepository,
-  ThreadLiveReaders,
+  ThreadPendingInboxReader,
   ThreadRepositories,
   ThreadRepository,
+  ThreadStatusReader,
   TurnRepository,
 } from "./ports/index.js";
 import type { ThreadEventHub } from "./thread-event-hub.js";
@@ -62,7 +63,7 @@ function groupBy<T, K>(items: T[], keyFor: (item: T) => K): Map<K, T[]> {
 export async function buildThreadSnapshot(
   repos: ThreadSnapshotRepositories,
   hub: ThreadEventHub,
-  statusReader: ThreadLiveReaders,
+  statusReader: ThreadStatusReader & ThreadPendingInboxReader,
   threadId: ThreadId,
 ): Promise<ThreadSnapshotResponse> {
   return repos.readSnapshot(async () => {
