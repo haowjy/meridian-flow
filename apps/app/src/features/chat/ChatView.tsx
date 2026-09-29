@@ -71,10 +71,7 @@ import {
 import { isHandoffSeed, optimisticHandoffSeed } from "./derivation/handoff-seed";
 import { optimisticForkPrefix, useInheritedView } from "./derivation/inherited-view";
 import { useHandoffBrief } from "./derivation/useHandoffBrief";
-import {
-  queuedWriterTurnIds as selectQueuedWriterTurnIds,
-  unreadWriterTurnIds,
-} from "./pending-inbox";
+import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
 import { placeStandIns } from "./retry-stand-ins";
@@ -215,21 +212,11 @@ export function ChatView({
     [pendingInbox],
   );
   const answeredControls = useMemo(() => answeredControlIds(turns), [turns]);
-  // A new command queues behind the newest message the model has not read.
-  const queueTailTurnId = useMemo(() => {
-    const unread = unreadWriterTurnIds(turns, queuedWriterTurnIds);
-    for (let index = turns.length - 1; index >= 0; index--) {
-      const id = turns[index]?.id;
-      if (id && unread.has(id)) return id;
-    }
-    return null;
-  }, [queuedWriterTurnIds, turns]);
   const controls = useThreadControls({
     threadId,
     pending: pendingInbox,
     answeredControlIds: answeredControls,
     leafTurnId: storedTurns.at(-1)?.id ?? null,
-    queueTailTurnId,
   });
   useControlTurnAnnouncements(turns);
   // The snapshot revalidates as a compaction reserves and settles, so its live
