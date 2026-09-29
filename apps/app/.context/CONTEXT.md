@@ -103,7 +103,7 @@ Two interfaces are the only paths between the visual layer and the substrate:
   initial prospective choice from the first active (then first available) named
   catalog Work, or No Work. Omitted or explicit-null root creation binds the
   locked No Work row as primary.
-  Direct `/p/*` and `/chat/*` authenticated routes mount the project
+  Direct `/p/*` authenticated routes mount the project
   provider stack and seed the project list + `now`; the project route loader
   seeds per-project threads and works before the workspace renders, and carries
   the working-set read as an explicit `row` / `absent` / `unavailable` result.
@@ -319,11 +319,15 @@ There is no `/project/<UUID>` or `/projects/<UUID>` project route and no
 inside the owning project's address space.
 
 Path destinations are the Chat index (`/p/<project>`) and chat detail
-(`/p/<project>/chat/<chat-UUID>`), Work collection/detail
-(`/works`, `/work/<work-slug>`), Editor (`/editor`), and context browse or
-document paths. A Work-scoped context path carries its Work slug in the path;
-project-scoped context can use the explicit `work` query selector. The only
-project-address query keys are `work`, `settings`, and `results`.
+(`/p/<project>/chats/<chat-UUID>`), Work collection/detail
+(`/works`, `/works/<work-slug>`), Editor (`/editor`), and context browse or
+document paths. Collections are plural and items live under them; `/works/new`
+and `/works/<work-UUID>` belong to creation, so the server never generates the
+slug `new` or a UUID-shaped slug. `@` never appears in a browser path: writers
+read it as a document reference, and it belongs to context URIs
+(`scratch://@slug/…`). A Work-scoped context path carries its Work slug in the
+path; project-scoped context can use the explicit `work` query selector. The
+only project-address query keys are `work`, `settings`, `results`, and `view`.
 Selectors distinguish omitted, explicit no-Work (empty), a slug, and malformed
 input; duplicate recognized keys and malformed encodings are invalid rather
 than normalized into another destination. Case and trailing-slash canonical

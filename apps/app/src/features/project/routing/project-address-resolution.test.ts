@@ -45,7 +45,7 @@ describe("authorized address resolution", () => {
   it("keeps path authority independent from Chat and secondary Work", () => {
     expect(
       addressWorkSelection(
-        address("/p/550e8400-e29b-41d4-a716-446655440000/work/@revision/scratch/notes.md"),
+        address("/p/550e8400-e29b-41d4-a716-446655440000/works/revision/scratch/notes.md"),
       ),
     ).toEqual({ kind: "slug", slug: "revision" });
     expect(
@@ -94,9 +94,9 @@ describe("optional query guard", () => {
     "/p/550e8400-e29b-41d4-a716-446655440000/editor",
     "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=",
     "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=valid",
-    "/p/550e8400-e29b-41d4-a716-446655440000/work/@missing",
-    "/p/550e8400-e29b-41d4-a716-446655440000/chat/00000000-0000-4000-8000-000000000000",
-    "/p/550e8400-e29b-41d4-a716-446655440000/work/@missing/scratch/notes.md",
+    "/p/550e8400-e29b-41d4-a716-446655440000/works/missing",
+    "/p/550e8400-e29b-41d4-a716-446655440000/chats/00000000-0000-4000-8000-000000000000",
+    "/p/550e8400-e29b-41d4-a716-446655440000/works/missing/scratch/notes.md",
   ])("leaves valid, absent, empty and required path identities untouched: %s", (href) => {
     const input = address(href);
     expect(guardProjectQuerySelections(input, { work: ready })).toBe(input);

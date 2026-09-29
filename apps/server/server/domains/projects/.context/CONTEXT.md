@@ -70,7 +70,9 @@ translate those to `title` and `description` in `ProjectDto`.
   their thread lists are flat under `/api/works/:workId`. Collection responses
   contain only the requested catalog Works and never select a Work implicitly.
 - Work slugs are stable project-unique handles assigned at creation. Rename does
-  not change a slug; UUID-shaped names keep their valid UUID-shaped slug. Soft
+  not change a slug. Generation never yields `new` or a UUID-shaped slug
+  (`isReservedWorkSlug`), because browser `/works/new` and `/works/<uuid>`
+  belong to creation; such names get a numeric suffix. Soft
   deletion releases active name uniqueness but reserves the slug. Lookup direction is
   exact: ID resolution never falls back to slug resolution or vice versa.
 - Work deletion never blocks on children. Under the Work lifecycle lock and in

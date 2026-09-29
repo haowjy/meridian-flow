@@ -176,7 +176,7 @@ Reload recovery (`recoveringFirstSend`) is decided once at mount; the phone
 opens its chat sheet for it over Work or Editor.
 
 First Send writes the durable account-stamped intent before selecting the new
-thread. From the index it pushes `/p/<project>/chat/<id>`, so Back returns to
+thread. From the index it pushes `/p/<project>/chats/<id>`, so Back returns to
 the index; dock selection remembers the chat and leaves the destination
 untouched. Reload recovery
 uses current chat identity, not a URL-only selector. The submitted Work, Agent,
@@ -357,7 +357,7 @@ grammar are gone. `project-route.ts` retains stable-ID command types and the
 context-removal CAS snapshot only; it is not a second address grammar.
 
 Work creation is addressable before the catalog knows its slug through
-`/works/<work-id>`. Confirmation replaces that path with `/work/@<slug>`.
+`/works/<work-id>`. Confirmation replaces that path with `/works/<slug>`.
 The account-scoped `client/creation/creation-registry` owns Project and Work
 creation records (`pending`, `failed`, or `confirmed`); the server Works
 snapshot and confirmed Work records meet once in `routing/work-route.ts`'s

@@ -16,6 +16,7 @@
 - Confirm/dismiss button pairs sit right-aligned, Cancel first.
 - Deleting a Work never blocks: its chats, drafts, Scratch and Uploads go with it. The Deleted tab lists it for 30 days with Restore, which brings everything back; after that it is purged.
 - Work list shows Active, Archived and Deleted as tabs, one list at a time. The tab lives in the URL (`?view=archived|deleted`), so Back returns to it; Archive and Unarchive move focus to the destination tab.
+- Project URLs are plural and drop `@`: `/chats/<id>`, `/works/<slug>`, `/works/<slug>/browse/…`. `@` stays for document references. New Works never get the slug `new` or a UUID-shaped slug.
 - Fix: the invalid-character name warning showed a raw "{0}".
 - `server`: Work delete cascade-marks children (`deleted_by_work_id`, migration 0011) and an hourly `work-purge` job removes Works past 30 days with their rows and blobs; restore past the window returns 410 `work_restore_expired`. Works drop `description` (migration 0010); `GET /api/works/:workId/threads` is removed in favor of the project chat feed's `workId` filter.
 

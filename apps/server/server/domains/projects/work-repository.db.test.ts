@@ -121,24 +121,29 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("keeps UUID-shaped slugs and resolves ambiguous strings by exact field role", async () => {
+    it("never generates route-reserved slugs and resolves strings by exact field role", async () => {
       const ambiguous = "123e4567-e89b-12d3-a456-426614174000";
       const byIdWork = await works.create({ id: ambiguous, projectId: PROJECT_ID, name: "Alpha" });
       const bySlugWork = await works.create({ projectId: PROJECT_ID, name: ambiguous });
       const collision = await works.create({ projectId: PROJECT_ID, name: `${ambiguous}!` });
+      const named = await works.create({ projectId: PROJECT_ID, name: "New" });
 
-      expect([bySlugWork.slug, collision.slug]).toEqual([ambiguous, `${ambiguous}-2`]);
+      expect([bySlugWork.slug, collision.slug, named.slug]).toEqual([
+        `${ambiguous}-2`,
+        `${ambiguous}-3`,
+        "new-2",
+      ]);
       const idAuthority = await authorities.byId(PROJECT_ID, byIdWork.id);
       if (!bySlugWork.slug) throw new Error("named Work missing slug");
       const slugAuthority = await authorities.bySlug(PROJECT_ID, bySlugWork.slug);
       expect(idAuthority).toMatchObject({ workId: byIdWork.id, workSlug: "alpha" });
-      expect(slugAuthority).toMatchObject({ workId: bySlugWork.id, workSlug: ambiguous });
+      expect(slugAuthority).toMatchObject({ workId: bySlugWork.id, workSlug: `${ambiguous}-2` });
       if (!idAuthority || !slugAuthority) throw new Error("missing resolved authority");
       expect(canonicalContextUri("scratch", "notes.md", idAuthority)).toBe(
         "scratch://@alpha/notes.md",
       );
       expect(canonicalContextUri("scratch", "notes.md", slugAuthority)).toBe(
-        `scratch://@${ambiguous}/notes.md`,
+        `scratch://@${ambiguous}-2/notes.md`,
       );
     });
 

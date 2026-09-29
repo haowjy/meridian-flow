@@ -6,6 +6,7 @@ import {
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { type ParsedRequestId, parseRequestId } from "@meridian/contracts/request-id";
+import { isReservedWorkSlug } from "@meridian/contracts/works";
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
 
 export type AddressSelection =
@@ -53,10 +54,6 @@ function handle(value: string | undefined): string | null {
   return normalized && HANDLE.test(normalized) ? normalized : null;
 }
 
-function workHandle(value: string | undefined): string | null {
-  return value?.startsWith("@") ? handle(value.slice(1)) : null;
-}
-
 function uuid(value: string | undefined): string | null {
   const normalized = value?.toLowerCase();
   return normalized && UUID.test(normalized) ? normalized : null;
@@ -75,19 +72,20 @@ function parseDestination(parts: string[]): ProjectDestination | null {
     if (parts[0] === "works" || parts[0] === "editor") return { kind: parts[0] };
     if (parts[0] === "browse") return { kind: "browse", scheme: null, path: "", workSlug: null };
   }
-  if (parts.length === 2 && parts[0] === "works") {
-    if (parts[1] === "new") return { kind: "works-new" };
-    const workId = parseRequestId(parts[1]);
-    return workId ? { kind: "work-id", workId } : null;
-  }
-  if (parts.length === 2 && parts[0] === "chat") {
+  if (parts.length === 2 && parts[0] === "chats") {
     const chatId = uuid(parts[1]);
     return chatId ? { kind: "chat", chatId } : null;
   }
   let workSlug: string | null = null;
-  if (parts[0] === "work") {
-    workSlug = workHandle(parts[1]);
-    if (!workSlug) return null;
+  if (parts[0] === "works") {
+    // The server never generates `new` or a UUID-shaped slug, so these segments stay unambiguous.
+    if (parts.length === 2 && parts[1] === "new") return { kind: "works-new" };
+    if (parts.length === 2 && uuid(parts[1])) {
+      const workId = parseRequestId(parts[1]);
+      return workId ? { kind: "work-id", workId } : null;
+    }
+    workSlug = handle(parts[1]);
+    if (!workSlug || isReservedWorkSlug(workSlug)) return null;
     if (parts.length === 2) return { kind: "work", workSlug };
     parts = parts.slice(2);
   }
@@ -196,11 +194,10 @@ export function projectAddressHref(address: ProjectAddress): string {
     case "chat-index":
       break;
     case "chat":
-      push("chat", d.chatId);
+      push("chats", d.chatId);
       break;
     case "work":
-      push("work");
-      parts.push(`@${encodeURIComponent(d.workSlug)}`);
+      push("works", d.workSlug);
       break;
     case "work-id":
       push("works", d.workId);
@@ -214,10 +211,7 @@ export function projectAddressHref(address: ProjectAddress): string {
       break;
     case "browse":
     case "document":
-      if (d.workSlug) {
-        push("work");
-        parts.push(`@${encodeURIComponent(d.workSlug)}`);
-      }
+      if (d.workSlug) push("works", d.workSlug);
       if (d.kind === "browse") push("browse");
       if (d.scheme) push(d.scheme);
       if (d.path) push(...d.path.split("/"));
