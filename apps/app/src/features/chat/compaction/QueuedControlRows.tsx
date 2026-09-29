@@ -1,19 +1,19 @@
 /**
- * Writer controls waiting at the transcript tail.
+ * Writer commands waiting at the transcript tail.
  *
- * A control takes no transcript position until it runs (R5), so a queued
- * `/compact` sits after the newest turn as a dashed rule: the divider it will
- * become, not yet drawn. Withdraw is right after the words; the withdrawal's
- * outcome replaces the words on the same row. A queued handoff brief Retry
- * waits here too, withdrawable, until it runs and its new card takes the
- * row's place; a brief that already has its seed is stopped on its card and
- * never listed here. The rows carry no live
+ * A command runs only once replies finish, and takes no transcript position
+ * until then, so a queued `/compact` or Undo sits after the newest turn as a
+ * dashed rule: the divider it will become, not yet drawn. Messages sent after
+ * it render above it; it stays last until it runs. Withdraw is right after the
+ * words and removes the row at once. A command that already started says so
+ * here until its divider shows. There is no Stop on a queued row: the
+ * composer's Stop (Esc) runs the command at once. The rows carry no live
  * region: `useThreadControls` announces each change through the global polite
  * announcer, which also reaches a row scrolled out of the virtualized list.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { CircleAlert, FoldVertical, Forward } from "lucide-react";
+import { CircleAlert, FoldVertical, UnfoldVertical } from "lucide-react";
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -28,11 +28,7 @@ export type QueuedControlRowsProps = {
 };
 
 function withdrawLabel(control: QueuedControl): string {
-  return control.control.kind === "compact"
-    ? t`Withdraw compaction`
-    : control.control.kind === "compaction_undo"
-      ? t`Withdraw undo`
-      : t`Withdraw handoff brief`;
+  return control.control.kind === "compact" ? t`Withdraw compaction` : t`Withdraw undo`;
 }
 
 export function QueuedControlRows({ controls, onWithdraw, onRetry }: QueuedControlRowsProps) {
@@ -72,7 +68,8 @@ function QueuedControlRow({
   const { status } = control;
   const failed = status === "failed";
   const canWithdraw = status === "queued" || status === "withdraw_failed";
-  const settled = status === "withdrawn" || status === "already_finished" || status === "stopping";
+  const settled = status === "already_started";
+  const Icon = control.control.kind === "compact" ? FoldVertical : UnfoldVertical;
   return (
     <li
       data-queued-control={control.control.kind}
@@ -82,10 +79,8 @@ function QueuedControlRow({
       <span className="flex min-w-0 items-center gap-[var(--chat-space-block)]">
         {failed ? (
           <CircleAlert aria-hidden className="size-3.5 shrink-0 text-destructive" />
-        ) : control.control.kind === "handoff_brief" ? (
-          <Forward aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
         ) : (
-          <FoldVertical aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
+          <Icon aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
         )}
         <span
           className={cn(

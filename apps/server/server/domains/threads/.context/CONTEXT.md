@@ -11,12 +11,16 @@ instead of the N:1 `threads.workId` column.
 
 Handoff requires a client destination id, selected cutoff and Agent selection.
 It shares fork's settled-cutoff normalization and row-only create-or-get rule
-(with `originType = handoff`). The cutoff owner is its recorded source, including
-an inherited fork cutoff. A subagent cannot be a derivation source.
-The create transaction writes one pending system seed, its `handoff_brief`
-control (naming the seed in `seedTurnId`) and the source event (cutoff, no
-summary). Delivery schedules the wake after commit. Runtime owns the seed from
-there, including its crash recovery: see
+(with `originType = handoff`). A delivered user turn is an accepted cutoff
+while its source reply streams; queued turns remain beyond the cutoff. The
+cutoff owner is its recorded source, including an inherited fork cutoff. A
+subagent cannot be a derivation source. After an idempotent lookup, runtime
+acquires the destination run claim before creation. If unavailable it returns
+409 `handoff_in_progress`; no destination is created. The create transaction
+writes one pending system seed and the source event (cutoff, no summary), then
+transfers the claim to a detached runtime launch after commit. A rollback
+releases the claim. The seed is not an inbox control or run turn. Runtime owns
+the brief, Stop, Retry and orphan recovery: see
 [runtime handoff](../../runtime/.context/handoff.md) and
 [HTTP contract](../../../../../../docs/api/thread-handoff.md).
 
@@ -24,7 +28,8 @@ The seed codec owns summarizer telemetry and typed brief failure reason/phase;
 the shared summary rejection codec is in `@meridian/contracts/runtime`.
 Response rows on system seeds never supply prefix warmth or token baselines.
 The effective-transcript loader accepts an optional through-cutoff selection,
-sharing the exact prefix slicing used for fork inheritance.
+sharing the exact prefix slicing used for fork inheritance. The source-shaped
+brief uses the shared summary rule once; failures are final.
 
 ## Prompt lifetime
 
@@ -74,8 +79,8 @@ reads only the raw `trigger` (a manual C whose run failed preparation carries no
 plan, so the full codec would not parse) and exhaustively handles the
 pending-placeholder role set from `@meridian/contracts/threads`. A completed
 compaction's metadata also carries its frozen `elisions` and ordered
-`pinnedRequestTurnIds`; the codec declares `trigger`, `controlMessageId`, and
-`satisfiesControlId`. `CompactionMetadataCodec` accepts either a planned cut or
+`pinnedRequestTurnIds`; the codec declares `trigger` and
+`controlMessageId`. `CompactionMetadataCodec` accepts either a planned cut or
 a failure without one; failure fields (`reason` and `phase` together, plus
 optional `estimatedTokens`/`fitLimitTokens`) are written only by
 `compactionFailureMetadata`, shared by live failure landing and orphan
@@ -589,14 +594,16 @@ turn. Its bound_turn_ids retain cancellation membership only for the live run,
 including committed predecessors; membership and current-turn binding are atomic.
 Initial and rebaked prompts share one resolved Agent context per composition.
 
-Manual compaction controls hold no transcript position until execution. Divider
-metadata links `controlMessageId` (manual) or `satisfiesControlId` (automatic).
+Manual compaction controls hold no transcript position until execution. Manual
+divider metadata links `controlMessageId`; automatic dividers have no control
+link.
 Completed compactions require ordered `pinnedRequestTurnIds`, including every
 unanswered directed message in the run receipt and adoption batch. Failed
 dividers, manual or automatic, carry typed `reason` and `phase` metadata and
 writer copy in `turn.error`. A failed C gets no bake pointer, so it stays an
 ordinary transcript item and opens no history segment.
-Control acknowledgement commits with the divider's ending, never B's response.
+The command is acknowledged when its start commits, not when C ends or B
+responds.
 
 ### Compaction undo projection
 

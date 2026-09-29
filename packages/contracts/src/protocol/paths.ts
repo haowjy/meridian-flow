@@ -242,7 +242,7 @@ export function apiThreadCancelPath(threadId: string, turnId: string): string {
   return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/cancel`;
 }
 
-/** Writer controls (`/compact`, compaction undo, handoff brief Retry) queued on a thread's inbox. */
+/** Writer commands (`/compact`, compaction undo) queued on a thread's inbox. */
 export function apiThreadControlsPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/controls`;
 }
@@ -270,6 +270,11 @@ export function apiThreadContextReversePath(threadId: string): string {
 
 export function apiThreadTurnLiveLineagePath(threadId: string, turnId: string): string {
   return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/live-lineage`;
+}
+
+/** POST: retry a latest failed reply under a client-minted assistant-turn id. */
+export function apiThreadTurnRetryPath(threadId: string, turnId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/retry`;
 }
 
 export type ModelRequestDebugQuery = {
@@ -319,6 +324,11 @@ export function apiThreadForkPath(threadId: string): string {
 /** POST: create-or-get a handoff from the thread at a cutoff turn, under a client-minted id. */
 export function apiThreadHandoffPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/handoff`;
+}
+
+/** POST: retry the pending brief for a handoff destination under a client-minted seed id. */
+export function apiThreadHandoffBriefPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/handoff/brief`;
 }
 
 export type TranscriptPagePathOptions = {

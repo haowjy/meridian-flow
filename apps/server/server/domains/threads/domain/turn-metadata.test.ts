@@ -1,6 +1,7 @@
 import { isPendingPlaceholder, isPlaceholderRole } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import {
+  CompactionFailurePhaseCodec,
   CompactionMetadataCodec,
   CompactionPlanMetadataCodec,
   CompactionUndoMetadataCodec,
@@ -10,10 +11,12 @@ import {
 describe("pending placeholders", () => {
   it("classifies only pending turns with a placeholder role", () => {
     expect(isPlaceholderRole("compaction")).toBe(true);
+    expect(isPlaceholderRole("system")).toBe(true);
     expect(isPlaceholderRole("assistant")).toBe(false);
     expect(isPendingPlaceholder({ role: "compaction", status: "pending" })).toBe(true);
     expect(isPendingPlaceholder({ role: "compaction", status: "complete" })).toBe(false);
     expect(isPendingPlaceholder({ role: "assistant", status: "pending" })).toBe(false);
+    expect(isPendingPlaceholder({ role: "system", status: "pending" })).toBe(true);
   });
 
   it("uses manual interruption copy, including a refusal without a cut", () => {
@@ -49,13 +52,16 @@ describe("pending placeholders", () => {
 });
 
 describe("compaction metadata", () => {
+  it("does not expose the removed late-arrival failure phase", () => {
+    expect(CompactionFailurePhaseCodec.safeParse("late_arrival").success).toBe(false);
+  });
+
   it("parses typed failure, control, and fit fields even without a compaction plan", () => {
     const metadata = CompactionMetadataCodec.parse({
       trigger: "auto",
       controlMessageId: "control-1",
-      satisfiesControlId: "satisfied-1",
       reason: "context_too_large",
-      phase: "late_arrival",
+      phase: "initial_prepare",
       estimatedTokens: 4_321,
       fitLimitTokens: 2_500,
     });
@@ -63,9 +69,8 @@ describe("compaction metadata", () => {
     expect(metadata).toMatchObject({
       trigger: "auto",
       controlMessageId: "control-1",
-      satisfiesControlId: "satisfied-1",
       reason: "context_too_large",
-      phase: "late_arrival",
+      phase: "initial_prepare",
       estimatedTokens: 4_321,
       fitLimitTokens: 2_500,
     });

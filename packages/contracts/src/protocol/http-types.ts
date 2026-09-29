@@ -377,6 +377,13 @@ export const handoffThreadRequestSchema = z.strictObject({
 });
 export type HandoffThreadRequest = z.infer<typeof handoffThreadRequestSchema>;
 
+export const handoffBriefRetryRequestSchema = z.strictObject({ id: z.uuid() });
+export type HandoffBriefRetryRequest = z.infer<typeof handoffBriefRetryRequestSchema>;
+
+/** Client-minted assistant-turn identity for an explicit retry of a failed reply. */
+export const replyRetryRequestSchema = z.strictObject({ id: z.uuid() });
+export type ReplyRetryRequest = z.infer<typeof replyRetryRequestSchema>;
+
 export type ForkThreadRequest = z.infer<typeof forkThreadRequestSchema>;
 
 export type UpdateWorkWriteModeRequest = {

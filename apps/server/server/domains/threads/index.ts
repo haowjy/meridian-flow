@@ -20,6 +20,7 @@ export {
   ForkCutoffError,
   type ForkCutoffErrorCode,
   forkThreadAgent,
+  HandoffInProgressError,
   handoffThreadAgent,
   SubagentDerivationError,
   type ThreadAgentSwapDeps,
@@ -148,7 +149,7 @@ export {
   TurnStartConflictError,
   type TurnStartConflictReason,
 } from "./domain/turn-start-transition.js";
-export type { HandoffControlQueue } from "./ports/handoff-control-queue.js";
+export type { HandoffBriefHold, HandoffBriefLauncher } from "./ports/handoff-brief-launcher.js";
 export * from "./ports/index.js";
 export { createThreadRuntimeService, type ThreadRuntimeService } from "./runtime-service.js";
 export {

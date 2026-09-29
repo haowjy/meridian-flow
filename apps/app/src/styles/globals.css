@@ -68,6 +68,12 @@
 /* Every virtual row owns a gap; user rows receive the larger user-to-reply spacing. */
 [data-chat-turn-row] { padding-bottom: var(--chat-space-exchange); }
 [data-chat-turn-row][data-chat-turn-role="user"] { padding-bottom: var(--chat-space-turn); }
+/* On touch, a delivered message's Hand off row sits under it and spaces like a reply's
+   action row. With a mouse it sits beside the bubble instead (below), keeping the turn gap. */
+[data-chat-turn-row][data-chat-turn-role="user"]:has([data-user-turn-actions]) { padding-bottom: var(--chat-space-exchange); }
+@media (hover: hover) and (pointer: fine) {
+  [data-chat-turn-row][data-chat-turn-role="user"]:has([data-user-turn-actions]) { padding-bottom: var(--chat-space-turn); }
+}
 /* A brief card is a turn of its own: the writer's next message sits a turn away. */
 [data-chat-turn-row][data-chat-turn-kind="handoff-seed"] { padding-bottom: var(--chat-space-turn); }
 /* A response woken by a subagent notification continues without a turn break. */
@@ -469,6 +475,35 @@
 }
 @media (hover: none), (pointer: coarse) {
   [data-assistant-turn] .assistant-turn-actions { opacity: 1; }
+}
+/* A writer message's Hand off follows the same rule, revealed from anywhere on
+   its transcript row since the bubble hugs the right edge. With a mouse it
+   takes no height: it sits left of the bubble's last line, and the bubble
+   leaves room for it. */
+@media (hover: hover) and (pointer: fine) {
+  [data-turn-role="user"]:has(> .user-turn-actions) {
+    position: relative;
+    max-width: min(95%, calc(100% - 1.5rem - var(--chat-space-inline)));
+  }
+  [data-turn-role="user"] > .user-turn-actions {
+    position: absolute;
+    right: 100%;
+    bottom: 0;
+    margin: 0 var(--chat-space-inline) 0 0;
+  }
+}
+@media (hover: hover) {
+  [data-turn-role="user"] .user-turn-actions {
+    opacity: 0;
+  }
+  [data-chat-turn-role="user"]:hover .user-turn-actions,
+  [data-turn-role="user"]:focus-within .user-turn-actions,
+  [data-turn-role="user"]:has(.user-turn-actions [aria-expanded="true"]) .user-turn-actions {
+    opacity: 1;
+  }
+}
+@media (hover: none), (pointer: coarse) {
+  [data-turn-role="user"] .user-turn-actions { opacity: 1; }
 }
 
 @utility chat-card {

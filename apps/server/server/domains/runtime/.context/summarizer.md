@@ -21,19 +21,33 @@ The caller supplies the source projection. Both callers build it with
 ([compaction](compaction.md#one-projection-authority)), so a compacted source
 keeps its summary bytes.
 
-## Warm, then cold
+## One branch-or-roll rule
 
-The path comes from one `prefixCacheStateFor` call on the source's model
-([request assembly](request-assembly.md#cache-state-and-cache-hints)); only
-`state` chooses it.
+The summarizer chooses exactly once before the provider call, with the same rule
+for every source model (`summary/summary-path.ts`):
 
-**Warm** sends the request in hand plus one appended system-origin
+1. A request known to be too large rolls. This covers the reply that just
+   overflowed and the previous settled summary attempt being rejected as too
+   large.
+2. Otherwise, a warm cache branches on the source-shaped request.
+3. Otherwise it rolls. Cold cache is not split by model price.
+
+Both compaction and handoff use this rule. There is no caller-selected path or
+branch-to-rolling fallback. Any provider rejection or rolling-segment failure
+ends that attempt. Rolling uses the configured cheap summarizer, or the source
+model when none is configured. A request-preparation failure is a final failure
+before the call, not a reason to try rolling.
+
+**Branch** sends the request in hand plus one appended system-origin
 instruction, with the output cap lowered to the summary reserve plus the
 thinking budget. It never raises the cap or changes other fields: tools,
-`tool_choice`, reasoning, `promptCacheKey`, and cache marks stay as assembled,
-so the prefix stays warm. The warm row records the thread model's prediction.
+`tool_choice`, reasoning, `promptCacheKey`, and cache marks stay as assembled.
+The response row records the source model's cache prediction, including a cold
+prediction. For a handoff, the appended instruction names the incoming Agent
+and says an unanswered writer message is an open request, not something to
+answer.
 
-For a compaction, the warm instruction also names what the summary is not
+For a compaction, the branch instruction also names what the summary is not
 replacing (issue [#619][i619]): the plan's retained pins and tail, each
 passage identified by role and a quoted opening of up to 200 characters,
 rendered from the active projection (tool-result openings include call IDs;
@@ -51,14 +65,14 @@ projection (the history the summarizer reads, not only the planned cut)
 supplies the changed URIs, named in the instruction (appended on warm, in the
 system prompt on cold). Warm requests keep their prefix unchanged.
 
-Any unusable warm response or provider failure runs **cold** once; Stop does
-not. Cold uses `COMPACTION_SUMMARIZER_MODEL` (default DeepSeek Flash), or the
-retained source model when that provider is disabled. Every cold row records
-`cold/summary_transcript`, never the thread prefix's prediction: its request
-does not share the thread's prefix. (A handoff from an older cutoff predicts
-`cold/fork_cutoff` for the source, which is why it takes the cold path.)
+Rolling uses `COMPACTION_SUMMARIZER_MODEL` (default DeepSeek Flash), or the
+retained source model when that provider is disabled. Each rolling row records
+`rolling/summary_transcript`, not the thread-prefix prediction. A handoff's
+older-cutoff prediction is truncated to the cutoff's ancestor chain: responses
+from abandoned sibling branches or descendant turns cannot make it appear
+warm.
 
-Cold receives only the cut blocks and prior summary (`projectCompactedHistory`
+Rolling receives only the cut blocks and prior summary (`projectCompactedHistory`
 drops the retained pin and tail). It renders model-visible custom content,
 omits opaque reasoning and thinking, and labels prior context. Before any cold
 call, all turns are measured. Oversized turns replace re-readable tool bodies
@@ -72,6 +86,8 @@ invented facts.
 
 Output-limit failure uses the provider finish reason, not an input-token
 estimate; the successor fit check still measures the full assembled request.
+Late arrivals that make the successor too large do not fail C: the reply below
+it fails its ordinary fit check.
 
 ## Paid rows and settlement
 
@@ -79,8 +95,10 @@ Every attempted call returns its row, prediction, and message count, even when
 a later segment fails or Stop aborts it. Adapters never throw after a paid
 call; unexpected throws are error-level events. Summary rejections share one
 contract reason set (`SummaryRejectionReason` in `@meridian/contracts/runtime`:
-`max_tokens`, `provider_error`, `tool_use`, `empty_text`); each owner composes
-its own failure phases.
+`max_tokens`, `request_too_large`, `provider_error`, `tool_use`, `empty_text`);
+gateway `context_overflow` maps to `request_too_large`. Each owner composes its
+own failure phases. Handoff seed metadata records the one attempted path,
+`branch` or `rolling`.
 
 `settleSummaryResponses` (`loop/settle-summary-responses.ts`) writes
 predictions, request sizes, and debits through `TurnAccounting.computeAndDebit`

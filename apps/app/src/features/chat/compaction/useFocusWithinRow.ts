@@ -1,11 +1,12 @@
 /**
  * Keeps keyboard focus in a transcript row when the control that held it
- * disappears: Undo becomes "Undo queued", Withdraw becomes an outcome, Stop
- * becomes a finished divider. Browsers drop focus to <body> when a focused
+ * disappears: Undo leaves a divider while it waits at the tail, Withdraw
+ * leaves a row of several, Stop becomes a finished divider or Retry. Browsers drop focus to <body> when a focused
  * element unmounts, which strands a keyboard or screen-reader writer at the
  * top of the page. Focus moves to the control the row marks
- * `data-focus-landing` (the one that replaced it), else the row's last
- * remaining control, else the row itself (it carries `tabIndex={-1}`).
+ * `data-focus-landing` (the one that replaced it), even while it waits
+ * (`aria-disabled`, so a screen reader reads why), else the row's last
+ * enabled control, else the row itself (it carries `tabIndex={-1}`).
  */
 import { type FocusEvent, type RefObject, useLayoutEffect, useRef } from "react";
 
@@ -22,10 +23,10 @@ export function useFocusWithinRow<T extends HTMLElement>(
       focusWithin.current = false;
       return;
     }
-    // Controls replace each other at the end of the row (Undo, then Withdraw).
+    // Controls replace each other at the end of the row (Stop, then Retry).
     const enabled = 'button:not([disabled]):not([aria-disabled="true"])';
     const next =
-      row.querySelector<HTMLElement>(`${enabled}[data-focus-landing]`) ??
+      row.querySelector<HTMLElement>("button[data-focus-landing]:not([disabled])") ??
       [...row.querySelectorAll<HTMLElement>(enabled)].at(-1);
     (next ?? row).focus({ preventScroll: true });
   });

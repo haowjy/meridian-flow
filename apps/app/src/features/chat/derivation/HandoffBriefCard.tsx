@@ -1,17 +1,19 @@
 /**
- * The handoff brief card: the first thing in a handed-off chat.
+ * The handoff brief card: the first thing in a handed-off chat, and the card
+ * each Retry adds at the leaf.
  *
- * The seed S generates in place. While it does, the card says so and offers
- * Stop (the composer's Stop targets the same turn). A ready brief shows the
- * summary the new Agent starts from, clipped with Show more. A brief that
- * failed or was stopped says so, and the newest one offers Retry, which queues
- * a new brief at the end of the chat. The source's name links back to it.
- * State changes are spoken by the global announcer, never a live region here.
+ * A pending seed is a brief being written. While it is, the card says so and
+ * offers Stop (the composer's Stop targets the same turn). A ready brief shows
+ * the summary the new Agent starts from, clipped with Show more. A brief that
+ * failed, was stopped, or was cut off by a restart says so, and the newest one
+ * offers Retry, which adds a new card at once. Retry waits while the chat is
+ * busy (a reply or a compaction): the server refuses a brief then. The
+ * source's name links back to it. State changes are spoken by the global
+ * announcer, never a live region here.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Turn } from "@meridian/contracts/protocol";
-import type { ThreadPhase } from "@meridian/contracts/threads";
 import { CircleAlert, Forward } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -19,30 +21,34 @@ import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { ClippedProse } from "../ClippedExpand";
 import { useFocusWithinRow } from "../compaction/useFocusWithinRow";
-import { briefCardView, readHandoffSeed } from "./handoff-seed";
+import { type BriefCardView, briefCardView, readHandoffSeed } from "./handoff-seed";
 import { SourceChatLink, useSourceThread } from "./SourceChatLink";
 
 export type HandoffBriefCardProps = {
   turn: Turn;
   /** The newest seed: only it can be retried. */
   latest: boolean;
-  /** A Retry is already queued or on its way. */
-  retryPending: boolean;
   stopping: boolean;
-  phase: ThreadPhase | null;
-  /** Absent in a read-only view (a fork's inherited brief) or before the thread exists. */
+  /** The writer's last Stop on this seed failed. */
+  stopFailed?: boolean;
+  /** The server refused this card's Retry: something else started in the chat first. */
+  retryRefused?: boolean;
+  /** A reply (or anything else) holds the chat: Retry waits until it ends. */
+  destinationBusy?: boolean;
+  /** Absent in a read-only view (a fork's inherited brief) or before the server has the seed. */
   onStop?: (turnId: string) => void;
-  onRetry?: () => void;
+  /** Absent in a read-only view. */
+  onRetry?: (turn: Turn) => void;
 };
 
-function stateTitle(state: ReturnType<typeof briefCardView>["state"], running: boolean) {
-  switch (state) {
+function stateTitle(view: BriefCardView) {
+  switch (view.state) {
     case "generating":
-      return running ? t`Writing the handoff brief` : t`Handoff brief queued`;
+      return t`Writing the handoff brief`;
     case "ready":
       return t`Handoff brief`;
     case "failed":
-      return t`Handoff brief unavailable`;
+      return view.interrupted ? t`Handoff brief interrupted` : t`Handoff brief unavailable`;
     case "stopped":
       return t`Handoff brief stopped`;
   }
@@ -51,23 +57,23 @@ function stateTitle(state: ReturnType<typeof briefCardView>["state"], running: b
 export function HandoffBriefCard({
   turn,
   latest,
-  retryPending,
   stopping,
-  phase,
+  stopFailed = false,
+  retryRefused = false,
+  destinationBusy = false,
   onStop,
   onRetry,
 }: HandoffBriefCardProps) {
   const seed = readHandoffSeed(turn);
-  const view = briefCardView({ turn, latest, retryPending, stopping, phase });
+  const view = briefCardView({ turn, latest, stopping });
+  const retryWaitId = useId();
   // The title frozen on S stands in until the current one is known, and names a trashed source.
   const source = useSourceThread(seed?.sourceThreadId ?? "", seed?.sourceTitle ?? null);
   const sectionRef = useRef<HTMLElement>(null);
   const focusWithin = useFocusWithinRow(sectionRef);
   // The Stop flag outlives the seed: a stopped or finished brief says what it is.
   const title =
-    stopping && view.state === "generating"
-      ? t`Stopping the handoff brief`
-      : stateTitle(view.state, view.running);
+    stopping && view.state === "generating" ? t`Stopping the handoff brief` : stateTitle(view);
   const ended = view.state === "failed" || view.state === "stopped";
   // For a source that was untitled when S was created: refs are never writer copy.
   const sourceFallbackName = t`the source chat`;
@@ -122,9 +128,16 @@ export function HandoffBriefCard({
                 variant="quiet"
                 size="meta"
                 aria-label={t`Retry the handoff brief`}
-                // Stop gives way to Retry: keyboard focus follows it there.
+                // aria-disabled, not disabled: Stop gives way to Retry and
+                // keyboard focus follows it there even while the chat is busy,
+                // where the wait note it is described by is read with it.
+                aria-disabled={destinationBusy || undefined}
+                className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent aria-disabled:hover:text-muted-foreground"
+                aria-describedby={destinationBusy ? retryWaitId : undefined}
                 data-focus-landing
-                onClick={onRetry}
+                onClick={() => {
+                  if (!destinationBusy) onRetry(turn);
+                }}
               >
                 <Trans>Retry</Trans>
               </Button>
@@ -147,14 +160,29 @@ export function HandoffBriefCard({
           {view.failureCopy ? (
             <p className="text-caption text-destructive">{view.failureCopy}</p>
           ) : null}
+          {stopFailed && view.state === "generating" ? (
+            <p className="text-caption text-destructive">
+              <Trans>Couldn't stop the brief. Try again.</Trans>
+            </p>
+          ) : null}
           {view.state === "failed" && view.superseded ? (
             <p className="text-caption text-muted-foreground">
               <Trans>This brief failed.</Trans>
             </p>
           ) : null}
+          {retryRefused ? (
+            <p className="text-caption text-muted-foreground">
+              <Trans>Couldn't retry. Something else started in this chat first.</Trans>
+            </p>
+          ) : null}
           {view.state === "stopped" && !view.superseded ? (
             <p className="text-caption text-muted-foreground">
               <Trans>This chat continues without a brief.</Trans>
+            </p>
+          ) : null}
+          {ended && view.canRetry && onRetry && destinationBusy ? (
+            <p id={retryWaitId} className="text-caption text-muted-foreground">
+              <Trans>You can retry when this chat is free.</Trans>
             </p>
           ) : null}
           {view.brief ? <BriefText brief={view.brief} /> : null}

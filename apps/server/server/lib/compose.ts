@@ -104,7 +104,13 @@ import {
   agentExecutionUnavailableReasons,
   agentModelUnavailableReasons,
 } from "../domains/runtime/agent-definition-support.js";
+import { createDetachedWorkTracker } from "../domains/runtime/detached-work.js";
 import { MODEL_REGISTRY, type MockScriptQueue } from "../domains/runtime/gateway/index.js";
+import { generateHandoffBrief } from "../domains/runtime/handoff/brief-request.js";
+import {
+  createHandoffBriefs,
+  type HandoffBriefs,
+} from "../domains/runtime/handoff/brief-service.js";
 import {
   createChildRunCoordinator,
   createChildRunDriver,
@@ -112,6 +118,7 @@ import {
   createContextImageAssetPort,
   createConversationSummarizer,
   createDrizzleAdmissionRecords,
+  createDrizzleHandoffStatusReader,
   createDrizzleRunClaim,
   createDrizzleRuntimeDelivery,
   createDrizzleThreadLock,
@@ -161,11 +168,13 @@ import {
   createInterruptRegistry,
   type InterruptRegistry,
 } from "../domains/runtime/loop/interrupts.js";
+import { createWakeIfRunnable } from "../domains/runtime/loop/wake-if-runnable.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import {
   createInMemoryModelRequestDebugStore,
   createModelRequestDebugStore,
 } from "../domains/runtime/model-request-debug/index.js";
+import type { HandoffBriefStopper } from "../domains/runtime/ports/handoff-briefs.js";
 import type { LocalObjectStoreAdapter, ObjectStorePort } from "../domains/storage/index.js";
 import { createDrizzleEventJournalReader } from "../domains/threads/adapters/drizzle/event-reader.js";
 import { createDrizzleEventJournalWriter } from "../domains/threads/adapters/drizzle/event-writer.js";
@@ -183,6 +192,7 @@ import type {
   EventJournalWriter,
   InternalThreadRepositories,
   ThreadRepositories,
+  ThreadStatusReader,
 } from "../domains/threads/ports/index.js";
 import {
   createThreadRuntimeService,
@@ -244,9 +254,9 @@ export type AppServices = {
   orchestrator: RunTurnPort;
   runner: TurnRunner;
   runStarter: RunStarter;
-  delivery: DeliveryProducer &
-    import("../domains/runtime/loop/runtime-delivery.js").ThreadControls &
-    import("../domains/threads/index.js").HandoffControlQueue;
+  delivery: DeliveryProducer & import("../domains/runtime/loop/runtime-delivery.js").ThreadControls;
+  handoffBriefs: HandoffBriefs;
+  shutdown(): Promise<void>;
   /** Startup/interval recovery for threads with a pending message and no live run. */
   recovery: {
     scanWakes(): Promise<number>;
@@ -320,6 +330,7 @@ export type ProductionAppPorts = {
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
   runClaim: RunClaim;
+  statusReader: ThreadStatusReader;
 };
 
 const CONCURRENT_RENDER_SAFETY_TOKENS = 16_000;
@@ -408,7 +419,8 @@ export async function createProductionAppPorts(input: {
   const runClaim = createDrizzleRunClaim(db, {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
   });
-  const threadRepos = createDrizzleRepositories(db, workProjectionMutation, runClaim);
+  const statusReader = createDrizzleHandoffStatusReader(db, runClaim);
+  const threadRepos = createDrizzleRepositories(db, workProjectionMutation, statusReader);
   const activeDocuments = createActiveDocumentResolver(threadRepos);
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
@@ -538,6 +550,7 @@ export async function createProductionAppPorts(input: {
   return {
     db,
     runClaim,
+    statusReader,
     gateway,
     summarizerConfig: {
       model: summarizerModel,
@@ -590,6 +603,8 @@ export async function createProductionAppPorts(input: {
 
 /** Pure wiring — no env reads and no concrete adapter construction. */
 export function composeAppServices(ports: ProductionAppPorts): AppServices {
+  const backgroundTasks = createDetachedWorkTracker();
+  const shutdown = { started: false };
   const threadEventHub = createThreadEventHub({
     journalReader: ports.journalReader,
     journalWriter: ports.journalWriter,
@@ -616,10 +631,21 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     { startDrain: (id) => runner.startDrain(id) },
     ports.eventSink,
   );
+  const publishThreadStatus = async (threadId: ThreadId) => {
+    const status = await ports.statusReader.read(threadId);
+    const runningTurnId = await ports.statusReader.readRunningTurnId(threadId);
+    await threadEventHub.appendEvent(threadId, {
+      type: "thread.status",
+      threadId,
+      status,
+      runningTurnId,
+    });
+  };
   let publishReport:
     | ((childThreadId: ThreadId, executionTurnId: TurnId) => Promise<unknown>)
     | undefined;
   const delivery = createDrizzleRuntimeDelivery(ports.db, {
+    backgroundTasks,
     toolRegistry,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
@@ -627,12 +653,14 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     notices: ports.notices,
     runStarter,
     workContext,
+    publishStatus: publishThreadStatus,
     async publishFinalizedReports(reports) {
       if (!publishReport) throw new Error("Report publisher is not initialized");
       for (const report of reports)
         await publishReport(report.childThreadId, report.executionTurnId);
     },
   });
+  const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter, shutdown });
   const workContextNotices = delivery;
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
@@ -658,7 +686,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   }
   for (const registration of createInspectionToolRegistrations({
     repos: ports.threadRepos,
-    statusReader: ports.runClaim,
+    statusReader: ports.statusReader,
     registry: toolRegistry,
     async tokenizer(caller) {
       const binding = await ports.agentRevisions.readThreadBinding(caller.id);
@@ -694,7 +722,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     readThreadActivity(
       {
         threads: ports.threadRepos.threads,
-        statusReader: ports.runClaim,
+        statusReader: ports.statusReader,
         executionReports: ports.threadRepos.executionReports,
       },
       threadId,
@@ -722,12 +750,14 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const orphanRepair = createOrphanReportRepair({
     toolRegistry,
     inbox: delivery,
+    retireOrphanedReply: delivery.retireOrphanedReply,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     authority: ports.runClaim,
     threadLock,
     publisher: reportPublisher,
     eventSink: ports.eventSink,
+    publishStatus: publishThreadStatus,
   });
   let wakeCursor: ThreadId | undefined;
   const recovery = {
@@ -794,6 +824,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     producer: admissionProducer,
   });
   const childRunDriver = createChildRunDriver({
+    backgroundTasks,
     orchestrator: { prepare: (input) => runner.prepare(input) },
     repos: { executionReports: ports.threadRepos.executionReports },
     // The live hub, not the bare journal writer: background lifecycle must reach
@@ -831,7 +862,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     agentRevisions: ports.agentRevisions,
     eventSink: ports.eventSink,
   });
-  const orchestrator = createOrchestrator({
+  let handoffBriefs!: HandoffBriefs;
+  const handoffBriefStopper: HandoffBriefStopper = {
+    stop: (threadId, seedTurnId) => handoffBriefs.stop(threadId, seedTurnId),
+  };
+  const orchestratorDeps = {
+    backgroundTasks,
+    shutdown,
     summarizer: createConversationSummarizer({
       gateway: ports.gateway,
       agentRevisions: ports.agentRevisions,
@@ -839,9 +876,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
         .prefixCacheStateFor,
       config: ports.summarizerConfig,
     }),
-    headSeq: (id) => threadEventHub.headSeq(id),
+    headSeq: (id: ThreadId) => threadEventHub.headSeq(id),
     onRunStarted: refreshSubagentActivity,
-    onRunSettled(threadId) {
+    onRunSettled(threadId: ThreadId) {
       refreshSubagentActivity(threadId);
     },
     gateway: ports.gateway,
@@ -861,7 +898,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     toolRegistry,
     projectPreferences: ports.preferences,
     workWriteMode: {
-      async read(workId) {
+      async read(workId: string) {
         const work = await ports.workRepo.findById(workId as import("@meridian/contracts").WorkId);
         if (!work) throw new Error(`Work not found: ${workId}`);
         return work.aiWriteMode;
@@ -880,11 +917,30 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     responseWrites,
     delivery,
     runClaim: ports.runClaim,
+    handoffBriefs: handoffBriefStopper,
     activeDocuments: ports.activeDocuments,
     imageAssets,
     concurrentRenderBudgetBytes,
-  });
+  };
+  const orchestrator = createOrchestrator(orchestratorDeps);
   runner = orchestrator;
+  handoffBriefs = createHandoffBriefs({
+    backgroundTasks,
+    repos: ports.threadRepos,
+    eventWriter: threadEventHub,
+    eventSink: ports.eventSink,
+    threadLock,
+    runClaim: ports.runClaim,
+    shutdown,
+    prioritizePendingControls: (threadId) => delivery.prioritizePendingControls(threadId),
+    wakeIfRunnable,
+    billingUsage: ports.billingUsage,
+    toolRegistry,
+    generate: ({ destination, seed, signal }) =>
+      generateHandoffBrief(orchestratorDeps, destination, seed, signal),
+    publishStatus: publishThreadStatus,
+    schedulePostCommit: runAfterDrizzleCommit,
+  });
 
   return {
     gateway: ports.gateway,
@@ -896,7 +952,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     hub: threadEventHub,
     threadRuntime: createThreadRuntimeService({
       db: ports.db,
-      statusReader: ports.runClaim,
+      statusReader: ports.statusReader,
       threads: ports.threadRepos.threads,
       executionReports: ports.threadRepos.executionReports,
       readPending,
@@ -942,6 +998,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     runStarter,
     delivery,
     recovery,
+    handoffBriefs,
     userTurnAdmission,
     runClaim: ports.runClaim,
     toolRegistry,
@@ -958,10 +1015,28 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     notices: ports.notices,
     changeTrails,
     changeTrailDelivery,
+    async shutdown() {
+      runner.beginShutdown();
+      handoffBriefs.beginShutdown();
+      const timeoutMs = 10_000;
+      const drained = await backgroundTasks.drain(timeoutMs);
+      if (!drained)
+        emitEvent(ports.eventSink, {
+          level: "warn",
+          source: "runtime.background-work",
+          name: "shutdown.drain_timed_out",
+          payload: {
+            pendingCount: backgroundTasks.pendingCount,
+            pendingTasks: backgroundTasks.pendingTasks,
+            timeoutMs,
+          },
+        });
+    },
   };
 }
 
 export function createInMemoryAppServices(): AppServices {
+  const backgroundTasks = createDetachedWorkTracker();
   const transactionOwner = new InMemoryTransactionOwner();
   const threadRepos = createInMemoryRepositories({
     transactionOwner,
@@ -986,9 +1061,13 @@ export function createInMemoryAppServices(): AppServices {
     },
     env: {},
   });
-  const runClaim = createInMemoryRunClaim();
+  const inbox = createInMemoryInbox();
+  const runClaim = createInMemoryRunClaim({
+    prioritizePendingControls: inbox.prioritizePendingControls,
+  });
   const runStarter = createInMemoryRunStarter();
   const delivery = createInMemoryRuntimeDelivery({
+    backgroundTasks,
     workContext: {
       async renderForThread() {
         throw new Error("No Work context configured");
@@ -998,7 +1077,7 @@ export function createInMemoryAppServices(): AppServices {
     eventWriter: createInMemoryEventJournalWriter(),
     notices,
     runClaim,
-    inbox: createInMemoryInbox(),
+    inbox,
     threadLock: createInMemoryThreadLock(),
     runStarter,
     async publishFinalizedReports() {},
@@ -1006,6 +1085,19 @@ export function createInMemoryAppServices(): AppServices {
       void task();
     },
   });
+  const handoffBriefs: HandoffBriefs = {
+    async hold() {
+      return null;
+    },
+    launchAfterCommit() {},
+    async stop() {
+      return false;
+    },
+    async retry() {
+      throw new Error("in-memory handoff retry is not implemented");
+    },
+    beginShutdown() {},
+  };
   const recovery = {
     async scanWakes() {
       return 0;
@@ -1341,6 +1433,9 @@ export function createInMemoryAppServices(): AppServices {
       async prepare() {
         throw new Error("in-memory run preparation is not implemented");
       },
+      async retryReply() {
+        throw new Error("in-memory reply retry is not implemented");
+      },
       getRunningTurn() {
         return null;
       },
@@ -1350,6 +1445,7 @@ export function createInMemoryAppServices(): AppServices {
       isThreadRunning() {
         return false;
       },
+      beginShutdown() {},
       async startDrain() {
         throw new Error("in-memory turn runner is not implemented");
       },
@@ -1360,6 +1456,7 @@ export function createInMemoryAppServices(): AppServices {
     runStarter,
     delivery,
     recovery,
+    handoffBriefs,
     userTurnAdmission: {
       async admit(input) {
         return { kind: "rejected", submissionId: input.submissionId, code: "invalid_message" };
@@ -1473,6 +1570,9 @@ export function createInMemoryAppServices(): AppServices {
       async drain() {
         return 0;
       },
+    },
+    async shutdown() {
+      await backgroundTasks.drain();
     },
   };
 }

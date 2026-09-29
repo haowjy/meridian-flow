@@ -1,7 +1,6 @@
 /** Compaction failure mapping keeps the phase and measured fit evidence durable. */
 import { describe, expect, it } from "vitest";
 import {
-  CompactionFailureError,
   CompactionPreparationError,
   compactionFailureFrom,
   compactionFailureMeridianError,
@@ -28,23 +27,6 @@ describe("compaction failure outcomes", () => {
     expect(compactionFailureFrom(new Error("composition failed"), "initial_prepare")).toEqual({
       reason: "compaction_failed",
       phase: "initial_prepare",
-    });
-  });
-
-  it("preserves late fit measurements through delivery", () => {
-    const failure = {
-      reason: "context_too_large" as const,
-      phase: "late_arrival" as const,
-      estimatedTokens: 4_321,
-      fitLimitTokens: 2_500,
-    };
-    expect(compactionFailureFrom(new CompactionFailureError(failure), "delivery")).toEqual(failure);
-  });
-
-  it("maps unknown late-arrival exceptions to the late-arrival phase", () => {
-    expect(compactionFailureFrom(new Error("successor overflow"), "late_arrival")).toEqual({
-      reason: "compaction_failed",
-      phase: "late_arrival",
     });
   });
 
@@ -85,12 +67,12 @@ describe("compaction failure outcomes", () => {
   it("keeps writer-facing refusal codes", () => {
     expect(
       compactionFailureMeridianError(
-        { reason: "context_too_large", phase: "late_arrival" },
+        { reason: "context_too_large", phase: "initial_prepare" },
         "Too large.",
       ),
     ).toMatchObject({
       code: "context_too_large",
-      details: { reason: "context_too_large", phase: "late_arrival" },
+      details: { reason: "context_too_large", phase: "initial_prepare" },
     });
   });
 

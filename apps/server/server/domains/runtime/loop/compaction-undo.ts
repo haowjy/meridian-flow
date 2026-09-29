@@ -26,8 +26,8 @@ import {
   resolveCompactionTrigger,
 } from "./compaction/index.js";
 import { queryCompactionRevisions } from "./compaction-revisions.js";
-import type { ControlMessage } from "./control-barrier.js";
 import { createLocalTurn } from "./local-turn.js";
+import type { ControlMessage } from "./next-inbox-work.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
 import { persistAndAppendEvents } from "./persistence.js";
 import type { AssembledNextTurnContext } from "./turn-context-assembly.js";
@@ -266,16 +266,15 @@ export async function persistPreparedControlEvents(
   deps: Parameters<typeof beginPromptEpoch>[0],
   threadId: ThreadId,
   events: OrchestratorEvent[],
-  undos: readonly PreparedUndo[],
+  undo: PreparedUndo | null,
 ): Promise<OrchestratorEvent[]> {
-  if (undos.length === 0) return events;
-  const complete = new Map(
-    undos.filter((u) => u.turn.status === "complete").map((u) => [u.turn.id, u]),
-  );
+  if (undo?.turn.status !== "complete") return events;
+  const block = undo.block;
+  if (!block) throw new Error("Completed compaction undo is missing its block");
   let prefix: OrchestratorEvent[] = [];
   for (const event of events) {
-    const undo = event.type === "turn.created" ? complete.get(event.turn.id) : undefined;
-    if (!undo) {
+    const isUndoTurn = event.type === "turn.created" && event.turn.id === undo.turn.id;
+    if (!isUndoTurn) {
       prefix.push(event);
       continue;
     }
@@ -290,7 +289,7 @@ export async function persistPreparedControlEvents(
       cause: "compaction_undo",
       boundaryTurnId: undo.turn.id,
       bake: { reuse: undo.turn.promptBakeId as PromptBakeId },
-      completion: { blocks: [undo.block!], metadata: undo.turn.metadata, announceBoundary: true },
+      completion: { blocks: [block], metadata: undo.turn.metadata, announceBoundary: true },
     });
   }
   return prefix;

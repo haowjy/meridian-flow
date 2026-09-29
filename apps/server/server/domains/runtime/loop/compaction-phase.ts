@@ -4,6 +4,7 @@ import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { CompactionMetadataCodec } from "../../threads/index.js";
 import type { SummaryOutcome, SummaryResponse } from "../ports/conversation-summarizer.js";
+import { previousAttemptRejectedAsTooLarge } from "../summary/summary-path.js";
 import {
   type CompactionDecision,
   CompactionFailureError,
@@ -82,7 +83,7 @@ export async function executeCompaction({
             kind: "failed",
             error: new CompactionPreparationError(decision.refusal ?? "nothing_to_compact"),
             modelResponses: [],
-            summarizer: { path: "cold", segments: 0 },
+            summarizer: { path: "rolling", segments: 0 },
           }
         : await deps.summarizer.summarize({
             owner: { threadId: input.threadId, turnId: currentTurn.id },
@@ -90,7 +91,9 @@ export async function executeCompaction({
             instruction: "compaction",
             changedDocuments: changed,
             requestInHand: decision.requestInHand,
-            forceCold: decision.path === "cold",
+            knownTooLarge:
+              decision.knownTooLarge ??
+              previousAttemptRejectedAsTooLarge(allTurns, currentTurn.id, "compaction"),
             retainedMessages: decision.plan.retainedSuffix.flatMap(({ turn, blocks }) =>
               turnContextMessages(
                 turn,
@@ -117,29 +120,23 @@ export async function executeCompaction({
       kind: input.signal?.aborted ? "cancelled" : "failed",
       error,
       modelResponses: [],
-      summarizer: { path: "cold", segments: 0 },
+      summarizer: { path: "rolling", segments: 0 },
     };
   }
   if (!decision.refusal) recordResponses(summary.modelResponses, summary.summarizer);
   input.signal?.throwIfAborted();
   const outcome = summary;
-  const complete = (
-    prepared: PreparedCompaction | undefined,
-    failure: unknown,
-    selection: import("./runtime-delivery.js").DeliverySelection,
-  ) =>
+  const complete = (prepared: PreparedCompaction | undefined, failure: unknown) =>
     completeCompactionCurrent({
       deps,
       threadId: input.threadId,
       placeholder: currentTurn,
-      satisfiesControlId: selection.satisfiesControlId,
       prepared,
       failure,
       settleResponses: () => settleResponses(outcome.modelResponses),
     });
   const successorBoundary = {
     ...boundary,
-    satisfyPendingCompact: decision.trigger === "auto" && !decision.satisfiesControlId,
     current: { kind: "placeholder" as const, complete },
     prepareCurrent: () =>
       prepareCompactionSuccessor({
@@ -157,50 +154,31 @@ export async function executeCompaction({
     prepareNextContext: async (
       drain: import("./inbox-context.js").InboxDrain,
       prepared: PreparedCompaction | undefined,
-      selection: import("./runtime-delivery.js").DeliverySelection,
+      selection: import("./runtime-delivery.js").DeliveryBoundarySelection,
     ) => {
-      if (prepared?.kind === "failed" && decision.required)
+      if (prepared?.kind === "failed" && decision.trigger === "auto")
         throw new CompactionFailureError(prepared.failure);
-      if (prepared?.kind === "usable" && !selection.control)
-        return prepareCompactionContext(drain, prepared);
-      const completed =
-        prepared?.kind === "usable"
-          ? {
-              ...currentTurn,
-              status: "complete" as const,
-              promptBakeId: prepared.provisionalBakeId,
-            }
-          : { ...currentTurn, status: "error" as const };
-      const next =
-        prepared?.kind === "usable"
-          ? await prepared.assemble(drain.turns, drain.blocks, selection)
-          : await prepareRequestContext({
-              deps,
-              thread,
-              threadId: input.threadId,
-              referenceTurnId: currentTurn.id,
-              currentTurnId: currentTurn.id,
-              turns: [
-                ...allTurns.map((turn) => (turn.id === currentTurn.id ? completed : turn)),
-                ...drain.turns,
-              ],
-              blocks: [...allBlocks, ...drain.blocks],
-              baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
-              readReferences: false,
-              skipCompaction:
-                !selection.control ||
-                selection.controls?.some((control) => control.body.kind === "handoff_brief"),
-              controls: selection.controls,
-              followingBatches: selection.followingBatches,
-              failedUndoIds: selection.failedUndoIds,
-              continueAfterControls: selection.outstanding.length > 0 || !!selection.continueTask,
-              pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
-              signal: input.signal,
-            });
+      if (prepared?.kind === "usable") return prepareCompactionContext(drain, prepared, selection);
+      const completed = { ...currentTurn, status: "error" as const };
+      const next = await prepareRequestContext({
+        deps,
+        thread,
+        threadId: input.threadId,
+        referenceTurnId: currentTurn.id,
+        currentTurnId: currentTurn.id,
+        turns: [
+          ...allTurns.map((turn) => (turn.id === currentTurn.id ? completed : turn)),
+          ...drain.turns,
+        ],
+        blocks: [...allBlocks, ...drain.blocks],
+        baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
+        readReferences: false,
+        skipCompaction: true,
+        pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
+        signal: input.signal,
+      });
       return {
         events: next.events,
-        undos: next.undos,
-        adoptedIds: next.adoptedIds,
         turns: next.turns,
         blocks: next.blocks,
         requiresSplit: true,

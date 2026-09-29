@@ -9,6 +9,7 @@ import type {
 import type { BlockUpsertedRow, Thread, ThreadActivity } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { EventJournalWriter, ThreadRepositories } from "../../threads/index.js";
+import type { DetachedWorkTracker } from "../detached-work.js";
 import type { PreparedRun, RunTurnPort } from "../loop/run-turn-port.js";
 import { appendSubagentActivityBestEffort } from "./activity-event.js";
 import type { ReportPublisher } from "./report-publisher.js";
@@ -36,6 +37,7 @@ export type PreparedChild = {
 };
 
 export interface ChildRunDriverDeps {
+  backgroundTasks: DetachedWorkTracker;
   orchestrator: RunTurnPort;
   repos: Pick<ThreadRepositories, "executionReports">;
   eventWriter: EventJournalWriter;
@@ -64,6 +66,7 @@ export interface ChildRunDriver {
 }
 
 export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
+  const backgroundTasks = deps.backgroundTasks;
   async function register(
     child: Thread,
     resolvedSlug: string,
@@ -180,9 +183,12 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     onAdmitted?: (execution: TurnId, admittedAt: string) => Promise<void>,
   ): Promise<TurnId> {
     const handle = await start(prepared, input, onAdmitted);
-    void finish(prepared, handle).catch((error) => {
-      observeCleanupFailure(prepared, "child.background_driver_failed", error);
-    });
+    backgroundTasks.track(
+      finish(prepared, handle).catch((error) => {
+        observeCleanupFailure(prepared, "child.background_driver_failed", error);
+      }),
+      "background child completion",
+    );
     return handle.executionTurnId;
   }
 

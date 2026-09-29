@@ -8,6 +8,7 @@ export { MANUSCRIPT_URI as UNIFIED_MANUSCRIPT_URI } from "../context/manuscript-
 export type { WorkContextNotices } from "../projects/index.js";
 export { createContextImageAssetPort } from "./adapters/context-image-assets.js";
 export { createDrizzleRuntimeDelivery } from "./adapters/drizzle/runtime-delivery.js";
+export { createDrizzleHandoffStatusReader } from "./adapters/drizzle-handoff-status-reader.js";
 export {
   createDrizzleRunClaim,
   type DrizzleRunClaimOptions,
@@ -33,7 +34,14 @@ export {
   type UserTurnAdmission,
 } from "./admission/user-turn-admission.js";
 export { createWriterTurnProducer } from "./admission/writer-turn-producer.js";
+export type { DetachedWorkTracker } from "./detached-work.js";
+export { createDetachedWorkTracker } from "./detached-work.js";
 export * from "./gateway/index.js";
+export {
+  createHandoffBriefs,
+  type HandoffBriefs,
+  HandoffRetryError,
+} from "./handoff/brief-service.js";
 export {
   type BeginPromptEpochInput,
   type BoundaryCompletion,
@@ -82,6 +90,7 @@ export {
 export * from "./loop/permissions/index.js";
 export type {
   ContextPart,
+  HeldRunClaim,
   InboxMessage,
   InboxReader,
   Lease,
@@ -115,9 +124,11 @@ export {
   isDrainRun,
   NoPendingWakeError,
   type PreparedRun,
+  ReplyRetryUnavailableError,
   type RunOutcome,
   type RunTurnInput,
   type RunTurnPort,
+  RuntimeShuttingDownError,
   type WriterRunTurnInput,
 } from "./loop/run-turn-port.js";
 export type { DeliveryProducer, RuntimeDelivery } from "./loop/runtime-delivery.js";
@@ -135,6 +146,7 @@ export {
   type WorkContextReader,
 } from "./loop/work-context.js";
 export type { ConversationSummarizer, SummaryOutcome } from "./ports/conversation-summarizer.js";
+export type { HandoffBriefStopper } from "./ports/handoff-briefs.js";
 export type { ImageAssetPort } from "./ports/image-asset.js";
 export { unavailableImageAssetPort } from "./ports/image-asset.js";
 export {

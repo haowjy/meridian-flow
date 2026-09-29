@@ -209,7 +209,7 @@ export interface PrefixCacheStateServiceDeps {
   repos: {
     threads: Pick<ThreadRepository, "findByIdIncludingDeleted">;
     turns: Pick<TurnRepository, "findById" | "listByThread">;
-    modelResponses: Pick<ModelResponseRepository, "findLatestByThread">;
+    modelResponses: Pick<ModelResponseRepository, "findLatestByThread" | "findLatestForTurns">;
   };
 }
 
@@ -230,17 +230,20 @@ export function createPrefixCacheStateService(deps: PrefixCacheStateServiceDeps)
     const thread = await deps.repos.threads.findByIdIncludingDeleted(input.threadId);
     if (!thread || !input.model) return cold("facts_unavailable");
 
-    const turns = input.knownLocalTurns ?? (await deps.repos.turns.listByThread(input.threadId));
-    const latestResponse = await deps.repos.modelResponses.findLatestByThread(input.threadId);
+    let turns = input.knownLocalTurns ?? (await deps.repos.turns.listByThread(input.threadId));
+    if (input.throughTurnId) {
+      const cutoffIndex = turns.findIndex((turn) => turn.id === input.throughTurnId);
+      if (cutoffIndex < 0) return cold("fork_cutoff");
+      turns = turns.slice(0, cutoffIndex + 1);
+    }
+    const latestResponse = input.throughTurnId
+      ? await deps.repos.modelResponses.findLatestForTurns(turns.map((turn) => turn.id))
+      : await deps.repos.modelResponses.findLatestByThread(input.threadId);
     const history: PrefixCacheHistory = {
       thread,
       turns,
       responses: latestResponse ? [latestResponse] : [],
     };
-
-    if (input.throughTurnId && !isForkCutoffCurrent(history, input.throughTurnId)) {
-      return cold("fork_cutoff");
-    }
 
     let forkOwner: PrefixCacheHistory | undefined;
     if (thread.originType === "fork" && !latestResponse) {

@@ -58,7 +58,9 @@ async function createAppServices(): Promise<AppServices> {
     ],
     eventSink,
   );
-  registerProcessShutdownCallback(() => scheduler.stop());
+  registerProcessShutdownCallback(async () => {
+    await Promise.all([scheduler.stop(), app.shutdown()]);
+  });
   return app;
 }
 

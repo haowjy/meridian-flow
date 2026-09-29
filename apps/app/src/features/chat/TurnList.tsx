@@ -19,11 +19,12 @@ import { QueuedControlRows } from "./compaction/QueuedControlRows";
 import type { QueuedControl } from "./compaction/thread-controls";
 import type { ThreadControls } from "./compaction/useThreadControls";
 import { HandoffBriefCard } from "./derivation/HandoffBriefCard";
-import { isOptimisticSeed } from "./derivation/handoff-seed";
 import { ForkPointRule, InheritedSourceHeader } from "./derivation/InheritedMarks";
 import type { InheritedView } from "./derivation/inherited-view";
 import { ThreadReferenceChip } from "./derivation/ThreadReferenceChip";
+import type { HandoffBrief } from "./derivation/useHandoffBrief";
 import { buildTranscriptModel, type InheritedMark, type TranscriptRow } from "./transcript-model";
+import type { ReplyRetry } from "./useReplyRetry";
 
 export { continuesResponse } from "./transcript-model";
 
@@ -50,8 +51,14 @@ export type TurnListProps = {
   /** Recovered ambiguous submissions, keyed by the restored user turn id. */
   submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
   queuedWriterTurnIds?: ReadonlySet<string>;
-  /** Writer controls: queued `/compact` and undo, withdrawal, and Stop on a pending divider. */
+  /** Writer commands: queued `/compact` and undo, withdrawal, and Stop on a running divider. */
   controls?: ThreadControls | null;
+  /** Retry and Stop on this handoff destination's brief cards. */
+  brief?: HandoffBrief | null;
+  /** Retry on the latest failed reply, and the new replies it stands in for. */
+  replyRetry?: ReplyRetry | null;
+  /** Something holds this chat (a reply, a compaction, a brief): Retry waits. */
+  busy?: boolean;
   /** Snapshot advice for the one local divider that can be undone. */
   compactionUndo?: CompactionUndoAvailability;
   /** The live lease phase while the thread is awake. */
@@ -102,6 +109,9 @@ export function TurnList({
   submissionRecoveryByTurnId,
   queuedWriterTurnIds,
   controls = null,
+  brief = null,
+  replyRetry = null,
+  busy = false,
   compactionUndo = null,
   phase = null,
   inherited = null,
@@ -118,40 +128,20 @@ export function TurnList({
   );
   const visibleTurns = transcript.visibleTurns;
   const lastAssistantIdx = findLastLocalAssistantIndex(transcript.rows);
-  // Undo items render on the divider they target; everything else still
-  // waiting sits at the tail, after the newest turn (R5: no position yet).
-  const { undoByDividerId, tailControls } = useMemo(() => {
-    const undoByDividerId = new Map<string, QueuedControl>();
-    const tailControls: QueuedControl[] = [];
+  // Queued commands wait at the tail, after the newest turn: they take no
+  // position until they run. A divider stops offering Undo while its undo waits.
+  const { undoQueuedFor, tailControls } = useMemo(() => {
+    const undoQueuedFor = new Set<string>();
     const answered = answeredControlIds(turns);
-    // The optimistic seed stands in for the server's, whose control id it
-    // cannot know yet: every brief request is that seed's, stopped on the card.
-    const seedPending = turns.some(isOptimisticSeed);
-    const dividerIds = new Set(
-      transcript.rows.flatMap((row) => (row.kind === "compaction" ? [row.turn.id] : [])),
-    );
+    const tailControls: QueuedControl[] = [];
     for (const control of controls?.queued ?? NO_CONTROLS) {
-      if (control.control.kind === "compaction_undo") {
-        const target = control.control.compactionTurnId;
-        if (dividerIds.has(target)) {
-          // The marker U tells an answered undo's story; an active request
-          // outranks a settled withdrawal note on the same divider.
-          const current = undoByDividerId.get(target);
-          if (!answered.has(control.id) && (!current || !isSettledControl(control)))
-            undoByDividerId.set(target, control);
-          continue;
-        }
-      }
       if (answered.has(control.id)) continue;
-      if (seedPending && control.control.kind === "handoff_brief") continue;
       tailControls.push(control);
+      if (control.control.kind === "compaction_undo" && control.status !== "already_started")
+        undoQueuedFor.add(control.control.compactionTurnId);
     }
-    return { undoByDividerId, tailControls };
-  }, [controls?.queued, transcript.rows, turns]);
-  // The server refuses a second brief while one waits, so the card hides Retry.
-  const briefRetryPending = tailControls.some(
-    (control) => control.control.kind === "handoff_brief" && isActiveControl(control),
-  );
+    return { undoQueuedFor, tailControls };
+  }, [controls?.queued, turns]);
   // List rows are transcript rows shifted down by the alert, when it shows.
   const rowOffset = onRetryInherited ? 1 : 0;
   const listRows = useMemo<ListRow[]>(
@@ -247,7 +237,7 @@ export function TurnList({
             turn={turn}
             undo={row.undo}
             undoAvailability={local ? compactionUndo : null}
-            queuedUndo={local ? (undoByDividerId.get(turn.id) ?? null) : null}
+            undoQueued={local && undoQueuedFor.has(turn.id)}
             phase={local ? phase : null}
             stopping={local && (controls?.stoppingTurnIds.has(turn.id) ?? false)}
             onStop={local ? controls?.stop : undefined}
@@ -257,8 +247,6 @@ export function TurnList({
                     controls.enqueue({ kind: "compaction_undo", compactionTurnId })
                 : undefined
             }
-            onWithdraw={local ? controls?.withdraw : undefined}
-            onRetry={local ? controls?.retry : undefined}
           />
         );
       }
@@ -272,16 +260,17 @@ export function TurnList({
         );
       }
       if (row.kind === "handoff-seed") {
-        const live = local && !isOptimisticSeed(turn) && controls;
+        const actions = local ? brief : null;
         return (
           <HandoffBriefCard
             turn={turn}
             latest={row.latest}
-            retryPending={briefRetryPending}
-            stopping={controls?.stoppingTurnIds.has(turn.id) ?? false}
-            phase={local ? phase : null}
-            onStop={live ? (turnId) => live.stop(turnId, "brief") : undefined}
-            onRetry={live ? () => live.enqueue({ kind: "handoff_brief" }) : undefined}
+            stopping={actions?.stopping.has(turn.id) ?? false}
+            stopFailed={actions?.stopFailed.has(turn.id) ?? false}
+            retryRefused={actions?.retryRefused.has(turn.id) ?? false}
+            destinationBusy={busy}
+            onStop={actions?.canStop(turn) ? actions.stop : undefined}
+            onRetry={actions?.retry}
           />
         );
       }
@@ -294,6 +283,32 @@ export function TurnList({
           />
         );
       }
+      // A divider is a row: once one follows a failed reply, that failure is
+      // history. The queued-controls tail is not a row and never counts. An
+      // inherited reply is the source's history, even with nothing below it.
+      const endsTranscript = local && idx === visibleTurns.length - 1;
+      const sendRetry =
+        local && turn.id === failedSendRetry?.turnId ? failedSendRetry.retry : undefined;
+      const standIn = local ? (replyRetry?.requestOf(turn.id) ?? null) : null;
+      const retry =
+        local && replyRetry && turn.status === "error" && !sendRetry
+          ? {
+              // Only the latest turn can be retried: the server answers its
+              // messages again below it.
+              onRetry: endsTranscript
+                ? () => {
+                    // Retry leaves with this row's error; keep focus in the
+                    // transcript and bring the new reply into view.
+                    viewportRef.current?.focus({ preventScroll: true });
+                    enterFollow();
+                    replyRetry.retry(turn);
+                  }
+                : undefined,
+              waiting: busy,
+              refused: replyRetry.refused.has(turn.id),
+              requestLost: standIn === "failed",
+            }
+          : undefined;
       return (
         <AssistantTurn
           threadId={row.inherited?.ownerThreadId ?? threadId}
@@ -302,14 +317,11 @@ export function TurnList({
           threadUsage={local ? threadUsage : null}
           deliveryEvents={transcript.deliveryEventsFor(turn.id)}
           isLatestAssistant={idx === lastAssistantIdx}
-          // A divider is a row: once one follows a failed reply, that failure is
-          // history. The queued-controls tail is not a row and never counts. An
-          // inherited reply is the source's history, even with nothing below it.
-          endsTranscript={local && idx === visibleTurns.length - 1}
+          endsTranscript={endsTranscript}
           continuesResponse={continuing[idx] ?? false}
-          failedSendRetry={
-            local && turn.id === failedSendRetry?.turnId ? failedSendRetry.retry : undefined
-          }
+          failedSendRetry={sendRetry}
+          replyRetry={retry}
+          standIn={standIn !== null}
           onRespondToInterrupt={local ? onRespondToInterrupt : undefined}
           changeTrail={local ? byTurnId.get(turn.id) : undefined}
           navigateToChange={navigateToChange}
@@ -317,12 +329,15 @@ export function TurnList({
       );
     },
     [
-      briefRetryPending,
+      brief,
+      busy,
       byTurnId,
+      enterFollow,
+      replyRetry,
       compactionUndo,
       controls,
       phase,
-      undoByDividerId,
+      undoQueuedFor,
       failedSendRetry,
       lastAssistantIdx,
       navigateToChange,
@@ -351,10 +366,21 @@ export function TurnList({
         );
       }
       if (row.kind === "queued-controls") {
+        const withdraw = controls?.withdraw;
         return (
           <QueuedControlRows
             controls={row.controls}
-            onWithdraw={controls?.withdraw}
+            onWithdraw={
+              withdraw
+                ? (control) => {
+                    // Withdraw removes the row at once. The last one takes the
+                    // whole tail with it, so keep focus in the transcript.
+                    if (row.controls.length === 1)
+                      viewportRef.current?.focus({ preventScroll: true });
+                    withdraw(control);
+                  }
+                : undefined
+            }
             onRetry={controls?.retry}
           />
         );
@@ -499,23 +525,6 @@ function InheritedRow({
       {children}
       {mark.endsInherited ? <ForkPointRule /> : null}
     </div>
-  );
-}
-
-function isActiveControl(control: QueuedControl): boolean {
-  return (
-    control.status === "queued" ||
-    control.status === "failed" ||
-    control.status === "withdrawing" ||
-    control.status === "withdraw_failed"
-  );
-}
-
-function isSettledControl(control: QueuedControl): boolean {
-  return (
-    control.status === "withdrawn" ||
-    control.status === "stopping" ||
-    control.status === "already_finished"
   );
 }
 

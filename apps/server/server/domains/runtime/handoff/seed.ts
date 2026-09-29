@@ -1,4 +1,4 @@
-/** Frozen model context for a handoff seed, including the no-brief terminal states. */
+/** Durable seed completion and the frozen handoff-card/system-update projection. */
 import type { HandoffBriefProps } from "@meridian/contracts/components";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { Turn } from "@meridian/contracts/threads";
@@ -8,41 +8,14 @@ import {
   HandoffSeedMetadataCodec,
   handoffSeedMetadata,
 } from "../../threads/index.js";
+import { contentForBlockInput } from "../loop/block-helpers.js";
+import type { PersistenceDeps } from "../loop/persistence.js";
+import { persistAndAppendEvents } from "../loop/persistence.js";
 import { threadReferenceText } from "../thread-reference.js";
-import { contentForBlockInput } from "./block-helpers.js";
-import type { ControlMessage } from "./control-barrier.js";
-import { createLocalTurn } from "./local-turn.js";
-import { type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
 
 export const handoffBriefFailedCopy = "This handoff brief couldn't be generated. Try again.";
-
-export async function reserveHandoffSeed(
-  repos: Pick<import("../../threads/index.js").ThreadRepositories, "turns" | "threads">,
-  input: Turn,
-  control: ControlMessage,
-  thread: import("@meridian/contracts/threads").Thread,
-) {
-  const cutoff = thread.originTurnId ? await repos.turns.findById(thread.originTurnId) : null;
-  if (!cutoff) throw new Error("Handoff cutoff is missing");
-  const source = await repos.threads.findByIdIncludingDeleted(cutoff.threadId);
-  if (!source) throw new Error("Handoff source is missing");
-  // S already captured this title at creation; a later retitle must not rewrite it.
-  const existingMetadata = HandoffSeedMetadataCodec.safeParse(input.metadata);
-  return createLocalTurn({
-    ...input,
-    prevTurnId: input.prevTurnId ?? null,
-    role: "system",
-    origin: "system",
-    status: "pending",
-    metadata: handoffSeedMetadata({
-      sourceThreadId: source.id,
-      sourceRef: source.ref ?? source.id,
-      sourceTitle: existingMetadata.success ? existingMetadata.data.sourceTitle : source.title,
-      cutoffTurnId: cutoff.id,
-      controlMessageId: control.id,
-    }),
-  });
-}
+export const handoffBriefUnavailableCopy =
+  "This conversation was handed off. No brief is available.";
 
 export function handoffSeedBlock(
   seed: Turn,
@@ -74,13 +47,13 @@ export function handoffSeedBlock(
   });
 }
 
-export class HandoffSeedSettledError extends Error {
-  constructor(readonly turn: Turn) {
-    super("The handoff seed was settled while its brief was running");
-  }
-}
+type HandoffSeedOutcome = {
+  summarizer?: import("../ports/conversation-summarizer.js").SummaryOutcome["summarizer"];
+  failure?: HandoffFailureOutcome;
+  cause?: string;
+};
 
-/** The caller holds the thread lock. Stop can settle a seed after its lease expires. */
+/** Caller holds the destination lock; the event and pending→terminal transition are atomic. */
 export async function completeHandoffSeed(
   deps: PersistenceDeps,
   completed: Turn,
@@ -89,46 +62,55 @@ export async function completeHandoffSeed(
 ): Promise<Turn> {
   const saved = await deps.repos.turns.findById(completed.id);
   if (!saved) throw new Error("Handoff seed disappeared");
-  if (saved.status !== "pending") throw new HandoffSeedSettledError(saved);
-  const recorded = await recordHandoffSeedOutcome(deps, saved, outcome);
-  completed = { ...completed, metadata: recorded.metadata };
+  if (saved.status !== "pending") return saved;
+  const metadata = await recordHandoffSeedOutcome(deps, saved, outcome);
+  completed = { ...completed, metadata: metadata.metadata };
   await persistAndAppendEvents(deps, completed.threadId, async () => ({
     result: undefined,
     events: [
       { type: "block.upserted", block },
       completed.status === "complete"
         ? { type: "turn.completed", turn: completed }
-        : {
-            type: "turn.error",
-            turn: completed,
-            error: {
-              ...meridianErrorFromSystem("handoff_brief_failed", completed.error ?? ""),
-              details: HandoffFailureOutcomeCodec.parse(completed.metadata),
+        : completed.status === "cancelled"
+          ? { type: "turn.cancelled", turn: completed }
+          : {
+              type: "turn.error",
+              turn: completed,
+              error: {
+                ...meridianErrorFromSystem("handoff_brief_failed", completed.error ?? ""),
+                details: {
+                  ...HandoffFailureOutcomeCodec.parse(completed.metadata),
+                  ...(outcome.cause ? { cause: outcome.cause } : {}),
+                },
+              },
             },
-          },
     ],
   }));
   return completed;
 }
 
-type HandoffSeedOutcome = {
-  summarizer?: import("../ports/conversation-summarizer.js").SummaryOutcome["summarizer"];
-  failure?: HandoffFailureOutcome;
-};
-
-/** One metadata writer, under the ending transaction's thread lock. */
+/** One metadata writer; terminal telemetry belongs only to the winning attempt. */
 export async function recordHandoffSeedOutcome(
   deps: Pick<PersistenceDeps, "repos">,
   turn: Turn,
   outcome: HandoffSeedOutcome,
 ): Promise<Turn> {
-  // Terminal seed telemetry belongs to its winning completion, not a stale paid attempt.
   if (turn.status !== "pending") return turn;
   const metadata = {
     ...HandoffSeedMetadataCodec.parse(turn.metadata),
     ...(outcome.summarizer ? { summarizer: outcome.summarizer } : {}),
-    ...outcome.failure,
+    ...(outcome.failure ?? {}),
   };
   await deps.repos.turns.updateStatus(turn.id, { status: turn.status, metadata });
   return { ...turn, metadata };
+}
+
+export function handoffSeedMetadataFrom(seed: Turn): ReturnType<typeof handoffSeedMetadata> {
+  const metadata = HandoffSeedMetadataCodec.parse(seed.metadata);
+  return handoffSeedMetadata({
+    sourceThreadId: metadata.sourceThreadId,
+    sourceRef: metadata.sourceRef,
+    sourceTitle: metadata.sourceTitle,
+    cutoffTurnId: metadata.cutoffTurnId,
+  });
 }

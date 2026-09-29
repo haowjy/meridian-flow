@@ -2,6 +2,7 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
+import { processDetachedWork } from "../detached-work.js";
 import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
 
 const runDb = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -66,6 +67,7 @@ else
       {
         const controller = new AbortController();
         const orchestrator = createRuntimeHarness({
+          backgroundTasks: processDetachedWork,
           repos,
           eventWriter,
           delivery: createTestDrizzleDelivery(db, { repos, eventWriter, runClaim: authority }),
@@ -130,6 +132,7 @@ else
         },
       };
       const harness = createRuntimeHarness({
+        backgroundTasks: processDetachedWork,
         repos,
         eventWriter: splitWriter,
         delivery: createTestDrizzleDelivery(db, {

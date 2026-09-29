@@ -85,9 +85,17 @@ one pass. Rows have kinds (turn, compaction divider, handoff brief card,
 `from` reference) and stay index-aligned with the visible turns; grouping
 switches on row kind, never on role. Compaction turns are divider rows there,
 never in the head; see
-[`.context/compaction-surfaces.md`](.context/compaction-surfaces.md). Fork,
+[`.context/compaction-surfaces.md`](.context/compaction-surfaces.md). Queued
+`/compact` and Undo wait at the transcript tail until replies finish. Fork,
 handoff, the brief card, and a fork's inherited rows are in
-[`.context/fork-and-handoff.md`](.context/fork-and-handoff.md).
+[`.context/fork-and-handoff.md`](.context/fork-and-handoff.md). The handoff
+brief is not an inbox command: `derivation/useHandoffBrief.ts` owns its Retry
+(an optimistic card after the turn it followed, reconciled by the seed's id) and Stop (turn
+cancel on the seed), and a pending seed is the composer's active run. A failed
+reply's Retry (`useReplyRetry.ts`) shares that optimistic half
+(`useRetryStandIns.ts`); see
+[`.context/failed-reply-retry.md`](.context/failed-reply-retry.md). Hand off
+also sits under a delivered writer message; Fork stays on replies.
 
 Child completion is a separate durable transcript event: system turns with
 `metadata.kind === "subagent_update"` render as a quiet inline row at their

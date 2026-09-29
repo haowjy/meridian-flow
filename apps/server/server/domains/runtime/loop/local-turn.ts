@@ -74,14 +74,15 @@ function emptyTurnUsage(): NonNullable<Turn["usage"]> {
 
 /** The role-to-kind rule for run-owned turns; SQL bindTurn mirrors this rule. */
 export function currentTurnKind(turn: Pick<Turn, "role">): CurrentTurn["kind"] {
-  if (turn.role === "system") return "handoff_brief";
   if (turn.role === "assistant" || turn.role === "compaction") return turn.role;
   throw new Error(`Not a current execution turn: ${turn.role}`);
 }
 
 /** Both run-start and split reservation use the boundary's decision unchanged. */
 export function reservationTurn(
-  input: Omit<Parameters<typeof createLocalTurn>[0], "role" | "origin" | "status" | "metadata">,
+  input: Omit<Parameters<typeof createLocalTurn>[0], "role" | "origin" | "status" | "metadata"> & {
+    metadata?: Turn["metadata"];
+  },
   decision: CompactionDecision = { kind: "generate" },
 ): Turn {
   return createLocalTurn({
@@ -100,10 +101,7 @@ export function reservationTurn(
                 })
               : {}),
             ...(decision.controlMessageId ? { controlMessageId: decision.controlMessageId } : {}),
-            ...(decision.satisfiesControlId
-              ? { satisfiesControlId: decision.satisfiesControlId }
-              : {}),
           }
-        : null,
+        : (input.metadata ?? null),
   });
 }

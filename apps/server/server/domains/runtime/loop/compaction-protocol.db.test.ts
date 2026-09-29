@@ -9,6 +9,7 @@ import {
   encodeImageInclusionMetadata,
   loadThreadConversationContext,
 } from "../../threads/index.js";
+import { processDetachedWork } from "../detached-work.js";
 import { ImageAssetResolutionError } from "../ports/image-asset.js";
 import { createConversationSummarizer } from "../summary/conversation-summarizer.js";
 import { searchDocumentText, writeDocumentText } from "../tools/document-text.js";
@@ -163,7 +164,7 @@ else
       options: { summarizer?: ReturnType<typeof scriptedSummarizer> } = {},
     ) {
       const rig = await fixture({ history: "old history ".repeat(8000), ...options });
-      rig.setThreshold(8000);
+      rig.setThreshold(6000);
       return rig;
     }
 
@@ -260,101 +261,6 @@ else
       }
       return { answer, results };
     }
-
-    it("preserves summary-time control satisfaction and elides both unanswered request pins", async () => {
-      let rig: Awaited<ReturnType<typeof fixture>>;
-      const controlId = crypto.randomUUID();
-      const summarizer = scriptedSummarizer(async () => {
-        await rig.delivery.enqueue({
-          id: controlId,
-          threadId: rig.threadId,
-          intent: "control",
-          provenance: { kind: "writer", actorId: rig.ids.user },
-          body: { kind: "compact" },
-          idempotencyKey: controlId,
-        });
-        return {
-          kind: "complete",
-          text: "Earlier context.",
-          model: "summary-model",
-          modelResponses: [],
-        };
-      });
-      rig = await fixture({
-        summarizer,
-        gateway: scriptedGateway({ usage: { inputTokens: 100, outputTokens: 10 } }),
-      });
-      rig.deps.documentRevisions.current = async ({ documentIds }) =>
-        new Map(documentIds.map((id) => [id, "new"]));
-      const pins: Array<Awaited<ReturnType<typeof rig.send>>> = [];
-      for (const words of ["Revise ", "Then continue "]) {
-        pins.push(
-          await rig.send(rig.threadId, `${words}Chapter`, {
-            blocks: [
-              { type: "text", text: words },
-              {
-                type: "reference",
-                text: "Chapter",
-                documentId: "00000000-0000-4000-8000-000000000012",
-                uri: "manuscript://chapter.md",
-              },
-            ],
-          }),
-        );
-      }
-      // Both unanswered messages already have saved reads from an earlier preparation.
-      for (const pin of pins) {
-        for (const block of await rig.repos.blocks.listByTurn(pin.userTurnId)) {
-          const content = block.content as JsonObject;
-          if (content.type === "reference")
-            await rig.repos.blocks.upsert({
-              ...block,
-              content: { ...content, read: { result: "STALE PIN READ", revision: "old" } },
-            });
-        }
-      }
-      const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
-      expect((await run.execute()).status).toBe("complete");
-      const c = await rig.repos.turns.findById(run.executionTurnId);
-      expect(c).toMatchObject({
-        role: "compaction",
-        status: "complete",
-        metadata: {
-          trigger: "auto",
-          satisfiesControlId: controlId,
-          pinnedRequestTurnIds: pins.map((pin) => pin.userTurnId),
-          elisions: [
-            expect.objectContaining({ treatment: "stale_read" }),
-            expect.objectContaining({ treatment: "stale_read" }),
-          ],
-        },
-      });
-      expect(c!.promptBakeId).not.toBeNull();
-      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
-      const thread = (await rig.repos.threads.findById(rig.threadId))!;
-      const context = await loadThreadConversationContext(rig.repos, thread);
-      const projected = await projectActiveHistoryWithBakes(
-        context.turns,
-        context.blocks,
-        thread.ref,
-        rig.repos.promptBakes,
-      );
-      expect(
-        projected.turns
-          .filter((turn) => pins.some((pin) => pin.userTurnId === turn.id))
-          .map((turn) => turn.id),
-      ).toEqual(pins.map((pin) => pin.userTurnId));
-      const request = JSON.stringify(rig.gateway.requests[0]);
-      expect(request).not.toContain("STALE PIN READ");
-      for (const words of ["Revise ", "Then continue "]) expect(request).toContain(words);
-      expect(request).toContain("Chapter");
-      for (const pin of pins) {
-        const blocks = await rig.repos.blocks.listByTurn(pin.userTurnId);
-        expect(
-          blocks.find((block) => (block.content as JsonObject).type === "reference")?.content,
-        ).toMatchObject({ text: "Chapter", read: { result: "STALE PIN READ", revision: "old" } });
-      }
-    });
 
     it("freezes stale text elisions with the epoch and preserves successor request bytes", async () => {
       const usage = { inputTokens: 100, outputTokens: 10 };
@@ -685,10 +591,10 @@ else
         userText: "Continue.",
       });
 
-      expect((await run.execute()).status).toBe("complete");
-      const compaction = (await rig.repos.turns.listByThread(rig.threadId)).find(
-        (turn) => turn.role === "compaction",
-      );
+      const result = await run.execute();
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
+      expect(result.status).toBe("complete");
+      const compaction = turns.find((turn) => turn.role === "compaction");
       if (!compaction) throw new Error("Missing compaction turn");
       const rows = await rig.repos.imageInclusions.listByThread(rig.threadId);
       expect(
@@ -713,7 +619,6 @@ else
         "data:image/png;base64,candidate",
         "data:image/png;base64,late",
       ]);
-      const turns = await rig.repos.turns.listByThread(rig.threadId);
       const evictionNotice = turns
         .map((turn) => ({ turn, metadata: decodeImageInclusionMetadata(turn.metadata) }))
         .find(({ metadata }) =>
@@ -758,10 +663,11 @@ else
       expect(compaction.status).toBe("error");
     });
 
-    it("settles both rows when a warm overflow falls back cold", async () => {
+    it("rolls the next real compaction after a warm branch summary is rejected as too large", async () => {
       const gateway = scriptedGateway();
       const original = gateway.stream;
       let summaries = 0;
+      const summaryRequests: import("../gateway/index.js").GenerateRequest[] = [];
       gateway.stream = async function* (request) {
         const isSummary = request.messages.some((message) =>
           message.content.some(
@@ -773,27 +679,27 @@ else
           return;
         }
         summaries++;
-        if (summaries === 1) {
-          yield { type: "usage", usage: { inputTokens: 100, outputTokens: 1 } };
+        summaryRequests.push(request);
+        yield { type: "usage", usage: { inputTokens: 100, outputTokens: 1 } };
+        if (summaries === 1)
           yield {
             type: "error",
             code: "context_overflow",
             message: "input length and max_tokens exceed context limit",
             retryable: false,
           };
-          return;
-        }
-        yield {
-          type: "end",
-          result: {
-            content: [{ type: "text", text: "The earlier work is complete." }],
-            toolCalls: [],
-            finishReason: "end_turn",
-            usage: { inputTokens: 100, outputTokens: 10 },
-            model: "gpt-4.1-mini",
-            provider: "openai",
-          },
-        };
+        else
+          yield {
+            type: "end",
+            result: {
+              content: [{ type: "text", text: "The story's earlier work is complete." }],
+              toolCalls: [],
+              finishReason: "end_turn",
+              usage: { inputTokens: 100, outputTokens: 10 },
+              model: "gpt-4.1-mini",
+              provider: "openai",
+            },
+          };
       };
       const rig = await fixture({ gateway });
       rig.deps.summarizer = createConversationSummarizer({
@@ -802,33 +708,86 @@ else
         prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
         config: { model: "gpt-4.1-mini", maxOutputTokens: 100 },
       });
+      const realSummarizer = rig.deps.summarizer;
+      const summaryInputs: Parameters<typeof realSummarizer.summarize>[0][] = [];
+      rig.deps.summarizer = {
+        ...realSummarizer,
+        async summarize(input) {
+          summaryInputs.push(input);
+          return realSummarizer.summarize(input);
+        },
+      };
       const run = await rig.orchestrator.prepare({
         threadId: rig.threadId,
         tools: [],
         userText: "Continue.",
       });
-      expect((await run.execute()).status).toBe("complete");
-      expect(summaries).toBe(2);
+      expect((await run.execute()).status).toBe("error");
+      expect(summaries).toBe(1);
       const rows = await rig.repos.modelResponses.listByTurn(run.executionTurnId);
-      expect(rows).toHaveLength(2);
-      expect(
-        rows.map((row) => [row.finishReason, row.predictedCacheState, row.predictedCacheReason]),
-      ).toEqual([
-        ["error", "warm", "reusable_prefix"],
-        ["end_turn", "cold", "summary_transcript"],
-      ]);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        finishReason: "error",
+        predictedCacheState: "warm",
+        predictedCacheReason: "reusable_prefix",
+      });
+      const compaction = (await rig.repos.turns.listByThread(rig.threadId)).find(
+        (turn) => turn.role === "compaction",
+      );
+      expect(compaction).toMatchObject({
+        status: "error",
+        metadata: {
+          reason: "request_too_large",
+          phase: "summary",
+          summarizer: { path: "branch" },
+        },
+      });
       const debits = await db.select().from(schema.creditTransactions);
       for (const row of rows) {
         expect(BigInt(row.millicredits ?? "0")).toBeGreaterThan(0n);
         expect(debits.filter((debit) => debit.usageEventId === row.id)).toHaveLength(1);
       }
+
+      // A new run crosses the previous C through its actual prevTurnId chain.
+      // The second compaction is a normal auto-trigger, so only that history walk
+      // can make the summarizer know the previous request was too large.
+      rig.setThreshold(2500);
+      const retry = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Try again after the rejected summary.",
+      });
+      expect((await retry.execute()).status).toBe("complete");
+
+      const compactions = (await rig.repos.turns.listByThread(rig.threadId)).filter(
+        (turn) => turn.role === "compaction",
+      );
+      expect(compactions).toHaveLength(2);
+      expect(compactions[1]).toMatchObject({
+        status: "complete",
+        metadata: { summarizer: { path: "rolling" } },
+      });
+      expect(summaryInputs.map((input) => input.knownTooLarge)).toEqual([false, true]);
+      expect(summaryRequests[0]?.messages.at(-1)?.content).toContainEqual(
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringMatching(/^<system_update>\n[\s\S]*\n<\/system_update>$/),
+        }),
+      );
+      expect(summaryRequests[1]?.messages).toHaveLength(2);
+      expect(summaryRequests[1]?.messages[1]?.content).toContainEqual(
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringContaining("Conversation transcript:"),
+        }),
+      );
     });
 
     it.each([
       "recovered",
       "second_overflow",
       "new_reply",
-    ])("forces cold after provider overflow and retries once (%s)", async (scenario) => {
+    ])("uses rolling after provider overflow and retries the reply once (%s)", async (scenario) => {
       const secondOverflow = scenario === "second_overflow";
       let rig: Awaited<ReturnType<typeof fixture>>;
       const gateway = scriptedGateway();
@@ -905,7 +864,7 @@ else
       const result = await run.execute();
       expect(calls).toBe(scenario === "new_reply" ? 4 : 2);
       expect(summaries).toBe(scenario === "new_reply" ? 2 : 1);
-      expect(inputs[0].forceCold).toBe(true);
+      expect(inputs[0].knownTooLarge).toBe(true);
       expect(inputs[0].projection.blocks.some((block) => block.textContent === "Continue.")).toBe(
         false,
       );
@@ -916,7 +875,7 @@ else
       expect(await rig.repos.blocks.listByTurn(a.id)).toEqual([]);
       expect(c).toMatchObject({
         status: "complete",
-        metadata: { summarizer: { path: "cold", segments: 1 } },
+        metadata: { summarizer: { path: "rolling", segments: 1 } },
       });
       expect(result.status).toBe(secondOverflow ? "error" : "complete");
       if (secondOverflow) {
@@ -954,6 +913,7 @@ else
             const current = await rig.runClaim.readRunningTurnId(rig.threadId);
             if (!current) throw new Error("Missing current summary");
             await rig.orchestrator.cancel(rig.threadId, current);
+            rig.orchestrator.beginShutdown();
             return;
           }
           yield {
@@ -990,7 +950,7 @@ else
       expect(c).toMatchObject({
         status: ending === "failed" ? "error" : ending,
         metadata: {
-          summarizer: { path: "cold", segments: 1 },
+          summarizer: { path: "rolling", segments: 1 },
           ...(ending === "failed" ? { reason: "max_tokens", phase: "summary" } : {}),
         },
       });
@@ -1021,9 +981,14 @@ else
         (row) => row.usageEventId === rows[0].id,
       );
       expect(debits).toHaveLength(1);
+      if (ending === "cancelled") {
+        expect(await rig.inbox.selectPending(rig.threadId)).toHaveLength(1);
+        await expect(processDetachedWork.drain(1_000)).resolves.toBe(true);
+        expect(processDetachedWork.pendingTasks).toEqual([]);
+      }
     });
 
-    it("includes discarded warm and every cold segment response in a child report's cost", async () => {
+    it("includes every cold segment response in a child report's cost", async () => {
       const rig = await fixture({ child: true, history: "short history ".repeat(100) });
       const model = {
         id: "gpt-4.1-mini",
@@ -1054,13 +1019,9 @@ else
         yield {
           type: "end",
           result: {
-            content:
-              summaryCalls === 1
-                ? [{ type: "tool_use", toolCallId: "discarded-warm", toolName: "read", input: {} }]
-                : [{ type: "text", text: `Cold segment ${summaryCalls - 1} summary.` }],
-            toolCalls:
-              summaryCalls === 1 ? [{ id: "discarded-warm", name: "read", arguments: {} }] : [],
-            finishReason: summaryCalls === 1 ? "tool_use" : "end_turn",
+            content: [{ type: "text", text: `Cold segment ${summaryCalls} summary.` }],
+            toolCalls: [],
+            finishReason: "end_turn",
             usage: { inputTokens: 100, outputTokens: 10 },
             model: model.id,
             provider: model.provider,
@@ -1070,7 +1031,7 @@ else
       rig.deps.summarizer = createConversationSummarizer({
         gateway: rig.deps.gateway,
         agentRevisions: rig.deps.agentRevisions,
-        prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
+        prefixCacheStateFor: async () => ({ state: "cold", reason: "ttl_expired" }),
         config: { model: model.id, maxOutputTokens: 100 },
       });
 
@@ -1110,13 +1071,11 @@ else
       if (!compaction) throw new Error("Missing compaction turn");
       const summaryRows = await rig.repos.modelResponses.listByTurn(compaction.id);
       expect(summaryRows).toHaveLength(summaryCalls);
-      expect(summaryRows[0]).toMatchObject({
-        predictedCacheState: "warm",
-        predictedCacheReason: "reusable_prefix",
-        finishReason: "tool_use",
-      });
       expect(
-        summaryRows.slice(1).every((row) => row.predictedCacheReason === "summary_transcript"),
+        summaryRows.every(
+          (row) =>
+            row.predictedCacheState === "cold" && row.predictedCacheReason === "summary_transcript",
+        ),
       ).toBe(true);
 
       const report = await rig.repos.executionReports.findByExecution(
@@ -1133,6 +1092,12 @@ else
         expect(debits.filter((debit) => debit.usageEventId === row.id)).toHaveLength(1);
       }
       expect(requests.length).toBeGreaterThan(summaryCalls);
+      rig.orchestrator.beginShutdown();
+      const drained = await processDetachedWork.drain(2_000);
+      expect({ drained, pendingTasks: processDetachedWork.pendingTasks }).toEqual({
+        drained: true,
+        pendingTasks: [],
+      });
     });
 
     it("stops the successor iteration when settled compaction cost exhausts the tree budget", async () => {
@@ -1365,12 +1330,12 @@ else
       expect((await rig.repos.turns.findById(run.executionTurnId))?.status).toBe("error");
     });
 
-    it("lands an impossible pinned request as a failed reply without C and acknowledges it", async () => {
+    it("lands a pinned request above the model window as a failed reply without C", async () => {
       const rig = await fixture();
       const run = await rig.orchestrator.prepare({
         threadId: rig.threadId,
         tools: [],
-        userText: "too big ".repeat(5000),
+        userText: "too big ".repeat(50_000),
       });
       expect((await run.execute()).status).toBe("error");
       const turns = await rig.repos.turns.listByThread(rig.threadId);
@@ -1378,11 +1343,11 @@ else
       expect(turns.at(-1)?.error).toBe("This message is too long for this chat's model.");
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
     });
-    it("rejects an impossible mid-run arrival without reserving C", async () => {
+    it("rejects a mid-run arrival above the model window without reserving C", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
       const gateway = scriptedGateway({
         onStream: async (call) => {
-          if (call === 1) await rig.send(rig.threadId, "Too large. ".repeat(5000));
+          if (call === 1) await rig.send(rig.threadId, "Too large. ".repeat(50_000));
         },
       });
       rig = await fixture({ history: "brief history", gateway });
@@ -1540,6 +1505,141 @@ else
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
     });
 
+    it("retries a failed automatic compaction with a fresh C and the client's reply ID", async () => {
+      const summarizer = scriptedSummarizer(async (_input, call) =>
+        call === 1
+          ? { kind: "failed", error: new Error("summary unavailable"), modelResponses: [] }
+          : {
+              kind: "complete",
+              text: "Recovered summary.",
+              model: "summary-model",
+              modelResponses: [],
+            },
+      );
+      const rig = await fixture({ summarizer });
+      const original = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue after the failed summary.",
+      });
+      expect((await original.execute()).status).toBe("error");
+      await processDetachedWork.drain();
+      const failedReply = await rig.repos.turns.getLatestByThread(rig.threadId);
+      expect(failedReply).toMatchObject({ role: "assistant", status: "error" });
+      if (!failedReply) throw new Error("Failed automatic compaction reply was not persisted");
+
+      const replyTurnId = crypto.randomUUID();
+      const retry = await rig.orchestrator.retryReply({
+        threadId: rig.threadId,
+        failedTurnId: failedReply.id as never,
+        replyTurnId: replyTurnId as never,
+      });
+      expect(retry).toMatchObject({ created: true, turn: { id: replyTurnId, status: "pending" } });
+      await processDetachedWork.drain();
+
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
+      const compactions = turns.filter((turn) => turn.role === "compaction");
+      const retriedReply = await rig.repos.turns.findById(replyTurnId as never);
+      expect(compactions).toHaveLength(2);
+      expect(compactions[1]).toMatchObject({ status: "complete" });
+      expect(compactions[1]?.id).not.toBe(replyTurnId);
+      expect(retriedReply).toMatchObject({
+        id: replyTurnId,
+        role: "assistant",
+        status: "complete",
+        prevTurnId: compactions[1]?.id,
+      });
+      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+      expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
+    });
+
+    it("replays a compaction-first Retry id and drops its promise when Stop ends the run", async () => {
+      let secondStarted!: () => void;
+      const compactionStarted = new Promise<void>((resolve) => {
+        secondStarted = resolve;
+      });
+      const summarizer = scriptedSummarizer(async ({ signal }, call) => {
+        if (call === 1)
+          return { kind: "failed", error: new Error("summary unavailable"), modelResponses: [] };
+        secondStarted();
+        await new Promise<void>((resolve) => {
+          if (signal.aborted) resolve();
+          else signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+        return { kind: "cancelled", modelResponses: [] };
+      });
+      const rig = await fixture({ summarizer });
+      const original = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Stop the retry summary.",
+      });
+      expect((await original.execute()).status).toBe("error");
+      await processDetachedWork.drain();
+      const failedReply = await rig.repos.turns.getLatestByThread(rig.threadId);
+      if (!failedReply) throw new Error("Failed automatic compaction reply was not persisted");
+
+      const replyTurnId = crypto.randomUUID();
+      const retry = await rig.orchestrator.retryReply({
+        threadId: rig.threadId,
+        failedTurnId: failedReply.id as never,
+        replyTurnId: replyTurnId as never,
+      });
+      await compactionStarted;
+      const replay = await rig.orchestrator.retryReply({
+        threadId: rig.threadId,
+        failedTurnId: failedReply.id as never,
+        replyTurnId: replyTurnId as never,
+      });
+      const compactionId = rig.orchestrator.getRunningTurnId(rig.threadId);
+      if (!compactionId) throw new Error("Retry compaction was not running");
+      expect(await rig.orchestrator.cancel(rig.threadId, compactionId)).toBe("cancelled");
+      await processDetachedWork.drain();
+
+      expect(retry).toMatchObject({
+        created: true,
+        turn: { id: replyTurnId, prevTurnId: compactionId },
+      });
+      expect(replay).toMatchObject({
+        created: false,
+        turn: { id: replyTurnId, prevTurnId: compactionId },
+      });
+      expect(await rig.repos.turns.findById(replyTurnId as never)).toBeNull();
+      expect(await rig.repos.turns.findById(compactionId)).toMatchObject({ status: "cancelled" });
+      expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
+    });
+
+    it("records shutdown during compaction as a recovery interruption", async () => {
+      let markStarted!: () => void;
+      const started = new Promise<void>((resolve) => {
+        markStarted = resolve;
+      });
+      const summarizer = scriptedSummarizer(async ({ signal }) => {
+        markStarted();
+        await new Promise<void>((resolve) => {
+          if (signal.aborted) resolve();
+          else signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+        return { kind: "cancelled", modelResponses: [] };
+      });
+      const rig = await fixture({ summarizer });
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Interrupt this summary during shutdown.",
+      });
+      const execution = run.execute();
+      await started;
+      rig.orchestrator.beginShutdown();
+      await expect(execution).resolves.toMatchObject({ status: "error" });
+
+      expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
+        role: "compaction",
+        status: "error",
+        metadata: { reason: "interrupted", phase: "recovery" },
+      });
+    });
+
     it("keeps a usable epoch when a late image fails preparation", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
       let writerId: string | undefined;
@@ -1583,10 +1683,60 @@ else
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
     });
 
-    it("fails C when a late paste exceeds the successor budget and settles its paid summary", async () => {
+    it("allows late input above the automatic trigger when it fits the model window", async () => {
+      let rig: Awaited<ReturnType<typeof fixture>>;
+      const summarizer = scriptedSummarizer(async ({ owner: { turnId } }, call) => {
+        if (call === 1) {
+          await rig.send(rig.threadId, "Late long paste. ".repeat(1500));
+          await rig.send(rig.threadId, "A second late direction.");
+        }
+        return {
+          kind: "complete",
+          text: "Usable summary.",
+          model: "summary-model",
+          modelResponses: [
+            {
+              id: crypto.randomUUID(),
+              turnId,
+              sequence: 0,
+              provider: "openai",
+              model: "gpt-4.1-mini",
+              inputTokens: 100,
+              outputTokens: 10,
+              requestMessageCount: 2,
+              predictedCacheState: "cold",
+              predictedCacheReason: "summary_transcript",
+            },
+          ],
+        };
+      });
+      rig = await fixture({ summarizer, history: "old history ".repeat(8000) });
+      rig.setThreshold(9000);
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      const result = await run.execute();
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
+      expect(result.status).toBe("complete");
+      const compactions = turns.filter((turn) => turn.role === "compaction");
+      expect(compactions).toHaveLength(1);
+      expect(compactions[0]?.status).toBe("complete");
+      const request = rig.gateway.requests.at(-1);
+      if (!request) throw new Error("Missing successor model request");
+      expect(
+        estimateRequestTokens({ request, baseline: null, tokenizer: "o200k" }),
+      ).toBeGreaterThan(9000);
+      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
+      expect(rig.summarizer.calls).toHaveLength(1);
+      expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
+    });
+
+    it("keeps C complete when late messages exceed the model window", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
       const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => {
-        await rig.send(rig.threadId, "Late long paste. ".repeat(5000));
+        await rig.send(rig.threadId, "Late long paste. ".repeat(50_000));
         await rig.send(rig.threadId, "A second late direction.");
         return {
           kind: "complete",
@@ -1617,29 +1767,20 @@ else
       expect((await run.execute()).status).toBe("error");
       const tail = (await rig.repos.turns.listByThread(rig.threadId)).slice(-4);
       expect(tail.map((turn) => [turn.role, turn.status])).toEqual([
-        ["compaction", "error"],
+        ["compaction", "complete"],
         ["user", "complete"],
         ["user", "complete"],
         ["assistant", "error"],
       ]);
       expect(tail[0]).toMatchObject({
-        promptBakeId: null,
-        error: "This message is too long for this chat's model.",
-        metadata: {
-          reason: "context_too_large",
-          phase: "late_arrival",
-          estimatedTokens: expect.any(Number),
-          fitLimitTokens: 2_500,
-        },
+        status: "complete",
+        promptBakeId: expect.any(String),
+        error: null,
+        metadata: { trigger: "auto" },
       });
+      expect(tail[0].metadata).not.toHaveProperty("phase");
+      expect(tail[0].metadata).not.toHaveProperty("reason");
       expect(CompactionMetadataCodec.safeParse(tail[0].metadata).success).toBe(true);
-      expect(tail[0].metadata).toMatchObject({
-        estimatedTokens: expect.any(Number),
-        fitLimitTokens: 2_500,
-      });
-      expect((tail[0].metadata as JsonObject).estimatedTokens as number).toBeGreaterThan(
-        (tail[0].metadata as JsonObject).fitLimitTokens as number,
-      );
       expect(tail[3].error).toBe("This message is too long for this chat's model.");
       expect(tail[3].prevTurnId).toBe(tail[2].id);
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
@@ -1654,7 +1795,6 @@ else
         .select({ payload: schema.eventJournal.payload })
         .from(schema.eventJournal);
       expect(JSON.stringify(events)).toContain('"code":"context_too_large"');
-      expect(JSON.stringify(events)).toContain('"phase":"late_arrival"');
     });
 
     it("compacts at close with a pending writer message, completing A before C and B", async () => {
@@ -1977,6 +2117,7 @@ else
           throw new Error("successor commit failed");
         }
         await rig.orchestrator.cancel(rig.threadId, input.currentTurn.id);
+        rig.orchestrator.beginShutdown();
         return split(input);
       };
       const run = await rig.orchestrator.prepare({
@@ -1993,7 +2134,8 @@ else
       expect(BigInt(rows[0].millicredits ?? "0")).toBeGreaterThan(0n);
       const debits = await db.select().from(schema.creditTransactions);
       expect(debits.filter((row) => row.usageEventId === rows[0].id)).toHaveLength(1);
-      expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
+      expect(await rig.inbox.selectPending(rig.threadId)).toHaveLength(1);
+      await expect(processDetachedWork.drain(1_000)).resolves.toBe(true);
     });
 
     it.each([
@@ -2024,6 +2166,10 @@ else
       let commits = 0;
       rig.delivery.splitAndContinue = async () => {
         commits++;
+        if (commits === 2) {
+          // Leave the failed input queued for recovery without rerunning this failed adapter.
+          rig.deps.shutdown.started = true;
+        }
         throw new Error("database unavailable");
       };
       const read = rig.runClaim.read;
@@ -2037,6 +2183,7 @@ else
         userText: "Continue.",
       });
       expect((await run.execute()).status).toBe("failed");
+      await expect(processDetachedWork.drain(1_000)).resolves.toBe(true);
       expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
         role: "compaction",
         status: "pending",

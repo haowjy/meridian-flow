@@ -463,6 +463,19 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
+      case "thread.status":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: "meridian.thread.status",
+            value: {
+              threadId: event.threadId,
+              status: event.status,
+              runningTurnId: event.runningTurnId,
+            },
+          }),
+        ];
+
       case "turn.completed":
         return finalizeRun();
 

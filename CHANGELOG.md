@@ -9,6 +9,8 @@
 
 - Run settlement transitions in memory; preserve scoped PostgreSQL durability proofs.
 - Catalog runtime control, compaction, handoff, and history probes.
+- Make Retry an ordinary no-input run using normal history and optimistic preparation; a run-start compaction gets a fresh ID while the retried reply keeps the client's ID. Shutdown-interrupted replies settle paid rows, acknowledge adopted messages, and remain retryable before SIGTERM/SIGINT flush and exit.
+- Keep a delivered writer message as a running-source handoff cutoff, and make `mf thread send` wait through an earlier failed run for its own reply.
 
 - Remove duplicate runtime checks; test editor undo and stream recovery through behavior.
 
@@ -29,8 +31,9 @@
 - Reset DB tests with rollback or FK-ordered deletes, without per-case table rewrites.
 - Resolve guarded worktree DB targets for `db:apply-functions`; make `db:migrate` finish by applying functions so migrated databases are complete.
 
-- Fork or hand off a chat from any finished reply, including a reply a fork inherited. The new chat opens at once and finishes creating in the background; a reload lands on the same chat, and a failure stays on it with Retry. Hand off picks the Agent, starting from the source's. Subagent chats offer neither.
-- Show the handoff brief as a card that writes itself in place: Stop while it writes, the brief behind Show the whole brief once ready, and Retry on a brief that failed or was stopped. A queued Retry can be withdrawn; messages sent meanwhile wait behind the brief.
+- Fork or hand off a chat from an assistant reply or delivered writer turn, including a reply a fork inherited. The new chat opens at once and finishes creating in the background; a reload lands on the same chat, and a failure stays on it with Retry. Hand off picks the Agent, starting from the source's. Subagent chats offer neither.
+- Show the handoff brief as a card that writes itself in place: Stop while it writes, the brief behind Show the whole brief once ready, and Retry on a brief that failed, was stopped, or was interrupted by a restart. Retry shows the new brief's card at once and waits while the chat is replying; a refused or lost Retry and a failed Stop say so on the card. Messages sent meanwhile are answered once the brief ends.
+- Retry a failed reply from the reply itself: the latest failed reply offers Retry, which shows the new reply working below it at once and waits while the chat is busy. A refused or lost Retry says so on the reply.
 - Show a fork's inherited history read-only, marked with the chat it came from and where the fork begins; it never changes when the source moves on.
 - Name the chat a subagent was pointed at with `from`, on its spawn card and at the top of its chat, and say when that chat is in the trash. Spawns no longer flash an "Unknown component" note in the reply.
 - A fork whose history fails to load says so with Retry; a fork cut at a failed reply shows it as history; a message sent while a fork or handoff is still being created survives a reload; an older failed brief says it failed instead of asking to try again; the Agent picker's row tooltip stays on screen on phones and no longer covers the list as it opens.
@@ -39,13 +42,13 @@
 - Skip paid manual compaction when too little context can be removed. Tell warm summaries not to repeat retained conversation.
 
 - Show compaction in the chat: a divider for compacting, compacted (summary behind a disclosure), failed, stopped, and undone; Stop on a running compaction, from the divider or the composer; Undo only where the server expects it to hold, with refusals quiet on the divider; one-line dividers on narrow screens; hide the empty reply an overflow recovery completes before compacting. A stopped autocompaction settles without waiting for another change, and screen readers hear each control change once, in the words its row shows.
-- Add `/compact` to the composer. Queued compactions, undos, and handoff brief retries show at once at the transcript tail or on their divider, and can be withdrawn in place.
+- Add `/compact` to the composer. A queued `/compact` or Undo waits at the bottom of the chat until replies finish, with Withdraw, which removes it at once; a command that already started says so. A `/compact` with nothing new to compact reads calmly.
 - Point spawned agents at connected prior work without copying history; freeze reference text and read instructions, including stopped handoffs.
 - Freeze handoff source titles on seeds and brief cards, and keep spawn source provenance on durable invocation cards.
 - A handed-off chat names a trashed source by its title, and a spawn card names its `from` chat straight from the card after a reload.
 - Treat a null spawn source as omitted.
 
-- Preserve bake-gated history guidance in cold handoff summaries; classify completed and failed briefs as system history.
+- Preserve bake-gated history guidance in rolling handoff summaries; classify completed and failed briefs as system history.
 
 - Preserve structured inspection errors, including unavailable bound models.
 
@@ -63,22 +66,22 @@
 - Keep history pages stable across compaction and undo; preserve old prompt-bake bytes.
 
 - Require a lineage root on every conversation; index fork and handoff discovery.
-- Accept failed replies as handoff cutoffs without changing the source warmth rule or rewriting their failed status on later sends.
+- Accept delivered user turns as handoff cutoffs while the source reply streams; source-shaped briefs follow the shared summary rule at every cutoff without rewriting failed reply history.
 
-- Preserve undo-before-Retry order in expanded control batches; only brief-only batches skip control history.
+- Keep inbox controls to compact and undo; handoff Retry appends outside the inbox. Compact and Undo run after queued messages unless Stop (Esc) stamps one to run first.
 - Record brief telemetry and failure metadata through one pending-owner writer; late paid attempts cannot replace the winning outcome.
 
-- Stage activated skills through one boundary owner. Retry briefs defer skill bodies until the successor commits.
+- Stage activated skills through one boundary owner. The handoff brief holds the destination run claim until settlement; queued skill activations then materialize with the reply.
 
-- Skip destination control-history preparation while a handoff brief owns the boundary.
+- Acquire the destination run claim before creating a handoff seed; the detached brief releases it through the shared runnable-queue wake without creating a run boundary.
 
 - Keep internal ending-commit failures out of handoff brief writer copy. Retain diagnostic causes in error details.
 
-- Fall back to cold briefs when source preview fails. Preserve queued skill activations through Retry and winning seed metadata through late paid responses.
+- Fail handoff when source request preparation fails instead of making a rolling fallback call. Preserve queued skill activations behind pending seeds and winning seed metadata through late paid responses.
 
-- Keep source image decisions unchanged when handoff preview discovers a lost asset; generate the brief cold.
+- Keep source image decisions unchanged when handoff preparation discovers a lost asset; fail the brief without a rolling fallback.
 
-- Generate handoff briefs from the source model’s warm prefix or the cheap cold summarizer. Meter every returned attempt on the destination seed.
+- Use one summary rule for compaction and handoff: known-too-large requests roll, warm source requests branch, and cold requests roll. Fail each attempt once and meter returned attempts on the owning turn.
 - Keep brief failures typed, preserve queued replies, and exclude brief calls from future cache baselines.
 
 - Undo failures show writer copy, retain typed reasons, and expose metadata in `mf thread view --json`.
@@ -88,21 +91,21 @@
 - Compaction undo preserves paged transcript segments and restores the pre-compaction prompt bake.
 
 ### Changed
-- Regenerate handoff migration after undo; accept all three queued control kinds.
-- Preserve handoff seeds during idle and startup repair; keep undo and handoff controls ordered together.
-- Preserve Work-context delivery while recovering stranded handoff controls.
-- Withdrawn controls cannot replay if their owner crashes before stopping.
+- Regenerate the handoff migration in place; keep inbox control schemas limited to compact and undo.
+- Include pending handoff seeds in ordinary placeholder repair; settle interrupted seeds with their card and history read line instead of relaunching them.
+- Preserve Work-context delivery while the detached brief holds the destination run claim.
+- A withdrawn control stays retired after a crash; replaying withdrawal returns `withdrawn`.
 - Validate Agent selections consistently across handoff and thread creation.
-- Reject handoff Retry while a brief is pending or the latest brief succeeded. Replayed requests stay idempotent.
-- Withdrawing a running compaction still stops it after its lease expires.
-- Recover handoffs whose brief seed already ended. Queued replies, Stop and withdrawal no longer get stuck.
-- Handoffs create immediately with a recoverable brief seed. Stop preserves queued messages. Retry appends a new seed.
-- Stop reaches pending handoff seeds after their owner lease expires. Resumed briefs cannot overwrite Stop.
+- Handoff Retry takes the destination run claim; a held claim returns 409 `handoff_retry_unavailable`, while an idempotent seed replay returns the existing seed.
+- Withdraw a control only before its start; after a C or U records it, return `already_started` without stopping the run. Replayed withdrawal of a withdrawn row remains `withdrawn`.
+- Remove the handoff recovery sweep and relaunch counter; orphan repair settles pending seeds interrupted after acquiring the destination claim.
+- Handoffs commit a durable pending seed and detach its brief while transferring the pre-acquired destination claim. Stop preserves queued messages; Retry appends a new seed.
+- Stop settles pending handoff seeds under the destination lock; a late brief cannot overwrite Stop.
 - Handoff requests require a destination id and cutoff; client-written summaries removed.
 
 - Type compaction failure reasons, phases, fit measurements and control IDs in the durable metadata codec, including failures without a planned cut.
 - Expose compaction failure and control metadata, with token counts, in the existing `thread view --json` projection.
-- Persist typed compaction failure reasons and phases on failed C turns and their `turn.error` events; fail C on a late-arrival fit overflow while settling paid summaries.
+- Persist typed compaction failure reasons and phases on failed C turns and their `turn.error` events. If late arrivals make the successor too large, commit C and fail the successor reply with its normal fit error.
 
 - Keep undo metadata and queued-control acknowledgments on one typed path.
 - Load undo advisory dependencies statically; keep the retained Agent and current model lookup.
@@ -116,7 +119,7 @@
 - Page the effective or inherited transcript by stable turn/block keys, split pages at prompt-epoch boundaries, and expose the authenticated writer transcript route.
 - Record atomic document revisions on agent reads, searches, references, and settled writes without adding model-visible text.
 - Queue manual compaction in message order. Withdraw queued requests or stop running dividers.
-- Keep unanswered writer text and mentions verbatim across compaction. Failed optional summaries leave replies running.
+- Keep unanswered writer text and mentions verbatim across compaction. Failed command summaries leave replies running; a failed automatic summary fails its reply.
 - Summarize long chats with cached requests or rolling cheap-model summaries. Keep story facts and writer preferences.
 - Default compaction to the model's usable window, pricing tier, or 400,000-token ceiling.
 - Stop a running compaction and deliver messages queued during its summary afterward.
@@ -139,21 +142,20 @@
 - Refresh search-only Work drafts before revision checks. Ignore documents removed from a Work.
 - Commit shared document pulls independently of chat transactions; preserve retries after failed pulls, including newer edits queued during a pull.
 - Settle direct-write tool results after their document commit instead of leaving successful edits marked staged.
-- Keep failed replies sweep-paced when a compact request waits behind them.
-- Withdrawing an absorbed compact request leaves the writer's reply running.
+- A queued compact waits behind messages; it is not absorbed by an automatic compaction.
 - Refuse back-to-back manual compaction until new history arrives.
-- Stop an automatic compaction even when it absorbed a queued manual request. Retry pre-reservation failures through the sweep, not a tight loop.
+- Stop (Esc) runs a pending command before waiting messages; those messages are pinned by the compaction and answered afterward. Retire a command whose start commit fails instead of retrying it on every wake.
 - Keep pending-placeholder roles and predicates in contracts, SQL in the database package, and interruption copy in the threads domain.
-- Retry failed warm summaries cold once. Bound summary output without changing cached thinking.
+- Fail a warm-summary error once instead of retrying it cold. Bound summary output without changing cached thinking.
 - Preflight cold transcripts before paid calls. Excerpt large document reads and split large turns at blocks.
 - Summarize only compacted history. Preserve exact story terms and completed versus pending edits.
 - Label cold summarizer calls independently of the chat cache. Correct DeepSeek Flash's context window to 1M.
 - Leave 10% headroom in default compaction triggers. Recover older Claude context-limit errors.
 - Keep complete summaries without confusing estimated input size with provider output tokens. Skip opaque reasoning in summaries.
 - Propagate context-window errors when provider fallback is enabled.
-- Compact cold and retry once after a provider context-window failure. Fail oversized retries without redelivery.
+- Roll summaries for cold or known-too-large requests; branch only from warm source requests. A `context_overflow` summary rejection is recorded as `request_too_large` so the next attempt rolls.
 - Allow clients to join chats while compaction is running.
-- Failed compaction lands a failed reply and retires its messages instead of paying for repeated summaries.
+- Failed automatic compaction lands a failed reply; command failure stays on C. A command is consumed at start, so neither path replays it for another summary.
 - Stop follows the same run across a committed reply split, including remote cancellation. Internal aborts stay errors.
 - Leave a compaction pending for recovery when its live failure transaction cannot commit.
 - Development: reset worktree databases that already applied the earlier unreleased 0014 with `pnpm db:reset`.

@@ -6,6 +6,13 @@ function turn(id: string, role: Turn["role"], status: Turn["status"]): Turn {
   return { id, role, status, blocks: [] } as unknown as Turn;
 }
 
+function seed(id: string, status: Turn["status"]): Turn {
+  return {
+    ...turn(id, "system", status),
+    metadata: { kind: "derivation_seed", derivation: "handoff", sourceThreadId: "source" },
+  } as Turn;
+}
+
 const writer = turn("u", "user", "complete");
 
 describe("composerRun: what the composer's Stop acts on", () => {
@@ -25,9 +32,22 @@ describe("composerRun: what the composer's Stop acts on", () => {
     });
   });
 
-  it("is the handoff brief while the run is briefing", () => {
-    const brief = turn("b", "system", "pending");
-    expect(composerRun([writer, brief])).toEqual({ kind: "placeholder", turn: brief });
+  it("is the handoff brief while its seed is pending, with no lease or phase", () => {
+    const brief = seed("s", "pending");
+    expect(composerRun([brief])).toEqual({ kind: "placeholder", turn: brief });
+  });
+
+  it("is the brief a Retry appended, with a message sent during it queued after", () => {
+    const retry = seed("s2", "pending");
+    expect(composerRun([seed("s", "error"), retry, turn("u", "user", "complete")])).toEqual({
+      kind: "placeholder",
+      turn: retry,
+    });
+  });
+
+  it("is idle once the brief ends, and never a pending system turn that is not a seed", () => {
+    expect(composerRun([seed("s", "cancelled")])).toBeNull();
+    expect(composerRun([writer, turn("x", "system", "pending")])).toBeNull();
   });
 
   it("is idle once the compaction settles", () => {

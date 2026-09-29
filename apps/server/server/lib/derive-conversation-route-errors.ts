@@ -4,6 +4,7 @@ import {
   DerivedSourceNotFoundError,
   DerivedThreadConflictError,
   ForkCutoffError,
+  HandoffInProgressError,
   SubagentDerivationError,
 } from "../domains/threads/index.js";
 
@@ -16,6 +17,7 @@ export function deriveConversationErrorStatus(error: unknown): number | null {
   ) {
     return 400;
   }
-  if (error instanceof DerivedThreadConflictError) return 409;
+  if (error instanceof DerivedThreadConflictError || error instanceof HandoffInProgressError)
+    return 409;
   return null;
 }

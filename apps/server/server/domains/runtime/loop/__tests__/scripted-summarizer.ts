@@ -24,7 +24,10 @@ export function scriptedSummarizer(
     calls,
     async summarize(input: Parameters<ConversationSummarizer["summarize"]>[0]) {
       calls.push(input);
-      return { summarizer: { path: "cold", segments: 1 }, ...(await script(input, calls.length)) };
+      return {
+        summarizer: { path: "rolling", segments: 1 },
+        ...(await script(input, calls.length)),
+      };
     },
   };
 }

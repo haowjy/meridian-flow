@@ -7,7 +7,6 @@ import {
   type Block,
   blockPlainText,
   type FinishReason,
-  isPendingPlaceholder,
   isTerminalTurnStatus,
   type OrchestratorEvent,
   type Turn,
@@ -18,17 +17,9 @@ import {
   CompactionFailureReasonCodec,
   compactionFailureMetadata,
   type EventJournalWriter,
-  HandoffFailureOutcomeCodec,
-  interruptedPlaceholderError,
   type ThreadRepositories,
 } from "../../threads/index.js";
 import { compactionFailureMeridianError } from "./compaction/decision.js";
-import {
-  handoffBriefFailedCopy,
-  handoffSeedBlock,
-  recordHandoffSeedOutcome,
-} from "./handoff-seed.js";
-import { historyReadableAt } from "./history-tool-availability.js";
 import { persistAndAppendEvents } from "./persistence.js";
 
 export type TerminalCause =
@@ -37,8 +28,6 @@ export type TerminalCause =
       kind: "failed";
       reason: string;
       error: MeridianError | string;
-      /** Retire this adopted batch so an unrecoverable preparation error is not swept again. */
-      acknowledgeInbox?: boolean;
     }
   | { kind: "cancelled"; reason: string };
 
@@ -94,19 +83,6 @@ function turnEvent(turn: Turn, cause: TerminalCause): OrchestratorEvent {
       ),
     };
   }
-  if (turn.role === "system") {
-    return {
-      type: "turn.error",
-      turn,
-      error: {
-        ...meridianErrorFromSystem("handoff_brief_failed", turn.error ?? ""),
-        details: {
-          ...HandoffFailureOutcomeCodec.parse(turn.metadata),
-          cause: typeof cause.error === "string" ? cause.error : cause.error.message,
-        },
-      },
-    };
-  }
   const error =
     typeof cause.error === "string"
       ? meridianErrorFromSystem("runtime_error", cause.error)
@@ -115,7 +91,7 @@ function turnEvent(turn: Turn, cause: TerminalCause): OrchestratorEvent {
 }
 
 function compactionFailureForFinalizer(cause: Extract<TerminalCause, { kind: "failed" }>) {
-  if (cause.reason === "orphaned")
+  if (cause.reason === "orphaned" || cause.reason === "shutdown")
     return { reason: "interrupted" as const, phase: "recovery" as const };
   if (typeof cause.error !== "string") {
     const details = CompactionFailureOutcomeCodec.safeParse(cause.error.details);
@@ -159,12 +135,12 @@ export async function finalizeExecution(
     deps,
     input.threadId,
     async () => {
-      let turn = await deps.repos.turns.findById(input.turnId);
+      const turn = await deps.repos.turns.findById(input.turnId);
       if (
         !turn ||
         turn.threadId !== input.threadId ||
         (turn.role !== "assistant" &&
-          !(isPendingPlaceholder(turn) && input.cause.kind !== "success"))
+          !(turn.role === "compaction" && input.cause.kind !== "success"))
       ) {
         throw new Error("Terminal turn is unavailable");
       }
@@ -184,27 +160,29 @@ export async function finalizeExecution(
         report = existingReport;
         return { result: turn, events: [] };
       }
-      if (turn.role === "system" && input.cause.kind === "failed") {
-        turn = await recordHandoffSeedOutcome(deps, turn, {
-          failure: {
-            reason: input.cause.reason === "orphaned" ? "interrupted" : "handoff_brief_failed",
-            phase: input.cause.reason === "orphaned" ? "recovery" : "delivery",
-          },
-        });
-      }
       const completedAt = toIsoString(new Date());
       const error =
         input.cause.kind === "failed"
-          ? turn.role === "system"
-            ? input.cause.reason === "orphaned"
-              ? interruptedPlaceholderError({ ...turn, role: turn.role })
-              : handoffBriefFailedCopy
-            : typeof input.cause.error === "string"
-              ? input.cause.error
-              : input.cause.error.message
+          ? typeof input.cause.error === "string"
+            ? input.cause.error
+            : input.cause.error.message
           : null;
       const updated: Turn = {
         ...turn,
+        ...(turn.role === "assistant" &&
+        input.cause.kind === "failed" &&
+        input.cause.reason === "shutdown"
+          ? {
+              metadata: {
+                ...(turn.metadata &&
+                typeof turn.metadata === "object" &&
+                !Array.isArray(turn.metadata)
+                  ? turn.metadata
+                  : {}),
+                reason: "shutdown",
+              },
+            }
+          : {}),
         ...(turn.role === "compaction" && input.cause.kind === "failed"
           ? {
               metadata: compactionFailureMetadata(
@@ -231,14 +209,7 @@ export async function finalizeExecution(
       if (input.cause.kind === "success") {
         await deps.repos.threads.updateCost(input.threadId, "0", 1);
       }
-      const events: OrchestratorEvent[] = [];
-      if (turn.role === "system") {
-        events.push({
-          type: "block.upserted",
-          block: handoffSeedBlock(turn, undefined, await historyReadableAt(deps, turn)),
-        });
-      }
-      return { result: updated, events: [...events, turnEvent(updated, input.cause)] };
+      return { result: updated, events: [turnEvent(updated, input.cause)] };
     },
     {
       async afterEvents(turn) {

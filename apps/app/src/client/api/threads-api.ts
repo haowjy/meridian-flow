@@ -2,8 +2,8 @@
  * threads-api — HTTP client for thread lifecycle and snapshot endpoints.
  *
  * Typed wrappers for list/create thread, append user message, cancel turn,
- * queue or withdraw writer controls, delete thread, and fetch/deserialize a
- * thread snapshot. Owns the thread
+ * queue or withdraw writer controls, retry a handoff brief or a failed reply,
+ * delete thread, and fetch/deserialize a thread snapshot. Owns the thread
  * network surface the chat flow and snapshot sync build on.
  */
 import {
@@ -15,6 +15,7 @@ import {
   apiThreadControlsPath,
   apiThreadControlWithdrawPath,
   apiThreadForkPath,
+  apiThreadHandoffBriefPath,
   apiThreadHandoffPath,
   apiThreadMessagePath,
   apiThreadModelRequestsDebugPath,
@@ -25,17 +26,20 @@ import {
   apiThreadTitlePath,
   apiThreadTranscriptPath,
   apiThreadTurnContextPreviewDebugPath,
+  apiThreadTurnRetryPath,
   apiThreadUserStatePath,
   apiThreadWorkPath,
   type CancelTurnResponse,
   type CreateThreadRequest,
   type ForkThreadRequest,
+  type HandoffBriefRetryRequest,
   type HandoffThreadRequest,
   type ListThreadRecentDocumentsResponse,
   type ListThreadsResponse,
   type ModelRequestDebugListResponse,
   type RenameThreadRequest,
   type RenameThreadResponse,
+  type ReplyRetryRequest,
   type RetireAdmissionResult,
   type SendMessageResponse,
   type Thread,
@@ -44,6 +48,7 @@ import {
   type ThreadSnapshotResponse,
   type TranscriptPagePathOptions,
   type TranscriptPageResponse,
+  type Turn,
   type TurnContextPreview,
   type UpdateThreadUserStateRequest,
   type UpdateThreadUserStateResponse,
@@ -105,6 +110,27 @@ export function handoffThread(
   request: HandoffThreadRequest,
 ): Promise<Thread> {
   return postJson(apiThreadHandoffPath(sourceThreadId), request) as unknown as Promise<Thread>;
+}
+
+/**
+ * Write a new brief for a handoff destination whose latest one ended without
+ * one. `request.id` is the new seed's client-minted id: a repeat returns the
+ * same seed (201 new, 200 existing). 409 while anything holds the destination.
+ */
+export function retryHandoffBrief(
+  threadId: string,
+  request: HandoffBriefRetryRequest,
+): Promise<Turn> {
+  return postJson(apiThreadHandoffBriefPath(threadId), request);
+}
+
+/** Retry a latest failed reply: the server answers the same messages under `request.id`. */
+export function retryReply(
+  threadId: string,
+  failedTurnId: string,
+  request: ReplyRetryRequest,
+): Promise<Turn> {
+  return postJson(apiThreadTurnRetryPath(threadId, failedTurnId), request);
 }
 
 /** One page of a thread's effective or inherited transcript. */
@@ -169,7 +195,7 @@ export function enqueueThreadControl(
   return postJson(apiThreadControlsPath(threadId), request);
 }
 
-/** Withdraw a queued control, or Stop the run that already bound it. */
+/** Withdraw a queued control; one that already started answers `already_started`. */
 export function withdrawThreadControl(
   threadId: string,
   controlId: string,

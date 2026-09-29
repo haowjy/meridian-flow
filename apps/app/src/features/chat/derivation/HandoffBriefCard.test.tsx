@@ -80,7 +80,6 @@ function seed(status: string, extra: Record<string, unknown> = {}): Turn {
       sourceRef: "c1",
       sourceTitle: "Chapter 12 plan",
       cutoffTurnId: "cut",
-      controlMessageId: "k",
     },
     blocks:
       status === "complete"
@@ -101,11 +100,7 @@ function seed(status: string, extra: Record<string, unknown> = {}): Turn {
 }
 
 async function render(props: Partial<HandoffBriefCardProps> & { turn: Turn }) {
-  await act(async () =>
-    root.render(
-      <HandoffBriefCard latest retryPending={false} stopping={false} phase={null} {...props} />,
-    ),
-  );
+  await act(async () => root.render(<HandoffBriefCard latest stopping={false} {...props} />));
 }
 
 const button = (name: string) =>
@@ -115,9 +110,9 @@ const button = (name: string) =>
 const card = () => host.querySelector("[data-handoff-brief]");
 
 describe("HandoffBriefCard", () => {
-  it("generating: says so, links the source, and Stop targets S", async () => {
+  it("generating while S is pending: says so, links the source, and Stop targets S", async () => {
     const onStop = vi.fn();
-    await render({ turn: seed("pending"), phase: "briefing", onStop });
+    await render({ turn: seed("pending"), onStop });
     expect(card()?.getAttribute("data-handoff-brief-state")).toBe("generating");
     expect(card()?.getAttribute("aria-label")).toBe("Writing the handoff brief");
     expect(host.textContent).toContain("Handed off from");
@@ -134,6 +129,22 @@ describe("HandoffBriefCard", () => {
     expect(stop?.getAttribute("aria-disabled")).toBe("true");
     await act(async () => stop?.click());
     expect(onStop).not.toHaveBeenCalled();
+  });
+
+  it("a failed Stop says so on the card, and Stop is offered again", async () => {
+    const onStop = vi.fn();
+    await render({ turn: seed("pending"), stopFailed: true, onStop });
+    expect(host.textContent).toContain("Couldn't stop the brief. Try again.");
+    await act(async () => button("Stop the handoff brief")?.click());
+    expect(onStop).toHaveBeenCalledWith("s");
+  });
+
+  it("says a refused Retry didn't run, even once a newer brief has replaced the card", async () => {
+    await render({ turn: seed("error"), latest: false, retryRefused: true, onRetry: vi.fn() });
+    expect(host.textContent).toContain(
+      "Couldn't retry. Something else started in this chat first.",
+    );
+    expect(button("Retry the handoff brief")).toBeUndefined();
   });
 
   it("a settled brief drops the stopping words even while the Stop flag lingers", async () => {
@@ -155,16 +166,68 @@ describe("HandoffBriefCard", () => {
     expect(button("Retry the handoff brief")).toBeUndefined();
   });
 
-  it("failed: the seed's writer copy and Retry, which queues a new brief", async () => {
+  it("failed: the seed's writer copy and Retry, which retries from this seed", async () => {
     const onRetry = vi.fn();
-    await render({
-      turn: seed("error", { error: "This handoff brief couldn't be generated. Try again." }),
-      onRetry,
-    });
+    const failed = seed("error", { error: "This handoff brief couldn't be generated. Try again." });
+    await render({ turn: failed, onRetry });
     expect(card()?.getAttribute("aria-label")).toBe("Handoff brief unavailable");
     expect(host.textContent).toContain("This handoff brief couldn't be generated. Try again.");
     await act(async () => button("Retry the handoff brief")?.click());
-    expect(onRetry).toHaveBeenCalledOnce();
+    expect(onRetry).toHaveBeenCalledWith(failed);
+  });
+
+  it("interrupted: a crash cut the brief off; it says so and offers Retry", async () => {
+    await render({
+      turn: seed("error", {
+        error: "This handoff brief couldn't be generated. Try again.",
+        metadata: {
+          kind: "derivation_seed",
+          derivation: "handoff",
+          sourceThreadId: "source",
+          sourceTitle: "Chapter 12 plan",
+          reason: "interrupted",
+          phase: "recovery",
+        },
+      }),
+      onRetry: vi.fn(),
+    });
+    expect(card()?.getAttribute("aria-label")).toBe("Handoff brief interrupted");
+    expect(button("Retry the handoff brief")).toBeDefined();
+  });
+
+  it("Retry waits while the chat is busy, and works once it is free", async () => {
+    const onRetry = vi.fn();
+    const failed = seed("error", { error: "This handoff brief couldn't be generated. Try again." });
+    await render({ turn: failed, destinationBusy: true, onRetry });
+    const retry = button("Retry the handoff brief");
+    // aria-disabled, not disabled: keyboard focus can still land on it after Stop.
+    expect(retry?.getAttribute("aria-disabled")).toBe("true");
+    expect(retry?.hasAttribute("disabled")).toBe(false);
+    expect(host.textContent).toContain("You can retry when this chat is free.");
+    const waitNote = document.getElementById(retry?.getAttribute("aria-describedby") ?? "");
+    expect(waitNote?.textContent).toBe("You can retry when this chat is free.");
+    await act(async () => retry?.click());
+    expect(onRetry).not.toHaveBeenCalled();
+
+    await render({ turn: failed, destinationBusy: false, onRetry });
+    expect(button("Retry the handoff brief")?.hasAttribute("aria-disabled")).toBe(false);
+    expect(host.textContent).not.toContain("You can retry when this chat is free.");
+    await act(async () => button("Retry the handoff brief")?.click());
+    expect(onRetry).toHaveBeenCalledWith(failed);
+  });
+
+  it("after Stop, focus lands on Retry even while it waits, so its wait note is read", async () => {
+    await render({ turn: seed("pending"), onStop: vi.fn(), onRetry: vi.fn() });
+    button("Stop the handoff brief")?.focus();
+    await render({
+      turn: seed("cancelled"),
+      destinationBusy: true,
+      onStop: vi.fn(),
+      onRetry: vi.fn(),
+    });
+    const retry = button("Retry the handoff brief");
+    expect(retry?.getAttribute("aria-disabled")).toBe("true");
+    expect(document.activeElement).toBe(retry);
   });
 
   it("stopped: says the chat continues without a brief, and offers Retry", async () => {
@@ -191,10 +254,8 @@ describe("HandoffBriefCard", () => {
     expect(host.textContent).not.toContain("This chat continues without a brief.");
   });
 
-  it("hides Retry on an older seed, while a Retry is queued, and in a read-only view", async () => {
+  it("hides Retry on an older seed (a Retry's new card replaced it) and in a read-only view", async () => {
     await render({ turn: seed("error"), latest: false, onRetry: vi.fn() });
-    expect(button("Retry the handoff brief")).toBeUndefined();
-    await render({ turn: seed("error"), retryPending: true, onRetry: vi.fn() });
     expect(button("Retry the handoff brief")).toBeUndefined();
     await render({ turn: seed("error") });
     expect(button("Retry the handoff brief")).toBeUndefined();

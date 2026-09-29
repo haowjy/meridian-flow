@@ -3,11 +3,10 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
 import type { Notice } from "../../notices/index.js";
 import type { WorkContextNotices } from "../../projects/index.js";
-import type { HandoffControlQueue } from "../../threads/index.js";
 import type { CompactionDecision } from "./compaction/decision.js";
-import type { ControlMessage } from "./control-barrier.js";
 import type { FinalizedExecution, TerminalCause } from "./execution-finalizer.js";
 import type { drainInbox, InboxDrain } from "./inbox-context.js";
+import type { InboxWorkSelection } from "./next-inbox-work.js";
 import type { InboxMessage, InboxReader, Lease, MessageDraft } from "./ports.js";
 
 export type DeliveryTransaction = {
@@ -16,20 +15,17 @@ export type DeliveryTransaction = {
   materializePrefix(): Promise<void>;
 };
 export type DeliveryProducer = Pick<RuntimeDelivery, "enqueue" | "withThreadLock">;
-export type ThreadControls = Pick<
-  RuntimeDelivery,
-  "enqueueControl" | "withdrawControl" | "cancelPendingSeed"
->;
+export type ThreadControls = Pick<RuntimeDelivery, "enqueueControl" | "withdrawControl">;
 export type DeliveryBoundary<TCurrent = undefined> = Pick<
   Parameters<typeof drainInbox>[0],
   "knownTurnIds" | "expectedLeafTurnId" | "prepareAdoptedTurn"
 > & {
   lease: Lease;
   currentTurn: Turn;
+  /** Use this client-minted id for the next assistant after a start-time compaction. */
+  preferredSuccessorTurnId?: TurnId;
   signal?: AbortSignal;
   continueTask?: boolean;
-  deferControl?: boolean;
-  satisfyPendingCompact?: boolean;
   admit?: (turn: Turn) => Promise<void>;
   /** Prepare the current placeholder before late arrivals; retried with the same selection. */
   prepareCurrent?: () => Promise<TCurrent>;
@@ -38,47 +34,36 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
     | { kind: "assistant" }
     | {
         kind: "placeholder";
-        complete: (
-          prepared: TCurrent | undefined,
-          failure: unknown | undefined,
-          selection: DeliverySelection,
-        ) => Promise<Turn>;
+        complete: (prepared: TCurrent | undefined, failure: unknown | undefined) => Promise<Turn>;
       };
   /** Prepare image decisions/breaks before the next assistant turn is reserved. */
   prepareNextContext: (
     drain: InboxDrain,
     current: TCurrent | undefined,
-    selection: DeliverySelection,
+    selection: DeliveryBoundarySelection,
   ) => Promise<{
     events: OrchestratorEvent[];
-    undos?: import("./compaction-undo.js").PreparedUndo[];
-    adoptedIds?: string[];
     turns: Turn[];
     blocks: Block[];
     requiresSplit: boolean;
     compaction?: CompactionDecision;
     context?: import("./turn-context-assembly.js").AssembledNextTurnContext;
+    successorFailure?: unknown;
   }>;
 };
-export type DeliverySelection = {
+export type DeliverySelectionFields = {
   batch: InboxMessage[];
   continueTask?: boolean;
-  controls?: ControlMessage[];
-  failedUndoIds?: ReadonlySet<string>;
-  followingBatches?: {
-    afterControlId: string;
-    ackIds: string[];
-    batch: InboxMessage[];
-    workContext?: import("./work-context.js").RenderedWorkContext;
-  }[];
-  control: ControlMessage | null;
-  satisfiesControlId?: string;
-  headControl: ControlMessage | null;
   outstanding: InboxMessage[];
   workContext?: import("./work-context.js").RenderedWorkContext;
   notices: Notice[];
   activeLeafTurnId: TurnId | null;
 };
+export type DeliverySelection = DeliverySelectionFields & {
+  next: InboxWorkSelection;
+  failedControlIds?: ReadonlySet<string>;
+};
+export type DeliveryBoundarySelection = DeliverySelectionFields;
 export type AdoptedBatch<TCurrent = undefined> = {
   drain: InboxDrain;
   next: Turn;
@@ -92,9 +77,9 @@ export type AdoptedBatch<TCurrent = undefined> = {
 };
 export interface RuntimeDelivery
   extends WorkContextNotices,
-    HandoffControlQueue,
     Pick<InboxReader, "selectPending" | "readPendingProjection" | "pendingMessageThreads"> {
-  cancelPendingSeed(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
+  /** Give pending commands the same run-first priority as Stop on a live run. */
+  prioritizePendingControls(threadId: ThreadId): Promise<void>;
   enqueueControl(input: {
     threadId: ThreadId;
     actorId: string;
@@ -112,6 +97,8 @@ export interface RuntimeDelivery
   refreshPending(threadId: ThreadId): Promise<void>;
   /** Settle any previous primary assistant before a new run selects context. */
   repairOrphanedTurns(lease: Lease): Promise<void>;
+  /** Retire only the adopted inbox receipt owned by a crash-finalized reply. */
+  retireOrphanedReply(threadId: ThreadId, turnId: TurnId): Promise<void>;
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   /** Parent-first business transaction; the producer does not reacquire the lock. */
   withThreadLock<T>(
@@ -127,14 +114,16 @@ export interface RuntimeDelivery
       terminal?: boolean;
       completedControlIds?: string[];
       turnId: TurnId;
-      turnKind: "assistant" | "compaction" | "handoff_brief";
+      turnKind: "assistant" | "compaction";
       messageIds: readonly string[];
       /** Preparation failures still adopt messages and reserve a failed assistant turn. */
       preparationFailure?: unknown;
       /** Turn-start writes run under the lock, after external context is prepared. */
       persist?: () => Promise<void>;
     } | null>,
-    options?: { signal?: AbortSignal },
+    options?: {
+      signal?: AbortSignal;
+    },
   ): Promise<T>;
   ackWithResponse<T>(lease: Lease, ids: string[], persist: () => Promise<T>): Promise<T>;
   splitAndContinue<TCurrent = undefined>(

@@ -218,6 +218,7 @@ export const threadInboxMessages = pgTable(
     idempotencyKey: text("idempotency_key").notNull(),
     enqueuedAt: timestamp("enqueued_at", { withTimezone: true }).notNull().defaultNow(),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    runsFirst: boolean("runs_first").notNull().default(false),
   },
   (table) => [
     unique("thread_inbox_messages_idem_unique").on(table.threadId, table.idempotencyKey),
@@ -234,7 +235,7 @@ export const threadInboxMessages = pgTable(
     ),
     check(
       "thread_inbox_messages_body_valid",
-      sql`(CASE WHEN ${table.intent} = 'control' THEN ${table.body}->>'kind' IN ('compact','compaction_undo','handoff_brief') ELSE ${table.body}->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE`,
+      sql`(CASE WHEN ${table.intent} = 'control' THEN ${table.body}->>'kind' IN ('compact','compaction_undo') ELSE ${table.body}->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE`,
     ),
   ],
 );
@@ -268,7 +269,7 @@ export const threadRunLeases = pgTable(
   (table) => [
     check(
       "thread_run_leases_phase_valid",
-      sql`${table.phase} IN ('generating','waiting','compacting','briefing')`,
+      sql`${table.phase} IN ('generating','waiting','compacting')`,
     ),
     index("thread_run_leases_expiry").on(table.expiresAt),
   ],

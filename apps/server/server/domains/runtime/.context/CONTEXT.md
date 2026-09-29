@@ -7,13 +7,15 @@ and emits `OrchestratorEvent`s that the threads domain fans out to clients.
 
 ```mermaid
 flowchart LR
-  Inbox["Inbox (messages, notices, controls)"] --> Delivery["Delivery"]
+  Inbox["Inbox (messages, notices, compaction controls)"] --> Delivery["Delivery"]
   Delivery --> RunLoop["Run loop"]
   RunLoop --> Assembly["Request assembly"]
   Assembly --> Gateway["Gateway"]
   RunLoop --> Tools["Tools and spawn"]
-  Delivery --> Compaction["Compaction, undo, brief"]
-  Compaction --> Summarizer["Summarizer"]
+  Delivery --> Compaction["Compaction and undo"]
+  Handoff["Handoff seed"] --> HandoffService["Independent handoff service"]
+  HandoffService --> Summarizer["Summarizer"]
+  Compaction --> Summarizer
 ```
 
 ## Where each concept lives
@@ -28,11 +30,11 @@ flowchart LR
 | [history-tools.md](history-tools.md) | `thread_ls`, `thread_history`, `thread_report`, lineage scope, `spawn.from`, and bake-gated history guidance. |
 | [document-text.md](document-text.md) | Document revision evidence and how compaction and `thread_history` replace stale document copies. |
 | [compaction.md](compaction.md) | The compaction protocol: transitions, decisions and refusals, the one projection authority, trigger and estimate, failure, cancellation, overflow, images. |
-| [controls.md](controls.md) | Queued writer controls and the barrier: position at execution, wakes, withdrawal, absorption. |
+| [controls.md](controls.md) | Queued writer controls, run-start queue order, Stop priority, withdrawal, and one-command-per-run consumption. |
 | [undo.md](undo.md) | Undoing a compaction and the Undo availability advisory. |
-| [handoff.md](handoff.md) | The row-owned handoff seed and its brief. |
-| [summarizer.md](summarizer.md) | The shared summarizer port (owner and source), warm and cold paths, and paid-row settlement. |
-| [recovery.md](recovery.md) | Pending placeholders, the one orphan finalizer, and process recovery lanes. |
+| [handoff.md](handoff.md) | Handoff brief ownership of the destination run claim, Stop/Retry, and release wake. |
+| [summarizer.md](summarizer.md) | The shared summarizer port (owner and source), branch/rolling paths, and paid-row settlement. |
+| [recovery.md](recovery.md) | Run-owned placeholder repair and independent process recovery lanes. |
 | [gateway context](../gateway/.context/CONTEXT.md) | The provider-neutral gateway: routing, retry, deadlines, usage, instrumentation, registry, cache descriptors. |
 
 Deferred work: [TODO](TODO) and [FUTURE](FUTURE).

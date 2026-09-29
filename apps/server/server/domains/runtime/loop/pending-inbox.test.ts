@@ -24,6 +24,7 @@ function inboxMessage(overrides: Partial<InboxMessage> & { id: string }): InboxM
     enqueuedAt: "2026-01-01T00:00:00.000Z",
     deliveredAt: null,
     ...overrides,
+    runsFirst: overrides.runsFirst ?? false,
   };
 }
 
@@ -51,24 +52,16 @@ function _recordingWriter(): { writer: EventJournalWriter; appended: Orchestrato
 }
 
 describe("projectPendingInbox", () => {
-  it("projects undo and handoff controls together", () => {
+  it("projects an undo control", () => {
     const undo = {
       kind: "compaction_undo" as const,
       compactionTurnId: "00000000-0000-4000-8000-000000000001",
     };
-    const brief = {
-      kind: "handoff_brief" as const,
-      seedTurnId: "00000000-0000-4000-8000-000000000002",
-    };
     const pending = projectPendingInbox([
       inboxMessage({ id: "undo", seq: 1, intent: "control", body: undo }),
-      inboxMessage({ id: "brief", seq: 2, intent: "control", body: brief }),
     ]);
-    expect(pending.items.map((item) => item.control)).toEqual([undo, brief]);
-    expect(pending.items.map((item) => item.summary)).toEqual([
-      "Undo compaction",
-      "Write handoff brief",
-    ]);
+    expect(pending.items.map((item) => item.control)).toEqual([undo]);
+    expect(pending.items.map((item) => item.summary)).toEqual(["Undo compaction"]);
   });
 
   it("maps the durable row, keeps seq order, and summarizes each body kind", () => {

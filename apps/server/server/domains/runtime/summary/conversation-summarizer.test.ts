@@ -42,7 +42,9 @@ function reply(text = "Kept facts", changes: Partial<GenerateResult> = {}): Gene
 }
 function projection(texts: string[]) {
   return {
-    turns: texts.map((_, i) => ({ id: `t${i}`, role: "user", position: i }) as Turn),
+    turns: texts.map(
+      (_, i) => ({ id: `t${i}`, role: "user", origin: "writer", position: i }) as Turn,
+    ),
     blocks: texts.map(
       (text, i) =>
         ({ turnId: `t${i}`, blockType: "text", sequence: 0, textContent: text }) as Block,
@@ -176,6 +178,13 @@ describe("conversation summarizer", () => {
       { type: "text", text: expect.stringContaining('user: "Task"') },
     ]);
     expect(JSON.stringify(sent.messages.at(-1))).toContain("Do not restate");
+    expect(sent.messages.at(-1)?.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringMatching(/^<system_update>\n[\s\S]*\n<\/system_update>$/),
+    });
+    expect(JSON.stringify(sent.messages.at(-1))).not.toContain(
+      "immediately before this system update",
+    );
 
     expect(sent).toMatchSnapshot("warm compaction request bytes");
     expect(JSON.stringify({ ...sent, maxTokens: 500, messages: sent.messages.slice(0, -1) })).toBe(
@@ -187,7 +196,7 @@ describe("conversation summarizer", () => {
     ]);
     expect(result).toMatchObject({
       kind: "complete",
-      summarizer: { path: "warm", segments: 1 },
+      summarizer: { path: "branch", segments: 1 },
       modelResponses: [
         {
           predictedCacheState: "warm",
@@ -200,10 +209,10 @@ describe("conversation summarizer", () => {
   });
 
   it.each([
-    "overflow",
-    "timeout",
-    "empty",
-  ])("falls back once after warm %s and keeps both rows", async (failure) => {
+    ["overflow", "request_too_large"],
+    ["timeout", "provider_error"],
+    ["empty", "empty_text"],
+  ] as const)("fails a warm %s branch once and keeps its paid row", async (failure, reason) => {
     const rig = setup({
       warm: true,
       async *events(_request, call) {
@@ -224,13 +233,13 @@ describe("conversation summarizer", () => {
       },
     });
     const outcome = await rig.service.summarize(rig.input);
-    expect(outcome).toMatchObject({ kind: "complete", summarizer: { path: "cold", segments: 1 } });
-    expect(outcome.modelResponses).toHaveLength(2);
-    expect(outcome.modelResponses[1]).toMatchObject({
-      predictedCacheState: "cold",
-      predictedCacheReason: "summary_transcript",
+    expect(outcome).toMatchObject({
+      kind: "failed",
+      rejectionReason: reason,
+      summarizer: { path: "branch", segments: 1 },
     });
-    expect(rig.requests).toHaveLength(2);
+    expect(outcome.modelResponses).toHaveLength(1);
+    expect(rig.requests).toHaveLength(1);
   });
 
   it("compacts a Sonnet 4.6 assistant turn with four 100 KB document results on a 128k summarizer", async () => {
@@ -372,8 +381,8 @@ describe("conversation summarizer", () => {
     expect(sent.messages).toHaveLength(1);
     const prompt = JSON.stringify(sent.messages);
     for (const phrase of [
-      "system instruction",
-      "not a new request from the writer",
+      "<system_update>",
+      "</system_update>",
       "edits already made",
       "edits still pending",
       "cultivation realms",
@@ -383,7 +392,7 @@ describe("conversation summarizer", () => {
       expect(prompt).toContain(phrase);
   });
 
-  it("does not retry the cold fallback if both calls fail", async () => {
+  it("fails once when a warm branch throws", async () => {
     const rig = setup({
       warm: true,
       async *events() {
@@ -393,8 +402,8 @@ describe("conversation summarizer", () => {
     });
     const outcome = await rig.service.summarize(rig.input);
     expect(outcome.kind).toBe("failed");
-    expect(outcome.modelResponses).toHaveLength(2);
-    expect(rig.requests).toHaveLength(2);
+    expect(outcome.modelResponses).toHaveLength(1);
+    expect(rig.requests).toHaveLength(1);
   });
 
   it("does not take the cold fallback after Stop during the warm call", async () => {
@@ -413,7 +422,7 @@ describe("conversation summarizer", () => {
     expect(rig.requests).toHaveLength(1);
   });
 
-  it("discards warm tool use and falls back to cold exactly once", async () => {
+  it("fails on warm tool use without making a rolling call", async () => {
     const rig = setup({
       warm: true,
       async *events(_request, call) {
@@ -430,13 +439,12 @@ describe("conversation summarizer", () => {
     });
     const outcome = await rig.service.summarize(rig.input);
     expect(outcome).toMatchObject({
-      kind: "complete",
-      model: cheapModel.id,
-      summarizer: { path: "cold", segments: 1 },
+      kind: "failed",
+      rejectionReason: "tool_use",
+      summarizer: { path: "branch", segments: 1 },
     });
-    expect(outcome.modelResponses).toHaveLength(2);
-    expect(rig.requests.map((r) => r.model)).toEqual([threadModel.id, cheapModel.id]);
-    expect(rig.requests[1].tools).toBeUndefined();
+    expect(outcome.modelResponses).toHaveLength(1);
+    expect(rig.requests.map((r) => r.model)).toEqual([threadModel.id]);
   });
 
   it("segments only at turns and carries the running summary into each bounded request", async () => {
@@ -455,7 +463,7 @@ describe("conversation summarizer", () => {
     expect(outcome).toMatchObject({
       kind: "complete",
       text: "Summary 3",
-      summarizer: { path: "cold", segments: 3 },
+      summarizer: { path: "rolling", segments: 3 },
     });
     expect(outcome.modelResponses).toHaveLength(3);
     rig.requests.forEach((request, index) => {
@@ -488,15 +496,15 @@ describe("conversation summarizer", () => {
   it("falls back to the thread model when the configured provider is disabled, including idle callers", async () => {
     const rig = setup({ models: [threadModel] });
     rig.input.requestInHand = null;
-    rig.input.instruction = "handoff_brief";
+    rig.input.instruction = "handoff";
     expect((await rig.service.summarize(rig.input)).kind).toBe("complete");
     expect(rig.requests[0].model).toBe(threadModel.id);
     expect(JSON.stringify(rig.requests[0])).toContain("handoff brief");
   });
 
-  it("forces cold despite warm state and renders images as URI and prior summaries as context", async () => {
+  it("uses rolling when the request is known too large and renders images as URI", async () => {
     const rig = setup({ warm: true });
-    rig.input.forceCold = true;
+    rig.input.knownTooLarge = true;
     rig.input.projection = projection([
       "Conversation summary. Earlier turns were compacted. Established story facts.",
     ]);
@@ -557,28 +565,40 @@ describe("conversation summarizer", () => {
     });
   });
 
-  it("cancellation returns every attempted row including a discarded warm reply", async () => {
-    const controller = new AbortController();
+  it("returns a too-large rejection from the provider event", async () => {
     const rig = setup({
       warm: true,
-      async *events(_request, call) {
-        if (call === 1)
-          yield {
-            type: "end",
-            result: reply("", { toolCalls: [{ id: "x", name: "read", arguments: {} }] }),
-          };
-        else {
-          yield { type: "usage", usage: { inputTokens: 42, outputTokens: 3 } };
-          controller.abort();
-          throw new DOMException("Aborted", "AbortError");
-        }
+      async *events() {
+        yield {
+          type: "error",
+          code: "context_overflow",
+          message: "Too many tokens",
+          retryable: false,
+        };
       },
     });
-    rig.input.signal = controller.signal;
-    const result = await rig.service.summarize(rig.input);
-    expect(result.kind).toBe("cancelled");
-    expect(result.modelResponses).toHaveLength(2);
-    expect(result.modelResponses[1]).toMatchObject({ inputTokens: 42, outputTokens: 3 });
+    expect(await rig.service.summarize(rig.input)).toMatchObject({
+      kind: "failed",
+      rejectionReason: "request_too_large",
+      modelResponses: [{ finishReason: "error" }],
+    });
+    expect(rig.requests).toHaveLength(1);
+  });
+
+  it("maps a thrown gateway context overflow to too large", async () => {
+    const rig = setup({
+      warm: true,
+      async *events() {
+        yield { type: "start", model: threadModel.id, provider: threadModel.provider };
+        throw Object.assign(new Error("Too many tokens"), { code: "context_overflow" });
+      },
+    });
+    expect(await rig.service.summarize(rig.input)).toMatchObject({
+      kind: "failed",
+      rejectionReason: "request_too_large",
+      modelResponses: [{ finishReason: "error" }],
+    });
+    expect(rig.requests).toHaveLength(1);
   });
 });
 
@@ -597,13 +617,15 @@ it.each([
   expect(JSON.stringify(sent.messages)).toContain("manuscript://chapter-12.md");
   expect(JSON.stringify(sent.messages)).not.toContain("thread_history");
   expect(JSON.stringify(rig.input.requestInHand)).toBe(before);
-  if (warm) expect(sent.messages.slice(0, -1)).toEqual(rig.input.requestInHand!.messages);
+  if (warm) expect(sent.messages.slice(0, -1)).toEqual(rig.input.requestInHand?.messages);
 });
 
 it("C7b warm brief preserves the source request and tools, correlating rows to the owner", async () => {
   const rig = setup({ warm: true });
+  const requestInHand = rig.input.requestInHand;
+  if (!requestInHand) throw new Error("Expected a source request");
   const sourceRequest = {
-    ...rig.input.requestInHand!,
+    ...requestInHand,
     tools: [
       {
         type: "function" as const,
@@ -617,7 +639,7 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
     ...rig.input,
     owner: { threadId: "destination", turnId: "seed" },
     source: { threadId: "thread", throughTurnId: "cutoff" },
-    instruction: "handoff_brief",
+    instruction: "handoff",
     incomingAgentName: "Editor",
     requestInHand: sourceRequest,
   });
@@ -626,6 +648,15 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
   expect(request.tools).toEqual(sourceRequest.tools);
   expect(request.messages).toHaveLength(sourceRequest.messages.length + 1);
   expect(JSON.stringify(request.messages.at(-1))).toContain("Editor");
+  expect(JSON.stringify(request.messages.at(-1))).toContain(
+    "The writer message immediately before this system update is unanswered and is the open request to report; do not answer it.",
+  );
+  expect(JSON.stringify(request.messages.at(-1))).toContain("<system_update>\\n");
+  expect(JSON.stringify(request.messages.at(-1))).toContain("\\n</system_update>");
+  expect(request.messages.slice(0, -1)).toEqual(sourceRequest.messages);
+  expect(JSON.stringify(request.messages.slice(0, -1))).toBe(
+    JSON.stringify(sourceRequest.messages),
+  );
   expect(JSON.stringify(request.messages.at(-1))).not.toContain("thread_history");
   expect(request.correlation).toEqual({ threadId: "destination", turnId: "seed" });
   expect(outcome.modelResponses[0].turnId).toBe("seed");
@@ -634,11 +665,76 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
   );
 });
 
+it("keeps the existing conditional open-request guidance for an assistant-row handoff cutoff", async () => {
+  const rig = setup({ warm: true });
+  rig.input.instruction = "handoff";
+  rig.input.projection.turns[0].role = "assistant";
+  const requestInHand = rig.input.requestInHand;
+  if (!requestInHand) throw new Error("Expected a source request");
+  requestInHand.messages.push({ role: "assistant", content: [{ type: "text", text: "Answer" }] });
+
+  await rig.service.summarize(rig.input);
+
+  const appended = rig.requests[0].messages.at(-1);
+  const text = appended?.content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("\n");
+  expect(text).toContain(
+    "If the conversation ends with a writer message you have not answered, report it as the open request; do not answer it.",
+  );
+  expect(text).not.toContain("immediately before this system update");
+  expect(rig.requests[0].messages.slice(0, -1)).toEqual(requestInHand.messages);
+});
+
+it("does not call a system-origin user row the writer's open request", async () => {
+  const rig = setup({ warm: true });
+  rig.input.instruction = "handoff";
+  rig.input.projection.turns[0].origin = "system";
+
+  await rig.service.summarize(rig.input);
+
+  const text = JSON.stringify(rig.requests[0].messages.at(-1));
+  expect(text).toContain(
+    "If the conversation ends with a writer message you have not answered, report it as the open request; do not answer it.",
+  );
+  expect(text).not.toContain("immediately before this system update");
+});
+
+it("uses rolling at a cold cutoff", async () => {
+  const rig = setup({ warm: false });
+  const tools = [
+    {
+      type: "function" as const,
+      name: "read",
+      description: "Read a source document",
+      inputSchema: { type: "object", properties: { uri: { type: "string" } } },
+    },
+  ];
+  const requestInHand = rig.input.requestInHand;
+  if (!requestInHand) throw new Error("Expected a source request");
+  const sourceRequest = {
+    ...requestInHand,
+    tools,
+    reasoning: { effort: "high" as const },
+  };
+  const outcome = await rig.service.summarize({
+    ...rig.input,
+    instruction: "handoff",
+    requestInHand: sourceRequest,
+  });
+
+  expect(outcome).toMatchObject({ kind: "complete", summarizer: { path: "rolling" } });
+  expect(rig.requests.length).toBeGreaterThan(0);
+  expect(rig.requests[0].model).toBe(cheapModel.id);
+  expect(rig.prefixCacheStateFor).toHaveBeenCalled();
+});
+
 it("C7b a cold transcript needs no source model when the cheap model is enabled", async () => {
   const rig = setup({ models: [cheapModel] });
   const outcome = await rig.service.summarize({
     ...rig.input,
-    instruction: "handoff_brief",
+    instruction: "handoff",
     incomingAgentName: "Editor",
     requestInHand: null,
   });

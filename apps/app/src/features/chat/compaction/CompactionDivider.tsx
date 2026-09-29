@@ -3,12 +3,14 @@
  *
  * One quiet rule across the transcript, with the state in words at its start
  * and its controls right after the words (bare transcript rows never
- * right-align controls). The summary sits behind a disclosure; Undo, a queued
- * undo with Withdraw, and a pending compaction's Stop live on the same line.
- * A refused undo and a manual compaction's failure speak on the divider they
- * belong to. An autocompaction's failure stays quiet (R3): the failed reply
- * under the writer's newest message already says so. State changes are spoken
- * by the global polite announcer, never a live region on the row.
+ * right-align controls). The summary sits behind a disclosure; Undo and a
+ * running compaction's Stop live on the same line. A queued undo waits at the
+ * transcript tail like any queued command, and the divider stops offering
+ * Undo meanwhile. A refused undo and a manual compaction's failure speak on
+ * the divider they belong to; a `/compact` that found nothing new to compact
+ * reads calmly. An autocompaction's failure stays quiet (R3): the failed
+ * reply under the writer's newest message already says so. State changes are
+ * spoken by the global polite announcer, never a live region on the row.
  */
 import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
@@ -21,23 +23,19 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { type CompactionUndoMarkers, type DividerView, dividerView } from "./compaction-model";
-import { controlStatusCopy } from "./control-copy";
-import type { QueuedControl } from "./thread-controls";
 import { useFocusWithinRow } from "./useFocusWithinRow";
 
 export type CompactionDividerProps = {
   turn: Turn;
   undo: CompactionUndoMarkers;
   undoAvailability: CompactionUndoAvailability;
-  /** A queued (or just settled) undo control that targets this divider. */
-  queuedUndo: QueuedControl | null;
+  /** An undo of this divider waits at the transcript tail. */
+  undoQueued: boolean;
   /** The thread's live lease phase, when it is awake. */
   phase: ThreadPhase | null;
   stopping: boolean;
   onStop?: (turnId: string) => void;
   onUndo?: (compactionTurnId: string) => void;
-  onWithdraw?: (control: QueuedControl) => void;
-  onRetry?: (controlId: string) => void;
 };
 
 /**
@@ -75,6 +73,8 @@ function stateLabel(view: DividerView, phase: ThreadPhase | null, stopping: bool
         ? { full: t`Conversation compacted`, short: t`Compacted` }
         : { full: t`Conversation compacted automatically`, short: t`Compacted` };
     case "failed":
+      if (view.nothingToCompact)
+        return { full: t`There is nothing to compact yet`, short: t`Nothing to compact` };
       return view.trigger === "manual"
         ? same(t`Couldn't compact`)
         : { full: t`Conversation not compacted`, short: t`Not compacted` };
@@ -89,19 +89,17 @@ export function CompactionDivider({
   turn,
   undo,
   undoAvailability,
-  queuedUndo,
+  undoQueued,
   phase,
   stopping,
   onStop,
   onUndo,
-  onWithdraw,
-  onRetry,
 }: CompactionDividerProps) {
   const view = dividerView({
     turn,
     markers: undo,
     undoAvailability,
-    queuedUndo,
+    undoQueued,
     failureCopyFor: compactionFailureCopy,
   });
   const [open, setOpen] = useState(false);
@@ -121,20 +119,6 @@ export function CompactionDivider({
     });
   // A refused undo loses nothing: it reads like a historical error, not an alarm.
   if (view.refusalCopy) notes.push({ key: "refusal", text: view.refusalCopy, tone: "muted" });
-  if (view.undoNote === "withdrawn")
-    notes.push({
-      key: "withdrawn",
-      text: controlStatusCopy("compaction_undo", "withdrawn"),
-      tone: "muted",
-    });
-  if (view.undo?.kind === "queued" && view.undo.control.status === "failed")
-    notes.push({
-      key: "undo-failed",
-      text: controlStatusCopy("compaction_undo", "failed"),
-      tone: "error",
-    });
-  if (view.undo?.kind === "queued" && view.undo.control.status === "withdraw_failed")
-    notes.push({ key: "withdraw-failed", text: t`Couldn't withdraw the undo.`, tone: "error" });
 
   return (
     <section
@@ -155,7 +139,9 @@ export function CompactionDivider({
           <span
             className={cn(
               "min-w-0 truncate text-caption font-medium",
-              view.state === "failed" && !loud ? "text-ink-subtle" : "text-ink-muted",
+              view.state === "failed" && !loud && !view.nothingToCompact
+                ? "text-ink-subtle"
+                : "text-ink-muted",
             )}
           >
             <span className="hidden @lg/divider:inline">{label.full}</span>
@@ -197,7 +183,7 @@ export function CompactionDivider({
           </Button>
         ) : null}
 
-        {view.undo?.kind === "offer" && onUndo ? (
+        {view.offerUndo && onUndo ? (
           <Button
             type="button"
             variant="quiet"
@@ -207,14 +193,6 @@ export function CompactionDivider({
           >
             <Trans>Undo</Trans>
           </Button>
-        ) : null}
-
-        {view.undo?.kind === "queued" ? (
-          <QueuedUndoControls
-            control={view.undo.control}
-            onWithdraw={onWithdraw}
-            onRetry={onRetry}
-          />
         ) : null}
 
         <span aria-hidden className="h-px min-w-3 flex-1 bg-border" />
@@ -248,52 +226,6 @@ export function CompactionDivider({
         </div>
       ) : null}
     </section>
-  );
-}
-
-function QueuedUndoControls({
-  control,
-  onWithdraw,
-  onRetry,
-}: {
-  control: QueuedControl;
-  onWithdraw?: (control: QueuedControl) => void;
-  onRetry?: (controlId: string) => void;
-}) {
-  if (control.status === "failed") {
-    return onRetry ? (
-      <Button
-        type="button"
-        variant="quiet"
-        size="meta"
-        aria-label={t`Retry undo`}
-        onClick={() => onRetry(control.id)}
-      >
-        <Trans>Retry</Trans>
-      </Button>
-    ) : null;
-  }
-  const withdrawing = control.status === "withdrawing";
-  return (
-    <>
-      <span className="shrink-0 whitespace-nowrap text-meta text-muted-foreground">
-        {controlStatusCopy("compaction_undo", withdrawing ? "withdrawing" : "queued")}
-      </span>
-      {onWithdraw ? (
-        <Button
-          type="button"
-          variant="quiet"
-          size="meta"
-          aria-disabled={withdrawing || undefined}
-          aria-label={t`Withdraw undo`}
-          onClick={() => {
-            if (!withdrawing) onWithdraw(control);
-          }}
-        >
-          <Trans>Withdraw</Trans>
-        </Button>
-      ) : null}
-    </>
   );
 }
 

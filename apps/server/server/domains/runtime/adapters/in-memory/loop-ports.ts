@@ -16,7 +16,9 @@ import {
 import type { ThreadLock } from "../../loop/thread-lock.js";
 import { createDeliveryAdapter, type DeliveryStore } from "../runtime-delivery.js";
 
-export function createInMemoryInbox(): DeliveryStore {
+export function createInMemoryInbox(): DeliveryStore & {
+  prioritizePendingControls(threadId: ThreadId): Promise<void>;
+} {
   const messages: InboxMessage[] = [];
   let nextSeq = 0;
   return {
@@ -54,6 +56,7 @@ export function createInMemoryInbox(): DeliveryStore {
         seq: nextSeq,
         enqueuedAt: new Date().toISOString(),
         deliveredAt: null,
+        runsFirst: false,
       };
       messages.push(message);
       return message;
@@ -85,6 +88,17 @@ export function createInMemoryInbox(): DeliveryStore {
         ) {
           message.deliveredAt = deliveredAt;
         }
+      }
+    },
+
+    async prioritizePendingControls(threadId) {
+      for (const message of messages) {
+        if (
+          message.threadId === threadId &&
+          message.intent === "control" &&
+          message.deliveredAt === null
+        )
+          message.runsFirst = true;
       }
     },
 
@@ -125,6 +139,8 @@ export interface InMemoryRunClaimOptions {
   leaseTtlMs?: number;
   /** Injected clock (ms since epoch) so expiry is deterministic in tests. */
   now?: () => number;
+  /** Mirrors Stop's atomic inbox priority update for the in-memory adapter. */
+  prioritizePendingControls?: (threadId: ThreadId) => Promise<void>;
 }
 
 export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): RunClaim &
@@ -143,18 +159,35 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
     return lease;
   };
 
+  async function hold(threadId: ThreadId) {
+    if (shortClaims.has(threadId) || leases.has(threadId)) return null;
+    shortClaims.add(threadId);
+    let held = true;
+    return {
+      async release() {
+        if (!held) return;
+        held = false;
+        shortClaims.delete(threadId);
+      },
+      onLost() {
+        return () => undefined;
+      },
+    };
+  }
+
   return {
     readDeliveryRun(threadId) {
       const row = liveLease(threadId);
       return row ? { turnId: row.turnId, messageIds: [...row.messageIds] } : null;
     },
+    hold,
     async withExclusiveThread(threadId, operation) {
-      if (shortClaims.has(threadId) || leases.has(threadId)) return null;
-      shortClaims.add(threadId);
+      const claim = await hold(threadId);
+      if (!claim) return null;
       try {
         return await operation();
       } finally {
-        shortClaims.delete(threadId);
+        await claim.release();
       }
     },
     async startExecution(threadId, runId) {
@@ -227,14 +260,28 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
       row.messageIds = [];
       return true;
     },
+    async clearOrphanedReceipt(threadId, turnId, expectedIds) {
+      const row = leases.get(threadId);
+      if (
+        !row ||
+        row.turnId !== turnId ||
+        row.messageIds.length !== expectedIds.length ||
+        row.messageIds.some((id, i) => id !== expectedIds[i])
+      )
+        return false;
+      row.turnId = null;
+      row.boundTurnIds.clear();
+      row.messageIds = [];
+      return true;
+    },
     async cancelThreadReceipt(threadId, turnId) {
       const row = leases.get(threadId);
       if (!row || row.turnId !== turnId) return false;
       row.cancelRequested = true;
       return true;
     },
-    async lockThreadReceipt(threadId, liveOnly) {
-      const row = liveOnly ? liveLease(threadId) : leases.get(threadId);
+    async lockThreadReceipt(threadId) {
+      const row = leases.get(threadId);
       return row ? { ids: [...row.messageIds], turnId: row.turnId } : null;
     },
     async lockReceipt(lease) {
@@ -271,6 +318,7 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
     async cancelExecution(threadId, turnId) {
       const row = liveLease(threadId);
       if (!row?.boundTurnIds.has(turnId)) return false;
+      await options.prioritizePendingControls?.(threadId);
       row.cancelRequested = true;
       return true;
     },

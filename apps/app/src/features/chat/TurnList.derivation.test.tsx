@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** TurnList for forks and handoffs: inherited rows read-only and marked, the brief card wired. */
+/** TurnList for forks and handoffs: inherited rows read-only and marked, brief and reply Retry wired. */
 import type { ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -76,9 +76,11 @@ import type { Turn } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { ThreadControls } from "./compaction/useThreadControls";
-import { optimisticHandoffSeed } from "./derivation/handoff-seed";
+import { isOptimisticSeed, optimisticHandoffSeed } from "./derivation/handoff-seed";
 import type { InheritedView } from "./derivation/inherited-view";
-import { TurnList } from "./TurnList";
+import type { HandoffBrief } from "./derivation/useHandoffBrief";
+import { TurnList, type TurnListProps } from "./TurnList";
+import type { ReplyRetry } from "./useReplyRetry";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 const previousActEnvironment = actGlobal.IS_REACT_ACT_ENVIRONMENT;
@@ -107,7 +109,7 @@ afterEach(async () => {
 
 const turn = (id: string, role: string, extra: Record<string, unknown> = {}) =>
   ({ id, role, status: "complete", blocks: [], ...extra }) as unknown as Turn;
-const seedTurn = (id: string, status: string, controlMessageId: string) =>
+const seedTurn = (id: string, status: string) =>
   turn(id, "system", {
     status,
     metadata: {
@@ -116,9 +118,31 @@ const seedTurn = (id: string, status: string, controlMessageId: string) =>
       sourceThreadId: "source",
       sourceRef: "c1",
       cutoffTurnId: "cut",
-      controlMessageId,
     },
   });
+
+function handoffBrief(overrides: Partial<HandoffBrief> = {}): HandoffBrief {
+  return {
+    localSeeds: [],
+    canStop: (seed) => !isOptimisticSeed(seed),
+    retryRefused: new Set(),
+    retry: vi.fn(),
+    stop: vi.fn(),
+    stopping: new Set(),
+    stopFailed: new Set(),
+    ...overrides,
+  };
+}
+
+function replyRetry(overrides: Partial<ReplyRetry> = {}): ReplyRetry {
+  return {
+    standIns: [],
+    requestOf: () => null,
+    refused: new Set(),
+    retry: vi.fn(),
+    ...overrides,
+  };
+}
 
 function controls(overrides: Partial<ThreadControls> = {}): ThreadControls {
   return {
@@ -137,6 +161,10 @@ async function render(props: {
   inherited?: InheritedView | null;
   onRetryInherited?: (() => void) | null;
   controls?: ThreadControls;
+  brief?: HandoffBrief;
+  replyRetry?: ReplyRetry;
+  failedSendRetry?: TurnListProps["failedSendRetry"];
+  busy?: boolean;
 }) {
   await act(async () =>
     root.render(
@@ -242,13 +270,11 @@ describe("TurnList inherited rows", () => {
     const divider = seen.dividers.get("c");
     expect(divider).toMatchObject({
       undoAvailability: null,
-      queuedUndo: null,
+      undoQueued: false,
       phase: null,
       stopping: false,
       onStop: undefined,
       onUndo: undefined,
-      onWithdraw: undefined,
-      onRetry: undefined,
     });
   });
 
@@ -264,50 +290,56 @@ describe("TurnList inherited rows", () => {
 });
 
 describe("TurnList brief card", () => {
-  it("wires Stop to S and Retry to a new handoff_brief control", async () => {
+  it("wires Stop and Retry to the seed itself, not to a queued command", async () => {
+    const brief = handoffBrief();
     const wired = controls();
-    await render({ turns: [seedTurn("s", "pending", "k")], controls: wired });
-    const brief = seen.briefs.get("s") as {
-      onStop: (id: string) => void;
-      latest: boolean;
-    };
-    expect(brief.latest).toBe(true);
-    brief.onStop("s");
-    expect(wired.stop).toHaveBeenCalledWith("s", "brief");
+    await render({ turns: [seedTurn("s", "pending")], controls: wired, brief });
+    const card = seen.briefs.get("s") as { onStop: (id: string) => void; latest: boolean };
+    expect(card.latest).toBe(true);
+    card.onStop("s");
+    expect(brief.stop).toHaveBeenCalledWith("s");
+    expect(wired.stop).not.toHaveBeenCalled();
 
-    await render({ turns: [seedTurn("s", "error", "k")], controls: wired });
-    (seen.briefs.get("s") as { onRetry: () => void }).onRetry();
-    expect(wired.enqueue).toHaveBeenCalledWith({ kind: "handoff_brief" });
+    const failed = seedTurn("s", "error");
+    await render({ turns: [failed], controls: wired, brief });
+    (seen.briefs.get("s") as { onRetry: (turn: Turn) => void }).onRetry(failed);
+    expect(brief.retry).toHaveBeenCalledWith(failed);
+    expect(wired.enqueue).not.toHaveBeenCalled();
   });
 
-  it("never lists the seed's own brief control at the tail: the card stops it", async () => {
-    const pendingBrief = {
-      id: "k",
-      control: { kind: "handoff_brief" as const, seedTurnId: "s" },
-      status: "queued" as const,
-    };
+  it("passes Stopping and a failed Stop to the card that owns them", async () => {
     await render({
-      turns: [seedTurn("s", "pending", "k")],
-      controls: controls({ queued: [pendingBrief] }),
+      turns: [seedTurn("s", "pending")],
+      brief: handoffBrief({ stopping: new Set(["s"]), stopFailed: new Set(["s"]) }),
     });
-    expect(host.querySelector("[data-queued]")).toBeNull();
+    expect(seen.briefs.get("s")).toMatchObject({ stopping: true, stopFailed: true });
   });
 
-  it("lists a queued Retry at the tail, withdrawable, and hides the card's Retry meanwhile", async () => {
-    const retry = {
-      id: "k2",
-      control: { kind: "handoff_brief" as const },
-      status: "queued" as const,
-    };
+  it("puts a refused Retry on the card the writer pressed", async () => {
     await render({
-      turns: [seedTurn("s", "error", "k")],
-      controls: controls({ queued: [retry] }),
+      turns: [seedTurn("s", "error")],
+      brief: handoffBrief({ retryRefused: new Set(["s"]) }),
     });
-    expect(seen.queued).toEqual([retry]);
-    expect(seen.briefs.get("s")?.retryPending).toBe(true);
+    expect(seen.briefs.get("s")).toMatchObject({ retryRefused: true });
   });
 
-  it("shows one brief when the inbox beats the snapshot: the optimistic seed owns the brief request", async () => {
+  it("tells the card when the chat is busy, so Retry waits for the reply", async () => {
+    await render({ turns: [seedTurn("s", "error")], brief: handoffBrief(), busy: true });
+    expect(seen.briefs.get("s")?.destinationBusy).toBe(true);
+    await render({ turns: [seedTurn("s", "error")], brief: handoffBrief(), busy: false });
+    expect(seen.briefs.get("s")?.destinationBusy).toBe(false);
+  });
+
+  it("a Retry's new card is the latest: the old one loses Retry", async () => {
+    await render({
+      turns: [seedTurn("s", "error"), seedTurn("s2", "pending")],
+      brief: handoffBrief(),
+    });
+    expect(seen.briefs.get("s")?.latest).toBe(false);
+    expect(seen.briefs.get("s2")?.latest).toBe(true);
+  });
+
+  it("gives a seed the server does not have yet nothing to stop", async () => {
     const optimistic = optimisticHandoffSeed({
       threadId: "fork",
       sourceThreadId: "source",
@@ -315,25 +347,140 @@ describe("TurnList brief card", () => {
       cutoffTurnId: "cut",
       createdAt: "2026-01-01T00:00:00Z",
     });
-    const initialBrief = {
-      id: "k",
-      control: { kind: "handoff_brief" as const },
-      status: "queued" as const,
-    };
-    await render({ turns: [optimistic], controls: controls({ queued: [initialBrief] }) });
-    expect(host.querySelector("[data-queued]")).toBeNull();
-    expect(seen.briefs.get(optimistic.id)?.retryPending).toBe(false);
+    await render({ turns: [optimistic], brief: handoffBrief() });
+    expect(seen.briefs.get(optimistic.id)?.onStop).toBeUndefined();
   });
 
-  it("gives the optimistic seed nothing to stop or retry", async () => {
-    const optimistic = optimisticHandoffSeed({
-      threadId: "fork",
-      sourceThreadId: "source",
-      sourceTitle: "Chapter 12 plan",
-      cutoffTurnId: "cut",
-      createdAt: "2026-01-01T00:00:00Z",
+  it("an inherited brief is read-only", async () => {
+    await render({
+      turns: [],
+      inherited: {
+        transcript: {
+          turns: [seedTurn("s", "error")],
+          ownerByTurnId: new Map([["s", "source"]]),
+        },
+        owners: new Map(),
+      },
+      brief: handoffBrief(),
     });
-    await render({ turns: [optimistic], controls: controls() });
-    expect(seen.briefs.get(optimistic.id)).toMatchObject({ onStop: undefined, onRetry: undefined });
+    expect(seen.briefs.get("s")).toMatchObject({ onStop: undefined, onRetry: undefined });
+  });
+});
+
+describe("TurnList failed reply Retry", () => {
+  type Offer = { onRetry?: () => void; waiting: boolean; refused: boolean; requestLost: boolean };
+  const offer = (id: string) => seen.assistants.get(id)?.replyRetry as Offer | undefined;
+  const failedReply = (id: string) => turn(id, "assistant", { status: "error" });
+
+  it("offers Retry only on the latest failed reply, and presses it with that reply", async () => {
+    const retry = replyRetry();
+    const latest = failedReply("a2");
+    await render({
+      turns: [turn("u1", "user"), failedReply("a1"), turn("u2", "user"), latest],
+      replyRetry: retry,
+    });
+    // The older failure is history: its row keeps the sentence, with nothing to press.
+    expect(offer("a1")).toMatchObject({ onRetry: undefined });
+    offer("a2")?.onRetry?.();
+    expect(retry.retry).toHaveBeenCalledWith(latest);
+  });
+
+  it("makes Retry wait while the chat is busy", async () => {
+    const turns = [turn("u1", "user"), failedReply("a1")];
+    await render({ turns, replyRetry: replyRetry(), busy: true });
+    expect(offer("a1")?.waiting).toBe(true);
+    await render({ turns, replyRetry: replyRetry(), busy: false });
+    expect(offer("a1")?.waiting).toBe(false);
+  });
+
+  it("puts a refused Retry on the failed reply the writer pressed", async () => {
+    await render({
+      turns: [turn("u1", "user"), failedReply("a1")],
+      replyRetry: replyRetry({ refused: new Set(["a1"]) }),
+    });
+    expect(offer("a1")?.refused).toBe(true);
+  });
+
+  it("renders the new reply below the failed one, which becomes history", async () => {
+    const standIn = turn("r", "assistant", { status: "pending", prevTurnId: "a1" });
+    await render({
+      turns: [turn("u1", "user"), failedReply("a1"), standIn],
+      replyRetry: replyRetry({ requestOf: (id) => (id === "r" ? "sending" : null) }),
+    });
+    const order = [...host.querySelectorAll("[data-assistant]")].map((node) =>
+      node.getAttribute("data-assistant"),
+    );
+    expect(order).toEqual(["a1", "r"]);
+    expect(seen.assistants.get("a1")?.endsTranscript).toBe(false);
+    expect(offer("a1")?.onRetry).toBeUndefined();
+    expect(seen.assistants.get("r")).toMatchObject({ standIn: true, endsTranscript: true });
+  });
+
+  it("marks a lost Retry's reply so its own Retry re-sends it", async () => {
+    const lost = failedReply("r");
+    const retry = replyRetry({ requestOf: (id) => (id === "r" ? "failed" : null) });
+    await render({ turns: [turn("u1", "user"), failedReply("a1"), lost], replyRetry: retry });
+    expect(offer("r")?.requestLost).toBe(true);
+    offer("r")?.onRetry?.();
+    expect(retry.retry).toHaveBeenCalledWith(lost);
+  });
+
+  it("leaves a failed first send to its own Retry, and an inherited failure read-only", async () => {
+    await render({
+      turns: [turn("u1", "user"), failedReply("a1")],
+      replyRetry: replyRetry(),
+      failedSendRetry: { turnId: "a1", retry: () => undefined },
+    });
+    expect(offer("a1")).toBeUndefined();
+
+    const failedInherited: InheritedView = {
+      ...inherited,
+      transcript: {
+        turns: [turn("u1", "user"), failedReply("a2")],
+        ownerByTurnId: new Map([
+          ["u1", "source"],
+          ["a2", "source"],
+        ]),
+      },
+    };
+    await render({ turns: [], inherited: failedInherited, replyRetry: replyRetry() });
+    expect(offer("a2")).toBeUndefined();
+  });
+});
+
+describe("TurnList queued commands", () => {
+  it("lists a queued Undo at the tail, and its divider stops offering Undo", async () => {
+    const undo = {
+      id: "u",
+      control: { kind: "compaction_undo" as const, compactionTurnId: "c" },
+      status: "queued" as const,
+    };
+    await render({
+      turns: [turn("c", "compaction", { metadata: { trigger: "manual" } }), turn("u1", "user")],
+      controls: controls({ queued: [undo] }),
+    });
+    expect(seen.queued).toEqual([undo]);
+    expect(seen.dividers.get("c")?.undoQueued).toBe(true);
+  });
+
+  it("keeps the queued row last, below messages sent after it", async () => {
+    const compact = { id: "k", control: { kind: "compact" as const }, status: "queued" as const };
+    await render({
+      turns: [turn("a", "assistant", { status: "streaming" }), turn("u2", "user")],
+      controls: controls({ queued: [compact] }),
+    });
+    const rows = [...host.querySelectorAll("[data-chat-turn-kind]")].map((row) =>
+      row.getAttribute("data-chat-turn-kind"),
+    );
+    expect(rows.at(-1)).toBe("queued-controls");
+  });
+
+  it("drops a command its divider already names", async () => {
+    const compact = { id: "k", control: { kind: "compact" as const }, status: "queued" as const };
+    await render({
+      turns: [turn("c", "compaction", { metadata: { trigger: "manual", controlMessageId: "k" } })],
+      controls: controls({ queued: [compact] }),
+    });
+    expect(host.querySelector("[data-queued]")).toBeNull();
   });
 });

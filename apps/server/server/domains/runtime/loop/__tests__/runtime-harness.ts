@@ -30,6 +30,7 @@ import {
   createInMemoryThreadLock,
 } from "../../adapters/in-memory/loop-ports.js";
 import { createWriterTurnProducer } from "../../admission/writer-turn-producer.js";
+import { createDetachedWorkTracker, type DetachedWorkTracker } from "../../detached-work.js";
 import type { Gateway, StreamEvent } from "../../gateway/index.js";
 import { createInMemoryModelRequestDebugStore } from "../../model-request-debug/index.js";
 import type { ChildRunCoordinator } from "../../spawn/child-run-coordinator.js";
@@ -53,7 +54,8 @@ function noopChildRunCoordinator(): ChildRunCoordinator {
 }
 
 export function createRuntimeHarness(
-  overrides: Partial<OrchestratorDeps> & {
+  overrides: Omit<Partial<OrchestratorDeps>, "backgroundTasks"> & {
+    backgroundTasks?: DetachedWorkTracker;
     repos?: ThreadRepositories;
     inbox?: import("../../adapters/runtime-delivery.js").DeliveryStore;
     threadLock?: import("../thread-lock.js").ThreadLock;
@@ -71,10 +73,12 @@ export function createRuntimeHarness(
     threadLock: suppliedLock,
     runStarter,
     schedulePostCommit,
+    backgroundTasks: suppliedBackgroundTasks,
     creditLedger: suppliedLedger,
     notices: suppliedNotices,
     ...dependencies
   } = overrides;
+  const backgroundTasks = suppliedBackgroundTasks ?? createDetachedWorkTracker();
   const projects = createInMemoryProjectRepository();
   const repos = overrides.repos ?? createInMemoryRepositories({ projects });
   const activeDocuments = createActiveDocumentResolver(repos);
@@ -92,9 +96,15 @@ export function createRuntimeHarness(
   const eventWriter = overrides.eventWriter ?? journal;
   const toolRegistry = overrides.toolRegistry ?? createToolRegistry();
   const notices = suppliedNotices ?? createTestNoticePort();
-  const runClaim = overrides.runClaim ?? createInMemoryRunClaim();
   const inbox = suppliedInbox ?? createInMemoryInbox();
+  const runClaim =
+    overrides.runClaim ??
+    createInMemoryRunClaim({
+      prioritizePendingControls: (inbox as Partial<ReturnType<typeof createInMemoryInbox>>)
+        .prioritizePendingControls,
+    });
   const threadLock = suppliedLock ?? createInMemoryThreadLock();
+  const shutdown = overrides.shutdown ?? { started: false };
   const workContext = overrides.workContext ?? {
     async renderForThread() {
       return {
@@ -159,9 +169,15 @@ export function createRuntimeHarness(
     eventSink: createInMemoryEventSink(),
     modelRequestDebug: createInMemoryModelRequestDebugStore(),
     runClaim,
+    handoffBriefs: {
+      async stop() {
+        return false;
+      },
+    },
     delivery:
       overrides.delivery ??
       createInMemoryRuntimeDelivery({
+        backgroundTasks,
         toolRegistry,
         workContext,
         repos,
@@ -191,6 +207,8 @@ export function createRuntimeHarness(
       async rollbackResponse() {},
     },
     ...dependencies,
+    backgroundTasks,
+    shutdown,
     workContext,
   };
   let runtime: ReturnType<typeof createOrchestrator>;
@@ -227,6 +245,7 @@ export function createRuntimeHarness(
   });
   return {
     deps,
+    backgroundTasks,
     flushWakes,
     repos,
     creditLedger,

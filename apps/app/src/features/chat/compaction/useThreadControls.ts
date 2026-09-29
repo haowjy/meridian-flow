@@ -1,26 +1,29 @@
 /**
  * useThreadControls — the imperative shell around `thread-controls.ts`.
  *
- * Mints control ids, shows the queued item before the network answers,
- * enqueues and withdraws through the threads API, stops a pending divider
- * or a generating handoff brief through the existing cancel route, and asks
- * the snapshot to revalidate so the new state reaches the transcript. Announces each state change the
- * writer caused.
+ * Mints command ids, shows the queued row before the network answers,
+ * enqueues and withdraws through the threads API, and asks the snapshot to
+ * revalidate so the new state reaches the transcript. Withdraw removes the row
+ * at once; a command the server never took (its enqueue failed) is withdrawn
+ * locally, with no request. Also stops a running compaction divider through the turn cancel
+ * route. Announces each state change the writer caused.
  */
 import { t } from "@lingui/core/macro";
 import type { ControlBody, ThreadPendingInbox } from "@meridian/contracts/threads";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { httpErrorStatus } from "@/client/api/http-client";
 import { enqueueThreadControl, withdrawThreadControl } from "@/client/api/threads-api";
-import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announce, announceError } from "@/client/stores";
-import { controlStatusCopy } from "./control-copy";
+import { useTurnStop } from "../useTurnStop";
+import { controlStatusCopy, controlWithdrawnCopy } from "./control-copy";
 import {
   controlsReducer,
   type LocalControl,
   mergeQueuedControls,
   type QueuedControl,
+  type WithdrawOutcome,
 } from "./thread-controls";
 
 const NO_LOCAL: readonly LocalControl[] = [];
@@ -31,17 +34,9 @@ export type ThreadControls = {
   enqueue: (control: ControlBody) => string;
   retry: (controlId: string) => void;
   withdraw: (control: QueuedControl) => void;
-  /** Stop a run-owned placeholder: a pending divider, or a generating handoff brief. */
-  stop: (turnId: string, target?: StopTarget) => void;
+  /** Stop a running compaction divider. */
+  stop: (turnId: string) => void;
 };
-
-export type StopTarget = "compaction" | "brief";
-
-function stopCopy(target: StopTarget) {
-  return target === "compaction"
-    ? { stopping: t`Stopping compaction`, failed: t`Couldn't stop the compaction. Try again.` }
-    : { stopping: t`Stopping the handoff brief`, failed: t`Couldn't stop the brief. Try again.` };
-}
 
 export function useThreadControls(input: {
   threadId: string;
@@ -51,14 +46,14 @@ export function useThreadControls(input: {
 }): ThreadControls {
   const { threadId, pending, answeredControlIds, leafTurnId } = input;
   const [local, dispatch] = useReducer(controlsReducer, NO_LOCAL);
-  const [stoppingTurnIds, setStoppingTurnIds] = useState<ReadonlySet<string>>(() => new Set());
   const localRef = useRef(local);
   localRef.current = local;
   const leafRef = useRef(leafTurnId);
   leafRef.current = leafTurnId;
-  const inflight = useRef(new Map<string, Promise<unknown>>());
+  /** In-flight enqueues, resolving to whether the server took the command. */
+  const inflight = useRef(new Map<string, Promise<boolean>>());
   const queryClient = useQueryClient();
-  const transport = useThreadTransport();
+  const turnStop = useTurnStop(threadId);
 
   const revalidate = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
@@ -79,10 +74,15 @@ export function useThreadControls(input: {
             turnId: response.turnId,
           });
           revalidate();
+          return true;
         },
         () => {
           dispatch({ type: "enqueue_failed", id });
-          announceError(controlStatusCopy(control.kind, "failed"));
+          // A command the writer already withdrew has no failure to show.
+          const entry = localRef.current.find((candidate) => candidate.id === id);
+          if (entry?.withdrawal !== "withdrawing")
+            announceError(controlStatusCopy(control.kind, "failed"));
+          return false;
         },
       );
       inflight.current.set(id, request);
@@ -119,40 +119,40 @@ export function useThreadControls(input: {
   const withdraw = useCallback(
     (queued: QueuedControl) => {
       dispatch({ type: "withdraw", id: queued.id, control: queued.control });
-      announce(controlStatusCopy(queued.control.kind, "withdrawing"));
-      const enqueueing = inflight.current.get(queued.id) ?? Promise.resolve();
-      void enqueueing
-        .then(() => withdrawThreadControl(threadId, queued.id))
-        .then(
-          ({ outcome }) => {
-            dispatch({ type: "withdrawn", id: queued.id, outcome, leafTurnId: leafRef.current });
-            announce(controlStatusCopy(queued.control.kind, outcome));
-            revalidate();
-          },
-          () => {
-            dispatch({ type: "withdraw_failed", id: queued.id });
-            announceError(t`Couldn't withdraw. Try again.`);
-          },
-        );
+      announce(controlWithdrawnCopy(queued.control.kind));
+      const settle = (outcome: WithdrawOutcome) =>
+        dispatch({ type: "withdrawn", id: queued.id, outcome, leafTurnId: leafRef.current });
+      const enqueueing =
+        inflight.current.get(queued.id) ?? Promise.resolve(queued.status !== "failed");
+      void enqueueing.then(async (accepted) => {
+        // The server never took it: there is nothing there to withdraw.
+        if (!accepted) return settle("withdrawn");
+        try {
+          const { outcome } = await withdrawThreadControl(threadId, queued.id);
+          settle(outcome);
+          if (outcome === "already_started")
+            announce(controlStatusCopy(queued.control.kind, "already_started"));
+          revalidate();
+        } catch (error) {
+          // A 404 on an id the inbox never listed: its enqueue never landed.
+          const seen = localRef.current.find((entry) => entry.id === queued.id)?.seen ?? true;
+          if (httpErrorStatus(error) === 404 && !seen) return settle("withdrawn");
+          dispatch({ type: "withdraw_failed", id: queued.id });
+          announceError(t`Couldn't withdraw. Try again.`);
+        }
+      });
     },
     [revalidate, threadId],
   );
 
+  const { stop: stopTurn } = turnStop;
   const stop = useCallback(
-    (turnId: string, target: StopTarget = "compaction") => {
-      const copy = stopCopy(target);
-      setStoppingTurnIds((current) => new Set(current).add(turnId));
-      announce(copy.stopping);
-      transport.cancel(threadId, turnId).then(revalidate, () => {
-        setStoppingTurnIds((current) => {
-          const next = new Set(current);
-          next.delete(turnId);
-          return next;
-        });
-        announceError(copy.failed);
-      });
-    },
-    [revalidate, threadId, transport],
+    (turnId: string) =>
+      stopTurn(turnId, {
+        stopping: t`Stopping compaction`,
+        failed: t`Couldn't stop the compaction. Try again.`,
+      }),
+    [stopTurn],
   );
 
   const queued = useMemo(
@@ -166,5 +166,5 @@ export function useThreadControls(input: {
     [answeredControlIds, leafTurnId, local, pending],
   );
 
-  return { queued, stoppingTurnIds, enqueue, retry, withdraw, stop };
+  return { queued, stoppingTurnIds: turnStop.stopping, enqueue, retry, withdraw, stop };
 }

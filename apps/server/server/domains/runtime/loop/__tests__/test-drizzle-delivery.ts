@@ -4,12 +4,14 @@ import { createDrizzleRepositoriesForTest } from "../../../threads/adapters/driz
 import { createDrizzleEventJournalWriter } from "../../../threads/index.js";
 import { createDrizzleRuntimeDelivery } from "../../adapters/drizzle/runtime-delivery.js";
 import { createDrizzleRunClaim } from "../../adapters/drizzle-run-claim.js";
+import { processDetachedWork } from "../../detached-work.js";
 import { createTestNoticePort } from "./runtime-fixtures.js";
 export function createTestDrizzleDelivery(
   db: Database,
   overrides: Partial<Parameters<typeof createDrizzleRuntimeDelivery>[1]> = {},
 ) {
   return createDrizzleRuntimeDelivery(db, {
+    backgroundTasks: processDetachedWork,
     workContext: {
       async renderForThread() {
         throw new Error("No Work context configured");

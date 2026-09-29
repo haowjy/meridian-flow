@@ -3,7 +3,7 @@
 import { Hocuspocus } from "@hocuspocus/server";
 import { splitHashline } from "@meridian/agent-edit";
 import { and, eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -39,6 +39,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
     });
     let db = database.current;
+    const composedApps: Array<{ shutdown(): Promise<void> }> = [];
+    afterEach(async () => {
+      await Promise.all(composedApps.splice(0).map((app) => app.shutdown()));
+    });
     beforeEach(async () => {
       db = database.current;
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "runtime-settlement"));
@@ -409,7 +413,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ports.documentSync.storeHocuspocusDocument(documentName, document),
       });
       ports.documentSync.bindHocuspocus(server);
-      return { ports, hocuspocus: server, app: composeAppServices(ports) };
+      const app = composeAppServices(ports);
+      composedApps.push(app);
+      return { ports, hocuspocus: server, app };
     }
 
     async function unloadRuntime(server: Hocuspocus): Promise<void> {

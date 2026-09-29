@@ -238,7 +238,7 @@ export function createDrizzleTurnRepository(
         .where(
           and(
             eq(schema.turns.threadId, threadId),
-            sql`(${schema.turns.metadata}->>'controlMessageId' = ${controlId} OR ${schema.turns.metadata}->>'satisfiesControlId' = ${controlId})`,
+            sql`${schema.turns.metadata}->>'controlMessageId' = ${controlId}`,
           ),
         )
         .orderBy(desc(schema.turns.position))

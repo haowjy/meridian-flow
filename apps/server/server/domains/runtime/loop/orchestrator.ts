@@ -85,16 +85,17 @@ import type {
 } from "../../threads/index.js";
 import {
   agentRequestMetadata,
-  bakeAt,
   loadThreadConversationContext,
   readThreadActivity,
   ThreadConversationContextError,
   writerSendMetadata,
 } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
+import type { DetachedWorkTracker } from "../detached-work.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
+import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
 import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
@@ -112,6 +113,7 @@ import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import {
   type CompactionDecision,
+  CompactionFailureError,
   CompactionPreparationError,
   type ForcedCompactionDecision,
 } from "./compaction/decision.js";
@@ -119,18 +121,7 @@ import { FLOW_ABSOLUTE_CEILING } from "./compaction/index.js";
 import { executeCompaction, recordCompactionSummary } from "./compaction-phase.js";
 import { failCompactionSuccessor } from "./compaction-successor.js";
 import { persistPreparedControlEvents } from "./compaction-undo.js";
-import { absorbPendingCompact } from "./control-barrier.js";
 import type { TerminalCause } from "./execution-finalizer.js";
-import { generateHandoffBrief } from "./handoff-brief.js";
-import {
-  completeHandoffSeed,
-  HandoffSeedSettledError,
-  handoffBriefFailedCopy,
-  handoffSeedBlock,
-  recordHandoffSeedOutcome,
-  reserveHandoffSeed,
-} from "./handoff-seed.js";
-import { historyReadableAt } from "./history-tool-availability.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
@@ -157,7 +148,6 @@ import { writerFacingPreparationError } from "./preparation-failure.js";
 import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
 import {
   type PreparedControlHistory,
-  prepareControlHistory,
   prepareFailedUndoHistory,
   prepareRequestContext,
   UndoRequestPreparationError,
@@ -217,6 +207,10 @@ export interface OrchestratorRepositories {
 }
 
 export interface OrchestratorDeps {
+  /** One app-owned lifecycle tracker shared by every detached runtime caller. */
+  backgroundTasks: DetachedWorkTracker;
+  /** Shared app shutdown state read by run starts, wakes and handoff briefs. */
+  shutdown: { started: boolean };
   summarizer: ConversationSummarizer;
   gateway: LlmGateway;
   toolExecutor: ToolExecutor;
@@ -249,6 +243,7 @@ export interface OrchestratorDeps {
   modelRequestDebug: ModelRequestDebugStore;
   /** Durable per-thread message queue drained into each model request. */
   delivery: RuntimeDelivery;
+  handoffBriefs: HandoffBriefStopper;
   /** Session claim and observable lease lifetime. */
   runClaim: RunClaim;
   activeDocuments: ActiveDocumentResolver;
@@ -304,11 +299,18 @@ export function createOrchestrator(deps: OrchestratorDeps) {
         imageResolutionError ??
         (error instanceof CompactionPreparationError ? error : null);
       const requestPreparationFailed = input.error instanceof RequestPreparationError;
+      const shutdownAbort = input.signal?.reason === "shutdown";
       const outcome = await deps.delivery.close({
         lease: input.lease,
         turnId: input.turnId,
         cause: input.signal?.aborted
-          ? { kind: "cancelled", reason: "cancelled" }
+          ? shutdownAbort
+            ? {
+                kind: "failed",
+                reason: "shutdown",
+                error: "This reply was interrupted.",
+              }
+            : { kind: "cancelled", reason: "cancelled" }
           : {
               kind: "failed",
               reason:
@@ -318,7 +320,6 @@ export function createOrchestrator(deps: OrchestratorDeps) {
                   : requestPreparationFailed
                     ? "request_preparation_failed"
                     : "execution_error"),
-              ...(preparationFailure || requestPreparationFailed ? { acknowledgeInbox: true } : {}),
               error: preparationFailure
                 ? writerFacingPreparationError(preparationFailure)
                 : requestPreparationFailed
@@ -518,18 +519,13 @@ async function runDrainTurn(
     async (selection) => {
       const setupThread = await deps.repos.threads.findById(input.threadId);
       if (!setupThread) throw new Error(`Thread not found: ${input.threadId}`);
-      const briefControl = selection.controls?.find(
-        (control) => control.body.kind === "handoff_brief",
-      );
-      const existingSeed =
-        briefControl?.body.kind === "handoff_brief" && briefControl.body.seedTurnId
-          ? await deps.repos.turns.findById(briefControl.body.seedTurnId)
-          : null;
       const batch = selection.batch;
-      if (!selection.control && !batch.some((message) => message.intent === "message")) return null;
+      const control = selection.next.kind === "control" ? selection.next.control : null;
+      if (selection.next.kind === "none" && !input.replyTurnId) return null;
       const ctx = await loadRunStartContext(deps, setupThread);
       preparationError = ctx.contextError;
       const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;
+      const requestPriorTurns = priorTurns;
       const existingTurns = [...inheritedTurns, ...priorTurns];
       const previousTurn = prevTurnId
         ? (existingTurns.find((turn) => turn.id === prevTurnId) ?? null)
@@ -570,7 +566,6 @@ async function runDrainTurn(
             threadId: input.threadId,
             invokingTurnId: prevTurnId,
             invokingTurnPosition: previousTurn?.position ?? null,
-            briefPending: !!briefControl,
           });
         } catch (error) {
           if (input.signal?.aborted) throw error;
@@ -580,16 +575,18 @@ async function runDrainTurn(
       let plan = makePlan(preparationError ? [] : selection.notices);
       const referenceUserTurnId =
         [...plan.turns].reverse().find((turn) => turn.role === "user")?.id ??
-        [...priorTurns, ...inheritedTurns].reverse().find((turn) => turn.role === "user")?.id ??
+        [...requestPriorTurns, ...inheritedTurns].reverse().find((turn) => turn.role === "user")
+          ?.id ??
         prevTurnId ??
         reservedTurnId;
       let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
       let controlHistory: PreparedControlHistory | null = null;
-      // An expanded undo prefix can precede Retry; only that prefix needs preparation.
-      if (
-        !preparationError &&
-        (!briefControl || selection.controls?.some((c) => c.body.kind === "compaction_undo"))
-      ) {
+      if (control?.body.kind === "compact" && selection.failedControlIds?.has(control.id))
+        preparationError = new CompactionFailureError({
+          reason: "compaction_failed",
+          phase: "delivery",
+        });
+      if (!preparationError) {
         try {
           const previousBlocks = await deps.repos.blocks.listByThread(input.threadId);
           const prepareInput = {
@@ -597,16 +594,13 @@ async function runDrainTurn(
             thread: setupThread,
             threadId: input.threadId,
             referenceTurnId: referenceUserTurnId,
-            currentTurnId: reservedTurnId,
-            skipCompaction: selection.controls?.some((c) => c.body.kind === "handoff_brief"),
-            controls: selection.controls,
-            followingBatches: selection.followingBatches,
-            failedUndoIds: selection.failedUndoIds,
-            continueAfterControls: selection.outstanding.length > 0,
+            currentTurnId: input.replyTurnId ?? reservedTurnId,
+            control,
+            failedControlIds: selection.failedControlIds,
             pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
             turns: [
               ...inheritedTurns,
-              ...priorTurns,
+              ...requestPriorTurns,
               ...(skillBody ? [skillBody.turn] : []),
               ...plan.turns,
             ],
@@ -619,8 +613,7 @@ async function runDrainTurn(
             baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
             signal: input.signal,
           };
-          if (briefControl) controlHistory = await prepareControlHistory(prepareInput);
-          else preflight = await prepareRequestContext(prepareInput);
+          preflight = await prepareRequestContext(prepareInput);
         } catch (error) {
           if (input.signal?.aborted) throw error;
           preparationError = asError(error);
@@ -632,58 +625,51 @@ async function runDrainTurn(
         plan = makePlan([]);
         if (preparationError instanceof UndoRequestPreparationError) {
           controlHistory = preparationError.after(plan.turns.at(-1) ?? previousTurn);
-        } else if (selection.controls?.some((c) => c.body.kind === "compaction_undo")) {
+        } else if (control?.body.kind === "compaction_undo") {
           controlHistory = await prepareFailedUndoHistory({
             deps,
             thread: setupThread,
             threadId: input.threadId,
             referenceTurnId: referenceUserTurnId,
             currentTurnId: reservedTurnId,
-            turns: [...inheritedTurns, ...priorTurns, ...plan.turns],
+            turns: [...inheritedTurns, ...requestPriorTurns, ...plan.turns],
             blocks: [],
-            controls: selection.controls,
-            followingBatches: selection.followingBatches,
+            control,
+            failedControlIds: selection.failedControlIds,
             signal: input.signal,
           });
         }
       }
       const controlPreparation = preflight ?? controlHistory;
-      if (preflight)
-        preflight.compaction = absorbPendingCompact(preflight.compaction, selection.headControl);
-      const controlId =
-        briefControl?.id ??
-        (preflight?.compaction.kind === "compact"
-          ? (preflight.compaction.controlMessageId ?? preflight.compaction.satisfiesControlId)
-          : undefined);
+      const preparedUndo = controlPreparation?.undo;
       const imageUpdateTurn = controlPreparation?.turns.at(-1);
       const terminal =
-        !!controlPreparation?.undos.length &&
+        !!preparedUndo &&
         selection.outstanding.length === 0 &&
-        !briefControl &&
         preflight?.compaction.kind !== "compact";
-      let reservedTurn = terminal
-        ? controlPreparation!.undos.at(-1)!.turn
-        : reservationTurn(
-            {
-              id: reservedTurnId,
-              threadId: input.threadId,
-              prevTurnId:
-                imageUpdateTurn?.id ?? plan.leafTurnId ?? skillBody?.turn.id ?? prevTurnId,
-              position: nextTurnPosition(
-                imageUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
-              ),
-            },
-            preflight?.compaction ?? { kind: "generate" },
-          );
-      if (briefControl)
-        reservedTurn =
-          existingSeed ??
-          (await reserveHandoffSeed(deps.repos, reservedTurn, briefControl, setupThread));
-      if (preparationError && selection.control?.body.kind === "compact") {
+      const reservedTurn =
+        terminal && preparedUndo
+          ? preparedUndo.turn
+          : reservationTurn(
+              {
+                id:
+                  preflight?.compaction.kind === "compact"
+                    ? crypto.randomUUID()
+                    : (input.replyTurnId ?? reservedTurnId),
+                threadId: input.threadId,
+                prevTurnId:
+                  imageUpdateTurn?.id ?? plan.leafTurnId ?? skillBody?.turn.id ?? prevTurnId,
+                position: nextTurnPosition(
+                  imageUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
+                ),
+              },
+              preflight?.compaction ?? { kind: "generate" },
+            );
+      if (preparationError && control?.body.kind === "compact") {
         reservedTurn.role = "compaction";
         reservedTurn.origin = "system";
         reservedTurn.status = "pending";
-        reservedTurn.metadata = { trigger: "manual", controlMessageId: selection.control.id };
+        reservedTurn.metadata = { trigger: "manual", controlMessageId: control.id };
       }
       const value = {
         thread: setupThread,
@@ -695,12 +681,10 @@ async function runDrainTurn(
         referenceUserTurnId,
         preflight,
         messageTurns: plan.turns,
-        priorTurns: existingSeed
-          ? priorTurns.filter((turn) => turn.position < existingSeed.position)
-          : priorTurns,
+        priorTurns: requestPriorTurns,
         inheritedTurns,
         inheritedBlocks,
-        executionAdmitted: selection.outstanding.length > 0,
+        executionAdmitted: selection.outstanding.length > 0 || !!input.replyTurnId,
       };
       const events = [
         ...(skillBody
@@ -711,25 +695,18 @@ async function runDrainTurn(
           : []),
         ...plan.events,
         ...(controlPreparation?.events ?? []),
-        ...(!terminal && !existingSeed
-          ? [{ type: "turn.created" as const, turn: reservedTurn }]
-          : []),
+        ...(!terminal ? [{ type: "turn.created" as const, turn: reservedTurn }] : []),
       ];
       return {
         value,
         turnId: reservedTurn.id,
         terminal,
-        completedControlIds: controlPreparation?.undos.map((u) => u.controlId),
-        turnKind: terminal ? ("assistant" as const) : currentTurnKind(reservedTurn),
-        messageIds: [
-          ...batch.map(({ id }) => id),
-          ...(controlPreparation?.adoptedIds ?? []),
-          ...(controlId
-            ? [controlId]
-            : preparationError && selection.control?.body.kind === "compact"
-              ? [selection.control.id]
-              : []),
+        completedControlIds: [
+          ...(controlPreparation?.undo ? [controlPreparation.undo.controlId] : []),
+          ...(control?.body.kind === "compact" ? [control.id] : []),
         ],
+        turnKind: terminal ? ("assistant" as const) : currentTurnKind(reservedTurn),
+        messageIds: [...batch.map(({ id }) => id)],
         ...(preparationError === null ? {} : { preparationFailure: preparationError }),
         persist: async () => {
           await persistAndAppendTurnStartEvents(
@@ -752,13 +729,13 @@ async function runDrainTurn(
                   deps,
                   input.threadId,
                   events,
-                  controlPreparation?.undos ?? [],
+                  controlPreparation?.undo ?? null,
                 ),
               };
             },
             {
               afterEvents: async () => {
-                if (selection.outstanding.length > 0)
+                if (selection.outstanding.length > 0 || input.replyTurnId)
                   await admitRunExecution(deps, input, setupThread, reservedTurn.id);
               },
             },
@@ -766,7 +743,9 @@ async function runDrainTurn(
         },
       };
     },
-    { signal: input.signal },
+    {
+      signal: input.signal,
+    },
   );
 
   const {
@@ -1329,10 +1308,8 @@ function createSkillBodyPreparation(slugs: readonly string[]) {
       threadId: ThreadId;
       invokingTurnId: TurnId | null;
       invokingTurnPosition: number | null;
-      briefPending: boolean;
     }) {
-      // A brief must not resolve destination skills. Its successor stages them instead.
-      if (input.briefPending || pending.length === 0) return null;
+      if (pending.length === 0) return null;
       if (!input.invokingTurnId || input.invokingTurnPosition === null)
         throw new Error("Activated skill body has no invoking turn");
       const skills = await Promise.all(
@@ -1610,11 +1587,16 @@ async function executeLoop({
   }
 
   let currentTurn: Turn = reservedTurn;
+  const requestedReplyTurnId = "replyTurnId" in input ? input.replyTurnId : undefined;
+  let preferredSuccessorTurnId =
+    requestedReplyTurnId && reservedTurn.id !== requestedReplyTurnId
+      ? requestedReplyTurnId
+      : undefined;
   let preparedContext: AssembledNextTurnContext | undefined = initialContext;
   let pendingSummaryResponses: import("../ports/conversation-summarizer.js").SummaryResponse[] = [];
   let pendingSummary:
     | {
-        kind: "compaction" | "handoff_brief";
+        kind: "compaction";
         turnId: TurnId;
         summarizer: import("../ports/conversation-summarizer.js").SummaryOutcome["summarizer"];
       }
@@ -1624,11 +1606,7 @@ async function executeLoop({
     if (pendingSummary) {
       const turn = await repos.turns.findById(pendingSummary.turnId);
       if (!turn) throw new Error("Summary placeholder disappeared");
-      if (pendingSummary.kind === "compaction") {
-        await recordCompactionSummary(deps, turn, pendingSummary.summarizer);
-      } else {
-        await recordHandoffSeedOutcome(deps, turn, { summarizer: pendingSummary.summarizer });
-      }
+      await recordCompactionSummary(deps, turn, pendingSummary.summarizer);
     }
     await settleSummaryResponses({ deps, thread, rows, accounting: turnAccounting, treeBudget });
   }
@@ -1659,9 +1637,11 @@ async function executeLoop({
     return {
       lease: input.lease,
       currentTurn: currentTurn,
+      ...(preferredSuccessorTurnId ? { preferredSuccessorTurnId } : {}),
       current: { kind: "assistant" },
       // Turn-end controls defer to a new run; an assistant boundary here has a task to continue.
-      continueTask: continuingTask || currentTurn.role === "assistant",
+      continueTask:
+        continuingTask || currentTurn.role === "assistant" || !!preferredSuccessorTurnId,
       admit: async (turn) => {
         if (
           thread.kind === "subagent" &&
@@ -1709,15 +1689,12 @@ async function executeLoop({
         // time before that request is sent.
         if (
           !forcedDecision &&
-          !selection.control &&
           preparedContext &&
           drain.turns.length === 0 &&
           drain.blocks.length === 0
         ) {
           return { events: [], turns: [], blocks: [], requiresSplit: false };
         }
-        const briefPending =
-          selection.controls?.some((c) => c.body.kind === "handoff_brief") ?? false;
         const leaf = drain.turns.at(-1) ?? allTurns.at(-1);
         const deferredSkillBody = await skillBodies.prepare({
           deps,
@@ -1725,26 +1702,7 @@ async function executeLoop({
           threadId: thread.id,
           invokingTurnId: leaf?.id ?? null,
           invokingTurnPosition: leaf?.position ?? null,
-          briefPending,
         });
-        if (briefPending) {
-          const predecessors = selection.controls?.some((c) => c.body.kind === "compaction_undo")
-            ? await prepareControlHistory({
-                deps,
-                thread,
-                threadId: thread.id,
-                referenceTurnId: currentTurn.id,
-                currentTurnId: currentTurn.id,
-                turns: [...allTurns, ...drain.turns],
-                blocks: [...allBlocks, ...drain.blocks],
-                controls: selection.controls,
-                followingBatches: selection.followingBatches,
-                failedUndoIds: selection.failedUndoIds,
-                signal: input.signal,
-              })
-            : { events: [], turns: [], blocks: [] };
-          return { ...predecessors, requiresSplit: true };
-        }
         const latestUserTurn =
           [...drain.turns].reverse().find((turn) => turn.role === "user") ??
           [...allTurns].reverse().find((turn) => turn.role === "user");
@@ -1772,18 +1730,12 @@ async function executeLoop({
             if (responseScope)
               throw new Error("Undo revision query requires no open response scope");
           },
-          controls: selection.controls,
-          followingBatches: selection.followingBatches,
-          failedUndoIds: selection.failedUndoIds,
-          continueAfterControls: selection.outstanding.length > 0 || !!selection.continueTask,
           pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
         });
         thread = prepared.assembled.thread;
         preparedContext = prepared.assembled;
         return {
           events: [...skillEvents, ...prepared.events],
-          undos: prepared.undos,
-          adoptedIds: prepared.adoptedIds,
           turns: [...skillTurns, ...prepared.turns],
           blocks: [...skillBlocks, ...prepared.blocks],
           requiresSplit: skillEvents.length + prepared.events.length > 0,
@@ -1795,6 +1747,8 @@ async function executeLoop({
   async function acceptBoundary(
     result: AdoptedBatch<unknown>,
   ): Promise<Awaited<ReturnType<typeof drainInbox>>> {
+    if (result.split && result.next.id === preferredSuccessorTurnId)
+      preferredSuccessorTurnId = undefined;
     if (result.completed) {
       const index = allTurns.findIndex((turn) => turn.id === result.completed?.id);
       allTurns[index] = result.completed;
@@ -1836,78 +1790,12 @@ async function executeLoop({
     if (result.preparationFailure !== undefined) {
       throw new RequestPreparationError(result.preparationFailure);
     }
-    if (result.next.role === "system") return brief();
     if (result.compaction) return compact(result.compaction);
     return result.drain;
   }
 
-  async function brief() {
-    await publishPhase("briefing");
-    input.signal?.throwIfAborted();
-    const { outcome, failure } = await generateHandoffBrief(
-      deps,
-      thread,
-      currentTurn,
-      input.signal ?? new AbortController().signal,
-    );
-    pendingSummaryResponses = outcome.modelResponses;
-    pendingSummary = {
-      kind: "handoff_brief",
-      turnId: currentTurn.id,
-      summarizer: outcome.summarizer,
-    };
-    input.signal?.throwIfAborted();
-    const available = outcome.kind === "complete" ? outcome : undefined;
-    const historyReadable = await historyReadableAt(deps, currentTurn, allTurns);
-    const block = handoffSeedBlock(currentTurn, available, historyReadable);
-    const completed = {
-      ...currentTurn,
-      status: available ? ("complete" as const) : ("error" as const),
-      error: available ? null : handoffBriefFailedCopy,
-      completedAt: new Date().toISOString(),
-    };
-    const index = allTurns.findIndex((turn) => turn.id === currentTurn.id);
-    allTurns[index] = completed;
-    allBlocks.push(localBlockFromEvent(block));
-    preparedContext = undefined;
-    const boundary = boundaryInput();
-    let result: AdoptedBatch<unknown>;
-    try {
-      result = await deps.delivery.splitAndContinue({
-        ...boundary,
-        current: {
-          kind: "placeholder",
-          complete: async () => {
-            const saved = await completeHandoffSeed(deps, completed, block, {
-              summarizer: outcome.summarizer,
-              failure,
-            });
-            await settlePendingSummary();
-            return saved;
-          },
-        },
-      });
-    } catch (error) {
-      if (!(error instanceof HandoffSeedSettledError)) throw error;
-      await deps.delivery.withThreadLock(thread.id, async (producer) => {
-        const staleControls = (await deps.delivery.selectPending(thread.id)).filter(
-          (row) => row.body.kind === "handoff_brief" && row.body.seedTurnId === currentTurn.id,
-        );
-        await settlePendingSummary();
-        await producer.acknowledge(staleControls.map((row) => row.id));
-      });
-      currentTurn = error.turn;
-      terminalControl = true;
-      return { turns: [], blocks: [], events: [], ackIds: [] };
-    }
-    pendingSummaryResponses = [];
-    pendingSummary = undefined;
-    if (result.context) preparedContext = result.context;
-    return acceptBoundary(result);
-  }
-
   async function compact(decision: Extract<CompactionDecision, { kind: "compact" }>) {
-    activeCompactionRequired = decision.required;
+    activeCompactionRequired = decision.trigger === "auto";
     await publishPhase("compacting");
     const result = await executeCompaction({
       deps,
@@ -1957,6 +1845,10 @@ async function executeLoop({
     return false;
   }
   const cancelTerminal: TerminalCause = { kind: "cancelled", reason: "cancelled" };
+  const abortTerminal = (): TerminalCause =>
+    input.signal?.reason === "shutdown"
+      ? { kind: "failed", reason: "shutdown", error: "This reply was interrupted." }
+      : cancelTerminal;
   const errorTerminal = (error: MeridianError | string, reason?: string): TerminalCause => ({
     kind: "failed",
     reason: reason ?? (typeof error === "string" ? "runtime_error" : error.code),
@@ -1972,7 +1864,7 @@ async function executeLoop({
   // cannot diverge.
   async function cancelExit(): Promise<boolean> {
     await rollbackActiveResponse();
-    return exitRun(false, cancelTerminal);
+    return exitRun(false, abortTerminal());
   }
 
   // One loader for request-only skill bodies: a writer start passes its
@@ -1992,7 +1884,6 @@ async function executeLoop({
 
   for (;;) {
     try {
-      if (currentTurn.role === "system") queuedDrain = await brief();
       if (initialCompaction.kind === "compact") {
         const firstDecision = initialCompaction;
         initialCompaction = { kind: "generate" };
@@ -2042,7 +1933,7 @@ async function executeLoop({
             "abort",
             () => {
               cancelRequested = true;
-              gatewayAbort.abort();
+              gatewayAbort.abort(input.signal?.reason);
             },
             { once: true },
           );
@@ -2229,7 +2120,6 @@ async function executeLoop({
                   error: writerFacingPreparationError(
                     new CompactionPreparationError("context_window_exceeded"),
                   ),
-                  acknowledgeInbox: true,
                 });
               }
               retriedContextOverflow = true;
@@ -2240,7 +2130,7 @@ async function executeLoop({
                   boundaryInput({
                     kind: "compact",
                     trigger: "auto",
-                    path: "cold",
+                    knownTooLarge: true,
                     fitLimitTokens: Math.min(usableWindowTokens, FLOW_ABSOLUTE_CEILING),
                   }),
                 ),
@@ -2272,7 +2162,7 @@ async function executeLoop({
           });
 
           currentTurn = settled;
-          return exitRun(false, cancelTerminal);
+          return exitRun(false, abortTerminal());
         }
 
         if (!result) {
@@ -2345,7 +2235,7 @@ async function executeLoop({
               const boundary = await scope.commit();
 
               if (boundary.status === "draft_closed") {
-                return exitRun(true, cancelTerminal);
+                return exitRun(true, abortTerminal());
               }
               scope.rotate();
             }
@@ -2428,7 +2318,7 @@ async function executeLoop({
           responseScope = undefined;
 
           if (concurrentEdits.status === "draft_closed") {
-            return exitRun(true, cancelTerminal);
+            return exitRun(true, abortTerminal());
           }
 
           await scope.backfill(
@@ -2468,7 +2358,7 @@ async function executeLoop({
       }
       const state = await deps.runClaim.read(input.threadId);
       if (input.signal?.aborted || (state?.kind === "awake" && state.cancelRequested)) {
-        await exitRun(false, cancelTerminal);
+        await exitRun(false, abortTerminal());
       } else if (currentTurnKind(currentTurn) === "compaction") {
         emitEvent(eventSink, {
           level: "error",
@@ -2493,7 +2383,7 @@ async function executeLoop({
           // A failed status read must not replace the terminal-commit marker.
           const latest = await deps.runClaim.read(input.threadId).catch(() => null);
           if (input.signal?.aborted || (latest?.kind === "awake" && latest.cancelRequested)) {
-            await exitRun(false, cancelTerminal);
+            await exitRun(false, abortTerminal());
             return currentTurn;
           }
           throw failure;

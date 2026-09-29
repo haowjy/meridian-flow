@@ -10,7 +10,6 @@ import {
   type CompactionDecision,
   CompactionFailureError,
   type CompactionFailureOutcome,
-  type CompactionFailurePhase,
   compactionFailureFrom,
   compactionFailureMeridianError,
   compactionFailureMessage,
@@ -41,17 +40,17 @@ export type PreparedCompaction =
       assemble: (
         turns: Turn[],
         blocks: Block[],
-        selection?: import("./runtime-delivery.js").DeliverySelection,
+        selection?: import("./runtime-delivery.js").DeliveryBoundarySelection,
       ) => ReturnType<typeof prepareRequestContext>;
     };
 
-function fittingTokens(
-  context: AssembledNextTurnContext,
-  fitLimitTokens: number,
-  phase: CompactionFailurePhase,
-) {
+function fittingTokens(context: AssembledNextTurnContext) {
   const tokenizer = context.resolvedModel?.tokenizer;
-  if (!tokenizer) throw new CompactionFailureError({ reason: "compaction_failed", phase });
+  if (!tokenizer)
+    throw new CompactionFailureError({ reason: "compaction_failed", phase: "initial_prepare" });
+  const fitLimitTokens = context.compactionUsableWindowTokens;
+  if (fitLimitTokens === null)
+    throw new CompactionFailureError({ reason: "compaction_failed", phase: "initial_prepare" });
   const tokens = estimateRequestTokens({
     request: context.generateRequest,
     baseline: null,
@@ -60,7 +59,7 @@ function fittingTokens(
   if (tokens >= fitLimitTokens)
     throw new CompactionFailureError({
       reason: "context_too_large",
-      phase,
+      phase: "initial_prepare",
       estimatedTokens: tokens,
       fitLimitTokens,
     });
@@ -165,7 +164,7 @@ export async function prepareCompactionSuccessor(args: {
     const assemble = (
       lateTurns: Turn[],
       lateBlocks: Block[],
-      selection?: import("./runtime-delivery.js").DeliverySelection,
+      selection?: import("./runtime-delivery.js").DeliveryBoundarySelection,
     ) =>
       prepareRequestContext({
         deps,
@@ -189,14 +188,7 @@ export async function prepareCompactionSuccessor(args: {
           ),
           decidingTurnId: placeholder.id as TurnId,
         },
-        skipCompaction:
-          !selection?.control ||
-          selection.controls?.some((control) => control.body.kind === "handoff_brief"),
         assertNoResponseScope: args.assertNoResponseScope,
-        controls: selection?.controls,
-        followingBatches: selection?.followingBatches,
-        failedUndoIds: selection?.failedUndoIds,
-        continueAfterControls: !!selection?.outstanding.length || !!selection?.continueTask,
         pinnedRequestTurnIds: new Set(selection?.outstanding.map((row) => row.id)),
         signal: input.signal,
         promptBakes: {
@@ -213,7 +205,7 @@ export async function prepareCompactionSuccessor(args: {
         },
       });
     const base = await assemble([], []);
-    const tokensAfter = fittingTokens(base.assembled, decision.fitLimitTokens, "initial_prepare");
+    const tokensAfter = fittingTokens(base.assembled);
     const summaryBlock = contentForBlockInput({
       ...blockInput,
       content: { kind: "compaction", props: { ...props, tokensAfter } },
@@ -238,15 +230,13 @@ export async function prepareCompactionSuccessor(args: {
 export async function prepareCompactionContext(
   drain: InboxDrain,
   prepared: PreparedCompaction | undefined,
+  selection: import("./runtime-delivery.js").DeliveryBoundarySelection,
 ) {
   if (!prepared) throw new Error("Missing prepared compaction");
   if (prepared.kind === "failed") throw new CompactionFailureError(prepared.failure);
-  const next = await prepared.assemble(drain.turns, drain.blocks);
-  fittingTokens(next.assembled, prepared.decision.fitLimitTokens, "late_arrival");
+  const next = await prepared.assemble(drain.turns, drain.blocks, selection);
   return {
     events: next.events,
-    undos: next.undos,
-    adoptedIds: next.adoptedIds,
     turns: next.turns,
     blocks: next.blocks,
     requiresSplit: true,
@@ -262,22 +252,11 @@ export async function completeCompactionCurrent(input: {
   prepared: PreparedCompaction | undefined;
   failure: unknown;
   settleResponses: () => Promise<void>;
-  satisfiesControlId?: string;
 }): Promise<Turn> {
   const { deps, threadId, placeholder, prepared } = input;
   await input.settleResponses();
   const settled = await deps.repos.turns.findById(placeholder.id);
   if (!settled) throw new Error("Compaction placeholder disappeared");
-  if (input.satisfiesControlId) {
-    settled.metadata = {
-      ...(settled.metadata as import("@meridian/contracts/threads").JsonObject),
-      satisfiesControlId: input.satisfiesControlId,
-    };
-    await deps.repos.turns.updateStatus(settled.id, {
-      status: settled.status,
-      metadata: settled.metadata,
-    });
-  }
   const deliveryFailure =
     input.failure === undefined ? undefined : compactionFailureFrom(input.failure, "delivery");
   const failure =

@@ -26,8 +26,21 @@ else
     } = await import("../index.js");
     const { hashPromptBakeContent } = await import("./prompt-bake-hash.js");
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
-    const { DerivedSourceNotFoundError, forkThreadAgent } = await import(
-      "./derive-conversation.js"
+    const {
+      DerivedSourceNotFoundError,
+      forkThreadAgent,
+      HandoffInProgressError,
+      handoffThreadAgent,
+    } = await import("./derive-conversation.js");
+    const { createRuntimeHarness } = await import(
+      "../../runtime/loop/__tests__/runtime-harness.js"
+    );
+    const { createConversationSummarizer } = await import(
+      "../../runtime/summary/conversation-summarizer.js"
+    );
+    const { generateHandoffBrief } = await import("../../runtime/handoff/brief-request.js");
+    const { createTestAgentBinding } = await import(
+      "../../runtime/loop/__tests__/runtime-fixtures.js"
     );
     const db = createDb(DATABASE_URL, { max: 6 });
     const repos = (
@@ -570,6 +583,290 @@ else
       });
 
       expect(fork.originTurnId).toBe(fixture.firstTurn.id);
+    });
+
+    it("keeps a delivered writer row as the handoff cutoff while the source reply streams", async () => {
+      const fixture = await setupSource();
+      const assistant = await repos.turns.create({
+        threadId: fixture.source.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "streaming",
+        prevTurnId: fixture.firstTurn.id,
+      });
+      const selected = await repos.turns.create({
+        threadId: fixture.source.id,
+        role: "user",
+        origin: "writer",
+        status: "complete",
+        prevTurnId: assistant.id,
+      });
+      const selectedText = "What should happen at the jade gate?";
+      await repos.blocks.create({
+        turnId: selected.id,
+        blockType: "text",
+        sequence: 0,
+        content: selectedText,
+        textContent: selectedText,
+        status: "complete",
+      });
+      const launchRequests: Array<{ threadId: string; seedTurnId: string }> = [];
+      const { thread: handoff } = await handoffThreadAgent(
+        {
+          ...fixture.deps,
+          handoffBriefs: {
+            async hold() {
+              return {
+                async release() {},
+                onLost() {
+                  return () => undefined;
+                },
+              };
+            },
+            launchAfterCommit(input) {
+              launchRequests.push({ threadId: input.threadId, seedTurnId: input.seedTurnId });
+            },
+          },
+        },
+        {
+          id: crypto.randomUUID(),
+          threadId: fixture.source.id,
+          userId: ids.userId,
+          originTurnId: selected.id,
+          agentSelection: fixture.agent.selection,
+        },
+      );
+      const seed = (await repos.turns.listByThread(handoff.id))[0];
+
+      expect(assistant.status).toBe("streaming");
+      expect(handoff.originTurnId).toBe(selected.id);
+      expect(seed?.metadata).toMatchObject({ cutoffTurnId: selected.id });
+      expect(seed.status).toBe("pending");
+      expect(launchRequests).toEqual([{ threadId: handoff.id, seedTurnId: seed.id }]);
+
+      const model: import("../../runtime/gateway/index.js").ModelInfo = {
+        id: "handoff-test-model",
+        provider: "test-provider",
+        tokenizer: "o200k" as const,
+        displayName: "Handoff test model",
+        contextWindow: 100_000,
+        maxOutputTokens: 4_096,
+        promptCache: { kind: "explicit" as const, ttlMs: 60_000 },
+        capabilities: new Set(),
+      };
+      const summaryRequests: import("../../runtime/gateway/index.js").GenerateRequest[] = [];
+      const gateway: import("../../runtime/gateway/index.js").Gateway = {
+        getDefaultModel: () => model.id,
+        listModels: () => [model],
+        async *stream(request) {
+          summaryRequests.push(request);
+          yield {
+            type: "end",
+            result: {
+              content: [
+                { type: "text", text: "The writer is deciding what to do at the jade gate." },
+              ],
+              toolCalls: [],
+              finishReason: "end_turn",
+              usage: { inputTokens: 10, outputTokens: 10 },
+              model: model.id,
+              provider: model.provider,
+            },
+          };
+        },
+        async generate() {
+          throw new Error("The test summarizer uses stream");
+        },
+      };
+      const runtime = createRuntimeHarness({
+        repos,
+        eventWriter,
+        gateway,
+        boundThreads: () => [fixture.source.id],
+      });
+      const summarizer = createConversationSummarizer({
+        gateway,
+        agentRevisions: createTestAgentBinding(model.id, "", () => [fixture.source.id]),
+        async prefixCacheStateFor() {
+          return { state: "warm", reason: "reusable_prefix" };
+        },
+        config: { model: model.id, maxOutputTokens: 1_000 },
+      });
+      const brief = await generateHandoffBrief(
+        { ...runtime.deps, summarizer },
+        handoff,
+        seed,
+        new AbortController().signal,
+      );
+      const request = summaryRequests[0];
+      expect(brief.outcome.kind).toBe("complete");
+      expect(JSON.stringify(request?.messages.at(-2))).toContain(selectedText);
+      expect(JSON.stringify(request?.messages.at(-1))).toContain(
+        "is the open request to report; do not answer it.",
+      );
+    });
+
+    it("returns an idempotent handoff before trying to take its destination claim", async () => {
+      const fixture = await setupSource();
+      const id = crypto.randomUUID();
+      let holds = 0;
+      const handoffBriefs = {
+        async hold() {
+          holds += 1;
+          return {
+            async release() {},
+            onLost() {
+              return () => undefined;
+            },
+          };
+        },
+        launchAfterCommit() {},
+      };
+      const input = {
+        id,
+        threadId: fixture.source.id,
+        userId: ids.userId,
+        originTurnId: fixture.firstTurn.id,
+        agentSelection: fixture.agent.selection,
+      };
+
+      const first = await handoffThreadAgent({ ...fixture.deps, handoffBriefs }, input);
+      const replay = await handoffThreadAgent(
+        {
+          ...fixture.deps,
+          handoffBriefs: {
+            async hold() {
+              throw new Error("Replay must not acquire a claim");
+            },
+            launchAfterCommit() {},
+          },
+        },
+        input,
+      );
+
+      expect(first.created).toBe(true);
+      expect(replay).toMatchObject({ thread: { id: first.thread.id }, created: false });
+      expect(holds).toBe(1);
+    });
+
+    it("refuses an unclaimed destination without creating it", async () => {
+      const fixture = await setupSource();
+      const id = crypto.randomUUID();
+
+      await expect(
+        handoffThreadAgent(
+          {
+            ...fixture.deps,
+            handoffBriefs: {
+              async hold() {
+                return null;
+              },
+              launchAfterCommit() {},
+            },
+          },
+          {
+            id,
+            threadId: fixture.source.id,
+            userId: ids.userId,
+            originTurnId: fixture.firstTurn.id,
+            agentSelection: fixture.agent.selection,
+          },
+        ),
+      ).rejects.toBeInstanceOf(HandoffInProgressError);
+      expect(await repos.threads.findByIdIncludingDeleted(id as never)).toBeNull();
+    });
+
+    it("holds the destination claim before creating S so a racing wake cannot repair it", async () => {
+      const fixture = await setupSource();
+      const { createDrizzleRunClaim } = await import("../../runtime/adapters/drizzle-run-claim.js");
+      const runClaim = createDrizzleRunClaim(db, { holderId: "handoff-first" });
+      const racingRunClaim = createDrizzleRunClaim(db, { holderId: "handoff-racing-run" });
+      const destinationId = crypto.randomUUID();
+      let racingLease: Awaited<ReturnType<typeof runClaim.startExecution>> = null;
+      const transferredClaims: Array<{ release(): Promise<void> }> = [];
+      const threads = {
+        ...fixture.deps.threads,
+        async createDerivedPrimary(
+          input: Parameters<typeof repos.threads.createDerivedPrimary>[0],
+        ) {
+          racingLease = await racingRunClaim.startExecution(destinationId as never, "racing-wake");
+          return fixture.deps.threads.createDerivedPrimary(input);
+        },
+      };
+
+      try {
+        const result = await handoffThreadAgent(
+          {
+            ...fixture.deps,
+            threads,
+            handoffBriefs: {
+              hold: (threadId) => runClaim.hold(threadId),
+              launchAfterCommit({ claim }) {
+                transferredClaims.push(claim);
+              },
+            },
+          },
+          {
+            id: destinationId,
+            threadId: fixture.source.id,
+            userId: ids.userId,
+            originTurnId: fixture.firstTurn.id,
+            agentSelection: fixture.agent.selection,
+          },
+        );
+
+        expect(result.created).toBe(true);
+        expect(racingLease).toBeNull();
+        expect(await repos.turns.listByThread(result.thread.id)).toMatchObject([
+          { role: "system", status: "pending" },
+        ]);
+        expect(
+          await racingRunClaim.startExecution(result.thread.id, "after-create-wake"),
+        ).toBeNull();
+      } finally {
+        await transferredClaims[0]?.release();
+      }
+    });
+
+    it("releases the destination claim when creation rolls back", async () => {
+      const fixture = await setupSource();
+      const id = crypto.randomUUID();
+      let released = 0;
+      await expect(
+        handoffThreadAgent(
+          {
+            ...fixture.deps,
+            eventWriter: {
+              ...fixture.deps.eventWriter,
+              async appendEvent() {
+                throw new Error("forced seed event failure");
+              },
+            },
+            handoffBriefs: {
+              async hold() {
+                return {
+                  async release() {
+                    released += 1;
+                  },
+                  onLost() {
+                    return () => undefined;
+                  },
+                };
+              },
+              launchAfterCommit() {},
+            },
+          },
+          {
+            id,
+            threadId: fixture.source.id,
+            userId: ids.userId,
+            originTurnId: fixture.firstTurn.id,
+            agentSelection: fixture.agent.selection,
+          },
+        ),
+      ).rejects.toThrow("forced seed event failure");
+      expect(released).toBe(1);
+      expect(await repos.threads.findByIdIncludingDeleted(id as never)).toBeNull();
     });
 
     it.each([

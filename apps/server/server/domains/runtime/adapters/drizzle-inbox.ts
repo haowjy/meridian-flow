@@ -26,6 +26,7 @@ function toInboxMessage(row: typeof schema.threadInboxMessages.$inferSelect): In
     idempotencyKey: row.idempotencyKey,
     enqueuedAt: toIso(row.enqueuedAt),
     deliveredAt: row.deliveredAt ? toIso(row.deliveredAt) : null,
+    runsFirst: row.runsFirst,
   };
 }
 
@@ -100,6 +101,18 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
         .where(eq(schema.threadInboxMessages.id, id))
         .limit(1);
       return row ? toInboxMessage(row) : null;
+    },
+    async prioritizePendingControls(threadId) {
+      await db_()
+        .update(schema.threadInboxMessages)
+        .set({ runsFirst: true })
+        .where(
+          and(
+            eq(schema.threadInboxMessages.threadId, threadId),
+            eq(schema.threadInboxMessages.intent, "control"),
+            isNull(schema.threadInboxMessages.deliveredAt),
+          ),
+        );
     },
     async enqueue(draft) {
       const [inserted] = await db_()

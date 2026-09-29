@@ -2,12 +2,14 @@
 
 These back up the automated control, compaction, undo, handoff, and history
 contracts. They do not replace the project checks. `C` means a compaction turn;
-`B` an assistant continuation; `S` a handoff seed. A control is an inbox entry,
-not a chat message.
+`B` an assistant continuation; `S` a handoff seed. Only `compact` and
+`compaction_undo` are inbox controls; the handoff brief runs outside the inbox.
 
 ## Setup and evidence
 
 Use a disposable worktree. `pnpm bootstrap` provisions its database if needed.
+Migration 0021 is edited in place; reset existing worktree dev and test databases
+that already applied it with `pnpm db:reset` before running migrations or probes.
 Start `MODEL_PROVIDER=mock pnpm dev --no-tailscale`, then `pnpm portless:list`.
 Use only that worktree's routes. All commands below run from its checkout.
 Set `E` to a directory under the active work item's `evidence/`, not the repo.
@@ -68,40 +70,71 @@ cache warmth. Historical run dates below come from timestamps in the saved JSON 
 and snapshots, not file modification times. The current catalog has not been run
 end-to-end as one suite.
 
-## RP-1: Failed controls do not hot-loop
+## RP-1: Failed replies need explicit Retry
 
-- **Protects:** failed message/summary retries remain sweep-paced, not immediate
-  self-wakes (`control-protocol`: failed successor with absorbed compact).
+- **Protects:** a failed reply consumes its adopted messages once, stays failed,
+  and is not restarted by release wakes or the 30-second sweep. Retry is an
+  ordinary no-input run with normal history; replaying its client ID returns
+  that turn. Pending non-control inbox rows do not block Retry.
 - **Stack:** mock, real wall clock.
-- **Steps:** prepare a compactable thread. Install a sticky failure, then send a
-  message and enqueue compact while it is active:
+- **Steps:** install a sticky provider failure, send a message, and record the
+  failed assistant ID. Leave the thread idle for one sweep interval, then Retry
+  the failed turn twice with the same client-minted ID:
 
   ```bash
   ./mf mock script '[{"error":{"status":500,"message":"RP1 provider unavailable"}}]' --json > "$E/error-script.json"
-  ./mf thread send "$T" 'RP1 M' --json > "$E/send.ndjson" & SEND=$!
-  compact > "$E/compact.json"
+  ./mf thread send "$T" 'RP1 failed reply' --json > "$E/send.ndjson"
+  FAILED=$(tail -n 1 "$E/send.ndjson" | jq -r .turnId)
+  ./mf thread view "$T" --json > "$E/failed.json"
   sleep 30
-  ./mf log --thread "$T" --json > "$E/pace.json"
-  wait "$SEND"
+  ./mf log --thread "$T" --json > "$E/idle.json"
+  RETRY=$(node -p 'crypto.randomUUID()')
+  ./mf api POST "/api/threads/$T/turns/$FAILED/retry" --data "{\"id\":\"$RETRY\"}" --json > "$E/retry.json"
+  ./mf api POST "/api/threads/$T/turns/$FAILED/retry" --data "{\"id\":\"$RETRY\"}" --json > "$E/retry-replay.json"
   ```
 
-- **Expect:** no unbounded `turn.error` stream or immediate re-adoption. Group
-  gateway retries by logical call ID: SDK/gateway retry attempts are not new
-  orchestrator calls. Before the next sweep, one failed generation and at most
-  one summary; subsequent attempts must align with sweep/lease eligibility.
-- **Evidence:** timestamped gateway and turn events for the entire 30 seconds,
-  pending control snapshots, script ID (clear only that ID afterward).
+- **Expect:** no provider call during the idle interval; the first Retry returns
+  201 with a new failed assistant after the unchanged original; the replay
+  returns 200 with the same turn. A queued compact runs immediately after a
+  failure rather than waiting behind failed messages.
+- **Evidence:** failed and retried snapshots, timeline of gateway and turn
+  events, both response statuses, and no extra request during the idle interval.
 - **Last run:** not recorded for this exact wall-clock recipe. Automated
   sweep-boundary coverage is not a substitute for running it.
 
-## RP-2: Compact is a barrier during a streaming reply
+## RP-9: Production signals drain; dev signals recover as crashes
 
-- **Protects:** writer order and retained messages (`control-protocol`: writer
-  order during A, notice before compact).
+- **Protects:** production Nitro runs the bounded signal drain, while upstream
+  Nitro dev terminates its worker promptly and exercises crash repair.
+- **Stack:** mock provider, real process signals; run separately in dev and
+  production preview/start.
+- **Steps:** use the mock `cancel billing` response, which emits partial text
+  and usage before it stalls. Send a writer message, wait until the assistant
+  is streaming, record the server PID and send it SIGTERM; repeat with SIGINT
+  on a fresh thread. After each process exits, inspect the durable thread and
+  billing rows from a newly started server.
+- **Expect (production):** exit occurs after the in-flight paid response is
+  persisted and debited once; the reply is `error` with `This reply was
+  interrupted.` and shutdown reason, its adopted inbox message is acknowledged,
+  no successor starts during shutdown, and Retry works after restart.
+- **Expect (dev):** Ctrl+C and SIGTERM exit promptly. After restart, orphan
+  repair marks the reply interrupted with the internal `orphaned` reason and
+  acknowledges every message named by its receipt. Those messages are not
+  answered automatically; only never-adopted queued-behind messages remain in
+  the inbox. Retry re-answers explicitly.
+- **Evidence:** signal and exit timestamps, process log showing signal-handler
+  ordering, settled reply and response rows, ledger debit, empty pending inbox,
+  and post-restart Retry result.
+
+## RP-2: Compact waits for the end of the queue
+
+- **Protects:** commands wait until messages are answered; Esc runs the command
+  first with its waiting messages pinned (`control-protocol`).
 - **Stack:** mock.
-- **Steps:** after setup, start a delayed reply, wait until streaming, enqueue
-  compact, then send `hi2`. Repeat on a fresh thread with `hi1` queued before
-  compact (the bent ordering variant).
+- **Steps:** after setup, start a delayed reply and wait until streaming. Enqueue
+  compact, then send `hi2`. Repeat with `hi1` queued before compact and a second
+  message after it. For the Esc variant on a fresh thread, queue compact and a
+  message during a delayed reply, then use Stop (Esc) before the reply ends.
 
   ```bash
   ./mf thread send "$T" hi --mock '[{"text":"reply to hi","delayMs":5000}]' --json > "$E/hi.ndjson" & SEND=$!
@@ -112,34 +145,62 @@ end-to-end as one suite.
   wait "$SEND"
   ```
 
-- **Expect:** suffix roles `user, assistant, user, compaction, assistant` in
-  the behind-barrier case. `hi2` remains pinned after the summary in its request;
-  no message is lost or answered twice. The bent case preserves `hi1`, too.
-- **Evidence:** admitted messages, control UUID, final roles and request messages.
-- **Last run:** C6a §4 PASS at `e48c032cd`; 2026-09-28.
-
-## RP-3: Withdraw before execution and during summary
-
-- **Protects:** withdrawal/reservation ownership (`control-protocol`, handoff withdrawal).
-- **Stack:** mock.
-- **Steps:** use RP-2's delayed active reply, enqueue compact, and withdraw it
-  while queued. Repeat on a fresh compactable idle thread with a delayed summary:
+  For the Esc variant, repeat on a fresh compactable thread. Start another
+  delayed reply, wait until streaming, and read its live assistant turn id from
+  `thread view --json`, then:
 
   ```bash
+  ./mf thread send "$T" hi --mock '[{"text":"reply to hi","delayMs":5000}]' --json > "$E/esc-hi.ndjson" & SEND=$!
+  ./mf thread view "$T" --json
+  # Set RUNNING_TURN_ID from the active assistant in the view.
+  compact > "$E/compact.json"
+  ./mf thread send "$T" 'Keep this message after Esc.' --json > "$E/waiting.ndjson" & WAITING=$!
+  ./mf thread cancel "$T" --turn "$RUNNING_TURN_ID" --json
+  ./mf thread tail "$T" --until-idle --timeout 60s --json
+  wait "$WAITING"
+  wait "$SEND"
+  ```
+
+- **Expect:** normal variants answer every queued message before C; the command
+  stays queued until the messages finish and never runs at a tool boundary. If
+  automatic compaction occurs first, the command is not absorbed; it runs at the
+  end of the queue and either compacts new history or refuses with
+  `nothing_to_compact`. On Stop, the stamped command runs
+  first, the waiting message appears verbatim among C's pinned requests, and
+  the message is answered after C. No message is lost or answered twice.
+- **Evidence:** admitted messages, control UUID, final roles and request messages.
+- **Last run:** not recorded for the end-of-queue and Esc variants.
+
+## RP-3: Withdraw only before the command starts
+
+- **Protects:** withdrawal/start ownership and replay outcomes
+  (`control-protocol`: `withdrawn` before start; `already_started` after).
+- **Stack:** mock.
+- **Steps:** use RP-2's delayed active reply, enqueue compact, and withdraw it
+  twice while queued. Repeat on a compactable idle thread with a delayed
+  summary, waiting until C is pending before withdrawing:
+
+  ```bash
+  ./mf thread send "$T" 'Hold the reply open.' --mock '[{"text":"Working","delayMs":5000}]' --json > "$E/withdraw-hi.ndjson" & SEND=$!
+  # Wait until streaming, then enqueue and withdraw the same control twice.
+  compact > "$E/withdrawn-compact.json"
+  ./mf api POST "/api/threads/$T/controls/$K/withdraw" --json > "$E/withdraw.json"
+  ./mf api POST "/api/threads/$T/controls/$K/withdraw" --json > "$E/withdraw-replay.json"
+  wait "$SEND"
+
+  # On a compactable idle thread, poll until C is pending after reservation.
   ./mf mock script '[{"text":"Delayed summary","delayMs":10000}]' --json
   compact > "$E/compact.json"
   ./mf thread view "$T" --json
   ./mf api POST "/api/threads/$T/controls/$K/withdraw" --json > "$E/withdraw.json"
-  ./mf thread send "$T" 'Answer after withdrawal' --mock '[{"text":"Still answered."}]' --json
+  ./mf thread tail "$T" --until-idle --timeout 60s --json
   ```
 
-- **Expect:** queued withdrawal returns `withdrawn` and creates no C. During
-  summary, outcome is `stopping`, C becomes cancelled, and the queued message
-  still gets a reply. A late withdrawal may instead return `already_finished`;
-  that does not prove the during-summary case.
+- **Expect:** withdrawal before start returns `withdrawn`, including on replay,
+  and creates no C. Withdrawal after C records the control id returns
+  `already_started`; it does not stop C, which completes normally.
 - **Evidence:** pre-withdraw snapshot, withdrawal outcome, terminal turn statuses.
-- **Last run:** C6a §5–6 PASS at `e48c032cd`; 2026-09-28. Merge-gate §26
-  also records queued Withdraw and Stop.
+- **Last run:** not recorded for the `already_started` outcome.
 
 ## RP-4: Proactive autocompaction and byte-stable continuation
 
@@ -170,14 +231,15 @@ end-to-end as one suite.
 
 ## RP-5: Kill the server mid-summary
 
-- **Protects:** dead lease repair, exactly-once redelivery and row-owned seeds
-  (`control-protocol` interrupted summary, handoff scan after crash).
+- **Protects:** dead lease repair, consumed-at-start commands, and waiting
+  message delivery (`control-protocol` interrupted summary).
 - **Stack:** mock, isolated owned server process, real Postgres.
 - **Steps:** queue a 30-second summary, compact, and send a message while C is
   pending. Save the pre-kill snapshot. Resolve this worktree's server wrapper
   with `pnpm portless:list`, inspect its Nitro child and `/proc/<pid>/cwd`, then
   `kill -9 <verified-owned-nitro-pid>`. Never kill Postgres or another stack.
-  Restart with `MODEL_PROVIDER=mock pnpm dev --restart --no-tailscale`; inspect:
+  Restart with `MODEL_PROVIDER=mock pnpm dev --restart --no-tailscale`; inspect.
+  Do not re-enqueue the compact command after restart.
 
   ```bash
   ./mf thread tail "$T" --until-idle --timeout 120s --json
@@ -185,15 +247,15 @@ end-to-end as one suite.
   ./mf log --thread "$T" --json
   ```
 
-  Repeat during handoff briefing. For a subagent variant also inspect the parent report.
-- **Expect:** dead C is error with interrupted/recovery metadata, followed by one
-  recovered control execution; queued message is delivered after C. Handoff
-  resumes the same row-owned S, not a duplicate seed. No stuck placeholders.
-  A dead child execution settles one failed/orphaned report.
-- **Evidence:** PID/cwd ownership, kill result, pre/post snapshots, recovery events,
-  parent report for the child variant.
-- **Last run:** merge-gate §29–30 and §33 PASS for C and S; C6a §8 PASS at
-  `e48c032cd`. Child variant not recorded. 2026-09-28.
+- **Expect:** dead C is error with interrupted/recovery metadata; its consumed
+  command is not redelivered. The queued message remains pending and is
+  delivered after C. This is queued-behind work, not an adopted reply input: if
+  a reply itself crashes, repair acknowledges its adopted receipt and shows one
+  interrupted reply rather than answering those inputs automatically. No stuck
+  placeholders.
+- **Evidence:** PID/cwd ownership, kill result, pre/post snapshots, recovery
+  events, command id and final turn statuses.
+- **Last run:** not recorded for no-redelivery behavior.
 
 ## RP-6: Manual compact then Undo restores request bytes
 
@@ -239,33 +301,52 @@ end-to-end as one suite.
 
 ## RP-8: Handoff brief, Stop, Retry, failure and source isolation
 
-- **Protects:** seed ownership, binding and fallback (`handoff-protocol`).
-- **Stack:** mock; real provider required to verify warm-cache versus cold briefing.
-- **Steps:** choose a settled reply ID `CUT` from the source `T`, allocate `DEST`,
-  and use the exact selection returned by setup (do not guess a revision):
+- **Protects:** destination run-claim ownership, detached launch, Stop, Retry,
+  release wake, and orphan repair (`handoff/brief-service`).
+- **Stack:** mock; a real provider is required to compare predicted cache state
+  with actual cache use.
+- **Steps:** choose a settled reply ID `CUT` from source `T`, allocate `DEST`,
+  and use the exact selection returned by setup (do not guess a revision). Delay
+  the brief so the destination claim remains held:
 
   ```bash
   DEST=$(node -p 'crypto.randomUUID()')
   jq --arg id "$DEST" --arg cut "$CUT" '{id:$id,originTurnId:$cut,agentSelection:.selection}' "$E/agent.json" > "$E/handoff-body.json"
   ./mf mock script '[{"text":"Brief: keep the silver gate secret.","delayMs":5000}]' --json
   ./mf api POST "/api/threads/$T/handoff" --data @"$E/handoff-body.json" --json
-  ./mf thread cancel "$DEST" --json
+  S=$(./mf thread view "$DEST" --json | jq -r '.turns[0].id')
+  ./mf thread send "$DEST" hi --mock '[{"text":"Hello from the destination."}]' --json > "$E/queued-hi.ndjson" & SEND=$!
+  ./mf api POST "/api/threads/$DEST/handoff/brief" --data "{\"id\":\"$(node -p 'crypto.randomUUID()')\"}" --json > "$E/retry-while-pending.json"
+  ./mf thread view "$DEST" --json
+  ./mf thread cancel "$DEST" --turn "$S" --json
   ./mf mock script '[{"text":"Retried brief."}]' --json
-  ./mf api POST "/api/threads/$DEST/controls" --data "{\"id\":\"$(node -p 'crypto.randomUUID()')\",\"control\":{\"kind\":\"handoff_brief\"}}" --json
-  ./mf thread send "$DEST" hi --mock '[{"text":"Hello from the destination."}]' --json
+  S2=$(node -p 'crypto.randomUUID()')
+  ./mf api POST "/api/threads/$DEST/handoff/brief" --data "{\"id\":\"$S2\"}" --json > "$E/retry.json"
+  ./mf api POST "/api/threads/$DEST/handoff/brief" --data "{\"id\":\"$S2\"}" --json > "$E/retry-replay.json"
+  wait "$SEND"
   ./mf thread context "$DEST" --all --view raw --json
   ```
 
-  In separate destinations, let the first brief complete, or fail it with a
-  sticky mock error; clear that script ID before sending `hi`. Send another
-  Retry while one is pending to check 409. For real warm/cold variants compare
-  recent latest-cut versus older-cut summary calls and capture cache usage.
-- **Expect:** destination contains the brief/source ref, never source transcript
-  text. Stop cancels S without blocking messages. Retry creates a new leaf seed;
-  duplicate pending Retry conflicts. Failed brief uses `No brief is available.`
-  and ordinary messages still run.
-- **Evidence:** source sentinel, destination requests, S/control statuses, 409,
-  summary path/cache metrics for the real variant.
+- **Expect:** POST handoff returns before the brief ends. While it runs,
+  `thread.status` is `awake/generating` with no running turn id, queued work is
+  not answered, and Retry returns 409 `handoff_retry_unavailable`. Stop settles
+  S cancelled; claim release starts the queued reply. Retry after Stop appends
+  S2 and returns before its brief ends; replaying S2 returns the same seed with
+  200. Destination context contains the brief/source ref, never source transcript
+  text. The brief has no fallback: a failed attempt shows `No brief is
+  available.` and Retry is the next attempt.
+- **Crash variant:** start a second delayed handoff, kill the app process while
+  its brief is in flight, restart it, and wait one orphan-repair interval. S
+  settles as interrupted with an unavailable card and history read line; thread
+  status returns idle and a queued destination message is answered. No brief is
+  relaunched. That destination message was never adopted while S held the claim;
+  adopted inputs of a crashed reply instead fail once with that reply. A focused
+  PostgreSQL test covers ending-transaction failure: S
+  remains pending, the claim releases, and the next run repairs it.
+- **Evidence:** request status and response timing, source sentinel and source
+  lease before/after, destination queue and transcript, Retry HTTP status/code,
+  S/S2 states and card blocks. For real-provider runs also capture summary
+  path/cache metrics for recent and older cutoffs.
 - **Last run:** merge-gate §21–24 mock PASS; original real warm/cold run blocked
   by billing settlement. 2026-09-28 (source commit not recorded).
 

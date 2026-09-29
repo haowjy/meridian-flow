@@ -1,7 +1,7 @@
 /** Bounded crash repair for admitted child turns without terminal truth. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
-import { isPlaceholderRole, isTerminalTurnStatus } from "@meridian/contracts/threads";
+import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { EventJournalWriter, ThreadRepositories } from "../../threads/index.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
@@ -17,11 +17,13 @@ export function createOrphanReportRepair(deps: {
   repos: ThreadRepositories;
   toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
   inbox: Pick<import("../loop/ports.js").InboxReader, "selectPending">;
+  retireOrphanedReply?(threadId: ThreadId, turnId: TurnId): Promise<void>;
   eventWriter: EventJournalWriter;
   authority: RunClaim;
   threadLock: ThreadLock;
   publisher: Pick<ReportPublisher, "publish">;
   eventSink: EventSink;
+  publishStatus?(threadId: ThreadId): Promise<void>;
 }) {
   let reportCursor: TurnId | undefined;
   let unsettledCursor: { threadId: ThreadId; position: number } | undefined;
@@ -37,9 +39,12 @@ export function createOrphanReportRepair(deps: {
         );
         if (!report || report.outcome !== null) return;
 
-        const orphanReports = await finalizeOrphanedPlaceholders(deps, {
-          threadId: childThreadId,
-        });
+        const orphanReports = await finalizeOrphanedPlaceholders(
+          { ...deps, publishStatus: deps.publishStatus },
+          {
+            threadId: childThreadId,
+          },
+        );
         for (const report of orphanReports) reportsToPublish.set(report.executionTurnId, report);
         if (orphanReports.some((report) => report.executionTurnId === executionTurnId)) return;
 
@@ -52,11 +57,11 @@ export function createOrphanReportRepair(deps: {
           // Every admitted selector begins a separate execution, regardless of turn role.
           if (await deps.repos.executionReports.findByExecution(childThreadId, next.id)) break;
           leaf = next;
-          if (next.role === "assistant" || isPlaceholderRole(next.role)) terminal = next;
+          if (next.role === "assistant" || next.role === "compaction") terminal = next;
         }
         if (
           !terminal ||
-          (terminal.role !== "assistant" && !isPlaceholderRole(terminal.role)) ||
+          (terminal.role !== "assistant" && terminal.role !== "compaction") ||
           isTerminalTurnStatus(terminal.status)
         )
           return;
@@ -81,7 +86,10 @@ export function createOrphanReportRepair(deps: {
   async function repairTurns(candidate: { threadId: ThreadId }): Promise<void> {
     const reports = await deps.authority.withExclusiveThread(candidate.threadId, () =>
       deps.threadLock.withThreadLock(candidate.threadId, () =>
-        finalizeOrphanedTurns(deps, { threadId: candidate.threadId }),
+        finalizeOrphanedTurns(
+          { ...deps, publishStatus: deps.publishStatus },
+          { threadId: candidate.threadId },
+        ),
       ),
     );
     for (const report of reports ?? [])
