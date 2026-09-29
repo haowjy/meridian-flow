@@ -32,6 +32,16 @@ else
       HandoffInProgressError,
       handoffThreadAgent,
     } = await import("./derive-conversation.js");
+    const { createRuntimeHarness } = await import(
+      "../../runtime/loop/__tests__/runtime-harness.js"
+    );
+    const { createConversationSummarizer } = await import(
+      "../../runtime/summary/conversation-summarizer.js"
+    );
+    const { generateHandoffBrief } = await import("../../runtime/handoff/brief-request.js");
+    const { createTestAgentBinding } = await import(
+      "../../runtime/loop/__tests__/runtime-fixtures.js"
+    );
     const db = createDb(DATABASE_URL, { max: 6 });
     const repos = (
       await import("../adapters/drizzle/repositories.js")
@@ -575,7 +585,7 @@ else
       expect(fork.originTurnId).toBe(fixture.firstTurn.id);
     });
 
-    it("accepts a delivered user turn as handoff cutoff while its reply streams", async () => {
+    it("keeps a delivered writer row as the handoff cutoff while the source reply streams", async () => {
       const fixture = await setupSource();
       const assistant = await repos.turns.create({
         threadId: fixture.source.id,
@@ -583,6 +593,22 @@ else
         origin: "assistant",
         status: "streaming",
         prevTurnId: fixture.firstTurn.id,
+      });
+      const selected = await repos.turns.create({
+        threadId: fixture.source.id,
+        role: "user",
+        origin: "writer",
+        status: "complete",
+        prevTurnId: assistant.id,
+      });
+      const selectedText = "What should happen at the jade gate?";
+      await repos.blocks.create({
+        turnId: selected.id,
+        blockType: "text",
+        sequence: 0,
+        content: selectedText,
+        textContent: selectedText,
+        status: "complete",
       });
       const launchRequests: Array<{ threadId: string; seedTurnId: string }> = [];
       const { thread: handoff } = await handoffThreadAgent(
@@ -606,17 +632,78 @@ else
           id: crypto.randomUUID(),
           threadId: fixture.source.id,
           userId: ids.userId,
-          originTurnId: fixture.firstTurn.id,
+          originTurnId: selected.id,
           agentSelection: fixture.agent.selection,
         },
       );
       const seed = (await repos.turns.listByThread(handoff.id))[0];
 
       expect(assistant.status).toBe("streaming");
-      expect(handoff.originTurnId).toBe(fixture.firstTurn.id);
-      expect(seed.metadata).toMatchObject({ cutoffTurnId: fixture.firstTurn.id });
+      expect(handoff.originTurnId).toBe(selected.id);
+      expect(seed?.metadata).toMatchObject({ cutoffTurnId: selected.id });
       expect(seed.status).toBe("pending");
       expect(launchRequests).toEqual([{ threadId: handoff.id, seedTurnId: seed.id }]);
+
+      const model: import("../../runtime/gateway/index.js").ModelInfo = {
+        id: "handoff-test-model",
+        provider: "test-provider",
+        tokenizer: "o200k" as const,
+        displayName: "Handoff test model",
+        contextWindow: 100_000,
+        maxOutputTokens: 4_096,
+        promptCache: { kind: "explicit" as const, ttlMs: 60_000 },
+        capabilities: new Set(),
+      };
+      const summaryRequests: import("../../runtime/gateway/index.js").GenerateRequest[] = [];
+      const gateway: import("../../runtime/gateway/index.js").Gateway = {
+        getDefaultModel: () => model.id,
+        listModels: () => [model],
+        async *stream(request) {
+          summaryRequests.push(request);
+          yield {
+            type: "end",
+            result: {
+              content: [
+                { type: "text", text: "The writer is deciding what to do at the jade gate." },
+              ],
+              toolCalls: [],
+              finishReason: "end_turn",
+              usage: { inputTokens: 10, outputTokens: 10 },
+              model: model.id,
+              provider: model.provider,
+            },
+          };
+        },
+        async generate() {
+          throw new Error("The test summarizer uses stream");
+        },
+      };
+      const runtime = createRuntimeHarness({
+        repos,
+        eventWriter,
+        gateway,
+        boundThreads: () => [fixture.source.id],
+      });
+      const summarizer = createConversationSummarizer({
+        gateway,
+        agentRevisions: createTestAgentBinding(model.id, "", () => [fixture.source.id]),
+        async prefixCacheStateFor() {
+          return { state: "warm", reason: "reusable_prefix" };
+        },
+        config: { model: model.id, maxOutputTokens: 1_000 },
+      });
+      const brief = await generateHandoffBrief(
+        { ...runtime.deps, summarizer },
+        handoff,
+        seed,
+        new AbortController().signal,
+      );
+      const request = summaryRequests[0];
+      expect(brief.outcome.kind).toBe("complete");
+      expect(JSON.stringify(request?.messages.at(-2))).toContain(selectedText);
+      expect(JSON.stringify(request?.messages.at(-1))).toContain(
+        "report it as the open request; do not answer it.",
+      );
     });
 
     it("returns an idempotent handoff before trying to take its destination claim", async () => {

@@ -117,7 +117,7 @@ export async function handoffThreadAgent(
         "handoff",
       );
       if (existing) return { thread: existing, created: false };
-      const cutoff = await normalizeForkCutoff(deps, lockedSource, input.originTurnId);
+      const cutoff = await normalizeHandoffCutoff(deps, lockedSource, input.originTurnId);
       const owner = await deps.threads.findByIdIncludingDeleted(cutoff.turn.threadId);
       if (!owner) throw new DerivedSourceNotFoundError();
       const workId = await requirePrimaryWorkId(deps, lockedSource.id, lockedSource.projectId);
@@ -303,6 +303,19 @@ async function normalizeForkCutoff(
     { threads: deps.threads, turns: deps.turns, blocks: deps.blocks },
     source,
   );
+  return normalizeSettledCutoff(context, requestedTurnId);
+}
+
+type ConversationContext = Awaited<ReturnType<typeof loadThreadConversationContext>>;
+
+function normalizeSettledCutoff(
+  context: ConversationContext,
+  requestedTurnId: string | null | undefined,
+): {
+  turn: ConversationContext["turns"][number];
+  turns: ConversationContext["turns"];
+  blocks: ConversationContext["blocks"];
+} {
   const selectedTurnId = requestedTurnId ?? context.turns.at(-1)?.id;
   if (!selectedTurnId && requestedTurnId == null) {
     throw new ForkCutoffError("no_settled_turn", null);
@@ -333,6 +346,31 @@ async function normalizeForkCutoff(
     turns: context.turns.slice(0, cutoffIndex + 1),
     blocks: context.blocks.filter((block) => inheritedTurnIds.has(block.turnId)),
   };
+}
+
+/** Handoff may cut at a delivered writer request even when the reply after it is streaming. */
+async function normalizeHandoffCutoff(
+  deps: ThreadAgentSwapDeps,
+  source: Thread,
+  requestedTurnId: string | null | undefined,
+): Promise<ReturnType<typeof normalizeSettledCutoff>> {
+  const context = await loadThreadConversationContext(
+    { threads: deps.threads, turns: deps.turns, blocks: deps.blocks },
+    source,
+  );
+  const selectedTurnId = requestedTurnId ?? context.turns.at(-1)?.id;
+  const selectedIndex = context.turns.findIndex((turn) => turn.id === selectedTurnId);
+  const selected = context.turns[selectedIndex];
+  if (selected?.role === "user" && selected.origin === "writer" && selected.status === "complete") {
+    const turns = context.turns.slice(0, selectedIndex + 1);
+    const ids = new Set(turns.map((turn) => turn.id));
+    return {
+      turn: selected,
+      turns,
+      blocks: context.blocks.filter((block) => ids.has(block.turnId)),
+    };
+  }
+  return normalizeSettledCutoff(context, requestedTurnId);
 }
 
 async function findIdempotentDerivation(
