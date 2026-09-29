@@ -5,13 +5,14 @@ and Retry act on handoff seeds, not inbox controls; see [handoff](handoff.md).
 
 ## Queue order
 
-The inbox is one `seq`-ordered queue. At a reply boundary, `next(pending,
-"boundary")` adopts the non-control prefix and stops before the first command. At
-run start, an oldest command runs by itself; otherwise the same prefix is
-adopted. A command never runs at a tool boundary. Stop only ends the current
-turn. Release then re-reads the queue and runs its ordinary head.
+The inbox is one durable queue, but commands wait until the message queue is
+empty. At a reply boundary, `next(pending, "boundary")` adopts every pending
+non-command row, even those enqueued after a command. At run start, every
+non-command row is adopted when any message is waiting; otherwise the oldest
+command runs alone. A command never runs at a tool boundary. Stop only ends the
+current turn. Release then applies the same selection rule.
 
-Withdrawing a queued command exposes the rows behind it for the next boundary.
+Withdrawing a queued command removes it without changing message eligibility.
 Messages that arrive while a command runs remain queued for the successor reply.
 
 ## Ownership and withdrawal
@@ -25,6 +26,6 @@ Withdrawal acknowledges a command that has not started and returns
 withdrawal returns `already_started`; it does not stop that run. Enqueue and
 withdrawal share the thread lock with command reservation.
 
-A failed manual C consumes its command. Messages behind it remain queued for a later reply.
+A failed manual C consumes its command. Messages that arrived while it ran remain queued for a later reply.
 
 For the shared selection and release wake contract, see [delivery](delivery.md).

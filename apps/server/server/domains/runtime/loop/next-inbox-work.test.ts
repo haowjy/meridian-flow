@@ -29,33 +29,37 @@ const workRefresh = row({
 });
 
 describe("next inbox work", () => {
-  it("adopts only the ordered prefix before a command at a boundary", () => {
+  it("adopts every non-command row at a boundary", () => {
     const after = row({
       id: "after",
       seq: 3,
       intent: "message",
       body: { kind: "text", text: "after" },
     });
-    expect(next([message, compact, after], "boundary")).toEqual({ kind: "batch", rows: [message] });
-    expect(next([compact, after], "boundary")).toEqual({ kind: "none" });
+    expect(next([message, compact, after], "boundary")).toEqual({
+      kind: "batch",
+      rows: [message, after],
+    });
+    expect(next([compact, after], "boundary")).toEqual({ kind: "batch", rows: [after] });
   });
 
   it("takes the same ordered prefix at run start", () => {
     expect(next([message, compact], "run_start")).toEqual({ kind: "batch", rows: [message] });
   });
 
-  it("runs an oldest command by itself", () => {
-    expect(next([compact, message], "run_start")).toEqual({
+  it("answers all messages before an older command", () => {
+    expect(next([compact, message], "run_start")).toEqual({ kind: "batch", rows: [message] });
+  });
+
+  it("runs an oldest command by itself when no message is waiting", () => {
+    expect(next([workRefresh, compact], "run_start")).toEqual({
       kind: "control",
       control: compact,
       rows: [],
     });
   });
 
-  it("keeps notices in their plain queue position", () => {
-    expect(next([workRefresh, compact], "run_start")).toEqual({
-      kind: "batch",
-      rows: [workRefresh],
-    });
+  it("does not start a run for notices alone", () => {
+    expect(next([workRefresh], "run_start")).toEqual({ kind: "none" });
   });
 });

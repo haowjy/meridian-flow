@@ -757,10 +757,27 @@ else
       await busyRig.runClaim.release(held);
     });
 
-    it("at natural end adopts A before a command, then compacts, then answers B", async () => {
+    it("adopts A and B across a queued command at a tool boundary, then compacts", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
       const gateway = scriptedGateway({
         usage: lowUsage,
+        results: [
+          {
+            content: [
+              {
+                type: "tool_use",
+                toolCallId: "queue-order-boundary",
+                toolName: "unavailable_probe_tool",
+                input: {},
+              },
+            ],
+            toolCalls: [],
+            finishReason: "tool_use",
+            usage: lowUsage,
+            model: "gpt-4.1-mini",
+            provider: "openai",
+          },
+        ],
         onStream: async (call) => {
           if (call !== 1) return;
           await rig.send(rig.threadId, "A before queued compact");
@@ -784,17 +801,55 @@ else
         "user",
         "assistant",
         "compaction",
-        "assistant",
       ]);
+      expect(tail.map((turn) => turn.position)).toEqual(
+        [...tail]
+          .sort((left, right) => left.position - right.position)
+          .map((turn) => turn.position),
+      );
       expect(JSON.stringify(gateway.requests[1])).toContain("A before queued compact");
-      expect(JSON.stringify(gateway.requests[1])).not.toContain("B after queued compact");
-      expect(JSON.stringify(gateway.requests.at(-1))).toContain("B after queued compact");
+      expect(JSON.stringify(gateway.requests[1].messages.at(-1))).toContain(
+        "B after queued compact",
+      );
       expect(tail.find((turn) => turn.role === "compaction")?.metadata).toMatchObject({
         trigger: "manual",
       });
     });
 
-    it("Stop follows the same A, command, B queue order as natural end", async () => {
+    it("answers B in the next run before compacting when B arrives after the last boundary", async () => {
+      let rig: Awaited<ReturnType<typeof fixture>>;
+      const gateway = scriptedGateway({
+        usage: lowUsage,
+        onStream: async (call) => {
+          if (call !== 1) return;
+          await rig.send(rig.threadId, "A before queued compact");
+          await compactControl(rig);
+          await rig.send(rig.threadId, "B after the last boundary");
+        },
+      });
+      rig = await manualFixture({ gateway });
+      const start = (await rig.repos.turns.listByThread(rig.threadId)).length;
+
+      await (
+        await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "first reply" })
+      ).execute();
+      const tail = (await settled(rig)).slice(start);
+
+      expect(gateway.requests).toHaveLength(2);
+      expect(JSON.stringify(gateway.requests[1].messages.at(-1))).toContain(
+        "B after the last boundary",
+      );
+      expect(tail.map((turn) => turn.position)).toEqual(
+        [...tail]
+          .sort((left, right) => left.position - right.position)
+          .map((turn) => turn.position),
+      );
+      const compaction = tail.find((turn) => turn.role === "compaction");
+      const answeringReply = [...tail].reverse().find((turn) => turn.role === "assistant");
+      expect(compaction?.position).toBeGreaterThan(answeringReply?.position ?? -1);
+    });
+
+    it("Stop answers waiting B before compacting", async () => {
       const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
       const rig = await manualFixture({ gateway });
       const active = await rig.orchestrator.prepare({
@@ -804,7 +859,7 @@ else
       const execution = active.execute();
       await gateway.untilGatewayBoundary(1);
 
-      const before = await rig.send(rig.threadId, "A before queued compact");
+      await rig.send(rig.threadId, "A before queued compact");
       const control = await compactControl(rig);
       await rig.send(rig.threadId, "B after queued compact");
       expect(await rig.orchestrator.cancel(rig.threadId, active.executionTurnId)).toBe("cancelled");
@@ -823,12 +878,19 @@ else
         status: "complete",
         metadata: {
           trigger: "manual",
-          pinnedRequestTurnIds: [before.userTurnId],
         },
       });
       expect(JSON.stringify(gateway.requests[1])).toContain("A before queued compact");
-      expect(JSON.stringify(gateway.requests[1])).not.toContain("B after queued compact");
-      expect(JSON.stringify(gateway.requests.at(-1))).toContain("B after queued compact");
+      expect(JSON.stringify(gateway.requests[1].messages.at(-1))).toContain(
+        "B after queued compact",
+      );
+      const relevant = turns.filter(
+        (turn) =>
+          turn.role === "user" ||
+          turn.role === "assistant" ||
+          (turn.metadata as { controlMessageId?: string } | null)?.controlMessageId === control.id,
+      );
+      expect(command?.position).toBeGreaterThan(relevant.at(-2)?.position ?? -1);
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
     });
 
@@ -853,9 +915,10 @@ else
         status: "complete",
         metadata: { controlMessageId: control.id },
       });
+      expect(turns.at(-1)?.position).toBeGreaterThan(turns.at(-2)?.position ?? -1);
     });
 
-    it("retires the next compact after a failed start commit and answers later messages", async () => {
+    it("answers waiting messages before retiring a compact whose start commit fails", async () => {
       const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
       const rig = await manualFixture({ gateway });
       const active = await rig.orchestrator.prepare({
@@ -870,10 +933,10 @@ else
       const waiting = await rig.send(rig.threadId, waitingText);
       expect(await rig.orchestrator.cancel(rig.threadId, active.executionTurnId)).toBe("cancelled");
       const transition = rig.repos.runTurnStartTransition.bind(rig.repos);
-      let failed = false;
+      let transitionCalls = 0;
       rig.repos.runTurnStartTransition = async (threadId, expectedLeafTurnId, operation) => {
-        if (!failed) {
-          failed = true;
+        transitionCalls += 1;
+        if (transitionCalls === 2) {
           throw new Error("compact start commit failed");
         }
         return transition(threadId, expectedLeafTurnId, operation);
@@ -888,7 +951,7 @@ else
           (turn.metadata as { controlMessageId?: string } | null)?.controlMessageId === control.id,
       );
 
-      expect(failed).toBe(true);
+      expect(transitionCalls).toBeGreaterThanOrEqual(2);
       expect(compact).toMatchObject({
         status: "error",
         metadata: { reason: "compaction_failed", phase: "delivery" },
@@ -897,6 +960,8 @@ else
         true,
       );
       expect(JSON.stringify(gateway.requests.at(-1))).toContain(waitingText);
+      const reply = [...turns].reverse().find((turn) => turn.role === "assistant");
+      expect(compact?.position).toBeGreaterThan(reply?.position ?? -1);
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
     });
 
@@ -967,7 +1032,9 @@ else
         outcome: "withdrawn",
       });
       await drainControls(rig);
-      expect(JSON.stringify(rig.gateway.requests.at(-1))).toContain("B behind withdrawn compact");
+      expect(JSON.stringify(rig.gateway.requests.at(-1)?.messages.at(-1))).toContain(
+        "B behind withdrawn compact",
+      );
 
       const started = await compactControl(rig);
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
@@ -1032,7 +1099,7 @@ else
       expect(summarizer.calls).toHaveLength(2);
     });
 
-    it("a failed manual summary does not fail the reply queued behind it", async () => {
+    it("answers a waiting reply before a later manual summary fails", async () => {
       const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
       const summarizer = scriptedSummarizer(async () => ({
         kind: "failed",
@@ -1054,12 +1121,15 @@ else
       await execution;
       const turns = await settled(rig);
 
-      expect(turns.find((turn) => turn.role === "compaction")).toMatchObject({
+      const compact = turns.find((turn) => turn.role === "compaction");
+      expect(compact).toMatchObject({
         status: "error",
         metadata: { reason: "compaction_failed", phase: "summary" },
       });
       expect(turns.find((turn) => turn.id === waiting.userTurnId)?.role).toBe("user");
-      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
+      const reply = [...turns].reverse().find((turn) => turn.role === "assistant");
+      expect(reply).toMatchObject({ role: "assistant", status: "complete" });
+      expect(compact?.position).toBeGreaterThan(reply?.position ?? -1);
       expect(JSON.stringify(gateway.requests.at(-1))).toContain("reply after failed compact");
     });
 
@@ -1366,12 +1436,21 @@ else
 
       await (await recovery.prepare({ threadId: rig.threadId, drain: true })).execute();
       expect(await delivery.selectPending(rig.threadId)).toEqual([]);
-      expect(await rig.repos.turns.listByThread(rig.threadId)).toContainEqual(
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
+      const compact = turns.find(
+        (turn) =>
+          turn.role === "compaction" &&
+          (turn.metadata as { controlMessageId?: string } | null)?.controlMessageId ===
+            control.response.id,
+      );
+      expect(compact).toEqual(
         expect.objectContaining({
           role: "compaction",
           status: "complete",
           metadata: expect.objectContaining({ controlMessageId: control.response.id }),
         }),
       );
+      const reply = [...turns].reverse().find((turn) => turn.role === "assistant");
+      expect(compact?.position).toBeGreaterThan(reply?.position ?? -1);
     });
   });

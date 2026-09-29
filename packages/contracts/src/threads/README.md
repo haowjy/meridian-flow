@@ -6,7 +6,7 @@ Commands are writer-only, not tools.
 
 `PendingInboxItem.control` carries that body on control rows. `summary` shows the instructions when present. Snapshot pending state and
 `inbox.changed` share the same schema. A queued control has no transcript
-position until a divider with `metadata.controlMessageId` starts it. Commands and messages retain `seq` order. Boundaries adopt only the non-control prefix before the first command; an oldest command runs alone at run start. Stop only ends the turn.
+position until a divider with `metadata.controlMessageId` starts it. Boundaries adopt every pending non-command row regardless of queued commands. At run start, waiting messages and notices run before the oldest command, which runs alone once no message remains. Stop only ends the turn.
 
 Manual dividers use role `compaction`, `trigger: "manual"`, and ordinary turn
 statuses: `pending`, `complete`, `error`, `cancelled`. A failed divider of

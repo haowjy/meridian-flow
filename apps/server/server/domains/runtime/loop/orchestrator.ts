@@ -523,8 +523,6 @@ async function runDrainTurn(
       const ctx = await loadRunStartContext(deps, setupThread);
       preparationError = ctx.contextError;
       const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;
-      const deferredIds = new Set(selection.deferred.map((row) => row.id));
-      const requestPriorTurns = priorTurns.filter((turn) => !deferredIds.has(turn.id));
       const existingTurns = [...inheritedTurns, ...priorTurns];
       const previousTurn = prevTurnId
         ? (existingTurns.find((turn) => turn.id === prevTurnId) ?? null)
@@ -574,8 +572,7 @@ async function runDrainTurn(
       let plan = makePlan(preparationError ? [] : selection.notices);
       const referenceUserTurnId =
         [...plan.turns].reverse().find((turn) => turn.role === "user")?.id ??
-        [...requestPriorTurns, ...inheritedTurns].reverse().find((turn) => turn.role === "user")
-          ?.id ??
+        [...priorTurns, ...inheritedTurns].reverse().find((turn) => turn.role === "user")?.id ??
         prevTurnId ??
         reservedTurnId;
       let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
@@ -586,9 +583,7 @@ async function runDrainTurn(
         });
       if (!preparationError) {
         try {
-          const previousBlocks = (await deps.repos.blocks.listByThread(input.threadId)).filter(
-            (block) => !deferredIds.has(block.turnId),
-          );
+          const previousBlocks = await deps.repos.blocks.listByThread(input.threadId);
           const prepareInput = {
             deps,
             thread: setupThread,
@@ -599,7 +594,7 @@ async function runDrainTurn(
             pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
             turns: [
               ...inheritedTurns,
-              ...requestPriorTurns,
+              ...priorTurns,
               ...(skillBody ? [skillBody.turn] : []),
               ...plan.turns,
             ],
@@ -657,7 +652,7 @@ async function runDrainTurn(
         referenceUserTurnId,
         preflight,
         messageTurns: plan.turns,
-        priorTurns: requestPriorTurns,
+        priorTurns,
         inheritedTurns,
         inheritedBlocks,
         executionAdmitted: selection.outstanding.length > 0 || !!input.replyTurnId,

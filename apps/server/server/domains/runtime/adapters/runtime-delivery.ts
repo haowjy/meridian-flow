@@ -154,7 +154,6 @@ export function createDeliveryAdapter(
       outstanding: pendingBatch.filter(
         (row) => row.intent === "message" && (boundIds.has(row.id) || selectedIds.has(row.id)),
       ),
-      deferred: pendingBatch.filter((row) => !boundIds.has(row.id) && !selectedIds.has(row.id)),
       workContext: work.workContext,
       notices,
       activeLeafTurnId: thread.activeLeafTurnId,
