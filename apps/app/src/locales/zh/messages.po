@@ -3544,8 +3544,8 @@ msgid "Restoring"
 msgstr ""
 
 #: src/features/project/work/DeletedWorkList.tsx
-msgid "Restoring brings back a Work with its chats, drafts, Scratch and Uploads."
-msgstr ""
+#~ msgid "Restoring brings back a Work with its chats, drafts, Scratch and Uploads."
+#~ msgstr ""
 
 #: src/features/project/work/RecentlyDeletedWork.tsx
 #~ msgid "Restoring brings back the Work with its chats, drafts, Scratch and Uploads."

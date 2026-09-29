@@ -28,26 +28,21 @@ export function DeletedWorkList({
       </p>
     );
   return (
-    <>
-      <p className="px-2 pb-2 text-xs text-muted-foreground">
-        <Trans>Restoring brings back a Work with its chats, drafts, Scratch and Uploads.</Trans>
-      </p>
-      <RuledList
-        rows={entries.map(({ key, work, failure }) => ({
-          key,
-          node: (
-            <>
-              <DeletedRow work={work} now={now} onRestore={() => onRestore(work)} />
-              {failure ? (
-                <div className="px-2">
-                  <WorkCommandFailureRow failure={failure} />
-                </div>
-              ) : null}
-            </>
-          ),
-        }))}
-      />
-    </>
+    <RuledList
+      rows={entries.map(({ key, work, failure }) => ({
+        key,
+        node: (
+          <>
+            <DeletedRow work={work} now={now} onRestore={() => onRestore(work)} />
+            {failure ? (
+              <div className="px-2">
+                <WorkCommandFailureRow failure={failure} />
+              </div>
+            ) : null}
+          </>
+        ),
+      }))}
+    />
   );
 }
 
