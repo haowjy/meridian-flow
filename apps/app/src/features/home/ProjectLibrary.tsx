@@ -84,7 +84,7 @@ export function ProjectLibrary() {
                     <li key={project.id} className="min-w-0">
                       <Link
                         to="/p/$projectId/$"
-                        params={{ projectId: project.id, _splat: "" }}
+                        params={{ projectId: project.id, _splat: "chats" }}
                         className="group focus-ring block rounded-xl"
                         aria-label={t`Open ${title}`}
                       >
