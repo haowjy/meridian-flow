@@ -31,6 +31,8 @@ export type HandoffBriefCardProps = {
   stopping: boolean;
   /** The writer's last Stop on this seed failed. */
   stopFailed?: boolean;
+  /** The server refused this card's Retry: something else started in the chat first. */
+  retryRefused?: boolean;
   /** A reply (or anything else) holds the chat: Retry waits until it ends. */
   destinationBusy?: boolean;
   /** Absent in a read-only view (a fork's inherited brief) or before the server has the seed. */
@@ -57,6 +59,7 @@ export function HandoffBriefCard({
   latest,
   stopping,
   stopFailed = false,
+  retryRefused = false,
   destinationBusy = false,
   onStop,
   onRetry,
@@ -164,6 +167,11 @@ export function HandoffBriefCard({
           {view.state === "failed" && view.superseded ? (
             <p className="text-caption text-muted-foreground">
               <Trans>This brief failed.</Trans>
+            </p>
+          ) : null}
+          {retryRefused ? (
+            <p className="text-caption text-muted-foreground">
+              <Trans>Couldn't retry. Something else started in this chat first.</Trans>
             </p>
           ) : null}
           {view.state === "stopped" && !view.superseded ? (

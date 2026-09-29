@@ -124,6 +124,7 @@ function handoffBrief(overrides: Partial<HandoffBrief> = {}): HandoffBrief {
   return {
     localSeeds: [],
     canStop: (seed) => !isOptimisticSeed(seed),
+    retryRefused: new Set(),
     retry: vi.fn(),
     stop: vi.fn(),
     stopping: new Set(),
@@ -299,6 +300,14 @@ describe("TurnList brief card", () => {
       brief: handoffBrief({ stopping: new Set(["s"]), stopFailed: new Set(["s"]) }),
     });
     expect(seen.briefs.get("s")).toMatchObject({ stopping: true, stopFailed: true });
+  });
+
+  it("puts a refused Retry on the card the writer pressed", async () => {
+    await render({
+      turns: [seedTurn("s", "error")],
+      brief: handoffBrief({ retryRefused: new Set(["s"]) }),
+    });
+    expect(seen.briefs.get("s")).toMatchObject({ retryRefused: true });
   });
 
   it("tells the card when the chat is busy, so Retry waits for the reply", async () => {

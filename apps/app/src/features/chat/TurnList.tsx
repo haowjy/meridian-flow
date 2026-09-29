@@ -263,6 +263,7 @@ export function TurnList({
             latest={row.latest}
             stopping={actions?.stopping.has(turn.id) ?? false}
             stopFailed={actions?.stopFailed.has(turn.id) ?? false}
+            retryRefused={actions?.retryRefused.has(turn.id) ?? false}
             destinationBusy={busy}
             onStop={actions?.canStop(turn) ? actions.stop : undefined}
             onRetry={actions?.retry}

@@ -107,15 +107,33 @@ describe("useHandoffBrief Retry", () => {
     expect(latest.localSeeds).toEqual([]);
   });
 
-  it("marks that card failed with copy on the card when the chat is busy (409)", async () => {
+  it("drops the card on a refusal (409), notes it on the pressed card, and refreshes", async () => {
     api.retryHandoffBrief.mockRejectedValue(
       new HttpResponseError("handoff_retry_unavailable", 409, null),
     );
     await act(async () => latest.retry(failed));
-    expect(latest.localSeeds[0]).toMatchObject({
-      status: "error",
-      error: "This chat is busy. Try again when the reply finishes.",
-    });
+    expect(latest.localSeeds).toEqual([]);
+    expect(latest.retryRefused.has("s")).toBe(true);
+    expect(invalidateQueries).toHaveBeenCalled();
+    expect(announcements.announce).toHaveBeenCalledWith(
+      "Couldn't retry. Something else started in this chat first.",
+    );
+    // Pressing Retry again clears the note while the new request runs.
+    api.retryHandoffBrief.mockReturnValueOnce(new Promise(() => undefined));
+    await act(async () => latest.retry(failed));
+    expect(latest.retryRefused.has("s")).toBe(false);
+  });
+
+  it("drops a lost Retry's card when its re-send is refused, noting the card first pressed", async () => {
+    api.retryHandoffBrief.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await act(async () => latest.retry(failed));
+    const lost = latest.localSeeds[0] as Turn;
+    api.retryHandoffBrief.mockRejectedValueOnce(
+      new HttpResponseError("handoff_retry_unavailable", 409, null),
+    );
+    await act(async () => latest.retry(lost));
+    expect(latest.localSeeds).toEqual([]);
+    expect([...latest.retryRefused]).toEqual(["s"]);
   });
 
   it("marks it failed on a lost request, and its Retry re-sends the same id", async () => {
@@ -126,6 +144,9 @@ describe("useHandoffBrief Retry", () => {
       status: "error",
       error: "Couldn't start a new brief. Try again.",
     });
+    expect(announcements.announceError).toHaveBeenCalledWith(
+      "Couldn't start a new brief. Try again.",
+    );
     const again = deferred<Turn>();
     api.retryHandoffBrief.mockReturnValueOnce(again.promise);
     await act(async () => latest.retry(lost));

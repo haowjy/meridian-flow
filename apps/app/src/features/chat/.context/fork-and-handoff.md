@@ -75,11 +75,16 @@ copy, and a stopped one drops "This chat continues without a brief."
 - **Retry** mints the new seed's id and appends a generating card at the leaf
   at once (`optimisticHandoffSeed` with that id and the old seed's frozen
   source), then posts `{ id }` to `POST /handoff/brief`. The response's seed
-  replaces the stand-in by id, and the snapshot's replaces that. A 409
-  (`handoff_retry_unavailable`: a reply or brief holds the chat) or a lost
-  request marks that card failed with its reason as the card's copy; its Retry
-  re-sends under the same id, so a request that did land replays. The new card
-  is the newest seed, so the old card loses Retry the moment it appears.
+  replaces the stand-in by id, and the snapshot's replaces that. The stand-in
+  sits after the turn it followed (`placeLocalSeeds`), so later turns render
+  below it and a newer server seed stays the latest. The new card is the
+  newest seed, so the old card loses Retry the moment it appears.
+- **A refused Retry** (409 `handoff_retry_unavailable`: something holds the
+  chat, or the pressed brief is no longer the latest failed one) wrote
+  nothing. The stand-in goes, the snapshot refreshes to show the true state,
+  and the pressed card says "Couldn't retry. Something else started in this
+  chat first." A lost request instead keeps the stand-in, failed; its Retry
+  re-sends under the same id, so a request that did land replays.
 - **Retry waits while the chat is busy** (a live status or a streaming
   reply). It stays focusable (`aria-disabled`) and says "You can retry when
   the reply finishes."; the server's 409 covers the race.

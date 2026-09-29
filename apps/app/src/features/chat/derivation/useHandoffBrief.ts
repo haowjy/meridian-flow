@@ -4,9 +4,13 @@
  * The brief is not a queued command: Retry and Stop act on the seed directly.
  * Retry mints the new seed's id and shows its generating card at the leaf at
  * once, then asks the server to write it. The server's seed replaces the
- * stand-in by id, first from the response and then from the snapshot. A
- * refusal or a lost request marks that card failed, with the reason on the
- * card, and its Retry re-sends under the same id. Stop marks the seed
+ * stand-in by id, first from the response and then from the snapshot.
+ *
+ * A refusal (409: the chat is busy, or the brief the writer pressed is no
+ * longer the latest failed one) drops the stand-in, notes it on the card the
+ * writer pressed, and refreshes the snapshot so the cards show the true
+ * state. A lost request keeps the stand-in, failed, and its Retry re-sends
+ * under the same id: the lost request may have arrived. Stop marks the seed
  * Stopping and cancels it through the turn cancel route; a failed Stop says
  * so on the card.
  */
@@ -17,13 +21,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HttpResponseError, isMeridianApiError } from "@/client/api/http-client";
 import { retryHandoffBrief } from "@/client/api/threads-api";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
+import { announce, announceError } from "@/client/stores";
 import { type TurnStop, useTurnStop } from "../useTurnStop";
-import { isOptimisticSeed, optimisticHandoffSeed, readHandoffSeed } from "./handoff-seed";
+import {
+  isOptimisticSeed,
+  optimisticHandoffSeed,
+  placeLocalSeeds,
+  readHandoffSeed,
+} from "./handoff-seed";
 
 type LocalSeed = {
   /** The stand-in, then the server's seed once the response lands. */
   turn: Turn;
   request: "sending" | "sent" | "failed";
+  /** The card whose Retry the writer pressed. */
+  from: string;
 };
 
 export type HandoffBrief = {
@@ -31,6 +43,8 @@ export type HandoffBrief = {
   localSeeds: readonly Turn[];
   /** Whether Stop can reach this seed: the server has it. */
   canStop: (turn: Turn) => boolean;
+  /** Cards whose Retry the server refused: the chat had moved on. */
+  retryRefused: ReadonlySet<string>;
   /** A new brief after `from`, or the same request again when `from` is a failed Retry. */
   retry: (from: Turn) => void;
   stop: (turnId: string) => void;
@@ -43,12 +57,7 @@ function httpStatus(error: unknown): number | undefined {
   return isMeridianApiError(error) ? error.status : undefined;
 }
 
-function retryFailureCopy(error: unknown): string {
-  // 409: the destination is replying, or another brief already started.
-  return httpStatus(error) === 409
-    ? t`This chat is busy. Try again when the reply finishes.`
-    : t`Couldn't start a new brief. Try again.`;
-}
+const NO_REFUSALS: ReadonlySet<string> = new Set();
 
 export function useHandoffBrief(input: {
   threadId: string;
@@ -56,6 +65,7 @@ export function useHandoffBrief(input: {
 }): HandoffBrief {
   const { threadId, storedTurns } = input;
   const [local, setLocal] = useState<readonly LocalSeed[]>([]);
+  const [retryRefused, setRetryRefused] = useState(NO_REFUSALS);
   const localRef = useRef(local);
   localRef.current = local;
   const storedRef = useRef(storedTurns);
@@ -76,43 +86,68 @@ export function useHandoffBrief(input: {
     setLocal((current) => current.map((entry) => (entry.turn.id === id ? change(entry) : entry)));
   }, []);
 
+  const refresh = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
+  }, [queryClient, threadId]);
+
   const send = useCallback(
-    (seedId: string) => {
+    (seedId: string, from: string) => {
       retryHandoffBrief(threadId, { id: seedId }).then(
         (serverSeed) => {
-          patch(seedId, () => ({ turn: serverSeed, request: "sent" }));
-          void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
+          patch(seedId, (entry) => ({ ...entry, turn: serverSeed, request: "sent" }));
+          refresh();
         },
         (error: unknown) => {
-          const copy = retryFailureCopy(error);
+          if (httpStatus(error) === 409) {
+            // Nothing was written: the snapshot shows what holds the chat or
+            // which brief is newer, and the pressed card says Retry didn't run.
+            setLocal((current) => current.filter((entry) => entry.turn.id !== seedId));
+            setRetryRefused((current) => new Set(current).add(from));
+            announce(t`Couldn't retry. Something else started in this chat first.`);
+            refresh();
+            return;
+          }
+          const copy = t`Couldn't start a new brief. Try again.`;
+          announceError(copy);
           // The card reads its failure from the seed, as it does a server failure.
           patch(seedId, (entry) => ({
+            ...entry,
             request: "failed",
             turn: { ...entry.turn, status: "error", error: copy },
           }));
         },
       );
     },
-    [patch, queryClient, threadId],
+    [patch, refresh, threadId],
   );
 
   const retry = useCallback(
     (from: Turn) => {
+      setRetryRefused((current) => {
+        if (!current.has(from.id)) return current;
+        const next = new Set(current);
+        next.delete(from.id);
+        return next;
+      });
       const failedRetry = localRef.current.find(
         (entry) => entry.turn.id === from.id && entry.request === "failed",
       );
       if (failedRetry) {
         // Same id: if the lost request did reach the server, this replays it.
         patch(from.id, (entry) => ({
+          ...entry,
           request: "sending",
           turn: { ...entry.turn, status: "pending", error: null },
         }));
-        send(from.id);
+        send(from.id, failedRetry.from);
         return;
       }
       const facts = readHandoffSeed(from);
       if (!facts?.cutoffTurnId) return;
-      const leaf = [...storedRef.current, ...localRef.current.map((entry) => entry.turn)].at(-1);
+      const leaf = placeLocalSeeds(
+        [...storedRef.current],
+        localRef.current.map((entry) => entry.turn),
+      ).at(-1);
       const id = crypto.randomUUID();
       const seed = optimisticHandoffSeed({
         id,
@@ -125,8 +160,8 @@ export function useHandoffBrief(input: {
         cutoffTurnId: facts.cutoffTurnId,
         createdAt: new Date().toISOString(),
       });
-      setLocal((current) => [...current, { turn: seed, request: "sending" }]);
-      send(id);
+      setLocal((current) => [...current, { turn: seed, request: "sending", from: from.id }]);
+      send(id, from.id);
     },
     [patch, send, threadId],
   );
@@ -157,6 +192,7 @@ export function useHandoffBrief(input: {
   return {
     localSeeds,
     canStop,
+    retryRefused,
     retry,
     stop,
     stopping: turnStop.stopping,

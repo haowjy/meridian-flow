@@ -139,6 +139,14 @@ describe("HandoffBriefCard", () => {
     expect(onStop).toHaveBeenCalledWith("s");
   });
 
+  it("says a refused Retry didn't run, even once a newer brief has replaced the card", async () => {
+    await render({ turn: seed("error"), latest: false, retryRefused: true, onRetry: vi.fn() });
+    expect(host.textContent).toContain(
+      "Couldn't retry. Something else started in this chat first.",
+    );
+    expect(button("Retry the handoff brief")).toBeUndefined();
+  });
+
   it("a settled brief drops the stopping words even while the Stop flag lingers", async () => {
     await render({ turn: seed("cancelled"), stopping: true, onRetry: vi.fn() });
     expect(card()?.getAttribute("aria-label")).toBe("Handoff brief stopped");
