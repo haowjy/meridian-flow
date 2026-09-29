@@ -232,54 +232,60 @@ export function createInMemoryWorkRepository(
     },
 
     async softDelete(id: WorkId) {
-      const row = rows.get(id);
-      if (!row || row.deletedAt) {
-        return {
-          before: row ? { ...row } : null,
-          after: row ? { ...row } : null,
+      return repo.transaction(async () => {
+        const row = rows.get(id);
+        if (!row || row.deletedAt) {
+          return {
+            before: row ? { ...row } : null,
+            after: row ? { ...row } : null,
+            threadIds: [],
+          };
+        }
+        if (row.isNoWork) throw new WorkLockedError();
+        const before = { ...row };
+        const deletedAt = currentTime();
+        row.deletedAt = deletedAt.toISOString();
+        row.updatedAt = row.deletedAt;
+        row.lastActivityAt = row.updatedAt;
+        const threadIds = await cascade.hide({
+          workId: id,
           threadIds: [],
-        };
-      }
-      if (row.isNoWork) throw new WorkLockedError();
-      const before = { ...row };
-      row.deletedAt = now();
-      row.updatedAt = row.deletedAt;
-      row.lastActivityAt = row.updatedAt;
-      const threadIds = await cascade.hide({
-        workId: id,
-        threadIds: [],
-        liveThreadIds: [],
-        at: currentTime(),
+          liveThreadIds: [],
+          at: deletedAt,
+        });
+        advance(row);
+        return { before, after: { ...row }, threadIds };
       });
-      advance(row);
-      return { before, after: { ...row }, threadIds };
     },
 
     async restore(id: WorkId): Promise<WorkRestoration> {
-      const row = rows.get(id);
-      if (!row) throw new Error(`Work not found: ${id}`);
-      if (decideWorkRestore(row, currentTime()) === "unchanged") {
-        const existing = { ...row };
-        return { before: existing, after: existing, changed: false };
-      }
-      if (nameIsTaken(row.projectId, row.name, row.id)) {
-        throw new WorkRestoreConflictError("name");
-      }
-      const slugIsTaken = [...rows.values()].some(
-        (other) =>
-          other.id !== row.id &&
-          other.projectId === row.projectId &&
-          other.deletedAt === null &&
-          other.slug === row.slug,
-      );
-      if (slugIsTaken) throw new WorkRestoreConflictError("slug");
-      const before = { ...row };
-      row.deletedAt = null;
-      row.updatedAt = now();
-      row.lastActivityAt = row.updatedAt;
-      await cascade.unhide({ workId: id, threadIds: [], liveThreadIds: [], at: currentTime() });
-      advance(row);
-      return { before, after: { ...row }, changed: true };
+      return repo.transaction(async () => {
+        const row = rows.get(id);
+        if (!row) throw new Error(`Work not found: ${id}`);
+        if (decideWorkRestore(row, currentTime()) === "unchanged") {
+          const existing = { ...row };
+          return { before: existing, after: existing, changed: false };
+        }
+        if (nameIsTaken(row.projectId, row.name, row.id)) {
+          throw new WorkRestoreConflictError("name");
+        }
+        const slugIsTaken = [...rows.values()].some(
+          (other) =>
+            other.id !== row.id &&
+            other.projectId === row.projectId &&
+            other.deletedAt === null &&
+            other.slug === row.slug,
+        );
+        if (slugIsTaken) throw new WorkRestoreConflictError("slug");
+        const before = { ...row };
+        const restoredAt = currentTime();
+        row.deletedAt = null;
+        row.updatedAt = restoredAt.toISOString();
+        row.lastActivityAt = row.updatedAt;
+        await cascade.unhide({ workId: id, threadIds: [], liveThreadIds: [], at: restoredAt });
+        advance(row);
+        return { before, after: { ...row }, changed: true };
+      });
     },
 
     async touch(id: WorkId): Promise<void> {

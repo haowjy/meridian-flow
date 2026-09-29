@@ -306,7 +306,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         if (before.isNoWork) throw new WorkLockedError();
         if (lockedTree.changed) throw new WorkDeleteRetryError();
 
-        const deletedAt = new Date();
+        const deletedAt = now();
         const deletedThreadIds = await cascade.hide({
           workId: id,
           threadIds: lockedTree.threadIds,
