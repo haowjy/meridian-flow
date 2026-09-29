@@ -1,18 +1,14 @@
 /**
- * Work commands: one table says, per operation, what it sends, what it shows
- * while pending, which fields it owns once committed, and when the server
- * already shows it. `useWorkMutations` is generated from that table, and each
- * command's record lives in the mutation cache until the server snapshot
- * includes it.
+ * Work commands and their records. One table says, per operation, what it
+ * sends, what it shows while pending, which fields it owns once committed,
+ * and when the server already shows it; `useWorkMutations` is generated from
+ * it. Each command leaves a record in a per-project store: pending until the
+ * server snapshot includes it, then gone, except a failure, which stays until
+ * the writer retries or dismisses it, and a delete, whose record is its Undo
+ * window. Records live in the QueryClient, scoped to the signed-in account.
  */
 import type { UpdateWorkRequest, Work, WorksSnapshot } from "@meridian/contracts/works";
-import {
-  type Mutation,
-  type MutationStatus,
-  type QueryClient,
-  useMutationState,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import {
@@ -23,6 +19,7 @@ import {
   unarchiveWork,
   updateWork,
 } from "@/client/api/projects-api";
+import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 import { projectQueryKeys } from "./project-query-keys";
 import { convergeWorkProjection } from "./work-projection-cache";
 import {
@@ -112,10 +109,13 @@ type CommandOf<Op extends WorkOperation> = { operation: Op; variables: WorkComma
 export type WorkCommand = { [Op in WorkOperation]: CommandOf<Op> }[WorkOperation];
 
 export type WorkCommandRecord = WorkCommand & {
-  mutationId: number;
+  id: number;
   workId: string;
   submittedAt: number;
-  status: MutationStatus;
+  /** `done` is a delete that landed: its Undo window. */
+  status: "pending" | "failed" | "done";
+  /** The writer closed it: a pending delete's Undo window. */
+  dismissed: boolean;
   error: Error | null;
 };
 
@@ -130,77 +130,166 @@ const OPERATIONS = Object.keys(workCommands) as WorkOperation[];
 
 export function useWorkMutations(projectId: string): WorkMutations {
   const client = useQueryClient();
+  const accountSignal = useOptionalAccountEpochSignal();
   return useMemo(
     () =>
       Object.fromEntries(
         OPERATIONS.map((operation) => [
           operation,
           (variables: WorkCommandVariables[WorkOperation]) =>
-            runWorkCommand(client, projectId, { operation, variables } as WorkCommand),
+            runWorkCommand(
+              client,
+              projectId,
+              { operation, variables } as WorkCommand,
+              accountSignal,
+            ),
         ]),
       ) as WorkMutations,
-    [client, projectId],
+    [accountSignal, client, projectId],
   );
 }
 
-const workCommandKey = (projectId: string, operation?: WorkOperation) =>
-  operation
-    ? (["work-command", projectId, operation] as const)
-    : (["work-command", projectId] as const);
+// --- The record store -------------------------------------------------------
 
-/** Identifies one command's record in the mutation cache after it settles. */
-type CommandReceipt = Record<string, never>;
+const NO_RECORDS: readonly WorkCommandRecord[] = [];
+
+function readRecords(client: QueryClient, projectId: string): readonly WorkCommandRecord[] {
+  return (
+    client.getQueryData<readonly WorkCommandRecord[]>(projectQueryKeys.workCommands(projectId)) ??
+    NO_RECORDS
+  );
+}
+
+function writeRecords(
+  client: QueryClient,
+  projectId: string,
+  update: (records: readonly WorkCommandRecord[]) => readonly WorkCommandRecord[],
+): void {
+  client.setQueryData(
+    projectQueryKeys.workCommands(projectId),
+    update(readRecords(client, projectId)),
+  );
+}
+
+/** This project's Work command records, oldest first. */
+export function useWorkCommandRecords(projectId: string): readonly WorkCommandRecord[] {
+  const client = useQueryClient();
+  return useQuery({
+    queryKey: projectQueryKeys.workCommands(projectId),
+    queryFn: () => readRecords(client, projectId),
+    initialData: () => readRecords(client, projectId),
+    enabled: false,
+    staleTime: Number.POSITIVE_INFINITY,
+  }).data;
+}
+
+/** Per project, the serial commands' network queue. */
+const queues = new WeakMap<QueryClient, Map<string, Promise<unknown>>>();
+const accountsSeen = new WeakMap<QueryClient, WeakSet<AbortSignal>>();
+let lastRecordId = 0;
+
+function projectQueues(client: QueryClient): Map<string, Promise<unknown>> {
+  let byProject = queues.get(client);
+  if (!byProject) {
+    byProject = new Map();
+    queues.set(client, byProject);
+  }
+  return byProject;
+}
+
+/** Account replacement drops every record; a command still running then writes nothing. */
+function scopeToAccount(client: QueryClient, accountSignal: AbortSignal | null): void {
+  if (!accountSignal) return;
+  let seen = accountsSeen.get(client);
+  if (!seen) {
+    seen = new WeakSet();
+    accountsSeen.set(client, seen);
+  }
+  if (seen.has(accountSignal)) return;
+  seen.add(accountSignal);
+  accountSignal.addEventListener(
+    "abort",
+    () => {
+      const stores = client.getQueryCache().findAll({
+        predicate: (query) =>
+          query.queryKey[0] === "projects" && query.queryKey[2] === "work-commands",
+      });
+      for (const store of stores) client.setQueryData(store.queryKey, NO_RECORDS);
+    },
+    { once: true },
+  );
+}
 
 function runWorkCommand(
   client: QueryClient,
   projectId: string,
   command: WorkCommand,
+  accountSignal: AbortSignal | null,
 ): Promise<Error | null> {
-  const { operation, variables } = command;
-  const mutation = client
-    .getMutationCache()
-    .build<unknown, Error, unknown, CommandReceipt>(client, {
-      mutationKey: workCommandKey(projectId, operation),
-      mutationFn: () => specs[operation].request(variables as never),
-      scope: specs[operation].serial ? { id: `work-lifecycle:${projectId}` } : undefined,
-      // A failure or a delete's Undo window stays until the writer acts on it,
-      // or runs another command on that Work; a success record goes on settle.
-      gcTime: Number.POSITIVE_INFINITY,
-      onMutate: () => {
-        forgetSettledCommands(client, projectId, operation, variables.workId);
-        return {};
-      },
-      onSettled: (result, error, _variables, receipt) =>
-        settleWorkCommand(client, projectId, command, receipt, error ? undefined : { result }),
-    });
-  return mutation.execute(variables).then(
-    () => null,
-    (error: unknown) => (error instanceof Error ? error : new Error(String(error))),
-  );
+  scopeToAccount(client, accountSignal);
+  const record = {
+    ...command,
+    id: ++lastRecordId,
+    workId: command.variables.workId,
+    submittedAt: Date.now(),
+    status: "pending",
+    dismissed: false,
+    error: null,
+  } as WorkCommandRecord;
+  // A new command replaces what its Work showed before. An Undo (restore)
+  // keeps the delete it answers, so a rejected Undo brings the Undo row back.
+  writeRecords(client, projectId, (records) => [
+    ...records.filter(
+      (other) =>
+        other.workId !== record.workId ||
+        other.status === "pending" ||
+        (record.operation === "restore" && other.operation === "delete" && other.status === "done"),
+    ),
+    record,
+  ]);
+  const run = () => executeWorkCommand(client, projectId, record, accountSignal);
+  if (!specs[command.operation].serial) return run();
+  const serial = projectQueues(client);
+  const outcome = (serial.get(projectId) ?? Promise.resolve()).then(run);
+  serial.set(projectId, outcome);
+  return outcome;
 }
 
-/** A stalled read must not hold the lifecycle queue; the fallback patch covers it. */
+/** A stalled read must not hold the serial queue; the fallback patch covers it. */
 const COMMIT_REFRESH_TIMEOUT_MS = 10_000;
 
 /**
- * Converges dependent caches, then keeps a successful command pending until a
- * server snapshot read started after its commit lands, so its projection never
- * drops before the snapshot includes it. Reads are ordered by
- * `authorityRevision`, so an older read cannot replace that newer one.
+ * Sends the command, then keeps its record pending until a server snapshot
+ * read started after the commit lands, so its projection never drops before
+ * the snapshot includes it. Reads are ordered by `authorityRevision`, so an
+ * older read cannot replace that newer one.
  */
-async function settleWorkCommand(
+async function executeWorkCommand(
   client: QueryClient,
   projectId: string,
-  command: WorkCommand,
-  receipt: CommandReceipt | undefined,
-  committed: { result: unknown } | undefined,
-): Promise<void> {
-  convergeWorkProjection(client, { kind: "entity", projectId, operation: command.operation });
-  if (!committed) {
+  record: WorkCommandRecord,
+  accountSignal: AbortSignal | null,
+): Promise<Error | null> {
+  const current = () => !accountSignal?.aborted;
+  let committed: unknown;
+  try {
+    committed = await request(record);
+  } catch (cause) {
+    const error = cause instanceof Error ? cause : new Error(String(cause));
+    if (!current()) return error;
+    convergeWorkProjection(client, { kind: "entity", projectId, operation: record.operation });
+    updateRecord(client, projectId, record.id, (failed) => ({
+      ...failed,
+      status: "failed",
+      dismissed: false,
+      error,
+    }));
     // The projection drops now; a read still catches a write the server kept.
     void repairWorksSnapshot(client, projectId);
-    return;
+    return error;
   }
+  if (!current()) return null;
+  convergeWorkProjection(client, { kind: "entity", projectId, operation: record.operation });
   try {
     await refreshWorksSnapshot(client, projectId, () =>
       listProjectWorks(projectId, { signal: AbortSignal.timeout(COMMIT_REFRESH_TIMEOUT_MS) }),
@@ -208,19 +297,19 @@ async function settleWorkCommand(
   } catch {
     // Without a fresh snapshot, what the server returned is the best truth for
     // the fields this command owns; the rest stays as last read.
-    installCommittedWork(
-      client,
-      projectId,
-      command.variables.workId,
-      ownedFields(command, committed.result),
-    );
+    installCommittedWork(client, projectId, record.workId, ownedFields(record, committed));
     await client.invalidateQueries({
       queryKey: projectQueryKeys.works(projectId),
       exact: true,
       refetchType: "none",
     });
   }
-  if (receipt) retireOnSuccess(client, projectId, receipt);
+  if (current()) retire(client, projectId, record);
+  return null;
+}
+
+function request<Op extends WorkOperation>(command: CommandOf<Op>): Promise<unknown> {
+  return specs[command.operation].request(command.variables);
 }
 
 function ownedFields<Op extends WorkOperation>(
@@ -229,6 +318,73 @@ function ownedFields<Op extends WorkOperation>(
 ): Partial<Work> {
   return specs[command.operation].owned(command.variables, committed as WorkCommandResults[Op]);
 }
+
+/**
+ * A landed command drops its record and every older settled one on its Work.
+ * A delete keeps its own, as its Undo window, unless the writer closed it.
+ */
+function retire(client: QueryClient, projectId: string, landed: WorkCommandRecord): void {
+  writeRecords(client, projectId, (records) =>
+    records.flatMap((record) => {
+      if (record.id === landed.id)
+        return record.operation === "delete" && !record.dismissed
+          ? [{ ...record, status: "done" as const }]
+          : [];
+      const older = record.workId === landed.workId && record.id < landed.id;
+      return older && record.status !== "pending" ? [] : [record];
+    }),
+  );
+}
+
+function updateRecord(
+  client: QueryClient,
+  projectId: string,
+  id: number,
+  update: (record: WorkCommandRecord) => WorkCommandRecord,
+): void {
+  writeRecords(client, projectId, (records) =>
+    records.map((record) => (record.id === id ? update(record) : record)),
+  );
+}
+
+/** Runs a failed command again, as a new command on its Work. */
+export function retryWorkCommand(
+  client: QueryClient,
+  projectId: string,
+  failed: WorkCommandRecord,
+  accountSignal: AbortSignal | null,
+): Promise<Error | null> {
+  const { operation, variables } = failed;
+  return runWorkCommand(client, projectId, { operation, variables } as WorkCommand, accountSignal);
+}
+
+/** The writer dismissed a failure. */
+export function dismissWorkCommand(client: QueryClient, projectId: string, id: number): void {
+  writeRecords(client, projectId, (records) => records.filter((record) => record.id !== id));
+}
+
+/**
+ * The writer closed a Work's Undo window: a landed delete and any rejected
+ * Undo go; a delete still on its way is marked, and goes once it lands.
+ */
+export function closeWorkDeleteWindow(
+  client: QueryClient,
+  projectId: string,
+  workId: string,
+): void {
+  writeRecords(client, projectId, (records) =>
+    records.flatMap((record) => {
+      if (record.workId !== workId) return [record];
+      if (record.operation === "delete" && record.status === "pending")
+        return [{ ...record, dismissed: true }];
+      if (record.operation === "delete" && record.status === "done") return [];
+      if (record.operation === "restore" && record.status === "failed") return [];
+      return [record];
+    }),
+  );
+}
+
+// --- Reading a record against the snapshot ----------------------------------
 
 /** What a pending command will make true of its Work. */
 export function commandProjection<Op extends WorkOperation>(
@@ -252,93 +408,4 @@ export function snapshotHasCommandTarget<Op extends WorkOperation>(
       ? snapshot.noWork
       : snapshot.works.find((entry) => entry.id === workId);
   return specs[command.operation].reached(work, command.variables);
-}
-
-function workCommandRecord(mutation: Mutation<unknown, Error, unknown>): WorkCommandRecord | null {
-  const operation = mutation.options.mutationKey?.[2] as WorkOperation | undefined;
-  const { variables, status, submittedAt, error } = mutation.state;
-  if (!operation || variables === undefined || status === "idle") return null;
-  return {
-    operation,
-    variables: variables as WorkCommandVariables[WorkOperation],
-    workId: (variables as { workId: string }).workId,
-    mutationId: mutation.mutationId,
-    submittedAt,
-    status,
-    error,
-  } as WorkCommandRecord;
-}
-
-/** This project's Work commands, oldest first. */
-export function useWorkCommandRecords(projectId: string, status?: MutationStatus) {
-  const records = useMutationState({
-    filters: { mutationKey: workCommandKey(projectId), status },
-    select: (mutation) => workCommandRecord(mutation as Mutation<unknown, Error, unknown>),
-  });
-  return useMemo(
-    () =>
-      records
-        .filter((record): record is WorkCommandRecord => record !== null)
-        .sort((a, b) => a.mutationId - b.mutationId),
-    [records],
-  );
-}
-
-export function workCommandsOn(client: QueryClient, projectId: string, workId: string) {
-  return client
-    .getMutationCache()
-    .findAll({ mutationKey: workCommandKey(projectId) })
-    .filter(
-      (mutation) =>
-        workCommandRecord(mutation as Mutation<unknown, Error, unknown>)?.workId === workId,
-    );
-}
-
-/**
- * A new command replaces what the Work showed before. An Undo (restore) keeps
- * the delete it answers, so a rejected Undo brings the Undo row back.
- */
-function forgetSettledCommands(
-  client: QueryClient,
-  projectId: string,
-  operation: WorkOperation,
-  workId: string,
-): void {
-  const cache = client.getMutationCache();
-  for (const mutation of workCommandsOn(client, projectId, workId)) {
-    if (mutation.state.status === "pending") continue;
-    const keepsDelete =
-      operation === "restore" &&
-      mutation.options.mutationKey?.[2] === "delete" &&
-      mutation.state.status === "success";
-    if (!keepsDelete) cache.remove(mutation);
-  }
-}
-
-/**
- * Once a command's success lands in the mutation cache, it drops its record
- * and every older settled one on its Work. A delete keeps its own record: that
- * record is its Undo window.
- */
-function retireOnSuccess(client: QueryClient, projectId: string, receipt: CommandReceipt): void {
-  const cache = client.getMutationCache();
-  const unsubscribe = cache.subscribe((event) => {
-    const mutation = event.mutation as Mutation<unknown, Error, unknown> | undefined;
-    if (!mutation || mutation.state.context !== receipt) return;
-    if (mutation.state.status === "pending") return;
-    unsubscribe();
-    const record = workCommandRecord(mutation);
-    if (mutation.state.status !== "success" || !record) return;
-    for (const other of workCommandsOn(client, projectId, record.workId)) {
-      if (other.mutationId < record.mutationId && other.state.status !== "pending")
-        cache.remove(other);
-    }
-    if (record.operation !== "delete") cache.remove(mutation);
-  });
-}
-
-export function removeWorkCommand(client: QueryClient, mutationId: number): void {
-  const cache = client.getMutationCache();
-  const mutation = cache.getAll().find((m) => m.mutationId === mutationId);
-  if (mutation) cache.remove(mutation);
 }

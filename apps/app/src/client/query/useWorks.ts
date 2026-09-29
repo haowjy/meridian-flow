@@ -29,10 +29,10 @@ export function useWorksSnapshot(projectId: string, requested = true) {
 
 export function useWorks(projectId: string, options?: { enabled?: boolean }) {
   const { list, enabled } = useWorksSnapshot(projectId, options?.enabled);
-  const pending = useWorkCommandRecords(projectId, "pending");
+  const records = useWorkCommandRecords(projectId);
   const snapshot = useMemo(
-    () => (list.data ? projectPendingCommands(list.data, pending) : undefined),
-    [list.data, pending],
+    () => (list.data ? projectPendingCommands(list.data, records) : undefined),
+    [list.data, records],
   );
   const works = useMemo(
     () => snapshot?.works.filter((work) => work.deletedAt === null) ?? (list.isError ? [] : null),
@@ -71,10 +71,11 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
 /** Each Work with every pending command's expected result laid over it. */
 function projectPendingCommands(
   snapshot: WorksSnapshot,
-  pending: readonly WorkCommandRecord[],
+  records: readonly WorkCommandRecord[],
 ): WorksSnapshot {
   const fields = new Map<string, Partial<Work>>();
-  for (const record of pending) {
+  for (const record of records) {
+    if (record.status !== "pending") continue;
     fields.set(record.workId, { ...fields.get(record.workId), ...commandProjection(record) });
   }
   if (!fields.size) return snapshot;

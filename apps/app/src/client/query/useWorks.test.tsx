@@ -18,10 +18,24 @@ import {
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { projectQueryKeys } from "./project-query-keys";
 import { useWorks } from "./useWorks";
-import { useWorkCommandFailures, type WorkCommandFailure } from "./work-command-selectors";
-import { useWorkMutations, type WorkMutations } from "./work-commands";
+import {
+  useWorkCommandFailures,
+  useWorkDeleteWindows,
+  type WorkCommandFailure,
+  type WorkDeleteWindow,
+} from "./work-command-selectors";
+import {
+  closeWorkDeleteWindow,
+  useWorkMutations,
+  type WorkCommandRecord,
+  type WorkMutations,
+} from "./work-commands";
 import { acquireWorksSnapshot } from "./works-projection-acquisition";
 
+const account = vi.hoisted(() => ({ epoch: new AbortController() }));
+vi.mock("@/features/project/context/account-feature-context", () => ({
+  useOptionalAccountEpochSignal: () => account.epoch.signal,
+}));
 vi.mock("./useProjectCreation", () => ({ useIsProjectPendingCreation: () => false }));
 vi.mock("@/client/api/projects-api", () => ({
   archiveWork: vi.fn(),
@@ -75,15 +89,20 @@ function deferred<T>() {
 }
 
 const OPERATIONS = ["update", "archive", "unarchive"] as const;
-type Seen = { works: Work[] | null; failures: ReadonlyMap<string, WorkCommandFailure> };
+type Seen = {
+  works: Work[] | null;
+  failures: ReadonlyMap<string, WorkCommandFailure>;
+  windows: readonly WorkDeleteWindow[];
+};
 let commands!: WorkMutations;
-let seen: Seen = { works: null, failures: new Map() };
+let seen: Seen = { works: null, failures: new Map(), windows: [] };
 const renders: Seen[] = [];
 function Probe() {
   commands = useWorkMutations(PROJECT_ID);
   seen = {
     works: useWorks(PROJECT_ID).works,
     failures: useWorkCommandFailures(PROJECT_ID, OPERATIONS),
+    windows: useWorkDeleteWindows(PROJECT_ID),
   };
   renders.push(seen);
   return null;
@@ -111,6 +130,10 @@ async function withProbe(server: WorksSnapshot, run: (client: QueryClient) => Pr
 }
 
 const settle = (check: () => void) => act(() => vi.waitFor(check));
+const recordStatuses = (client: QueryClient) =>
+  (client.getQueryData<WorkCommandRecord[]>(projectQueryKeys.workCommands(PROJECT_ID)) ?? []).map(
+    (record) => record.status,
+  );
 
 describe("Work command projection", () => {
   it("shows a rename at once, keeps it over an older read, and drops it on failure", async () => {
@@ -201,7 +224,7 @@ describe("Work command projection", () => {
       });
 
       await act(async () => renameRead.resolve(snapshot([renamed, archived(SECOND)], "3")));
-      await settle(() => expect(client.getMutationCache().getAll()).toHaveLength(0));
+      await settle(() => expect(recordStatuses(client)).toEqual([]));
       await settle(() => {
         expect(field(WORK.id, "name")).toBe("Revised arc");
         expect(field(SECOND.id, "status")).toBe("archived");
@@ -271,7 +294,7 @@ describe("Work command projection", () => {
         await commands.archive({ workId: WORK.id });
       });
       await settle(() => {
-        expect(client.getMutationCache().getAll()).toHaveLength(0);
+        expect(recordStatuses(client)).toEqual([]);
         expect(field(WORK.id, "status")).toBe("archived");
       });
       expect(field(WORK.id, "name")).toBe("Revised arc");
@@ -293,7 +316,7 @@ describe("Work command projection", () => {
         await commands.update({ workId: WORK.id, data: { name: "Revised arc" } });
       });
       await settle(() => {
-        expect(client.getMutationCache().getAll()).toHaveLength(0);
+        expect(recordStatuses(client)).toEqual([]);
         expect(field(WORK.id, "name")).toBe("Revised arc");
       });
 
@@ -301,12 +324,61 @@ describe("Work command projection", () => {
         await commands.delete({ workId: WORK.id });
       });
       await settle(() => expect(seen.works).toEqual([]));
-      expect(
-        client
-          .getMutationCache()
-          .getAll()
-          .map((m) => m.state.status),
-      ).toEqual(["success"]);
+      expect(recordStatuses(client)).toEqual(["done"]);
     });
+  });
+
+  it("closes a pending delete's Undo window at once, and drops its record when it lands", async () => {
+    let server = snapshot([WORK]);
+    vi.mocked(listProjectWorks).mockImplementation(async () => server);
+    const request = deferred<void>();
+    vi.mocked(deleteWork).mockImplementation(() => request.promise);
+    await withProbe(server, async (client) => {
+      await act(async () => {
+        void commands.delete({ workId: WORK.id });
+      });
+      await settle(() => expect(seen.windows.map((open) => open.workId)).toEqual([WORK.id]));
+
+      await act(async () => closeWorkDeleteWindow(client, PROJECT_ID, WORK.id));
+      await settle(() => expect(seen.windows).toEqual([]));
+      expect(seen.works).toEqual([]);
+
+      await act(async () => {
+        server = snapshot([{ ...WORK, deletedAt: "2026-09-03T00:00:00.000Z" } as Work], "2");
+        request.resolve();
+      });
+      await settle(() => expect(recordStatuses(client)).toEqual([]));
+      expect(seen.windows).toEqual([]);
+    });
+  });
+
+  it("drops every record on an account switch, and a command still running writes none", async () => {
+    const request = deferred<Work>();
+    vi.mocked(archiveWork)
+      .mockRejectedValueOnce(new Error("Rejected"))
+      .mockImplementationOnce(() => request.promise);
+    vi.mocked(listProjectWorks).mockImplementation(() => new Promise(() => undefined));
+    await withProbe(snapshot([WORK, SECOND]), async (client) => {
+      await act(async () => {
+        void commands.archive({ workId: WORK.id });
+        void commands.archive({ workId: SECOND.id });
+      });
+      await settle(() => {
+        expect(seen.failures.get(WORK.id)?.operation).toBe("archive");
+        expect(field(SECOND.id, "status")).toBe("archived");
+      });
+      const reads = vi.mocked(listProjectWorks).mock.calls.length;
+
+      await act(async () => account.epoch.abort());
+      await settle(() => {
+        expect(seen.failures.size).toBe(0);
+        expect(field(SECOND.id, "status")).toBe("active");
+      });
+      // The old account's commit neither reads nor patches the Works snapshot.
+      await act(async () => request.resolve(archived(SECOND)));
+      expect(listProjectWorks).toHaveBeenCalledTimes(reads);
+      expect(recordStatuses(client)).toEqual([]);
+    });
+    account.epoch = new AbortController();
   });
 });
