@@ -24,6 +24,8 @@
 - Fix: an archived Work waiting to be undeleted showed under Archived beside its Undo row.
 - Phone: a failed Archive or chat rename gets its own line under the top bar instead of squeezing the title.
 - Fix: deleting a second Work while the first was still deleting lost the first one's Undo row and its failure. Each deleted Work now keeps its own Undo row in the tab it left, and a failed delete or Undo stays on that Work.
+- Fix: a newly created Work briefly vanished from the Work list, the Work picker and the sidebar just after the server confirmed it. A Work being created shows in its list at once and stays there.
+- A refused Restore can be dismissed.
 - `server`: Work delete cascade-marks children (`deleted_by_work_id`, migration 0011) and an hourly `work-purge` job removes Works past 30 days with their rows and blobs; restore past the window returns 410 `work_restore_expired`. Works drop `description` (migration 0010); `GET /api/works/:workId/threads` is removed in favor of the project chat feed's `workId` filter.
 
 - Keep writer messages visible after the reply starts; only machine-delivered inbox messages fold into activity rows.
