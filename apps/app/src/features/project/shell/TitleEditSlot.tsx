@@ -2,7 +2,9 @@
  * A title renamed in place, optimistically. Committing closes the field at
  * once and the new title shows from the rename's own cache update; a refused
  * rename reopens the field with the writer's text and the failure under it.
- * Callers own the wrapper (it must be `relative`) and the resting trigger.
+ * Callers own the resting trigger and the failure's positioned ancestor: the
+ * failure is placed against the nearest `relative` element, so the owning
+ * header can give it room beyond the title itself.
  */
 import { type ReactNode, type RefObject, useId, useRef, useState } from "react";
 import { cn } from "@/lib/utils";

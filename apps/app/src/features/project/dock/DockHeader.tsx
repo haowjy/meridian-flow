@@ -60,7 +60,7 @@ export function DockHeader({
       {/* No overflow-hidden: truncation is owned by the min-w-0/truncate chain
           inside, and clipping here shears the trigger's hover pill (it
           bleeds left of the slot). */}
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
+      <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
         {view === "chat" ? threadSelect : null}
         {view === "chat" && threadId ? (
           <SubagentHeader threadId={threadId} nodes={activity.activity.descendants} />

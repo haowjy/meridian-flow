@@ -8,7 +8,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import { ChevronDown, Pencil, Plus, Search } from "lucide-react";
-import { type KeyboardEvent, useRef, useState } from "react";
+import { type KeyboardEvent, type RefObject, useRef, useState } from "react";
 
 import { useThreadStore } from "@/client/stores";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
@@ -41,12 +41,15 @@ export function ThreadSwitcherPopover({
   activeThreadId,
   title,
   onRename,
+  triggerRef,
   variant = "quiet",
 }: {
   projectId: string;
   activeThreadId: string | null;
   title: string;
   onRename?: () => void;
+  /** Where a closed rename field hands focus back. */
+  triggerRef?: RefObject<HTMLButtonElement | null>;
   /**
    * `quiet` — chrome that stays chrome (the dock): hovers like an inactive
    *   document tab.
@@ -120,6 +123,7 @@ export function ThreadSwitcherPopover({
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           aria-label={t`Switch chat, currently ${title}`}
           aria-expanded={open}

@@ -26,7 +26,7 @@ import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
 import { useWorkChrome } from "../work/useWorkChrome";
 import { useWorkDeletion, type WorkDeletion } from "../work/useWorkDeletion";
 import { WorkScreen } from "../work/WorkScreen";
-import { ChatBreadcrumb, ChatRenameNotice } from "./ChatBreadcrumb";
+import { ChatBreadcrumb } from "./ChatBreadcrumb";
 import { folderAncestry, pathLeafName } from "./context-location";
 import { MobileBreadcrumb, type MobileBreadcrumbSegment } from "./MobileBreadcrumb";
 import { MobileChatHost } from "./MobileChatHost";
@@ -106,13 +106,7 @@ export function MobileProject(props: MobileProjectProps) {
             <MobileBreadcrumb segments={crumbs} />
           ) : undefined
         }
-        notice={
-          props.resultsOpen ? undefined : props.activeScreen === "chat" ? (
-            <ChatRenameNotice projectId={props.projectId} display={props.chatDisplay} />
-          ) : onWorkDetail ? (
-            work.notice
-          ) : undefined
-        }
+        notice={!props.resultsOpen && onWorkDetail ? work.notice : undefined}
         chatAction={
           props.activeScreen !== "chat" ? (
             <PhoneIconButton aria-label={t`Open chat`} onClick={() => openChatSheet()}>

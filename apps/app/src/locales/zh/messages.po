@@ -1411,7 +1411,11 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/ChatThreadHeader.tsx
-msgid "Couldn't rename chat."
+#~ msgid "Couldn't rename chat."
+#~ msgstr ""
+
+#: src/features/chat/ChatThreadTitle.tsx
+msgid "Couldn’t rename this chat. Try again."
 msgstr ""
 
 #: src/features/project/context/ContextTreeRows.tsx
@@ -2680,7 +2684,7 @@ msgstr ""
 msgid "New"
 msgstr ""
 
-#: src/features/chat/ChatThreadHeader.tsx
+#: src/features/chat/ChatThreadTitle.tsx
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
@@ -3431,7 +3435,7 @@ msgstr ""
 msgid "Rename"
 msgstr ""
 
-#: src/features/chat/ChatThreadHeader.tsx
+#: src/features/chat/ChatThreadTitle.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Rename chat"
 msgstr ""
@@ -3466,7 +3470,7 @@ msgstr ""
 #~ msgid "Rename Work: {name}"
 #~ msgstr ""
 
-#: src/features/chat/ChatThreadHeader.tsx
+#: src/features/chat/ChatThreadTitle.tsx
 msgid "Renamed to {confirmed}"
 msgstr ""
 
@@ -3711,8 +3715,8 @@ msgid "Saved locally (offline)"
 msgstr ""
 
 #: src/features/chat/ChatThreadHeader.tsx
-msgid "Saving chat title"
-msgstr ""
+#~ msgid "Saving chat title"
+#~ msgstr ""
 
 #: src/features/project/shell/InlineProjectTitle.tsx
 #~ msgid "Saving project title"

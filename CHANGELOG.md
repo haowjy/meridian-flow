@@ -22,7 +22,8 @@
 - Fix: restoring an archived Work showed it under Active before it settled under Archived.
 - Fix: a failed Archive stayed silent when another Archive followed it; the Work list and the Work band now show the same failure, and a Work's changes can no longer flicker back while a server read catches up.
 - Fix: an archived Work waiting to be undeleted showed under Archived beside its Undo row.
-- Phone: a failed Archive or chat rename gets its own line under the top bar instead of squeezing the title.
+- Phone: a failed Archive gets its own line under the top bar instead of squeezing the title.
+- Chat titles rename like Work and project titles: the field closes at once, and a refused rename reopens it with your text and the error under it (no separate Retry row).
 - Fix: deleting a second Work while the first was still deleting lost the first one's Undo row and its failure. Each deleted Work now keeps its own Undo row in the tab it left, and a failed delete or Undo stays on that Work.
 - Fix: a newly created Work briefly vanished from the Work list, the Work picker and the sidebar just after the server confirmed it. A Work being created shows in its list at once and stays there.
 - A refused Restore can be dismissed.

@@ -5,12 +5,13 @@
  * ancestor crumb, never a back chevron). The current segment stays the chat
  * switcher so switching and New chat remain one tap away. On the index itself
  * the trail is a lone, non-interactive "Chats". The Chat screen's top bar only:
- * the chat sheet over Work or Editor has no index to climb to. A rejected
- * rename leaves the trail for its own line under the top bar.
+ * the chat sheet over Work or Editor has no index to climb to. A refused
+ * rename spans the width under the top bar (its positioned ancestor), not the
+ * narrow trail.
  */
 import { t } from "@lingui/core/macro";
 
-import { ChatRenameFailure, ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
+import { ChatThreadTitle } from "@/features/chat/ChatThreadTitle";
 import {
   type ChatDisplay,
   displayedChatThreadId,
@@ -33,7 +34,7 @@ export function ChatBreadcrumb({
     <ChatThreadTitle
       projectId={projectId}
       threadId={displayedChatThreadId(display)}
-      renameFailure="external"
+      failureClassName="inset-x-2"
     />
   );
   return (
@@ -44,16 +45,4 @@ export function ChatBreadcrumb({
       ]}
     />
   );
-}
-
-/** The phone top bar's line for a rejected rename of the chat in the trail. */
-export function ChatRenameNotice({
-  projectId,
-  display,
-}: {
-  projectId: string;
-  display: ChatDisplay;
-}) {
-  const threadId = displayedChatThreadId(display);
-  return threadId ? <ChatRenameFailure projectId={projectId} threadId={threadId} /> : null;
 }

@@ -68,16 +68,17 @@ export function PaneHeader({ title, left, right, actions, leading, notice }: Pan
         ) : null}
 
         {/* Band-tall, so a title chip can stretch into an inactive tab's full-height hover. */}
+        {/* Relative: a refused title rename floats under the band from here. */}
         <div
           className={cn(
-            "flex h-10 min-w-0 flex-1 items-center",
+            "relative flex h-10 min-w-0 flex-1 items-center",
             notice && "@2xl/pane-header:flex-initial",
           )}
         >
           {title}
         </div>
         {notice ? (
-          <div className="order-last min-w-0 basis-full empty:hidden @2xl/pane-header:order-none @2xl/pane-header:flex-initial @2xl/pane-header:basis-auto">
+          <div className="order-last min-w-0 basis-full @2xl/pane-header:order-none @2xl/pane-header:flex-initial @2xl/pane-header:basis-auto">
             {notice}
           </div>
         ) : null}

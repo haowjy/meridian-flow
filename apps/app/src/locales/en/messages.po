@@ -1411,8 +1411,12 @@ msgstr "Couldn't refresh recent documents."
 #~ msgstr "Couldn't remove agent from project."
 
 #: src/features/chat/ChatThreadHeader.tsx
-msgid "Couldn't rename chat."
-msgstr "Couldn't rename chat."
+#~ msgid "Couldn't rename chat."
+#~ msgstr "Couldn't rename chat."
+
+#: src/features/chat/ChatThreadTitle.tsx
+msgid "Couldn’t rename this chat. Try again."
+msgstr "Couldn’t rename this chat. Try again."
 
 #: src/features/project/context/ContextTreeRows.tsx
 msgid "Couldn't rename this document. Try again."
@@ -2680,7 +2684,7 @@ msgstr "Names cannot end with '/'"
 msgid "New"
 msgstr "New"
 
-#: src/features/chat/ChatThreadHeader.tsx
+#: src/features/chat/ChatThreadTitle.tsx
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
@@ -3435,7 +3439,7 @@ msgstr "Removed"
 msgid "Rename"
 msgstr "Rename"
 
-#: src/features/chat/ChatThreadHeader.tsx
+#: src/features/chat/ChatThreadTitle.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Rename chat"
 msgstr "Rename chat"
@@ -3470,7 +3474,7 @@ msgstr "Rename Work: {0}"
 #~ msgid "Rename Work: {name}"
 #~ msgstr "Rename Work: {name}"
 
-#: src/features/chat/ChatThreadHeader.tsx
+#: src/features/chat/ChatThreadTitle.tsx
 msgid "Renamed to {confirmed}"
 msgstr "Renamed to {confirmed}"
 
@@ -3715,8 +3719,8 @@ msgid "Saved locally (offline)"
 msgstr "Saved locally (offline)"
 
 #: src/features/chat/ChatThreadHeader.tsx
-msgid "Saving chat title"
-msgstr "Saving chat title"
+#~ msgid "Saving chat title"
+#~ msgstr "Saving chat title"
 
 #: src/features/project/shell/InlineProjectTitle.tsx
 #~ msgid "Saving project title"
