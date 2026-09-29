@@ -67,20 +67,18 @@ export function registerProcessShutdownCallback(callback: () => Promise<void> | 
   state().shutdownCallbacks.push(callback);
 }
 
-function shutdownProcessResources(): Promise<void> {
+function shutdownProcessResources(deadlineMs: number): Promise<void> {
   const current = state();
   if (!current.shutdownPromise) {
     let deadline: ReturnType<typeof setTimeout>;
     const work = (async () => {
-      for (const callback of current.shutdownCallbacks) {
-        await Promise.resolve()
-          .then(callback)
-          .catch(() => undefined);
-      }
+      await Promise.allSettled(
+        current.shutdownCallbacks.map((callback) => Promise.resolve().then(callback)),
+      );
       await current.sink.flush().catch(() => undefined);
     })();
     const expired = new Promise<void>((resolve) => {
-      deadline = setTimeout(resolve, PROCESS_SHUTDOWN_DEADLINE_MS);
+      deadline = setTimeout(resolve, deadlineMs);
       deadline.unref();
     });
     current.shutdownPromise = Promise.race([work, expired]).finally(() => clearTimeout(deadline));
@@ -88,7 +86,7 @@ function shutdownProcessResources(): Promise<void> {
   return current.shutdownPromise;
 }
 
-export function installObservabilityShutdownHooks(): void {
+export function installObservabilityShutdownHooks(options: { deadlineMs?: number } = {}): void {
   const current = state();
   if (current.shutdownInstalled) return;
   current.shutdownInstalled = true;
@@ -99,7 +97,9 @@ export function installObservabilityShutdownHooks(): void {
       return;
     }
     signalReceived = true;
-    void shutdownProcessResources().finally(() => process.exit(0));
+    void shutdownProcessResources(options.deadlineMs ?? PROCESS_SHUTDOWN_DEADLINE_MS).finally(() =>
+      process.exit(0),
+    );
   };
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
