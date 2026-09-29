@@ -21,9 +21,12 @@ redelivered after repair.
 
 A reply that reaches a durable failed terminal state is different from an
 orphan: it acknowledges every message adopted by that reply and is never
-restarted by the 30-second inbox wake sweep. Its saved input IDs support only
-an explicit Retry of the latest failed reply on an idle primary or subagent
-thread; Retry appends a new assistant and leaves the failed turn unchanged.
+restarted by the 30-second inbox wake sweep. An explicit Retry of the latest
+failed assistant on an idle primary or subagent thread starts an ordinary
+no-input run; prior user turns already carry its request history. Shutdown
+abort is finalized the same way as a failed reply, with `reason: shutdown` and
+“This reply was interrupted.”, after paid rows settle and adopted messages are
+acknowledged, so the writer can Retry after restart.
 
 ## Handoff claim and release
 

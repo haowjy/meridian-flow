@@ -271,7 +271,10 @@ describe("RunSession", () => {
     await started;
     f.runtime.beginShutdown();
 
-    await expect(execution).resolves.toMatchObject({ status: "cancelled" });
+    await expect(execution).resolves.toMatchObject({
+      status: "error",
+      turn: { status: "error", error: "This reply was interrupted." },
+    });
     expect(providerSignal?.reason).toBe("shutdown");
     expect(await f.repos.modelResponses.listByTurn(run.executionTurnId)).toHaveLength(1);
     expect(BigInt(await f.deps.creditLedger.getBalance({ userId: f.thread.userId }))).toBeLessThan(

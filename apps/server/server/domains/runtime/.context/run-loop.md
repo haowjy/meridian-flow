@@ -36,20 +36,24 @@ Every non-control row, including a Work refresh notice, closes the reply prefix
 at a boundary; a notice-only queue still does not start a run.
 
 After a run releases its claim, cleanup refreshes and re-reads the queue through
-`wakeIfRunnable`; this includes a run that found nothing to do and a lease
-cancelled during setup. A failed assistant acknowledges every message it adopted,
-including on provider error, output-limit failure, preparation failure, or a
-thrown execution error. The failed turn stays in history and stores the adopted
-message IDs for an explicit Retry; the Retry run excludes that failed assistant
-from model history so its request matches the original attempt. A repeated Retry
-with the same client-minted turn ID returns that turn. Failed replies are never
-restarted by release wakes or the periodic sweep, and a queued command runs
-normally after their adopted rows are acknowledged. A real setup error before
-adoption still skips the reread as the hot-loop guard. Short exclusive claim
-holders still use the sweep as their liveness backstop.
+`wakeIfRunnable`; this includes a run that found nothing to do, a Retry refusal
+after taking a claim, and a lease cancelled during setup. A failed assistant
+acknowledges every message it adopted, including on provider error, output-limit
+failure, preparation failure, or a thrown execution error. Failed replies are
+never restarted by release wakes or the periodic sweep. Explicit Retry of the
+latest assistant `error` with no live run starts an ordinary no-input run through
+optimistic preparation; it uses the regular history projection (including the
+failed turn) and any pending non-control rows are adopted normally. Retry stores
+no inbox provenance and does not un-acknowledge messages. If startup compacts,
+the compaction receives a fresh ID and the reply receives the client's ID. A
+queued command runs normally after failed adopted rows are acknowledged. A real
+setup error before adoption still skips the reread as the hot-loop guard. Short
+exclusive claim holders still use the sweep as their liveness backstop.
 
 `POST /api/threads/:threadId/turns/:turnId/retry` is available only for the
-latest failed assistant reply on an idle primary or subagent thread. See the
+latest failed assistant reply on an idle primary or subagent thread; eligibility
+is checked before the claim. A repeated client ID returns the same assistant
+turn. See the
 [reply Retry API](../../../../../../docs/api/thread-reply-retry.md).
 
 The runtime composition owns one `DetachedWorkTracker` shared by run sessions,
@@ -59,8 +63,12 @@ post-commit runtime work register with it. `drain()` waits for tracked work and
 work registered before the tracker becomes quiescent. App shutdown sets the
 shared shutdown flag before aborting live runs and briefs with the `shutdown`
 reason. Run starts and wakes are suppressed after that point; live replies
-settle paid response rows before releasing their claims. The app waits for one
-bounded 10-second drain and warns if it times out. A brief launched after
+settle paid response rows, end as error with `reason: shutdown` and
+“This reply was interrupted.”, acknowledge their receipts, and release their
+claims. SIGTERM and SIGINT enter one shared process-hook sequence: registered
+app shutdown callbacks run before the observability sink flushes and process
+exit. The app waits for one bounded 10-second drain and warns if it times out. A
+brief launched after
 shutdown begins leaves S pending for ordinary repair, and a released claim does
 not wake its destination. DB test fixture resets drain the explicitly wired
 test tracker before locking and deleting tables.
@@ -86,9 +94,10 @@ and recovery live in the independent [handoff service](handoff.md).
 - **Max 32 iterations** per turn (`MAX_TURN_ITERATIONS`). Exceeding this
   finalizes the turn with an error.
 - **Cancellation via `AbortSignal`**, checked before model calls, after stream
-  events, and around tool execution. Cancellation finalizes the turn as
-  `cancelled` and sets the thread back to `idle`. The run signal (with the
-  durable cancel request) is the only cancel authority; see
+  events, and around tool execution. Writer Stop finalizes the turn as
+  `cancelled`; shutdown abort reason `shutdown` finalizes as a retryable error
+  after response settlement. Both return the thread to `idle`. The run signal
+  (with the durable cancel request) is the only cancel authority; see
   [compaction cancellation](compaction.md#current-turn-and-cancellation).
 - **Persist/project-then-emit.** Every state mutation goes through
   `persistAndAppendEvents` before any event is yielded to subscribers. Within

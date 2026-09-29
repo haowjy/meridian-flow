@@ -146,7 +146,6 @@ import type { RunClaim, ThreadPhase } from "./ports.js";
 import { createPrefixCacheStateService, type PrefixCacheState } from "./prefix-cache-state.js";
 import { writerFacingPreparationError } from "./preparation-failure.js";
 import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
-import { markReplyRetryOrigin } from "./reply-retry-metadata.js";
 import {
   type PreparedControlHistory,
   prepareFailedUndoHistory,
@@ -300,11 +299,18 @@ export function createOrchestrator(deps: OrchestratorDeps) {
         imageResolutionError ??
         (error instanceof CompactionPreparationError ? error : null);
       const requestPreparationFailed = input.error instanceof RequestPreparationError;
+      const shutdownAbort = input.signal?.reason === "shutdown";
       const outcome = await deps.delivery.close({
         lease: input.lease,
         turnId: input.turnId,
         cause: input.signal?.aborted
-          ? { kind: "cancelled", reason: "cancelled" }
+          ? shutdownAbort
+            ? {
+                kind: "failed",
+                reason: "shutdown",
+                error: "This reply was interrupted.",
+              }
+            : { kind: "cancelled", reason: "cancelled" }
           : {
               kind: "failed",
               reason:
@@ -505,7 +511,7 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
 async function runDrainTurn(
   deps: OrchestratorDeps,
   input: DrainRunLoopInput,
-  reservedTurnId: TurnId = input.retry?.replyTurnId ?? crypto.randomUUID(),
+  reservedTurnId: TurnId = crypto.randomUUID(),
 ): Promise<PreparedLoop> {
   let preparationError: Error | null = null;
   const setup = await deps.delivery.adoptBatch(
@@ -515,14 +521,11 @@ async function runDrainTurn(
       if (!setupThread) throw new Error(`Thread not found: ${input.threadId}`);
       const batch = selection.batch;
       const control = selection.next.kind === "control" ? selection.next.control : null;
-      if (selection.next.kind === "none") return null;
+      if (selection.next.kind === "none" && !input.replyTurnId) return null;
       const ctx = await loadRunStartContext(deps, setupThread);
       preparationError = ctx.contextError;
       const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;
-      const requestPriorTurns = input.retry
-        ? priorTurns.filter((turn) => turn.id !== input.retry?.failedTurnId)
-        : priorTurns;
-      const retryInputMessageIds = selection.outstanding.map((row) => row.id);
+      const requestPriorTurns = priorTurns;
       const existingTurns = [...inheritedTurns, ...priorTurns];
       const previousTurn = prevTurnId
         ? (existingTurns.find((turn) => turn.id === prevTurnId) ?? null)
@@ -591,7 +594,7 @@ async function runDrainTurn(
             thread: setupThread,
             threadId: input.threadId,
             referenceTurnId: referenceUserTurnId,
-            currentTurnId: reservedTurnId,
+            currentTurnId: input.replyTurnId ?? reservedTurnId,
             control,
             failedControlIds: selection.failedControlIds,
             pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
@@ -649,16 +652,16 @@ async function runDrainTurn(
           ? preparedUndo.turn
           : reservationTurn(
               {
-                id: reservedTurnId,
+                id:
+                  preflight?.compaction.kind === "compact"
+                    ? crypto.randomUUID()
+                    : (input.replyTurnId ?? reservedTurnId),
                 threadId: input.threadId,
                 prevTurnId:
                   imageUpdateTurn?.id ?? plan.leafTurnId ?? skillBody?.turn.id ?? prevTurnId,
                 position: nextTurnPosition(
                   imageUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
                 ),
-                ...(input.retry
-                  ? { metadata: markReplyRetryOrigin(null, input.retry.failedTurnId) }
-                  : {}),
               },
               preflight?.compaction ?? { kind: "generate" },
             );
@@ -681,8 +684,7 @@ async function runDrainTurn(
         priorTurns: requestPriorTurns,
         inheritedTurns,
         inheritedBlocks,
-        retryInputMessageIds,
-        executionAdmitted: selection.outstanding.length > 0,
+        executionAdmitted: selection.outstanding.length > 0 || !!input.replyTurnId,
       };
       const events = [
         ...(skillBody
@@ -733,7 +735,7 @@ async function runDrainTurn(
             },
             {
               afterEvents: async () => {
-                if (selection.outstanding.length > 0)
+                if (selection.outstanding.length > 0 || input.replyTurnId)
                   await admitRunExecution(deps, input, setupThread, reservedTurn.id);
               },
             },
@@ -743,7 +745,6 @@ async function runDrainTurn(
     },
     {
       signal: input.signal,
-      ...(input.retry ? { retry: input.retry } : {}),
     },
   );
 
@@ -756,7 +757,6 @@ async function runDrainTurn(
     priorTurns,
     inheritedTurns,
     inheritedBlocks,
-    retryInputMessageIds,
   } = setup;
   setup.skillBodies.committed(skillBody ? [skillBody.turn] : []);
   return {
@@ -793,7 +793,6 @@ async function runDrainTurn(
           input.treeBudget ??
           createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
         skillBodies: setup.skillBodies,
-        initialRetryMessageIds: retryInputMessageIds,
       });
     },
   };
@@ -1550,7 +1549,6 @@ async function executeLoop({
   initialExecutionAdmitted,
   treeBudget,
   skillBodies,
-  initialRetryMessageIds,
 }: {
   deps: OrchestratorDeps;
   input: RunLoopInput;
@@ -1564,7 +1562,6 @@ async function executeLoop({
   initialExecutionAdmitted: boolean;
   treeBudget: TreeBudget;
   skillBodies: ReturnType<typeof createSkillBodyPreparation>;
-  initialRetryMessageIds: readonly string[];
 }): Promise<Turn> {
   const { gateway, repos, eventWriter } = deps;
   const eventSink = deps.eventSink;
@@ -1590,7 +1587,11 @@ async function executeLoop({
   }
 
   let currentTurn: Turn = reservedTurn;
-  const retryInputMessageIds = new Set(initialRetryMessageIds);
+  const requestedReplyTurnId = "replyTurnId" in input ? input.replyTurnId : undefined;
+  let preferredSuccessorTurnId =
+    requestedReplyTurnId && reservedTurn.id !== requestedReplyTurnId
+      ? requestedReplyTurnId
+      : undefined;
   let preparedContext: AssembledNextTurnContext | undefined = initialContext;
   let pendingSummaryResponses: import("../ports/conversation-summarizer.js").SummaryResponse[] = [];
   let pendingSummary:
@@ -1636,9 +1637,11 @@ async function executeLoop({
     return {
       lease: input.lease,
       currentTurn: currentTurn,
+      ...(preferredSuccessorTurnId ? { preferredSuccessorTurnId } : {}),
       current: { kind: "assistant" },
       // Turn-end controls defer to a new run; an assistant boundary here has a task to continue.
-      continueTask: continuingTask || currentTurn.role === "assistant",
+      continueTask:
+        continuingTask || currentTurn.role === "assistant" || !!preferredSuccessorTurnId,
       admit: async (turn) => {
         if (
           thread.kind === "subagent" &&
@@ -1744,12 +1747,8 @@ async function executeLoop({
   async function acceptBoundary(
     result: AdoptedBatch<unknown>,
   ): Promise<Awaited<ReturnType<typeof drainInbox>>> {
-    if (result.split) {
-      retryInputMessageIds.clear();
-      for (const id of result.drain.ackIds) retryInputMessageIds.add(id);
-    } else {
-      for (const id of result.drain.ackIds) retryInputMessageIds.add(id);
-    }
+    if (result.split && result.next.id === preferredSuccessorTurnId)
+      preferredSuccessorTurnId = undefined;
     if (result.completed) {
       const index = allTurns.findIndex((turn) => turn.id === result.completed?.id);
       allTurns[index] = result.completed;
@@ -1835,7 +1834,6 @@ async function executeLoop({
       lease: input.lease,
       turnId: currentTurn.id,
       cause,
-      ...(cause.kind === "failed" ? { retryInputMessageIds: [...retryInputMessageIds] } : {}),
       settleSummaryResponses: () => settlePendingSummary(),
       ...(continueOnPending ? { continueWith: boundaryInput() } : {}),
     });
@@ -1847,6 +1845,10 @@ async function executeLoop({
     return false;
   }
   const cancelTerminal: TerminalCause = { kind: "cancelled", reason: "cancelled" };
+  const abortTerminal = (): TerminalCause =>
+    input.signal?.reason === "shutdown"
+      ? { kind: "failed", reason: "shutdown", error: "This reply was interrupted." }
+      : cancelTerminal;
   const errorTerminal = (error: MeridianError | string, reason?: string): TerminalCause => ({
     kind: "failed",
     reason: reason ?? (typeof error === "string" ? "runtime_error" : error.code),
@@ -1862,7 +1864,7 @@ async function executeLoop({
   // cannot diverge.
   async function cancelExit(): Promise<boolean> {
     await rollbackActiveResponse();
-    return exitRun(false, cancelTerminal);
+    return exitRun(false, abortTerminal());
   }
 
   // One loader for request-only skill bodies: a writer start passes its
@@ -2160,7 +2162,7 @@ async function executeLoop({
           });
 
           currentTurn = settled;
-          return exitRun(false, cancelTerminal);
+          return exitRun(false, abortTerminal());
         }
 
         if (!result) {
@@ -2233,7 +2235,7 @@ async function executeLoop({
               const boundary = await scope.commit();
 
               if (boundary.status === "draft_closed") {
-                return exitRun(true, cancelTerminal);
+                return exitRun(true, abortTerminal());
               }
               scope.rotate();
             }
@@ -2316,7 +2318,7 @@ async function executeLoop({
           responseScope = undefined;
 
           if (concurrentEdits.status === "draft_closed") {
-            return exitRun(true, cancelTerminal);
+            return exitRun(true, abortTerminal());
           }
 
           await scope.backfill(
@@ -2356,7 +2358,7 @@ async function executeLoop({
       }
       const state = await deps.runClaim.read(input.threadId);
       if (input.signal?.aborted || (state?.kind === "awake" && state.cancelRequested)) {
-        await exitRun(false, cancelTerminal);
+        await exitRun(false, abortTerminal());
       } else if (currentTurnKind(currentTurn) === "compaction") {
         emitEvent(eventSink, {
           level: "error",
@@ -2381,7 +2383,7 @@ async function executeLoop({
           // A failed status read must not replace the terminal-commit marker.
           const latest = await deps.runClaim.read(input.threadId).catch(() => null);
           if (input.signal?.aborted || (latest?.kind === "awake" && latest.cancelRequested)) {
-            await exitRun(false, cancelTerminal);
+            await exitRun(false, abortTerminal());
             return currentTurn;
           }
           throw failure;

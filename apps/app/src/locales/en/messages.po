@@ -4504,6 +4504,10 @@ msgstr "This project couldn’t load. It may be unavailable."
 #~ msgid "This project has no chats yet."
 #~ msgstr "This project has no chats yet."
 
+#: src/features/chat/ErrorBlock.tsx
+msgid "This reply was interrupted."
+msgstr "This reply was interrupted."
+
 #: src/features/chat/tool-renderers.tsx
 #~ msgid "This report is unavailable."
 #~ msgstr "This report is unavailable."

@@ -21,7 +21,6 @@ import {
 } from "../../threads/index.js";
 import { compactionFailureMeridianError } from "./compaction/decision.js";
 import { persistAndAppendEvents } from "./persistence.js";
-import { markFailedReplyRetryable } from "./reply-retry-metadata.js";
 
 export type TerminalCause =
   | { kind: "success"; finishReason: FinishReason }
@@ -29,8 +28,6 @@ export type TerminalCause =
       kind: "failed";
       reason: string;
       error: MeridianError | string;
-      /** Inbox rows the failed assistant had adopted, including rows acked after earlier responses. */
-      retryInputMessageIds?: readonly string[];
     }
   | { kind: "cancelled"; reason: string };
 
@@ -172,19 +169,25 @@ export async function finalizeExecution(
           : null;
       const updated: Turn = {
         ...turn,
+        ...(turn.role === "assistant" &&
+        input.cause.kind === "failed" &&
+        input.cause.reason === "shutdown"
+          ? {
+              metadata: {
+                ...(turn.metadata &&
+                typeof turn.metadata === "object" &&
+                !Array.isArray(turn.metadata)
+                  ? turn.metadata
+                  : {}),
+                reason: "shutdown",
+              },
+            }
+          : {}),
         ...(turn.role === "compaction" && input.cause.kind === "failed"
           ? {
               metadata: compactionFailureMetadata(
                 turn.metadata,
                 compactionFailureForFinalizer(input.cause),
-              ),
-            }
-          : {}),
-        ...(turn.role === "assistant" && input.cause.kind === "failed"
-          ? {
-              metadata: markFailedReplyRetryable(
-                turn.metadata,
-                input.cause.retryInputMessageIds ?? [],
               ),
             }
           : {}),

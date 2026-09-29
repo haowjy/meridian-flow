@@ -6,7 +6,7 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { MessageIntent, MessageProvenance } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
-import { and, asc, eq, gt, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDatabase } from "../../../shared/drizzle-transaction.js";
 import type { InboxMessage, MessageBody } from "../loop/ports.js";
 import type { DeliveryStore } from "./runtime-delivery.js";
@@ -197,33 +197,6 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
             isNull(schema.threadInboxMessages.deliveredAt),
           ),
         );
-    },
-
-    async restoreForRetry(threadId, ids) {
-      if (ids.length === 0) return [];
-      const rows = await db_()
-        .select()
-        .from(schema.threadInboxMessages)
-        .where(
-          and(
-            eq(schema.threadInboxMessages.threadId, threadId),
-            inArray(schema.threadInboxMessages.id, [...ids]),
-            isNotNull(schema.threadInboxMessages.deliveredAt),
-          ),
-        );
-      if (rows.length !== ids.length) return [];
-      const restored = await db_()
-        .update(schema.threadInboxMessages)
-        .set({ deliveredAt: null })
-        .where(
-          and(
-            eq(schema.threadInboxMessages.threadId, threadId),
-            inArray(schema.threadInboxMessages.id, [...ids]),
-            isNotNull(schema.threadInboxMessages.deliveredAt),
-          ),
-        )
-        .returning();
-      return restored.sort((left, right) => left.seq - right.seq).map(toInboxMessage);
     },
 
     async pendingMessageThreads(limit, afterThreadId) {

@@ -1,6 +1,7 @@
 /** Control queue ordering, start consumption, and withdrawal against PostgreSQL. */
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
+import type { Gateway } from "../gateway/ports/gateway.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
@@ -149,7 +150,7 @@ else
         };
       };
       const rig = await manualFixture({ gateway });
-      const adopted = await rig.delivery.enqueue({
+      await rig.delivery.enqueue({
         threadId: rig.threadId,
         intent: "message",
         provenance: { kind: "writer", actorId: rig.ids.user },
@@ -163,7 +164,6 @@ else
       expect(first.status).toBe("error");
       expect(failed).toMatchObject({ role: "assistant", status: "error" });
       if (!failed) throw new Error("Failed reply was not persisted");
-      expect(failed?.metadata).toMatchObject({ replyRetry: { messageIds: [adopted.id] } });
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
 
       const replyTurnId = crypto.randomUUID();
@@ -202,6 +202,272 @@ else
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
     });
 
+    it("rereads and answers a writer message queued while Retry runs", async () => {
+      const gateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1, pauseAt: [2] });
+      const rig = await manualFixture({ gateway });
+      await rig.delivery.enqueue({
+        threadId: rig.threadId,
+        intent: "message",
+        provenance: { kind: "writer", actorId: rig.ids.user },
+        body: { kind: "text", text: "Original request." },
+        idempotencyKey: "retry-writer-race-original",
+      });
+      await drainControls(rig);
+      await processDetachedWork.drain();
+      const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+      if (!failed) throw new Error("Failed reply was not persisted");
+
+      const retry = await rig.orchestrator.retryReply({
+        threadId: rig.threadId,
+        failedTurnId: failed.id as never,
+        replyTurnId: crypto.randomUUID() as never,
+      });
+      await gateway.untilGatewayBoundary(2);
+      const waiting = await rig.delivery.enqueue({
+        threadId: rig.threadId,
+        intent: "message",
+        provenance: { kind: "writer", actorId: rig.ids.user },
+        body: { kind: "text", text: "Arrived during Retry." },
+        idempotencyKey: "retry-writer-race-late",
+      });
+      gateway.release(2);
+      const turns = await settled(rig);
+      await processDetachedWork.drain();
+
+      expect(retry.created).toBe(true);
+      expect(turns).toContainEqual(expect.objectContaining({ id: waiting.id, role: "user" }));
+      expect(turns).toContainEqual(
+        expect.objectContaining({ role: "assistant", status: "complete", prevTurnId: waiting.id }),
+      );
+      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+    });
+
+    it("rereads and runs a compact queued while Retry runs", async () => {
+      const gateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1, pauseAt: [2] });
+      const rig = await manualFixture({ gateway });
+      await rig.delivery.enqueue({
+        threadId: rig.threadId,
+        intent: "message",
+        provenance: { kind: "writer", actorId: rig.ids.user },
+        body: { kind: "text", text: "Original request." },
+        idempotencyKey: "retry-compact-race-original",
+      });
+      await drainControls(rig);
+      await processDetachedWork.drain();
+      const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+      if (!failed) throw new Error("Failed reply was not persisted");
+
+      const retry = await rig.orchestrator.retryReply({
+        threadId: rig.threadId,
+        failedTurnId: failed.id as never,
+        replyTurnId: crypto.randomUUID() as never,
+      });
+      await gateway.untilGatewayBoundary(2);
+      const compact = await compactControl(rig);
+      gateway.release(2);
+      const turns = await settled(rig);
+      await processDetachedWork.drain();
+
+      expect(retry.created).toBe(true);
+      expect(turns).toContainEqual(
+        expect.objectContaining({
+          role: "compaction",
+          metadata: expect.objectContaining({ controlMessageId: compact.id }),
+        }),
+      );
+      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+    });
+
+    it("allows only one of two tab Retries to take the run claim", async () => {
+      const gateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1, pauseAt: [2] });
+      const rig = await manualFixture({ gateway });
+      await rig.delivery.enqueue({
+        threadId: rig.threadId,
+        intent: "message",
+        provenance: { kind: "writer", actorId: rig.ids.user },
+        body: { kind: "text", text: "Original request." },
+        idempotencyKey: "retry-two-tabs-original",
+      });
+      await drainControls(rig);
+      await processDetachedWork.drain();
+      const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+      if (!failed) throw new Error("Failed reply was not persisted");
+      const winningId = crypto.randomUUID();
+      const first = await rig.orchestrator.retryReply({
+        threadId: rig.threadId,
+        failedTurnId: failed.id as never,
+        replyTurnId: winningId as never,
+      });
+      await gateway.untilGatewayBoundary(2);
+      await expect(
+        rig.orchestrator.retryReply({
+          threadId: rig.threadId,
+          failedTurnId: failed.id as never,
+          replyTurnId: crypto.randomUUID() as never,
+        }),
+      ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
+      gateway.release(2);
+      const turns = await settled(rig);
+      await processDetachedWork.drain();
+
+      expect(first.created).toBe(true);
+      expect(turns.filter((turn) => turn.id === winningId)).toHaveLength(1);
+      expect(gateway.requests).toHaveLength(2);
+      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+    });
+
+    it("does not let a pending Work refresh block Retry", async () => {
+      let rig: Awaited<ReturnType<typeof fixture>>;
+      const workContext = {
+        async renderForThread() {
+          return {
+            text: "<work_context>current: none (direct writes)</work_context>",
+            current: {
+              projectId: rig.ids.project as never,
+              execution: {
+                scope: { workId: crypto.randomUUID() as never, workSlug: null },
+                aiWriteMode: "direct" as const,
+                draftOwner: null,
+              },
+            },
+          };
+        },
+      };
+      const gateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1 });
+      rig = await manualFixture({ gateway, workContext });
+      await rig.delivery.enqueue({
+        threadId: rig.threadId,
+        intent: "message",
+        provenance: { kind: "writer", actorId: rig.ids.user },
+        body: { kind: "text", text: "Original request." },
+        idempotencyKey: "retry-work-refresh-original",
+      });
+      await drainControls(rig);
+      await processDetachedWork.drain();
+      const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+      if (!failed) throw new Error("Failed reply was not persisted");
+      await rig.delivery.threadChanged(rig.threadId);
+      expect(await rig.delivery.selectPending(rig.threadId)).toHaveLength(1);
+
+      const retry = await rig.orchestrator.retryReply({
+        threadId: rig.threadId,
+        failedTurnId: failed.id as never,
+        replyTurnId: crypto.randomUUID() as never,
+      });
+      await processDetachedWork.drain();
+      const turns = await settled(rig);
+
+      expect(retry.created).toBe(true);
+      expect(turns).toContainEqual(
+        expect.objectContaining({
+          role: "user",
+          origin: "system",
+          metadata: expect.objectContaining({ section: "work_context" }),
+        }),
+      );
+      expect(gateway.requests.length).toBeGreaterThanOrEqual(2);
+      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+    });
+
+    it("retries a crash-orphaned assistant after ordinary orphan repair", async () => {
+      const rig = await manualFixture({ gateway: scriptedGateway({ usage: lowUsage }) });
+      const previous = await rig.repos.turns.getLatestByThread(rig.threadId);
+      if (!previous) throw new Error("Expected fixture history");
+      const orphan = await rig.repos.turns.create({
+        threadId: rig.threadId,
+        prevTurnId: previous.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "pending",
+      });
+      await expect(
+        rig.orchestrator.prepare({ threadId: rig.threadId, drain: true }),
+      ).rejects.toMatchObject({
+        name: "NoPendingWakeError",
+      });
+      await processDetachedWork.drain();
+      const failed = await rig.repos.turns.findById(orphan.id as never);
+      expect(failed).toMatchObject({ status: "error", error: "This reply was interrupted." });
+
+      const retry = await rig.orchestrator.retryReply({
+        threadId: rig.threadId,
+        failedTurnId: orphan.id as never,
+        replyTurnId: crypto.randomUUID() as never,
+      });
+      await processDetachedWork.drain();
+      expect(retry.created).toBe(true);
+      expect(await rig.repos.turns.findById(retry.turn.id)).toMatchObject({ status: "complete" });
+      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+    });
+
+    it("settles and acknowledges a shutdown reply, which is retryable after restart", async () => {
+      let markStarted!: () => void;
+      const started = new Promise<void>((resolve) => {
+        markStarted = resolve;
+      });
+      let call = 0;
+      const gateway = scriptedGateway({ usage: lowUsage });
+      gateway.stream = async function* (request) {
+        call++;
+        gateway.requests.push(request);
+        if (call === 1) {
+          markStarted();
+          await new Promise<void>((resolve) => {
+            if (request.signal?.aborted) resolve();
+            else request.signal?.addEventListener("abort", () => resolve(), { once: true });
+          });
+        }
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "text", text: call === 1 ? "partial" : "retried" }],
+            toolCalls: [],
+            finishReason: "end_turn",
+            usage: lowUsage,
+            model: "gpt-4.1-mini",
+            provider: "openai",
+          },
+        };
+      };
+      const gatewayWithSettlement = gateway as ReturnType<typeof scriptedGateway> &
+        Pick<Gateway, "settleCancelledResult">;
+      gatewayWithSettlement.settleCancelledResult = async ({ result }) =>
+        result ? { result, persist: true } : null;
+      const rig = await manualFixture({ gateway });
+      const message = await rig.delivery.enqueue({
+        threadId: rig.threadId,
+        intent: "message",
+        provenance: { kind: "writer", actorId: rig.ids.user },
+        body: { kind: "text", text: "Reply during deployment." },
+        idempotencyKey: "shutdown-reply-message",
+      });
+      const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
+      const execution = run.execute();
+      await started;
+      rig.orchestrator.beginShutdown();
+      await expect(execution).resolves.toMatchObject({
+        status: "error",
+        turn: { status: "error", error: "This reply was interrupted." },
+      });
+      await processDetachedWork.drain();
+
+      expect(await rig.repos.modelResponses.listByTurn(run.executionTurnId)).toHaveLength(1);
+      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+      expect(await rig.repos.turns.findById(message.id as never)).toMatchObject({ role: "user" });
+      rig.deps.shutdown.started = false;
+      const interrupted = await rig.repos.turns.getLatestByThread(rig.threadId);
+      if (!interrupted) throw new Error("Shutdown reply was not persisted");
+      const retry = await rig.orchestrator.retryReply({
+        threadId: rig.threadId,
+        failedTurnId: interrupted.id as never,
+        replyTurnId: crypto.randomUUID() as never,
+      });
+      await processDetachedWork.drain();
+
+      expect(retry.created).toBe(true);
+      expect(await rig.repos.turns.findById(retry.turn.id)).toMatchObject({ status: "complete" });
+    });
+
     it("does not allow Retry for a successful reply", async () => {
       const rig = await manualFixture();
       const completed = await rig.orchestrator.prepare({
@@ -216,6 +482,7 @@ else
           replyTurnId: crypto.randomUUID() as never,
         }),
       ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
+      expect(await rig.runClaim.holder(rig.threadId)).toBeNull();
     });
 
     it("does not allow Retry for a superseded failed reply", async () => {

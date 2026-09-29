@@ -74,7 +74,8 @@ end-to-end as one suite.
 
 - **Protects:** a failed reply consumes its adopted messages once, stays failed,
   and is not restarted by release wakes or the 30-second sweep. Retry is an
-  explicit new assistant turn; replaying its client ID returns that turn.
+  ordinary no-input run with normal history; replaying its client ID returns
+  that turn. Pending non-control inbox rows do not block Retry.
 - **Stack:** mock, real wall clock.
 - **Steps:** install a sticky provider failure, send a message, and record the
   failed assistant ID. Leave the thread idle for one sweep interval, then Retry
@@ -100,6 +101,26 @@ end-to-end as one suite.
   events, both response statuses, and no extra request during the idle interval.
 - **Last run:** not recorded for this exact wall-clock recipe. Automated
   sweep-boundary coverage is not a substitute for running it.
+
+## RP-9: SIGTERM and SIGINT settle live replies before exit
+
+- **Protects:** the actual process signal path in both `nitro dev` and the
+  production Nitro server runs one sequence: begin shutdown, abort live replies
+  with reason `shutdown`, drain bounded runtime work, flush observability, exit.
+- **Stack:** mock provider, real process signals; run separately in dev and
+  production preview/start.
+- **Steps:** use the mock `cancel billing` response, which emits partial text
+  and usage before it stalls. Send a writer message, wait until the assistant
+  is streaming, record the server PID and send it SIGTERM; repeat with SIGINT
+  on a fresh thread. After each process exits, inspect the durable thread and
+  billing rows from a newly started server.
+- **Expect:** exit occurs after the in-flight paid response is persisted and
+  debited once; the reply is `error` with `This reply was interrupted.` and
+  shutdown reason, its adopted inbox message is acknowledged, no successor run
+  starts during shutdown, and Retry works after restart.
+- **Evidence:** signal and exit timestamps, process log showing signal-handler
+  ordering, settled reply and response rows, ledger debit, empty pending inbox,
+  and post-restart Retry result.
 
 ## RP-2: Compact waits for the end of the queue
 

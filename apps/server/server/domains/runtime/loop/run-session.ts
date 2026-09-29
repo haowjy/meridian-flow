@@ -4,8 +4,8 @@ import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
+import { createLocalTurn } from "./local-turn.js";
 import { type CurrentTurn, DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
-import { readReplyRetryMetadata } from "./reply-retry-metadata.js";
 import { createRunStarter } from "./run-starter.js";
 import {
   NoPendingWakeError,
@@ -113,7 +113,8 @@ export function createRunSessions(deps: {
         if (lease) {
           await authority.release(lease);
           claimReleased = true;
-          wakeAfterRelease = preparedRun || setupMayWake;
+          wakeAfterRelease =
+            preparedRun || setupMayWake || ("replyTurnId" in input && !!input.replyTurnId);
         }
       } catch (error) {
         observe(threadId, "lease_release.failed", error);
@@ -251,34 +252,54 @@ export function createRunSessions(deps: {
     async retryReply(input: { threadId: ThreadId; failedTurnId: TurnId; replyTurnId: TurnId }) {
       const existing = await deps.repos.turns.findById(input.replyTurnId);
       if (existing) {
-        if (
-          existing.threadId !== input.threadId ||
-          existing.role !== "assistant" ||
-          readReplyRetryMetadata(existing)?.retryOfTurnId !== input.failedTurnId
-        ) {
+        if (existing.threadId !== input.threadId || existing.role !== "assistant")
           throw new ReplyRetryUnavailableError(input.threadId);
-        }
         return { created: false as const, turn: existing };
       }
+
+      const [failedTurn, latestTurn, runState] = await Promise.all([
+        deps.repos.turns.findById(input.failedTurnId),
+        deps.repos.turns.getLatestByThread(input.threadId),
+        authority.read(input.threadId),
+      ]);
+      if (
+        shutdown.started ||
+        running.has(input.threadId) ||
+        runState.kind === "awake" ||
+        !failedTurn ||
+        failedTurn.threadId !== input.threadId ||
+        failedTurn.role !== "assistant" ||
+        failedTurn.status !== "error" ||
+        latestTurn?.id !== failedTurn.id
+      )
+        throw new ReplyRetryUnavailableError(input.threadId);
 
       try {
         const run = await prepare({
           threadId: input.threadId,
           drain: true,
-          retry: { failedTurnId: input.failedTurnId, replyTurnId: input.replyTurnId },
+          replyTurnId: input.replyTurnId,
         });
-        const turn = await deps.repos.turns.findById(run.executionTurnId);
-        if (!turn || turn.id !== input.replyTurnId || turn.role !== "assistant")
-          throw new ReplyRetryUnavailableError(input.threadId);
+        const persisted = await deps.repos.turns.findById(input.replyTurnId);
+        const firstTurn = await deps.repos.turns.findById(run.executionTurnId);
+        const turn =
+          persisted ??
+          createLocalTurn({
+            id: input.replyTurnId,
+            threadId: input.threadId,
+            prevTurnId: firstTurn?.role === "compaction" ? firstTurn.id : failedTurn.id,
+            position:
+              (firstTurn?.role === "compaction" ? firstTurn.position : failedTurn.position) + 1,
+            role: "assistant",
+            origin: "assistant",
+            status: "pending",
+            writeMode: failedTurn.writeMode ?? undefined,
+          });
         backgroundTasks.track(run.execute(), "detached reply retry");
         return { created: true as const, turn };
       } catch (error) {
         const raced = await deps.repos.turns.findById(input.replyTurnId);
-        if (
-          raced?.threadId === input.threadId &&
-          raced.role === "assistant" &&
-          readReplyRetryMetadata(raced)?.retryOfTurnId === input.failedTurnId
-        ) {
+        if (raced?.threadId === input.threadId && raced.role === "assistant") {
           return { created: false as const, turn: raced };
         }
         if (error instanceof TurnStartConflictError || error instanceof NoPendingWakeError) {

@@ -18,10 +18,11 @@ export type ErrorBlockProps = {
    * - `send` → the writer's message was never admitted (failed first send).
    * - `generation` → the message was admitted and the reply failed, with or
    *   without partial output.
+   * - `interrupted` → the server ended this reply during process shutdown.
    * - `retry` → a failed reply's Retry never reached the server; this is its
    *   stand-in, and Retry re-sends the same request.
    */
-  kind?: "send" | "generation" | "retry";
+  kind?: "send" | "generation" | "interrupted" | "retry";
   /** Retry this turn. Omit to hide the control. */
   onRetry?: () => void;
   /** Something holds the chat: Retry stays in place but waits until it ends. */
@@ -37,6 +38,8 @@ function copy(kind: ErrorBlockProps["kind"], current: boolean): string {
       return t`Couldn't send.`;
     case "retry":
       return current ? t`Couldn't start the retry. Try again.` : t`Couldn't start the retry.`;
+    case "interrupted":
+      return t`This reply was interrupted.`;
     default:
       return t`This response failed.`;
   }

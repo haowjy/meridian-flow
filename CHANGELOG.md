@@ -9,7 +9,7 @@
 
 - Run settlement transitions in memory; preserve scoped PostgreSQL durability proofs.
 - Catalog runtime control, compaction, handoff, and history probes.
-- Make failed replies acknowledge their adopted messages and wait for explicit Retry; Retry appends a new reply from the original request without changing failed history.
+- Make Retry an ordinary no-input run using normal history and optimistic preparation; a run-start compaction gets a fresh ID while the retried reply keeps the client's ID. Shutdown-interrupted replies settle paid rows, acknowledge adopted messages, and remain retryable before SIGTERM/SIGINT flush and exit.
 - Keep a delivered writer message as a running-source handoff cutoff, and make `mf thread send` wait through an earlier failed run for its own reply.
 
 - Remove duplicate runtime checks; test editor undo and stream recovery through behavior.
