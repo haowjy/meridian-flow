@@ -1496,6 +1496,9 @@ else
         ["assistant", "error"],
       ]);
       expect(tail[1].error).toBe("This conversation couldn't be compacted. Try again.");
+      expect(tail[1].metadata).toMatchObject({
+        replyRetry: { messageIds: [run.userTurnId] },
+      });
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
     });
 

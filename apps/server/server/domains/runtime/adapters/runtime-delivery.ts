@@ -624,7 +624,12 @@ export function createDeliveryAdapter(
       const completion = await finalizeExecution(deps, {
         threadId,
         turnId: next.id,
-        cause: { kind: "failed", reason: error.code, error },
+        cause: {
+          kind: "failed",
+          reason: error.code,
+          error,
+          retryInputMessageIds: drain.ackIds,
+        },
       });
       next = completion.turn;
       await inbox.ack(threadId, drain.ackIds);
