@@ -5,14 +5,17 @@
  */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { WORK_DELETE_RETENTION_DAYS, type Work, workPurgeAt } from "@meridian/contracts/works";
+import {
+  DAY_MS,
+  WORK_DELETE_RETENTION_DAYS,
+  type Work,
+  workPurgeAt,
+} from "@meridian/contracts/works";
 import { useCallback } from "react";
 import { HttpResponseError } from "@/client/api/http-client";
 import { useWorkCommandFailures, useWorkMutations } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { cn } from "@/lib/utils";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type WorkRestore = ReturnType<typeof useWorkRestore>;
 

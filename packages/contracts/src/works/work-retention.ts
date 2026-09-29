@@ -1,9 +1,11 @@
-/** How long a deleted Work (with its chats, drafts, Scratch and Uploads) stays restorable. */
+/** Deleted Works remain restorable until this many days after deletion. */
 export const WORK_DELETE_RETENTION_DAYS = 30;
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+export const DAY_MS = 24 * 60 * 60 * 1_000;
 
 /** When a Work deleted at `deletedAt` is purged for good. */
 export function workPurgeAt(deletedAt: string | Date): Date {
-  return new Date(new Date(deletedAt).getTime() + WORK_DELETE_RETENTION_DAYS * DAY_MS);
+  const timestamp = deletedAt instanceof Date ? deletedAt.getTime() : Date.parse(deletedAt);
+  if (!Number.isFinite(timestamp)) throw new RangeError("Invalid Work deletion timestamp");
+  return new Date(timestamp + WORK_DELETE_RETENTION_DAYS * DAY_MS);
 }
