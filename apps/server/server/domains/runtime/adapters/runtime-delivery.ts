@@ -41,7 +41,6 @@ import type { ThreadLock } from "../loop/thread-lock.js";
 /** Adapter-private storage primitives; never injected into the model loop or producers. */
 export interface DeliveryStore extends InboxReader {
   findMessage(id: string): Promise<InboxMessage | null>;
-  prioritizePendingControls(threadId: ThreadId): Promise<void>;
   workNoticeTargets(projectId: ProjectId): Promise<ThreadId[]>;
   canMaterializeWork(threadId: ThreadId): Promise<boolean>;
   pendingWorkThreads(limit: number, afterThreadId?: ThreadId): Promise<ThreadId[]>;
@@ -155,6 +154,7 @@ export function createDeliveryAdapter(
       outstanding: pendingBatch.filter(
         (row) => row.intent === "message" && (boundIds.has(row.id) || selectedIds.has(row.id)),
       ),
+      deferred: pendingBatch.filter((row) => !boundIds.has(row.id) && !selectedIds.has(row.id)),
       workContext: work.workContext,
       notices,
       activeLeafTurnId: thread.activeLeafTurnId,
@@ -382,7 +382,6 @@ export function createDeliveryAdapter(
           idempotencyKey: turn.id,
           enqueuedAt: turn.createdAt,
           deliveredAt: turn.createdAt,
-          runsFirst: false,
         });
       }
       leaf = (turn.prevTurnId as TurnId | null | undefined) ?? null;
@@ -628,7 +627,6 @@ export function createDeliveryAdapter(
   }
 
   return {
-    prioritizePendingControls: (threadId) => inbox.prioritizePendingControls(threadId),
     ...createThreadControls({
       withThreadLock: threadLock.withThreadLock,
       findMessage: inbox.findMessage,

@@ -1,5 +1,5 @@
 {
-  "id": "0c15d7f2-8d4b-4a8c-a579-f6799d0dcbd4",
+  "id": "ffa0a147-de7f-44d4-a7ef-575d9a403a62",
   "prevId": "bc5eca79-73e4-4090-a6b2-52f9d5fcb989",
   "version": "7",
   "dialect": "postgresql",
@@ -2011,13 +2011,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "runs_first": {
-          "name": "runs_first",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         }
       },
       "indexes": {

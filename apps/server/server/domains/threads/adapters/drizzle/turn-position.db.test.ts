@@ -82,7 +82,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           seq: 1,
           enqueuedAt: queuedAt,
           deliveredAt: null,
-          runsFirst: false,
         },
       ];
       const plan = planMessageTurns({

@@ -93,8 +93,6 @@ else
         eventSink: createInMemoryEventSink(),
         threadLock: createDrizzleThreadLock(db),
         runClaim,
-        prioritizePendingControls: (threadId) =>
-          createDrizzleInbox(db).prioritizePendingControls(threadId),
         async wakeIfRunnable() {},
         billingUsage: { canStartTurn: options.canStartTurn ?? (async () => true) },
         generate:
@@ -235,8 +233,6 @@ else
         eventSink: createInMemoryEventSink(),
         threadLock: createDrizzleThreadLock(db),
         runClaim,
-        prioritizePendingControls: (threadId) =>
-          createDrizzleInbox(db).prioritizePendingControls(threadId),
         async wakeIfRunnable(threadId) {
           if (threadId === destination.id) wakes += 1;
         },
@@ -321,8 +317,6 @@ else
         eventSink: createInMemoryEventSink(),
         threadLock: createDrizzleThreadLock(db),
         runClaim,
-        prioritizePendingControls: (threadId) =>
-          createDrizzleInbox(db).prioritizePendingControls(threadId),
         wakeIfRunnable,
         billingUsage: {
           async canStartTurn() {
@@ -437,8 +431,6 @@ else
         eventSink: createInMemoryEventSink(),
         threadLock: createDrizzleThreadLock(db),
         runClaim: runner.runClaim,
-        prioritizePendingControls: (threadId) =>
-          createDrizzleInbox(db).prioritizePendingControls(threadId),
         wakeIfRunnable: createWakeIfRunnable({
           delivery: runner.delivery,
           runStarter: runner.runStarter,
@@ -570,8 +562,6 @@ else
         eventSink: createInMemoryEventSink(),
         threadLock: createDrizzleThreadLock(db),
         runClaim,
-        prioritizePendingControls: (threadId) =>
-          createDrizzleInbox(db).prioritizePendingControls(threadId),
         wakeIfRunnable,
         billingUsage,
         async generate({ signal }) {
@@ -828,7 +818,7 @@ else
       expect(await startBrief(service, fixture.destination.id, fixture.seed.id)).toBe(true);
       await providerStarted;
       expect(await service.stop(fixture.destination.id, fixture.seed.id)).toBe(true);
-      expect(await inbox.findMessage(compact.id)).toMatchObject({ runsFirst: true });
+      expect(await inbox.findMessage(compact.id)).toMatchObject({ deliveredAt: null });
       release();
       await expect
         .poll(async () => (await fixture.repos.turns.findById(fixture.seed.id))?.status)

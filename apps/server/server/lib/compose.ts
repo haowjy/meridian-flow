@@ -932,7 +932,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     threadLock,
     runClaim: ports.runClaim,
     shutdown,
-    prioritizePendingControls: (threadId) => delivery.prioritizePendingControls(threadId),
     wakeIfRunnable,
     billingUsage: ports.billingUsage,
     toolRegistry,
@@ -1057,9 +1056,7 @@ export function createInMemoryAppServices(): AppServices {
     env: {},
   });
   const inbox = createInMemoryInbox();
-  const runClaim = createInMemoryRunClaim({
-    prioritizePendingControls: inbox.prioritizePendingControls,
-  });
+  const runClaim = createInMemoryRunClaim();
   const runStarter = createInMemoryRunStarter();
   const delivery = createInMemoryRuntimeDelivery({
     backgroundTasks,

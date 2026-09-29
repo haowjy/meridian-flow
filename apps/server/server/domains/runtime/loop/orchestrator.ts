@@ -523,7 +523,8 @@ async function runDrainTurn(
       const ctx = await loadRunStartContext(deps, setupThread);
       preparationError = ctx.contextError;
       const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;
-      const requestPriorTurns = priorTurns;
+      const deferredIds = new Set(selection.deferred.map((row) => row.id));
+      const requestPriorTurns = priorTurns.filter((turn) => !deferredIds.has(turn.id));
       const existingTurns = [...inheritedTurns, ...priorTurns];
       const previousTurn = prevTurnId
         ? (existingTurns.find((turn) => turn.id === prevTurnId) ?? null)
@@ -585,7 +586,9 @@ async function runDrainTurn(
         });
       if (!preparationError) {
         try {
-          const previousBlocks = await deps.repos.blocks.listByThread(input.threadId);
+          const previousBlocks = (await deps.repos.blocks.listByThread(input.threadId)).filter(
+            (block) => !deferredIds.has(block.turnId),
+          );
           const prepareInput = {
             deps,
             thread: setupThread,
@@ -639,7 +642,11 @@ async function runDrainTurn(
         reservedTurn.role = "compaction";
         reservedTurn.origin = "system";
         reservedTurn.status = "pending";
-        reservedTurn.metadata = { trigger: "manual", controlMessageId: control.id };
+        reservedTurn.metadata = {
+          trigger: "manual",
+          controlMessageId: control.id,
+          ...(control.body.instructions ? { instructions: control.body.instructions } : {}),
+        };
       }
       const value = {
         thread: setupThread,
