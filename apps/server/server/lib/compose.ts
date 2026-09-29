@@ -751,6 +751,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     toolRegistry,
     inbox: delivery,
     retireOrphanedReply: delivery.retireOrphanedReply,
+    clearOrphanedTurn: delivery.clearOrphanedTurn,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     authority: ports.runClaim,

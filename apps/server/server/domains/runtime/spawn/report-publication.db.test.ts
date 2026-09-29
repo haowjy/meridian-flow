@@ -656,6 +656,62 @@ else
       ).toHaveLength(1);
     });
 
+    it("clears a crashed compaction selector before the replacement run starts", async () => {
+      const compaction = await repos.turns.create({
+        threadId: ids.root,
+        prevTurnId: ids.rootTurn,
+        role: "compaction",
+        origin: "system",
+        status: "pending",
+      });
+      const adopted = await delivery.enqueue({
+        threadId: ids.root,
+        intent: "message",
+        provenance: { kind: "writer", actorId: ids.user },
+        body: { kind: "text", text: "Continue after the crash." },
+        idempotencyKey: "crashed-compaction-adopted-message",
+      });
+      await db.insert(schema.threadRunLeases).values({
+        threadId: ids.root,
+        runId: "dead-compaction-run",
+        turnId: compaction.id,
+        boundTurnIds: [compaction.id],
+        adoptedMessageIds: [adopted.id],
+        holderId: "dead-worker",
+        phase: "compacting",
+        expiresAt: new Date(0),
+      });
+      const authority = createDrizzleRunClaim(db, { holderId: "compaction-crash-repair" });
+      const repair = createOrphanReportRepair({
+        inbox,
+        repos,
+        eventWriter,
+        authority,
+        threadLock,
+        publisher,
+        eventSink,
+        retireOrphanedReply: delivery.retireOrphanedReply,
+        clearOrphanedTurn: delivery.clearOrphanedTurn,
+      });
+
+      expect(await repair.sweep(10)).toBeGreaterThanOrEqual(1);
+      expect(await repos.turns.findById(compaction.id)).toMatchObject({ status: "error" });
+      expect((await inbox.selectPending(ids.root)).map(({ id }) => id)).toEqual([adopted.id]);
+
+      const replacement = await authority.startExecution(ids.root, crypto.randomUUID());
+      if (!replacement) throw new Error("failed to acquire replacement run claim");
+      try {
+        expect((await authority.readMany([ids.root])).get(ids.root)?.runningTurnId).toBeNull();
+        expect(await authority.cancelExecution(ids.root, compaction.id)).toBe(false);
+        expect(await authority.read(ids.root)).toMatchObject({
+          kind: "awake",
+          cancelRequested: false,
+        });
+      } finally {
+        await authority.release(replacement);
+      }
+    });
+
     it("repairs indexed pending placeholders for primary and child threads, then publishes the child report", async () => {
       eventSink.clear();
       const primaryC = await repos.turns.create({

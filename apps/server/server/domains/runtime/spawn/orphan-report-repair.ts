@@ -18,6 +18,7 @@ export function createOrphanReportRepair(deps: {
   toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
   inbox: Pick<import("../loop/ports.js").InboxReader, "selectPending">;
   retireOrphanedReply?(threadId: ThreadId, turnId: TurnId): Promise<void>;
+  clearOrphanedTurn?(threadId: ThreadId, turnId: TurnId): Promise<void>;
   eventWriter: EventJournalWriter;
   authority: RunClaim;
   threadLock: ThreadLock;
@@ -77,6 +78,7 @@ export function createOrphanReportRepair(deps: {
         });
         if (terminal.role === "assistant")
           await deps.retireOrphanedReply?.(childThreadId, terminal.id);
+        else await deps.clearOrphanedTurn?.(childThreadId, terminal.id);
         if (completion.report)
           reportsToPublish.set(completion.report.executionTurnId, completion.report);
       });

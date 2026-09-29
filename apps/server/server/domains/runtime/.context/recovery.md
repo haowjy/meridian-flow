@@ -22,6 +22,10 @@ Repair finalizes that reply and atomically retires and acknowledges its exact
 receipt, whether the reply belongs to a primary or child thread. Late messages
 that the dead run never adopted stay queued, and a crashed child publishes one
 failure report without starting again for the retired parent message.
+Every finalized orphan clears the dead turn selector and bound-turn set before
+later work can start. Non-reply repair, including a crashed compaction, clears
+the receipt without acknowledging its adopted messages so the next run can
+deliver them.
 
 A reply that reaches a durable failed terminal state, including through orphan
 repair, acknowledges every message it adopted and is never restarted by the

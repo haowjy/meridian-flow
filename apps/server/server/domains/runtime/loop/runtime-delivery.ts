@@ -99,6 +99,8 @@ export interface RuntimeDelivery
   repairOrphanedTurns(lease: Lease): Promise<void>;
   /** Retire only the adopted inbox receipt owned by a crash-finalized reply. */
   retireOrphanedReply(threadId: ThreadId, turnId: TurnId): Promise<void>;
+  /** Clear a crash-finalized non-reply selector without acknowledging its messages. */
+  clearOrphanedTurn(threadId: ThreadId, turnId: TurnId): Promise<void>;
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   /** Parent-first business transaction; the producer does not reacquire the lock. */
   withThreadLock<T>(

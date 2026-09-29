@@ -101,14 +101,22 @@ export function createDeliveryAdapter(
       pending: await readPendingInbox(inbox, threadId),
     });
   };
-  const retireOrphanedReply = async (threadId: ThreadId, turnId: TurnId) => {
+  const clearOrphanedTurn = async (threadId: ThreadId, turnId: TurnId) => {
     const receipt = await leaseStore.lockThreadReceipt(threadId);
-    if (!receipt || receipt.turnId !== turnId) return;
+    if (!receipt || receipt.turnId !== turnId) return null;
     if (!(await leaseStore.clearOrphanedReceipt(threadId, turnId, receipt.ids))) {
-      throw new Error("Cannot retire orphaned reply receipt after it changed");
+      throw new Error("Cannot clear orphaned run receipt after it changed");
     }
-    await inbox.ack(threadId, receipt.ids);
+    return receipt.ids;
+  };
+  const retireOrphanedReply = async (threadId: ThreadId, turnId: TurnId) => {
+    const ids = await clearOrphanedTurn(threadId, turnId);
+    if (!ids) return;
+    await inbox.ack(threadId, ids);
     await appendPending(threadId);
+  };
+  const clearOrphanedTurnForRepair = async (threadId: ThreadId, turnId: TurnId) => {
+    await clearOrphanedTurn(threadId, turnId);
   };
   type SelectedDelivery<TSelection> = {
     selection: TSelection;
@@ -657,10 +665,17 @@ export function createDeliveryAdapter(
       threadLock.withThreadLock(threadId, () => appendPending(threadId)),
     retireOrphanedReply: (threadId, turnId) =>
       threadLock.withThreadLock(threadId, () => retireOrphanedReply(threadId, turnId)),
+    clearOrphanedTurn: (threadId, turnId) =>
+      threadLock.withThreadLock(threadId, () => clearOrphanedTurnForRepair(threadId, turnId)),
     repairOrphanedTurns: async (lease) => {
       const reports = await threadLock.withThreadLock(lease.threadId, () =>
         finalizeOrphanedTurns(
-          { ...deps, publishStatus: deps.publishStatus, retireOrphanedReply },
+          {
+            ...deps,
+            publishStatus: deps.publishStatus,
+            retireOrphanedReply,
+            clearOrphanedTurn: clearOrphanedTurnForRepair,
+          },
           { threadId: lease.threadId },
         ),
       );
