@@ -206,7 +206,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           sourceRef: "p1",
           sourceTitle: "Source",
           cutoffTurnId: crypto.randomUUID(),
-          launches: 1,
         },
       });
       const waiting = await inbox.enqueue(message("wait-for-seed", THREAD_A));

@@ -7,7 +7,6 @@ import { type CurrentTurn, DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } fro
 import { createRunStarter } from "./run-starter.js";
 import {
   NoPendingWakeError,
-  PendingHandoffSeedError,
   type PreparedLoop,
   type PreparedRun,
   type RunLoopInput,
@@ -88,7 +87,6 @@ export function createRunSessions(deps: {
     let lease: Lease | null = null;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     let preparedRun = false;
-    let handoffGatedStart = false;
     let setupMayWake = false;
     async function cleanup() {
       clearInterval(heartbeat);
@@ -103,8 +101,6 @@ export function createRunSessions(deps: {
           await authority.release(lease);
           claimReleased = true;
           wakeAfterRelease = preparedRun || setupMayWake;
-          if (handoffGatedStart && !(await deps.repos.turns.hasPendingHandoffSeed(threadId)))
-            wakeAfterRelease = true;
         }
       } catch (error) {
         observe(threadId, "lease_release.failed", error);
@@ -199,7 +195,6 @@ export function createRunSessions(deps: {
         execute: () => (execution ??= execute()),
       };
     } catch (error) {
-      handoffGatedStart = error instanceof PendingHandoffSeedError;
       setupMayWake = error instanceof NoPendingWakeError || isAbortError(error);
       if (lease && session.currentTurn) {
         try {
@@ -220,13 +215,11 @@ export function createRunSessions(deps: {
   }
 
   async function startDrain(threadId: ThreadId): Promise<void> {
-    if (await deps.repos.turns.hasPendingHandoffSeed(threadId)) return;
     try {
       const run = await prepare({ threadId, drain: true });
       void run.execute();
     } catch (error) {
-      if (!(error instanceof NoPendingWakeError || error instanceof PendingHandoffSeedError))
-        throw error;
+      if (!(error instanceof NoPendingWakeError)) throw error;
     }
   }
   return {

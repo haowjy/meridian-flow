@@ -1,9 +1,4 @@
-import {
-  isPendingPlaceholder,
-  isPlaceholderRole,
-  isRunOwnedPlaceholder,
-  isRunOwnedPlaceholderRole,
-} from "@meridian/contracts/threads";
+import { isPendingPlaceholder, isPlaceholderRole } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import {
   CompactionFailurePhaseCodec,
@@ -21,10 +16,7 @@ describe("pending placeholders", () => {
     expect(isPendingPlaceholder({ role: "compaction", status: "pending" })).toBe(true);
     expect(isPendingPlaceholder({ role: "compaction", status: "complete" })).toBe(false);
     expect(isPendingPlaceholder({ role: "assistant", status: "pending" })).toBe(false);
-    expect(isRunOwnedPlaceholderRole("compaction")).toBe(true);
-    expect(isRunOwnedPlaceholderRole("system")).toBe(false);
-    expect(isRunOwnedPlaceholder({ role: "compaction", status: "pending" })).toBe(true);
-    expect(isRunOwnedPlaceholder({ role: "system", status: "pending" })).toBe(false);
+    expect(isPendingPlaceholder({ role: "system", status: "pending" })).toBe(true);
   });
 
   it("uses manual interruption copy, including a refusal without a cut", () => {

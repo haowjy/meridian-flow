@@ -481,15 +481,9 @@ export interface TurnRepository {
   findByControlId(threadId: ThreadId, controlId: string): Promise<Turn | null>;
   findLatestHandoffSeed(threadId: ThreadId): Promise<Turn | null>;
   listByThread(threadId: ThreadId): Promise<Turn[]>;
-  hasPendingHandoffSeed(threadId: ThreadId): Promise<boolean>;
-  /** Keyset page for the independent handoff-brief recovery lane. */
-  listPendingHandoffSeeds(
-    limit: number,
-    afterTurnId?: TurnId,
-  ): Promise<Array<Pick<Turn, "id" | "threadId">>>;
-  /** Run-owned placeholder recovery scan; handoff system turns are never repaired here. */
+  /** Pending placeholder turns eligible for thread-scoped orphan repair. */
   listPendingPlaceholdersForThread(threadId: ThreadId): Promise<Turn[]>;
-  /** Keyset page of C4's pending placeholders. */
+  /** Keyset page of pending placeholders eligible for orphan repair. */
   listPendingPlaceholders(
     limit: number,
     afterTurnId?: TurnId,

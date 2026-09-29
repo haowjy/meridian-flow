@@ -67,14 +67,6 @@ export class NoPendingWakeError extends Error {
   }
 }
 
-/** A destination start reached its authoritative locked commit while S was pending. */
-export class PendingHandoffSeedError extends Error {
-  constructor(readonly threadId: ThreadId) {
-    super(`Thread ${threadId} has a pending handoff seed`);
-    this.name = "PendingHandoffSeedError";
-  }
-}
-
 /** A live placeholder's failure transaction did not commit. Orphan repair owns
  * its terminal state; paid response rows still in memory are lost like a crash,
  * not separately debited outside the transaction that ends the placeholder.
