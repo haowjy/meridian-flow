@@ -8,6 +8,11 @@
  * the server treats a retry as a no-op). Withdraw removes the item at once;
  * a failed withdrawal brings it back. A command that already started says so
  * on its row until the transcript shows the turn it runs as.
+ *
+ * The inbox is one ordered queue: a command waits among the writer's queued
+ * messages in the order they were sent, never pinned to the tail. Each command
+ * remembers the queued message it was sent after; `placeQueuedControls` turns
+ * that into a transcript position.
  */
 import type {
   ControlBody,
@@ -21,6 +26,8 @@ export type WithdrawOutcome = WithdrawThreadControlResponse["outcome"];
 export type LocalControl = {
   id: string;
   control: ControlBody;
+  /** The newest queued writer turn when it was sent; null when none waited. */
+  afterTurnId: string | null;
   request: "sending" | "sent" | "failed" | "finished";
   /** The server inbox has listed this id at least once. */
   seen: boolean;
@@ -35,10 +42,12 @@ export type QueuedControl = {
   id: string;
   control: ControlBody;
   status: QueuedControlStatus;
+  /** The queued message sent just before it; null when it leads the queue. */
+  afterTurnId: string | null;
 };
 
 export type ControlAction =
-  | { type: "enqueue"; id: string; control: ControlBody }
+  | { type: "enqueue"; id: string; control: ControlBody; afterTurnId: string | null }
   | { type: "retry"; id: string }
   | { type: "enqueued"; id: string; pending: PendingInboxItem | null; turnId: string | null }
   | { type: "enqueue_failed"; id: string }
@@ -61,6 +70,7 @@ export function controlsReducer(
         {
           id: action.id,
           control: action.control,
+          afterTurnId: action.afterTurnId,
           request: "sending",
           seen: false,
           withdrawal: null,
@@ -83,6 +93,7 @@ export function controlsReducer(
           {
             id: action.id,
             control: action.control,
+            afterTurnId: null,
             request: "sent",
             seen: true,
             withdrawal: "withdrawing",
@@ -122,17 +133,28 @@ export function mergeQueuedControls(input: {
   const localById = new Map(local.map((entry) => [entry.id, entry]));
   const result: QueuedControl[] = [];
   const listed = new Set<string>();
-  for (const item of pending.items) {
-    if (item.intent !== "control" || !item.control) continue;
+  let afterTurnId: string | null = null;
+  for (const item of [...pending.items].sort((left, right) => left.seq - right.seq)) {
+    if (item.intent !== "control" || !item.control) {
+      // Only a writer's message is a transcript row to wait behind.
+      if (item.provenance.kind === "writer") afterTurnId = item.id;
+      continue;
+    }
     listed.add(item.id);
     // A withdrawal response is fresher than the inbox frame that follows it.
     const status = listedStatus(localById.get(item.id)?.withdrawal ?? null);
-    if (status) result.push({ id: item.id, control: item.control, status });
+    if (status) result.push({ id: item.id, control: item.control, status, afterTurnId });
   }
   for (const entry of local) {
     if (listed.has(entry.id)) continue;
     const status = localStatus(entry, executedControlIds, leafTurnId);
-    if (status) result.push({ id: entry.id, control: entry.control, status });
+    if (status)
+      result.push({
+        id: entry.id,
+        control: entry.control,
+        status,
+        afterTurnId: entry.afterTurnId,
+      });
   }
   return result;
 }
@@ -175,4 +197,37 @@ function requestStatus(
   if (entry.request === "finished" || entry.seen || executed.has(entry.id)) return null;
   // Accepted, and the inbox echo has not arrived yet.
   return "queued";
+}
+
+/**
+ * Where each queued command renders among the transcript's rows, as the row
+ * index it goes before (`rowTurnIds.length` is the tail). A command goes right
+ * after the queued message it was sent after, while that message is still
+ * queued; otherwise it leads the queued messages, or ends the transcript when
+ * none wait. Commands sharing a slot keep their given order.
+ */
+export function placeQueuedControls(input: {
+  controls: readonly QueuedControl[];
+  /** This thread's own transcript rows, in order; null for rows it inherited. */
+  rowTurnIds: readonly (string | null)[];
+  /** Writer turns still waiting to be read, queued or still sending. */
+  queuedTurnIds: ReadonlySet<string>;
+}): ReadonlyMap<number, readonly QueuedControl[]> {
+  const { controls, rowTurnIds, queuedTurnIds } = input;
+  const indexById = new Map<string, number>();
+  let firstQueued = rowTurnIds.length;
+  rowTurnIds.forEach((id, index) => {
+    if (!id || !queuedTurnIds.has(id)) return;
+    indexById.set(id, index);
+    firstQueued = Math.min(firstQueued, index);
+  });
+  const slots = new Map<number, QueuedControl[]>();
+  for (const control of controls) {
+    const after = control.afterTurnId === null ? undefined : indexById.get(control.afterTurnId);
+    const before = after === undefined ? firstQueued : after + 1;
+    const slot = slots.get(before);
+    if (slot) slot.push(control);
+    else slots.set(before, [control]);
+  }
+  return slots;
 }

@@ -37,12 +37,13 @@ const NONE: ReadonlySet<string> = new Set();
 
 let root: Root;
 let latest: ThreadControls;
-function Probe(props: { pending?: ThreadPendingInbox; leaf?: string }) {
+function Probe(props: { pending?: ThreadPendingInbox; leaf?: string; queueTail?: string }) {
   latest = useThreadControls({
     threadId: "thread-1",
     pending: props.pending ?? EMPTY,
     answeredControlIds: NONE,
     leafTurnId: props.leaf ?? "leaf-1",
+    queueTailTurnId: props.queueTail ?? null,
   });
   return null;
 }
@@ -79,10 +80,10 @@ describe("useThreadControls", () => {
       id,
       control: { kind: "compact" },
     });
-    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
-    expect(announcements.announce).toHaveBeenCalledWith(
-      "Compaction queued. Runs when replies finish.",
-    );
+    expect(latest.queued).toEqual([
+      { id, control: { kind: "compact" }, status: "queued", afterTurnId: null },
+    ]);
+    expect(announcements.announce).toHaveBeenCalledWith("Compaction queued");
     await act(async () => response.resolve({ id, pending: null, turnId: "c" }));
     expect(latest.queued).toEqual([]);
     expect(invalidateQueries).toHaveBeenCalled();
@@ -94,7 +95,9 @@ describe("useThreadControls", () => {
     await act(async () => {
       id = latest.enqueue({ kind: "compact" });
     });
-    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "failed" }]);
+    expect(latest.queued).toEqual([
+      { id, control: { kind: "compact" }, status: "failed", afterTurnId: null },
+    ]);
     expect(announcements.announceError).toHaveBeenCalledWith("Couldn't queue the compaction.");
     const retry = deferred<unknown>();
     api.enqueueThreadControl.mockReturnValueOnce(retry.promise);
@@ -169,7 +172,12 @@ describe("useThreadControls", () => {
     await act(async () => {
       latest.enqueue({ kind: "compact" });
     });
-    const queued = { id: "", control: { kind: "compact" }, status: "queued" } as const;
+    const queued = {
+      id: "",
+      control: { kind: "compact" },
+      status: "queued",
+      afterTurnId: null,
+    } as const;
     const id = api.enqueueThreadControl.mock.calls[0]?.[1].id as string;
     await act(async () => latest.withdraw({ ...queued, id }));
     expect(api.withdrawThreadControl).toHaveBeenCalledWith("thread-1", id);
@@ -182,14 +190,24 @@ describe("useThreadControls", () => {
       new HttpResponseError("control_not_found", 404, null),
     );
     await act(async () =>
-      latest.withdraw({ id: "k", control: { kind: "compact" }, status: "queued" }),
+      latest.withdraw({
+        id: "k",
+        control: { kind: "compact" },
+        status: "queued",
+        afterTurnId: null,
+      }),
     );
     expect(announcements.announceError).toHaveBeenCalledWith("Couldn't withdraw. Try again.");
   });
 
   it("brings the row back when the withdrawal fails", async () => {
     api.withdrawThreadControl.mockRejectedValue(new Error("offline"));
-    const queued = { id: "k", control: { kind: "compact" }, status: "queued" } as const;
+    const queued = {
+      id: "k",
+      control: { kind: "compact" },
+      status: "queued",
+      afterTurnId: null,
+    } as const;
     const inbox: ThreadPendingInbox = {
       items: [
         {
@@ -228,6 +246,27 @@ describe("useThreadControls", () => {
     expect(latest.stoppingTurnIds.has("c")).toBe(false);
   });
 
+  it("queues a command after the newest waiting message, with its instructions", async () => {
+    api.enqueueThreadControl.mockReturnValue(new Promise(() => undefined));
+    await act(async () => root.render(<Probe queueTail="u3" />));
+    let id = "";
+    await act(async () => {
+      id = latest.enqueue({ kind: "compact", instructions: "Keep the oath" });
+    });
+    expect(api.enqueueThreadControl).toHaveBeenCalledWith("thread-1", {
+      id,
+      control: { kind: "compact", instructions: "Keep the oath" },
+    });
+    expect(latest.queued).toEqual([
+      {
+        id,
+        control: { kind: "compact", instructions: "Keep the oath" },
+        status: "queued",
+        afterTurnId: "u3",
+      },
+    ]);
+  });
+
   it("announces a failed enqueue", async () => {
     api.enqueueThreadControl.mockRejectedValue(new Error("offline"));
     await act(async () => {
@@ -239,11 +278,16 @@ describe("useThreadControls", () => {
   it("says a command already started when Withdraw comes too late", async () => {
     api.withdrawThreadControl.mockResolvedValue({ outcome: "already_started" });
     await act(async () =>
-      latest.withdraw({ id: "k", control: { kind: "compact" }, status: "queued" }),
+      latest.withdraw({
+        id: "k",
+        control: { kind: "compact" },
+        status: "queued",
+        afterTurnId: null,
+      }),
     );
     expect(announcements.announce).toHaveBeenLastCalledWith("This compaction already started.");
     expect(latest.queued).toEqual([
-      { id: "k", control: { kind: "compact" }, status: "already_started" },
+      { id: "k", control: { kind: "compact" }, status: "already_started", afterTurnId: null },
     ]);
   });
 });

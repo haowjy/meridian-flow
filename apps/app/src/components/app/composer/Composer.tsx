@@ -35,6 +35,7 @@ import {
   ComposerCommandMenu,
   composerChatCommandItems,
   composerSkillCommandItems,
+  matchComposerChatCommand,
 } from "./command";
 import {
   type ComposerDraftChange,
@@ -264,7 +265,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               ...composerChatCommandItems(chatCommands),
             ],
             runCommand: (slug) =>
-              commandsRef.current?.find((command) => command.slug === slug)?.run(),
+              commandsRef.current?.find((command) => command.slug === slug)?.run(null),
           };
         },
         suggestionHost: (current) => editorSuggestionHost(current, "prose"),
@@ -457,6 +458,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       revision.current,
       composerSelection(editor.state.selection),
     );
+    // `/compact <instructions>` is a verb, not a message: it runs on the thread
+    // and its text leaves the composer at once, like choosing it from the menu.
+    const verb = matchComposerChatCommand(envelope.text, commandsRef.current ?? []);
+    if (verb) {
+      setSubmitFailure(false);
+      editor.commands.clearContent(true);
+      verb.command.run(verb.instructions);
+      editor.commands.focus(undefined, { scrollIntoView: false });
+      return;
+    }
     inFlight.current = envelope;
     const outcome = await Promise.resolve(onSubmit(envelope)).catch(
       (): ComposerSubmitOutcome => ({

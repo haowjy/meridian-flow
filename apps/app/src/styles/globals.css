@@ -476,6 +476,20 @@
 @media (hover: none), (pointer: coarse) {
   [data-assistant-turn] .assistant-turn-actions { opacity: 1; }
 }
+/* A finished compaction divider's Fork follows the same rule, revealed from
+   anywhere on the divider. */
+@media (hover: hover) {
+  [data-compaction-divider] .compaction-divider-actions {
+    opacity: 0;
+  }
+  [data-compaction-divider]:hover .compaction-divider-actions,
+  [data-compaction-divider]:focus-within .compaction-divider-actions {
+    opacity: 1;
+  }
+}
+@media (hover: none), (pointer: coarse) {
+  [data-compaction-divider] .compaction-divider-actions { opacity: 1; }
+}
 /* A writer message's Hand off follows the same rule, revealed from anywhere on
    its transcript row since the bubble hugs the right edge. With a mouse it
    takes no height: it sits left of the bubble's last line, and the bubble

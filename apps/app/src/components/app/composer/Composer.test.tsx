@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Composer, type ComposerSubmitEnvelope, type ComposerSubmitOutcome } from "./Composer";
+import type { ComposerChatCommand } from "./command";
 import { plainComposerDoc, serializeComposerDraft } from "./composer-document";
 
 vi.mock("@lingui/core/macro", () => ({
@@ -32,7 +33,12 @@ function draft(text: string) {
 }
 
 async function render(
-  props: { running?: boolean; initialDraft?: ReturnType<typeof draft>; onStop?: () => void } = {},
+  props: {
+    running?: boolean;
+    initialDraft?: ReturnType<typeof draft>;
+    onStop?: () => void;
+    commands?: readonly ComposerChatCommand[];
+  } = {},
 ) {
   const onSubmit = vi.fn(
     (envelope: ComposerSubmitEnvelope): ComposerSubmitOutcome => ({
@@ -48,6 +54,7 @@ async function render(
         initialDraft={props.initialDraft}
         onStop={props.onStop}
         onSubmit={onSubmit}
+        commands={props.commands}
       />,
     );
   });
@@ -55,6 +62,14 @@ async function render(
 }
 
 const editorElement = () => host.querySelector<HTMLElement>(".composer-input");
+
+async function pressEnter() {
+  await act(async () => {
+    editorElement()?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
 
 async function pressEscape() {
   await act(async () => {
@@ -115,5 +130,41 @@ describe("Composer during a live run", () => {
     await render({ onStop });
     await pressEscape();
     expect(onStop).not.toHaveBeenCalled();
+  });
+});
+
+describe("Composer chat verbs", () => {
+  const compact = () => {
+    const run = vi.fn();
+    return {
+      run,
+      commands: [{ slug: "compact", name: "Compact conversation", description: "d", run }] as const,
+    };
+  };
+
+  it("sends `/compact <instructions>` as the command, never as a message", async () => {
+    const { run, commands } = compact();
+    const onSubmit = await render({
+      running: true,
+      initialDraft: draft("/compact   Keep the sect names  "),
+      commands,
+    });
+    await pressEnter();
+    expect(run).toHaveBeenCalledWith("Keep the sect names");
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(editorElement()?.textContent).toBe("");
+  });
+
+  it("sends a bare `/compact` with no instructions", async () => {
+    const { run, commands } = compact();
+    await render({ initialDraft: draft("/compact"), commands });
+    await pressEnter();
+    expect(run).toHaveBeenCalledWith(null);
+  });
+
+  it("sends `/compact` text as a message where the command is not offered", async () => {
+    const onSubmit = await render({ initialDraft: draft("/compact Keep the names") });
+    await pressEnter();
+    expect(onSubmit).toHaveBeenCalledOnce();
   });
 });

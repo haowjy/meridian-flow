@@ -34,8 +34,8 @@ one Info scope across A, C, B. Delivery rows never attach across a divider.
 
 A divider **is** a row for the failed-reply rule: a failed reply followed by a
 divider is history, because the writer (or the run) moved on, and it no
-longer offers Retry ([failed-reply Retry](failed-reply-retry.md)). The
-queued-commands tail is not a row and never counts. R3 is untouched: an
+longer offers Retry ([failed-reply Retry](failed-reply-retry.md)). A queued
+command is not a transcript row and never counts. R3 is untouched: an
 autocompaction's failed reply comes after its divider, so it stays current.
 
 ## Divider states
@@ -44,14 +44,17 @@ Pending (the lease phase, Stop through the existing cancel route on C),
 complete (summary disclosure; token counts only when the context shrank),
 failed, cancelled. A manual failure says why on the divider, with
 `turn.error` as copy except `context_too_large`, whose server copy blames the
-writer's message; the client owns that sentence. `nothing_to_compact` is not
-an alarm: the divider reads "There is nothing to compact yet" in the muted
-tone, with no error copy. It is expected after an automatic compaction took
-care of what a queued `/compact` asked for. An autocompaction's failure stays
-quiet (R3): the failed reply under the newest message carries it.
+writer's message; the client owns that sentence. There is no "nothing to
+compact" state: a manual `/compact` always compacts (A12). An autocompaction's
+failure stays quiet (R3): the failed reply under the newest message carries it.
 
 A divider records the compaction and its summary. Nothing on it reverses the
-compaction.
+compaction. A compaction is a turn: a complete divider's action is Fork (the
+same `ForkTurnAction` and navigate-first fork as a reply; the fork starts from
+the compacted history). It has no Copy and no Hand off. Fork reveals on hover
+or focus like a reply's actions and stays visible on touch. The writer's
+`/compact <instructions>` show verbatim under the line (`metadata.instructions`,
+read defensively), in every state.
 
 The divider is one line at every width. Its section is a container: below
 `@lg` the state label switches to a short form ("Compacted") and truncates
@@ -71,18 +74,26 @@ turn.
 
 ## Writer commands
 
-The only command is `/compact`. It runs only when replies
-finish: at the end of the queue, one per run. Stop (the Stop button, or Esc in
-an empty composer; with a draft, Esc leaves the run alone) runs a queued
-command at once, before the waiting messages, which are answered after it; the
-client just shows the server's state (the reply stops, "Compacting" appears).
+The only command is `/compact`, offered once the chat (or the history a fork
+inherited) has a completed reply. Typing `/compact <instructions>` and sending
+runs it with the rest of the draft, trimmed, as `instructions`; choosing it
+from the `/` menu runs it with none. The inbox is one ordered queue: a command
+runs by itself when it reaches the front, after the current reply and anything
+sent before it. Stop (the Stop button, or Esc in an empty composer; with a
+draft, Esc leaves the run alone) only ends the turn; whatever is next runs.
+The client special-cases none of it and just shows the server's state.
 
 `useThreadControls` is the shell over `compaction/thread-controls.ts`. It mints
 the id, shows the item as queued before the network answers, and keeps a
 failed enqueue on the item with Retry under the same id (the server treats a
-repeat as the original). A queued command waits at the tail as a dashed rule:
-"Compaction queued. Runs when replies finish." with Withdraw. Messages sent after it render above it; it
-stays last until it runs. Queued rows have no Stop.
+repeat as the original). A queued command is a dashed rule, "Compaction
+queued" with Withdraw, and its instructions verbatim under it, at once. It
+renders in the pending inbox's `seq` order among the queued messages:
+`mergeQueuedControls` records the writer message sent just before it
+(`afterTurnId`; a local command records the newest unread writer turn when it
+was sent), and `placeQueuedControls` puts it right after that message while
+the message is still unread, else ahead of the unread messages, else at the
+end. Queued rows have no Stop.
 
 Withdraw removes the row at once (focus stays in the transcript when it was
 the last). The server answers `withdrawn`, or `already_started` once a divider

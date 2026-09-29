@@ -105,7 +105,7 @@ describe("dividerView", () => {
       ),
     ).toMatchObject({
       state: "failed",
-      nothingToCompact: false,
+      instructions: null,
       failureCopy: "This conversation couldn't be compacted. Try again.",
     });
     expect(
@@ -117,18 +117,6 @@ describe("dividerView", () => {
         }),
       ).failureCopy,
     ).toBe("client copy");
-  });
-
-  it("nothing to compact: a calm outcome with no failure copy", () => {
-    expect(
-      view(
-        compaction({
-          status: "error",
-          error: "There is nothing to compact yet.",
-          metadata: { trigger: "manual", reason: "nothing_to_compact", phase: "initial_prepare" },
-        }),
-      ),
-    ).toMatchObject({ state: "failed", nothingToCompact: true, failureCopy: null });
   });
 
   it("failed auto stays quiet (R3): the failed reply carries the error", () => {
@@ -145,6 +133,16 @@ describe("dividerView", () => {
 
   it("cancelled", () => {
     expect(view(compaction({ status: "cancelled" })).state).toBe("cancelled");
+  });
+
+  it("carries the writer's instructions verbatim; blank or malformed is none", () => {
+    const withInstructions = (instructions: string | number | null) =>
+      view(compaction({ metadata: { trigger: "manual", controlMessageId: "k", instructions } }))
+        .instructions;
+    expect(withInstructions("  Keep the oath\n")).toBe("  Keep the oath\n");
+    expect(withInstructions("   ")).toBeNull();
+    expect(withInstructions(7)).toBeNull();
+    expect(withInstructions(null)).toBeNull();
   });
 });
 

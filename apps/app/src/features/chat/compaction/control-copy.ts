@@ -2,7 +2,8 @@
  * Writer copy for a queued `/compact`.
  *
  * The queued row and the polite announcer that speaks its change read the
- * same string, so what a writer hears matches what they see.
+ * same string, so what a writer hears matches what they see. The row's place
+ * in the queue says when it runs; the copy does not promise a moment.
  */
 import { t } from "@lingui/core/macro";
 import type { QueuedControlStatus } from "./thread-controls";
@@ -12,7 +13,7 @@ export function controlStatusCopy(status: QueuedControlStatus): string {
   switch (status) {
     case "queued":
     case "withdraw_failed":
-      return t`Compaction queued. Runs when replies finish.`;
+      return t`Compaction queued`;
     case "failed":
       return t`Couldn't queue the compaction.`;
     case "already_started":

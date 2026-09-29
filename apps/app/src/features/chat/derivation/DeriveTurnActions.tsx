@@ -1,6 +1,7 @@
 /**
- * Fork and Hand off in a finished reply's action row, and Hand off alone
- * under a delivered writer message. The turn is the cutoff.
+ * Fork and Hand off in a finished reply's action row, Hand off alone under a
+ * delivered writer message, and Fork alone on a finished compaction divider.
+ * The turn is the cutoff.
  *
  * A primary chat provides `TurnDerivation`; a subagent's view does not, so
  * neither action renders there (the server refuses both from a subagent).
@@ -71,26 +72,35 @@ export function defaultHandoffAgent(
 export function DeriveTurnActions({ turnId }: { turnId: string }) {
   const derivation = useTurnDerivation();
   if (!derivation) return null;
-  const forkLabel = t`Fork from here`;
   return (
     <>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-xs"
-            className={actionClass}
-            aria-label={forkLabel}
-            onClick={() => derivation.fork(turnId)}
-          >
-            <GitFork aria-hidden />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{forkLabel}</TooltipContent>
-      </Tooltip>
+      <ForkTurnAction turnId={turnId} />
       <HandoffPicker turnId={turnId} derivation={derivation} align="start" />
     </>
+  );
+}
+
+/** Fork alone: a compaction divider's action. A fork cut there starts compacted. */
+export function ForkTurnAction({ turnId }: { turnId: string }) {
+  const derivation = useTurnDerivation();
+  if (!derivation) return null;
+  const forkLabel = t`Fork from here`;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-xs"
+          className={actionClass}
+          aria-label={forkLabel}
+          onClick={() => derivation.fork(turnId)}
+        >
+          <GitFork aria-hidden />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{forkLabel}</TooltipContent>
+    </Tooltip>
   );
 }
 

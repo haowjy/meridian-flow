@@ -71,7 +71,10 @@ import {
 import { isHandoffSeed, optimisticHandoffSeed } from "./derivation/handoff-seed";
 import { optimisticForkPrefix, useInheritedView } from "./derivation/inherited-view";
 import { useHandoffBrief } from "./derivation/useHandoffBrief";
-import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
+import {
+  queuedWriterTurnIds as selectQueuedWriterTurnIds,
+  unreadWriterTurnIds,
+} from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
 import { placeStandIns } from "./retry-stand-ins";
@@ -212,11 +215,21 @@ export function ChatView({
     [pendingInbox],
   );
   const answeredControls = useMemo(() => answeredControlIds(turns), [turns]);
+  // A new command queues behind the newest message the model has not read.
+  const queueTailTurnId = useMemo(() => {
+    const unread = unreadWriterTurnIds(turns, queuedWriterTurnIds);
+    for (let index = turns.length - 1; index >= 0; index--) {
+      const id = turns[index]?.id;
+      if (id && unread.has(id)) return id;
+    }
+    return null;
+  }, [queuedWriterTurnIds, turns]);
   const controls = useThreadControls({
     threadId,
     pending: pendingInbox,
     answeredControlIds: answeredControls,
     leafTurnId: storedTurns.at(-1)?.id ?? null,
+    queueTailTurnId,
   });
   useControlTurnAnnouncements(turns);
   // The snapshot revalidates as a compaction reserves and settles, so its live
@@ -224,19 +237,33 @@ export function ChatView({
   const liveStatus = snapshotLiveState?.status ?? activity.status;
   const livePhase = liveStatus.kind === "awake" ? liveStatus.phase : null;
   const { enqueue: enqueueControl } = controls;
+  // Compaction summarizes finished replies: until one exists, `/compact` is not offered.
+  const inheritedTurns = inherited.view?.transcript.turns;
+  const hasCompletedReply = useMemo(
+    () =>
+      [...(inheritedTurns ?? []), ...turns].some(
+        (turn) => turn.role === "assistant" && turn.status === "complete",
+      ),
+    [inheritedTurns, turns],
+  );
   const chatCommands = useMemo<readonly ComposerChatCommand[]>(
-    () => [
-      {
-        slug: "compact",
-        name: t`Compact conversation`,
-        description: t`Summarize earlier messages so the model has room to keep going`,
-        run: () => {
-          requestTailFollow();
-          enqueueControl({ kind: "compact" });
-        },
-      },
-    ],
-    [enqueueControl],
+    () =>
+      hasCompletedReply
+        ? [
+            {
+              slug: "compact",
+              name: t`Compact conversation`,
+              description: t`Summarize earlier messages so the model has room to keep going`,
+              run: (instructions) => {
+                requestTailFollow();
+                enqueueControl(
+                  instructions ? { kind: "compact", instructions } : { kind: "compact" },
+                );
+              },
+            },
+          ]
+        : [],
+    [enqueueControl, hasCompletedReply],
   );
 
   // Only a primary the server already has can be forked or handed off; a

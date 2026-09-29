@@ -1138,12 +1138,12 @@ msgid "Compacting conversation"
 msgstr "Compacting conversation"
 
 #: src/features/chat/compaction/control-copy.ts
-#~ msgid "Compaction queued"
-#~ msgstr "Compaction queued"
+msgid "Compaction queued"
+msgstr "Compaction queued"
 
 #: src/features/chat/compaction/control-copy.ts
-msgid "Compaction queued. Runs when replies finish."
-msgstr "Compaction queued. Runs when replies finish."
+#~ msgid "Compaction queued. Runs when replies finish."
+#~ msgstr "Compaction queued. Runs when replies finish."
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/compaction/useControlTurnAnnouncements.ts
@@ -2901,8 +2901,8 @@ msgid "Nothing opened yet"
 msgstr "Nothing opened yet"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "Nothing to compact"
-msgstr "Nothing to compact"
+#~ msgid "Nothing to compact"
+#~ msgstr "Nothing to compact"
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Nothing to redo yet."
@@ -4228,8 +4228,8 @@ msgid "Theme"
 msgstr "Theme"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "There is nothing to compact yet"
-msgstr "There is nothing to compact yet"
+#~ msgid "There is nothing to compact yet"
+#~ msgstr "There is nothing to compact yet"
 
 #: src/core/editor/images/image-uploads.ts
 msgid "There is nowhere left to put that picture."
