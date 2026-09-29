@@ -4500,6 +4500,10 @@ msgstr ""
 #~ msgid "This project has no chats yet."
 #~ msgstr ""
 
+#: src/features/chat/ErrorBlock.tsx
+msgid "This reply was interrupted."
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 #~ msgid "This report is unavailable."
 #~ msgstr ""

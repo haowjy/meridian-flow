@@ -43,8 +43,8 @@ export interface WriterRunTurnInput extends RunTurnBase {
  */
 export interface DrainRunTurnInput extends RunTurnBase {
   drain: true;
-  /** Replays the adopted inbox inputs of a latest failed assistant reply. */
-  retry?: { failedTurnId: TurnId; replyTurnId: TurnId };
+  /** Client-minted id for an explicit no-input reply Retry. */
+  replyTurnId?: TurnId;
 }
 
 export type RunTurnInput = WriterRunTurnInput | DrainRunTurnInput;

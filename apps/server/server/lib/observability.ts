@@ -19,6 +19,7 @@ type ObservabilityGlobal = typeof globalThis & {
     eventQuery?: EventQuery;
     delegateBound: boolean;
     shutdownInstalled: boolean;
+    shutdownPromise?: Promise<void>;
     shutdownCallbacks: Array<() => Promise<void> | void>;
   };
 };
@@ -69,12 +70,22 @@ export function installObservabilityShutdownHooks(): void {
   const current = state();
   if (current.shutdownInstalled) return;
   current.shutdownInstalled = true;
-  const flush = async () => {
-    for (const callback of current.shutdownCallbacks) {
-      await Promise.resolve(callback()).catch(() => undefined);
-    }
-    await current.sink.flush().catch(() => undefined);
+  const shutdown = () => {
+    // SIGINT and SIGTERM may both arrive while the bounded runtime drain is in
+    // flight. They are one shutdown, not competing drain/flush/exit sequences.
+    current.shutdownPromise ??= (async () => {
+      try {
+        for (const callback of current.shutdownCallbacks) {
+          await Promise.resolve()
+            .then(callback)
+            .catch(() => undefined);
+        }
+        await current.sink.flush().catch(() => undefined);
+      } finally {
+        process.exit(0);
+      }
+    })();
   };
-  process.once("SIGTERM", () => void flush().finally(() => process.exit(0)));
-  process.once("SIGINT", () => void flush().finally(() => process.exit(0)));
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
 }

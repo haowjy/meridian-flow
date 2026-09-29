@@ -89,12 +89,13 @@ messages or a queued command. The concrete Drizzle adapter appends the
 classified pending replacement before commit; journal failure rolls back the
 transition and only physical wake is best-effort after commit.
 
-`loop/preparation-failure.ts` maps a preparation error to that reply's writer-facing error. A failed reply stays
-`error`; its ending transaction acknowledges every adopted inbox message and
-records their IDs as Retry provenance. The read model never rewrites it
-when the writer sends again. Explicit Retry restores only those messages and
-appends a new assistant after the failed one; model history excludes the failed
-assistant to preserve the original request. See the [reply Retry API](../../../../../../docs/api/thread-reply-retry.md).
+`loop/preparation-failure.ts` maps a preparation error to that reply's
+writer-facing error. A failed reply stays `error`; its ending transaction
+acknowledges every adopted inbox message. The read model never rewrites it when
+the writer sends again. Explicit Retry starts a normal no-input run after the
+failed turn; the ordinary request projection includes that turn. Pending
+non-control rows are adopted normally, with no Retry-specific restoration or
+inbox metadata. See the [reply Retry API](../../../../../../docs/api/thread-reply-retry.md).
 
 - **Inbox adoption is lease-owned and transactional.** The current batch's
   exact IDs live in `thread_run_leases.adopted_message_ids`, never turn

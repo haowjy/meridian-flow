@@ -6,6 +6,7 @@ import type { NoticePort } from "../../../notices/index.js";
 import { createDrizzleEventJournalWriter } from "../../../threads/index.js";
 import { createDrizzleRunClaim } from "../../adapters/drizzle-run-claim.js";
 import { processDetachedWork } from "../../detached-work.js";
+import type { WorkContextReader } from "../work-context.js";
 import { createTestAgentBinding } from "./runtime-fixtures.js";
 import { createRuntimeHarness } from "./runtime-harness.js";
 import { scriptedSummarizer } from "./scripted-summarizer.js";
@@ -20,6 +21,7 @@ export function createCompactionFixture(db: Database) {
       empty?: boolean;
       summarizer?: ReturnType<typeof scriptedSummarizer>;
       gateway?: ReturnType<typeof scriptedGateway>;
+      workContext?: WorkContextReader;
     } = {},
   ) {
     const { repos, ids } = await executionScenario(db);
@@ -67,6 +69,7 @@ export function createCompactionFixture(db: Database) {
         eventWriter,
         runClaim: claim,
         notices: options.notices ?? createDrizzleNoticePort(db),
+        ...(options.workContext && { workContext: options.workContext }),
       }),
     });
     await rig.creditLedger.grant({

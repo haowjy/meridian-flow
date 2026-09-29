@@ -22,6 +22,8 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
 > & {
   lease: Lease;
   currentTurn: Turn;
+  /** Use this client-minted id for the next assistant after a start-time compaction. */
+  preferredSuccessorTurnId?: TurnId;
   signal?: AbortSignal;
   continueTask?: boolean;
   admit?: (turn: Turn) => Promise<void>;
@@ -119,7 +121,6 @@ export interface RuntimeDelivery
     } | null>,
     options?: {
       signal?: AbortSignal;
-      retry?: { failedTurnId: TurnId; replyTurnId: TurnId };
     },
   ): Promise<T>;
   ackWithResponse<T>(lease: Lease, ids: string[], persist: () => Promise<T>): Promise<T>;
@@ -130,7 +131,6 @@ export interface RuntimeDelivery
     lease: Lease;
     turnId: TurnId;
     cause: TerminalCause;
-    retryInputMessageIds?: readonly string[];
     settleSummaryResponses?: () => Promise<void>;
     continueWith?: DeliveryBoundary;
   }): Promise<

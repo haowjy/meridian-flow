@@ -1502,10 +1502,55 @@ else
         ["assistant", "error"],
       ]);
       expect(tail[1].error).toBe("This conversation couldn't be compacted. Try again.");
-      expect(tail[1].metadata).toMatchObject({
-        replyRetry: { messageIds: [run.userTurnId] },
-      });
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
+    });
+
+    it("retries a failed automatic compaction with a fresh C and the client's reply ID", async () => {
+      const summarizer = scriptedSummarizer(async (_input, call) =>
+        call === 1
+          ? { kind: "failed", error: new Error("summary unavailable"), modelResponses: [] }
+          : {
+              kind: "complete",
+              text: "Recovered summary.",
+              model: "summary-model",
+              modelResponses: [],
+            },
+      );
+      const rig = await fixture({ summarizer });
+      const original = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue after the failed summary.",
+      });
+      expect((await original.execute()).status).toBe("error");
+      await processDetachedWork.drain();
+      const failedReply = await rig.repos.turns.getLatestByThread(rig.threadId);
+      expect(failedReply).toMatchObject({ role: "assistant", status: "error" });
+      if (!failedReply) throw new Error("Failed automatic compaction reply was not persisted");
+
+      const replyTurnId = crypto.randomUUID();
+      const retry = await rig.orchestrator.retryReply({
+        threadId: rig.threadId,
+        failedTurnId: failedReply.id as never,
+        replyTurnId: replyTurnId as never,
+      });
+      expect(retry).toMatchObject({ created: true, turn: { id: replyTurnId, status: "pending" } });
+      await processDetachedWork.drain();
+
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
+      const compactions = turns.filter((turn) => turn.role === "compaction");
+      const retriedReply = await rig.repos.turns.findById(replyTurnId as never);
+      expect(compactions).toHaveLength(2);
+      expect(compactions[1]).toMatchObject({ status: "complete" });
+      expect(compactions[1]?.id).not.toBe(replyTurnId);
+      expect(retriedReply).toMatchObject({
+        id: replyTurnId,
+        role: "assistant",
+        status: "complete",
+        prevTurnId: compactions[1]?.id,
+      });
+      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+      expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
     });
 
     it("keeps a usable epoch when a late image fails preparation", async () => {

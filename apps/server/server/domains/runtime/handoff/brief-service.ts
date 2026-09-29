@@ -55,7 +55,7 @@ type BriefGeneration = (input: {
 
 type HandoffBriefServiceDeps = {
   backgroundTasks: DetachedWorkTracker;
-  shutdown?: { started: boolean };
+  shutdown: { started: boolean };
   repos: ThreadRepositories;
   eventWriter: EventJournalWriter;
   eventSink: EventSink;
@@ -84,7 +84,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
   };
   const live = new Map<TurnId, LiveBrief>();
   const backgroundTasks = deps.backgroundTasks;
-  const shutdown = deps.shutdown ?? { started: false };
+  const shutdown = deps.shutdown;
   const accounting = createTurnAccounting({
     billingUsage: deps.billingUsage as BillingUsagePolicy,
   });

@@ -28,6 +28,7 @@ const failedTurn = {
   error: "provider unavailable",
   blocks: [],
 } as unknown as Turn;
+const interruptedTurn = { ...failedTurn, error: "This reply was interrupted." } as Turn;
 
 const SEND = "Couldn&#x27;t send.";
 
@@ -89,6 +90,23 @@ describe("AssistantTurn failure", () => {
     );
     expect(older).toContain("This response failed.");
     expect(older).not.toContain("<button");
+  });
+
+  it("shows a shutdown-interrupted reply with its server copy and Retry", () => {
+    const html = renderToStaticMarkup(
+      <AssistantTurn
+        turn={interruptedTurn}
+        endsTranscript
+        replyRetry={{
+          onRetry: () => undefined,
+          waiting: false,
+          refused: false,
+          requestLost: false,
+        }}
+      />,
+    );
+    expect(html).toContain("This reply was interrupted.");
+    expect(html).toContain("data-reply-retry");
   });
 
   it("shows a lost Retry's stand-in as a retry that never started, with no action row", () => {

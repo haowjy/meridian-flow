@@ -58,6 +58,7 @@ describe("handoff brief service", () => {
     const wakes: string[] = [];
     const scheduled: Array<() => Promise<void>> = [];
     const service = createHandoffBriefs({
+      shutdown: { started: false },
       backgroundTasks: state.rig.backgroundTasks,
       repos: state.rig.repos,
       eventWriter: state.rig.eventWriter,
@@ -141,6 +142,7 @@ describe("handoff brief service", () => {
     });
     const scheduled: Array<() => Promise<void>> = [];
     const service = createHandoffBriefs({
+      shutdown: { started: false },
       backgroundTasks: state.rig.backgroundTasks,
       repos: state.rig.repos,
       eventWriter: state.rig.eventWriter,
@@ -214,6 +216,7 @@ describe("handoff brief service", () => {
       releaseRetry = resolve;
     });
     const service = createHandoffBriefs({
+      shutdown: { started: false },
       backgroundTasks: rig.backgroundTasks,
       repos: rig.repos,
       eventWriter: rig.eventWriter,
@@ -312,6 +315,7 @@ describe("handoff brief service", () => {
       runStarter: { start: (threadId) => rig.startDrain(threadId) },
     });
     const service = createHandoffBriefs({
+      shutdown: { started: false },
       backgroundTasks: rig.backgroundTasks,
       repos: {
         ...rig.repos,

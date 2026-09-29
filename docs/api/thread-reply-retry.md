@@ -1,8 +1,9 @@
 # Failed reply Retry API
 
-`POST /api/threads/:threadId/turns/:turnId/retry` starts a new reply for the
-same inbox messages adopted by a failed assistant turn. The failed turn remains
-unchanged in history; Retry appends a new assistant turn after it.
+`POST /api/threads/:threadId/turns/:turnId/retry` starts an ordinary run with no
+new input. Writer messages already answered by the failed reply remain user
+turns in the transcript. Retry appends a new assistant reply; the failed turn
+remains in history.
 
 The request body is strict and the ID is minted by the client:
 
@@ -15,15 +16,25 @@ The request body is strict and the ID is minted by the client:
 new retry returns **201** with the serialized new `Turn`. Repeating the same
 request ID returns **200** with that existing turn.
 
-Retry is available only when `turnId` is the latest failed assistant reply on
-the same primary or subagent thread, the chat has no active run, and the inbox
-is empty. Otherwise the route returns **409** with
+Retry is available only when `turnId` is the latest assistant turn with status
+`error` on the same primary or subagent thread, and no run is live. The server
+checks eligibility before claiming the thread, so a refusal holds no claim.
+Pending inbox rows do not block Retry; the normal run start adopts eligible
+non-control rows. Otherwise the route returns **409** with
 `reply_retry_unavailable`. The route also requires ownership of the thread.
 
-The retry request uses the saved adopted messages and excludes the failed
-assistant turn from model history. This recreates the original request rather
-than asking the model to continue from a failure marker. The failed turn still
-remains visible in transcript history, immediately before the new reply.
+Model context uses the ordinary history projection, including the failed turn.
+For an early provider failure with no output, Retry's request is equivalent to
+the original. After partial output or work, that activity remains honest
+history. If preparation must compact first, the compaction uses a fresh turn ID
+and the retried reply uses the client ID, so the optimistic reply reconciles by
+ID. Repeating the same ID returns that turn with **200**; a new retry returns
+**201**.
+
+A reply interrupted by process shutdown ends as an error with reason
+`shutdown` and copy “This reply was interrupted.” Its adopted messages are
+acknowledged like any failed reply, so the latest interrupted reply can be
+retried after restart.
 
 This operation is distinct from [handoff brief Retry](thread-handoff.md),
 which creates a new destination seed rather than repeating a failed reply.
