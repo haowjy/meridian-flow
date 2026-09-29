@@ -2,7 +2,7 @@
  * Writer commands waiting at the transcript tail.
  *
  * A command runs only once replies finish, and takes no transcript position
- * until then, so a queued `/compact` or Undo sits after the newest turn as a
+ * until then, so a queued `/compact` sits after the newest turn as a
  * dashed rule: the divider it will become, not yet drawn. Messages sent after
  * it render above it; it stays last until it runs. Withdraw is right after the
  * words and removes the row at once. A command that already started says so
@@ -13,7 +13,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { CircleAlert, FoldVertical, UnfoldVertical } from "lucide-react";
+import { CircleAlert, FoldVertical } from "lucide-react";
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -26,10 +26,6 @@ export type QueuedControlRowsProps = {
   onWithdraw?: (control: QueuedControl) => void;
   onRetry?: (controlId: string) => void;
 };
-
-function withdrawLabel(control: QueuedControl): string {
-  return control.control.kind === "compact" ? t`Withdraw compaction` : t`Withdraw undo`;
-}
 
 export function QueuedControlRows({ controls, onWithdraw, onRetry }: QueuedControlRowsProps) {
   const listRef = useRef<HTMLUListElement>(null);
@@ -69,7 +65,6 @@ function QueuedControlRow({
   const failed = status === "failed";
   const canWithdraw = status === "queued" || status === "withdraw_failed";
   const settled = status === "already_started";
-  const Icon = control.control.kind === "compact" ? FoldVertical : UnfoldVertical;
   return (
     <li
       data-queued-control={control.control.kind}
@@ -80,7 +75,7 @@ function QueuedControlRow({
         {failed ? (
           <CircleAlert aria-hidden className="size-3.5 shrink-0 text-destructive" />
         ) : (
-          <Icon aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
+          <FoldVertical aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
         )}
         <span
           className={cn(
@@ -88,7 +83,7 @@ function QueuedControlRow({
             failed ? "text-destructive" : settled ? "text-ink-subtle" : "text-ink-muted",
           )}
         >
-          {controlStatusCopy(control.control.kind, status)}
+          {controlStatusCopy(status)}
         </span>
       </span>
       {failed && onRetry ? (
@@ -107,7 +102,7 @@ function QueuedControlRow({
           type="button"
           variant="quiet"
           size="meta"
-          aria-label={withdrawLabel(control)}
+          aria-label={t`Withdraw compaction`}
           onClick={() => onWithdraw(control)}
         >
           <Trans>Withdraw</Trans>

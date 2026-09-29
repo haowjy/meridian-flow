@@ -145,7 +145,7 @@ export function defineThreadHistoryContract(
       batches.mockRestore();
     });
 
-    it("labels writer, steer, agent request, spawn prompt, assistant, thinking, completion, seed, complete/refused undo and failed C", async () => {
+    it("labels writer, steer, agent request, spawn prompt, assistant, thinking, completion, seed and failed C", async () => {
       const f = await fixture();
       const cases: [Turn["role"], Turn["origin"], JsonObject | null, string][] = [
         ["user", "writer", null, "writer"],
@@ -183,22 +183,11 @@ export function defineThreadHistoryContract(
           { kind: "derivation_seed", derivation: "handoff" },
           "system: fork_or_handoff_seed",
         ],
-        [
-          "system",
-          "system",
-          { kind: "compaction_undo", revertsCompactionTurnId: "c" },
-          "system: undo_marker",
-        ],
       ];
       for (const [role, origin, metadata, label] of cases) {
         const t = await f.turn(role, metadata, "complete", origin);
         await f.block(t, "text", `text-${label}`);
       }
-      await f.turn(
-        "system",
-        { kind: "compaction_undo", revertsCompactionTurnId: "c", reason: "would_recompact" },
-        "error",
-      );
       await f.turn(
         "compaction",
         { kind: "compaction", failure: { reason: "provider_error", phase: "summary" } },
@@ -210,7 +199,6 @@ export function defineThreadHistoryContract(
       expect(defaults).toContain("writer");
       expect(defaults).toContain("agent");
       expect(defaults).not.toContain("thinking-secret");
-      expect(defaults).not.toContain("system: undo_marker");
       const all = output(
         await f.read({ order: "oldest_first", include: ["system_messages", "thinking"] }),
       );
@@ -227,7 +215,7 @@ export function defineThreadHistoryContract(
         "system",
         handoffSeedMetadata({
           sourceThreadId: f.thread.id,
-          sourceRef: f.thread.ref!,
+          sourceRef: f.thread.ref ?? "c1",
           sourceTitle: f.thread.title,
           cutoffTurnId: crypto.randomUUID(),
         }),

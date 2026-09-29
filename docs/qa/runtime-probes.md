@@ -1,9 +1,8 @@
 # Runtime protocol probes
 
-These back up the automated control, compaction, undo, handoff, and history
+These back up the automated control, compaction, handoff, and history
 contracts. They do not replace the project checks. `C` means a compaction turn;
-`B` an assistant continuation; `S` a handoff seed. Only `compact` and
-`compaction_undo` are inbox controls; the handoff brief runs outside the inbox.
+`B` an assistant continuation; `S` a handoff seed. Only `compact` is an inbox control; the handoff brief runs outside the inbox.
 
 ## Setup and evidence
 
@@ -41,11 +40,6 @@ compact() {
   K=$(node -p 'crypto.randomUUID()')
   ./mf api POST "/api/threads/$T/controls" \
     --data "{\"id\":\"$K\",\"control\":{\"kind\":\"compact\"}}" --json
-}
-undo() {
-  U=$(node -p 'crypto.randomUUID()')
-  ./mf api POST "/api/threads/$T/controls" \
-    --data "{\"id\":\"$U\",\"control\":{\"kind\":\"compaction_undo\",\"compactionTurnId\":\"$C\"}}" --json
 }
 ```
 
@@ -258,48 +252,6 @@ end-to-end as one suite.
   events, command id and final turn statuses.
 - **Last run:** not recorded for no-redelivery behavior.
 
-## RP-6: Manual compact then Undo restores request bytes
-
-- **Protects:** restored bake, undo without provider generation (`compaction-undo`).
-- **Stack:** mock.
-- **Steps:** save setup's last request. Queue a summary, compact, and wait idle.
-  Set `C` to the complete compaction turn ID from `thread view --json`. Then:
-
-  ```bash
-  undo > "$E/undo.json"
-  ./mf thread tail "$T" --until-idle --timeout 60s --json
-  ./mf thread send "$T" 'After undo' --mock '[{"text":"Restored."}]' --json
-  ./mf thread context "$T" --all --view raw --json > "$E/restored.json"
-  ```
-
-- **Expect:** U completes with the pre-C bake. No summary/provider request for U;
-  the next reply's request extends the byte-identical pre-C message prefix.
-- **Evidence:** pre-C and restored message arrays/hashes, C/U metadata, provider call log.
-- **Last run:** 2026-09-28, this test-hygiene worktree at base `22f2989bc`
-  plus test/doc edits, PASS. `evidence/test-hygiene/probe-prefix-assertion.json`
-  records 8 equal messages (70,510 bytes). Earlier merge-gate §10–11 also PASS.
-
-## RP-7: Refused Undo reports `would_recompact`
-
-- **Protects:** advisory and execution use the same fit rule (`compaction-undo`).
-- **Stack:** mock, low-threshold Agent from RP-4.
-- **Steps:** obtain an auto C with over-threshold pre-C context. Read the snapshot
-  advisory, set `C`, enqueue Undo even if the UI would not offer it, then inspect:
-
-  ```bash
-  ./mf api GET "/api/threads/$T/snapshot" --json > "$E/advisory.json"
-  undo > "$E/undo.json"
-  ./mf thread tail "$T" --until-idle --timeout 60s --json
-  ./mf thread view "$T" --json
-  ./mf thread context "$T" --all --view raw --json
-  ```
-
-- **Expect:** advisory `would_recompact`; U errors with that reason and no block.
-  The active compacted prefix is unchanged.
-- **Evidence:** advisory, marker blocks/metadata, before/after context.
-- **Last run:** merge-gate §31 PASS for advisory; executing the refused control
-  is not recorded there. Full recipe not yet recorded.
-
 ## RP-8: Handoff brief, Stop, Retry, failure and source isolation
 
 - **Protects:** destination run-claim ownership, detached launch, Stop, Retry,
@@ -354,7 +306,7 @@ end-to-end as one suite.
 
 ## RP-9: Fork prefix remains frozen as source grows and compacts
 
-- **Protects:** inherited cutoff/bake ownership (`compaction-protocol`, `compaction-undo`).
+- **Protects:** inherited cutoff/bake ownership (`compaction-protocol`).
 - **Stack:** mock.
 - **Steps:** choose settled `CUT`, allocate `FORK`, and fork. Send on the fork and
   save context, then grow and compact the source via RP-6. Send on the fork again:
@@ -369,7 +321,7 @@ end-to-end as one suite.
   ./mf thread context "$FORK" --all --view raw --json > "$E/fork-after.json"
   ```
 
-- **Expect:** inherited prefix bytes do not change; later source turns/C/U do not
+- **Expect:** inherited prefix bytes do not change; later source turns/C do not
   appear in the fork's inherited transcript.
 - **Evidence:** source and fork snapshots plus inherited-prefix arrays/hashes.
 - **Last run:** merge-gate §8–12 PASS; 2026-09-28 (source commit not recorded).
@@ -423,7 +375,7 @@ end-to-end as one suite.
   ```
 
   Follow returned cursors where the history exceeds one page. Repeat on the
-  compacted/undone source and fork from RP-6/RP-9.
+  compacted source and fork from RP-9.
 - **Expect:** child's first request has the reference/read instruction without
   source history. Invalid `from` fails before creating a child or charging a
   child run. Default inspection omits hidden tool payloads; explicit includes

@@ -203,7 +203,7 @@ export function createRunSessions(deps: {
             }
             turn = await deps.finalizeFailure({
               threadId,
-              turnId: session.currentTurn?.id ?? loop.currentTurn?.id ?? loop.terminalTurnId!,
+              turnId: session.currentTurn?.id ?? loop.currentTurn.id,
               error,
               signal: controller.signal,
               lease: heldLease,
@@ -220,7 +220,7 @@ export function createRunSessions(deps: {
       return {
         runId: lease.runId,
         userTurnId: loop.userTurnId,
-        executionTurnId: loop.currentTurn?.id ?? loop.terminalTurnId!,
+        executionTurnId: loop.currentTurn.id,
         resumeAfterSeq,
         snapshotFloorNextSeq,
         execute: () => (execution ??= execute()),

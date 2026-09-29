@@ -1,7 +1,7 @@
 /**
  * Keeps keyboard focus in a transcript row when the control that held it
- * disappears: Undo leaves a divider while it waits at the tail, Withdraw
- * leaves a row of several, Stop becomes a finished divider or Retry. Browsers drop focus to <body> when a focused
+ * disappears: Withdraw leaves a row of several, Stop becomes a finished
+ * divider or Retry. Browsers drop focus to <body> when a focused
  * element unmounts, which strands a keyboard or screen-reader writer at the
  * top of the page. Focus moves to the control the row marks
  * `data-focus-landing` (the one that replaced it), even while it waits

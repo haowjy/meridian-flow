@@ -190,11 +190,10 @@ hand-edit it.** Never touch a migration already present on the target branch
 5. A handwritten `--custom` migration cannot be regenerated. Recreate it with
    `drizzle-kit generate --custom` at the new ordinal and copy its body.
 
-Why: two lanes that each recreate the same CHECK constraint (the thread inbox
-body check gained `compaction_undo` in one lane and `handoff_brief` in the
-other) each list only their own value. Renumbering one by hand keeps that
-SQL, so whichever runs last silently drops the other lane's value. A renamed
-file also breaks the snapshot `prevId` chain, and ordinals without advancing
+Why: two lanes that each recreate the same CHECK constraint can each list only
+their own value. Renumbering one by hand keeps that SQL, so whichever runs last
+silently drops the other lane's value. A renamed file also breaks the snapshot
+`prevId` chain, and ordinals without advancing
 `when` timestamps can make an incremental database skip entries that a fresh
 database applies. `fresh-migrations.db.test.ts` checks strict journal ordering
 and the installed baseline hash without preventing future additive migrations.

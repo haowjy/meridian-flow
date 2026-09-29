@@ -1,11 +1,7 @@
 /** Request preparation stages references and image decisions without writes, then measures compaction. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Thread, Turn } from "@meridian/contracts/threads";
-import {
-  encodeImageInclusionMetadata,
-  type ImageContextBreak,
-  revertedCompactionIds,
-} from "../../threads/index.js";
+import { encodeImageInclusionMetadata, type ImageContextBreak } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import type { Tool } from "../gateway/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
@@ -16,7 +12,6 @@ import {
   type ForcedCompactionDecision,
 } from "./compaction/decision.js";
 import { estimateRequestTokens } from "./compaction/estimate.js";
-import { type PreparedUndo, prepareCompactionUndo } from "./compaction-undo.js";
 import type { CompactionImageProjectionMode, ImageInclusionDecision } from "./image-context.js";
 import { createLocalTurn } from "./local-turn.js";
 import type { ControlMessage } from "./next-inbox-work.js";
@@ -47,7 +42,6 @@ export type PrepareRequestInput = {
   signal?: AbortSignal;
 };
 export type PreparedRequest = {
-  undo: PreparedUndo | null;
   turns: Turn[];
   blocks: Block[];
   assembled: AssembledNextTurnContext;
@@ -55,134 +49,22 @@ export type PreparedRequest = {
   compaction: CompactionDecision;
 };
 
-export type PreparedControlHistory = Omit<PreparedRequest, "assembled" | "compaction"> & {
-  historyTurns: Turn[];
-  historyBlocks: Block[];
-};
-export class UndoRequestPreparationError extends Error {
-  constructor(
-    readonly prepared: PreparedControlHistory,
-    cause: unknown,
-  ) {
-    super("Request preparation failed after undo", { cause });
-  }
-  after(leaf: Pick<Turn, "id" | "position"> | null): PreparedControlHistory {
-    let previous = leaf;
-    for (const turn of this.prepared.turns) {
-      turn.prevTurnId = previous?.id ?? null;
-      turn.position = nextTurnPosition(previous);
-      previous = turn;
-    }
-    return this.prepared;
-  }
-}
-
-export function prepareFailedUndoHistory(
-  input: PrepareRequestInput,
-): Promise<PreparedControlHistory> {
-  return prepareControlHistory({
-    ...input,
-    failedControlIds: new Set(
-      input.control?.body.kind === "compaction_undo" ? [input.control.id] : [],
-    ),
-  });
-}
-
 export async function prepareRequestContext(input: PrepareRequestInput): Promise<PreparedRequest> {
-  const history = await prepareControlHistory(input);
   const compact = input.control?.body.kind === "compact" ? input.control : null;
-  try {
-    const prepared = await prepareBaseRequest({
-      ...input,
-      turns: history.historyTurns,
-      blocks: history.historyBlocks,
-      controlMessageId: compact?.id ?? input.controlMessageId,
-      skipCompaction:
-        !compact && history.undo?.turn.status === "complete" ? true : input.skipCompaction,
-    });
-    return {
-      ...prepared,
-      ...history,
-      events: [...history.events, ...prepared.events],
-      turns: [...history.turns, ...prepared.assembled.imageContextUpdates.turns],
-      blocks: [...history.blocks, ...prepared.assembled.imageContextUpdates.blocks],
-    };
-  } catch (error) {
-    if (input.signal?.aborted || !history.undo) throw error;
-    if (history.undo.turn.status === "error") throw new UndoRequestPreparationError(history, error);
-    const failedControlIds = new Set([history.undo.controlId]);
-    const failed = await prepareControlHistory({
-      ...input,
-      failedControlIds,
-    });
-    throw new UndoRequestPreparationError(failed, error);
-  }
-}
-
-export async function prepareControlHistory(
-  input: PrepareRequestInput,
-): Promise<PreparedControlHistory> {
-  let undo: PreparedUndo | null = null;
-  const addedTurns: Turn[] = [];
-  const addedBlocks: Block[] = [];
-  const events: OrchestratorEvent[] = [];
-  let turns = input.turns;
-  let blocks = input.blocks;
-  const control = input.control;
-  if (control?.body.kind === "compaction_undo") {
-    undo = await prepareCompactionUndo({
-      ...input,
-      turns,
-      blocks,
-      control,
-      forceFailure: input.failedControlIds?.has(control.id),
-      assemble: async (restoredTurns, restoredBlocks) => {
-        return (
-          await prepareBaseRequest({
-            ...input,
-            turns: restoredTurns,
-            blocks: restoredBlocks,
-            skipCompaction: true,
-            controlMessageId: undefined,
-          })
-        ).assembled;
-      },
-    });
-    const { turn } = undo;
-    events.push({
-      type: "turn.created",
-      turn: turn.status === "complete" ? { ...turn, status: "pending", promptBakeId: null } : turn,
-    });
-    if (undo.error)
-      events.push({
-        type: "turn.error",
-        turn,
-        error: undo.error,
-      });
-    const nextBlocks = undo.block ? [localBlockFromEvent(undo.block)] : [];
-    addedTurns.push(turn);
-    addedBlocks.push(...nextBlocks);
-    turns = [...turns, turn];
-    blocks = [...blocks, ...nextBlocks];
-  }
+  const prepared = await prepareBaseRequest({
+    ...input,
+    controlMessageId: compact?.id ?? input.controlMessageId,
+  });
   return {
-    undo,
-    events,
-    turns: addedTurns,
-    blocks: addedBlocks,
-    historyTurns: turns,
-    historyBlocks: blocks,
+    ...prepared,
+    turns: prepared.assembled.imageContextUpdates.turns,
+    blocks: prepared.assembled.imageContextUpdates.blocks,
   };
 }
 
 async function prepareBaseRequest(
   input: PrepareRequestInput,
-): Promise<Omit<PreparedRequest, "undo" | "turns" | "blocks">> {
-  const imageProjectionMode =
-    input.imageProjectionMode &&
-    revertedCompactionIds(input.turns).has(input.imageProjectionMode.decidingTurnId)
-      ? undefined
-      : input.imageProjectionMode;
+): Promise<Omit<PreparedRequest, "turns" | "blocks">> {
   const referenceUpdates =
     input.readReferences === false
       ? []
@@ -217,7 +99,7 @@ async function prepareBaseRequest(
     gateway: input.deps.gateway,
     imageAssets: input.deps.imageAssets,
     imageInclusions: input.deps.repos.imageInclusions,
-    imageProjectionMode,
+    imageProjectionMode: input.imageProjectionMode,
     signal: input.signal,
     baseTools: input.baseTools ?? input.deps.toolExecutor.getDefinitions?.(),
     promptBakes: input.promptBakes ?? input.deps.repos.promptBakes,

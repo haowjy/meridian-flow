@@ -22,13 +22,9 @@ kind, never on role: a `compaction` row is looked past, any other non-`turn`
 row ends a reply, and the delivery walk stops at the next rendered row. A
 reply never spans the fork point or two owners.
 
-Never rows:
-
-- **Undo markers.** A `system` turn with `metadata.kind: "compaction_undo"`
-  folds into the divider it names (`collectUndoMarkers`): a complete U marks it
-  undone, the latest errored U is a refusal shown on it.
-- **R4 overflow shells.** An empty, complete assistant turn directly before a
-  compaction is the reply a context overflow completed before recovering.
+Never a row: an **R4 overflow shell**, the empty, complete assistant turn
+directly before a compaction, which is the reply a context overflow completed
+before recovering.
 
 A divider does not end a reply. `continuesResponse` and response grouping look
 past compaction rows, so a mid-response autocompaction keeps one action row and
@@ -46,7 +42,7 @@ autocompaction's failed reply comes after its divider, so it stays current.
 
 Pending (the lease phase, Stop through the existing cancel route on C),
 complete (summary disclosure; token counts only when the context shrank),
-failed, cancelled, undone. A manual failure says why on the divider, with
+failed, cancelled. A manual failure says why on the divider, with
 `turn.error` as copy except `context_too_large`, whose server copy blames the
 writer's message; the client owns that sentence. `nothing_to_compact` is not
 an alarm: the divider reads "There is nothing to compact yet" in the muted
@@ -54,14 +50,8 @@ tone, with no error copy. It is expected after an automatic compaction took
 care of what a queued `/compact` asked for. An autocompaction's failure stays
 quiet (R3): the failed reply under the newest message carries it.
 
-Undo is offered only where it is likely to succeed (R-C6-2): on the divider
-`snapshot.compactionUndo` names with `availability: "likely"`. With
-`would_recompact` there is no Undo. The server owns availability alone: it
-reads `null` while any compaction is pending and `would_recompact` after a
-refusal at an unchanged trigger, so the divider follows the snapshot with no
-client correction. While an undo of it waits at the tail, the divider offers none, and a refused
-undo's copy stays on the divider it targeted, in the quiet muted tone of a
-historical error (it lost nothing).
+A divider records the compaction and its summary. Nothing on it reverses the
+compaction.
 
 The divider is one line at every width. Its section is a container: below
 `@lg` the state label switches to a short form ("Compacted") and truncates
@@ -81,7 +71,7 @@ turn.
 
 ## Writer commands
 
-Commands are `/compact` and compaction Undo. They run only when replies
+The only command is `/compact`. It runs only when replies
 finish: at the end of the queue, one per run. Stop (Esc) runs a queued
 command at once, before the waiting messages, which are answered after it; the
 client just shows the server's state (the reply stops, "Compacting" appears).
@@ -89,28 +79,26 @@ client just shows the server's state (the reply stops, "Compacting" appears).
 `useThreadControls` is the shell over `compaction/thread-controls.ts`. It mints
 the id, shows the item as queued before the network answers, and keeps a
 failed enqueue on the item with Retry under the same id (the server treats a
-repeat as the original). Every queued command, Undo included, waits at the
-tail as a dashed rule: "Compaction queued. Runs when replies finish." (or the
-Undo equivalent) with Withdraw. Messages sent after it render above it; it
+repeat as the original). A queued command waits at the tail as a dashed rule:
+"Compaction queued. Runs when replies finish." with Withdraw. Messages sent after it render above it; it
 stays last until it runs. Queued rows have no Stop.
 
 Withdraw removes the row at once (focus stays in the transcript when it was
-the last). The server answers `withdrawn`, or `already_started` once a C or U
+the last). The server answers `withdrawn`, or `already_started` once a divider
 carries the command's id: then the row says "This compaction already started."
-until the divider or undo marker that names it arrives (or the leaf moves). A
+until the divider that names it arrives (or the leaf moves). A
 failed withdrawal brings the row back with "Couldn't withdraw. Try again."
 Withdrawing a command whose enqueue then failed finishes locally with no
 request, and a 404 on an id the inbox never listed counts as withdrawn: in
 both the server never took the command. A
-command a transcript turn already names (`controlMessageId` on C or U) is no
-longer queued.
+command a divider already names (`controlMessageId`) is no longer queued.
 
 One announcer. Rows and dividers carry no live region; `useThreadControls`
 announces each writer-caused change and `useControlTurnAnnouncements` each
-turn-driven one (dividers, undo markers, and brief seeds), through the global
+turn-driven one (dividers and brief seeds), through the global
 polite announcer, which reaches rows the virtualized list has scrolled away.
 Status words come from `compaction/control-copy.ts`, so the announcement and
-the row say the same thing for each command kind.
+the row say the same thing.
 
 Compaction turns have no AG-UI stream, and a cancelled one ends without
 `RUN_FINISHED`. The snapshot revalidates on run end and on every inbox frame

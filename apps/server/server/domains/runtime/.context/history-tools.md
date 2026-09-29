@@ -85,8 +85,7 @@ tool registration only when the thread has no bake yet. Two places use it:
 
 - the compaction summary's history-read sentence, resolved against C's own
   bake by `projectActiveHistoryWithBakes`
-  ([compaction](compaction.md#one-projection-authority)), so a later undo or
-  registry change never rewrites an old summary;
+  ([compaction](compaction.md#one-projection-authority)), so a later registry change never rewrites an old summary;
 - a settled handoff seed's read line, `threadReferenceText` appended inside
   `<system_update>` when `historyReadableAt(S)` holds, from the independent
   brief service's terminal seed projection

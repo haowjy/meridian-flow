@@ -80,8 +80,7 @@ export function useThreadControls(input: {
           dispatch({ type: "enqueue_failed", id });
           // A command the writer already withdrew has no failure to show.
           const entry = localRef.current.find((candidate) => candidate.id === id);
-          if (entry?.withdrawal !== "withdrawing")
-            announceError(controlStatusCopy(control.kind, "failed"));
+          if (entry?.withdrawal !== "withdrawing") announceError(controlStatusCopy("failed"));
           return false;
         },
       );
@@ -97,7 +96,7 @@ export function useThreadControls(input: {
     (control: ControlBody) => {
       const id = crypto.randomUUID();
       dispatch({ type: "enqueue", id, control });
-      announce(controlStatusCopy(control.kind, "queued"));
+      announce(controlStatusCopy("queued"));
       send(id, control);
       return id;
     },
@@ -109,7 +108,7 @@ export function useThreadControls(input: {
       const entry = localRef.current.find((candidate) => candidate.id === controlId);
       if (entry?.request !== "failed") return;
       dispatch({ type: "retry", id: controlId });
-      announce(controlStatusCopy(entry.control.kind, "queued"));
+      announce(controlStatusCopy("queued"));
       // Same id: the server treats a repeat as the original request.
       send(controlId, entry.control);
     },
@@ -119,7 +118,7 @@ export function useThreadControls(input: {
   const withdraw = useCallback(
     (queued: QueuedControl) => {
       dispatch({ type: "withdraw", id: queued.id, control: queued.control });
-      announce(controlWithdrawnCopy(queued.control.kind));
+      announce(controlWithdrawnCopy());
       const settle = (outcome: WithdrawOutcome) =>
         dispatch({ type: "withdrawn", id: queued.id, outcome, leafTurnId: leafRef.current });
       const enqueueing =
@@ -130,8 +129,7 @@ export function useThreadControls(input: {
         try {
           const { outcome } = await withdrawThreadControl(threadId, queued.id);
           settle(outcome);
-          if (outcome === "already_started")
-            announce(controlStatusCopy(queued.control.kind, "already_started"));
+          if (outcome === "already_started") announce(controlStatusCopy("already_started"));
           revalidate();
         } catch (error) {
           // A 404 on an id the inbox never listed: its enqueue never landed.

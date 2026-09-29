@@ -81,8 +81,7 @@ Contract:
 - `thread view` prints a failed compaction's typed outcome as
   `compaction failure: <reason> during <phase>`. With `--json`, compaction
   turns carry `compactionMetadata` (trigger, control IDs, failure reason and
-  phase, fit tokens, `tokensBefore`/`tokensAfter`). Undo markers carry
-  `compactionUndoMetadata` (target compaction, control ID, refusal reason);
+  phase, fit tokens, `tokensBefore`/`tokensAfter`);
   `error` remains writer-facing copy.
 - `<thread>` accepts a `cN`/`pN` ref, a full id, an app URL containing one, or
   a unique id prefix. Refs are per project: they resolve through

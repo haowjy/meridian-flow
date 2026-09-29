@@ -17,7 +17,6 @@ import type { Turn } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { CompactionDivider, type CompactionDividerProps } from "./CompactionDivider";
-import { collectUndoMarkers, NO_UNDO_MARKERS } from "./compaction-model";
 import { QueuedControlRows } from "./QueuedControlRows";
 import type { QueuedControl } from "./thread-controls";
 
@@ -66,16 +65,7 @@ function divider(overrides: Record<string, unknown> = {}): Turn {
 
 async function render(props: Partial<CompactionDividerProps> & { turn: Turn }) {
   await act(async () =>
-    root.render(
-      <CompactionDivider
-        undo={NO_UNDO_MARKERS}
-        undoAvailability={null}
-        undoQueued={false}
-        phase={null}
-        stopping={false}
-        {...props}
-      />,
-    ),
+    root.render(<CompactionDivider phase={null} stopping={false} {...props} />),
   );
 }
 
@@ -124,15 +114,12 @@ describe("CompactionDivider", () => {
     expect(panel?.textContent).toContain("The keeper counts ships.");
   });
 
-  it("complete: Undo enqueues for this divider", async () => {
-    const onUndo = vi.fn();
-    await render({
-      turn: divider(),
-      undoAvailability: { turnId: "c", availability: "likely" },
-      onUndo,
-    });
-    await act(async () => button("Undo compaction")?.click());
-    expect(onUndo).toHaveBeenCalledWith("c");
+  it("complete: the summary disclosure is its only control", async () => {
+    await render({ turn: divider(), onStop: vi.fn() });
+    const names = [...host.querySelectorAll("button")].map(
+      (candidate) => candidate.getAttribute("aria-label") ?? candidate.textContent,
+    );
+    expect(names).toEqual(["Summary"]);
   });
 
   it("names the section in full and keeps a short label for a narrow column", async () => {
@@ -145,89 +132,13 @@ describe("CompactionDivider", () => {
     expect(labels).toEqual(["Conversation compacted automatically", "Compacted"]);
   });
 
-  it("would_recompact: no Undo, since it would compact again at once", async () => {
-    await render({
-      turn: divider(),
-      undoAvailability: { turnId: "c", availability: "would_recompact" },
-      onUndo: vi.fn(),
-    });
-    expect(button("Undo compaction")).toBeUndefined();
-    expect(button("Summary")).toBeDefined();
-  });
-
-  it("queued undo: the divider stops offering Undo while it waits at the tail", async () => {
-    await render({
-      turn: divider(),
-      undoAvailability: { turnId: "c", availability: "likely" },
-      undoQueued: true,
-      onUndo: vi.fn(),
-    });
-    expect(button("Undo compaction")).toBeUndefined();
-    expect(host.textContent).not.toContain("Undo queued");
-  });
-
-  it("keeps keyboard focus in the divider when Undo is queued and leaves it", async () => {
-    const props = {
-      turn: divider(),
-      undoAvailability: { turnId: "c", availability: "likely" } as const,
-      onUndo: vi.fn(),
-    };
-    await render(props);
-    button("Undo compaction")?.focus();
-    expect(document.activeElement).toBe(button("Undo compaction"));
-    await render({ ...props, undoQueued: true });
+  it("keeps keyboard focus in the divider when its Stop leaves", async () => {
+    const onStop = vi.fn();
+    await render({ turn: divider({ status: "pending" }), phase: "compacting", onStop });
+    button("Stop compaction")?.focus();
+    expect(document.activeElement).toBe(button("Stop compaction"));
+    await render({ turn: divider(), onStop });
     expect(document.activeElement).toBe(button("Summary"));
-  });
-
-  it("refused undo: the U's copy shows on this divider", async () => {
-    const undo = collectUndoMarkers([
-      {
-        id: "u",
-        role: "system",
-        status: "error",
-        error: "Undo would make this conversation compact again immediately.",
-        metadata: {
-          kind: "compaction_undo",
-          revertsCompactionTurnId: "c",
-          reason: "would_recompact",
-        },
-        blocks: [],
-      } as unknown as Turn,
-    ]).get("c");
-    await render({
-      turn: divider(),
-      undo,
-      undoAvailability: { turnId: "c", availability: "would_recompact" },
-      onUndo: vi.fn(),
-    });
-    const refusal = [...host.querySelectorAll("p")].find((node) =>
-      node.textContent?.includes("Undo would make this conversation compact again immediately."),
-    );
-    // A refused undo loses nothing: quiet, like a historical error.
-    expect(refusal?.className).toContain("text-muted-foreground");
-    expect(refusal?.className).not.toContain("text-destructive");
-    expect(button("Undo compaction")).toBeUndefined();
-  });
-
-  it("undone: reads as undone and keeps the summary", async () => {
-    const undo = collectUndoMarkers([
-      {
-        id: "u",
-        role: "system",
-        status: "complete",
-        metadata: { kind: "compaction_undo", revertsCompactionTurnId: "c" },
-        blocks: [],
-      } as unknown as Turn,
-    ]).get("c");
-    await render({
-      turn: divider(),
-      undo,
-      undoAvailability: { turnId: "c", availability: "likely" },
-    });
-    expect(state()).toBe("undone");
-    expect(host.textContent).toContain("Compaction undone");
-    expect(button("Undo compaction")).toBeUndefined();
-    expect(button("Summary")).toBeDefined();
   });
 
   it("failed manual: says why on the divider", async () => {
@@ -286,11 +197,6 @@ describe("QueuedControlRows", () => {
     control: { kind: "compact" },
     status,
   });
-  const undo = (status: QueuedControl["status"]): QueuedControl => ({
-    id: "u",
-    control: { kind: "compaction_undo", compactionTurnId: "c" },
-    status,
-  });
 
   it("renders a queued /compact that says when it runs, with Withdraw and no Stop", async () => {
     const onWithdraw = vi.fn();
@@ -301,14 +207,6 @@ describe("QueuedControlRows", () => {
     expect(button("Stop")).toBeUndefined();
     await act(async () => button("Withdraw compaction")?.click());
     expect(onWithdraw).toHaveBeenCalledWith(compact("queued"));
-  });
-
-  it("renders a queued Undo the same way", async () => {
-    await act(async () =>
-      root.render(<QueuedControlRows controls={[undo("queued")]} onWithdraw={vi.fn()} />),
-    );
-    expect(host.textContent).toContain("Undo queued. Runs when replies finish.");
-    expect(button("Withdraw undo")).toBeDefined();
   });
 
   it("says a command already started, without Withdraw, in no live region", async () => {

@@ -121,7 +121,6 @@ import {
 import { FLOW_ABSOLUTE_CEILING } from "./compaction/index.js";
 import { executeCompaction, recordCompactionSummary } from "./compaction-phase.js";
 import { failCompactionSuccessor } from "./compaction-successor.js";
-import { persistPreparedControlEvents } from "./compaction-undo.js";
 import type { TerminalCause } from "./execution-finalizer.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
@@ -147,12 +146,7 @@ import type { RunClaim, ThreadPhase } from "./ports.js";
 import { createPrefixCacheStateService, type PrefixCacheState } from "./prefix-cache-state.js";
 import { writerFacingPreparationError } from "./preparation-failure.js";
 import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
-import {
-  type PreparedControlHistory,
-  prepareFailedUndoHistory,
-  prepareRequestContext,
-  UndoRequestPreparationError,
-} from "./request-preparation.js";
+import { prepareRequestContext } from "./request-preparation.js";
 import { createRunSessions } from "./run-session.js";
 import {
   type DrainRunLoopInput,
@@ -581,7 +575,6 @@ async function runDrainTurn(
         prevTurnId ??
         reservedTurnId;
       let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
-      let controlHistory: PreparedControlHistory | null = null;
       if (control?.body.kind === "compact" && selection.failedControlIds?.has(control.id))
         preparationError = new CompactionFailureError({
           reason: "compaction_failed",
@@ -624,48 +617,22 @@ async function runDrainTurn(
         preflight = null;
         skillBody = null;
         plan = makePlan([]);
-        if (preparationError instanceof UndoRequestPreparationError) {
-          controlHistory = preparationError.after(plan.turns.at(-1) ?? previousTurn);
-        } else if (control?.body.kind === "compaction_undo") {
-          controlHistory = await prepareFailedUndoHistory({
-            deps,
-            thread: setupThread,
-            threadId: input.threadId,
-            referenceTurnId: referenceUserTurnId,
-            currentTurnId: reservedTurnId,
-            turns: [...inheritedTurns, ...requestPriorTurns, ...plan.turns],
-            blocks: [],
-            control,
-            failedControlIds: selection.failedControlIds,
-            signal: input.signal,
-          });
-        }
       }
-      const controlPreparation = preflight ?? controlHistory;
-      const preparedUndo = controlPreparation?.undo;
-      const imageUpdateTurn = controlPreparation?.turns.at(-1);
-      const terminal =
-        !!preparedUndo &&
-        selection.outstanding.length === 0 &&
-        preflight?.compaction.kind !== "compact";
-      const reservedTurn =
-        terminal && preparedUndo
-          ? preparedUndo.turn
-          : reservationTurn(
-              {
-                id:
-                  preflight?.compaction.kind === "compact"
-                    ? crypto.randomUUID()
-                    : (input.replyTurnId ?? reservedTurnId),
-                threadId: input.threadId,
-                prevTurnId:
-                  imageUpdateTurn?.id ?? plan.leafTurnId ?? skillBody?.turn.id ?? prevTurnId,
-                position: nextTurnPosition(
-                  imageUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
-                ),
-              },
-              preflight?.compaction ?? { kind: "generate" },
-            );
+      const imageUpdateTurn = preflight?.turns.at(-1);
+      const reservedTurn = reservationTurn(
+        {
+          id:
+            preflight?.compaction.kind === "compact"
+              ? crypto.randomUUID()
+              : (input.replyTurnId ?? reservedTurnId),
+          threadId: input.threadId,
+          prevTurnId: imageUpdateTurn?.id ?? plan.leafTurnId ?? skillBody?.turn.id ?? prevTurnId,
+          position: nextTurnPosition(
+            imageUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
+          ),
+        },
+        preflight?.compaction ?? { kind: "generate" },
+      );
       if (preparationError && control?.body.kind === "compact") {
         reservedTurn.role = "compaction";
         reservedTurn.origin = "system";
@@ -675,9 +642,8 @@ async function runDrainTurn(
       const value = {
         thread: setupThread,
         skillBodies,
-        controlTurns: controlPreparation?.turns ?? [],
+        controlTurns: preflight?.turns ?? [],
         reservedTurn,
-        terminal,
         skillBody,
         referenceUserTurnId,
         preflight,
@@ -695,18 +661,14 @@ async function runDrainTurn(
             ]
           : []),
         ...plan.events,
-        ...(controlPreparation?.events ?? []),
-        ...(!terminal ? [{ type: "turn.created" as const, turn: reservedTurn }] : []),
+        ...(preflight?.events ?? []),
+        { type: "turn.created" as const, turn: reservedTurn },
       ];
       return {
         value,
         turnId: reservedTurn.id,
-        terminal,
-        completedControlIds: [
-          ...(controlPreparation?.undo ? [controlPreparation.undo.controlId] : []),
-          ...(control?.body.kind === "compact" ? [control.id] : []),
-        ],
-        turnKind: terminal ? ("assistant" as const) : currentTurnKind(reservedTurn),
+        completedControlIds: control?.body.kind === "compact" ? [control.id] : [],
+        turnKind: currentTurnKind(reservedTurn),
         messageIds: [...batch.map(({ id }) => id)],
         ...(preparationError === null ? {} : { preparationFailure: preparationError }),
         persist: async () => {
@@ -726,12 +688,7 @@ async function runDrainTurn(
                 : "direct";
               return {
                 result: undefined,
-                events: await persistPreparedControlEvents(
-                  deps,
-                  input.threadId,
-                  events,
-                  controlPreparation?.undo ?? null,
-                ),
+                events,
               };
             },
             {
@@ -762,15 +719,11 @@ async function runDrainTurn(
   setup.skillBodies.committed(skillBody ? [skillBody.turn] : []);
   return {
     userTurnId: referenceUserTurnId,
-    terminalTurnId: setup.terminal ? reservedTurn.id : undefined,
-    currentTurn: setup.terminal
-      ? null
-      : {
-          id: reservedTurn.id,
-          kind: currentTurnKind(reservedTurn),
-        },
+    currentTurn: {
+      id: reservedTurn.id,
+      kind: currentTurnKind(reservedTurn),
+    },
     execute: async () => {
-      if (setup.terminal) return reservedTurn;
       if (preparationError) throw new RequestPreparationError(preparationError);
       if (!preflight && reservedTurn.role !== "system")
         throw new Error("Request context is unavailable after preparation failed");

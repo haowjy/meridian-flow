@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** `/compact` and Undo dispatch: optimistic at once, retried with the same id, withdrawn at once. */
+/** `/compact` dispatch: optimistic at once, retried with the same id, withdrawn at once. */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@lingui/core/macro", () => ({
@@ -210,18 +210,6 @@ describe("useThreadControls", () => {
     expect(announcements.announceError).toHaveBeenCalledWith("Couldn't withdraw. Try again.");
   });
 
-  it("queues Undo for a divider", async () => {
-    api.enqueueThreadControl.mockReturnValue(new Promise(() => undefined));
-    await act(async () => {
-      latest.enqueue({ kind: "compaction_undo", compactionTurnId: "c" });
-    });
-    expect(latest.queued[0]).toMatchObject({
-      control: { kind: "compaction_undo", compactionTurnId: "c" },
-      status: "queued",
-    });
-    expect(announcements.announce).toHaveBeenCalledWith("Undo queued. Runs when replies finish.");
-  });
-
   it("stops a pending divider through the cancel route and marks it stopping", async () => {
     transport.cancel.mockResolvedValue({ status: "cancelled" });
     await act(async () => latest.stop("c"));
@@ -240,16 +228,12 @@ describe("useThreadControls", () => {
     expect(latest.stoppingTurnIds.has("c")).toBe(false);
   });
 
-  it("announces a failed enqueue in its own command kind's words", async () => {
+  it("announces a failed enqueue", async () => {
     api.enqueueThreadControl.mockRejectedValue(new Error("offline"));
     await act(async () => {
       latest.enqueue({ kind: "compact" });
     });
     expect(announcements.announceError).toHaveBeenLastCalledWith("Couldn't queue the compaction.");
-    await act(async () => {
-      latest.enqueue({ kind: "compaction_undo", compactionTurnId: "c" });
-    });
-    expect(announcements.announceError).toHaveBeenLastCalledWith("Couldn't queue the undo.");
   });
 
   it("says a command already started when Withdraw comes too late", async () => {

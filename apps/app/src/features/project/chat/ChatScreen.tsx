@@ -188,7 +188,6 @@ function ChatScreenLoaded({
             snapshotLiveState={snapshotLiveState}
             snapshotNextSeq={snapshotNextSeq}
             snapshotThreadUsage={snapshot?.threadUsage}
-            snapshotCompactionUndo={snapshot?.compactionUndo ?? null}
             historySettled={historySettled}
             activateProjection={activateProjection}
             key={`${projectId}:${threadId}`}

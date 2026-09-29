@@ -16,7 +16,6 @@
  */
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
-import type { CompactionUndoAvailability } from "@meridian/contracts/threads";
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { resolveDocumentLink } from "@/client/api/document-links-api";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
@@ -115,8 +114,6 @@ export type ChatViewProps = {
     outputTokens: number;
     cacheResets: number;
   } | null;
-  /** Which local compaction can be undone, and whether undo will likely hold. */
-  snapshotCompactionUndo?: CompactionUndoAvailability;
   /**
    * Whether the thread snapshot request has resolved. Feeds the transcript's
    * conversation-reveal ownership: only a settled history can say a named turn
@@ -134,7 +131,6 @@ export function ChatView({
   snapshotLiveState = null,
   snapshotNextSeq = null,
   snapshotThreadUsage = null,
-  snapshotCompactionUndo = null,
   historySettled,
   activateProjection,
 }: ChatViewProps) {
@@ -588,7 +584,6 @@ export function ChatView({
                   brief={brief}
                   replyRetry={replyRetry}
                   busy={liveStatus.kind === "awake" || run !== null}
-                  compactionUndo={snapshotCompactionUndo}
                   phase={livePhase}
                   inherited={inheritedView}
                   onRetryInherited={inherited.failed ? inherited.retry : null}

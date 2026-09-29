@@ -203,15 +203,7 @@ describe("TurnList failed replies", () => {
       },
       blocks: [],
     };
-    const undoMarker = {
-      id: "undo",
-      role: "system",
-      status: "error",
-      error: "This compaction has already been undone.",
-      metadata: { kind: "compaction_undo", revertsCompactionTurnId: "elsewhere" },
-      blocks: [],
-    };
-    await renderTurns([user("u1"), assistant("b", "error"), delivery, undoMarker]);
+    await renderTurns([user("u1"), assistant("b", "error"), delivery]);
     expect(rendered.assistants.get("b")).toEqual({ endsTranscript: true, failedSend: false });
   });
 

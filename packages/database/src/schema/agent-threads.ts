@@ -235,7 +235,7 @@ export const threadInboxMessages = pgTable(
     ),
     check(
       "thread_inbox_messages_body_valid",
-      sql`(CASE WHEN ${table.intent} = 'control' THEN ${table.body}->>'kind' IN ('compact','compaction_undo') ELSE ${table.body}->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE`,
+      sql`(CASE WHEN ${table.intent} = 'control' THEN ${table.body}->>'kind' IN ('compact') ELSE ${table.body}->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE`,
     ),
   ],
 );

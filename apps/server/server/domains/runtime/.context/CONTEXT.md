@@ -12,7 +12,7 @@ flowchart LR
   RunLoop --> Assembly["Request assembly"]
   Assembly --> Gateway["Gateway"]
   RunLoop --> Tools["Tools and spawn"]
-  Delivery --> Compaction["Compaction and undo"]
+  Delivery --> Compaction["Compaction"]
   Handoff["Handoff seed"] --> HandoffService["Independent handoff service"]
   HandoffService --> Summarizer["Summarizer"]
   Compaction --> Summarizer
@@ -31,7 +31,6 @@ flowchart LR
 | [document-text.md](document-text.md) | Document revision evidence and how compaction and `thread_history` replace stale document copies. |
 | [compaction.md](compaction.md) | The compaction protocol: transitions, decisions and refusals, the one projection authority, trigger and estimate, failure, cancellation, overflow, images. |
 | [controls.md](controls.md) | Queued writer controls, run-start queue order, Stop priority, withdrawal, and one-command-per-run consumption. |
-| [undo.md](undo.md) | Undoing a compaction and the Undo availability advisory. |
 | [handoff.md](handoff.md) | Handoff brief ownership of the destination run claim, Stop/Retry, and release wake. |
 | [summarizer.md](summarizer.md) | The shared summarizer port (owner and source), branch/rolling paths, and paid-row settlement. |
 | [recovery.md](recovery.md) | Run-owned placeholder repair and independent process recovery lanes. |

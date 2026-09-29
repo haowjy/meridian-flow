@@ -145,22 +145,8 @@
     {
       "idx": 20,
       "version": "7",
-      "when": 1790578437082,
-      "tag": "0020_solid_cable",
-      "breakpoints": true
-    },
-    {
-      "idx": 21,
-      "version": "7",
-      "when": 1790579758044,
-      "tag": "0021_wonderful_drax",
-      "breakpoints": true
-    },
-    {
-      "idx": 22,
-      "version": "7",
-      "when": 1790581759486,
-      "tag": "0022_nervous_reptil",
+      "when": 1790705638628,
+      "tag": "0020_lethal_bloodstrike",
       "breakpoints": true
     }
   ]

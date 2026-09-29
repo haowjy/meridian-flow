@@ -89,8 +89,7 @@ A code deploy, Agent revision update, model change, or idle/cache-TTL timer
 never rebakes a live thread. `beginPromptEpoch` is the named transactional
 operation for a reserved boundary: it hashes composed live parts, reuses the
 current row when the bytes match, and completes the turn through
-`persistAndAppendEvents`. Its callers are the compaction successor commit
-(`compaction-successor.ts`) and undo (`compaction-undo.ts`). `bakeAt` and
+`persistAndAppendEvents`. Its caller is the compaction successor commit (`compaction-successor.ts`). `bakeAt` and
 `bakeInEffect` use complete owner-local boundary turns in write-once
 `turns.position` order. Positions are assigned under the thread mutation lock,
 and fork-local turns begin after their cutoff.

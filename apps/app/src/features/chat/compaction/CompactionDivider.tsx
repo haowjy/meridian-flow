@@ -3,12 +3,10 @@
  *
  * One quiet rule across the transcript, with the state in words at its start
  * and its controls right after the words (bare transcript rows never
- * right-align controls). The summary sits behind a disclosure; Undo and a
- * running compaction's Stop live on the same line. A queued undo waits at the
- * transcript tail like any queued command, and the divider stops offering
- * Undo meanwhile. A refused undo and a manual compaction's failure speak on
- * the divider they belong to; a `/compact` that found nothing new to compact
- * reads calmly. An autocompaction's failure stays quiet (R3): the failed
+ * right-align controls). The summary sits behind a disclosure; a running
+ * compaction's Stop lives on the same line. A manual compaction's failure
+ * speaks on the divider it belongs to; a `/compact` that found nothing new to
+ * compact reads calmly. An autocompaction's failure stays quiet (R3): the failed
  * reply under the writer's newest message already says so. State changes are
  * spoken by the global polite announcer, never a live region on the row.
  */
@@ -16,26 +14,21 @@ import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Turn } from "@meridian/contracts/protocol";
-import type { CompactionUndoAvailability, ThreadPhase } from "@meridian/contracts/threads";
-import { ChevronRight, CircleAlert, FoldVertical, UnfoldVertical } from "lucide-react";
+import type { ThreadPhase } from "@meridian/contracts/threads";
+import { ChevronRight, CircleAlert, FoldVertical } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
-import { type CompactionUndoMarkers, type DividerView, dividerView } from "./compaction-model";
+import { type DividerView, dividerView } from "./compaction-model";
 import { useFocusWithinRow } from "./useFocusWithinRow";
 
 export type CompactionDividerProps = {
   turn: Turn;
-  undo: CompactionUndoMarkers;
-  undoAvailability: CompactionUndoAvailability;
-  /** An undo of this divider waits at the transcript tail. */
-  undoQueued: boolean;
   /** The thread's live lease phase, when it is awake. */
   phase: ThreadPhase | null;
   stopping: boolean;
   onStop?: (turnId: string) => void;
-  onUndo?: (compactionTurnId: string) => void;
 };
 
 /**
@@ -80,45 +73,17 @@ function stateLabel(view: DividerView, phase: ThreadPhase | null, stopping: bool
         : { full: t`Conversation not compacted`, short: t`Not compacted` };
     case "cancelled":
       return same(t`Compaction stopped`);
-    case "undone":
-      return same(t`Compaction undone`);
   }
 }
 
-export function CompactionDivider({
-  turn,
-  undo,
-  undoAvailability,
-  undoQueued,
-  phase,
-  stopping,
-  onStop,
-  onUndo,
-}: CompactionDividerProps) {
-  const view = dividerView({
-    turn,
-    markers: undo,
-    undoAvailability,
-    undoQueued,
-    failureCopyFor: compactionFailureCopy,
-  });
+export function CompactionDivider({ turn, phase, stopping, onStop }: CompactionDividerProps) {
+  const view = dividerView({ turn, failureCopyFor: compactionFailureCopy });
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const sectionRef = useRef<HTMLElement>(null);
   const focusWithin = useFocusWithinRow(sectionRef);
   const label = stateLabel(view, phase, stopping);
   const loud = view.state === "failed" && view.failureCopy !== null;
-
-  const notes: { key: string; text: string; tone: "muted" | "error" }[] = [];
-  if (view.failureCopy) notes.push({ key: "failure", text: view.failureCopy, tone: "error" });
-  if (view.state === "undone")
-    notes.push({
-      key: "undone",
-      text: t`The full conversation is back in context.`,
-      tone: "muted",
-    });
-  // A refused undo loses nothing: it reads like a historical error, not an alarm.
-  if (view.refusalCopy) notes.push({ key: "refusal", text: view.refusalCopy, tone: "muted" });
 
   return (
     <section
@@ -183,32 +148,12 @@ export function CompactionDivider({
           </Button>
         ) : null}
 
-        {view.offerUndo && onUndo ? (
-          <Button
-            type="button"
-            variant="quiet"
-            size="meta"
-            aria-label={t`Undo compaction`}
-            onClick={() => onUndo(turn.id)}
-          >
-            <Trans>Undo</Trans>
-          </Button>
-        ) : null}
-
         <span aria-hidden className="h-px min-w-3 flex-1 bg-border" />
       </div>
 
-      {notes.map((note) => (
-        <p
-          key={note.key}
-          className={cn(
-            "text-caption",
-            note.tone === "error" ? "text-destructive" : "text-muted-foreground",
-          )}
-        >
-          {note.text}
-        </p>
-      ))}
+      {view.failureCopy ? (
+        <p className="text-caption text-destructive">{view.failureCopy}</p>
+      ) : null}
 
       {view.summary ? (
         <div
@@ -232,8 +177,7 @@ export function CompactionDivider({
 function DividerMark({ state, loud }: { state: DividerView["state"]; loud: boolean }) {
   if (state === "pending") return <span aria-hidden className="streaming-dot mx-1" />;
   if (loud) return <CircleAlert aria-hidden className="size-3.5 shrink-0 text-destructive" />;
-  const Icon = state === "undone" ? UnfoldVertical : FoldVertical;
-  return <Icon aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />;
+  return <FoldVertical aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />;
 }
 
 function formatTokens(value: number): string {

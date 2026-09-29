@@ -1,4 +1,4 @@
-/** Transcript rows: dividers become rows, undo markers and R4 overflow shells never do. */
+/** Transcript rows: dividers become rows, R4 overflow shells never do. */
 import type { Turn } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import { buildTranscriptModel } from "./transcript-model";
@@ -17,17 +17,6 @@ describe("transcript rows", () => {
       "turn:a",
       "compaction:c",
     ]);
-  });
-
-  it("folds undo markers into the divider they name", () => {
-    const undo = turn("undo", "system", {
-      blocks: [{ id: "t", blockType: "text" }],
-      metadata: { kind: "compaction_undo", revertsCompactionTurnId: "c" },
-    });
-    const model = buildTranscriptModel([turn("u", "user"), compaction("c"), undo], false);
-    expect(model.rows.map((row) => row.turn.id)).toEqual(["u", "c"]);
-    const divider = model.rows[1];
-    expect(divider?.kind === "compaction" && divider.undo.undone?.id).toBe("undo");
   });
 
   it("hides the empty assistant turn the overflow fallback completed before C (R4)", () => {

@@ -448,7 +448,6 @@ export type ThreadSnapshotAncestor = {
 };
 
 export type ThreadSnapshotResponse = {
-  compactionUndo: import("../threads/index.js").CompactionUndoAvailability;
   threadId: string;
   thread: Thread;
   turns: Turn[];
@@ -478,7 +477,7 @@ export type TranscriptPageResponse = {
   segment: {
     index: number;
     bakeId: string | null;
-    openedBy: { turnId: string; kind: "compaction" | "undo_marker" | "other" } | null;
+    openedBy: { turnId: string; kind: "compaction" | "other" } | null;
     compactedThrough?: { turnId: string; blockSequence?: number };
   };
   segmentBoundary: boolean;

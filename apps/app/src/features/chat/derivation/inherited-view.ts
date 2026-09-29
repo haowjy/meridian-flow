@@ -2,7 +2,7 @@
  * A fork's inherited view: the source's turns through the cutoff, read once
  * from the transcript route's `inherited` range and never extended.
  *
- * Later source turns, compactions, and undos never reach it: the server clips
+ * Later source turns and compactions never reach it: the server clips
  * the source at the cutoff, so the read is the same every time. Owners name
  * where each turn came from (the source, or a thread further up for a fork of
  * a fork) and whether that thread is in the trash.

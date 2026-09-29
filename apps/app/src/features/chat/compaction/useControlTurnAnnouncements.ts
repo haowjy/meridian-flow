@@ -1,8 +1,8 @@
 /**
  * useControlTurnAnnouncements — speaks the state changes of placeholder turns
- * with no reply stream: compaction dividers, their undo markers, and handoff
- * brief seeds (the first, and each Retry's, including one that exists only on
- * the client until the server has it).
+ * with no reply stream: compaction dividers and handoff brief seeds (the
+ * first, and each Retry's, including one that exists only on the client until
+ * the server has it).
  *
  * Those rows are virtualized and may be off-screen, so the announcement is
  * driven from the turns, not from a mounted row. History present at mount is
@@ -15,7 +15,7 @@ import { useEffect, useRef } from "react";
 import { announce } from "@/client/stores";
 import { isHandoffSeed } from "../derivation/handoff-seed";
 import { compactionFailureCopy } from "./CompactionDivider";
-import { readCompactionFacts, undoMarkerTarget } from "./compaction-model";
+import { readCompactionFacts } from "./compaction-model";
 
 function announcementFor(turn: Turn): string | null {
   if (turn.role === "compaction") {
@@ -36,10 +36,6 @@ function announcementFor(turn: Turn): string | null {
         return null;
     }
   }
-  if (undoMarkerTarget(turn)) {
-    if (turn.status === "complete") return t`Compaction undone`;
-    if (turn.status === "error") return turn.error ?? t`The compaction couldn't be undone.`;
-  }
   if (isHandoffSeed(turn)) {
     switch (turn.status) {
       case "pending":
@@ -59,7 +55,7 @@ function announcementFor(turn: Turn): string | null {
 }
 
 function isControlTurn(turn: Turn): boolean {
-  return turn.role === "compaction" || undoMarkerTarget(turn) !== null || isHandoffSeed(turn);
+  return turn.role === "compaction" || isHandoffSeed(turn);
 }
 
 export function useControlTurnAnnouncements(turns: readonly Turn[]): void {

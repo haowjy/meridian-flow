@@ -4,7 +4,7 @@ How a writer send, a subagent report, a Work change, or a notice becomes
 durable conversation and reaches the model. Everything the model learns
 mid-thread arrives here as a durable turn at a graph point, never as a
 live-request splice; the frozen prefix it lands after is in
-[request assembly](request-assembly.md). Compaction and undo share this inbox
+[request assembly](request-assembly.md). Compaction uses this inbox
 but commands run only at the start of a run under the [queue rules](controls.md).
 A pending handoff seed is not an inbox row. The detached brief holds the
 destination run claim, so admission meets the claim rather than checking seed

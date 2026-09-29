@@ -52,18 +52,6 @@ function _recordingWriter(): { writer: EventJournalWriter; appended: Orchestrato
 }
 
 describe("projectPendingInbox", () => {
-  it("projects an undo control", () => {
-    const undo = {
-      kind: "compaction_undo" as const,
-      compactionTurnId: "00000000-0000-4000-8000-000000000001",
-    };
-    const pending = projectPendingInbox([
-      inboxMessage({ id: "undo", seq: 1, intent: "control", body: undo }),
-    ]);
-    expect(pending.items.map((item) => item.control)).toEqual([undo]);
-    expect(pending.items.map((item) => item.summary)).toEqual(["Undo compaction"]);
-  });
-
   it("maps the durable row, keeps seq order, and summarizes each body kind", () => {
     const pending = projectPendingInbox([
       inboxMessage({ id: "a", seq: 1 }),

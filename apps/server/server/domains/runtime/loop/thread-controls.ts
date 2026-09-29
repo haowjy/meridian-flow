@@ -1,5 +1,5 @@
 /** Writer control commands serialize idempotency and withdrawal with boundary reservation. */
-import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ThreadPendingInbox, Turn } from "@meridian/contracts/threads";
 import type { InboxMessage, MessageDraft } from "./ports.js";
 import type { ThreadControls } from "./runtime-delivery.js";
@@ -18,7 +18,6 @@ export function createThreadControls(deps: {
   withThreadLock: ThreadLock["withThreadLock"];
   findMessage(id: string): Promise<InboxMessage | null>;
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
-  findTurn(id: TurnId): Promise<Turn | null>;
   findControlTurn(threadId: ThreadId, controlId: string): Promise<Turn | null>;
   pending(threadId: ThreadId): Promise<ThreadPendingInbox>;
   acknowledge(threadId: ThreadId, id: string): Promise<void>;
@@ -34,11 +33,6 @@ export function createThreadControls(deps: {
             existing.body.kind !== input.control.kind)
         )
           throw new ThreadControlError(409, "control_id_conflict");
-        if (!existing && input.control.kind === "compaction_undo") {
-          const target = await deps.findTurn(input.control.compactionTurnId);
-          if (!target || target.threadId !== input.threadId || target.role !== "compaction")
-            throw new ThreadControlError(404, "compaction_not_found");
-        }
         const row =
           existing ??
           (await deps.enqueue({

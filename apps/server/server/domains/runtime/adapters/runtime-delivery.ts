@@ -26,7 +26,6 @@ import type {
   RunStarter,
 } from "../loop/ports.js";
 import { writerFacingPreparationError } from "../loop/preparation-failure.js";
-import { UndoRequestPreparationError } from "../loop/request-preparation.js";
 import { NoPendingWakeError } from "../loop/run-turn-port.js";
 import type {
   AdoptedBatch,
@@ -209,7 +208,7 @@ export function createDeliveryAdapter(
     } catch (error) {
       if (input.signal?.aborted || !committingControlId) throw error;
       // Retire a command whose start transaction failed. Its fresh preparation
-      // commits a failed U or C rather than leaving the command at the queue head.
+      // commits a failed C rather than leaving the command at the queue head.
       failedControlIds = new Set([committingControlId]);
       return attemptPreparation();
     }
@@ -437,10 +436,7 @@ export function createDeliveryAdapter(
         knownTurnIds: input.knownTurnIds,
         expectedLeafTurnId: expectedLeaf,
       });
-      prepared =
-        error instanceof UndoRequestPreparationError
-          ? { ...error.after(drain.turns.at(-1) ?? expectedLeafTurn), requiresSplit: true }
-          : { events: [], turns: [], blocks: [], requiresSplit: false };
+      prepared = { events: [], turns: [], blocks: [], requiresSplit: false };
     }
     return {
       batch: orderedBatch,
@@ -636,7 +632,6 @@ export function createDeliveryAdapter(
       withThreadLock: threadLock.withThreadLock,
       findMessage: inbox.findMessage,
       enqueue,
-      findTurn: (id) => deps.repos.turns.findById(id),
       findControlTurn: (id, controlId) => deps.repos.turns.findByControlId(id, controlId),
       pending: (id) => readPendingInbox(inbox, id),
       acknowledge: async (id, controlId) => {
@@ -721,18 +716,14 @@ export function createDeliveryAdapter(
           await prepared.persist?.();
           await inbox.ack(lease.threadId, work.ids);
           await inbox.ack(lease.threadId, prepared.completedControlIds ?? []);
-          if (prepared.terminal) {
-            await inbox.ack(lease.threadId, [...prepared.messageIds]);
-            await deps.runClaim.release(lease);
-          } else
-            await leaseStore.bindTurn(
-              lease,
-              prepared.turnId,
-              prepared.messageIds.filter(
-                (id) => !work.ids.includes(id) && !prepared.completedControlIds?.includes(id),
-              ),
-              prepared.turnKind,
-            );
+          await leaseStore.bindTurn(
+            lease,
+            prepared.turnId,
+            prepared.messageIds.filter(
+              (id) => !work.ids.includes(id) && !prepared.completedControlIds?.includes(id),
+            ),
+            prepared.turnKind,
+          );
           await appendPending(lease.threadId);
           return { value: prepared.value };
         },

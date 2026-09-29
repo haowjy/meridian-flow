@@ -1,6 +1,6 @@
 /**
- * Optimistic writer commands: the local half of `/compact` and compaction
- * undo, merged with the server's pending inbox.
+ * Optimistic writer commands: the local half of `/compact`, merged with the
+ * server's pending inbox.
  *
  * The writer sees a queued command the moment they ask for it. The server
  * inbox is the authority once it knows the id; until then the local entry
@@ -114,7 +114,7 @@ export function controlsReducer(
 export function mergeQueuedControls(input: {
   local: readonly LocalControl[];
   pending: ThreadPendingInbox;
-  /** Commands a transcript turn already names (a divider or an undo marker). */
+  /** Commands a compaction divider already names. */
   executedControlIds: ReadonlySet<string>;
   leafTurnId: string | null;
 }): QueuedControl[] {
@@ -158,7 +158,7 @@ function localStatus(
 ): QueuedControlStatus | null {
   if (entry.withdrawal === "withdrawing" || entry.withdrawal === "withdrawn") return null;
   if (entry.withdrawal === "already_started") {
-    // The divider or undo marker it ran as tells the rest of the story.
+    // The divider it ran as tells the rest of the story.
     if (executed.has(entry.id) || entry.settledAtLeaf !== leafTurnId) return null;
     return "already_started";
   }

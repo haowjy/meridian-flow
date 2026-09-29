@@ -62,7 +62,6 @@ interface ToolGroup {
 interface ClassifiedTurn {
   turn: Turn;
   kind: ReturnType<typeof classifyHistoryItem>["kind"];
-  revertsCompactionTurnId: string | null;
   retainable: boolean;
   isPinnedRequest: boolean;
 }
@@ -115,12 +114,8 @@ function classifyTurns(turns: readonly Turn[]): ClassifiedTurn[] {
     return {
       turn,
       kind: classification.kind,
-      revertsCompactionTurnId:
-        classification.kind === "undo_marker" ? classification.compactionTurnId : null,
       retainable:
-        classification.kind !== "fork_or_handoff_seed" &&
-        classification.kind !== "compaction" &&
-        classification.kind !== "undo_marker",
+        classification.kind !== "fork_or_handoff_seed" && classification.kind !== "compaction",
       isPinnedRequest: turn.role === "user" && !isSystemUpdateMetadata(turn.metadata),
     };
   });
@@ -158,17 +153,9 @@ function candidatesFor(
 }
 
 function activeCompactionCut(turns: readonly ClassifiedTurn[]): CompactionCut | null {
-  const revertedIds = new Set(
-    turns.flatMap(({ turn, revertsCompactionTurnId }) =>
-      turn.status === "complete" && revertsCompactionTurnId ? [revertsCompactionTurnId] : [],
-    ),
-  );
   const active = [...turns]
     .reverse()
-    .find(
-      ({ turn, kind }) =>
-        kind === "compaction" && turn.status === "complete" && !revertedIds.has(turn.id),
-    );
+    .find(({ turn, kind }) => kind === "compaction" && turn.status === "complete");
   if (!active) return null;
 
   const metadata = CompactionPlanMetadataCodec.parse(active.turn.metadata);

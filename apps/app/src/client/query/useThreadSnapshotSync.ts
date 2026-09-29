@@ -141,7 +141,7 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
                 // Compaction turns have no stream of their own, and a cancelled
                 // one ends without RUN_FINISHED. The server sends an inbox frame
                 // after every lease release, so every inbox frame revalidates:
-                // that is when a divider reserves, settles, stops, or is undone.
+                // that is when a divider reserves, settles, or stops.
                 if (pendingInboxFromEvent(event)) refresh(expected);
                 // A handoff brief holds the chat with no lease or run, so its
                 // start and end reach the chat only as a status frame.

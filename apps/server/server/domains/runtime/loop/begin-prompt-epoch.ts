@@ -36,7 +36,7 @@ export interface BoundaryCompletion {
 
 export type BeginPromptEpochInput = {
   threadId: ThreadId;
-  cause: "compaction" | "compaction_undo";
+  cause: "compaction";
   bake: { compose: ComposePromptBake } | { reuse: PromptBakeId };
   boundaryTurnId: TurnId;
   completion: BoundaryCompletion;
