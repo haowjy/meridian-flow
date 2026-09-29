@@ -173,7 +173,7 @@ and provides Open in Editor; text content, images, and PDFs stay constrained to
 the dock body. Open in Editor clears the slot before routing through
 `openWorkContext`.
 
-The chat index is the project root (`/p/<project>`). It reads a flat,
+The chat index is `/p/<project>/chats`; the bare project URL replaces itself there. It reads a flat,
 cursor-paginated primary-chat feed ordered by last activity. Favorites is a
 server-side filter, applied before pagination, and so is title search. The
 shared row also serves Work detail. The index leads with the centered
@@ -401,6 +401,34 @@ push/replace behavior. The legacy slug project routes and `?screen`/`?thread`
 grammar are gone. `project-route.ts` retains stable-ID command types and the
 context-removal CAS snapshot only; it is not a second address grammar.
 
+### Address grammar
+
+The path names the screen and what is open on it; the query holds context and
+overlays. The first segment after `/p/<project>` is always a screen.
+
+```
+/p/<id>                                  replaced by /p/<id>/chats (no history entry)
+/p/<id>/chats[/<chatId>]                 chat index, a chat
+/p/<id>/works[?view=archived|deleted]    Work list
+/p/<id>/works/new                        create dialog
+/p/<id>/works/<workId>[?view=files]      Work page
+/p/<id>/editor[?work=<workId>]           Editor, nothing open
+/p/<id>/editor/<scheme>/<path>[?work=…]  document
+/p/<id>/editor/browse[/<scheme>/<path>]  folder
+overlays on any screen: ?settings=<section>  ?results
+```
+
+`ProjectDestination` never carries a Work; the address's `work` is the one Work
+selection for every scheme. For project schemes (manuscript, kb, user,
+unfiled) `?work` is the editing context: absent, empty (no Work) or an id. For
+Scratch and Uploads (`workIsIdentity`) `?work` is the resource's identity:
+`?work=<id>` names the Work, `?work=` is No Work, and absent or malformed is an
+invalid address. The query guard never repairs an identity `?work`. Slugs and
+`@` never appear. Older shapes (`/<scheme>/…`, `/browse/…`, `/works/<id>/<scheme>/…`)
+are invalid, with no alias. An invalid address keeps its URL and shows the
+unavailable state over the center column on desktop and phone.
+`repairAddress` rewrites the current entry in place to its canonical path.
+
 Work details use `/p/<project>/works/<work-id>` from the moment of creation.
 The same id-addressed destination renders pending, failed, and confirmed Works;
 confirmation never replaces the browser path. Browser paths never contain
@@ -445,8 +473,8 @@ selectors using synchronous, entry-guarded history replacement, pinning no selec
 without empty URL parameters. This same-destination repair bypasses blockers;
 it never queues a competing navigation behind a pending dirty-edit decision.
 Pending catalog refreshes and catalog errors never prove absence. Valid and omitted selectors are not rewritten. Duplicate query keys,
-invalid percent encoding, and conflicting path/query Work scope remain parser
-errors, not recoverable selector values. Required path identities never fall
+invalid percent encoding, and a Scratch or Uploads address without its Work
+remain parser errors, not recoverable selector values. Required path identities never fall
 back. Work and document path misses stay unavailable. Path and remembered chat IDs are identity, not primary-list lookups. A confirmed
 snapshot miss falls back to the index.
 Editor can seed its initially absent Work
