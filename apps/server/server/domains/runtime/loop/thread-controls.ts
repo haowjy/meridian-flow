@@ -14,6 +14,14 @@ export class ThreadControlError extends Error {
   }
 }
 
+export function requireCompletedReplyForCompaction(
+  turns: readonly Pick<Turn, "role" | "status">[],
+): void {
+  if (!turns.some((turn) => turn.role === "assistant" && turn.status === "complete")) {
+    throw new ThreadControlError(409, "compact_requires_completed_reply");
+  }
+}
+
 export function createThreadControls(deps: {
   withThreadLock: ThreadLock["withThreadLock"];
   findMessage(id: string): Promise<InboxMessage | null>;
@@ -30,7 +38,8 @@ export function createThreadControls(deps: {
           existing &&
           (existing.threadId !== input.threadId ||
             existing.intent !== "control" ||
-            existing.body.kind !== input.control.kind)
+            existing.body.kind !== input.control.kind ||
+            existing.body.instructions !== input.control.instructions)
         )
           throw new ThreadControlError(409, "control_id_conflict");
         const row =

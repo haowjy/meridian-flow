@@ -6,24 +6,23 @@ import {
   readBody,
   setResponseStatus,
 } from "nitro/h3";
-import { z } from "zod";
-import { ThreadControlError } from "../../../../../domains/runtime/index.js";
+import {
+  requireCompletedReplyForCompaction,
+  ThreadControlError,
+  threadControlRequestSchema,
+} from "../../../../../domains/runtime/index.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../../lib/request-id.js";
 
-const request = z
-  .object({
-    id: z.string().uuid(),
-    control: z.object({ kind: z.literal("compact") }).strict(),
-  })
-  .strict();
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const threadId = requireRequestId(getRouterParam(event, "threadId"), "threadId");
   await app.threadRuntime.requireOwnedThread(threadId, user.userId);
-  const parsed = request.safeParse(await readBody(event));
+  const parsed = threadControlRequestSchema.safeParse(await readBody(event));
   if (!parsed.success) throw createError({ statusCode: 400, message: "invalid_control" });
+  const turns = await app.repos.turns.listByThread(threadId);
   try {
+    requireCompletedReplyForCompaction(turns);
     const result = await app.delivery.enqueueControl({
       ...parsed.data,
       threadId,

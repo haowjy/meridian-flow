@@ -91,7 +91,6 @@ const compactedThroughCodec = z.object({
 });
 
 export const CompactionFailureReasonCodec = z.enum([
-  "nothing_to_compact",
   "context_too_large",
   "compaction_failed",
   "context_window_exceeded",
@@ -124,13 +123,14 @@ const compactionMetadataFields = {
   elisions: modelElisionsCodec.optional(),
   trigger: z.enum(["auto", "manual"]).optional(),
   controlMessageId: z.string().min(1).optional(),
+  instructions: z.string().min(1).optional(),
 };
 
 export const CompactionPlanMetadataCodec = z
   .object({
     ...compactionMetadataFields,
     compactedThrough: compactedThroughCodec,
-    pinnedRequestTurnIds: z.array(z.string().min(1)).min(1),
+    pinnedRequestTurnIds: z.array(z.string().min(1)),
     ...compactionFailureMetadataFields,
   })
   .passthrough()
@@ -147,7 +147,7 @@ const CompactionFailureMetadataCodec = z
   .object({
     ...compactionMetadataFields,
     compactedThrough: compactedThroughCodec.optional(),
-    pinnedRequestTurnIds: z.array(z.string().min(1)).min(1).optional(),
+    pinnedRequestTurnIds: z.array(z.string().min(1)).optional(),
     reason: CompactionFailureReasonCodec,
     phase: CompactionFailurePhaseCodec,
     estimatedTokens: z.number().int().nonnegative().optional(),
@@ -281,6 +281,7 @@ export function compactionTurnMetadata(metadata: CompactionPlanMetadata): JsonOb
     compactedThrough: { ...metadata.compactedThrough },
     pinnedRequestTurnIds: metadata.pinnedRequestTurnIds,
     ...(metadata.trigger ? { trigger: metadata.trigger } : {}),
+    ...(metadata.instructions ? { instructions: metadata.instructions } : {}),
   };
 }
 

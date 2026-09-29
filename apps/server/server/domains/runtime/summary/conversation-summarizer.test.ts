@@ -98,6 +98,17 @@ function setup(
 
 describe("conversation summarizer", () => {
   it.each([
+    false,
+    true,
+  ])("includes writer summary instructions on the %s cache path", async (warm) => {
+    const rig = setup({ warm });
+    rig.input.writerInstructions = "Prioritize unresolved cultivation debts.";
+
+    expect(await rig.service.summarize(rig.input)).toMatchObject({ kind: "complete" });
+    expect(JSON.stringify(rig.requests)).toContain("Prioritize unresolved cultivation debts.");
+  });
+
+  it.each([
     "established facts ".repeat(65),
     "故事".repeat(60),
   ])("accepts complete output without treating conservative input estimates as provider tokens", async (text) => {

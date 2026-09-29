@@ -28,6 +28,8 @@ export interface PlanCompactionInput {
   fixedOverheadTokens: number;
   tokenizer: TokenizerFamily;
   tailBudgetFraction?: number;
+  /** Manual compaction fallback: summarize through the latest safe boundary and retain only pins. */
+  minimalTail?: boolean;
   /** Optional assembled-token estimate; otherwise a conservative JSON bytes/3 estimate is used. */
   estimateTurnTokens?: (turn: Turn, blocks: readonly Block[]) => number;
 }
@@ -371,8 +373,9 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
   for (const turnBlocks of blocksByTurn.values())
     turnBlocks.sort((a, b) => a.sequence - b.sequence);
 
-  const pinnedRequest =
-    [...classifiedTurns].reverse().find((entry) => entry.isPinnedRequest)?.turn ?? null;
+  const pinnedRequest = input.minimalTail
+    ? null
+    : ([...classifiedTurns].reverse().find((entry) => entry.isPinnedRequest)?.turn ?? null);
   const estimate =
     input.estimateTurnTokens ??
     ((turn: Turn, blocks: readonly Block[]) => estimateTurnTokens(turn, blocks, input.tokenizer));
@@ -409,7 +412,9 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
   const groupsByIndex = toolGroupsByTurn(classifiedTurns, blocksByTurn);
   const candidates = candidatesAfterCut(
     candidatesFor(classifiedTurns, groupsByIndex, blocksByTurn).filter(
-      (candidate) => classifiedTurns[candidate.turnIndex]?.retainable,
+      (candidate) =>
+        classifiedTurns[candidate.turnIndex]?.retainable ||
+        (input.minimalTail && classifiedTurns[candidate.turnIndex]?.kind === "compaction"),
     ),
     classifiedTurns,
     activeCompactionCut(classifiedTurns),
@@ -427,12 +432,14 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
   const candidateCosts = candidates.map((candidate) =>
     candidateTailCost(candidate, costs, suffixCosts),
   );
-  const minimumIndex = minimumCutIndex({
-    turns: classifiedTurns,
-    candidates,
-    groupsByIndex,
-    pinnedRequest: pinnedRequests.at(-1) ?? null,
-  });
+  const minimumIndex = input.minimalTail
+    ? candidates.length - 1
+    : minimumCutIndex({
+        turns: classifiedTurns,
+        candidates,
+        groupsByIndex,
+        pinnedRequest: pinnedRequests.at(-1) ?? null,
+      });
   const minimumCandidate = candidates[minimumIndex] ?? candidates.at(-1);
   if (!minimumCandidate) throw new Error("Compaction candidate list unexpectedly became empty");
 

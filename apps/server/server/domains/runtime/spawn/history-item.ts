@@ -160,6 +160,9 @@ export function renderHistoryItem(input: {
       body = `[image: ${(block.content as JsonObject)?.name ?? (block.content as JsonObject)?.uri ?? "attachment"}]`;
     else body = block.textContent ?? stringify(block.content);
   }
+  if (kind.kind === "compaction" && typeof metadata?.instructions === "string") {
+    body = `instructions: ${metadata.instructions}${body ? `\n${body}` : ""}`;
+  }
   return {
     position: turn.position,
     sequence,

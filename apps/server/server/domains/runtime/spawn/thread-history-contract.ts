@@ -275,6 +275,7 @@ export function defineThreadHistoryContract(
           kind: "compaction",
           compactedThrough: { turnId: t.id },
           pinnedRequestTurnIds: [],
+          instructions: "Emphasize the broken oath.",
         },
       });
       await f.block(c, "custom", { kind: "compaction", props: { summary: "summary" } });
@@ -296,6 +297,7 @@ export function defineThreadHistoryContract(
       expect(two).toContain("new-hash");
       expect(two.match(/NEW PROMPT/g)).toHaveLength(1);
       expect(two).toContain("summary");
+      expect(two).toContain("instructions: Emphasize the broken oath.");
     });
     it("100 hidden tool results do not burn the visible item limit", async () => {
       const f = await fixture();

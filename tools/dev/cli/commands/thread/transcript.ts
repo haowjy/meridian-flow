@@ -25,6 +25,7 @@ export type CompactTurn = {
   compactionMetadata?: {
     trigger?: string;
     controlMessageId?: string;
+    instructions?: string;
     reason?: string;
     phase?: string;
     estimatedTokens?: number;
@@ -128,6 +129,9 @@ export function compactTurn(turn: Turn, limits: TranscriptLimits): CompactTurn {
           ...(typeof metadata.trigger === "string" ? { trigger: metadata.trigger } : {}),
           ...(typeof metadata.controlMessageId === "string"
             ? { controlMessageId: metadata.controlMessageId }
+            : {}),
+          ...(typeof metadata.instructions === "string"
+            ? { instructions: metadata.instructions }
             : {}),
           ...(typeof metadata.reason === "string" ? { reason: metadata.reason } : {}),
           ...(typeof metadata.phase === "string" ? { phase: metadata.phase } : {}),
@@ -260,6 +264,8 @@ export function renderThreadView(view: ThreadView): string {
     if (turn.error) lines.push(`  error: ${turn.error}`);
     if (turn.role === "assistant" && turn.status === "error" && turn.failureReason)
       lines.push(`  failure reason: ${turn.failureReason}`);
+    if (turn.role === "compaction" && turn.compactionMetadata?.instructions)
+      lines.push(`  instructions: ${turn.compactionMetadata.instructions}`);
     if (
       turn.role === "compaction" &&
       turn.status === "error" &&
