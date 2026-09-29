@@ -27,11 +27,9 @@ run shrinks its history is [compaction](compaction.md).
 ## Queue and release wake
 
 `next(pending, at)` in `next-inbox-work.ts` is the one pure selector used by
-run start and `wakeIfRunnable`. At a reply boundary it selects every non-control
-row. At run start it chooses a stamped command plus waiting messages,
-otherwise messages before the oldest command, or one command when no message
-waits. This keeps `/compact` at the end of the queue and prevents
-command selection between tools or at reply boundaries ([controls](controls.md)).
+run start and `wakeIfRunnable`. It follows plain `seq` order. A boundary adopts
+the non-control prefix before the first command. At run start, an oldest command
+runs alone; otherwise the same prefix runs. Stop has no queue-priority behavior.
 Every non-control row, including a Work refresh notice, closes the reply prefix
 at a boundary; a notice-only queue still does not start a run.
 

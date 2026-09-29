@@ -23,9 +23,7 @@ T=$(jq -r .threadId "$E/thread.json")
 ```
 
 For a compactable thread, send tens of thousands of characters of distinctive
-history, then another writer/reply pair. The newer pair is retained; the older
-history must exceed the manual compaction floor. A short thread should refuse
-with `nothing_to_compact`, not call the summarizer. Use `send --mock` for replies:
+history, then another writer/reply pair. The newer pair is normally retained. A short thread still compacts, using the minimal safe tail. Use `send --mock` for replies:
 
 ```bash
 ./mf thread send "$T" "$(python3 -c 'print("The silver gate opens only for the keeper. " * 1400)')" \
@@ -41,6 +39,7 @@ compact() {
   ./mf api POST "/api/threads/$T/controls" \
     --data "{\"id\":\"$K\",\"control\":{\"kind\":\"compact\"}}" --json
 }
+# Add `instructions` beside `kind` to probe `/compact <instructions>`.
 ```
 
 If the snapshot is already terminal, do not start a fresh `thread tail`: it
@@ -121,51 +120,21 @@ end-to-end as one suite.
   ordering, settled reply and response rows, ledger debit, empty pending inbox,
   and post-restart Retry result.
 
-## RP-2: Compact waits for the end of the queue
+## RP-2: Plain queue order
 
-- **Protects:** commands wait until messages are answered; Stop runs the command
-  first with its waiting messages pinned (`control-protocol`).
+- **Protects:** `[A][/compact][B]` adopts A before the command barrier, then
+  compacts, then answers B. Natural end and Stop have the same ordering. A
+  command at the head runs alone; withdrawing it exposes B.
 - **Stack:** mock.
-- **Steps:** after setup, start a delayed reply and wait until streaming. Enqueue
-  compact, then send `hi2`. Repeat with `hi1` queued before compact and a second
-  message after it. For the Stop variant on a fresh thread, queue compact and a
-  message during a delayed reply, then use Stop (the Stop button, or Esc in an empty
-  composer) before the reply ends.
-
-  ```bash
-  ./mf thread send "$T" hi --mock '[{"text":"reply to hi","delayMs":5000}]' --json > "$E/hi.ndjson" & SEND=$!
-  ./mf thread view "$T" --json
-  ./mf mock script '[{"text":"Earlier context summary."}]' --json
-  compact > "$E/compact.json"
-  ./mf thread send "$T" hi2 --mock '[{"text":"reply to hi2"}]' --json > "$E/hi2.ndjson"
-  wait "$SEND"
-  ```
-
-  For the Stop variant, repeat on a fresh compactable thread. Start another
-  delayed reply, wait until streaming, and read its live assistant turn id from
-  `thread view --json`, then:
-
-  ```bash
-  ./mf thread send "$T" hi --mock '[{"text":"reply to hi","delayMs":5000}]' --json > "$E/stop-hi.ndjson" & SEND=$!
-  ./mf thread view "$T" --json
-  # Set RUNNING_TURN_ID from the active assistant in the view.
-  compact > "$E/compact.json"
-  ./mf thread send "$T" 'Keep this message after Stop.' --json > "$E/waiting.ndjson" & WAITING=$!
-  ./mf thread cancel "$T" --turn "$RUNNING_TURN_ID" --json
-  ./mf thread tail "$T" --until-idle --timeout 60s --json
-  wait "$WAITING"
-  wait "$SEND"
-  ```
-
-- **Expect:** normal variants answer every queued message before C; the command
-  stays queued until the messages finish and never runs at a tool boundary. If
-  automatic compaction occurs first, the command is not absorbed; it runs at the
-  end of the queue and either compacts new history or refuses with
-  `nothing_to_compact`. On Stop, the stamped command runs
-  first, the waiting message appears verbatim among C's pinned requests, and
-  the message is answered after C. No message is lost or answered twice.
-- **Evidence:** admitted messages, control UUID, final roles and request messages.
-- **Last run:** not recorded for the end-of-queue and Stop variants.
+- **Steps:** during a delayed reply, enqueue A, compact, then B. Repeat and Stop
+  the delayed reply. On another run enqueue compact first and Stop. Withdraw a
+  queued compact with B behind it.
+- **Expect:** the request before C contains A but not B; the successor after C
+  contains B. Stop changes only when the active turn ends. The head compact runs
+  immediately after release. Withdrawal lets B run at the next boundary.
+- **Evidence:** pending snapshots in `seq` order, request messages, C metadata,
+  and terminal turns.
+- **Last run:** not recorded for this exact recipe.
 
 ## RP-3: Withdraw only before the command starts
 

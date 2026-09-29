@@ -1,22 +1,19 @@
 # Thread inbox controls
 
 `MessageIntent` distinguishes directed `message`, context-only `notice`, and
-runtime `control`. A control is not model-visible chat text. Its body is `{ kind: "compact" }`.
+runtime `control`. A control is not model-visible chat text. Its body is `{ kind: "compact", instructions?: string }`.
 Commands are writer-only, not tools.
 
-`PendingInboxItem.control` carries that body on control rows. `summary` is the writer label "Compact conversation". Snapshot pending state and
+`PendingInboxItem.control` carries that body on control rows. `summary` shows the instructions when present. Snapshot pending state and
 `inbox.changed` share the same schema. A queued control has no transcript
-position until a divider with `metadata.controlMessageId` starts it. Commands are selected at run start, one per run, after
-waiting messages unless Stop stamps all pending commands to run first with
-those messages.
+position until a divider with `metadata.controlMessageId` starts it. Commands and messages retain `seq` order. Boundaries adopt only the non-control prefix before the first command; an oldest command runs alone at run start. Stop only ends the turn.
 
 Manual dividers use role `compaction`, `trigger: "manual"`, and ordinary turn
 statuses: `pending`, `complete`, `error`, `cancelled`. A failed divider of
 either trigger carries a typed `reason` and `phase` in metadata (crash recovery
 is `interrupted` at `recovery`); the server's `CompactionFailureReasonCodec`
 and `CompactionFailurePhaseCodec` in `threads/domain/turn-metadata.ts` own the
-values. Its `turn.error` code stays `nothing_to_compact`, `context_too_large`,
-`context_window_exceeded`, or `compaction_failed`, with the outcome in
+values. Its `turn.error` code is `context_too_large`, `context_window_exceeded`, or `compaction_failed`, with the outcome in
 `details`. Completed summary blocks carry `summary`, `tokensBefore`, and
 `tokensAfter`. `pinnedRequestTurnIds` records every unanswered directed request
 plus the newest writer request; ids may identify user or directed system turns.
