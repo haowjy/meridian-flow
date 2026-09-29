@@ -37,7 +37,8 @@ at a boundary; a notice-only queue still does not start a run.
 
 After a run releases its claim, cleanup refreshes and re-reads the queue through
 `wakeIfRunnable`; this includes a run that found nothing to do and a lease
-cancelled during setup. A failed assistant acknowledges every message it
+cancelled during setup, plus a Retry refusal after taking a claim. A failed
+assistant acknowledges every message it
 adopted, including on provider error, output-limit failure, preparation
 failure, a thrown execution error, or crash repair. A crashed reply therefore
 fails once: repair shows “This reply was interrupted.” and retires its preserved
