@@ -1461,6 +1461,11 @@ msgstr "Couldn't rename this document. Try again."
 msgid "Couldn't rename this document. Try another name."
 msgstr "Couldn't rename this document. Try another name."
 
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+#: src/features/chat/derivation/useHandoffBrief.ts
+msgid "Couldn't retry. Something else started in this chat first."
+msgstr "Couldn't retry. Something else started in this chat first."
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't run that skill"
 msgstr "Couldn't run that skill"
@@ -4322,8 +4327,8 @@ msgid "This chat continues without a brief."
 msgstr "This chat continues without a brief."
 
 #: src/features/chat/derivation/useHandoffBrief.ts
-msgid "This chat is busy. Try again when the reply finishes."
-msgstr "This chat is busy. Try again when the reply finishes."
+#~ msgid "This chat is busy. Try again when the reply finishes."
+#~ msgstr "This chat is busy. Try again when the reply finishes."
 
 #. placeholder {0}: commit.work.name
 #: src/features/chat/useComposerWorkBinding.ts
@@ -4988,8 +4993,12 @@ msgid "you answered"
 msgstr "you answered"
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-msgid "You can retry when the reply finishes."
-msgstr "You can retry when the reply finishes."
+#~ msgid "You can retry when the reply finishes."
+#~ msgstr "You can retry when the reply finishes."
+
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+msgid "You can retry when this chat is free."
+msgstr "You can retry when this chat is free."
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "You left checkout. No purchase was confirmed."
