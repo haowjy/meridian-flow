@@ -66,6 +66,19 @@ export function registerProcessShutdownCallback(callback: () => Promise<void> | 
   state().shutdownCallbacks.push(callback);
 }
 
+export function shutdownProcessResources(): Promise<void> {
+  const current = state();
+  current.shutdownPromise ??= (async () => {
+    for (const callback of current.shutdownCallbacks) {
+      await Promise.resolve()
+        .then(callback)
+        .catch(() => undefined);
+    }
+    await current.sink.flush().catch(() => undefined);
+  })();
+  return current.shutdownPromise;
+}
+
 export function installObservabilityShutdownHooks(): void {
   const current = state();
   if (current.shutdownInstalled) return;
@@ -73,18 +86,7 @@ export function installObservabilityShutdownHooks(): void {
   const shutdown = () => {
     // SIGINT and SIGTERM may both arrive while the bounded runtime drain is in
     // flight. They are one shutdown, not competing drain/flush/exit sequences.
-    current.shutdownPromise ??= (async () => {
-      try {
-        for (const callback of current.shutdownCallbacks) {
-          await Promise.resolve()
-            .then(callback)
-            .catch(() => undefined);
-        }
-        await current.sink.flush().catch(() => undefined);
-      } finally {
-        process.exit(0);
-      }
-    })();
+    void shutdownProcessResources().finally(() => process.exit(0));
   };
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);

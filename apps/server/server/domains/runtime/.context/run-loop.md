@@ -67,7 +67,11 @@ settle paid response rows, end as error with `reason: shutdown` and
 “This reply was interrupted.”, acknowledge their receipts, and release their
 claims. SIGTERM and SIGINT enter one shared process-hook sequence: registered
 app shutdown callbacks run before the observability sink flushes and process
-exit. The app waits for one bounded 10-second drain and warns if it times out. A
+exit. Production signals reach that sequence directly. In Nitro dev, the
+supervisor closes the real `node-worker` runner; the patched runner invokes and
+awaits the worker runtime's close hook before terminating it, so the same
+sequence runs without changing HMR or Portless routing. The app waits for one
+bounded 10-second drain and warns if it times out. A
 brief launched after
 shutdown begins leaves S pending for ordinary repair, and a released claim does
 not wake its destination. DB test fixture resets drain the explicitly wired

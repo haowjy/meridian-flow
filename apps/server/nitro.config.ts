@@ -38,8 +38,8 @@ export default defineConfig({
   },
   hooks: {
     compiled(nitro) {
-      // `nitro dev` owns a worker process; the worker's app hook must get its
-      // SIGTERM and finish the bounded drain before this supervisor disappears.
+      // Close Nitro on a dev signal. The patched worker runner asks the runtime
+      // to close and awaits its application drain before terminating the thread.
       if (
         process.env.NODE_ENV === "development" &&
         process.argv[2] === "dev" &&

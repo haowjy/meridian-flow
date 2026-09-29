@@ -28,3 +28,4 @@ overrides:
   "@tanstack/history": 1.162.3
 patchedDependencies:
   '@tanstack/history@1.162.3': patches/@tanstack__history@1.162.3.patch
+  env-runner@0.1.14: patches/env-runner@0.1.14.patch

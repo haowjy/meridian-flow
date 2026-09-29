@@ -59,6 +59,9 @@ patchedDependencies:
   '@tanstack/history@1.162.3':
     hash: 5fa3ad9cee56999b0dd84605d67a1f93081a16c7526237d8310fc3c2e92cd03c
     path: patches/@tanstack__history@1.162.3.patch
+  env-runner@0.1.14:
+    hash: 24526e67f2d8189b8175fbf5fb2665bad700853e03b0d71ef36dfbf5b57649fb
+    path: patches/env-runner@0.1.14.patch
 
 importers:
 
@@ -9920,7 +9923,7 @@ snapshots:
 
   entities@8.0.0: {}
 
-  env-runner@0.1.14:
+  env-runner@0.1.14(patch_hash=24526e67f2d8189b8175fbf5fb2665bad700853e03b0d71ef36dfbf5b57649fb):
     dependencies:
       crossws: 0.4.6(srvx@0.11.17)
       exsolve: 1.1.0
@@ -11127,7 +11130,7 @@ snapshots:
       consola: 3.4.2
       crossws: 0.4.6(srvx@0.11.17)
       db0: 0.3.4(drizzle-orm@0.45.2(postgres@3.4.9))
-      env-runner: 0.1.14
+      env-runner: 0.1.14(patch_hash=24526e67f2d8189b8175fbf5fb2665bad700853e03b0d71ef36dfbf5b57649fb)
       h3: 2.0.1-rc.22(crossws@0.4.6(srvx@0.11.17))
       hookable: 6.1.1
       nf3: 0.3.17
@@ -11179,7 +11182,7 @@ snapshots:
       consola: 3.4.2
       crossws: 0.4.6(srvx@0.11.17)
       db0: 0.3.4(drizzle-orm@0.45.2(postgres@3.4.9))
-      env-runner: 0.1.14
+      env-runner: 0.1.14(patch_hash=24526e67f2d8189b8175fbf5fb2665bad700853e03b0d71ef36dfbf5b57649fb)
       h3: 2.0.1-rc.22(crossws@0.4.6(srvx@0.11.17))
       hookable: 6.1.1
       nf3: 0.3.17
