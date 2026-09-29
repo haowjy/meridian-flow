@@ -208,7 +208,7 @@ export function createDeliveryAdapter(
     } catch (error) {
       if (input.signal?.aborted || !committingControlId) throw error;
       // Retire a command whose start transaction failed. Its fresh preparation
-      // commits a failed U or C rather than leaving the command at the queue head.
+      // commits a failed C rather than leaving the command at the queue head.
       failedControlIds = new Set([committingControlId]);
       return attemptPreparation();
     }

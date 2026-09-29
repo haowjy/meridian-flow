@@ -41,8 +41,6 @@
 
 - Skip paid manual compaction when too little context can be removed. Tell warm summaries not to repeat retained conversation.
 
-- Show compaction in the chat: a divider for compacting, compacted (summary behind a disclosure), failed, stopped, and undone; Stop on a running compaction, from the divider or the composer; Undo only where the server expects it to hold, with refusals quiet on the divider; one-line dividers on narrow screens; hide the empty reply an overflow recovery completes before compacting. A stopped autocompaction settles without waiting for another change, and screen readers hear each control change once, in the words its row shows.
-- Add `/compact` to the composer. A queued `/compact` or Undo waits at the bottom of the chat until replies finish, with Withdraw, which removes it at once; a command that already started says so. A `/compact` with nothing new to compact reads calmly.
 - Point spawned agents at connected prior work without copying history; freeze reference text and read instructions, including stopped handoffs.
 - Freeze handoff source titles on seeds and brief cards, and keep spawn source provenance on durable invocation cards.
 - A handed-off chat names a trashed source by its title, and a spawn card names its `from` chat straight from the card after a reload.
@@ -63,12 +61,10 @@
 - Seed browser-test conversations with their lineage root.
 
 - Find connected conversations and read their history with document pointers and dated edit records.
-- Keep history pages stable across compaction and undo; preserve old prompt-bake bytes.
 
 - Require a lineage root on every conversation; index fork and handoff discovery.
 - Accept delivered user turns as handoff cutoffs while the source reply streams; source-shaped briefs follow the shared summary rule at every cutoff without rewriting failed reply history.
 
-- Keep inbox controls to compact and undo; handoff Retry appends outside the inbox. Compact and Undo run after queued messages unless Stop (Esc) stamps one to run first.
 - Record brief telemetry and failure metadata through one pending-owner writer; late paid attempts cannot replace the winning outcome.
 
 - Stage activated skills through one boundary owner. The handoff brief holds the destination run claim until settlement; queued skill activations then materialize with the reply.
@@ -84,20 +80,17 @@
 - Use one summary rule for compaction and handoff: known-too-large requests roll, warm source requests branch, and cold requests roll. Fail each attempt once and meter returned attempts on the owning turn.
 - Keep brief failures typed, preserve queued replies, and exclude brief calls from future cache baselines.
 
-- Undo failures show writer copy, retain typed reasons, and expose metadata in `mf thread view --json`.
 
-- Regenerate compaction undo migration after transcript indexes; keep both database changes.
 
-- Compaction undo preserves paged transcript segments and restores the pre-compaction prompt bake.
 
 ### Changed
-- Regenerate the handoff migration in place; keep inbox control schemas limited to compact and undo.
+- Regenerate the handoff migration in place; keep the inbox control schema limited to compact.
 - Include pending handoff seeds in ordinary placeholder repair; settle interrupted seeds with their card and history read line instead of relaunching them.
 - Preserve Work-context delivery while the detached brief holds the destination run claim.
 - A withdrawn control stays retired after a crash; replaying withdrawal returns `withdrawn`.
 - Validate Agent selections consistently across handoff and thread creation.
 - Handoff Retry takes the destination run claim; a held claim returns 409 `handoff_retry_unavailable`, while an idempotent seed replay returns the existing seed.
-- Withdraw a control only before its start; after a C or U records it, return `already_started` without stopping the run. Replayed withdrawal of a withdrawn row remains `withdrawn`.
+- Withdraw a control only before its start; after C records it, return `already_started` without stopping the run. Replayed withdrawal of a withdrawn row remains `withdrawn`.
 - Remove the handoff recovery sweep and relaunch counter; orphan repair settles pending seeds interrupted after acquiring the destination claim.
 - Handoffs commit a durable pending seed and detach its brief while transferring the pre-acquired destination claim. Stop preserves queued messages; Retry appends a new seed.
 - Stop settles pending handoff seeds under the destination lock; a late brief cannot overwrite Stop.
@@ -107,15 +100,10 @@
 - Expose compaction failure and control metadata, with token counts, in the existing `thread view --json` projection.
 - Persist typed compaction failure reasons and phases on failed C turns and their `turn.error` events. If late arrivals make the successor too large, commit C and fail the successor reply with its normal fit error.
 
-- Keep undo metadata and queued-control acknowledgments on one typed path.
-- Load undo advisory dependencies statically; keep the retained Agent and current model lookup.
 
 - Compaction clears stale document reads, write text, search excerpts and references from model context. Fresh text and writer transcripts stay intact.
 
 ### Added
-- Undo local compactions under the prior prompt. Refuse restores that would compact again.
-- Keep queued replies running after failed undo. Undo markers appear settled, never pending.
-- Keep missing-skill and history-load failures visible when undo is queued.
 - Page the effective or inherited transcript by stable turn/block keys, split pages at prompt-epoch boundaries, and expose the authenticated writer transcript route.
 - Record atomic document revisions on agent reads, searches, references, and settled writes without adding model-visible text.
 - Queue manual compaction in message order. Withdraw queued requests or stop running dividers.
@@ -127,7 +115,6 @@
 - Recover orphaned primary assistant turns and pending compaction placeholders under the session claim; child reports terminate on the orphaned placeholder and late inbox messages remain redeliverable.
 - Persist request sizes and turn-neutral child execution selectors for compaction.
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
-- Re-admit retained excluded images into budget left after normal late-arrival handling during complete compaction; compaction-owned decisions remain reversible, and forks preserve decision history through their cutoff, including undo.
 
 ### Fixed
 - Keep a failed reply marked failed after the writer sends again. Its error turns into a quiet marker as soon as anything follows it, and each failure keeps its own marker. Its pending trail work no longer auto-pushes its branch when the writer sends first; before, that depended on timing.
@@ -1801,7 +1788,6 @@
   (`buffered → journalCommitted → liveProjected → closed`) and structured `response_committer.*` EventSink events on every
   lifecycle branch.
 - `apps/app`: turn reversal waits for refreshed lineage before settling, so
-  refused Undo attempts immediately replace the stale Undo affordance.
 - `apps/server`: project/work thread lists and snapshots now derive soft
   `waitingForUser` state from the same `active_leaf_turn_id` logical head, so
   tied turn timestamps cannot make sidebar lifecycle state flip on refetch.

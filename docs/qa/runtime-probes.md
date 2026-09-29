@@ -321,7 +321,7 @@ end-to-end as one suite.
   ./mf thread context "$FORK" --all --view raw --json > "$E/fork-after.json"
   ```
 
-- **Expect:** inherited prefix bytes do not change; later source turns/C/U do not
+- **Expect:** inherited prefix bytes do not change; later source turns/C do not
   appear in the fork's inherited transcript.
 - **Evidence:** source and fork snapshots plus inherited-prefix arrays/hashes.
 - **Last run:** merge-gate §8–12 PASS; 2026-09-28 (source commit not recorded).
