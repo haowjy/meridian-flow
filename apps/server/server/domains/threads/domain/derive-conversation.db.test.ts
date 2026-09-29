@@ -689,6 +689,55 @@ else
       expect(await repos.threads.findByIdIncludingDeleted(id as never)).toBeNull();
     });
 
+    it("holds the destination claim before creating S so a racing wake cannot repair it", async () => {
+      const fixture = await setupSource();
+      const { createDrizzleRunClaim } = await import("../../runtime/adapters/drizzle-run-claim.js");
+      const runClaim = createDrizzleRunClaim(db, { holderId: "handoff-first" });
+      const destinationId = crypto.randomUUID();
+      let racingLease: Awaited<ReturnType<typeof runClaim.startExecution>> = null;
+      const transferredClaims: Array<{ release(): Promise<void> }> = [];
+      const threads = {
+        ...fixture.deps.threads,
+        async createDerivedPrimary(
+          input: Parameters<typeof repos.threads.createDerivedPrimary>[0],
+        ) {
+          racingLease = await runClaim.startExecution(destinationId as never, "racing-wake");
+          return fixture.deps.threads.createDerivedPrimary(input);
+        },
+      };
+
+      try {
+        const result = await handoffThreadAgent(
+          {
+            ...fixture.deps,
+            threads,
+            handoffBriefs: {
+              hold: (threadId) => runClaim.hold(threadId),
+              launchAfterCommit({ claim }) {
+                transferredClaims.push(claim);
+              },
+            },
+          },
+          {
+            id: destinationId,
+            threadId: fixture.source.id,
+            userId: ids.userId,
+            originTurnId: fixture.firstTurn.id,
+            agentSelection: fixture.agent.selection,
+          },
+        );
+
+        expect(result.created).toBe(true);
+        expect(racingLease).toBeNull();
+        expect(await repos.turns.listByThread(result.thread.id)).toMatchObject([
+          { role: "system", status: "pending" },
+        ]);
+        expect(await runClaim.startExecution(result.thread.id, "after-create-wake")).toBeNull();
+      } finally {
+        await transferredClaims[0]?.release();
+      }
+    });
+
     it("releases the destination claim when creation rolls back", async () => {
       const fixture = await setupSource();
       const id = crypto.randomUUID();
