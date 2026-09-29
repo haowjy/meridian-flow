@@ -2,8 +2,8 @@
  * threads-api — HTTP client for thread lifecycle and snapshot endpoints.
  *
  * Typed wrappers for list/create thread, append user message, cancel turn,
- * queue or withdraw writer controls, retry a handoff brief, delete thread,
- * and fetch/deserialize a thread snapshot. Owns the thread
+ * queue or withdraw writer controls, retry a handoff brief or a failed reply,
+ * delete thread, and fetch/deserialize a thread snapshot. Owns the thread
  * network surface the chat flow and snapshot sync build on.
  */
 import {
@@ -26,6 +26,7 @@ import {
   apiThreadTitlePath,
   apiThreadTranscriptPath,
   apiThreadTurnContextPreviewDebugPath,
+  apiThreadTurnRetryPath,
   apiThreadUserStatePath,
   apiThreadWorkPath,
   type CancelTurnResponse,
@@ -38,6 +39,7 @@ import {
   type ModelRequestDebugListResponse,
   type RenameThreadRequest,
   type RenameThreadResponse,
+  type ReplyRetryRequest,
   type RetireAdmissionResult,
   type SendMessageResponse,
   type Thread,
@@ -120,6 +122,15 @@ export function retryHandoffBrief(
   request: HandoffBriefRetryRequest,
 ): Promise<Turn> {
   return postJson(apiThreadHandoffBriefPath(threadId), request);
+}
+
+/** Retry a latest failed reply: the server answers the same messages under `request.id`. */
+export function retryReply(
+  threadId: string,
+  failedTurnId: string,
+  request: ReplyRetryRequest,
+): Promise<Turn> {
+  return postJson(apiThreadTurnRetryPath(threadId, failedTurnId), request);
 }
 
 /** One page of a thread's effective or inherited transcript. */

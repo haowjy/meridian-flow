@@ -73,9 +73,24 @@ export type AssistantTurnProps = {
    * error send copy rather than generation copy; calling it resubmits.
    */
   failedSendRetry?: () => void;
+  /** Retry on a failed reply; absent where the reply can't be retried from here. */
+  replyRetry?: ReplyRetryView;
+  /** A Retry's new reply before the server has it: nothing to read or act on yet. */
+  standIn?: boolean;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   changeTrail?: ChangeTrailShell;
   navigateToChange?: NavigateToTrailChange;
+};
+
+export type ReplyRetryView = {
+  /** Present only while this failed reply is the latest turn. */
+  onRetry?: () => void;
+  /** Something holds the chat: Retry waits. */
+  waiting: boolean;
+  /** The server refused this reply's last Retry. */
+  refused: boolean;
+  /** This is a Retry's stand-in whose request never answered. */
+  requestLost: boolean;
 };
 
 function AssistantTurnComponent({
@@ -88,6 +103,8 @@ function AssistantTurnComponent({
   endsTranscript = false,
   continuesResponse = false,
   failedSendRetry,
+  replyRetry,
+  standIn = false,
   onRespondToInterrupt,
   changeTrail,
   navigateToChange,
@@ -121,7 +138,9 @@ function AssistantTurnComponent({
   const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
   const isLive = !isSettled;
   const resolvedThreadId = threadId ?? turn.threadId;
-  const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, { enabled: !isLive });
+  const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, {
+    enabled: !isLive && !standIn,
+  });
   const liveLineageDocuments = useMemo(
     () => dedupeTurnEditDocuments(liveLineage.documents ?? []),
     [liveLineage.documents],
@@ -180,12 +199,14 @@ function AssistantTurnComponent({
         {isErrored ? (
           <ErrorBlock
             isLatest={endsTranscript}
-            kind={failedSendRetry ? "send" : "generation"}
-            onRetry={endsTranscript ? failedSendRetry : undefined}
+            kind={failedSendRetry ? "send" : replyRetry?.requestLost ? "retry" : "generation"}
+            onRetry={endsTranscript ? (failedSendRetry ?? replyRetry?.onRetry) : undefined}
+            retryWaiting={!failedSendRetry && (replyRetry?.waiting ?? false)}
+            retryRefused={replyRetry?.refused ?? false}
           />
         ) : null}
       </div>
-      {isSettled && !continuesResponse ? (
+      {isSettled && !continuesResponse && !standIn ? (
         <AssistantTurnActions
           threadId={resolvedThreadId}
           turn={turn}

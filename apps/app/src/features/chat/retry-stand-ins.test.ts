@@ -3,6 +3,7 @@ import type { Turn } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import { placeStandIns } from "./retry-stand-ins";
 import { buildTranscriptModel } from "./transcript-model";
+import { optimisticRetryReply } from "./useReplyRetry";
 
 const seed = (status: string, extra: Record<string, unknown> = {}) =>
   ({
@@ -58,5 +59,23 @@ describe("placeStandIns", () => {
       "a1",
       "s9",
     ]);
+  });
+});
+
+describe("placeStandIns for a failed reply's Retry", () => {
+  const turn = (id: string, role: string, status: string, prevTurnId: string | null) =>
+    ({ id, role, status, prevTurnId, position: 1, blocks: [] }) as unknown as Turn;
+  const message = turn("u1", "user", "complete", null);
+  const failed = { ...turn("a1", "assistant", "error", "u1"), position: 2 } as Turn;
+
+  it("renders the new reply below the failed one, which ends its own reply", () => {
+    const reply = optimisticRetryReply({ id: "r", failed, createdAt: "2026-01-01T00:00:00Z" });
+    expect(reply).toMatchObject({ prevTurnId: "a1", position: 3, status: "pending" });
+    const turns = placeStandIns([message, failed], [reply]);
+    expect(turns.map((entry) => entry.id)).toEqual(["u1", "a1", "r"]);
+    const model = buildTranscriptModel(turns, false);
+    expect(model.rows.map((row) => row.turn.id)).toEqual(["u1", "a1", "r"]);
+    // The failure stays its own finished reply; the retry does not continue it.
+    expect(model.continuing).toEqual([false, false, false]);
   });
 });

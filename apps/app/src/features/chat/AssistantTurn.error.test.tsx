@@ -13,7 +13,9 @@ vi.mock("@lingui/core/macro", () => ({
 vi.mock("@/client/query/useTurnLiveLineage", () => ({
   useTurnLiveLineage: () => ({ documents: [], receipt: null }),
 }));
-vi.mock("./AssistantTurnActions", () => ({ AssistantTurnActions: () => null }));
+vi.mock("./AssistantTurnActions", () => ({
+  AssistantTurnActions: () => <span data-turn-actions />,
+}));
 
 import { AssistantTurn } from "./AssistantTurn";
 
@@ -60,7 +62,7 @@ describe("AssistantTurn failure", () => {
   it("shows generation copy for an admitted reply that failed before any output", () => {
     const active = render(true);
     expect(active).toContain('role="alert"');
-    expect(active).toContain("Something went wrong generating a response.");
+    expect(active).toContain("This response failed.");
     expect(active).not.toContain(SEND);
     expect(active).not.toContain("<button");
 
@@ -68,5 +70,40 @@ describe("AssistantTurn failure", () => {
     expect(historical).toContain("This response failed.");
     expect(historical).not.toContain(SEND);
     expect(historical).not.toContain('role="alert"');
+  });
+
+  it("offers Retry on a failed reply only while it ends the transcript", () => {
+    const retry = { onRetry: () => undefined, waiting: false, refused: false, requestLost: false };
+    const current = renderToStaticMarkup(
+      <AssistantTurn turn={failedTurn} endsTranscript replyRetry={retry} />,
+    );
+    expect(current).toContain("This response failed.");
+    expect(current).toContain("data-reply-retry");
+
+    const older = renderToStaticMarkup(
+      <AssistantTurn
+        turn={failedTurn}
+        endsTranscript={false}
+        replyRetry={{ ...retry, onRetry: undefined }}
+      />,
+    );
+    expect(older).toContain("This response failed.");
+    expect(older).not.toContain("<button");
+  });
+
+  it("shows a lost Retry's stand-in as a retry that never started, with no action row", () => {
+    const html = renderToStaticMarkup(
+      <AssistantTurn
+        turn={failedTurn}
+        endsTranscript
+        standIn
+        replyRetry={{ onRetry: () => undefined, waiting: false, refused: false, requestLost: true }}
+      />,
+    );
+    expect(html).toContain("Couldn&#x27;t start the retry. Try again.");
+    expect(html).not.toContain("This response failed.");
+    expect(html).not.toContain("data-turn-actions");
+    // A settled server reply keeps its action row.
+    expect(render(true)).toContain("data-turn-actions");
   });
 });

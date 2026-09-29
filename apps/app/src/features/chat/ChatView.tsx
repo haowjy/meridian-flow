@@ -91,6 +91,7 @@ import {
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
 import { usePendingInbox } from "./usePendingInbox";
+import { useReplyRetry } from "./useReplyRetry";
 import { useThreadActivity } from "./useThreadActivity";
 import { useThreadDurableProjections } from "./useThreadDurableProjections";
 import { useThreadHandoff } from "./useThreadHandoff";
@@ -153,12 +154,14 @@ export function ChatView({
   const inherited = useInheritedView(activeThread, derivation?.inherited ?? null);
   const storedTurns = useThreadStore((state) => state.turnsByThread[threadId] ?? EMPTY_TURNS);
   const brief = useHandoffBrief({ threadId, storedTurns });
+  const replyRetry = useReplyRetry({ threadId, storedTurns });
   // A handoff's brief is on its way the moment the writer lands; until the
   // server's seed arrives the card stands in for it (it has nothing to stop
-  // yet). A Retry's new card stands after the turn it followed until the
-  // server has it.
+  // yet). A Retry's new card, or a failed reply's new reply, stands after the
+  // turn it followed until the server has it.
   const intent = derivation?.intent;
   const { localSeeds } = brief;
+  const { standIns: replyStandIns } = replyRetry;
   const turns = useMemo(() => {
     const opening =
       intent?.kind === "handoff" &&
@@ -174,11 +177,15 @@ export function ChatView({
             }),
           ]
         : [];
-    const placed = placeStandIns(storedTurns, localSeeds);
+    const placed = placeStandIns(storedTurns, [...localSeeds, ...replyStandIns]);
     return opening.length ? [...opening, ...placed] : placed;
-  }, [derivation?.state, intent, localSeeds, storedTurns, threadId]);
+  }, [derivation?.state, intent, localSeeds, replyStandIns, storedTurns, threadId]);
+  // Live announcements follow the server's replies: a Retry's stand-in speaks
+  // for itself, and a lost one is not a failed run.
   const latestAssistantTurn =
-    [...turns].reverse().find((turn) => turn.role === "assistant") ?? null;
+    [...turns]
+      .reverse()
+      .find((turn) => turn.role === "assistant" && replyRetry.requestOf(turn.id) === null) ?? null;
   const isStreaming = latestAssistantTurn?.status === "streaming";
   // Only what the server has can be stopped: a stand-in brief is not a run yet.
   const { canStop: canStopSeed } = brief;
@@ -579,6 +586,7 @@ export function ChatView({
                   queuedWriterTurnIds={queuedWriterTurnIds}
                   controls={controls}
                   brief={brief}
+                  replyRetry={replyRetry}
                   busy={liveStatus.kind === "awake" || run !== null}
                   compactionUndo={snapshotCompactionUndo}
                   phase={livePhase}

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** TurnList for forks and handoffs: inherited rows read-only and marked, the brief card wired. */
+/** TurnList for forks and handoffs: inherited rows read-only and marked, brief and reply Retry wired. */
 import type { ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -79,7 +79,8 @@ import type { ThreadControls } from "./compaction/useThreadControls";
 import { isOptimisticSeed, optimisticHandoffSeed } from "./derivation/handoff-seed";
 import type { InheritedView } from "./derivation/inherited-view";
 import type { HandoffBrief } from "./derivation/useHandoffBrief";
-import { TurnList } from "./TurnList";
+import { TurnList, type TurnListProps } from "./TurnList";
+import type { ReplyRetry } from "./useReplyRetry";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 const previousActEnvironment = actGlobal.IS_REACT_ACT_ENVIRONMENT;
@@ -133,6 +134,16 @@ function handoffBrief(overrides: Partial<HandoffBrief> = {}): HandoffBrief {
   };
 }
 
+function replyRetry(overrides: Partial<ReplyRetry> = {}): ReplyRetry {
+  return {
+    standIns: [],
+    requestOf: () => null,
+    refused: new Set(),
+    retry: vi.fn(),
+    ...overrides,
+  };
+}
+
 function controls(overrides: Partial<ThreadControls> = {}): ThreadControls {
   return {
     queued: [],
@@ -151,6 +162,8 @@ async function render(props: {
   onRetryInherited?: (() => void) | null;
   controls?: ThreadControls;
   brief?: HandoffBrief;
+  replyRetry?: ReplyRetry;
+  failedSendRetry?: TurnListProps["failedSendRetry"];
   busy?: boolean;
 }) {
   await act(async () =>
@@ -351,6 +364,87 @@ describe("TurnList brief card", () => {
       brief: handoffBrief(),
     });
     expect(seen.briefs.get("s")).toMatchObject({ onStop: undefined, onRetry: undefined });
+  });
+});
+
+describe("TurnList failed reply Retry", () => {
+  type Offer = { onRetry?: () => void; waiting: boolean; refused: boolean; requestLost: boolean };
+  const offer = (id: string) => seen.assistants.get(id)?.replyRetry as Offer | undefined;
+  const failedReply = (id: string) => turn(id, "assistant", { status: "error" });
+
+  it("offers Retry only on the latest failed reply, and presses it with that reply", async () => {
+    const retry = replyRetry();
+    const latest = failedReply("a2");
+    await render({
+      turns: [turn("u1", "user"), failedReply("a1"), turn("u2", "user"), latest],
+      replyRetry: retry,
+    });
+    // The older failure is history: its row keeps the sentence, with nothing to press.
+    expect(offer("a1")).toMatchObject({ onRetry: undefined });
+    offer("a2")?.onRetry?.();
+    expect(retry.retry).toHaveBeenCalledWith(latest);
+  });
+
+  it("makes Retry wait while the chat is busy", async () => {
+    const turns = [turn("u1", "user"), failedReply("a1")];
+    await render({ turns, replyRetry: replyRetry(), busy: true });
+    expect(offer("a1")?.waiting).toBe(true);
+    await render({ turns, replyRetry: replyRetry(), busy: false });
+    expect(offer("a1")?.waiting).toBe(false);
+  });
+
+  it("puts a refused Retry on the failed reply the writer pressed", async () => {
+    await render({
+      turns: [turn("u1", "user"), failedReply("a1")],
+      replyRetry: replyRetry({ refused: new Set(["a1"]) }),
+    });
+    expect(offer("a1")?.refused).toBe(true);
+  });
+
+  it("renders the new reply below the failed one, which becomes history", async () => {
+    const standIn = turn("r", "assistant", { status: "pending", prevTurnId: "a1" });
+    await render({
+      turns: [turn("u1", "user"), failedReply("a1"), standIn],
+      replyRetry: replyRetry({ requestOf: (id) => (id === "r" ? "sending" : null) }),
+    });
+    const order = [...host.querySelectorAll("[data-assistant]")].map((node) =>
+      node.getAttribute("data-assistant"),
+    );
+    expect(order).toEqual(["a1", "r"]);
+    expect(seen.assistants.get("a1")?.endsTranscript).toBe(false);
+    expect(offer("a1")?.onRetry).toBeUndefined();
+    expect(seen.assistants.get("r")).toMatchObject({ standIn: true, endsTranscript: true });
+  });
+
+  it("marks a lost Retry's reply so its own Retry re-sends it", async () => {
+    const lost = failedReply("r");
+    const retry = replyRetry({ requestOf: (id) => (id === "r" ? "failed" : null) });
+    await render({ turns: [turn("u1", "user"), failedReply("a1"), lost], replyRetry: retry });
+    expect(offer("r")?.requestLost).toBe(true);
+    offer("r")?.onRetry?.();
+    expect(retry.retry).toHaveBeenCalledWith(lost);
+  });
+
+  it("leaves a failed first send to its own Retry, and an inherited failure read-only", async () => {
+    await render({
+      turns: [turn("u1", "user"), failedReply("a1")],
+      replyRetry: replyRetry(),
+      failedSendRetry: { turnId: "a1", retry: () => undefined },
+    });
+    expect(offer("a1")).toBeUndefined();
+
+    const failedInherited: InheritedView = {
+      ...inherited,
+      transcript: {
+        turns: [turn("u1", "user"), failedReply("a2")],
+        ownerByTurnId: new Map([
+          ["u1", "source"],
+          ["a2", "source"],
+        ]),
+      },
+    };
+    await render({ turns: [], inherited: failedInherited, replyRetry: replyRetry() });
+    expect(offer("a2")).toBeUndefined();
   });
 });
 

@@ -24,6 +24,7 @@ import type { InheritedView } from "./derivation/inherited-view";
 import { ThreadReferenceChip } from "./derivation/ThreadReferenceChip";
 import type { HandoffBrief } from "./derivation/useHandoffBrief";
 import { buildTranscriptModel, type InheritedMark, type TranscriptRow } from "./transcript-model";
+import type { ReplyRetry } from "./useReplyRetry";
 
 export { continuesResponse } from "./transcript-model";
 
@@ -54,7 +55,9 @@ export type TurnListProps = {
   controls?: ThreadControls | null;
   /** Retry and Stop on this handoff destination's brief cards. */
   brief?: HandoffBrief | null;
-  /** Something holds this chat (a reply, a compaction, a brief): a brief's Retry waits. */
+  /** Retry on the latest failed reply, and the new replies it stands in for. */
+  replyRetry?: ReplyRetry | null;
+  /** Something holds this chat (a reply, a compaction, a brief): Retry waits. */
   busy?: boolean;
   /** Snapshot advice for the one local divider that can be undone. */
   compactionUndo?: CompactionUndoAvailability;
@@ -107,6 +110,7 @@ export function TurnList({
   queuedWriterTurnIds,
   controls = null,
   brief = null,
+  replyRetry = null,
   busy = false,
   compactionUndo = null,
   phase = null,
@@ -279,6 +283,32 @@ export function TurnList({
           />
         );
       }
+      // A divider is a row: once one follows a failed reply, that failure is
+      // history. The queued-controls tail is not a row and never counts. An
+      // inherited reply is the source's history, even with nothing below it.
+      const endsTranscript = local && idx === visibleTurns.length - 1;
+      const sendRetry =
+        local && turn.id === failedSendRetry?.turnId ? failedSendRetry.retry : undefined;
+      const standIn = local ? (replyRetry?.requestOf(turn.id) ?? null) : null;
+      const retry =
+        local && replyRetry && turn.status === "error" && !sendRetry
+          ? {
+              // Only the latest turn can be retried: the server answers its
+              // messages again below it.
+              onRetry: endsTranscript
+                ? () => {
+                    // Retry leaves with this row's error; keep focus in the
+                    // transcript and bring the new reply into view.
+                    viewportRef.current?.focus({ preventScroll: true });
+                    enterFollow();
+                    replyRetry.retry(turn);
+                  }
+                : undefined,
+              waiting: busy,
+              refused: replyRetry.refused.has(turn.id),
+              requestLost: standIn === "failed",
+            }
+          : undefined;
       return (
         <AssistantTurn
           threadId={row.inherited?.ownerThreadId ?? threadId}
@@ -287,14 +317,11 @@ export function TurnList({
           threadUsage={local ? threadUsage : null}
           deliveryEvents={transcript.deliveryEventsFor(turn.id)}
           isLatestAssistant={idx === lastAssistantIdx}
-          // A divider is a row: once one follows a failed reply, that failure is
-          // history. The queued-controls tail is not a row and never counts. An
-          // inherited reply is the source's history, even with nothing below it.
-          endsTranscript={local && idx === visibleTurns.length - 1}
+          endsTranscript={endsTranscript}
           continuesResponse={continuing[idx] ?? false}
-          failedSendRetry={
-            local && turn.id === failedSendRetry?.turnId ? failedSendRetry.retry : undefined
-          }
+          failedSendRetry={sendRetry}
+          replyRetry={retry}
+          standIn={standIn !== null}
           onRespondToInterrupt={local ? onRespondToInterrupt : undefined}
           changeTrail={local ? byTurnId.get(turn.id) : undefined}
           navigateToChange={navigateToChange}
@@ -305,6 +332,8 @@ export function TurnList({
       brief,
       busy,
       byTurnId,
+      enterFollow,
+      replyRetry,
       compactionUndo,
       controls,
       phase,
