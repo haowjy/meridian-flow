@@ -385,7 +385,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const availability = createDrizzleProjectContextAvailability(db);
       const repository = createDrizzleWorkRepository({
         db,
-        hasUnreviewedDraft: async () => false,
         projectionMutation: createWorkProjectionMutation({ db, availability, catalog }),
       });
       const workId = "00000000-0000-4000-8000-000000000807" as never;
@@ -414,7 +413,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const failingRepository = createDrizzleWorkRepository({
         db,
-        hasUnreviewedDraft: async () => false,
         projectionMutation: createWorkProjectionMutation({
           db,
           availability,

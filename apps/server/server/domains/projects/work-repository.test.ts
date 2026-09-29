@@ -22,7 +22,7 @@ describe("WorkRepository", () => {
   });
 
   it("deletes despite existing conversations, drafts, files, and folders", async () => {
-    const repo = createInMemoryWorkRepository({ hasUnreviewedDrafts: () => true });
+    const repo = createInMemoryWorkRepository();
     const created = await repo.create({ projectId: PROJECT_ID, name: "Review pending" });
 
     await expect(repo.softDelete(created.id)).resolves.toMatchObject({

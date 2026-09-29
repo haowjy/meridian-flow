@@ -68,10 +68,7 @@ export default defineEventHandler(async (event) => {
               threads: app.threadRepos.threads,
               works: app.works,
               workContextNotices: app.workContextNotices,
-              async stopThreadRun(stoppedThreadId) {
-                const runningTurnId = await app.threadRuntime.readRunningTurnId(stoppedThreadId);
-                if (runningTurnId) await app.runner.cancel(stoppedThreadId, runningTurnId);
-              },
+              stopThreadRun: app.stopThreadRun,
               transaction: app.threadRepos.transaction,
             },
             { threadId, turnId, direction: body.direction },

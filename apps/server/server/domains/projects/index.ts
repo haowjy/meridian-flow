@@ -310,6 +310,11 @@ export function createDrizzleProjectBootstrapRepository(deps: {
 }
 
 export type { WorkCatalogEntry } from "@meridian/contracts/works";
+export {
+  createInMemoryWorkCascade,
+  type InMemoryWorkCascade,
+  type InMemoryWorkChild,
+} from "./adapters/in-memory-work-cascade.js";
 // ── Project CRUD ────────────────────────────────────────────────────────────
 export { createDrizzleProjectRepository } from "./adapters/project-repository/drizzle.js";
 export { createInMemoryProjectRepository } from "./adapters/project-repository/in-memory.js";
@@ -324,7 +329,7 @@ export {
 export { createDrizzleWorkRepository as createDrizzleProjectWorkRepository } from "./adapters/work-repository/drizzle.js";
 export { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
 export { createWork } from "./create-work.js";
-export { deleteWork, deleteWorkTransition, restoreWork } from "./delete-work.js";
+export { deleteWorkTransition, restoreWork } from "./delete-work.js";
 export { listWorkCatalog } from "./list-work-catalog.js";
 export type {
   CreateProjectInput,
@@ -352,6 +357,7 @@ export {
   WorkRestoreExpiredError,
 } from "./ports/work-repository.js";
 export { type RequireProjectOwnerOptions, requireProjectOwner } from "./project-access.js";
+export { runWorkDeletion } from "./run-work-deletion.js";
 export {
   normalizeWorkUpdateInput,
   type UpdateWorkCommandInput,

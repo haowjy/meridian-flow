@@ -111,7 +111,6 @@ export interface WorkRepository {
   update(id: WorkId, input: UpdateWorkInput): Promise<Work>;
   archive(id: WorkId): Promise<Work>;
   unarchive(id: WorkId): Promise<Work>;
-  hasUnreviewedDraft(id: WorkId): Promise<boolean>;
   /** Soft-deletes the Work and marks its live children in the same transaction. */
   softDelete(id: WorkId): Promise<WorkDeletion>;
   /** Restores a soft-deleted Work and exactly its marked children, with an exact receipt. */
