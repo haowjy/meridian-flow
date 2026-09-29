@@ -618,9 +618,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
         "scratch://@draft/arc.md",
       ]);
+      const namedAddress = () =>
+        createDrizzleDocumentAddressStore(db).candidate({
+          projectId: PROJECT_ID as never,
+          userId: USER_ID,
+          scheme: "scratch",
+          workId: NAMED,
+          path: "/arc.md",
+        });
+      await expect(namedAddress()).resolves.toMatchObject({
+        kind: "current",
+        documentId: NAMED_FILE,
+      });
 
       await db.update(works).set({ deletedAt: new Date() }).where(eq(works.id, NAMED));
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([]);
+      await expect(namedAddress()).resolves.toBeNull();
 
       await expect(
         createDrizzleDocumentAddressStore(db).candidate({
