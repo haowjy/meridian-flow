@@ -42,7 +42,9 @@ function reply(text = "Kept facts", changes: Partial<GenerateResult> = {}): Gene
 }
 function projection(texts: string[]) {
   return {
-    turns: texts.map((_, i) => ({ id: `t${i}`, role: "user", position: i }) as Turn),
+    turns: texts.map(
+      (_, i) => ({ id: `t${i}`, role: "user", origin: "writer", position: i }) as Turn,
+    ),
     blocks: texts.map(
       (text, i) =>
         ({ turnId: `t${i}`, blockType: "text", sequence: 0, textContent: text }) as Block,
@@ -683,6 +685,20 @@ it("keeps the existing conditional open-request guidance for an assistant-row ha
   );
   expect(text).not.toContain("immediately before this system update");
   expect(rig.requests[0].messages.slice(0, -1)).toEqual(requestInHand.messages);
+});
+
+it("does not call a system-origin user row the writer's open request", async () => {
+  const rig = setup({ warm: true });
+  rig.input.instruction = "handoff";
+  rig.input.projection.turns[0].origin = "system";
+
+  await rig.service.summarize(rig.input);
+
+  const text = JSON.stringify(rig.requests[0].messages.at(-1));
+  expect(text).toContain(
+    "If the conversation ends with a writer message you have not answered, report it as the open request; do not answer it.",
+  );
+  expect(text).not.toContain("immediately before this system update");
 });
 
 it("uses rolling at a cold cutoff", async () => {

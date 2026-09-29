@@ -252,7 +252,9 @@ export function createConversationSummarizer(
               input.projection.turns.at(-1))
             : input.projection.turns.at(-1);
           const branchPrompt = promptFor(
-            input.instruction === "handoff" && cutoffTurn?.role === "user",
+            input.instruction === "handoff" &&
+              cutoffTurn?.role === "user" &&
+              cutoffTurn.origin === "writer",
           );
           const retainedScope =
             input.instruction === "compaction" && input.retainedMessages?.length
