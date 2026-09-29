@@ -1150,6 +1150,35 @@ describe("projectActiveHistoryWithBakes", () => {
     expect(buildContext({ thread: thread(), ...projected }).messages).toEqual(baseline.messages);
   });
 
+  it("projects an inherited compaction before a fork-local turn", async () => {
+    const oldRequest = turn("old-request", 1, "user");
+    const request = turn("request", 2, "user");
+    const answer = turn("answer", 3, "assistant");
+    const compaction = compactionTurn("c", 4, oldRequest.id, request.id);
+    const forkLocal = turn("fork-local", 5, "user", {
+      threadId: "fork-thread",
+      origin: "writer",
+    });
+    const blocks = [
+      block("old-request-text", oldRequest.id, 0, "text", "old request"),
+      block("request-text", request.id, 0, "text", "request"),
+      block("answer-text", answer.id, 0, "text", "answer"),
+      compactionBlock("c-summary", compaction.id),
+      block("fork-text", forkLocal.id, 0, "text", "continue"),
+    ];
+
+    const inherited = await projectActiveHistoryWithBakes(
+      [oldRequest, request, answer, compaction, forkLocal],
+      blocks,
+      "c13",
+      noPromptBakes,
+    );
+
+    expect(inherited.turns.map(({ id }) => id)).toContain("c:summary");
+    expect(inherited.turns.map(({ id }) => id)).not.toContain(oldRequest.id);
+    expect(inherited.turns.map(({ id }) => id)).toContain(forkLocal.id);
+  });
+
   it("throws instead of hiding malformed completed compactions", async () => {
     const malformed = compactionTurn("broken", 3, "request", "request", "complete", {
       metadata: { malformed: true } as JsonObject,
