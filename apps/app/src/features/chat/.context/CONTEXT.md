@@ -20,9 +20,9 @@ draft-control changes can be understood independently.
   composer sizing.
 - [Draft review](draft-review.md) — inline review session, pending projection,
   freshness, and draft-only tabs.
-- [Compaction surfaces](compaction-surfaces.md) — divider rows, undo markers
-  and R4 shells that never render, `endsTranscript` with a divider, Undo, and
-  optimistic writer controls (`/compact`, withdrawal).
+- [Compaction surfaces](compaction-surfaces.md) — divider rows, R4 shells that
+  never render, `endsTranscript` with a divider, and optimistic writer
+  controls (`/compact`, withdrawal).
 - [Fork and handoff](fork-and-handoff.md) — the turn actions, navigate-first
   creation and its failure, the brief card, a fork's inherited view, and
   `from` sources.

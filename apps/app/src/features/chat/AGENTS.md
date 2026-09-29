@@ -86,7 +86,7 @@ one pass. Rows have kinds (turn, compaction divider, handoff brief card,
 switches on row kind, never on role. Compaction turns are divider rows there,
 never in the head; see
 [`.context/compaction-surfaces.md`](.context/compaction-surfaces.md). Queued
-`/compact` and Undo wait at the transcript tail until replies finish. Fork,
+`/compact` waits at the transcript tail until replies finish. Fork,
 handoff, the brief card, and a fork's inherited rows are in
 [`.context/fork-and-handoff.md`](.context/fork-and-handoff.md). The handoff
 brief is not an inbox command: `derivation/useHandoffBrief.ts` owns its Retry

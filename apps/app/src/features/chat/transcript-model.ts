@@ -1,14 +1,7 @@
 /** One indexed interpretation of transcript rows, response boundaries, delivery rows, and reveal targets. */
 import { parseInvocationCard } from "@meridian/contracts/components";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
-import {
-  type CompactionUndoMarkers,
-  collectUndoMarkers,
-  isOverflowShell,
-  NO_UNDO_MARKERS,
-  readCompactionFacts,
-  undoMarkerTarget,
-} from "./compaction/compaction-model";
+import { isOverflowShell, readCompactionFacts } from "./compaction/compaction-model";
 import { isHandoffSeed } from "./derivation/handoff-seed";
 import { readThreadReferences, type ThreadReference } from "./derivation/thread-reference";
 import { reportPersistedContractFailure } from "./persisted-contract-debug";
@@ -51,12 +44,7 @@ export type InheritedMark = {
  */
 export type TranscriptRow =
   | { kind: "turn"; turn: Turn; inherited: InheritedMark | null }
-  | {
-      kind: "compaction";
-      turn: Turn;
-      undo: CompactionUndoMarkers;
-      inherited: InheritedMark | null;
-    }
+  | { kind: "compaction"; turn: Turn; inherited: InheritedMark | null }
   /** A handoff seed S: the brief card. Only the newest local seed can be retried. */
   | { kind: "handoff-seed"; turn: Turn; latest: boolean; inherited: InheritedMark | null }
   /**
@@ -96,7 +84,6 @@ export function buildTranscriptModel(
   const turns = inherited?.turns.length ? [...inherited.turns, ...localTurns] : localTurns;
   const nextByPrev = new Map<string, Turn>();
   for (const turn of turns) if (turn.prevTurnId) nextByPrev.set(turn.prevTurnId, turn);
-  const undoByCompactionId = collectUndoMarkers(turns);
   const rows: TranscriptRow[] = [];
   let latestSeedIndex = -1;
   turns.forEach((turn, index) => {
@@ -105,12 +92,7 @@ export function buildTranscriptModel(
       ? { ownerThreadId: owner, startsOwner: false, endsInherited: false }
       : null;
     if (turn.role === "compaction") {
-      rows.push({
-        kind: "compaction",
-        turn,
-        undo: undoByCompactionId.get(turn.id) ?? NO_UNDO_MARKERS,
-        inherited: mark,
-      });
+      rows.push({ kind: "compaction", turn, inherited: mark });
       return;
     }
     // A fork of a handoff destination inherits its brief, read-only.
@@ -119,8 +101,6 @@ export function buildTranscriptModel(
       rows.push({ kind: "handoff-seed", turn, latest: false, inherited: mark });
       return;
     }
-    // An undo marker renders on the divider it names, never as its own row.
-    if (undoMarkerTarget(turn)) return;
     if (isOverflowShell(turn, nextByPrev.get(turn.id) ?? turns[index + 1])) return;
     if (classifyTurn(turn) === "bubble") {
       rows.push({ kind: "turn", turn, inherited: mark });

@@ -112,8 +112,8 @@ card's state changes are announced from the turns
 
 `useInheritedView` reads a fork's prefix from `GET /transcript?range=inherited`
 (oldest first, a page per 200 turns, across segment boundaries) once; the
-server clips the source at the cutoff, so later source turns, compactions, and
-undos never appear. Each entry names its owner. `buildTranscriptModel` takes
+server clips the source at the cutoff, so later source turns and compactions
+never appear. Each entry names its owner. `buildTranscriptModel` takes
 the prefix ahead of the fork's own turns and marks those rows `inherited`:
 
 - the first row of each owner's run opens with "From <source>" (one message
@@ -124,8 +124,7 @@ the prefix ahead of the fork's own turns and marks those rows `inherited`:
   inherited rows would start, never a fork whose history silently vanished;
 - inherited rows never end the transcript or count as the latest reply, so a
   cutoff at a failed reply stays the quiet historical marker;
-- inherited dividers are read-only (no Undo, Stop, withdrawal, or undo
-  advice); inherited replies render as their owner's (lineage and receipts)
+- inherited dividers are read-only (no Stop or withdrawal); inherited replies render as their owner's (lineage and receipts)
   with no interrupt answers; they keep Copy, Fork, and Hand off.
 
 ## `from`

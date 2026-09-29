@@ -2,7 +2,7 @@
 
 import { t } from "@lingui/core/macro";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
-import type { CompactionUndoAvailability, ThreadPhase } from "@meridian/contracts/threads";
+import type { ThreadPhase } from "@meridian/contracts/threads";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
@@ -51,7 +51,7 @@ export type TurnListProps = {
   /** Recovered ambiguous submissions, keyed by the restored user turn id. */
   submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
   queuedWriterTurnIds?: ReadonlySet<string>;
-  /** Writer commands: queued `/compact` and undo, withdrawal, and Stop on a running divider. */
+  /** Writer commands: queued `/compact`, withdrawal, and Stop on a running divider. */
   controls?: ThreadControls | null;
   /** Retry and Stop on this handoff destination's brief cards. */
   brief?: HandoffBrief | null;
@@ -59,8 +59,6 @@ export type TurnListProps = {
   replyRetry?: ReplyRetry | null;
   /** Something holds this chat (a reply, a compaction, a brief): Retry waits. */
   busy?: boolean;
-  /** Snapshot advice for the one local divider that can be undone. */
-  compactionUndo?: CompactionUndoAvailability;
   /** The live lease phase while the thread is awake. */
   phase?: ThreadPhase | null;
   /** A fork's frozen prefix from its source, rendered read-only above its own turns. */
@@ -112,7 +110,6 @@ export function TurnList({
   brief = null,
   replyRetry = null,
   busy = false,
-  compactionUndo = null,
   phase = null,
   inherited = null,
   onRetryInherited = null,
@@ -129,18 +126,10 @@ export function TurnList({
   const visibleTurns = transcript.visibleTurns;
   const lastAssistantIdx = findLastLocalAssistantIndex(transcript.rows);
   // Queued commands wait at the tail, after the newest turn: they take no
-  // position until they run. A divider stops offering Undo while its undo waits.
-  const { undoQueuedFor, tailControls } = useMemo(() => {
-    const undoQueuedFor = new Set<string>();
+  // position until they run.
+  const tailControls = useMemo(() => {
     const answered = answeredControlIds(turns);
-    const tailControls: QueuedControl[] = [];
-    for (const control of controls?.queued ?? NO_CONTROLS) {
-      if (answered.has(control.id)) continue;
-      tailControls.push(control);
-      if (control.control.kind === "compaction_undo" && control.status !== "already_started")
-        undoQueuedFor.add(control.control.compactionTurnId);
-    }
-    return { undoQueuedFor, tailControls };
+    return (controls?.queued ?? NO_CONTROLS).filter((control) => !answered.has(control.id));
   }, [controls?.queued, turns]);
   // List rows are transcript rows shifted down by the alert, when it shows.
   const rowOffset = onRetryInherited ? 1 : 0;
@@ -235,18 +224,9 @@ export function TurnList({
         return (
           <CompactionDivider
             turn={turn}
-            undo={row.undo}
-            undoAvailability={local ? compactionUndo : null}
-            undoQueued={local && undoQueuedFor.has(turn.id)}
             phase={local ? phase : null}
             stopping={local && (controls?.stoppingTurnIds.has(turn.id) ?? false)}
             onStop={local ? controls?.stop : undefined}
-            onUndo={
-              local && controls
-                ? (compactionTurnId) =>
-                    controls.enqueue({ kind: "compaction_undo", compactionTurnId })
-                : undefined
-            }
           />
         );
       }
@@ -334,10 +314,8 @@ export function TurnList({
       byTurnId,
       enterFollow,
       replyRetry,
-      compactionUndo,
       controls,
       phase,
-      undoQueuedFor,
       failedSendRetry,
       lastAssistantIdx,
       navigateToChange,

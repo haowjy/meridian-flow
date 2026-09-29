@@ -1,14 +1,11 @@
 /**
- * Pure reads of compaction dividers and the undo markers that target them.
+ * Pure reads of compaction dividers.
  *
- * A compaction turn (C) is a transcript row; its undo marker (U, a system
- * turn) never is. U folds into the divider it names: a complete U marks the
- * divider undone, an errored U is a refusal shown on that divider. Metadata is
- * read defensively: the server's codecs own the shape, the client only picks
- * the fields the writer sees.
+ * A compaction turn is a transcript row that shows where the model's context
+ * was summarized. Metadata is read defensively: the server's codecs own the
+ * shape, the client only picks the fields the writer sees.
  */
 import type { Turn } from "@meridian/contracts/protocol";
-import type { CompactionUndoAvailability } from "@meridian/contracts/threads";
 
 export type CompactionTrigger = "auto" | "manual";
 
@@ -22,16 +19,6 @@ export type CompactionFacts = {
   tokensBefore: number | null;
   tokensAfter: number | null;
 };
-
-/** What the writer's undo of one divider has done so far. */
-export type CompactionUndoMarkers = {
-  /** The complete U that restored the history this divider summarized. */
-  undone: Turn | null;
-  /** The latest refused U, when no U has succeeded. */
-  refusal: Turn | null;
-};
-
-export const NO_UNDO_MARKERS: CompactionUndoMarkers = { undone: null, refusal: null };
 
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -72,48 +59,14 @@ export function readCompactionFacts(turn: Turn): CompactionFacts {
   };
 }
 
-/** The divider a U names, or null when the turn is not an undo marker. */
-export function undoMarkerTarget(turn: Turn): string | null {
-  if (turn.role !== "system") return null;
-  const metadata = record(turn.metadata);
-  return metadata?.kind === "compaction_undo" ? text(metadata.revertsCompactionTurnId) : null;
-}
-
-/** The control a U executed, when it names one. */
-export function undoMarkerControlId(turn: Turn): string | null {
-  return text(record(turn.metadata)?.controlMessageId);
-}
-
-/**
- * Every writer command a turn already answers: the divider it ran as, or its
- * undo marker. A queued item for one of these is no longer queued.
- */
+/** Every writer command a divider already answers: a queued item for one is no longer queued. */
 export function answeredControlIds(turns: readonly Turn[]): ReadonlySet<string> {
   const ids = new Set<string>();
   for (const turn of turns) {
-    const id =
-      turn.role === "compaction"
-        ? readCompactionFacts(turn).controlId
-        : undoMarkerTarget(turn)
-          ? undoMarkerControlId(turn)
-          : null;
+    const id = turn.role === "compaction" ? readCompactionFacts(turn).controlId : null;
     if (id) ids.add(id);
   }
   return ids;
-}
-
-/** Folds every U into the divider it targets, in transcript order. */
-export function collectUndoMarkers(turns: readonly Turn[]): Map<string, CompactionUndoMarkers> {
-  const markers = new Map<string, CompactionUndoMarkers>();
-  for (const turn of turns) {
-    const target = undoMarkerTarget(turn);
-    if (!target) continue;
-    const current = markers.get(target) ?? NO_UNDO_MARKERS;
-    if (turn.status === "complete") markers.set(target, { undone: turn, refusal: null });
-    else if (turn.status === "error" && !current.undone)
-      markers.set(target, { ...current, refusal: turn });
-  }
-  return markers;
 }
 
 /**
@@ -129,7 +82,7 @@ export function isOverflowShell(turn: Turn, next: Turn | undefined): boolean {
   );
 }
 
-export type DividerState = "pending" | "complete" | "failed" | "cancelled" | "undone";
+export type DividerState = "pending" | "complete" | "failed" | "cancelled";
 
 export type DividerView = {
   state: DividerState;
@@ -145,10 +98,6 @@ export type DividerView = {
   tokens: { before: number; after: number } | null;
   /** Writer copy for a failure the writer must hear about; null keeps R3's quiet divider. */
   failureCopy: string | null;
-  /** Undo is offered: the server marks it likely to succeed, and none is queued. */
-  offerUndo: boolean;
-  /** Writer copy from the latest refused undo, while no undo has succeeded. */
-  refusalCopy: string | null;
 };
 
 /**
@@ -158,17 +107,12 @@ export type DividerView = {
  */
 export function dividerView(input: {
   turn: Turn;
-  markers: CompactionUndoMarkers;
-  undoAvailability: CompactionUndoAvailability;
-  /** An undo of this divider waits at the transcript tail. */
-  undoQueued: boolean;
   failureCopyFor: (reason: string | null, serverCopy: string | null) => string | null;
 }): DividerView {
-  const { turn, markers, undoAvailability, undoQueued } = input;
+  const { turn } = input;
   const facts = readCompactionFacts(turn);
-  const state: DividerState = markers.undone
-    ? "undone"
-    : turn.status === "pending" || turn.status === "streaming"
+  const state: DividerState =
+    turn.status === "pending" || turn.status === "streaming"
       ? "pending"
       : turn.status === "error"
         ? "failed"
@@ -188,14 +132,6 @@ export function dividerView(input: {
     state === "failed" && facts.trigger === "manual" && !nothingToCompact
       ? input.failureCopyFor(facts.failureReason, turn.error)
       : null;
-  // R-C6-2: offer Undo only where it is likely to succeed. `would_recompact`
-  // means restoring the history would compact it again at once.
-  const offerUndo =
-    state === "complete" &&
-    !undoQueued &&
-    undoAvailability?.turnId === turn.id &&
-    undoAvailability.availability === "likely";
-  const refusalCopy = state === "complete" && !undoQueued ? (markers.refusal?.error ?? null) : null;
   return {
     state,
     trigger: facts.trigger,
@@ -203,7 +139,5 @@ export function dividerView(input: {
     summary: facts.summary,
     tokens,
     failureCopy,
-    offerUndo,
-    refusalCopy,
   };
 }

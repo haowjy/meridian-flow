@@ -1150,11 +1150,6 @@ msgstr "Compaction queued. Runs when replies finish."
 msgid "Compaction stopped"
 msgstr "Compaction stopped"
 
-#: src/features/chat/compaction/CompactionDivider.tsx
-#: src/features/chat/compaction/useControlTurnAnnouncements.ts
-msgid "Compaction undone"
-msgstr "Compaction undone"
-
 #: src/features/chat/compaction/control-copy.ts
 msgid "Compaction withdrawn"
 msgstr "Compaction withdrawn"
@@ -1417,10 +1412,6 @@ msgstr "Couldn't queue the compaction."
 #~ msgid "Couldn't queue the handoff brief."
 #~ msgstr "Couldn't queue the handoff brief."
 
-#: src/features/chat/compaction/control-copy.ts
-msgid "Couldn't queue the undo."
-msgstr "Couldn't queue the undo."
-
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't read"
 msgstr "Couldn't read"
@@ -1545,10 +1536,6 @@ msgstr "Couldn't undo"
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't update that Work"
 msgstr "Couldn't update that Work"
-
-#: src/features/chat/compaction/CompactionDivider.tsx
-#~ msgid "Couldn't withdraw the undo."
-#~ msgstr "Couldn't withdraw the undo."
 
 #: src/features/chat/compaction/QueuedControlRows.tsx
 #: src/features/chat/compaction/useThreadControls.ts
@@ -3567,10 +3554,6 @@ msgstr "Retry sign-in"
 msgid "Retry the handoff brief"
 msgstr "Retry the handoff brief"
 
-#: src/features/chat/compaction/CompactionDivider.tsx
-#~ msgid "Retry undo"
-#~ msgstr "Retry undo"
-
 #: src/features/project/work/WorkScreen.tsx
 msgid "Retry Work"
 msgstr "Retry Work"
@@ -4175,10 +4158,6 @@ msgstr "The change could not be confirmed. Try again."
 #~ msgid "The child run stopped"
 #~ msgstr "The child run stopped"
 
-#: src/features/chat/compaction/useControlTurnAnnouncements.ts
-msgid "The compaction couldn't be undone."
-msgstr "The compaction couldn't be undone."
-
 #: src/features/chat/CreationComposer.tsx
 #~ msgid "The created destination didn’t match your choices."
 #~ msgstr "The created destination didn’t match your choices."
@@ -4194,14 +4173,6 @@ msgstr "The endpoint reports its own env-presence checklist in the body above (p
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "The entry changed. Refresh the tree and try again."
 msgstr "The entry changed. Refresh the tree and try again."
-
-#: src/features/chat/compaction/CompactionDivider.tsx
-msgid "The full conversation is back in context."
-msgstr "The full conversation is back in context."
-
-#: src/features/chat/compaction/CompactionDivider.tsx
-#~ msgid "The full conversation may be too long to restore."
-#~ msgstr "The full conversation may be too long to restore."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row does not merge into the body."
@@ -4544,14 +4515,6 @@ msgstr "This selection holds blocks that keep their own block type."
 msgid "This stored figure needs a project before it can be rendered."
 msgstr "This stored figure needs a project before it can be rendered."
 
-#: src/features/chat/compaction/control-copy.ts
-#~ msgid "This undo already ran."
-#~ msgstr "This undo already ran."
-
-#: src/features/chat/compaction/control-copy.ts
-msgid "This undo already started."
-msgstr "This undo already started."
-
 #: src/lib/date-groups.ts
 #~ msgid "This week"
 #~ msgstr "This week"
@@ -4678,15 +4641,10 @@ msgstr "Undid"
 msgid "Undid change to Work {0}."
 msgstr "Undid change to Work {0}."
 
-#: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Undo"
 msgstr "Undo"
-
-#: src/features/chat/compaction/CompactionDivider.tsx
-msgid "Undo compaction"
-msgstr "Undo compaction"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undo didn't go through. Try again."
@@ -4695,22 +4653,6 @@ msgstr "Undo didn't go through. Try again."
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undo is no longer available."
 msgstr "Undo is no longer available."
-
-#: src/features/chat/compaction/control-copy.ts
-#~ msgid "Undo queued"
-#~ msgstr "Undo queued"
-
-#: src/features/chat/compaction/control-copy.ts
-msgid "Undo queued. Runs when replies finish."
-msgstr "Undo queued. Runs when replies finish."
-
-#: src/features/chat/compaction/control-copy.ts
-msgid "Undo withdrawn"
-msgstr "Undo withdrawn"
-
-#: src/features/chat/compaction/CompactionDivider.tsx
-#~ msgid "Undo withdrawn."
-#~ msgstr "Undo withdrawn."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Undoing…"
@@ -4897,10 +4839,6 @@ msgstr "Withdraw compaction"
 #~ msgstr "Withdraw handoff brief"
 
 #: src/features/chat/compaction/QueuedControlRows.tsx
-msgid "Withdraw undo"
-msgstr "Withdraw undo"
-
-#: src/features/chat/compaction/QueuedControlRows.tsx
 #~ msgid "Withdrawing"
 #~ msgstr "Withdrawing"
 
@@ -4911,10 +4849,6 @@ msgstr "Withdraw undo"
 #: src/features/chat/compaction/control-copy.ts
 #~ msgid "Withdrawing handoff brief"
 #~ msgstr "Withdrawing handoff brief"
-
-#: src/features/chat/compaction/control-copy.ts
-#~ msgid "Withdrawing undo"
-#~ msgstr "Withdrawing undo"
 
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/chat/NewThreadComposerToolbar.tsx

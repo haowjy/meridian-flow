@@ -1,12 +1,10 @@
-/** Divider states, undo markers, and R4's hidden overflow shell. */
+/** Divider states, answered commands, and R4's hidden overflow shell. */
 import type { Turn } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import {
   answeredControlIds,
-  collectUndoMarkers,
   dividerView,
   isOverflowShell,
-  NO_UNDO_MARKERS,
   readCompactionFacts,
 } from "./compaction-model";
 
@@ -37,45 +35,11 @@ function compaction(
   } as unknown as Turn;
 }
 
-function undoMarker(
-  id: string,
-  status: "complete" | "error",
-  target = "c",
-  extra: { error?: string; controlMessageId?: string; reason?: string } = {},
-): Turn {
-  return {
-    id,
-    role: "system",
-    status,
-    error: extra.error ?? null,
-    metadata: {
-      kind: "compaction_undo",
-      revertsCompactionTurnId: target,
-      ...(extra.controlMessageId ? { controlMessageId: extra.controlMessageId } : {}),
-      ...(extra.reason ? { reason: extra.reason } : {}),
-    },
-    blocks: [],
-  } as unknown as Turn;
-}
-
 const failureCopyFor = (reason: string | null, server: string | null) =>
   reason === "context_too_large" ? "client copy" : server;
 
-function view(
-  turn: Turn,
-  options: {
-    markers?: ReturnType<typeof collectUndoMarkers> extends Map<string, infer M> ? M : never;
-    undo?: { turnId: string; availability: "likely" | "would_recompact" } | null;
-    undoQueued?: boolean;
-  } = {},
-) {
-  return dividerView({
-    turn,
-    markers: options.markers ?? NO_UNDO_MARKERS,
-    undoAvailability: options.undo ?? null,
-    undoQueued: options.undoQueued ?? false,
-    failureCopyFor,
-  });
+function view(turn: Turn) {
+  return dividerView({ turn, failureCopyFor });
 }
 
 describe("readCompactionFacts", () => {
@@ -99,21 +63,18 @@ describe("readCompactionFacts", () => {
 });
 
 describe("dividerView", () => {
-  it("pending: compacting, no undo", () => {
-    expect(
-      view(compaction({ status: "pending" }), { undo: { turnId: "c", availability: "likely" } }),
-    ).toMatchObject({ state: "pending", offerUndo: false, failureCopy: null });
+  it("pending: compacting, no failure copy", () => {
+    expect(view(compaction({ status: "pending" }))).toMatchObject({
+      state: "pending",
+      failureCopy: null,
+    });
   });
 
-  it("complete: summary, tokens when smaller, and Undo on the snapshot's divider", () => {
-    const result = view(compaction({ summary: "S" }), {
-      undo: { turnId: "c", availability: "likely" },
-    });
-    expect(result).toMatchObject({
+  it("complete: summary, and tokens when smaller", () => {
+    expect(view(compaction({ summary: "S" }))).toMatchObject({
       state: "complete",
       summary: "S",
       tokens: { before: 40_000, after: 9_000 },
-      offerUndo: true,
     });
   });
 
@@ -131,18 +92,6 @@ describe("dividerView", () => {
       },
     ];
     expect(view(grown).tokens).toBeNull();
-  });
-
-  it("offers Undo only on the divider the snapshot names", () => {
-    expect(
-      view(compaction(), { undo: { turnId: "other", availability: "likely" } }).offerUndo,
-    ).toBe(false);
-  });
-
-  it("offers Undo only where the server marks it likely to succeed", () => {
-    expect(
-      view(compaction(), { undo: { turnId: "c", availability: "would_recompact" } }).offerUndo,
-    ).toBe(false);
   });
 
   it("failed manual: says why, with client copy where the server's would blame the writer", () => {
@@ -197,70 +146,16 @@ describe("dividerView", () => {
   it("cancelled", () => {
     expect(view(compaction({ status: "cancelled" })).state).toBe("cancelled");
   });
-
-  it("undone: a complete U folds into the divider; Undo is gone", () => {
-    const markers = collectUndoMarkers([compaction(), undoMarker("u", "complete")]).get("c");
-    expect(
-      view(compaction(), { markers, undo: { turnId: "c", availability: "likely" } }),
-    ).toMatchObject({ state: "undone", offerUndo: false, refusalCopy: null });
-  });
-
-  it("refused: the U's writer copy shows on the divider it targeted", () => {
-    const markers = collectUndoMarkers([
-      compaction(),
-      undoMarker("u", "error", "c", {
-        error: "Undo would make this conversation compact again immediately.",
-        reason: "would_recompact",
-      }),
-    ]).get("c");
-    expect(
-      view(compaction(), { markers, undo: { turnId: "c", availability: "would_recompact" } }),
-    ).toMatchObject({
-      state: "complete",
-      refusalCopy: "Undo would make this conversation compact again immediately.",
-      offerUndo: false,
-    });
-  });
-
-  it("a queued undo withdraws the offer and the old refusal until it runs", () => {
-    const markers = collectUndoMarkers([
-      compaction(),
-      undoMarker("u", "error", "c", { error: "refused" }),
-    ]).get("c");
-    expect(
-      view(compaction(), {
-        markers,
-        undo: { turnId: "c", availability: "likely" },
-        undoQueued: true,
-      }),
-    ).toMatchObject({ offerUndo: false, refusalCopy: null });
-  });
-});
-
-describe("collectUndoMarkers", () => {
-  it("keeps the latest refusal and lets a success win", () => {
-    const markers = collectUndoMarkers([
-      undoMarker("u1", "error", "c", { error: "first" }),
-      undoMarker("u2", "error", "c", { error: "second" }),
-    ]).get("c");
-    expect(markers?.refusal?.id).toBe("u2");
-    const after = collectUndoMarkers([
-      undoMarker("u1", "error", "c"),
-      undoMarker("u2", "complete", "c"),
-      undoMarker("u3", "error", "c", { reason: "already_undone" }),
-    ]).get("c");
-    expect(after).toMatchObject({ undone: { id: "u2" }, refusal: null });
-  });
 });
 
 describe("answeredControlIds", () => {
-  it("collects the commands a divider or undo marker ran as, and nothing else", () => {
+  it("collects the commands a divider ran as, and nothing else", () => {
     const ids = answeredControlIds([
       compaction({ metadata: { trigger: "manual", controlMessageId: "k1" } }),
       compaction({ id: "c2", metadata: { trigger: "auto" } }),
-      undoMarker("u", "complete", "c", { controlMessageId: "k3" }),
+      { id: "u", role: "user", status: "complete", blocks: [] } as unknown as Turn,
     ]);
-    expect([...ids].sort()).toEqual(["k1", "k3"]);
+    expect([...ids]).toEqual(["k1"]);
   });
 });
 

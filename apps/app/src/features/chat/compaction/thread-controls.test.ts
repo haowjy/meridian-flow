@@ -163,11 +163,7 @@ describe("server inbox rows", () => {
     const message: PendingInboxItem = { ...inboxItem("m"), intent: "message", control: undefined };
     expect(
       merge([], {
-        items: [
-          inboxItem("a"),
-          message,
-          inboxItem("b", { kind: "compaction_undo", compactionTurnId: "c" }),
-        ],
+        items: [inboxItem("a"), message, inboxItem("b")],
       }),
     ).toEqual([
       { id: "a", status: "queued" },

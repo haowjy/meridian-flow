@@ -173,7 +173,6 @@ async function render(props: {
         historySettled
         tailFollowRevision={0}
         ariaLabel="Chat"
-        compactionUndo={{ turnId: "c", availability: "likely" }}
         phase="compacting"
         onRespondToInterrupt={() => undefined}
         {...props}
@@ -265,17 +264,10 @@ describe("TurnList inherited rows", () => {
     expect(seen.assistants.get("a1")?.isLatestAssistant).toBe(false);
   });
 
-  it("renders an inherited divider read-only: no Stop, Undo, withdrawal or undo advice", async () => {
+  it("renders an inherited divider read-only: no Stop or phase", async () => {
     await render({ turns: [], inherited, controls: controls() });
     const divider = seen.dividers.get("c");
-    expect(divider).toMatchObject({
-      undoAvailability: null,
-      undoQueued: false,
-      phase: null,
-      stopping: false,
-      onStop: undefined,
-      onUndo: undefined,
-    });
+    expect(divider).toMatchObject({ phase: null, stopping: false, onStop: undefined });
   });
 
   it("renders inherited replies as their owner's, with no interrupt answers", async () => {
@@ -449,18 +441,13 @@ describe("TurnList failed reply Retry", () => {
 });
 
 describe("TurnList queued commands", () => {
-  it("lists a queued Undo at the tail, and its divider stops offering Undo", async () => {
-    const undo = {
-      id: "u",
-      control: { kind: "compaction_undo" as const, compactionTurnId: "c" },
-      status: "queued" as const,
-    };
+  it("lists a queued /compact at the tail", async () => {
+    const compact = { id: "k", control: { kind: "compact" as const }, status: "queued" as const };
     await render({
       turns: [turn("c", "compaction", { metadata: { trigger: "manual" } }), turn("u1", "user")],
-      controls: controls({ queued: [undo] }),
+      controls: controls({ queued: [compact] }),
     });
-    expect(seen.queued).toEqual([undo]);
-    expect(seen.dividers.get("c")?.undoQueued).toBe(true);
+    expect(seen.queued).toEqual([compact]);
   });
 
   it("keeps the queued row last, below messages sent after it", async () => {
