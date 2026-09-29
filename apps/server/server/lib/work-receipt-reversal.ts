@@ -11,7 +11,7 @@ import {
   type WorkReceiptState,
 } from "@meridian/contracts/works";
 import {
-  runWorkDeletion,
+  runWorkLifecycleCommand,
   type WorkContextNotices,
   type WorkRepository,
 } from "../domains/projects/index.js";
@@ -74,7 +74,7 @@ export async function reverseWorkReceipts(
   if (!context) return [];
   const ordered = orderReceipts(context.receipts, input.direction);
   try {
-    return await runWorkDeletion(
+    return await runWorkLifecycleCommand(
       { transaction: deps.transaction, stopThreadRun: deps.stopThreadRun },
       async () => {
         const changedProjects = new Set<string>();

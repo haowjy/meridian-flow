@@ -329,9 +329,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     async restore(id: WorkId): Promise<WorkRestoration> {
       try {
         return await runInDrizzleTransaction(db, async () => {
-          const _activeDb = currentDrizzleDb(db);
           const lockedTree = await lockWorkThreadTree(db, id, { includeMarked: true });
-          if (lockedTree.changed) throw new WorkDeleteRetryError();
           const existing = await findWorkById(id);
           if (!existing) throw new Error(`Work not found: ${id}`);
           if (decideWorkRestore(existing, now()) === "unchanged") {

@@ -87,9 +87,10 @@ translate those to `title` and `description` in `ProjectDto`.
   not yet run. The `work-purge` recovery job runs hourly, in batches of 100;
   it commits expired Work and owned-row deletion before best-effort upload/result
   blob cleanup. Blob failures are warned and left to orphan sweeping. No Work remains locked against deletion.
-- Membership changes follow thread-before-Work locking. Delete, restore, and purge share `lockWorkThreadTree`: read the
-  primary chat forest, lock its threads, lock the Work, then recheck the full
-  set. A newly joined chat retries the transaction rather than escaping
-  the cascade. Work context mutations and reviewable branch-journal creation
+- Membership changes follow thread-before-Work locking. Delete and purge use
+  `lockWorkThreadTree` to read the primary chat forest, lock its threads, lock
+  the Work, then recheck the full set; a newly joined chat retries rather than
+  escaping deletion. Restore locks the threads carrying that Work's deletion
+  marker and clears exactly that set. Work context mutations and reviewable branch-journal creation
   still serialize on the Work lifecycle row lock. Restore refuses rather than
   clobbering a reclaimed active name.

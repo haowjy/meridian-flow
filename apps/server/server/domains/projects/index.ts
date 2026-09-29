@@ -357,7 +357,7 @@ export {
   WorkRestoreExpiredError,
 } from "./ports/work-repository.js";
 export { type RequireProjectOwnerOptions, requireProjectOwner } from "./project-access.js";
-export { runWorkDeletion } from "./run-work-deletion.js";
+export { runWorkLifecycleCommand } from "./run-work-lifecycle-command.js";
 export {
   normalizeWorkUpdateInput,
   type UpdateWorkCommandInput,
