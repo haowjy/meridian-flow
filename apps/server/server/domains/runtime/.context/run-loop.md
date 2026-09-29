@@ -37,13 +37,20 @@ at a boundary; a notice-only queue still does not start a run.
 
 After a run releases its claim, cleanup refreshes and re-reads the queue through
 `wakeIfRunnable`; this includes a run that found nothing to do and a lease
-cancelled during setup. If an assistant fails, its initiating input is excluded
-from this reread. A command queued behind failed-receipt rows is also suppressed;
-the periodic sweep is the retry path for those rows. Newly arrived rows outside
-that receipt remain eligible and wake promptly.
-An empty reread does not start a run. A real setup error skips the reread to
-avoid a hot loop. Short exclusive claim holders still use the sweep as their
-liveness backstop.
+cancelled during setup. A failed assistant acknowledges every message it adopted,
+including on provider error, output-limit failure, preparation failure, or a
+thrown execution error. The failed turn stays in history and stores the adopted
+message IDs for an explicit Retry; the Retry run excludes that failed assistant
+from model history so its request matches the original attempt. A repeated Retry
+with the same client-minted turn ID returns that turn. Failed replies are never
+restarted by release wakes or the periodic sweep, and a queued command runs
+normally after their adopted rows are acknowledged. A real setup error before
+adoption still skips the reread as the hot-loop guard. Short exclusive claim
+holders still use the sweep as their liveness backstop.
+
+`POST /api/threads/:threadId/turns/:turnId/retry` is available only for the
+latest failed assistant reply on an idle primary or subagent thread. See the
+[reply Retry API](../../../../../../docs/api/thread-reply-retry.md).
 
 The runtime composition owns one `DetachedWorkTracker` shared by run sessions,
 delivery callbacks, background child completion, and handoff briefs. Cleanup
