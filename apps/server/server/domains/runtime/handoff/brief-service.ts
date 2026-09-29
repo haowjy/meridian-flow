@@ -31,6 +31,7 @@ import type { HandoffBriefOutcome } from "./brief-request.js";
 import { completeHandoffSeed, handoffBriefFailedCopy, handoffSeedBlock } from "./seed.js";
 
 const REMOTE_STOP_POLL_MS = 5_000;
+const SHUTDOWN_TIMEOUT_MS = 10_000;
 
 export type HandoffRetryErrorCode =
   | "not_a_handoff_retry"
@@ -70,7 +71,7 @@ type LiveBrief = { controller: AbortController; threadId: ThreadId };
 
 export interface HandoffBriefs extends HandoffBriefStopper, HandoffBriefLauncher {
   retry(input: { threadId: ThreadId; seedId: TurnId }): Promise<{ turn: Turn; created: boolean }>;
-  shutdown(): void;
+  shutdown(): Promise<void>;
 }
 
 export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBriefs {
@@ -79,6 +80,9 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     eventWriter: deps.eventWriter,
   };
   const live = new Map<TurnId, LiveBrief>();
+  const launches = new Set<Promise<void>>();
+  let shuttingDown = false;
+  let shutdownTask: Promise<void> | undefined;
   const accounting = createTurnAccounting({
     billingUsage: deps.billingUsage as BillingUsagePolicy,
   });
@@ -206,6 +210,21 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
         });
         return;
       }
+      if (controller.signal.aborted) {
+        await finish(
+          input.threadId,
+          input.seedTurnId,
+          {
+            outcome: {
+              kind: "cancelled",
+              modelResponses: [],
+              summarizer: { path: "rolling", segments: 0 },
+            },
+          },
+          controller.signal.reason as BriefAbortReason | undefined,
+        );
+        return;
+      }
       poll = setInterval(() => {
         void deps.repos.turns
           .findById(input.seedTurnId)
@@ -277,19 +296,47 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
           payload: unknownToEventPayload(error),
         });
       } finally {
-        try {
-          await deps.wakeIfRunnable(input.threadId);
-        } catch (error) {
-          emitEvent(deps.eventSink, {
-            level: "warn",
-            source: "runtime.handoff",
-            name: "wake.failed",
-            correlation: { threadId: input.threadId },
-            payload: unknownToEventPayload(error),
-          });
+        if (!shuttingDown) {
+          try {
+            await deps.wakeIfRunnable(input.threadId);
+          } catch (error) {
+            emitEvent(deps.eventSink, {
+              level: "warn",
+              source: "runtime.handoff",
+              name: "wake.failed",
+              correlation: { threadId: input.threadId },
+              payload: unknownToEventPayload(error),
+            });
+          }
         }
       }
     }
+  }
+
+  function startLaunch(input: { threadId: ThreadId; seedTurnId: TurnId; claim: HandoffBriefHold }) {
+    if (shuttingDown) {
+      void input.claim.release().catch((error) => {
+        emitEvent(deps.eventSink, {
+          level: "error",
+          source: "runtime.handoff",
+          name: "claim.release_failed",
+          correlation: { threadId: input.threadId },
+          payload: unknownToEventPayload(error),
+        });
+      });
+      return;
+    }
+    const task = launch(input).catch((error) => {
+      emitEvent(deps.eventSink, {
+        level: "error",
+        source: "runtime.handoff",
+        name: "brief.failed",
+        correlation: { threadId: input.threadId, turnId: input.seedTurnId },
+        payload: unknownToEventPayload(error),
+      });
+    });
+    launches.add(task);
+    void task.finally(() => launches.delete(task));
   }
 
   function launchAfterCommit(input: {
@@ -298,15 +345,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     claim: HandoffBriefHold;
   }) {
     deps.schedulePostCommit(async () => {
-      void launch(input).catch((error) => {
-        emitEvent(deps.eventSink, {
-          level: "error",
-          source: "runtime.handoff",
-          name: "brief.failed",
-          correlation: { threadId: input.threadId, turnId: input.seedTurnId },
-          payload: unknownToEventPayload(error),
-        });
-      });
+      startLaunch(input);
     });
   }
 
@@ -432,8 +471,30 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     }
   }
 
-  function shutdown() {
+  function shutdown(): Promise<void> {
+    if (shutdownTask) return shutdownTask;
+    shuttingDown = true;
     for (const brief of live.values()) brief.controller.abort("shutdown");
+    const active = [...launches];
+    shutdownTask = (async () => {
+      if (active.length === 0) return;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<"timeout">((resolve) => {
+        timer = setTimeout(() => resolve("timeout"), SHUTDOWN_TIMEOUT_MS);
+      });
+      const finished = Promise.allSettled(active).then(() => "finished" as const);
+      const result = await Promise.race([finished, timeout]);
+      if (timer) clearTimeout(timer);
+      if (result === "timeout") {
+        emitEvent(deps.eventSink, {
+          level: "warn",
+          source: "runtime.handoff",
+          name: "shutdown.briefs_timed_out",
+          payload: { count: active.length, timeoutMs: SHUTDOWN_TIMEOUT_MS },
+        });
+      }
+    })();
+    return shutdownTask;
   }
 
   return {

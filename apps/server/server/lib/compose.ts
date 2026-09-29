@@ -1065,7 +1065,7 @@ export function createInMemoryAppServices(): AppServices {
     async retry() {
       throw new Error("in-memory handoff retry is not implemented");
     },
-    shutdown() {},
+    async shutdown() {},
   };
   const recovery = {
     async scanWakes() {

@@ -76,10 +76,6 @@ export async function finalizeOrphanedPlaceholders(
   const placeholders = await deps.repos.turns.listPendingPlaceholdersForThread(input.threadId);
   for (const placeholder of placeholders) {
     if (!isPendingPlaceholder(placeholder)) continue;
-    if (placeholder.role === "system") {
-      await finalizeHandoffSeed(deps, placeholder);
-      continue;
-    }
     if (placeholder.role !== "compaction") continue;
     const completion = await finalizeExecution(deps, {
       threadId: input.threadId,

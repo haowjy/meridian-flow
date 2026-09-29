@@ -187,7 +187,7 @@ describe("handoff brief service", () => {
     service.launchAfterCommit({ threadId: state.destination.id, seedTurnId: state.seed.id, claim });
     await required(scheduled.shift())();
     await providerStarted;
-    service.shutdown();
+    await service.shutdown();
     await releaseFinished;
 
     expect(providerSignal.reason).toBe("shutdown");

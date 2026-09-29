@@ -30,9 +30,7 @@ else
       "../loop/__tests__/test-drizzle-delivery.js"
     );
     const { createWakeIfRunnable } = await import("../loop/wake-if-runnable.js");
-    const { finalizeOrphanedPlaceholders, finalizeOrphanedTurns } = await import(
-      "../loop/orphaned-placeholder.js"
-    );
+    const { createOrphanReportRepair } = await import("../spawn/orphan-report-repair.js");
     const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
     const { handoffSeedMetadata } = await import("../../threads/index.js");
     const databaseUrl = required(url);
@@ -337,6 +335,128 @@ else
       await idleClaim?.release();
     });
 
+    it("settles paid rows on shutdown, leaves S pending, releases the claim, and skips the wake", async () => {
+      const fixture = await handoffSeed();
+      const runClaim = createDrizzleRunClaim(db, { holderId: "shutdown-brief" });
+      const inbox = createDrizzleInbox(db);
+      let startAttempts = 0;
+      let startedRuns = 0;
+      const runStarter = {
+        async start(threadId: string) {
+          startAttempts += 1;
+          const lease = await runClaim.startExecution(
+            threadId as never,
+            `shutdown-wake-${startAttempts}`,
+          );
+          if (!lease) return;
+          startedRuns += 1;
+          await runClaim.release(lease);
+        },
+      };
+      const delivery = createTestDrizzleDelivery(db, {
+        repos: fixture.repos,
+        runClaim,
+        runStarter,
+      });
+      const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter });
+      const queued = await inbox.enqueue({
+        threadId: fixture.destination.id,
+        intent: "message",
+        provenance: { kind: "writer", actorId: fixture.ids.user },
+        body: { kind: "text", text: "Wait behind shutdown." },
+        idempotencyKey: "shutdown-brief-wake",
+      });
+      const responseId = crypto.randomUUID();
+      const response = {
+        id: responseId,
+        turnId: fixture.seed.id,
+        sequence: 0,
+        provider: "openai",
+        model: "gpt-4.1-mini",
+        inputTokens: 1_000,
+        outputTokens: 10,
+        requestMessageCount: 1,
+        predictedCacheState: "cold" as const,
+        predictedCacheReason: "summary_transcript" as const,
+      };
+      let debitCount = 0;
+      const billingUsage = {
+        async canStartTurn() {
+          return true;
+        },
+        async debit() {
+          debitCount += 1;
+          return { transactionId: crypto.randomUUID() };
+        },
+      };
+      let markProviderStarted!: () => void;
+      const providerStarted = new Promise<void>((resolve) => {
+        markProviderStarted = resolve;
+      });
+      let providerSignal: AbortSignal | undefined;
+      const postCommit: Array<() => Promise<void>> = [];
+      const service = createHandoffBriefs({
+        repos: fixture.repos,
+        eventWriter: createDrizzleEventJournalWriter(db),
+        eventSink: createInMemoryEventSink(),
+        threadLock: createDrizzleThreadLock(db),
+        runClaim,
+        wakeIfRunnable,
+        billingUsage,
+        async generate({ signal }) {
+          providerSignal = signal;
+          markProviderStarted();
+          return new Promise((resolve) => {
+            signal.addEventListener(
+              "abort",
+              () =>
+                resolve({
+                  outcome: {
+                    kind: "cancelled",
+                    modelResponses: [response],
+                    summarizer: { path: "rolling", segments: 1 },
+                  },
+                }),
+              { once: true },
+            );
+          });
+        },
+        async publishStatus() {},
+        schedulePostCommit(task) {
+          postCommit.push(task);
+        },
+      });
+      const claim = required(await service.hold(fixture.destination.id));
+      service.launchAfterCommit({
+        threadId: fixture.destination.id,
+        seedTurnId: fixture.seed.id,
+        claim,
+      });
+      await required(postCommit.shift())();
+      await providerStarted;
+
+      await wakeIfRunnable(fixture.destination.id);
+      expect(await inbox.selectPending(fixture.destination.id)).toMatchObject([{ id: queued.id }]);
+      expect(startAttempts).toBe(1);
+      expect(startedRuns).toBe(0);
+
+      await service.shutdown();
+
+      expect(providerSignal?.reason).toBe("shutdown");
+      expect(await fixture.repos.turns.findById(fixture.seed.id)).toMatchObject({
+        status: "pending",
+      });
+      expect(await fixture.repos.modelResponses.listByTurn(fixture.seed.id)).toMatchObject([
+        { id: responseId },
+      ]);
+      expect(debitCount).toBe(1);
+      expect(startAttempts).toBe(1);
+      expect(startedRuns).toBe(0);
+      const reacquired = await runClaim.hold(fixture.destination.id);
+      expect(reacquired).not.toBeNull();
+      await reacquired?.release();
+    });
+
     it("gates Retry on the live destination run and appends idempotently after Stop", async () => {
       const fixture = await handoffSeed();
       const runClaim = createDrizzleRunClaim(db, { holderId: "retry-run" });
@@ -531,7 +651,14 @@ else
 
       expect(await startBrief(service, fixture.destination.id, fixture.seed.id)).toBe(true);
       await expect.poll(async () => transactionCalls).toBe(1);
-      await expect.poll(async () => await runClaim.holder(fixture.destination.id)).toBeNull();
+      await expect
+        .poll(async () => {
+          const freeClaim = await runClaim.hold(fixture.destination.id);
+          if (!freeClaim) return false;
+          await freeClaim.release();
+          return true;
+        })
+        .toBe(true);
 
       expect(await fixture.repos.turns.findById(fixture.seed.id)).toMatchObject({
         status: "pending",
@@ -539,37 +666,58 @@ else
       expect(await fixture.repos.blocks.listByTurn(fixture.seed.id)).toHaveLength(0);
     });
 
-    it.each([
-      "run-start",
-      "placeholder-sweep",
-    ] as const)("repairs a crashed handoff seed through %s with its card and status refresh", async (repairPath) => {
+    it("repairs a crashed handoff seed through the guarded placeholder sweep", async () => {
       const fixture = await handoffSeed();
+      const authority = createDrizzleRunClaim(db, { holderId: "handoff-placeholder-sweep" });
       let statusPublishes = 0;
-      const repairDeps = {
+      const repair = createOrphanReportRepair({
         repos: fixture.repos,
+        inbox: createDrizzleInbox(db),
         eventWriter: createDrizzleEventJournalWriter(db),
+        authority,
+        threadLock: createDrizzleThreadLock(db),
+        publisher: {
+          async publish() {
+            return "already" as const;
+          },
+        },
+        eventSink: createInMemoryEventSink(),
+        toolRegistry: {
+          getRegistration(name: string) {
+            return name === "thread_history" ? ({} as never) : undefined;
+          },
+        },
         async publishStatus(threadId: string) {
           expect(threadId).toBe(fixture.destination.id);
           statusPublishes += 1;
         },
-      };
+      });
+      const liveClaim = required(await authority.hold(fixture.destination.id));
+      await repair.sweep(10);
+      expect(await fixture.repos.turns.findById(fixture.seed.id)).toMatchObject({
+        status: "pending",
+      });
+      expect(statusPublishes).toBe(0);
 
-      const reports =
-        repairPath === "run-start"
-          ? await finalizeOrphanedTurns(repairDeps, { threadId: fixture.destination.id })
-          : await finalizeOrphanedPlaceholders(repairDeps, { threadId: fixture.destination.id });
+      await liveClaim.release();
+      await repair.sweep(10);
       const seed = await fixture.repos.turns.findById(fixture.seed.id);
 
-      expect(reports).toEqual([]);
       expect(seed).toMatchObject({
         role: "system",
         status: "error",
         error: "This handoff brief was interrupted.",
         metadata: { reason: "interrupted", phase: "recovery" },
       });
-      expect(await fixture.repos.blocks.listByTurn(fixture.seed.id)).toMatchObject([
-        { content: { kind: "handoff-brief", props: { state: "unavailable" } } },
-      ]);
+      const [card] = await fixture.repos.blocks.listByTurn(fixture.seed.id);
+      expect(card?.content).toMatchObject({
+        kind: "handoff-brief",
+        props: { state: "unavailable" },
+      });
+      expect(card?.content).toHaveProperty(
+        "props.modelText",
+        expect.stringContaining(`<thread_reference ref="${fixture.source.ref}">`),
+      );
       expect(statusPublishes).toBe(1);
     });
   });
