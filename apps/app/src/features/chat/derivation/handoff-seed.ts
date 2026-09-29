@@ -1,12 +1,12 @@
 /**
- * Pure reads of a handoff seed S: the destination's first system turn, which
- * the runtime completes with the brief (or its unavailable fallback).
+ * Pure reads of a handoff seed S: a system turn on the destination that the
+ * brief completes with its summary (or the unavailable card). The first seed
+ * opens the chat; a Retry appends another at the leaf.
  *
  * The server's `HandoffSeedMetadataCodec` owns the shape; the client picks the
  * fields the writer sees and reads them defensively.
  */
 import type { Turn } from "@meridian/contracts/protocol";
-import type { ThreadPhase } from "@meridian/contracts/threads";
 
 export type HandoffSeedFacts = {
   sourceThreadId: string;
@@ -18,8 +18,8 @@ export type HandoffSeedFacts = {
    */
   sourceTitle: string | null;
   cutoffTurnId: string | null;
-  /** The `handoff_brief` control this seed answers. */
-  controlMessageId: string | null;
+  /** The ended brief was cut off by a crash or restart, not by its own failure. */
+  interrupted: boolean;
 };
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -44,7 +44,7 @@ export function readHandoffSeed(turn: Turn): HandoffSeedFacts | null {
     sourceRef: text(metadata.sourceRef),
     sourceTitle: text(metadata.sourceTitle),
     cutoffTurnId: text(metadata.cutoffTurnId),
-    controlMessageId: text(metadata.controlMessageId),
+    interrupted: metadata.reason === "interrupted",
   };
 }
 
@@ -80,23 +80,22 @@ export type BriefCardView = {
   canStop: boolean;
   /** Retry is offered only on the latest seed, once it ended without a brief. */
   canRetry: boolean;
-  /** The runtime has bound the brief to a run (`briefing`), rather than it waiting to start. */
-  running: boolean;
+  /** An ended brief a crash or restart cut off. */
+  interrupted: boolean;
 };
 
 /**
- * One brief card's view state. `latest` is whether this is the thread's newest
- * seed; `retryPending` is whether a Retry is already queued or on its way (the
- * server refuses a second while one waits).
+ * One brief card's view state. A pending seed is a brief being written: no
+ * lease or phase says so, only S itself. `latest` is whether this is the
+ * thread's newest seed; a Retry appends a newer one, so the old card loses
+ * Retry the moment the new card appears.
  */
 export function briefCardView(input: {
   turn: Turn;
   latest: boolean;
-  retryPending: boolean;
   stopping: boolean;
-  phase: ThreadPhase | null;
 }): BriefCardView {
-  const { turn, latest, retryPending, stopping, phase } = input;
+  const { turn, latest, stopping } = input;
   const state: BriefCardState =
     turn.status === "pending" || turn.status === "streaming"
       ? "generating"
@@ -112,29 +111,41 @@ export function briefCardView(input: {
     failureCopy: state === "failed" && latest ? (turn.error ?? null) : null,
     superseded: ended && !latest,
     canStop: state === "generating" && !stopping,
-    canRetry: ended && latest && !retryPending,
-    running: state === "generating" && phase === "briefing",
+    canRetry: ended && latest,
+    interrupted: state === "failed" && (readHandoffSeed(turn)?.interrupted ?? false),
   };
 }
 
 const OPTIMISTIC_SEED_PREFIX = "optimistic-seed:";
 
-/**
- * The seed a handoff shows before the server has created it: the brief is
- * already on its way, so the card says so at once. It has no turn to stop yet.
- */
-export function optimisticHandoffSeed(input: {
-  threadId: string;
+type SeedSource = {
   sourceThreadId: string;
+  sourceRef?: string | null;
   sourceTitle: string | null;
   cutoffTurnId: string;
-  createdAt: string;
-}): Turn {
+};
+
+/**
+ * A seed the writer sees before the server has it. With no `id`, it is the
+ * first brief of a handoff whose destination is still being created: it has
+ * no turn to stop yet (`isOptimisticSeed`). With the client-minted id of a
+ * Retry, it is that retry's seed S2 at the leaf, and the server's S2 replaces
+ * it by id.
+ */
+export function optimisticHandoffSeed(
+  input: SeedSource & {
+    threadId: string;
+    createdAt: string;
+    id?: string;
+    position?: number;
+    prevTurnId?: string | null;
+  },
+): Turn {
   return {
-    id: `${OPTIMISTIC_SEED_PREFIX}${input.threadId}`,
+    id: input.id ?? `${OPTIMISTIC_SEED_PREFIX}${input.threadId}`,
     threadId: input.threadId,
-    position: 1,
-    prevTurnId: null,
+    position: input.position ?? 1,
+    prevTurnId: input.prevTurnId ?? null,
     role: "system",
     origin: "system",
     writeMode: null,
@@ -151,6 +162,7 @@ export function optimisticHandoffSeed(input: {
       kind: "derivation_seed",
       derivation: "handoff",
       sourceThreadId: input.sourceThreadId,
+      ...(input.sourceRef ? { sourceRef: input.sourceRef } : {}),
       sourceTitle: input.sourceTitle,
       cutoffTurnId: input.cutoffTurnId,
     },
@@ -162,6 +174,7 @@ export function optimisticHandoffSeed(input: {
   };
 }
 
+/** The first brief's stand-in, before the destination exists: nothing to stop yet. */
 export function isOptimisticSeed(turn: Turn): boolean {
   return turn.id.startsWith(OPTIMISTIC_SEED_PREFIX);
 }

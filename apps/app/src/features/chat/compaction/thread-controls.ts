@@ -1,12 +1,13 @@
 /**
- * Optimistic writer controls: the local half of `/compact`, compaction undo,
- * and handoff brief Retry, merged with the server's pending inbox.
+ * Optimistic writer commands: the local half of `/compact` and compaction
+ * undo, merged with the server's pending inbox.
  *
- * The writer sees a queued control the moment they ask for it. The server
+ * The writer sees a queued command the moment they ask for it. The server
  * inbox is the authority once it knows the id; until then the local entry
  * stands in, and a failed enqueue stays on the item with Retry (same id, so
- * the server treats a retry as a no-op). A withdrawal's outcome lands on the
- * item and stays until the transcript moves on.
+ * the server treats a retry as a no-op). Withdraw removes the item at once;
+ * a failed withdrawal brings it back. A command that already started says so
+ * on its row until the transcript shows the turn it runs as.
  */
 import type {
   ControlBody,
@@ -24,16 +25,11 @@ export type LocalControl = {
   /** The server inbox has listed this id at least once. */
   seen: boolean;
   withdrawal: null | "withdrawing" | "failed" | WithdrawOutcome;
-  /** Transcript leaf when the withdrawal settled; the outcome shows until it moves. */
+  /** Transcript leaf when the withdrawal settled; `already_started` shows until it moves. */
   settledAtLeaf: string | null;
 };
 
-export type QueuedControlStatus =
-  | "queued"
-  | "failed"
-  | "withdrawing"
-  | "withdraw_failed"
-  | WithdrawOutcome;
+export type QueuedControlStatus = "queued" | "failed" | "withdraw_failed" | "already_started";
 
 export type QueuedControl = {
   id: string;
@@ -112,13 +108,13 @@ export function controlsReducer(
 }
 
 /**
- * The controls the writer should see: server rows first (in inbox order),
+ * The commands the writer should see: server rows first (in inbox order),
  * then local ones the server has not listed yet or has just settled.
  */
 export function mergeQueuedControls(input: {
   local: readonly LocalControl[];
   pending: ThreadPendingInbox;
-  /** Controls a transcript turn already names (divider or undo marker). */
+  /** Commands a transcript turn already names (a divider or an undo marker). */
   executedControlIds: ReadonlySet<string>;
   leafTurnId: string | null;
 }): QueuedControl[] {
@@ -129,14 +125,9 @@ export function mergeQueuedControls(input: {
   for (const item of pending.items) {
     if (item.intent !== "control" || !item.control) continue;
     listed.add(item.id);
-    const withdrawal = localById.get(item.id)?.withdrawal ?? null;
     // A withdrawal response is fresher than the inbox frame that follows it.
-    result.push({
-      id: item.id,
-      control: item.control,
-      status:
-        withdrawal === null ? "queued" : withdrawal === "failed" ? "withdraw_failed" : withdrawal,
-    });
+    const status = listedStatus(localById.get(item.id)?.withdrawal ?? null);
+    if (status) result.push({ id: item.id, control: item.control, status });
   }
   for (const entry of local) {
     if (listed.has(entry.id)) continue;
@@ -146,21 +137,39 @@ export function mergeQueuedControls(input: {
   return result;
 }
 
+function listedStatus(withdrawal: LocalControl["withdrawal"]): QueuedControlStatus | null {
+  switch (withdrawal) {
+    case null:
+      return "queued";
+    case "failed":
+      return "withdraw_failed";
+    case "already_started":
+      return "already_started";
+    case "withdrawing":
+    case "withdrawn":
+      return null;
+  }
+}
+
 function localStatus(
   entry: LocalControl,
   executed: ReadonlySet<string>,
   leafTurnId: string | null,
 ): QueuedControlStatus | null {
-  if (entry.withdrawal === "withdrawing") return "withdrawing";
-  if (
-    entry.withdrawal === "withdrawn" ||
-    entry.withdrawal === "stopping" ||
-    entry.withdrawal === "already_finished"
-  ) {
-    // A turn that names the control tells the rest of the story itself.
+  if (entry.withdrawal === "withdrawing" || entry.withdrawal === "withdrawn") return null;
+  if (entry.withdrawal === "already_started") {
+    // The divider or undo marker it ran as tells the rest of the story.
     if (executed.has(entry.id) || entry.settledAtLeaf !== leafTurnId) return null;
-    return entry.withdrawal;
+    return "already_started";
   }
+  const status = requestStatus(entry, executed);
+  return status === "queued" && entry.withdrawal === "failed" ? "withdraw_failed" : status;
+}
+
+function requestStatus(
+  entry: LocalControl,
+  executed: ReadonlySet<string>,
+): QueuedControlStatus | null {
   if (entry.request === "sending") return "queued";
   if (entry.request === "failed") return "failed";
   if (entry.request === "finished" || entry.seen || executed.has(entry.id)) return null;

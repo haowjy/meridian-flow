@@ -1,7 +1,6 @@
 /** The brief card's view state, read from the seed S. */
 import type { Turn } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
-import { answeredControlIds } from "../compaction/compaction-model";
 import {
   briefCardView,
   isOptimisticSeed,
@@ -24,7 +23,6 @@ const seed = (status: string, extra: Record<string, unknown> = {}) =>
       sourceRef: "c1",
       sourceTitle: "Chapter 12 plan",
       cutoffTurnId: "cut",
-      controlMessageId: "k",
     },
     ...extra,
   }) as unknown as Turn;
@@ -35,14 +33,7 @@ const briefBlock = (state: "available" | "unavailable", brief: string | null) =>
   content: { kind: "handoff-brief", props: { state, brief, modelText: "<system_update/>" } },
 });
 const view = (turn: Turn, extra: Partial<Parameters<typeof briefCardView>[0]> = {}) =>
-  briefCardView({
-    turn,
-    latest: true,
-    retryPending: false,
-    stopping: false,
-    phase: null,
-    ...extra,
-  });
+  briefCardView({ turn, latest: true, stopping: false, ...extra });
 
 describe("readHandoffSeed", () => {
   it("reads a handoff seed and ignores a fork's seed and other system turns", () => {
@@ -51,7 +42,7 @@ describe("readHandoffSeed", () => {
       sourceRef: "c1",
       sourceTitle: "Chapter 12 plan",
       cutoffTurnId: "cut",
-      controlMessageId: "k",
+      interrupted: false,
     });
     const forkSeed = seed("complete", {
       metadata: { kind: "derivation_seed", derivation: "fork" },
@@ -71,11 +62,9 @@ describe("readHandoffSeed", () => {
 });
 
 describe("briefCardView", () => {
-  it("generating: Stop until a Stop is in flight; running only while the lease briefs", () => {
+  it("generating while S is pending: Stop until a Stop is in flight", () => {
     expect(view(seed("pending"))).toMatchObject({ state: "generating", canStop: true });
     expect(view(seed("pending"), { stopping: true }).canStop).toBe(false);
-    expect(view(seed("pending"), { phase: "briefing" }).running).toBe(true);
-    expect(view(seed("pending"), { phase: "generating" }).running).toBe(false);
   });
 
   it("ready: the brief from the block, nothing to stop or retry", () => {
@@ -100,7 +89,23 @@ describe("briefCardView", () => {
       failureCopy: null,
       superseded: true,
     });
-    expect(view(failed, { retryPending: true }).canRetry).toBe(false);
+  });
+
+  it("interrupted: a crash or restart cut the brief off, and it offers Retry", () => {
+    const interrupted = seed("error", {
+      error: "This handoff brief couldn't be generated. Try again.",
+      metadata: {
+        ...(seed("error").metadata as Record<string, unknown>),
+        reason: "interrupted",
+        phase: "recovery",
+      },
+    });
+    expect(view(interrupted)).toMatchObject({
+      state: "failed",
+      interrupted: true,
+      canRetry: true,
+    });
+    expect(view(seed("error")).interrupted).toBe(false);
   });
 
   it("stopped: Retry, and no failure copy", () => {
@@ -113,7 +118,7 @@ describe("briefCardView", () => {
 });
 
 describe("optimisticHandoffSeed", () => {
-  it("is a generating handoff seed with nothing to stop", () => {
+  it("before the destination exists: a generating handoff seed with nothing to stop", () => {
     const optimistic = optimisticHandoffSeed({
       threadId: "t",
       sourceThreadId: "source",
@@ -129,10 +134,22 @@ describe("optimisticHandoffSeed", () => {
     });
     expect(view(optimistic).state).toBe("generating");
   });
-});
 
-describe("answeredControlIds", () => {
-  it("counts a seed's brief control as answered: the card owns it and Stop, not Withdraw", () => {
-    expect(answeredControlIds([seed("pending")]).has("k")).toBe(true);
+  it("for a Retry: the client-minted id at the leaf, carrying the source forward", () => {
+    const retry = optimisticHandoffSeed({
+      id: "s2",
+      threadId: "t",
+      position: 7,
+      prevTurnId: "leaf",
+      sourceThreadId: "source",
+      sourceRef: "c1",
+      sourceTitle: "Chapter 12 plan",
+      cutoffTurnId: "cut",
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    expect(retry).toMatchObject({ id: "s2", position: 7, prevTurnId: "leaf", status: "pending" });
+    // The server has (or will have) this id: it is not the opening stand-in.
+    expect(isOptimisticSeed(retry)).toBe(false);
+    expect(readHandoffSeed(retry)).toMatchObject({ sourceRef: "c1", cutoffTurnId: "cut" });
   });
 });

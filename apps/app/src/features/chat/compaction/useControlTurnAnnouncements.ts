@@ -1,7 +1,8 @@
 /**
- * useControlTurnAnnouncements — speaks the state changes of turns a writer
- * control runs as: compaction dividers, their undo markers, and handoff brief
- * seeds.
+ * useControlTurnAnnouncements — speaks the state changes of placeholder turns
+ * with no reply stream: compaction dividers, their undo markers, and handoff
+ * brief seeds (the first, and each Retry's, including one that exists only on
+ * the client until the server has it).
  *
  * Those rows are virtualized and may be off-screen, so the announcement is
  * driven from the turns, not from a mounted row. History present at mount is

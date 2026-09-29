@@ -9,7 +9,6 @@ import {
   NO_UNDO_MARKERS,
   readCompactionFacts,
 } from "./compaction-model";
-import type { QueuedControl } from "./thread-controls";
 
 function compaction(
   overrides: Partial<Turn> & { metadata?: unknown; summary?: string } = {},
@@ -67,39 +66,29 @@ function view(
   options: {
     markers?: ReturnType<typeof collectUndoMarkers> extends Map<string, infer M> ? M : never;
     undo?: { turnId: string; availability: "likely" | "would_recompact" } | null;
-    queued?: QueuedControl | null;
+    undoQueued?: boolean;
   } = {},
 ) {
   return dividerView({
     turn,
     markers: options.markers ?? NO_UNDO_MARKERS,
     undoAvailability: options.undo ?? null,
-    queuedUndo: options.queued ?? null,
+    undoQueued: options.undoQueued ?? false,
     failureCopyFor,
   });
 }
 
-const queuedUndo = (status: QueuedControl["status"]): QueuedControl => ({
-  id: "undo-k",
-  control: { kind: "compaction_undo", compactionTurnId: "c" },
-  status,
-});
-
 describe("readCompactionFacts", () => {
-  it("reads the summary block, tokens, trigger, and control ids", () => {
-    const facts = readCompactionFacts(
-      compaction({
-        summary: "Earlier chapters",
-        metadata: { trigger: "auto", satisfiesControlId: "k2" },
-      }),
-    );
+  it("reads the summary block, tokens, trigger, and the command it ran", () => {
+    const facts = readCompactionFacts(compaction({ summary: "Earlier chapters" }));
     expect(facts).toMatchObject({
-      trigger: "auto",
+      trigger: "manual",
       summary: "Earlier chapters",
       tokensBefore: 40_000,
       tokensAfter: 9_000,
-      controlIds: ["k2"],
+      controlId: "k",
     });
+    expect(readCompactionFacts(compaction({ metadata: { trigger: "auto" } })).controlId).toBeNull();
   });
 
   it("treats a divider with a control id and no trigger as manual", () => {
@@ -113,7 +102,7 @@ describe("dividerView", () => {
   it("pending: compacting, no undo", () => {
     expect(
       view(compaction({ status: "pending" }), { undo: { turnId: "c", availability: "likely" } }),
-    ).toMatchObject({ state: "pending", undo: null, failureCopy: null });
+    ).toMatchObject({ state: "pending", offerUndo: false, failureCopy: null });
   });
 
   it("complete: summary, tokens when smaller, and Undo on the snapshot's divider", () => {
@@ -124,7 +113,7 @@ describe("dividerView", () => {
       state: "complete",
       summary: "S",
       tokens: { before: 40_000, after: 9_000 },
-      undo: { kind: "offer" },
+      offerUndo: true,
     });
   });
 
@@ -146,23 +135,14 @@ describe("dividerView", () => {
 
   it("offers Undo only on the divider the snapshot names", () => {
     expect(
-      view(compaction(), { undo: { turnId: "other", availability: "likely" } }).undo,
-    ).toBeNull();
+      view(compaction(), { undo: { turnId: "other", availability: "likely" } }).offerUndo,
+    ).toBe(false);
   });
 
   it("offers Undo only where the server marks it likely to succeed", () => {
     expect(
-      view(compaction(), { undo: { turnId: "c", availability: "would_recompact" } }).undo,
-    ).toBeNull();
-  });
-
-  it("still shows an undo already queued when availability turns to would_recompact", () => {
-    expect(
-      view(compaction(), {
-        undo: { turnId: "c", availability: "would_recompact" },
-        queued: queuedUndo("queued"),
-      }).undo,
-    ).toMatchObject({ kind: "queued", control: { id: "undo-k", status: "queued" } });
+      view(compaction(), { undo: { turnId: "c", availability: "would_recompact" } }).offerUndo,
+    ).toBe(false);
   });
 
   it("failed manual: says why, with client copy where the server's would blame the writer", () => {
@@ -170,11 +150,15 @@ describe("dividerView", () => {
       view(
         compaction({
           status: "error",
-          error: "There is nothing to compact yet.",
-          metadata: { trigger: "manual", reason: "nothing_to_compact", phase: "initial_prepare" },
+          error: "This conversation couldn't be compacted. Try again.",
+          metadata: { trigger: "manual", reason: "provider_error", phase: "summary" },
         }),
       ),
-    ).toMatchObject({ state: "failed", failureCopy: "There is nothing to compact yet." });
+    ).toMatchObject({
+      state: "failed",
+      nothingToCompact: false,
+      failureCopy: "This conversation couldn't be compacted. Try again.",
+    });
     expect(
       view(
         compaction({
@@ -184,6 +168,18 @@ describe("dividerView", () => {
         }),
       ).failureCopy,
     ).toBe("client copy");
+  });
+
+  it("nothing to compact: a calm outcome with no failure copy", () => {
+    expect(
+      view(
+        compaction({
+          status: "error",
+          error: "There is nothing to compact yet.",
+          metadata: { trigger: "manual", reason: "nothing_to_compact", phase: "initial_prepare" },
+        }),
+      ),
+    ).toMatchObject({ state: "failed", nothingToCompact: true, failureCopy: null });
   });
 
   it("failed auto stays quiet (R3): the failed reply carries the error", () => {
@@ -206,7 +202,7 @@ describe("dividerView", () => {
     const markers = collectUndoMarkers([compaction(), undoMarker("u", "complete")]).get("c");
     expect(
       view(compaction(), { markers, undo: { turnId: "c", availability: "likely" } }),
-    ).toMatchObject({ state: "undone", undo: null, refusalCopy: null });
+    ).toMatchObject({ state: "undone", offerUndo: false, refusalCopy: null });
   });
 
   it("refused: the U's writer copy shows on the divider it targeted", () => {
@@ -222,11 +218,11 @@ describe("dividerView", () => {
     ).toMatchObject({
       state: "complete",
       refusalCopy: "Undo would make this conversation compact again immediately.",
-      undo: null,
+      offerUndo: false,
     });
   });
 
-  it("queued undo replaces the offer and the old refusal until it runs", () => {
+  it("a queued undo withdraws the offer and the old refusal until it runs", () => {
     const markers = collectUndoMarkers([
       compaction(),
       undoMarker("u", "error", "c", { error: "refused" }),
@@ -235,21 +231,9 @@ describe("dividerView", () => {
       view(compaction(), {
         markers,
         undo: { turnId: "c", availability: "likely" },
-        queued: queuedUndo("queued"),
+        undoQueued: true,
       }),
-    ).toMatchObject({
-      undo: { kind: "queued", control: { id: "undo-k", status: "queued" } },
-      refusalCopy: null,
-    });
-  });
-
-  it("a withdrawn undo returns the offer with a note", () => {
-    expect(
-      view(compaction(), {
-        undo: { turnId: "c", availability: "likely" },
-        queued: queuedUndo("withdrawn"),
-      }),
-    ).toMatchObject({ undo: { kind: "offer" }, undoNote: "withdrawn" });
+    ).toMatchObject({ offerUndo: false, refusalCopy: null });
   });
 });
 
@@ -270,13 +254,13 @@ describe("collectUndoMarkers", () => {
 });
 
 describe("answeredControlIds", () => {
-  it("collects controls a divider ran or absorbed and undo markers executed", () => {
+  it("collects the commands a divider or undo marker ran as, and nothing else", () => {
     const ids = answeredControlIds([
       compaction({ metadata: { trigger: "manual", controlMessageId: "k1" } }),
-      compaction({ id: "c2", metadata: { trigger: "auto", satisfiesControlId: "k2" } }),
+      compaction({ id: "c2", metadata: { trigger: "auto" } }),
       undoMarker("u", "complete", "c", { controlMessageId: "k3" }),
     ]);
-    expect([...ids].sort()).toEqual(["k1", "k2", "k3"]);
+    expect([...ids].sort()).toEqual(["k1", "k3"]);
   });
 });
 

@@ -1,4 +1,4 @@
-/** Optimistic queued controls merged with the server inbox, and withdrawal outcomes. */
+/** Optimistic queued commands merged with the server inbox, and withdrawal outcomes. */
 import type { PendingInboxItem, ThreadPendingInbox } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import {
@@ -103,50 +103,46 @@ describe("withdrawal", () => {
     { type: "observe", pendingIds: new Set(["k"]) },
   ]);
 
-  it("shows withdrawing while the request is in flight", () => {
+  it("removes the row at once, before the server answers", () => {
     const withdrawing = run([{ type: "withdraw", id: "k" }], listed);
-    expect(merge(withdrawing, { items: [inboxItem("k")] })).toEqual([
-      { id: "k", status: "withdrawing" },
-    ]);
+    expect(merge(withdrawing, { items: [inboxItem("k")] })).toEqual([]);
   });
 
-  it.each([
-    "withdrawn",
-    "stopping",
-    "already_finished",
-  ] as const)("lands %s on the item until the transcript moves on", (outcome) => {
-    const settled = run(
+  it("keeps a withdrawn row gone, even behind a lagging inbox frame", () => {
+    const withdrawn = run(
       [
         { type: "withdraw", id: "k" },
-        { type: "withdrawn", id: "k", outcome, leafTurnId: "leaf-1" },
+        { type: "withdrawn", id: "k", outcome: "withdrawn", leafTurnId: "leaf-1" },
       ],
       listed,
     );
-    // Fresher than a lagging inbox frame that still lists the row.
-    expect(merge(settled, { items: [inboxItem("k")] })).toEqual([{ id: "k", status: outcome }]);
-    expect(merge(settled)).toEqual([{ id: "k", status: outcome }]);
-    expect(merge(settled, EMPTY, { leaf: "leaf-2" })).toEqual([]);
+    expect(merge(withdrawn, { items: [inboxItem("k")] })).toEqual([]);
+    expect(merge(withdrawn)).toEqual([]);
   });
 
-  it("hides a stop outcome once the divider it stopped is in the transcript", () => {
-    const stopping = run(
+  it("says a started command already started, until its divider takes over", () => {
+    const started = run(
       [
         { type: "withdraw", id: "k" },
-        { type: "withdrawn", id: "k", outcome: "stopping", leafTurnId: "leaf-1" },
+        { type: "withdrawn", id: "k", outcome: "already_started", leafTurnId: "leaf-1" },
       ],
       listed,
     );
-    expect(merge(stopping, EMPTY, { executed: ["k"] })).toEqual([]);
+    expect(merge(started)).toEqual([{ id: "k", status: "already_started" }]);
+    expect(merge(started, EMPTY, { executed: ["k"] })).toEqual([]);
+    expect(merge(started, EMPTY, { leaf: "leaf-2" })).toEqual([]);
   });
 
   it("shadows a server-only row so its withdrawal still lands", () => {
     const local = run([{ type: "withdraw", id: "server", control: COMPACT }]);
-    expect(merge(local, { items: [inboxItem("server")] })).toEqual([
-      { id: "server", status: "withdrawing" },
+    expect(merge(local, { items: [inboxItem("server")] })).toEqual([]);
+    const failed = run([{ type: "withdraw_failed", id: "server" }], local);
+    expect(merge(failed, { items: [inboxItem("server")] })).toEqual([
+      { id: "server", status: "withdraw_failed" },
     ]);
   });
 
-  it("keeps the row withdrawable after a failed withdrawal", () => {
+  it("brings the row back, withdrawable, after a failed withdrawal", () => {
     const failed = run(
       [
         { type: "withdraw", id: "k" },
@@ -157,6 +153,8 @@ describe("withdrawal", () => {
     expect(merge(failed, { items: [inboxItem("k")] })).toEqual([
       { id: "k", status: "withdraw_failed" },
     ]);
+    // It ran meanwhile: gone from the inbox, so nothing is left to withdraw.
+    expect(merge(failed)).toEqual([]);
   });
 });
 

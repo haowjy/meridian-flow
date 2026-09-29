@@ -1,11 +1,14 @@
 /**
- * Fork and Hand off in a finished turn's action row. The turn is the cutoff.
+ * Fork and Hand off in a finished reply's action row, and Hand off alone
+ * under a delivered writer message. The turn is the cutoff.
  *
  * A primary chat provides `TurnDerivation`; a subagent's view does not, so
  * neither action renders there (the server refuses both from a subagent).
  * Fork keeps the Agent and needs no choice. Hand off opens the Agent picker
  * with the source's Agent selected, so Enter hands off to the same Agent.
- * Both navigate at once; creation finishes in the background.
+ * Both navigate at once; creation finishes in the background. Handing off
+ * from a writer message includes it: while its reply is still streaming, the
+ * brief reports it as the open request.
  */
 import { t } from "@lingui/core/macro";
 import type { AgentCatalogItem } from "@meridian/contracts/agents";
@@ -86,12 +89,28 @@ export function DeriveTurnActions({ turnId }: { turnId: string }) {
         </TooltipTrigger>
         <TooltipContent>{forkLabel}</TooltipContent>
       </Tooltip>
-      <HandoffAction turnId={turnId} derivation={derivation} />
+      <HandoffPicker turnId={turnId} derivation={derivation} align="start" />
     </>
   );
 }
 
-function HandoffAction({ turnId, derivation }: { turnId: string; derivation: TurnDerivation }) {
+/** Hand off alone: a writer message's action. Fork stays on replies. */
+export function HandoffTurnAction({ turnId }: { turnId: string }) {
+  const derivation = useTurnDerivation();
+  if (!derivation) return null;
+  // The message sits at the right edge, so the picker opens toward the chat.
+  return <HandoffPicker turnId={turnId} derivation={derivation} align="end" />;
+}
+
+function HandoffPicker({
+  turnId,
+  derivation,
+  align,
+}: {
+  turnId: string;
+  derivation: TurnDerivation;
+  align: "start" | "end";
+}) {
   const [open, setOpen] = useState(false);
   const catalog = useAgentCatalog(open, derivation.projectId);
   const selectedRef = useRef<HTMLButtonElement | null>(null);
@@ -140,7 +159,7 @@ function HandoffAction({ turnId, derivation }: { turnId: string; derivation: Tur
       <PopoverContent
         ref={contentRef}
         tabIndex={-1}
-        align="start"
+        align={align}
         aria-label={t`Hand off to an Agent`}
         className="text-tier-chat w-72 p-1"
         onOpenAutoFocus={(event) => {

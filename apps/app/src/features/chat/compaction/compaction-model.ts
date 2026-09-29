@@ -9,15 +9,13 @@
  */
 import type { Turn } from "@meridian/contracts/protocol";
 import type { CompactionUndoAvailability } from "@meridian/contracts/threads";
-import { readHandoffSeed } from "../derivation/handoff-seed";
-import type { QueuedControl } from "./thread-controls";
 
 export type CompactionTrigger = "auto" | "manual";
 
 export type CompactionFacts = {
   trigger: CompactionTrigger;
-  /** The writer control this divider ran (`controlMessageId`) or absorbed (`satisfiesControlId`). */
-  controlIds: readonly string[];
+  /** The writer command this divider ran (`controlMessageId`); null for an automatic one. */
+  controlId: string | null;
   /** Typed failure reason on an errored divider; null otherwise. */
   failureReason: string | null;
   summary: string | null;
@@ -56,7 +54,6 @@ export function isCompactionTurn(turn: Turn): boolean {
 export function readCompactionFacts(turn: Turn): CompactionFacts {
   const metadata = record(turn.metadata);
   const controlMessageId = text(metadata?.controlMessageId);
-  const satisfiesControlId = text(metadata?.satisfiesControlId);
   const trigger: CompactionTrigger =
     metadata?.trigger === "manual" || (metadata?.trigger === undefined && controlMessageId)
       ? "manual"
@@ -67,7 +64,7 @@ export function readCompactionFacts(turn: Turn): CompactionFacts {
   const props = record(record(summaryBlock?.content)?.props);
   return {
     trigger,
-    controlIds: [controlMessageId, satisfiesControlId].filter((id): id is string => id !== null),
+    controlId: controlMessageId,
     failureReason: turn.status === "error" ? text(metadata?.reason) : null,
     summary: text(props?.summary),
     tokensBefore: count(props?.tokensBefore),
@@ -88,23 +85,19 @@ export function undoMarkerControlId(turn: Turn): string | null {
 }
 
 /**
- * Every writer control a turn already answers: a divider that ran or absorbed
- * it, an undo marker, or a handoff seed (its brief card owns it from then on,
- * and it is stopped there, never withdrawn). A queued item for one of these is
- * no longer queued.
+ * Every writer command a turn already answers: the divider it ran as, or its
+ * undo marker. A queued item for one of these is no longer queued.
  */
 export function answeredControlIds(turns: readonly Turn[]): ReadonlySet<string> {
   const ids = new Set<string>();
   for (const turn of turns) {
-    if (turn.role === "compaction")
-      for (const id of readCompactionFacts(turn).controlIds) ids.add(id);
-    else if (undoMarkerTarget(turn)) {
-      const id = undoMarkerControlId(turn);
-      if (id) ids.add(id);
-    } else {
-      const id = readHandoffSeed(turn)?.controlMessageId;
-      if (id) ids.add(id);
-    }
+    const id =
+      turn.role === "compaction"
+        ? readCompactionFacts(turn).controlId
+        : undoMarkerTarget(turn)
+          ? undoMarkerControlId(turn)
+          : null;
+    if (id) ids.add(id);
   }
   return ids;
 }
@@ -138,34 +131,25 @@ export function isOverflowShell(turn: Turn, next: Turn | undefined): boolean {
 
 export type DividerState = "pending" | "complete" | "failed" | "cancelled" | "undone";
 
-export type DividerUndo =
-  /** Undo is offered: the server marks it likely to succeed on this divider. */
-  | { kind: "offer" }
-  /** An undo control is on its way to the inbox, waiting there, or being withdrawn. */
-  | { kind: "queued"; control: QueuedControl }
-  | null;
-
 export type DividerView = {
   state: DividerState;
   trigger: CompactionTrigger;
+  /**
+   * A `/compact` that found too little new history since the last compaction.
+   * Expected after an automatic compaction absorbed the need: it reads calmly,
+   * never as an error.
+   */
+  nothingToCompact: boolean;
   summary: string | null;
   /** Shown only when the compaction actually made the context smaller. */
   tokens: { before: number; after: number } | null;
   /** Writer copy for a failure the writer must hear about; null keeps R3's quiet divider. */
   failureCopy: string | null;
-  undo: DividerUndo;
-  /** The writer's last undo request was withdrawn before it ran. */
-  undoNote: "withdrawn" | null;
+  /** Undo is offered: the server marks it likely to succeed, and none is queued. */
+  offerUndo: boolean;
   /** Writer copy from the latest refused undo, while no undo has succeeded. */
   refusalCopy: string | null;
 };
-
-const ACTIVE_UNDO: ReadonlySet<QueuedControl["status"]> = new Set([
-  "queued",
-  "failed",
-  "withdrawing",
-  "withdraw_failed",
-]);
 
 /**
  * One divider's view state. `failureCopyFor` supplies client-owned copy for
@@ -176,10 +160,11 @@ export function dividerView(input: {
   turn: Turn;
   markers: CompactionUndoMarkers;
   undoAvailability: CompactionUndoAvailability;
-  queuedUndo: QueuedControl | null;
+  /** An undo of this divider waits at the transcript tail. */
+  undoQueued: boolean;
   failureCopyFor: (reason: string | null, serverCopy: string | null) => string | null;
 }): DividerView {
-  const { turn, markers, undoAvailability, queuedUndo } = input;
+  const { turn, markers, undoAvailability, undoQueued } = input;
   const facts = readCompactionFacts(turn);
   const state: DividerState = markers.undone
     ? "undone"
@@ -196,30 +181,29 @@ export function dividerView(input: {
     facts.tokensAfter < facts.tokensBefore
       ? { before: facts.tokensBefore, after: facts.tokensAfter }
       : null;
+  const nothingToCompact = state === "failed" && facts.failureReason === "nothing_to_compact";
   // R3: an autocompaction's failure is carried by the failed reply under the
   // writer's newest message. A manual one has no reply to carry it.
   const failureCopy =
-    state === "failed" && facts.trigger === "manual"
+    state === "failed" && facts.trigger === "manual" && !nothingToCompact
       ? input.failureCopyFor(facts.failureReason, turn.error)
       : null;
-  const activeUndo = queuedUndo && ACTIVE_UNDO.has(queuedUndo.status) ? queuedUndo : null;
-  let undo: DividerUndo = null;
-  if (state === "complete") {
-    if (activeUndo) undo = { kind: "queued", control: activeUndo };
-    // R-C6-2: offer Undo only where it is likely to succeed. `would_recompact`
-    // means restoring the history would compact it again at once.
-    else if (undoAvailability?.turnId === turn.id && undoAvailability.availability === "likely")
-      undo = { kind: "offer" };
-  }
-  const refusalCopy = state === "complete" && !activeUndo ? (markers.refusal?.error ?? null) : null;
+  // R-C6-2: offer Undo only where it is likely to succeed. `would_recompact`
+  // means restoring the history would compact it again at once.
+  const offerUndo =
+    state === "complete" &&
+    !undoQueued &&
+    undoAvailability?.turnId === turn.id &&
+    undoAvailability.availability === "likely";
+  const refusalCopy = state === "complete" && !undoQueued ? (markers.refusal?.error ?? null) : null;
   return {
     state,
     trigger: facts.trigger,
+    nothingToCompact,
     summary: facts.summary,
     tokens,
     failureCopy,
-    undo,
-    undoNote: state === "complete" && queuedUndo?.status === "withdrawn" ? "withdrawn" : null,
+    offerUndo,
     refusalCopy,
   };
 }

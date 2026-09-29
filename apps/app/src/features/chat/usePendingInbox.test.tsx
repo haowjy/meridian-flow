@@ -15,6 +15,11 @@ vi.mock("@/features/project/context/open-project-document", () => ({
   useOpenProjectDocument: () => () => undefined,
   useProjectDocumentNavigationProjectId: () => null,
 }));
+// Hand off needs a primary chat's derivation; this test renders a bare row.
+vi.mock("./derivation/DeriveTurnActions", () => ({
+  HandoffTurnAction: () => null,
+  useTurnDerivation: () => null,
+}));
 vi.mock("@/rich-content/Markdown", () => ({
   Markdown: ({ children }: { children: React.ReactNode }) => children,
 }));

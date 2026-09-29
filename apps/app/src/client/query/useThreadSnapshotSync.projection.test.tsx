@@ -671,7 +671,7 @@ describe("stale acquisition and missing targets", () => {
     expect(harness.snapshotRequest).toHaveBeenCalledTimes(1);
   });
 
-  it("revalidates as a run ends and on every inbox frame", async () => {
+  it("revalidates as a run ends, on every inbox frame, and on every status frame", async () => {
     vi.useFakeTimers();
     harness.snapshotRequest.mockReset().mockImplementation(async () => ({
       thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
@@ -729,6 +729,19 @@ describe("stale acquisition and missing targets", () => {
     );
     await settle();
     expect(harness.snapshotRequest).toHaveBeenCalledTimes(4);
+    // A handoff brief starts and ends with no run: only its status frame says so.
+    act(() =>
+      bus.emit(
+        {
+          type: EventType.CUSTOM,
+          name: "meridian.thread.status",
+          value: { threadId: "thread-1", status: { kind: "asleep" }, runningTurnId: null },
+        } as AGUIEvent,
+        "4000",
+      ),
+    );
+    await settle();
+    expect(harness.snapshotRequest).toHaveBeenCalledTimes(5);
   });
 
   it("settles a stopped autocompaction from the empty inbox frame its lease release sends", async () => {
