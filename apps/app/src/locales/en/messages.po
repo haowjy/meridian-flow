@@ -3022,8 +3022,8 @@ msgid "Open full screen"
 msgstr "Open full screen"
 
 #: src/features/project/dock/DockFileView.tsx
-msgid "Open in Editor"
-msgstr "Open in Editor"
+#~ msgid "Open in Editor"
+#~ msgstr "Open in Editor"
 
 #: src/components/app/composer/ComposerReferenceMenu.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx

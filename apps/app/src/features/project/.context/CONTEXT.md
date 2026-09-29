@@ -124,10 +124,11 @@ failed New note remains as a retryable, dismissible attempt row.
 leaves. It reconciles against the route screen and Work identity, including
 unresolved client-addressed creation routes, so the collection and other screens
 cannot inherit a prior Work's file.
-The viewer uses `ContextViewerBareHost` because dock header chrome names the file
-and provides Open in Editor; text content, images, and PDFs stay constrained to
-the dock body. Open in Editor clears the slot before routing through
-`openWorkContext`.
+The viewer uses `ContextViewerBareHost` because dock header chrome names the file;
+text content, images, and PDFs stay constrained to the dock body. It has no Open
+in Editor: Scratch and Uploads have no Editor destination (the Editor shows
+"resource-viewing" for them), so the dock is their only viewer until a dedicated
+popup or sidebar viewer replaces it.
 
 The chat index is the project root (`/p/<project>`). It reads a flat,
 cursor-paginated primary-chat feed ordered by last activity. Favorites is a

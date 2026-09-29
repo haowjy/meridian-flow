@@ -8,17 +8,14 @@
  */
 import type { ReactNode } from "react";
 
-export type ReadOnlyViewerHeader = {
-  action?: ReactNode;
-} & (
+export type ReadOnlyViewerHeader =
   | {
       /** Writer-facing location label for hosts whose chrome already names the file. */
       location: { name: string; folder?: string };
       name?: never;
       path?: never;
     }
-  | { location?: never; name: string; path: string }
-);
+  | { location?: never; name: string; path: string };
 
 export type ReadOnlyViewerFrameProps = {
   /** File identity or writer-facing location, depending on the host's chrome. */
@@ -60,7 +57,6 @@ export function ReadOnlyViewerFrame({ header, children, footer }: ReadOnlyViewer
               </>
             )}
           </div>
-          {header.action}
         </header>
       ) : null}
       <div
