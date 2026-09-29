@@ -126,7 +126,9 @@ menu and the collection's Undo rows share it; it holds no state of its own
 another Work or starting a new one closes the Undo windows. The page body starts with
 the Work's heading (`WorkHeading`), renamed in place like the tab; both titles
 read the same route Work, so the update command's projection publishes a
-rename in both places at once. Then
+rename in both places at once. Every title slot (`TitleEditSlot`, keyed by
+`titleKey`) reopens only for the latest rename of its title, and never takes
+focus from where the writer has moved on. Then
 the description: clicking a clamped description shows all of it, Show less folds
 it, and a right-aligned Edit edits it in place without moving (see DESIGN.md),
 with Cancel and Save right-aligned below. The last opened Work is remembered
@@ -159,7 +161,9 @@ the viewer, and the contained dock switch can return to Chat or close the file.
 `viewerTabForCatalogFile` is the common catalog-file to viewer-tab builder for
 Scratch and Uploads. Files search uses one name matcher across drafts,
 Scratch, and Uploads; rename collisions use direct catalog siblings, and a
-failed New note remains as a retryable, dismissible attempt row.
+failed New note remains as a retryable, dismissible attempt row. Scratch and
+Uploads list in the sidebar tree's order (`compareTreePlaces`), attempts sorted
+by the path they will land at, so a landing file keeps its row.
 `ProjectView` clears the slot when its Work changes or the Work destination
 leaves. It reconciles against the route screen and Work identity, including
 unresolved client-addressed creation routes, so the collection and other screens
