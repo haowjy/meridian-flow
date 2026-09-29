@@ -740,19 +740,9 @@ export function createDeliveryAdapter(
         });
         if (
           completion.turn.status === "cancelled" ||
-          (cause.kind === "failed" &&
-            (cause.acknowledgeInbox ||
-              (completion.turn.metadata as import("@meridian/contracts/threads").JsonObject | null)
-                ?.trigger === "manual"))
+          (cause.kind === "failed" && cause.acknowledgeInbox)
         ) {
-          const ids =
-            (completion.turn.metadata as import("@meridian/contracts/threads").JsonObject | null)
-              ?.trigger === "manual"
-              ? (await inbox.selectPending(threadId))
-                  .filter((row) => row.intent === "control" && receipt?.ids.includes(row.id))
-                  .map((row) => row.id)
-              : (receipt?.ids ?? []);
-          await inbox.ack(threadId, ids);
+          await inbox.ack(threadId, receipt?.ids ?? []);
         }
         await deps.runClaim.release(input.lease);
         await appendPending(threadId);
