@@ -60,6 +60,7 @@ type HandoffBriefServiceDeps = {
   eventSink: EventSink;
   threadLock: ThreadLock;
   runClaim: Pick<RunClaim, "hold">;
+  prioritizePendingControls(threadId: ThreadId): Promise<void>;
   wakeIfRunnable(threadId: ThreadId): Promise<void>;
   billingUsage: Pick<BillingUsagePolicy, "canStartTurn">;
   toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
@@ -408,6 +409,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
           handoffSeedBlock(seed, undefined, readable),
           {},
         );
+        await deps.prioritizePendingControls(threadId);
       });
       stopped = true;
     });

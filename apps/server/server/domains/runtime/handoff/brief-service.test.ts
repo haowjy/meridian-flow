@@ -79,6 +79,7 @@ describe("handoff brief service", () => {
           };
         },
       },
+      async prioritizePendingControls() {},
       async wakeIfRunnable(threadId) {
         wakes.push(threadId);
       },
@@ -159,6 +160,7 @@ describe("handoff brief service", () => {
           };
         },
       },
+      async prioritizePendingControls() {},
       async wakeIfRunnable() {},
       billingUsage: state.rig.deps.billingUsage,
       async generate({ signal }) {
@@ -221,6 +223,7 @@ describe("handoff brief service", () => {
         },
       },
       runClaim: rig.runClaim,
+      async prioritizePendingControls() {},
       wakeIfRunnable: createWakeIfRunnable({
         delivery: rig.delivery,
         runStarter: createRunStarter(rig.runner, rig.deps.eventSink),
@@ -318,6 +321,7 @@ describe("handoff brief service", () => {
         withThreadLock: (_threadId, operation) => operation(),
       },
       runClaim: rig.runClaim,
+      async prioritizePendingControls() {},
       wakeIfRunnable,
       billingUsage: rig.deps.billingUsage,
       async generate() {

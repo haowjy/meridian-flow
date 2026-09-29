@@ -42,6 +42,7 @@ import type { ThreadLock } from "../loop/thread-lock.js";
 /** Adapter-private storage primitives; never injected into the model loop or producers. */
 export interface DeliveryStore extends InboxReader {
   findMessage(id: string): Promise<InboxMessage | null>;
+  prioritizePendingControls(threadId: ThreadId): Promise<void>;
   workNoticeTargets(projectId: ProjectId): Promise<ThreadId[]>;
   canMaterializeWork(threadId: ThreadId): Promise<boolean>;
   pendingWorkThreads(limit: number, afterThreadId?: ThreadId): Promise<ThreadId[]>;
@@ -601,6 +602,7 @@ export function createDeliveryAdapter(
   }
 
   return {
+    prioritizePendingControls: (threadId) => inbox.prioritizePendingControls(threadId),
     ...createThreadControls({
       withThreadLock: threadLock.withThreadLock,
       findMessage: inbox.findMessage,

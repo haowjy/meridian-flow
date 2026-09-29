@@ -928,6 +928,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
     threadLock,
     runClaim: ports.runClaim,
+    prioritizePendingControls: (threadId) => delivery.prioritizePendingControls(threadId),
     wakeIfRunnable,
     billingUsage: ports.billingUsage,
     toolRegistry,

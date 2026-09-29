@@ -102,6 +102,18 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
         .limit(1);
       return row ? toInboxMessage(row) : null;
     },
+    async prioritizePendingControls(threadId) {
+      await db_()
+        .update(schema.threadInboxMessages)
+        .set({ runsFirst: true })
+        .where(
+          and(
+            eq(schema.threadInboxMessages.threadId, threadId),
+            eq(schema.threadInboxMessages.intent, "control"),
+            isNull(schema.threadInboxMessages.deliveredAt),
+          ),
+        );
+    },
     async enqueue(draft) {
       const [inserted] = await db_()
         .insert(schema.threadInboxMessages)

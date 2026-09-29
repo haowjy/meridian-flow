@@ -84,6 +84,8 @@ else
         eventSink: createInMemoryEventSink(),
         threadLock: createDrizzleThreadLock(db),
         runClaim,
+        prioritizePendingControls: (threadId) =>
+          createDrizzleInbox(db).prioritizePendingControls(threadId),
         async wakeIfRunnable() {},
         billingUsage: { canStartTurn: options.canStartTurn ?? (async () => true) },
         generate:
@@ -180,6 +182,8 @@ else
         eventSink: createInMemoryEventSink(),
         threadLock: createDrizzleThreadLock(db),
         runClaim,
+        prioritizePendingControls: (threadId) =>
+          createDrizzleInbox(db).prioritizePendingControls(threadId),
         async wakeIfRunnable(threadId) {
           if (threadId === destination.id) wakes += 1;
         },
@@ -276,6 +280,8 @@ else
         eventSink: createInMemoryEventSink(),
         threadLock: createDrizzleThreadLock(db),
         runClaim,
+        prioritizePendingControls: (threadId) =>
+          createDrizzleInbox(db).prioritizePendingControls(threadId),
         wakeIfRunnable: async (threadId) => {
           await wakeIfRunnable(threadId);
           markWoke();
@@ -402,6 +408,8 @@ else
         eventSink: createInMemoryEventSink(),
         threadLock: createDrizzleThreadLock(db),
         runClaim,
+        prioritizePendingControls: (threadId) =>
+          createDrizzleInbox(db).prioritizePendingControls(threadId),
         wakeIfRunnable,
         billingUsage,
         async generate({ signal }) {
@@ -601,6 +609,14 @@ else
     it("keeps Stop's terminal block when a late provider result arrives", async () => {
       const fixture = await handoffSeed();
       const runClaim = createDrizzleRunClaim(db, { holderId: "stop-race" });
+      const inbox = createDrizzleInbox(db);
+      const compact = await inbox.enqueue({
+        threadId: fixture.destination.id,
+        intent: "control",
+        provenance: { kind: "writer", actorId: fixture.ids.user },
+        body: { kind: "compact" },
+        idempotencyKey: "compact-before-brief-stop",
+      });
       let started!: () => void;
       const providerStarted = new Promise<void>((resolve) => {
         started = resolve;
@@ -628,6 +644,7 @@ else
       expect(await startBrief(service, fixture.destination.id, fixture.seed.id)).toBe(true);
       await providerStarted;
       expect(await service.stop(fixture.destination.id, fixture.seed.id)).toBe(true);
+      expect(await inbox.findMessage(compact.id)).toMatchObject({ runsFirst: true });
       release();
       await expect
         .poll(async () => (await fixture.repos.turns.findById(fixture.seed.id))?.status)
