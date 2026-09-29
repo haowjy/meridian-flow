@@ -35,7 +35,10 @@ export function createRunSessions(deps: {
     lease: Lease;
   }): Promise<Turn>;
   runClaim: RunClaim;
-  delivery: Pick<RuntimeDelivery, "repairOrphanedTurns" | "refreshPending" | "selectPending">;
+  delivery: Pick<
+    RuntimeDelivery,
+    "repairOrphanedTurns" | "refreshPending" | "selectPending" | "readRunReceiptIds"
+  >;
   handoffBriefs: import("../ports/handoff-briefs.js").HandoffBriefStopper;
   repos: { turns: TurnRepository };
   headSeq(threadId: ThreadId): Promise<bigint>;
@@ -88,6 +91,15 @@ export function createRunSessions(deps: {
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     let preparedRun = false;
     let setupMayWake = false;
+    const unacknowledgedReceiptIds = new Set<string>();
+    async function retainReceiptIds(heldLease: Lease) {
+      try {
+        for (const id of await deps.delivery.readRunReceiptIds(heldLease))
+          unacknowledgedReceiptIds.add(id);
+      } catch (error) {
+        observe(threadId, "receipt_read.failed", error);
+      }
+    }
     async function cleanup() {
       clearInterval(heartbeat);
       parentSignal?.removeEventListener("abort", abort);
@@ -113,7 +125,7 @@ export function createRunSessions(deps: {
         }
         if (claimReleased && wakeAfterRelease) {
           void session.completion
-            .then(() => wakeIfRunnable(threadId))
+            .then(() => wakeIfRunnable(threadId, [...unacknowledgedReceiptIds]))
             .catch((error) => observe(threadId, "cleanup_wake.failed", error));
         }
       }
@@ -170,6 +182,7 @@ export function createRunSessions(deps: {
           } catch (error) {
             observe(threadId, "execution.failed", error);
             if (error instanceof UnsettledPlaceholderError) throw error;
+            if (session.currentTurn?.kind === "assistant") await retainReceiptIds(heldLease);
             turn = await deps.finalizeFailure({
               threadId,
               turnId: session.currentTurn?.id ?? loop.currentTurn?.id ?? loop.terminalTurnId!,
@@ -198,6 +211,7 @@ export function createRunSessions(deps: {
       setupMayWake = error instanceof NoPendingWakeError || isAbortError(error);
       if (lease && session.currentTurn) {
         try {
+          if (session.currentTurn.kind === "assistant") await retainReceiptIds(lease);
           await deps.finalizeFailure({
             threadId,
             turnId: session.currentTurn.id,

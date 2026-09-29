@@ -96,6 +96,8 @@ export interface RuntimeDelivery
   refreshPending(threadId: ThreadId): Promise<void>;
   /** Settle any previous primary assistant before a new run selects context. */
   repairOrphanedTurns(lease: Lease): Promise<void>;
+  /** Receipt rows still unacknowledged when the owning run releases its claim. */
+  readRunReceiptIds(lease: Lease): Promise<string[]>;
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   /** Parent-first business transaction; the producer does not reacquire the lock. */
   withThreadLock<T>(

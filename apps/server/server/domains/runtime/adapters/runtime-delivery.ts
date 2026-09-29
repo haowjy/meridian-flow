@@ -630,6 +630,7 @@ export function createDeliveryAdapter(
       );
       await deps.publishFinalizedReports(reports);
     },
+    readRunReceiptIds: async (lease) => (await leaseStore.lockReceipt(lease))?.ids ?? [],
     selectPending: inbox.selectPending,
     readPendingProjection: inbox.readPendingProjection,
     pendingMessageThreads: async (limit, afterThreadId) => {

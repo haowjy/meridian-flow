@@ -43,6 +43,19 @@ else
       });
     }
 
+    function assertOneRunStartDuringCleanup(rig: Awaited<ReturnType<typeof fixture>>) {
+      const start = rig.runClaim.startExecution.bind(rig.runClaim);
+      const starts = vi
+        .spyOn(rig.runClaim, "startExecution")
+        .mockResolvedValue(null)
+        .mockImplementationOnce(start);
+      return () => {
+        const attempts = starts.mock.calls.length;
+        starts.mockRestore();
+        expect(attempts).toBe(1);
+      };
+    }
+
     async function settled(rig: Awaited<ReturnType<typeof fixture>>) {
       await expect
         .poll(async () => (await rig.runClaim.read(rig.threadId)).kind, { timeout: 15000 })
@@ -53,6 +66,82 @@ else
       await expect.poll(rig.activeRuns, { timeout: 15000 }).toBe(0);
       return rig.repos.turns.listByThread(rig.threadId);
     }
+
+    async function drainControls(rig: Awaited<ReturnType<typeof fixture>>) {
+      const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
+      return run.execute();
+    }
+
+    it("keeps a failed reply sweep-paced while a command waits behind it", async () => {
+      const gateway = scriptedGateway({ usage: lowUsage });
+      gateway.stream = async function* (request) {
+        gateway.requests.push(request);
+        yield {
+          type: "error",
+          code: "provider_error",
+          message: "provider unavailable",
+          retryable: false,
+        };
+      };
+      const rig = await manualFixture({ gateway });
+      await rig.delivery.enqueue({
+        threadId: rig.threadId,
+        intent: "message",
+        provenance: { kind: "writer", actorId: rig.ids.user },
+        body: { kind: "text", text: "M ahead of K" },
+        idempotencyKey: "failed-message",
+      });
+      await compactControl(rig);
+
+      const assertOneStart = assertOneRunStartDuringCleanup(rig);
+      const failed = await drainControls(rig);
+      assertOneStart();
+      expect(failed.status).toBe("error");
+      expect(gateway.requests).toHaveLength(1);
+      expect(await rig.delivery.selectPending(rig.threadId)).toHaveLength(2);
+      expect((await rig.delivery.selectPending(rig.threadId))[0]?.intent).toBe("message");
+
+      // The next explicit wake retries the pending reply once. The command remains behind it.
+      await drainControls(rig);
+      expect(gateway.requests).toHaveLength(2);
+    });
+
+    it("wakes a new message after a failed reply without waiting for the sweep", async () => {
+      let rig: Awaited<ReturnType<typeof fixture>>;
+      let arrivingId = "";
+      const gateway = scriptedGateway({
+        usage: lowUsage,
+        errorAtCall: 1,
+        onStream: async (call) => {
+          if (call !== 1) return;
+          const arriving = await rig.delivery.enqueue({
+            threadId: rig.threadId,
+            intent: "message",
+            provenance: { kind: "writer", actorId: rig.ids.user },
+            body: { kind: "text", text: "arrived during failure" },
+            idempotencyKey: "arrived-during-failure",
+          });
+          arrivingId = arriving.id;
+        },
+      });
+      rig = await manualFixture({ gateway });
+      const initial = await rig.delivery.enqueue({
+        threadId: rig.threadId,
+        intent: "message",
+        provenance: { kind: "writer", actorId: rig.ids.user },
+        body: { kind: "text", text: "first failed request" },
+        idempotencyKey: "first-failed-request",
+      });
+
+      await drainControls(rig);
+      const turns = await settled(rig);
+
+      expect(turns.filter((turn) => turn.id === initial.id)).toHaveLength(1);
+      expect(turns).toContainEqual(expect.objectContaining({ id: arrivingId }));
+      expect(gateway.requests.length).toBeGreaterThanOrEqual(2);
+      expect(JSON.stringify(gateway.requests[1])).toContain("first failed request");
+      expect(JSON.stringify(gateway.requests[1])).toContain("arrived during failure");
+    });
 
     it("answers messages before a command queued earlier during the reply", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
