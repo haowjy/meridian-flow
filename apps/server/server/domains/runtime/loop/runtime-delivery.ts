@@ -6,7 +6,7 @@ import type { WorkContextNotices } from "../../projects/index.js";
 import type { CompactionDecision } from "./compaction/decision.js";
 import type { FinalizedExecution, TerminalCause } from "./execution-finalizer.js";
 import type { drainInbox, InboxDrain } from "./inbox-context.js";
-import type { ControlMessage, InboxWorkSelection } from "./next-inbox-work.js";
+import type { InboxWorkSelection } from "./next-inbox-work.js";
 import type { InboxMessage, InboxReader, Lease, MessageDraft } from "./ports.js";
 
 export type DeliveryTransaction = {
@@ -32,11 +32,7 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
     | { kind: "assistant" }
     | {
         kind: "placeholder";
-        complete: (
-          prepared: TCurrent | undefined,
-          failure: unknown | undefined,
-          selection: DeliveryBoundarySelection,
-        ) => Promise<Turn>;
+        complete: (prepared: TCurrent | undefined, failure: unknown | undefined) => Promise<Turn>;
       };
   /** Prepare image decisions/breaks before the next assistant turn is reserved. */
   prepareNextContext: (
@@ -64,7 +60,6 @@ export type DeliverySelectionFields = {
 export type DeliverySelection = DeliverySelectionFields & {
   next: InboxWorkSelection;
   failedControlIds?: ReadonlySet<string>;
-  control: ControlMessage | null;
 };
 export type DeliveryBoundarySelection = DeliverySelectionFields;
 export type AdoptedBatch<TCurrent = undefined> = {

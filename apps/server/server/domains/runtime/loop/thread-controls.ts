@@ -22,7 +22,6 @@ export function createThreadControls(deps: {
   findControlTurn(threadId: ThreadId, controlId: string): Promise<Turn | null>;
   pending(threadId: ThreadId): Promise<ThreadPendingInbox>;
   acknowledge(threadId: ThreadId, id: string): Promise<void>;
-  wake(threadId: ThreadId): void;
 }): ThreadControls {
   return {
     enqueueControl: (input) =>
@@ -63,7 +62,6 @@ export function createThreadControls(deps: {
         if (await deps.findControlTurn(threadId, controlId)) return { outcome: "already_started" };
         if (row.deliveredAt) return { outcome: "withdrawn" };
         await deps.acknowledge(threadId, controlId);
-        deps.wake(threadId);
         return { outcome: "withdrawn" };
       }),
   };

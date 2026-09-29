@@ -140,7 +140,7 @@ export function createDeliveryAdapter(
     };
     const selection: DeliverySelection | DeliveryBoundarySelection =
       at === "run_start"
-        ? { ...selectionFields, next: nextWork, control, failedControlIds }
+        ? { ...selectionFields, next: nextWork, failedControlIds }
         : selectionFields;
     return { selection, pendingBatch, work };
   }
@@ -475,7 +475,6 @@ export function createDeliveryAdapter(
           ? await input.current.complete(
               adoption.preparedCurrent,
               prepared.successorFailure === undefined ? preparationFailure : undefined,
-              adoption.selection,
             )
           : {
               ...currentTurn,
@@ -614,7 +613,6 @@ export function createDeliveryAdapter(
         await inbox.ack(id, [controlId]);
         await appendPending(id);
       },
-      wake: (id) => schedulePostCommit(() => deps.runStarter.start(id)),
     }),
     threadChanged,
     async projectChanged(projectId) {
@@ -671,7 +669,8 @@ export function createDeliveryAdapter(
         threadId: lease.threadId,
         select: (failedControlIds) =>
           selectForPreparation(lease.threadId, "run_start", failedControlIds),
-        retryControlId: (selection) => selection.control?.id ?? null,
+        retryControlId: (selection) =>
+          selection.next.kind === "control" ? selection.next.control.id : null,
         signal: options?.signal,
         validate: async () => {
           if ((await leaseStore.lockReceipt(lease))?.cancelRequested)

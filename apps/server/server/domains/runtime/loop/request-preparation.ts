@@ -47,7 +47,7 @@ export type PrepareRequestInput = {
   signal?: AbortSignal;
 };
 export type PreparedRequest = {
-  undos: PreparedUndo[];
+  undo: PreparedUndo | null;
   turns: Turn[];
   blocks: Block[];
   assembled: AssembledNextTurnContext;
@@ -98,9 +98,7 @@ export async function prepareRequestContext(input: PrepareRequestInput): Promise
       blocks: history.historyBlocks,
       controlMessageId: compact?.id ?? input.controlMessageId,
       skipCompaction:
-        !compact && history.undos.some((u) => u.turn.status === "complete")
-          ? true
-          : input.skipCompaction,
+        !compact && history.undo?.turn.status === "complete" ? true : input.skipCompaction,
     });
     return {
       ...prepared,
@@ -110,10 +108,9 @@ export async function prepareRequestContext(input: PrepareRequestInput): Promise
       blocks: [...history.blocks, ...prepared.assembled.imageContextUpdates.blocks],
     };
   } catch (error) {
-    if (input.signal?.aborted || history.undos.length === 0) throw error;
-    if (history.undos.every((u) => u.turn.status === "error"))
-      throw new UndoRequestPreparationError(history, error);
-    const failedControlIds = new Set(history.undos.map((u) => u.controlId));
+    if (input.signal?.aborted || !history.undo) throw error;
+    if (history.undo.turn.status === "error") throw new UndoRequestPreparationError(history, error);
+    const failedControlIds = new Set([history.undo.controlId]);
     const failed = await prepareControlHistory({
       ...input,
       failedControlIds,
@@ -125,7 +122,7 @@ export async function prepareRequestContext(input: PrepareRequestInput): Promise
 export async function prepareControlHistory(
   input: PrepareRequestInput,
 ): Promise<PreparedControlHistory> {
-  const undos: PreparedUndo[] = [];
+  let undo: PreparedUndo | null = null;
   const addedTurns: Turn[] = [];
   const addedBlocks: Block[] = [];
   const events: OrchestratorEvent[] = [];
@@ -133,7 +130,7 @@ export async function prepareControlHistory(
   let blocks = input.blocks;
   const control = input.control;
   if (control?.body.kind === "compaction_undo") {
-    const undo = await prepareCompactionUndo({
+    undo = await prepareCompactionUndo({
       ...input,
       turns,
       blocks,
@@ -152,7 +149,6 @@ export async function prepareControlHistory(
       },
     });
     const { turn } = undo;
-    undos.push(undo);
     events.push({
       type: "turn.created",
       turn: turn.status === "complete" ? { ...turn, status: "pending", promptBakeId: null } : turn,
@@ -170,7 +166,7 @@ export async function prepareControlHistory(
     blocks = [...blocks, ...nextBlocks];
   }
   return {
-    undos,
+    undo,
     events,
     turns: addedTurns,
     blocks: addedBlocks,
@@ -181,7 +177,7 @@ export async function prepareControlHistory(
 
 async function prepareBaseRequest(
   input: PrepareRequestInput,
-): Promise<Omit<PreparedRequest, "undos" | "turns" | "blocks">> {
+): Promise<Omit<PreparedRequest, "undo" | "turns" | "blocks">> {
   const imageProjectionMode =
     input.imageProjectionMode &&
     revertedCompactionIds(input.turns).has(input.imageProjectionMode.decidingTurnId)

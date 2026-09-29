@@ -514,6 +514,7 @@ async function runDrainTurn(
       const setupThread = await deps.repos.threads.findById(input.threadId);
       if (!setupThread) throw new Error(`Thread not found: ${input.threadId}`);
       const batch = selection.batch;
+      const control = selection.next.kind === "control" ? selection.next.control : null;
       if (selection.next.kind === "none") return null;
       const ctx = await loadRunStartContext(deps, setupThread);
       preparationError = ctx.contextError;
@@ -572,10 +573,7 @@ async function runDrainTurn(
         reservedTurnId;
       let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
       let controlHistory: PreparedControlHistory | null = null;
-      if (
-        selection.control?.body.kind === "compact" &&
-        selection.failedControlIds?.has(selection.control.id)
-      )
+      if (control?.body.kind === "compact" && selection.failedControlIds?.has(control.id))
         preparationError = new CompactionFailureError({
           reason: "compaction_failed",
           phase: "delivery",
@@ -589,7 +587,7 @@ async function runDrainTurn(
             threadId: input.threadId,
             referenceTurnId: referenceUserTurnId,
             currentTurnId: reservedTurnId,
-            control: selection.control,
+            control,
             failedControlIds: selection.failedControlIds,
             pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
             turns: [
@@ -619,7 +617,7 @@ async function runDrainTurn(
         plan = makePlan([]);
         if (preparationError instanceof UndoRequestPreparationError) {
           controlHistory = preparationError.after(plan.turns.at(-1) ?? previousTurn);
-        } else if (selection.control?.body.kind === "compaction_undo") {
+        } else if (control?.body.kind === "compaction_undo") {
           controlHistory = await prepareFailedUndoHistory({
             deps,
             thread: setupThread,
@@ -628,37 +626,39 @@ async function runDrainTurn(
             currentTurnId: reservedTurnId,
             turns: [...inheritedTurns, ...priorTurns, ...plan.turns],
             blocks: [],
-            control: selection.control,
+            control,
             failedControlIds: selection.failedControlIds,
             signal: input.signal,
           });
         }
       }
       const controlPreparation = preflight ?? controlHistory;
+      const preparedUndo = controlPreparation?.undo;
       const imageUpdateTurn = controlPreparation?.turns.at(-1);
       const terminal =
-        !!controlPreparation?.undos.length &&
+        !!preparedUndo &&
         selection.outstanding.length === 0 &&
         preflight?.compaction.kind !== "compact";
-      const reservedTurn = terminal
-        ? controlPreparation!.undos.at(-1)!.turn
-        : reservationTurn(
-            {
-              id: reservedTurnId,
-              threadId: input.threadId,
-              prevTurnId:
-                imageUpdateTurn?.id ?? plan.leafTurnId ?? skillBody?.turn.id ?? prevTurnId,
-              position: nextTurnPosition(
-                imageUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
-              ),
-            },
-            preflight?.compaction ?? { kind: "generate" },
-          );
-      if (preparationError && selection.control?.body.kind === "compact") {
+      const reservedTurn =
+        terminal && preparedUndo
+          ? preparedUndo.turn
+          : reservationTurn(
+              {
+                id: reservedTurnId,
+                threadId: input.threadId,
+                prevTurnId:
+                  imageUpdateTurn?.id ?? plan.leafTurnId ?? skillBody?.turn.id ?? prevTurnId,
+                position: nextTurnPosition(
+                  imageUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
+                ),
+              },
+              preflight?.compaction ?? { kind: "generate" },
+            );
+      if (preparationError && control?.body.kind === "compact") {
         reservedTurn.role = "compaction";
         reservedTurn.origin = "system";
         reservedTurn.status = "pending";
-        reservedTurn.metadata = { trigger: "manual", controlMessageId: selection.control.id };
+        reservedTurn.metadata = { trigger: "manual", controlMessageId: control.id };
       }
       const value = {
         thread: setupThread,
@@ -691,8 +691,8 @@ async function runDrainTurn(
         turnId: reservedTurn.id,
         terminal,
         completedControlIds: [
-          ...(controlPreparation?.undos.map((u) => u.controlId) ?? []),
-          ...(selection.control?.body.kind === "compact" ? [selection.control.id] : []),
+          ...(controlPreparation?.undo ? [controlPreparation.undo.controlId] : []),
+          ...(control?.body.kind === "compact" ? [control.id] : []),
         ],
         turnKind: terminal ? ("assistant" as const) : currentTurnKind(reservedTurn),
         messageIds: [...batch.map(({ id }) => id)],
@@ -718,7 +718,7 @@ async function runDrainTurn(
                   deps,
                   input.threadId,
                   events,
-                  controlPreparation?.undos ?? [],
+                  controlPreparation?.undo ?? null,
                 ),
               };
             },
