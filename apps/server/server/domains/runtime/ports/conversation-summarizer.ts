@@ -25,6 +25,8 @@ export interface ConversationSummarizer {
     owner: { threadId: ThreadId; turnId: TurnId };
     source: { threadId: ThreadId; throughTurnId?: TurnId };
     instruction: "compaction" | "handoff";
+    /** Writer-provided direction for this summary, distinct from transcript source material. */
+    writerInstructions?: string;
     incomingAgentName?: string;
     changedDocuments?: readonly string[];
     requestInHand: GenerateRequest | null;

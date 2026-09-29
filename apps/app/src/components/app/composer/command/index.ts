@@ -15,6 +15,7 @@ export {
   composerChatCommandItems,
   composerSkillCommandItems,
   filterComposerCommandItems,
+  matchComposerChatCommand,
   RESERVED_COMPOSER_COMMAND_SLUGS,
 } from "./command-catalog";
 export { allowsComposerCommandTrigger } from "./command-trigger";

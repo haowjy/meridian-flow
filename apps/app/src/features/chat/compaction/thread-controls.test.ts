@@ -6,6 +6,8 @@ import {
   controlsReducer,
   type LocalControl,
   mergeQueuedControls,
+  placeQueuedControls,
+  type QueuedControl,
 } from "./thread-controls";
 
 const COMPACT = { kind: "compact" } as const;
@@ -14,10 +16,14 @@ function run(actions: ControlAction[], start: readonly LocalControl[] = []) {
   return actions.reduce(controlsReducer, start);
 }
 
-function inboxItem(id: string, control: PendingInboxItem["control"] = COMPACT): PendingInboxItem {
+function inboxItem(
+  id: string,
+  control: PendingInboxItem["control"] = COMPACT,
+  seq = 1,
+): PendingInboxItem {
   return {
     id,
-    seq: 1,
+    seq,
     intent: "control",
     control,
     provenance: { kind: "writer", actorId: "writer" },
@@ -44,21 +50,21 @@ function merge(
 
 describe("optimistic enqueue", () => {
   it("shows the control as queued before the server answers", () => {
-    const local = run([{ type: "enqueue", id: "k", control: COMPACT }]);
+    const local = run([{ type: "enqueue", id: "k", control: COMPACT, afterTurnId: null }]);
     expect(merge(local)).toEqual([{ id: "k", status: "queued" }]);
   });
 
   it("is idempotent on a repeated enqueue of the same id", () => {
     const local = run([
-      { type: "enqueue", id: "k", control: COMPACT },
-      { type: "enqueue", id: "k", control: COMPACT },
+      { type: "enqueue", id: "k", control: COMPACT, afterTurnId: null },
+      { type: "enqueue", id: "k", control: COMPACT, afterTurnId: null },
     ]);
     expect(local).toHaveLength(1);
   });
 
   it("keeps an accepted control queued until the inbox echo, then yields to the server row", () => {
     const accepted = run([
-      { type: "enqueue", id: "k", control: COMPACT },
+      { type: "enqueue", id: "k", control: COMPACT, afterTurnId: null },
       { type: "enqueued", id: "k", pending: inboxItem("k"), turnId: null },
     ]);
     expect(merge(accepted)).toEqual([{ id: "k", status: "queued" }]);
@@ -70,7 +76,7 @@ describe("optimistic enqueue", () => {
 
   it("drops a control a turn already names, even before the inbox echo", () => {
     const accepted = run([
-      { type: "enqueue", id: "k", control: COMPACT },
+      { type: "enqueue", id: "k", control: COMPACT, afterTurnId: null },
       { type: "enqueued", id: "k", pending: inboxItem("k"), turnId: null },
     ]);
     expect(merge(accepted, EMPTY, { executed: ["k"] })).toEqual([]);
@@ -78,7 +84,7 @@ describe("optimistic enqueue", () => {
 
   it("drops a control the server reports as already run", () => {
     const local = run([
-      { type: "enqueue", id: "k", control: COMPACT },
+      { type: "enqueue", id: "k", control: COMPACT, afterTurnId: null },
       { type: "enqueued", id: "k", pending: null, turnId: "c" },
     ]);
     expect(merge(local)).toEqual([]);
@@ -86,7 +92,7 @@ describe("optimistic enqueue", () => {
 
   it("keeps a failed enqueue on the item, and Retry returns it to queued with the same id", () => {
     const failed = run([
-      { type: "enqueue", id: "k", control: COMPACT },
+      { type: "enqueue", id: "k", control: COMPACT, afterTurnId: null },
       { type: "enqueue_failed", id: "k" },
     ]);
     expect(merge(failed)).toEqual([{ id: "k", status: "failed" }]);
@@ -98,7 +104,7 @@ describe("optimistic enqueue", () => {
 
 describe("withdrawal", () => {
   const listed = run([
-    { type: "enqueue", id: "k", control: COMPACT },
+    { type: "enqueue", id: "k", control: COMPACT, afterTurnId: null },
     { type: "enqueued", id: "k", pending: inboxItem("k"), turnId: null },
     { type: "observe", pendingIds: new Set(["k"]) },
   ]);
@@ -169,5 +175,95 @@ describe("server inbox rows", () => {
       { id: "a", status: "queued" },
       { id: "b", status: "queued" },
     ]);
+  });
+});
+
+describe("queue order", () => {
+  const message = (id: string, seq: number): PendingInboxItem => ({
+    ...inboxItem(id, undefined, seq),
+    intent: "message",
+    deliveryState: "waiting",
+  });
+
+  it("remembers the writer message each command was sent after, in seq order", () => {
+    const pending = {
+      items: [
+        message("m2", 4),
+        inboxItem("c2", COMPACT, 5),
+        inboxItem("c1", { kind: "compact", instructions: "Keep the names" }, 2),
+        message("m1", 1),
+        { ...message("notice", 3), provenance: { kind: "system", source: "work" } } as const,
+      ],
+    };
+    const queued = mergeQueuedControls({
+      local: [],
+      pending,
+      executedControlIds: new Set(),
+      leafTurnId: null,
+    });
+    expect(queued.map(({ id, afterTurnId, control }) => ({ id, afterTurnId, control }))).toEqual([
+      { id: "c1", afterTurnId: "m1", control: { kind: "compact", instructions: "Keep the names" } },
+      { id: "c2", afterTurnId: "m2", control: COMPACT },
+    ]);
+  });
+
+  it("keeps a local command's anchor until the inbox lists it", () => {
+    const local = run([{ type: "enqueue", id: "k", control: COMPACT, afterTurnId: "m1" }]);
+    expect(
+      mergeQueuedControls({
+        local,
+        pending: EMPTY,
+        executedControlIds: new Set(),
+        leafTurnId: null,
+      })[0]?.afterTurnId,
+    ).toBe("m1");
+  });
+
+  const control = (id: string, afterTurnId: string | null): QueuedControl => ({
+    id,
+    control: COMPACT,
+    status: "queued",
+    afterTurnId,
+  });
+  const slots = (
+    controls: QueuedControl[],
+    rowTurnIds: (string | null)[],
+    queued: string[],
+  ): Record<number, string[]> =>
+    Object.fromEntries(
+      [
+        ...placeQueuedControls({
+          controls,
+          rowTurnIds,
+          queuedTurnIds: new Set(queued),
+        }),
+      ].map(([index, placed]) => [index, placed.map((entry) => entry.id)]),
+    );
+
+  it("renders a command right after the queued message it was sent after", () => {
+    expect(slots([control("c", "m1")], ["u", "a", "m1", "m2"], ["m1", "m2"])).toEqual({ 3: ["c"] });
+  });
+
+  it("leads the queued messages when it was sent before them all", () => {
+    expect(slots([control("c", null)], ["u", "a", "m1"], ["m1"])).toEqual({ 2: ["c"] });
+  });
+
+  it("ends the transcript when no message waits", () => {
+    expect(slots([control("c", null)], ["u", "a"], [])).toEqual({ 2: ["c"] });
+  });
+
+  it("falls back to the front of the queue once its message was read", () => {
+    // m1 was adopted by the running reply; m2 still waits.
+    expect(slots([control("c", "m1")], ["u", "m1", "a", "m2"], ["m2"])).toEqual({ 3: ["c"] });
+  });
+
+  it("keeps commands sharing a slot in the order given", () => {
+    expect(slots([control("c1", "m1"), control("c2", "m1")], ["u", "a", "m1"], ["m1"])).toEqual({
+      3: ["c1", "c2"],
+    });
+  });
+
+  it("never anchors to an inherited row", () => {
+    expect(slots([control("c", "m1")], [null, "a", "m1"], ["m1"])).toEqual({ 3: ["c"] });
   });
 });

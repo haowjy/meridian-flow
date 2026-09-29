@@ -74,24 +74,17 @@ overflow (a provider context-window failure, below).
 Manual decisions fit against the usable window; their tail budget base is
 `min(trigger, tokensBefore)`. Automatic and overflow decisions use their fit
 limit as the tail budget base. Pins preserve unanswered directed requests and
-the newest writer request. When Stop stamps a command, its selected waiting
-messages are adopted and pinned with that command.
+the newest writer request. Adopted-but-unanswered requests remain pinned; rows behind the command are not adopted by C.
 
-`compaction/decision.ts` refuses without calling the summarizer or opening an
-epoch; the refusal is an `error` divider:
-
-- **`nothing_to_compact`**: nothing after the active cut, no pinned request, or
-  a completed compaction as the newest completed turn (a `/compact` right after
-  a completed C refuses, because C's retained tail is not new history).
-- **The manual floor** (`nothing_to_compact` at `initial_prepare`): a manual
-  decision whose compactable range estimates strictly below the summarizer's
-  maximum output tokens. The range is `projectCompactedHistory` of the active
-  projection, the same input as the cold summary, so retained pins and tail,
-  superseded raw history, and fixed prompt and tool overhead cannot lift it
-  over the floor. No summary call, response row, or debit. Automatic and
-  overflow decisions do not use it. Rationale: a summary as long as its
-  maximum output could outweigh what it replaces.
-- **`context_too_large`**: a minimal tail over the usable window.
+A manual decision always plans a cut once the thread has a completed reply. It
+uses the normal retained tail when that leaves history to summarize; otherwise it
+replans with the minimal tail (only outstanding pins, with tool groups intact).
+Thus consecutive manual compactions summarize the prior summary plus everything
+after it. The controls route rejects a thread with no completed reply before
+enqueue. A minimal tail that does not fit still fails as `context_too_large`.
+Optional `/compact` instructions are stored on C and added to both warm-branch
+and rolling summarizer prompts. Forking at a completed C inherits that C, so the
+fork's active history begins with its summary and retained tail.
 
 The reservation commit consumes a selected compact command by acknowledging
 its inbox row with C. A crash after compact starts repairs the already-created

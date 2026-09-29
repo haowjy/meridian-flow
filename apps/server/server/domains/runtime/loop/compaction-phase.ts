@@ -81,7 +81,7 @@ export async function executeCompaction({
       decision.plan.outcome !== "planned" || decision.refusal
         ? {
             kind: "failed",
-            error: new CompactionPreparationError(decision.refusal ?? "nothing_to_compact"),
+            error: new CompactionPreparationError(decision.refusal ?? "compaction_failed"),
             modelResponses: [],
             summarizer: { path: "rolling", segments: 0 },
           }
@@ -89,6 +89,7 @@ export async function executeCompaction({
             owner: { threadId: input.threadId, turnId: currentTurn.id },
             source: { threadId: input.threadId },
             instruction: "compaction",
+            writerInstructions: decision.instructions,
             changedDocuments: changed,
             requestInHand: decision.requestInHand,
             knownTooLarge:

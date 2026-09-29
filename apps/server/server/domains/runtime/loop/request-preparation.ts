@@ -34,6 +34,7 @@ export type PrepareRequestInput = {
   forcedDecision?: ForcedCompactionDecision;
   imageProjectionMode?: CompactionImageProjectionMode;
   controlMessageId?: string;
+  instructions?: string;
   control?: ControlMessage | null;
   assertNoResponseScope?: () => void;
   pinnedRequestTurnIds?: ReadonlySet<string>;
@@ -53,6 +54,7 @@ export async function prepareRequestContext(input: PrepareRequestInput): Promise
   const prepared = await prepareBaseRequest({
     ...input,
     controlMessageId: compact?.id ?? input.controlMessageId,
+    instructions: compact?.body.instructions ?? input.instructions,
   });
   return {
     ...prepared,
@@ -154,6 +156,7 @@ async function prepareBaseRequest(
           }
         : input.forcedDecision,
       controlMessageId: input.controlMessageId,
+      instructions: input.instructions,
       pinnedRequestTurnIds: input.pinnedRequestTurnIds,
       summaryReserveTokens: input.deps.summarizer.maxOutputTokens,
       baseline,

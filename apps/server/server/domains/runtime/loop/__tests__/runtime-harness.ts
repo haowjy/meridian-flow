@@ -97,12 +97,7 @@ export function createRuntimeHarness(
   const toolRegistry = overrides.toolRegistry ?? createToolRegistry();
   const notices = suppliedNotices ?? createTestNoticePort();
   const inbox = suppliedInbox ?? createInMemoryInbox();
-  const runClaim =
-    overrides.runClaim ??
-    createInMemoryRunClaim({
-      prioritizePendingControls: (inbox as Partial<ReturnType<typeof createInMemoryInbox>>)
-        .prioritizePendingControls,
-    });
+  const runClaim = overrides.runClaim ?? createInMemoryRunClaim();
   const threadLock = suppliedLock ?? createInMemoryThreadLock();
   const shutdown = overrides.shutdown ?? { started: false };
   const workContext = overrides.workContext ?? {

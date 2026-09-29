@@ -9,9 +9,8 @@ import {
   type CompactionFailureReason,
   compactionFailedCopy,
 } from "../../../threads/index.js";
-import { orderTurnsByPosition } from "../../../threads/order-turns.js";
 import type { GenerateRequest, TokenizerFamily } from "../../gateway/index.js";
-import { estimateRequestTokens, estimateTurnTokens } from "./estimate.js";
+import { estimateRequestTokens } from "./estimate.js";
 import { type CompactionPlan, planCompaction } from "./plan.js";
 import { type ProjectedActiveHistory, projectCompactedHistory } from "./project.js";
 
@@ -28,7 +27,8 @@ export type CompactionDecision =
       kind: "compact";
       plan: CompactionPlan;
       controlMessageId?: string;
-      refusal?: "nothing_to_compact" | "context_too_large";
+      instructions?: string;
+      refusal?: "context_too_large";
       requestInHand: GenerateRequest;
       trigger: "auto" | "manual";
       fitLimitTokens: number;
@@ -53,8 +53,6 @@ export class CompactionFailureError extends CompactionPreparationError {
 
 export function compactionFailureMessage(reason: CompactionFailureReason): string {
   switch (reason) {
-    case "nothing_to_compact":
-      return "There is nothing to compact yet.";
     case "context_too_large":
       return "This message is too long for this chat's model.";
     case "context_window_exceeded":
@@ -67,9 +65,7 @@ export function compactionFailureMessage(reason: CompactionFailureReason): strin
 /** Keep rejection reasons in details instead of expanding the system error-code family. */
 export function compactionFailureMeridianError(failure: CompactionFailureOutcome, message: string) {
   const code =
-    failure.reason === "context_too_large" ||
-    failure.reason === "nothing_to_compact" ||
-    failure.reason === "context_window_exceeded"
+    failure.reason === "context_too_large" || failure.reason === "context_window_exceeded"
       ? failure.reason
       : "compaction_failed";
   return {
@@ -110,6 +106,7 @@ export function decideCompaction(input: {
   forcedDecision?: ForcedCompactionDecision;
   pinnedRequestTurnIds?: ReadonlySet<string>;
   controlMessageId?: string;
+  instructions?: string;
   summaryReserveTokens: number;
   baseline: { inputTokens: number; messageCount: number } | null;
   tokenizer: TokenizerFamily;
@@ -118,7 +115,7 @@ export function decideCompaction(input: {
   if (fitLimitTokens === null) return { kind: "generate" };
   const tokensBefore = estimateRequestTokens(input);
   if (!input.forcedDecision && tokensBefore < fitLimitTokens) return { kind: "generate" };
-  const plan = planCompaction({
+  const planInput = {
     turns: input.turns,
     blocks: input.blocks,
     fitLimitTokens,
@@ -137,30 +134,15 @@ export function decideCompaction(input: {
       baseline: null,
     }),
     tokenizer: input.tokenizer,
-  });
-  const compactable =
-    plan.outcome === "planned" && input.forcedDecision?.trigger === "manual"
-      ? projectCompactedHistory(input.activeHistory, plan)
-      : null;
-  const belowSummaryFloor =
-    compactable !== null &&
-    compactable.turns.reduce(
-      (tokens, turn) =>
-        tokens +
-        estimateTurnTokens(
-          turn,
-          compactable.blocks.filter((block) => block.turnId === turn.id),
-          input.tokenizer,
-        ),
-      0,
-    ) < input.summaryReserveTokens;
-  // A retained tail is not new history: consecutive manual controls cannot
-  // repeatedly summarize it without an intervening completed turn.
-  const immediatelyAfterCompaction =
+  } satisfies Parameters<typeof planCompaction>[0];
+  let plan = planCompaction(planInput);
+  if (
     input.forcedDecision?.trigger === "manual" &&
-    orderTurnsByPosition(input.turns)
-      .reverse()
-      .find((turn) => turn.status === "complete")?.role === "compaction";
+    (plan.outcome === "no_compaction" ||
+      projectCompactedHistory(input.activeHistory, plan).blocks.length === 0)
+  ) {
+    plan = planCompaction({ ...planInput, minimalTail: true });
+  }
   return input.forcedDecision?.trigger === "manual" ||
     (plan.outcome === "planned" && plan.minimalTailFits)
     ? {
@@ -174,11 +156,10 @@ export function decideCompaction(input: {
           : {}),
         tokensBefore,
         ...(input.controlMessageId ? { controlMessageId: input.controlMessageId } : {}),
-        ...(immediatelyAfterCompaction || plan.outcome === "no_compaction" || belowSummaryFloor
-          ? { refusal: "nothing_to_compact" as const }
-          : !plan.minimalTailFits
-            ? { refusal: "context_too_large" as const }
-            : {}),
+        ...(input.instructions ? { instructions: input.instructions } : {}),
+        ...(plan.outcome === "no_compaction" || !plan.minimalTailFits
+          ? { refusal: "context_too_large" as const }
+          : {}),
       }
     : { kind: "too_large", plan };
 }

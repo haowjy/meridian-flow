@@ -7,6 +7,7 @@ import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
 import { createOrchestrator } from "./orchestrator.js";
+import { requireCompletedReplyForCompaction } from "./thread-controls.js";
 
 const url = process.env.DATABASE_URL;
 if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? ""))
@@ -37,13 +38,14 @@ else
     async function compactControl(
       rig: Awaited<ReturnType<typeof fixture>>,
       id: string = crypto.randomUUID(),
+      instructions?: string,
     ) {
       return rig.delivery.enqueue({
         id,
         threadId: rig.threadId,
         intent: "control",
         provenance: { kind: "writer", actorId: rig.ids.user },
-        body: { kind: "compact" },
+        body: { kind: "compact", ...(instructions ? { instructions } : {}) },
         idempotencyKey: id,
       });
     }
@@ -63,6 +65,22 @@ else
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
       return run.execute();
     }
+
+    it("rejects compact with its own 409 code until the thread has a completed reply", async () => {
+      const rig = await manualFixture();
+      expect(() => requireCompletedReplyForCompaction([])).toThrowError(
+        expect.objectContaining({
+          statusCode: 409,
+          message: "compact_requires_completed_reply",
+        }),
+      );
+
+      await (
+        await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "Complete a reply." })
+      ).execute();
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
+      expect(() => requireCompletedReplyForCompaction(turns)).not.toThrow();
+    });
 
     it.each([1, 2])("fails once and acknowledges %i adopted message(s)", async (messageCount) => {
       const gateway = scriptedGateway({ usage: lowUsage });
@@ -694,14 +712,15 @@ else
       await busyRig.runClaim.release(held);
     });
 
-    it("answers messages before a command queued earlier during the reply", async () => {
+    it("at natural end adopts A before a command, then compacts, then answers B", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
       const gateway = scriptedGateway({
         usage: lowUsage,
         onStream: async (call) => {
           if (call !== 1) return;
+          await rig.send(rig.threadId, "A before queued compact");
           await compactControl(rig);
-          await rig.send(rig.threadId, "message after queued compact");
+          await rig.send(rig.threadId, "B after queued compact");
         },
       });
       rig = await manualFixture({ gateway });
@@ -717,14 +736,20 @@ else
         "user",
         "assistant",
         "user",
+        "user",
         "assistant",
         "compaction",
+        "assistant",
       ]);
-      expect(JSON.stringify(gateway.requests.at(-1))).toContain("message after queued compact");
-      expect(tail.at(-1)?.metadata).toMatchObject({ trigger: "manual" });
+      expect(JSON.stringify(gateway.requests[1])).toContain("A before queued compact");
+      expect(JSON.stringify(gateway.requests[1])).not.toContain("B after queued compact");
+      expect(JSON.stringify(gateway.requests.at(-1))).toContain("B after queued compact");
+      expect(tail.find((turn) => turn.role === "compaction")?.metadata).toMatchObject({
+        trigger: "manual",
+      });
     });
 
-    it("Stop runs the queued command first with waiting messages pinned verbatim", async () => {
+    it("Stop follows the same A, command, B queue order as natural end", async () => {
       const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
       const rig = await manualFixture({ gateway });
       const active = await rig.orchestrator.prepare({
@@ -734,9 +759,9 @@ else
       const execution = active.execute();
       await gateway.untilGatewayBoundary(1);
 
+      const before = await rig.send(rig.threadId, "A before queued compact");
       const control = await compactControl(rig);
-      const waitingText = "Keep this exact message after Esc.";
-      const waiting = await rig.send(rig.threadId, waitingText);
+      await rig.send(rig.threadId, "B after queued compact");
       expect(await rig.orchestrator.cancel(rig.threadId, active.executionTurnId)).toBe("cancelled");
 
       gateway.release(1);
@@ -753,14 +778,39 @@ else
         status: "complete",
         metadata: {
           trigger: "manual",
-          pinnedRequestTurnIds: [waiting.userTurnId],
+          pinnedRequestTurnIds: [before.userTurnId],
         },
       });
-      expect(JSON.stringify(gateway.requests.at(-1))).toContain(waitingText);
+      expect(JSON.stringify(gateway.requests[1])).toContain("A before queued compact");
+      expect(JSON.stringify(gateway.requests[1])).not.toContain("B after queued compact");
+      expect(JSON.stringify(gateway.requests.at(-1))).toContain("B after queued compact");
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
     });
 
-    it("retires a Stop-stamped compact after a failed start commit and answers its messages", async () => {
+    it("Stop with a compact at the queue head compacts immediately", async () => {
+      const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
+      const rig = await manualFixture({ gateway });
+      const active = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        userText: "reply before compact",
+      });
+      const execution = active.execute();
+      await gateway.untilGatewayBoundary(1);
+      const control = await compactControl(rig);
+
+      expect(await rig.orchestrator.cancel(rig.threadId, active.executionTurnId)).toBe("cancelled");
+      gateway.release(1);
+      await execution;
+      const turns = await settled(rig);
+
+      expect(turns.at(-1)).toMatchObject({
+        role: "compaction",
+        status: "complete",
+        metadata: { controlMessageId: control.id },
+      });
+    });
+
+    it("retires the next compact after a failed start commit and answers later messages", async () => {
       const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
       const rig = await manualFixture({ gateway });
       const active = await rig.orchestrator.prepare({
@@ -807,6 +857,10 @@ else
 
     it("runs queued controls one per run and in their queue order", async () => {
       const rig = await manualFixture();
+      await (
+        await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "History to compact." })
+      ).execute();
+      await settled(rig);
       const first = await compactControl(rig);
       const second = await compactControl(rig);
       const startExecution = vi.spyOn(rig.runClaim, "startExecution");
@@ -819,6 +873,11 @@ else
       expect(
         controls.map((turn) => (turn.metadata as { controlMessageId?: string }).controlMessageId),
       ).toEqual([first.id, second.id]);
+      expect(controls.map((turn) => turn.status)).toEqual(["complete", "complete"]);
+      expect(rig.summarizer.calls).toHaveLength(2);
+      expect(rig.summarizer.calls[1].projection.blocks[0]?.textContent).toContain(
+        "Earlier context.",
+      );
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
     });
 
@@ -855,12 +914,15 @@ else
     it("withdrawal is replay-safe before start and refused after start", async () => {
       const rig = await manualFixture();
       const withdrawn = await compactControl(rig);
+      await rig.send(rig.threadId, "B behind withdrawn compact");
       expect(await rig.delivery.withdrawControl(rig.threadId, withdrawn.id)).toEqual({
         outcome: "withdrawn",
       });
       expect(await rig.delivery.withdrawControl(rig.threadId, withdrawn.id)).toEqual({
         outcome: "withdrawn",
       });
+      await drainControls(rig);
+      expect(JSON.stringify(rig.gateway.requests.at(-1))).toContain("B behind withdrawn compact");
 
       const started = await compactControl(rig);
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
@@ -872,6 +934,26 @@ else
       expect(await rig.delivery.withdrawControl(rig.threadId, started.id)).toEqual({
         outcome: "already_started",
       });
+    });
+
+    it("stores compaction instructions on C and sends them to the summarizer", async () => {
+      const rig = await manualFixture();
+      await (
+        await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "History to compact." })
+      ).execute();
+      await settled(rig);
+      await compactControl(rig, crypto.randomUUID(), "Focus on the antagonist's promises.");
+      await drainControls(rig);
+      const turns = await settled(rig);
+
+      expect(turns.at(-1)).toMatchObject({
+        role: "compaction",
+        status: "complete",
+        metadata: { instructions: "Focus on the antagonist's promises." },
+      });
+      expect(rig.summarizer.calls[0].writerInstructions).toBe(
+        "Focus on the antagonist's promises.",
+      );
     });
 
     it("keeps a queued compact after an automatic compaction", async () => {
@@ -905,7 +987,7 @@ else
       expect(summarizer.calls).toHaveLength(2);
     });
 
-    it("a failed manual summary does not fail a reply behind a Stop-stamped command", async () => {
+    it("a failed manual summary does not fail the reply queued behind it", async () => {
       const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
       const summarizer = scriptedSummarizer(async () => ({
         kind: "failed",
@@ -1022,7 +1104,7 @@ else
       ).toHaveLength(1);
     });
 
-    it("#619 refuses manual compaction below the compactable floor without billing", async () => {
+    it("compacts a short thread to its minimal tail", async () => {
       const rig = await manualFixture({ history: "A short planning note." });
       await (
         await rig.orchestrator.prepare({
@@ -1031,19 +1113,15 @@ else
         })
       ).execute();
       await settled(rig);
-      const balance = await rig.creditLedger.getBalance({ userId: rig.ids.user });
       await compactControl(rig);
       await drainControls(rig);
       const turn = (await settled(rig)).at(-1);
       if (!turn) throw new Error("Expected the manual compaction turn");
       expect(turn).toMatchObject({
         role: "compaction",
-        status: "error",
-        metadata: { reason: "nothing_to_compact", phase: "initial_prepare" },
+        status: "complete",
       });
-      expect(rig.summarizer.calls).toHaveLength(0);
-      expect(await rig.repos.modelResponses.listByTurn(turn.id)).toEqual([]);
-      expect(await rig.creditLedger.getBalance({ userId: rig.ids.user })).toBe(balance);
+      expect(rig.summarizer.calls).toHaveLength(1);
     });
 
     it("a control-only sweep starts an idle thread", async () => {
@@ -1197,42 +1275,6 @@ else
         status: "error",
         error: "This conversation couldn't be compacted. Try again.",
         metadata: { reason: "interrupted", phase: "recovery", controlMessageId: control.id },
-      });
-      expect(await delivery.selectPending(rig.threadId)).toEqual([]);
-    });
-
-    it("a crash while a command waits leaves it queued for the next run", async () => {
-      const rig = await manualFixture();
-      const lease = await rig.runClaim.hold(rig.threadId);
-      if (!lease) throw new Error("expected the simulated pre-crash run claim");
-      const control = await compactControl(rig);
-      expect(await rig.delivery.selectPending(rig.threadId)).toContainEqual(
-        expect.objectContaining({ id: control.id }),
-      );
-
-      // The queued row survives the process that held the thread claim.
-      await lease.release();
-      const replacement = createDrizzleRunClaim(db);
-      const delivery = createTestDrizzleDelivery(db, {
-        repos: rig.repos,
-        eventWriter: rig.eventWriter,
-        runClaim: replacement,
-      });
-      const recovery = createOrchestrator({ ...rig.deps, runClaim: replacement, delivery });
-      const run = await recovery.prepare({ threadId: rig.threadId, drain: true });
-      await run.execute();
-
-      const compaction = (await rig.repos.turns.listByThread(rig.threadId)).find(
-        (turn) => turn.role === "compaction",
-      );
-      expect(compaction).toMatchObject({
-        status: "error",
-        error: "There is nothing to compact yet.",
-        metadata: {
-          trigger: "manual",
-          controlMessageId: control.id,
-          reason: "nothing_to_compact",
-        },
       });
       expect(await delivery.selectPending(rig.threadId)).toEqual([]);
     });

@@ -15,7 +15,9 @@ brief reports the message as the open request). A queued, sending, or failed
 message offers none: a queued one is chained after the streaming turn, so the
 server's cutoff rule would move it back silently. Fork stays on replies. The
 message's row reveals on hover or focus like a reply's actions, stays visible
-on touch, and opens the picker toward the chat (`align="end"`).
+on touch, and opens the picker toward the chat (`align="end"`). A finished
+compaction divider is a turn too and offers Fork alone (`ForkTurnAction`); a
+fork cut there starts from the compacted history.
 
 The server normalizes the cutoff to the last settled turn at or before it, and
 an inherited turn's owner becomes the recorded source. `ChatView` provides a

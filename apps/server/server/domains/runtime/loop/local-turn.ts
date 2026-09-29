@@ -101,6 +101,7 @@ export function reservationTurn(
                 })
               : {}),
             ...(decision.controlMessageId ? { controlMessageId: decision.controlMessageId } : {}),
+            ...(decision.instructions ? { instructions: decision.instructions } : {}),
           }
         : (input.metadata ?? null),
   });

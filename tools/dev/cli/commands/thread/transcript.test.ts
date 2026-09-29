@@ -72,6 +72,7 @@ describe("thread transcript compaction failures", () => {
         phase: "initial_prepare",
         trigger: "auto",
         controlMessageId: "control-id",
+        instructions: "Keep the broken oath.",
         estimatedTokens: 12_001,
         fitLimitTokens: 12_000,
       },
@@ -90,6 +91,7 @@ describe("thread transcript compaction failures", () => {
     expect(compact.compactionMetadata).toEqual({
       trigger: "auto",
       controlMessageId: "control-id",
+      instructions: "Keep the broken oath.",
       reason: "context_too_large",
       phase: "initial_prepare",
       estimatedTokens: 12_001,
@@ -114,7 +116,7 @@ describe("thread transcript compaction failures", () => {
         showing: 1,
         total: 1,
       }),
-    ).toContain("compaction failure: context_too_large during initial_prepare");
+    ).toContain("instructions: Keep the broken oath.");
   });
 
   it("includes summary token counts from the compaction block", () => {

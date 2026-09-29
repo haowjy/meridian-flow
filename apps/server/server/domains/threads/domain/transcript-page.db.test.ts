@@ -78,7 +78,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         metadata: {
           trigger: "manual",
           controlMessageId: controls[0].id,
-          reason: "nothing_to_compact",
+          reason: "context_too_large",
           phase: "initial_prepare",
         },
       });

@@ -219,17 +219,6 @@ export function createDrizzleRunClaim(
           )
           .returning({ turnId: schema.threadRunLeases.turnId });
         if (rows.length === 0) return false;
-        // Esc priority and cancellation must commit together before the release wake reads the queue.
-        await db_()
-          .update(schema.threadInboxMessages)
-          .set({ runsFirst: true })
-          .where(
-            and(
-              eq(schema.threadInboxMessages.threadId, threadId),
-              eq(schema.threadInboxMessages.intent, "control"),
-              sql`${schema.threadInboxMessages.deliveredAt} IS NULL`,
-            ),
-          );
         return true;
       });
     },

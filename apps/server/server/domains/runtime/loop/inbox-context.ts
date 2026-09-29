@@ -394,7 +394,9 @@ export function noticesTurnFor(
 export function inboxMessageText(message: InboxMessage): string {
   switch (message.body.kind) {
     case "compact":
-      return "Compact conversation";
+      return message.body.instructions
+        ? `/compact ${message.body.instructions}`
+        : "Compact conversation";
     case "work_context_refresh":
       return "";
     case "text":

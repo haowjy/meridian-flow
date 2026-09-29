@@ -16,13 +16,14 @@ import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { CompactionDivider } from "./compaction/CompactionDivider";
 import { answeredControlIds } from "./compaction/compaction-model";
 import { QueuedControlRows } from "./compaction/QueuedControlRows";
-import type { QueuedControl } from "./compaction/thread-controls";
+import { placeQueuedControls, type QueuedControl } from "./compaction/thread-controls";
 import type { ThreadControls } from "./compaction/useThreadControls";
 import { HandoffBriefCard } from "./derivation/HandoffBriefCard";
 import { ForkPointRule, InheritedSourceHeader } from "./derivation/InheritedMarks";
 import type { InheritedView } from "./derivation/inherited-view";
 import { ThreadReferenceChip } from "./derivation/ThreadReferenceChip";
 import type { HandoffBrief } from "./derivation/useHandoffBrief";
+import { unreadWriterTurnIds } from "./pending-inbox";
 import { buildTranscriptModel, type InheritedMark, type TranscriptRow } from "./transcript-model";
 import type { ReplyRetry } from "./useReplyRetry";
 
@@ -77,17 +78,48 @@ export type TurnListProps = {
 };
 
 /**
- * A virtual row: a transcript row, the missing-history alert above them, or the
- * queued controls at the tail.
+ * A virtual row: a transcript row, the missing-history alert above them, or
+ * queued commands at their place in the queue.
  */
 type ListRow =
   | TranscriptRow
   | { kind: "inherited-failed" }
-  | { kind: "queued-controls"; controls: readonly QueuedControl[] };
+  | { kind: "queued-controls"; key: string; controls: readonly QueuedControl[] };
 
-const QUEUED_CONTROLS_KEY = "queued-controls";
 const INHERITED_FAILED_KEY = "inherited-failed";
 const NO_CONTROLS: readonly QueuedControl[] = [];
+const NO_QUEUED_TURNS: ReadonlySet<string> = new Set();
+
+/** The virtual list's rows, with the transcript index each list row renders. */
+function buildListRows(input: {
+  rows: readonly TranscriptRow[];
+  inheritedFailed: boolean;
+  controls: ReadonlyMap<number, readonly QueuedControl[]>;
+}): { listRows: ListRow[]; transcriptIndex: (number | null)[]; listIndex: number[] } {
+  const listRows: ListRow[] = [];
+  const transcriptIndex: (number | null)[] = [];
+  const listIndex: number[] = [];
+  const pushControls = (index: number) => {
+    const controls = input.controls.get(index);
+    if (!controls?.length) return;
+    // Keyed by the slot, not a command: withdrawing one keeps the row mounted.
+    const before = input.rows[index]?.turn.id ?? "end";
+    listRows.push({ kind: "queued-controls", key: `queued-before:${before}`, controls });
+    transcriptIndex.push(null);
+  };
+  if (input.inheritedFailed) {
+    listRows.push({ kind: "inherited-failed" });
+    transcriptIndex.push(null);
+  }
+  input.rows.forEach((row, index) => {
+    pushControls(index);
+    listIndex.push(listRows.length);
+    listRows.push(row);
+    transcriptIndex.push(index);
+  });
+  pushControls(input.rows.length);
+  return { listRows, transcriptIndex, listIndex };
+}
 
 /** Estimated row height before measurement; corrected by `measureElement`. */
 const ESTIMATED_TURN_HEIGHT = 160;
@@ -125,23 +157,24 @@ export function TurnList({
   );
   const visibleTurns = transcript.visibleTurns;
   const lastAssistantIdx = findLastLocalAssistantIndex(transcript.rows);
-  // Queued commands wait at the tail, after the newest turn: they take no
-  // position until they run.
-  const tailControls = useMemo(() => {
+  // Queued commands wait among the queued messages in the order they were
+  // sent; they take a transcript position of their own only when they run.
+  const placedControls = useMemo(() => {
     const answered = answeredControlIds(turns);
-    return (controls?.queued ?? NO_CONTROLS).filter((control) => !answered.has(control.id));
-  }, [controls?.queued, turns]);
-  // List rows are transcript rows shifted down by the alert, when it shows.
-  const rowOffset = onRetryInherited ? 1 : 0;
-  const listRows = useMemo<ListRow[]>(
-    () => [
-      ...(onRetryInherited ? [{ kind: "inherited-failed" as const }] : []),
-      ...transcript.rows,
-      ...(tailControls.length
-        ? [{ kind: "queued-controls" as const, controls: tailControls }]
-        : []),
-    ],
-    [onRetryInherited, tailControls, transcript.rows],
+    return placeQueuedControls({
+      controls: (controls?.queued ?? NO_CONTROLS).filter((control) => !answered.has(control.id)),
+      rowTurnIds: transcript.rows.map((row) => (row.inherited ? null : row.turn.id)),
+      queuedTurnIds: unreadWriterTurnIds(turns, queuedWriterTurnIds ?? NO_QUEUED_TURNS),
+    });
+  }, [controls?.queued, queuedWriterTurnIds, transcript.rows, turns]);
+  const { listRows, transcriptIndex, listIndex } = useMemo(
+    () =>
+      buildListRows({
+        rows: transcript.rows,
+        inheritedFailed: onRetryInherited !== null,
+        controls: placedControls,
+      }),
+    [onRetryInherited, placedControls, transcript.rows],
   );
   const { continuing, partsByFinalTurnId } = transcript;
   const byTurnId = useMemo(() => {
@@ -160,7 +193,7 @@ export function TurnList({
       const row = listRows[index];
       if (!row) return index;
       if (row.kind === "inherited-failed") return INHERITED_FAILED_KEY;
-      return row.kind === "queued-controls" ? QUEUED_CONTROLS_KEY : row.turn.id;
+      return row.kind === "queued-controls" ? row.key : row.turn.id;
     },
     overscan: 8,
     paddingStart: TOP_INSET,
@@ -194,7 +227,8 @@ export function TurnList({
         : turnId,
     historySettled,
     viewportRef,
-    scrollToIndex: (index) => virtualizer.scrollToIndex(index + rowOffset, { align: "center" }),
+    scrollToIndex: (index) =>
+      virtualizer.scrollToIndex(listIndex[index] ?? index, { align: "center" }),
   });
 
   // Follow policy. `getTotalSize()` is the content height AND the revision: it is
@@ -264,7 +298,7 @@ export function TurnList({
         );
       }
       // A divider is a row: once one follows a failed reply, that failure is
-      // history. The queued-controls tail is not a row and never counts. An
+      // history. A queued command is not a transcript row and never counts. An
       // inherited reply is the source's history, even with nothing below it.
       const endsTranscript = local && idx === visibleTurns.length - 1;
       const sendRetry =
@@ -351,8 +385,8 @@ export function TurnList({
             onWithdraw={
               withdraw
                 ? (control) => {
-                    // Withdraw removes the row at once. The last one takes the
-                    // whole tail with it, so keep focus in the transcript.
+                    // Withdraw removes the row at once. The last one here takes
+                    // the whole list row with it, so keep focus in the transcript.
                     if (row.controls.length === 1)
                       viewportRef.current?.focus({ preventScroll: true });
                     withdraw(control);
@@ -363,7 +397,7 @@ export function TurnList({
           />
         );
       }
-      const content = renderTranscriptRow(row, idx - rowOffset);
+      const content = renderTranscriptRow(row, transcriptIndex[idx] ?? idx);
       return row.inherited ? (
         <InheritedRow mark={row.inherited} owners={inherited?.owners ?? null}>
           {content}
@@ -372,7 +406,7 @@ export function TurnList({
         content
       );
     },
-    [controls, inherited?.owners, onRetryInherited, renderTranscriptRow, rowOffset],
+    [controls, inherited?.owners, onRetryInherited, renderTranscriptRow, transcriptIndex],
   );
 
   return (
@@ -414,7 +448,7 @@ export function TurnList({
                   data-chat-turn-role={transcriptRow?.turn.role}
                   data-chat-turn-kind={row.kind}
                   data-chat-turn-continues={
-                    continuing[virtualItem.index - rowOffset] ? "" : undefined
+                    continuing[transcriptIndex[virtualItem.index] ?? -1] ? "" : undefined
                   }
                   data-chat-turn-inherited={transcriptRow?.inherited ? "" : undefined}
                   ref={virtualizer.measureElement}

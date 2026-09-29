@@ -133,6 +133,9 @@ export function createConversationSummarizer(
               input.incomingAgentName,
               writerRowCutoff,
             ),
+            ...(input.writerInstructions
+              ? ["Writer instructions for this summary:", input.writerInstructions]
+              : []),
             ...(input.changedDocuments?.length
               ? [
                   "These documents changed after they were read; name them, do not restate their earlier text.",

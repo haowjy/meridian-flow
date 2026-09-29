@@ -55,6 +55,8 @@ export type DeliverySelectionFields = {
   batch: InboxMessage[];
   continueTask?: boolean;
   outstanding: InboxMessage[];
+  /** Pending rows behind the first command, excluded from this boundary's history. */
+  deferred: InboxMessage[];
   workContext?: import("./work-context.js").RenderedWorkContext;
   notices: Notice[];
   activeLeafTurnId: TurnId | null;
@@ -79,7 +81,6 @@ export interface RuntimeDelivery
   extends WorkContextNotices,
     Pick<InboxReader, "selectPending" | "readPendingProjection" | "pendingMessageThreads"> {
   /** Give pending commands the same run-first priority as Stop on a live run. */
-  prioritizePendingControls(threadId: ThreadId): Promise<void>;
   enqueueControl(input: {
     threadId: ThreadId;
     actorId: string;

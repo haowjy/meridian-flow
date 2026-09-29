@@ -153,7 +153,7 @@ const pendingInboxItemSchema: z.ZodType<import("../threads/index.js").PendingInb
   id: z.string().min(1),
   seq: z.number().int(),
   intent: z.enum(["message", "notice", "control"]),
-  control: z.object({ kind: z.literal("compact") }).optional(),
+  control: z.object({ kind: z.literal("compact"), instructions: z.string().optional() }).optional(),
   provenance: messageProvenanceSchema,
   deliveryState: z.enum(["awaiting_run", "waiting"]),
   summary: z.string(),

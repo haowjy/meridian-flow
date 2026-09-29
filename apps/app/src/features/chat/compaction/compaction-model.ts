@@ -15,6 +15,8 @@ export type CompactionFacts = {
   controlId: string | null;
   /** Typed failure reason on an errored divider; null otherwise. */
   failureReason: string | null;
+  /** The writer's `/compact <instructions>`, verbatim; null for a plain `/compact`. */
+  instructions: string | null;
   summary: string | null;
   tokensBefore: number | null;
   tokensAfter: number | null;
@@ -32,6 +34,11 @@ function text(value: unknown): string | null {
 
 function count(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/** Writer instructions are shown verbatim; only whitespace-only text counts as none. */
+export function instructionsText(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
 export function isCompactionTurn(turn: Turn): boolean {
@@ -53,6 +60,7 @@ export function readCompactionFacts(turn: Turn): CompactionFacts {
     trigger,
     controlId: controlMessageId,
     failureReason: turn.status === "error" ? text(metadata?.reason) : null,
+    instructions: instructionsText(metadata?.instructions),
     summary: text(props?.summary),
     tokensBefore: count(props?.tokensBefore),
     tokensAfter: count(props?.tokensAfter),
@@ -87,12 +95,8 @@ export type DividerState = "pending" | "complete" | "failed" | "cancelled";
 export type DividerView = {
   state: DividerState;
   trigger: CompactionTrigger;
-  /**
-   * A `/compact` that found too little new history since the last compaction.
-   * Expected after an automatic compaction absorbed the need: it reads calmly,
-   * never as an error.
-   */
-  nothingToCompact: boolean;
+  /** What the writer asked the summary to do (`/compact <instructions>`). */
+  instructions: string | null;
   summary: string | null;
   /** Shown only when the compaction actually made the context smaller. */
   tokens: { before: number; after: number } | null;
@@ -125,17 +129,16 @@ export function dividerView(input: {
     facts.tokensAfter < facts.tokensBefore
       ? { before: facts.tokensBefore, after: facts.tokensAfter }
       : null;
-  const nothingToCompact = state === "failed" && facts.failureReason === "nothing_to_compact";
   // R3: an autocompaction's failure is carried by the failed reply under the
   // writer's newest message. A manual one has no reply to carry it.
   const failureCopy =
-    state === "failed" && facts.trigger === "manual" && !nothingToCompact
+    state === "failed" && facts.trigger === "manual"
       ? input.failureCopyFor(facts.failureReason, turn.error)
       : null;
   return {
     state,
     trigger: facts.trigger,
-    nothingToCompact,
+    instructions: facts.instructions,
     summary: facts.summary,
     tokens,
     failureCopy,

@@ -5,18 +5,14 @@ and Retry act on handoff seeds, not inbox controls; see [handoff](handoff.md).
 
 ## Queue order
 
-Commands run only at the start of a run, one per run. At a reply boundary,
-`next(pending, "boundary")` selects every non-control row. At run start,
-`next(pending, "run_start")` selects the oldest command only when no message is
-waiting; otherwise messages run first. Stop (the Stop button, or Esc in an
-empty composer) means "run what is queued now": it stamps every pending command,
-so the oldest stamped command runs first together with the waiting messages, and
-each stamped command runs ahead of later messages, one per run, until all
-stamped commands have run. Messages adopted with a command stay pinned verbatim in compaction.
+The inbox is one `seq`-ordered queue. At a reply boundary, `next(pending,
+"boundary")` adopts the non-control prefix and stops before the first command. At
+run start, an oldest command runs by itself; otherwise the same prefix is
+adopted. A command never runs at a tool boundary. Stop only ends the current
+turn. Release then re-reads the queue and runs its ordinary head.
 
-Reply boundaries and turn close never run commands. If a turn ends with only
-commands waiting, the claim is released and the queue is re-read; the next run
-starts the command. Messages arriving while it runs are answered after it.
+Withdrawing a queued command exposes the rows behind it for the next boundary.
+Messages that arrive while a command runs remain queued for the successor reply.
 
 ## Ownership and withdrawal
 
@@ -29,8 +25,6 @@ Withdrawal acknowledges a command that has not started and returns
 withdrawal returns `already_started`; it does not stop that run. Enqueue and
 withdrawal share the thread lock with command reservation.
 
-A failed manual C consumes its command, but it does not acknowledge the waiting
-messages adopted with a Stop-stamped command. Those messages remain queued for a
-later reply.
+A failed manual C consumes its command. Messages behind it remain queued for a later reply.
 
 For the shared selection and release wake contract, see [delivery](delivery.md).

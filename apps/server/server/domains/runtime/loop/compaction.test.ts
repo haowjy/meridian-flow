@@ -135,7 +135,6 @@ function inboxMessage(
     idempotencyKey: `idem-${id}`,
     enqueuedAt: "2026-01-01T00:00:00.000Z",
     deliveredAt: null,
-    runsFirst: false,
   };
 }
 
@@ -472,7 +471,7 @@ describe("estimateRequestTokens", () => {
     expect(estimated).toBeGreaterThanOrEqual(3 * text.length * CJK_CODE_POINT_TOKEN_RATES.deepseek);
   });
 
-  it("#619 measures only the active cut, refuses strictly below the cap, and leaves auto alone", () => {
+  it("manual compaction ignores the former summary-output floor", () => {
     const turns = [
       turn("old", 1, "user"),
       turn("answer", 2, "assistant"),
@@ -516,10 +515,9 @@ describe("estimateRequestTokens", () => {
     expect(decideCompaction({ ...common, summaryReserveTokens: floor })).not.toHaveProperty(
       "refusal",
     );
-    expect(decideCompaction({ ...common, summaryReserveTokens: floor + 1 })).toMatchObject({
-      kind: "compact",
-      refusal: "nothing_to_compact",
-    });
+    expect(decideCompaction({ ...common, summaryReserveTokens: floor + 1 })).not.toHaveProperty(
+      "refusal",
+    );
     expect(
       decideCompaction({
         ...common,
