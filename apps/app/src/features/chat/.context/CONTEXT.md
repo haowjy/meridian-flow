@@ -26,6 +26,8 @@ draft-control changes can be understood independently.
 - [Fork and handoff](fork-and-handoff.md) — the turn actions, navigate-first
   creation and its failure, the brief card, a fork's inherited view, and
   `from` sources.
+- [Failed-reply Retry](failed-reply-retry.md) — Retry on the latest failed
+  reply, the optimistic new reply below it, and the refused and lost cases.
 - [Thread live updates](thread-live-updates.md) — snapshot revalidation on
   activation and on a new run, and the per-run resume that renders a
   server-initiated continuation live.

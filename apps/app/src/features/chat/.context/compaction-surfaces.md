@@ -37,7 +37,8 @@ one Info scope across A, C, B. Delivery rows never attach across a divider.
 ## `endsTranscript`
 
 A divider **is** a row for the failed-reply rule: a failed reply followed by a
-divider is history, because the writer (or the run) moved on. The
+divider is history, because the writer (or the run) moved on, and it no
+longer offers Retry ([failed-reply Retry](failed-reply-retry.md)). The
 queued-commands tail is not a row and never counts. R3 is untouched: an
 autocompaction's failed reply comes after its divider, so it stays current.
 

@@ -91,7 +91,10 @@ handoff, the brief card, and a fork's inherited rows are in
 [`.context/fork-and-handoff.md`](.context/fork-and-handoff.md). The handoff
 brief is not an inbox command: `derivation/useHandoffBrief.ts` owns its Retry
 (an optimistic card after the turn it followed, reconciled by the seed's id) and Stop (turn
-cancel on the seed), and a pending seed is the composer's active run. Hand off
+cancel on the seed), and a pending seed is the composer's active run. A failed
+reply's Retry (`useReplyRetry.ts`) shares that optimistic half
+(`useRetryStandIns.ts`); see
+[`.context/failed-reply-retry.md`](.context/failed-reply-retry.md). Hand off
 also sits under a delivered writer message; Fork stays on replies.
 
 Child completion is a separate durable transcript event: system turns with
