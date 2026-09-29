@@ -1,53 +1,25 @@
 /**
  * A Work's two titles: the active tab in the pane band (navigation chrome) and
  * the page heading (the page's own identity). Both rename the same Work in
- * place, without moving the text, and show a rename at once through
- * `useWorkRename`. A rejected rename reopens the title that was edited with the
- * writer's text and the error.
+ * place through `TitleEditSlot`, without moving the text: a rename shows at
+ * once, and a refused one reopens the title that was edited.
  */
 import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/works";
-import { useState } from "react";
+import { useWorkMutations } from "@/client/query/work-command-store";
 import { cn } from "@/lib/utils";
-import { TabTitleField } from "../shell/TabTitleField";
+import { TitleEditSlot } from "../shell/TitleEditSlot";
 import { titleChipClass } from "../shell/title-chip";
-import { useWorkRename } from "./useWorkRename";
 
 const headingClass = "min-w-0 text-xl font-semibold tracking-tight [overflow-wrap:anywhere]";
 
-function useTitleEditing(projectId: string, work: Work) {
-  const { rename } = useWorkRename(projectId, work);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-  return {
-    name: work.name,
-    editing,
-    failed,
-    start: () => setEditing(work.name),
-    commit: (next: string) => {
-      setEditing(null);
-      setFailed(false);
-      rename(next, () => {
-        setFailed(true);
-        setEditing(next);
-      });
-    },
-    cancel: () => {
-      setEditing(null);
-      setFailed(false);
-    },
+/** Renames the Work; rejects when the server refused it. */
+function useWorkRename(projectId: string, work: Work) {
+  const { update } = useWorkMutations(projectId);
+  return async (name: string) => {
+    const error = await update({ workId: work.id, data: { name } });
+    if (error) throw error;
   };
-}
-
-function RenameFailure() {
-  return (
-    <p
-      role="alert"
-      className="absolute top-full left-0 z-20 mt-1 w-max max-w-72 rounded-md border border-border bg-popover px-2 py-1.5 text-xs font-normal text-destructive shadow-sm"
-    >
-      {t`Couldn’t rename this Work. Try again.`}
-    </p>
-  );
 }
 
 export function WorkTitleTab({
@@ -59,64 +31,58 @@ export function WorkTitleTab({
   work: Work;
   variant: "tab" | "quiet";
 }) {
-  const title = useTitleEditing(projectId, work);
+  const rename = useWorkRename(projectId, work);
   return (
     <div className={cn(titleChipClass(variant), "relative")}>
-      {title.editing !== null ? (
-        <>
-          <TabTitleField
-            initial={title.editing}
-            label={t`Rename Work`}
-            onCommit={title.commit}
-            onCancel={title.cancel}
-          />
-          {title.failed ? <RenameFailure /> : null}
-        </>
-      ) : (
-        <span className="flex min-w-0 px-1">
-          <button
-            type="button"
-            aria-label={t`Rename Work: ${title.name}`}
-            title={title.name}
-            onClick={title.start}
-            className="pane-title inline-edit-trigger focus-ring min-w-0 truncate text-left"
-          >
-            {title.name}
-          </button>
-        </span>
-      )}
+      <TitleEditSlot
+        label={t`Rename Work`}
+        failure={t`Couldn’t rename this Work. Try again.`}
+        rename={rename}
+      >
+        {({ start, triggerRef }) => (
+          <span className="flex min-w-0 px-1">
+            <button
+              ref={triggerRef}
+              type="button"
+              aria-label={t`Rename Work: ${work.name}`}
+              title={work.name}
+              onClick={() => start(work.name)}
+              className="pane-title inline-edit-trigger focus-ring min-w-0 truncate text-left"
+            >
+              {work.name}
+            </button>
+          </span>
+        )}
+      </TitleEditSlot>
     </div>
   );
 }
 
 /** The Work page's heading, renamed in place like the tab above it. */
 export function WorkHeading({ projectId, work }: { projectId: string; work: Work }) {
-  const title = useTitleEditing(projectId, work);
+  const rename = useWorkRename(projectId, work);
   return (
     <h1 className={cn(headingClass, "relative")}>
-      {title.editing !== null ? (
-        <>
-          <TabTitleField
-            initial={title.editing}
-            label={t`Rename Work`}
-            className="flex min-w-0"
-            onCommit={title.commit}
-            onCancel={title.cancel}
-          />
-          {title.failed ? <RenameFailure /> : null}
-        </>
-      ) : (
-        // The heading's accessible name stays the Work's name; the tooltip says
-        // what clicking it does.
-        <button
-          type="button"
-          title={t`Rename`}
-          onClick={title.start}
-          className="inline-edit-trigger focus-ring text-left"
-        >
-          {title.name}
-        </button>
-      )}
+      <TitleEditSlot
+        label={t`Rename Work`}
+        failure={t`Couldn’t rename this Work. Try again.`}
+        rename={rename}
+        fieldClassName="flex min-w-0"
+      >
+        {({ start, triggerRef }) => (
+          // The heading's accessible name stays the Work's name; the tooltip
+          // says what clicking it does.
+          <button
+            ref={triggerRef}
+            type="button"
+            title={t`Rename`}
+            onClick={() => start(work.name)}
+            className="inline-edit-trigger focus-ring text-left"
+          >
+            {work.name}
+          </button>
+        )}
+      </TitleEditSlot>
     </h1>
   );
 }

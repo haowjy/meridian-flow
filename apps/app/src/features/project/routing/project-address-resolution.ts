@@ -1,5 +1,5 @@
 /** Resolves address selections against an authorized project catalog without inventing IDs. */
-import type { AddressSelection, ProjectAddress } from "./project-address";
+import { type AddressSelection, isWorkScopedScheme, type ProjectAddress } from "./project-address";
 
 export type AddressCatalog<T> =
   | { status: "loading" | "error"; entries?: readonly T[] }
@@ -26,12 +26,8 @@ export function resolveAddressSelection<T extends { id: string }>(
 export function addressWorkSelection(address: ProjectAddress): AddressSelection {
   const d = address.destination;
   if (d.kind === "work") return { kind: "id", id: d.workId };
-  if (
-    (d.kind === "document" || d.kind === "browse") &&
-    (d.scheme === "scratch" || d.scheme === "uploads")
-  ) {
+  if ((d.kind === "document" || d.kind === "browse") && isWorkScopedScheme(d.scheme))
     return d.workId ? { kind: "id", id: d.workId } : { kind: "none" };
-  }
   return address.work;
 }
 

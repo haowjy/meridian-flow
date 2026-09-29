@@ -12,6 +12,7 @@ export function TabTitleField({
   initial,
   label,
   maxLength,
+  describedBy,
   onCommit,
   onCancel,
   className = "pane-title flex min-w-0 px-1",
@@ -19,6 +20,8 @@ export function TabTitleField({
   initial: string;
   label: string;
   maxLength?: number;
+  /** Id of text that describes the field, such as a refused rename. */
+  describedBy?: string;
   /** Receives the trimmed draft; an empty or unchanged draft cancels instead. */
   onCommit: (title: string) => void;
   onCancel: () => void;
@@ -28,7 +31,12 @@ export function TabTitleField({
   const edit = useInlineEdit({ initial, onCommit, onCancel });
   return (
     <span className={className}>
-      <InlineEditInput {...edit.inputProps} maxLength={maxLength} aria-label={label} />
+      <InlineEditInput
+        {...edit.inputProps}
+        maxLength={maxLength}
+        aria-label={label}
+        aria-describedby={describedBy}
+      />
     </span>
   );
 }

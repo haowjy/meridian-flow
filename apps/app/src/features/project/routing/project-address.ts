@@ -4,6 +4,7 @@ import {
   isProjectContextTreeScheme,
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
+  type WorkAuthorityScheme,
 } from "@meridian/contracts/protocol";
 import { type ParsedRequestId, parseRequestId } from "@meridian/contracts/request-id";
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
@@ -56,11 +57,37 @@ function uuid(value: string | undefined): string | null {
   return normalized && UUID.test(normalized) ? normalized : null;
 }
 
+/** A nullable Work id as a selection: no id selects no Work. */
+export function workIdSelection(workId: string | null): AddressSelection {
+  if (workId === null) return { kind: "none" };
+  const id = parseRequestId(workId);
+  return id ? { kind: "id", id } : { kind: "malformed", value: workId };
+}
+
+/** The `?work=` query value: absent, empty for no Work, or a Work id. */
 function selection(value: string | null): AddressSelection {
-  if (value === null) return ABSENT;
-  if (value === "") return { kind: "none" };
-  const id = parseRequestId(value);
-  return id ? { kind: "id", id } : { kind: "malformed", value };
+  return value === null ? ABSENT : workIdSelection(value || null);
+}
+
+/** Scratch and Uploads belong to a Work; every other scheme is the project's. */
+export function isWorkScopedScheme(
+  scheme: ProjectContextTreeScheme | null,
+): scheme is WorkAuthorityScheme {
+  return scheme !== null && isWorkScopedProjectContextScheme(scheme);
+}
+
+/** A folder to browse; Scratch and Uploads browse under their Work. */
+export function browseDestination(
+  scheme: ProjectContextTreeScheme | null,
+  path: string,
+  workId: string | null,
+): ProjectDestination {
+  return {
+    kind: "browse",
+    scheme,
+    path: path.replace(/^\/+/, ""),
+    workId: isWorkScopedScheme(scheme) ? parseRequestId(workId) : null,
+  };
 }
 
 function parseDestination(parts: string[]): ProjectDestination | null {

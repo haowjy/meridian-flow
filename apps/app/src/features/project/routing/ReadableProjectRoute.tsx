@@ -2,7 +2,7 @@
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { parseRequestId } from "@meridian/contracts/request-id";
+import { type ParsedRequestId, parseRequestId } from "@meridian/contracts/request-id";
 import { useQuery } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -36,10 +36,13 @@ import { type OpenContextOptions, ProjectNavigationProvider } from "./ProjectNav
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import {
   type AddressSelection,
+  browseDestination,
+  isWorkScopedScheme,
   type ProjectAddress,
   type ProjectDestination,
   parseProjectAddress,
   projectAddressHref,
+  workIdSelection,
 } from "./project-address";
 import { addressWorkSelection } from "./project-address-resolution";
 import { resolveLocalDocumentSelection, selectEditorEntryTab } from "./project-local-selection";
@@ -61,11 +64,6 @@ import { useProjectRouteData } from "./use-project-route-data";
 import { resolveRouteWork, useWorkRoute } from "./work-route";
 
 const NONE: AddressSelection = { kind: "none" };
-function selection(value: string | null): AddressSelection {
-  if (value === null) return NONE;
-  const id = parseRequestId(value);
-  return id ? { kind: "id", id } : { kind: "malformed", value };
-}
 /** What keeps a route's Work from showing its content yet; a Work being created is still loading. */
 function issue(
   routeWork: RouteWorkResolution,
@@ -139,7 +137,7 @@ export function ReadableProjectRoute({
   const editorSelection =
     activeScreen === "context" && requestedWork.kind !== "absent"
       ? requestedWork
-      : selection(
+      : workIdSelection(
           rememberedEditor.current !== undefined
             ? rememberedEditor.current
             : (displayedChat?.workId ?? null),
@@ -236,8 +234,7 @@ export function ReadableProjectRoute({
     return () => !!ticket && !!current?.isCurrent(ticket);
   }, []);
   const reportSelection = useCallback(
-    (value: { editorWorkId: string | null }) => {
-      const workId = value.editorWorkId ? parseRequestId(value.editorWorkId) : null;
+    ({ editorWorkId: workId }: { editorWorkId: ParsedRequestId | null }) => {
       shown.current = { workId, local: localPointer };
       if (activeScreen === "context" && !issue(editorWork)) rememberedEditor.current = workId;
     },
@@ -246,7 +243,7 @@ export function ReadableProjectRoute({
 
   const resourceDestination =
     (destination.kind === "document" || destination.kind === "browse") &&
-    (destination.scheme === "scratch" || destination.scheme === "uploads");
+    isWorkScopedScheme(destination.scheme);
   const documentDestination =
     destination.kind === "document" && !resourceDestination ? destination : null;
   // A document path outside Scratch and Uploads never carries a Work; its
@@ -339,7 +336,6 @@ export function ReadableProjectRoute({
   const contextDestination = useCallback(
     (target: ContextRouteTarget, preparedTab?: ContextTab) => {
       const current = latest.current;
-      const scoped = target.scheme === "scratch" || target.scheme === "uploads";
       let state: Record<string, unknown> | undefined;
       if (target.path === "") {
         const workspace = getContextTabs(projectId);
@@ -377,10 +373,10 @@ export function ReadableProjectRoute({
                 kind: "document",
                 scheme: target.scheme,
                 path: target.path.replace(/^\/+/, ""),
-                workId: scoped && target.workId ? parseRequestId(target.workId) : null,
+                workId: isWorkScopedScheme(target.scheme) ? parseRequestId(target.workId) : null,
               }
             : { kind: "editor" },
-          work: selection(target.workId),
+          work: workIdSelection(target.workId),
           results: false,
         } as ProjectAddress,
         state,
@@ -485,15 +481,7 @@ export function ReadableProjectRoute({
             if (result.kind === "failed") throw result.error;
           })
         : go(
-            toDestination({
-              kind: "browse",
-              scheme: target.scheme,
-              path: (target.folder ?? "").replace(/^\/+/, ""),
-              workId:
-                target.scheme === "scratch" || target.scheme === "uploads"
-                  ? parseRequestId(target.workId)
-                  : null,
-            }),
+            toDestination(browseDestination(target.scheme, target.folder ?? "", target.workId)),
             options,
           ),
   };
@@ -533,24 +521,15 @@ export function ReadableProjectRoute({
     return go(
       {
         ...toDestination({ kind: next === "work" ? "works" : "editor" }),
-        work: selection(rememberedEditor.current ?? shown.current.workId),
+        work: workIdSelection(rememberedEditor.current ?? shown.current.workId),
       },
       { replace: false },
     );
   };
   const browse = (scheme: ProjectContextTreeScheme | null, path = "") =>
-    go(
-      toDestination({
-        kind: "browse",
-        scheme,
-        path: path.replace(/^\/+/, ""),
-        workId:
-          scheme === "scratch" || scheme === "uploads"
-            ? parseRequestId(shown.current.workId ?? "")
-            : null,
-      }),
-      { replace: false },
-    );
+    go(toDestination(browseDestination(scheme, path, shown.current.workId)), {
+      replace: false,
+    });
 
   return (
     <ProjectNavigationProvider

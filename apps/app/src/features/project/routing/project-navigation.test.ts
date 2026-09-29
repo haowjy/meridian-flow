@@ -1,5 +1,6 @@
 /** Coordinator policy under synchronous memory history, plus router URL decoding.
  * Native browser replace/push coalescing requires separate runtime verification. */
+import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { createMemoryHistory, createRootRoute, createRouter } from "@tanstack/react-router";
 import { describe, expect, it } from "vitest";
 import { parseProjectAddress } from "./project-address";
@@ -107,7 +108,7 @@ describe("project navigation", () => {
     const { history, navigation, changes } = setup(
       "/p/550e8400-e29b-41d4-a716-446655440000/editor?settings=usage",
       {
-        workId: "123e4567-e89b-42d3-a456-426614174000",
+        workId: "123e4567-e89b-42d3-a456-426614174000" as ParsedRequestId,
       },
     );
     await navigation.navigate(address("/p/550e8400-e29b-41d4-a716-446655440000/works"), {

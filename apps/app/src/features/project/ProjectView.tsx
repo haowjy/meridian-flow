@@ -19,6 +19,7 @@ import {
   type ProjectContextTreeScheme,
   type Work,
 } from "@meridian/contracts/protocol";
+import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { updateProject } from "@/client/api/projects-api";
@@ -145,7 +146,7 @@ export type ProjectViewProps = {
   addressOwnsDocumentAdmission?: boolean;
   routeLocationKey?: string;
   routeIssues?: { main?: ProjectRouteIssue; editor?: ProjectRouteIssue };
-  onDisplayedSelection?: (selection: { editorWorkId: string | null }) => void;
+  onDisplayedSelection?: (selection: { editorWorkId: ParsedRequestId | null }) => void;
   /** Awaitable route-owner commands used by future collection/detail leaves. */
   routeCommands: ProjectRouteCommands;
   /** Browser route adapter for atomic removal repairs. */

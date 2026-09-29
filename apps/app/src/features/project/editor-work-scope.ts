@@ -1,8 +1,9 @@
 /** Converts an already-resolved readable Editor selection into content authority. */
+import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { RouteWorkResolution } from "./routing/project-route";
 export type EditorWorkScope =
-  | { status: "ready"; workId: string | null; source: "route" }
-  | { status: "loading" | "error" | "unavailable"; workId: string | null };
+  | { status: "ready"; workId: ParsedRequestId | null; source: "route" }
+  | { status: "loading" | "error" | "unavailable"; workId: ParsedRequestId | null };
 export function resolveEditorWorkScope(routeWork: RouteWorkResolution): EditorWorkScope {
   if (routeWork.status === "unresolved")
     return { status: routeWork.reason, workId: routeWork.workId };
