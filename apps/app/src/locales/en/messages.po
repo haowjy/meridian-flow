@@ -1720,6 +1720,7 @@ msgstr "Discard all changes?"
 msgid "Discard changes"
 msgstr "Discard changes"
 
+#: src/components/app/InlineErrorRow.tsx
 #: src/features/editor/SchemaRepairNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkFilesView.tsx
@@ -3579,6 +3580,7 @@ msgstr "Resume where I left off on any device"
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
+#: src/features/project/work/useWorkChrome.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 #: src/features/project/work/WorkFilesView.tsx
@@ -4881,9 +4883,19 @@ msgstr "Work {name} was already up to date"
 #~ msgid "Work actions"
 #~ msgstr "Work actions"
 
+#: src/features/project/work/useWorkChrome.tsx
+#: src/features/project/work/WorkCollection.tsx
+msgid "Work couldn’t be archived"
+msgstr "Work couldn’t be archived"
+
 #: src/features/project/work/WorkCollection.tsx
 msgid "Work couldn’t be deleted"
 msgstr "Work couldn’t be deleted"
+
+#: src/features/project/work/useWorkChrome.tsx
+#: src/features/project/work/WorkCollection.tsx
+msgid "Work couldn’t be unarchived"
+msgstr "Work couldn’t be unarchived"
 
 #: src/features/chat/CreationComposer.tsx
 #: src/features/project/EditorWorkRecovery.tsx

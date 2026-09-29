@@ -41,7 +41,7 @@ export function WorkCollection({
   const collectionHeading = useRef<HTMLHeadingElement>(null);
   const deleteState = deletion.state;
   const archiveToggle = useWorkArchiveToggle(projectId);
-  const archiveFocus = useArchiveFocusFollow(works, archiveToggle.toggle);
+  const archiveFocus = useArchiveFocusFollow(works, archiveToggle);
   const focusHandled = useRef(false);
   useEffect(() => {
     if (focusHandled.current) return;
@@ -85,13 +85,35 @@ export function WorkCollection({
       actions={
         <WorkActionsMenu
           work={work}
-          disabled={archiveToggle.isPending}
           onToggleArchive={() => archiveFocus.toggleArchive(work)}
           onDelete={() => deletion.remove(work, "list")}
         />
       }
     />
   );
+  const archiveFailure = archiveToggle.failure;
+  // A rejected Archive or Unarchive returns the Work to its tab with the failure under it.
+  const listRow = (work: Work) => ({
+    key: work.id,
+    node:
+      archiveFailure?.workId === work.id ? (
+        <>
+          {row(work)}
+          <InlineErrorRow
+            message={
+              archiveFailure.operation === "archive"
+                ? t`Work couldn’t be archived`
+                : t`Work couldn’t be unarchived`
+            }
+            onRetry={archiveFocus.retry}
+            actionLabel={t`Retry`}
+            onDismiss={archiveToggle.dismiss}
+          />
+        </>
+      ) : (
+        row(work)
+      ),
+  });
   const activeRows: { key: string; node: ReactNode }[] = [
     ...unfinishedCreations.map((creation) => ({
       key: `creation-${creation.workId}`,
@@ -170,7 +192,7 @@ export function WorkCollection({
           },
         ]
       : []),
-    ...active.map((work) => ({ key: work.id, node: row(work) })),
+    ...active.map(listRow),
   ];
   return (
     <div className="app-scroll" aria-busy={isFetching}>
@@ -216,10 +238,7 @@ export function WorkCollection({
               restore={restore}
             />
           ) : view === "archived" ? (
-            <RowList
-              rows={archived.map((work) => ({ key: work.id, node: row(work) }))}
-              empty={<Trans>No archived Work.</Trans>}
-            />
+            <RowList rows={archived.map(listRow)} empty={<Trans>No archived Work.</Trans>} />
           ) : (
             <RowList rows={activeRows} empty={<Trans>No active Work yet.</Trans>} />
           )}

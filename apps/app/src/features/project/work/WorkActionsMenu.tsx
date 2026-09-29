@@ -8,13 +8,11 @@ import { OverflowMenu } from "@/components/ui/overflow-menu";
 
 export function WorkActionsMenu({
   work,
-  disabled,
   onToggleArchive,
   onDelete,
   triggerClassName,
 }: {
   work: Work;
-  disabled?: boolean;
   onToggleArchive: () => void;
   onDelete: () => void;
   triggerClassName?: string;
@@ -25,7 +23,7 @@ export function WorkActionsMenu({
       label={t`Actions for ${work.name}`}
       triggerClassName={triggerClassName ?? "[@media(pointer:coarse)]:size-11"}
     >
-      <DropdownMenuItem disabled={disabled} onSelect={onToggleArchive}>
+      <DropdownMenuItem onSelect={onToggleArchive}>
         {archived ? (
           <ArchiveRestore className="size-3.5 text-muted-foreground" aria-hidden />
         ) : (
@@ -34,7 +32,7 @@ export function WorkActionsMenu({
         {archived ? <Trans>Unarchive</Trans> : <Trans>Archive</Trans>}
       </DropdownMenuItem>
       <DropdownMenuSeparator />
-      <DropdownMenuItem variant="destructive" disabled={disabled} onSelect={onDelete}>
+      <DropdownMenuItem variant="destructive" onSelect={onDelete}>
         <Trash2 className="size-3.5" aria-hidden />
         <Trans>Delete Work</Trans>
       </DropdownMenuItem>

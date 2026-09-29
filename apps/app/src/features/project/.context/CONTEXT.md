@@ -56,16 +56,22 @@ active and archived Work and owns creation and lifecycle entry points; it never 
   Works and never lists No Work as a row. Route-owned detail and inline metadata consume
 the typed catalog, PATCH mutation, and filtered chat-feed query seams.
 Work detail's route Work is the sole source for title and description values. The
-Work update command optimistically patches the works snapshot query and restores
-the prior snapshot on rejection; acquisition watermarks keep an older in-flight
-snapshot from erasing that patch. The page-scoped metadata controller owns only
+Work update, Archive, and Unarchive commands optimistically patch the works
+snapshot query; a rejection reverts only the Works still showing that command's
+projection, so a queued lifecycle command keeps its own. Acquisition watermarks
+keep an older in-flight snapshot from erasing a patch. A command's confirmed Work
+is installed on success, and the snapshot repair read runs only once no other
+Work command is pending, since it would erase their projections. The page-scoped metadata controller owns only
 the description draft, field-local failure, and the route leave decision. A dirty
 description offers Save, Discard, or Keep editing; hard unload uses the router's
 native before-unload integration rather than a second draft owner. The collection
 focuses its heading after the catalog resolves. It shows one list at a time
 under Active, Archived, and Deleted tabs (lifecycle states never overlap, so
 tabs replace stacked disclosures). `useArchiveFocusFollow` moves focus to the
-destination tab when Archive or Unarchive moves a row out of the visible list.
+destination tab when Archive or Unarchive moves a row out of the visible list,
+right after the click. A rejected Archive or Unarchive returns the row to its tab
+with an inline error row (Retry, dismiss) under it; the Work band shows the same
+error beside the title, like a rejected chat rename.
 Detail composes identity and lifecycle, Goal, pending drafts, Scratch,
 Uploads, and associated chats. Associated chats use bounded cursor pages and the
 same virtualized, borderless project chat row as the Chat index without adding a nested

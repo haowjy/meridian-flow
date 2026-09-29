@@ -1720,6 +1720,7 @@ msgstr ""
 msgid "Discard changes"
 msgstr ""
 
+#: src/components/app/InlineErrorRow.tsx
 #: src/features/editor/SchemaRepairNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkFilesView.tsx
@@ -3575,6 +3576,7 @@ msgstr ""
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
+#: src/features/project/work/useWorkChrome.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 #: src/features/project/work/WorkFilesView.tsx
@@ -4877,8 +4879,18 @@ msgstr ""
 #~ msgid "Work actions"
 #~ msgstr ""
 
+#: src/features/project/work/useWorkChrome.tsx
+#: src/features/project/work/WorkCollection.tsx
+msgid "Work couldn’t be archived"
+msgstr ""
+
 #: src/features/project/work/WorkCollection.tsx
 msgid "Work couldn’t be deleted"
+msgstr ""
+
+#: src/features/project/work/useWorkChrome.tsx
+#: src/features/project/work/WorkCollection.tsx
+msgid "Work couldn’t be unarchived"
 msgstr ""
 
 #: src/features/chat/CreationComposer.tsx

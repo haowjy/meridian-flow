@@ -3,7 +3,7 @@ import type { UpdateWorkRequest, Work, WorksSnapshot } from "@meridian/contracts
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { listProjectWorks, updateWork } from "@/client/api/projects-api";
+import { archiveWork, listProjectWorks, updateWork } from "@/client/api/projects-api";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { projectQueryKeys } from "./project-query-keys";
 import { useWorkMutations } from "./useWorks";
@@ -57,9 +57,11 @@ function deferred<T>() {
 }
 
 let submitUpdate: (input: { workId: string; data: UpdateWorkRequest }) => Promise<Work>;
+let submitArchive: (workId: string) => Promise<Work>;
 function MutationProbe() {
-  const { update } = useWorkMutations(PROJECT_ID);
+  const { update, archive } = useWorkMutations(PROJECT_ID);
   submitUpdate = (input) => update.mutateAsync(input);
+  submitArchive = (workId) => archive.mutateAsync(workId);
   return null;
 }
 
@@ -107,6 +109,53 @@ describe("useWorkMutations update", () => {
           expect(
             client.getQueryData<WorksSnapshot>(projectQueryKeys.works(PROJECT_ID))?.works[0]?.name,
           ).toBe("Arc");
+        },
+      );
+    } finally {
+      client.clear();
+      vi.clearAllMocks();
+    }
+  });
+});
+
+describe("useWorkMutations archive", () => {
+  it("shows queued archives at once and rolls back only the rejected one", async () => {
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const second = { ...WORK, id: "work-2", name: "Coda", slug: "coda" };
+    const snapshot = { ...SNAPSHOT, works: [WORK, second] } as WorksSnapshot;
+    client.setQueryData(projectQueryKeys.works(PROJECT_ID), snapshot);
+    const firstRequest = deferred<Work>();
+    const secondRequest = deferred<Work>();
+    vi.mocked(archiveWork)
+      .mockImplementationOnce(() => firstRequest.promise)
+      .mockImplementationOnce(() => secondRequest.promise);
+    // Repair reads never land here: the test observes the projection only.
+    vi.mocked(listProjectWorks).mockImplementation(() => new Promise(() => undefined));
+    const statuses = () =>
+      client
+        .getQueryData<WorksSnapshot>(projectQueryKeys.works(PROJECT_ID))
+        ?.works.map((work) => work.status);
+
+    try {
+      await withReactRoot(
+        <QueryClientProvider client={client}>
+          <MutationProbe />
+        </QueryClientProvider>,
+        async () => {
+          let first!: Promise<Work>;
+          await act(async () => {
+            first = submitArchive(WORK.id);
+            void submitArchive(second.id).catch(() => undefined);
+          });
+          await vi.waitFor(() => expect(statuses()).toEqual(["archived", "archived"]));
+          // One lifecycle scope: the second command waits for the first on the network.
+          expect(archiveWork).toHaveBeenCalledTimes(1);
+
+          await act(async () => {
+            firstRequest.reject(new Error("Rejected"));
+            await expect(first).rejects.toThrow("Rejected");
+          });
+          expect(statuses()).toEqual(["active", "archived"]);
         },
       );
     } finally {

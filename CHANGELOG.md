@@ -18,6 +18,7 @@
 - Work list shows Active, Archived and Deleted as tabs, one list at a time. The tab lives in the URL (`?view=archived|deleted`), so Back returns to it; Archive and Unarchive move focus to the destination tab.
 - Project URLs are plural and id-based: `/chats/<id>`, `/works/<id>`, `/works/<id>/browse/…`. A new Work keeps its URL from creation on. Slugs and `@` stay out of browser URLs.
 - Fix: the invalid-character name warning showed a raw "{0}".
+- Archive and Unarchive move a Work to its new tab at once. If the server refuses, the Work returns with an error to retry or dismiss.
 - `server`: Work delete cascade-marks children (`deleted_by_work_id`, migration 0011) and an hourly `work-purge` job removes Works past 30 days with their rows and blobs; restore past the window returns 410 `work_restore_expired`. Works drop `description` (migration 0010); `GET /api/works/:workId/threads` is removed in favor of the project chat feed's `workId` filter.
 
 - Keep writer messages visible after the reply starts; only machine-delivered inbox messages fold into activity rows.

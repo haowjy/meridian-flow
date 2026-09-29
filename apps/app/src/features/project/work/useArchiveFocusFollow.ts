@@ -1,14 +1,13 @@
 /** Archive moves a Work row to the other tab; focus follows to that tab. */
 import type { Work } from "@meridian/contracts/works";
 import { useCallback, useEffect, useRef } from "react";
+import type { WorkArchiveToggle } from "./useWorkArchiveToggle";
 
-export function useArchiveFocusFollow(
-  works: readonly Work[] | null,
-  archive: (work: Work, options?: { onError?: (error: Error) => void }) => void,
-) {
+export function useArchiveFocusFollow(works: readonly Work[] | null, archive: WorkArchiveToggle) {
   const tabs = useRef<HTMLDivElement>(null);
   const intent = useRef<{ workId: string; status: Work["status"] } | null>(null);
 
+  // The move is optimistic, so this fires as soon as the command starts.
   useEffect(() => {
     const target = intent.current;
     if (!target || works === null) return;
@@ -17,18 +16,30 @@ export function useArchiveFocusFollow(
     intent.current = null;
   }, [works]);
 
+  const onError = useCallback(() => {
+    intent.current = null;
+  }, []);
+  const { toggle, retry: retryCommand, failure } = archive;
+
   const toggleArchive = useCallback(
     (work: Work) => {
-      const status = work.status === "archived" ? "active" : "archived";
-      intent.current = { workId: work.id, status };
-      archive(work, {
-        onError: () => {
-          intent.current = null;
-        },
-      });
+      intent.current = {
+        workId: work.id,
+        status: work.status === "archived" ? "active" : "archived",
+      };
+      toggle(work, { onError });
     },
-    [archive],
+    [toggle, onError],
   );
 
-  return { tabs, toggleArchive };
+  const retry = useCallback(() => {
+    if (!failure) return;
+    intent.current = {
+      workId: failure.workId,
+      status: failure.operation === "archive" ? "archived" : "active",
+    };
+    retryCommand({ onError });
+  }, [failure, retryCommand, onError]);
+
+  return { tabs, toggleArchive, retry };
 }

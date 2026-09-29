@@ -1,12 +1,14 @@
 /**
  * The Work destination's chrome: the All Work door, the open Work's name as a
  * tab renamed in place, and its `…` actions. The desktop band and the phone
- * top bar both render these pieces.
+ * top bar both render these pieces. A rejected Archive or Unarchive shows
+ * beside the title, like a rejected chat rename in the chat header.
  */
 import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import { Layers } from "lucide-react";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
 import { IndexTabChip, ReturnTabChip } from "../shell/IndexTabChip";
 import { useWorkArchiveToggle } from "./useWorkArchiveToggle";
@@ -32,6 +34,8 @@ export function useWorkChrome(
   };
   const work = routeWork.status === "present" ? routeWork.work : null;
   const remembered = onCollection ? rememberedWork : null;
+  const archiveFailure =
+    work && archiveToggle.failure?.workId === work.id ? archiveToggle.failure : null;
   return {
     onCollection,
     openCollection,
@@ -45,7 +49,23 @@ export function useWorkChrome(
       />
     ),
     title: work ? (
-      <WorkTitleTab key={work.id} projectId={projectId} work={work} variant={variant} />
+      <>
+        <WorkTitleTab key={work.id} projectId={projectId} work={work} variant={variant} />
+        {archiveFailure ? (
+          <div className="min-w-0">
+            <InlineErrorRow
+              message={
+                archiveFailure.operation === "archive"
+                  ? t`Work couldn’t be archived`
+                  : t`Work couldn’t be unarchived`
+              }
+              onRetry={() => archiveToggle.retry()}
+              actionLabel={t`Retry`}
+              onDismiss={archiveToggle.dismiss}
+            />
+          </div>
+        ) : null}
+      </>
     ) : pendingName ? (
       <PendingWorkTitleTab name={pendingName} variant={variant} />
     ) : remembered && variant === "tab" ? (
@@ -61,7 +81,6 @@ export function useWorkChrome(
     actions: work ? (
       <WorkActionsMenu
         work={work}
-        disabled={archiveToggle.isPending}
         onToggleArchive={() => archiveToggle.toggle(work)}
         onDelete={() => onDelete(work, "detail")}
       />
