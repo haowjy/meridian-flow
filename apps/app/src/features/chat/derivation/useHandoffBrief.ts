@@ -18,7 +18,7 @@ import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { HttpResponseError, isMeridianApiError } from "@/client/api/http-client";
+import { httpErrorStatus } from "@/client/api/http-client";
 import { retryHandoffBrief } from "@/client/api/threads-api";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announce, announceError } from "@/client/stores";
@@ -51,11 +51,6 @@ export type HandoffBrief = {
   stopping: TurnStop["stopping"];
   stopFailed: TurnStop["failed"];
 };
-
-function httpStatus(error: unknown): number | undefined {
-  if (error instanceof HttpResponseError) return error.status;
-  return isMeridianApiError(error) ? error.status : undefined;
-}
 
 const NO_REFUSALS: ReadonlySet<string> = new Set();
 
@@ -98,7 +93,7 @@ export function useHandoffBrief(input: {
           refresh();
         },
         (error: unknown) => {
-          if (httpStatus(error) === 409) {
+          if (httpErrorStatus(error) === 409) {
             // Nothing was written: the snapshot shows what holds the chat or
             // which brief is newer, and the pressed card says Retry didn't run.
             setLocal((current) => current.filter((entry) => entry.turn.id !== seedId));

@@ -20,6 +20,7 @@ vi.mock("@/client/stores", () => announcements);
 import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { HttpResponseError } from "@/client/api/http-client";
 import { type ThreadControls, useThreadControls } from "./useThreadControls";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -137,6 +138,53 @@ describe("useThreadControls", () => {
     );
     expect(api.withdrawThreadControl).toHaveBeenCalledWith("thread-1", id);
     expect(latest.queued).toEqual([]);
+  });
+
+  it("withdraws locally when the in-flight enqueue fails: no request, no failure", async () => {
+    const enqueued = deferred<unknown>();
+    api.enqueueThreadControl.mockReturnValue(enqueued.promise);
+    await act(async () => {
+      latest.enqueue({ kind: "compact" });
+    });
+    const [queued] = latest.queued;
+    if (!queued) throw new Error("expected a queued control");
+    await act(async () => latest.withdraw(queued));
+    await act(async () => enqueued.reject(new TypeError("Failed to fetch")));
+    expect(api.withdrawThreadControl).not.toHaveBeenCalled();
+    expect(latest.queued).toEqual([]);
+    expect(announcements.announceError).not.toHaveBeenCalled();
+  });
+
+  it("counts a 404 on an id the inbox never listed as withdrawn", async () => {
+    api.enqueueThreadControl.mockImplementation(
+      async (_thread: string, { id }: { id: string }) => ({
+        id,
+        pending: null,
+        turnId: null,
+      }),
+    );
+    api.withdrawThreadControl.mockRejectedValue(
+      new HttpResponseError("control_not_found", 404, null),
+    );
+    await act(async () => {
+      latest.enqueue({ kind: "compact" });
+    });
+    const queued = { id: "", control: { kind: "compact" }, status: "queued" } as const;
+    const id = api.enqueueThreadControl.mock.calls[0]?.[1].id as string;
+    await act(async () => latest.withdraw({ ...queued, id }));
+    expect(api.withdrawThreadControl).toHaveBeenCalledWith("thread-1", id);
+    expect(latest.queued).toEqual([]);
+    expect(announcements.announceError).not.toHaveBeenCalled();
+  });
+
+  it("still fails a 404 on a command the inbox listed", async () => {
+    api.withdrawThreadControl.mockRejectedValue(
+      new HttpResponseError("control_not_found", 404, null),
+    );
+    await act(async () =>
+      latest.withdraw({ id: "k", control: { kind: "compact" }, status: "queued" }),
+    );
+    expect(announcements.announceError).toHaveBeenCalledWith("Couldn't withdraw. Try again.");
   });
 
   it("brings the row back when the withdrawal fails", async () => {

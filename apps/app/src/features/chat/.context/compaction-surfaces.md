@@ -97,7 +97,10 @@ Withdraw removes the row at once (focus stays in the transcript when it was
 the last). The server answers `withdrawn`, or `already_started` once a C or U
 carries the command's id: then the row says "This compaction already started."
 until the divider or undo marker that names it arrives (or the leaf moves). A
-failed withdrawal brings the row back with "Couldn't withdraw. Try again." A
+failed withdrawal brings the row back with "Couldn't withdraw. Try again."
+Withdrawing a command whose enqueue then failed finishes locally with no
+request, and a 404 on an id the inbox never listed counts as withdrawn: in
+both the server never took the command. A
 command a transcript turn already names (`controlMessageId` on C or U) is no
 longer queued.
 
