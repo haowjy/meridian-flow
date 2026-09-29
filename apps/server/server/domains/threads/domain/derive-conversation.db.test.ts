@@ -702,7 +702,7 @@ else
       expect(brief.outcome.kind).toBe("complete");
       expect(JSON.stringify(request?.messages.at(-2))).toContain(selectedText);
       expect(JSON.stringify(request?.messages.at(-1))).toContain(
-        "report it as the open request; do not answer it.",
+        "is the open request to report; do not answer it.",
       );
     });
 
