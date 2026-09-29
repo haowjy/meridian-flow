@@ -1,9 +1,10 @@
-/** Pure service contracts for handoff recovery and clean claim loss. */
-import { describe, expect, it, vi } from "vitest";
+/** Pure service contracts for handoff claims and non-Stop aborts. */
+import { describe, expect, it } from "vitest";
 import { createInMemoryRepositories } from "../../threads/adapters/in-memory/repositories.js";
-import { HandoffSeedMetadataCodec } from "../../threads/index.js";
-import { createInMemoryHandoffBriefClaim } from "../adapters/in-memory/handoff-brief-claim.js";
-import { createRuntimeHarness } from "../loop/__tests__/runtime-harness.js";
+import { handoffSeedMetadata } from "../../threads/index.js";
+import { createRuntimeHarness, runtimeScenario } from "../loop/__tests__/runtime-harness.js";
+import { scriptedGateway } from "../loop/__tests__/test-gateway.js";
+import { createWakeIfRunnable } from "../loop/wake-if-runnable.js";
 import { createHandoffBriefs } from "./brief-service.js";
 
 function required<T>(value: T | null | undefined): T {
@@ -36,95 +37,53 @@ async function createFixture() {
       sourceRef: required(source.ref),
       sourceTitle: source.title,
       cutoffTurnId: cutoff.id,
-      launches: 0,
     },
   });
   return { rig, source, destination, seed };
 }
 
-function makeService(
-  state: Awaited<ReturnType<typeof createFixture>>,
-  options: {
-    generate?: Parameters<typeof createHandoffBriefs>[0]["generate"];
-    claim?: Parameters<typeof createHandoffBriefs>[0]["claim"];
-  } = {},
-) {
-  const scheduled: Array<() => Promise<void>> = [];
-  const service = createHandoffBriefs({
-    repos: state.rig.repos,
-    eventWriter: state.rig.eventWriter,
-    eventSink: state.rig.deps.eventSink,
-    threadLock: {
-      async withThreadLock(_threadId, operation) {
-        return operation();
-      },
-    },
-    claim: options.claim ?? createInMemoryHandoffBriefClaim(),
-    runClaim: state.rig.runClaim,
-    runStarter: { async start() {} },
-    billingUsage: state.rig.deps.billingUsage,
-    generate:
-      options.generate ??
-      (async () => ({
-        outcome: {
-          kind: "complete" as const,
-          text: "Summary",
-          model: "writer-model",
-          modelResponses: [],
-          summarizer: { path: "branch" as const, segments: 1 },
-        },
-      })),
-    async publishStatus() {},
-    schedulePostCommit(task) {
-      scheduled.push(task);
-    },
-  });
-  return { service, scheduled };
-}
-
 describe("handoff brief service", () => {
-  it("settles a repeatedly crashing seed at the launch limit without another call", async () => {
-    const state = await createFixture();
-    expect(HandoffSeedMetadataCodec.safeParse(state.seed.metadata).success).toBe(true);
-    expect(await state.rig.repos.turns.findById(state.seed.id)).not.toBeNull();
-    await state.rig.repos.turns.updateStatus(state.seed.id, {
-      status: "pending",
-      metadata: { ...HandoffSeedMetadataCodec.parse(state.seed.metadata), launches: 3 },
-    });
-    const generate = vi.fn();
-    const { service } = makeService(state, { generate });
-
-    await service.launch(state.seed.id);
-
-    expect(generate).not.toHaveBeenCalled();
-    expect(await state.rig.repos.turns.findById(state.seed.id)).toMatchObject({
-      status: "error",
-      metadata: { launches: 3, reason: "interrupted", phase: "recovery" },
-    });
-  });
-
-  it("leaves the seed pending and restores its launch count when the claim is lost", async () => {
+  it("leaves S pending after losing the claim and wakes only after release", async () => {
     const state = await createFixture();
     const listeners = new Set<() => void>();
-    const claim = {
-      async tryAcquire() {
-        return {
-          onLost(listener: () => void) {
-            listeners.add(listener);
-            return () => listeners.delete(listener);
-          },
-          async release() {},
-        };
-      },
-    };
-    let markStarted!: () => void;
-    const started = new Promise<void>((resolve) => {
-      markStarted = resolve;
+    let released!: () => void;
+    const releaseFinished = new Promise<void>((resolve) => {
+      released = resolve;
     });
-    const { service } = makeService(state, {
-      claim,
+    let started!: () => void;
+    const providerStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const wakes: string[] = [];
+    const scheduled: Array<() => Promise<void>> = [];
+    const service = createHandoffBriefs({
+      repos: state.rig.repos,
+      eventWriter: state.rig.eventWriter,
+      eventSink: state.rig.deps.eventSink,
+      threadLock: {
+        async withThreadLock(_threadId, operation) {
+          return operation();
+        },
+      },
+      runClaim: {
+        async hold() {
+          return {
+            onLost(listener) {
+              listeners.add(listener);
+              return () => listeners.delete(listener);
+            },
+            async release() {
+              released();
+            },
+          };
+        },
+      },
+      async wakeIfRunnable(threadId) {
+        wakes.push(threadId);
+      },
+      billingUsage: state.rig.deps.billingUsage,
       async generate({ signal }) {
-        markStarted();
+        started();
         return new Promise((resolve) => {
           signal.addEventListener(
             "abort",
@@ -133,24 +92,203 @@ describe("handoff brief service", () => {
                 outcome: {
                   kind: "cancelled",
                   modelResponses: [],
-                  summarizer: { path: "branch", segments: 1 },
+                  summarizer: { path: "rolling", segments: 0 },
                 },
               }),
             { once: true },
           );
         });
       },
+      async publishStatus() {},
+      schedulePostCommit(task) {
+        scheduled.push(task);
+      },
     });
 
-    const launching = service.launch(state.seed.id);
-    await started;
+    const claim = required(await service.hold(state.destination.id));
+    service.launchAfterCommit({
+      threadId: state.destination.id,
+      seedTurnId: state.seed.id,
+      claim,
+    });
+    await required(scheduled.shift())();
+    await providerStarted;
     for (const listener of listeners) listener();
-    await launching;
+    await releaseFinished;
 
     expect(await state.rig.repos.turns.findById(state.seed.id)).toMatchObject({
       status: "pending",
-      metadata: { launches: 0 },
     });
-    expect(await state.rig.repos.turns.hasPendingHandoffSeed(state.destination.id)).toBe(true);
+    expect(
+      await state.rig.repos.turns.listPendingPlaceholdersForThread(state.destination.id),
+    ).toEqual([expect.objectContaining({ id: state.seed.id, role: "system", status: "pending" })]);
+    expect(wakes).toEqual([state.destination.id]);
+  });
+
+  it("aborts live briefs on process shutdown without settling S as cancelled", async () => {
+    const state = await createFixture();
+    let started!: () => void;
+    const providerStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let providerSignal!: AbortSignal;
+    let released!: () => void;
+    const releaseFinished = new Promise<void>((resolve) => {
+      released = resolve;
+    });
+    const scheduled: Array<() => Promise<void>> = [];
+    const service = createHandoffBriefs({
+      repos: state.rig.repos,
+      eventWriter: state.rig.eventWriter,
+      eventSink: state.rig.deps.eventSink,
+      threadLock: {
+        async withThreadLock(_threadId, operation) {
+          return operation();
+        },
+      },
+      runClaim: {
+        async hold() {
+          return {
+            onLost() {
+              return () => undefined;
+            },
+            async release() {
+              released();
+            },
+          };
+        },
+      },
+      async wakeIfRunnable() {},
+      billingUsage: state.rig.deps.billingUsage,
+      async generate({ signal }) {
+        providerSignal = signal;
+        started();
+        return new Promise((resolve) => {
+          signal.addEventListener(
+            "abort",
+            () =>
+              resolve({
+                outcome: {
+                  kind: "cancelled",
+                  modelResponses: [],
+                  summarizer: { path: "rolling", segments: 0 },
+                },
+              }),
+            { once: true },
+          );
+        });
+      },
+      async publishStatus() {},
+      schedulePostCommit(task) {
+        scheduled.push(task);
+      },
+    });
+    const claim = required(await service.hold(state.destination.id));
+    service.launchAfterCommit({ threadId: state.destination.id, seedTurnId: state.seed.id, claim });
+    await required(scheduled.shift())();
+    await providerStarted;
+    service.shutdown();
+    await releaseFinished;
+
+    expect(providerSignal.reason).toBe("shutdown");
+    expect(await state.rig.repos.turns.findById(state.seed.id)).toMatchObject({
+      status: "pending",
+    });
+  });
+
+  it("repairs a failed ending transaction and answers a message waiting behind the brief", async () => {
+    const rig = await runtimeScenario({
+      gateway: scriptedGateway({ usage: { inputTokens: 1, outputTokens: 1 } }),
+    });
+    const source = await rig.repos.threads.create({
+      userId: rig.userId,
+      projectId: rig.project.id,
+    });
+    const cutoff = await rig.repos.turns.create({
+      threadId: source.id,
+      role: "user",
+      origin: "writer",
+      status: "complete",
+    });
+    const seed = await rig.repos.turns.create({
+      threadId: rig.thread.id,
+      role: "system",
+      origin: "system",
+      status: "pending",
+      metadata: handoffSeedMetadata({
+        sourceThreadId: source.id,
+        sourceRef: required(source.ref),
+        sourceTitle: source.title,
+        cutoffTurnId: cutoff.id,
+      }),
+    });
+    const queued = await rig.delivery.enqueue({
+      threadId: rig.thread.id,
+      intent: "message",
+      provenance: { kind: "writer", actorId: rig.userId },
+      body: { kind: "text", text: "Please answer after the brief." },
+      idempotencyKey: "queued-behind-failing-brief",
+    });
+    const wakeIfRunnable = createWakeIfRunnable({
+      delivery: rig.delivery,
+      runStarter: { start: (threadId) => rig.startDrain(threadId) },
+    });
+    const service = createHandoffBriefs({
+      repos: {
+        ...rig.repos,
+        async transaction() {
+          throw new Error("ending transaction failed");
+        },
+      },
+      eventWriter: rig.eventWriter,
+      eventSink: rig.deps.eventSink,
+      threadLock: {
+        withThreadLock: (_threadId, operation) => operation(),
+      },
+      runClaim: rig.runClaim,
+      wakeIfRunnable,
+      billingUsage: rig.deps.billingUsage,
+      async generate() {
+        return {
+          outcome: {
+            kind: "complete",
+            text: "Unused brief result.",
+            model: "test-model",
+            modelResponses: [],
+            summarizer: { path: "branch", segments: 1 },
+          },
+        };
+      },
+      async publishStatus() {},
+      schedulePostCommit(task) {
+        void task();
+      },
+    });
+    const claim = required(await service.hold(rig.thread.id));
+    service.launchAfterCommit({
+      threadId: rig.thread.id,
+      seedTurnId: seed.id,
+      claim,
+    });
+
+    await expect.poll(async () => (await rig.repos.turns.findById(seed.id))?.status).toBe("error");
+    await expect
+      .poll(async () => (await rig.repos.turns.findById(queued.id))?.status)
+      .toBe("complete");
+    await rig.untilSettled();
+
+    expect(await rig.repos.turns.findById(seed.id)).toMatchObject({
+      status: "error",
+      metadata: { reason: "interrupted", phase: "recovery" },
+    });
+    expect(await rig.repos.turns.findById(queued.id)).toMatchObject({
+      role: "user",
+      status: "complete",
+    });
+    expect(
+      (await rig.repos.turns.listByThread(rig.thread.id)).some(
+        (turn) => turn.role === "assistant" && turn.status === "complete",
+      ),
+    ).toBe(true);
   });
 });

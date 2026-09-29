@@ -43,7 +43,6 @@ async function createAppServices(): Promise<AppServices> {
   const scheduler = startRecoveryScheduler(
     [
       { name: "wake-scan", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.scanWakes },
-      { name: "handoff-briefs", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.handoffBriefs },
       { name: "orphan-repair", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.repairOrphans },
       {
         name: "report-publication",
@@ -59,7 +58,10 @@ async function createAppServices(): Promise<AppServices> {
     ],
     eventSink,
   );
-  registerProcessShutdownCallback(() => scheduler.stop());
+  registerProcessShutdownCallback(async () => {
+    scheduler.stop();
+    app.handoffBriefs.shutdown();
+  });
   return app;
 }
 
