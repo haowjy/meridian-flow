@@ -32,7 +32,7 @@ export const projectResults = pgTable(
       .references(() => turns.id, { onDelete: "restrict" }),
     deletedByWorkId: uuid("deleted_by_work_id")
       .$type<WorkId>()
-      .references(() => works.id, { onDelete: "cascade" }),
+      .references(() => works.id, { onDelete: "set null" }),
     toolCallId: text("tool_call_id"),
     createdAt: createdAt(),
   },

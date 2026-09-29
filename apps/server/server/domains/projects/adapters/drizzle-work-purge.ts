@@ -5,8 +5,10 @@ import { DAY_MS, WORK_DELETE_RETENTION_DAYS, workPurgeAt } from "@meridian/contr
 import type { Database } from "@meridian/database";
 import {
   documentBranches,
+  eventJournal,
   projectResults,
   threads,
+  turns,
   uploadIntakes,
   works,
 } from "@meridian/database/schema";
@@ -85,9 +87,13 @@ export function createDrizzleWorkPurger(deps: {
         }),
       ];
 
-      // Results restrict thread deletion, and branches restrict Work deletion.
+      // Results and journal history restrict conversation deletion; branches restrict Work deletion.
       await activeDb.delete(projectResults).where(eq(projectResults.deletedByWorkId, workId));
       if (lockedTree.threadIds.length > 0) {
+        await activeDb
+          .delete(eventJournal)
+          .where(inArray(eventJournal.threadId, lockedTree.threadIds));
+        await activeDb.delete(turns).where(inArray(turns.threadId, lockedTree.threadIds));
         await activeDb.delete(threads).where(inArray(threads.id, lockedTree.threadIds));
       }
       await activeDb.delete(documentBranches).where(eq(documentBranches.workId, workId));

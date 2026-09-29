@@ -66,7 +66,7 @@ export const documentBranches = pgTable(
       .references(() => works.id, { onDelete: "restrict" }),
     deletedByWorkId: uuid("deleted_by_work_id")
       .$type<WorkId>()
-      .references(() => works.id, { onDelete: "cascade" }),
+      .references(() => works.id, { onDelete: "set null" }),
     threadId: uuid("thread_id")
       .$type<ThreadId>()
       .references(() => threads.id, { onDelete: "cascade" }),

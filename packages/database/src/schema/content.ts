@@ -147,7 +147,7 @@ export const contextSources = pgTable(
     deletedAt: softDeleteAt(),
     deletedByWorkId: uuid("deleted_by_work_id")
       .$type<WorkId>()
-      .references(() => works.id, { onDelete: "cascade" }),
+      .references(() => works.id, { onDelete: "set null" }),
   },
   (table) => [
     index("context_sources_deleted_by_work_idx")
@@ -199,7 +199,7 @@ export const folders = pgTable(
     deletedAt: softDeleteAt(),
     deletedByWorkId: uuid("deleted_by_work_id")
       .$type<WorkId>()
-      .references(() => works.id, { onDelete: "cascade" }),
+      .references(() => works.id, { onDelete: "set null" }),
   },
   (table) => [
     index("folders_deleted_by_work_idx")
@@ -246,7 +246,7 @@ export const documents = pgTable(
     deletedAt: softDeleteAt(),
     deletedByWorkId: uuid("deleted_by_work_id")
       .$type<WorkId>()
-      .references(() => works.id, { onDelete: "cascade" }),
+      .references(() => works.id, { onDelete: "set null" }),
   },
   (table) => [
     index("documents_deleted_by_work_idx")

@@ -875,6 +875,33 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         })
         .returning();
       if (!document) throw new Error("Expected uploaded document");
+      await db.insert(schema.documentBranches).values({
+        id: "purged-work-draft",
+        documentId: document.id,
+        kind: "work_draft",
+        workId: work.id,
+        state: Buffer.from([]),
+        stateVector: Buffer.from([]),
+      });
+      const resultTurnId = "00000000-0000-4000-8000-000000000848";
+      await db.insert(schema.turns).values({
+        id: resultTurnId,
+        threadId: THREAD_ID,
+        role: "assistant",
+        origin: "assistant",
+      });
+      await db.insert(schema.projectResults).values({
+        id: "00000000-0000-4000-8000-000000000849",
+        projectId: PROJECT_ID,
+        sourcePath: "reports/purge.txt",
+        resultsUri: `results://@${work.slug}/threads/root/reports/purge.txt`,
+        storageUrl: "memory://purged-result",
+        mimeType: "text/plain",
+        sizeBytes: 4,
+        rootThreadId: THREAD_ID,
+        threadId: THREAD_ID,
+        turnId: resultTurnId,
+      });
       const objectKey = `uploads/${PROJECT_ID}/${document.id}`;
       const stored = await objectStore.put(objectKey, new Uint8Array([7]), "image/png");
       if (!stored.ok) throw new Error(stored.error.message);
@@ -920,6 +947,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toEqual([]);
       await expect(
         db.select().from(schema.uploadIntakes).where(eq(schema.uploadIntakes.workId, work.id)),
+      ).resolves.toEqual([]);
+      await expect(
+        db
+          .select()
+          .from(schema.projectResults)
+          .where(eq(schema.projectResults.projectId, PROJECT_ID)),
+      ).resolves.toEqual([]);
+      await expect(
+        db
+          .select()
+          .from(schema.documentBranches)
+          .where(eq(schema.documentBranches.id, "purged-work-draft")),
       ).resolves.toEqual([]);
       expect(deleteObservedCommittedPurge).toBe(true);
       await expect(objectStore.get(objectKey)).resolves.toMatchObject({ ok: true });
