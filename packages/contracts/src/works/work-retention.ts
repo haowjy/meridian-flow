@@ -9,3 +9,10 @@ export function workPurgeAt(deletedAt: string | Date): Date {
   if (!Number.isFinite(timestamp)) throw new RangeError("Invalid Work deletion timestamp");
   return new Date(timestamp + WORK_DELETE_RETENTION_DAYS * DAY_MS);
 }
+
+/** Latest deletion timestamp eligible for purge at `now`. */
+export function workPurgeCutoff(now: string | Date): Date {
+  const timestamp = now instanceof Date ? now.getTime() : Date.parse(now);
+  if (!Number.isFinite(timestamp)) throw new RangeError("Invalid Work purge timestamp");
+  return new Date(timestamp - WORK_DELETE_RETENTION_DAYS * DAY_MS);
+}

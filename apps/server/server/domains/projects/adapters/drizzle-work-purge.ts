@@ -1,7 +1,7 @@
 /** Permanently removes expired Works, then best-effort removes their object-store blobs. */
 
 import type { WorkId } from "@meridian/contracts/runtime";
-import { DAY_MS, WORK_DELETE_RETENTION_DAYS, workPurgeAt } from "@meridian/contracts/works";
+import { workPurgeCutoff } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
   documentBranches,
@@ -53,7 +53,7 @@ export function createDrizzleWorkPurger(deps: {
 
   async function purge(
     workId: WorkId,
-    currentTime: Date,
+    cutoff: Date,
   ): Promise<{ purged: boolean; objectKeys: string[] }> {
     return runInDrizzleTransaction(deps.db, async () => {
       const lockedTree = await lockWorkThreadTree(deps.db, workId, { includeMarked: true });
@@ -65,7 +65,7 @@ export function createDrizzleWorkPurger(deps: {
         .select({ id: works.id, deletedAt: works.deletedAt })
         .from(works)
         .where(eq(works.id, workId));
-      if (!work?.deletedAt || workPurgeAt(work.deletedAt).getTime() > currentTime.getTime()) {
+      if (!work?.deletedAt || work.deletedAt.getTime() > cutoff.getTime()) {
         return { purged: false, objectKeys: [] };
       }
 
@@ -99,7 +99,7 @@ export function createDrizzleWorkPurger(deps: {
       await activeDb.delete(documentBranches).where(eq(documentBranches.workId, workId));
       const deleted = await activeDb
         .delete(works)
-        .where(and(eq(works.id, workId), lte(works.deletedAt, currentTime)))
+        .where(and(eq(works.id, workId), lte(works.deletedAt, cutoff)))
         .returning({ id: works.id });
       return { purged: deleted.length > 0, objectKeys };
     });
@@ -108,23 +108,16 @@ export function createDrizzleWorkPurger(deps: {
   return {
     async sweep(): Promise<number> {
       const currentTime = now();
+      const cutoff = workPurgeCutoff(currentTime);
       const candidates = await currentDrizzleDb(deps.db)
         .select({ id: works.id })
         .from(works)
-        .where(
-          and(
-            isNotNull(works.deletedAt),
-            lte(
-              works.deletedAt,
-              new Date(currentTime.getTime() - WORK_DELETE_RETENTION_DAYS * DAY_MS),
-            ),
-          ),
-        )
+        .where(and(isNotNull(works.deletedAt), lte(works.deletedAt, cutoff)))
         .orderBy(asc(works.deletedAt), asc(works.id))
         .limit(WORK_PURGE_BATCH_LIMIT);
       let count = 0;
       for (const candidate of candidates) {
-        const result = await purge(candidate.id, currentTime);
+        const result = await purge(candidate.id, cutoff);
         if (!result.purged) continue;
         count += 1;
         await deleteObjects(result.objectKeys);
