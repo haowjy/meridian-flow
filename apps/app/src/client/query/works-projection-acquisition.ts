@@ -166,15 +166,21 @@ export function seedWorksSnapshot(
 }
 
 /**
- * Fallback when the read after a committed Work command fails: patch the Work
- * the server returned into the snapshot without claiming a newer revision, so
- * the next successful read still replaces it.
+ * Fallback when the read after a committed Work command fails: patch only the
+ * fields that command owns into the snapshot, without claiming a newer
+ * revision, so the next successful read still replaces it and no newer field
+ * from another command is reverted.
  */
-export function installCommittedWork(client: QueryClient, projectId: string, work: Work): void {
+export function installCommittedWork(
+  client: QueryClient,
+  projectId: string,
+  workId: string,
+  fields: Partial<Work>,
+): void {
   const current = currentSnapshot(client, projectId);
-  if (!current) return;
+  if (!current || !Object.keys(fields).length) return;
   const patch = <T extends Work>(entry: T): T =>
-    entry.id === work.id ? { ...entry, ...work } : entry;
+    entry.id === workId ? { ...entry, ...fields } : entry;
   client.setQueryData(projectQueryKeys.works(projectId), {
     ...current,
     works: current.works.map(patch),

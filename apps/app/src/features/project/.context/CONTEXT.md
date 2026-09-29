@@ -57,14 +57,17 @@ active and archived Work and owns creation and lifecycle entry points; it never 
 the typed catalog, PATCH mutation, and filtered chat-feed query seams.
 Work detail's route Work is the sole source for title and description values. The
 works query cache holds only server snapshots, ordered by `authorityRevision`.
-Work commands (update, Archive, Unarchive, Restore; Delete shows through its
-Undo row) never write guesses into it: `useWorks` lays each pending command's
-expected result over the snapshot, read from the mutation cache, so every reader
-sees one projection and a rejection simply stops projecting. A successful command
-stays pending until a snapshot read started after its commit lands, so no
-earlier read can hide it. Failures are read back from the mutation cache
-(`useWorkCommandFailures`): a Work shows its latest command's failure until the
-writer retries, dismisses it, or runs another command on that Work. The page-scoped metadata controller owns only
+Work commands (update, Archive, Unarchive, Delete, Restore) never write guesses
+into it: `useWorks` lays each pending command's expected result over the
+snapshot, read from the mutation cache, so every reader sees one projection and
+a rejection simply stops projecting. A successful command stays pending until a
+snapshot read started after its commit lands (bounded; if the read fails, only
+the fields that command owns are patched in), so no earlier read can hide it.
+Its record then leaves the cache, except a delete's, which is its Undo window.
+Failures are read back from the mutation cache (`useWorkCommandFailures`): a
+Work shows its latest command's failure until the writer retries, dismisses it,
+runs another command on that Work, or the server snapshot already shows the
+command's target. The page-scoped metadata controller owns only
 the description draft, field-local failure, and the route leave decision. A dirty
 description offers Save, Discard, or Keep editing; hard unload uses the router's
 native before-unload integration rather than a second draft owner. The collection
@@ -72,11 +75,13 @@ focuses its heading after the catalog resolves. It shows one list at a time
 under Active, Archived, and Deleted tabs (lifecycle states never overlap, so
 tabs replace stacked disclosures). `useArchiveFocusFollow` moves focus to the
 destination tab when Archive or Unarchive moves a row out of the visible list,
-right after the click. A rejected Archive or Unarchive returns the row to its tab
-with an inline error row (Retry, dismiss) under it; the Work band shows the same
-failure beside the title on desktop, like a rejected chat rename, and on its own
-full-width line under the phone top bar, as the phone's chat rename failure does.
-A Work in its delete Undo window, or whose delete failed, shows only as that row.
+right after the click. A rejected Archive, Unarchive or Delete returns the row to
+its tab with an inline error row (Retry, dismiss) under it; the Work band shows
+the same failure as its `notice`: one element that `PaneHeader` flows beside the
+title when wide and wraps onto its own line when narrow (so a resize neither
+re-announces it nor drops focus), and a full-width line under the phone top bar.
+Each deleted Work has its own Undo row, in the tab it left (`useWorkDeleteWindows`
+derives them from delete records); a rejected Undo reopens the row with the error.
 Detail composes identity and lifecycle, Goal, pending drafts, Scratch,
 Uploads, and associated chats. Associated chats use bounded cursor pages and the
 same virtualized, borderless project chat row as the Chat index without adding a nested
@@ -95,8 +100,10 @@ The Work band copies the Chat pane's grammar (`useWorkChrome`): an All Work
 `IndexTabChip` door, the open Work's name as the active tab the page rises into
 and renamed inside it (`WorkTitleTab` over `TabTitleField`, no dropdown), and the
 Work's `…` menu at the far right. The phone top bar shows the same pieces as a
-`Work › <name>` trail. Delete state (`useWorkDeletion`) lives above the screen so
-the band's menu and the collection's Undo row share it. The page body starts with
+`Work › <name>` trail. `useWorkDeletion` lives above the screen so the band's
+menu and the collection's Undo rows share it; its only local state is which
+Undo windows were closed while their delete was still pending. Opening another
+Work or starting a new one closes the Undo windows. The page body starts with
 the Work's heading (`WorkHeading`), renamed in place like the tab; both titles
 read the same route Work, so the update command's projection publishes a
 rename in both places at once. Then

@@ -1,8 +1,8 @@
 /**
  * The Work destination's chrome: the All Work door, the open Work's name as a
  * tab renamed in place, and its `…` actions. The desktop band and the phone
- * top bar both render these pieces. A rejected Archive or Unarchive is its own
- * `notice`, placed like a rejected chat rename: beside the title in a wide
+ * top bar both render these pieces. A rejected Archive, Unarchive or Delete is
+ * its own `notice`, placed like a rejected chat rename: beside the title in a wide
  * band, on its own full-width line under a narrow band or the phone top bar.
  */
 import { t } from "@lingui/core/macro";
@@ -23,7 +23,7 @@ export function useWorkChrome(
   routeWork: RouteWorkResolution,
   rememberedWork: Work | null,
   routeCommands: ProjectRouteCommands,
-  onDelete: WorkDeletion["remove"],
+  deletion: WorkDeletion,
   /** `tab` in the desktop band; `quiet` in the phone top bar's trail. */
   variant: "tab" | "quiet",
 ) {
@@ -36,6 +36,7 @@ export function useWorkChrome(
   const work = routeWork.status === "present" ? routeWork.work : null;
   const remembered = onCollection ? rememberedWork : null;
   const archiveFailure = work ? archiveToggle.failureFor(work.id) : null;
+  const deleteFailure = work ? deletion.failures.get(work.id) : undefined;
   return {
     onCollection,
     openCollection,
@@ -59,6 +60,13 @@ export function useWorkChrome(
         actionLabel={t`Retry`}
         onDismiss={archiveFailure.dismiss}
       />
+    ) : work && deleteFailure ? (
+      <InlineErrorRow
+        message={t`Work couldn’t be deleted`}
+        onRetry={() => deletion.remove(work, "detail")}
+        actionLabel={t`Retry`}
+        onDismiss={deleteFailure.dismiss}
+      />
     ) : null,
     title: work ? (
       <WorkTitleTab key={work.id} projectId={projectId} work={work} variant={variant} />
@@ -78,7 +86,7 @@ export function useWorkChrome(
       <WorkActionsMenu
         work={work}
         onToggleArchive={() => void archiveToggle.toggle(work)}
-        onDelete={() => onDelete(work, "detail")}
+        onDelete={() => deletion.remove(work, "detail")}
       />
     ) : null,
   };

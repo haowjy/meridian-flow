@@ -120,6 +120,7 @@ export async function listProjectWorks(
   const path = apiProjectWorksPath(projectId);
   return getJson<ListWorksResponse>(urlFor(path, options), {
     headers: options?.headers,
+    signal: options?.signal,
   });
 }
 

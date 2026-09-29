@@ -10,6 +10,7 @@ import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import {
   archiveWork,
+  deleteWork,
   listProjectWorks,
   unarchiveWork,
   updateWork,
@@ -186,7 +187,7 @@ describe("Work command projection", () => {
     vi.mocked(archiveWork).mockImplementation(async () => archived(SECOND));
     const renamed = { ...WORK, name: "Revised arc" } as Work;
     vi.mocked(updateWork).mockImplementation(async () => renamed);
-    await withProbe(snapshot([WORK, SECOND]), async () => {
+    await withProbe(snapshot([WORK, SECOND]), async (client) => {
       await act(async () => {
         void commands.archive.mutateAsync(SECOND.id);
       });
@@ -197,13 +198,18 @@ describe("Work command projection", () => {
       await settle(() => expect(listProjectWorks).toHaveBeenCalledTimes(2));
 
       await act(async () => archiveRead.resolve(snapshot([WORK, archived(SECOND)], "2")));
-      await settle(() => expect(field(SECOND.id, "status")).toBe("archived"));
-      expect(field(WORK.id, "name")).toBe("Revised arc");
+      // Query and mutation notifications flush on a timer; wait for the render.
+      await settle(() => {
+        expect(field(SECOND.id, "status")).toBe("archived");
+        expect(field(WORK.id, "name")).toBe("Revised arc");
+      });
 
       await act(async () => renameRead.resolve(snapshot([renamed, archived(SECOND)], "3")));
-      await settle(() => expect(seen.failures.size).toBe(0));
-      expect(field(WORK.id, "name")).toBe("Revised arc");
-      expect(field(SECOND.id, "status")).toBe("archived");
+      await settle(() => expect(client.getMutationCache().getAll()).toHaveLength(0));
+      await settle(() => {
+        expect(field(WORK.id, "name")).toBe("Revised arc");
+        expect(field(SECOND.id, "status")).toBe("archived");
+      });
       const shown = renders.findIndex((render) => render.works?.[0]?.name === "Revised arc");
       expect(renders.slice(shown).map((render) => render.works?.[0]?.name)).not.toContain("Arc");
     });
@@ -239,6 +245,72 @@ describe("Work command projection", () => {
         "archived",
       );
       expect(field(WORK.id, "status")).toBe("active");
+    });
+  });
+  it("hides a failure once the server already shows its target", async () => {
+    vi.mocked(archiveWork).mockRejectedValue(new Error("Rejected"));
+    vi.mocked(listProjectWorks).mockImplementation(() => new Promise(() => undefined));
+    await withProbe(snapshot([WORK]), async (client) => {
+      await act(async () => {
+        void commands.archive.mutateAsync(WORK.id).catch(() => undefined);
+      });
+      await settle(() => expect(seen.failures.get(WORK.id)?.operation).toBe("archive"));
+
+      // Another device archived it: Retry would be a no-op, so the failure goes quiet.
+      await act(async () => {
+        client.setQueryData(projectQueryKeys.works(PROJECT_ID), snapshot([archived(WORK)], "2"));
+      });
+      await settle(() => expect(seen.failures.size).toBe(0));
+      expect(field(WORK.id, "status")).toBe("archived");
+    });
+  });
+
+  it("patches only the fields a command owns when the refresh after it fails", async () => {
+    const renamed = { ...WORK, name: "Revised arc" } as Work;
+    // The archive committed against the old name; a newer read already has the rename.
+    vi.mocked(archiveWork).mockResolvedValue(archived(WORK));
+    vi.mocked(listProjectWorks).mockRejectedValue(new Error("Offline"));
+    await withProbe(snapshot([renamed], "2"), async (client) => {
+      await act(async () => {
+        await commands.archive.mutateAsync(WORK.id);
+      });
+      await settle(() => {
+        expect(client.getMutationCache().getAll()).toHaveLength(0);
+        expect(field(WORK.id, "status")).toBe("archived");
+      });
+      expect(field(WORK.id, "name")).toBe("Revised arc");
+    });
+  });
+
+  it("drops a success record once it lands, and keeps a delete's as its Undo window", async () => {
+    let server = snapshot([WORK]);
+    vi.mocked(listProjectWorks).mockImplementation(async () => server);
+    vi.mocked(updateWork).mockImplementation(async () => {
+      server = snapshot([{ ...WORK, name: "Revised arc" } as Work], "2");
+      return server.works[0] as Work;
+    });
+    vi.mocked(deleteWork).mockImplementation(async () => {
+      server = snapshot([{ ...WORK, deletedAt: "2026-09-03T00:00:00.000Z" } as Work], "3");
+    });
+    await withProbe(server, async (client) => {
+      await act(async () => {
+        await commands.update.mutateAsync({ workId: WORK.id, data: { name: "Revised arc" } });
+      });
+      await settle(() => {
+        expect(client.getMutationCache().getAll()).toHaveLength(0);
+        expect(field(WORK.id, "name")).toBe("Revised arc");
+      });
+
+      await act(async () => {
+        await commands.delete.mutateAsync(WORK.id);
+      });
+      await settle(() => expect(seen.works).toEqual([]));
+      expect(
+        client
+          .getMutationCache()
+          .getAll()
+          .map((m) => m.state.status),
+      ).toEqual(["success"]);
     });
   });
 });

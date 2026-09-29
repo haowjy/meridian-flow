@@ -77,7 +77,7 @@ export function MobileProject(props: MobileProjectProps) {
     props.routeWork,
     props.rememberedWork,
     props.routeCommands,
-    workDeletion.remove,
+    workDeletion,
     "quiet",
   );
   const onWorkDetail = props.activeScreen === "work" && !work.onCollection && Boolean(work.title);

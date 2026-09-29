@@ -36,12 +36,16 @@ export function useWorkRestore(projectId: string) {
   return { failureFor, restore };
 }
 
-/** Deleted Works still inside their retention window, minus one already offered for Undo. */
-export function restorableWorks(deleted: readonly Work[], now: number, exceptId?: string) {
+/** Deleted Works still inside their retention window, minus those offered for Undo. */
+export function restorableWorks(
+  deleted: readonly Work[],
+  now: number,
+  undoable: ReadonlySet<string>,
+) {
   return deleted.filter(
     (work) =>
       work.deletedAt !== null &&
-      work.id !== exceptId &&
+      !undoable.has(work.id) &&
       workPurgeAt(work.deletedAt).getTime() > now,
   );
 }
@@ -119,7 +123,8 @@ function DeletedRow({ work, now, onRestore }: { work: Work; now: number; onResto
   );
 }
 
-function RestoreFailure({ error, onRetry }: { error: Error; onRetry: () => void }) {
+/** Why a restore or an Undo was rejected, with a retry where one can help. */
+export function RestoreFailure({ error, onRetry }: { error: Error; onRetry: () => void }) {
   const status = error instanceof HttpResponseError ? error.status : null;
   if (status === 409)
     return (

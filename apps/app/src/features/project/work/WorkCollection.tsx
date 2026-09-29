@@ -16,7 +16,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { cn } from "@/lib/utils";
 import type { ProjectRouteCommands } from "../routing/project-route";
-import { DeletedWorkList, restorableWorks, useWorkRestore } from "./DeletedWorkList";
+import {
+  DeletedWorkList,
+  RestoreFailure,
+  restorableWorks,
+  useWorkRestore,
+} from "./DeletedWorkList";
 import { useArchiveFocusFollow } from "./useArchiveFocusFollow";
 import { useWorkArchiveToggle } from "./useWorkArchiveToggle";
 import { useWorkCreationRecords } from "./useWorkCreation";
@@ -40,7 +45,6 @@ export function WorkCollection({
   const restore = useWorkRestore(projectId);
   const restoring = useRestoringWorkIds(projectId);
   const collectionHeading = useRef<HTMLHeadingElement>(null);
-  const deleteState = deletion.state;
   const archiveToggle = useWorkArchiveToggle(projectId);
   const archiveFocus = useArchiveFocusFollow(works, archiveToggle);
   const focusHandled = useRef(false);
@@ -54,19 +58,12 @@ export function WorkCollection({
     (creation) => creation.status === "pending" || creation.status === "failed",
   );
   const unfinishedIds = new Set(unfinishedCreations.map((creation) => creation.workId));
-  // A Work in its Undo window, or whose delete failed, shows only as that row.
-  const heldByDelete = (work: Work) =>
-    deleteState.failed?.id === work.id ||
-    (deleteState.deleted?.id === work.id && !deleteState.restorePending);
+  // A deleting Work has already left `works`; its Undo row stands in its tab.
   const listed = (status: Work["status"]) =>
-    works?.filter(
-      (work) => work.status === status && !unfinishedIds.has(work.id) && !heldByDelete(work),
-    ) ?? [];
+    works?.filter((work) => work.status === status && !unfinishedIds.has(work.id)) ?? [];
   const active = listed("active");
   const archived = listed("archived");
-  const failedWork = deleteState.failed;
-  const undoableId =
-    deleteState.deleted && !deleteState.restorePending ? deleteState.deleted.id : undefined;
+  const undoable = new Set(deletion.windows.map((window) => window.workId));
   const openWorkId = (id: string) => {
     const workId = parseRequestId(id);
     if (workId) void routeCommands.openWork({ kind: "work-detail", workId }, { replace: false });
@@ -91,10 +88,37 @@ export function WorkCollection({
       }
     />
   );
-  // A rejected Archive or Unarchive returns the Work to its tab with the
-  // failure under it. A restoring Work already shows in the tab it returns to.
+  // A rejected Archive, Unarchive or Delete returns the Work to its tab with
+  // the failure under it. A restoring Work already shows in the tab it returns to.
+  const failureRow = (work: Work) => {
+    const archiveFailure = archiveToggle.failureFor(work.id);
+    if (archiveFailure)
+      return (
+        <InlineErrorRow
+          message={
+            archiveFailure.operation === "archive"
+              ? t`Work couldn’t be archived`
+              : t`Work couldn’t be unarchived`
+          }
+          onRetry={() => archiveFocus.retry(work.id)}
+          actionLabel={t`Retry`}
+          onDismiss={archiveFailure.dismiss}
+        />
+      );
+    const deleteFailure = deletion.failures.get(work.id);
+    if (deleteFailure)
+      return (
+        <InlineErrorRow
+          message={t`Work couldn’t be deleted`}
+          onRetry={() => deletion.remove(work, "list")}
+          actionLabel={t`Retry`}
+          onDismiss={deleteFailure.dismiss}
+        />
+      );
+    return null;
+  };
   const listRow = (work: Work) => {
-    const failure = archiveToggle.failureFor(work.id);
+    const failure = failureRow(work);
     return {
       key: work.id,
       node: restoring.has(work.id) ? (
@@ -112,39 +136,32 @@ export function WorkCollection({
       ) : failure ? (
         <>
           {row(work)}
-          <InlineErrorRow
-            message={
-              failure.operation === "archive"
-                ? t`Work couldn’t be archived`
-                : t`Work couldn’t be unarchived`
-            }
-            onRetry={() => archiveFocus.retry(work.id)}
-            actionLabel={t`Retry`}
-            onDismiss={failure.dismiss}
-          />
+          {failure}
         </>
       ) : (
         row(work)
       ),
     };
   };
-  const failedRows = failedWork
-    ? [
+  // Each deleted Work keeps its own Undo row in the tab it left, newest first.
+  const undoRows = (status: Work["status"]) =>
+    [...deletion.windows].reverse().flatMap((window) => {
+      const work = deleted.find((entry) => entry.id === window.workId);
+      if (!work || work.status !== status) return [];
+      return [
         {
-          key: `failed-${failedWork.id}`,
+          key: `deleted-${work.id}`,
           node: (
-            <>
-              {row(failedWork)}
-              <InlineErrorRow
-                message={t`Work couldn’t be deleted`}
-                onRetry={deletion.retry}
-                actionLabel={t`Retry`}
-              />
-            </>
+            <DeletedWorkRow
+              name={work.name}
+              undoError={window.undoError}
+              onUndo={() => deletion.undo(work.id)}
+              onDismiss={() => deletion.dismiss(work.id)}
+            />
           ),
         },
-      ]
-    : [];
+      ];
+    });
   const activeRows: { key: string; node: ReactNode }[] = [
     ...unfinishedCreations.map((creation) => ({
       key: `creation-${creation.workId}`,
@@ -172,27 +189,10 @@ export function WorkCollection({
         />
       ),
     })),
-    ...(deleteState.deleted && !deleteState.restorePending
-      ? [
-          {
-            key: `deleted-${deleteState.deleted.id}`,
-            node: (
-              <DeletedWorkRow
-                name={deleteState.deleted.name}
-                onUndo={deletion.undo}
-                onDismiss={deletion.dismiss}
-              />
-            ),
-          },
-        ]
-      : []),
-    ...(failedWork?.status === "archived" ? [] : failedRows),
+    ...undoRows("active"),
     ...active.map(listRow),
   ];
-  const archivedRows = [
-    ...(failedWork?.status === "archived" ? failedRows : []),
-    ...archived.map(listRow),
-  ];
+  const archivedRows = [...undoRows("archived"), ...archived.map(listRow)];
   return (
     <div className="app-scroll" aria-busy={isFetching}>
       <section className="project-screen-column">
@@ -232,7 +232,7 @@ export function WorkCollection({
             <LoadingRows />
           ) : view === "deleted" ? (
             <DeletedWorkList
-              works={restorableWorks(deleted, now, undoableId)}
+              works={restorableWorks(deleted, now, undoable)}
               now={now}
               restore={restore}
             />
@@ -268,14 +268,17 @@ function RowList({
 
 function DeletedWorkRow({
   name,
+  undoError,
   onUndo,
   onDismiss,
 }: {
   name: string;
-  onUndo?: () => void;
-  onDismiss?: () => void;
+  /** Why the writer's last Undo was rejected. */
+  undoError: Error | null;
+  onUndo: () => void;
+  onDismiss: () => void;
 }) {
-  return (
+  const row = (
     <div
       role="status"
       className="flex min-h-12 min-w-0 items-center gap-3 px-2 py-1.5 text-sm text-muted-foreground"
@@ -295,6 +298,15 @@ function DeletedWorkRow({
         <X aria-hidden className="size-4" />
       </IconButton>
     </div>
+  );
+  if (!undoError) return row;
+  return (
+    <>
+      {row}
+      <div className="px-2">
+        <RestoreFailure error={undoError} onRetry={onUndo} />
+      </div>
+    </>
   );
 }
 

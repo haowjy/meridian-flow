@@ -36,7 +36,7 @@ export function WorkPaneController({
     routeWork,
     rememberedWork,
     routeCommands,
-    deletion.remove,
+    deletion,
     "tab",
   );
   return (
