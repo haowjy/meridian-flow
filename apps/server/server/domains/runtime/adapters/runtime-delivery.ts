@@ -61,6 +61,11 @@ export interface DeliveryLeaseStore {
   ): Promise<void>;
   setAdoptedMessageIds(lease: Lease, ids: readonly string[]): Promise<boolean>;
   clearReceipt(lease: Lease, expectedIds: readonly string[]): Promise<boolean>;
+  clearOrphanedReceipt(
+    threadId: ThreadId,
+    turnId: TurnId,
+    expectedIds: readonly string[],
+  ): Promise<boolean>;
   lockReceipt(lease: Lease): Promise<{ ids: string[]; cancelRequested: boolean } | null>;
 }
 
@@ -95,6 +100,15 @@ export function createDeliveryAdapter(
       threadId,
       pending: await readPendingInbox(inbox, threadId),
     });
+  };
+  const retireOrphanedReply = async (threadId: ThreadId, turnId: TurnId) => {
+    const receipt = await leaseStore.lockThreadReceipt(threadId);
+    if (!receipt || receipt.turnId !== turnId) return;
+    if (!(await leaseStore.clearOrphanedReceipt(threadId, turnId, receipt.ids))) {
+      throw new Error("Cannot retire orphaned reply receipt after it changed");
+    }
+    await inbox.ack(threadId, receipt.ids);
+    await appendPending(threadId);
   };
   type SelectedDelivery<TSelection> = {
     selection: TSelection;
@@ -286,7 +300,7 @@ export function createDeliveryAdapter(
   async function materializeIdle(threadId: ThreadId) {
     await deps.runClaim.withExclusiveThread(threadId, () =>
       threadLock.withThreadLock(threadId, async () => {
-        const reports = await finalizeOrphanedTurns(deps, { threadId });
+        const reports = await finalizeOrphanedTurns({ ...deps, retireOrphanedReply }, { threadId });
         schedulePostCommit(() => deps.publishFinalizedReports(reports));
         if (await inbox.canMaterializeWork(threadId)) await materializePrefix(threadId);
       }),
@@ -641,10 +655,12 @@ export function createDeliveryAdapter(
     },
     refreshPending: (threadId) =>
       threadLock.withThreadLock(threadId, () => appendPending(threadId)),
+    retireOrphanedReply: (threadId, turnId) =>
+      threadLock.withThreadLock(threadId, () => retireOrphanedReply(threadId, turnId)),
     repairOrphanedTurns: async (lease) => {
       const reports = await threadLock.withThreadLock(lease.threadId, () =>
         finalizeOrphanedTurns(
-          { ...deps, publishStatus: deps.publishStatus },
+          { ...deps, publishStatus: deps.publishStatus, retireOrphanedReply },
           { threadId: lease.threadId },
         ),
       );

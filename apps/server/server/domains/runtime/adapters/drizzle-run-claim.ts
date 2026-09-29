@@ -103,9 +103,6 @@ export function createDrizzleRunClaim(
             target: schema.threadRunLeases.threadId,
             set: {
               runId,
-              turnId: null,
-              boundTurnIds: [],
-              adoptedMessageIds: [],
               holderId,
               phase: "generating",
               cancelRequested: false,

@@ -16,17 +16,25 @@ use `completeHandoffSeed` to write an unavailable card, interrupted recovery
 metadata and history read line, then publish a status refresh.
 
 Run repair holds the destination thread lock and run claim. Expired lease rows
-alone do not prove death. Late writer messages stay unacknowledged and can be
-redelivered after repair.
+alone do not prove death. Once the session claim proves the prior owner is gone,
+the replacement lease retains the dead reply's turn and adopted-message IDs.
+Repair finalizes that reply and atomically retires and acknowledges its exact
+receipt. Late messages that the dead run never adopted stay queued.
 
-A reply that reaches a durable failed terminal state is different from an
-orphan: it acknowledges every message adopted by that reply and is never
-restarted by the 30-second inbox wake sweep. An explicit Retry of the latest
+A reply that reaches a durable failed terminal state, including through orphan
+repair, acknowledges every message it adopted and is never restarted by the
+30-second inbox wake sweep. Crash repair keeps the internal `orphaned` reason
+because no shutdown signal reached the runtime, but uses the same writer copy,
+“This reply was interrupted.” An explicit Retry of the latest
 failed assistant on an idle primary or subagent thread starts an ordinary
 no-input run; prior user turns already carry its request history. Shutdown
 abort is finalized the same way as a failed reply, with `reason: shutdown` and
 “This reply was interrupted.”, after paid rows settle and adopted messages are
 acknowledged, so the writer can Retry after restart.
+
+Production SIGTERM and SIGINT run the bounded shutdown drain before exit. Nitro
+dev intentionally keeps the upstream crash-style worker termination and relies
+on this repair path after Ctrl+C or SIGTERM.
 
 ## Handoff claim and release
 

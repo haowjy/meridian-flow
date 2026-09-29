@@ -260,6 +260,20 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
       row.messageIds = [];
       return true;
     },
+    async clearOrphanedReceipt(threadId, turnId, expectedIds) {
+      const row = leases.get(threadId);
+      if (
+        !row ||
+        row.turnId !== turnId ||
+        row.messageIds.length !== expectedIds.length ||
+        row.messageIds.some((id, i) => id !== expectedIds[i])
+      )
+        return false;
+      row.turnId = null;
+      row.boundTurnIds.clear();
+      row.messageIds = [];
+      return true;
+    },
     async cancelThreadReceipt(threadId, turnId) {
       const row = leases.get(threadId);
       if (!row || row.turnId !== turnId) return false;

@@ -102,11 +102,10 @@ end-to-end as one suite.
 - **Last run:** not recorded for this exact wall-clock recipe. Automated
   sweep-boundary coverage is not a substitute for running it.
 
-## RP-9: SIGTERM and SIGINT settle live replies before exit
+## RP-9: Production signals drain; dev signals recover as crashes
 
-- **Protects:** the actual process signal path in both `nitro dev` and the
-  production Nitro server runs one sequence: begin shutdown, abort live replies
-  with reason `shutdown`, drain bounded runtime work, flush observability, exit.
+- **Protects:** production Nitro runs the bounded signal drain, while upstream
+  Nitro dev terminates its worker promptly and exercises crash repair.
 - **Stack:** mock provider, real process signals; run separately in dev and
   production preview/start.
 - **Steps:** use the mock `cancel billing` response, which emits partial text
@@ -114,10 +113,15 @@ end-to-end as one suite.
   is streaming, record the server PID and send it SIGTERM; repeat with SIGINT
   on a fresh thread. After each process exits, inspect the durable thread and
   billing rows from a newly started server.
-- **Expect:** exit occurs after the in-flight paid response is persisted and
-  debited once; the reply is `error` with `This reply was interrupted.` and
-  shutdown reason, its adopted inbox message is acknowledged, no successor run
-  starts during shutdown, and Retry works after restart.
+- **Expect (production):** exit occurs after the in-flight paid response is
+  persisted and debited once; the reply is `error` with `This reply was
+  interrupted.` and shutdown reason, its adopted inbox message is acknowledged,
+  no successor starts during shutdown, and Retry works after restart.
+- **Expect (dev):** Ctrl+C and SIGTERM exit promptly. After restart, orphan
+  repair marks the reply interrupted with the internal `orphaned` reason and
+  acknowledges every message named by its receipt. Those messages are not
+  answered automatically; only never-adopted queued-behind messages remain in
+  the inbox. Retry re-answers explicitly.
 - **Evidence:** signal and exit timestamps, process log showing signal-handler
   ordering, settled reply and response rows, ledger debit, empty pending inbox,
   and post-restart Retry result.
@@ -245,7 +249,10 @@ end-to-end as one suite.
 
 - **Expect:** dead C is error with interrupted/recovery metadata; its consumed
   command is not redelivered. The queued message remains pending and is
-  delivered after C. No stuck placeholders.
+  delivered after C. This is queued-behind work, not an adopted reply input: if
+  a reply itself crashes, repair acknowledges its adopted receipt and shows one
+  interrupted reply rather than answering those inputs automatically. No stuck
+  placeholders.
 - **Evidence:** PID/cwd ownership, kill result, pre/post snapshots, recovery
   events, command id and final turn statuses.
 - **Last run:** not recorded for no-redelivery behavior.
@@ -332,7 +339,9 @@ end-to-end as one suite.
   its brief is in flight, restart it, and wait one orphan-repair interval. S
   settles as interrupted with an unavailable card and history read line; thread
   status returns idle and a queued destination message is answered. No brief is
-  relaunched. A focused PostgreSQL test covers ending-transaction failure: S
+  relaunched. That destination message was never adopted while S held the claim;
+  adopted inputs of a crashed reply instead fail once with that reply. A focused
+  PostgreSQL test covers ending-transaction failure: S
   remains pending, the claim releases, and the next run repairs it.
 - **Evidence:** request status and response timing, source sentinel and source
   lease before/after, destination queue and transcript, Retry HTTP status/code,

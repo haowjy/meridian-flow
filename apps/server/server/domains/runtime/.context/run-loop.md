@@ -11,7 +11,7 @@ run shrinks its history is [compaction](compaction.md).
 | `orchestrator.ts` | Builds run-start and next-boundary model context from selected writer messages, durable history, references, skills, and images. It returns durable turn events plus the assistant to reserve; the delivery boundary owns preparation retries, notice consumption, inbox adoption, and atomic commit. `loadRunStartContext` reports a typed fork-history load failure as the `thread.conversation_context.load_failed` warn event and preserves the `thread_context_error` failed-reply path instead of falling back. A mid-run adoption completes assistant A and creates B, preserving graph order. Report admission belongs to the first commit that adopts a directed row, on that commit's reserved turn. Control-only runs admit no report. |
 | `run-session.ts` | One owner for writer and child claims, AbortController, current-turn registry, heartbeat, cancel, terminal fallback, and best-effort release. `execute` settles after cleanup; child report publication B follows it. A primary completion aborts foreground descendants only; a child invocation bounds its whole subtree and aborts background descendants too. Explicit cancellation includes background descendants. |
 | `run-turn-port.ts` | `prepare(input)` returns a `PreparedRun` with run/initial assistant identity, pre-setup replay cursor, post-setup snapshot floor, and one-shot `execute(): Promise<RunOutcome>`. Setup commits before returning; only execute enters the model loop. The journal/hub is the sole event consumer, not an orchestrator generator. |
-| `ports.ts` / `adapters/drizzle-run-claim.ts` | `InboxReader` is read-only; `selectPending` does not claim or mutate. `RunClaim` shares one nonreentrant session advisory claim across `withExclusiveThread` (short admission/Work/recovery work without a lease) and `startExecution` (observable, heartbeating lease). Only delivery binds the current turn (assistant or pending compaction) and receipt. Receipt mutation is guarded by thread/run/holder and exact IDs when clearing; the held session claim, not heartbeat expiry, authorizes a paid response commit. Guarded `cancelExecution(threadId, turnId)` matches any selector bound to the live run under the lease row lock: a prior segment can stop its current successor, but a selector from an ended run cannot stop a new run. Session release deletes only its own lease and physically unlocks after commit; the session owner retains one failure-backstop release. |
+| `ports.ts` / `adapters/drizzle-run-claim.ts` | `InboxReader` is read-only; `selectPending` does not claim or mutate. `RunClaim` shares one nonreentrant session advisory claim across `withExclusiveThread` (short admission/Work/recovery work without a lease) and `startExecution` (observable, heartbeating lease). Only delivery binds the current turn (assistant or pending compaction) and receipt. A replacement run preserves a crashed run's turn and adopted-message receipt until orphan repair retires them together; queued-behind rows are not in that receipt. Other receipt mutation is guarded by thread/run/holder and exact IDs when clearing; the held session claim, not heartbeat expiry, authorizes a paid response commit. Guarded `cancelExecution(threadId, turnId)` matches any selector bound to the live run under the lease row lock: a prior segment can stop its current successor, but a selector from an ended run cannot stop a new run. Session release deletes only its own lease and physically unlocks after commit; the session owner retains one failure-backstop release. |
 | `execution-finalizer.ts` | Terminal transaction projects the current turn event and finalizes the nearest admitted report on the terminal turn's ancestor chain. The report's selector remains its admitted first reserved turn; `terminalTurnId` records the final turn. A pending placeholder can end failed or cancelled, never successful through this finalizer. Fallback text is from that terminal turn’s final persisted response; cost includes terminal responses and every assistant or compaction response back through the selector, so a C that is the selector or terminal is covered once. Run-scoped capture keeps the existing partial-outcome policy except orphaned placeholders, whose child report is empty. Intermediate splits never publish a report. |
 | `persistence.ts` | Transactional persist/project-then-emit helper. **Ordering**: `projectReadModelEvent` runs before `eventWriter.appendEvent` so the `event_journal.turn_id` FK can reference the turn row created by the projector. Both happen in the same repo transaction. |
 | `tool-dispatch.ts` | Live output, spawn/thread_message/returnResult callback wiring, and durable tool_result persistence. Dispatch does not apply policy. return_result settlement is spawn-owned: dispatch honors the typed `ReturnResultOutcome` and does not parse arguments or reconstruct the envelope from JSON. |
@@ -37,9 +37,12 @@ at a boundary; a notice-only queue still does not start a run.
 
 After a run releases its claim, cleanup refreshes and re-reads the queue through
 `wakeIfRunnable`; this includes a run that found nothing to do and a lease
-cancelled during setup. A failed assistant
-acknowledges every message it adopted, including on provider error, output-limit
-failure, preparation failure, or a thrown execution error. Failed replies are
+cancelled during setup. A failed assistant acknowledges every message it
+adopted, including on provider error, output-limit failure, preparation
+failure, a thrown execution error, or crash repair. A crashed reply therefore
+fails once: repair shows “This reply was interrupted.” and retires its preserved
+receipt, while messages queued after its last adoption remain pending for the
+next run. Failed replies are
 never restarted by release wakes or the periodic sweep. Explicit Retry of the
 latest assistant `error` with no live run starts an ordinary no-input run through
 optimistic preparation; it uses the regular history projection (including the
@@ -67,10 +70,10 @@ settle paid response rows, end as error with `reason: shutdown` and
 “This reply was interrupted.”, acknowledge their receipts, and release their
 claims. SIGTERM and SIGINT enter one shared process-hook sequence: registered
 app shutdown callbacks run before the observability sink flushes and process
-exit. Production signals reach that sequence directly. In Nitro dev, the
-supervisor closes the real `node-worker` runner; the patched runner invokes and
-awaits the worker runtime's close hook before terminating it, so the same
-sequence runs without changing HMR or Portless routing. The app waits for one
+exit. Production signals reach that sequence directly. Nitro dev uses the
+upstream worker runner: Ctrl+C or SIGTERM exits promptly by terminating the
+worker, so the runtime treats an in-flight reply as a crash and repairs it on
+restart. The app waits for one
 bounded 10-second runtime drain and warns if it times out. The whole callback
 and observability flush sequence has a 12-second process deadline; a second
 signal exits immediately. A

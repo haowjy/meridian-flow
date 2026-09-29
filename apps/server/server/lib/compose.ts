@@ -750,6 +750,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const orphanRepair = createOrphanReportRepair({
     toolRegistry,
     inbox: delivery,
+    retireOrphanedReply: delivery.retireOrphanedReply,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     authority: ports.runClaim,

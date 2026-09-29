@@ -64,6 +64,20 @@ export function createDrizzleRuntimeDelivery(
         .returning({ threadId: schema.threadRunLeases.threadId });
       return rows.length > 0;
     },
+    async clearOrphanedReceipt(threadId, turnId, expectedIds) {
+      const rows = await db_()
+        .update(schema.threadRunLeases)
+        .set({ turnId: null, boundTurnIds: [], adoptedMessageIds: [] })
+        .where(
+          and(
+            eq(schema.threadRunLeases.threadId, threadId),
+            eq(schema.threadRunLeases.turnId, turnId),
+            eq(schema.threadRunLeases.adoptedMessageIds, [...expectedIds]),
+          ),
+        )
+        .returning({ threadId: schema.threadRunLeases.threadId });
+      return rows.length > 0;
+    },
     async cancelThreadReceipt(threadId, turnId) {
       const rows = await db_()
         .update(schema.threadRunLeases)

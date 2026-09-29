@@ -17,6 +17,7 @@ export function createOrphanReportRepair(deps: {
   repos: ThreadRepositories;
   toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
   inbox: Pick<import("../loop/ports.js").InboxReader, "selectPending">;
+  retireOrphanedReply?(threadId: ThreadId, turnId: TurnId): Promise<void>;
   eventWriter: EventJournalWriter;
   authority: RunClaim;
   threadLock: ThreadLock;

@@ -10,6 +10,7 @@ import type { PersistenceDeps } from "./persistence.js";
 
 type OrphanRepairDeps = Parameters<typeof finalizeExecution>[0] & {
   publishStatus?(threadId: ThreadId): Promise<void>;
+  retireOrphanedReply?(threadId: ThreadId, turnId: Turn["id"]): Promise<void>;
 };
 
 async function finalizeHandoffSeed(deps: OrphanRepairDeps, seed: Turn): Promise<void> {
@@ -62,6 +63,7 @@ export async function finalizeOrphanedTurns(
         error: compaction ? interruptedPlaceholderError(turn) : "This reply was interrupted.",
       },
     });
+    if (!compaction) await deps.retireOrphanedReply?.(input.threadId, turn.id);
     if (completion.report) reports.push(completion.report);
   }
   return reports;

@@ -97,6 +97,8 @@ export interface RuntimeDelivery
   refreshPending(threadId: ThreadId): Promise<void>;
   /** Settle any previous primary assistant before a new run selects context. */
   repairOrphanedTurns(lease: Lease): Promise<void>;
+  /** Retire only the adopted inbox receipt owned by a crash-finalized reply. */
+  retireOrphanedReply(threadId: ThreadId, turnId: TurnId): Promise<void>;
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   /** Parent-first business transaction; the producer does not reacquire the lock. */
   withThreadLock<T>(

@@ -400,6 +400,102 @@ else
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
     });
 
+    it("acknowledges a crashed reply's adopted messages and leaves queued work for Retry", async () => {
+      const gateway = scriptedGateway({ usage: lowUsage });
+      const rig = await manualFixture({ gateway });
+      const previous = await rig.repos.turns.getLatestByThread(rig.threadId);
+      if (!previous) throw new Error("Expected fixture history");
+      const adopted = [];
+      let prevTurnId = previous.id;
+      for (const [index, text] of ["first adopted", "second adopted"].entries()) {
+        const id = crypto.randomUUID();
+        const message = await rig.delivery.enqueue({
+          id,
+          threadId: rig.threadId,
+          intent: "message",
+          provenance: { kind: "writer", actorId: rig.ids.user },
+          body: { kind: "text", text },
+          idempotencyKey: `crash-adopted-${index}`,
+        });
+        const turn = await rig.repos.turns.create({
+          id: id as never,
+          threadId: rig.threadId,
+          prevTurnId,
+          role: "user",
+          origin: "writer",
+          status: "complete",
+        });
+        await rig.repos.blocks.create({
+          turnId: turn.id,
+          blockType: "text",
+          sequence: 0,
+          content: text,
+          textContent: text,
+          status: "complete",
+        });
+        adopted.push({ message, turn });
+        prevTurnId = turn.id;
+      }
+      const orphan = await rig.repos.turns.create({
+        threadId: rig.threadId,
+        prevTurnId: adopted[1]?.turn.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "streaming",
+      });
+      const queued = await rig.delivery.enqueue({
+        threadId: rig.threadId,
+        intent: "message",
+        provenance: { kind: "writer", actorId: rig.ids.user },
+        body: { kind: "text", text: "queued behind the crashed reply" },
+        idempotencyKey: "crash-queued-behind",
+      });
+      const staleAt = new Date(Date.now() - 60_000);
+      await db.insert(schema.threadRunLeases).values({
+        threadId: rig.threadId,
+        runId: "crashed-run",
+        turnId: orphan.id,
+        boundTurnIds: [orphan.id],
+        adoptedMessageIds: adopted.map(({ message }) => message.id),
+        holderId: "dead-worker",
+        acquiredAt: staleAt,
+        renewedAt: staleAt,
+        expiresAt: staleAt,
+      });
+
+      const replacement = createDrizzleRunClaim(db, { holderId: "replacement-worker" });
+      const delivery = createTestDrizzleDelivery(db, {
+        repos: rig.repos,
+        eventWriter: rig.eventWriter,
+        runClaim: replacement,
+      });
+      const repairLease = await replacement.startExecution(rig.threadId, "repair-run");
+      if (!repairLease) throw new Error("Expected replacement run claim");
+      await delivery.repairOrphanedTurns(repairLease);
+      await replacement.release(repairLease);
+
+      expect(await rig.repos.turns.findById(orphan.id)).toMatchObject({
+        status: "error",
+        error: "This reply was interrupted.",
+      });
+      expect(await delivery.selectPending(rig.threadId)).toEqual([
+        expect.objectContaining({ id: queued.id }),
+      ]);
+
+      const recovery = createOrchestrator({ ...rig.deps, runClaim: replacement, delivery });
+      const retry = await recovery.retryReply({
+        threadId: rig.threadId,
+        failedTurnId: orphan.id as never,
+        replyTurnId: crypto.randomUUID() as never,
+      });
+      await processDetachedWork.drain();
+
+      expect(retry.created).toBe(true);
+      expect(await rig.repos.turns.findById(retry.turn.id)).toMatchObject({ status: "complete" });
+      expect(gateway.requests).toHaveLength(1);
+      expect(await delivery.selectPending(rig.threadId)).toEqual([]);
+    });
+
     it("settles and acknowledges a shutdown reply, which is retryable after restart", async () => {
       let markStarted!: () => void;
       const started = new Promise<void>((resolve) => {
