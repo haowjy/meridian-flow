@@ -4,6 +4,7 @@ import { createInMemoryRepositories } from "../../threads/adapters/in-memory/rep
 import { handoffSeedMetadata } from "../../threads/index.js";
 import { createRuntimeHarness, runtimeScenario } from "../loop/__tests__/runtime-harness.js";
 import { scriptedGateway } from "../loop/__tests__/test-gateway.js";
+import { createRunStarter } from "../loop/run-starter.js";
 import { createWakeIfRunnable } from "../loop/wake-if-runnable.js";
 import { createHandoffBriefs } from "./brief-service.js";
 
@@ -194,6 +195,77 @@ describe("handoff brief service", () => {
     expect(await state.rig.repos.turns.findById(state.seed.id)).toMatchObject({
       status: "pending",
     });
+  });
+
+  it("re-reads the queue when Retry releases without launching", async () => {
+    const rig = await runtimeScenario({
+      gateway: scriptedGateway({ usage: { inputTokens: 1, outputTokens: 1 } }),
+    });
+    let markRetryHeld!: () => void;
+    const retryHeld = new Promise<void>((resolve) => {
+      markRetryHeld = resolve;
+    });
+    let releaseRetry!: () => void;
+    const retryGate = new Promise<void>((resolve) => {
+      releaseRetry = resolve;
+    });
+    const service = createHandoffBriefs({
+      repos: rig.repos,
+      eventWriter: rig.eventWriter,
+      eventSink: rig.deps.eventSink,
+      threadLock: {
+        async withThreadLock(_threadId, operation) {
+          markRetryHeld();
+          await retryGate;
+          return operation();
+        },
+      },
+      runClaim: rig.runClaim,
+      wakeIfRunnable: createWakeIfRunnable({
+        delivery: rig.delivery,
+        runStarter: createRunStarter(rig.runner, rig.deps.eventSink),
+      }),
+      billingUsage: rig.deps.billingUsage,
+      async generate() {
+        throw new Error("Retry must not launch a brief for a non-handoff thread");
+      },
+      async publishStatus() {},
+      schedulePostCommit(task) {
+        void task();
+      },
+    });
+    const retry = service.retry({
+      threadId: rig.thread.id,
+      seedId: crypto.randomUUID() as never,
+    });
+    await retryHeld;
+    const queued = await rig.inbox.enqueue({
+      threadId: rig.thread.id,
+      intent: "message",
+      provenance: { kind: "writer", actorId: rig.userId },
+      body: { kind: "text", text: "Answer after Retry releases." },
+      idempotencyKey: "retry-release-wake",
+    });
+    const wakeIfRunnable = createWakeIfRunnable({
+      delivery: rig.delivery,
+      runStarter: createRunStarter(rig.runner, rig.deps.eventSink),
+    });
+    await wakeIfRunnable(rig.thread.id);
+    expect(await rig.inbox.selectPending(rig.thread.id)).toMatchObject([{ id: queued.id }]);
+
+    releaseRetry();
+    await expect(retry).rejects.toMatchObject({ code: "not_a_handoff_retry" });
+    await expect
+      .poll(async () => (await rig.repos.turns.findById(queued.id))?.status)
+      .toBe("complete");
+    await rig.untilSettled();
+
+    expect(await rig.inbox.selectPending(rig.thread.id)).toEqual([]);
+    expect(
+      (await rig.repos.turns.listByThread(rig.thread.id)).some(
+        (turn) => turn.role === "assistant" && turn.status === "complete",
+      ),
+    ).toBe(true);
   });
 
   it("repairs a failed ending transaction and answers a message waiting behind the brief", async () => {

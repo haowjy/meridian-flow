@@ -104,6 +104,39 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     });
   }
 
+  async function wakeAfterRelease(threadId: ThreadId) {
+    if (shuttingDown) return;
+    try {
+      await deps.wakeIfRunnable(threadId);
+    } catch (error) {
+      emitEvent(deps.eventSink, {
+        level: "warn",
+        source: "runtime.handoff",
+        name: "wake.failed",
+        correlation: { threadId },
+        payload: unknownToEventPayload(error),
+      });
+    }
+  }
+
+  async function holdDestination(threadId: ThreadId): Promise<HandoffBriefHold | null> {
+    const claim = await deps.runClaim.hold(threadId);
+    if (!claim) return null;
+    let released = false;
+    return {
+      onLost: (listener) => claim.onLost(listener),
+      async release() {
+        if (released) return;
+        released = true;
+        try {
+          await claim.release();
+        } finally {
+          await wakeAfterRelease(threadId);
+        }
+      },
+    };
+  }
+
   async function currentSeed(seedTurnId: TurnId): Promise<{ seed: Turn; thread: Thread } | null> {
     const seed = await deps.repos.turns.findById(seedTurnId);
     if (seed?.role !== "system" || !HandoffSeedMetadataCodec.safeParse(seed.metadata).success)
@@ -295,20 +328,6 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
           correlation: { threadId: input.threadId },
           payload: unknownToEventPayload(error),
         });
-      } finally {
-        if (!shuttingDown) {
-          try {
-            await deps.wakeIfRunnable(input.threadId);
-          } catch (error) {
-            emitEvent(deps.eventSink, {
-              level: "warn",
-              source: "runtime.handoff",
-              name: "wake.failed",
-              correlation: { threadId: input.threadId },
-              payload: unknownToEventPayload(error),
-            });
-          }
-        }
       }
     }
   }
@@ -410,7 +429,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
         return { turn: existing, created: false };
       throw new HandoffRetryError("seed_id_conflict");
     }
-    const claim = await deps.runClaim.hold(input.threadId);
+    const claim = await holdDestination(input.threadId);
     if (!claim) throw new HandoffRetryError("handoff_retry_unavailable");
     try {
       const result = await deps.threadLock.withThreadLock(input.threadId, async () => {
@@ -498,7 +517,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
   }
 
   return {
-    hold: (threadId) => deps.runClaim.hold(threadId),
+    hold: holdDestination,
     launchAfterCommit,
     stop,
     retry,
