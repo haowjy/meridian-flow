@@ -15,7 +15,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
-import { cn } from "@/lib/utils";
+import { RuledList } from "../RuledList";
 import type { ProjectRouteCommands } from "../routing/project-route";
 import { DeletedWorkList } from "./DeletedWorkList";
 import { useArchiveFocusFollow } from "./useArchiveFocusFollow";
@@ -193,13 +193,13 @@ export function WorkCollection({
               onRestore={(work) => void restore({ workId: work.id })}
             />
           ) : view === "archived" ? (
-            <RowList
+            <WorkRows
               entries={entries.archived}
               row={row}
               empty={<Trans>No archived Work.</Trans>}
             />
           ) : (
-            <RowList
+            <WorkRows
               entries={entries.active}
               row={row}
               empty={<Trans>No active Work yet.</Trans>}
@@ -211,7 +211,7 @@ export function WorkCollection({
   );
 }
 
-function RowList({
+function WorkRows({
   entries,
   row,
   empty,
@@ -221,15 +221,7 @@ function RowList({
   empty: ReactNode;
 }) {
   if (!entries.length) return <p className="px-2 py-2 text-sm text-muted-foreground">{empty}</p>;
-  return (
-    <ul className="min-w-0">
-      {entries.map((entry, index) => (
-        <li key={entry.key} className={cn("relative", index < entries.length - 1 && "row-rule")}>
-          {row(entry)}
-        </li>
-      ))}
-    </ul>
-  );
+  return <RuledList rows={entries.map((entry) => ({ key: entry.key, node: row(entry) }))} />;
 }
 
 function DeletedWorkRow({

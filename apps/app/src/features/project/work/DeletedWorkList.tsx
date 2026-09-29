@@ -11,7 +11,7 @@ import {
   type Work,
   workPurgeAt,
 } from "@meridian/contracts/works";
-import { cn } from "@/lib/utils";
+import { RuledList } from "../RuledList";
 import { WorkCommandFailureRow } from "./WorkCommandFailureRow";
 import type { ListedWorkEntry } from "./work-list-model";
 
@@ -37,18 +37,21 @@ export function DeletedWorkList({
       <p className="px-2 pb-2 text-xs text-muted-foreground">
         <Trans>Restoring brings back a Work with its chats, drafts, Scratch and Uploads.</Trans>
       </p>
-      <ul className="min-w-0">
-        {entries.map(({ key, work, failure }, index) => (
-          <li key={key} className={cn("relative", index < entries.length - 1 && "row-rule")}>
-            <DeletedRow work={work} now={now} onRestore={() => onRestore(work)} />
-            {failure ? (
-              <div className="px-2">
-                <WorkCommandFailureRow failure={failure} />
-              </div>
-            ) : null}
-          </li>
-        ))}
-      </ul>
+      <RuledList
+        rows={entries.map(({ key, work, failure }) => ({
+          key,
+          node: (
+            <>
+              <DeletedRow work={work} now={now} onRestore={() => onRestore(work)} />
+              {failure ? (
+                <div className="px-2">
+                  <WorkCommandFailureRow failure={failure} />
+                </div>
+              ) : null}
+            </>
+          ),
+        }))}
+      />
     </>
   );
 }
