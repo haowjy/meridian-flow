@@ -3,12 +3,12 @@
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getProjectDocumentAddress } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { type ProjectRouteData, seedProjectRouteData } from "@/client/query/project-route-data";
+import type { ProjectRouteData } from "@/client/query/project-route-data";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import {
@@ -17,7 +17,7 @@ import {
   useContextTabs,
   useContextTabsStore,
 } from "@/client/stores";
-import { hydrateWorkingSet, readRecentRoutes } from "@/client/working-set";
+import { readRecentRoutes } from "@/client/working-set";
 import { originalBrowserSearch } from "@/router-search";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
 import { routeTargetForTab } from "../context/context-removal-planner";
@@ -57,6 +57,7 @@ import {
   projectSearchEquals,
   type RouteWorkResolution,
 } from "./project-route";
+import { useProjectRouteData } from "./use-project-route-data";
 import { resolveRouteWork, useWorkRoute } from "./work-route";
 
 const NONE: AddressSelection = { kind: "none" };
@@ -89,19 +90,13 @@ export function ReadableProjectRoute({
   user,
 }: {
   project: Project;
-  data: ProjectRouteData;
+  /** `null` while the project is being created. */
+  data: ProjectRouteData | null;
   user: { userId: string; workingSetSyncEnabled?: boolean | null };
 }) {
   const projectId = project.id;
   const contextRemoval = useContextRemovalCoordinator();
-  const queryClient = useQueryClient();
-  useState(() => {
-    seedProjectRouteData(queryClient, projectId, data);
-    return null;
-  });
-  const [entryHydration] = useState(() =>
-    hydrateWorkingSet(projectId, data.workingSet, user.workingSetSyncEnabled === true),
-  );
+  const entryHydration = useProjectRouteData(projectId, data, user.workingSetSyncEnabled === true);
   const router = useRouter();
   const location = useRouterState({ select: (state) => state.location });
   const parsed = parseProjectAddress(
@@ -586,8 +581,6 @@ export function ReadableProjectRoute({
           <ProjectView
             project={project}
             projectId={projectId}
-            workingSet={data.workingSet}
-            workingSetSyncEnabled={user.workingSetSyncEnabled === true}
             activeScreen={activeScreen}
             chatDisplay={chat.display}
             entryHydration={entryHydration}

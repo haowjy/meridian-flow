@@ -68,11 +68,9 @@ function useProjectCreationMutation(userId: string, accountSignal: AbortSignal) 
           createProject({ id, title } satisfies CreateProjectRequest, { signal: accountSignal }),
         async () => getProject(id, { signal: accountSignal }),
       ),
-    onSuccess: (project, variables) => {
-      const record = readCreationRecord<ProjectCreationPayload, Project>(
-        projectCreationKey(variables.id),
-        userId,
-      );
+    onSuccess: async (project, variables) => {
+      const key = projectCreationKey(variables.id);
+      const record = readCreationRecord<ProjectCreationPayload, Project>(key, userId);
       if (!record) return;
       ensureProject(project);
       client.setQueryData(projectQueryKeys.detail(project.id), project);
@@ -82,7 +80,10 @@ function useProjectCreationMutation(userId: string, accountSignal: AbortSignal) 
         result: project,
         error: null,
       });
-      void router.invalidate();
+      // The confirmed record stands in for the project until the route has
+      // loaded its own data, then goes.
+      await router.invalidate();
+      removeCreationRecord(key, userId);
     },
     onError: (error, variables) => {
       const record = readCreationRecord<ProjectCreationPayload, Project>(

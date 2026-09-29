@@ -1,10 +1,9 @@
 /** Authorized project identity and persistent shell lifetime for readable child destinations. */
 import { Trans } from "@lingui/react/macro";
 import { createFileRoute, useRouter, useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useEffect } from "react";
+import type { ReactNode } from "react";
 import { getProject } from "@/client/api/projects-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
-import { creationRecordKey, removeCreationRecord } from "@/client/creation/creation-registry";
 import { loadProjectRouteData } from "@/client/query/project-route-data";
 import {
   readPendingProjectCreation,
@@ -13,6 +12,7 @@ import {
 import { useProject } from "@/client/query/useProjectList";
 import { Button } from "@/components/ui/button";
 import { useAccountEpochSignal } from "@/features/project/context/account-feature-context";
+import { ProjectCreationNotice } from "@/features/project/ProjectCreationNotice";
 import { ReadableProjectRoute } from "@/features/project/routing/ReadableProjectRoute";
 import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
 import { Route as AuthenticatedRoute } from "../../_authenticated";
@@ -68,82 +68,21 @@ function ProjectRoute() {
   const loaderData = Route.useLoaderData();
   const { projectId } = Route.useParams();
   const { user } = AuthenticatedRoute.useLoaderData();
-  const router = useRouter();
   const accountSignal = useAccountEpochSignal();
   const creation = useProjectCreationState(projectId, accountSignal);
   const project = useProject(projectId, loaderData.project ?? creation.project);
-  const data =
-    loaderData.data ??
-    (creation.status !== "none"
-      ? {
-          threads: null,
-          works: null,
-          worksStarted: 0,
-          workingSet: { status: "unavailable" as const },
-        }
-      : null);
-
-  useEffect(() => {
-    if (creation.status !== "confirmed" || loaderData.data === null) return;
-    removeCreationRecord(creationRecordKey("project", projectId), user.userId);
-  }, [creation.status, loaderData.data, projectId, user.userId]);
-
-  if (!project || !data) return <PendingProject />;
+  // A project being created has no route data yet; the creation stands in.
+  if (!project || (!loaderData.data && creation.status === "none")) return <PendingProject />;
 
   return (
     <ProjectIdentityBoundary projectId={projectId}>
       <div className="flex h-full min-h-0 flex-col">
-        {creation.status === "pending" || creation.status === "failed" ? (
-          <ProjectCreationNotice
-            failed={creation.status === "failed"}
-            onRetry={creation.retry}
-            onDiscard={() => {
-              creation.discard();
-              void router.navigate({ to: "/" });
-            }}
-          />
-        ) : null}
+        <ProjectCreationNotice creation={creation} />
         <div className="min-h-0 flex-1">
-          <ReadableProjectRoute
-            key={`${project.id}:${loaderData.data ? "ready" : "pending"}`}
-            project={project}
-            data={data}
-            user={user}
-          />
+          <ReadableProjectRoute project={project} data={loaderData.data} user={user} />
         </div>
       </div>
     </ProjectIdentityBoundary>
-  );
-}
-
-function ProjectCreationNotice({
-  failed,
-  onRetry,
-  onDiscard,
-}: {
-  failed: boolean;
-  onRetry: () => void;
-  onDiscard: () => void;
-}) {
-  return (
-    <div
-      className="flex shrink-0 items-center justify-between gap-3 border-b border-border-subtle px-4 py-2"
-      role={failed ? "alert" : "status"}
-    >
-      <p className={failed ? "text-sm text-destructive" : "text-sm text-muted-foreground"}>
-        {failed ? <Trans>Project creation failed.</Trans> : <Trans>Creating project…</Trans>}
-      </p>
-      {failed ? (
-        <div className="flex shrink-0 gap-2">
-          <Button size="sm" variant="outline" onClick={onRetry}>
-            <Trans>Retry</Trans>
-          </Button>
-          <Button size="sm" variant="ghost" onClick={onDiscard}>
-            <Trans>Discard</Trans>
-          </Button>
-        </div>
-      ) : null}
-    </div>
   );
 }
 

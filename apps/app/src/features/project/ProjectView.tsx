@@ -23,7 +23,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { updateProject } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import type { ProjectRouteData } from "@/client/query/project-route-data";
 import { useContextCatalogWake } from "@/client/query/useContextCatalog";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -132,8 +131,6 @@ export type ProjectViewProps = {
   projectId: string;
   /** Full route-loaded project, used before the account list query is ready. */
   project: Project;
-  workingSet: ProjectRouteData["workingSet"];
-  workingSetSyncEnabled: boolean;
   /** Resolved screen key from the route (defaults to Chat). */
   activeScreen: ScreenKey;
   /** What the Chat screen or the dock currently shows for chat. */
@@ -302,8 +299,13 @@ export function ProjectView(props: ProjectViewProps) {
       lease.release();
     };
   }, [accountId, availability, props.projectId, queryClient, removal]);
-  const [retriedHydration, setRetriedHydration] = useState<WorkingSetHydrationPlan | null>(null);
-  const workingSetHydration = retriedHydration ?? props.entryHydration;
+  // A retry answers the entry plan it retried; new route data brings a new one.
+  const [retriedHydration, setRetriedHydration] = useState<{
+    entry: WorkingSetHydrationPlan;
+    plan: WorkingSetHydrationPlan;
+  } | null>(null);
+  const workingSetHydration =
+    retriedHydration?.entry === props.entryHydration ? retriedHydration.plan : props.entryHydration;
   const { threads: projectThreads } = useProjectThreads(props.projectId);
   const worksQuery = useWorks(props.projectId);
   const { works, noWork } = worksQuery;
@@ -328,12 +330,15 @@ export function ProjectView(props: ProjectViewProps) {
   });
   useEffect(() => {
     if (workingSetHydration.status !== "read-degraded") return;
+    const entry = props.entryHydration;
     const retry = () => {
-      void retryWorkingSetHydration(props.projectId).then(setRetriedHydration);
+      void retryWorkingSetHydration(props.projectId).then((plan) =>
+        setRetriedHydration({ entry, plan }),
+      );
     };
     window.addEventListener("online", retry);
     return () => window.removeEventListener("online", retry);
-  }, [props.projectId, workingSetHydration.status]);
+  }, [props.projectId, props.entryHydration, workingSetHydration.status]);
 
   // Gate the whole project on prefs-store hydration so DesktopProject mounts
   // exactly once against final persisted prefs. rehydrate() is synchronous
