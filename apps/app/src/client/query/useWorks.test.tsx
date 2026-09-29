@@ -183,8 +183,10 @@ describe("Work command projection", () => {
       await act(async () => {
         await commands.archive({ workId: WORK.id });
       });
-      await settle(() => expect(recordStatuses(client)).toEqual([]));
-      expect(field(WORK.id, "status")).toBe("archived");
+      await settle(() => {
+        expect(recordStatuses(client)).toEqual([]);
+        expect(field(WORK.id, "status")).toBe("archived");
+      });
       expect(seen.failures.size).toBe(0);
     });
   });
