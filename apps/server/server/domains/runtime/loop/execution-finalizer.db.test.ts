@@ -343,6 +343,10 @@ else
         },
       );
       expect(first.events.map((event) => event.type)).toEqual(["turn.error"]);
+      expect(first.events[0]).toMatchObject({
+        type: "turn.error",
+        error: { details: { reason: "budget" } },
+      });
       expect(first.report).toMatchObject({
         outcome: "failed",
         source: "return_result",

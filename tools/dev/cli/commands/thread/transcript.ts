@@ -21,6 +21,7 @@ export type CompactTurn = {
   finishReason: Turn["finishReason"];
   model: string | null;
   error: string | null;
+  failureReason?: string;
   compactionMetadata?: {
     trigger?: string;
     controlMessageId?: string;
@@ -156,6 +157,9 @@ export function compactTurn(turn: Turn, limits: TranscriptLimits): CompactTurn {
     finishReason: turn.finishReason,
     model: turn.model ?? null,
     error: turn.error,
+    ...(turn.role === "assistant" && turn.status === "error" && typeof metadata.reason === "string"
+      ? { failureReason: metadata.reason }
+      : {}),
     ...(compactionMetadata && Object.keys(compactionMetadata).length > 0
       ? { compactionMetadata }
       : {}),
@@ -254,6 +258,8 @@ export function renderThreadView(view: ThreadView): string {
       `[${turn.role}] ${turn.id} ${turn.status}${turn.finishReason ? `/${turn.finishReason}` : ""}${turn.model ? ` ${turn.model}` : ""}${turn.role === "assistant" ? ` in=${turn.usage.inputTokens} out=${turn.usage.outputTokens}` : ""}`,
     );
     if (turn.error) lines.push(`  error: ${turn.error}`);
+    if (turn.role === "assistant" && turn.status === "error" && turn.failureReason)
+      lines.push(`  failure reason: ${turn.failureReason}`);
     if (
       turn.role === "compaction" &&
       turn.status === "error" &&

@@ -59,13 +59,32 @@ describe("RunEventMapper", () => {
         name: "meridian.tool.result_error",
         value: { toolCallId: "c1", isError: true },
       } as AGUIEvent,
-      { type: "RUN_ERROR", message: "provider exploded" } as AGUIEvent,
+      { type: "RUN_ERROR", message: "This response failed." } as AGUIEvent,
     ]);
     expect(events.map((event) => event.type)).toEqual([
       "interrupt.requested",
       "tool.errored",
       "turn.failed",
     ]);
+  });
+
+  it("shows the diagnostic failure reason carried by a run error", () => {
+    const mapper = new RunEventMapper();
+    const [failed] = mapper.map({
+      seq: "1",
+      event: { type: "RUN_ERROR", message: "This response failed." } as AGUIEvent,
+      error: {
+        code: "runtime_error",
+        message: "This response failed.",
+        source: "system",
+        retryable: false,
+        details: { reason: "orphaned" },
+      },
+    });
+
+    expect(failed && renderEventLine(failed, false)).toBe(
+      "turn.failed This response failed. (failure reason: orphaned)",
+    );
   });
 
   it("marks a message joined mid-stream as partial instead of passing a fragment off as whole", () => {

@@ -87,7 +87,24 @@ function turnEvent(turn: Turn, cause: TerminalCause): OrchestratorEvent {
     typeof cause.error === "string"
       ? meridianErrorFromSystem("runtime_error", cause.error)
       : cause.error;
-  return { type: "turn.error", turn, error };
+  const existingDetails = error.details;
+  return {
+    type: "turn.error",
+    turn,
+    error: {
+      ...error,
+      details: {
+        ...(existingDetails &&
+        typeof existingDetails === "object" &&
+        !Array.isArray(existingDetails)
+          ? existingDetails
+          : existingDetails === undefined
+            ? {}
+            : { errorDetails: existingDetails }),
+        reason: cause.reason,
+      },
+    },
+  };
 }
 
 function compactionFailureForFinalizer(cause: Extract<TerminalCause, { kind: "failed" }>) {
