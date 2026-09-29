@@ -516,6 +516,44 @@ else
       ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
     });
 
+    it("rechecks the failed leaf after taking the Retry claim", async () => {
+      const rig = await manualFixture({
+        gateway: scriptedGateway({ usage: lowUsage, errorAtCall: 1 }),
+      });
+      await rig.delivery.enqueue({
+        threadId: rig.threadId,
+        intent: "message",
+        provenance: { kind: "writer", actorId: rig.ids.user },
+        body: { kind: "text", text: "failed reply before claim race" },
+        idempotencyKey: "retry-claim-race-failure",
+      });
+      await drainControls(rig);
+      await processDetachedWork.drain();
+      const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+      if (!failed) throw new Error("Failed reply was not persisted");
+
+      const startExecution = rig.runClaim.startExecution.bind(rig.runClaim);
+      rig.runClaim.startExecution = async (threadId, runId) => {
+        await rig.repos.turns.create({
+          threadId: rig.threadId,
+          prevTurnId: failed.id,
+          role: "system",
+          origin: "system",
+          status: "complete",
+        });
+        return startExecution(threadId, runId);
+      };
+
+      await expect(
+        rig.orchestrator.retryReply({
+          threadId: rig.threadId,
+          failedTurnId: failed.id as never,
+          replyTurnId: crypto.randomUUID() as never,
+        }),
+      ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
+      expect(await rig.runClaim.holder(rig.threadId)).toBeNull();
+    });
+
     it("does not allow Retry while the thread claim is held", async () => {
       const busyRig = await manualFixture({
         gateway: scriptedGateway({ usage: lowUsage, errorAtCall: 1 }),

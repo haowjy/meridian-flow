@@ -164,6 +164,12 @@ export function createRunSessions(deps: {
       );
       heartbeat.unref();
       await deps.delivery.repairOrphanedTurns(lease);
+      if (
+        "expectedLeafTurnId" in input &&
+        input.expectedLeafTurnId &&
+        (await deps.repos.turns.getLatestByThread(threadId))?.id !== input.expectedLeafTurnId
+      )
+        throw new ReplyRetryUnavailableError(threadId);
       const resumeAfterSeq = (await deps.headSeq(threadId)).toString();
       const loop = await deps.setup({
         ...input,
@@ -303,6 +309,7 @@ export function createRunSessions(deps: {
           threadId: input.threadId,
           drain: true,
           replyTurnId: input.replyTurnId,
+          expectedLeafTurnId: input.failedTurnId,
         });
         const session = running.get(input.threadId);
         if (session)

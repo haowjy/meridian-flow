@@ -45,6 +45,8 @@ export interface DrainRunTurnInput extends RunTurnBase {
   drain: true;
   /** Client-minted id for an explicit no-input reply Retry. */
   replyTurnId?: TurnId;
+  /** Leaf that must still be current after the run claim is acquired. */
+  expectedLeafTurnId?: TurnId;
 }
 
 export type RunTurnInput = WriterRunTurnInput | DrainRunTurnInput;
