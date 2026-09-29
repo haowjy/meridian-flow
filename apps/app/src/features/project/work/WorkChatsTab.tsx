@@ -13,7 +13,7 @@ import { ChatIndexList, type ChatIndexRowProps } from "../chat-index/ChatIndexLi
 import { ChatIndexLoading } from "../chat-index/ChatIndexLoading";
 import { useChatRowCommands } from "../chat-list/useChatRowCommands";
 import { useChatNavigation } from "../routing/chat-navigation";
-import { SearchField, useSettledSearch } from "../SearchField";
+import { SettledSearchField } from "../SearchField";
 import { WorkToolbarTools } from "./WorkToolbarSlot";
 
 export function WorkChatsTab({
@@ -26,7 +26,6 @@ export function WorkChatsTab({
   scrollOwner: RefObject<HTMLDivElement | null>;
 }) {
   const [search, setSearch] = useState<string | null>(null);
-  const [text, setText] = useSettledSearch(search, setSearch);
   const feed = useProjectChatFeed(projectId, false, search, workId);
   const now = useMinuteClock();
   const { openChat, openNewChat } = useChatNavigation();
@@ -43,7 +42,7 @@ export function WorkChatsTab({
   return (
     <>
       <WorkToolbarTools>
-        <SearchField label={t`Search chats`} value={text} onChange={setText} />
+        <SettledSearchField label={t`Search chats`} value={search} onSettle={setSearch} />
         <Button
           size="sm"
           onClick={() => void openNewChat(workId)}

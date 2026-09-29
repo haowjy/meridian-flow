@@ -1,7 +1,7 @@
 /**
- * The project lists' search box, and `useSettledSearch`: keystroke-local text
- * whose settled (debounced) value alone reaches the list, so typing never
- * re-renders every row.
+ * The project lists' search box, and `SettledSearchField`: a search box that
+ * keeps keystrokes to itself and reports only the settled (debounced) value,
+ * so typing never re-renders the list it filters.
  */
 import { Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -35,12 +35,26 @@ export function SearchField({
   );
 }
 
+/** A search box whose settled value alone leaves it; see `useSettledSearch`. */
+export function SettledSearchField({
+  label,
+  value,
+  onSettle,
+}: {
+  label: string;
+  value: string | null;
+  onSettle: (value: string | null) => void;
+}) {
+  const [text, setText] = useSettledSearch(value, onSettle);
+  return <SearchField label={label} value={text} onChange={setText} />;
+}
+
 /**
  * Reports the trimmed text (null when empty) 200ms after typing stops, at
  * once when cleared. Resyncs from an outside change to `settled` (Back or
  * Forward) without clobbering text the writer is still typing.
  */
-export function useSettledSearch(
+function useSettledSearch(
   settled: string | null,
   onSettle: (value: string | null) => void,
 ): [string, (text: string) => void] {

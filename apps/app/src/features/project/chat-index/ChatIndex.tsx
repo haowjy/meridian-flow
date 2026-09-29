@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { useChatRowCommands } from "../chat-list/useChatRowCommands";
 import { useChatNavigation } from "../routing/chat-navigation";
 import type { ProjectSearch } from "../routing/project-route";
-import { SearchField, useSettledSearch } from "../SearchField";
+import { SettledSearchField } from "../SearchField";
 import { ChatIndexList, type ChatIndexRowProps } from "./ChatIndexList";
 import { ChatIndexLoading } from "./ChatIndexLoading";
 
@@ -115,7 +115,7 @@ export function ChatIndex({ projectId, namedByChrome = false }: ChatIndexProps) 
           <h2 className="sr-only">
             <Trans>Chats</Trans>
           </h2>
-          <ChatSearchField value={settledSearch} onSettle={setSearch} />
+          <SettledSearchField label={t`Search chats`} value={settledSearch} onSettle={setSearch} />
           <ChatFilter value={filter} onChange={setFilter} />
         </div>
         <div className="mt-[clamp(0.5rem,2vh,1.25rem)]">
@@ -134,18 +134,6 @@ export function ChatIndex({ projectId, namedByChrome = false }: ChatIndexProps) 
       {deleteDialog}
     </div>
   );
-}
-
-/** Only the settled search reaches the feed; see `useSettledSearch`. */
-function ChatSearchField({
-  value,
-  onSettle,
-}: {
-  value: string | null;
-  onSettle: (value: string | null) => void;
-}) {
-  const [text, setText] = useSettledSearch(value, onSettle);
-  return <SearchField label={t`Search chats`} value={text} onChange={setText} />;
 }
 
 function ChatFilter({

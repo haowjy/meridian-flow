@@ -62,7 +62,13 @@ export function WorkScreen({ projectId, routeWork, routeCommands, deletion }: Wo
 
   if (routeWork.status === "present")
     return (
-      <WorkDetailScreen projectId={projectId} work={routeWork.work} routeCommands={routeCommands} />
+      // Keyed: search text, scroll and tab state belong to one Work.
+      <WorkDetailScreen
+        key={routeWork.work.id}
+        projectId={projectId}
+        work={routeWork.work}
+        routeCommands={routeCommands}
+      />
     );
 
   if (routeWork.status === "unresolved" && routeWork.reason === "error")
