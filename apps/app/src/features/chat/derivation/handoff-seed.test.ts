@@ -42,7 +42,6 @@ describe("readHandoffSeed", () => {
       sourceRef: "c1",
       sourceTitle: "Chapter 12 plan",
       cutoffTurnId: "cut",
-      interrupted: false,
     });
     const forkSeed = seed("complete", {
       metadata: { kind: "derivation_seed", derivation: "fork" },
@@ -91,21 +90,18 @@ describe("briefCardView", () => {
     });
   });
 
-  it("interrupted: a crash or restart cut the brief off, and it offers Retry", () => {
+  it("a brief a crash or restart cut off reads as an ordinary failed brief, with Retry", () => {
+    const error = "This handoff brief couldn't be generated. Try again.";
     const interrupted = seed("error", {
-      error: "This handoff brief couldn't be generated. Try again.",
+      error,
       metadata: {
         ...(seed("error").metadata as Record<string, unknown>),
         reason: "interrupted",
         phase: "recovery",
       },
     });
-    expect(view(interrupted)).toMatchObject({
-      state: "failed",
-      interrupted: true,
-      canRetry: true,
-    });
-    expect(view(seed("error")).interrupted).toBe(false);
+    expect(view(interrupted)).toEqual(view(seed("error", { error })));
+    expect(view(interrupted)).toMatchObject({ state: "failed", canRetry: true });
   });
 
   it("stopped: Retry, and no failure copy", () => {

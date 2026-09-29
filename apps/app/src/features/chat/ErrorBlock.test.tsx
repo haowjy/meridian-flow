@@ -30,14 +30,6 @@ describe("ErrorBlock", () => {
     expect(html).not.toContain("<button");
   });
 
-  it("shows the server's shutdown interruption copy with Retry", () => {
-    const html = renderToStaticMarkup(
-      <ErrorBlock isLatest kind="interrupted" onRetry={() => undefined} />,
-    );
-    expect(html).toContain("This reply was interrupted.");
-    expect(html).toContain("Retry");
-  });
-
   it("keeps historical errors quiet, one sentence per kind", () => {
     const generation = renderToStaticMarkup(<ErrorBlock isLatest={false} />);
     expect(generation).toContain("This response failed.");
@@ -64,7 +56,7 @@ describe("ErrorBlock", () => {
   });
 
   it("notes a refused Retry, current or in history", () => {
-    const refused = "Couldn&#x27;t retry. Something else started in this chat first.";
+    const refused = "Couldn&#x27;t retry.</p>";
     expect(
       renderToStaticMarkup(<ErrorBlock isLatest onRetry={() => undefined} retryRefused />),
     ).toContain(refused);
