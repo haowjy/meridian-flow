@@ -216,6 +216,20 @@ describe("HandoffBriefCard", () => {
     expect(onRetry).toHaveBeenCalledWith(failed);
   });
 
+  it("after Stop, focus lands on Retry even while it waits, so its wait note is read", async () => {
+    await render({ turn: seed("pending"), onStop: vi.fn(), onRetry: vi.fn() });
+    button("Stop the handoff brief")?.focus();
+    await render({
+      turn: seed("cancelled"),
+      destinationBusy: true,
+      onStop: vi.fn(),
+      onRetry: vi.fn(),
+    });
+    const retry = button("Retry the handoff brief");
+    expect(retry?.getAttribute("aria-disabled")).toBe("true");
+    expect(document.activeElement).toBe(retry);
+  });
+
   it("stopped: says the chat continues without a brief, and offers Retry", async () => {
     await render({ turn: seed("cancelled"), onRetry: vi.fn() });
     expect(card()?.getAttribute("aria-label")).toBe("Handoff brief stopped");

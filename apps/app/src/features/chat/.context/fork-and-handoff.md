@@ -94,7 +94,8 @@ copy, and a stopped one drops "This chat continues without a brief."
   seed the server does not have yet (the opening stand-in, a Retry still
   sending) offers no Stop.
 
-After Stop, keyboard focus lands on Retry (`data-focus-landing`). The source's
+After Stop, keyboard focus lands on Retry (`data-focus-landing`), even while
+it waits, so a screen reader reads its wait note with it. The source's
 name links back to it and says when it is in the trash. S freezes the source's
 title (`turn.metadata.sourceTitle`, projected to the block's
 `props.sourceTitle`) for display only, so a trashed source reads "<title> (in
