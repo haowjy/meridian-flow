@@ -3,7 +3,8 @@
  * attempt row until the catalog has it. An upload the server has taken keeps
  * its row until the Uploads catalog lists the same document, so the file never
  * drops out of the list between the two. Attempts live per Work outside the
- * Files tab, so a failure stays where the writer left it across tab switches.
+ * Files tab, so a failure stays where the writer left it across tab switches,
+ * and are scoped to the signed-in account: an account switch drops them.
  */
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect } from "react";
@@ -11,6 +12,7 @@ import { create } from "zustand";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
+import { useOptionalAccountEpochSignal } from "../context/account-feature-context";
 import { uniqueScratchNoteName } from "./work-file-names";
 
 export type FileAttempt = {
@@ -34,6 +36,17 @@ const EMPTY: WorkIntake = { uploads: [], note: null };
 const useIntakeStore = create<{ byWork: Readonly<Record<string, WorkIntake>> }>(() => ({
   byWork: {},
 }));
+
+const accountsSeen = new WeakSet<AbortSignal>();
+
+/** The account's end drops every attempt it made. */
+function scopeToAccount(accountSignal: AbortSignal | null): void {
+  if (!accountSignal || accountsSeen.has(accountSignal)) return;
+  accountsSeen.add(accountSignal);
+  accountSignal.addEventListener("abort", () => useIntakeStore.setState({ byWork: {} }), {
+    once: true,
+  });
+}
 
 function update(workId: string, change: (intake: WorkIntake) => WorkIntake): void {
   useIntakeStore.setState(({ byWork }) => ({
@@ -71,12 +84,22 @@ export function useWorkFileIntake(projectId: string, workId: string, uploadCatal
   }, [landed, uploadCatalog, workId]);
   const createEntry = useCreateContextEntry(projectId);
   const queryClient = useQueryClient();
+  const accountSignal = useOptionalAccountEpochSignal();
+  // Settling after the account ended would bring a dropped Work's attempts back.
+  const record = useCallback(
+    (change: (intake: WorkIntake) => WorkIntake) => {
+      if (accountSignal?.aborted) return;
+      scopeToAccount(accountSignal);
+      update(workId, change);
+    },
+    [accountSignal, workId],
+  );
 
   /** Uploads every file at once; each lands or fails on its own row. */
   const submitFiles = useCallback(
     (files: FileList | readonly File[]) => {
       const batch = Array.from(files, (file) => ({ file, key: crypto.randomUUID() }));
-      update(workId, (current) => ({
+      record((current) => ({
         ...current,
         uploads: [
           ...current.uploads,
@@ -99,20 +122,20 @@ export function useWorkFileIntake(projectId: string, workId: string, uploadCatal
           } catch {
             outcome = "failed";
           }
-          update(workId, (current) => ({
+          record((current) => ({
             ...current,
             uploads: settle(current.uploads, key, outcome),
           }));
         }),
       );
     },
-    [projectId, queryClient, workId],
+    [projectId, queryClient, record, workId],
   );
 
   /** Resolves to the note's name once the server has it, else `null`. */
   const sendNote = useCallback(
     async (attempt: FileAttempt): Promise<string | null> => {
-      update(workId, (current) => ({ ...current, note: attempt }));
+      record((current) => ({ ...current, note: attempt }));
       try {
         await createEntry.mutateAsync({
           scheme: "scratch",
@@ -121,14 +144,14 @@ export function useWorkFileIntake(projectId: string, workId: string, uploadCatal
           content: "",
           workId,
         });
-        update(workId, (current) => ({ ...current, note: null }));
+        record((current) => ({ ...current, note: null }));
         return attempt.name;
       } catch {
-        update(workId, (current) => ({ ...current, note: { ...attempt, state: "failed" } }));
+        record((current) => ({ ...current, note: { ...attempt, state: "failed" } }));
         return null;
       }
     },
-    [createEntry, workId],
+    [createEntry, record, workId],
   );
   /** A new dated scratch note, named apart from its siblings and any refused note. */
   const createNote = useCallback(
@@ -150,15 +173,15 @@ export function useWorkFileIntake(projectId: string, workId: string, uploadCatal
 
   const dismissUpload = useCallback(
     (key: string) =>
-      update(workId, (current) => ({
+      record((current) => ({
         ...current,
         uploads: current.uploads.filter((item) => item.key !== key),
       })),
-    [workId],
+    [record],
   );
   const dismissNote = useCallback(
-    () => update(workId, (current) => ({ ...current, note: null })),
-    [workId],
+    () => record((current) => ({ ...current, note: null })),
+    [record],
   );
 
   return {

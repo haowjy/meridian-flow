@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
  * Files dropped on a Work upload side by side, their rows outlive the tab that
- * started them, and a finished upload keeps its row until the catalog lists it.
+ * started them, a finished upload keeps its row until the catalog lists it, and
+ * an account switch drops every row.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useState } from "react";
@@ -11,6 +12,10 @@ import { withReactRoot } from "@/test-support/react-dom-harness";
 import { useWorkFileIntake } from "./use-work-file-intake";
 
 vi.mock("@/client/api/upload-intake-api", () => ({ uploadIntakePort: { intake: vi.fn() } }));
+const account = vi.hoisted(() => ({ epoch: new AbortController() }));
+vi.mock("../context/account-feature-context", () => ({
+  useOptionalAccountEpochSignal: () => account.epoch.signal,
+}));
 vi.mock("@/client/query/useCreateContextEntry", () => ({
   useCreateContextEntry: () => ({ mutateAsync: vi.fn() }),
 }));
@@ -115,4 +120,37 @@ it("retires a finished upload once its catalog lists it", async () => {
     },
     { drainMacrotask: true },
   );
+});
+
+it("drops every attempt when the account ends, and one settling after writes none", async () => {
+  const late = deferred();
+  vi.mocked(uploadIntakePort.intake)
+    .mockRejectedValueOnce(new Error("Rejected"))
+    .mockImplementationOnce(() => late.promise as never);
+  const client = new QueryClient();
+  await withReactRoot(
+    <QueryClientProvider client={client}>
+      <Probe workId="work-3" />
+    </QueryClientProvider>,
+    async () => {
+      let pending!: Promise<unknown>;
+      await act(async () => {
+        await intake.submitFiles([new File(["d"], "d.md")]);
+        pending = intake.submitFiles([new File(["e"], "e.md")]);
+      });
+      expect(intake.uploads.map((item) => [item.name, item.state])).toEqual([
+        ["d.md", "failed"],
+        ["e.md", "pending"],
+      ]);
+      await act(async () => account.epoch.abort());
+      expect(intake.uploads).toEqual([]);
+      await act(async () => {
+        late.reject(new Error("Aborted"));
+        await pending;
+      });
+      expect(intake.uploads).toEqual([]);
+    },
+    { drainMacrotask: true },
+  );
+  account.epoch = new AbortController();
 });
