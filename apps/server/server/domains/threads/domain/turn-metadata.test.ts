@@ -5,7 +5,6 @@ import {
   CompactionFailurePhaseCodec,
   CompactionMetadataCodec,
   CompactionPlanMetadataCodec,
-  CompactionUndoMetadataCodec,
 } from "./turn-metadata.js";
 
 describe("pending placeholders", () => {
@@ -86,12 +85,4 @@ describe("compaction metadata", () => {
       }).success,
     ).toBe(false);
   });
-});
-
-it("rejects unknown undo refusal reasons but accepts successful markers", () => {
-  const metadata = { kind: "compaction_undo", revertsCompactionTurnId: "c" };
-  expect(CompactionUndoMetadataCodec.safeParse(metadata).success).toBe(true);
-  expect(
-    CompactionUndoMetadataCodec.safeParse({ ...metadata, reason: "provider_error" }).success,
-  ).toBe(false);
 });

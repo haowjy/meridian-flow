@@ -1,6 +1,6 @@
 # Controls
 
-`/compact` and Undo are transcript commands in the durable inbox. Handoff Stop
+`/compact` is a transcript command in the durable inbox. Handoff Stop
 and Retry act on handoff seeds, not inbox controls; see [handoff](handoff.md).
 
 ## Queue order
@@ -21,12 +21,11 @@ starts the command. Messages arriving while it runs are answered after it.
 ## Ownership and withdrawal
 
 The start commit consumes the command: C's reservation commit acknowledges
-`/compact`, and Undo is acknowledged in its atomic commit. A crash while a
-command waits leaves it queued; a crash after `/compact` starts repairs C, and
-a committed U is already complete. Neither command is replayed.
+`/compact`. A crash while a command waits leaves it queued; a crash after
+`/compact` starts repairs C. The command is not replayed.
 
 Withdrawal acknowledges a command that has not started and returns
-`withdrawn`, including on replay. If a C or U already records its id,
+`withdrawn`, including on replay. If a C already records its id,
 withdrawal returns `already_started`; it does not stop that run. Enqueue and
 withdrawal share the thread lock with command reservation.
 

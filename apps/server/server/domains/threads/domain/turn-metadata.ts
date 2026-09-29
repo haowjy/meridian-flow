@@ -85,25 +85,6 @@ const modelElisionsCodec = z.array(
   }),
 );
 
-export const CompactionUndoFailureReasonCodec = z.enum([
-  "would_recompact",
-  "not_active",
-  "already_undone",
-  "undo_failed",
-]);
-export type CompactionUndoFailureReason = z.infer<typeof CompactionUndoFailureReasonCodec>;
-
-export const CompactionUndoMetadataCodec = z
-  .object({
-    kind: z.literal("compaction_undo"),
-    revertsCompactionTurnId: z.string().min(1),
-    reason: CompactionUndoFailureReasonCodec.optional(),
-    compactionTriggerTokens: z.number().int().nonnegative().optional(),
-    controlMessageId: z.string().optional(),
-    elisions: modelElisionsCodec.optional(),
-  })
-  .passthrough();
-
 const compactedThroughCodec = z.object({
   turnId: z.string().min(1),
   blockSequence: z.number().int().nonnegative().optional(),
@@ -183,12 +164,10 @@ export const PromptEpochMetadataCodec = z.union([
   z
     .object({
       kind: z.literal("prompt_epoch_boundary"),
-      cause: z.enum(["compaction", "compaction_undo"]),
+      cause: z.literal("compaction"),
     })
     .passthrough(),
-  z
-    .object({ promptEpoch: z.object({ cause: z.enum(["compaction", "compaction_undo"]) }) })
-    .passthrough(),
+  z.object({ promptEpoch: z.object({ cause: z.literal("compaction") }) }).passthrough(),
 ]);
 
 export const SteerMetadataCodec = z.object({ delivery: z.literal("steer") }).passthrough();
@@ -212,7 +191,6 @@ export type HistoryItemClass =
   | { kind: "image_update" }
   | { kind: "fork_or_handoff_seed"; derivation: "fork" | "handoff" }
   | { kind: "compaction"; metadata?: CompactionMetadata }
-  | { kind: "undo_marker"; compactionTurnId: string }
   | { kind: "system_update" }
   | { kind: "assistant_response" }
   | { kind: "other" };
@@ -298,21 +276,6 @@ export function handoffSeedMetadata(input: {
   return { ...derivationSeedMetadata("handoff"), ...input };
 }
 
-export function compactionUndoMetadata(
-  revertsCompactionTurnId: string,
-  controlMessageId?: string,
-  reason?: CompactionUndoFailureReason,
-  compactionTriggerTokens?: number,
-): JsonObject {
-  return {
-    kind: "compaction_undo",
-    revertsCompactionTurnId,
-    ...(reason ? { reason } : {}),
-    ...(compactionTriggerTokens === undefined ? {} : { compactionTriggerTokens }),
-    ...(controlMessageId ? { controlMessageId } : {}),
-  };
-}
-
 export function compactionTurnMetadata(metadata: CompactionPlanMetadata): JsonObject {
   return {
     compactedThrough: { ...metadata.compactedThrough },
@@ -359,7 +322,7 @@ export function decodeImageInclusionMetadata(value: unknown): ImageInclusionMeta
 
 export function promptEpochMetadata(
   metadata: JsonValue | null | undefined,
-  cause: "compaction" | "compaction_undo",
+  cause: "compaction",
 ): JsonObject {
   if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
     return { ...(metadata as JsonObject), promptEpoch: { cause } };
@@ -384,11 +347,6 @@ export function classifyHistoryItem(
     return compaction.success
       ? { kind: "compaction", metadata: compaction.data }
       : { kind: "compaction" };
-  }
-
-  const undo = CompactionUndoMetadataCodec.safeParse(turn.metadata);
-  if (undo.success) {
-    return { kind: "undo_marker", compactionTurnId: undo.data.revertsCompactionTurnId };
   }
 
   const derivationSeed = DerivationSeedMetadataCodec.safeParse(turn.metadata);
@@ -434,24 +392,10 @@ export function classifyHistoryItem(
   return { kind: "other" };
 }
 
-/** Effective transcript, already bounded by a fork cutoff, owns its reverted set. */
-export function revertedCompactionIds(turns: readonly Turn[]): Set<string> {
-  return new Set(
-    turns.flatMap((turn) => {
-      if (turn.status !== "complete") return [];
-      const undo = CompactionUndoMetadataCodec.safeParse(turn.metadata);
-      return undo.success ? [undo.data.revertsCompactionTurnId] : [];
-    }),
-  );
-}
 export function activeCompaction(turns: readonly Turn[]): Turn | null {
-  const reverted = revertedCompactionIds(turns);
   return (
     [...turns]
       .sort((a, b) => b.position - a.position)
-      .find(
-        (turn) =>
-          turn.role === "compaction" && turn.status === "complete" && !reverted.has(turn.id),
-      ) ?? null
+      .find((turn) => turn.role === "compaction" && turn.status === "complete") ?? null
   );
 }

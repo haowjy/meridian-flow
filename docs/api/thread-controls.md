@@ -1,8 +1,7 @@
 # Thread control API
 
 Both routes authenticate the writer and require ownership of the thread.
-Controls are durable inbox commands, not chat text. The supported kinds are
-`compact` and `compaction_undo`; handoff Stop and Retry act on handoff seed turns
+Controls are durable inbox commands, not chat text. The supported kind is `compact`; handoff Stop and Retry act on handoff seed turns
 through the [handoff API](thread-handoff.md), not through controls.
 
 ## Enqueue
@@ -12,19 +11,6 @@ through the [handoff API](thread-handoff.md), not through controls.
 ```json
 { "id": "client-minted-uuid", "control": { "kind": "compact" } }
 ```
-
-Undo names a local compaction turn (pending is allowed at enqueue):
-
-```json
-{ "id": "client-minted-uuid", "control": { "kind": "compaction_undo", "compactionTurnId": "compaction-turn-uuid" } }
-```
-
-A missing, inherited or non-compaction target returns 404
-(`compaction_not_found`). Active-target and size checks happen at execution.
-A refusal appends an empty system marker with a typed `metadata.reason` and
-writer-facing error. Successful undo restores pre-cut history under the
-pre-compaction bake. It is refused if the restored request reaches the current
-Agent trigger and makes no model call.
 
 Returns 201 for a new row or 200 for an existing id:
 
@@ -54,8 +40,7 @@ message, another control kind, or a row in another thread returns 409
 { outcome: "withdrawn" | "already_started" }
 ```
 
-Withdrawal acknowledges a command that has not started. If its C or U already
-records the command id, withdrawal returns `already_started` and does not stop
+Withdrawal acknowledges a command that has not started. If its C already records the command id, withdrawal returns `already_started` and does not stop
 the run. Replaying withdrawal of a withdrawn row still returns `withdrawn`.
 An unknown control returns 404 (`control_not_found`). Withdrawal and start
 reservation share the thread lock, so exactly one wins.

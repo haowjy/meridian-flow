@@ -30,7 +30,7 @@ run shrinks its history is [compaction](compaction.md).
 run start and `wakeIfRunnable`. At a reply boundary it selects every non-control
 row. At run start it chooses a stamped command plus waiting messages,
 otherwise messages before the oldest command, or one command when no message
-waits. This keeps `/compact` and Undo at the end of the queue and prevents
+waits. This keeps `/compact` at the end of the queue and prevents
 command selection between tools or at reply boundaries ([controls](controls.md)).
 Every non-control row, including a Work refresh notice, closes the reply prefix
 at a boundary; a notice-only queue still does not start a run.

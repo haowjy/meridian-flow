@@ -23,7 +23,6 @@ import {
   findCutoffOwnerThreadId,
   hashPromptBakeContent,
   type ImageContextBreak,
-  revertedCompactionIds,
 } from "../../threads/index.js";
 import type {
   PromptBakeContent,
@@ -224,11 +223,7 @@ export async function assembleNextTurnContext(
     input.thread.ref,
     input.promptBakes,
   );
-  const savedInclusions =
-    (await input.imageInclusions?.findByThread(
-      thread.id as ThreadId,
-      revertedCompactionIds(input.turns),
-    )) ?? [];
+  const savedInclusions = (await input.imageInclusions?.findByThread(thread.id as ThreadId)) ?? [];
   const imageProjection = await projectImageBlocksForModel({
     thread,
     blocks: activeHistory.blocks,

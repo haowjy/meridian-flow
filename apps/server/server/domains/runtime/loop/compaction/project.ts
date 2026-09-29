@@ -6,10 +6,8 @@ import {
   activeCompaction,
   type CompactionPlanMetadata,
   CompactionPlanMetadataCodec,
-  CompactionUndoMetadataCodec,
   classifyHistoryItem,
   compactionSummaryMetadata,
-  revertedCompactionIds,
 } from "../../../threads/index.js";
 import { orderTurnsByPosition } from "../../../threads/order-turns.js";
 import type { PromptBakeRepository } from "../../../threads/ports/repositories.js";
@@ -119,7 +117,6 @@ function projectActiveHistory(
   }
 
   const turns = orderTurnsByPosition(effectiveTurns);
-  const reverted = revertedCompactionIds(turns);
   const blocksByTurn = new Map<string, Block[]>();
   for (const block of effectiveBlocks) {
     const entries = blocksByTurn.get(block.turnId) ?? [];
@@ -135,32 +132,8 @@ function projectActiveHistory(
       metadata: compactionMetadata(turn),
       props: compactionPropsForTurn(turn.id, effectiveBlocks),
     }));
-  let activeCompaction: (typeof completeCompactions)[number] | undefined;
-  for (const candidate of completeCompactions) {
-    if (!reverted.has(candidate.turn.id)) activeCompaction = candidate;
-  }
-  const undo = [...turns]
-    .reverse()
-    .find(
-      (turn) =>
-        turn.status === "complete" &&
-        turn.position > (activeCompaction?.turn.position ?? -1) &&
-        CompactionUndoMetadataCodec.safeParse(turn.metadata).success,
-    );
-  const undoElisions = new Map(
-    undo
-      ? CompactionUndoMetadataCodec.parse(undo.metadata).elisions?.map((e) => [
-          e.blockId,
-          e.content,
-        ])
-      : [],
-  );
-  const applyUndo = (blocks: Block[]) =>
-    blocks.map((block) =>
-      undoElisions.has(block.id) ? { ...block, content: undoElisions.get(block.id)! } : block,
-    );
-  if (!activeCompaction)
-    return { turns: [...effectiveTurns], blocks: applyUndo([...effectiveBlocks]) };
+  const activeCompaction = completeCompactions.at(-1);
+  if (!activeCompaction) return { turns: [...effectiveTurns], blocks: [...effectiveBlocks] };
   if (!threadRef)
     throw new Error(`Thread ${activeCompaction.turn.threadId} has no ref for compaction summary`);
 
@@ -188,10 +161,7 @@ function projectActiveHistory(
   const retainable = new Map<string, boolean>();
   for (const turn of beforeCompaction) {
     const kind = classifyHistoryItem(turn).kind;
-    retainable.set(
-      turn.id,
-      kind !== "fork_or_handoff_seed" && kind !== "compaction" && kind !== "undo_marker",
-    );
+    retainable.set(turn.id, kind !== "fork_or_handoff_seed" && kind !== "compaction");
   }
   const tail = retainedTail({
     turns: beforeCompaction,
@@ -214,12 +184,14 @@ function projectActiveHistory(
     const retained = tailByTurn.get(turn.id);
     return retained
       ? retained.blocks.map((block) =>
-          elisions.has(block.id) ? { ...block, content: elisions.get(block.id)! } : block,
+          elisions.has(block.id)
+            ? { ...block, content: elisions.get(block.id) ?? block.content }
+            : block,
         )
       : (blocksByTurn.get(turn.id) ?? []);
   });
 
-  return { turns: projectedTurns, blocks: applyUndo(projectedBlocks) };
+  return { turns: projectedTurns, blocks: projectedBlocks };
 }
 
 /** The cold summary replaces only the cut, never the pin or the verbatim retained tail. */
@@ -240,7 +212,7 @@ export function projectCompactedHistory(
   return { turns: projection.turns.filter((turn) => included.has(turn.id)), blocks };
 }
 
-/** Resolve the summary's own bake, not today's tool registry or a later undo epoch. */
+/** Resolve the summary's own bake, not today's tool registry. */
 export async function projectActiveHistoryWithBakes(
   turns: readonly Turn[],
   blocks: readonly Block[],

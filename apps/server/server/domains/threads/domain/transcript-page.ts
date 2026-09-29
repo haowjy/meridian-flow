@@ -29,7 +29,7 @@ export interface TranscriptOwner {
 export interface TranscriptSegment {
   index: number;
   bakeId: string | null;
-  openedBy: { turnId: TurnId; kind: "compaction" | "undo_marker" | "other" } | null;
+  openedBy: { turnId: TurnId; kind: "compaction" | "other" } | null;
   compactedThrough?: { turnId: TurnId; blockSequence?: number };
 }
 
@@ -318,12 +318,7 @@ function segmentHeader(
   const opening = [...boundaries].reverse().find((turn) => turn.position <= position);
   if (!opening) return { index: 0, bakeId: firstBakeId, openedBy: null };
   const classification = classifyHistoryItem(opening);
-  const kind =
-    classification.kind === "compaction"
-      ? "compaction"
-      : classification.kind === "undo_marker"
-        ? "undo_marker"
-        : "other";
+  const kind = classification.kind === "compaction" ? "compaction" : "other";
   const metadata =
     kind === "compaction"
       ? CompactionPlanMetadataCodec.safeParse(opening.metadata)

@@ -114,7 +114,6 @@ import {
 import {
   createChildRunCoordinator,
   createChildRunDriver,
-  createCompactionUndoReader,
   createContextImageAssetPort,
   createConversationSummarizer,
   createDrizzleAdmissionRecords,
@@ -957,11 +956,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       threads: ports.threadRepos.threads,
       executionReports: ports.threadRepos.executionReports,
       readPending,
-      readCompactionUndo: createCompactionUndoReader({
-        agentRevisions: ports.agentRevisions,
-        toolRegistry,
-        gateway: ports.gateway,
-      }),
     }),
     documentSync: ports.documentSync,
     contextPorts: ports.contextPorts,
@@ -1215,7 +1209,6 @@ export function createInMemoryAppServices(): AppServices {
     threadEventHub: inMemoryThreadEventHub,
     hub: inMemoryThreadEventHub,
     threadRuntime: {
-      readCompactionUndo: undefined,
       async requireOwnedThread() {
         throw new Error("in-memory thread runtime is not implemented");
       },

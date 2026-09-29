@@ -1,15 +1,12 @@
 # Thread inbox controls
 
 `MessageIntent` distinguishes directed `message`, context-only `notice`, and
-runtime `control`. A control is not model-visible chat text. Its current body
-is `{ kind: "compact" }` or `{ kind: "compaction_undo", compactionTurnId }`.
+runtime `control`. A control is not model-visible chat text. Its body is `{ kind: "compact" }`.
 Commands are writer-only, not tools.
 
-`PendingInboxItem.control` carries that body on control rows. `summary` is the
-writer label ("Compact conversation" or "Undo compaction"). Snapshot pending state and
+`PendingInboxItem.control` carries that body on control rows. `summary` is the writer label "Compact conversation". Snapshot pending state and
 `inbox.changed` share the same schema. A queued control has no transcript
-position until a divider with `metadata.controlMessageId` (or, for undo, a U
-naming it) starts it. Commands are selected at run start, one per run, after
+position until a divider with `metadata.controlMessageId` starts it. Commands are selected at run start, one per run, after
 waiting messages unless Stop stamps all pending commands to run first with
 those messages.
 
@@ -50,19 +47,3 @@ metadata and is excluded from `modelText`. The shared `HandoffBriefProps` and
 `InvocationCardProps` component contracts describe the handoff and spawn-card
 fields. See
 [handoff API](../../../../docs/api/thread-handoff.md).
-
-### Compaction undo
-
-`ControlBody` accepts `{ kind: "compaction_undo", compactionTurnId: string }`.
-It shares the controls route, idempotency and pending WS projection with compact.
-Completed U is a system turn with `metadata.kind: "compaction_undo"`,
-`revertsCompactionTurnId`, `controlMessageId`, a reused `promptBakeId`, and frozen
-`elisions`. Refused U has no blocks or bake; `metadata.reason` holds its typed
-reason (the server's `CompactionUndoFailureReasonCodec`) and `turn.error` holds
-writer copy.
-The snapshot always carries `compactionUndo`: null, or
-`{ turnId, availability: "likely" | "would_recompact" }`. The server owns
-availability: it estimates the restored size from C's pre-cut size plus growth
-since C, reads null while any compaction is pending, and keeps
-`would_recompact` after a refusal at an unchanged trigger. Clients follow it
-without correction; actual execution remeasures.

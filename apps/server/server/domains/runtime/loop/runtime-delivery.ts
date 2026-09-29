@@ -113,7 +113,6 @@ export interface RuntimeDelivery
     /** Pure preparation; writes belong in `persist`. Null retires stale controls without a reservation. */
     prepare: (selection: DeliverySelection) => Promise<{
       value: T;
-      terminal?: boolean;
       completedControlIds?: string[];
       turnId: TurnId;
       turnKind: "assistant" | "compaction";

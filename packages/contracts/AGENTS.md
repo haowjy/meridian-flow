@@ -36,7 +36,7 @@ runtime shapes, and observability records.
   placeholders (`compaction` and handoff seed `system`); the database partial
   index and orphan-repair queries derive from it.
 - `ControlBody` in `threads/` is the one list of thread control kinds
-  (`compact`, `compaction_undo`). Four restatements do not
+  (`compact`). Four restatements do not
   fail to compile when a kind is missing, so change them with it: the
   websocket pending schema (`protocol/ws-protocol.ts`), the controls route's
   request schema, runtime `pending-inbox.ts`, and the database inbox body

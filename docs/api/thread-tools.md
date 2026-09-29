@@ -48,9 +48,7 @@ that preview is outside the stable settled-prefix cursor chain.
 
 Defaults show writer and agent requests, assistant prose, and one-line tool
 markers. Thinking, results and system messages are opt-in. `tool_args` and
-`expand` expose dated edit records, not current documents. A complete or
-refused undo, failed compaction, and handoff seed remain classified system
-items; only a complete turn with a bake opens a new segment.
+`expand` expose dated edit records, not current documents. A failed compaction and handoff seed remain classified system items; only a complete turn with a bake opens a new segment.
 
 Document copies never render: read and diff results, search excerpts, reference
 reads and write echoes become pointers. This also applies to `expand`.

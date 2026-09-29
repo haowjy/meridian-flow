@@ -23,8 +23,7 @@ The response contains `entries` (`turn`, page-sliced `blocks`, and
 opening `segment`, `segmentBoundary`, `hasMore`, and an optional `nextCursor`.
 Only a cursorless `newest_first` effective read can include `unsettledTail`;
 that live preview is not part of the cursor chain. A segment is opened by a
-complete turn with a prompt-bake pointer, including compaction and undo-marker
-turns. Pages never cross segment boundaries.
+complete compaction turn with a prompt-bake pointer. Pages never cross segment boundaries.
 
 Malformed cursors and cursors for another thread, order, unit, or range return
 HTTP 400. Missing, trashed, wrong-owner, or wrong-project target threads return

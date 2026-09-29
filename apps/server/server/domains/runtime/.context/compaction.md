@@ -4,8 +4,7 @@ How a run shrinks its history: a compaction placeholder C is reserved at a run
 boundary, an unlocked summary call writes the summary, and a successor commit
 opens a new prompt epoch with the summary, the pinned requests, and a recent
 tail. The summary call itself is the [summarizer](summarizer.md). Manual
-`/compact` is selected at run start under the [control queue](controls.md),
-its reversal is [undo](undo.md), and stale document text in the retained tail
+`/compact` is selected at run start under the [control queue](controls.md), and stale document text in the retained tail
 is [elided](document-text.md). Orphaned C is repaired by
 [recovery](recovery.md). Rationale: the KB's
 [run preparation protocol][kb-run-prep] and
@@ -95,24 +94,20 @@ epoch; the refusal is an `error` divider:
 - **`context_too_large`**: a minimal tail over the usable window.
 
 The reservation commit consumes a selected compact command by acknowledging
-its inbox row with C. Undo is acknowledged by its atomic commit. A crash after
-compact starts repairs the already-created C; a committed U is already
-complete. Neither command is redelivered. Waiting commands are not part of the
+its inbox row with C. A crash after compact starts repairs the already-created
+C, and the command is not redelivered. Waiting commands are not part of the
 current reservation and remain queued.
 
 ## One projection authority
 
 `projectActiveHistoryWithBakes` (`compaction/project.ts`) is the only public
-way to project a thread's active history: the latest complete, unreverted C's
-summary, its pinned requests, and its retained tail, with C's frozen elisions
-and the latest complete undo applied. It resolves C's own prompt bake before
-adding the summary's history-read sentence, so neither the current registry
-nor a later undo's bake can change an old summary's bytes
+way to project a thread's active history: the latest complete C's summary, its pinned requests, and its retained tail,
+with C's frozen elisions applied. It resolves C's own prompt bake before
+adding the summary's history-read sentence, so the current registry cannot change an old summary's bytes
 ([history tools](history-tools.md#history-guidance-follows-the-bake)). The
 synchronous projector stays private because, without that bake, it drops the
-sentence. Callers: request assembly (`turn-context-assembly.ts`), the summary
-phase (`compaction-phase.ts`), undo (`compaction-undo.ts`), and the handoff
-request (`runtime/handoff/brief-request.ts`). `projectCompactedHistory` narrows a
+sentence. Callers: request assembly (`turn-context-assembly.ts`), the summary phase
+(`compaction-phase.ts`), and the handoff request (`runtime/handoff/brief-request.ts`). `projectCompactedHistory` narrows a
 projection to the cut alone (retained pins and tail removed) for the cold
 summary and the manual floor.
 
@@ -166,9 +161,7 @@ headroom, using `apps/server/scripts/fixtures/compaction-estimator-probe.json`.
   `tool_use`, and `empty_text`;
   unknown summary errors stay `compaction_failed`. Orphan recovery uses the same
   metadata writer with `reason: interrupted` and `phase: recovery`, both at run
-  preparation and during the primary/child startup sweep. These codecs are
-  C's alone: a refused undo has its own reason set ([undo](undo.md)), and the
-  handoff seed's typed outcome is separate ([handoff](handoff.md)).
+  preparation and during the primary/child startup sweep. These codecs belong to C; the handoff seed's typed outcome is separate ([handoff](handoff.md)).
 - Late arrivals get B's own request preflight. It may compact again when the
   normal plan can fit them; if the request is over the automatic trigger but
   still fits the model's usable window and cannot be compacted below the
@@ -233,8 +226,8 @@ then needed, so the new image evicted an included one and the pass wrote a
 removal notice for an image that was never removed. Candidates are never
 eviction victims, and each block is decided at most once per pass.
 
-Re-admission decisions belong to C, so reverting C removes their effect and a
-fork copies them only when its cutoff includes C. `tokensAfter` measures the
+Re-admission decisions belong to C, and a fork copies them only when its cutoff
+includes C. `tokensAfter` measures the
 prepared request; B runs its own preflight after late arrivals and can compact
 again or proceed under the usable window.
 

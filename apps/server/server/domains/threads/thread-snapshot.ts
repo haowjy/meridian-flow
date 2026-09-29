@@ -119,7 +119,6 @@ export async function buildThreadSnapshot(
     const pending = await statusReader.readPending(threadId);
 
     return {
-      compactionUndo: (await statusReader.readCompactionUndo?.(thread, threadTurns)) ?? null,
       threadId,
       thread,
       threadUsage: await repos.modelResponses.sumUsageByThread(threadId),

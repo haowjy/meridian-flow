@@ -52,12 +52,9 @@ The writer transcript stays intact. A completed compaction owns frozen
 `metadata.elisions` (block ID, treatment, affected URIs, replacement content).
 The active projection ([compaction](compaction.md#one-projection-authority))
 substitutes them only in C's retained tail and pinned requests, not later
-arrivals. Reverted, failed, pending, and superseded owners do not apply; undo
-runs its own pass ([undo](undo.md)).
-Forks inherit this metadata only when their cutoff includes the owner. Never
-move elisions onto block rows: a fork reads its source's blocks in place, so a
-source compaction after the cutoff would rewrite the fork's request, and undo
-could no longer restore the text by reverting C. Do not derive stubs at render
+arrivals. Failed, pending, and superseded owners do not apply.
+Forks inherit this metadata only when their cutoff includes the owner. Never move elisions onto block rows: a fork reads its source's blocks in place,
+so a source compaction after the cutoff would rewrite the fork's request. Do not derive stubs at render
 time either: a copy change in a deploy would rewrite every compacted thread's
 prefix. `compaction/elide.ts` plans the replacements and
 `compaction-revisions.ts` queries current revisions.

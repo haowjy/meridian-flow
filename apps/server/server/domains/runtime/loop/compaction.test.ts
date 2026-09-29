@@ -9,7 +9,6 @@ import {
   childSeedMetadata,
   classifyHistoryItem,
   compactionTurnMetadata,
-  compactionUndoMetadata,
   derivationSeedMetadata,
   encodeImageInclusionMetadata,
   foregroundMessageMetadata,
@@ -240,9 +239,6 @@ describe("classifyHistoryItem", () => {
     });
     const fork = turn("fork", 10, "system", { metadata: derivationSeedMetadata("fork") });
     const handoff = turn("handoff", 11, "system", { metadata: derivationSeedMetadata("handoff") });
-    const undo = turn("undo", 12, "system", {
-      metadata: compactionUndoMetadata("compaction"),
-    });
     const compaction = compactionTurn("compaction", 13, "old", "request", "pending");
     const savedReport = turn("saved-report", 14, "system", {
       metadata: savedSubagentReportMetadata(),
@@ -277,10 +273,6 @@ describe("classifyHistoryItem", () => {
         compactedThrough: { turnId: "old" },
         pinnedRequestTurnIds: ["request"],
       },
-    });
-    expect(classifyHistoryItem(undo)).toEqual({
-      kind: "undo_marker",
-      compactionTurnId: "compaction",
     });
   });
 
@@ -1158,42 +1150,6 @@ describe("projectActiveHistoryWithBakes", () => {
     expect(buildContext({ thread: thread(), ...projected }).messages).toEqual(baseline.messages);
   });
 
-  it("treats reverted and inherited fork compactions correctly", async () => {
-    const oldRequest = turn("old-request", 1, "user");
-    const request = turn("request", 2, "user");
-    const answer = turn("answer", 3, "assistant");
-    const compaction = compactionTurn("c", 4, oldRequest.id, request.id);
-    const undo = turn("undo", 5, "system", { metadata: compactionUndoMetadata(compaction.id) });
-    const turns = [oldRequest, request, answer, compaction, undo];
-    const blocks = [
-      block("old-request-text", oldRequest.id, 0, "text", "old request"),
-      block("request-text", request.id, 0, "text", "request"),
-      block("answer-text", answer.id, 0, "text", "answer"),
-      compactionBlock("c-summary", compaction.id),
-    ];
-    const baseline = buildContext({ thread: thread(), turns, blocks });
-    const revertedProjection = await projectActiveHistoryWithBakes(
-      turns,
-      blocks,
-      "c12",
-      noPromptBakes,
-    );
-    expect(buildContext({ thread: thread(), ...revertedProjection }).messages).toEqual(
-      baseline.messages,
-    );
-
-    const forkLocal = turn("fork-local", 5, "user", { threadId: "fork-thread", origin: "writer" });
-    const inherited = await projectActiveHistoryWithBakes(
-      [...turns.slice(0, 3), compaction, forkLocal],
-      [...blocks, block("fork-text", forkLocal.id, 0, "text", "continue")],
-      "c13",
-      noPromptBakes,
-    );
-    expect(inherited.turns.map(({ id }) => id)).toContain("c:summary");
-    expect(inherited.turns.map(({ id }) => id)).not.toContain(oldRequest.id);
-    expect(inherited.turns.map(({ id }) => id)).toContain("fork-local");
-  });
-
   it("throws instead of hiding malformed completed compactions", async () => {
     const malformed = compactionTurn("broken", 3, "request", "request", "complete", {
       metadata: { malformed: true } as JsonObject,
@@ -1329,17 +1285,6 @@ describe("compaction-owned elisions", () => {
         ).blocks,
       ).toEqual(blocks);
     }
-    const undo = turn("undo", 5, "user", { metadata: compactionUndoMetadata(c.id) });
-    expect(
-      (
-        await projectActiveHistoryWithBakes(
-          [old, pin, reply, c, late, undo],
-          blocks,
-          "c1",
-          noPromptBakes,
-        )
-      ).blocks,
-    ).toEqual(blocks);
     const next = compactionTurn("next", 6, "old", "pin");
     expect(
       (
