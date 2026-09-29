@@ -45,9 +45,3 @@
   document view per browser tab. A split-view design must first define focus,
   history, tab membership, and session-retention semantics; do not stretch the
   single-selection workspace reducer into two implicit selections.
-- Scratch and Uploads viewer (`dock/DockFileView.tsx`, `routing/ReadableProjectRoute.tsx`
-  "resource-viewing"): planned as a popup or sidebar viewer reachable from any
-  screen (chat references included), not an Editor destination. Today only the
-  Work screen's dock shows them, and Editor addresses for these schemes render
-  the "not available yet" placeholder. When the viewer lands, retire those
-  Editor addresses instead of keeping both.
