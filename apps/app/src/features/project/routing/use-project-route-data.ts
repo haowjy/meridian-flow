@@ -1,7 +1,7 @@
 /**
  * Seeds the query cache and the working set from the project route's loader
  * data. A project still being created has no data yet; it seeds once that
- * data arrives, without remounting the route.
+ * data arrives, without remounting the route, and afresh for another project.
  */
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
@@ -18,13 +18,20 @@ export function useProjectRouteData(
   workingSetSyncEnabled: boolean,
 ): WorkingSetHydrationPlan {
   const queryClient = useQueryClient();
-  const seeded = useRef<{ data: ProjectRouteData | null; hydration: WorkingSetHydrationPlan }>(
-    null,
-  );
+  const seeded = useRef<{
+    projectId: string;
+    data: ProjectRouteData | null;
+    hydration: WorkingSetHydrationPlan;
+  }>(null);
   // Before first paint, so no query starts a read the seed already answers.
-  if (!seeded.current || (seeded.current.data === null && data !== null)) {
+  if (
+    !seeded.current ||
+    seeded.current.projectId !== projectId ||
+    (seeded.current.data === null && data !== null)
+  ) {
     if (data) seedProjectRouteData(queryClient, projectId, data);
     seeded.current = {
+      projectId,
       data,
       hydration: hydrateWorkingSet(
         projectId,

@@ -79,7 +79,13 @@ function ProjectRoute() {
       <div className="flex h-full min-h-0 flex-col">
         <ProjectCreationNotice creation={creation} />
         <div className="min-h-0 flex-1">
-          <ReadableProjectRoute project={project} data={loaderData.data} user={user} />
+          {/* Project-scoped state (navigation, admission, seeding) never carries across projects. */}
+          <ReadableProjectRoute
+            key={project.id}
+            project={project}
+            data={loaderData.data}
+            user={user}
+          />
         </div>
       </div>
     </ProjectIdentityBoundary>
