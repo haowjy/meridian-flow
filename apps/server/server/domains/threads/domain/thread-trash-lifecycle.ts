@@ -52,13 +52,12 @@ export async function transitionThreadTrash(
         throw new ThreadTrashUnavailableError(input.threadId);
       }
       if (!before.deletedAt) return { thread: before, changed: false };
-      if (await deps.repos.threads.isDeletedByWork(input.threadId)) {
-        throw new ThreadTrashUnavailableError(input.threadId);
-      }
       const rootThreadId = before.rootThreadId ?? before.id;
       const primary = await deps.repos.threadWorks.findPrimary(rootThreadId);
       const primaryWork = primary ? await deps.works.findById(primary.workId) : null;
-      if (primaryWork?.deletedAt) throw new ThreadTrashUnavailableError(input.threadId);
+      if (before.deletedByWorkId || primaryWork?.deletedAt) {
+        throw new ThreadTrashUnavailableError(input.threadId);
+      }
       const threadPrimary = await deps.repos.threadWorks.findPrimary(input.threadId);
       const availableAuthority = threadPrimary
         ? await deps.workAuthorityResolver.lockById(before.projectId, threadPrimary.workId)

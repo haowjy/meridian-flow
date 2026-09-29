@@ -71,6 +71,7 @@ represented as a fully-typed slot:
 | `preferences` | preferences | Drizzle project preferences repository |
 | `orchestrator` | runtime | `RunTurnPort` — the full orchestrator |
 | `runner` | runtime | `TurnRunner` with child-run registry |
+| `stopThreadRun` | runtime | One composed running-turn lookup and runner-cancel policy used by Work lifecycle routes and tools |
 | `toolRegistry` | runtime | Name-keyed tool registration map |
 | `toolExecutor` | runtime | Dispatches tool calls to registered handlers |
 | `modelRequestDebug` | runtime | In-memory capture when the debug gate is open, noop otherwise |

@@ -24,7 +24,6 @@ else
     const repos = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
       db,
-      hasUnreviewedDraft: async () => false,
       projectionMutation: createTestWorkProjectionMutation(db),
     });
     const ids = THREAD_WORK_RACE;

@@ -5,12 +5,15 @@
  */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { WORK_DELETE_RETENTION_DAYS, type Work, workPurgeAt } from "@meridian/contracts/works";
+import {
+  DAY_MS,
+  WORK_DELETE_RETENTION_DAYS,
+  type Work,
+  workPurgeAt,
+} from "@meridian/contracts/works";
 import { cn } from "@/lib/utils";
 import { WorkCommandFailureRow } from "./WorkCommandFailureRow";
 import type { WorkListEntry } from "./work-list-model";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function DeletedWorkList({
   entries,

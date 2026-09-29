@@ -1,6 +1,7 @@
-/** In-memory WorkRepository for tests: Map-backed work CRUD implementing the port. Shares the default-title constant with the drizzle adapter via shared.ts. */
+/** In-memory WorkRepository for tests; Work child cascades are DB-only and are not modeled here. */
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
-import { type Work, workPurgeAt } from "@meridian/contracts/works";
+import type { Work } from "@meridian/contracts/works";
+import { decideWorkRestore } from "../../domain/work-restore.js";
 import type {
   CreateWorkInput,
   ListWorksOptions,
@@ -12,18 +13,11 @@ import {
   WorkLockedError,
   WorkNameConflictError,
   WorkRestoreConflictError,
-  WorkRestoreExpiredError,
 } from "../../ports/work-repository.js";
 import { NO_WORK_NAME, nextWorkSlug } from "./shared.js";
 
-export interface InMemoryWorkRepositoryOptions {
-  hasUnreviewedDrafts?: (workId: WorkId) => boolean | Promise<boolean>;
-}
-
 /** In-memory {@link WorkRepository} for tests. */
-export function createInMemoryWorkRepository(
-  options: InMemoryWorkRepositoryOptions = {},
-): WorkRepository {
+export function createInMemoryWorkRepository(options: { now?: () => Date } = {}): WorkRepository {
   const rows = new Map<string, Work>();
   const projects = new Map<string, { catalogGeneration: string; revision: bigint }>();
 
@@ -41,8 +35,10 @@ export function createInMemoryWorkRepository(
     projectState(work.projectId).revision += 1n;
   }
 
+  const currentTime = options.now ?? (() => new Date());
+
   function now(): string {
-    return new Date().toISOString();
+    return currentTime().toISOString();
   }
 
   function build(input: CreateWorkInput): Work {
@@ -230,55 +226,54 @@ export function createInMemoryWorkRepository(
       return { ...row };
     },
 
-    async hasUnreviewedDraft(id: WorkId): Promise<boolean> {
-      return (await options.hasUnreviewedDrafts?.(id)) ?? false;
-    },
-
     async softDelete(id: WorkId) {
-      const row = rows.get(id);
-      if (!row || row.deletedAt) {
-        return {
-          before: row ? { ...row } : null,
-          after: row ? { ...row } : null,
-          threadIds: [],
-        };
-      }
-      if (row.isNoWork) throw new WorkLockedError();
-      const before = { ...row };
-      row.deletedAt = now();
-      row.updatedAt = row.deletedAt;
-      row.lastActivityAt = row.updatedAt;
-      advance(row);
-      return { before, after: { ...row }, threadIds: [] };
+      return repo.transaction(async () => {
+        const row = rows.get(id);
+        if (!row || row.deletedAt) {
+          return {
+            before: row ? { ...row } : null,
+            after: row ? { ...row } : null,
+            threadIds: [],
+          };
+        }
+        if (row.isNoWork) throw new WorkLockedError();
+        const before = { ...row };
+        const deletedAt = currentTime();
+        row.deletedAt = deletedAt.toISOString();
+        row.updatedAt = row.deletedAt;
+        row.lastActivityAt = row.updatedAt;
+        advance(row);
+        return { before, after: { ...row }, threadIds: [] };
+      });
     },
 
     async restore(id: WorkId): Promise<WorkRestoration> {
-      const row = rows.get(id);
-      if (!row) throw new Error(`Work not found: ${id}`);
-      if (!row.deletedAt) {
-        const existing = { ...row };
-        return { before: existing, after: existing, changed: false };
-      }
-      if (workPurgeAt(row.deletedAt).getTime() <= Date.now()) {
-        throw new WorkRestoreExpiredError();
-      }
-      if (nameIsTaken(row.projectId, row.name, row.id)) {
-        throw new WorkRestoreConflictError("name");
-      }
-      const slugIsTaken = [...rows.values()].some(
-        (other) =>
-          other.id !== row.id &&
-          other.projectId === row.projectId &&
-          other.deletedAt === null &&
-          other.slug === row.slug,
-      );
-      if (slugIsTaken) throw new WorkRestoreConflictError("slug");
-      const before = { ...row };
-      row.deletedAt = null;
-      row.updatedAt = now();
-      row.lastActivityAt = row.updatedAt;
-      advance(row);
-      return { before, after: { ...row }, changed: true };
+      return repo.transaction(async () => {
+        const row = rows.get(id);
+        if (!row) throw new Error(`Work not found: ${id}`);
+        if (decideWorkRestore(row, currentTime()) === "unchanged") {
+          const existing = { ...row };
+          return { before: existing, after: existing, changed: false };
+        }
+        if (nameIsTaken(row.projectId, row.name, row.id)) {
+          throw new WorkRestoreConflictError("name");
+        }
+        const slugIsTaken = [...rows.values()].some(
+          (other) =>
+            other.id !== row.id &&
+            other.projectId === row.projectId &&
+            other.deletedAt === null &&
+            other.slug === row.slug,
+        );
+        if (slugIsTaken) throw new WorkRestoreConflictError("slug");
+        const before = { ...row };
+        const restoredAt = currentTime();
+        row.deletedAt = null;
+        row.updatedAt = restoredAt.toISOString();
+        row.lastActivityAt = row.updatedAt;
+        advance(row);
+        return { before, after: { ...row }, changed: true };
+      });
     },
 
     async touch(id: WorkId): Promise<void> {

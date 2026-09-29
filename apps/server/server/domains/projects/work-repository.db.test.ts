@@ -42,6 +42,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       createDrizzleWorkPurger,
     } = await import("./index.js");
     const { createInMemoryObjectStore } = await import("../storage/index.js");
+    const { createInMemoryEventSink } = await import("../observability/index.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 4 });
@@ -57,7 +58,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     const works = createDrizzleProjectWorkRepository({
       db,
-      hasUnreviewedDraft: async () => false,
       projectionMutation,
     });
     const threadRepos = createDrizzleRepositoriesForTest(db);
@@ -189,7 +189,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await deleteHasLock;
       const commandDelete = deleteWorkTransition(
-        { works, workContextNotices: { async projectChanged() {} } },
+        { works, workContextNotices: { async projectChanged() {} }, stopThreadRun: async () => {} },
         work.id,
       );
       await waitForLock("transactionid");
@@ -662,12 +662,29 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
       await expect(
         db
+          .select({ id: schema.threads.id, deletedByWorkId: schema.threads.deletedByWorkId })
+          .from(schema.threads)
+          .where(inArray(schema.threads.id, [THREAD_ID as never, childThreadId as never])),
+      ).resolves.toEqual(
+        expect.arrayContaining([
+          { id: THREAD_ID, deletedByWorkId: work.id },
+          { id: childThreadId, deletedByWorkId: work.id },
+        ]),
+      );
+      await expect(
+        db
           .select()
           .from(schema.documentBranches)
           .where(eq(schema.documentBranches.id, "work-delete-draft")),
       ).resolves.toMatchObject([{ status: "closed", deletedByWorkId: work.id }]);
 
       await works.restore(work.id);
+      await expect(
+        db
+          .select({ deletedByWorkId: schema.threads.deletedByWorkId })
+          .from(schema.threads)
+          .where(inArray(schema.threads.id, [THREAD_ID as never, childThreadId as never])),
+      ).resolves.toEqual([{ deletedByWorkId: null }, { deletedByWorkId: null }]);
       await expect(threadRepos.threads.findById(THREAD_ID as never)).resolves.toMatchObject({
         id: THREAD_ID,
       });
@@ -699,10 +716,109 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(works.restore(work.id)).rejects.toBeInstanceOf(WorkRestoreExpiredError);
     });
 
-    it("purges expired Work rows and upload blobs without touching live Works", async () => {
-      const objectStore = createInMemoryObjectStore();
-      const purger = createDrizzleWorkPurger({ db, objectStore });
+    it("refuses restoring a marked child after its root moves to another Work", async () => {
+      const noWork = await works.ensureNoWork(PROJECT_ID as never);
+      const deletedWork = await works.create({ projectId: PROJECT_ID, name: "Deleted Work" });
+      const liveWork = await works.create({ projectId: PROJECT_ID, name: "Live Work" });
+      const childThreadId = "00000000-0000-4000-8000-000000000845";
+      await db.insert(schema.threads).values([
+        {
+          id: THREAD_ID,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          title: "Rebound root",
+        },
+        {
+          id: childThreadId,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          title: "Child left behind",
+          kind: "subagent",
+          parentThreadId: THREAD_ID,
+          rootThreadId: THREAD_ID,
+          originTurnId: THREAD_ID,
+          originType: "spawn",
+          spawnStatus: "succeeded",
+          spawnDepth: 1,
+        },
+      ]);
+      await db.insert(schema.threadWorks).values([
+        {
+          threadId: THREAD_ID,
+          workId: deletedWork.id,
+          projectId: PROJECT_ID,
+          isPrimary: true,
+        },
+        {
+          threadId: childThreadId,
+          workId: deletedWork.id,
+          projectId: PROJECT_ID,
+          isPrimary: true,
+        },
+      ]);
+      await threadRepos.threadWorks.rebindPrimary(THREAD_ID as never, liveWork.id);
+      await works.softDelete(deletedWork.id);
+
+      const { restoreOwnedThreadFromTrash } = await import("../threads/thread-access.js");
+      await expect(
+        restoreOwnedThreadFromTrash(
+          {
+            repos: threadRepos,
+            projects: {
+              async findById() {
+                return { id: PROJECT_ID, userId: USER_ID, deletedAt: null } as never;
+              },
+            },
+            workContextNotices: {
+              async threadChanged() {},
+              async materializeIdle() {
+                return "delivered" as const;
+              },
+            },
+            workAuthorityResolver: authorities,
+            works,
+          },
+          childThreadId as never,
+          USER_ID as never,
+        ),
+      ).rejects.toMatchObject({ statusCode: 404 });
+      await expect(
+        threadRepos.threadWorks.findPrimary(childThreadId as never),
+      ).resolves.toMatchObject({ workId: deletedWork.id });
+      await expect(
+        db
+          .select({ deletedByWorkId: schema.threads.deletedByWorkId })
+          .from(schema.threads)
+          .where(eq(schema.threads.id, childThreadId as never)),
+      ).resolves.toEqual([{ deletedByWorkId: deletedWork.id }]);
+
+      await works.restore(deletedWork.id);
+      await expect(threadRepos.threads.findById(childThreadId as never)).resolves.toMatchObject({
+        id: childThreadId,
+        workId: deletedWork.id,
+      });
+      expect(noWork.id).not.toBe(deletedWork.id);
+    });
+
+    it("commits an expired Work purge before best-effort blob deletion", async () => {
+      const backingStore = createInMemoryObjectStore();
       const work = await works.create({ projectId: PROJECT_ID, name: "Purge me" });
+      let deleteObservedCommittedPurge = false;
+      const objectStore = {
+        put: backingStore.put.bind(backingStore),
+        get: backingStore.get.bind(backingStore),
+        list: backingStore.list.bind(backingStore),
+        getSignedUrl: backingStore.getSignedUrl.bind(backingStore),
+        async delete() {
+          deleteObservedCommittedPurge = (await works.findById(work.id)) === null;
+          return {
+            ok: false as const,
+            error: { code: "io_error" as const, message: "retry during orphan sweep" },
+          };
+        },
+      };
+      const eventSink = createInMemoryEventSink();
+      const purger = createDrizzleWorkPurger({ db, objectStore, eventSink });
       const other = await works.create({ projectId: PROJECT_ID, name: "Keep me" });
       const expiredTrashThreadId = "00000000-0000-4000-8000-000000000847";
       await db.insert(schema.threads).values({
@@ -759,6 +875,33 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         })
         .returning();
       if (!document) throw new Error("Expected uploaded document");
+      await db.insert(schema.documentBranches).values({
+        id: "purged-work-draft",
+        documentId: document.id,
+        kind: "work_draft",
+        workId: work.id,
+        state: Buffer.from([]),
+        stateVector: Buffer.from([]),
+      });
+      const resultTurnId = "00000000-0000-4000-8000-000000000848";
+      await db.insert(schema.turns).values({
+        id: resultTurnId,
+        threadId: THREAD_ID,
+        role: "assistant",
+        origin: "assistant",
+      });
+      await db.insert(schema.projectResults).values({
+        id: "00000000-0000-4000-8000-000000000849",
+        projectId: PROJECT_ID,
+        sourcePath: "reports/purge.txt",
+        resultsUri: `results://@${work.slug}/threads/root/reports/purge.txt`,
+        storageUrl: "memory://purged-result",
+        mimeType: "text/plain",
+        sizeBytes: 4,
+        rootThreadId: THREAD_ID,
+        threadId: THREAD_ID,
+        turnId: resultTurnId,
+      });
       const objectKey = `uploads/${PROJECT_ID}/${document.id}`;
       const stored = await objectStore.put(objectKey, new Uint8Array([7]), "image/png");
       if (!stored.ok) throw new Error(stored.error.message);
@@ -805,10 +948,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         db.select().from(schema.uploadIntakes).where(eq(schema.uploadIntakes.workId, work.id)),
       ).resolves.toEqual([]);
-      await expect(objectStore.get(objectKey)).resolves.toMatchObject({
-        ok: false,
-        error: { code: "not_found" },
-      });
+      await expect(
+        db
+          .select()
+          .from(schema.projectResults)
+          .where(eq(schema.projectResults.projectId, PROJECT_ID)),
+      ).resolves.toEqual([]);
+      await expect(
+        db
+          .select()
+          .from(schema.documentBranches)
+          .where(eq(schema.documentBranches.id, "purged-work-draft")),
+      ).resolves.toEqual([]);
+      expect(deleteObservedCommittedPurge).toBe(true);
+      await expect(objectStore.get(objectKey)).resolves.toMatchObject({ ok: true });
+      expect(eventSink.events).toContainEqual(
+        expect.objectContaining({
+          level: "warn",
+          source: "projects.work-purge",
+          name: "object_delete.failed",
+        }),
+      );
     });
 
     it("serializes Work content creation before deletion", async () => {

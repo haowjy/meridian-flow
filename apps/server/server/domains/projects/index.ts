@@ -324,7 +324,7 @@ export {
 export { createDrizzleWorkRepository as createDrizzleProjectWorkRepository } from "./adapters/work-repository/drizzle.js";
 export { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
 export { createWork } from "./create-work.js";
-export { deleteWork, deleteWorkTransition, restoreWork } from "./delete-work.js";
+export { deleteWorkTransition, restoreWork } from "./delete-work.js";
 export { listWorkCatalog } from "./list-work-catalog.js";
 export type {
   CreateProjectInput,
@@ -352,6 +352,7 @@ export {
   WorkRestoreExpiredError,
 } from "./ports/work-repository.js";
 export { type RequireProjectOwnerOptions, requireProjectOwner } from "./project-access.js";
+export { runWorkLifecycleCommand } from "./run-work-lifecycle-command.js";
 export {
   normalizeWorkUpdateInput,
   type UpdateWorkCommandInput,

@@ -71,7 +71,7 @@ export const threads = pgTable(
     deletedAt: softDeleteAt(),
     deletedByWorkId: uuid("deleted_by_work_id")
       .$type<WorkId>()
-      .references(() => works.id, { onDelete: "cascade" }),
+      .references(() => works.id, { onDelete: "set null" }),
   },
   (table) => [
     unique("threads_project_id_unique").on(table.projectId, table.id),

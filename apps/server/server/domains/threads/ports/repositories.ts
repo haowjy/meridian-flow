@@ -225,7 +225,7 @@ export interface ThreadRepository {
   lockByIdIncludingDeleted(
     id: ThreadId,
     additionalWorkIds?: readonly WorkId[],
-  ): Promise<Thread | null>;
+  ): Promise<(Thread & { deletedByWorkId: WorkId | null }) | null>;
   listByUser(userId: UserId): Promise<Thread[]>;
   /** Primary threads in a project (excludes subagents and soft-deleted threads; caller must gate project access). */
   listByProject(projectId: ProjectId): Promise<ThreadListItem[]>;
@@ -262,8 +262,6 @@ export interface ThreadRepository {
   //     feed already omit archived chats by default.
   /** Applies a changed trash state; lifecycle commands must first hold the thread row lock. */
   setTrashState(id: ThreadId, target: "deleted" | "visible"): Promise<Thread>;
-  /** True when Work deletion, rather than the writer, owns this thread's trash state. */
-  isDeletedByWork(id: ThreadId): Promise<boolean>;
 }
 
 export interface WorkThreadSummary {

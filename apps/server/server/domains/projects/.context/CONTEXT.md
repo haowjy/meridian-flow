@@ -30,12 +30,12 @@ translate those to `title` and `description` in `ProjectDto`.
 | `ProjectRepository.ensureDefaultBootstrap(userId)` | Returns the converged `DefaultBootstrap` bundle for the authenticated user. |
 | `ProjectRepository.ensureDefaultBootstrapReady(userId)` | Auth path: trusts the durable completion flag as its lock-free fast path. Incomplete bootstrap is retried transactionally; seed failures leave no partial bootstrap and return false without failing unrelated requests. |
 | `ProjectBootstrapResult` | Project, manuscript document/source, and URI IDs needed by the app shell. |
-| `WorkRepository` | Creates/lists/updates/archives/unarchives/deletes/restores Works. Deletion atomically marks live Work children; its `transaction` boundary keeps compound lifecycle commands atomic. |
+| `WorkRepository` | Creates/lists/updates/archives/unarchives/deletes/restores Works. The Drizzle adapter cascades child visibility atomically; cascade is DB-only and covered by DB tests. Shared adapter conformance covers lifecycle policy only. |
 | `ProjectWorkAuthorityResolver` | Exact same-project `byId`/`bySlug` and transactional `lockById` resolution; it is the only projects-domain mint for opaque stable Work URI authority. |
 | `listWorkCatalog(deps, input)` | Owner-gates and lists the requested Work collection, then enriches it through one set-oriented pending-draft count read. |
 | `createWork(input)` | Creates an explicit Work and durably enqueues affected thread Work context in the same transaction. |
 | `updateWorkTransition(workId, input)` | One metadata policy for the human PATCH adapter and LLM `work.update`: locks the lifecycle row, normalizes and compares requested semantic fields, persists only real changes, enqueues context delivery, and returns exact before/after/changed facts. `updateWork` projects its final Work for routes; LLM receipts remain outside this shared operation. |
-| `deleteWorkTransition` / `restoreWork` | Both lifecycle transitions lock and return exact state, including concurrent no-ops, and durably enqueue Work context only after real changes in the same transaction. |
+| `deleteWorkTransition` / `restoreWork` | Both lifecycle transitions lock and return exact state, including concurrent no-ops, and durably enqueue Work context only after real changes in the same transaction. Deletion and receipt reversal share one retry/post-commit run-stop helper; restore policy uses the canonical retention function and an adapter-injected clock. |
 | `requireWorkOwner(workId, userId)` | Owner gate for flat `/api/works/:workId` item routes. |
 
 ## Invariants
@@ -85,11 +85,12 @@ translate those to `title` and `description` in `ProjectDto`.
   until `workPurgeAt(deletedAt)` (30 days). Later restore returns HTTP 410 with
   `{ data: { code: "work_restore_expired" } }`, even if the hourly purge has
   not yet run. The `work-purge` recovery job runs hourly, in batches of 100;
-  it deletes expired Works and owned rows and removes upload/result blobs from
-  object storage. No Work remains locked against deletion.
-- Membership changes follow thread-before-Work locking. Delete reads the
-  primary chat set, locks those threads, then locks the Work and rechecks the
-  full set. A newly joined chat retries the transaction rather than escaping
-  the cascade. Work context mutations and reviewable branch-journal creation
+  it commits expired Work and owned-row deletion before best-effort upload/result
+  blob cleanup. Blob failures are warned and left to orphan sweeping. No Work remains locked against deletion.
+- Membership changes follow thread-before-Work locking. Delete and purge use
+  `lockWorkThreadTree` to read the primary chat forest, lock its threads, lock
+  the Work, then recheck the full set; a newly joined chat retries rather than
+  escaping deletion. Restore locks the threads carrying that Work's deletion
+  marker and clears exactly that set. Work context mutations and reviewable branch-journal creation
   still serialize on the Work lifecycle row lock. Restore refuses rather than
   clobbering a reclaimed active name.

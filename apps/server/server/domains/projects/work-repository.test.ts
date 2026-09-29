@@ -21,19 +21,6 @@ describe("WorkRepository", () => {
     expect(await repo.findById(first.id)).toEqual(deleted);
   });
 
-  it("deletes despite existing conversations, drafts, files, and folders", async () => {
-    const repo = createInMemoryWorkRepository({ hasUnreviewedDrafts: () => true });
-    const created = await repo.create({ projectId: PROJECT_ID, name: "Review pending" });
-
-    await expect(repo.softDelete(created.id)).resolves.toMatchObject({
-      before: { deletedAt: null },
-      after: { deletedAt: expect.any(String) },
-    });
-    await expect(repo.findById(created.id)).resolves.toMatchObject({
-      deletedAt: expect.any(String),
-    });
-  });
-
   it("refuses restore once the retention window has ended", async () => {
     vi.useFakeTimers();
     try {

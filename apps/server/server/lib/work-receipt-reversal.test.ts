@@ -32,6 +32,7 @@ function harness(receipts: WorkReceipt[]) {
       },
       workContextNotices: { projectChanged: vi.fn(async () => {}) },
       transaction: works.transaction,
+      stopThreadRun: vi.fn(async () => {}),
       blocks: {
         listByTurn: async () =>
           receipts.map((workReceipt) => ({

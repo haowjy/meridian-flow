@@ -11,8 +11,8 @@ import {
   type WorkReceiptState,
 } from "@meridian/contracts/works";
 import {
+  runWorkLifecycleCommand,
   type WorkContextNotices,
-  WorkDeleteRetryError,
   type WorkRepository,
 } from "../domains/projects/index.js";
 import type {
@@ -27,7 +27,7 @@ type WorkReceiptReversalDeps = {
   threads: Pick<ThreadRepository, "findById">;
   works: WorkRepository;
   workContextNotices: Pick<WorkContextNotices, "projectChanged">;
-  stopThreadRun?: (threadId: ThreadId) => Promise<void>;
+  stopThreadRun: (threadId: ThreadId) => Promise<void>;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
 };
 
@@ -73,61 +73,49 @@ export async function reverseWorkReceipts(
   const context = await reversalContext(deps, input);
   if (!context) return [];
   const ordered = orderReceipts(context.receipts, input.direction);
-  const changedProjects = new Set<string>();
-  let threadIdsToStop: ThreadId[] = [];
   try {
-    let results: WorkReceiptReversal[] | undefined;
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      try {
-        const transactionResult = await deps.transaction(async () => {
-          await lockReceiptState(deps, ordered);
-          const plan = await planReceipts(deps, ordered, context.thread, input.direction);
-          const applied: WorkReceiptReversal[] = [];
-          const deletedThreadIds = new Set<ThreadId>();
-          for (const step of plan) {
-            if (!step.executable) {
-              applied.push(
-                result(
-                  step.receipt,
-                  context.thread.projectId,
-                  step.command,
-                  "unavailable",
-                  step.message,
-                ),
-              );
-              continue;
-            }
-            for (const threadId of await applyStep(deps, step.receipt, input.direction)) {
-              deletedThreadIds.add(threadId);
-            }
-            changedProjects.add(context.thread.projectId);
+    return await runWorkLifecycleCommand(
+      { transaction: deps.transaction, stopThreadRun: deps.stopThreadRun },
+      async () => {
+        const changedProjects = new Set<string>();
+        await lockReceiptState(deps, ordered);
+        const plan = await planReceipts(deps, ordered, context.thread, input.direction);
+        const applied: WorkReceiptReversal[] = [];
+        const deletedThreadIds = new Set<ThreadId>();
+        for (const step of plan) {
+          if (!step.executable) {
             applied.push(
               result(
                 step.receipt,
                 context.thread.projectId,
                 step.command,
-                input.direction === "undo" ? "reversed" : "redone",
+                "unavailable",
+                step.message,
               ),
             );
+            continue;
           }
-          await Promise.all(
-            [...changedProjects].map((projectId) =>
-              deps.workContextNotices.projectChanged(projectId),
+          for (const threadId of await applyStep(deps, step.receipt, input.direction)) {
+            deletedThreadIds.add(threadId);
+          }
+          changedProjects.add(context.thread.projectId);
+          applied.push(
+            result(
+              step.receipt,
+              context.thread.projectId,
+              step.command,
+              input.direction === "undo" ? "reversed" : "redone",
             ),
           );
-          return { applied, deletedThreadIds: [...deletedThreadIds] };
-        });
-        results = transactionResult.applied;
-        threadIdsToStop = transactionResult.deletedThreadIds;
-        break;
-      } catch (error) {
-        if (!(error instanceof WorkDeleteRetryError) || attempt === 4) throw error;
-      }
-    }
-    if (deps.stopThreadRun) {
-      await Promise.all(threadIdsToStop.map(deps.stopThreadRun));
-    }
-    return results ?? [];
+        }
+        await Promise.all(
+          [...changedProjects].map((projectId) =>
+            deps.workContextNotices.projectChanged(projectId),
+          ),
+        );
+        return { value: applied, threadIdsToStop: [...deletedThreadIds] };
+      },
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return ordered.map((receipt) =>

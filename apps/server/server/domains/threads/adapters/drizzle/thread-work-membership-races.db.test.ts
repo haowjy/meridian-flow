@@ -49,8 +49,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const draftPending = createWorkDraftPending(createDrizzleWorkDraftPendingStore(db));
     const works = createDrizzleProjectWorkRepository({
       db,
-      hasUnreviewedDraft: async (workId) =>
-        ((await draftPending.countPendingByWorkIds([workId])).get(workId) ?? 0) > 0,
       projectionMutation: createTestWorkProjectionMutation(db),
     });
     const branches = createDrizzleBranchStore(db, undefined);
@@ -106,6 +104,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           {
             works,
             workContextNotices: { projectChanged: async () => {} },
+            stopThreadRun: async () => {},
           },
           WORK_ID,
         ).then(
@@ -293,6 +292,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           {
             works,
             workContextNotices: { projectChanged: async () => {} },
+            stopThreadRun: async () => {},
           },
           TARGET_WORK_ID,
         ).then(
