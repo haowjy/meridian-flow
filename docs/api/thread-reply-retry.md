@@ -32,7 +32,7 @@ ID. Repeating the same ID returns that turn with **200**; a new retry returns
 **201**.
 
 A reply interrupted by process shutdown ends as an error with reason
-`shutdown` and copy “This reply was interrupted.” Its adopted messages are
+`shutdown` and copy “This response failed.” Its adopted messages are
 acknowledged like any failed reply, so the latest interrupted reply can be
 retried after restart.
 

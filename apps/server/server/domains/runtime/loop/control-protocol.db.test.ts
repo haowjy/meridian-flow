@@ -387,7 +387,11 @@ else
       });
       await processDetachedWork.drain();
       const failed = await rig.repos.turns.findById(orphan.id as never);
-      expect(failed).toMatchObject({ status: "error", error: "This reply was interrupted." });
+      expect(failed).toMatchObject({
+        status: "error",
+        error: "This response failed.",
+        metadata: { reason: "orphaned" },
+      });
 
       const retry = await rig.orchestrator.retryReply({
         threadId: rig.threadId,
@@ -476,7 +480,8 @@ else
 
       expect(await rig.repos.turns.findById(orphan.id)).toMatchObject({
         status: "error",
-        error: "This reply was interrupted.",
+        error: "This response failed.",
+        metadata: { reason: "orphaned" },
       });
       expect(await delivery.selectPending(rig.threadId)).toEqual([
         expect.objectContaining({ id: queued.id }),
@@ -543,7 +548,11 @@ else
       rig.orchestrator.beginShutdown();
       await expect(execution).resolves.toMatchObject({
         status: "error",
-        turn: { status: "error", error: "This reply was interrupted." },
+        turn: {
+          status: "error",
+          error: "This response failed.",
+          metadata: { reason: "shutdown" },
+        },
       });
       await processDetachedWork.drain();
 
@@ -1186,7 +1195,7 @@ else
       expect(compactions).toHaveLength(1);
       expect(compactions[0]).toMatchObject({
         status: "error",
-        error: "This manual compaction was interrupted.",
+        error: "This conversation couldn't be compacted. Try again.",
         metadata: { reason: "interrupted", phase: "recovery", controlMessageId: control.id },
       });
       expect(await delivery.selectPending(rig.threadId)).toEqual([]);

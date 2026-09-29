@@ -31,11 +31,11 @@ A reply that reaches a durable failed terminal state, including through orphan
 repair, acknowledges every message it adopted and is never restarted by the
 30-second inbox wake sweep. Crash repair keeps the internal `orphaned` reason
 because no shutdown signal reached the runtime, but uses the same writer copy,
-“This reply was interrupted.” An explicit Retry of the latest
+“This response failed.” An explicit Retry of the latest
 failed assistant on an idle primary or subagent thread starts an ordinary
 no-input run; prior user turns already carry its request history. Shutdown
 abort is finalized the same way as a failed reply, with `reason: shutdown` and
-“This reply was interrupted.”, after paid rows settle and adopted messages are
+“This response failed.”, after paid rows settle and adopted messages are
 acknowledged, so the writer can Retry after restart.
 
 Production SIGTERM and SIGINT run the bounded shutdown drain before exit. Nitro

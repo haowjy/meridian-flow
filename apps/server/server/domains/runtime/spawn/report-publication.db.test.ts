@@ -765,7 +765,7 @@ else
         const repaired = await repos.turns.findById(turnId);
         expect(repaired).toMatchObject({
           status: "error",
-          error: "This compaction was interrupted.",
+          error: "This conversation couldn't be compacted. Try again.",
         });
         expect(CompactionMetadataCodec.parse(repaired?.metadata)).toMatchObject({
           reason: "interrupted",
@@ -812,7 +812,8 @@ else
       expect(await repair.sweep(10)).toBeGreaterThanOrEqual(1);
       expect(await repos.turns.findById(orphan.id)).toMatchObject({
         status: "error",
-        error: "This reply was interrupted.",
+        error: "This response failed.",
+        metadata: { reason: "orphaned" },
       });
       expect(await repos.turns.listUnsettledForThread(ids.root)).toEqual([]);
 
@@ -1125,7 +1126,7 @@ else
       const repaired = await repos.turns.findById(c.id);
       expect(repaired).toMatchObject({
         status: "error",
-        error: "This compaction was interrupted.",
+        error: "This conversation couldn't be compacted. Try again.",
       });
       expect(CompactionMetadataCodec.parse(repaired?.metadata)).toMatchObject({
         reason: "interrupted",

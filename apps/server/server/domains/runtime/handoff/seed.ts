@@ -13,7 +13,6 @@ import type { PersistenceDeps } from "../loop/persistence.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
 import { threadReferenceText } from "../thread-reference.js";
 
-export const handoffBriefFailedCopy = "This handoff brief couldn't be generated. Try again.";
 export const handoffBriefUnavailableCopy =
   "This conversation was handed off. No brief is available.";
 

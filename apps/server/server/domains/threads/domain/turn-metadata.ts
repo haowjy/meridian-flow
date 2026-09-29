@@ -1,12 +1,7 @@
 /** Typed metadata codecs, constructors, and history classification for durable turns. */
 
 import { SummaryRejectionReasonCodec } from "@meridian/contracts/runtime";
-import type {
-  JsonObject,
-  JsonValue,
-  PendingPlaceholderRole,
-  Turn,
-} from "@meridian/contracts/threads";
+import type { JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
 import { z } from "zod";
 
 export const SystemUpdateMetadataCodec = z
@@ -347,25 +342,6 @@ export function compactionFailureMetadata(
     ...(failure.estimatedTokens === undefined ? {} : { estimatedTokens: failure.estimatedTokens }),
     ...(failure.fitLimitTokens === undefined ? {} : { fitLimitTokens: failure.fitLimitTokens }),
   };
-}
-
-/** The writer-facing failure copy for an interrupted pending placeholder. */
-export function interruptedPlaceholderError(
-  turn: Pick<Turn, "metadata"> & { role: PendingPlaceholderRole },
-): string {
-  switch (turn.role) {
-    case "system":
-      return "This handoff brief was interrupted.";
-    case "compaction": {
-      return (turn.metadata as JsonObject | null)?.trigger === "manual"
-        ? "This manual compaction was interrupted."
-        : "This compaction was interrupted.";
-    }
-    default: {
-      const exhaustiveRole: never = turn.role;
-      return exhaustiveRole;
-    }
-  }
 }
 
 export function encodeImageInclusionMetadata(breaks: readonly ImageContextBreak[]): JsonObject {

@@ -912,7 +912,7 @@ else
       expect(seed).toMatchObject({
         role: "system",
         status: "error",
-        error: "This handoff brief was interrupted.",
+        error: "This handoff brief couldn't be generated. Try again.",
         metadata: { reason: "interrupted", phase: "recovery" },
       });
       const [card] = await fixture.repos.blocks.listByTurn(fixture.seed.id);
