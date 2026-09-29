@@ -310,7 +310,8 @@ export function createOrchestrator(deps: OrchestratorDeps) {
             ? {
                 kind: "failed",
                 reason: "shutdown",
-                error: turnFailedCopy(failedTurn),
+                error: "Runtime shut down before the response completed",
+                copy: turnFailedCopy(failedTurn),
               }
             : { kind: "cancelled", reason: "cancelled" }
           : {
@@ -322,9 +323,8 @@ export function createOrchestrator(deps: OrchestratorDeps) {
                   : requestPreparationFailed
                     ? "request_preparation_failed"
                     : "execution_error"),
-              error:
-                publicPreparationError ?? (error instanceof Error ? error.message : String(error)),
-              publicError: publicPreparationError?.message ?? turnFailedCopy(failedTurn),
+              error: error instanceof Error ? error.message : String(error),
+              copy: publicPreparationError?.message ?? turnFailedCopy(failedTurn),
             },
       });
       if (outcome.kind !== "completed") throw new Error("Failure finalization cannot split");
@@ -1803,12 +1803,22 @@ async function executeLoop({
   const cancelTerminal: TerminalCause = { kind: "cancelled", reason: "cancelled" };
   const abortTerminal = (): TerminalCause =>
     input.signal?.reason === "shutdown"
-      ? { kind: "failed", reason: "shutdown", error: turnFailedCopy(currentTurn) }
+      ? {
+          kind: "failed",
+          reason: "shutdown",
+          error: "Runtime shut down before the response completed",
+          copy: turnFailedCopy(currentTurn),
+        }
       : cancelTerminal;
-  const errorTerminal = (error: MeridianError | string, reason?: string): TerminalCause => ({
+  const errorTerminal = (
+    error: MeridianError | string,
+    reason?: string,
+    copy = turnFailedCopy(currentTurn),
+  ): TerminalCause => ({
     kind: "failed",
     reason: reason ?? (typeof error === "string" ? "runtime_error" : error.code),
     error,
+    copy,
   });
   const completeTerminal = (result: GenerateResult): TerminalCause => ({
     kind: "success",
@@ -1877,7 +1887,7 @@ async function executeLoop({
 
         const budgetError = await turnAccounting.assertPreIterationBudget(treeBudget, thread);
         if (budgetError) {
-          return exitRun(false, errorTerminal(budgetError));
+          return exitRun(false, errorTerminal(budgetError, undefined, budgetError.message));
         }
 
         turnAccounting.recordIterationSpend(treeBudget);
@@ -2073,9 +2083,10 @@ async function executeLoop({
                 return exitRun(false, {
                   kind: "failed",
                   reason: "context_window_exceeded",
-                  error: writerFacingPreparationError(
+                  error: "Model context overflowed after compaction retry",
+                  copy: writerFacingPreparationError(
                     new CompactionPreparationError("context_window_exceeded"),
-                  ),
+                  ).message,
                 });
               }
               retriedContextOverflow = true;

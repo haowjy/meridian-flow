@@ -131,7 +131,12 @@ describe("captured candidate terminal policy", () => {
       {
         threadId: child.id,
         turnId: turn.id,
-        cause: { kind: "failed", reason: "runtime_error", error: "later failure" },
+        cause: {
+          kind: "failed",
+          reason: "runtime_error",
+          error: "later failure",
+          copy: "This response failed.",
+        },
       },
     );
     expect(await repos.executionReports.findByExecution(child.id, turn.id)).toMatchObject({
@@ -257,14 +262,24 @@ describe("persisted execution fallback", () => {
       {
         threadId: scope.child.id,
         turnId: scope.turn.id,
-        cause: { kind: "failed", reason: "budget", error: "budget exhausted" },
+        cause: {
+          kind: "failed",
+          reason: "budget",
+          error: "budget exhausted",
+          copy: "This response failed.",
+        },
       },
     );
     expect(terminal.report).toMatchObject({ outcome: "failed", source: "empty", summary: "" });
   });
 
   for (const cause of [
-    { kind: "failed" as const, reason: "budget", error: "budget exhausted" },
+    {
+      kind: "failed" as const,
+      reason: "budget",
+      error: "budget exhausted",
+      copy: "This response failed.",
+    },
     { kind: "cancelled" as const, reason: "cancelled" },
   ]) {
     it(`keeps only the last durable public response on ${cause.kind}`, async () => {
@@ -296,7 +311,12 @@ describe("persisted execution fallback", () => {
       {
         threadId: scope.child.id,
         turnId: scope.turn.id,
-        cause: { kind: "failed", reason: "generator_error", error: "provider failed" },
+        cause: {
+          kind: "failed",
+          reason: "generator_error",
+          error: "provider failed",
+          copy: "This response failed.",
+        },
       },
     );
     expect(terminal.report).toMatchObject({

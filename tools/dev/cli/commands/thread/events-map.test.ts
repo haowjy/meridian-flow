@@ -68,14 +68,14 @@ describe("RunEventMapper", () => {
     ]);
   });
 
-  it("shows the diagnostic failure reason carried by a run error", () => {
+  it("shows the raw diagnostic cause and reason carried by a run error", () => {
     const mapper = new RunEventMapper();
     const [failed] = mapper.map({
       seq: "1",
-      event: { type: "RUN_ERROR", message: "This response failed." } as AGUIEvent,
+      event: { type: "RUN_ERROR", message: "provider credentials were rejected" } as AGUIEvent,
       error: {
         code: "runtime_error",
-        message: "This response failed.",
+        message: "provider credentials were rejected",
         source: "system",
         retryable: false,
         details: { reason: "orphaned" },
@@ -83,7 +83,7 @@ describe("RunEventMapper", () => {
     });
 
     expect(failed && renderEventLine(failed, false)).toBe(
-      "turn.failed This response failed. (failure reason: orphaned)",
+      "turn.failed provider credentials were rejected (failure reason: orphaned)",
     );
   });
 

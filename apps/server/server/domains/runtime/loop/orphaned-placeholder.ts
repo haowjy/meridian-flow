@@ -62,7 +62,8 @@ export async function finalizeOrphanedTurns(
       cause: {
         kind: "failed",
         reason: "orphaned",
-        error: turnFailedCopy(turn),
+        error: "Run stopped before terminal completion",
+        copy: turnFailedCopy(turn),
       },
     });
     if (compaction) await deps.clearOrphanedTurn?.(input.threadId, turn.id);
@@ -89,7 +90,8 @@ export async function finalizeOrphanedPlaceholders(
       cause: {
         kind: "failed",
         reason: "orphaned",
-        error: turnFailedCopy(placeholder),
+        error: "Run stopped before terminal completion",
+        copy: turnFailedCopy(placeholder),
       },
     });
     await deps.clearOrphanedTurn?.(input.threadId, placeholder.id);

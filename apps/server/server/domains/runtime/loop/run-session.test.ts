@@ -69,6 +69,27 @@ async function fixture(configure?: (deps: OrchestratorDeps) => void) {
 }
 
 describe("RunSession", () => {
+  async function expectDiagnosticFailure(
+    f: Awaited<ReturnType<typeof fixture>>,
+    executionTurnId: TurnId,
+    rawCause: string,
+    reason: string,
+  ) {
+    expect(await f.repos.turns.findById(executionTurnId)).toMatchObject({
+      status: "error",
+      error: "This response failed.",
+      metadata: { reason },
+    });
+    const terminal = f.journal
+      .getEvents(f.thread.id)
+      .map(({ event }) => event)
+      .find((event) => event.type === "turn.error" && event.turn.id === executionTurnId);
+    expect(terminal).toMatchObject({
+      type: "turn.error",
+      error: { message: rawCause, details: { reason } },
+    });
+  }
+
   it("repairs an orphaned primary assistant after taking the run claim", async () => {
     const f = await fixture();
     const orphan = await f.repos.turns.create({
@@ -300,6 +321,83 @@ describe("RunSession", () => {
     expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
   });
 
+  it("keeps a provider cause diagnostic while storing generic reply copy", async () => {
+    const f = await fixture((deps) => {
+      deps.gateway.stream = async function* () {
+        yield {
+          type: "error",
+          code: "provider_error",
+          message: "provider credentials were rejected",
+          retryable: false,
+        };
+      };
+    });
+    const run = await f.prepare();
+
+    await expect(run.execute()).resolves.toMatchObject({ status: "error" });
+    await expectDiagnosticFailure(
+      f,
+      run.executionTurnId,
+      "provider credentials were rejected",
+      "provider_error",
+    );
+  });
+
+  it("keeps a thrown execution cause diagnostic while storing generic reply copy", async () => {
+    const f = await fixture((deps) => {
+      deps.gateway.stream = async function* () {
+        if (Math.random() < 0) yield undefined as never;
+        throw new Error("provider stream exploded");
+      };
+    });
+    const run = await f.prepare();
+
+    await expect(run.execute()).resolves.toMatchObject({ status: "error" });
+    await expectDiagnosticFailure(
+      f,
+      run.executionTurnId,
+      "provider stream exploded",
+      "execution_error",
+    );
+  });
+
+  it("keeps the tool-iteration limit diagnostic while storing generic reply copy", async () => {
+    let call = 0;
+    const f = await fixture((deps) => {
+      deps.gateway.stream = async function* () {
+        call += 1;
+        yield {
+          type: "end",
+          result: {
+            content: [
+              {
+                type: "tool_use",
+                toolCallId: `missing-${call}`,
+                toolName: "missing_tool",
+                input: {},
+              },
+            ],
+            toolCalls: [],
+            finishReason: "tool_use",
+            usage: { inputTokens: 0, outputTokens: 0 },
+            model: "gpt-4.1-mini",
+            provider: "openai",
+          },
+        };
+      };
+    });
+    const run = await f.prepare();
+
+    await expect(run.execute()).resolves.toMatchObject({ status: "error" });
+    expect(call).toBe(32);
+    await expectDiagnosticFailure(
+      f,
+      run.executionTurnId,
+      "exceeded max tool iterations",
+      "runtime_error",
+    );
+  });
+
   it("finalizes fork-context prep failure on the adopted message without a wake retry", async () => {
     const f = await fixture();
     const message = await f.deps.delivery.enqueue({
@@ -334,10 +432,11 @@ describe("RunSession", () => {
     expect(terminal).toMatchObject({
       type: "turn.error",
       error: {
-        code: "thread_context_error",
-        message: "This chat's fork history couldn't be loaded.",
+        code: "runtime_error",
+        message: expect.stringMatching(/has no cutoff turn$/),
         source: "system",
         retryable: false,
+        details: { reason: "missing_cutoff_turn" },
       },
     });
     expect(f.sink.events).toContainEqual(

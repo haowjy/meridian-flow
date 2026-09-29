@@ -78,7 +78,7 @@ export function createOrphanReportRepair(deps: {
             kind: "failed",
             reason: "orphaned",
             error: "Child execution stopped before terminal completion",
-            publicError: turnFailedCopy(terminal),
+            copy: turnFailedCopy(terminal),
           },
         });
         if (terminal.role === "assistant")

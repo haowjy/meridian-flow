@@ -28,8 +28,8 @@ export type TerminalCause =
       kind: "failed";
       reason: string;
       error: MeridianError | string;
-      /** Optional server-owned safe copy when a known failure has more useful writer guidance. */
-      publicError?: string;
+      /** Server-owned writer copy. Raw causes belong in diagnostics, never in the turn. */
+      copy: string;
     }
   | { kind: "cancelled"; reason: string };
 
@@ -123,7 +123,10 @@ function compactionFailureForFinalizer(cause: Extract<TerminalCause, { kind: "fa
   };
 }
 
-/** Call under the thread lock; nested persistence joins its transaction. */
+/**
+ * Finalize one execution under the thread lock; nested persistence joins its transaction.
+ * Failed turns persist only `cause.copy`; `cause.error` remains diagnostic journal data.
+ */
 export async function finalizeExecution(
   deps: {
     repos: Pick<
@@ -180,11 +183,7 @@ export async function finalizeExecution(
         return { result: turn, events: [] };
       }
       const completedAt = toIsoString(new Date());
-      const error =
-        input.cause.kind === "failed"
-          ? (input.cause.publicError ??
-            (typeof input.cause.error === "string" ? input.cause.error : input.cause.error.message))
-          : null;
+      const error = input.cause.kind === "failed" ? input.cause.copy : null;
       const updated: Turn = {
         ...turn,
         ...(turn.role === "assistant" && input.cause.kind === "failed"

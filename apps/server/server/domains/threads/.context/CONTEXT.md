@@ -76,7 +76,9 @@ for the tool-freeze mechanics.
 constructors, and `classifyHistoryItem`, including image-inclusion and compaction
 metadata. `domain/failure-copy.ts` owns the generic writer copy for failed replies,
 handoff briefs, and compactions, and exhaustively maps the pending-placeholder
-role set to those copies. A completed
+role set to those copies. Every failed terminal cause supplies writer copy
+explicitly; `turn.error` stores only that copy while raw causes remain in journal
+diagnostics, logs, and `./mf`. A completed
 compaction's metadata also carries its frozen `elisions` and ordered
 `pinnedRequestTurnIds`; the codec declares `trigger` and
 `controlMessageId`. `CompactionMetadataCodec` accepts either a planned cut or
