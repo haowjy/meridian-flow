@@ -7,6 +7,7 @@
 
 ## [Unreleased]
 
+- Esc in the composer stops a run only when the Stop button shows (empty composer); with a draft it leaves the run and the draft alone.
 - Run settlement transitions in memory; preserve scoped PostgreSQL durability proofs.
 - Catalog runtime control, compaction, handoff, and history probes.
 - Make Retry an ordinary no-input run using normal history and optimistic preparation; a run-start compaction gets a fresh ID while the retried reply keeps the client's ID. Shutdown-interrupted replies settle paid rows, acknowledge adopted messages, and remain retryable before SIGTERM/SIGINT flush and exit.

@@ -123,13 +123,14 @@ end-to-end as one suite.
 
 ## RP-2: Compact waits for the end of the queue
 
-- **Protects:** commands wait until messages are answered; Esc runs the command
+- **Protects:** commands wait until messages are answered; Stop runs the command
   first with its waiting messages pinned (`control-protocol`).
 - **Stack:** mock.
 - **Steps:** after setup, start a delayed reply and wait until streaming. Enqueue
   compact, then send `hi2`. Repeat with `hi1` queued before compact and a second
-  message after it. For the Esc variant on a fresh thread, queue compact and a
-  message during a delayed reply, then use Stop (Esc) before the reply ends.
+  message after it. For the Stop variant on a fresh thread, queue compact and a
+  message during a delayed reply, then use Stop (the Stop button, or Esc in an empty
+  composer) before the reply ends.
 
   ```bash
   ./mf thread send "$T" hi --mock '[{"text":"reply to hi","delayMs":5000}]' --json > "$E/hi.ndjson" & SEND=$!
@@ -140,16 +141,16 @@ end-to-end as one suite.
   wait "$SEND"
   ```
 
-  For the Esc variant, repeat on a fresh compactable thread. Start another
+  For the Stop variant, repeat on a fresh compactable thread. Start another
   delayed reply, wait until streaming, and read its live assistant turn id from
   `thread view --json`, then:
 
   ```bash
-  ./mf thread send "$T" hi --mock '[{"text":"reply to hi","delayMs":5000}]' --json > "$E/esc-hi.ndjson" & SEND=$!
+  ./mf thread send "$T" hi --mock '[{"text":"reply to hi","delayMs":5000}]' --json > "$E/stop-hi.ndjson" & SEND=$!
   ./mf thread view "$T" --json
   # Set RUNNING_TURN_ID from the active assistant in the view.
   compact > "$E/compact.json"
-  ./mf thread send "$T" 'Keep this message after Esc.' --json > "$E/waiting.ndjson" & WAITING=$!
+  ./mf thread send "$T" 'Keep this message after Stop.' --json > "$E/waiting.ndjson" & WAITING=$!
   ./mf thread cancel "$T" --turn "$RUNNING_TURN_ID" --json
   ./mf thread tail "$T" --until-idle --timeout 60s --json
   wait "$WAITING"
@@ -164,7 +165,7 @@ end-to-end as one suite.
   first, the waiting message appears verbatim among C's pinned requests, and
   the message is answered after C. No message is lost or answered twice.
 - **Evidence:** admitted messages, control UUID, final roles and request messages.
-- **Last run:** not recorded for the end-of-queue and Esc variants.
+- **Last run:** not recorded for the end-of-queue and Stop variants.
 
 ## RP-3: Withdraw only before the command starts
 

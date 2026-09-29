@@ -72,7 +72,8 @@ turn.
 ## Writer commands
 
 The only command is `/compact`. It runs only when replies
-finish: at the end of the queue, one per run. Stop (Esc) runs a queued
+finish: at the end of the queue, one per run. Stop (the Stop button, or Esc in
+an empty composer; with a draft, Esc leaves the run alone) runs a queued
 command at once, before the waiting messages, which are answered after it; the
 client just shows the server's state (the reply stops, "Compacting" appears).
 

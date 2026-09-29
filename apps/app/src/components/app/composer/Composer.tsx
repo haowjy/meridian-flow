@@ -105,7 +105,8 @@ export type ComposerProps = {
   onStop?: () => void;
   /**
    * A run is active on this thread (a reply streaming, a compaction, a brief).
-   * Stop replaces an empty Send, Escape stops, and a send queues behind it.
+   * Stop replaces an empty Send, Escape in the empty composer presses it, and a
+   * send queues behind the run.
    */
   running?: boolean;
   placeholder?: string;
@@ -566,6 +567,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     });
   }, [editor]);
 
+  // Escape is the Stop button: it stops only while Stop shows. With a draft it
+  // leaves the run and the draft alone for other Escape owners.
+  const showStop = running && !hasContent;
   const keyDown = (event: React.KeyboardEvent) => {
     if (
       event.target instanceof Element &&
@@ -574,12 +578,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       )
     )
       return;
-    if (event.key === "Escape" && running) {
+    if (event.key === "Escape" && showStop) {
       event.preventDefault();
       onStop?.();
     }
   };
-  const showStop = running && !hasContent;
   return (
     <div
       data-composer=""

@@ -31,7 +31,9 @@ function draft(text: string) {
   };
 }
 
-async function render(props: { running?: boolean; initialDraft?: ReturnType<typeof draft> } = {}) {
+async function render(
+  props: { running?: boolean; initialDraft?: ReturnType<typeof draft>; onStop?: () => void } = {},
+) {
   const onSubmit = vi.fn(
     (envelope: ComposerSubmitEnvelope): ComposerSubmitOutcome => ({
       kind: "accepted",
@@ -41,10 +43,24 @@ async function render(props: { running?: boolean; initialDraft?: ReturnType<type
   );
   await act(() => {
     root.render(
-      <Composer running={props.running} initialDraft={props.initialDraft} onSubmit={onSubmit} />,
+      <Composer
+        running={props.running}
+        initialDraft={props.initialDraft}
+        onStop={props.onStop}
+        onSubmit={onSubmit}
+      />,
     );
   });
   return onSubmit;
+}
+
+const editorElement = () => host.querySelector<HTMLElement>(".composer-input");
+
+async function pressEscape() {
+  await act(async () => {
+    editorElement()?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await Promise.resolve();
+  });
 }
 
 const button = () => host.querySelector<HTMLButtonElement>("[data-composer] button:last-of-type");
@@ -75,5 +91,29 @@ describe("Composer during a live run", () => {
     });
     expect(onSubmit).toHaveBeenCalledOnce();
     expect(button()?.getAttribute("aria-label")).toBe("Stop");
+  });
+
+  it("stops on Escape when the composer is empty, like the Stop button", async () => {
+    const onStop = vi.fn();
+    await render({ running: true, onStop });
+    expect(button()?.getAttribute("aria-label")).toBe("Stop");
+    await pressEscape();
+    expect(onStop).toHaveBeenCalledOnce();
+  });
+
+  it("leaves the run and the draft alone on Escape while drafting", async () => {
+    const onStop = vi.fn();
+    await render({ running: true, initialDraft: draft("Follow up"), onStop });
+    await pressEscape();
+    expect(onStop).not.toHaveBeenCalled();
+    expect(editorElement()?.textContent).toBe("Follow up");
+    expect(button()?.getAttribute("aria-label")).toBe("Send message");
+  });
+
+  it("does not stop on Escape when no run is active", async () => {
+    const onStop = vi.fn();
+    await render({ onStop });
+    await pressEscape();
+    expect(onStop).not.toHaveBeenCalled();
   });
 });
