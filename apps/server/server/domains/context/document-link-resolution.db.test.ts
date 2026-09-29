@@ -89,7 +89,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
       }
     });
-    it("does not search another Work's titles and observes deleted authority", async () => {
+    it("does not search another Work's titles and resolves archived but not deleted authority", async () => {
       const r = resolver();
       const local = await add("scratch", "Gate", a);
       await add("scratch", "Gate", b);
@@ -117,7 +117,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           workId: a,
           target: { kind: "scheme", uri: "scratch://@work-b/Gate.md" },
         }),
-      ).toBeNull();
+      ).toMatchObject({ scheme: "scratch", path: "Gate.md" });
       await database.current.update(works).set({ deletedAt: new Date() }).where(eq(works.id, b));
       expect(
         await r.resolve({
