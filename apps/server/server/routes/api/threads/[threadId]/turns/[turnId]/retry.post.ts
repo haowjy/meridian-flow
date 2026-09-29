@@ -7,7 +7,10 @@ import {
   readBody,
   setResponseStatus,
 } from "nitro/h3";
-import { ReplyRetryUnavailableError } from "../../../../../../domains/runtime/index.js";
+import {
+  ReplyRetryUnavailableError,
+  RuntimeShuttingDownError,
+} from "../../../../../../domains/runtime/index.js";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../../../lib/request-id.js";
 
@@ -29,6 +32,8 @@ export default defineEventHandler(async (event) => {
   } catch (error) {
     if (error instanceof ReplyRetryUnavailableError)
       throw createError({ statusCode: 409, message: error.code });
+    if (error instanceof RuntimeShuttingDownError)
+      throw createError({ statusCode: 503, message: error.message });
     throw error;
   }
 });

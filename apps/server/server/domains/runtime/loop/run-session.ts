@@ -292,8 +292,8 @@ export function createRunSessions(deps: {
         deps.repos.turns.getLatestByThread(input.threadId),
         authority.read(input.threadId),
       ]);
+      if (shutdown.started) throw new RuntimeShuttingDownError(input.threadId);
       if (
-        shutdown.started ||
         running.has(input.threadId) ||
         runState.kind === "awake" ||
         !failedTurn ||

@@ -36,8 +36,8 @@ Every non-control row, including a Work refresh notice, closes the reply prefix
 at a boundary; a notice-only queue still does not start a run.
 
 After a run releases its claim, cleanup refreshes and re-reads the queue through
-`wakeIfRunnable`; this includes a run that found nothing to do, a Retry refusal
-after taking a claim, and a lease cancelled during setup. A failed assistant
+`wakeIfRunnable`; this includes a run that found nothing to do and a lease
+cancelled during setup. A failed assistant
 acknowledges every message it adopted, including on provider error, output-limit
 failure, preparation failure, or a thrown execution error. Failed replies are
 never restarted by release wakes or the periodic sweep. Explicit Retry of the
@@ -52,8 +52,8 @@ exclusive claim holders still use the sweep as their liveness backstop.
 
 `POST /api/threads/:threadId/turns/:turnId/retry` is available only for the
 latest failed assistant reply on an idle primary or subagent thread; eligibility
-is checked before the claim. A repeated client ID returns the same assistant
-turn. See the
+is checked before the claim and its expected leaf is checked again after the
+claim. A repeated client ID returns the same assistant turn. See the
 [reply Retry API](../../../../../../docs/api/thread-reply-retry.md).
 
 The runtime composition owns one `DetachedWorkTracker` shared by run sessions,

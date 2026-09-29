@@ -137,6 +137,17 @@ describe("useReplyRetry", () => {
     expect(latest.refused.has("f")).toBe(false);
   });
 
+  it("drops the new reply with accurate copy when shutdown refuses it", async () => {
+    api.retryReply.mockRejectedValue(new HttpResponseError("runtime_shutting_down", 503, null));
+    await act(async () => latest.retry(failed));
+    expect(latest.standIns).toEqual([]);
+    expect(latest.refused).toEqual(new Set());
+    expect(invalidateQueries).toHaveBeenCalled();
+    expect(announcements.announce).toHaveBeenCalledWith(
+      "Couldn't retry. The server is restarting.",
+    );
+  });
+
   it("keeps a lost request's reply, failed, and its Retry re-sends the same id for the same failed reply", async () => {
     api.retryReply.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     await act(async () => latest.retry(failed));

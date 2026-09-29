@@ -454,6 +454,13 @@ else
       expect(await rig.repos.modelResponses.listByTurn(run.executionTurnId)).toHaveLength(1);
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
       expect(await rig.repos.turns.findById(message.id as never)).toMatchObject({ role: "user" });
+      await expect(
+        rig.orchestrator.retryReply({
+          threadId: rig.threadId,
+          failedTurnId: run.executionTurnId as never,
+          replyTurnId: crypto.randomUUID() as never,
+        }),
+      ).rejects.toThrow("runtime_shutting_down");
       rig.deps.shutdown.started = false;
       const interrupted = await rig.repos.turns.getLatestByThread(rig.threadId);
       if (!interrupted) throw new Error("Shutdown reply was not persisted");

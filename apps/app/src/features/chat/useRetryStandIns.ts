@@ -16,7 +16,7 @@ import { t } from "@lingui/core/macro";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { httpErrorStatus } from "@/client/api/http-client";
+import { HttpResponseError, httpErrorStatus } from "@/client/api/http-client";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announce, announceError } from "@/client/stores";
 import { placeStandIns } from "./retry-stand-ins";
@@ -104,6 +104,12 @@ export function useRetryStandIns(input: {
           refresh();
         },
         (error: unknown) => {
+          if (error instanceof HttpResponseError && error.message === "runtime_shutting_down") {
+            setLocal((current) => current.filter((entry) => entry.turn.id !== id));
+            announce(t`Couldn't retry. The server is restarting.`);
+            refresh();
+            return;
+          }
           if (httpErrorStatus(error) === 409) {
             // Nothing was written: the snapshot shows what holds the chat, and
             // the pressed turn says Retry didn't run.

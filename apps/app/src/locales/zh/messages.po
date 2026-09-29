@@ -1467,6 +1467,10 @@ msgstr ""
 msgid "Couldn't retry. Something else started in this chat first."
 msgstr ""
 
+#: src/features/chat/useRetryStandIns.ts
+msgid "Couldn't retry. The server is restarting."
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't run that skill"
 msgstr ""

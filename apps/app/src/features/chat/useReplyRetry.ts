@@ -4,9 +4,9 @@
  * A failed reply consumes the messages it answered, and nothing retries it in
  * the background. Retry on the latest failed reply shows a new reply working
  * below it at once, under a client-minted id, then asks the server to answer
- * the same messages again (`POST /turns/:turnId/retry`). The failed reply
- * stays in history above it. `useRetryStandIns` owns the stand-in, the
- * refusal note, and the re-send of a lost request.
+ * from the ordinary conversation history (`POST /turns/:turnId/retry`). The
+ * failed reply stays in history above it. `useRetryStandIns` owns the stand-in,
+ * the refusal note, and the re-send of a lost request.
  */
 import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
