@@ -1,7 +1,12 @@
 import { parseRequestId } from "@meridian/contracts/request-id";
 import { describe, expect, it } from "vitest";
 import type { AddressableWork } from "@/client/query/useWorks";
-import { applyContextRepairIfCurrent, openContextRouteSearch, routeWorkId } from "./project-route";
+import {
+  applyContextRepairIfCurrent,
+  openContextRouteSearch,
+  routeWorkId,
+  routeWorkIssue,
+} from "./project-route";
 
 describe("route Work identity", () => {
   it("names the present, creating or unresolved Work, and nothing else", () => {
@@ -21,6 +26,27 @@ describe("route Work identity", () => {
     ).toBe(workId);
     expect(routeWorkId({ status: "none" })).toBeNull();
     expect(routeWorkId({ status: "new" })).toBeNull();
+  });
+});
+
+describe("route Work issue", () => {
+  const workId = parseRequestId("f41144a6-1035-460b-9272-6c4712f3a8b6");
+  if (!workId) throw new Error("Invalid test Work ID");
+  const creating = { status: "creating", workId, name: "Fight scene", goal: null } as const;
+
+  it("loads while a Work is created, and fails instead of loading forever when its create failed", () => {
+    expect(routeWorkIssue({ ...creating, phase: "pending" })).toBe("loading");
+    expect(routeWorkIssue({ ...creating, phase: "failed" })).toBe("error");
+  });
+
+  it("passes an unresolved reason through and has no issue for a present Work", () => {
+    expect(routeWorkIssue({ status: "unresolved", reason: "unavailable", workId: null })).toBe(
+      "unavailable",
+    );
+    expect(routeWorkIssue({ status: "present", workId, work: {} as AddressableWork })).toBe(
+      undefined,
+    );
+    expect(routeWorkIssue({ status: "none" })).toBe(undefined);
   });
 });
 

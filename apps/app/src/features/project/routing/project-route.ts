@@ -3,6 +3,7 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { AddressableWork } from "@/client/query/useWorks";
 import type { ScreenKey } from "../shell/screens";
+import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import type { WorksView, WorkView } from "./project-address";
 
 export type ProjectSearch = {
@@ -58,6 +59,17 @@ export type RouteWorkResolution =
 /** The id of the Work a route addresses, whether it is present, being created, or unresolved. */
 export function routeWorkId(routeWork: RouteWorkResolution): ParsedRequestId | null {
   return "workId" in routeWork ? routeWork.workId : null;
+}
+
+/**
+ * What keeps a route's Work from showing its content yet. A Work being created
+ * is still loading; one whose create failed never arrives, so it is an error.
+ */
+export function routeWorkIssue(
+  routeWork: RouteWorkResolution,
+): Exclude<ProjectRouteIssue, "resource-viewing"> | undefined {
+  if (routeWork.status === "unresolved") return routeWork.reason;
+  if (routeWork.status === "creating") return routeWork.phase === "failed" ? "error" : "loading";
 }
 
 export type NavigationOptions = { replace: boolean };

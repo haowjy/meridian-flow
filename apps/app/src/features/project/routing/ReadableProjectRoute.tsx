@@ -59,18 +59,12 @@ import {
   type ProjectSearch,
   projectSearchEquals,
   type RouteWorkResolution,
+  routeWorkIssue,
 } from "./project-route";
 import { useProjectRouteData } from "./use-project-route-data";
 import { resolveRouteWork, useWorkRoute } from "./work-route";
 
 const NONE: AddressSelection = { kind: "none" };
-/** What keeps a route's Work from showing its content yet; a Work being created is still loading. */
-function issue(
-  routeWork: RouteWorkResolution,
-): Exclude<ProjectRouteIssue, "resource-viewing"> | undefined {
-  if (routeWork.status === "unresolved") return routeWork.reason;
-  if (routeWork.status === "creating") return "loading";
-}
 function screen(destination: ProjectDestination): ScreenKey {
   if (
     destination.kind === "work" ||
@@ -236,7 +230,8 @@ export function ReadableProjectRoute({
   const reportSelection = useCallback(
     ({ editorWorkId: workId }: { editorWorkId: ParsedRequestId | null }) => {
       shown.current = { workId, local: localPointer };
-      if (activeScreen === "context" && !issue(editorWork)) rememberedEditor.current = workId;
+      if (activeScreen === "context" && !routeWorkIssue(editorWork))
+        rememberedEditor.current = workId;
     },
     [activeScreen, editorWork.status],
   );
@@ -251,7 +246,7 @@ export function ReadableProjectRoute({
   const { catalog: addressCatalog } = useContextCatalogView(
     projectId,
     documentDestination?.scheme ?? "manuscript",
-    { workId: null, enabled: !!documentDestination && !issue(routeWork) },
+    { workId: null, enabled: !!documentDestination && !routeWorkIssue(routeWork) },
   );
   const [admission, setAdmission] = useState<AddressAdmission | null>(null);
   const documentLookup = useQuery({
@@ -270,7 +265,7 @@ export function ReadableProjectRoute({
         documentDestination.path,
       );
     },
-    enabled: !!documentDestination && !issue(routeWork),
+    enabled: !!documentDestination && !routeWorkIssue(routeWork),
     staleTime: 0,
     retry: false,
   });
@@ -288,7 +283,7 @@ export function ReadableProjectRoute({
   const documentResult = reconciledDocumentAddress.result;
   const documentIssue: ProjectRouteIssue | undefined = !documentDestination
     ? undefined
-    : (issue(routeWork) ??
+    : (routeWorkIssue(routeWork) ??
       (!documentResult && documentLookup.isError
         ? "error"
         : !documentResult
@@ -309,7 +304,7 @@ export function ReadableProjectRoute({
         : undefined) ??
       (editorWork.status === "present" && editorWork.work.status === "archived"
         ? "unavailable"
-        : issue(editorWork)) ??
+        : routeWorkIssue(editorWork)) ??
       documentIssue ??
       (documentDestination
         ? admission?.href === location.href &&
