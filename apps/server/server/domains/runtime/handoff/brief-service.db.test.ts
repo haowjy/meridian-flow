@@ -3,7 +3,6 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
-import { createDrizzleHandoffBriefClaim } from "../adapters/drizzle-handoff-brief-claim.js";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
 import { createDrizzleThreadLock } from "../adapters/drizzle-thread-lock.js";
 import { createHandoffBriefs } from "./brief-service.js";
@@ -27,6 +26,13 @@ else
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { executionScenario } = await import("../../../test-support/execution-scenario.js");
     const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
+    const { createTestDrizzleDelivery } = await import(
+      "../loop/__tests__/test-drizzle-delivery.js"
+    );
+    const { createWakeIfRunnable } = await import("../loop/wake-if-runnable.js");
+    const { finalizeOrphanedPlaceholders, finalizeOrphanedTurns } = await import(
+      "../loop/orphaned-placeholder.js"
+    );
     const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
     const { handoffSeedMetadata } = await import("../../threads/index.js");
     const databaseUrl = required(url);
@@ -78,9 +84,8 @@ else
         eventWriter: createDrizzleEventJournalWriter(db),
         eventSink: createInMemoryEventSink(),
         threadLock: createDrizzleThreadLock(db),
-        claim: createDrizzleHandoffBriefClaim(db),
         runClaim,
-        runStarter: { async start() {} },
+        async wakeIfRunnable() {},
         billingUsage: { canStartTurn: options.canStartTurn ?? (async () => true) },
         generate:
           options.generate ??
@@ -94,8 +99,25 @@ else
             },
           })),
         async publishStatus() {},
-        schedulePostCommit() {},
+        schedulePostCommit(task) {
+          void task();
+        },
       });
+    }
+
+    async function startBrief(
+      service: ReturnType<typeof createHandoffBriefs>,
+      threadId: string,
+      seedTurnId: string,
+    ) {
+      const claim = await service.hold(threadId as never);
+      if (!claim) return false;
+      service.launchAfterCommit({
+        threadId: threadId as never,
+        seedTurnId: seedTurnId as never,
+        claim,
+      });
+      return true;
     }
 
     it("settles a pending seed without acquiring or mutating the source run", async () => {
@@ -128,7 +150,7 @@ else
         body: { kind: "text", text: "Wait for the handoff brief." },
         idempotencyKey: "queued-during-brief",
       });
-      expect(await inbox.pendingMessageThreads(10)).toEqual([]);
+      expect(await inbox.pendingMessageThreads(10)).toEqual([destination.id]);
       const sourceLease = await runClaim.startExecution(source.id, "source-running");
       const heldSourceLease = required(sourceLease);
       const sourceTurnsBefore = await repos.turns.listByThread(source.id);
@@ -140,7 +162,9 @@ else
       const statusReader = (
         await import("../adapters/drizzle-handoff-status-reader.js")
       ).createDrizzleHandoffStatusReader(db, runClaim);
-      expect(await repos.turns.hasPendingHandoffSeed(destination.id)).toBe(true);
+      expect(await repos.turns.listPendingPlaceholdersForThread(destination.id)).toContainEqual(
+        expect.objectContaining({ id: seed.id, role: "system", status: "pending" }),
+      );
       expect(await statusReader.read(destination.id)).toMatchObject({
         kind: "awake",
         phase: "generating",
@@ -156,12 +180,9 @@ else
         eventWriter,
         eventSink: createInMemoryEventSink(),
         threadLock: createDrizzleThreadLock(db),
-        claim: createDrizzleHandoffBriefClaim(db),
         runClaim,
-        runStarter: {
-          async start(threadId) {
-            if (threadId === destination.id) wakes += 1;
-          },
+        async wakeIfRunnable(threadId) {
+          if (threadId === destination.id) wakes += 1;
         },
         billingUsage: {
           async canStartTurn() {
@@ -187,11 +208,18 @@ else
         },
       });
 
-      expect(await service.sweep()).toBe(1);
+      const briefClaim = required(await service.hold(destination.id));
+      service.launchAfterCommit({
+        threadId: destination.id,
+        seedTurnId: seed.id,
+        claim: briefClaim,
+      });
+      await required(postCommit.shift())();
+      await expect.poll(async () => (await repos.turns.findById(seed.id))?.status).toBe("complete");
       await Promise.all(postCommit.splice(0).map((task) => task()));
 
       expect(await repos.turns.findById(seed.id)).toMatchObject({ status: "complete" });
-      expect(await repos.turns.hasPendingHandoffSeed(destination.id)).toBe(false);
+      expect(await repos.turns.listPendingPlaceholdersForThread(destination.id)).toEqual([]);
       expect(await repos.blocks.listByTurn(seed.id)).toHaveLength(1);
       expect(await statusReader.read(destination.id)).toEqual({ kind: "asleep" });
       expect(await runClaim.holder(destination.id)).toBeNull();
@@ -211,17 +239,139 @@ else
       await runClaim.release(heldSourceLease);
     });
 
+    it("detaches the brief and wakes queued work only after releasing its destination claim", async () => {
+      const fixture = await handoffSeed();
+      const runClaim = createDrizzleRunClaim(db, { holderId: "brief-claim" });
+      const inbox = createDrizzleInbox(db);
+      const starts: string[] = [];
+      const runStarter = {
+        async start(threadId: string) {
+          const claim = await runClaim.hold(threadId as never);
+          if (!claim) return;
+          starts.push(threadId);
+          await claim.release();
+        },
+      };
+      const delivery = createTestDrizzleDelivery(db, {
+        repos: fixture.repos,
+        runClaim,
+        runStarter,
+      });
+      const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter });
+      let markProviderStarted!: () => void;
+      const providerStarted = new Promise<void>((resolve) => {
+        markProviderStarted = resolve;
+      });
+      let releaseProvider!: () => void;
+      const providerGate = new Promise<void>((resolve) => {
+        releaseProvider = resolve;
+      });
+      let markWoke!: () => void;
+      const woke = new Promise<void>((resolve) => {
+        markWoke = resolve;
+      });
+      const postCommit: Array<() => Promise<void>> = [];
+      const service = createHandoffBriefs({
+        repos: fixture.repos,
+        eventWriter: createDrizzleEventJournalWriter(db),
+        eventSink: createInMemoryEventSink(),
+        threadLock: createDrizzleThreadLock(db),
+        runClaim,
+        wakeIfRunnable: async (threadId) => {
+          await wakeIfRunnable(threadId);
+          markWoke();
+        },
+        billingUsage: {
+          async canStartTurn() {
+            return true;
+          },
+        },
+        async generate() {
+          markProviderStarted();
+          await providerGate;
+          return {
+            outcome: {
+              kind: "complete",
+              text: "Brief ready.",
+              model: "test-model",
+              modelResponses: [],
+              summarizer: { path: "branch", segments: 1 },
+            },
+          };
+        },
+        async publishStatus() {},
+        schedulePostCommit(task) {
+          postCommit.push(task);
+        },
+      });
+      const claim = required(await service.hold(fixture.destination.id));
+      service.launchAfterCommit({
+        threadId: fixture.destination.id,
+        seedTurnId: fixture.seed.id,
+        claim,
+      });
+
+      const launchPostCommit = required(postCommit.shift());
+      await launchPostCommit();
+      await providerStarted;
+      expect(await runClaim.startExecution(fixture.destination.id, "racing-run")).toBeNull();
+      const queued = await inbox.enqueue({
+        threadId: fixture.destination.id,
+        intent: "message",
+        provenance: { kind: "writer", actorId: fixture.ids.user },
+        body: { kind: "text", text: "After the brief." },
+        idempotencyKey: "during-brief",
+      });
+      expect(await runClaim.startExecution(fixture.destination.id, "racing-wake")).toBeNull();
+
+      releaseProvider();
+      await woke;
+
+      expect(starts).toEqual([fixture.destination.id]);
+      expect(await fixture.repos.turns.findById(fixture.seed.id)).toMatchObject({
+        status: "complete",
+      });
+      expect(await inbox.selectPending(fixture.destination.id)).toMatchObject([{ id: queued.id }]);
+      const idleClaim = await runClaim.hold(fixture.destination.id);
+      expect(idleClaim).not.toBeNull();
+      await idleClaim?.release();
+    });
+
     it("gates Retry on the live destination run and appends idempotently after Stop", async () => {
       const fixture = await handoffSeed();
       const runClaim = createDrizzleRunClaim(db, { holderId: "retry-run" });
-      const service = serviceFor(fixture.repos, runClaim);
+      let markProviderStarted!: () => void;
+      const providerStarted = new Promise<void>((resolve) => {
+        markProviderStarted = resolve;
+      });
+      let releaseProvider!: () => void;
+      const providerGate = new Promise<void>((resolve) => {
+        releaseProvider = resolve;
+      });
+      const service = serviceFor(fixture.repos, runClaim, {
+        async generate() {
+          markProviderStarted();
+          await providerGate;
+          return {
+            outcome: {
+              kind: "complete",
+              text: "Retry brief.",
+              model: "test-model",
+              modelResponses: [],
+              summarizer: { path: "branch", segments: 1 },
+            },
+          };
+        },
+      });
       const retryId = crypto.randomUUID();
 
+      const heldBrief = required(await service.hold(fixture.destination.id));
       await expect(
         service.retry({ threadId: fixture.destination.id, seedId: retryId }),
       ).rejects.toMatchObject({
         code: "handoff_retry_unavailable",
       });
+      await heldBrief.release();
       expect(await service.stop(fixture.destination.id, fixture.seed.id)).toBe(true);
       const liveReply = await runClaim.startExecution(fixture.destination.id, "destination-reply");
       const heldLiveReply = required(liveReply);
@@ -243,15 +393,15 @@ else
           sourceRef: fixture.source.ref,
           sourceTitle: fixture.source.title,
           cutoffTurnId: fixture.cutoff.id,
-          launches: 0,
         },
       });
-      await expect(
-        service.retry({ threadId: fixture.destination.id, seedId: retryId }),
-      ).resolves.toEqual({
-        turn: retried.turn,
-        created: false,
-      });
+      await providerStarted;
+      const replay = await service.retry({ threadId: fixture.destination.id, seedId: retryId });
+      expect(replay).toMatchObject({ created: false, turn: { id: retried.turn.id } });
+      releaseProvider();
+      await expect
+        .poll(async () => (await fixture.repos.turns.findById(retryId))?.status)
+        .toBe("complete");
       await expect(
         service.retry({ threadId: fixture.destination.id, seedId: fixture.cutoff.id }),
       ).rejects.toMatchObject({ code: "seed_id_conflict" });
@@ -270,11 +420,13 @@ else
         generate,
       });
 
-      await service.launch(fixture.seed.id);
-
+      expect(await startBrief(service, fixture.destination.id, fixture.seed.id)).toBe(true);
+      await expect
+        .poll(async () => (await fixture.repos.turns.findById(fixture.seed.id))?.status)
+        .toBe("error");
       expect(await fixture.repos.turns.findById(fixture.seed.id)).toMatchObject({
         status: "error",
-        metadata: { launches: 1, reason: "credits_exhausted", phase: "launch" },
+        metadata: { reason: "credits_exhausted", phase: "launch" },
       });
     });
 
@@ -307,12 +459,14 @@ else
       const first = serviceFor(fixture.repos, runClaim, { generate });
       const second = serviceFor(fixture.repos, runClaim, { generate });
 
-      const launching = first.launch(fixture.seed.id);
+      expect(await startBrief(first, fixture.destination.id, fixture.seed.id)).toBe(true);
       await providerStarted;
-      await second.launch(fixture.seed.id);
+      expect(await startBrief(second, fixture.destination.id, fixture.seed.id)).toBe(false);
       expect(providerCalls).toBe(1);
       release();
-      await launching;
+      await expect
+        .poll(async () => (await fixture.repos.turns.findById(fixture.seed.id))?.status)
+        .toBe("complete");
 
       expect(await fixture.repos.turns.findById(fixture.seed.id)).toMatchObject({
         status: "complete",
@@ -346,11 +500,13 @@ else
         },
       });
 
-      const launching = service.launch(fixture.seed.id);
+      expect(await startBrief(service, fixture.destination.id, fixture.seed.id)).toBe(true);
       await providerStarted;
       expect(await service.stop(fixture.destination.id, fixture.seed.id)).toBe(true);
       release();
-      await launching;
+      await expect
+        .poll(async () => (await fixture.repos.turns.findById(fixture.seed.id))?.status)
+        .toBe("cancelled");
 
       expect(await fixture.repos.turns.findById(fixture.seed.id)).toMatchObject({
         status: "cancelled",
@@ -360,26 +516,60 @@ else
       ]);
     });
 
-    it("retries the same good outcome after one settlement transaction failure", async () => {
+    it("leaves a pending seed for repair after its ending transaction fails", async () => {
       const fixture = await handoffSeed();
-      const runClaim = createDrizzleRunClaim(db, { holderId: "settlement-retry" });
+      const runClaim = createDrizzleRunClaim(db, { holderId: "settlement-failure" });
       let transactionCalls = 0;
       const flakyRepos = {
         ...fixture.repos,
-        async transaction<T>(operation: () => Promise<T>): Promise<T> {
+        async transaction<T>(_operation: () => Promise<T>): Promise<T> {
           transactionCalls += 1;
-          if (transactionCalls === 1) throw new Error("temporary commit failure");
-          return fixture.repos.transaction(operation);
+          throw new Error("ending commit failure");
         },
       };
       const service = serviceFor(fixture.repos, runClaim, { repos: flakyRepos });
 
-      await service.launch(fixture.seed.id);
+      expect(await startBrief(service, fixture.destination.id, fixture.seed.id)).toBe(true);
+      await expect.poll(async () => transactionCalls).toBe(1);
+      await expect.poll(async () => await runClaim.holder(fixture.destination.id)).toBeNull();
 
-      expect(transactionCalls).toBeGreaterThan(1);
       expect(await fixture.repos.turns.findById(fixture.seed.id)).toMatchObject({
-        status: "complete",
+        status: "pending",
       });
-      expect(await fixture.repos.blocks.listByTurn(fixture.seed.id)).toHaveLength(1);
+      expect(await fixture.repos.blocks.listByTurn(fixture.seed.id)).toHaveLength(0);
+    });
+
+    it.each([
+      "run-start",
+      "placeholder-sweep",
+    ] as const)("repairs a crashed handoff seed through %s with its card and status refresh", async (repairPath) => {
+      const fixture = await handoffSeed();
+      let statusPublishes = 0;
+      const repairDeps = {
+        repos: fixture.repos,
+        eventWriter: createDrizzleEventJournalWriter(db),
+        async publishStatus(threadId: string) {
+          expect(threadId).toBe(fixture.destination.id);
+          statusPublishes += 1;
+        },
+      };
+
+      const reports =
+        repairPath === "run-start"
+          ? await finalizeOrphanedTurns(repairDeps, { threadId: fixture.destination.id })
+          : await finalizeOrphanedPlaceholders(repairDeps, { threadId: fixture.destination.id });
+      const seed = await fixture.repos.turns.findById(fixture.seed.id);
+
+      expect(reports).toEqual([]);
+      expect(seed).toMatchObject({
+        role: "system",
+        status: "error",
+        error: "This handoff brief was interrupted.",
+        metadata: { reason: "interrupted", phase: "recovery" },
+      });
+      expect(await fixture.repos.blocks.listByTurn(fixture.seed.id)).toMatchObject([
+        { content: { kind: "handoff-brief", props: { state: "unavailable" } } },
+      ]);
+      expect(statusPublishes).toBe(1);
     });
   });
