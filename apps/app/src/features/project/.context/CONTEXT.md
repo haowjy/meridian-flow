@@ -481,7 +481,12 @@ stay in the center on Chat, and in the dock on Work or Editor.
 
 Chat switching lives in `features/chat/ThreadSwitcherPopover`; it filters by
 chat title, groups chats by Work when meaningful, and delegates actual
-navigation to the route owner. The route resolves current chat by exact identity,
+navigation to the route owner. The switcher is the resting state of
+`ChatThreadTitle`, which renames through `TitleEditSlot` like the Work and
+project titles. It renders no wrapper: the host header (`PaneHeader`,
+`DockHeader`, the phone chat sheet header, the phone top bar) is the refusal's
+positioned ancestor and places it with `failureClassName`. A chat's title
+changing is not navigation; only a new thread id focuses the composer. The route resolves current chat by exact identity,
 including subagents. `ProjectView` uses a primary-list lookup only for the Work
 projection passed to context hydration, Draft Review, and headers; that lookup
 never chooses or rejects the chat body identity. Descendants must not re-derive
