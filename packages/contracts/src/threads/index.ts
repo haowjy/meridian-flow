@@ -158,7 +158,7 @@ export type ThreadActivity = {
 export type MessageIntent = "message" | "notice" | "control";
 
 /** Runtime commands take their transcript position at execution, not enqueue. */
-export type ControlBody = { kind: "compact" };
+export type ControlBody = { kind: "compact"; instructions?: string };
 export type EnqueueThreadControlRequest = { id: string; control: ControlBody };
 export type EnqueueThreadControlResponse = {
   id: string;
