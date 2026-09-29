@@ -75,6 +75,8 @@ export function createOrphanReportRepair(deps: {
             error: "Child execution stopped before terminal completion",
           },
         });
+        if (terminal.role === "assistant")
+          await deps.retireOrphanedReply?.(childThreadId, terminal.id);
         if (completion.report)
           reportsToPublish.set(completion.report.executionTurnId, completion.report);
       });

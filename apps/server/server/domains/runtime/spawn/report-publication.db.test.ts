@@ -604,6 +604,58 @@ else
       expect((await repos.turns.findById(ids.execution))?.status).toBe("error");
     });
 
+    it("retires a crashed child's adopted parent message after publishing one failure report", async () => {
+      const adopted = await delivery.enqueue({
+        threadId: ids.child,
+        intent: "message",
+        provenance: { kind: "agent", threadId: ids.caller },
+        body: { kind: "text", text: "Review this scene." },
+        idempotencyKey: "crashed-child-adopted-parent-message",
+      });
+      await db.insert(schema.threadRunLeases).values({
+        threadId: ids.child,
+        runId: "dead-child-run",
+        turnId: ids.execution,
+        boundTurnIds: [ids.execution],
+        adoptedMessageIds: [adopted.id],
+        holderId: "dead-worker",
+        phase: "generating",
+        expiresAt: new Date(0),
+      });
+      const authority = createDrizzleRunClaim(db, { holderId: "child-crash-repair" });
+      const repair = createOrphanReportRepair({
+        inbox,
+        repos,
+        eventWriter,
+        authority,
+        threadLock,
+        publisher,
+        eventSink,
+        retireOrphanedReply: delivery.retireOrphanedReply,
+      });
+
+      expect(await repair.sweep(10)).toBeGreaterThanOrEqual(1);
+      expect(await repos.turns.findById(ids.execution)).toMatchObject({
+        status: "error",
+        error: "Child execution stopped before terminal completion",
+      });
+      expect(await inbox.selectPending(ids.child)).toEqual([]);
+      expect(await db.select().from(schema.threadRunLeases)).toMatchObject([
+        { threadId: ids.child, turnId: null, boundTurnIds: [], adoptedMessageIds: [] },
+      ]);
+      expect(
+        (await journalEventsByThread(db, ids.caller)).filter(
+          (event) => event.eventType === "agent.run_completed",
+        ),
+      ).toHaveLength(1);
+      expect(await repair.sweep(10)).toBe(0);
+      expect(
+        (await journalEventsByThread(db, ids.caller)).filter(
+          (event) => event.eventType === "agent.run_completed",
+        ),
+      ).toHaveLength(1);
+    });
+
     it("repairs indexed pending placeholders for primary and child threads, then publishes the child report", async () => {
       eventSink.clear();
       const primaryC = await repos.turns.create({

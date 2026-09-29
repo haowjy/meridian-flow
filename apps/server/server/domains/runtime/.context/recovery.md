@@ -19,7 +19,9 @@ Run repair holds the destination thread lock and run claim. Expired lease rows
 alone do not prove death. Once the session claim proves the prior owner is gone,
 the replacement lease retains the dead reply's turn and adopted-message IDs.
 Repair finalizes that reply and atomically retires and acknowledges its exact
-receipt. Late messages that the dead run never adopted stay queued.
+receipt, whether the reply belongs to a primary or child thread. Late messages
+that the dead run never adopted stay queued, and a crashed child publishes one
+failure report without starting again for the retired parent message.
 
 A reply that reaches a durable failed terminal state, including through orphan
 repair, acknowledges every message it adopted and is never restarted by the
