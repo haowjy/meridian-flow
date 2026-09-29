@@ -381,7 +381,7 @@ describe("inbox drain", () => {
     await execute(queued);
   });
 
-  it("persists a request-only notice as a durable system_update turn", async () => {
+  it("persists a pending notice with a direct writer message", async () => {
     const { thread, inbox, requests, orchestrator, repos } = await setup();
     await inbox.enqueue(notice("work context note", thread.id));
 
@@ -389,12 +389,10 @@ describe("inbox drain", () => {
 
     const texts = messageTexts(requests[0].messages);
     expect(texts.some((text) => text.includes("work context note"))).toBe(true);
-    // The run's own user + assistant turns, plus a durable notices turn so the
-    // notice reproduces identically on a later request instead of vanishing.
-    // A notice (like a Work refresh) splits the run: the original empty
-    // assistant turn completes and a fresh one continues after the notice.
+    // Notices alone do not start a run, but a direct writer message makes this
+    // run runnable and adopts the notice durably before its single reply.
     const turns = await repos.turns.listByThread(thread.id);
-    expect(turns).toHaveLength(4);
+    expect(turns.map((turn) => turn.role)).toEqual(["user", "system", "assistant"]);
     const noticesTurn = turns.find((turn) => {
       const metadata = SystemUpdateMetadataCodec.safeParse(turn.metadata);
       return metadata.success && metadata.data.section === "notices";

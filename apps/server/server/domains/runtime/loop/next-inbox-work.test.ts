@@ -17,6 +17,11 @@ function row(input: Pick<InboxMessage, "id" | "intent" | "body"> & { runsFirst?:
 
 const message = row({ id: "message", intent: "message", body: { kind: "text", text: "hello" } });
 const compact = row({ id: "compact", intent: "control", body: { kind: "compact" } });
+const notice = row({
+  id: "notice",
+  intent: "notice",
+  body: { kind: "context", parts: [{ source: "work", text: "work context note" }] },
+});
 
 describe("next inbox work", () => {
   it("serves messages at a boundary and leaves controls for a run start", () => {
@@ -49,20 +54,23 @@ describe("next inbox work", () => {
   });
 
   it("does not wake for a Work refresh notice alone", () => {
-    const notice = row({
+    const workRefresh = row({
       id: "notice",
       intent: "notice",
       body: { kind: "work_context_refresh" },
     });
+    expect(next([workRefresh], "run_start")).toEqual({ kind: "none" });
+  });
+
+  it("adopts pending notices when a direct writer message starts the run", () => {
     expect(next([notice], "run_start")).toEqual({ kind: "none" });
+    expect(next([notice, message], "run_start")).toEqual({
+      kind: "messages",
+      rows: [notice, message],
+    });
   });
 
   it("co-adopts non-message notices with a runnable command", () => {
-    const notice = row({
-      id: "notice",
-      intent: "notice",
-      body: { kind: "work_context_refresh" },
-    });
     expect(next([compact, notice], "run_start")).toEqual({
       kind: "control",
       control: compact,
