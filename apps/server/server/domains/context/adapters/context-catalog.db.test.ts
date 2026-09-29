@@ -539,7 +539,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("returns the same @/ scratch and uploads for none and No Work id", async () => {
+    it("returns canonical Work files until the Work is deleted", async () => {
       const db = database.current;
       const NO_WORK = "00000000-0000-4000-8000-000000000808";
       const NAMED = "00000000-0000-4000-8000-000000000809";
@@ -610,6 +610,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
         "scratch://@draft/arc.md",
       ]);
+
+      await db
+        .update(works)
+        .set({ status: "archived", archivedAt: new Date() })
+        .where(eq(works.id, NAMED));
+      expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
+        "scratch://@draft/arc.md",
+      ]);
+
+      await db.update(works).set({ deletedAt: new Date() }).where(eq(works.id, NAMED));
+      expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([]);
 
       await expect(
         createDrizzleDocumentAddressStore(db).candidate({

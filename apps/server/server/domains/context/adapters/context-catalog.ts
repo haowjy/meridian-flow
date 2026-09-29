@@ -166,19 +166,18 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
       .limit(1);
     if (!activeProject) return [];
     if (scope.kind === "work") {
-      const [activeWork] = await db
+      const [visibleWork] = await db
         .select({ id: works.id })
         .from(works)
         .where(
           and(
             eq(works.id, scope.workId),
             eq(works.projectId, scope.projectId),
-            eq(works.status, "active"),
             isNull(works.deletedAt),
           ),
         )
         .limit(1);
-      if (!activeWork) return [];
+      if (!visibleWork) return [];
     }
   }
   const sourceRows = await sourcesForScope(db, scope);
