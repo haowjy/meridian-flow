@@ -42,14 +42,26 @@ reread does not start a run. A real setup error skips the reread to avoid a hot
 loop. Short exclusive claim holders still use the sweep as their liveness
 backstop.
 
-`OrchestratorDeps` is fully required: gateway, repos, retained Agent revision
-reader, tool registry/executor, project preferences, credit ledger, the
+The runtime composition owns one `DetachedWorkTracker` shared by run sessions,
+delivery callbacks, background child completion, and handoff briefs. Cleanup
+wakes, detached drain execution, lease-renewal I/O, brief launches/polls, and
+post-commit runtime work register with it. `drain()` waits for tracked work and
+work registered before the tracker becomes quiescent. App shutdown tells the
+brief service to abort with the `shutdown` reason, then performs one bounded
+drain; DB test fixture resets drain the shared test tracker before locking and
+deleting tables. A released brief claim does not wake its destination once
+shutdown has begun.
+
+`OrchestratorDeps` requires the runtime ports: gateway, repos, retained Agent
+revision reader, tool registry/executor, project preferences, credit ledger, the
 `RuntimeDelivery` boundary, the `RunClaim`, interrupt artifact flush,
-child-run coordinator, interrupt registry, and `EventSink`. Disabled behavior
-is an explicit adapter (for example a no-op sink), never an omitted dep. Do
-not re-add a global permission gate here; names and per-tool command sets are
-gated per turn from advertised policy ([tools](tools.md)). Provider-specific
-model-call behavior stays behind the gateway port.
+child-run coordinator, interrupt registry, and `EventSink`. `backgroundTasks`
+is injected by the app composition; manually composed runtimes default to the
+shared process tracker. Disabled behavior is an explicit adapter (for example
+a no-op sink), never an omitted dep. Do not re-add a global permission gate
+here; names and per-tool command sets are gated per turn from advertised policy
+([tools](tools.md)). Provider-specific model-call behavior stays behind the
+gateway port.
 
 Handoff brief generation is not a run: the orchestrator only delegates Stop
 for a pending seed to `HandoffBriefs`. Launch, provider calls, seed settlement,

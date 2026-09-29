@@ -23,7 +23,8 @@ release calls the shared `wakeIfRunnable`, which rereads the queue. Messages,
 controls and Work notices therefore remain durable and run after S, without a
 pending-seed gate or a separate brief claim. Retry applies the same rule: an
 idempotent seed lookup first, then `RunClaim.hold`, then create and detached
-launch. A held claim returns 409 `handoff_retry_unavailable`.
+launch. The launch registers with the runtime composition's shared detached
+work tracker. A held claim returns 409 `handoff_retry_unavailable`.
 
 ## Seed lifecycle
 
@@ -49,7 +50,9 @@ that notices claim loss after repair settles S. Claim loss and shutdown are
 distinct aborts: only Stop settles cancelled; the others settle available paid
 rows while leaving S pending so repair can record it as interrupted. A failed
 source preparation or summary attempt is final and can be retried by the writer
-with a new S.
+with a new S. Shutdown starts by aborting live briefs with reason `shutdown`;
+the shared runtime drain waits for their settlement and claim release. Their
+release does not wake the destination after shutdown starts.
 
 ## Read models and recovery
 
