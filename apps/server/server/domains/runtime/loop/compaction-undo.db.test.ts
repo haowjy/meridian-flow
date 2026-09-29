@@ -4,6 +4,7 @@ import type { ControlBody, Turn } from "@meridian/contracts/threads";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
+import { estimateRequestTokens } from "./compaction/estimate.js";
 
 const url = process.env.DATABASE_URL;
 if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? ""))
@@ -686,7 +687,7 @@ else
         ),
       ).toBeNull();
     });
-    it("C6b an oversized reply does not overwrite an undo refusal", async () => {
+    it("C6b an above-trigger reply leaves the undo refusal intact", async () => {
       const rig = await fixture();
       const c = await compact(rig);
       rig.setThreshold(100);
@@ -700,11 +701,21 @@ else
       rig.setThreshold(2500);
       await (await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true })).execute();
       const turns = await rig.repos.turns.listByThread(rig.threadId);
+      const request = rig.gateway.requests.at(-1);
+      if (!request) throw new Error("Missing reply request");
+      const requestTokens = estimateRequestTokens({
+        request,
+        baseline: null,
+        tokenizer: "o200k",
+      });
+      expect(requestTokens).toBeGreaterThan(2500);
+      expect(requestTokens).toBeLessThan(127900);
       expect(marker(turns)).toMatchObject({
         status: "error",
         error: "Undo would make this conversation compact again immediately.",
         metadata: { reason: "would_recompact" },
       });
-      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "error" });
+      expect(turns.filter((turn) => turn.role === "compaction")).toHaveLength(1);
+      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
     });
   });
