@@ -913,6 +913,7 @@ else
             const current = await rig.runClaim.readRunningTurnId(rig.threadId);
             if (!current) throw new Error("Missing current summary");
             await rig.orchestrator.cancel(rig.threadId, current);
+            rig.orchestrator.beginShutdown();
             return;
           }
           yield {
@@ -980,6 +981,11 @@ else
         (row) => row.usageEventId === rows[0].id,
       );
       expect(debits).toHaveLength(1);
+      if (ending === "cancelled") {
+        expect(await rig.inbox.selectPending(rig.threadId)).toHaveLength(1);
+        await expect(processDetachedWork.drain(1_000)).resolves.toBe(true);
+        expect(processDetachedWork.pendingTasks).toEqual([]);
+      }
     });
 
     it("includes every cold segment response in a child report's cost", async () => {
@@ -1979,6 +1985,7 @@ else
           throw new Error("successor commit failed");
         }
         await rig.orchestrator.cancel(rig.threadId, input.currentTurn.id);
+        rig.orchestrator.beginShutdown();
         return split(input);
       };
       const run = await rig.orchestrator.prepare({
@@ -1995,7 +2002,8 @@ else
       expect(BigInt(rows[0].millicredits ?? "0")).toBeGreaterThan(0n);
       const debits = await db.select().from(schema.creditTransactions);
       expect(debits.filter((row) => row.usageEventId === rows[0].id)).toHaveLength(1);
-      expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
+      expect(await rig.inbox.selectPending(rig.threadId)).toHaveLength(1);
+      await expect(processDetachedWork.drain(1_000)).resolves.toBe(true);
     });
 
     it.each([
@@ -2026,6 +2034,10 @@ else
       let commits = 0;
       rig.delivery.splitAndContinue = async () => {
         commits++;
+        if (commits === 2) {
+          // Leave the failed input queued for recovery without rerunning this failed adapter.
+          rig.deps.shutdown.started = true;
+        }
         throw new Error("database unavailable");
       };
       const read = rig.runClaim.read;
