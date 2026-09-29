@@ -74,7 +74,7 @@ overflow (a provider context-window failure, below).
 Manual decisions fit against the usable window; their tail budget base is
 `min(trigger, tokensBefore)`. Automatic and overflow decisions use their fit
 limit as the tail budget base. Pins preserve unanswered directed requests and
-the newest writer request. Adopted-but-unanswered requests remain pinned; rows behind the command are not adopted by C.
+the newest writer request. Adopted-but-unanswered requests remain pinned. A command starts only after all waiting messages have been adopted by a reply.
 
 A manual decision always plans a cut once the thread has a completed reply. It
 uses the normal retained tail when that leaves history to summarize; otherwise it

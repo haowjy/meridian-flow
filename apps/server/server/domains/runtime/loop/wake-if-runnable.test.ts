@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createWakeIfRunnable } from "./wake-if-runnable.js";
 
 describe("wakeIfRunnable", () => {
-  it("refreshes the queue and starts its plain ordered head", async () => {
+  it("refreshes the queue without starting for a notice alone", async () => {
     const order: string[] = [];
     const wake = createWakeIfRunnable({
       delivery: {
@@ -35,7 +35,7 @@ describe("wakeIfRunnable", () => {
 
     await wake("thread");
 
-    expect(order).toEqual(["refresh", "select", "start"]);
+    expect(order).toEqual(["refresh", "select"]);
   });
 
   it("starts after rereading when the queue has runnable work", async () => {

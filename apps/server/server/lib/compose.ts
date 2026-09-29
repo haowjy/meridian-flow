@@ -874,6 +874,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       agentRevisions: ports.agentRevisions,
       prefixCacheStateFor: createPrefixCacheStateService({ repos: ports.threadRepos })
         .prefixCacheStateFor,
+      modelRequestDebug: ports.modelRequestDebug,
+      toolRegistry,
       config: ports.summarizerConfig,
     }),
     headSeq: (id: ThreadId) => threadEventHub.headSeq(id),

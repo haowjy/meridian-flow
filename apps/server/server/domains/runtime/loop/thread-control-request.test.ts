@@ -27,5 +27,14 @@ describe("thread control request", () => {
         control: { kind: "compact", instructions: "x".repeat(MAX_USER_MESSAGE_TEXT + 1) },
       }).success,
     ).toBe(false);
+    expect(
+      threadControlRequestSchema.safeParse({
+        id,
+        control: {
+          kind: "compact",
+          instructions: ` ${"x".repeat(MAX_USER_MESSAGE_TEXT)} `,
+        },
+      }).success,
+    ).toBe(true);
   });
 });

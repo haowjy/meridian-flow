@@ -4,7 +4,7 @@
  * No transport or React here — the live wiring lives in `usePendingInbox`, so
  * this logic is directly unit-testable.
  */
-import { EventType, type Turn } from "@meridian/contracts/protocol";
+import { EventType } from "@meridian/contracts/protocol";
 import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 
 export const EMPTY_THREAD_PENDING_INBOX: ThreadPendingInbox = { items: [] };
@@ -20,22 +20,6 @@ export function queuedWriterTurnIds(pending: ThreadPendingInbox): ReadonlySet<st
       item.deliveryState === "waiting"
     )
       ids.add(item.id);
-  }
-  return ids;
-}
-
-/**
- * Writer turns the model has not read: queued behind a run, or still sending.
- * Together they are the queue a new command waits at the end of.
- */
-export function unreadWriterTurnIds(
-  turns: readonly Turn[],
-  queued: ReadonlySet<string>,
-): ReadonlySet<string> {
-  const ids = new Set<string>();
-  for (const turn of turns) {
-    if (turn.role === "user" && (turn.status === "pending" || queued.has(turn.id)))
-      ids.add(turn.id);
   }
   return ids;
 }

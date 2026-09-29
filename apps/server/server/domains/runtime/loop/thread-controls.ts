@@ -29,10 +29,12 @@ export function createThreadControls(deps: {
   findControlTurn(threadId: ThreadId, controlId: string): Promise<Turn | null>;
   pending(threadId: ThreadId): Promise<ThreadPendingInbox>;
   acknowledge(threadId: ThreadId, id: string): Promise<void>;
+  effectiveTurns(threadId: ThreadId): Promise<readonly Turn[]>;
 }): ThreadControls {
   return {
     enqueueControl: (input) =>
       deps.withThreadLock(input.threadId, async () => {
+        requireCompletedReplyForCompaction(await deps.effectiveTurns(input.threadId));
         const existing = await deps.findMessage(input.id);
         if (
           existing &&

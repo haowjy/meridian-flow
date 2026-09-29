@@ -14,13 +14,14 @@ Rationale: [One Run Preparation Protocol][kb-run-prep].
 ## Command selection and release wake
 
 `loop/next-inbox-work.ts` owns the pure `next(pending, at)` selector. At a
-reply boundary it selects every non-control row, including Work refresh notices;
-commands never run beside a tool call or at turn close. At run start, a stamped
-command runs first with all selected non-control rows. Otherwise, waiting
-messages run before commands; if none wait, the oldest command runs without a
-message batch. A notice-only queue does not start a run, but a Work refresh
-notice already waiting at a reply boundary still closes that reply's prefix.
-The selector returns at most one command per run.
+reply boundary it selects every non-command row, including rows and Work
+refresh notices after a queued command; commands never run beside a tool call
+or at turn close. At run start, every non-command row runs if any message is
+waiting; otherwise the oldest command runs alone. Messages never wait behind a command.
+A notice-only queue does not start a run, but a Work refresh notice already
+waiting in the selected prefix at a reply boundary still closes that reply's
+prefix. The selector returns at most one command per run. Stop only ends the
+current turn; release then follows the same message-first rule.
 
 After a run releases its claim, `wakeIfRunnable` refreshes pending state and
 uses the same run-start selector as setup. It re-reads after runs that found no

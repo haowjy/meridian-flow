@@ -401,7 +401,7 @@ export function planCompaction(input: PlanCompactionInput): CompactionPlan {
     ),
   );
 
-  if (pinnedRequests.length === 0) {
+  if (!input.minimalTail && pinnedRequests.length === 0) {
     return noCompactionPlan({
       pinnedRequests,
       minimalTailTokens: summaryReserveTokens + fixedOverheadTokens,

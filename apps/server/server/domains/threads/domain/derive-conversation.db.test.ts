@@ -658,6 +658,8 @@ else
         async prefixCacheStateFor() {
           return { state: "warm", reason: "reusable_prefix" };
         },
+        modelRequestDebug: runtime.deps.modelRequestDebug,
+        toolRegistry: runtime.deps.toolRegistry,
         config: { model: model.id, maxOutputTokens: 1_000 },
       });
       const brief = await generateHandoffBrief(

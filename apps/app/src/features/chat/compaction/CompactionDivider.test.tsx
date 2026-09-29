@@ -250,7 +250,6 @@ describe("QueuedControlRows", () => {
     id: "k",
     control: { kind: "compact" },
     status,
-    afterTurnId: null,
   });
 
   it("renders a queued /compact quietly, with Withdraw and no Stop", async () => {

@@ -442,12 +442,11 @@ describe("TurnList failed reply Retry", () => {
 });
 
 describe("TurnList queued commands", () => {
-  const compact = (afterTurnId: string | null) => ({
+  const compact = {
     id: "k",
     control: { kind: "compact" as const, instructions: "Keep the names" },
     status: "queued" as const,
-    afterTurnId,
-  });
+  };
   const rowKinds = () =>
     [...host.querySelectorAll("[data-chat-turn-kind]")].map((row) =>
       row.getAttribute("data-chat-turn-kind") === "queued-controls"
@@ -458,42 +457,31 @@ describe("TurnList queued commands", () => {
   it("ends the transcript when no message waits", async () => {
     await render({
       turns: [turn("c", "compaction", { metadata: { trigger: "manual" } }), turn("u1", "user")],
-      controls: controls({ queued: [compact(null)] }),
+      controls: controls({ queued: [compact] }),
     });
-    expect(seen.queued).toEqual([compact(null)]);
+    expect(seen.queued).toEqual([compact]);
     expect(rowKinds()).toEqual(["compaction", "user", "compact"]);
   });
 
-  it("sits between queued messages in the order they were sent", async () => {
+  it("sits after every queued message, whatever order they were sent in", async () => {
+    // u2 was queued before the command and u3 after it; both run first.
     await render({
       turns: [
         turn("u1", "user"),
         turn("a", "assistant", { status: "streaming" }),
         turn("u2", "user"),
-        turn("u3", "user"),
+        turn("u3", "user", { status: "pending" }),
       ],
-      queuedWriterTurnIds: new Set(["u2", "u3"]),
-      controls: controls({ queued: [compact("u2")] }),
+      queuedWriterTurnIds: new Set(["u2"]),
+      controls: controls({ queued: [compact] }),
     });
-    expect(rowKinds()).toEqual(["user", "assistant", "user", "compact", "user"]);
-  });
-
-  it("leads the queued messages when it was sent before them", async () => {
-    await render({
-      turns: [
-        turn("u1", "user"),
-        turn("a", "assistant", { status: "streaming" }),
-        turn("u2", "user", { status: "pending" }),
-      ],
-      controls: controls({ queued: [compact(null)] }),
-    });
-    expect(rowKinds()).toEqual(["user", "assistant", "compact", "user"]);
+    expect(rowKinds()).toEqual(["user", "assistant", "user", "user", "compact"]);
   });
 
   it("drops a command its divider already names", async () => {
     await render({
       turns: [turn("c", "compaction", { metadata: { trigger: "manual", controlMessageId: "k" } })],
-      controls: controls({ queued: [compact(null)] }),
+      controls: controls({ queued: [compact] }),
     });
     expect(host.querySelector("[data-queued]")).toBeNull();
   });

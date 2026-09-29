@@ -23,14 +23,17 @@ turn carries `metadata.controlMessageId`. Completed controls return their turn
 id. A withdrawn row returns both `pending` and `turnId` null. Its key stays
 retired: retrying enqueue never schedules a withdrawn or completed control.
 
-The inbox follows plain sequence order. At a reply boundary, rows before the first
-command are adopted. At run start, an oldest command runs alone; otherwise the
-same prefix runs. Stop only ends the current turn, so release runs the ordinary
-queue head. A command is acknowledged by the commit that starts it.
+Commands wait until the message queue is empty. At a reply boundary, every
+pending non-command row is adopted, including rows after a command. At run
+start, every non-command row runs when any message is waiting; otherwise the
+oldest command runs alone. Stop only ends the current turn, so release applies
+the same message-first rule. A command is acknowledged by the commit that starts it.
 
-`/compact` requires at least one completed assistant reply; otherwise enqueue
-returns 409 (`compact_requires_completed_reply`). Every accepted manual compact
-produces a summary, including consecutive commands and short histories.
+`/compact` requires at least one completed assistant reply in the effective
+transcript, including inherited fork history; otherwise enqueue returns 409
+(`compact_requires_completed_reply`). The domain checks this while holding the
+thread lock. Every accepted manual compact produces a summary, including
+consecutive commands and short histories.
 
 Invalid bodies return 400 (`invalid_control`). An id belonging to an ordinary
 message, another control kind, or a row in another thread returns 409

@@ -49,7 +49,7 @@ terminal seed's custom block has kind `handoff-brief` and props `state`
 
 Stop uses `POST /api/threads/:threadId/turns/:turnId/cancel` with S's id. It
 settles a pending S directly under the destination lock; it does not cancel a
-destination run. After the brief releases its claim, the ordinary queue head runs. Stop gives no command special priority.
+destination run. After the brief releases its claim, waiting messages run before any queued command. Stop gives no command special priority.
 The brief worker observes remote Stop within its five-second status poll. A
 queued destination message remains available after Stop.
 

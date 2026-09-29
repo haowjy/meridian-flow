@@ -74,26 +74,29 @@ turn.
 
 ## Writer commands
 
-The only command is `/compact`, offered once the chat (or the history a fork
-inherited) has a completed reply. Typing `/compact <instructions>` and sending
+The only command is `/compact`, offered on every chat and always run as the
+command, never sent to the model as a message. A chat with no completed reply
+yet (its own or inherited) is refused by the server with 409
+`compact_requires_completed_reply`; the app does not pre-check, and the refusal
+shows on the command's row as the generic "Couldn't queue the compaction." with
+Retry. Typing `/compact <instructions>` and sending
 runs it with the rest of the draft, trimmed, as `instructions`; choosing it
-from the `/` menu runs it with none. The inbox is one ordered queue: a command
-runs by itself when it reaches the front, after the current reply and anything
-sent before it. Stop (the Stop button, or Esc in an empty composer; with a
-draft, Esc leaves the run alone) only ends the turn; whatever is next runs.
-The client special-cases none of it and just shows the server's state.
+from the `/` menu runs it with none. Commands wait at the end of the queue: a
+running reply adopts queued messages at each tool boundary, and a new run takes
+waiting messages first; a command runs only when no message waits, oldest
+first, one per run. Stop (the Stop button, or Esc in an empty composer; with a
+draft, Esc leaves the run alone) only ends the turn; the same rule picks what
+runs next. The client special-cases none of it and just shows the server's
+state.
 
 `useThreadControls` is the shell over `compaction/thread-controls.ts`. It mints
 the id, shows the item as queued before the network answers, and keeps a
 failed enqueue on the item with Retry under the same id (the server treats a
 repeat as the original). A queued command is a dashed rule, "Compaction
-queued" with Withdraw, and its instructions verbatim under it, at once. It
-renders in the pending inbox's `seq` order among the queued messages:
-`mergeQueuedControls` records the writer message sent just before it
-(`afterTurnId`; a local command records the newest unread writer turn when it
-was sent), and `placeQueuedControls` puts it right after that message while
-the message is still unread, else ahead of the unread messages, else at the
-end. Queued rows have no Stop.
+queued" with Withdraw, and its instructions verbatim under it, at once. Queued
+commands render at the transcript tail, after every queued message whatever
+order they were sent in, oldest first; they take no transcript position until
+they run. Queued rows have no Stop.
 
 Withdraw removes the row at once (focus stays in the transcript when it was
 the last). The server answers `withdrawn`, or `already_started` once a divider

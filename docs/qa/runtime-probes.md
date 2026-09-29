@@ -120,20 +120,20 @@ end-to-end as one suite.
   ordering, settled reply and response rows, ledger debit, empty pending inbox,
   and post-restart Retry result.
 
-## RP-2: Plain queue order
+## RP-2: Commands wait for messages
 
-- **Protects:** `[A][/compact][B]` adopts A before the command barrier, then
-  compacts, then answers B. Natural end and Stop have the same ordering. A
-  command at the head runs alone; withdrawing it exposes B.
+- **Protects:** `[A][/compact][B]` adopts A and B at the next tool boundary,
+  then compacts after the turn. Without another boundary, the next run answers
+  B before compacting. Stop uses the same message-first rule.
 - **Stack:** mock.
-- **Steps:** during a delayed reply, enqueue A, compact, then B. Repeat and Stop
-  the delayed reply. On another run enqueue compact first and Stop. Withdraw a
-  queued compact with B behind it.
-- **Expect:** the request before C contains A but not B; the successor after C
-  contains B. Stop changes only when the active turn ends. The head compact runs
-  immediately after release. Withdrawal lets B run at the next boundary.
-- **Evidence:** pending snapshots in `seq` order, request messages, C metadata,
-  and terminal turns.
+- **Steps:** during a delayed reply, enqueue A, compact, then B and let the model
+  cross a tool boundary. Repeat without a later boundary, and repeat with Stop.
+  Enqueue compact alone and Stop. Withdraw a queued compact while B waits.
+- **Expect:** the tool-boundary request ends with B and C follows the reply. In
+  the other message cases the successor request ends with B and C follows it.
+  Compact alone runs after Stop. Withdrawal leaves the messages unaffected.
+- **Evidence:** pending snapshots, complete request message arrays, C metadata,
+  and durable turn positions proving the chain matches writer-visible order.
 - **Last run:** not recorded for this exact recipe.
 
 ## RP-3: Withdraw only before the command starts

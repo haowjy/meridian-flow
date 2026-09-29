@@ -42,7 +42,7 @@ includes the internal cause. Returned provider response rows and debits settle
 in the same ending transaction as S. If that transaction throws, the claim is
 released and S remains pending for ordinary orphan repair.
 
-Stop settles S as cancelled under the destination lock and aborts a local worker. After release, the ordinary queue head runs. A
+Stop settles S as cancelled under the destination lock and aborts a local worker. After release, waiting messages run before any queued command. A
 remote worker notices within the five-second status poll. A dead
 database session is detected by the session lock only on its next query; while
 the brief is in a provider call, its five-second S status poll is the mechanism

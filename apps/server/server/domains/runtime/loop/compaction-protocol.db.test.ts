@@ -706,6 +706,8 @@ else
         gateway: rig.deps.gateway,
         agentRevisions: rig.deps.agentRevisions,
         prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
+        modelRequestDebug: rig.deps.modelRequestDebug,
+        toolRegistry: rig.deps.toolRegistry,
         config: { model: "gpt-4.1-mini", maxOutputTokens: 100 },
       });
       const realSummarizer = rig.deps.summarizer;
@@ -846,6 +848,8 @@ else
         gateway: rig.deps.gateway,
         agentRevisions: rig.deps.agentRevisions,
         prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
+        modelRequestDebug: rig.deps.modelRequestDebug,
+        toolRegistry: rig.deps.toolRegistry,
         config: { model: "gpt-4.1-mini", maxOutputTokens: 100 },
       });
       const inputs: Parameters<typeof real.summarize>[0][] = [];
@@ -937,6 +941,8 @@ else
         agentRevisions: rig.deps.agentRevisions,
         prefixCacheStateFor: createPrefixCacheStateService({ repos: rig.repos })
           .prefixCacheStateFor,
+        modelRequestDebug: rig.deps.modelRequestDebug,
+        toolRegistry: rig.deps.toolRegistry,
         config: { model: "disabled-cheap-model", maxOutputTokens: 100 },
       });
       const run = await rig.orchestrator.prepare({
@@ -1032,6 +1038,8 @@ else
         gateway: rig.deps.gateway,
         agentRevisions: rig.deps.agentRevisions,
         prefixCacheStateFor: async () => ({ state: "cold", reason: "ttl_expired" }),
+        modelRequestDebug: rig.deps.modelRequestDebug,
+        toolRegistry: rig.deps.toolRegistry,
         config: { model: model.id, maxOutputTokens: 100 },
       });
 

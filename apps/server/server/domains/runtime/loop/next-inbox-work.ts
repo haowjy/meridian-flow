@@ -14,10 +14,14 @@ export function next(
   pending: readonly InboxMessage[],
   at: "run_start" | "boundary",
 ): InboxWorkSelection {
-  const firstControl = pending.findIndex((row) => row.intent === "control");
-  const prefix = pending.slice(0, firstControl < 0 ? pending.length : firstControl);
-  if (prefix.length > 0) return { kind: "batch", rows: [...prefix] };
-  if (at === "boundary" || firstControl < 0) return { kind: "none" };
-  const control = pending[firstControl] as ControlMessage;
-  return { kind: "control", control, rows: [] };
+  const rows = pending.filter((row) => row.intent !== "control");
+  if (at === "boundary") return rows.length > 0 ? { kind: "batch", rows } : { kind: "none" };
+
+  if (pending.some((row) => row.intent === "message")) return { kind: "batch", rows };
+  const control = pending.find(isControl);
+  return control ? { kind: "control", control, rows: [] } : { kind: "none" };
+}
+
+function isControl(row: InboxMessage): row is ControlMessage {
+  return row.intent === "control";
 }
