@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { integer, pgSchema } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { processDetachedWork } from "../domains/runtime/detached-work.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -222,6 +223,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       } finally {
         await deleteDrizzleRows(db, [users]);
       }
+    });
+
+    it("drains shared detached work before clearing fixture rows", async () => {
+      let finishTask!: () => void;
+      const pendingTask = new Promise<void>((resolve) => {
+        finishTask = resolve;
+      });
+      processDetachedWork.track(pendingTask);
+
+      let resetFinished = false;
+      const reset = deleteDrizzleRows(db, [users]).then(() => {
+        resetFinished = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(resetFinished).toBe(false);
+
+      finishTask();
+      await reset;
+      expect(resetFinished).toBe(true);
     });
 
     it("deletes the transitive diamond closure without deleting unrelated tables", async () => {

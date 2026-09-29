@@ -30,6 +30,7 @@ import {
   createInMemoryThreadLock,
 } from "../../adapters/in-memory/loop-ports.js";
 import { createWriterTurnProducer } from "../../admission/writer-turn-producer.js";
+import { processDetachedWork } from "../../detached-work.js";
 import type { Gateway, StreamEvent } from "../../gateway/index.js";
 import { createInMemoryModelRequestDebugStore } from "../../model-request-debug/index.js";
 import type { ChildRunCoordinator } from "../../spawn/child-run-coordinator.js";
@@ -53,7 +54,7 @@ function noopChildRunCoordinator(): ChildRunCoordinator {
 }
 
 export function createRuntimeHarness(
-  overrides: Partial<OrchestratorDeps> & {
+  overrides: Omit<Partial<OrchestratorDeps>, "backgroundTasks"> & {
     repos?: ThreadRepositories;
     inbox?: import("../../adapters/runtime-delivery.js").DeliveryStore;
     threadLock?: import("../thread-lock.js").ThreadLock;
@@ -201,6 +202,7 @@ export function createRuntimeHarness(
       async rollbackResponse() {},
     },
     ...dependencies,
+    backgroundTasks: processDetachedWork,
     workContext,
   };
   let runtime: ReturnType<typeof createOrchestrator>;
@@ -279,7 +281,10 @@ export function createRuntimeHarness(
 
 /** Seed ownership and credits around the same composition, with optional real gateway. */
 export async function runtimeScenario(
-  options: Omit<Partial<OrchestratorDeps>, "repos" | "eventWriter" | "headSeq"> & {
+  options: Omit<
+    Partial<OrchestratorDeps>,
+    "backgroundTasks" | "repos" | "eventWriter" | "headSeq"
+  > & {
     gateway: Gateway;
     userId?: string;
     projectTitle?: string;
