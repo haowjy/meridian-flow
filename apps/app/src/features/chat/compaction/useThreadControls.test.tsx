@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** `/compact` and Undo dispatch: optimistic at once, retried with the same id, withdrawn in place. */
+/** `/compact` and Undo dispatch: optimistic at once, retried with the same id, withdrawn at once. */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@lingui/core/macro", () => ({
@@ -79,7 +79,9 @@ describe("useThreadControls", () => {
       control: { kind: "compact" },
     });
     expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
-    expect(announcements.announce).toHaveBeenCalledWith("Compaction queued");
+    expect(announcements.announce).toHaveBeenCalledWith(
+      "Compaction queued. Runs when replies finish.",
+    );
     await act(async () => response.resolve({ id, pending: null, turnId: "c" }));
     expect(latest.queued).toEqual([]);
     expect(invalidateQueries).toHaveBeenCalled();
@@ -103,7 +105,7 @@ describe("useThreadControls", () => {
     expect(latest.queued[0]?.status).toBe("queued");
   });
 
-  it("waits for an in-flight enqueue before withdrawing, then lands the outcome", async () => {
+  it("removes the row at once, and withdraws once the in-flight enqueue lands", async () => {
     const enqueued = deferred<unknown>();
     api.enqueueThreadControl.mockReturnValue(enqueued.promise);
     api.withdrawThreadControl.mockResolvedValue({ outcome: "withdrawn" });
@@ -115,8 +117,8 @@ describe("useThreadControls", () => {
     if (!queued) throw new Error("expected a queued control");
     await act(async () => latest.withdraw(queued));
     expect(api.withdrawThreadControl).not.toHaveBeenCalled();
-    expect(latest.queued[0]?.status).toBe("withdrawing");
-    expect(announcements.announce).toHaveBeenLastCalledWith("Withdrawing compaction");
+    expect(latest.queued).toEqual([]);
+    expect(announcements.announce).toHaveBeenLastCalledWith("Compaction withdrawn");
     await act(async () =>
       enqueued.resolve({
         id,
@@ -134,11 +136,30 @@ describe("useThreadControls", () => {
       }),
     );
     expect(api.withdrawThreadControl).toHaveBeenCalledWith("thread-1", id);
-    expect(latest.queued[0]?.status).toBe("withdrawn");
-    expect(announcements.announce).toHaveBeenLastCalledWith("Compaction withdrawn");
-    // The outcome stays until the transcript moves on.
-    await act(async () => root.render(<Probe leaf="leaf-2" />));
     expect(latest.queued).toEqual([]);
+  });
+
+  it("brings the row back when the withdrawal fails", async () => {
+    api.withdrawThreadControl.mockRejectedValue(new Error("offline"));
+    const queued = { id: "k", control: { kind: "compact" }, status: "queued" } as const;
+    const inbox: ThreadPendingInbox = {
+      items: [
+        {
+          id: "k",
+          seq: 1,
+          intent: "control",
+          control: { kind: "compact" },
+          provenance: { kind: "writer", actorId: "w" },
+          deliveryState: "awaiting_run",
+          summary: "Compact conversation",
+          enqueuedAt: "2026-09-28T00:00:00.000Z",
+        },
+      ],
+    };
+    await act(async () => root.render(<Probe pending={inbox} />));
+    await act(async () => latest.withdraw(queued));
+    expect(latest.queued).toEqual([{ ...queued, status: "withdraw_failed" }]);
+    expect(announcements.announceError).toHaveBeenCalledWith("Couldn't withdraw. Try again.");
   });
 
   it("queues Undo for a divider", async () => {
@@ -150,7 +171,7 @@ describe("useThreadControls", () => {
       control: { kind: "compaction_undo", compactionTurnId: "c" },
       status: "queued",
     });
-    expect(announcements.announce).toHaveBeenCalledWith("Undo queued");
+    expect(announcements.announce).toHaveBeenCalledWith("Undo queued. Runs when replies finish.");
   });
 
   it("stops a pending divider through the cancel route and marks it stopping", async () => {
@@ -161,36 +182,36 @@ describe("useThreadControls", () => {
     expect(invalidateQueries).toHaveBeenCalled();
   });
 
-  it("stops a generating brief through the same cancel route, in the brief's words", async () => {
+  it("says so when a Stop on the divider fails, and gives Stop back", async () => {
     transport.cancel.mockRejectedValueOnce(new Error("offline"));
-    await act(async () => latest.stop("s", "brief"));
-    expect(transport.cancel).toHaveBeenCalledWith("thread-1", "s");
-    expect(announcements.announce).toHaveBeenCalledWith("Stopping the handoff brief");
-    expect(announcements.announceError).toHaveBeenCalledWith("Couldn't stop the brief. Try again.");
-    // A failed Stop gives the card its Stop back.
-    expect(latest.stoppingTurnIds.has("s")).toBe(false);
+    await act(async () => latest.stop("c"));
+    expect(announcements.announce).toHaveBeenCalledWith("Stopping compaction");
+    expect(announcements.announceError).toHaveBeenCalledWith(
+      "Couldn't stop the compaction. Try again.",
+    );
+    expect(latest.stoppingTurnIds.has("c")).toBe(false);
   });
 
-  it("announces a failed enqueue in its own control kind's words", async () => {
+  it("announces a failed enqueue in its own command kind's words", async () => {
     api.enqueueThreadControl.mockRejectedValue(new Error("offline"));
     await act(async () => {
-      latest.enqueue({ kind: "handoff_brief" });
+      latest.enqueue({ kind: "compact" });
     });
-    expect(announcements.announceError).toHaveBeenLastCalledWith(
-      "Couldn't queue the handoff brief.",
-    );
+    expect(announcements.announceError).toHaveBeenLastCalledWith("Couldn't queue the compaction.");
     await act(async () => {
       latest.enqueue({ kind: "compaction_undo", compactionTurnId: "c" });
     });
     expect(announcements.announceError).toHaveBeenLastCalledWith("Couldn't queue the undo.");
   });
 
-  it("announces the same words the row shows when a withdrawal finds the control already ran", async () => {
-    api.enqueueThreadControl.mockResolvedValue({ id: "x", pending: null, turnId: null });
-    api.withdrawThreadControl.mockResolvedValue({ outcome: "already_finished" });
+  it("says a command already started when Withdraw comes too late", async () => {
+    api.withdrawThreadControl.mockResolvedValue({ outcome: "already_started" });
     await act(async () =>
       latest.withdraw({ id: "k", control: { kind: "compact" }, status: "queued" }),
     );
-    expect(announcements.announce).toHaveBeenLastCalledWith("This compaction already ran.");
+    expect(announcements.announce).toHaveBeenLastCalledWith("This compaction already started.");
+    expect(latest.queued).toEqual([
+      { id: "k", control: { kind: "compact" }, status: "already_started" },
+    ]);
   });
 });

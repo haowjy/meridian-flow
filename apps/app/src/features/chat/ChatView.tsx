@@ -71,6 +71,7 @@ import {
 } from "./derivation/derive-conversation";
 import { isHandoffSeed, optimisticHandoffSeed } from "./derivation/handoff-seed";
 import { optimisticForkPrefix, useInheritedView } from "./derivation/inherited-view";
+import { useHandoffBrief } from "./derivation/useHandoffBrief";
 import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
@@ -150,11 +151,14 @@ export function ChatView({
   const derivation = useDerivationStatus(threadId);
   const inherited = useInheritedView(activeThread, derivation?.inherited ?? null);
   const storedTurns = useThreadStore((state) => state.turnsByThread[threadId] ?? EMPTY_TURNS);
+  const brief = useHandoffBrief({ threadId, storedTurns });
   // A handoff's brief is on its way the moment the writer lands; until the
-  // server's seed arrives the card stands in for it (it has nothing to stop yet).
+  // server's seed arrives the card stands in for it (it has nothing to stop
+  // yet). A Retry's new card stands at the leaf until the server has it.
   const intent = derivation?.intent;
-  const turns = useMemo(
-    () =>
+  const { localSeeds } = brief;
+  const turns = useMemo(() => {
+    const opening =
       intent?.kind === "handoff" &&
       derivation?.state !== "failed" &&
       !storedTurns.some(isHandoffSeed)
@@ -166,15 +170,21 @@ export function ChatView({
               cutoffTurnId: intent.originTurnId,
               createdAt: intent.createdAt,
             }),
-            ...storedTurns,
           ]
-        : storedTurns,
-    [derivation?.state, intent, storedTurns, threadId],
-  );
+        : [];
+    return opening.length || localSeeds.length
+      ? [...opening, ...storedTurns, ...localSeeds]
+      : storedTurns;
+  }, [derivation?.state, intent, localSeeds, storedTurns, threadId]);
   const latestAssistantTurn =
     [...turns].reverse().find((turn) => turn.role === "assistant") ?? null;
   const isStreaming = latestAssistantTurn?.status === "streaming";
-  const run = useMemo(() => composerRun(storedTurns), [storedTurns]);
+  // Only what the server has can be stopped: a stand-in brief is not a run yet.
+  const { canStop: canStopSeed } = brief;
+  const run = useMemo(
+    () => composerRun(turns.filter((turn) => !isHandoffSeed(turn) || canStopSeed(turn))),
+    [canStopSeed, turns],
+  );
   const composerAgentName = activeThread?.agentName ?? "General";
 
   const pageTitle = activeThread?.title ? displayThreadTitle(activeThread.title) : t`New chat`;
@@ -435,7 +445,8 @@ export function ChatView({
     // A compaction or brief has no reply stream for the run controller to
     // stop: cancel its turn, as the divider's and the card's own Stop do.
     if (run?.kind === "placeholder") {
-      controls.stop(run.turn.id, run.turn.role === "compaction" ? "compaction" : "brief");
+      if (run.turn.role === "compaction") controls.stop(run.turn.id);
+      else brief.stop(run.turn.id);
       return;
     }
     controller.cancel(threadId);
@@ -566,6 +577,8 @@ export function ChatView({
                   submissionRecoveryByTurnId={submissionRecoveryByTurnId}
                   queuedWriterTurnIds={queuedWriterTurnIds}
                   controls={controls}
+                  brief={brief}
+                  busy={liveStatus.kind === "awake" || run !== null}
                   compactionUndo={snapshotCompactionUndo}
                   phase={livePhase}
                   inherited={inheritedView}

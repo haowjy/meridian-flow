@@ -70,7 +70,7 @@ async function render(props: Partial<CompactionDividerProps> & { turn: Turn }) {
       <CompactionDivider
         undo={NO_UNDO_MARKERS}
         undoAvailability={null}
-        queuedUndo={null}
+        undoQueued={false}
         phase={null}
         stopping={false}
         {...props}
@@ -155,45 +155,28 @@ describe("CompactionDivider", () => {
     expect(button("Summary")).toBeDefined();
   });
 
-  it("queued undo: shows at once with Withdraw", async () => {
-    const onWithdraw = vi.fn();
-    const queued: QueuedControl = {
-      id: "u-k",
-      control: { kind: "compaction_undo", compactionTurnId: "c" },
-      status: "queued",
-    };
+  it("queued undo: the divider stops offering Undo while it waits at the tail", async () => {
     await render({
       turn: divider(),
       undoAvailability: { turnId: "c", availability: "likely" },
-      queuedUndo: queued,
+      undoQueued: true,
       onUndo: vi.fn(),
-      onWithdraw,
     });
     expect(button("Undo compaction")).toBeUndefined();
-    expect(host.textContent).toContain("Undo queued");
-    // The global announcer speaks it; the row is not a second live region.
-    expect(host.querySelector('[role="status"]')).toBeNull();
-    await act(async () => button("Withdraw undo")?.click());
-    expect(onWithdraw).toHaveBeenCalledWith(queued);
+    expect(host.textContent).not.toContain("Undo queued");
   });
 
-  it("keeps keyboard focus in the divider when Undo gives way to Withdraw", async () => {
-    const queued: QueuedControl = {
-      id: "u-k",
-      control: { kind: "compaction_undo", compactionTurnId: "c" },
-      status: "queued",
-    };
+  it("keeps keyboard focus in the divider when Undo is queued and leaves it", async () => {
     const props = {
       turn: divider(),
       undoAvailability: { turnId: "c", availability: "likely" } as const,
       onUndo: vi.fn(),
-      onWithdraw: vi.fn(),
     };
     await render(props);
     button("Undo compaction")?.focus();
     expect(document.activeElement).toBe(button("Undo compaction"));
-    await render({ ...props, queuedUndo: queued });
-    expect(document.activeElement).toBe(button("Withdraw undo"));
+    await render({ ...props, undoQueued: true });
+    expect(document.activeElement).toBe(button("Summary"));
   });
 
   it("refused undo: the U's copy shows on this divider", async () => {
@@ -252,12 +235,29 @@ describe("CompactionDivider", () => {
       turn: divider({
         status: "error",
         blocks: [],
+        error: "This conversation couldn't be compacted. Try again.",
+        metadata: { trigger: "manual", reason: "provider_error", phase: "summary" },
+      }),
+    });
+    expect(state()).toBe("failed");
+    expect(host.textContent).toContain("Couldn't compact");
+    expect(host.textContent).toContain("This conversation couldn't be compacted. Try again.");
+  });
+
+  it("nothing to compact: reads calmly, never as an error", async () => {
+    // Expected after an automatic compaction took care of what /compact queued for.
+    await render({
+      turn: divider({
+        status: "error",
+        blocks: [],
         error: "There is nothing to compact yet.",
         metadata: { trigger: "manual", reason: "nothing_to_compact", phase: "initial_prepare" },
       }),
     });
-    expect(state()).toBe("failed");
-    expect(host.textContent).toContain("There is nothing to compact yet.");
+    const section = host.querySelector("[data-compaction-divider]");
+    expect(section?.getAttribute("aria-label")).toBe("There is nothing to compact yet");
+    expect(host.textContent).not.toContain("Couldn't compact");
+    expect(host.querySelector(".text-destructive")).toBeNull();
   });
 
   it("failed auto: quiet, no error copy (R3)", async () => {
@@ -286,28 +286,52 @@ describe("QueuedControlRows", () => {
     control: { kind: "compact" },
     status,
   });
+  const undo = (status: QueuedControl["status"]): QueuedControl => ({
+    id: "u",
+    control: { kind: "compaction_undo", compactionTurnId: "c" },
+    status,
+  });
 
-  it("renders a queued /compact with Withdraw", async () => {
+  it("renders a queued /compact that says when it runs, with Withdraw and no Stop", async () => {
     const onWithdraw = vi.fn();
     await act(async () =>
       root.render(<QueuedControlRows controls={[compact("queued")]} onWithdraw={onWithdraw} />),
     );
-    expect(host.textContent).toContain("Compaction queued");
+    expect(host.textContent).toContain("Compaction queued. Runs when replies finish.");
+    expect(button("Stop")).toBeUndefined();
     await act(async () => button("Withdraw compaction")?.click());
     expect(onWithdraw).toHaveBeenCalledWith(compact("queued"));
   });
 
-  it.each([
-    ["withdrawn", "Compaction withdrawn"],
-    ["stopping", "Stopping compaction"],
-    ["already_finished", "This compaction already ran."],
-  ] as const)("lands the %s outcome on the item, without Withdraw", async (status, copy) => {
+  it("renders a queued Undo the same way", async () => {
     await act(async () =>
-      root.render(<QueuedControlRows controls={[compact(status)]} onWithdraw={vi.fn()} />),
+      root.render(<QueuedControlRows controls={[undo("queued")]} onWithdraw={vi.fn()} />),
     );
-    expect(host.querySelector("[data-queued-control]")?.textContent).toBe(copy);
+    expect(host.textContent).toContain("Undo queued. Runs when replies finish.");
+    expect(button("Withdraw undo")).toBeDefined();
+  });
+
+  it("says a command already started, without Withdraw, in no live region", async () => {
+    await act(async () =>
+      root.render(
+        <QueuedControlRows controls={[compact("already_started")]} onWithdraw={vi.fn()} />,
+      ),
+    );
+    expect(host.querySelector("[data-queued-control]")?.textContent).toBe(
+      "This compaction already started.",
+    );
     expect(host.querySelector('[role="status"]')).toBeNull();
     expect(button("Withdraw compaction")).toBeUndefined();
+  });
+
+  it("keeps a failed withdrawal on the row, withdrawable again", async () => {
+    await act(async () =>
+      root.render(
+        <QueuedControlRows controls={[compact("withdraw_failed")]} onWithdraw={vi.fn()} />,
+      ),
+    );
+    expect(host.textContent).toContain("Couldn't withdraw. Try again.");
+    expect(button("Withdraw compaction")).toBeDefined();
   });
 
   it("keeps a failed enqueue on the item with Retry", async () => {
@@ -318,18 +342,5 @@ describe("QueuedControlRows", () => {
     expect(host.textContent).toContain("Couldn't queue the compaction.");
     await act(async () => button("Retry queueing")?.click());
     expect(onRetry).toHaveBeenCalledWith("k");
-  });
-
-  it("renders a handoff brief Retry minimally", async () => {
-    await act(async () =>
-      root.render(
-        <QueuedControlRows
-          controls={[{ id: "h", control: { kind: "handoff_brief" }, status: "queued" }]}
-          onWithdraw={vi.fn()}
-        />,
-      ),
-    );
-    expect(host.textContent).toContain("Handoff brief queued");
-    expect(button("Withdraw handoff brief")).toBeDefined();
   });
 });
