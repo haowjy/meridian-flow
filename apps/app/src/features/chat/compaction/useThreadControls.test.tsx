@@ -37,13 +37,12 @@ const NONE: ReadonlySet<string> = new Set();
 
 let root: Root;
 let latest: ThreadControls;
-function Probe(props: { pending?: ThreadPendingInbox; leaf?: string; queueTail?: string }) {
+function Probe(props: { pending?: ThreadPendingInbox; leaf?: string }) {
   latest = useThreadControls({
     threadId: "thread-1",
     pending: props.pending ?? EMPTY,
     answeredControlIds: NONE,
     leafTurnId: props.leaf ?? "leaf-1",
-    queueTailTurnId: props.queueTail ?? null,
   });
   return null;
 }
@@ -80,9 +79,7 @@ describe("useThreadControls", () => {
       id,
       control: { kind: "compact" },
     });
-    expect(latest.queued).toEqual([
-      { id, control: { kind: "compact" }, status: "queued", afterTurnId: null },
-    ]);
+    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
     expect(announcements.announce).toHaveBeenCalledWith("Compaction queued");
     await act(async () => response.resolve({ id, pending: null, turnId: "c" }));
     expect(latest.queued).toEqual([]);
@@ -95,9 +92,7 @@ describe("useThreadControls", () => {
     await act(async () => {
       id = latest.enqueue({ kind: "compact" });
     });
-    expect(latest.queued).toEqual([
-      { id, control: { kind: "compact" }, status: "failed", afterTurnId: null },
-    ]);
+    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "failed" }]);
     expect(announcements.announceError).toHaveBeenCalledWith("Couldn't queue the compaction.");
     const retry = deferred<unknown>();
     api.enqueueThreadControl.mockReturnValueOnce(retry.promise);
@@ -176,7 +171,6 @@ describe("useThreadControls", () => {
       id: "",
       control: { kind: "compact" },
       status: "queued",
-      afterTurnId: null,
     } as const;
     const id = api.enqueueThreadControl.mock.calls[0]?.[1].id as string;
     await act(async () => latest.withdraw({ ...queued, id }));
@@ -194,7 +188,6 @@ describe("useThreadControls", () => {
         id: "k",
         control: { kind: "compact" },
         status: "queued",
-        afterTurnId: null,
       }),
     );
     expect(announcements.announceError).toHaveBeenCalledWith("Couldn't withdraw. Try again.");
@@ -206,7 +199,6 @@ describe("useThreadControls", () => {
       id: "k",
       control: { kind: "compact" },
       status: "queued",
-      afterTurnId: null,
     } as const;
     const inbox: ThreadPendingInbox = {
       items: [
@@ -246,9 +238,9 @@ describe("useThreadControls", () => {
     expect(latest.stoppingTurnIds.has("c")).toBe(false);
   });
 
-  it("queues a command after the newest waiting message, with its instructions", async () => {
+  it("queues a command with its instructions", async () => {
     api.enqueueThreadControl.mockReturnValue(new Promise(() => undefined));
-    await act(async () => root.render(<Probe queueTail="u3" />));
+    await act(async () => root.render(<Probe />));
     let id = "";
     await act(async () => {
       id = latest.enqueue({ kind: "compact", instructions: "Keep the oath" });
@@ -262,7 +254,6 @@ describe("useThreadControls", () => {
         id,
         control: { kind: "compact", instructions: "Keep the oath" },
         status: "queued",
-        afterTurnId: "u3",
       },
     ]);
   });
@@ -282,7 +273,6 @@ describe("useThreadControls", () => {
         id,
         control: { kind: "compact", instructions: "Keep the sect names" },
         status: "failed",
-        afterTurnId: null,
       },
     ]);
     expect(announcements.announceError).toHaveBeenCalledWith("Couldn't queue the compaction.");
@@ -303,12 +293,11 @@ describe("useThreadControls", () => {
         id: "k",
         control: { kind: "compact" },
         status: "queued",
-        afterTurnId: null,
       }),
     );
     expect(announcements.announce).toHaveBeenLastCalledWith("This compaction already started.");
     expect(latest.queued).toEqual([
-      { id: "k", control: { kind: "compact" }, status: "already_started", afterTurnId: null },
+      { id: "k", control: { kind: "compact" }, status: "already_started" },
     ]);
   });
 });

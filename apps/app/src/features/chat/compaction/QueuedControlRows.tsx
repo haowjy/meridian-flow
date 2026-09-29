@@ -1,11 +1,10 @@
 /**
  * Writer commands waiting in the queue.
  *
- * The queue is the writer's order: a queued `/compact` sits among the queued
- * messages exactly where it was sent (`placeQueuedControls`), as a dashed
- * rule: the divider it will become, not yet drawn. It runs when it reaches the
- * front, after the current reply and anything sent before it. The writer's
- * instructions show under it verbatim, at once. Withdraw is right after the
+ * A command runs only once no message waits, so a queued `/compact` sits at
+ * the transcript tail, after every queued message, as a dashed rule: the
+ * divider it will become, not yet drawn. The writer's instructions show under
+ * it verbatim, at once. Withdraw is right after the
  * words and removes the row at once. A command that already started says so
  * here until its divider shows. There is no Stop on a queued row. The rows
  * carry no live region: `useThreadControls` announces each change through the
