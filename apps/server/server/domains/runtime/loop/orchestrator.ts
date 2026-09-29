@@ -87,8 +87,8 @@ import {
   agentRequestMetadata,
   loadThreadConversationContext,
   readThreadActivity,
-  replyFailedCopy,
   ThreadConversationContextError,
+  turnFailedCopy,
   writerSendMetadata,
 } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
@@ -295,6 +295,13 @@ export function createOrchestrator(deps: OrchestratorDeps) {
         (error instanceof CompactionPreparationError ? error : null);
       const requestPreparationFailed = input.error instanceof RequestPreparationError;
       const shutdownAbort = input.signal?.reason === "shutdown";
+      const publicPreparationError = preparationFailure
+        ? writerFacingPreparationError(preparationFailure)
+        : requestPreparationFailed
+          ? writerFacingPreparationError(asError(error))
+          : null;
+      const failedTurn = await deps.repos.turns.findById(input.turnId);
+      if (!failedTurn) throw new Error(`Failure turn not found: ${input.turnId}`);
       const outcome = await deps.delivery.close({
         lease: input.lease,
         turnId: input.turnId,
@@ -303,7 +310,7 @@ export function createOrchestrator(deps: OrchestratorDeps) {
             ? {
                 kind: "failed",
                 reason: "shutdown",
-                error: replyFailedCopy,
+                error: turnFailedCopy(failedTurn),
               }
             : { kind: "cancelled", reason: "cancelled" }
           : {
@@ -315,13 +322,9 @@ export function createOrchestrator(deps: OrchestratorDeps) {
                   : requestPreparationFailed
                     ? "request_preparation_failed"
                     : "execution_error"),
-              error: preparationFailure
-                ? writerFacingPreparationError(preparationFailure)
-                : requestPreparationFailed
-                  ? writerFacingPreparationError(asError(error))
-                  : error instanceof Error
-                    ? error.message
-                    : String(error),
+              error:
+                publicPreparationError ?? (error instanceof Error ? error.message : String(error)),
+              publicError: publicPreparationError?.message ?? turnFailedCopy(failedTurn),
             },
       });
       if (outcome.kind !== "completed") throw new Error("Failure finalization cannot split");
@@ -1800,7 +1803,7 @@ async function executeLoop({
   const cancelTerminal: TerminalCause = { kind: "cancelled", reason: "cancelled" };
   const abortTerminal = (): TerminalCause =>
     input.signal?.reason === "shutdown"
-      ? { kind: "failed", reason: "shutdown", error: replyFailedCopy }
+      ? { kind: "failed", reason: "shutdown", error: turnFailedCopy(currentTurn) }
       : cancelTerminal;
   const errorTerminal = (error: MeridianError | string, reason?: string): TerminalCause => ({
     kind: "failed",

@@ -28,6 +28,8 @@ export type TerminalCause =
       kind: "failed";
       reason: string;
       error: MeridianError | string;
+      /** Optional server-owned safe copy when a known failure has more useful writer guidance. */
+      publicError?: string;
     }
   | { kind: "cancelled"; reason: string };
 
@@ -180,9 +182,8 @@ export async function finalizeExecution(
       const completedAt = toIsoString(new Date());
       const error =
         input.cause.kind === "failed"
-          ? typeof input.cause.error === "string"
-            ? input.cause.error
-            : input.cause.error.message
+          ? (input.cause.publicError ??
+            (typeof input.cause.error === "string" ? input.cause.error : input.cause.error.message))
           : null;
       const updated: Turn = {
         ...turn,

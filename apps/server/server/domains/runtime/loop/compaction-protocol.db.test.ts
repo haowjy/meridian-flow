@@ -1636,6 +1636,7 @@ else
       expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
         role: "compaction",
         status: "error",
+        error: "This conversation couldn't be compacted. Try again.",
         metadata: { reason: "interrupted", phase: "recovery" },
       });
     });
