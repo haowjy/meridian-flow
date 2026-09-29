@@ -3,7 +3,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
-import { processDetachedWork } from "../detached-work.js";
+import type { DetachedWorkTracker } from "../detached-work.js";
 import { type CurrentTurn, DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
 import { createRunStarter } from "./run-starter.js";
 import {
@@ -29,7 +29,7 @@ type RunSession = {
 
 export function createRunSessions(deps: {
   shutdown: { started: boolean };
-  backgroundTasks?: import("../detached-work.js").DetachedWorkTracker;
+  backgroundTasks: DetachedWorkTracker;
   setup(input: RunLoopInput): Promise<PreparedLoop>;
   finalizeFailure(input: {
     threadId: ThreadId;
@@ -52,7 +52,7 @@ export function createRunSessions(deps: {
 }) {
   const running = new Map<ThreadId, RunSession>();
   const shutdown = deps.shutdown;
-  const backgroundTasks = deps.backgroundTasks ?? processDetachedWork;
+  const backgroundTasks = deps.backgroundTasks;
   const authority = deps.runClaim;
   const runStarter = createRunStarter({ startDrain }, deps.eventSink);
   const wakeIfRunnable = createWakeIfRunnable({

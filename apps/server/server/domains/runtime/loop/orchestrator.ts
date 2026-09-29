@@ -208,7 +208,7 @@ export interface OrchestratorRepositories {
 
 export interface OrchestratorDeps {
   /** One app-owned lifecycle tracker shared by every detached runtime caller. */
-  backgroundTasks?: DetachedWorkTracker;
+  backgroundTasks: DetachedWorkTracker;
   /** Shared app shutdown state read by run starts, wakes and handoff briefs. */
   shutdown: { started: boolean };
   summarizer: ConversationSummarizer;

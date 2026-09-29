@@ -58,6 +58,7 @@ async function fixture(configure?: (deps: OrchestratorDeps) => void) {
     runtime,
     repos,
     deps,
+    backgroundTasks: harness.backgroundTasks,
     thread,
     boundThreadIds,
     journal,
@@ -486,6 +487,7 @@ describe("RunSession", () => {
       published = resolve;
     });
     const driver = createChildRunDriver({
+      backgroundTasks: f.backgroundTasks,
       orchestrator: f.runtime,
       repos: f.deps.repos,
       eventWriter: f.journal,

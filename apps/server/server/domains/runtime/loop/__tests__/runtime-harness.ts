@@ -30,7 +30,7 @@ import {
   createInMemoryThreadLock,
 } from "../../adapters/in-memory/loop-ports.js";
 import { createWriterTurnProducer } from "../../admission/writer-turn-producer.js";
-import { processDetachedWork } from "../../detached-work.js";
+import { createDetachedWorkTracker, type DetachedWorkTracker } from "../../detached-work.js";
 import type { Gateway, StreamEvent } from "../../gateway/index.js";
 import { createInMemoryModelRequestDebugStore } from "../../model-request-debug/index.js";
 import type { ChildRunCoordinator } from "../../spawn/child-run-coordinator.js";
@@ -55,6 +55,7 @@ function noopChildRunCoordinator(): ChildRunCoordinator {
 
 export function createRuntimeHarness(
   overrides: Omit<Partial<OrchestratorDeps>, "backgroundTasks"> & {
+    backgroundTasks?: DetachedWorkTracker;
     repos?: ThreadRepositories;
     inbox?: import("../../adapters/runtime-delivery.js").DeliveryStore;
     threadLock?: import("../thread-lock.js").ThreadLock;
@@ -72,10 +73,12 @@ export function createRuntimeHarness(
     threadLock: suppliedLock,
     runStarter,
     schedulePostCommit,
+    backgroundTasks: suppliedBackgroundTasks,
     creditLedger: suppliedLedger,
     notices: suppliedNotices,
     ...dependencies
   } = overrides;
+  const backgroundTasks = suppliedBackgroundTasks ?? createDetachedWorkTracker();
   const projects = createInMemoryProjectRepository();
   const repos = overrides.repos ?? createInMemoryRepositories({ projects });
   const activeDocuments = createActiveDocumentResolver(repos);
@@ -174,6 +177,7 @@ export function createRuntimeHarness(
     delivery:
       overrides.delivery ??
       createInMemoryRuntimeDelivery({
+        backgroundTasks,
         toolRegistry,
         workContext,
         repos,
@@ -203,7 +207,7 @@ export function createRuntimeHarness(
       async rollbackResponse() {},
     },
     ...dependencies,
-    backgroundTasks: processDetachedWork,
+    backgroundTasks,
     shutdown,
     workContext,
   };
@@ -241,6 +245,7 @@ export function createRuntimeHarness(
   });
   return {
     deps,
+    backgroundTasks,
     flushWakes,
     repos,
     creditLedger,
@@ -283,10 +288,7 @@ export function createRuntimeHarness(
 
 /** Seed ownership and credits around the same composition, with optional real gateway. */
 export async function runtimeScenario(
-  options: Omit<
-    Partial<OrchestratorDeps>,
-    "backgroundTasks" | "repos" | "eventWriter" | "headSeq"
-  > & {
+  options: Omit<Partial<OrchestratorDeps>, "repos" | "eventWriter" | "headSeq"> & {
     gateway: Gateway;
     userId?: string;
     projectTitle?: string;

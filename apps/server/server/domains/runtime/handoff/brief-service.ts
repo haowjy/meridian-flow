@@ -16,7 +16,7 @@ import type {
   HandoffBriefHold,
   HandoffBriefLauncher,
 } from "../../threads/ports/handoff-brief-launcher.js";
-import { type DetachedWorkTracker, processDetachedWork } from "../detached-work.js";
+import type { DetachedWorkTracker } from "../detached-work.js";
 import { historyReadableAt } from "../loop/history-tool-availability.js";
 import { createLocalTurn } from "../loop/local-turn.js";
 import type { PersistenceDeps } from "../loop/persistence.js";
@@ -54,7 +54,7 @@ type BriefGeneration = (input: {
 }) => Promise<{ outcome: HandoffBriefOutcome; failure?: HandoffFailureOutcome }>;
 
 type HandoffBriefServiceDeps = {
-  backgroundTasks?: DetachedWorkTracker;
+  backgroundTasks: DetachedWorkTracker;
   shutdown?: { started: boolean };
   repos: ThreadRepositories;
   eventWriter: EventJournalWriter;
@@ -83,7 +83,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     eventWriter: deps.eventWriter,
   };
   const live = new Map<TurnId, LiveBrief>();
-  const backgroundTasks = deps.backgroundTasks ?? processDetachedWork;
+  const backgroundTasks = deps.backgroundTasks;
   const shutdown = deps.shutdown ?? { started: false };
   const accounting = createTurnAccounting({
     billingUsage: deps.billingUsage as BillingUsagePolicy,

@@ -79,6 +79,7 @@ else
       } = {},
     ) {
       return createHandoffBriefs({
+        backgroundTasks: processDetachedWork,
         repos: options.repos ?? repos,
         eventWriter: createDrizzleEventJournalWriter(db),
         eventSink: createInMemoryEventSink(),
@@ -177,6 +178,7 @@ else
       const published: unknown[] = [];
       const postCommit: Array<() => Promise<void>> = [];
       const service = createHandoffBriefs({
+        backgroundTasks: processDetachedWork,
         repos,
         eventWriter,
         eventSink: createInMemoryEventSink(),
@@ -275,6 +277,7 @@ else
       });
       const postCommit: Array<() => Promise<void>> = [];
       const service = createHandoffBriefs({
+        backgroundTasks: processDetachedWork,
         repos: fixture.repos,
         eventWriter: createDrizzleEventJournalWriter(db),
         eventSink: createInMemoryEventSink(),
@@ -403,6 +406,7 @@ else
       let providerSignal: AbortSignal | undefined;
       const postCommit: Array<() => Promise<void>> = [];
       const service = createHandoffBriefs({
+        backgroundTasks: processDetachedWork,
         repos: fixture.repos,
         eventWriter: createDrizzleEventJournalWriter(db),
         eventSink: createInMemoryEventSink(),

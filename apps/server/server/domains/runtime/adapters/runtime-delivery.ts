@@ -5,7 +5,7 @@ import { isPendingPlaceholder } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
 import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
-import { type DetachedWorkTracker, processDetachedWork } from "../detached-work.js";
+import type { DetachedWorkTracker } from "../detached-work.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
 import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
@@ -68,7 +68,7 @@ const PREPARATION_ATTEMPTS = 3;
 
 export function createDeliveryAdapter(
   deps: PersistenceDeps & {
-    backgroundTasks?: DetachedWorkTracker;
+    backgroundTasks: DetachedWorkTracker;
     repos: import("../../threads/index.js").ThreadRepositories;
     toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
     inbox: DeliveryStore;
@@ -84,7 +84,7 @@ export function createDeliveryAdapter(
   },
 ): RuntimeDelivery {
   const { inbox, leaseStore, threadLock } = deps;
-  const backgroundTasks = deps.backgroundTasks ?? processDetachedWork;
+  const backgroundTasks = deps.backgroundTasks;
   const schedulePostCommit = (task: () => Promise<void>) =>
     deps.schedulePostCommit(() =>
       backgroundTasks.track(Promise.resolve().then(task), "runtime delivery callback"),

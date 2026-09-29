@@ -1035,6 +1035,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
 }
 
 export function createInMemoryAppServices(): AppServices {
+  const backgroundTasks = createDetachedWorkTracker();
   const transactionOwner = new InMemoryTransactionOwner();
   const threadRepos = createInMemoryRepositories({
     transactionOwner,
@@ -1065,6 +1066,7 @@ export function createInMemoryAppServices(): AppServices {
   });
   const runStarter = createInMemoryRunStarter();
   const delivery = createInMemoryRuntimeDelivery({
+    backgroundTasks,
     workContext: {
       async renderForThread() {
         throw new Error("No Work context configured");
@@ -1565,7 +1567,9 @@ export function createInMemoryAppServices(): AppServices {
         return 0;
       },
     },
-    async shutdown() {},
+    async shutdown() {
+      await backgroundTasks.drain();
+    },
   };
 }
 

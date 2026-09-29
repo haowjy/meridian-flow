@@ -221,7 +221,7 @@ async function fixture(
     );
   const inbox = createInMemoryInbox();
   const runStarter = createInMemoryRunStarter();
-  const delivery = createRuntimeHarness({
+  const runtimeHarness = createRuntimeHarness({
     repos,
     eventWriter,
     runClaim,
@@ -229,10 +229,12 @@ async function fixture(
     threadLock: createInMemoryThreadLock(),
     runStarter,
     schedulePostCommit: (task) => task(),
-  }).delivery;
+  });
+  const delivery = runtimeHarness.delivery;
   const publisher = createReportPublisher({ repos, eventWriter, delivery, eventSink });
 
   const driver = createChildRunDriver({
+    backgroundTasks: runtimeHarness.backgroundTasks,
     orchestrator:
       typeof options.orchestrator === "function"
         ? options.orchestrator(repos)
