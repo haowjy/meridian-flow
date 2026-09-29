@@ -78,6 +78,9 @@ fi
 
 # 5. Portless HTTPS proxy on :443 (root, so no sudo prompt).
 if ! curl -sk -o /dev/null --max-time 3 https://127.0.0.1:443/; then
+  # No proxy means a restarted container: every saved route is stale, and its
+  # recorded PID can belong to an unrelated new process, which blocks re-registering.
+  rm -f "$HOME/.portless/routes.json"
   run node_modules/.bin/portless proxy start --https
 fi
 
