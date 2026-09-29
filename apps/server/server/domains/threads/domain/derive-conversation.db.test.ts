@@ -693,6 +693,7 @@ else
       const fixture = await setupSource();
       const { createDrizzleRunClaim } = await import("../../runtime/adapters/drizzle-run-claim.js");
       const runClaim = createDrizzleRunClaim(db, { holderId: "handoff-first" });
+      const racingRunClaim = createDrizzleRunClaim(db, { holderId: "handoff-racing-run" });
       const destinationId = crypto.randomUUID();
       let racingLease: Awaited<ReturnType<typeof runClaim.startExecution>> = null;
       const transferredClaims: Array<{ release(): Promise<void> }> = [];
@@ -701,7 +702,7 @@ else
         async createDerivedPrimary(
           input: Parameters<typeof repos.threads.createDerivedPrimary>[0],
         ) {
-          racingLease = await runClaim.startExecution(destinationId as never, "racing-wake");
+          racingLease = await racingRunClaim.startExecution(destinationId as never, "racing-wake");
           return fixture.deps.threads.createDerivedPrimary(input);
         },
       };
@@ -732,7 +733,9 @@ else
         expect(await repos.turns.listByThread(result.thread.id)).toMatchObject([
           { role: "system", status: "pending" },
         ]);
-        expect(await runClaim.startExecution(result.thread.id, "after-create-wake")).toBeNull();
+        expect(
+          await racingRunClaim.startExecution(result.thread.id, "after-create-wake"),
+        ).toBeNull();
       } finally {
         await transferredClaims[0]?.release();
       }

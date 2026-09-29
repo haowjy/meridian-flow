@@ -577,11 +577,14 @@ else
         };
       };
       const first = serviceFor(fixture.repos, runClaim, { generate });
-      const second = serviceFor(fixture.repos, runClaim, { generate });
 
       expect(await startBrief(first, fixture.destination.id, fixture.seed.id)).toBe(true);
       await providerStarted;
-      expect(await startBrief(second, fixture.destination.id, fixture.seed.id)).toBe(false);
+      const secondRunClaim = createDrizzleRunClaim(db, { holderId: "multi-worker-second" });
+      const secondWithOwnClaim = serviceFor(fixture.repos, secondRunClaim, { generate });
+      expect(await startBrief(secondWithOwnClaim, fixture.destination.id, fixture.seed.id)).toBe(
+        false,
+      );
       expect(providerCalls).toBe(1);
       release();
       await expect
