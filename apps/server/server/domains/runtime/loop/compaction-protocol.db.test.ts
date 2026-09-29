@@ -1086,6 +1086,11 @@ else
         expect(debits.filter((debit) => debit.usageEventId === row.id)).toHaveLength(1);
       }
       expect(requests.length).toBeGreaterThan(summaryCalls);
+      const drained = await processDetachedWork.drain(2_000);
+      expect({ drained, pendingTasks: processDetachedWork.pendingTasks }).toEqual({
+        drained: true,
+        pendingTasks: [],
+      });
     });
 
     it("stops the successor iteration when settled compaction cost exhausts the tree budget", async () => {

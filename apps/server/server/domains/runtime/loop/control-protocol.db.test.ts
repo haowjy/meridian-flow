@@ -47,19 +47,6 @@ else
       });
     }
 
-    function assertOneRunStartDuringCleanup(rig: Awaited<ReturnType<typeof fixture>>) {
-      const start = rig.runClaim.startExecution.bind(rig.runClaim);
-      const starts = vi
-        .spyOn(rig.runClaim, "startExecution")
-        .mockResolvedValue(null)
-        .mockImplementationOnce(start);
-      return () => {
-        const attempts = starts.mock.calls.length;
-        starts.mockRestore();
-        expect(attempts).toBe(1);
-      };
-    }
-
     async function settled(rig: Awaited<ReturnType<typeof fixture>>) {
       await expect
         .poll(async () => (await rig.runClaim.read(rig.threadId)).kind, { timeout: 15000 })
@@ -76,7 +63,44 @@ else
       return run.execute();
     }
 
-    it("keeps a failed reply sweep-paced while a command waits behind it", async () => {
+    it.each([1, 2])("fails once and acknowledges %i adopted message(s)", async (messageCount) => {
+      const gateway = scriptedGateway({ usage: lowUsage });
+      gateway.stream = async function* (request) {
+        gateway.requests.push(request);
+        yield {
+          type: "error",
+          code: "provider_error",
+          message: "provider unavailable",
+          retryable: false,
+        };
+      };
+      const rig = await manualFixture({ gateway });
+      for (let index = 0; index < messageCount; index++) {
+        await rig.delivery.enqueue({
+          threadId: rig.threadId,
+          intent: "message",
+          provenance: { kind: "writer", actorId: rig.ids.user },
+          body: { kind: "text", text: `failed message ${index + 1}` },
+          idempotencyKey: `failed-message-${index + 1}`,
+        });
+      }
+
+      const start = rig.runClaim.startExecution.bind(rig.runClaim);
+      const starts = vi.spyOn(rig.runClaim, "startExecution").mockImplementation(start);
+      const failed = await drainControls(rig);
+      await processDetachedWork.drain();
+
+      expect(failed.status).toBe("error");
+      expect(gateway.requests).toHaveLength(1);
+      expect(starts).toHaveBeenCalledTimes(1);
+      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+      expect(await rig.repos.turns.listByThread(rig.threadId)).toEqual(
+        expect.arrayContaining([expect.objectContaining({ role: "assistant", status: "error" })]),
+      );
+      starts.mockRestore();
+    });
+
+    it("runs a queued compact immediately after a failed reply", async () => {
       const gateway = scriptedGateway({ usage: lowUsage });
       gateway.stream = async function* (request) {
         gateway.requests.push(request);
@@ -93,58 +117,164 @@ else
         intent: "message",
         provenance: { kind: "writer", actorId: rig.ids.user },
         body: { kind: "text", text: "M ahead of K" },
-        idempotencyKey: "failed-message",
+        idempotencyKey: "failed-message-before-compact",
       });
-      await compactControl(rig);
+      const compact = await compactControl(rig);
 
-      const assertOneStart = assertOneRunStartDuringCleanup(rig);
-      const failed = await drainControls(rig);
-      assertOneStart();
-      expect(failed.status).toBe("error");
-      expect(gateway.requests).toHaveLength(1);
-      expect(await rig.delivery.selectPending(rig.threadId)).toHaveLength(2);
-      expect((await rig.delivery.selectPending(rig.threadId))[0]?.intent).toBe("message");
-
-      // The next explicit wake retries the pending reply once. The command remains behind it.
       await drainControls(rig);
-      expect(gateway.requests).toHaveLength(2);
+      await processDetachedWork.drain();
+      const turns = await settled(rig);
+
+      expect(gateway.requests).toHaveLength(1);
+      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+      expect(turns).toContainEqual(
+        expect.objectContaining({
+          role: "compaction",
+          status: "complete",
+          metadata: expect.objectContaining({ controlMessageId: compact.id }),
+        }),
+      );
     });
 
-    it("wakes a new message after a failed reply without waiting for the sweep", async () => {
-      let rig: Awaited<ReturnType<typeof fixture>>;
-      let arrivingId = "";
-      const gateway = scriptedGateway({
-        usage: lowUsage,
-        errorAtCall: 1,
-        onStream: async (call) => {
-          if (call !== 1) return;
-          const arriving = await rig.delivery.enqueue({
-            threadId: rig.threadId,
-            intent: "message",
-            provenance: { kind: "writer", actorId: rig.ids.user },
-            body: { kind: "text", text: "arrived during failure" },
-            idempotencyKey: "arrived-during-failure",
-          });
-          arrivingId = arriving.id;
-        },
-      });
-      rig = await manualFixture({ gateway });
-      const initial = await rig.delivery.enqueue({
+    it("Retry replays the original request, appends after failure, and is idempotent", async () => {
+      const gateway = scriptedGateway({ usage: lowUsage });
+      const requests = gateway.requests;
+      gateway.stream = async function* (request) {
+        requests.push(request);
+        yield {
+          type: "error",
+          code: "provider_error",
+          message: "provider unavailable",
+          retryable: false,
+        };
+      };
+      const rig = await manualFixture({ gateway });
+      const adopted = await rig.delivery.enqueue({
         threadId: rig.threadId,
         intent: "message",
         provenance: { kind: "writer", actorId: rig.ids.user },
-        body: { kind: "text", text: "first failed request" },
-        idempotencyKey: "first-failed-request",
+        body: { kind: "text", text: "Answer exactly this again." },
+        idempotencyKey: "retry-source-message",
       });
 
-      await drainControls(rig);
-      const turns = await settled(rig);
+      const first = await drainControls(rig);
+      await processDetachedWork.drain();
+      const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+      expect(first.status).toBe("error");
+      expect(failed).toMatchObject({ role: "assistant", status: "error" });
+      if (!failed) throw new Error("Failed reply was not persisted");
+      expect(failed?.metadata).toMatchObject({ replyRetry: { messageIds: [adopted.id] } });
+      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
 
-      expect(turns.filter((turn) => turn.id === initial.id)).toHaveLength(1);
-      expect(turns).toContainEqual(expect.objectContaining({ id: arrivingId }));
-      expect(gateway.requests.length).toBeGreaterThanOrEqual(2);
-      expect(JSON.stringify(gateway.requests[1])).toContain("first failed request");
-      expect(JSON.stringify(gateway.requests[1])).toContain("arrived during failure");
+      const replyTurnId = crypto.randomUUID();
+      const started = await rig.orchestrator.retryReply({
+        threadId: rig.threadId,
+        failedTurnId: failed.id as never,
+        replyTurnId: replyTurnId as never,
+      });
+      await processDetachedWork.drain();
+      const replayed = await rig.repos.turns.findById(replyTurnId as never);
+      if (!replayed) throw new Error("Retry reply was not persisted");
+      const duplicate = await rig.orchestrator.retryReply({
+        threadId: rig.threadId,
+        failedTurnId: failed.id as never,
+        replyTurnId: replyTurnId as never,
+      });
+
+      const comparable = (request: (typeof requests)[number]) => {
+        const { correlation: _correlation, signal: _signal, ...input } = request;
+        return input;
+      };
+      expect(started.created).toBe(true);
+      expect(duplicate).toMatchObject({ created: false, turn: { id: replyTurnId } });
+      expect(replayed).toMatchObject({
+        id: replyTurnId,
+        role: "assistant",
+        status: "error",
+        prevTurnId: failed.id,
+      });
+      expect(replayed.position).toBeGreaterThan(failed.position);
+      expect(requests).toHaveLength(2);
+      const originalRequest = requests[0];
+      const retryRequest = requests[1];
+      if (!originalRequest || !retryRequest) throw new Error("Expected both retry requests");
+      expect(comparable(retryRequest)).toEqual(comparable(originalRequest));
+      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+    });
+
+    it("does not allow Retry for a successful reply", async () => {
+      const rig = await manualFixture();
+      const completed = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        userText: "successful reply",
+      });
+      await completed.execute();
+      await expect(
+        rig.orchestrator.retryReply({
+          threadId: rig.threadId,
+          failedTurnId: completed.executionTurnId as never,
+          replyTurnId: crypto.randomUUID() as never,
+        }),
+      ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
+    });
+
+    it("does not allow Retry for a superseded failed reply", async () => {
+      const failedGateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1 });
+      const failedRig = await manualFixture({ gateway: failedGateway });
+      await failedRig.delivery.enqueue({
+        threadId: failedRig.threadId,
+        intent: "message",
+        provenance: { kind: "writer", actorId: failedRig.ids.user },
+        body: { kind: "text", text: "failed reply" },
+        idempotencyKey: "failed-reply-before-new-turn",
+      });
+      await drainControls(failedRig);
+      await processDetachedWork.drain();
+      const failed = await failedRig.repos.turns.getLatestByThread(failedRig.threadId);
+      if (!failed) throw new Error("Failed reply was not persisted");
+      const later = await failedRig.repos.turns.create({
+        threadId: failedRig.threadId,
+        prevTurnId: failed?.id as never,
+        role: "system",
+        origin: "system",
+        status: "complete",
+      });
+      expect(later).toBeTruthy();
+      await expect(
+        failedRig.orchestrator.retryReply({
+          threadId: failedRig.threadId,
+          failedTurnId: failed.id as never,
+          replyTurnId: crypto.randomUUID() as never,
+        }),
+      ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
+    });
+
+    it("does not allow Retry while the thread claim is held", async () => {
+      const busyRig = await manualFixture({
+        gateway: scriptedGateway({ usage: lowUsage, errorAtCall: 1 }),
+      });
+      await busyRig.delivery.enqueue({
+        threadId: busyRig.threadId,
+        intent: "message",
+        provenance: { kind: "writer", actorId: busyRig.ids.user },
+        body: { kind: "text", text: "busy retry" },
+        idempotencyKey: "busy-failed-reply",
+      });
+      await drainControls(busyRig);
+      await processDetachedWork.drain();
+      const busyFailed = await busyRig.repos.turns.getLatestByThread(busyRig.threadId);
+      if (!busyFailed) throw new Error("Failed reply was not persisted");
+      const held = await busyRig.runClaim.startExecution(busyRig.threadId, crypto.randomUUID());
+      expect(held).toBeTruthy();
+      if (!held) throw new Error("Expected the test to hold the thread claim");
+      await expect(
+        busyRig.orchestrator.retryReply({
+          threadId: busyRig.threadId,
+          failedTurnId: busyFailed.id as never,
+          replyTurnId: crypto.randomUUID() as never,
+        }),
+      ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
+      await busyRig.runClaim.release(held);
     });
 
     it("answers messages before a command queued earlier during the reply", async () => {

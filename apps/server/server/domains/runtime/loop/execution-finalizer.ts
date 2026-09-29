@@ -21,6 +21,7 @@ import {
 } from "../../threads/index.js";
 import { compactionFailureMeridianError } from "./compaction/decision.js";
 import { persistAndAppendEvents } from "./persistence.js";
+import { markFailedReplyRetryable } from "./reply-retry-metadata.js";
 
 export type TerminalCause =
   | { kind: "success"; finishReason: FinishReason }
@@ -28,8 +29,8 @@ export type TerminalCause =
       kind: "failed";
       reason: string;
       error: MeridianError | string;
-      /** Retire this adopted batch so an unrecoverable preparation error is not swept again. */
-      acknowledgeInbox?: boolean;
+      /** Inbox rows the failed assistant had adopted, including rows acked after earlier responses. */
+      retryInputMessageIds?: readonly string[];
     }
   | { kind: "cancelled"; reason: string };
 
@@ -176,6 +177,14 @@ export async function finalizeExecution(
               metadata: compactionFailureMetadata(
                 turn.metadata,
                 compactionFailureForFinalizer(input.cause),
+              ),
+            }
+          : {}),
+        ...(turn.role === "assistant" && input.cause.kind === "failed"
+          ? {
+              metadata: markFailedReplyRetryable(
+                turn.metadata,
+                input.cause.retryInputMessageIds ?? [],
               ),
             }
           : {}),

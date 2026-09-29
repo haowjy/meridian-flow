@@ -80,7 +80,9 @@ export function currentTurnKind(turn: Pick<Turn, "role">): CurrentTurn["kind"] {
 
 /** Both run-start and split reservation use the boundary's decision unchanged. */
 export function reservationTurn(
-  input: Omit<Parameters<typeof createLocalTurn>[0], "role" | "origin" | "status" | "metadata">,
+  input: Omit<Parameters<typeof createLocalTurn>[0], "role" | "origin" | "status" | "metadata"> & {
+    metadata?: Turn["metadata"];
+  },
   decision: CompactionDecision = { kind: "generate" },
 ): Turn {
   return createLocalTurn({
@@ -100,6 +102,6 @@ export function reservationTurn(
               : {}),
             ...(decision.controlMessageId ? { controlMessageId: decision.controlMessageId } : {}),
           }
-        : null,
+        : (input.metadata ?? null),
   });
 }

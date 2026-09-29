@@ -43,6 +43,8 @@ export interface WriterRunTurnInput extends RunTurnBase {
  */
 export interface DrainRunTurnInput extends RunTurnBase {
   drain: true;
+  /** Replays the adopted inbox inputs of a latest failed assistant reply. */
+  retry?: { failedTurnId: TurnId; replyTurnId: TurnId };
 }
 
 export type RunTurnInput = WriterRunTurnInput | DrainRunTurnInput;
@@ -72,6 +74,16 @@ export class RuntimeShuttingDownError extends Error {
   constructor(readonly threadId: ThreadId) {
     super("runtime_shutting_down");
     this.name = "RuntimeShuttingDownError";
+  }
+}
+
+/** The requested failed reply is no longer eligible for an explicit Retry. */
+export class ReplyRetryUnavailableError extends Error {
+  readonly code = "reply_retry_unavailable";
+
+  constructor(readonly threadId: ThreadId) {
+    super("reply_retry_unavailable");
+    this.name = "ReplyRetryUnavailableError";
   }
 }
 

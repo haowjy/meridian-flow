@@ -1432,6 +1432,9 @@ export function createInMemoryAppServices(): AppServices {
       async prepare() {
         throw new Error("in-memory run preparation is not implemented");
       },
+      async retryReply() {
+        throw new Error("in-memory reply retry is not implemented");
+      },
       getRunningTurn() {
         return null;
       },

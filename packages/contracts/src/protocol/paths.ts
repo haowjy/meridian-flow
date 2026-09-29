@@ -272,6 +272,11 @@ export function apiThreadTurnLiveLineagePath(threadId: string, turnId: string): 
   return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/live-lineage`;
 }
 
+/** POST: retry a latest failed reply under a client-minted assistant-turn id. */
+export function apiThreadTurnRetryPath(threadId: string, turnId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/retry`;
+}
+
 export type ModelRequestDebugQuery = {
   turnId?: string;
   iteration?: number;

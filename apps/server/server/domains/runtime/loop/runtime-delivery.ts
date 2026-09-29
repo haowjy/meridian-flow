@@ -95,8 +95,6 @@ export interface RuntimeDelivery
   refreshPending(threadId: ThreadId): Promise<void>;
   /** Settle any previous primary assistant before a new run selects context. */
   repairOrphanedTurns(lease: Lease): Promise<void>;
-  /** Receipt rows still unacknowledged when the owning run releases its claim. */
-  readRunReceiptIds(lease: Lease): Promise<string[]>;
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   /** Parent-first business transaction; the producer does not reacquire the lock. */
   withThreadLock<T>(
@@ -119,7 +117,10 @@ export interface RuntimeDelivery
       /** Turn-start writes run under the lock, after external context is prepared. */
       persist?: () => Promise<void>;
     } | null>,
-    options?: { signal?: AbortSignal },
+    options?: {
+      signal?: AbortSignal;
+      retry?: { failedTurnId: TurnId; replyTurnId: TurnId };
+    },
   ): Promise<T>;
   ackWithResponse<T>(lease: Lease, ids: string[], persist: () => Promise<T>): Promise<T>;
   splitAndContinue<TCurrent = undefined>(
@@ -129,6 +130,7 @@ export interface RuntimeDelivery
     lease: Lease;
     turnId: TurnId;
     cause: TerminalCause;
+    retryInputMessageIds?: readonly string[];
     settleSummaryResponses?: () => Promise<void>;
     continueWith?: DeliveryBoundary;
   }): Promise<

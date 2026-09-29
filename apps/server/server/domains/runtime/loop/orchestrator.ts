@@ -146,6 +146,7 @@ import type { RunClaim, ThreadPhase } from "./ports.js";
 import { createPrefixCacheStateService, type PrefixCacheState } from "./prefix-cache-state.js";
 import { writerFacingPreparationError } from "./preparation-failure.js";
 import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
+import { markReplyRetryOrigin } from "./reply-retry-metadata.js";
 import {
   type PreparedControlHistory,
   prepareFailedUndoHistory,
@@ -313,7 +314,6 @@ export function createOrchestrator(deps: OrchestratorDeps) {
                   : requestPreparationFailed
                     ? "request_preparation_failed"
                     : "execution_error"),
-              ...(preparationFailure || requestPreparationFailed ? { acknowledgeInbox: true } : {}),
               error: preparationFailure
                 ? writerFacingPreparationError(preparationFailure)
                 : requestPreparationFailed
@@ -505,7 +505,7 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
 async function runDrainTurn(
   deps: OrchestratorDeps,
   input: DrainRunLoopInput,
-  reservedTurnId: TurnId = crypto.randomUUID(),
+  reservedTurnId: TurnId = input.retry?.replyTurnId ?? crypto.randomUUID(),
 ): Promise<PreparedLoop> {
   let preparationError: Error | null = null;
   const setup = await deps.delivery.adoptBatch(
@@ -519,6 +519,10 @@ async function runDrainTurn(
       const ctx = await loadRunStartContext(deps, setupThread);
       preparationError = ctx.contextError;
       const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;
+      const requestPriorTurns = input.retry
+        ? priorTurns.filter((turn) => turn.id !== input.retry?.failedTurnId)
+        : priorTurns;
+      const retryInputMessageIds = selection.outstanding.map((row) => row.id);
       const existingTurns = [...inheritedTurns, ...priorTurns];
       const previousTurn = prevTurnId
         ? (existingTurns.find((turn) => turn.id === prevTurnId) ?? null)
@@ -568,7 +572,8 @@ async function runDrainTurn(
       let plan = makePlan(preparationError ? [] : selection.notices);
       const referenceUserTurnId =
         [...plan.turns].reverse().find((turn) => turn.role === "user")?.id ??
-        [...priorTurns, ...inheritedTurns].reverse().find((turn) => turn.role === "user")?.id ??
+        [...requestPriorTurns, ...inheritedTurns].reverse().find((turn) => turn.role === "user")
+          ?.id ??
         prevTurnId ??
         reservedTurnId;
       let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
@@ -592,7 +597,7 @@ async function runDrainTurn(
             pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
             turns: [
               ...inheritedTurns,
-              ...priorTurns,
+              ...requestPriorTurns,
               ...(skillBody ? [skillBody.turn] : []),
               ...plan.turns,
             ],
@@ -624,7 +629,7 @@ async function runDrainTurn(
             threadId: input.threadId,
             referenceTurnId: referenceUserTurnId,
             currentTurnId: reservedTurnId,
-            turns: [...inheritedTurns, ...priorTurns, ...plan.turns],
+            turns: [...inheritedTurns, ...requestPriorTurns, ...plan.turns],
             blocks: [],
             control,
             failedControlIds: selection.failedControlIds,
@@ -651,6 +656,9 @@ async function runDrainTurn(
                 position: nextTurnPosition(
                   imageUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
                 ),
+                ...(input.retry
+                  ? { metadata: markReplyRetryOrigin(null, input.retry.failedTurnId) }
+                  : {}),
               },
               preflight?.compaction ?? { kind: "generate" },
             );
@@ -670,9 +678,10 @@ async function runDrainTurn(
         referenceUserTurnId,
         preflight,
         messageTurns: plan.turns,
-        priorTurns,
+        priorTurns: requestPriorTurns,
         inheritedTurns,
         inheritedBlocks,
+        retryInputMessageIds,
         executionAdmitted: selection.outstanding.length > 0,
       };
       const events = [
@@ -732,7 +741,10 @@ async function runDrainTurn(
         },
       };
     },
-    { signal: input.signal },
+    {
+      signal: input.signal,
+      ...(input.retry ? { retry: input.retry } : {}),
+    },
   );
 
   const {
@@ -744,6 +756,7 @@ async function runDrainTurn(
     priorTurns,
     inheritedTurns,
     inheritedBlocks,
+    retryInputMessageIds,
   } = setup;
   setup.skillBodies.committed(skillBody ? [skillBody.turn] : []);
   return {
@@ -780,6 +793,7 @@ async function runDrainTurn(
           input.treeBudget ??
           createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
         skillBodies: setup.skillBodies,
+        initialRetryMessageIds: retryInputMessageIds,
       });
     },
   };
@@ -1536,6 +1550,7 @@ async function executeLoop({
   initialExecutionAdmitted,
   treeBudget,
   skillBodies,
+  initialRetryMessageIds,
 }: {
   deps: OrchestratorDeps;
   input: RunLoopInput;
@@ -1549,6 +1564,7 @@ async function executeLoop({
   initialExecutionAdmitted: boolean;
   treeBudget: TreeBudget;
   skillBodies: ReturnType<typeof createSkillBodyPreparation>;
+  initialRetryMessageIds: readonly string[];
 }): Promise<Turn> {
   const { gateway, repos, eventWriter } = deps;
   const eventSink = deps.eventSink;
@@ -1574,6 +1590,7 @@ async function executeLoop({
   }
 
   let currentTurn: Turn = reservedTurn;
+  const retryInputMessageIds = new Set(initialRetryMessageIds);
   let preparedContext: AssembledNextTurnContext | undefined = initialContext;
   let pendingSummaryResponses: import("../ports/conversation-summarizer.js").SummaryResponse[] = [];
   let pendingSummary:
@@ -1727,6 +1744,12 @@ async function executeLoop({
   async function acceptBoundary(
     result: AdoptedBatch<unknown>,
   ): Promise<Awaited<ReturnType<typeof drainInbox>>> {
+    if (result.split) {
+      retryInputMessageIds.clear();
+      for (const id of result.drain.ackIds) retryInputMessageIds.add(id);
+    } else {
+      for (const id of result.drain.ackIds) retryInputMessageIds.add(id);
+    }
     if (result.completed) {
       const index = allTurns.findIndex((turn) => turn.id === result.completed?.id);
       allTurns[index] = result.completed;
@@ -1812,6 +1835,7 @@ async function executeLoop({
       lease: input.lease,
       turnId: currentTurn.id,
       cause,
+      ...(cause.kind === "failed" ? { retryInputMessageIds: [...retryInputMessageIds] } : {}),
       settleSummaryResponses: () => settlePendingSummary(),
       ...(continueOnPending ? { continueWith: boundaryInput() } : {}),
     });
@@ -2094,7 +2118,6 @@ async function executeLoop({
                   error: writerFacingPreparationError(
                     new CompactionPreparationError("context_window_exceeded"),
                   ),
-                  acknowledgeInbox: true,
                 });
               }
               retriedContextOverflow = true;

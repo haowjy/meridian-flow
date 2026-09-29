@@ -124,6 +124,7 @@ export {
   isDrainRun,
   NoPendingWakeError,
   type PreparedRun,
+  ReplyRetryUnavailableError,
   type RunOutcome,
   type RunTurnInput,
   type RunTurnPort,

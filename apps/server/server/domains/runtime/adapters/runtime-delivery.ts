@@ -26,8 +26,9 @@ import type {
   RunStarter,
 } from "../loop/ports.js";
 import { writerFacingPreparationError } from "../loop/preparation-failure.js";
+import { readReplyRetryMetadata } from "../loop/reply-retry-metadata.js";
 import { UndoRequestPreparationError } from "../loop/request-preparation.js";
-import { NoPendingWakeError } from "../loop/run-turn-port.js";
+import { NoPendingWakeError, ReplyRetryUnavailableError } from "../loop/run-turn-port.js";
 import type {
   AdoptedBatch,
   DeliveryBoundary,
@@ -48,6 +49,7 @@ export interface DeliveryStore extends InboxReader {
   pendingWorkThreads(limit: number, afterThreadId?: ThreadId): Promise<ThreadId[]>;
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   ack(threadId: ThreadId, ids: string[]): Promise<void>;
+  restoreForRetry(threadId: ThreadId, ids: readonly string[]): Promise<InboxMessage[]>;
 }
 
 export interface DeliveryLeaseStore {
@@ -100,11 +102,13 @@ export function createDeliveryAdapter(
     selection: TSelection;
     pendingBatch: InboxMessage[];
     work: Awaited<ReturnType<typeof workBatch>>;
+    retryMessageIds?: ReadonlySet<string>;
   };
   async function selectForPreparation(
     threadId: ThreadId,
     at: "run_start",
     failedControlIds?: ReadonlySet<string>,
+    retryMessageIds?: ReadonlySet<string>,
   ): Promise<SelectedDelivery<DeliverySelection>>;
   async function selectForPreparation(
     threadId: ThreadId,
@@ -114,8 +118,12 @@ export function createDeliveryAdapter(
     threadId: ThreadId,
     at: "run_start" | "boundary",
     failedControlIds: ReadonlySet<string> = new Set(),
+    retryMessageIds?: ReadonlySet<string>,
   ): Promise<SelectedDelivery<DeliverySelection | DeliveryBoundarySelection>> {
-    const pendingBatch = await inbox.selectPending(threadId);
+    const allPending = await inbox.selectPending(threadId);
+    const pendingBatch = retryMessageIds
+      ? allPending.filter((row) => retryMessageIds.has(row.id))
+      : allPending;
     const projection = await inbox.readPendingProjection(threadId);
     const boundIds = new Set(projection.run?.messageIds ?? []);
     const eligible = pendingBatch.filter((row) => !boundIds.has(row.id));
@@ -142,30 +150,73 @@ export function createDeliveryAdapter(
       at === "run_start"
         ? { ...selectionFields, next: nextWork, failedControlIds }
         : selectionFields;
-    return { selection, pendingBatch, work };
+    return { selection, pendingBatch, work, ...(retryMessageIds ? { retryMessageIds } : {}) };
   }
   async function selectionStillCurrent(
     threadId: ThreadId,
     selected: SelectedDelivery<DeliverySelectionFields>,
   ) {
-    const [pendingBatch, thread] = await Promise.all([
+    const [allPending, thread] = await Promise.all([
       inbox.selectPending(threadId),
       deps.repos.threads.findById(threadId),
     ]);
     if (!thread) throw new Error(`Thread not found: ${threadId}`);
+    const pendingBatch = selected.retryMessageIds
+      ? allPending.filter((row) => selected.retryMessageIds?.has(row.id))
+      : allPending;
     return (
       thread.activeLeafTurnId === selected.selection.activeLeafTurnId &&
       sameInboxBatch(pendingBatch, selected.pendingBatch)
     );
   }
+
+  async function restoreFailedReplyInputs(
+    threadId: ThreadId,
+    retry: { failedTurnId: TurnId; replyTurnId: TurnId },
+  ): Promise<string[]> {
+    const [failedTurn, latestTurn, thread, pending] = await Promise.all([
+      deps.repos.turns.findById(retry.failedTurnId),
+      deps.repos.turns.getLatestByThread(threadId),
+      deps.repos.threads.findById(threadId),
+      inbox.selectPending(threadId),
+    ]);
+    if (
+      !failedTurn ||
+      failedTurn.threadId !== threadId ||
+      failedTurn.role !== "assistant" ||
+      failedTurn.status !== "error" ||
+      latestTurn?.id !== failedTurn.id ||
+      !thread ||
+      (thread.kind !== "primary" && thread.kind !== "subagent") ||
+      pending.length > 0
+    ) {
+      throw new ReplyRetryUnavailableError(threadId);
+    }
+    const metadata = readReplyRetryMetadata(failedTurn);
+    if (!metadata?.messageIds.length) throw new ReplyRetryUnavailableError(threadId);
+    const restored = await inbox.restoreForRetry(threadId, metadata.messageIds);
+    if (
+      restored.length !== metadata.messageIds.length ||
+      restored.some((message) => message.intent !== "message")
+    ) {
+      throw new ReplyRetryUnavailableError(threadId);
+    }
+    await appendPending(threadId);
+    return metadata.messageIds;
+  }
+
   async function prepareAndCommit<
     TSelection extends DeliverySelection | DeliveryBoundarySelection,
     TPrepared,
     TResult,
   >(input: {
     threadId: ThreadId;
-    select: (failedControlIds: ReadonlySet<string>) => Promise<SelectedDelivery<TSelection>>;
+    select: (
+      failedControlIds: ReadonlySet<string>,
+      retryMessageIds?: ReadonlySet<string>,
+    ) => Promise<SelectedDelivery<TSelection>>;
     retryControlId?: (selection: TSelection) => string | null;
+    retry?: { failedTurnId: TurnId; replyTurnId: TurnId };
     signal?: AbortSignal;
     validate?: () => Promise<void>;
     prepare: (
@@ -191,6 +242,18 @@ export function createDeliveryAdapter(
       return attemptPreparation();
     }
     async function attemptPreparation(): Promise<TResult> {
+      if (input.retry) {
+        const retry = input.retry;
+        return threadLock.withThreadLock(input.threadId, async () => {
+          const retryMessageIds = await restoreFailedReplyInputs(input.threadId, retry);
+          const selected = await input.select(failedControlIds, new Set(retryMessageIds));
+          input.signal?.throwIfAborted();
+          const prepared = await input.prepare(selected.selection, selected.work);
+          input.signal?.throwIfAborted();
+          await input.validate?.();
+          return commitSelected(selected, prepared);
+        });
+      }
       for (let attempt = 0; attempt < PREPARATION_ATTEMPTS; attempt += 1) {
         const lockedPreparation = attempt === PREPARATION_ATTEMPTS - 1;
         if (lockedPreparation) {
@@ -561,7 +624,7 @@ export function createDeliveryAdapter(
       const completion = await finalizeExecution(deps, {
         threadId,
         turnId: next.id,
-        cause: { kind: "failed", reason: error.code, error, acknowledgeInbox: true },
+        cause: { kind: "failed", reason: error.code, error },
       });
       next = completion.turn;
       await inbox.ack(threadId, drain.ackIds);
@@ -642,7 +705,6 @@ export function createDeliveryAdapter(
       );
       await deps.publishFinalizedReports(reports);
     },
-    readRunReceiptIds: async (lease) => (await leaseStore.lockReceipt(lease))?.ids ?? [],
     selectPending: inbox.selectPending,
     readPendingProjection: inbox.readPendingProjection,
     pendingMessageThreads: async (limit, afterThreadId) => {
@@ -667,8 +729,9 @@ export function createDeliveryAdapter(
     adoptBatch: async (lease, prepare, options) => {
       const result = await prepareAndCommit({
         threadId: lease.threadId,
-        select: (failedControlIds) =>
-          selectForPreparation(lease.threadId, "run_start", failedControlIds),
+        select: (failedControlIds, retryMessageIds) =>
+          selectForPreparation(lease.threadId, "run_start", failedControlIds, retryMessageIds),
+        retry: options?.retry,
         retryControlId: (selection) =>
           selection.next.kind === "control" ? selection.next.control.id : null,
         signal: options?.signal,
@@ -722,6 +785,15 @@ export function createDeliveryAdapter(
         const cause = receipt?.cancelRequested
           ? { kind: "cancelled" as const, reason: "cancelled" }
           : input.cause;
+        const finalCause =
+          cause.kind === "failed"
+            ? {
+                ...cause,
+                retryInputMessageIds: [
+                  ...new Set([...(input.retryInputMessageIds ?? []), ...(receipt?.ids ?? [])]),
+                ],
+              }
+            : cause;
         if (input.continueWith && cause.kind === "success") {
           const { selection } = await selectForPreparation(threadId, "boundary");
           if (
@@ -735,11 +807,11 @@ export function createDeliveryAdapter(
         const completion = await finalizeExecution(deps, {
           threadId,
           turnId: input.turnId,
-          cause,
+          cause: finalCause,
         });
         if (
-          completion.turn.status === "cancelled" ||
-          (cause.kind === "failed" && cause.acknowledgeInbox)
+          completion.turn.role === "assistant" &&
+          (completion.turn.status === "cancelled" || completion.turn.status === "error")
         ) {
           await inbox.ack(threadId, receipt?.ids ?? []);
         }
@@ -757,12 +829,25 @@ export function createDeliveryAdapter(
         const cause = receipt?.cancelRequested
           ? { kind: "cancelled" as const, reason: "cancelled" }
           : input.cause;
+        const finalCause =
+          cause.kind === "failed"
+            ? {
+                ...cause,
+                retryInputMessageIds: [
+                  ...new Set([...(input.retryInputMessageIds ?? []), ...(receipt?.ids ?? [])]),
+                ],
+              }
+            : cause;
         const result = await finalizeExecution(deps, {
           threadId,
           turnId: input.turnId,
-          cause,
+          cause: finalCause,
         });
-        if (result.turn.status === "cancelled") await inbox.ack(threadId, receipt?.ids ?? []);
+        if (
+          result.turn.role === "assistant" &&
+          (result.turn.status === "cancelled" || result.turn.status === "error")
+        )
+          await inbox.ack(threadId, receipt?.ids ?? []);
         await deps.runClaim.release(input.lease);
         await appendPending(threadId);
         return result;
