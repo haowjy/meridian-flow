@@ -27,9 +27,16 @@ else
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { executionScenario } = await import("../../../test-support/execution-scenario.js");
     const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
+    const { createDetachedWorkTracker } = await import("../detached-work.js");
+    const { createDrizzleCreditLedger } = await import("../../billing/index.js");
     const { createTestDrizzleDelivery } = await import(
       "../loop/__tests__/test-drizzle-delivery.js"
     );
+    const { createRuntimeHarness } = await import("../loop/__tests__/runtime-harness.js");
+    const { createTestAgentBinding } = await import("../loop/__tests__/runtime-fixtures.js");
+    const { scriptedGateway } = await import("../loop/__tests__/test-gateway.js");
+    const { createRunStarter } = await import("../loop/run-starter.js");
+    const { generateHandoffBrief } = await import("./brief-request.js");
     const { createWakeIfRunnable } = await import("../loop/wake-if-runnable.js");
     const { createOrphanReportRepair } = await import("../spawn/orphan-report-repair.js");
     const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
@@ -120,6 +127,48 @@ else
         claim,
       });
       return true;
+    }
+
+    async function destinationRunner(
+      fixture: Awaited<ReturnType<typeof handoffSeed>>,
+      agentRevisions?: NonNullable<Parameters<typeof createRuntimeHarness>[0]>["agentRevisions"],
+    ) {
+      const backgroundTasks = createDetachedWorkTracker();
+      const runClaim = createDrizzleRunClaim(db, { holderId: "brief-wake-runner" });
+      const eventWriter = createDrizzleEventJournalWriter(db);
+      const creditLedger = createDrizzleCreditLedger(db);
+      await creditLedger.grant({
+        userId: fixture.ids.user,
+        source: "manual",
+        amountMillicredits: "1000000000",
+        reason: "brief wake runtime fixture",
+      });
+      let runtime!: ReturnType<typeof createRuntimeHarness>;
+      const runStarter = createRunStarter(
+        { startDrain: (threadId) => runtime.startDrain(threadId) },
+        createInMemoryEventSink(),
+      );
+      const delivery = createTestDrizzleDelivery(db, {
+        backgroundTasks,
+        repos: fixture.repos,
+        eventWriter,
+        runClaim,
+        runStarter,
+      });
+      runtime = createRuntimeHarness({
+        backgroundTasks,
+        repos: fixture.repos,
+        eventWriter,
+        runClaim,
+        delivery,
+        runStarter,
+        creditLedger,
+        agentRevisions:
+          agentRevisions ??
+          createTestAgentBinding("gpt-4.1-mini", "Write stories.", () => [fixture.destination.id]),
+        gateway: scriptedGateway({ usage: { inputTokens: 1, outputTokens: 1 } }),
+      });
+      return { backgroundTasks, delivery, runClaim, runStarter, runtime };
     }
 
     it("settles a pending seed without acquiring or mutating the source run", async () => {
@@ -244,24 +293,14 @@ else
       await runClaim.release(heldSourceLease);
     });
 
-    it("detaches the brief and wakes queued work only after releasing its destination claim", async () => {
+    it.each([
+      "complete",
+      "failed",
+      "stopped",
+    ] as const)("answers a held-claim message after a %s handoff seed using the real run starter", async (ending) => {
       const fixture = await handoffSeed();
-      const runClaim = createDrizzleRunClaim(db, { holderId: "brief-claim" });
-      const inbox = createDrizzleInbox(db);
-      const starts: string[] = [];
-      const runStarter = {
-        async start(threadId: string) {
-          const claim = await runClaim.hold(threadId as never);
-          if (!claim) return;
-          starts.push(threadId);
-          await claim.release();
-        },
-      };
-      const delivery = createTestDrizzleDelivery(db, {
-        repos: fixture.repos,
-        runClaim,
-        runStarter,
-      });
+      const runner = await destinationRunner(fixture);
+      const { backgroundTasks, delivery, runClaim, runStarter } = runner;
       const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter });
       let markProviderStarted!: () => void;
       const providerStarted = new Promise<void>((resolve) => {
@@ -271,13 +310,9 @@ else
       const providerGate = new Promise<void>((resolve) => {
         releaseProvider = resolve;
       });
-      let markWoke!: () => void;
-      const woke = new Promise<void>((resolve) => {
-        markWoke = resolve;
-      });
       const postCommit: Array<() => Promise<void>> = [];
       const service = createHandoffBriefs({
-        backgroundTasks: processDetachedWork,
+        backgroundTasks,
         repos: fixture.repos,
         eventWriter: createDrizzleEventJournalWriter(db),
         eventSink: createInMemoryEventSink(),
@@ -285,18 +320,24 @@ else
         runClaim,
         prioritizePendingControls: (threadId) =>
           createDrizzleInbox(db).prioritizePendingControls(threadId),
-        wakeIfRunnable: async (threadId) => {
-          await wakeIfRunnable(threadId);
-          markWoke();
-        },
+        wakeIfRunnable,
         billingUsage: {
           async canStartTurn() {
             return true;
           },
         },
-        async generate() {
+        async generate({ signal }) {
           markProviderStarted();
+          if (ending === "stopped")
+            return new Promise((resolve) => {
+              signal.addEventListener(
+                "abort",
+                () => resolve({ outcome: { kind: "cancelled", modelResponses: [] } }),
+                { once: true },
+              );
+            });
           await providerGate;
+          if (ending === "failed") throw new Error("brief provider failure");
           return {
             outcome: {
               kind: "complete",
@@ -323,26 +364,138 @@ else
       await launchPostCommit();
       await providerStarted;
       expect(await runClaim.startExecution(fixture.destination.id, "racing-run")).toBeNull();
-      const queued = await inbox.enqueue({
+      const queued = await delivery.enqueue({
         threadId: fixture.destination.id,
         intent: "message",
         provenance: { kind: "writer", actorId: fixture.ids.user },
         body: { kind: "text", text: "After the brief." },
         idempotencyKey: "during-brief",
       });
+      const compact =
+        ending === "stopped"
+          ? null
+          : await delivery.enqueue({
+              threadId: fixture.destination.id,
+              intent: "control",
+              provenance: { kind: "writer", actorId: fixture.ids.user },
+              body: { kind: "compact" },
+              idempotencyKey: "compact-during-brief",
+            });
       expect(await runClaim.startExecution(fixture.destination.id, "racing-wake")).toBeNull();
 
-      releaseProvider();
-      await woke;
+      if (ending === "stopped") {
+        await expect(service.stop(fixture.destination.id, fixture.seed.id)).resolves.toBe(true);
+      } else {
+        releaseProvider();
+      }
 
-      expect(starts).toEqual([fixture.destination.id]);
-      expect(await fixture.repos.turns.findById(fixture.seed.id)).toMatchObject({
+      const expectedSeedStatus =
+        ending === "complete" ? "complete" : ending === "failed" ? "error" : "cancelled";
+      await expect
+        .poll(async () => (await fixture.repos.turns.findById(fixture.seed.id))?.status)
+        .toBe(expectedSeedStatus);
+      await expect
+        .poll(async () => (await fixture.repos.turns.findById(queued.id))?.status)
+        .toBe("complete");
+      await backgroundTasks.drain();
+
+      const turns = await fixture.repos.turns.listByThread(fixture.destination.id);
+      const answer = turns.find(
+        (turn) => turn.role === "assistant" && turn.prevTurnId === queued.id,
+      );
+      expect(answer).toMatchObject({ status: "complete", prevTurnId: queued.id });
+      expect(answer?.position).toBeGreaterThan(
+        (await fixture.repos.turns.findById(fixture.seed.id))?.position ?? 0,
+      );
+      if (compact) {
+        const compactTurn = await fixture.repos.turns.findByControlId(
+          fixture.destination.id,
+          compact.id,
+        );
+        expect(compactTurn?.position).toBeGreaterThan(
+          (await fixture.repos.turns.findById(fixture.seed.id))?.position ?? 0,
+        );
+      }
+      expect(await delivery.selectPending(fixture.destination.id)).toEqual([]);
+    });
+
+    it("completes the brief before a broken destination binding fails its reply", async () => {
+      const fixture = await handoffSeed();
+      const runner = await destinationRunner(
+        fixture,
+        createTestAgentBinding("gpt-4.1-mini", "Source Agent.", () => [fixture.source.id]),
+      );
+      let generateCalls = 0;
+      const service = createHandoffBriefs({
+        backgroundTasks: runner.backgroundTasks,
+        repos: fixture.repos,
+        eventWriter: createDrizzleEventJournalWriter(db),
+        eventSink: createInMemoryEventSink(),
+        threadLock: createDrizzleThreadLock(db),
+        runClaim: runner.runClaim,
+        prioritizePendingControls: (threadId) =>
+          createDrizzleInbox(db).prioritizePendingControls(threadId),
+        wakeIfRunnable: createWakeIfRunnable({
+          delivery: runner.delivery,
+          runStarter: runner.runStarter,
+        }),
+        billingUsage: {
+          async canStartTurn() {
+            return true;
+          },
+        },
+        generate(input) {
+          generateCalls += 1;
+          return generateHandoffBrief(
+            runner.runtime.deps,
+            input.destination,
+            input.seed,
+            input.signal,
+          );
+        },
+        async publishStatus() {},
+        schedulePostCommit(task) {
+          void task();
+        },
+      });
+      const claim = required(await service.hold(fixture.destination.id));
+      service.launchAfterCommit({
+        threadId: fixture.destination.id,
+        seedTurnId: fixture.seed.id,
+        claim,
+      });
+      const queued = await runner.delivery.enqueue({
+        threadId: fixture.destination.id,
+        intent: "message",
+        provenance: { kind: "writer", actorId: fixture.ids.user },
+        body: { kind: "text", text: "The destination reply should fail." },
+        idempotencyKey: "broken-destination-binding",
+      });
+
+      await expect
+        .poll(async () => (await fixture.repos.turns.findById(fixture.seed.id))?.status)
+        .toBe("complete");
+      await expect
+        .poll(async () =>
+          (await fixture.repos.turns.listByThread(fixture.destination.id)).some(
+            (turn) => turn.role === "assistant" && turn.status === "error",
+          ),
+        )
+        .toBe(true);
+      await runner.backgroundTasks.drain();
+
+      expect(
+        await runner.runtime.deps.agentRevisions.readThreadBinding(fixture.destination.id),
+      ).toBeUndefined();
+      expect(await fixture.repos.turns.findById(queued.id)).toMatchObject({
+        role: "user",
         status: "complete",
       });
-      expect(await inbox.selectPending(fixture.destination.id)).toMatchObject([{ id: queued.id }]);
-      const idleClaim = await runClaim.hold(fixture.destination.id);
-      expect(idleClaim).not.toBeNull();
-      await idleClaim?.release();
+      expect(await fixture.repos.turns.findById(fixture.seed.id)).toMatchObject({
+        role: "system",
+        status: "complete",
+      });
+      expect(generateCalls).toBe(1);
     });
 
     it("settles paid rows on shutdown, leaves S pending, releases the claim, and skips the wake", async () => {

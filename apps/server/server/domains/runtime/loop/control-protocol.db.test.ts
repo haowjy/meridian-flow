@@ -18,6 +18,7 @@ else
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
+    const { processDetachedWork } = await import("../detached-work.js");
     assertThrowawayDatabaseForRunDbTests(url);
     const db = createDb(url, { max: 8 });
     beforeEach(() => deleteDrizzleRows(db, [schema.users]));
@@ -193,6 +194,7 @@ else
 
       gateway.release(1);
       await execution;
+      await processDetachedWork.drain();
       const turns = await settled(rig);
       const command = turns.find(
         (turn) =>
@@ -648,6 +650,42 @@ else
         status: "error",
         error: "This manual compaction was interrupted.",
         metadata: { reason: "interrupted", phase: "recovery", controlMessageId: control.id },
+      });
+      expect(await delivery.selectPending(rig.threadId)).toEqual([]);
+    });
+
+    it("a crash while a command waits leaves it queued for the next run", async () => {
+      const rig = await manualFixture();
+      const lease = await rig.runClaim.hold(rig.threadId);
+      if (!lease) throw new Error("expected the simulated pre-crash run claim");
+      const control = await compactControl(rig);
+      expect(await rig.delivery.selectPending(rig.threadId)).toContainEqual(
+        expect.objectContaining({ id: control.id }),
+      );
+
+      // The queued row survives the process that held the thread claim.
+      await lease.release();
+      const replacement = createDrizzleRunClaim(db);
+      const delivery = createTestDrizzleDelivery(db, {
+        repos: rig.repos,
+        eventWriter: rig.eventWriter,
+        runClaim: replacement,
+      });
+      const recovery = createOrchestrator({ ...rig.deps, runClaim: replacement, delivery });
+      const run = await recovery.prepare({ threadId: rig.threadId, drain: true });
+      await run.execute();
+
+      const compaction = (await rig.repos.turns.listByThread(rig.threadId)).find(
+        (turn) => turn.role === "compaction",
+      );
+      expect(compaction).toMatchObject({
+        status: "error",
+        error: "There is nothing to compact yet.",
+        metadata: {
+          trigger: "manual",
+          controlMessageId: control.id,
+          reason: "nothing_to_compact",
+        },
       });
       expect(await delivery.selectPending(rig.threadId)).toEqual([]);
     });

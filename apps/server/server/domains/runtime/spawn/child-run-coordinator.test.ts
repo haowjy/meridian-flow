@@ -28,6 +28,7 @@ import {
   createInMemoryThreadLock,
 } from "../adapters/in-memory/loop-ports.js";
 import { createRuntimeHarness } from "../loop/__tests__/runtime-harness.js";
+import { scriptedGateway } from "../loop/__tests__/test-gateway.js";
 import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js";
 import type { RunTurnPort } from "../loop/run-turn-port.js";
 import { createToolRegistry, resolveAgentThreadTurnContext } from "../tools/index.js";
@@ -128,6 +129,8 @@ async function fixture(
       | RunTurnPort
       | ((repos: ReturnType<typeof createInMemoryRepositories>) => RunTurnPort);
     eventWriter?: EventJournalWriter;
+    realRuntime?: boolean;
+    gateway?: ReturnType<typeof scriptedGateway>;
   } = {},
 ) {
   const transactionOwner = new InMemoryTransactionOwner();
@@ -224,6 +227,8 @@ async function fixture(
   const runtimeHarness = createRuntimeHarness({
     repos,
     eventWriter,
+    agentRevisions: revisions,
+    ...(options.gateway ? { gateway: options.gateway } : {}),
     runClaim,
     inbox,
     threadLock: createInMemoryThreadLock(),
@@ -238,7 +243,10 @@ async function fixture(
     orchestrator:
       typeof options.orchestrator === "function"
         ? options.orchestrator(repos)
-        : (options.orchestrator ?? stubOrchestrator(turns, repos, runClaim)),
+        : (options.orchestrator ??
+          (options.realRuntime
+            ? runtimeHarness.orchestrator
+            : stubOrchestrator(turns, repos, runClaim))),
     repos: { executionReports: repos.executionReports },
     eventWriter,
     readActivity,
@@ -318,6 +326,7 @@ async function fixture(
     runClaim,
     eventWriter,
     eventSink,
+    runtimeHarness,
   };
 }
 
@@ -350,6 +359,92 @@ function transcriptFor(
 }
 
 describe("ChildRunCoordinator spawn selection", () => {
+  it("debits child work to the lineage root when a fork coordinates the spawn", async () => {
+    const runtimeGateway = Object.assign(
+      scriptedGateway({ usage: { inputTokens: 100, outputTokens: 10 } }),
+      {
+        listModels: () => [
+          {
+            id: "parent-model",
+            provider: "openai",
+            tokenizer: "o200k" as const,
+            displayName: "Fixture",
+            contextWindow: 128000,
+            maxOutputTokens: 100,
+            promptCache: { kind: "automatic" as const, ttlMs: 60000 },
+            capabilities: new Set(["image_input"]),
+          },
+        ],
+      },
+    );
+    const { coordinator, parent, parentConfiguration, revisions, repos, runtimeHarness } =
+      await fixture({
+        realRuntime: true,
+        gateway: runtimeGateway,
+      });
+    const cutoff = await repos.turns.create({
+      threadId: parent.id,
+      role: "user",
+      origin: "writer",
+      status: "complete",
+    });
+    const forkResult = await repos.threads.createDerivedPrimary({
+      id: crypto.randomUUID() as ThreadId,
+      userId: parent.userId as never,
+      projectId: parent.projectId as never,
+      workId: null,
+      source: parent,
+      originType: "fork",
+      originTurnId: cutoff.id,
+      title: "Fork coordinator",
+    });
+    const fork = forkResult.thread;
+    const callerTurn = await repos.turns.create({
+      threadId: fork.id,
+      prevTurnId: cutoff.id,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    });
+    const parentBinding = await revisions.readThreadBinding(parent.id);
+    if (!parentBinding?.revision) throw new Error("parent binding missing");
+    await revisions.bindThread(fork.id, parentBinding.revision.id, parentConfiguration, null);
+    await runtimeHarness.creditLedger.grant({
+      userId: parent.userId,
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "fork coordinator debit fixture",
+    });
+
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: fork,
+        parentTurnId: callerTurn.id,
+        agentSlug: "",
+        prompt,
+        budget: createDefaultTreeBudget(),
+      },
+      { mode: "foreground" },
+    );
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+    const child = await repos.threads.findById(result.report.threadId);
+    expect(child?.rootThreadId).toBe(parent.rootThreadId);
+    expect(child?.rootThreadId).not.toBe(fork.id);
+
+    const consumption = (
+      await runtimeHarness.creditLedger.listTransactions({
+        userId: parent.userId,
+        limit: 20,
+      })
+    ).find((transaction) => transaction.transactionType === "consumption");
+    expect(consumption?.metadata).toMatchObject({
+      rootThreadId: parent.rootThreadId,
+      threadId: result.report.threadId,
+    });
+  });
+
   it("refuses depth 4 before creating a child; depth 3 still spawns", async () => {
     const { coordinator, parent, journal } = await fixture();
     const refused = await coordinator.runChild(
