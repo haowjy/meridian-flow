@@ -132,7 +132,10 @@ end-to-end as one suite.
   ```
 
 - **Expect:** normal variants answer every queued message before C; the command
-  is not absorbed or run at a tool boundary. On Stop, the stamped command runs
+  stays queued until the messages finish and never runs at a tool boundary. If
+  automatic compaction occurs first, the command is not absorbed; it runs at the
+  end of the queue and either compacts new history or refuses with
+  `nothing_to_compact`. On Stop, the stamped command runs
   first, the waiting message appears verbatim among C's pinned requests, and
   the message is answered after C. No message is lost or answered twice.
 - **Evidence:** admitted messages, control UUID, final roles and request messages.

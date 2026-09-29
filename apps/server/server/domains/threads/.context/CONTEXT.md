@@ -79,8 +79,8 @@ reads only the raw `trigger` (a manual C whose run failed preparation carries no
 plan, so the full codec would not parse) and exhaustively handles the
 pending-placeholder role set from `@meridian/contracts/threads`. A completed
 compaction's metadata also carries its frozen `elisions` and ordered
-`pinnedRequestTurnIds`; the codec declares `trigger`, `controlMessageId`, and
-`satisfiesControlId`. `CompactionMetadataCodec` accepts either a planned cut or
+`pinnedRequestTurnIds`; the codec declares `trigger` and
+`controlMessageId`. `CompactionMetadataCodec` accepts either a planned cut or
 a failure without one; failure fields (`reason` and `phase` together, plus
 optional `estimatedTokens`/`fitLimitTokens`) are written only by
 `compactionFailureMetadata`, shared by live failure landing and orphan
@@ -594,14 +594,16 @@ turn. Its bound_turn_ids retain cancellation membership only for the live run,
 including committed predecessors; membership and current-turn binding are atomic.
 Initial and rebaked prompts share one resolved Agent context per composition.
 
-Manual compaction controls hold no transcript position until execution. Divider
-metadata links `controlMessageId` (manual) or `satisfiesControlId` (automatic).
+Manual compaction controls hold no transcript position until execution. Manual
+divider metadata links `controlMessageId`; automatic dividers have no control
+link.
 Completed compactions require ordered `pinnedRequestTurnIds`, including every
 unanswered directed message in the run receipt and adoption batch. Failed
 dividers, manual or automatic, carry typed `reason` and `phase` metadata and
 writer copy in `turn.error`. A failed C gets no bake pointer, so it stays an
 ordinary transcript item and opens no history segment.
-Control acknowledgement commits with the divider's ending, never B's response.
+The command is acknowledged when its start commits, not when C ends or B
+responds.
 
 ### Compaction undo projection
 

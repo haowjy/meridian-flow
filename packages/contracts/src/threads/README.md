@@ -10,7 +10,8 @@ writer label ("Compact conversation" or "Undo compaction"). Snapshot pending sta
 `inbox.changed` share the same schema. A queued control has no transcript
 position until a divider with `metadata.controlMessageId` (or, for undo, a U
 naming it) starts it. Commands are selected at run start, one per run, after
-waiting messages unless Stop stamps one to run first with those messages.
+waiting messages unless Stop stamps all pending commands to run first with
+those messages.
 
 Manual dividers use role `compaction`, `trigger: "manual"`, and ordinary turn
 statuses: `pending`, `complete`, `error`, `cancelled`. A failed divider of
