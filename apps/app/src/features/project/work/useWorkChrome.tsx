@@ -9,12 +9,13 @@ import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import { Layers } from "lucide-react";
-import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
 import { IndexTabChip, ReturnTabChip } from "../shell/IndexTabChip";
 import { useWorkArchiveToggle } from "./useWorkArchiveToggle";
 import type { WorkDeletion } from "./useWorkDeletion";
 import { WorkActionsMenu } from "./WorkActionsMenu";
+import { WORK_ROW_OPERATIONS, WorkCommandFailureRow } from "./WorkCommandFailureRow";
 import { PendingWorkTitleTab, WorkTitleTab } from "./WorkTitles";
 
 /** The Work destination's chrome pieces, shared by the desktop band and the phone top bar. */
@@ -27,7 +28,8 @@ export function useWorkChrome(
   /** `tab` in the desktop band; `quiet` in the phone top bar's trail. */
   variant: "tab" | "quiet",
 ) {
-  const archiveToggle = useWorkArchiveToggle(projectId);
+  const toggleArchive = useWorkArchiveToggle(projectId);
+  const failures = useWorkCommandFailures(projectId, WORK_ROW_OPERATIONS);
   const onCollection = routeWork.status === "none" || routeWork.status === "new";
   const pendingName = routeWork.status === "creating" ? routeWork.name : undefined;
   const openCollection = () => {
@@ -35,8 +37,7 @@ export function useWorkChrome(
   };
   const work = routeWork.status === "present" ? routeWork.work : null;
   const remembered = onCollection ? rememberedWork : null;
-  const archiveFailure = work ? archiveToggle.failureFor(work.id) : null;
-  const deleteFailure = work ? deletion.failures.get(work.id) : undefined;
+  const failure = work ? failures.get(work.id) : undefined;
   return {
     onCollection,
     openCollection,
@@ -49,25 +50,16 @@ export function useWorkChrome(
         onClick={onCollection ? undefined : openCollection}
       />
     ),
-    notice: archiveFailure ? (
-      <InlineErrorRow
-        message={
-          archiveFailure.operation === "archive"
-            ? t`Work couldn’t be archived`
-            : t`Work couldn’t be unarchived`
-        }
-        onRetry={() => void archiveFailure.retry()}
-        actionLabel={t`Retry`}
-        onDismiss={archiveFailure.dismiss}
-      />
-    ) : work && deleteFailure ? (
-      <InlineErrorRow
-        message={t`Work couldn’t be deleted`}
-        onRetry={() => deletion.remove(work, "detail")}
-        actionLabel={t`Retry`}
-        onDismiss={deleteFailure.dismiss}
-      />
-    ) : null,
+    notice:
+      work && failure ? (
+        <WorkCommandFailureRow
+          failure={failure}
+          // Retrying a delete here leaves the Work page, as the delete did.
+          onRetry={
+            failure.operation === "delete" ? () => deletion.remove(work, "detail") : undefined
+          }
+        />
+      ) : null,
     title: work ? (
       <WorkTitleTab key={work.id} projectId={projectId} work={work} variant={variant} />
     ) : pendingName ? (
@@ -85,7 +77,7 @@ export function useWorkChrome(
     actions: work ? (
       <WorkActionsMenu
         work={work}
-        onToggleArchive={() => void archiveToggle.toggle(work)}
+        onToggleArchive={() => void toggleArchive(work)}
         onDelete={() => deletion.remove(work, "detail")}
       />
     ) : null,

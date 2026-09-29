@@ -6,9 +6,10 @@ import type { Work } from "@meridian/contracts/works";
 import { Link } from "@tanstack/react-router";
 import { Plus, X } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useWorks } from "@/client/query/useWorks";
-import { useRestoringWorkIds } from "@/client/query/work-command-selectors";
+import { useRestoringWorkIds, useWorkCommandFailures } from "@/client/query/work-command-selectors";
+import { useWorkMutations } from "@/client/query/work-commands";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -17,17 +18,22 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { cn } from "@/lib/utils";
 import type { ProjectRouteCommands } from "../routing/project-route";
-import {
-  DeletedWorkList,
-  RestoreFailure,
-  restorableWorks,
-  useWorkRestore,
-} from "./DeletedWorkList";
+import { DeletedWorkList } from "./DeletedWorkList";
 import { useArchiveFocusFollow } from "./useArchiveFocusFollow";
 import { useWorkArchiveToggle } from "./useWorkArchiveToggle";
 import type { WorkDeletion } from "./useWorkDeletion";
 import { WorkActionsMenu } from "./WorkActionsMenu";
+import {
+  WORK_ROW_OPERATIONS,
+  WorkCommandFailureRow,
+  type WorkRowFailure,
+} from "./WorkCommandFailureRow";
 import { WorkRow } from "./WorkRow";
+import { type WorkListEntry, workListEntries } from "./work-list-model";
+
+/** The tab an Archive or Unarchive, or its retry, moves the Work to. */
+const archiveTarget = (operation: "archive" | "unarchive"): Work["status"] =>
+  operation === "archive" ? "archived" : "active";
 
 export function WorkCollection({
   projectId,
@@ -41,11 +47,12 @@ export function WorkCollection({
   const { works, deleted, creations, isError, isFetching, refetch } = useWorks(projectId);
   const now = useMinuteClock();
   const view = routeCommands.worksView;
-  const restore = useWorkRestore(projectId);
+  const { restore } = useWorkMutations(projectId);
   const restoring = useRestoringWorkIds(projectId);
+  const failures = useWorkCommandFailures(projectId, WORK_ROW_OPERATIONS);
+  const toggleArchive = useWorkArchiveToggle(projectId);
+  const archiveFocus = useArchiveFocusFollow(works);
   const collectionHeading = useRef<HTMLHeadingElement>(null);
-  const archiveToggle = useWorkArchiveToggle(projectId);
-  const archiveFocus = useArchiveFocusFollow(works, archiveToggle);
   const focusHandled = useRef(false);
   useEffect(() => {
     if (focusHandled.current) return;
@@ -53,11 +60,16 @@ export function WorkCollection({
     collectionHeading.current?.focus();
     focusHandled.current = true;
   }, [works]);
-  // A deleting Work has already left `works`; its Undo row stands in its tab.
-  const listed = (status: Work["status"]) => works?.filter((work) => work.status === status) ?? [];
-  const active = listed("active");
-  const archived = listed("archived");
-  const undoable = new Set(deletion.windows.map((window) => window.workId));
+  const entries = useMemo(
+    () =>
+      workListEntries(
+        { works: works ?? [], deleted, creations, restoring },
+        deletion.windows,
+        failures,
+        now,
+      ),
+    [works, deleted, creations, restoring, deletion.windows, failures, now],
+  );
   const openWorkId = (id: string) => {
     const workId = parseRequestId(id);
     if (workId) void routeCommands.openWork({ kind: "work-detail", workId }, { replace: false });
@@ -67,122 +79,85 @@ export function WorkCollection({
     if (!workId) throw new Error("Invalid persisted Work identity");
     return routeCommands.workHref({ kind: "work-detail", workId });
   };
-  const row = (work: Work) => (
-    <WorkRow
-      work={work}
-      href={hrefForId(work.id)}
-      now={now}
-      onOpen={() => openWorkId(work.id)}
-      actions={
-        <WorkActionsMenu
-          work={work}
-          onToggleArchive={() => archiveFocus.toggleArchive(work)}
-          onDelete={() => deletion.remove(work, "list")}
-        />
-      }
-    />
-  );
-  // A rejected Archive, Unarchive or Delete returns the Work to its tab with
-  // the failure under it. A restoring Work already shows in the tab it returns to.
-  const failureRow = (work: Work) => {
-    const archiveFailure = archiveToggle.failureFor(work.id);
-    if (archiveFailure)
-      return (
-        <InlineErrorRow
-          message={
-            archiveFailure.operation === "archive"
-              ? t`Work couldn’t be archived`
-              : t`Work couldn’t be unarchived`
-          }
-          onRetry={() => archiveFocus.retry(work.id)}
-          actionLabel={t`Retry`}
-          onDismiss={archiveFailure.dismiss}
-        />
-      );
-    const deleteFailure = deletion.failures.get(work.id);
-    if (deleteFailure)
-      return (
-        <InlineErrorRow
-          message={t`Work couldn’t be deleted`}
-          onRetry={() => deletion.remove(work, "list")}
-          actionLabel={t`Retry`}
-          onDismiss={deleteFailure.dismiss}
-        />
-      );
-    return null;
-  };
-  const listRow = (work: Work) => {
-    const failure = failureRow(work);
-    return {
-      key: work.id,
-      node: restoring.has(work.id) ? (
-        <WorkRow
-          work={work}
-          href={hrefForId(work.id)}
-          now={now}
-          onOpen={() => openWorkId(work.id)}
-          status={
-            <span role="status">
-              <Trans>Restoring</Trans>
-            </span>
-          }
-        />
-      ) : failure ? (
-        <>
-          {row(work)}
-          {failure}
-        </>
-      ) : (
-        row(work)
-      ),
+  // Focus follows an Archive, or its retry, to the tab the Work moves to.
+  const retry = ({ operation, workId, retry }: WorkRowFailure) =>
+    operation === "archive" || operation === "unarchive"
+      ? () => archiveFocus.follow(workId, archiveTarget(operation), retry())
+      : undefined;
+  const row = ({ work, state, failure }: WorkListEntry): ReactNode => {
+    const shared = {
+      work,
+      href: hrefForId(work.id),
+      now,
+      onOpen: () => openWorkId(work.id),
     };
-  };
-  // Each deleted Work keeps its own Undo row in the tab it left, newest first.
-  const undoRows = (status: Work["status"]) =>
-    [...deletion.windows].reverse().flatMap((window) => {
-      const work = deleted.find((entry) => entry.id === window.workId);
-      if (!work || work.status !== status) return [];
-      return [
-        {
-          key: `deleted-${work.id}`,
-          node: (
-            <DeletedWorkRow
-              name={work.name}
-              undoError={window.undoError}
-              onUndo={() => deletion.undo(work.id)}
-              onDismiss={() => deletion.dismiss(work.id)}
-            />
-          ),
-        },
-      ];
-    });
-  const activeRows: { key: string; node: ReactNode }[] = [
-    ...[...creations.values()].map(({ work, phase }) => ({
-      key: work.id,
-      node: (
-        <WorkRow
-          work={work}
-          href={hrefForId(work.id)}
-          now={now}
-          onOpen={() => openWorkId(work.id)}
-          status={
-            phase === "failed" ? (
-              <span role="alert" className="text-destructive">
-                <Trans>Not created</Trans>
-              </span>
-            ) : (
+    switch (state) {
+      case "creating":
+        return (
+          <WorkRow
+            {...shared}
+            status={
               <span role="status">
                 <Trans>Creating</Trans>
               </span>
-            )
-          }
-        />
-      ),
-    })),
-    ...undoRows("active"),
-    ...active.map(listRow),
-  ];
-  const archivedRows = [...undoRows("archived"), ...archived.map(listRow)];
+            }
+          />
+        );
+      case "notCreated":
+        return (
+          <WorkRow
+            {...shared}
+            status={
+              <span role="alert" className="text-destructive">
+                <Trans>Not created</Trans>
+              </span>
+            }
+          />
+        );
+      case "restoring":
+        return (
+          <WorkRow
+            {...shared}
+            status={
+              <span role="status">
+                <Trans>Restoring</Trans>
+              </span>
+            }
+          />
+        );
+      case "undo":
+        return (
+          <DeletedWorkRow
+            name={work.name}
+            failure={failure}
+            onUndo={() => deletion.undo(work.id)}
+            onDismiss={() => deletion.dismiss(work.id)}
+          />
+        );
+      case "idle":
+        return (
+          <>
+            <WorkRow
+              {...shared}
+              actions={
+                <WorkActionsMenu
+                  work={work}
+                  onToggleArchive={() =>
+                    archiveFocus.follow(
+                      work.id,
+                      work.status === "archived" ? "active" : "archived",
+                      toggleArchive(work),
+                    )
+                  }
+                  onDelete={() => deletion.remove(work, "list")}
+                />
+              }
+            />
+            {failure ? <WorkCommandFailureRow failure={failure} onRetry={retry(failure)} /> : null}
+          </>
+        );
+    }
+  };
   return (
     <div className="app-scroll" aria-busy={isFetching}>
       <section className="project-screen-column">
@@ -222,14 +197,22 @@ export function WorkCollection({
             <LoadingRows />
           ) : view === "deleted" ? (
             <DeletedWorkList
-              works={restorableWorks(deleted, now, undoable)}
+              entries={entries.deleted}
               now={now}
-              restore={restore}
+              onRestore={(work) => void restore({ workId: work.id })}
             />
           ) : view === "archived" ? (
-            <RowList rows={archivedRows} empty={<Trans>No archived Work.</Trans>} />
+            <RowList
+              entries={entries.archived}
+              row={row}
+              empty={<Trans>No archived Work.</Trans>}
+            />
           ) : (
-            <RowList rows={activeRows} empty={<Trans>No active Work yet.</Trans>} />
+            <RowList
+              entries={entries.active}
+              row={row}
+              empty={<Trans>No active Work yet.</Trans>}
+            />
           )}
         </div>
       </section>
@@ -238,18 +221,20 @@ export function WorkCollection({
 }
 
 function RowList({
-  rows,
+  entries,
+  row,
   empty,
 }: {
-  rows: readonly { key: string; node: ReactNode }[];
+  entries: readonly WorkListEntry[];
+  row: (entry: WorkListEntry) => ReactNode;
   empty: ReactNode;
 }) {
-  if (!rows.length) return <p className="px-2 py-2 text-sm text-muted-foreground">{empty}</p>;
+  if (!entries.length) return <p className="px-2 py-2 text-sm text-muted-foreground">{empty}</p>;
   return (
     <ul className="min-w-0">
-      {rows.map((item, index) => (
-        <li key={item.key} className={cn("relative", index < rows.length - 1 && "row-rule")}>
-          {item.node}
+      {entries.map((entry, index) => (
+        <li key={entry.key} className={cn("relative", index < entries.length - 1 && "row-rule")}>
+          {row(entry)}
         </li>
       ))}
     </ul>
@@ -258,13 +243,13 @@ function RowList({
 
 function DeletedWorkRow({
   name,
-  undoError,
+  failure,
   onUndo,
   onDismiss,
 }: {
   name: string;
-  /** Why the writer's last Undo was rejected. */
-  undoError: Error | null;
+  /** The writer's last Undo, rejected. */
+  failure: WorkRowFailure | undefined;
   onUndo: () => void;
   onDismiss: () => void;
 }) {
@@ -289,12 +274,12 @@ function DeletedWorkRow({
       </IconButton>
     </div>
   );
-  if (!undoError) return row;
+  if (!failure) return row;
   return (
     <>
       {row}
       <div className="px-2">
-        <RestoreFailure error={undoError} onRetry={onUndo} />
+        <WorkCommandFailureRow failure={failure} />
       </div>
     </>
   );

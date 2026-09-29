@@ -66,9 +66,10 @@ function latestByWork(records: readonly WorkCommandRecord[]) {
 
 /**
  * A deleted Work's Undo window: open from the delete until the writer undoes
- * or dismisses it. A rejected Undo reopens it with that error.
+ * or dismisses it. A rejected Undo reopens it; its failure is the Work's
+ * restore failure.
  */
-export type WorkDeleteWindow = { workId: string; undoError: Error | null };
+export type WorkDeleteWindow = { workId: string };
 
 /** Every open Undo window in this project, oldest delete first. */
 export function useWorkDeleteWindows(projectId: string): readonly WorkDeleteWindow[] {
@@ -88,8 +89,7 @@ export function useWorkDeleteWindows(projectId: string): readonly WorkDeleteWind
       if (after.some((record) => record.status !== "failed")) continue;
       // Restored elsewhere: the Work is back, so there is nothing to undo.
       if (remove.status === "done" && server && !snapshotHasCommandTarget(server, remove)) continue;
-      const undo = after.filter((record) => record.operation === "restore").at(-1);
-      windows.push({ workId, undoError: undo?.error ?? null });
+      windows.push({ workId });
     }
     return windows;
   }, [records, server]);

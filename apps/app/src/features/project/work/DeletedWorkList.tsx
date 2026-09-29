@@ -6,61 +6,22 @@
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { WORK_DELETE_RETENTION_DAYS, type Work, workPurgeAt } from "@meridian/contracts/works";
-import { useCallback } from "react";
-import { HttpResponseError } from "@/client/api/http-client";
-import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
-import { useWorkMutations } from "@/client/query/work-commands";
-import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { cn } from "@/lib/utils";
+import { WorkCommandFailureRow } from "./WorkCommandFailureRow";
+import type { WorkListEntry } from "./work-list-model";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export type WorkRestore = ReturnType<typeof useWorkRestore>;
-
-const RESTORE_OPERATIONS = ["restore"] as const;
-
-/**
- * Optimistic restore: the Work leaves this list for its prior tab at once; a
- * failure returns it here with the error on its row.
- */
-export function useWorkRestore(projectId: string) {
-  const restoreCommand = useWorkMutations(projectId).restore;
-  const failures = useWorkCommandFailures(projectId, RESTORE_OPERATIONS);
-  const restore = useCallback(
-    (work: Work) => void restoreCommand({ workId: work.id }),
-    [restoreCommand],
-  );
-  const failureFor = useCallback(
-    (workId: string) => failures.get(workId)?.error ?? null,
-    [failures],
-  );
-  return { failureFor, restore };
-}
-
-/** Deleted Works still inside their retention window, minus those offered for Undo. */
-export function restorableWorks(
-  deleted: readonly Work[],
-  now: number,
-  undoable: ReadonlySet<string>,
-) {
-  return deleted.filter(
-    (work) =>
-      work.deletedAt !== null &&
-      !undoable.has(work.id) &&
-      workPurgeAt(work.deletedAt).getTime() > now,
-  );
-}
-
 export function DeletedWorkList({
-  works,
+  entries,
   now,
-  restore,
+  onRestore,
 }: {
-  works: readonly Work[];
+  entries: readonly WorkListEntry[];
   now: number;
-  restore: WorkRestore;
+  onRestore: (work: Work) => void;
 }) {
-  if (!works.length)
+  if (!entries.length)
     return (
       <p className="px-2 py-2 text-sm text-muted-foreground">
         <Trans>
@@ -74,19 +35,16 @@ export function DeletedWorkList({
         <Trans>Restoring brings back a Work with its chats, drafts, Scratch and Uploads.</Trans>
       </p>
       <ul className="min-w-0">
-        {works.map((work, index) => {
-          const failure = restore.failureFor(work.id);
-          return (
-            <li key={work.id} className={cn("relative", index < works.length - 1 && "row-rule")}>
-              <DeletedRow work={work} now={now} onRestore={() => restore.restore(work)} />
-              {failure ? (
-                <div className="px-2">
-                  <RestoreFailure error={failure} onRetry={() => restore.restore(work)} />
-                </div>
-              ) : null}
-            </li>
-          );
-        })}
+        {entries.map(({ key, work, failure }, index) => (
+          <li key={key} className={cn("relative", index < entries.length - 1 && "row-rule")}>
+            <DeletedRow work={work} now={now} onRestore={() => onRestore(work)} />
+            {failure ? (
+              <div className="px-2">
+                <WorkCommandFailureRow failure={failure} />
+              </div>
+            ) : null}
+          </li>
+        ))}
       </ul>
     </>
   );
@@ -122,25 +80,4 @@ function DeletedRow({ work, now, onRestore }: { work: Work; now: number; onResto
       </button>
     </div>
   );
-}
-
-/** Why a restore or an Undo was rejected, with a retry where one can help. */
-export function RestoreFailure({ error, onRetry }: { error: Error; onRetry: () => void }) {
-  const status = error instanceof HttpResponseError ? error.status : null;
-  if (status === 409)
-    return (
-      <p role="alert" className="pb-2 text-sm text-destructive">
-        <Trans>Another Work now has this name. Rename that Work, then restore this one.</Trans>
-      </p>
-    );
-  if (status === 410)
-    return (
-      <p role="alert" className="pb-2 text-sm text-destructive">
-        <Trans>
-          This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be
-          restored.
-        </Trans>
-      </p>
-    );
-  return <InlineErrorRow message={t`Couldn’t restore this Work`} onRetry={onRetry} />;
 }

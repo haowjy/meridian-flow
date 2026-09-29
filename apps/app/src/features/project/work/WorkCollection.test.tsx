@@ -476,6 +476,43 @@ describe("Work collection delete", () => {
 });
 
 describe("Work collection restore", () => {
+  it("shows a refused restore on its row, with Retry and Dismiss", async () => {
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const gone = { ...WORK, deletedAt: new Date().toISOString() } as Work;
+    client.setQueryData(projectQueryKeys.works(PROJECT_ID), snapshot([gone]));
+    vi.mocked(listProjectWorks).mockImplementation(async () => snapshot([gone]));
+    vi.mocked(restoreWork).mockRejectedValue(new Error("Rejected"));
+
+    try {
+      await withReactRoot(
+        <QueryClientProvider client={client}>
+          <CollectionHarness initialView="deleted" />
+        </QueryClientProvider>,
+        async () => {
+          await act(async () =>
+            document.querySelector<HTMLButtonElement>('[aria-label="Restore Arc"]')?.click(),
+          );
+          await act(() =>
+            vi.waitFor(() =>
+              expect(listAlerts()).toEqual([expect.stringContaining("Couldn’t restore this Work")]),
+            ),
+          );
+          await clickIn(document.querySelector('li [role="alert"]'), "Retry");
+          await act(() => vi.waitFor(() => expect(restoreWork).toHaveBeenCalledTimes(2)));
+          await act(() => vi.waitFor(() => expect(listAlerts()).toHaveLength(1)));
+
+          await clickIn(document.querySelector('li [role="alert"]'), "Dismiss");
+          await act(() => vi.waitFor(() => expect(listAlerts()).toEqual([])));
+          expect(document.querySelector('[aria-label="Restore Arc"]')).not.toBeNull();
+        },
+        { drainMacrotask: true },
+      );
+    } finally {
+      client.clear();
+      vi.clearAllMocks();
+    }
+  });
+
   it("shows a restoring archived Work under Archived, never under Active", async () => {
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const deletedArchived = {
