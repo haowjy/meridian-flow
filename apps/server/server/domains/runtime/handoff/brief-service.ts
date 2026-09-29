@@ -101,10 +101,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
 
   async function currentSeed(seedTurnId: TurnId): Promise<{ seed: Turn; thread: Thread } | null> {
     const seed = await deps.repos.turns.findById(seedTurnId);
-    if (
-      seed?.role !== "system" ||
-      !HandoffSeedMetadataCodec.safeParse(seed.metadata).success
-    )
+    if (seed?.role !== "system" || !HandoffSeedMetadataCodec.safeParse(seed.metadata).success)
       return null;
     const thread = await deps.repos.threads.findById(seed.threadId);
     return thread ? { seed, thread } : null;
@@ -389,8 +386,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
           throw new HandoffRetryError("seed_id_conflict");
         }
         const thread = await deps.repos.threads.findById(input.threadId);
-        if (thread?.originType !== "handoff")
-          throw new HandoffRetryError("not_a_handoff_retry");
+        if (thread?.originType !== "handoff") throw new HandoffRetryError("not_a_handoff_retry");
         const latest = await deps.repos.turns.findLatestHandoffSeed(input.threadId);
         if (
           !latest ||
