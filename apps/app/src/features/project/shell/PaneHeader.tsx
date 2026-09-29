@@ -19,6 +19,12 @@ import { PanelToggleButton } from "./PanelToggleButton";
  * nothing in that slot — no reserved spacer; title/actions take the space.
  * (The cursor trick is between the two buttons' screen positions and doesn't
  * need the slot held open.)
+ *
+ * A `notice` (a failed command on the pane's subject, like a rejected rename or
+ * Archive) sits beside the title when the pane is wide, and takes its own
+ * full-width line under the band when the pane is narrow, so the title keeps
+ * its width. It renders in both slots; a container query shows one, and the
+ * hidden one is `display: none`, so assistive tech meets it once.
  */
 export type PaneHeaderRailToggle = {
   open: boolean;
@@ -39,33 +45,43 @@ export type PaneHeaderProps = {
    * on the same x as the Editor's Recently opened chip in both sidebar states.
    */
   leading?: ReactNode;
+  /** A failed command's row; placement follows the pane's width. */
+  notice?: ReactNode;
 };
 
-export function PaneHeader({ title, left, right, actions, leading }: PaneHeaderProps) {
+export function PaneHeader({ title, left, right, actions, leading, notice }: PaneHeaderProps) {
   const leftToggle = left && !left.open;
   return (
-    <header className="flex h-10 shrink-0 items-center gap-1 px-2">
-      {leftToggle ? (
-        <PanelToggleButton icon={PanelLeftOpen} label={left.label} onClick={left.onExpand} />
-      ) : null}
-      {leading ? (
-        // The tab strip puts its first chip flush at the pane edge, or 8px past
-        // the toggle's own px-2 zone; the offsets land on those same x values.
-        // -mr-1 cancels the gap so the title chip sits flush like a next tab.
-        <div className={cn("-mr-1 flex shrink-0 self-stretch", leftToggle ? "ml-1" : "-ml-2")}>
-          {leading}
-        </div>
-      ) : null}
-
-      {/* Band-tall, so a title chip can stretch into an inactive tab's full-height hover. */}
-      <div className="flex min-w-0 flex-1 items-center self-stretch">{title}</div>
-
-      <div className="flex shrink-0 items-center gap-1">
-        {actions}
-        {right && !right.open ? (
-          <PanelToggleButton icon={PanelRightOpen} label={right.label} onClick={right.onExpand} />
+    <div className="@container/pane-header shrink-0">
+      <header className="flex h-10 items-center gap-1 px-2">
+        {leftToggle ? (
+          <PanelToggleButton icon={PanelLeftOpen} label={left.label} onClick={left.onExpand} />
         ) : null}
-      </div>
-    </header>
+        {leading ? (
+          // The tab strip puts its first chip flush at the pane edge, or 8px past
+          // the toggle's own px-2 zone; the offsets land on those same x values.
+          // -mr-1 cancels the gap so the title chip sits flush like a next tab.
+          <div className={cn("-mr-1 flex shrink-0 self-stretch", leftToggle ? "ml-1" : "-ml-2")}>
+            {leading}
+          </div>
+        ) : null}
+
+        {/* Band-tall, so a title chip can stretch into an inactive tab's full-height hover. */}
+        <div className="flex min-w-0 flex-1 items-center self-stretch">
+          {title}
+          {notice ? (
+            <div className="hidden min-w-0 empty:hidden @2xl/pane-header:block">{notice}</div>
+          ) : null}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1">
+          {actions}
+          {right && !right.open ? (
+            <PanelToggleButton icon={PanelRightOpen} label={right.label} onClick={right.onExpand} />
+          ) : null}
+        </div>
+      </header>
+      {notice ? <div className="px-2 empty:hidden @2xl/pane-header:hidden">{notice}</div> : null}
+    </div>
   );
 }

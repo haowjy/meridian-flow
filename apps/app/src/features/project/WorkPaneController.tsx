@@ -44,6 +44,7 @@ export function WorkPaneController({
       <PaneHeader
         leading={chrome.door}
         title={chrome.title}
+        notice={chrome.notice}
         actions={chrome.actions}
         left={sidebarToggle}
         right={chatToggle}

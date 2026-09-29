@@ -1,46 +1,55 @@
 /**
- * One Work command for toggling between its active and archived states. The
- * move shows at once; a rejected move returns the Work and leaves a failure on
- * it until the writer retries or dismisses it.
+ * Archive and Unarchive for one Work. The move shows at once. A rejected move
+ * returns the Work and leaves a failure on it, read from the mutation cache so
+ * the Work list and the Work band show the same one, until the writer retries,
+ * dismisses it, or runs another command on that Work.
  */
 import type { Work } from "@meridian/contracts/works";
-import { useCallback, useState } from "react";
-import { useWorkMutations } from "@/client/query/useWorks";
+import { useCallback } from "react";
+import { useWorkCommandFailures, useWorkMutations } from "@/client/query/useWorks";
 
-export type WorkArchiveFailure = { workId: string; operation: "archive" | "unarchive" };
+export type WorkArchiveOperation = "archive" | "unarchive";
+
+export type WorkArchiveFailure = {
+  operation: WorkArchiveOperation;
+  /** Resolves `false` when the command fails again. */
+  retry: () => Promise<boolean>;
+  dismiss: () => void;
+};
 
 export type WorkArchiveToggle = ReturnType<typeof useWorkArchiveToggle>;
 
+const ARCHIVE_OPERATIONS: readonly WorkArchiveOperation[] = ["archive", "unarchive"];
+
 export function useWorkArchiveToggle(projectId: string) {
   const { archive, unarchive } = useWorkMutations(projectId);
-  const [failure, setFailure] = useState<WorkArchiveFailure | null>(null);
+  const failures = useWorkCommandFailures(projectId, ARCHIVE_OPERATIONS);
+  const archiveAsync = archive.mutateAsync;
+  const unarchiveAsync = unarchive.mutateAsync;
   const run = useCallback(
-    (
-      workId: string,
-      operation: WorkArchiveFailure["operation"],
-      options?: { onError?: (error: Error) => void },
-    ) => {
-      setFailure((current) => (current?.workId === workId ? null : current));
-      (operation === "archive" ? archive : unarchive).mutate(workId, {
-        onError: (error) => {
-          setFailure({ workId, operation });
-          options?.onError?.(error);
-        },
-      });
-    },
-    [archive, unarchive],
+    (workId: string, operation: WorkArchiveOperation): Promise<boolean> =>
+      (operation === "archive" ? archiveAsync : unarchiveAsync)(workId).then(
+        () => true,
+        () => false,
+      ),
+    [archiveAsync, unarchiveAsync],
   );
+  /** Resolves `false` when the command fails. */
   const toggle = useCallback(
-    (work: Work, options?: { onError?: (error: Error) => void }) =>
-      run(work.id, work.status === "archived" ? "unarchive" : "archive", options),
+    (work: Work) => run(work.id, work.status === "archived" ? "unarchive" : "archive"),
     [run],
   );
-  const retry = useCallback(
-    (options?: { onError?: (error: Error) => void }) => {
-      if (failure) run(failure.workId, failure.operation, options);
+  const failureFor = useCallback(
+    (workId: string): WorkArchiveFailure | null => {
+      const failure = failures.get(workId);
+      if (!failure) return null;
+      return {
+        operation: failure.operation,
+        retry: () => run(workId, failure.operation),
+        dismiss: failure.dismiss,
+      };
     },
-    [failure, run],
+    [failures, run],
   );
-  const dismiss = useCallback(() => setFailure(null), []);
-  return { toggle, failure, retry, dismiss };
+  return { toggle, failureFor };
 }

@@ -56,12 +56,15 @@ active and archived Work and owns creation and lifecycle entry points; it never 
   Works and never lists No Work as a row. Route-owned detail and inline metadata consume
 the typed catalog, PATCH mutation, and filtered chat-feed query seams.
 Work detail's route Work is the sole source for title and description values. The
-Work update, Archive, and Unarchive commands optimistically patch the works
-snapshot query; a rejection reverts only the Works still showing that command's
-projection, so a queued lifecycle command keeps its own. Acquisition watermarks
-keep an older in-flight snapshot from erasing a patch. A command's confirmed Work
-is installed on success, and the snapshot repair read runs only once no other
-Work command is pending, since it would erase their projections. The page-scoped metadata controller owns only
+works query cache holds only server snapshots, ordered by `authorityRevision`.
+Work commands (update, Archive, Unarchive, Restore; Delete shows through its
+Undo row) never write guesses into it: `useWorks` lays each pending command's
+expected result over the snapshot, read from the mutation cache, so every reader
+sees one projection and a rejection simply stops projecting. A successful command
+stays pending until a snapshot read started after its commit lands, so no
+earlier read can hide it. Failures are read back from the mutation cache
+(`useWorkCommandFailures`): a Work shows its latest command's failure until the
+writer retries, dismisses it, or runs another command on that Work. The page-scoped metadata controller owns only
 the description draft, field-local failure, and the route leave decision. A dirty
 description offers Save, Discard, or Keep editing; hard unload uses the router's
 native before-unload integration rather than a second draft owner. The collection
@@ -71,7 +74,9 @@ tabs replace stacked disclosures). `useArchiveFocusFollow` moves focus to the
 destination tab when Archive or Unarchive moves a row out of the visible list,
 right after the click. A rejected Archive or Unarchive returns the row to its tab
 with an inline error row (Retry, dismiss) under it; the Work band shows the same
-error beside the title, like a rejected chat rename.
+failure beside the title on desktop, like a rejected chat rename, and on its own
+full-width line under the phone top bar, as the phone's chat rename failure does.
+A Work in its delete Undo window, or whose delete failed, shows only as that row.
 Detail composes identity and lifecycle, Goal, pending drafts, Scratch,
 Uploads, and associated chats. Associated chats use bounded cursor pages and the
 same virtualized, borderless project chat row as the Chat index without adding a nested
@@ -84,8 +89,8 @@ list row, lands on the collection, and shows an inline Undo row there. Delete
 never blocks: the Work's chats, drafts, Scratch and Uploads go with it, and it
 stays restorable for `WORK_DELETE_RETENTION_DAYS` (30) under the collection's
 Deleted tab (`DeletedWorkList`) until the server's purge job removes it. Restore
-returns a Work to the status it had before deletion; while pending, its
-Restoring row shows in that tab (Active or Archived) at once.
+returns a Work to the status it had before deletion; while pending, it shows in
+that tab (Active or Archived) at once, marked Restoring.
 The Work band copies the Chat pane's grammar (`useWorkChrome`): an All Work
 `IndexTabChip` door, the open Work's name as the active tab the page rises into
 and renamed inside it (`WorkTitleTab` over `TabTitleField`, no dropdown), and the
@@ -93,7 +98,7 @@ Work's `…` menu at the far right. The phone top bar shows the same pieces as a
 `Work › <name>` trail. Delete state (`useWorkDeletion`) lives above the screen so
 the band's menu and the collection's Undo row share it. The page body starts with
 the Work's heading (`WorkHeading`), renamed in place like the tab; both titles
-read the same route Work, so the update command's cache projection publishes a
+read the same route Work, so the update command's projection publishes a
 rename in both places at once. Then
 the description: clicking a clamped description shows all of it, Show less folds
 it, and a right-aligned Edit edits it in place without moving (see DESIGN.md),
@@ -111,9 +116,9 @@ The collection, the Chats tab and the Files tab share the app's list grammar
 (`WorkActionsMenu` for Work, the tree's `ContextEntryActions` for files). The
 route dispatcher is `WorkScreen`; `WorkCollection` and
 `WorkCreationDestination` own their page bodies. `WorkCollection` receives the
-shared deletion controller as a required prop. `useWorkArchiveToggle` is shared
-by the collection and band; `useArchiveFocusFollow` owns collection focus after
-Archive or Unarchive.
+shared deletion controller as a required prop. The collection and band each
+call `useWorkArchiveToggle`, and share its failures through the mutation cache;
+`useArchiveFocusFollow` owns collection focus after Archive or Unarchive.
 The Work toolbar is one sticky row: view switch, full-width search, then the view's
 jade action. Both shells share this route-owned module. At phone geometry, text
 must wrap without horizontal overflow and product controls retain coarse-pointer touch

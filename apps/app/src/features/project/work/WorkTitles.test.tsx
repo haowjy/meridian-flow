@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import type { Work, WorksSnapshot } from "@meridian/contracts/works";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { listProjectWorks, updateWork } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { useWorks } from "@/client/query/useWorks";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { WorkHeading, WorkTitleTab } from "./WorkTitles";
 
@@ -14,6 +15,9 @@ vi.mock("@lingui/core/macro", () => ({
 }));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+vi.mock("@/client/query/useProjectCreation", () => ({
+  useIsProjectPendingCreation: () => false,
 }));
 vi.mock("@/client/api/projects-api", () => ({
   archiveWork: vi.fn(),
@@ -63,12 +67,7 @@ function deferred<T>() {
 }
 
 function TitleHarness() {
-  const { data } = useQuery({
-    queryKey: projectQueryKeys.works(PROJECT_ID),
-    queryFn: async () => SNAPSHOT,
-    staleTime: Number.POSITIVE_INFINITY,
-  });
-  const work = data?.works[0];
+  const work = useWorks(PROJECT_ID).works?.[0];
   if (!work) return null;
   return (
     <>

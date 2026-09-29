@@ -164,3 +164,20 @@ export function seedWorksSnapshot(
   state.installedStart = requestStarted;
   return snapshot;
 }
+
+/**
+ * Fallback when the read after a committed Work command fails: patch the Work
+ * the server returned into the snapshot without claiming a newer revision, so
+ * the next successful read still replaces it.
+ */
+export function installCommittedWork(client: QueryClient, projectId: string, work: Work): void {
+  const current = currentSnapshot(client, projectId);
+  if (!current) return;
+  const patch = <T extends Work>(entry: T): T =>
+    entry.id === work.id ? { ...entry, ...work } : entry;
+  client.setQueryData(projectQueryKeys.works(projectId), {
+    ...current,
+    works: current.works.map(patch),
+    noWork: patch(current.noWork),
+  });
+}

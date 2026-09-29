@@ -7,7 +7,7 @@ import { Link } from "@tanstack/react-router";
 import { Plus, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef } from "react";
-import { useWorks } from "@/client/query/useWorks";
+import { useRestoringWorkIds, useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -38,6 +38,7 @@ export function WorkCollection({
   const now = useMinuteClock();
   const view = routeCommands.worksView;
   const restore = useWorkRestore(projectId);
+  const restoring = useRestoringWorkIds(projectId);
   const collectionHeading = useRef<HTMLHeadingElement>(null);
   const deleteState = deletion.state;
   const archiveToggle = useWorkArchiveToggle(projectId);
@@ -53,18 +54,17 @@ export function WorkCollection({
     (creation) => creation.status === "pending" || creation.status === "failed",
   );
   const unfinishedIds = new Set(unfinishedCreations.map((creation) => creation.workId));
-  const active =
+  // A Work in its Undo window, or whose delete failed, shows only as that row.
+  const heldByDelete = (work: Work) =>
+    deleteState.failed?.id === work.id ||
+    (deleteState.deleted?.id === work.id && !deleteState.restorePending);
+  const listed = (status: Work["status"]) =>
     works?.filter(
-      (work) =>
-        work.status === "active" &&
-        !unfinishedIds.has(work.id) &&
-        deleteState.failed?.id !== work.id &&
-        !(deleteState.deleted?.id === work.id && !deleteState.restorePending),
+      (work) => work.status === status && !unfinishedIds.has(work.id) && !heldByDelete(work),
     ) ?? [];
-  const archived =
-    works?.filter((work) => work.status === "archived" && !unfinishedIds.has(work.id)) ?? [];
+  const active = listed("active");
+  const archived = listed("archived");
   const failedWork = deleteState.failed;
-  const restoring = deleted.find((work) => work.id === restore.restoringId);
   const undoableId =
     deleteState.deleted && !deleteState.restorePending ? deleteState.deleted.id : undefined;
   const openWorkId = (id: string) => {
@@ -91,47 +91,60 @@ export function WorkCollection({
       }
     />
   );
-  const archiveFailure = archiveToggle.failure;
-  // A rejected Archive or Unarchive returns the Work to its tab with the failure under it.
-  const listRow = (work: Work) => ({
-    key: work.id,
-    node:
-      archiveFailure?.workId === work.id ? (
+  // A rejected Archive or Unarchive returns the Work to its tab with the
+  // failure under it. A restoring Work already shows in the tab it returns to.
+  const listRow = (work: Work) => {
+    const failure = archiveToggle.failureFor(work.id);
+    return {
+      key: work.id,
+      node: restoring.has(work.id) ? (
+        <WorkRow
+          work={work}
+          href={hrefForId(work.id)}
+          now={now}
+          onOpen={() => openWorkId(work.id)}
+          status={
+            <span role="status">
+              <Trans>Restoring</Trans>
+            </span>
+          }
+        />
+      ) : failure ? (
         <>
           {row(work)}
           <InlineErrorRow
             message={
-              archiveFailure.operation === "archive"
+              failure.operation === "archive"
                 ? t`Work couldn’t be archived`
                 : t`Work couldn’t be unarchived`
             }
-            onRetry={archiveFocus.retry}
+            onRetry={() => archiveFocus.retry(work.id)}
             actionLabel={t`Retry`}
-            onDismiss={archiveToggle.dismiss}
+            onDismiss={failure.dismiss}
           />
         </>
       ) : (
         row(work)
       ),
-  });
-  // Restore returns a Work to the status it had before deletion, so the
-  // pending row shows in that tab.
-  const restoringRow = (work: Work) => ({
-    key: work.id,
-    node: (
-      <WorkRow
-        work={work}
-        href={hrefForId(work.id)}
-        now={now}
-        onOpen={() => openWorkId(work.id)}
-        status={
-          <span role="status">
-            <Trans>Restoring</Trans>
-          </span>
-        }
-      />
-    ),
-  });
+    };
+  };
+  const failedRows = failedWork
+    ? [
+        {
+          key: `failed-${failedWork.id}`,
+          node: (
+            <>
+              {row(failedWork)}
+              <InlineErrorRow
+                message={t`Work couldn’t be deleted`}
+                onRetry={deletion.retry}
+                actionLabel={t`Retry`}
+              />
+            </>
+          ),
+        },
+      ]
+    : [];
   const activeRows: { key: string; node: ReactNode }[] = [
     ...unfinishedCreations.map((creation) => ({
       key: `creation-${creation.workId}`,
@@ -173,28 +186,11 @@ export function WorkCollection({
           },
         ]
       : []),
-    ...(failedWork
-      ? [
-          {
-            key: `failed-${failedWork.id}`,
-            node: (
-              <>
-                {row(failedWork)}
-                <InlineErrorRow
-                  message={t`Work couldn’t be deleted`}
-                  onRetry={deletion.retry}
-                  actionLabel={t`Retry`}
-                />
-              </>
-            ),
-          },
-        ]
-      : []),
-    ...(restoring && restoring.status !== "archived" ? [restoringRow(restoring)] : []),
+    ...(failedWork?.status === "archived" ? [] : failedRows),
     ...active.map(listRow),
   ];
   const archivedRows = [
-    ...(restoring?.status === "archived" ? [restoringRow(restoring)] : []),
+    ...(failedWork?.status === "archived" ? failedRows : []),
     ...archived.map(listRow),
   ];
   return (

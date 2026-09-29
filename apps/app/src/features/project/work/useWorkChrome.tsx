@@ -1,8 +1,9 @@
 /**
  * The Work destination's chrome: the All Work door, the open Work's name as a
  * tab renamed in place, and its `…` actions. The desktop band and the phone
- * top bar both render these pieces. A rejected Archive or Unarchive shows
- * beside the title, like a rejected chat rename in the chat header.
+ * top bar both render these pieces. A rejected Archive or Unarchive is its own
+ * `notice`, placed like a rejected chat rename: beside the title in a wide
+ * band, on its own full-width line under a narrow band or the phone top bar.
  */
 import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/protocol";
@@ -34,8 +35,7 @@ export function useWorkChrome(
   };
   const work = routeWork.status === "present" ? routeWork.work : null;
   const remembered = onCollection ? rememberedWork : null;
-  const archiveFailure =
-    work && archiveToggle.failure?.workId === work.id ? archiveToggle.failure : null;
+  const archiveFailure = work ? archiveToggle.failureFor(work.id) : null;
   return {
     onCollection,
     openCollection,
@@ -48,24 +48,20 @@ export function useWorkChrome(
         onClick={onCollection ? undefined : openCollection}
       />
     ),
+    notice: archiveFailure ? (
+      <InlineErrorRow
+        message={
+          archiveFailure.operation === "archive"
+            ? t`Work couldn’t be archived`
+            : t`Work couldn’t be unarchived`
+        }
+        onRetry={() => void archiveFailure.retry()}
+        actionLabel={t`Retry`}
+        onDismiss={archiveFailure.dismiss}
+      />
+    ) : null,
     title: work ? (
-      <>
-        <WorkTitleTab key={work.id} projectId={projectId} work={work} variant={variant} />
-        {archiveFailure ? (
-          <div className="min-w-0">
-            <InlineErrorRow
-              message={
-                archiveFailure.operation === "archive"
-                  ? t`Work couldn’t be archived`
-                  : t`Work couldn’t be unarchived`
-              }
-              onRetry={() => archiveToggle.retry()}
-              actionLabel={t`Retry`}
-              onDismiss={archiveToggle.dismiss}
-            />
-          </div>
-        ) : null}
-      </>
+      <WorkTitleTab key={work.id} projectId={projectId} work={work} variant={variant} />
     ) : pendingName ? (
       <PendingWorkTitleTab name={pendingName} variant={variant} />
     ) : remembered && variant === "tab" ? (
@@ -81,7 +77,7 @@ export function useWorkChrome(
     actions: work ? (
       <WorkActionsMenu
         work={work}
-        onToggleArchive={() => archiveToggle.toggle(work)}
+        onToggleArchive={() => void archiveToggle.toggle(work)}
         onDelete={() => onDelete(work, "detail")}
       />
     ) : null,

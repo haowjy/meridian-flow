@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
  * Work list lifecycle: Archive and Unarchive move rows at once and failures stay
- * on the Work; a restoring Work waits in the tab it returns to.
+ * on the Work, shared with the Work band; a restoring Work waits in the tab it
+ * returns to; a Work in its delete Undo window shows only as that row.
  */
 import type { Work, WorksSnapshot } from "@meridian/contracts/works";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -9,9 +10,11 @@ import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { archiveWork, listProjectWorks, restoreWork } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { useWorks } from "@/client/query/useWorks";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { WorksView } from "../routing/project-address";
-import type { ProjectRouteCommands } from "../routing/project-route";
+import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
+import { useWorkChrome } from "./useWorkChrome";
 import type { WorkDeletion } from "./useWorkDeletion";
 import { WorkCollection } from "./WorkCollection";
 import { emptyWorkDeleteState } from "./work-delete-state";
@@ -87,17 +90,49 @@ const deletion: WorkDeletion = {
   dismiss: vi.fn(),
 };
 
-function CollectionHarness({ initialView = "active" }: { initialView?: WorksView }) {
+function CollectionHarness({
+  initialView = "active",
+  deletionState = deletion,
+  bandWorkId,
+}: {
+  initialView?: WorksView;
+  deletionState?: WorkDeletion;
+  /** Also renders the Work band for this Work, as the pane chrome does. */
+  bandWorkId?: string;
+}) {
   const [view, setView] = useState<WorksView>(initialView);
   const routeCommands = {
     worksView: view,
     setWorksView: async (next: WorksView) => setView(next),
     openWork: vi.fn(),
+    closeWork: vi.fn(),
     workHref: () => "/works/arc",
   } as unknown as ProjectRouteCommands;
   return (
-    <WorkCollection projectId={PROJECT_ID} routeCommands={routeCommands} deletion={deletion} />
+    <>
+      {bandWorkId ? <BandHarness workId={bandWorkId} routeCommands={routeCommands} /> : null}
+      <WorkCollection
+        projectId={PROJECT_ID}
+        routeCommands={routeCommands}
+        deletion={deletionState}
+      />
+    </>
   );
+}
+
+function BandHarness({
+  workId,
+  routeCommands,
+}: {
+  workId: string;
+  routeCommands: ProjectRouteCommands;
+}) {
+  const work = useWorks(PROJECT_ID).works?.find((entry) => entry.id === workId);
+  const routeWork = (
+    work ? { status: "present", workId, work } : { status: "none" }
+  ) as RouteWorkResolution;
+  const chrome = useWorkChrome(PROJECT_ID, routeWork, null, routeCommands, vi.fn(), "tab");
+  return <header data-testid="band">{chrome.notice}</header>;
 }
 
 const tab = (view: WorksView) =>
@@ -110,6 +145,10 @@ async function showTab(view: WorksView) {
 /** Names of the Work rows in the visible list. */
 const rowNames = () =>
   [...document.querySelectorAll("li a span[aria-hidden]")].map((node) => node.textContent);
+
+const band = () => document.querySelector('[data-testid="band"]');
+const listAlerts = () =>
+  [...document.querySelectorAll('li [role="alert"]')].map((node) => node.textContent);
 
 async function archiveFromMenu(name: string) {
   const trigger = document.querySelector(`[aria-label="Actions for ${name}"]`) as HTMLButtonElement;
@@ -186,6 +225,128 @@ describe("Work collection archive", () => {
           expect(document.querySelector('[role="alert"]')).toBeNull();
           await showTab("archived");
           expect(rowNames()).toEqual(["Arc"]);
+        },
+        { drainMacrotask: true },
+      );
+    } finally {
+      client.clear();
+      vi.clearAllMocks();
+    }
+  });
+});
+
+describe("Work collection archive failures", () => {
+  it("keeps the first failure when a second archive follows it", async () => {
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const coda = { ...WORK, id: "00000000-0000-4000-8000-000000000002", name: "Coda" } as Work;
+    client.setQueryData(projectQueryKeys.works(PROJECT_ID), snapshot([WORK, coda]));
+    vi.mocked(listProjectWorks).mockImplementation(() => new Promise(() => undefined));
+    const first = deferred<Work>();
+    vi.mocked(archiveWork)
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => new Promise(() => undefined));
+
+    try {
+      await withReactRoot(
+        <QueryClientProvider client={client}>
+          <CollectionHarness />
+        </QueryClientProvider>,
+        async () => {
+          await archiveFromMenu("Arc");
+          await act(() => vi.waitFor(() => expect(rowNames()).toEqual(["Coda"])));
+          await archiveFromMenu("Coda");
+          await act(() =>
+            vi.waitFor(() => expect(document.body.textContent).toContain("No active Work yet.")),
+          );
+
+          await act(async () => first.reject(new Error("Rejected")));
+          await act(() => vi.waitFor(() => expect(rowNames()).toEqual(["Arc"])));
+          expect(listAlerts()).toEqual([expect.stringContaining("Work couldn’t be archived")]);
+        },
+        { drainMacrotask: true },
+      );
+    } finally {
+      client.clear();
+      vi.clearAllMocks();
+    }
+  });
+
+  it("shows one failure in the list and the band, cleared by a retry from either", async () => {
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    let server = snapshot([WORK]);
+    client.setQueryData(projectQueryKeys.works(PROJECT_ID), server);
+    vi.mocked(listProjectWorks).mockImplementation(async () => server);
+    vi.mocked(archiveWork).mockImplementationOnce(async () => {
+      throw new Error("Rejected");
+    });
+
+    try {
+      await withReactRoot(
+        <QueryClientProvider client={client}>
+          <CollectionHarness bandWorkId={WORK.id} />
+        </QueryClientProvider>,
+        async () => {
+          await archiveFromMenu("Arc");
+          await act(() =>
+            vi.waitFor(() => expect(band()?.textContent).toContain("Work couldn’t be archived")),
+          );
+          expect(listAlerts()).toEqual([expect.stringContaining("Work couldn’t be archived")]);
+
+          const archivedWork = {
+            ...WORK,
+            status: "archived",
+            archivedAt: "2026-09-02T00:00:00.000Z",
+          };
+          vi.mocked(archiveWork).mockImplementationOnce(async () => {
+            server = snapshot([archivedWork as Work], "2");
+            return archivedWork as Work;
+          });
+          const bandRetry = [...(band()?.querySelectorAll("button") ?? [])].find(
+            (button) => button.textContent === "Retry",
+          );
+          await act(async () => bandRetry?.click());
+          await act(() =>
+            vi.waitFor(() => expect(document.body.textContent).toContain("No active Work yet.")),
+          );
+          await act(() => vi.waitFor(() => expect(band()?.textContent).toBe("")));
+          expect(document.querySelector('[role="alert"]')).toBeNull();
+          expect(archiveWork).toHaveBeenCalledTimes(2);
+        },
+        { drainMacrotask: true },
+      );
+    } finally {
+      client.clear();
+      vi.clearAllMocks();
+    }
+  });
+});
+
+describe("Work collection delete", () => {
+  it("shows an archived Work in its Undo window only as the Undo row", async () => {
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const archivedWork = {
+      ...WORK,
+      status: "archived",
+      archivedAt: "2026-09-02T00:00:00.000Z",
+    } as Work;
+    // The delete has not reached the snapshot yet.
+    client.setQueryData(projectQueryKeys.works(PROJECT_ID), snapshot([archivedWork]));
+    vi.mocked(listProjectWorks).mockImplementation(() => new Promise(() => undefined));
+    const undoWindow = {
+      ...deletion,
+      state: { ...emptyWorkDeleteState(), deleted: archivedWork },
+    };
+
+    try {
+      await withReactRoot(
+        <QueryClientProvider client={client}>
+          <CollectionHarness initialView="archived" deletionState={undoWindow} />
+        </QueryClientProvider>,
+        async () => {
+          expect(rowNames()).toEqual([]);
+          expect(document.body.textContent).toContain("No archived Work.");
+          await showTab("active");
+          expect(document.body.textContent).toContain("Deleted Arc");
         },
         { drainMacrotask: true },
       );

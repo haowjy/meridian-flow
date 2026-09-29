@@ -6,9 +6,9 @@
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { WORK_DELETE_RETENTION_DAYS, type Work, workPurgeAt } from "@meridian/contracts/works";
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { HttpResponseError } from "@/client/api/http-client";
-import { useWorkMutations } from "@/client/query/useWorks";
+import { useWorkCommandFailures, useWorkMutations } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { cn } from "@/lib/utils";
 
@@ -16,26 +16,24 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type WorkRestore = ReturnType<typeof useWorkRestore>;
 
-/** Optimistic restore: the Work returns to its prior tab at once; a failure lands on its deleted row. */
+const RESTORE_OPERATIONS = ["restore"] as const;
+
+/**
+ * Optimistic restore: the Work leaves this list for its prior tab at once; a
+ * failure returns it here with the error on its row.
+ */
 export function useWorkRestore(projectId: string) {
-  const mutations = useWorkMutations(projectId);
-  const [restoringId, setRestoringId] = useState<string | null>(null);
-  const [failure, setFailure] = useState<{ id: string; error: Error } | null>(null);
+  const restoreAsync = useWorkMutations(projectId).restore.mutateAsync;
+  const failures = useWorkCommandFailures(projectId, RESTORE_OPERATIONS);
   const restore = useCallback(
-    (work: Work) => {
-      setFailure(null);
-      setRestoringId(work.id);
-      mutations.restore.mutate(work.id, {
-        onSuccess: () => setRestoringId(null),
-        onError: (error) => {
-          setRestoringId(null);
-          setFailure({ id: work.id, error });
-        },
-      });
-    },
-    [mutations.restore],
+    (work: Work) => void restoreAsync(work.id).catch(() => undefined),
+    [restoreAsync],
   );
-  return { restoringId, failure, restore };
+  const failureFor = useCallback(
+    (workId: string) => failures.get(workId)?.error ?? null,
+    [failures],
+  );
+  return { failureFor, restore };
 }
 
 /** Deleted Works still inside their retention window, minus one already offered for Undo. */
@@ -57,8 +55,7 @@ export function DeletedWorkList({
   now: number;
   restore: WorkRestore;
 }) {
-  const shown = works.filter((work) => work.id !== restore.restoringId);
-  if (!shown.length)
+  if (!works.length)
     return (
       <p className="px-2 py-2 text-sm text-muted-foreground">
         <Trans>
@@ -72,19 +69,19 @@ export function DeletedWorkList({
         <Trans>Restoring brings back a Work with its chats, drafts, Scratch and Uploads.</Trans>
       </p>
       <ul className="min-w-0">
-        {shown.map((work, index) => (
-          <li key={work.id} className={cn("relative", index < shown.length - 1 && "row-rule")}>
-            <DeletedRow work={work} now={now} onRestore={() => restore.restore(work)} />
-            {restore.failure?.id === work.id ? (
-              <div className="px-2">
-                <RestoreFailure
-                  error={restore.failure.error}
-                  onRetry={() => restore.restore(work)}
-                />
-              </div>
-            ) : null}
-          </li>
-        ))}
+        {works.map((work, index) => {
+          const failure = restore.failureFor(work.id);
+          return (
+            <li key={work.id} className={cn("relative", index < works.length - 1 && "row-rule")}>
+              <DeletedRow work={work} now={now} onRestore={() => restore.restore(work)} />
+              {failure ? (
+                <div className="px-2">
+                  <RestoreFailure error={failure} onRetry={() => restore.restore(work)} />
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
       </ul>
     </>
   );

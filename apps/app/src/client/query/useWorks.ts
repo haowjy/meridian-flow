@@ -1,10 +1,17 @@
+/**
+ * Works reads and Work commands. The query cache holds only server snapshots;
+ * readers see that snapshot with every pending Work command's expected result
+ * laid over it, and a command's failure is read back from the mutation cache.
+ */
 import type { UpdateWorkRequest, Work, WorksSnapshot } from "@meridian/contracts/works";
 import {
+  type Mutation,
+  type MutationStatus,
   type QueryClient,
-  replaceEqualDeep,
   type UseMutateAsyncFunction,
   type UseMutateFunction,
   useMutation,
+  useMutationState,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -24,9 +31,9 @@ import { useIsProjectPendingCreation } from "./useProjectCreation";
 import { convergeWorkProjection } from "./work-projection-cache";
 import {
   acquireWorksSnapshot,
-  beginWorksSnapshotRequest,
+  installCommittedWork,
+  refreshWorksSnapshot,
   repairWorksSnapshot,
-  seedWorksSnapshot,
   workFromSnapshot,
 } from "./works-projection-acquisition";
 
@@ -41,19 +48,24 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
     staleTime: 30_000,
     enabled,
   });
+  const pending = useWorkCommandRecords(projectId, "pending");
+  const snapshot = useMemo(
+    () => (list.data ? projectPendingCommands(list.data, pending) : undefined),
+    [list.data, pending],
+  );
   const works = useMemo(
-    () => list.data?.works.filter((work) => work.deletedAt === null) ?? (list.isError ? [] : null),
-    [list.data?.works, list.isError],
+    () => snapshot?.works.filter((work) => work.deletedAt === null) ?? (list.isError ? [] : null),
+    [snapshot?.works, list.isError],
   );
   // Soft-deleted Works stay restorable until their purge date; newest first.
   const deleted = useMemo(
     () =>
-      (list.data?.works.filter((work) => work.deletedAt !== null) ?? []).sort((a, b) =>
+      (snapshot?.works.filter((work) => work.deletedAt !== null) ?? []).sort((a, b) =>
         (b.deletedAt ?? "").localeCompare(a.deletedAt ?? ""),
       ),
-    [list.data?.works],
+    [snapshot?.works],
   );
-  const noWork = list.data?.noWork ?? null;
+  const noWork = snapshot?.noWork ?? null;
   const refetch = useCallback(() => void list.refetch(), [list.refetch]);
   const status = !enabled
     ? "disabled"
@@ -78,12 +90,20 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
 export interface WorkCommand<TResult, TVariables> {
   mutate: UseMutateFunction<TResult, Error, TVariables>;
   mutateAsync: UseMutateAsyncFunction<TResult, Error, TVariables>;
-  isPending: boolean;
-  error: Error | null;
 }
 
+type WorkCommandVariables = {
+  update: { workId: string; data: UpdateWorkRequest };
+  archive: string;
+  unarchive: string;
+  delete: string;
+  restore: string;
+};
+
+export type WorkOperation = keyof WorkCommandVariables;
+
 export interface WorkMutations {
-  update: WorkCommand<Work, { workId: string; data: UpdateWorkRequest }>;
+  update: WorkCommand<Work, WorkCommandVariables["update"]>;
   archive: WorkCommand<Work, string>;
   unarchive: WorkCommand<Work, string>;
   delete: WorkCommand<void, string>;
@@ -92,190 +112,229 @@ export interface WorkMutations {
 
 export function useWorkMutations(projectId: string): WorkMutations {
   const client = useQueryClient();
-  const lifecycleScope = { id: `work-lifecycle:${projectId}` };
-  const update = useWorkCommand(
-    client,
-    projectId,
-    "update",
-    ({ workId, data }: { workId: string; data: UpdateWorkRequest }) => updateWork(workId, data),
-    {
-      optimistic: (snapshot, { workId, data }) =>
-        patchSnapshotWork(snapshot, workId, { ...data, updatedAt: new Date().toISOString() }),
-      confirmed: true,
-    },
+  // Lifecycle commands run one at a time on the network; each still shows at once.
+  const lifecycle = { id: `work-lifecycle:${projectId}` };
+  const update = useWorkCommand(client, projectId, "update", ({ workId, data }) =>
+    updateWork(workId, data),
   );
-  const archive = useWorkCommand(
-    client,
-    projectId,
-    "archive",
-    (workId: string) => archiveWork(workId),
-    {
-      scope: lifecycleScope,
-      optimistic: (snapshot, workId) =>
-        patchSnapshotWork(snapshot, workId, {
-          status: "archived",
-          archivedAt: new Date().toISOString(),
-        }),
-      confirmed: true,
-    },
-  );
+  const archive = useWorkCommand(client, projectId, "archive", (id) => archiveWork(id), lifecycle);
   const unarchive = useWorkCommand(
     client,
     projectId,
     "unarchive",
-    (workId: string) => unarchiveWork(workId),
-    {
-      scope: lifecycleScope,
-      optimistic: (snapshot, workId) =>
-        patchSnapshotWork(snapshot, workId, { status: "active", archivedAt: null }),
-      confirmed: true,
-    },
+    (id) => unarchiveWork(id),
+    lifecycle,
   );
-  const remove = useWorkCommand(
-    client,
-    projectId,
-    "delete",
-    (workId: string) => deleteWork(workId),
-    {
-      scope: lifecycleScope,
-    },
-  );
-  const restore = useWorkCommand(
-    client,
-    projectId,
-    "restore",
-    (workId: string) => restoreWork(workId),
-    {
-      scope: lifecycleScope,
-      confirmed: true,
-    },
-  );
+  const remove = useWorkCommand(client, projectId, "delete", (id) => deleteWork(id), lifecycle);
+  const restore = useWorkCommand(client, projectId, "restore", (id) => restoreWork(id), lifecycle);
   return { update, archive, unarchive, delete: remove, restore };
 }
 
-type WorkOperation = "update" | "archive" | "unarchive" | "delete" | "restore";
+const workCommandKey = (projectId: string, operation?: WorkOperation) =>
+  operation
+    ? (["work-command", projectId, operation] as const)
+    : (["work-command", projectId] as const);
 
-/** Projects a command's expected result into the snapshot until the server answers. */
-type OptimisticWorkPatch<TVariables> = (
-  snapshot: WorksSnapshot,
-  variables: TVariables,
-) => WorksSnapshot;
+const commandWorkId = <Op extends WorkOperation>(
+  operation: Op,
+  variables: WorkCommandVariables[Op],
+): string =>
+  operation === "update"
+    ? (variables as WorkCommandVariables["update"]).workId
+    : (variables as string);
 
-type OptimisticContext = { previous: WorksSnapshot; optimistic: WorksSnapshot } | undefined;
-
-function patchSnapshotWork(
-  snapshot: WorksSnapshot,
-  workId: string,
-  fields: Partial<Work>,
-): WorksSnapshot {
-  const patch = <T extends Work>(work: T): T =>
-    work.id === workId ? ({ ...work, ...fields } as T) : work;
-  return { ...snapshot, works: snapshot.works.map(patch), noWork: patch(snapshot.noWork) };
+function useWorkCommand<Op extends WorkOperation, TResult>(
+  client: QueryClient,
+  projectId: string,
+  operation: Op,
+  command: (variables: WorkCommandVariables[Op]) => Promise<TResult>,
+  scope?: { id: string },
+): WorkCommand<TResult, WorkCommandVariables[Op]> {
+  const mutation = useMutation<TResult, Error, WorkCommandVariables[Op]>({
+    mutationKey: workCommandKey(projectId, operation),
+    mutationFn: command,
+    scope,
+    // A failed command stays on its Work until the writer retries, dismisses,
+    // or runs another command on that Work; settled records are pruned then.
+    gcTime: Number.POSITIVE_INFINITY,
+    onMutate: (variables) => {
+      forgetSettledCommands(client, projectId, commandWorkId(operation, variables));
+    },
+    onSettled: (result, error) =>
+      settleWorkCommand(client, projectId, operation, error ? null : (result as Work | undefined)),
+  });
+  return { mutate: mutation.mutate, mutateAsync: mutation.mutateAsync };
 }
 
 /**
- * Undoes one command's projection entry by entry. Lifecycle commands queue in
- * one scope, so a later command's projection (or server truth that arrived
- * since) may sit beside this one; only Works still showing exactly this
- * projection return to their prior value.
+ * Converges dependent caches, then keeps a successful command pending until a
+ * server snapshot read started after its commit lands, so its projection never
+ * drops before the snapshot includes it. Reads are ordered by
+ * `authorityRevision`, so an older read cannot replace that newer one.
  */
-function revertOptimistic(
-  current: WorksSnapshot,
-  { previous, optimistic }: NonNullable<OptimisticContext>,
-): WorksSnapshot {
-  const before = new Map([...previous.works, previous.noWork].map((work) => [work.id, work]));
-  const projected = new Map(
-    [...optimistic.works, optimistic.noWork].map((work) => [work.id, work]),
-  );
-  const revert = <T extends Work>(work: T): T => {
-    const prior = before.get(work.id);
-    const mine = projected.get(work.id);
-    if (!prior || !mine || mine === prior) return work;
-    // Deep-equal check: the query cache structurally shares, so identity is lost.
-    return replaceEqualDeep(mine, work) === mine ? (prior as T) : work;
-  };
-  return { ...current, works: current.works.map(revert), noWork: revert(current.noWork) };
-}
-
-function useWorkCommand<TResult, TVariables>(
+async function settleWorkCommand(
   client: QueryClient,
   projectId: string,
   operation: WorkOperation,
-  command: (variables: TVariables) => Promise<TResult>,
-  options: {
-    scope?: { id: string };
-    optimistic?: OptimisticWorkPatch<TVariables>;
-    /** The command answers with the Work as committed; install it at once. */
-    confirmed?: TResult extends Work ? true : never;
-  } = {},
-): WorkCommand<TResult, TVariables> {
-  const { optimistic, confirmed } = options;
-  const queryKey = projectQueryKeys.works(projectId);
-  const mutation = useMutation<TResult, Error, TVariables, OptimisticContext>({
-    mutationKey: workCommandKey(projectId),
-    mutationFn: command,
-    scope: options.scope,
-    // A scoped command waits for its turn on the network, but onMutate runs at
-    // once, so the writer sees every queued command immediately.
-    onMutate: optimistic
-      ? async (variables): Promise<OptimisticContext> => {
-          await client.cancelQueries({ queryKey, exact: true });
-          const previous = client.getQueryData<WorksSnapshot>(queryKey);
-          if (!previous) return undefined;
-          const next = optimistic(previous, variables);
-          // Advance the acquisition watermark as well as the cache. An older
-          // request can write directly from the snapshot adapter.
-          seedWorksSnapshot(client, next, beginWorksSnapshotRequest(projectId));
-          return { previous, optimistic: next };
-        }
-      : undefined,
-    onError: optimistic
-      ? (_error, _variables, context) => {
-          const current = client.getQueryData<WorksSnapshot>(queryKey);
-          if (!context || !current) return;
-          seedWorksSnapshot(
-            client,
-            revertOptimistic(current, context),
-            beginWorksSnapshotRequest(projectId),
-          );
-        }
-      : undefined,
-    onSuccess: confirmed
-      ? (result) => {
-          const current = client.getQueryData<WorksSnapshot>(queryKey);
-          if (!current) return;
-          const work = result as Work;
-          seedWorksSnapshot(
-            client,
-            patchSnapshotWork(current, work.id, work),
-            beginWorksSnapshotRequest(projectId),
-          );
-        }
-      : undefined,
-    onSettled: () => convergeWorkCommand(client, projectId, operation),
-  });
-  return {
-    mutate: mutation.mutate,
-    mutateAsync: mutation.mutateAsync,
-    isPending: mutation.isPending,
-    error: mutation.error,
-  };
-}
-
-const workCommandKey = (projectId: string) => ["work-command", projectId] as const;
-
-function convergeWorkCommand(
-  client: QueryClient,
-  projectId: string,
-  operation: WorkOperation,
+  committed: Work | undefined | null,
 ): Promise<void> {
   convergeWorkProjection(client, { kind: "entity", projectId, operation });
-  // A server snapshot read now would erase the projections of Work commands
-  // still pending (queued in the lifecycle scope); the last one to settle
-  // repairs. This command still counts as pending while it settles, and a
-  // confirmed command has already installed its own Work.
-  if (client.isMutating({ mutationKey: workCommandKey(projectId) }) > 1) return Promise.resolve();
-  return repairWorksSnapshot(client, projectId);
+  if (committed === null) {
+    // The projection drops now; a read still catches a write the server kept.
+    void repairWorksSnapshot(client, projectId);
+    return;
+  }
+  try {
+    await refreshWorksSnapshot(client, projectId);
+  } catch {
+    // Without a fresh snapshot, the Work the server returned is the best truth.
+    if (committed) installCommittedWork(client, projectId, committed);
+    await client.invalidateQueries({
+      queryKey: projectQueryKeys.works(projectId),
+      exact: true,
+      refetchType: "none",
+    });
+  }
+}
+
+type WorkCommandRecord = {
+  mutationId: number;
+  operation: WorkOperation;
+  workId: string;
+  variables: unknown;
+  submittedAt: number;
+  status: MutationStatus;
+  error: Error | null;
+};
+
+function workCommandRecord(mutation: Mutation<unknown, Error, unknown>): WorkCommandRecord | null {
+  const operation = mutation.options.mutationKey?.[2] as WorkOperation | undefined;
+  const { variables, status, submittedAt, error } = mutation.state;
+  if (!operation || variables === undefined || status === "idle") return null;
+  return {
+    mutationId: mutation.mutationId,
+    operation,
+    workId: commandWorkId(operation, variables as WorkCommandVariables[WorkOperation]),
+    variables,
+    submittedAt,
+    status,
+    error,
+  };
+}
+
+/** This project's Work commands, oldest first. */
+function useWorkCommandRecords(projectId: string, status?: MutationStatus) {
+  const records = useMutationState({
+    filters: { mutationKey: workCommandKey(projectId), status },
+    select: (mutation) => workCommandRecord(mutation as Mutation<unknown, Error, unknown>),
+  });
+  return useMemo(
+    () =>
+      records
+        .filter((record): record is WorkCommandRecord => record !== null)
+        .sort((a, b) => a.mutationId - b.mutationId),
+    [records],
+  );
+}
+
+/** What a pending command will make true of its Work. Delete is shown by its Undo row. */
+function commandProjection(record: WorkCommandRecord): Partial<Work> | null {
+  const at = new Date(record.submittedAt).toISOString();
+  switch (record.operation) {
+    case "update":
+      return { ...(record.variables as WorkCommandVariables["update"]).data, updatedAt: at };
+    case "archive":
+      return { status: "archived", archivedAt: at };
+    case "unarchive":
+      return { status: "active", archivedAt: null };
+    case "restore":
+      return { deletedAt: null };
+    case "delete":
+      return null;
+  }
+}
+
+function projectPendingCommands(
+  snapshot: WorksSnapshot,
+  pending: readonly WorkCommandRecord[],
+): WorksSnapshot {
+  const fields = new Map<string, Partial<Work>>();
+  for (const record of pending) {
+    const projection = commandProjection(record);
+    if (projection) fields.set(record.workId, { ...fields.get(record.workId), ...projection });
+  }
+  if (!fields.size) return snapshot;
+  const patch = <T extends Work>(work: T): T => {
+    const next = fields.get(work.id);
+    return next ? ({ ...work, ...next } as T) : work;
+  };
+  return { ...snapshot, works: snapshot.works.map(patch), noWork: patch(snapshot.noWork) };
+}
+
+function findWorkCommands(client: QueryClient, projectId: string) {
+  return client.getMutationCache().findAll({ mutationKey: workCommandKey(projectId) });
+}
+
+function forgetSettledCommands(client: QueryClient, projectId: string, workId: string): void {
+  const cache = client.getMutationCache();
+  for (const mutation of findWorkCommands(client, projectId)) {
+    if (mutation.state.status === "pending") continue;
+    if (workCommandRecord(mutation as Mutation<unknown, Error, unknown>)?.workId === workId)
+      cache.remove(mutation);
+  }
+}
+
+export type WorkCommandFailure<Op extends WorkOperation = WorkOperation> = {
+  workId: string;
+  operation: Op;
+  error: Error;
+  dismiss: () => void;
+};
+
+/**
+ * The failed command each Work still shows, keyed by Work id. A Work's latest
+ * command wins, so a retry or any newer command on it replaces the failure.
+ * Every surface reads the same mutation cache, so the list and the band agree.
+ */
+export function useWorkCommandFailures<Op extends WorkOperation>(
+  projectId: string,
+  operations: readonly Op[],
+): ReadonlyMap<string, WorkCommandFailure<Op>> {
+  const client = useQueryClient();
+  const records = useWorkCommandRecords(projectId);
+  const shown = operations.join(" ");
+  return useMemo(() => {
+    const latest = new Map<string, WorkCommandRecord>();
+    for (const record of records) latest.set(record.workId, record);
+    const failures = new Map<string, WorkCommandFailure<Op>>();
+    for (const record of latest.values()) {
+      if (record.status !== "error" || !record.error) continue;
+      if (!shown.split(" ").includes(record.operation)) continue;
+      failures.set(record.workId, {
+        workId: record.workId,
+        operation: record.operation as Op,
+        error: record.error,
+        dismiss: () => {
+          const cache = client.getMutationCache();
+          const mutation = cache.getAll().find((m) => m.mutationId === record.mutationId);
+          if (mutation) cache.remove(mutation);
+        },
+      });
+    }
+    return failures;
+  }, [client, records, shown]);
+}
+
+/** Works whose restore is still on its way; they already show in their tab. */
+export function useRestoringWorkIds(projectId: string): ReadonlySet<string> {
+  const pending = useWorkCommandRecords(projectId, "pending");
+  return useMemo(
+    () =>
+      new Set(
+        pending.filter((record) => record.operation === "restore").map((record) => record.workId),
+      ),
+    [pending],
+  );
 }
 
 export type UpdateWorkWriteModeMutationInput =

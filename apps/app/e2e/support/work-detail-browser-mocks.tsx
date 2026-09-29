@@ -73,8 +73,6 @@ function browserWorkCommand<TResult, TVariables>(
   return {
     mutate: () => undefined,
     mutateAsync: run,
-    isPending: false,
-    error: null,
   };
 }
 
@@ -87,6 +85,8 @@ export const useWorkMutations = (): WorkMutations => ({
   delete: browserWorkCommand<void, string>(async () => undefined),
   restore: browserWorkCommand<Work, string>(async () => state().work),
 });
+export const useWorkCommandFailures = () => new Map();
+export const useRestoringWorkIds = () => new Set<string>();
 export const useWorks = () => ({
   works: [state().work],
   isError: false,
