@@ -15,7 +15,7 @@ it("admits explicit no Work without another selector", () => {
   });
 });
 it.each(["loading"] as const)("keeps unresolved %s inert", (reason) => {
-  expect(resolveEditorWorkScope({ status: "unresolved", reason, slug: "requested" })).toEqual({
+  expect(resolveEditorWorkScope({ status: "unresolved", reason, id: "requested" })).toEqual({
     status: reason,
     workId: "requested",
   });

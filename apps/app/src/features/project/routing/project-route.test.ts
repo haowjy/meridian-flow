@@ -22,7 +22,7 @@ describe("Work dock route scope", () => {
       workDockDestinationId("work", {
         status: "unresolved",
         reason: "loading",
-        slug: "pending-id",
+        id: "pending-id",
       }),
     ).toBe("pending-id");
     expect(

@@ -2,6 +2,7 @@
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
+import { parseRequestId } from "@meridian/contracts/request-id";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -59,12 +60,13 @@ import {
   type ProjectSearch,
   projectSearchEquals,
 } from "./project-route";
-import { useWorkRoute, workDestination, workRouteResolution } from "./work-route";
+import { useWorkRoute, workRouteResolution } from "./work-route";
 
 const NONE: AddressSelection = { kind: "none" };
-const EMPTY_WORKS: readonly Work[] = [];
-function selection(slug: string | null): AddressSelection {
-  return slug ? { kind: "slug", slug } : NONE;
+function selection(value: string | null): AddressSelection {
+  if (value === null) return NONE;
+  const id = parseRequestId(value);
+  return id ? { kind: "id", id } : { kind: "malformed", value };
 }
 function issue<T>(
   resolution: AddressResolution<T>,
@@ -76,7 +78,6 @@ function issue<T>(
 function screen(destination: ProjectDestination): ScreenKey {
   if (
     destination.kind === "work" ||
-    destination.kind === "work-id" ||
     destination.kind === "works" ||
     destination.kind === "works-new"
   )
@@ -133,7 +134,6 @@ export function ReadableProjectRoute({
     rememberedWork,
     openRemembered,
   } = workRoute;
-  const workEntries = workCatalog.entries ?? EMPTY_WORKS;
   const threads = useProjectThreads(projectId);
   const chat = useProjectChatNavigation({
     accountId: user.userId,
@@ -153,7 +153,7 @@ export function ReadableProjectRoute({
       : selection(
           rememberedEditor.current !== undefined
             ? rememberedEditor.current
-            : (workEntries.find((value) => value.id === displayedChat?.workId)?.slug ?? null),
+            : (displayedChat?.workId ?? null),
         );
   const editorDefaultPending =
     rememberedEditor.current === undefined &&
@@ -166,7 +166,7 @@ export function ReadableProjectRoute({
       threadsUnloaded: threads.threads === null,
     });
   const editorWork: AddressResolution<Work> = editorDefaultPending
-    ? { status: workCatalog.status === "error" || threads.isError ? "error" : "loading", slug: "" }
+    ? { status: workCatalog.status === "error" || threads.isError ? "error" : "loading", id: "" }
     : resolveAddressSelection(editorSelection, workCatalog);
   const workId = editorWork.status === "resolved" ? editorWork.value.id : null;
   const { tabs: workspaceTabs } = useContextTabs(projectId);
@@ -195,7 +195,7 @@ export function ReadableProjectRoute({
     if (localDocumentId)
       void useContextTabsStore.getState().selectTab(projectId, workId ?? "", localDocumentId);
   }, [projectId, workId, localDocumentId]);
-  const shown = useRef<DisplayedProjectSelection>({ workSlug: null });
+  const shown = useRef<DisplayedProjectSelection>({ workId: null });
   useBlocker({
     shouldBlockFn: async () => (navigation ? !(await navigation.allowDeparture()) : false),
     enableBeforeUnload: () => navigation?.hasUnsavedChanges() ?? false,
@@ -235,8 +235,8 @@ export function ReadableProjectRoute({
     });
   }, [navigation, location, workCatalog.entries, workCatalog.status, workCatalog.isFetching]);
 
-  const latest = useRef({ address, location, navigation, works: workEntries });
-  latest.current = { address, location, navigation, works: workEntries };
+  const latest = useRef({ address, location, navigation });
+  latest.current = { address, location, navigation };
   const captureNavigation = useCallback(() => {
     const current = latest.current.navigation;
     const ticket = current?.beginIntent();
@@ -244,11 +244,11 @@ export function ReadableProjectRoute({
   }, []);
   const reportSelection = useCallback(
     (value: { editorWorkId: string | null }) => {
-      const workSlug = workEntries.find((work) => work.id === value.editorWorkId)?.slug ?? null;
-      shown.current = { workSlug, local: localPointer };
-      if (activeScreen === "context" && !issue(editorWork)) rememberedEditor.current = workSlug;
+      const workId = value.editorWorkId ? parseRequestId(value.editorWorkId) : null;
+      shown.current = { workId, local: localPointer };
+      if (activeScreen === "context" && !issue(editorWork)) rememberedEditor.current = workId;
     },
-    [workEntries, activeScreen, editorWork.status],
+    [activeScreen, editorWork.status],
   );
 
   const resourceDestination =
@@ -257,7 +257,7 @@ export function ReadableProjectRoute({
   const documentDestination =
     destination.kind === "document" && !resourceDestination ? destination : null;
   const sourceWorkId =
-    documentDestination?.workSlug && work.status === "resolved" ? work.value.id : null;
+    documentDestination?.workId && work.status === "resolved" ? work.value.id : null;
   const { catalog: addressCatalog } = useContextCatalogView(
     projectId,
     documentDestination?.scheme ?? "manuscript",
@@ -311,8 +311,7 @@ export function ReadableProjectRoute({
   const mainIssue =
     parsed.kind === "invalid"
       ? "unavailable"
-      : (destination.kind === "work" || destination.kind === "work-id") &&
-          shownRouteWork.status === "unresolved"
+      : destination.kind === "work" && shownRouteWork.status === "unresolved"
         ? shownRouteWork.reason
         : undefined;
   const editorIssue = resourceDestination
@@ -341,24 +340,15 @@ export function ReadableProjectRoute({
     return {
       ...address,
       destination: next,
-      workView: next.kind === "work" || next.kind === "work-id" ? address.workView : undefined,
+      workView: next.kind === "work" ? address.workView : undefined,
       worksView: undefined,
       results: false,
     };
-  }
-  function workSlug(id: string): string {
-    const slug = workEntries.find((work) => work.id === id && work.deletedAt === null)?.slug;
-    if (!slug) throw new Error("Work address is unavailable");
-    return slug;
   }
   const contextDestination = useCallback(
     (target: ContextRouteTarget, preparedTab?: ContextTab) => {
       const current = latest.current;
       const scoped = target.scheme === "scratch" || target.scheme === "uploads";
-      const slug = target.workId
-        ? current.works?.find((work) => work.id === target.workId)?.slug
-        : null;
-      if (target.workId && !slug) throw new Error("Work address is unavailable");
       let state: Record<string, unknown> | undefined;
       if (target.path === "") {
         const workspace = getContextTabs(projectId);
@@ -396,10 +386,10 @@ export function ReadableProjectRoute({
                 kind: "document",
                 scheme: target.scheme,
                 path: target.path.replace(/^\/+/, ""),
-                workSlug: scoped ? (slug ?? null) : null,
+                workId: scoped && target.workId ? parseRequestId(target.workId) : null,
               }
             : { kind: "editor" },
-          work: selection(slug ?? null),
+          work: selection(target.workId),
           results: false,
         } as ProjectAddress,
         state,
@@ -474,9 +464,9 @@ export function ReadableProjectRoute({
 
   const routeCommands: ProjectRouteCommands = {
     openWork: (target, options) =>
-      go(toDestination(workDestination(target.workId, workCatalog)), options),
+      go(toDestination({ kind: "work", workId: target.workId }), options),
     workHref: (target) =>
-      projectAddressHref(toDestination(workDestination(target.workId, workCatalog))),
+      projectAddressHref(toDestination({ kind: "work", workId: target.workId })),
     workView: address.workView ?? "chats",
     setWorkView: (view) =>
       go({ ...address, workView: view === "files" ? "files" : undefined }, { replace: true }),
@@ -508,9 +498,9 @@ export function ReadableProjectRoute({
               kind: "browse",
               scheme: target.scheme,
               path: (target.folder ?? "").replace(/^\/+/, ""),
-              workSlug:
+              workId:
                 target.scheme === "scratch" || target.scheme === "uploads"
-                  ? workSlug(target.workId)
+                  ? parseRequestId(target.workId)
                   : null,
             }),
             options,
@@ -552,7 +542,7 @@ export function ReadableProjectRoute({
     return go(
       {
         ...toDestination({ kind: next === "work" ? "works" : "editor" }),
-        work: selection(rememberedEditor.current ?? shown.current.workSlug),
+        work: selection(rememberedEditor.current ?? shown.current.workId),
       },
       { replace: false },
     );
@@ -563,7 +553,10 @@ export function ReadableProjectRoute({
         kind: "browse",
         scheme,
         path: path.replace(/^\/+/, ""),
-        workSlug: scheme === "scratch" || scheme === "uploads" ? shown.current.workSlug : null,
+        workId:
+          scheme === "scratch" || scheme === "uploads"
+            ? parseRequestId(shown.current.workId ?? "")
+            : null,
       }),
       { replace: false },
     );
@@ -590,7 +583,6 @@ export function ReadableProjectRoute({
               result={documentResult}
               localFile={reconciledDocumentAddress.localFile}
               workId={workId}
-              workSlug={editorWork.status === "resolved" ? editorWork.value.slug : null}
               navigation={navigation}
               onAdmission={setAdmission}
             />

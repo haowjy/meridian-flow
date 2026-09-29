@@ -1,5 +1,5 @@
 /** Shared Work naming and stable-handle rules used by both repository adapters. */
-import { decodeWorkSlug, isReservedWorkSlug, type WorkSlug } from "@meridian/contracts/works";
+import { decodeWorkSlug, type WorkSlug } from "@meridian/contracts/works";
 export const DEFAULT_WORK_NAME = "Untitled Work";
 export const NO_WORK_NAME = "No Work";
 
@@ -21,7 +21,7 @@ export function workSlugBase(name: string): WorkSlug {
 export function nextWorkSlug(name: string, existingSlugs: Iterable<string | null>): WorkSlug {
   const base = workSlugBase(name);
   const taken = new Set([...existingSlugs].filter((slug): slug is string => slug != null));
-  if (!taken.has(base) && !isReservedWorkSlug(base)) return base;
+  if (!taken.has(base)) return base;
   for (let suffix = 2; ; suffix += 1) {
     const candidate = `${base}-${suffix}`;
     if (!taken.has(candidate)) {

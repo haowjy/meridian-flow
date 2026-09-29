@@ -1,9 +1,10 @@
 /** Warm exact content resolves readable routes without waiting for remote address lookup. */
+
+import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type {
   DocumentAddressResult,
   ProjectContextIdentityResolution,
 } from "@meridian/contracts/protocol";
-import { decodeWorkSlug } from "@meridian/contracts/works";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
 import type { ProjectDestination } from "./project-address";
 
@@ -27,13 +28,14 @@ export function resolveLocalDocumentAddress(
   if (entry.scope.kind === "project") authority = entry.scope;
   else if (entry.scope.kind === "user") authority = entry.scope;
   else {
-    const workSlug = destination.workSlug === null ? null : decodeWorkSlug(destination.workSlug);
-    if (destination.workSlug !== null && !workSlug) return undefined;
+    if (!destination.workId || destination.workId !== entry.scope.workId) return undefined;
+    const uri = parseUnifiedContextUri(file.uri);
+    if (!uri.ok || uri.value.authority.kind !== "work") return undefined;
     authority = {
       kind: "work",
       projectId,
       workId: entry.scope.workId,
-      workSlug,
+      workSlug: uri.value.authority.workSlug,
     };
   }
   return {

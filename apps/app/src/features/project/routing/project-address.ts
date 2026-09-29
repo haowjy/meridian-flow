@@ -6,27 +6,30 @@ import {
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { type ParsedRequestId, parseRequestId } from "@meridian/contracts/request-id";
-import { isReservedWorkSlug } from "@meridian/contracts/works";
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
 
 export type AddressSelection =
   | { kind: "absent" }
   | { kind: "none" }
-  | { kind: "slug"; slug: string }
+  | { kind: "id"; id: ParsedRequestId }
   | { kind: "malformed"; value: string };
 
 export type ProjectDestination =
   | { kind: "chat-index" | "works" | "works-new" | "editor" }
   | { kind: "chat"; chatId: string }
-  | { kind: "work"; workSlug: string }
-  | { kind: "work-id"; workId: ParsedRequestId }
+  | { kind: "work"; workId: ParsedRequestId }
   | {
       kind: "browse";
       scheme: ProjectContextTreeScheme | null;
       path: string;
-      workSlug: string | null;
+      workId: ParsedRequestId | null;
     }
-  | { kind: "document"; scheme: ProjectContextTreeScheme; path: string; workSlug: string | null };
+  | {
+      kind: "document";
+      scheme: ProjectContextTreeScheme;
+      path: string;
+      workId: ParsedRequestId | null;
+    };
 
 export type ProjectAddress = {
   projectId: string;
@@ -46,13 +49,7 @@ export type ParsedProjectAddress =
   | { kind: "invalid"; reason: string };
 const ABSENT: AddressSelection = { kind: "absent" };
 const RECOGNIZED_QUERY = new Set(["work", "settings", "results", "view"]);
-const HANDLE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function handle(value: string | undefined): string | null {
-  const normalized = value?.toLowerCase();
-  return normalized && HANDLE.test(normalized) ? normalized : null;
-}
 
 function uuid(value: string | undefined): string | null {
   const normalized = value?.toLowerCase();
@@ -62,43 +59,45 @@ function uuid(value: string | undefined): string | null {
 function selection(value: string | null): AddressSelection {
   if (value === null) return ABSENT;
   if (value === "") return { kind: "none" };
-  const slug = handle(value);
-  return slug ? { kind: "slug", slug } : { kind: "malformed", value };
+  const id = parseRequestId(value);
+  return id ? { kind: "id", id } : { kind: "malformed", value };
 }
 
 function parseDestination(parts: string[]): ProjectDestination | null {
   if (parts.length === 0) return { kind: "chat-index" };
   if (parts.length === 1) {
     if (parts[0] === "works" || parts[0] === "editor") return { kind: parts[0] };
-    if (parts[0] === "browse") return { kind: "browse", scheme: null, path: "", workSlug: null };
+    if (parts[0] === "browse") return { kind: "browse", scheme: null, path: "", workId: null };
   }
   if (parts.length === 2 && parts[0] === "chats") {
     const chatId = uuid(parts[1]);
     return chatId ? { kind: "chat", chatId } : null;
   }
-  let workSlug: string | null = null;
   if (parts[0] === "works") {
-    // The server never generates `new` or a UUID-shaped slug, so these segments stay unambiguous.
     if (parts.length === 2 && parts[1] === "new") return { kind: "works-new" };
-    if (parts.length === 2 && uuid(parts[1])) {
-      const workId = parseRequestId(parts[1]);
-      return workId ? { kind: "work-id", workId } : null;
-    }
-    workSlug = handle(parts[1]);
-    if (!workSlug || isReservedWorkSlug(workSlug)) return null;
-    if (parts.length === 2) return { kind: "work", workSlug };
+    const workId = parseRequestId(parts[1]);
+    if (!workId) return null;
+    if (parts.length === 2) return { kind: "work", workId };
     parts = parts.slice(2);
+    const browse = parts[0] === "browse";
+    if (browse) parts = parts.slice(1);
+    const scheme = parts[0];
+    if (!isProjectContextTreeScheme(scheme) || !isWorkScopedProjectContextScheme(scheme))
+      return null;
+    const path = parts.slice(1).join("/");
+    const validated = validateContextEntryPath(path, { allowRoot: browse });
+    if (!validated.ok || validated.value !== path) return null;
+    return { kind: browse ? "browse" : "document", scheme, workId, path };
   }
   const browse = parts[0] === "browse";
   if (browse) parts = parts.slice(1);
   const scheme = parts[0];
   if (!isProjectContextTreeScheme(scheme)) return null;
-  if (workSlug && !isWorkScopedProjectContextScheme(scheme)) return null;
   const path = parts.slice(1).join("/");
   const validated = validateContextEntryPath(path, { allowRoot: browse });
   // Browser addresses must not silently trim a different filename into existence.
   if (!validated.ok || validated.value !== path) return null;
-  return { kind: browse ? "browse" : "document", scheme, workSlug, path };
+  return { kind: browse ? "browse" : "document", scheme, workId: null, path };
 }
 
 /** Called with the router's original search string, before its default parser collapses duplicates. */
@@ -141,8 +140,8 @@ export function parseProjectAddress(
     if (
       work.kind !== "absent" &&
       !(
-        (work.kind === "none" && destination.workSlug === null) ||
-        (work.kind === "slug" && work.slug === destination.workSlug)
+        (work.kind === "none" && destination.workId === null) ||
+        (work.kind === "id" && work.id === destination.workId)
       )
     )
       return { kind: "invalid", reason: "conflicting-work" };
@@ -150,9 +149,7 @@ export function parseProjectAddress(
   }
   const settings = query.get("settings");
   const workView =
-    (destination.kind === "work" || destination.kind === "work-id") && query.get("view") === "files"
-      ? "files"
-      : undefined;
+    destination.kind === "work" && query.get("view") === "files" ? "files" : undefined;
   const view = query.get("view");
   const worksView =
     destination.kind === "works" && (view === "archived" || view === "deleted") ? view : undefined;
@@ -182,7 +179,7 @@ export function parseProjectAddress(
 }
 
 function writeSelection(query: URLSearchParams, key: string, value: AddressSelection): void {
-  if (value.kind === "slug") query.set(key, value.slug);
+  if (value.kind === "id") query.set(key, value.id);
   else if (value.kind === "malformed") query.set(key, value.value);
 }
 
@@ -197,9 +194,6 @@ export function projectAddressHref(address: ProjectAddress): string {
       push("chats", d.chatId);
       break;
     case "work":
-      push("works", d.workSlug);
-      break;
-    case "work-id":
       push("works", d.workId);
       break;
     case "works":
@@ -211,7 +205,7 @@ export function projectAddressHref(address: ProjectAddress): string {
       break;
     case "browse":
     case "document":
-      if (d.workSlug) push("works", d.workSlug);
+      if (d.workId) push("works", d.workId);
       if (d.kind === "browse") push("browse");
       if (d.scheme) push(d.scheme);
       if (d.path) push(...d.path.split("/"));
@@ -225,24 +219,12 @@ export function projectAddressHref(address: ProjectAddress): string {
     isWorkScopedProjectContextScheme(d.scheme);
   if (context && !pathOwnsWork) writeSelection(query, "work", address.work);
   if ((context || d.kind === "chat") && address.results) query.set("results", "");
-  if ((d.kind === "work" || d.kind === "work-id") && address.workView === "files")
-    query.set("view", "files");
+  if (d.kind === "work" && address.workView === "files") query.set("view", "files");
   if (d.kind === "works" && address.worksView) query.set("view", address.worksView);
   if (address.settings) query.set("settings", address.settings);
   const search = query.toString();
   const path = parts.join("/");
   return `/${path}${search ? `?${search}` : ""}`;
-}
-
-/** A confirmed id-addressed Work adopts its server slug without changing projects. */
-export function confirmedWorkAddress(
-  address: ProjectAddress,
-  workId: string,
-  slug: string,
-): ProjectAddress {
-  return address.destination.kind === "work-id" && address.destination.workId === workId
-    ? { ...address, destination: { kind: "work", workSlug: slug } }
-    : address;
 }
 
 /** Entry-local no-selection intent; actual selections remain in the public address. */

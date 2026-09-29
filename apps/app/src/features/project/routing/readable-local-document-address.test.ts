@@ -1,4 +1,6 @@
 /** Warm exact content resolves readable routes independently from network address lookup. */
+
+import { parseRequestId } from "@meridian/contracts/request-id";
 import { catalogViewFromSnapshot } from "@meridian/resource-replica";
 import { expect, it } from "vitest";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
@@ -75,11 +77,77 @@ function catalog(localContent: boolean): CatalogContextView {
   };
 }
 
+function workCatalog(workId: string, localContent: boolean): CatalogContextView {
+  const scope = { kind: "work" as const, projectId: "project-id", workId };
+  const uri = "scratch://@chapter-drafts/notes.md";
+  const normalized = catalogViewFromSnapshot({
+    scope,
+    generation: "cached",
+    headRevision: "1",
+    cursor: "cursor",
+    entries: [
+      {
+        kind: "source",
+        entryId: "scratch-source",
+        scope,
+        scheme: "scratch",
+        name: "Scratch",
+        uri: "scratch://@chapter-drafts",
+      },
+      {
+        kind: "file",
+        entryId: "document-id",
+        scope,
+        sourceId: "scratch-source",
+        parentId: "scratch-source",
+        name: "notes.md",
+        aliases: [],
+        path: ["notes.md"],
+        uri,
+        provisionalName: false,
+        editable: true,
+        filetype: "markdown",
+        schemaType: "document",
+      },
+    ],
+  });
+  const file: CatalogFile = {
+    kind: "file",
+    entryId: "document-id",
+    parentId: "scratch-source",
+    documentId: "document-id",
+    name: "notes.md",
+    aliases: [],
+    path: "/notes.md",
+    uri,
+    provisionalName: false,
+    editable: true,
+    filetype: "markdown",
+    schemaType: "document",
+    ...(localContent ? { localContent: true as const } : {}),
+  };
+  return {
+    normalized,
+    root: {
+      kind: "dir",
+      entryId: "scratch-source",
+      parentId: null,
+      name: "Scratch",
+      path: "/",
+      uri: "scratch://@chapter-drafts",
+    },
+    children: () => [file],
+    files: () => [file],
+    findPath: (path) => (path === file.path ? file : null),
+    findDocument: (documentId) => (documentId === file.documentId ? file : null),
+  };
+}
+
 it("admits an exact cached readable path before a failed remote lookup matters", () => {
   expect(
     resolveLocalDocumentAddress(
       "project-id",
-      { kind: "document", scheme: "kb", path: "Cached.md", workSlug: null },
+      { kind: "document", scheme: "kb", path: "Cached.md", workId: null },
       catalog(true),
     ),
   ).toMatchObject({
@@ -95,8 +163,40 @@ it("does not turn metadata-only catalog discovery into blank local content", () 
   expect(
     resolveLocalDocumentAddress(
       "project-id",
-      { kind: "document", scheme: "kb", path: "Cached.md", workSlug: null },
+      { kind: "document", scheme: "kb", path: "Cached.md", workId: null },
       catalog(false),
+    ),
+  ).toBeUndefined();
+});
+
+it("resolves a Work-scoped path through its id and takes the context URI slug from the catalog", () => {
+  const workId = parseRequestId("123e4567-e89b-42d3-a456-426614174000");
+  if (!workId) throw new Error("Invalid test Work ID");
+  const result = resolveLocalDocumentAddress(
+    "project-id",
+    { kind: "document", scheme: "scratch", path: "notes.md", workId },
+    workCatalog(workId, true),
+  );
+  expect(result?.result).toMatchObject({
+    kind: "current",
+    document: {
+      authority: {
+        kind: "work",
+        workId,
+        workSlug: "chapter-drafts",
+      },
+    },
+  });
+  expect(
+    resolveLocalDocumentAddress(
+      "project-id",
+      {
+        kind: "document",
+        scheme: "scratch",
+        path: "notes.md",
+        workId: parseRequestId("123e4567-e89b-42d3-a456-426614174001"),
+      },
+      workCatalog(workId, true),
     ),
   ).toBeUndefined();
 });
@@ -104,7 +204,7 @@ it("does not turn metadata-only catalog discovery into blank local content", () 
 it("uses local content through lookup failure, then yields to a successful canonical result", () => {
   const local = resolveLocalDocumentAddress(
     "project-id",
-    { kind: "document", scheme: "kb", path: "Cached.md", workSlug: null },
+    { kind: "document", scheme: "kb", path: "Cached.md", workId: null },
     catalog(true),
   );
   if (!local || local.result.kind === "unavailable") throw new Error("Expected a local address");

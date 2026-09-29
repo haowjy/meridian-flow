@@ -1,11 +1,6 @@
 /** Browser grammar contracts: explicit scope, exact filenames, and lossless raw query parsing. */
 import { describe, expect, it } from "vitest";
-import {
-  confirmedWorkAddress,
-  parseProjectAddress,
-  projectAddressHref,
-  projectAddressState,
-} from "./project-address";
+import { parseProjectAddress, projectAddressHref, projectAddressState } from "./project-address";
 
 describe("readable project addresses", () => {
   it("uses a UUID project root as the Chat landing and rejects slug aliases", () => {
@@ -23,24 +18,16 @@ describe("readable project addresses", () => {
     );
   });
 
-  it("resolves an id-addressed Work and replaces it with the canonical slug address", () => {
+  it("parses Work details by id and rejects slug URLs", () => {
     const projectId = "550e8400-e29b-41d4-a716-446655440000";
     const workId = "123e4567-e89b-42d3-a456-426614174000";
-    const parsed = parseProjectAddress(`/p/${projectId}/works/${workId}`);
-    expect(parsed).toMatchObject({
+    const href = `/p/${projectId}/works/${workId}`;
+    expect(parseProjectAddress(href)).toMatchObject({
       kind: "valid",
-      address: { destination: { kind: "work-id", workId } },
-      href: `/p/${projectId}/works/${workId}`,
+      address: { destination: { kind: "work", workId } },
+      href,
     });
-    if (parsed.kind !== "valid") throw new Error(parsed.reason);
-    const confirmed = confirmedWorkAddress(parsed.address, workId, "fight-scene");
-    const confirmedHref = projectAddressHref(confirmed);
-    expect(confirmedHref).toBe(`/p/${projectId}/works/fight-scene`);
-    expect(parseProjectAddress(confirmedHref)).toMatchObject({
-      kind: "valid",
-      address: { destination: { kind: "work", workSlug: "fight-scene" } },
-    });
-    expect(confirmedWorkAddress(parsed.address, "another-id", "fight-scene")).toBe(parsed.address);
+    expect(parseProjectAddress(`/p/${projectId}/works/fight-scene`).kind).toBe("invalid");
   });
 
   it("parses the Work creation destination without treating new as an id", () => {
@@ -58,19 +45,20 @@ describe("readable project addresses", () => {
 
   it("owns the Work detail view in the URL and omits its chats default", () => {
     const projectId = "550e8400-e29b-41d4-a716-446655440000";
-    const href = `/p/${projectId}/works/fight-scene?view=files`;
-    expect(parseProjectAddress(`/p/${projectId}/works/fight-scene`, "?view=files")).toMatchObject({
+    const workId = "123e4567-e89b-42d3-a456-426614174000";
+    const href = `/p/${projectId}/works/${workId}?view=files`;
+    expect(parseProjectAddress(`/p/${projectId}/works/${workId}`, "?view=files")).toMatchObject({
       kind: "valid",
-      address: { destination: { kind: "work", workSlug: "fight-scene" }, workView: "files" },
+      address: { destination: { kind: "work", workId }, workView: "files" },
       href,
     });
-    expect(parseProjectAddress(`/p/${projectId}/works/fight-scene`, "?view=chats")).toMatchObject({
+    expect(parseProjectAddress(`/p/${projectId}/works/${workId}`, "?view=chats")).toMatchObject({
       kind: "valid",
-      address: { destination: { kind: "work", workSlug: "fight-scene" } },
-      href: `/p/${projectId}/works/fight-scene`,
+      address: { destination: { kind: "work", workId } },
+      href: `/p/${projectId}/works/${workId}`,
     });
     expect(
-      parseProjectAddress(`/p/${projectId}/works/fight-scene`, "?view=files&view=chats").kind,
+      parseProjectAddress(`/p/${projectId}/works/${workId}`, "?view=files&view=chats").kind,
     ).toBe("invalid");
   });
 
@@ -89,11 +77,10 @@ describe("readable project addresses", () => {
     expect(parseProjectAddress(`/p/${projectId}/works`, "?view=files")).toMatchObject({
       href: `/p/${projectId}/works`,
     });
-    expect(parseProjectAddress(`/p/${projectId}/works/fight-scene`, "?view=deleted")).toMatchObject(
-      {
-        href: `/p/${projectId}/works/fight-scene`,
-      },
-    );
+    const workId = "123e4567-e89b-42d3-a456-426614174000";
+    expect(parseProjectAddress(`/p/${projectId}/works/${workId}`, "?view=deleted")).toMatchObject({
+      href: `/p/${projectId}/works/${workId}`,
+    });
   });
 
   it("rejects the unused /works-new alias", () => {
@@ -103,18 +90,19 @@ describe("readable project addresses", () => {
   });
 
   it.each([
-    "/p/550e8400-e29b-41d4-a716-446655440000/chats/550e8400-e29b-41d4-a716-446655440000",
+    "/p/550e8400-e29b-41d4-a716-446655440000/works/new",
     "/p/550e8400-e29b-41d4-a716-446655440000/works",
     "/p/550e8400-e29b-41d4-a716-446655440000/editor",
     "/p/550e8400-e29b-41d4-a716-446655440000/browse",
     "/p/550e8400-e29b-41d4-a716-446655440000/browse/manuscript",
+    "/p/550e8400-e29b-41d4-a716-446655440000/chats/550e8400-e29b-41d4-a716-446655440000",
     "/p/550e8400-e29b-41d4-a716-446655440000/browse/manuscript/Volume%201",
     "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/Volume%201/Chapter%20%231.md",
     "/p/550e8400-e29b-41d4-a716-446655440000/kb/%E4%BF%AE%E7%82%BC.md",
     "/p/550e8400-e29b-41d4-a716-446655440000/user/100%25.md",
-    "/p/550e8400-e29b-41d4-a716-446655440000/works/revision/scratch/notes.md",
+    "/p/550e8400-e29b-41d4-a716-446655440000/works/123e4567-e89b-42d3-a456-426614174000/scratch/notes.md",
     "/p/550e8400-e29b-41d4-a716-446655440000/scratch/notes.md",
-    "/p/550e8400-e29b-41d4-a716-446655440000/works/revision/browse/uploads",
+    "/p/550e8400-e29b-41d4-a716-446655440000/works/123e4567-e89b-42d3-a456-426614174000/browse/uploads",
     "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/literal%252F.md",
   ])("round trips %s", (path) => {
     const parsed = parseProjectAddress(path);
@@ -148,11 +136,10 @@ describe("readable project addresses", () => {
     "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/..",
     "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/%40draft.md",
     "/p/550e8400-e29b-41d4-a716-446655440000/manuscript//leaf.md",
-    "/p/550e8400-e29b-41d4-a716-446655440000/works/revision/manuscript/leaf.md",
+    "/p/550e8400-e29b-41d4-a716-446655440000/works/123e4567-e89b-42d3-a456-426614174000/manuscript/leaf.md",
     "/p/550e8400-e29b-41d4-a716-446655440000/work/revision",
     "/p/550e8400-e29b-41d4-a716-446655440000/works/@revision",
     "/p/550e8400-e29b-41d4-a716-446655440000/works/new/scratch/notes.md",
-    "/p/550e8400-e29b-41d4-a716-446655440000/works/550e8400-e29b-41d4-a716-446655440000/scratch/notes.md",
     "/p/550e8400-e29b-41d4-a716-446655440000/manuscript",
     "/p/550e8400-e29b-41d4-a716-446655440000/chats",
     "/p/550e8400-e29b-41d4-a716-446655440000/chat/550e8400-e29b-41d4-a716-446655440000",
@@ -163,14 +150,14 @@ describe("readable project addresses", () => {
     expect(parseProjectAddress(path).kind).toBe("invalid");
   });
 
-  it("normalizes only handles and trailing slash, never document case", () => {
+  it("normalizes UUID case and trailing slash, never document case", () => {
     expect(
       parseProjectAddress(
-        "/p/550E8400-E29B-41D4-A716-446655440000/works/ReVision/scratch/Chapter.md/",
+        "/p/550E8400-E29B-41D4-A716-446655440000/works/123E4567-E89B-42D3-A456-426614174000/scratch/Chapter.md/",
       ),
     ).toMatchObject({
       kind: "valid",
-      href: "/p/550e8400-e29b-41d4-a716-446655440000/works/revision/scratch/Chapter.md",
+      href: "/p/550e8400-e29b-41d4-a716-446655440000/works/123e4567-e89b-42d3-a456-426614174000/scratch/Chapter.md",
     });
   });
 
@@ -185,6 +172,11 @@ describe("readable project addresses", () => {
       address: { work: { kind: "none" } },
     });
     expect(
+      parseProjectAddress("/p/550e8400-e29b-41d4-a716-446655440000/editor", "?work=revision"),
+    ).toMatchObject({
+      address: { work: { kind: "malformed", value: "revision" } },
+    });
+    expect(
       parseProjectAddress("/p/550e8400-e29b-41d4-a716-446655440000/editor", "?work=bad%2Fwork"),
     ).toMatchObject({
       address: {
@@ -194,7 +186,7 @@ describe("readable project addresses", () => {
   });
 
   it.each([
-    "?work=a&work=",
+    "?work=123e4567-e89b-42d3-a456-426614174000&work=",
     "?settings=profile&settings=usage",
     "?results=&results=1",
     "?unknown=%FE",
@@ -208,15 +200,15 @@ describe("readable project addresses", () => {
     expect(
       parseProjectAddress(
         "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md",
-        "?work=Revision&settings=usage&doc=ignored&unknown=1",
+        "?work=123E4567-E89B-42D3-A456-426614174000&settings=usage&doc=ignored&unknown=1",
       ),
     ).toMatchObject({
-      href: "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?work=revision&settings=usage",
+      href: "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?work=123e4567-e89b-42d3-a456-426614174000&settings=usage",
     });
     expect(
       parseProjectAddress(
         "/p/550e8400-e29b-41d4-a716-446655440000/chats/550e8400-e29b-41d4-a716-446655440000",
-        "?work=revision&doc=ignored&results=&settings=profile",
+        "?work=123e4567-e89b-42d3-a456-426614174000&doc=ignored&results=&settings=profile",
       ),
     ).toMatchObject({
       href: "/p/550e8400-e29b-41d4-a716-446655440000/chats/550e8400-e29b-41d4-a716-446655440000?results=&settings=profile",
@@ -224,8 +216,9 @@ describe("readable project addresses", () => {
   });
 
   it("path-owned Work cannot be overridden by query context", () => {
-    const path = "/p/550e8400-e29b-41d4-a716-446655440000/works/revision/scratch/notes.md";
-    expect(parseProjectAddress(path, "?work=Revision")).toMatchObject({
+    const workId = "123e4567-e89b-42d3-a456-426614174000";
+    const path = `/p/550e8400-e29b-41d4-a716-446655440000/works/${workId}/scratch/notes.md`;
+    expect(parseProjectAddress(path, `?work=${workId}`)).toMatchObject({
       kind: "valid",
       href: path,
     });
@@ -233,7 +226,7 @@ describe("readable project addresses", () => {
       kind: "invalid",
       reason: "conflicting-work",
     });
-    expect(parseProjectAddress(path, "?work=other")).toMatchObject({
+    expect(parseProjectAddress(path, "?work=223e4567-e89b-42d3-a456-426614174000")).toMatchObject({
       kind: "invalid",
       reason: "conflicting-work",
     });
@@ -246,7 +239,7 @@ describe("readable project addresses", () => {
     expect(
       parseProjectAddress(
         "/p/550e8400-e29b-41d4-a716-446655440000/scratch/notes.md",
-        "?work=revision",
+        `?work=${workId}`,
       ).kind,
     ).toBe("invalid");
   });

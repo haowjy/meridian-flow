@@ -1,4 +1,4 @@
-/** Resolves readable selections against an authorized project catalog without inventing IDs. */
+/** Resolves address selections against an authorized project catalog without inventing IDs. */
 import type { AddressSelection, ProjectAddress } from "./project-address";
 
 export type AddressCatalog<T> =
@@ -7,30 +7,30 @@ export type AddressCatalog<T> =
 export type AddressResolution<T> =
   | { status: "absent" | "none" }
   | { status: "malformed"; value: string }
-  | { status: "loading" | "error" | "unavailable"; slug: string }
+  | { status: "loading" | "error" | "unavailable"; id: string }
   | { status: "resolved"; value: T };
 
-export function resolveAddressSelection<T extends { slug: string | null }>(
+export function resolveAddressSelection<T extends { id: string }>(
   selection: AddressSelection,
   catalog: AddressCatalog<T>,
 ): AddressResolution<T> {
   if (selection.kind === "absent" || selection.kind === "none") return { status: selection.kind };
   if (selection.kind === "malformed") return { status: "malformed", value: selection.value };
-  const value = catalog.entries?.find((entry) => entry.slug === selection.slug);
+  const value = catalog.entries?.find((entry) => entry.id === selection.id);
   if (value) return { status: "resolved", value };
-  if (catalog.status !== "ready") return { status: catalog.status, slug: selection.slug };
-  return { status: "unavailable", slug: selection.slug };
+  if (catalog.status !== "ready") return { status: catalog.status, id: selection.id };
+  return { status: "unavailable", id: selection.id };
 }
 
 /** Work-owned paths pin authority, including explicitly unassigned Scratch and Uploads. */
 export function addressWorkSelection(address: ProjectAddress): AddressSelection {
   const d = address.destination;
-  if (d.kind === "work") return { kind: "slug", slug: d.workSlug };
+  if (d.kind === "work") return { kind: "id", id: d.workId };
   if (
     (d.kind === "document" || d.kind === "browse") &&
     (d.scheme === "scratch" || d.scheme === "uploads")
   ) {
-    return d.workSlug ? { kind: "slug", slug: d.workSlug } : { kind: "none" };
+    return d.workId ? { kind: "id", id: d.workId } : { kind: "none" };
   }
   return address.work;
 }
@@ -39,7 +39,7 @@ export function addressWorkSelection(address: ProjectAddress): AddressSelection 
 export function guardProjectQuerySelections(
   address: ProjectAddress,
   catalogs: {
-    work: AddressCatalog<{ slug: string | null }>;
+    work: AddressCatalog<{ id: string }>;
   },
 ): ProjectAddress {
   const resolution = resolveAddressSelection(address.work, catalogs.work);

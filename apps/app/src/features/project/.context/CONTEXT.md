@@ -356,8 +356,10 @@ push/replace behavior. The legacy slug project routes and `?screen`/`?thread`
 grammar are gone. `project-route.ts` retains stable-ID command types and the
 context-removal CAS snapshot only; it is not a second address grammar.
 
-Work creation is addressable before the catalog knows its slug through
-`/works/<work-id>`. Confirmation replaces that path with `/works/<slug>`.
+Work details use `/p/<project>/works/<work-id>` from the moment of creation.
+The same id-addressed destination renders pending, failed, and confirmed Works;
+confirmation never replaces the browser path. Browser paths never contain
+Work slugs or `@`; those remain in the model's context-URI address space.
 The account-scoped `client/creation/creation-registry` owns Project and Work
 creation records (`pending`, `failed`, or `confirmed`); the server Works
 snapshot and confirmed Work records meet once in `routing/work-route.ts`'s
@@ -366,8 +368,8 @@ creation record is pending or failed. Browser history state is not creation
 recovery, and an in-flight create may be lost on reload. Project-scoped Works,
 threads, context catalogs, Results, and Agent catalog reads pause through
 selectors over that same registry until the create is confirmed.
-`routing/work-route.ts` also owns Work id-to-slug canonicalization and the
-read/write projection for remembered Work. Work detail's `?view=files` and the
+`routing/work-route.ts` also owns the read/write projection for remembered
+Work, stored by id. Work detail's `?view=files` and the
 Work list's `?view=archived|deleted` belong to the project address, each only on
 its own destination; the defaults (Chats, Active) carry no URL parameter, so
 Back from an opened Work returns to the tab it was opened from.

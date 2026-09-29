@@ -320,23 +320,26 @@ inside the owning project's address space.
 
 Path destinations are the Chat index (`/p/<project>`) and chat detail
 (`/p/<project>/chats/<chat-UUID>`), Work collection/detail
-(`/works`, `/works/<work-slug>`), Editor (`/editor`), and context browse or
-document paths. Collections are plural and items live under them; `/works/new`
-and `/works/<work-UUID>` belong to creation, so the server never generates the
-slug `new` or a UUID-shaped slug. `@` never appears in a browser path: writers
-read it as a document reference, and it belongs to context URIs
-(`scratch://@slug/…`). A Work-scoped context path carries its Work slug in the
-path; project-scoped context can use the explicit `work` query selector. The
-only project-address query keys are `work`, `settings`, `results`, and `view`.
-Selectors distinguish omitted, explicit no-Work (empty), a slug, and malformed
-input; duplicate recognized keys and malformed encodings are invalid rather
-than normalized into another destination. Case and trailing-slash canonical
+(`/p/<project>/works`, `/p/<project>/works/<work-UUID>`), Editor
+(`/p/<project>/editor`), and context browse or document paths. Collections are
+plural and items live under them. Work details and Work-scoped context paths
+address a Work by UUID, like projects and chats. Scoped context paths nest below
+`/p/<project>/works/<work-UUID>`, for example
+`/p/<project>/works/<work-UUID>/browse/scratch/…`. `@` and Work slugs never
+appear in browser URLs. Slugs remain the model's address space for context
+URIs (`scratch://@slug/…`) and `work.switch`. `/works/new` is the Work creation
+destination, distinct from every UUID-addressed Work. The only project-address
+query keys are `work`, `settings`, `results`, and `view`. The Editor
+`?work=<work-UUID>` selector distinguishes omitted, explicit no-Work (empty), a
+Work ID, and malformed input;
+duplicate recognized keys and malformed encodings are invalid rather than
+normalized into another destination. Case and trailing-slash canonical
 replacement use the address serializer. Settings remains the layout-owned
 overlay; Results remains auxiliary state.
 
 `ReadableProjectRoute` is the sole browser-address parser/resolver and
-`createProjectNavigation` owns history admission. Project identity and Work
-slugs resolve through successful owner/project catalogs. Chat UUIDs resolve by
+`createProjectNavigation` owns history admission. Project and Work identities
+resolve through successful owner/project catalogs. Chat UUIDs resolve by
 snapshot identity, including subagents absent from the primary list. An unavailable or
 malformed explicit target parks/disables its requested host; it never falls
 through to a remembered or catalog-default target. Main-destination navigation

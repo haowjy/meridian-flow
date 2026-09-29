@@ -270,7 +270,7 @@ function recentDocumentHref(item: AccountRecentItem, projectId: string | undefin
       kind: "document",
       scheme: item.address.scheme,
       path,
-      workSlug: null,
+      workId: null,
     },
 
     work: { kind: "absent" },

@@ -35,7 +35,7 @@ export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): 
 
 export type RouteWorkResolution =
   | { status: "new" }
-  | { status: "unresolved"; reason: "loading" | "error" | "unavailable"; slug: string }
+  | { status: "unresolved"; reason: "loading" | "error" | "unavailable"; id: string }
   | {
       status: "creating";
       workId: ParsedRequestId;
@@ -53,7 +53,7 @@ export function workDockDestinationId(
 ): string | null {
   if (screen !== "work") return null;
   if (routeWork.status === "present") return routeWork.workId;
-  if (routeWork.status === "unresolved") return routeWork.slug;
+  if (routeWork.status === "unresolved") return routeWork.id;
   if (routeWork.status === "creating") return routeWork.workId;
   return null;
 }

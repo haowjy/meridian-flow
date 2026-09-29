@@ -72,7 +72,7 @@ it.each([
       replaceEntry: () => undefined,
       navigate,
     },
-    () => ({ chatId: null, workSlug: null }),
+    () => ({ workId: null }),
   );
   const address: ProjectAddress = {
     projectId: "550e8400-e29b-41d4-a716-446655440000",
@@ -80,7 +80,7 @@ it.each([
       kind: "document",
       scheme: "kb",
       path: kind === "alias" ? "before" : "doc",
-      workSlug: null,
+      workId: null,
     },
 
     work: { kind: "none" },
@@ -95,7 +95,6 @@ it.each([
       address={address}
       result={result}
       workId={null}
-      workSlug={null}
       navigation={navigation}
       onAdmission={onAdmission}
     />,
@@ -139,7 +138,7 @@ it("preserves a proven local resource handle during readable-route admission", a
       replaceEntry: () => undefined,
       navigate: vi.fn(),
     },
-    () => ({ chatId: null, workSlug: null }),
+    () => ({ workId: null }),
   );
   const localFile: CatalogFile = {
     kind: "file",
@@ -167,7 +166,7 @@ it("preserves a proven local resource handle during readable-route admission", a
       entryKey="entry"
       address={{
         projectId: "550e8400-e29b-41d4-a716-446655440000",
-        destination: { kind: "document", scheme: "kb", path: "doc", workSlug: null },
+        destination: { kind: "document", scheme: "kb", path: "doc", workId: null },
 
         work: { kind: "none" },
         results: false,
@@ -175,7 +174,6 @@ it("preserves a proven local resource handle during readable-route admission", a
       result={documentResult("current")}
       localFile={localFile}
       workId={null}
-      workSlug={null}
       navigation={navigation}
       onAdmission={vi.fn()}
     />,
@@ -208,7 +206,7 @@ it("admits one semantic address when parent state rebuilds equivalent lookup obj
       replaceEntry: () => undefined,
       navigate: vi.fn(),
     },
-    () => ({ chatId: null, workSlug: null }),
+    () => ({ workId: null }),
   );
   function Harness() {
     const [admission, setAdmission] = useState<AddressAdmission | null>(null);
@@ -221,14 +219,13 @@ it("admits one semantic address when parent state rebuilds equivalent lookup obj
           entryKey="entry"
           address={{
             projectId: "550e8400-e29b-41d4-a716-446655440000",
-            destination: { kind: "document", scheme: "kb", path: "doc", workSlug: null },
+            destination: { kind: "document", scheme: "kb", path: "doc", workId: null },
 
             work: { kind: "none" },
             results: false,
           }}
           result={documentResult("current")}
           workId={null}
-          workSlug={null}
           navigation={navigation}
           onAdmission={setAdmission}
         />
@@ -265,11 +262,11 @@ it.each([
       replaceEntry: () => undefined,
       navigate: vi.fn().mockReturnValueOnce(pending).mockResolvedValue(undefined),
     },
-    () => ({ chatId: null, workSlug: null }),
+    () => ({ workId: null }),
   );
   const address: ProjectAddress = {
     projectId: "550e8400-e29b-41d4-a716-446655440000",
-    destination: { kind: "document", scheme: "kb", path: "before", workSlug: null },
+    destination: { kind: "document", scheme: "kb", path: "before", workId: null },
 
     work: { kind: "none" },
     results: false,
@@ -290,7 +287,6 @@ it.each([
         address={address}
         result={documentResult("alias")}
         workId={null}
-        workSlug={null}
         navigation={navigation}
         onAdmission={onAdmission}
       />,
