@@ -12,7 +12,7 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
-import { runOwnedPlaceholderPredicate } from "@meridian/database/schema/pending-placeholder";
+import { pendingPlaceholderPredicate } from "@meridian/database/schema/pending-placeholder";
 import { and, asc, desc, eq, gt, gte, inArray, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
@@ -253,43 +253,6 @@ export function createDrizzleTurnRepository(
         .orderBy(asc(schema.turns.position));
       return rows.map(mapTurn);
     },
-    async hasPendingHandoffSeed(threadId) {
-      const [row] = await currentDrizzleDb(db)
-        .select({ id: schema.turns.id })
-        .from(schema.turns)
-        .where(
-          and(
-            eq(schema.turns.threadId, threadId),
-            eq(schema.turns.role, "system"),
-            eq(schema.turns.status, "pending"),
-            sql`${schema.turns.metadata}->>'kind' = 'derivation_seed'`,
-            sql`${schema.turns.metadata}->>'derivation' = 'handoff'`,
-          ),
-        )
-        .limit(1);
-      return !!row;
-    },
-    async listPendingHandoffSeeds(limit, afterTurnId) {
-      if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limit must be positive");
-      const rows = await currentDrizzleDb(db)
-        .select({ id: schema.turns.id, threadId: schema.turns.threadId })
-        .from(schema.turns)
-        .where(
-          and(
-            eq(schema.turns.role, "system"),
-            eq(schema.turns.status, "pending"),
-            sql`${schema.turns.metadata}->>'kind' = 'derivation_seed'`,
-            sql`${schema.turns.metadata}->>'derivation' = 'handoff'`,
-            ...(afterTurnId ? [gt(schema.turns.id, afterTurnId)] : []),
-          ),
-        )
-        .orderBy(asc(schema.turns.id))
-        .limit(limit);
-      return rows.map(({ id, threadId: ownerThreadId }) => ({
-        id: id as TurnId,
-        threadId: ownerThreadId as ThreadId,
-      }));
-    },
     async listPendingPlaceholdersForThread(threadId) {
       const rows = await currentDrizzleDb(db)
         .select()
@@ -297,7 +260,7 @@ export function createDrizzleTurnRepository(
         .where(
           and(
             eq(schema.turns.threadId, threadId),
-            runOwnedPlaceholderPredicate({ status: schema.turns.status, role: schema.turns.role }),
+            pendingPlaceholderPredicate({ status: schema.turns.status, role: schema.turns.role }),
           ),
         )
         .orderBy(asc(schema.turns.position));
@@ -310,7 +273,7 @@ export function createDrizzleTurnRepository(
         .from(schema.turns)
         .where(
           and(
-            runOwnedPlaceholderPredicate({ status: schema.turns.status, role: schema.turns.role }),
+            pendingPlaceholderPredicate({ status: schema.turns.status, role: schema.turns.role }),
             ...(afterTurnId ? [gt(schema.turns.id, afterTurnId)] : []),
           ),
         )

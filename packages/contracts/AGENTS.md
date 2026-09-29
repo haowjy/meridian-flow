@@ -34,9 +34,7 @@ runtime shapes, and observability records.
   real-Work serialization requires opaque project-resolved authority.
 - `PENDING_PLACEHOLDER_ROLES` in `threads/` defines pending transcript
   placeholders (`compaction` and handoff seed `system`); the database partial
-  index derives from it. `RUN_OWNED_PLACEHOLDER_ROLES` defines the subset
-  orphan repair may settle (`compaction` only). Keep their SQL predicates and
-  runtime checks aligned with these sets.
+  index and orphan-repair queries derive from it.
 - `ControlBody` in `threads/` is the one list of thread control kinds
   (`compact`, `compaction_undo`). Four restatements do not
   fail to compile when a kind is missing, so change them with it: the

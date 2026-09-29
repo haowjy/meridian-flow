@@ -14,7 +14,7 @@ import type {
   Turn,
   TurnUsage,
 } from "@meridian/contracts/threads";
-import { formatThreadRef, isRunOwnedPlaceholder } from "@meridian/contracts/threads";
+import { formatThreadRef, isPendingPlaceholder } from "@meridian/contracts/threads";
 import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { toIsoString } from "../../domain/contract-serialization.js";
@@ -645,46 +645,17 @@ export function createInMemoryRepositories(
     async listByThread(threadId) {
       return orderTurnsByPosition([...turns.values()].filter((t) => t.threadId === threadId));
     },
-    async hasPendingHandoffSeed(threadId) {
-      return [...turns.values()].some((turn) => {
-        const metadata = turn.metadata as import("@meridian/contracts/threads").JsonObject | null;
-        return (
-          turn.threadId === threadId &&
-          turn.role === "system" &&
-          turn.status === "pending" &&
-          metadata?.kind === "derivation_seed" &&
-          metadata?.derivation === "handoff"
-        );
-      });
-    },
-    async listPendingHandoffSeeds(limit, afterTurnId) {
-      if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limit must be positive");
-      return [...turns.values()]
-        .filter((turn) => {
-          const metadata = turn.metadata as import("@meridian/contracts/threads").JsonObject | null;
-          return (
-            turn.role === "system" &&
-            turn.status === "pending" &&
-            metadata?.kind === "derivation_seed" &&
-            metadata?.derivation === "handoff" &&
-            (!afterTurnId || turn.id > afterTurnId)
-          );
-        })
-        .sort((left, right) => left.id.localeCompare(right.id))
-        .slice(0, limit)
-        .map(({ id, threadId }) => ({ id, threadId: threadId as ThreadId }));
-    },
     async listPendingPlaceholdersForThread(threadId) {
       return orderTurnsByPosition(
         [...turns.values()].filter(
-          (turn) => turn.threadId === threadId && isRunOwnedPlaceholder(turn),
+          (turn) => turn.threadId === threadId && isPendingPlaceholder(turn),
         ),
       );
     },
     async listPendingPlaceholders(limit, afterTurnId) {
       if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limit must be positive");
       return [...turns.values()]
-        .filter((turn) => isRunOwnedPlaceholder(turn) && (!afterTurnId || turn.id > afterTurnId))
+        .filter((turn) => isPendingPlaceholder(turn) && (!afterTurnId || turn.id > afterTurnId))
         .sort((left, right) => left.id.localeCompare(right.id))
         .slice(0, limit)
         .map(({ id, threadId: ownerThreadId, role }) => ({

@@ -7,7 +7,6 @@ import {
   type Block,
   blockPlainText,
   type FinishReason,
-  isRunOwnedPlaceholder,
   isTerminalTurnStatus,
   type OrchestratorEvent,
   type Turn,
@@ -138,12 +137,12 @@ export async function finalizeExecution(
     deps,
     input.threadId,
     async () => {
-      let turn = await deps.repos.turns.findById(input.turnId);
+      const turn = await deps.repos.turns.findById(input.turnId);
       if (
         !turn ||
         turn.threadId !== input.threadId ||
         (turn.role !== "assistant" &&
-          !(isRunOwnedPlaceholder(turn) && input.cause.kind !== "success"))
+          !(turn.role === "compaction" && input.cause.kind !== "success"))
       ) {
         throw new Error("Terminal turn is unavailable");
       }

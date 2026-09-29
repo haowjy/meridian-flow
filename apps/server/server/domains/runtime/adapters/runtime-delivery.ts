@@ -1,7 +1,7 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
 import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
-import { isRunOwnedPlaceholder } from "@meridian/contracts/threads";
+import { isPendingPlaceholder } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
 import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
@@ -27,7 +27,7 @@ import type {
 } from "../loop/ports.js";
 import { writerFacingPreparationError } from "../loop/preparation-failure.js";
 import { UndoRequestPreparationError } from "../loop/request-preparation.js";
-import { NoPendingWakeError, PendingHandoffSeedError } from "../loop/run-turn-port.js";
+import { NoPendingWakeError } from "../loop/run-turn-port.js";
 import type {
   AdoptedBatch,
   DeliveryBoundary,
@@ -76,6 +76,7 @@ export function createDeliveryAdapter(
     notices: NoticePort;
     runStarter: RunStarter;
     schedulePostCommit(task: () => Promise<void>): void;
+    publishStatus?(threadId: ThreadId): Promise<void>;
   },
 ): RuntimeDelivery {
   const { inbox, leaseStore, threadLock } = deps;
@@ -191,8 +192,6 @@ export function createDeliveryAdapter(
       selected: Awaited<ReturnType<typeof selectForPreparation>>,
       prepared: TPrepared,
     ): Promise<TResult> {
-      if (await deps.repos.turns.hasPendingHandoffSeed(input.threadId))
-        throw new PendingHandoffSeedError(input.threadId);
       committingControlId = selected.selection.control?.id;
       const result = await input.commit(selected.selection, selected.work, prepared);
       committingControlId = undefined;
@@ -310,7 +309,7 @@ export function createDeliveryAdapter(
     while (leaf && !input.knownTurnIds.has(leaf)) {
       const turn = await deps.repos.turns.findById(leaf);
       if (!turn) throw new Error(`Missing causal turn: ${leaf}`);
-      if (isRunOwnedPlaceholder(turn))
+      if (isPendingPlaceholder(turn))
         throw new Error("Unexpected pending placeholder in adoption tail");
       const message = batch.find((entry) => entry.id === turn.id);
       const systemUpdate = SystemUpdateMetadataCodec.safeParse(turn.metadata);
@@ -624,19 +623,17 @@ export function createDeliveryAdapter(
       threadLock.withThreadLock(threadId, () => appendPending(threadId)),
     repairOrphanedTurns: async (lease) => {
       const reports = await threadLock.withThreadLock(lease.threadId, () =>
-        finalizeOrphanedTurns(deps, { threadId: lease.threadId }),
+        finalizeOrphanedTurns(
+          { ...deps, publishStatus: deps.publishStatus },
+          { threadId: lease.threadId },
+        ),
       );
       await deps.publishFinalizedReports(reports);
     },
     selectPending: inbox.selectPending,
     readPendingProjection: inbox.readPendingProjection,
     pendingMessageThreads: async (limit, afterThreadId) => {
-      const candidates = await inbox.pendingMessageThreads(limit, afterThreadId);
-      const eligible: ThreadId[] = [];
-      for (const threadId of candidates) {
-        if (!(await deps.repos.turns.hasPendingHandoffSeed(threadId))) eligible.push(threadId);
-      }
-      return eligible;
+      return inbox.pendingMessageThreads(limit, afterThreadId);
     },
     enqueue: (draft) => threadLock.withThreadLock(draft.threadId, () => enqueue(draft)),
     withThreadLock: (threadId, operation) =>
