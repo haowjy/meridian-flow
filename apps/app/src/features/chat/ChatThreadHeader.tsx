@@ -52,6 +52,8 @@ type ChatThreadTitleProps = {
   activeThread?: Thread | null;
   /** Trigger presentation — see `ThreadSwitcherPopover`. */
   variant?: "quiet" | "tab";
+  /** `external`: the host shows `ChatRenameFailure` elsewhere (the phone top bar). */
+  renameFailure?: "inline" | "external";
 };
 
 export function ChatThreadTitle(props: ChatThreadTitleProps) {
@@ -72,6 +74,7 @@ function ExistingThreadTitle({
   threadId,
   activeThread,
   variant,
+  renameFailure = "inline",
 }: ChatThreadTitleProps & { threadId: string }) {
   const { threadById } = useProjectThreadGroups(projectId);
   const resolved = activeThread ?? threadById.get(threadId) ?? null;
@@ -117,9 +120,23 @@ function ExistingThreadTitle({
           className="size-3.5 shrink-0 animate-spin text-ink-subtle"
         />
       ) : null}
-      {rename.error ? (
+      {rename.error && renameFailure === "inline" ? (
         <InlineErrorRow message={t`Couldn't rename chat.`} onRetry={rename.retry} />
       ) : null}
     </>
   );
+}
+
+/** A rejected rename of this chat, for hosts that place it apart from the title. */
+export function ChatRenameFailure({
+  projectId,
+  threadId,
+}: {
+  projectId: string;
+  threadId: string;
+}) {
+  const rename = useRenameThread(projectId, threadId);
+  return rename.error ? (
+    <InlineErrorRow message={t`Couldn't rename chat.`} onRetry={rename.retry} />
+  ) : null;
 }

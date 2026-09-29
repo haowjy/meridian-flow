@@ -22,6 +22,7 @@
 - Fix: restoring an archived Work showed it under Active before it settled under Archived.
 - Fix: a failed Archive stayed silent when another Archive followed it; the Work list and the Work band now show the same failure, and a Work's changes can no longer flicker back while a server read catches up.
 - Fix: an archived Work waiting to be undeleted showed under Archived beside its Undo row.
+- Phone: a failed Archive or chat rename gets its own line under the top bar instead of squeezing the title.
 - `server`: Work delete cascade-marks children (`deleted_by_work_id`, migration 0011) and an hourly `work-purge` job removes Works past 30 days with their rows and blobs; restore past the window returns 410 `work_restore_expired`. Works drop `description` (migration 0010); `GET /api/works/:workId/threads` is removed in favor of the project chat feed's `workId` filter.
 
 - Keep writer messages visible after the reply starts; only machine-delivered inbox messages fold into activity rows.

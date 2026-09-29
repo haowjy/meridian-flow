@@ -9,7 +9,9 @@
  * after the hamburger and takes the remaining row width. Screens without one
  * (Work, or the routed Results auxiliary surface) get a centered title: the
  * leading side reserves as many 44px slots as the trailing side, so the title
- * stays truly centered even with the chat door beside the actions.
+ * stays truly centered even with the chat door beside the actions. A rejected
+ * command on the screen's subject (a Work's Archive, a chat's rename) takes a
+ * full-width `notice` line under the bar, so the title keeps its width.
  * Desktop pane headers stay separate.
  */
 import { t } from "@lingui/core/macro";
@@ -30,6 +32,8 @@ export type MobileTopBarProps = Pick<ProjectViewProps, "activeScreen"> & {
   /** Opens the chat sheet over Work or Editor. */
   chatAction?: ReactNode;
   title?: ReactNode;
+  /** A failed command's row; the line collapses when it renders nothing. */
+  notice?: ReactNode;
 };
 
 export function MobileTopBar({
@@ -40,6 +44,7 @@ export function MobileTopBar({
   actions,
   chatAction,
   title,
+  notice,
 }: MobileTopBarProps) {
   // Two trailing controls need a matching 44px reserve on the leading side.
   const balance = !breadcrumb && Boolean(chatAction) && Boolean(actions);
@@ -85,6 +90,17 @@ export function MobileTopBar({
           {actions}
         </div>
       </div>
+      {notice ? (
+        <div
+          className="border-t border-border-subtle empty:hidden"
+          style={{
+            paddingLeft: "calc(0.5rem + env(safe-area-inset-left))",
+            paddingRight: "calc(0.5rem + env(safe-area-inset-right))",
+          }}
+        >
+          {notice}
+        </div>
+      ) : null}
     </header>
   );
 }
