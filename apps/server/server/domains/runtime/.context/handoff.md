@@ -42,17 +42,21 @@ includes the internal cause. Returned provider response rows and debits settle
 in the same ending transaction as S. If that transaction throws, the claim is
 released and S remains pending for ordinary orphan repair.
 
-Stop settles S as cancelled under the destination lock and aborts a local
-worker. A remote worker notices within the five-second status poll. A dead
+Stop settles S as cancelled under the destination lock, stamps the destination's
+pending commands to run first in that transaction, and aborts a local worker. A
+remote worker notices within the five-second status poll. A dead
 database session is detected by the session lock only on its next query; while
 the brief is in a provider call, its five-second S status poll is the mechanism
 that notices claim loss after repair settles S. Claim loss and shutdown are
 distinct aborts: only Stop settles cancelled; the others settle available paid
 rows while leaving S pending so repair can record it as interrupted. A failed
 source preparation or summary attempt is final and can be retried by the writer
-with a new S. Shutdown starts by aborting live briefs with reason `shutdown`;
-the shared runtime drain waits for their settlement and claim release. Their
-release does not wake the destination after shutdown starts.
+with a new S. Shutdown sets the shared flag before aborting live runs and briefs
+with reason `shutdown`, suppressing new run starts and wakes. Live work is
+aborted so paid response rows settle before claim release. The app's shared
+runtime tracker drains for at most 10 seconds and reports a timeout. A brief
+launch that begins after shutdown has started leaves S pending for ordinary
+orphan repair. A released claim does not wake the destination after shutdown.
 
 ## Read models and recovery
 

@@ -56,5 +56,5 @@ export function createDetachedWorkTracker(): DetachedWorkTracker {
   };
 }
 
-/** Shared by manually composed runtimes and DB test resets; apps inject their own tracker. */
+/** Explicitly wired by DB test harnesses and resets; apps own their tracker. */
 export const processDetachedWork = createDetachedWorkTracker();

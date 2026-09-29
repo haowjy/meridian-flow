@@ -70,29 +70,34 @@ cache warmth. Historical run dates below come from timestamps in the saved JSON 
 and snapshots, not file modification times. The current catalog has not been run
 end-to-end as one suite.
 
-## RP-1: Failed controls do not hot-loop
+## RP-1: Failed replies need explicit Retry
 
-- **Protects:** a failed reply followed by one queued compact does not start
-  repeated summaries (`control-protocol`: the command is consumed at start).
+- **Protects:** a failed reply consumes its adopted messages once, stays failed,
+  and is not restarted by release wakes or the 30-second sweep. Retry is an
+  explicit new assistant turn; replaying its client ID returns that turn.
 - **Stack:** mock, real wall clock.
-- **Steps:** prepare a compactable thread. Install a sticky failure, then send a
-  message and enqueue compact while it is active:
+- **Steps:** install a sticky provider failure, send a message, and record the
+  failed assistant ID. Leave the thread idle for one sweep interval, then Retry
+  the failed turn twice with the same client-minted ID:
 
   ```bash
   ./mf mock script '[{"error":{"status":500,"message":"RP1 provider unavailable"}}]' --json > "$E/error-script.json"
-  ./mf thread send "$T" 'RP1 M' --json > "$E/send.ndjson" & SEND=$!
-  compact > "$E/compact.json"
+  ./mf thread send "$T" 'RP1 failed reply' --json > "$E/send.ndjson"
+  FAILED=$(tail -n 1 "$E/send.ndjson" | jq -r .turnId)
+  ./mf thread view "$T" --json > "$E/failed.json"
   sleep 30
-  ./mf log --thread "$T" --json > "$E/pace.json"
-  wait "$SEND"
+  ./mf log --thread "$T" --json > "$E/idle.json"
+  RETRY=$(node -p 'crypto.randomUUID()')
+  ./mf api POST "/api/threads/$T/turns/$FAILED/retry" --data "{\"id\":\"$RETRY\"}" --json > "$E/retry.json"
+  ./mf api POST "/api/threads/$T/turns/$FAILED/retry" --data "{\"id\":\"$RETRY\"}" --json > "$E/retry-replay.json"
   ```
 
-- **Expect:** no unbounded `turn.error` stream or immediate re-adoption. Group
-  gateway retries by logical call ID: SDK/gateway retry attempts are not new
-  orchestrator calls. The failed generation and at most one summary come from
-  the queued command; any later attempts must align with sweep/lease eligibility.
-- **Evidence:** timestamped gateway and turn events for the entire 30 seconds,
-  pending command snapshots, script ID (clear only that ID afterward).
+- **Expect:** no provider call during the idle interval; the first Retry returns
+  201 with a new failed assistant after the unchanged original; the replay
+  returns 200 with the same turn. A queued compact runs immediately after a
+  failure rather than waiting behind failed messages.
+- **Evidence:** failed and retried snapshots, timeline of gateway and turn
+  events, both response statuses, and no extra request during the idle interval.
 - **Last run:** not recorded for this exact wall-clock recipe. Automated
   sweep-boundary coverage is not a substitute for running it.
 
@@ -132,7 +137,10 @@ end-to-end as one suite.
   ```
 
 - **Expect:** normal variants answer every queued message before C; the command
-  is not absorbed or run at a tool boundary. On Stop, the stamped command runs
+  stays queued until the messages finish and never runs at a tool boundary. If
+  automatic compaction occurs first, the command is not absorbed; it runs at the
+  end of the queue and either compacts new history or refuses with
+  `nothing_to_compact`. On Stop, the stamped command runs
   first, the waiting message appears verbatim among C's pinned requests, and
   the message is answered after C. No message is lost or answered twice.
 - **Evidence:** admitted messages, control UUID, final roles and request messages.

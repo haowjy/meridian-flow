@@ -6,7 +6,7 @@ import type { WorkContextNotices } from "../../projects/index.js";
 import type { CompactionDecision } from "./compaction/decision.js";
 import type { FinalizedExecution, TerminalCause } from "./execution-finalizer.js";
 import type { drainInbox, InboxDrain } from "./inbox-context.js";
-import type { ControlMessage, InboxWorkSelection } from "./next-inbox-work.js";
+import type { InboxWorkSelection } from "./next-inbox-work.js";
 import type { InboxMessage, InboxReader, Lease, MessageDraft } from "./ports.js";
 
 export type DeliveryTransaction = {
@@ -32,11 +32,7 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
     | { kind: "assistant" }
     | {
         kind: "placeholder";
-        complete: (
-          prepared: TCurrent | undefined,
-          failure: unknown | undefined,
-          selection: DeliveryBoundarySelection,
-        ) => Promise<Turn>;
+        complete: (prepared: TCurrent | undefined, failure: unknown | undefined) => Promise<Turn>;
       };
   /** Prepare image decisions/breaks before the next assistant turn is reserved. */
   prepareNextContext: (
@@ -64,7 +60,6 @@ export type DeliverySelectionFields = {
 export type DeliverySelection = DeliverySelectionFields & {
   next: InboxWorkSelection;
   failedControlIds?: ReadonlySet<string>;
-  control: ControlMessage | null;
 };
 export type DeliveryBoundarySelection = DeliverySelectionFields;
 export type AdoptedBatch<TCurrent = undefined> = {
@@ -81,6 +76,8 @@ export type AdoptedBatch<TCurrent = undefined> = {
 export interface RuntimeDelivery
   extends WorkContextNotices,
     Pick<InboxReader, "selectPending" | "readPendingProjection" | "pendingMessageThreads"> {
+  /** Give pending commands the same run-first priority as Stop on a live run. */
+  prioritizePendingControls(threadId: ThreadId): Promise<void>;
   enqueueControl(input: {
     threadId: ThreadId;
     actorId: string;
@@ -98,8 +95,6 @@ export interface RuntimeDelivery
   refreshPending(threadId: ThreadId): Promise<void>;
   /** Settle any previous primary assistant before a new run selects context. */
   repairOrphanedTurns(lease: Lease): Promise<void>;
-  /** Receipt rows still unacknowledged when the owning run releases its claim. */
-  readRunReceiptIds(lease: Lease): Promise<string[]>;
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   /** Parent-first business transaction; the producer does not reacquire the lock. */
   withThreadLock<T>(
@@ -122,7 +117,10 @@ export interface RuntimeDelivery
       /** Turn-start writes run under the lock, after external context is prepared. */
       persist?: () => Promise<void>;
     } | null>,
-    options?: { signal?: AbortSignal },
+    options?: {
+      signal?: AbortSignal;
+      retry?: { failedTurnId: TurnId; replyTurnId: TurnId };
+    },
   ): Promise<T>;
   ackWithResponse<T>(lease: Lease, ids: string[], persist: () => Promise<T>): Promise<T>;
   splitAndContinue<TCurrent = undefined>(
@@ -132,6 +130,7 @@ export interface RuntimeDelivery
     lease: Lease;
     turnId: TurnId;
     cause: TerminalCause;
+    retryInputMessageIds?: readonly string[];
     settleSummaryResponses?: () => Promise<void>;
     continueWith?: DeliveryBoundary;
   }): Promise<

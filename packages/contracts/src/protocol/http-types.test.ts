@@ -5,8 +5,9 @@ import {
   handoffBriefRetryRequestSchema,
   parseWorkingSetRoute,
   parseWorkingSetRouteList,
+  replyRetryRequestSchema,
 } from "./http-types.js";
-import { apiThreadHandoffBriefPath } from "./paths.js";
+import { apiThreadHandoffBriefPath, apiThreadTurnRetryPath } from "./paths.js";
 
 describe("fork request schema", () => {
   it("requires a client id and rejects removed Agent selection input", () => {
@@ -20,6 +21,23 @@ describe("fork request schema", () => {
         },
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("reply retry request schema", () => {
+  it("requires exactly one client-minted UUID", () => {
+    expect(replyRetryRequestSchema.safeParse({ id: crypto.randomUUID() }).success).toBe(true);
+    expect(replyRetryRequestSchema.safeParse({ id: "not-a-uuid" }).success).toBe(false);
+    expect(
+      replyRetryRequestSchema.safeParse({ id: crypto.randomUUID(), turnId: crypto.randomUUID() })
+        .success,
+    ).toBe(false);
+  });
+
+  it("builds the canonical retry path for a failed reply", () => {
+    expect(apiThreadTurnRetryPath("thread-id", "turn-id")).toBe(
+      "/api/threads/thread-id/turns/turn-id/retry",
+    );
   });
 });
 

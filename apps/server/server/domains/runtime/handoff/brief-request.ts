@@ -15,7 +15,8 @@ import { previousAttemptRejectedAsTooLarge } from "../summary/summary-path.js";
 
 export type HandoffBriefOutcome =
   | SummaryOutcome
-  | { kind: "failed"; error: unknown; modelResponses: SummaryOutcome["modelResponses"] };
+  | { kind: "failed"; error: unknown; modelResponses: SummaryOutcome["modelResponses"] }
+  | { kind: "cancelled"; modelResponses: SummaryOutcome["modelResponses"] };
 
 export async function generateHandoffBrief(
   deps: OrchestratorDeps,

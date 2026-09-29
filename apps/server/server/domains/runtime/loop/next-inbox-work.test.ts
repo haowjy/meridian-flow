@@ -17,11 +17,7 @@ function row(input: Pick<InboxMessage, "id" | "intent" | "body"> & { runsFirst?:
 
 const message = row({ id: "message", intent: "message", body: { kind: "text", text: "hello" } });
 const compact = row({ id: "compact", intent: "control", body: { kind: "compact" } });
-const notice = row({
-  id: "notice",
-  intent: "notice",
-  body: { kind: "context", parts: [{ source: "work", text: "work context note" }] },
-});
+const workRefresh = row({ id: "notice", intent: "notice", body: { kind: "work_context_refresh" } });
 
 describe("next inbox work", () => {
   it("serves messages at a boundary and leaves controls for a run start", () => {
@@ -53,33 +49,24 @@ describe("next inbox work", () => {
     });
   });
 
-  it("does not wake for a Work refresh notice alone", () => {
-    const workRefresh = row({
-      id: "notice",
-      intent: "notice",
-      body: { kind: "work_context_refresh" },
-    });
+  it("adopts every non-control row at a boundary", () => {
     expect(next([workRefresh], "run_start")).toEqual({ kind: "none" });
     expect(next([workRefresh], "boundary")).toEqual({ kind: "batch", rows: [workRefresh] });
   });
 
-  it("does not materialize request-only notices before a runnable batch", () => {
-    expect(next([notice], "boundary")).toEqual({ kind: "none" });
-  });
-
   it("adopts pending notices when a direct writer message starts the run", () => {
-    expect(next([notice], "run_start")).toEqual({ kind: "none" });
-    expect(next([notice, message], "run_start")).toEqual({
+    expect(next([workRefresh], "run_start")).toEqual({ kind: "none" });
+    expect(next([workRefresh, message], "run_start")).toEqual({
       kind: "batch",
-      rows: [notice, message],
+      rows: [workRefresh, message],
     });
   });
 
   it("co-adopts non-message notices with a runnable command", () => {
-    expect(next([compact, notice], "run_start")).toEqual({
+    expect(next([compact, workRefresh], "run_start")).toEqual({
       kind: "control",
       control: compact,
-      rows: [notice],
+      rows: [workRefresh],
     });
   });
 });

@@ -27,39 +27,53 @@ run shrinks its history is [compaction](compaction.md).
 ## Queue and release wake
 
 `next(pending, at)` in `next-inbox-work.ts` is the one pure selector used by
-run start and `wakeIfRunnable`. At a reply boundary it selects non-control
-messages only. At run start it chooses a stamped command plus waiting messages,
+run start and `wakeIfRunnable`. At a reply boundary it selects every non-control
+row. At run start it chooses a stamped command plus waiting messages,
 otherwise messages before the oldest command, or one command when no message
 waits. This keeps `/compact` and Undo at the end of the queue and prevents
 command selection between tools or at reply boundaries ([controls](controls.md)).
+Every non-control row, including a Work refresh notice, closes the reply prefix
+at a boundary; a notice-only queue still does not start a run.
 
 After a run releases its claim, cleanup refreshes and re-reads the queue through
 `wakeIfRunnable`; this includes a run that found nothing to do and a lease
-cancelled during setup. If an assistant fails, its initiating input and any
-other unacknowledged adopted receipts are excluded from this reread and wait
-for the periodic sweep; newly arrived rows remain eligible and wake promptly.
-An empty reread does not start a run. A real setup error skips the reread to
-avoid a hot loop. Short exclusive claim holders still use the sweep as their
-liveness backstop.
+cancelled during setup. A failed assistant acknowledges every message it adopted,
+including on provider error, output-limit failure, preparation failure, or a
+thrown execution error. The failed turn stays in history and stores the adopted
+message IDs for an explicit Retry; the Retry run excludes that failed assistant
+from model history so its request matches the original attempt. A repeated Retry
+with the same client-minted turn ID returns that turn. Failed replies are never
+restarted by release wakes or the periodic sweep, and a queued command runs
+normally after their adopted rows are acknowledged. A real setup error before
+adoption still skips the reread as the hot-loop guard. Short exclusive claim
+holders still use the sweep as their liveness backstop.
+
+`POST /api/threads/:threadId/turns/:turnId/retry` is available only for the
+latest failed assistant reply on an idle primary or subagent thread. See the
+[reply Retry API](../../../../../../docs/api/thread-reply-retry.md).
 
 The runtime composition owns one `DetachedWorkTracker` shared by run sessions,
 delivery callbacks, background child completion, and handoff briefs. Cleanup
 wakes, detached drain execution, lease-renewal I/O, brief launches/polls, and
 post-commit runtime work register with it. `drain()` waits for tracked work and
-work registered before the tracker becomes quiescent. App shutdown tells the
-brief service to abort with the `shutdown` reason, then performs one bounded
-drain; DB test fixture resets drain the shared test tracker before locking and
-deleting tables. A released brief claim does not wake its destination once
-shutdown has begun.
+work registered before the tracker becomes quiescent. App shutdown sets the
+shared shutdown flag before aborting live runs and briefs with the `shutdown`
+reason. Run starts and wakes are suppressed after that point; live replies
+settle paid response rows before releasing their claims. The app waits for one
+bounded 10-second drain and warns if it times out. A brief launched after
+shutdown begins leaves S pending for ordinary repair, and a released claim does
+not wake its destination. DB test fixture resets drain the explicitly wired
+test tracker before locking and deleting tables.
 
 `OrchestratorDeps` requires the runtime ports: gateway, repos, retained Agent
 revision reader, tool registry/executor, project preferences, credit ledger, the
 `RuntimeDelivery` boundary, the `RunClaim`, interrupt artifact flush,
 child-run coordinator, interrupt registry, and `EventSink`. `backgroundTasks`
-is injected by the app composition; manually composed runtimes default to the
-shared process tracker. Disabled behavior is an explicit adapter (for example
-a no-op sink), never an omitted dep. Do not re-add a global permission gate
-here; names and per-tool command sets are gated per turn from advertised policy
+is required and injected by the app composition or test harness. The process
+tracker is explicitly wired only into DB test fixtures. Disabled behavior is
+an explicit adapter (for example a no-op sink), never an omitted dep. Do not
+re-add a global permission gate here; names and per-tool command sets are gated
+per turn from advertised policy
 ([tools](tools.md)). Provider-specific model-call behavior stays behind the
 gateway port.
 

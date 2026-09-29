@@ -3,16 +3,19 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
-import { processDetachedWork } from "../detached-work.js";
+import type { DetachedWorkTracker } from "../detached-work.js";
 import { type CurrentTurn, DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
+import { readReplyRetryMetadata } from "./reply-retry-metadata.js";
 import { createRunStarter } from "./run-starter.js";
 import {
   NoPendingWakeError,
   type PreparedLoop,
   type PreparedRun,
+  ReplyRetryUnavailableError,
   type RunLoopInput,
   type RunOutcome,
   type RunTurnInput,
+  RuntimeShuttingDownError,
   UnsettledPlaceholderError,
 } from "./run-turn-port.js";
 import type { RuntimeDelivery } from "./runtime-delivery.js";
@@ -27,7 +30,8 @@ type RunSession = {
 };
 
 export function createRunSessions(deps: {
-  backgroundTasks?: import("../detached-work.js").DetachedWorkTracker;
+  shutdown: { started: boolean };
+  backgroundTasks: DetachedWorkTracker;
   setup(input: RunLoopInput): Promise<PreparedLoop>;
   finalizeFailure(input: {
     threadId: ThreadId;
@@ -37,10 +41,7 @@ export function createRunSessions(deps: {
     lease: Lease;
   }): Promise<Turn>;
   runClaim: RunClaim;
-  delivery: Pick<
-    RuntimeDelivery,
-    "repairOrphanedTurns" | "refreshPending" | "selectPending" | "readRunReceiptIds"
-  >;
+  delivery: Pick<RuntimeDelivery, "repairOrphanedTurns" | "refreshPending" | "selectPending">;
   handoffBriefs: import("../ports/handoff-briefs.js").HandoffBriefStopper;
   repos: { turns: TurnRepository };
   headSeq(threadId: ThreadId): Promise<bigint>;
@@ -49,10 +50,15 @@ export function createRunSessions(deps: {
   onRunSettled?: (threadId: ThreadId) => void;
 }) {
   const running = new Map<ThreadId, RunSession>();
-  const backgroundTasks = deps.backgroundTasks ?? processDetachedWork;
+  const shutdown = deps.shutdown;
+  const backgroundTasks = deps.backgroundTasks;
   const authority = deps.runClaim;
   const runStarter = createRunStarter({ startDrain }, deps.eventSink);
-  const wakeIfRunnable = createWakeIfRunnable({ delivery: deps.delivery, runStarter });
+  const wakeIfRunnable = createWakeIfRunnable({
+    delivery: deps.delivery,
+    runStarter,
+    shutdown,
+  });
   function observe(threadId: ThreadId, name: string, error: unknown) {
     emitEvent(deps.eventSink, {
       level: "error",
@@ -73,6 +79,7 @@ export function createRunSessions(deps: {
 
   async function prepare(input: RunTurnInput): Promise<PreparedRun> {
     const { threadId } = input;
+    if (shutdown.started) throw new RuntimeShuttingDownError(threadId);
     if (running.has(threadId)) throw new TurnStartConflictError(threadId, "already_running");
     const controller = new AbortController();
     let complete!: () => void;
@@ -94,23 +101,6 @@ export function createRunSessions(deps: {
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     let preparedRun = false;
     let setupMayWake = false;
-    let skipCleanupWake = false;
-    const unacknowledgedReceiptIds = new Set<string>();
-    async function retainReceiptIds(heldLease: Lease): Promise<boolean> {
-      try {
-        const ids = await deps.delivery.readRunReceiptIds(heldLease);
-        for (const id of ids) unacknowledgedReceiptIds.add(id);
-        return true;
-      } catch (error) {
-        observe(threadId, "receipt_read.failed", error);
-        return false;
-      }
-    }
-    async function retainFailedReceipt(heldLease: Lease, userTurnId: string): Promise<boolean> {
-      // The failed input can remain pending after its durable lease receipt clears.
-      unacknowledgedReceiptIds.add(userTurnId);
-      return retainReceiptIds(heldLease);
-    }
     async function cleanup() {
       clearInterval(heartbeat);
       parentSignal?.removeEventListener("abort", abort);
@@ -123,7 +113,7 @@ export function createRunSessions(deps: {
         if (lease) {
           await authority.release(lease);
           claimReleased = true;
-          wakeAfterRelease = (preparedRun || setupMayWake) && !skipCleanupWake;
+          wakeAfterRelease = preparedRun || setupMayWake;
         }
       } catch (error) {
         observe(threadId, "lease_release.failed", error);
@@ -137,7 +127,7 @@ export function createRunSessions(deps: {
         if (claimReleased && wakeAfterRelease) {
           backgroundTasks.track(
             session.completion
-              .then(() => wakeIfRunnable(threadId, [...unacknowledgedReceiptIds]))
+              .then(() => wakeIfRunnable(threadId))
               .catch((error) => observe(threadId, "cleanup_wake.failed", error)),
             "run cleanup wake",
           );
@@ -147,6 +137,7 @@ export function createRunSessions(deps: {
     try {
       lease = await authority.startExecution(threadId, crypto.randomUUID());
       if (!lease) throw new TurnStartConflictError(threadId, "already_running");
+      if (shutdown.started) throw new RuntimeShuttingDownError(threadId);
       const heldLease = lease;
       heartbeat = setInterval(
         () => {
@@ -182,6 +173,7 @@ export function createRunSessions(deps: {
         },
       });
       session.currentTurn = loop.currentTurn;
+      if (shutdown.started) throw new RuntimeShuttingDownError(threadId);
       preparedRun = true;
       const snapshotFloorNextSeq = ((await deps.headSeq(threadId)) + 1n).toString();
       try {
@@ -196,17 +188,10 @@ export function createRunSessions(deps: {
           let turn: Turn;
           try {
             turn = await loop.execute();
-            if (turn.role === "assistant" && turn.status === "error") {
-              if (!(await retainFailedReceipt(heldLease, loop.userTurnId))) skipCleanupWake = true;
-            }
           } catch (error) {
             observe(threadId, "execution.failed", error);
             if (error instanceof UnsettledPlaceholderError) {
-              if (!(await retainFailedReceipt(heldLease, loop.userTurnId))) skipCleanupWake = true;
               throw error;
-            }
-            if (session.currentTurn?.kind === "assistant") {
-              if (!(await retainFailedReceipt(heldLease, loop.userTurnId))) skipCleanupWake = true;
             }
             turn = await deps.finalizeFailure({
               threadId,
@@ -236,7 +221,6 @@ export function createRunSessions(deps: {
       setupMayWake = error instanceof NoPendingWakeError || isAbortError(error);
       if (lease && session.currentTurn) {
         try {
-          if (session.currentTurn.kind === "assistant") await retainReceiptIds(lease);
           await deps.finalizeFailure({
             threadId,
             turnId: session.currentTurn.id,
@@ -258,11 +242,51 @@ export function createRunSessions(deps: {
       const run = await prepare({ threadId, drain: true });
       backgroundTasks.track(run.execute(), "detached run execution");
     } catch (error) {
-      if (!(error instanceof NoPendingWakeError)) throw error;
+      if (!(error instanceof NoPendingWakeError) && !(error instanceof RuntimeShuttingDownError))
+        throw error;
     }
   }
   return {
     prepare,
+    async retryReply(input: { threadId: ThreadId; failedTurnId: TurnId; replyTurnId: TurnId }) {
+      const existing = await deps.repos.turns.findById(input.replyTurnId);
+      if (existing) {
+        if (
+          existing.threadId !== input.threadId ||
+          existing.role !== "assistant" ||
+          readReplyRetryMetadata(existing)?.retryOfTurnId !== input.failedTurnId
+        ) {
+          throw new ReplyRetryUnavailableError(input.threadId);
+        }
+        return { created: false as const, turn: existing };
+      }
+
+      try {
+        const run = await prepare({
+          threadId: input.threadId,
+          drain: true,
+          retry: { failedTurnId: input.failedTurnId, replyTurnId: input.replyTurnId },
+        });
+        const turn = await deps.repos.turns.findById(run.executionTurnId);
+        if (!turn || turn.id !== input.replyTurnId || turn.role !== "assistant")
+          throw new ReplyRetryUnavailableError(input.threadId);
+        backgroundTasks.track(run.execute(), "detached reply retry");
+        return { created: true as const, turn };
+      } catch (error) {
+        const raced = await deps.repos.turns.findById(input.replyTurnId);
+        if (
+          raced?.threadId === input.threadId &&
+          raced.role === "assistant" &&
+          readReplyRetryMetadata(raced)?.retryOfTurnId === input.failedTurnId
+        ) {
+          return { created: false as const, turn: raced };
+        }
+        if (error instanceof TurnStartConflictError || error instanceof NoPendingWakeError) {
+          throw new ReplyRetryUnavailableError(input.threadId);
+        }
+        throw error;
+      }
+    },
     startDrain,
     getRunningTurn(threadId: ThreadId) {
       const session = running.get(threadId);
@@ -276,6 +300,10 @@ export function createRunSessions(deps: {
     },
     getRunningTurnId: (threadId: ThreadId) => running.get(threadId)?.currentTurn?.id ?? null,
     isThreadRunning: (threadId: ThreadId) => running.has(threadId),
+    beginShutdown() {
+      shutdown.started = true;
+      for (const session of running.values()) session.controller.abort("shutdown");
+    },
     async cancel(
       threadId: ThreadId,
       turnId: TurnId,

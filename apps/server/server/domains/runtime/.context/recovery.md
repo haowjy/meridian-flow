@@ -19,6 +19,12 @@ Run repair holds the destination thread lock and run claim. Expired lease rows
 alone do not prove death. Late writer messages stay unacknowledged and can be
 redelivered after repair.
 
+A reply that reaches a durable failed terminal state is different from an
+orphan: it acknowledges every message adopted by that reply and is never
+restarted by the 30-second inbox wake sweep. Its saved input IDs support only
+an explicit Retry of the latest failed reply on an idle primary or subagent
+thread; Retry appends a new assistant and leaves the failed turn unchanged.
+
 ## Handoff claim and release
 
 Hand off and Retry take `RunClaim.hold` before creating S. The claim has no

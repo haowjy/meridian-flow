@@ -14,20 +14,23 @@ Rationale: [One Run Preparation Protocol][kb-run-prep].
 ## Command selection and release wake
 
 `loop/next-inbox-work.ts` owns the pure `next(pending, at)` selector. At a
-reply boundary it selects non-control rows only when a message is waiting;
+reply boundary it selects every non-control row, including Work refresh notices;
 commands never run beside a tool call or at turn close. At run start, a stamped
 command runs first with all selected non-control rows. Otherwise, waiting
 messages run before commands; if none wait, the oldest command runs without a
-message batch. Selected notices may ride a batch but do not make a notice-only
-queue runnable.
+message batch. A notice-only queue does not start a run, but a Work refresh
+notice already waiting at a reply boundary still closes that reply's prefix.
 The selector returns at most one command per run.
 
 After a run releases its claim, `wakeIfRunnable` refreshes pending state and
 uses the same run-start selector as setup. It re-reads after runs that found no
 work and after setup cancellation, so work enqueued while a claim was held is
-not lost. An empty reread cannot spin. Real setup errors skip the reread; the
-periodic wake sweep is their liveness backstop. Short exclusive claim holders
-still rely on that sweep.
+not lost. A failed assistant acknowledges its adopted messages before release,
+so neither the reread nor the periodic sweep replays that reply. The wake has no
+failed-receipt exclusion: if the plain selector finds a queued command or other
+work, it starts it. An empty reread cannot spin. Real setup errors before
+adoption skip the reread as the hot-loop guard; short exclusive claim holders
+still rely on the sweep.
 
 ## Writer admission
 
@@ -87,13 +90,18 @@ classified pending replacement before commit; journal failure rolls back the
 transition and only physical wake is best-effort after commit.
 
 `loop/preparation-failure.ts` maps a preparation error to that reply's writer-facing error. A failed reply stays
-`error`; the read model never rewrites it when the writer sends again.
+`error`; its ending transaction acknowledges every adopted inbox message and
+records their IDs as Retry provenance. The read model never rewrites it
+when the writer sends again. Explicit Retry restores only those messages and
+appends a new assistant after the failed one; model history excludes the failed
+assistant to preserve the original request. See the [reply Retry API](../../../../../../docs/api/thread-reply-retry.md).
 
 - **Inbox adoption is lease-owned and transactional.** The current batch's
   exact IDs live in `thread_run_leases.adopted_message_ids`, never turn
   metadata. Binding a new assistant and recording its receipt commit with the
   graph split. Response persistence, inbox acknowledgement, and receipt
-  clearing share one transaction. Cancellation acknowledges the receipt, not a
+  clearing share one transaction. Successful and failed terminal replies
+  acknowledge their receipt; cancellation acknowledges the receipt, not a
   later pending claim. The joined projection exposes `waiting` for an
   unadopted row behind a live bound run and `awaiting_run` for adopted rows or
   no bound live run. Generic `ThreadPendingInbox` projects every provenance;

@@ -102,6 +102,17 @@ export function createInMemoryInbox(): DeliveryStore & {
       }
     },
 
+    async restoreForRetry(threadId, ids) {
+      const targets = new Set(ids);
+      const rows = messages.filter(
+        (message) =>
+          message.threadId === threadId && targets.has(message.id) && message.deliveredAt !== null,
+      );
+      if (rows.length !== ids.length) return [];
+      for (const message of rows) message.deliveredAt = null;
+      return rows.sort((left, right) => left.seq - right.seq);
+    },
+
     async pendingMessageThreads(limit, afterThreadId) {
       return [
         ...new Set(

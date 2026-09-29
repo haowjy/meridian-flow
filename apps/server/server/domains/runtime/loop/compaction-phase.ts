@@ -126,11 +126,7 @@ export async function executeCompaction({
   if (!decision.refusal) recordResponses(summary.modelResponses, summary.summarizer);
   input.signal?.throwIfAborted();
   const outcome = summary;
-  const complete = (
-    prepared: PreparedCompaction | undefined,
-    failure: unknown,
-    _selection: import("./runtime-delivery.js").DeliveryBoundarySelection,
-  ) =>
+  const complete = (prepared: PreparedCompaction | undefined, failure: unknown) =>
     completeCompactionCurrent({
       deps,
       threadId: input.threadId,

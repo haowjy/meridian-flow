@@ -1086,6 +1086,12 @@ else
         expect(debits.filter((debit) => debit.usageEventId === row.id)).toHaveLength(1);
       }
       expect(requests.length).toBeGreaterThan(summaryCalls);
+      rig.orchestrator.beginShutdown();
+      const drained = await processDetachedWork.drain(2_000);
+      expect({ drained, pendingTasks: processDetachedWork.pendingTasks }).toEqual({
+        drained: true,
+        pendingTasks: [],
+      });
     });
 
     it("stops the successor iteration when settled compaction cost exhausts the tree budget", async () => {
@@ -1490,6 +1496,9 @@ else
         ["assistant", "error"],
       ]);
       expect(tail[1].error).toBe("This conversation couldn't be compacted. Try again.");
+      expect(tail[1].metadata).toMatchObject({
+        replyRetry: { messageIds: [run.userTurnId] },
+      });
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
     });
 

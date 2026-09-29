@@ -9,6 +9,8 @@
 
 - Run settlement transitions in memory; preserve scoped PostgreSQL durability proofs.
 - Catalog runtime control, compaction, handoff, and history probes.
+- Make failed replies acknowledge their adopted messages and wait for explicit Retry; Retry appends a new reply from the original request without changing failed history.
+- Keep a delivered writer message as a running-source handoff cutoff, and make `mf thread send` wait through an earlier failed run for its own reply.
 
 - Remove duplicate runtime checks; test editor undo and stream recovery through behavior.
 
@@ -139,7 +141,6 @@
 - Refresh search-only Work drafts before revision checks. Ignore documents removed from a Work.
 - Commit shared document pulls independently of chat transactions; preserve retries after failed pulls, including newer edits queued during a pull.
 - Settle direct-write tool results after their document commit instead of leaving successful edits marked staged.
-- Keep failed replies sweep-paced when a compact request waits behind them.
 - A queued compact waits behind messages; it is not absorbed by an automatic compaction.
 - Refuse back-to-back manual compaction until new history arrives.
 - Stop (Esc) runs a pending command before waiting messages; those messages are pinned by the compaction and answered afterward. Retire a command whose start commit fails instead of retrying it on every wake.

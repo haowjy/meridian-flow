@@ -7,23 +7,15 @@ import type { RuntimeDelivery } from "./runtime-delivery.js";
 export function createWakeIfRunnable(deps: {
   delivery: Pick<RuntimeDelivery, "refreshPending" | "selectPending">;
   runStarter: RunStarter;
-}): (threadId: ThreadId, excludedReceiptIds?: readonly string[]) => Promise<void> {
-  return async (threadId, excludedReceiptIds = []) => {
+  shutdown?: { started: boolean };
+}): (threadId: ThreadId) => Promise<void> {
+  const shutdown = deps.shutdown ?? { started: false };
+  return async (threadId) => {
+    if (shutdown.started) return;
     await deps.delivery.refreshPending(threadId);
-    const excluded = new Set(excludedReceiptIds);
+    if (shutdown.started) return;
     const pending = await deps.delivery.selectPending(threadId);
-    const selection = next(
-      pending.filter((row) => !excluded.has(row.id)),
-      "run_start",
-    );
-    // A failed reply leaves its receipt pending for the periodic sweep. Do not
-    // let a queued command bypass that older message; a newly arrived message
-    // may still wake promptly and will be retried with the original receipt.
-    const onlyCommandBehindReceipt =
-      excluded.size > 0 &&
-      selection.kind === "control" &&
-      !selection.rows.some((row) => row.intent === "message");
-    if (selection.kind !== "none" && !onlyCommandBehindReceipt)
-      await deps.runStarter.start(threadId);
+    const selection = next(pending, "run_start");
+    if (!shutdown.started && selection.kind !== "none") await deps.runStarter.start(threadId);
   };
 }

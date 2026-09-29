@@ -5,6 +5,7 @@ import { createDrizzleNoticePort } from "../../../notices/adapters/drizzle-notic
 import type { NoticePort } from "../../../notices/index.js";
 import { createDrizzleEventJournalWriter } from "../../../threads/index.js";
 import { createDrizzleRunClaim } from "../../adapters/drizzle-run-claim.js";
+import { processDetachedWork } from "../../detached-work.js";
 import { createTestAgentBinding } from "./runtime-fixtures.js";
 import { createRuntimeHarness } from "./runtime-harness.js";
 import { scriptedSummarizer } from "./scripted-summarizer.js";
@@ -39,6 +40,7 @@ export function createCompactionFixture(db: Database) {
     const summarizer = options.summarizer ?? scriptedSummarizer();
     const { createDrizzleCreditLedger } = await import("../../../billing/index.js");
     const rig = createRuntimeHarness({
+      backgroundTasks: processDetachedWork,
       creditLedger: createDrizzleCreditLedger(db),
       repos,
       eventWriter,
