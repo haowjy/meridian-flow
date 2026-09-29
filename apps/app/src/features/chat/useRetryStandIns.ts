@@ -69,19 +69,31 @@ export function useRetryStandIns(input: {
 
   const storedIds = useMemo(() => new Set(storedTurns.map((turn) => turn.id)), [storedTurns]);
   // Once the snapshot has the turn, it is the authority. A failed or stopped
-  // compaction also proves that its promised successor will never be created.
+  // compaction also settles the Retry chain that started from its predecessor.
   useEffect(() => {
     setLocal((current) => {
       const storedById = new Map(storedTurns.map((turn) => [turn.id, turn]));
+      const failedCompactionSources = new Set(
+        storedTurns
+          .filter(
+            (turn) =>
+              turn.role === "compaction" &&
+              turn.prevTurnId &&
+              turn.status !== "complete" &&
+              isTerminalTurnStatus(turn.status),
+          )
+          .map((turn) => turn.prevTurnId as string),
+      );
       const next = current.filter((entry) => {
         if (storedIds.has(entry.turn.id)) return false;
         const predecessor = entry.turn.prevTurnId
           ? storedById.get(entry.turn.prevTurnId)
           : undefined;
         return !(
-          predecessor?.role === "compaction" &&
-          predecessor.status !== "complete" &&
-          isTerminalTurnStatus(predecessor.status)
+          (predecessor?.role === "compaction" &&
+            predecessor.status !== "complete" &&
+            isTerminalTurnStatus(predecessor.status)) ||
+          failedCompactionSources.has(entry.from)
         );
       });
       return next.length === current.length ? current : next;

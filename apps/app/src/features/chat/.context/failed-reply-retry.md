@@ -37,8 +37,9 @@ snapshot) replaces that.
   the turn it already made). If preparation first creates a compaction, the
   live run records the promised reply id, so the same-id re-send also replays
   while that compaction is running. A failed or stopped compaction in the
-  snapshot proves that no promised successor will arrive and drops the
-  stand-in.
+  snapshot settles the Retry chain and drops the stand-in. If the server also
+  persisted the failed promised successor, that stored turn replaces the
+  stand-in by id instead.
 
 Pressing Retry moves focus to the transcript (the button leaves with the error
 block) and follows the tail so the new reply is in view. A stand-in has no

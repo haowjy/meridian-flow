@@ -122,6 +122,28 @@ describe("useReplyRetry", () => {
     expect(latest.requestOf(id)).toBeNull();
   });
 
+  it("drops a lost Retry stand-in when an unsuccessful compaction hangs off its source reply", async () => {
+    api.retryReply.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await act(async () => latest.retry(failed));
+    const lost = latest.standIns[0] as Turn;
+    expect(lost).toMatchObject({ prevTurnId: "f", status: "error" });
+
+    await act(async () =>
+      root.render(
+        <Probe
+          turns={[
+            message,
+            failed,
+            { ...turn("c", "compaction", "error", 3), prevTurnId: failed.id },
+          ]}
+        />,
+      ),
+    );
+
+    expect(latest.standIns).toEqual([]);
+    expect(latest.requestOf(lost.id)).toBeNull();
+  });
+
   it("drops the new reply on a refusal (409), notes the failed reply, and refreshes", async () => {
     api.retryReply.mockRejectedValue(new HttpResponseError("reply_retry_unavailable", 409, null));
     await act(async () => latest.retry(failed));
