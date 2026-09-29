@@ -16,7 +16,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type WorkRestore = ReturnType<typeof useWorkRestore>;
 
-/** Optimistic restore: the Work returns to Active at once; a failure lands on its deleted row. */
+/** Optimistic restore: the Work returns to its prior tab at once; a failure lands on its deleted row. */
 export function useWorkRestore(projectId: string) {
   const mutations = useWorkMutations(projectId);
   const [restoringId, setRestoringId] = useState<string | null>(null);

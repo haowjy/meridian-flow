@@ -114,6 +114,24 @@ export function WorkCollection({
         row(work)
       ),
   });
+  // Restore returns a Work to the status it had before deletion, so the
+  // pending row shows in that tab.
+  const restoringRow = (work: Work) => ({
+    key: work.id,
+    node: (
+      <WorkRow
+        work={work}
+        href={hrefForId(work.id)}
+        now={now}
+        onOpen={() => openWorkId(work.id)}
+        status={
+          <span role="status">
+            <Trans>Restoring</Trans>
+          </span>
+        }
+      />
+    ),
+  });
   const activeRows: { key: string; node: ReactNode }[] = [
     ...unfinishedCreations.map((creation) => ({
       key: `creation-${creation.workId}`,
@@ -172,27 +190,12 @@ export function WorkCollection({
           },
         ]
       : []),
-    ...(restoring
-      ? [
-          {
-            key: restoring.id,
-            node: (
-              <WorkRow
-                work={restoring}
-                href={hrefForId(restoring.id)}
-                now={now}
-                onOpen={() => openWorkId(restoring.id)}
-                status={
-                  <span role="status">
-                    <Trans>Restoring</Trans>
-                  </span>
-                }
-              />
-            ),
-          },
-        ]
-      : []),
+    ...(restoring && restoring.status !== "archived" ? [restoringRow(restoring)] : []),
     ...active.map(listRow),
+  ];
+  const archivedRows = [
+    ...(restoring?.status === "archived" ? [restoringRow(restoring)] : []),
+    ...archived.map(listRow),
   ];
   return (
     <div className="app-scroll" aria-busy={isFetching}>
@@ -238,7 +241,7 @@ export function WorkCollection({
               restore={restore}
             />
           ) : view === "archived" ? (
-            <RowList rows={archived.map(listRow)} empty={<Trans>No archived Work.</Trans>} />
+            <RowList rows={archivedRows} empty={<Trans>No archived Work.</Trans>} />
           ) : (
             <RowList rows={activeRows} empty={<Trans>No active Work yet.</Trans>} />
           )}

@@ -83,8 +83,9 @@ unarchive preserve the detail route; delete is optimistic from the band menu or 
 list row, lands on the collection, and shows an inline Undo row there. Delete
 never blocks: the Work's chats, drafts, Scratch and Uploads go with it, and it
 stays restorable for `WORK_DELETE_RETENTION_DAYS` (30) under the collection's
-Deleted tab (`DeletedWorkList`, optimistic restore back to Active) until the
-server's purge job removes it.
+Deleted tab (`DeletedWorkList`) until the server's purge job removes it. Restore
+returns a Work to the status it had before deletion; while pending, its
+Restoring row shows in that tab (Active or Archived) at once.
 The Work band copies the Chat pane's grammar (`useWorkChrome`): an All Work
 `IndexTabChip` door, the open Work's name as the active tab the page rises into
 and renamed inside it (`WorkTitleTab` over `TabTitleField`, no dropdown), and the

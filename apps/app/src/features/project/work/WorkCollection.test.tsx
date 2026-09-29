@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
-/** Work list lifecycle: Archive and Unarchive move rows at once; failures stay on the Work. */
+/**
+ * Work list lifecycle: Archive and Unarchive move rows at once and failures stay
+ * on the Work; a restoring Work waits in the tab it returns to.
+ */
 import type { Work, WorksSnapshot } from "@meridian/contracts/works";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { archiveWork, listProjectWorks } from "@/client/api/projects-api";
+import { archiveWork, listProjectWorks, restoreWork } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { WorksView } from "../routing/project-address";
@@ -84,8 +87,8 @@ const deletion: WorkDeletion = {
   dismiss: vi.fn(),
 };
 
-function CollectionHarness() {
-  const [view, setView] = useState<WorksView>("active");
+function CollectionHarness({ initialView = "active" }: { initialView?: WorksView }) {
+  const [view, setView] = useState<WorksView>(initialView);
   const routeCommands = {
     worksView: view,
     setWorksView: async (next: WorksView) => setView(next),
@@ -183,6 +186,48 @@ describe("Work collection archive", () => {
           expect(document.querySelector('[role="alert"]')).toBeNull();
           await showTab("archived");
           expect(rowNames()).toEqual(["Arc"]);
+        },
+        { drainMacrotask: true },
+      );
+    } finally {
+      client.clear();
+      vi.clearAllMocks();
+    }
+  });
+});
+
+describe("Work collection restore", () => {
+  it("shows a restoring archived Work under Archived, never under Active", async () => {
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const deletedArchived = {
+      ...WORK,
+      status: "archived",
+      archivedAt: "2026-09-02T00:00:00.000Z",
+      deletedAt: new Date().toISOString(),
+    } as Work;
+    client.setQueryData(projectQueryKeys.works(PROJECT_ID), snapshot([deletedArchived]));
+    vi.mocked(listProjectWorks).mockImplementation(async () => snapshot([deletedArchived]));
+    const request = deferred<Work>();
+    vi.mocked(restoreWork).mockImplementation(() => request.promise);
+
+    try {
+      await withReactRoot(
+        <QueryClientProvider client={client}>
+          <CollectionHarness initialView="deleted" />
+        </QueryClientProvider>,
+        async () => {
+          await act(async () =>
+            document.querySelector<HTMLButtonElement>('[aria-label="Restore Arc"]')?.click(),
+          );
+          expect(restoreWork).toHaveBeenCalledWith(WORK.id);
+
+          await showTab("active");
+          expect(rowNames()).toEqual([]);
+          expect(document.body.textContent).not.toContain("Restoring");
+
+          await showTab("archived");
+          expect(rowNames()).toEqual(["Arc"]);
+          expect(document.querySelector('[role="status"]')?.textContent).toBe("Restoring");
         },
         { drainMacrotask: true },
       );
