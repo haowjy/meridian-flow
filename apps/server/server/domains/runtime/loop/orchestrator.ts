@@ -85,7 +85,6 @@ import type {
 } from "../../threads/index.js";
 import {
   agentRequestMetadata,
-  bakeAt,
   loadThreadConversationContext,
   readThreadActivity,
   ThreadConversationContextError,
@@ -148,7 +147,6 @@ import { writerFacingPreparationError } from "./preparation-failure.js";
 import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
 import {
   type PreparedControlHistory,
-  prepareControlHistory,
   prepareFailedUndoHistory,
   prepareRequestContext,
   UndoRequestPreparationError,
@@ -1666,7 +1664,6 @@ async function executeLoop({
         // time before that request is sent.
         if (
           !forcedDecision &&
-          !selection.control &&
           preparedContext &&
           drain.turns.length === 0 &&
           drain.blocks.length === 0
@@ -1708,15 +1705,12 @@ async function executeLoop({
             if (responseScope)
               throw new Error("Undo revision query requires no open response scope");
           },
-          control: selection.control,
-          failedControlIds: selection.failedControlIds,
           pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
         });
         thread = prepared.assembled.thread;
         preparedContext = prepared.assembled;
         return {
           events: [...skillEvents, ...prepared.events],
-          undos: prepared.undos,
           turns: [...skillTurns, ...prepared.turns],
           blocks: [...skillBlocks, ...prepared.blocks],
           requiresSplit: skillEvents.length + prepared.events.length > 0,

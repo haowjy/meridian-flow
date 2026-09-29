@@ -129,7 +129,7 @@ export async function executeCompaction({
   const complete = (
     prepared: PreparedCompaction | undefined,
     failure: unknown,
-    _selection: import("./runtime-delivery.js").DeliverySelection,
+    _selection: import("./runtime-delivery.js").DeliveryBoundarySelection,
   ) =>
     completeCompactionCurrent({
       deps,
@@ -158,45 +158,31 @@ export async function executeCompaction({
     prepareNextContext: async (
       drain: import("./inbox-context.js").InboxDrain,
       prepared: PreparedCompaction | undefined,
-      selection: import("./runtime-delivery.js").DeliverySelection,
+      selection: import("./runtime-delivery.js").DeliveryBoundarySelection,
     ) => {
       if (prepared?.kind === "failed" && decision.trigger === "auto")
         throw new CompactionFailureError(prepared.failure);
-      if (prepared?.kind === "usable" && !selection.control)
-        return prepareCompactionContext(drain, prepared, selection);
-      const completed =
-        prepared?.kind === "usable"
-          ? {
-              ...currentTurn,
-              status: "complete" as const,
-              promptBakeId: prepared.provisionalBakeId,
-            }
-          : { ...currentTurn, status: "error" as const };
-      const next =
-        prepared?.kind === "usable"
-          ? await prepared.assemble(drain.turns, drain.blocks, selection)
-          : await prepareRequestContext({
-              deps,
-              thread,
-              threadId: input.threadId,
-              referenceTurnId: currentTurn.id,
-              currentTurnId: currentTurn.id,
-              turns: [
-                ...allTurns.map((turn) => (turn.id === currentTurn.id ? completed : turn)),
-                ...drain.turns,
-              ],
-              blocks: [...allBlocks, ...drain.blocks],
-              baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
-              readReferences: false,
-              skipCompaction: !selection.control,
-              control: selection.control,
-              failedControlIds: selection.failedControlIds,
-              pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
-              signal: input.signal,
-            });
+      if (prepared?.kind === "usable") return prepareCompactionContext(drain, prepared, selection);
+      const completed = { ...currentTurn, status: "error" as const };
+      const next = await prepareRequestContext({
+        deps,
+        thread,
+        threadId: input.threadId,
+        referenceTurnId: currentTurn.id,
+        currentTurnId: currentTurn.id,
+        turns: [
+          ...allTurns.map((turn) => (turn.id === currentTurn.id ? completed : turn)),
+          ...drain.turns,
+        ],
+        blocks: [...allBlocks, ...drain.blocks],
+        baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
+        readReferences: false,
+        skipCompaction: true,
+        pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
+        signal: input.signal,
+      });
       return {
         events: next.events,
-        undos: next.undos,
         turns: next.turns,
         blocks: next.blocks,
         requiresSplit: true,

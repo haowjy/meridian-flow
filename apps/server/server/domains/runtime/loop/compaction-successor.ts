@@ -41,7 +41,7 @@ export type PreparedCompaction =
       assemble: (
         turns: Turn[],
         blocks: Block[],
-        selection?: import("./runtime-delivery.js").DeliverySelection,
+        selection?: import("./runtime-delivery.js").DeliveryBoundarySelection,
       ) => ReturnType<typeof prepareRequestContext>;
     };
 
@@ -162,7 +162,7 @@ export async function prepareCompactionSuccessor(args: {
     const assemble = (
       lateTurns: Turn[],
       lateBlocks: Block[],
-      selection?: import("./runtime-delivery.js").DeliverySelection,
+      selection?: import("./runtime-delivery.js").DeliveryBoundarySelection,
     ) =>
       prepareRequestContext({
         deps,
@@ -186,10 +186,8 @@ export async function prepareCompactionSuccessor(args: {
           ),
           decidingTurnId: placeholder.id as TurnId,
         },
-        skipCompaction: !selection?.control,
+        skipCompaction: true,
         assertNoResponseScope: args.assertNoResponseScope,
-        control: selection?.control,
-        failedControlIds: selection?.failedControlIds,
         pinnedRequestTurnIds: new Set(selection?.outstanding.map((row) => row.id)),
         signal: input.signal,
         promptBakes: {
@@ -231,7 +229,7 @@ export async function prepareCompactionSuccessor(args: {
 export async function prepareCompactionContext(
   drain: InboxDrain,
   prepared: PreparedCompaction | undefined,
-  selection: import("./runtime-delivery.js").DeliverySelection,
+  selection: import("./runtime-delivery.js").DeliveryBoundarySelection,
 ) {
   if (!prepared) throw new Error("Missing prepared compaction");
   if (prepared.kind === "failed") throw new CompactionFailureError(prepared.failure);
@@ -245,7 +243,6 @@ export async function prepareCompactionContext(
   });
   return {
     events: next.events,
-    undos: next.undos,
     turns: next.turns,
     blocks: next.blocks,
     requiresSplit: true,

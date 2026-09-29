@@ -35,17 +35,16 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
         complete: (
           prepared: TCurrent | undefined,
           failure: unknown | undefined,
-          selection: DeliverySelection,
+          selection: DeliveryBoundarySelection,
         ) => Promise<Turn>;
       };
   /** Prepare image decisions/breaks before the next assistant turn is reserved. */
   prepareNextContext: (
     drain: InboxDrain,
     current: TCurrent | undefined,
-    selection: DeliverySelection,
+    selection: DeliveryBoundarySelection,
   ) => Promise<{
     events: OrchestratorEvent[];
-    undos?: import("./compaction-undo.js").PreparedUndo[];
     turns: Turn[];
     blocks: Block[];
     requiresSplit: boolean;
@@ -54,17 +53,20 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
     successorFailure?: unknown;
   }>;
 };
-export type DeliverySelection = {
-  next: InboxWorkSelection;
+export type DeliverySelectionFields = {
   batch: InboxMessage[];
   continueTask?: boolean;
-  failedControlIds?: ReadonlySet<string>;
-  control: ControlMessage | null;
   outstanding: InboxMessage[];
   workContext?: import("./work-context.js").RenderedWorkContext;
   notices: Notice[];
   activeLeafTurnId: TurnId | null;
 };
+export type DeliverySelection = DeliverySelectionFields & {
+  next: InboxWorkSelection;
+  failedControlIds?: ReadonlySet<string>;
+  control: ControlMessage | null;
+};
+export type DeliveryBoundarySelection = DeliverySelectionFields;
 export type AdoptedBatch<TCurrent = undefined> = {
   drain: InboxDrain;
   next: Turn;
