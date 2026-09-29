@@ -1,51 +1,45 @@
-/** Work catalog resolution, Works still being created, and remembered Work routing. */
-import type { Work } from "@meridian/contracts/protocol";
+/** Work route resolution, Works still being created, and remembered Work routing. */
 import { parseRequestId } from "@meridian/contracts/request-id";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readCurrentWork, writeCurrentWork } from "@/client/current-work";
-import { useWorks } from "@/client/query/useWorks";
+import { type AddressableWork, useWorks } from "@/client/query/useWorks";
 import type { WorkCreation } from "@/client/query/work-command-projection";
 import { useAccountId } from "../context/account-feature-context";
-import type { ProjectAddress, ProjectDestination } from "./project-address";
-import {
-  type AddressCatalog,
-  type AddressResolution,
-  addressWorkSelection,
-  resolveAddressSelection,
-} from "./project-address-resolution";
+import type { AddressSelection, ProjectAddress, ProjectDestination } from "./project-address";
+import { type AddressCatalog, addressWorkSelection } from "./project-address-resolution";
 import type { createProjectNavigation } from "./project-navigation";
 import type { RouteWorkResolution } from "./project-route";
 
-type WorkCatalog = AddressCatalog<Work> & {
+export type WorkCatalog = AddressCatalog<AddressableWork> & {
   creations: ReadonlyMap<string, WorkCreation>;
   isFetching: boolean;
 };
 type WorkNavigation = ReturnType<typeof createProjectNavigation>;
 
-export function workRouteResolution(resolution: AddressResolution<Work>): RouteWorkResolution {
-  if (resolution.status === "resolved") {
-    const workId = parseRequestId(resolution.value.id);
-    if (!workId) throw new Error("Invalid persisted Work identity");
-    return { status: "present", workId, work: resolution.value };
-  }
-  if (resolution.status === "loading" || resolution.status === "error")
-    return { status: "unresolved", reason: resolution.status, id: resolution.id };
-  if (resolution.status === "unavailable")
-    return { status: "unresolved", reason: "unavailable", id: resolution.id };
-  if (resolution.status === "malformed")
-    return { status: "unresolved", reason: "unavailable", id: resolution.value };
-  return { status: "none" };
-}
-
-function resolveWorkId(workId: string, catalog: WorkCatalog): AddressResolution<Work> {
+/** Which Work an address selection names, against the projected catalog and its creations. */
+export function resolveRouteWork(
+  selection: AddressSelection,
+  catalog: WorkCatalog,
+): RouteWorkResolution {
+  if (selection.kind === "absent" || selection.kind === "none") return { status: "none" };
+  if (selection.kind === "malformed")
+    return { status: "unresolved", reason: "unavailable", workId: null };
+  const workId = selection.id;
   const work = catalog.entries?.find((entry) => entry.id === workId);
-  if (work) return { status: "resolved", value: work };
-  if (catalog.status === "loading" || catalog.status === "error")
-    return { status: catalog.status, id: workId };
-  return { status: "unavailable", id: workId };
+  if (work) return { status: "present", workId, work };
+  const creation = catalog.creations.get(workId);
+  if (creation) {
+    const { name, goal } = creation.work;
+    return { status: "creating", workId, name, goal, phase: creation.phase };
+  }
+  return {
+    status: "unresolved",
+    reason: catalog.status === "ready" ? "unavailable" : catalog.status,
+    workId,
+  };
 }
 
-const NO_WORKS: readonly Work[] = [];
+const NO_WORKS: readonly AddressableWork[] = [];
 
 /** The projected Works a route can resolve, and those still being created. */
 export function useWorkCatalog(projectId: string): WorkCatalog {
@@ -67,46 +61,28 @@ export function useWorkCatalog(projectId: string): WorkCatalog {
 /** Owns Work route resolution plus both remembered-Work reads and writes. */
 export function useWorkRoute({
   projectId,
-  destination,
   address,
   navigation,
 }: {
   projectId: string;
-  destination: ProjectDestination;
   address: ProjectAddress;
   navigation: WorkNavigation | null;
 }): {
   routeWork: RouteWorkResolution;
-  workResolution: AddressResolution<Work>;
   workCatalog: WorkCatalog;
-  rememberedWork: Work | null;
+  rememberedWork: AddressableWork | null;
   openRemembered: () => Promise<void>;
 } {
   const accountId = useAccountId();
   const catalog = useWorkCatalog(projectId);
-  const requestedWork = addressWorkSelection(address);
-  const routeWorkId =
-    destination.kind === "work" || destination.kind === "document" || destination.kind === "browse"
-      ? destination.workId
-      : null;
-  const workResolution = routeWorkId
-    ? resolveWorkId(routeWorkId, catalog)
-    : resolveAddressSelection(requestedWork, catalog);
-  const creation = routeWorkId ? catalog.creations.get(routeWorkId) : undefined;
   const routeWork: RouteWorkResolution =
-    destination.kind === "works-new"
+    address.destination.kind === "works-new"
       ? { status: "new" }
-      : routeWorkId && creation
-        ? {
-            status: "creating",
-            workId: routeWorkId,
-            name: creation.work.name,
-            goal: creation.work.goal,
-            phase: creation.phase,
-          }
-        : workRouteResolution(workResolution);
+      : resolveRouteWork(addressWorkSelection(address), catalog);
 
-  const [rememberedId, setRememberedId] = useState(() => readCurrentWork(accountId, projectId));
+  const [rememberedId, setRememberedId] = useState(() =>
+    parseRequestId(readCurrentWork(accountId, projectId)),
+  );
   const rememberedWork = catalog.entries?.find((entry) => entry.id === rememberedId) ?? null;
   const latest = useRef({ address, navigation, rememberedWork });
   latest.current = { address, navigation, rememberedWork };
@@ -119,29 +95,14 @@ export function useWorkRoute({
   }, [accountId, activeWorkId, projectId]);
 
   const openRemembered = useCallback(async () => {
-    const current = latest.current;
-    const work = current.rememberedWork;
-    if (!current.navigation || !work) return;
-    const workId = parseRequestId(work.id);
-    if (!workId) return;
-    const destination: ProjectDestination = { kind: "work", workId };
-    await current.navigation.navigate(
-      {
-        ...current.address,
-        destination,
-        workView: undefined,
-        worksView: undefined,
-        results: false,
-      },
+    const { address, navigation, rememberedWork } = latest.current;
+    if (!navigation || !rememberedWork) return;
+    const destination: ProjectDestination = { kind: "work", workId: rememberedWork.id };
+    await navigation.navigate(
+      { ...address, destination, workView: undefined, worksView: undefined, results: false },
       { replace: false },
     );
   }, []);
 
-  return {
-    routeWork,
-    workResolution,
-    workCatalog: catalog,
-    rememberedWork,
-    openRemembered,
-  };
+  return { routeWork, workCatalog: catalog, rememberedWork, openRemembered };
 }

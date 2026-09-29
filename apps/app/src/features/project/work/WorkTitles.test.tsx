@@ -31,7 +31,7 @@ vi.mock("@/client/api/projects-api", () => ({
 
 const PROJECT_ID = "project-1";
 const WORK = {
-  id: "work-1",
+  id: "00000000-0000-4000-8000-000000000001",
   projectId: PROJECT_ID,
   createdByUserId: "user-1",
   name: "Arc",

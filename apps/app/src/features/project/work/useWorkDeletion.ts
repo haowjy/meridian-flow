@@ -11,8 +11,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef } from "react";
 import { useWorkDeleteWindows, type WorkDeleteWindow } from "@/client/query/work-command-selectors";
 import { closeWorkDeleteWindow, useWorkMutations } from "@/client/query/work-command-store";
-import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
-import { routeWorkIdentity } from "./route-work-identity";
+import {
+  type ProjectRouteCommands,
+  type RouteWorkResolution,
+  routeWorkId,
+} from "../routing/project-route";
 
 export type WorkDeletion = {
   /** Open Undo windows, oldest delete first. */
@@ -39,12 +42,12 @@ export function useWorkDeletion(
   // Opening another Work or starting a new one ends the Undo windows.
   const windowsRef = useRef(windows);
   windowsRef.current = windows;
-  const routeWorkId = routeWorkIdentity(routeWork);
+  const openWorkId = routeWorkId(routeWork);
   const ending = routeWork.status === "new" || routeWork.status === "present";
   useEffect(() => {
     if (!ending) return;
-    for (const open of windowsRef.current) if (open.workId !== routeWorkId) close(open.workId);
-  }, [ending, routeWorkId, close]);
+    for (const open of windowsRef.current) if (open.workId !== openWorkId) close(open.workId);
+  }, [ending, openWorkId, close]);
 
   const remove = useCallback(
     (work: Work, from: "detail" | "list") => {

@@ -6,7 +6,7 @@
  * and the Work's `…` actions at the far right.
  */
 
-import type { Work } from "@meridian/contracts/protocol";
+import type { AddressableWork } from "@/client/query/useWorks";
 import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
 import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { useWorkChrome } from "./work/useWorkChrome";
@@ -18,7 +18,7 @@ export type WorkPaneControllerProps = {
   sidebarToggle: PaneHeaderRailToggle;
   chatToggle: PaneHeaderRailToggle;
   routeWork: RouteWorkResolution;
-  rememberedWork: Work | null;
+  rememberedWork: AddressableWork | null;
   routeCommands: ProjectRouteCommands;
 };
 

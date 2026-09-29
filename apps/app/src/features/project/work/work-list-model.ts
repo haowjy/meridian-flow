@@ -4,6 +4,7 @@
  * these entries to rows.
  */
 import { type Work, workPurgeAt } from "@meridian/contracts/works";
+import type { AddressableWork } from "@/client/query/useWorks";
 import type { WorkCreation, WorkDraft } from "@/client/query/work-command-projection";
 import type { WorkDeleteWindow } from "@/client/query/work-command-selectors";
 import type { WorksView } from "../routing/project-address";
@@ -17,16 +18,16 @@ import type { WorkRowFailure } from "./WorkCommandFailureRow";
  */
 export type WorkListEntry = { key: string; failure?: WorkRowFailure } & (
   | { state: "creating" | "notCreated"; work: WorkDraft }
-  | { state: "restoring" | "undo" | "idle"; work: Work }
+  | { state: "restoring" | "undo" | "idle"; work: AddressableWork }
 );
 
 /** A row of a Work the server has. */
-export type ListedWorkEntry = Extract<WorkListEntry, { work: Work }>;
+export type ListedWorkEntry = Extract<WorkListEntry, { work: AddressableWork }>;
 
 export type WorkListProjection = {
-  works: readonly Work[];
+  works: readonly AddressableWork[];
   /** Soft-deleted Works, newest delete first. */
-  deleted: readonly Work[];
+  deleted: readonly AddressableWork[];
   creations: ReadonlyMap<string, WorkCreation>;
   restoring: ReadonlySet<string>;
 };
@@ -43,7 +44,7 @@ export function workListEntries(
   failures: ReadonlyMap<string, WorkRowFailure>,
   now: number,
 ): Record<Exclude<WorksView, "deleted">, WorkListEntry[]> & { deleted: ListedWorkEntry[] } {
-  const listed = (work: Work): ListedWorkEntry =>
+  const listed = (work: AddressableWork): ListedWorkEntry =>
     projected.restoring.has(work.id)
       ? { key: work.id, work, state: "restoring" }
       : { key: work.id, work, state: "idle", failure: failures.get(work.id) };
@@ -78,11 +79,11 @@ export function workListEntries(
 }
 
 /** Deleted Works still inside their retention window, minus those offered for Undo. */
-export function restorableWorks(
-  deleted: readonly Work[],
+export function restorableWorks<W extends Work>(
+  deleted: readonly W[],
   now: number,
   undoable: ReadonlySet<string>,
-): Work[] {
+): W[] {
   return deleted.filter(
     (work) =>
       work.deletedAt !== null &&

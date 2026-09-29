@@ -1,6 +1,7 @@
 /** Stable-ID navigation commands and normalized context-removal CAS snapshots, not browser grammar. */
-import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
+import type { AddressableWork } from "@/client/query/useWorks";
 import type { ScreenKey } from "../shell/screens";
 import type { WorksView, WorkView } from "./project-address";
 
@@ -33,9 +34,17 @@ export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): 
   );
 }
 
+/**
+ * The Work a route addresses. `unresolved` has no id when the address named
+ * no Work it could parse.
+ */
 export type RouteWorkResolution =
   | { status: "new" }
-  | { status: "unresolved"; reason: "loading" | "error" | "unavailable"; id: string }
+  | {
+      status: "unresolved";
+      reason: "loading" | "error" | "unavailable";
+      workId: ParsedRequestId | null;
+    }
   | {
       status: "creating";
       workId: ParsedRequestId;
@@ -44,18 +53,11 @@ export type RouteWorkResolution =
       phase: "pending" | "failed";
     }
   | { status: "none" }
-  | { status: "present"; workId: ParsedRequestId; work: Work };
+  | { status: "present"; workId: ParsedRequestId; work: AddressableWork };
 
-/** Identity used to scope transient Work-dock content to its current route. */
-export function workDockDestinationId(
-  screen: ScreenKey,
-  routeWork: RouteWorkResolution,
-): string | null {
-  if (screen !== "work") return null;
-  if (routeWork.status === "present") return routeWork.workId;
-  if (routeWork.status === "unresolved") return routeWork.id;
-  if (routeWork.status === "creating") return routeWork.workId;
-  return null;
+/** The id of the Work a route addresses, whether it is present, being created, or unresolved. */
+export function routeWorkId(routeWork: RouteWorkResolution): ParsedRequestId | null {
+  return "workId" in routeWork ? routeWork.workId : null;
 }
 
 export type NavigationOptions = { replace: boolean };

@@ -5,8 +5,6 @@
  */
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
-import { parseRequestId } from "@meridian/contracts/request-id";
-import type { Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { FilePlus, Folder, FolderOpen, type LucideIcon, Upload } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
@@ -16,6 +14,7 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
+import type { AddressableWork } from "@/client/query/useWorks";
 import { viewerTabForCatalogFile } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
@@ -48,7 +47,7 @@ type Scheme = "scratch" | "uploads";
 type UploadAttempt = { key: string; name: string; state: "uploading" | "failed" };
 type ScratchNoteAttempt = { key: string; name: string; state: "creating" | "failed" };
 
-export function useWorkFiles(projectId: string, work: Work) {
+export function useWorkFiles(projectId: string, work: AddressableWork) {
   const scratch = useContextCatalogView(projectId, "scratch", { workId: work.id });
   const uploads = useContextCatalogView(projectId, "uploads", { workId: work.id });
   const create = useCreateContextEntry(projectId);
@@ -191,7 +190,7 @@ export function WorkFilesView({
   files,
 }: {
   projectId: string;
-  work: Work;
+  work: AddressableWork;
   commands: ProjectRouteCommands;
   search: string;
   files: WorkFiles;
@@ -396,7 +395,7 @@ function Drafts({
   matchesSearch,
 }: {
   projectId: string;
-  work: Work;
+  work: AddressableWork;
   commands: ProjectRouteCommands;
   matchesSearch: WorkFileSearch;
 }) {
@@ -404,7 +403,6 @@ function Drafts({
   const groups = activeWorkDraftGroups(
     usePostApplyDraftGroupProjections(query.groups, projectId, work.id).commandEligibleGroups,
   );
-  const workId = parseRequestId(work.id);
   const visible = groups.filter((group) =>
     matchesSearch(group.documentName || group.contextPath || ""),
   );
@@ -428,13 +426,13 @@ function Drafts({
               <button
                 type="button"
                 className={rowClass}
-                disabled={!group.contextPath || !workId}
+                disabled={!group.contextPath}
                 onClick={() => {
-                  if (group.contextPath && workId)
+                  if (group.contextPath)
                     void commands.openWorkContext(
                       {
                         kind: "work-context",
-                        workId,
+                        workId: work.id,
                         scheme: "manuscript",
                         path: group.contextPath,
                       },
@@ -501,7 +499,7 @@ function CatalogFileRow({
   onDelete,
 }: {
   projectId: string;
-  work: Work;
+  work: AddressableWork;
   scheme: Scheme;
   file: CatalogFile;
   siblingNames: readonly string[];

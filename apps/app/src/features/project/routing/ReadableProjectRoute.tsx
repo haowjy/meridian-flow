@@ -1,7 +1,7 @@
 /** Browser address resolution and navigation over one authorized, ID-backed project shell. */
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
-import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
@@ -41,11 +41,7 @@ import {
   parseProjectAddress,
   projectAddressHref,
 } from "./project-address";
-import {
-  type AddressResolution,
-  addressWorkSelection,
-  resolveAddressSelection,
-} from "./project-address-resolution";
+import { addressWorkSelection } from "./project-address-resolution";
 import { resolveLocalDocumentSelection, selectEditorEntryTab } from "./project-local-selection";
 import {
   createProjectNavigation,
@@ -59,8 +55,9 @@ import {
   type ProjectRouteCommands,
   type ProjectSearch,
   projectSearchEquals,
+  type RouteWorkResolution,
 } from "./project-route";
-import { useWorkRoute, workRouteResolution } from "./work-route";
+import { resolveRouteWork, useWorkRoute } from "./work-route";
 
 const NONE: AddressSelection = { kind: "none" };
 function selection(value: string | null): AddressSelection {
@@ -68,12 +65,12 @@ function selection(value: string | null): AddressSelection {
   const id = parseRequestId(value);
   return id ? { kind: "id", id } : { kind: "malformed", value };
 }
-function issue<T>(
-  resolution: AddressResolution<T>,
+/** What keeps a route's Work from showing its content yet; a Work being created is still loading. */
+function issue(
+  routeWork: RouteWorkResolution,
 ): Exclude<ProjectRouteIssue, "resource-viewing"> | undefined {
-  if (resolution.status === "loading" || resolution.status === "error") return resolution.status;
-  if (resolution.status === "unavailable" || resolution.status === "malformed")
-    return "unavailable";
+  if (routeWork.status === "unresolved") return routeWork.reason;
+  if (routeWork.status === "creating") return "loading";
 }
 function screen(destination: ProjectDestination): ScreenKey {
   if (
@@ -126,14 +123,11 @@ export function ReadableProjectRoute({
   const [navigation, setNavigation] = useState<ReturnType<typeof createProjectNavigation> | null>(
     null,
   );
-  const workRoute = useWorkRoute({ projectId, destination, address, navigation });
-  const {
-    routeWork: shownRouteWork,
-    workResolution: work,
-    workCatalog,
-    rememberedWork,
-    openRemembered,
-  } = workRoute;
+  const { routeWork, workCatalog, rememberedWork, openRemembered } = useWorkRoute({
+    projectId,
+    address,
+    navigation,
+  });
   const threads = useProjectThreads(projectId);
   const chat = useProjectChatNavigation({
     accountId: user.userId,
@@ -165,10 +159,14 @@ export function ReadableProjectRoute({
       threadsFailed: threads.isError,
       threadsUnloaded: threads.threads === null,
     });
-  const editorWork: AddressResolution<Work> = editorDefaultPending
-    ? { status: workCatalog.status === "error" || threads.isError ? "error" : "loading", id: "" }
-    : resolveAddressSelection(editorSelection, workCatalog);
-  const workId = editorWork.status === "resolved" ? editorWork.value.id : null;
+  const editorWork: RouteWorkResolution = editorDefaultPending
+    ? {
+        status: "unresolved",
+        reason: workCatalog.status === "error" || threads.isError ? "error" : "loading",
+        workId: null,
+      }
+    : resolveRouteWork(editorSelection, workCatalog);
+  const workId = editorWork.status === "present" ? editorWork.workId : null;
   const { tabs: workspaceTabs } = useContextTabs(projectId);
   const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const localDocument = resolveLocalDocumentSelection({
@@ -256,12 +254,12 @@ export function ReadableProjectRoute({
     (destination.scheme === "scratch" || destination.scheme === "uploads");
   const documentDestination =
     destination.kind === "document" && !resourceDestination ? destination : null;
-  const sourceWorkId =
-    documentDestination?.workId && work.status === "resolved" ? work.value.id : null;
+  // A document path outside Scratch and Uploads never carries a Work; its
+  // `?work=` selection must still resolve before the lookup runs.
   const { catalog: addressCatalog } = useContextCatalogView(
     projectId,
     documentDestination?.scheme ?? "manuscript",
-    { workId: sourceWorkId, enabled: !!documentDestination && !issue(work) },
+    { workId: null, enabled: !!documentDestination && !issue(routeWork) },
   );
   const [admission, setAdmission] = useState<AddressAdmission | null>(null);
   const documentLookup = useQuery({
@@ -269,7 +267,6 @@ export function ReadableProjectRoute({
       ...projectQueryKeys.documentAddresses(projectId),
       documentDestination?.scheme,
       documentDestination?.path,
-      sourceWorkId,
       addressCatalog?.normalized.generation,
       addressCatalog?.normalized.appliedRevision,
     ],
@@ -279,10 +276,9 @@ export function ReadableProjectRoute({
         projectId,
         documentDestination.scheme,
         documentDestination.path,
-        sourceWorkId ? { workId: sourceWorkId } : undefined,
       );
     },
-    enabled: !!documentDestination && !issue(work),
+    enabled: !!documentDestination && !issue(routeWork),
     staleTime: 0,
     retry: false,
   });
@@ -300,7 +296,7 @@ export function ReadableProjectRoute({
   const documentResult = reconciledDocumentAddress.result;
   const documentIssue: ProjectRouteIssue | undefined = !documentDestination
     ? undefined
-    : (issue(work) ??
+    : (issue(routeWork) ??
       (!documentResult && documentLookup.isError
         ? "error"
         : !documentResult
@@ -311,15 +307,15 @@ export function ReadableProjectRoute({
   const mainIssue =
     parsed.kind === "invalid"
       ? "unavailable"
-      : destination.kind === "work" && shownRouteWork.status === "unresolved"
-        ? shownRouteWork.reason
+      : destination.kind === "work" && routeWork.status === "unresolved"
+        ? routeWork.reason
         : undefined;
   const editorIssue = resourceDestination
     ? "resource-viewing"
     : ((localDocument.kind === "loading" || localDocument.kind === "unavailable"
         ? localDocument.kind
         : undefined) ??
-      (editorWork.status === "resolved" && editorWork.value.status === "archived"
+      (editorWork.status === "present" && editorWork.work.status === "archived"
         ? "unavailable"
         : issue(editorWork)) ??
       documentIssue ??
@@ -596,9 +592,9 @@ export function ReadableProjectRoute({
             chatDisplay={chat.display}
             entryHydration={entryHydration}
             addressOwnsDocumentAdmission
-            routeWork={shownRouteWork}
+            routeWork={routeWork}
             rememberedWork={rememberedWork}
-            editorRouteWork={workRouteResolution(editorWork)}
+            editorRouteWork={editorWork}
             routeLocationKey={location.state.__TSR_key ?? location.href}
             routeIssues={{ main: mainIssue, editor: editorIssue }}
             onDisplayedSelection={reportSelection}

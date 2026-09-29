@@ -6,9 +6,8 @@
  * band, on its own full-width line under a narrow band or the phone top bar.
  */
 import { t } from "@lingui/core/macro";
-import type { Work } from "@meridian/contracts/protocol";
-import { parseRequestId } from "@meridian/contracts/request-id";
 import { Layers } from "lucide-react";
+import type { AddressableWork } from "@/client/query/useWorks";
 import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
 import { IndexTabChip, ReturnTabChip } from "../shell/IndexTabChip";
@@ -22,7 +21,7 @@ import { PendingWorkTitleTab, WorkTitleTab } from "./WorkTitles";
 export function useWorkChrome(
   projectId: string,
   routeWork: RouteWorkResolution,
-  rememberedWork: Work | null,
+  rememberedWork: AddressableWork | null,
   routeCommands: ProjectRouteCommands,
   deletion: WorkDeletion,
   /** `tab` in the desktop band; `quiet` in the phone top bar's trail. */
@@ -67,11 +66,12 @@ export function useWorkChrome(
     ) : remembered && variant === "tab" ? (
       <ReturnTabChip
         title={remembered.name}
-        onClick={() => {
-          const workId = parseRequestId(remembered.id);
-          if (workId)
-            void routeCommands.openWork({ kind: "work-detail", workId }, { replace: false });
-        }}
+        onClick={() =>
+          void routeCommands.openWork(
+            { kind: "work-detail", workId: remembered.id },
+            { replace: false },
+          )
+        }
       />
     ) : null,
     actions: work ? (

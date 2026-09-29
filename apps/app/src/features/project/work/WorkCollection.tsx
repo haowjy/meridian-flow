@@ -1,7 +1,6 @@
 /** Collection surface for Work creation and lifecycle: Active, Archived, and Deleted tabs. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { parseRequestId } from "@meridian/contracts/request-id";
 import type { Work } from "@meridian/contracts/works";
 import { Link } from "@tanstack/react-router";
 import { Plus, X } from "lucide-react";
@@ -70,26 +69,18 @@ export function WorkCollection({
       ),
     [works, deleted, creations, restoring, deletion.windows, failures, now],
   );
-  const openWorkId = (id: string) => {
-    const workId = parseRequestId(id);
-    if (workId) void routeCommands.openWork({ kind: "work-detail", workId }, { replace: false });
-  };
-  const hrefForId = (id: string) => {
-    const workId = parseRequestId(id);
-    if (!workId) throw new Error("Invalid persisted Work identity");
-    return routeCommands.workHref({ kind: "work-detail", workId });
-  };
   // Focus follows an Archive, or its retry, to the tab the Work moves to.
   const retry = ({ operation, workId, retry }: WorkRowFailure) =>
     operation === "archive" || operation === "unarchive"
       ? () => archiveFocus.follow(workId, archiveTarget(operation), retry())
       : undefined;
   const row = ({ work, state, failure }: WorkListEntry): ReactNode => {
+    const target = { kind: "work-detail", workId: work.id } as const;
     const shared = {
       work,
-      href: hrefForId(work.id),
+      href: routeCommands.workHref(target),
       now,
-      onOpen: () => openWorkId(work.id),
+      onOpen: () => void routeCommands.openWork(target, { replace: false }),
     };
     switch (state) {
       case "creating":

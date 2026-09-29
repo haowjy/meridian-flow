@@ -4,6 +4,7 @@
  * on the Work, shared with the Work band; a restoring Work waits in the tab it
  * returns to; each deleted Work keeps its own Undo row or failure.
  */
+import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { Work, WorksSnapshot } from "@meridian/contracts/works";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useState } from "react";
@@ -481,7 +482,10 @@ describe("Work collection restore", () => {
     const gone = { ...WORK, deletedAt: new Date().toISOString() } as Work;
     client.setQueryData(projectQueryKeys.works(PROJECT_ID), snapshot([gone]));
     vi.mocked(listProjectWorks).mockImplementation(async () => snapshot([gone]));
-    vi.mocked(restoreWork).mockRejectedValue(new Error("Rejected"));
+    const retried = deferred<Work>();
+    vi.mocked(restoreWork)
+      .mockRejectedValueOnce(new Error("Rejected"))
+      .mockImplementationOnce(() => retried.promise);
 
     try {
       await withReactRoot(
@@ -499,6 +503,8 @@ describe("Work collection restore", () => {
           );
           await clickIn(document.querySelector('li [role="alert"]'), "Retry");
           await act(() => vi.waitFor(() => expect(restoreWork).toHaveBeenCalledTimes(2)));
+          await act(() => vi.waitFor(() => expect(listAlerts()).toEqual([])));
+          await act(async () => retried.reject(new Error("Rejected")));
           await act(() => vi.waitFor(() => expect(listAlerts()).toHaveLength(1)));
 
           await clickIn(document.querySelector('li [role="alert"]'), "Dismiss");
@@ -570,7 +576,7 @@ describe("Work collection create", () => {
         </QueryClientProvider>,
         async () => {
           await act(async () => {
-            void createWork({ workId: CODA.id, name: "Coda" });
+            void createWork({ workId: CODA.id as ParsedRequestId, name: "Coda" });
           });
           await act(() => vi.waitFor(() => expect(rowNames()).toEqual(["Coda", "Arc"])));
           expect(document.querySelector('li [role="status"]')?.textContent).toBe("Creating");

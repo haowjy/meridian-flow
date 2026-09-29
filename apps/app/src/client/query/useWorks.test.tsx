@@ -4,6 +4,7 @@
  * snapshot: queued commands show at once, each failure stays on its own Work,
  * and no server read can hide a change whose command has not settled.
  */
+import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { Work, WorksSnapshot } from "@meridian/contracts/works";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
@@ -48,7 +49,7 @@ vi.mock("@/client/api/projects-api", () => ({
 
 const PROJECT_ID = "project-1";
 const WORK = {
-  id: "work-1",
+  id: "00000000-0000-4000-8000-000000000001",
   projectId: PROJECT_ID,
   createdByUserId: "user-1",
   name: "Arc",
@@ -64,7 +65,12 @@ const WORK = {
   lastActivityAt: "2026-09-01T00:00:00.000Z",
   deletedAt: null,
 } as Work;
-const SECOND = { ...WORK, id: "work-2", name: "Coda", slug: "coda" } as Work;
+const SECOND = {
+  ...WORK,
+  id: "00000000-0000-4000-8000-000000000002",
+  name: "Coda",
+  slug: "coda",
+} as Work;
 const snapshot = (works: Work[], authorityRevision = "1") =>
   ({
     projectId: PROJECT_ID,
@@ -424,7 +430,13 @@ describe("Work command projection", () => {
 });
 
 describe("Work creation", () => {
-  const CREATED = { ...WORK, id: "work-3", name: "Draft three", slug: "draft-three" } as Work;
+  const CREATED = {
+    ...WORK,
+    id: "00000000-0000-4000-8000-000000000003",
+    name: "Draft three",
+    slug: "draft-three",
+  } as Work;
+  const CREATED_ID = CREATED.id as ParsedRequestId;
 
   it("keeps a confirmed Work in every reader until the snapshot includes it", async () => {
     const post = deferred<Work>();
@@ -436,7 +448,7 @@ describe("Work creation", () => {
       const staleRead = deferred<WorksSnapshot>();
       const stale = acquireWorksSnapshot(client, PROJECT_ID, () => staleRead.promise);
       await act(async () => {
-        void commands.create({ workId: CREATED.id, name: "Draft three" });
+        void commands.create({ workId: CREATED_ID, name: "Draft three" });
       });
       await settle(() => expect(seen.creations.get(CREATED.id)?.phase).toBe("pending"));
       expect(seen.works?.map((work) => work.id)).toEqual([WORK.id]);
@@ -466,7 +478,7 @@ describe("Work creation", () => {
     vi.mocked(listProjectWorks).mockImplementation(async () => server);
     await withProbe(server, async () => {
       await act(async () => {
-        void commands.create({ workId: CREATED.id, name: "Draft three" });
+        void commands.create({ workId: CREATED_ID, name: "Draft three" });
       });
       await settle(() => expect(seen.creations.get(CREATED.id)?.phase).toBe("failed"));
       expect(seen.creations.get(CREATED.id)?.work.name).toBe("Draft three");
@@ -488,7 +500,7 @@ describe("Work creation", () => {
     await withProbe(snapshot([WORK]), async (client) => {
       let outcome: Error | null | undefined;
       await act(async () => {
-        outcome = await commands.create({ workId: CREATED.id, name: "Draft three" });
+        outcome = await commands.create({ workId: CREATED_ID, name: "Draft three" });
       });
       expect(outcome).toBeNull();
       await settle(() => expect(seen.works?.map((work) => work.id)).toEqual([CREATED.id, WORK.id]));

@@ -1,32 +1,17 @@
 import { parseRequestId } from "@meridian/contracts/request-id";
-import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it } from "vitest";
-import type { RouteWorkResolution } from "./project-route";
-import {
-  applyContextRepairIfCurrent,
-  openContextRouteSearch,
-  workDockDestinationId,
-} from "./project-route";
+import type { AddressableWork } from "@/client/query/useWorks";
+import { applyContextRepairIfCurrent, openContextRouteSearch, routeWorkId } from "./project-route";
 
-describe("Work dock route scope", () => {
-  it("uses the resolved or pending Work id and clears for collection and other screens", () => {
+describe("route Work identity", () => {
+  it("names the present, creating or unresolved Work, and nothing else", () => {
     const workId = parseRequestId("f41144a6-1035-460b-9272-6c4712f3a8b6");
     if (!workId) throw new Error("Invalid test Work ID");
-    const present: RouteWorkResolution = {
-      status: "present",
-      workId,
-      work: {} as Work,
-    };
-    expect(workDockDestinationId("work", present)).toBe("f41144a6-1035-460b-9272-6c4712f3a8b6");
+    expect(routeWorkId({ status: "present", workId, work: {} as AddressableWork })).toBe(workId);
+    expect(routeWorkId({ status: "unresolved", reason: "loading", workId })).toBe(workId);
+    expect(routeWorkId({ status: "unresolved", reason: "unavailable", workId: null })).toBeNull();
     expect(
-      workDockDestinationId("work", {
-        status: "unresolved",
-        reason: "loading",
-        id: "pending-id",
-      }),
-    ).toBe("pending-id");
-    expect(
-      workDockDestinationId("work", {
+      routeWorkId({
         status: "creating",
         workId,
         name: "Fight scene",
@@ -34,8 +19,8 @@ describe("Work dock route scope", () => {
         phase: "pending",
       }),
     ).toBe(workId);
-    expect(workDockDestinationId("work", { status: "none" })).toBeNull();
-    expect(workDockDestinationId("chat", present)).toBeNull();
+    expect(routeWorkId({ status: "none" })).toBeNull();
+    expect(routeWorkId({ status: "new" })).toBeNull();
   });
 });
 

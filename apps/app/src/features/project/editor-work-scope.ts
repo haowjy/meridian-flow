@@ -2,9 +2,10 @@
 import type { RouteWorkResolution } from "./routing/project-route";
 export type EditorWorkScope =
   | { status: "ready"; workId: string | null; source: "route" }
-  | { status: "loading" | "error" | "unavailable"; workId: string };
+  | { status: "loading" | "error" | "unavailable"; workId: string | null };
 export function resolveEditorWorkScope(routeWork: RouteWorkResolution): EditorWorkScope {
-  if (routeWork.status === "unresolved") return { status: routeWork.reason, workId: routeWork.id };
+  if (routeWork.status === "unresolved")
+    return { status: routeWork.reason, workId: routeWork.workId };
   if (routeWork.status === "creating") return { status: "loading", workId: routeWork.workId };
   if (routeWork.status === "new") return { status: "ready", workId: null, source: "route" };
   if (routeWork.status === "none") return { status: "ready", workId: null, source: "route" };

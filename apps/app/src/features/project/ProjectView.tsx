@@ -27,7 +27,7 @@ import type { ProjectRouteData } from "@/client/query/project-route-data";
 import { useContextCatalogWake } from "@/client/query/useContextCatalog";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
-import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
+import { type AddressableWork, useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { observeWorksAvailability } from "@/client/query/works-availability-observer";
 import {
   patchAccountRecentsFromTabs,
@@ -100,7 +100,7 @@ import {
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import { ProjectRouteBoundary, type ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
 import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
-import { workDockDestinationId } from "./routing/project-route";
+import { routeWorkId } from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
 import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
 import { LeftSidebar } from "./shell/LeftSidebar";
@@ -141,7 +141,7 @@ export type ProjectViewProps = {
   /** Explicit route Work state; loading/error never collapses into absence. */
   routeWork: RouteWorkResolution;
   /** Validated browser-local Work offered as the collection's return destination. */
-  rememberedWork: Work | null;
+  rememberedWork: AddressableWork | null;
   editorRouteWork?: RouteWorkResolution;
   activeLocalDocumentId?: string;
   entryHydration: WorkingSetHydrationPlan;
@@ -177,7 +177,7 @@ export function ProjectView(props: ProjectViewProps) {
   const enterWork = useDockViewStore((state) => state.enterWork);
   const leaveWork = useDockViewStore((state) => state.leaveWork);
   useLayoutEffect(() => {
-    const workId = workDockDestinationId(props.activeScreen, props.routeWork);
+    const workId = props.activeScreen === "work" ? routeWorkId(props.routeWork) : null;
     if (workId) enterWork(workId);
     else leaveWork();
   }, [props.activeScreen, props.routeWork, enterWork, leaveWork]);

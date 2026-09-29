@@ -5,6 +5,7 @@
  * (`work-command-store`) runs commands from it; the projection
  * (`work-command-projection`) reads records against the server snapshot.
  */
+import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
 
 import {
@@ -19,7 +20,7 @@ import {
 import { createWithRecovery } from "@/client/creation/creation-registry";
 
 export type WorkCommandVariables = {
-  create: { workId: string; name: string; goal?: string };
+  create: { workId: ParsedRequestId; name: string; goal?: string };
   update: { workId: string; data: UpdateWorkRequest };
   archive: { workId: string };
   unarchive: { workId: string };

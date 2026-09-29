@@ -1,6 +1,7 @@
 /** The Work list's rows per tab, from the projected Works and their command records. */
 import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it } from "vitest";
+import type { AddressableWork } from "@/client/query/useWorks";
 import type { WorkRowFailure } from "./WorkCommandFailureRow";
 import { type WorkListProjection, workListEntries } from "./work-list-model";
 
@@ -15,7 +16,7 @@ const work = (id: string, fields: Partial<Work> = {}) =>
     deletedAt: null,
     lastActivityAt: "2026-09-01T00:00:00.000Z",
     ...fields,
-  }) as Work;
+  }) as AddressableWork;
 const deleted = (id: string, fields: Partial<Work> = {}) =>
   work(id, { deletedAt: "2026-09-09T00:00:00.000Z", ...fields });
 const failure = (workId: string, operation: WorkRowFailure["operation"]) =>

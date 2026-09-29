@@ -3,6 +3,7 @@
  * every pending command laid over it, the Works still being created beside
  * it, and whether the snapshot already shows what a command asked for.
  */
+import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { Work, WorksSnapshot } from "@meridian/contracts/works";
 
 import {
@@ -15,7 +16,7 @@ import {
 } from "./work-commands";
 
 /** A Work the server has not created yet, as the writer asked for it. */
-export type WorkDraft = Pick<Work, "id" | "name" | "goal" | "lastActivityAt">;
+export type WorkDraft = Pick<Work, "name" | "goal" | "lastActivityAt"> & { id: ParsedRequestId };
 
 /**
  * A Work the server has not created yet: pending while its create is on its
