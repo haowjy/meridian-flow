@@ -13,10 +13,10 @@ import {
   useCloseWorkDeleteWindow,
   useWorkCommandFailures,
   useWorkDeleteWindows,
-  useWorkMutations,
   type WorkCommandFailure,
   type WorkDeleteWindow,
-} from "@/client/query/useWorks";
+} from "@/client/query/work-command-selectors";
+import { useWorkMutations } from "@/client/query/work-commands";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
 import { routeWorkIdentity } from "./route-work-identity";
 
@@ -78,19 +78,14 @@ export function useWorkDeletion(
     if (others.length) close(others);
   }, [ending, routeWorkId, close]);
 
-  const deleteAsync = deleteCommand.mutateAsync;
-  const restoreAsync = restore.mutateAsync;
   const remove = useCallback(
     (work: Work, from: "detail" | "list") => {
       if (from === "detail") void routeCommands.closeWork({ replace: true });
-      void deleteAsync(work.id).catch(() => undefined);
+      void deleteCommand({ workId: work.id });
     },
-    [deleteAsync, routeCommands],
+    [deleteCommand, routeCommands],
   );
-  const undo = useCallback(
-    (workId: string) => void restoreAsync(workId).catch(() => undefined),
-    [restoreAsync],
-  );
+  const undo = useCallback((workId: string) => void restore({ workId }), [restore]);
   const dismiss = useCallback(
     (workId: string) => close(windows.filter((w) => w.workId === workId)),
     [close, windows],

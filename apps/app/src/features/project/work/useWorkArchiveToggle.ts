@@ -6,7 +6,8 @@
  */
 import type { Work } from "@meridian/contracts/works";
 import { useCallback } from "react";
-import { useWorkCommandFailures, useWorkMutations } from "@/client/query/useWorks";
+import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
+import { useWorkMutations } from "@/client/query/work-commands";
 
 export type WorkArchiveOperation = "archive" | "unarchive";
 
@@ -24,15 +25,10 @@ const ARCHIVE_OPERATIONS: readonly WorkArchiveOperation[] = ["archive", "unarchi
 export function useWorkArchiveToggle(projectId: string) {
   const { archive, unarchive } = useWorkMutations(projectId);
   const failures = useWorkCommandFailures(projectId, ARCHIVE_OPERATIONS);
-  const archiveAsync = archive.mutateAsync;
-  const unarchiveAsync = unarchive.mutateAsync;
   const run = useCallback(
     (workId: string, operation: WorkArchiveOperation): Promise<boolean> =>
-      (operation === "archive" ? archiveAsync : unarchiveAsync)(workId).then(
-        () => true,
-        () => false,
-      ),
-    [archiveAsync, unarchiveAsync],
+      (operation === "archive" ? archive : unarchive)({ workId }).then((error) => !error),
+    [archive, unarchive],
   );
   /** Resolves `false` when the command fails. */
   const toggle = useCallback(

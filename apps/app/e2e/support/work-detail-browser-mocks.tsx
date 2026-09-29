@@ -1,7 +1,7 @@
 /** Deterministic browser adapters for the Work detail component fixture. */
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
-import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
-import type { WorkCommand, WorkMutations } from "../../src/client/query/useWorks";
+import type { Work } from "@meridian/contracts/works";
+import type { WorkMutations } from "../../src/client/query/work-commands";
 export const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
   parts.reduce((text, part, index) => text + part + (values[index] ?? ""), "");
 export const msg = t;
@@ -67,23 +67,13 @@ export const accessibleResourceCatalogView = () => null;
 export const contextCatalogScope = () => null;
 export const projectCatalogFile = () => null;
 export const projectCatalogView = () => null;
-function browserWorkCommand<TResult, TVariables>(
-  run: (variables: TVariables) => Promise<TResult>,
-): WorkCommand<TResult, TVariables> {
-  return {
-    mutate: () => undefined,
-    mutateAsync: run,
-  };
-}
-
+const settled = async () => null;
 export const useWorkMutations = (): WorkMutations => ({
-  update: browserWorkCommand<Work, { workId: string; data: UpdateWorkRequest }>(
-    async () => state().work,
-  ),
-  archive: browserWorkCommand<Work, string>(async () => state().work),
-  unarchive: browserWorkCommand<Work, string>(async () => state().work),
-  delete: browserWorkCommand<void, string>(async () => undefined),
-  restore: browserWorkCommand<Work, string>(async () => state().work),
+  update: settled,
+  archive: settled,
+  unarchive: settled,
+  delete: settled,
+  restore: settled,
 });
 export const useWorkCommandFailures = () => new Map();
 export const useRestoringWorkIds = () => new Set<string>();

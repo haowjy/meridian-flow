@@ -8,7 +8,8 @@ import { Trans } from "@lingui/react/macro";
 import { WORK_DELETE_RETENTION_DAYS, type Work, workPurgeAt } from "@meridian/contracts/works";
 import { useCallback } from "react";
 import { HttpResponseError } from "@/client/api/http-client";
-import { useWorkCommandFailures, useWorkMutations } from "@/client/query/useWorks";
+import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
+import { useWorkMutations } from "@/client/query/work-commands";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { cn } from "@/lib/utils";
 
@@ -23,11 +24,11 @@ const RESTORE_OPERATIONS = ["restore"] as const;
  * failure returns it here with the error on its row.
  */
 export function useWorkRestore(projectId: string) {
-  const restoreAsync = useWorkMutations(projectId).restore.mutateAsync;
+  const restoreCommand = useWorkMutations(projectId).restore;
   const failures = useWorkCommandFailures(projectId, RESTORE_OPERATIONS);
   const restore = useCallback(
-    (work: Work) => void restoreAsync(work.id).catch(() => undefined),
-    [restoreAsync],
+    (work: Work) => void restoreCommand({ workId: work.id }),
+    [restoreCommand],
   );
   const failureFor = useCallback(
     (workId: string) => failures.get(workId)?.error ?? null,

@@ -17,13 +17,9 @@ import {
 } from "@/client/api/projects-api";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { projectQueryKeys } from "./project-query-keys";
-import {
-  useWorkCommandFailures,
-  useWorkMutations,
-  useWorks,
-  type WorkCommandFailure,
-  type WorkMutations,
-} from "./useWorks";
+import { useWorks } from "./useWorks";
+import { useWorkCommandFailures, type WorkCommandFailure } from "./work-command-selectors";
+import { useWorkMutations, type WorkMutations } from "./work-commands";
 import { acquireWorksSnapshot } from "./works-projection-acquisition";
 
 vi.mock("./useProjectCreation", () => ({ useIsProjectPendingCreation: () => false }));
@@ -124,9 +120,9 @@ describe("Work command projection", () => {
     await withProbe(snapshot([WORK]), async (client) => {
       const staleRead = deferred<WorksSnapshot>();
       const stale = acquireWorksSnapshot(client, PROJECT_ID, () => staleRead.promise);
-      let rename!: Promise<Work>;
+      let rename!: Promise<Error | null>;
       await act(async () => {
-        rename = commands.update.mutateAsync({ workId: WORK.id, data: { name: "Revised arc" } });
+        rename = commands.update({ workId: WORK.id, data: { name: "Revised arc" } });
       });
       await settle(() => expect(field(WORK.id, "name")).toBe("Revised arc"));
 
@@ -138,7 +134,7 @@ describe("Work command projection", () => {
 
       await act(async () => {
         request.reject(new Error("Rejected"));
-        await rename.catch(() => undefined);
+        await rename;
       });
       await settle(() => expect(field(WORK.id, "name")).toBe("Arc"));
       expect(seen.failures.get(WORK.id)?.operation).toBe("update");
@@ -155,8 +151,8 @@ describe("Work command projection", () => {
     vi.mocked(listProjectWorks).mockImplementation(() => new Promise(() => undefined));
     await withProbe(snapshot([WORK, SECOND]), async () => {
       await act(async () => {
-        void commands.archive.mutateAsync(WORK.id).catch(() => undefined);
-        void commands.archive.mutateAsync(SECOND.id).catch(() => undefined);
+        void commands.archive({ workId: WORK.id });
+        void commands.archive({ workId: SECOND.id });
       });
       await settle(() => {
         expect(field(WORK.id, "status")).toBe("archived");
@@ -189,11 +185,11 @@ describe("Work command projection", () => {
     vi.mocked(updateWork).mockImplementation(async () => renamed);
     await withProbe(snapshot([WORK, SECOND]), async (client) => {
       await act(async () => {
-        void commands.archive.mutateAsync(SECOND.id);
+        void commands.archive({ workId: SECOND.id });
       });
       await settle(() => expect(listProjectWorks).toHaveBeenCalledTimes(1));
       await act(async () => {
-        void commands.update.mutateAsync({ workId: WORK.id, data: { name: "Revised arc" } });
+        void commands.update({ workId: WORK.id, data: { name: "Revised arc" } });
       });
       await settle(() => expect(listProjectWorks).toHaveBeenCalledTimes(2));
 
@@ -226,11 +222,11 @@ describe("Work command projection", () => {
     });
     await withProbe(server, async () => {
       await act(async () => {
-        void commands.archive.mutateAsync(WORK.id);
+        void commands.archive({ workId: WORK.id });
       });
       await settle(() => expect(field(WORK.id, "status")).toBe("archived"));
       await act(async () => {
-        void commands.unarchive.mutateAsync(WORK.id);
+        void commands.unarchive({ workId: WORK.id });
       });
       await settle(() => expect(field(WORK.id, "status")).toBe("active"));
       const back = renders.length - 1;
@@ -252,7 +248,7 @@ describe("Work command projection", () => {
     vi.mocked(listProjectWorks).mockImplementation(() => new Promise(() => undefined));
     await withProbe(snapshot([WORK]), async (client) => {
       await act(async () => {
-        void commands.archive.mutateAsync(WORK.id).catch(() => undefined);
+        void commands.archive({ workId: WORK.id });
       });
       await settle(() => expect(seen.failures.get(WORK.id)?.operation).toBe("archive"));
 
@@ -272,7 +268,7 @@ describe("Work command projection", () => {
     vi.mocked(listProjectWorks).mockRejectedValue(new Error("Offline"));
     await withProbe(snapshot([renamed], "2"), async (client) => {
       await act(async () => {
-        await commands.archive.mutateAsync(WORK.id);
+        await commands.archive({ workId: WORK.id });
       });
       await settle(() => {
         expect(client.getMutationCache().getAll()).toHaveLength(0);
@@ -294,7 +290,7 @@ describe("Work command projection", () => {
     });
     await withProbe(server, async (client) => {
       await act(async () => {
-        await commands.update.mutateAsync({ workId: WORK.id, data: { name: "Revised arc" } });
+        await commands.update({ workId: WORK.id, data: { name: "Revised arc" } });
       });
       await settle(() => {
         expect(client.getMutationCache().getAll()).toHaveLength(0);
@@ -302,7 +298,7 @@ describe("Work command projection", () => {
       });
 
       await act(async () => {
-        await commands.delete.mutateAsync(WORK.id);
+        await commands.delete({ workId: WORK.id });
       });
       await settle(() => expect(seen.works).toEqual([]));
       expect(

@@ -4,8 +4,11 @@ import { Plural, Trans } from "@lingui/react/macro";
 import type { UpdateWorkWriteModeResponse, Work } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { type RefObject, useRef, useState } from "react";
-import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
-import { useUpdateWorkWriteMode } from "@/client/query/useWorks";
+import {
+  activeWorkDraftGroups,
+  useUpdateWorkWriteMode,
+  useWorkDrafts,
+} from "@/client/query/useWorkDrafts";
 import {
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,

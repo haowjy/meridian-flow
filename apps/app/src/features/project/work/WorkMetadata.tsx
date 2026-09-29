@@ -15,7 +15,7 @@ type HeldIntent = { run: () => void; cancel: () => void };
 
 export function useWorkMetadataController(
   work: Work,
-  saveWork: (data: UpdateWorkRequest) => Promise<Work>,
+  saveWork: (data: UpdateWorkRequest) => Promise<unknown>,
 ) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");

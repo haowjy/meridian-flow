@@ -26,6 +26,8 @@ test.beforeAll(async () => {
         "@/client/query/useProjectChatFeed",
         "@/client/query/useProjectChatUserState",
         "@/client/query/useWorks",
+        "@/client/query/work-commands",
+        "@/client/query/work-command-selectors",
         "@/client/stores",
       ].map((find) => ({ find, replacement: mocks })),
     },

@@ -23,8 +23,6 @@ const mutate = vi.fn();
 vi.mock("@/client/query/useWorkDrafts", () => ({
   useWorkDrafts: () => ({ groups, drafts: null, status: groups === null ? "loading" : "ready" }),
   activeWorkDraftGroups: () => groups ?? [],
-}));
-vi.mock("@/client/query/useWorks", () => ({
   useUpdateWorkWriteMode: () => ({ isPending: false, mutate, mutateAsync }),
 }));
 vi.mock("@/components/app/composer-toolbar/useMeasuredComposerToolbar", async () => ({

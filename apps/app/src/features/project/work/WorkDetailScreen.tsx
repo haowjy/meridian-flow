@@ -6,7 +6,7 @@ import type { Work } from "@meridian/contracts/works";
 import { MessageSquarePlus, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
-import { useWorkMutations } from "@/client/query/useWorks";
+import { useWorkMutations } from "@/client/query/work-commands";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
@@ -86,9 +86,10 @@ function useWorkView(
 
 export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailScreenProps) {
   const mutations = useWorkMutations(projectId);
-  const controller = useWorkMetadataController(work, (data) =>
-    mutations.update.mutateAsync({ workId: work.id, data }),
-  );
+  const controller = useWorkMetadataController(work, async (data) => {
+    const error = await mutations.update({ workId: work.id, data });
+    if (error) throw error;
+  });
   const [view, setView] = useWorkView(routeCommands);
   const [searchText, setSearchText] = useState("");
   const [settledSearch, setSettledSearch] = useState<string | null>(null);
