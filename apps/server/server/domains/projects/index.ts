@@ -310,11 +310,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
 }
 
 export type { WorkCatalogEntry } from "@meridian/contracts/works";
-export {
-  createInMemoryWorkCascade,
-  type InMemoryWorkCascade,
-  type InMemoryWorkChild,
-} from "./adapters/in-memory-work-cascade.js";
 // ── Project CRUD ────────────────────────────────────────────────────────────
 export { createDrizzleProjectRepository } from "./adapters/project-repository/drizzle.js";
 export { createInMemoryProjectRepository } from "./adapters/project-repository/in-memory.js";

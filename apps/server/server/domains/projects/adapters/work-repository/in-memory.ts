@@ -1,8 +1,7 @@
-/** In-memory WorkRepository for tests: Map-backed work CRUD implementing the port. Shares the default-title constant with the drizzle adapter via shared.ts. */
+/** In-memory WorkRepository for tests; Work child cascades are DB-only and are not modeled here. */
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
 import type { Work } from "@meridian/contracts/works";
 import { decideWorkRestore } from "../../domain/work-restore.js";
-import type { WorkCascade } from "../../ports/work-cascade.js";
 import type {
   CreateWorkInput,
   ListWorksOptions,
@@ -15,13 +14,10 @@ import {
   WorkNameConflictError,
   WorkRestoreConflictError,
 } from "../../ports/work-repository.js";
-import { createInMemoryWorkCascade } from "../in-memory-work-cascade.js";
 import { NO_WORK_NAME, nextWorkSlug } from "./shared.js";
 
 /** In-memory {@link WorkRepository} for tests. */
-export function createInMemoryWorkRepository(
-  options: { now?: () => Date; cascade?: WorkCascade } = {},
-): WorkRepository {
+export function createInMemoryWorkRepository(options: { now?: () => Date } = {}): WorkRepository {
   const rows = new Map<string, Work>();
   const projects = new Map<string, { catalogGeneration: string; revision: bigint }>();
 
@@ -40,7 +36,6 @@ export function createInMemoryWorkRepository(
   }
 
   const currentTime = options.now ?? (() => new Date());
-  const cascade = options.cascade ?? createInMemoryWorkCascade();
 
   function now(): string {
     return currentTime().toISOString();
@@ -88,7 +83,7 @@ export function createInMemoryWorkRepository(
       const snapshot = structuredClone(rows);
       const projectSnapshot = structuredClone(projects);
       try {
-        return await cascade.transaction(operation);
+        return await operation();
       } catch (cause) {
         rows.clear();
         for (const [id, work] of snapshot) rows.set(id, work);
@@ -247,14 +242,8 @@ export function createInMemoryWorkRepository(
         row.deletedAt = deletedAt.toISOString();
         row.updatedAt = row.deletedAt;
         row.lastActivityAt = row.updatedAt;
-        const threadIds = await cascade.hide({
-          workId: id,
-          threadIds: [],
-          liveThreadIds: [],
-          at: deletedAt,
-        });
         advance(row);
-        return { before, after: { ...row }, threadIds };
+        return { before, after: { ...row }, threadIds: [] };
       });
     },
 
@@ -282,7 +271,6 @@ export function createInMemoryWorkRepository(
         row.deletedAt = null;
         row.updatedAt = restoredAt.toISOString();
         row.lastActivityAt = row.updatedAt;
-        await cascade.unhide({ workId: id, threadIds: [], liveThreadIds: [], at: restoredAt });
         advance(row);
         return { before, after: { ...row }, changed: true };
       });

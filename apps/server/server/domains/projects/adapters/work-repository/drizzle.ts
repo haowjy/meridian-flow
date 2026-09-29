@@ -23,7 +23,6 @@ import { lockWorkThreadTree } from "../../../../shared/thread-work-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import { lockWorkLifecycle } from "../../../../shared/work-lifecycle-lock.js";
 import { decideWorkRestore } from "../../domain/work-restore.js";
-import type { WorkCascade } from "../../ports/work-cascade.js";
 import type {
   CreateWorkInput,
   ListWorksOptions,
@@ -37,7 +36,7 @@ import {
   WorkNameConflictError,
   WorkRestoreConflictError,
 } from "../../ports/work-repository.js";
-import { createDrizzleWorkCascade } from "../work-cascade.js";
+import { hideWorkOwnedRows, unhideWorkOwnedRows } from "../work-cascade.js";
 import type { WorkProjectionMutation } from "../work-projection-mutation.js";
 import { NO_WORK_NAME, nextWorkSlug } from "./shared.js";
 
@@ -79,13 +78,11 @@ export interface DrizzleWorkRepositoryDeps {
   db: Database;
   projectionMutation: WorkProjectionMutation;
   now?: () => Date;
-  cascade?: WorkCascade;
 }
 export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): WorkRepository {
   const { db } = deps;
   const projectionMutation = deps.projectionMutation;
   const now = deps.now ?? (() => new Date());
-  const cascade = deps.cascade ?? createDrizzleWorkCascade(db);
 
   async function lockProjectWorkCreation(projectId: ProjectId): Promise<void> {
     await currentDrizzleDb(db).execute(
@@ -307,7 +304,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         if (lockedTree.changed) throw new WorkDeleteRetryError();
 
         const deletedAt = now();
-        const deletedThreadIds = await cascade.hide({
+        const deletedThreadIds = await hideWorkOwnedRows(db, {
           workId: id,
           threadIds: lockedTree.threadIds,
           liveThreadIds: lockedTree.liveThreadIds,
@@ -346,7 +343,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             .where(eq(works.id, id))
             .returning();
           if (!row) throw new Error(`Work not found: ${id}`);
-          await cascade.unhide({
+          await unhideWorkOwnedRows(db, {
             workId: id,
             threadIds: lockedTree.threadIds,
             liveThreadIds: lockedTree.liveThreadIds,

@@ -1,5 +1,4 @@
 /** PostgreSQL half of the shared WorkRepository conformance suite. */
-import { eq } from "drizzle-orm";
 import { beforeEach, describe, it } from "vitest";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -9,7 +8,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("drizzle WorkRepository adapter contract (postgres)", () => {});
 } else {
   describe("drizzle WorkRepository adapter contract (postgres)", async () => {
-    const { projects, threads, threadWorks, users } = await import("@meridian/database/schema");
+    const { projects, users } = await import("@meridian/database/schema");
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
@@ -40,7 +39,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("honors lifecycle cascade, exact restore, no-change, and retention", async () => {
+    it("honors restore, no-change, and retention policy", async () => {
       let now = new Date("2026-01-01T00:00:00.000Z");
       const repo = createDrizzleWorkRepository({
         db,
@@ -58,32 +57,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         setNow(value) {
           now = value;
-        },
-        async addThread(input) {
-          await db.insert(threads).values({
-            id: input.id,
-            projectId: PROJECT_ID,
-            createdByUserId: USER_ID,
-            title: input.id,
-            deletedAt: input.deletedAt ? new Date(input.deletedAt) : null,
-          });
-          await db.insert(threadWorks).values({
-            threadId: input.id,
-            workId: input.workId,
-            projectId: PROJECT_ID,
-            isPrimary: true,
-          });
-        },
-        async readThread(id) {
-          const [row] = await db
-            .select({ deletedAt: threads.deletedAt, deletedByWorkId: threads.deletedByWorkId })
-            .from(threads)
-            .where(eq(threads.id, id));
-          if (!row) throw new Error(`Missing thread ${id}`);
-          return {
-            deletedAt: row.deletedAt?.toISOString() ?? null,
-            deletedByWorkId: row.deletedByWorkId,
-          };
         },
       });
     });

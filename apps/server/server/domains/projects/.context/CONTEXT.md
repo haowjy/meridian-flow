@@ -30,7 +30,7 @@ translate those to `title` and `description` in `ProjectDto`.
 | `ProjectRepository.ensureDefaultBootstrap(userId)` | Returns the converged `DefaultBootstrap` bundle for the authenticated user. |
 | `ProjectRepository.ensureDefaultBootstrapReady(userId)` | Auth path: trusts the durable completion flag as its lock-free fast path. Incomplete bootstrap is retried transactionally; seed failures leave no partial bootstrap and return false without failing unrelated requests. |
 | `ProjectBootstrapResult` | Project, manuscript document/source, and URI IDs needed by the app shell. |
-| `WorkRepository` | Creates/lists/updates/archives/unarchives/deletes/restores Works. Deletion delegates child visibility to the `WorkCascade` port; both Drizzle and in-memory adapters pass the shared conformance suite, and the repository transaction keeps the cascade atomic. |
+| `WorkRepository` | Creates/lists/updates/archives/unarchives/deletes/restores Works. The Drizzle adapter cascades child visibility atomically; cascade is DB-only and covered by DB tests. Shared adapter conformance covers lifecycle policy only. |
 | `ProjectWorkAuthorityResolver` | Exact same-project `byId`/`bySlug` and transactional `lockById` resolution; it is the only projects-domain mint for opaque stable Work URI authority. |
 | `listWorkCatalog(deps, input)` | Owner-gates and lists the requested Work collection, then enriches it through one set-oriented pending-draft count read. |
 | `createWork(input)` | Creates an explicit Work and durably enqueues affected thread Work context in the same transaction. |
