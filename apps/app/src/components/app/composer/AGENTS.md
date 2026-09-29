@@ -20,5 +20,6 @@ This directory owns authored text, reference atoms, skill atoms, and pending/fai
   Sending a draft that is a registered verb (`/compact`, optionally followed by
   whitespace and text) runs it with the trimmed rest as `instructions` and
   clears the draft; an unregistered verb sends as a message. Only `/compact` is
-  registered today, and only once the chat has a completed reply. Manuscript
+  registered today, on every chat: it is always the command, and the server's
+  refusal (nothing to summarize yet) lands on its row. Manuscript
   slash insertion is a different catalog.

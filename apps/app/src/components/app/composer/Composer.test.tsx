@@ -162,7 +162,7 @@ describe("Composer chat verbs", () => {
     expect(run).toHaveBeenCalledWith(null);
   });
 
-  it("sends `/compact` text as a message where the command is not offered", async () => {
+  it("sends `/compact` text as a message on a surface that registers no verbs", async () => {
     const onSubmit = await render({ initialDraft: draft("/compact Keep the names") });
     await pressEnter();
     expect(onSubmit).toHaveBeenCalledOnce();

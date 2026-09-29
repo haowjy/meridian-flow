@@ -74,8 +74,12 @@ turn.
 
 ## Writer commands
 
-The only command is `/compact`, offered once the chat (or the history a fork
-inherited) has a completed reply. Typing `/compact <instructions>` and sending
+The only command is `/compact`, offered on every chat and always run as the
+command, never sent to the model as a message. A chat with no completed reply
+yet (its own or inherited) is refused by the server with 409
+`compact_requires_completed_reply`; the app does not pre-check, and the refusal
+shows on the command's row as the generic "Couldn't queue the compaction." with
+Retry. Typing `/compact <instructions>` and sending
 runs it with the rest of the draft, trimmed, as `instructions`; choosing it
 from the `/` menu runs it with none. The inbox is one ordered queue: a command
 runs by itself when it reaches the front, after the current reply and anything

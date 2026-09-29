@@ -267,6 +267,27 @@ describe("useThreadControls", () => {
     ]);
   });
 
+  it("shows the server's refusal of a chat with nothing to summarize on the row", async () => {
+    api.enqueueThreadControl.mockRejectedValueOnce(
+      new HttpResponseError("compact_requires_completed_reply", 409, {
+        error: "compact_requires_completed_reply",
+      }),
+    );
+    let id = "";
+    await act(async () => {
+      id = latest.enqueue({ kind: "compact", instructions: "Keep the sect names" });
+    });
+    expect(latest.queued).toEqual([
+      {
+        id,
+        control: { kind: "compact", instructions: "Keep the sect names" },
+        status: "failed",
+        afterTurnId: null,
+      },
+    ]);
+    expect(announcements.announceError).toHaveBeenCalledWith("Couldn't queue the compaction.");
+  });
+
   it("announces a failed enqueue", async () => {
     api.enqueueThreadControl.mockRejectedValue(new Error("offline"));
     await act(async () => {
