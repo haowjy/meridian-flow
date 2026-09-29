@@ -3,7 +3,7 @@
 One `ConversationSummarizer` port (`ports/conversation-summarizer.ts`) serves
 both paid summaries: a compaction's C and a handoff's brief on seed S.
 `summary/conversation-summarizer.ts` implements it in production. Rationale:
-[Compaction Summarizes Warm or Cold][kb-summarizer].
+[Compaction Chooses Branch or Rolling Once][kb-summarizer].
 
 ## Owner and source
 

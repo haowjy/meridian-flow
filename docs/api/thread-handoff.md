@@ -49,8 +49,11 @@ terminal seed's custom block has kind `handoff-brief` and props `state`
 
 Stop uses `POST /api/threads/:threadId/turns/:turnId/cancel` with S's id. It
 settles a pending S directly under the destination lock; it does not cancel a
-destination run. The brief worker observes remote Stop within its five-second
-status poll. A queued destination message remains available after Stop.
+destination run. The transaction that cancels S also marks the destination's
+pending transcript commands to run first, as Stop on a live reply does, so a
+queued `/compact` runs before the waiting messages when the claim is released.
+The brief worker observes remote Stop within its five-second status poll. A
+queued destination message remains available after Stop.
 
 Retry is a direct append operation, not a control:
 
