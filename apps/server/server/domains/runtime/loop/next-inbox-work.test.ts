@@ -25,11 +25,11 @@ const notice = row({
 
 describe("next inbox work", () => {
   it("serves messages at a boundary and leaves controls for a run start", () => {
-    expect(next([compact, message], "boundary")).toEqual({ kind: "messages", rows: [message] });
+    expect(next([compact, message], "boundary")).toEqual({ kind: "batch", rows: [message] });
   });
 
   it("serves messages before a queued command regardless of enqueue order", () => {
-    expect(next([compact, message], "run_start")).toEqual({ kind: "messages", rows: [message] });
+    expect(next([compact, message], "run_start")).toEqual({ kind: "batch", rows: [message] });
   });
 
   it("selects one command only when no message is waiting", () => {
@@ -60,12 +60,17 @@ describe("next inbox work", () => {
       body: { kind: "work_context_refresh" },
     });
     expect(next([workRefresh], "run_start")).toEqual({ kind: "none" });
+    expect(next([workRefresh], "boundary")).toEqual({ kind: "batch", rows: [workRefresh] });
+  });
+
+  it("does not materialize request-only notices before a runnable batch", () => {
+    expect(next([notice], "boundary")).toEqual({ kind: "none" });
   });
 
   it("adopts pending notices when a direct writer message starts the run", () => {
     expect(next([notice], "run_start")).toEqual({ kind: "none" });
     expect(next([notice, message], "run_start")).toEqual({
-      kind: "messages",
+      kind: "batch",
       rows: [notice, message],
     });
   });
