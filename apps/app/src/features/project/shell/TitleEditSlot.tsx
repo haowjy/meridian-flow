@@ -2,6 +2,9 @@
  * A title renamed in place, optimistically. Committing closes the field at
  * once and the new title shows from the rename's own cache update; a refused
  * rename reopens the field with the writer's text and the failure under it.
+ * Only the latest rename can reopen it: a refusal a newer rename superseded
+ * stays quiet, and one that lands while the writer is working elsewhere shows
+ * without taking focus.
  * Callers own the resting trigger and the failure's positioned ancestor: the
  * failure is placed against the nearest `relative` element, so the owning
  * header can give it room beyond the title itself.
@@ -10,7 +13,15 @@ import { type ReactNode, type RefObject, useId, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { TabTitleField } from "./TabTitleField";
 
+/**
+ * The latest rename committed per title, across every slot that edits it (a
+ * Work's tab and heading are two slots over one name).
+ */
+const latestRename = new Map<string, number>();
+let renames = 0;
+
 export function TitleEditSlot({
+  titleKey,
   label,
   failure,
   rename,
@@ -19,6 +30,8 @@ export function TitleEditSlot({
   failureClassName = "left-0 w-max max-w-72",
   children,
 }: {
+  /** What is titled, e.g. `work:<id>`; a newer rename of it supersedes an older one. */
+  titleKey: string;
   /** The field's accessible name. */
   label: string;
   /** Shown under the reopened field when the rename was refused. */
@@ -38,7 +51,11 @@ export function TitleEditSlot({
 }) {
   // `unchanged` stays the title the edit started from, so committing the
   // refused text again (Enter or blur on the reopened field) retries it.
-  const [editing, setEditing] = useState<{ initial: string; unchanged: string } | null>(null);
+  const [editing, setEditing] = useState<{
+    initial: string;
+    unchanged: string;
+    focus: boolean;
+  } | null>(null);
   const [failed, setFailed] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const failureId = useId();
@@ -53,7 +70,7 @@ export function TitleEditSlot({
   };
   if (editing === null)
     return children({
-      start: (initial) => setEditing({ initial, unchanged: initial }),
+      start: (initial) => setEditing({ initial, unchanged: initial, focus: true }),
       triggerRef,
     });
   const { unchanged } = editing;
@@ -66,12 +83,25 @@ export function TitleEditSlot({
         maxLength={maxLength}
         className={fieldClassName}
         describedBy={failed ? failureId : undefined}
+        invalid={failed}
+        focusOnMount={editing.focus}
         onCommit={(next) => {
+          const commit = ++renames;
+          latestRename.set(titleKey, commit);
           close();
-          rename(next).catch(() => {
-            setFailed(true);
-            setEditing({ initial: next, unchanged });
-          });
+          rename(next)
+            .catch(() => {
+              if (latestRename.get(titleKey) !== commit) return;
+              setFailed(true);
+              // An edit the writer already reopened keeps its draft.
+              setEditing(
+                (current) =>
+                  current ?? { initial: next, unchanged, focus: focusIsIdle(triggerRef) },
+              );
+            })
+            .finally(() => {
+              if (latestRename.get(titleKey) === commit) latestRename.delete(titleKey);
+            });
         }}
         onCancel={close}
       />
@@ -89,4 +119,10 @@ export function TitleEditSlot({
       ) : null}
     </>
   );
+}
+
+/** Focus rests on nothing, or on the title itself: the writer is not working elsewhere. */
+function focusIsIdle(triggerRef: RefObject<HTMLButtonElement | null>): boolean {
+  const active = document.activeElement;
+  return !active || active === document.body || active === triggerRef.current;
 }

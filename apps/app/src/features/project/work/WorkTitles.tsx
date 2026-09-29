@@ -35,6 +35,7 @@ export function WorkTitleTab({
   return (
     <div className={cn(titleChipClass(variant), "relative")}>
       <TitleEditSlot
+        titleKey={`work:${work.id}`}
         label={t`Rename Work`}
         failure={t`Couldn’t rename this Work. Try again.`}
         rename={rename}
@@ -64,6 +65,7 @@ export function WorkHeading({ projectId, work }: { projectId: string; work: Work
   return (
     <h1 className={cn(headingClass, "relative")}>
       <TitleEditSlot
+        titleKey={`work:${work.id}`}
         label={t`Rename Work`}
         failure={t`Couldn’t rename this Work. Try again.`}
         rename={rename}

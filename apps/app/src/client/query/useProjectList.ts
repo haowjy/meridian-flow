@@ -15,6 +15,7 @@ import { mergeApiProjects } from "@/client/stores";
 import { unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { useIsProjectPendingCreation } from "./useProjectCreation";
+import { pendingProjectTitles } from "./useRenameProject";
 
 function useProjectListQuery() {
   const queryClient = useQueryClient();
@@ -23,19 +24,7 @@ function useProjectListQuery() {
     queryFn: async () => {
       const apiProjects = await listProjects();
       const prev = queryClient.getQueryData<Project[] | null>(projectQueryKeys.list);
-      const pendingTitles = new Map(
-        queryClient
-          .getMutationCache()
-          .findAll({ mutationKey: projectQueryKeys.renamePrefix })
-          .filter((mutation) => mutation.state.status === "pending")
-          .flatMap((mutation) => {
-            const projectId = mutation.options.mutationKey?.[2];
-            const title = mutation.state.variables;
-            return typeof projectId === "string" && typeof title === "string"
-              ? [[projectId, title] as const]
-              : [];
-          }),
-      );
+      const pendingTitles = pendingProjectTitles(queryClient);
       const reconciled = apiProjects.map((project) => {
         const title = pendingTitles.get(project.id);
         return title ? { ...project, title, name: title } : project;

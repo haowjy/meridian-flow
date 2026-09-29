@@ -22,6 +22,7 @@ function Harness() {
   const [title, setTitle] = useState("Old serial");
   return (
     <InlineProjectTitle
+      projectId="project-1"
       title={title}
       onSave={(next) => {
         setTitle(next);

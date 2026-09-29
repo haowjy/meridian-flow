@@ -2,7 +2,8 @@
  * useInlineEdit — the one commit/cancel protocol for text edited in place.
  *
  * Pairs with `InlineEditInput`. Focuses and selects on mount (with a frame
- * retry, since a closing Radix menu holds focus for one frame). Enter or blur
+ * retry, since a closing Radix menu holds focus for one frame), unless the
+ * caller opens it without focus. Enter or blur
  * commits; Escape cancels; IME composition keys are ignored. An empty or
  * unchanged draft cancels instead of committing. A blocking validation issue
  * keeps the field open; a throw from `onCommit` keeps it open with the thrown
@@ -27,6 +28,8 @@ export type UseInlineEditOptions = {
   onCancel: () => void;
   /** Selection once focused; defaults to selecting everything. */
   select?: (input: HTMLInputElement) => void;
+  /** Take focus on mount; defaults to true. */
+  focusOnMount?: boolean;
 };
 
 export type InlineEdit = ReturnType<typeof useInlineEdit>;
@@ -39,6 +42,7 @@ export function useInlineEdit({
   onCommit,
   onCancel,
   select = (input) => input.select(),
+  focusOnMount = true,
 }: UseInlineEditOptions) {
   const [draft, setDraft] = useState(initial);
   const [failure, setFailure] = useState<string | null>(initialError ?? null);
@@ -50,7 +54,7 @@ export function useInlineEdit({
 
   useEffect(() => {
     const input = inputRef.current;
-    if (!input) return;
+    if (!input || !focusOnMount) return;
     input.focus();
     select(input);
     const frame = requestAnimationFrame(() => {

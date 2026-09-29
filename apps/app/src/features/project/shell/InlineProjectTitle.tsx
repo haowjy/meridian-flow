@@ -7,9 +7,10 @@ import { t } from "@lingui/core/macro";
 import { cn } from "@/lib/utils";
 import { TitleEditSlot } from "./TitleEditSlot";
 
-export type ProjectTitleEdit = { onSave: (title: string) => Promise<unknown> };
+export type ProjectTitleEdit = { projectId: string; onSave: (title: string) => Promise<unknown> };
 
 export function InlineProjectTitle({
+  projectId,
   title,
   onSave,
   className,
@@ -26,6 +27,7 @@ export function InlineProjectTitle({
   return (
     <div className="relative flex min-w-0 flex-1 items-center">
       <TitleEditSlot
+        titleKey={`project:${projectId}`}
         label={t`Project title`}
         failure={t`Project title could not be saved. Try again.`}
         rename={onSave}

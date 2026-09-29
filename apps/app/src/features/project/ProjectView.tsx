@@ -20,13 +20,12 @@ import {
   type Work,
 } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { updateProject } from "@/client/api/projects-api";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextCatalogWake } from "@/client/query/useContextCatalog";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
+import { useRenameProject } from "@/client/query/useRenameProject";
 import { type AddressableWork, useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { observeWorksAvailability } from "@/client/query/works-availability-observer";
 import {
@@ -182,51 +181,7 @@ export function ProjectView(props: ProjectViewProps) {
   const queryClient = useQueryClient();
   const cachedProject = useProject(props.projectId, props.project);
   const projectTitle = cachedProject?.title ?? props.project.title;
-  const renameProject = useMutation({
-    mutationKey: projectQueryKeys.rename(props.projectId),
-    mutationFn: (title: string) => updateProject(props.projectId, { title }),
-    onMutate: async (title) => {
-      await Promise.all([
-        queryClient.cancelQueries({ queryKey: projectQueryKeys.list }),
-        queryClient.cancelQueries({ queryKey: projectQueryKeys.detail(props.projectId) }),
-      ]);
-      const list = queryClient.getQueryData<Project[] | null>(projectQueryKeys.list);
-      const detail = queryClient.getQueryData<Project>(projectQueryKeys.detail(props.projectId));
-      const previousRow = list?.find((project) => project.id === props.projectId);
-      const optimistic = (project: Project): Project => ({ ...project, title });
-      queryClient.setQueryData<Project[] | null>(projectQueryKeys.list, (current) =>
-        (current ?? [props.project]).map((project) =>
-          project.id === props.projectId ? optimistic(project) : project,
-        ),
-      );
-      if (detail)
-        queryClient.setQueryData(projectQueryKeys.detail(props.projectId), optimistic(detail));
-      return { previousRow, detail };
-    },
-    onError: (_error, _title, previous) => {
-      if (!previous) return;
-      queryClient.setQueryData<Project[] | null>(projectQueryKeys.list, (current) =>
-        current?.flatMap((project) =>
-          project.id === props.projectId
-            ? previous.previousRow
-              ? [previous.previousRow]
-              : []
-            : [project],
-        ),
-      );
-      if (previous.detail)
-        queryClient.setQueryData(projectQueryKeys.detail(props.projectId), previous.detail);
-    },
-    onSuccess: async (project) => {
-      // A list read started while the mutation was pending may return an old
-      // title after PATCH succeeds. Fence it before publishing confirmation.
-      await queryClient.cancelQueries({ queryKey: projectQueryKeys.list });
-      queryClient.setQueryData<Project[] | null>(projectQueryKeys.list, (list) =>
-        list?.map((item) => (item.id === project.id ? project : item)),
-      );
-      queryClient.setQueryData(projectQueryKeys.detail(props.projectId), project);
-    },
-  });
+  const renameProject = useRenameProject(cachedProject ?? props.project);
   const accountId = useAccountId();
   const availability = useProjectContextAvailabilityCoordinator();
   const removal = useContextRemovalCoordinator();
@@ -385,7 +340,7 @@ export function ProjectView(props: ProjectViewProps) {
           <HydratedReviewProject
             {...resolvedProps}
             projectTitle={projectTitle}
-            titleEdit={{ onSave: (title) => renameProject.mutateAsync(title) }}
+            titleEdit={{ projectId: props.projectId, onSave: renameProject }}
           />
         </>
       ) : null}

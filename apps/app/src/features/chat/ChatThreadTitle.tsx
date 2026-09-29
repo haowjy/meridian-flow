@@ -58,6 +58,7 @@ function ExistingThreadTitle({
   });
   return (
     <TitleEditSlot
+      titleKey={`chat:${threadId}`}
       label={t`Rename chat`}
       failure={t`Couldn’t rename this chat. Try again.`}
       rename={rename}
