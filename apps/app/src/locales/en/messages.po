@@ -4888,6 +4888,7 @@ msgstr "Work {name} was already up to date"
 msgid "Work couldn’t be archived"
 msgstr "Work couldn’t be archived"
 
+#: src/features/project/work/useWorkChrome.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Work couldn’t be deleted"
 msgstr "Work couldn’t be deleted"

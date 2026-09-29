@@ -4884,6 +4884,7 @@ msgstr ""
 msgid "Work couldn’t be archived"
 msgstr ""
 
+#: src/features/project/work/useWorkChrome.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Work couldn’t be deleted"
 msgstr ""
