@@ -716,6 +716,90 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(works.restore(work.id)).rejects.toBeInstanceOf(WorkRestoreExpiredError);
     });
 
+    it("refuses restoring a marked child after its root moves to another Work", async () => {
+      const noWork = await works.ensureNoWork(PROJECT_ID as never);
+      const deletedWork = await works.create({ projectId: PROJECT_ID, name: "Deleted Work" });
+      const liveWork = await works.create({ projectId: PROJECT_ID, name: "Live Work" });
+      const childThreadId = "00000000-0000-4000-8000-000000000845";
+      await db.insert(schema.threads).values([
+        {
+          id: THREAD_ID,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          title: "Rebound root",
+        },
+        {
+          id: childThreadId,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          title: "Child left behind",
+          kind: "subagent",
+          parentThreadId: THREAD_ID,
+          rootThreadId: THREAD_ID,
+          originTurnId: THREAD_ID,
+          originType: "spawn",
+          spawnStatus: "succeeded",
+          spawnDepth: 1,
+        },
+      ]);
+      await db.insert(schema.threadWorks).values([
+        {
+          threadId: THREAD_ID,
+          workId: deletedWork.id,
+          projectId: PROJECT_ID,
+          isPrimary: true,
+        },
+        {
+          threadId: childThreadId,
+          workId: deletedWork.id,
+          projectId: PROJECT_ID,
+          isPrimary: true,
+        },
+      ]);
+      await threadRepos.threadWorks.rebindPrimary(THREAD_ID as never, liveWork.id);
+      await works.softDelete(deletedWork.id);
+
+      const { restoreOwnedThreadFromTrash } = await import("../threads/thread-access.js");
+      await expect(
+        restoreOwnedThreadFromTrash(
+          {
+            repos: threadRepos,
+            projects: {
+              async findById() {
+                return { id: PROJECT_ID, userId: USER_ID, deletedAt: null } as never;
+              },
+            },
+            workContextNotices: {
+              async threadChanged() {},
+              async materializeIdle() {
+                return "delivered" as const;
+              },
+            },
+            workAuthorityResolver: authorities,
+            works,
+          },
+          childThreadId as never,
+          USER_ID as never,
+        ),
+      ).rejects.toMatchObject({ statusCode: 404 });
+      await expect(
+        threadRepos.threadWorks.findPrimary(childThreadId as never),
+      ).resolves.toMatchObject({ workId: deletedWork.id });
+      await expect(
+        db
+          .select({ deletedByWorkId: schema.threads.deletedByWorkId })
+          .from(schema.threads)
+          .where(eq(schema.threads.id, childThreadId as never)),
+      ).resolves.toEqual([{ deletedByWorkId: deletedWork.id }]);
+
+      await works.restore(deletedWork.id);
+      await expect(threadRepos.threads.findById(childThreadId as never)).resolves.toMatchObject({
+        id: childThreadId,
+        workId: deletedWork.id,
+      });
+      expect(noWork.id).not.toBe(deletedWork.id);
+    });
+
     it("commits an expired Work purge before best-effort blob deletion", async () => {
       const backingStore = createInMemoryObjectStore();
       const work = await works.create({ projectId: PROJECT_ID, name: "Purge me" });

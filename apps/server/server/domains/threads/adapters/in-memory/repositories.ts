@@ -281,7 +281,7 @@ export function createInMemoryRepositories(
     },
     async lockByIdIncludingDeleted(id) {
       const thread = threads.get(id);
-      return thread ? projectThread(thread) : null;
+      return thread ? { ...projectThread(thread), deletedByWorkId: null } : null;
     },
     async listByUser(userId) {
       const visible: Thread[] = [];

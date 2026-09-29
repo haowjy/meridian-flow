@@ -225,7 +225,7 @@ export interface ThreadRepository {
   lockByIdIncludingDeleted(
     id: ThreadId,
     additionalWorkIds?: readonly WorkId[],
-  ): Promise<Thread | null>;
+  ): Promise<(Thread & { deletedByWorkId: WorkId | null }) | null>;
   listByUser(userId: UserId): Promise<Thread[]>;
   /** Primary threads in a project (excludes subagents and soft-deleted threads; caller must gate project access). */
   listByProject(projectId: ProjectId): Promise<ThreadListItem[]>;
