@@ -1,0 +1,11 @@
+# TODO — features/project
+
+- Invalid project addresses render silently (`routing/ReadableProjectRoute.tsx`
+  `mainIssue`, `routing/ProjectRouteBoundary.tsx`): an unparseable URL such as
+  `/p/<id>/works/revise-arc-3`, `/work/@slug` or `/chat/<id>` falls back to the
+  chat index and keeps the bad URL, and the "This destination is unavailable"
+  overlay does not appear on desktop even though `mainIssue` is `unavailable`.
+  Show the unavailable state on the destination (and keep the URL). Found by
+  the URL smoke probe (work item `thread-ux`, `url-smoke-screenshots/06*`).
+- Open in Editor for Scratch and Uploads lands on the "not available yet"
+  placeholder. Tracked in https://github.com/haowjy/meridian-flow/issues/625.
