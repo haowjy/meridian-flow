@@ -21,7 +21,13 @@ import { useWorkFileIntake } from "./use-work-file-intake";
 import { WorkDrafts } from "./WorkDrafts";
 import { WorkFileGroup, WorkFileGroupLoading, WorkFileGroupNote } from "./WorkFileGroup";
 import { CatalogFileRow, FileAttemptRow, FolderRow } from "./WorkFileRows";
-import { catalogSiblingNames, filterWorkFileGroups, workFileSearch } from "./work-files-model";
+import {
+  catalogSiblingNames,
+  compareTreePlaces,
+  filterWorkFileGroups,
+  type TreePlace,
+  workFileSearch,
+} from "./work-files-model";
 
 export function useWorkFiles(projectId: string, work: AddressableWork) {
   const scratch = useContextCatalogView(projectId, "scratch", { workId: work.id });
@@ -142,51 +148,59 @@ export function WorkFilesView({
       return next;
     });
 
-  const scratchRows: RuledRow[] = visible.scratch.map((node) => ({
-    key: node.entryId,
-    node:
-      node.kind === "dir" ? (
-        <FolderRow
-          folder={node}
-          open={expanded.has(node.path)}
-          onToggle={() => toggleFolder(node.path)}
-        />
-      ) : (
-        <CatalogFileRow
-          projectId={projectId}
-          workId={work.id}
-          scheme="scratch"
-          file={node}
-          siblingNames={catalogSiblingNames(scratch.catalog, node)}
-          renaming={files.renaming === node.path}
-          onRename={files.setRenaming}
-          onDelete={() =>
-            scratchDelete.requestDelete({
-              kind: "file",
-              name: node.name,
-              path: node.path,
-              documentId: node.documentId,
-            })
-          }
-        />
-      ),
-  }));
-  if (intake.note)
-    scratchRows.push({
-      key: intake.note.key,
-      node: (
-        <FileAttemptRow
-          attempt={intake.note}
-          pendingLabel={<Trans>Creating…</Trans>}
-          failureLabel={<Trans>Couldn’t create note</Trans>}
-          onRetry={files.retryNote}
-          onDismiss={intake.dismissNote}
-        />
-      ),
-    });
-  const uploadRows: RuledRow[] = [
+  const scratchRows = inTreeOrder([
+    ...visible.scratch.map((node) => ({
+      key: node.entryId,
+      place: { path: node.path, folder: node.kind === "dir" },
+      node:
+        node.kind === "dir" ? (
+          <FolderRow
+            folder={node}
+            open={expanded.has(node.path)}
+            onToggle={() => toggleFolder(node.path)}
+          />
+        ) : (
+          <CatalogFileRow
+            projectId={projectId}
+            workId={work.id}
+            scheme="scratch"
+            file={node}
+            siblingNames={catalogSiblingNames(scratch.catalog, node)}
+            renaming={files.renaming === node.path}
+            onRename={files.setRenaming}
+            onDelete={() =>
+              scratchDelete.requestDelete({
+                kind: "file",
+                name: node.name,
+                path: node.path,
+                documentId: node.documentId,
+              })
+            }
+          />
+        ),
+    })),
+    ...(intake.note
+      ? [
+          {
+            key: intake.note.key,
+            place: attemptPlace(intake.note),
+            node: (
+              <FileAttemptRow
+                attempt={intake.note}
+                pendingLabel={<Trans>Creating…</Trans>}
+                failureLabel={<Trans>Couldn’t create note</Trans>}
+                onRetry={files.retryNote}
+                onDismiss={intake.dismissNote}
+              />
+            ),
+          },
+        ]
+      : []),
+  ]);
+  const uploadRows = inTreeOrder([
     ...visible.uploads.map((file) => ({
       key: file.entryId,
+      place: { path: file.path, folder: false },
       node: (
         <CatalogFileRow
           projectId={projectId}
@@ -201,6 +215,7 @@ export function WorkFilesView({
     })),
     ...intake.uploads.map((attempt) => ({
       key: attempt.key,
+      place: attemptPlace(attempt),
       node: (
         <FileAttemptRow
           attempt={attempt}
@@ -210,7 +225,7 @@ export function WorkFilesView({
         />
       ),
     })),
-  ];
+  ]);
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the whole tab accepts dropped files; the Upload button is the keyboard path.
@@ -288,4 +303,16 @@ export function WorkFilesView({
       />
     </div>
   );
+}
+
+/** A file being added lands at its group's root, under its own name. */
+const attemptPlace = (attempt: { name: string }): TreePlace => ({
+  path: `/${attempt.name}`,
+  folder: false,
+});
+
+function inTreeOrder(rows: (RuledRow & { place: TreePlace })[]): RuledRow[] {
+  return rows
+    .sort((left, right) => compareTreePlaces(left.place, right.place))
+    .map(({ key, node }) => ({ key, node }));
 }
