@@ -104,7 +104,7 @@ msgstr "{0, plural, other {# 次调用}}"
 #~ msgstr ""
 
 #. placeholder {0}: group.drafts.length
-#: src/features/project/work/WorkFilesView.tsx
+#: src/features/project/work/WorkDrafts.tsx
 msgid "{0, plural, one {# pending draft} other {# pending drafts}}"
 msgstr ""
 
@@ -628,7 +628,7 @@ msgstr ""
 #~ msgid "Another chat needs your answer"
 #~ msgstr ""
 
-#: src/features/project/work/DeletedWorkList.tsx
+#: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Another Work now has this name. Rename that Work, then restore this one."
 msgstr ""
 
@@ -927,12 +927,12 @@ msgstr ""
 msgid "Chats"
 msgstr ""
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkChatsTab.tsx
 msgid "Chats couldn’t load"
 msgstr ""
 
+#: src/features/project/work/WorkChatsTab.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
-#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Chats you start here stay with this Work."
 msgstr ""
 
@@ -1426,7 +1426,7 @@ msgstr ""
 msgid "Couldn’t rename this Work. Try again."
 msgstr ""
 
-#: src/features/project/work/DeletedWorkList.tsx
+#: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Couldn’t restore this Work"
 msgstr ""
 
@@ -1543,7 +1543,7 @@ msgstr ""
 #~ msgid "Creating chat"
 #~ msgstr ""
 
-#: src/routes/_authenticated/p/$projectId.tsx
+#: src/features/project/ProjectCreationNotice.tsx
 msgid "Creating project…"
 msgstr ""
 
@@ -1702,8 +1702,8 @@ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
+#: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
-#: src/routes/_authenticated/p/$projectId.tsx
 msgid "Discard"
 msgstr ""
 
@@ -1723,7 +1723,8 @@ msgstr ""
 #: src/components/app/InlineErrorRow.tsx
 #: src/features/editor/SchemaRepairNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
-#: src/features/project/work/WorkFilesView.tsx
+#: src/features/project/work/WorkCommandFailureRow.tsx
+#: src/features/project/work/WorkFileRows.tsx
 msgid "Dismiss"
 msgstr ""
 
@@ -1802,7 +1803,7 @@ msgstr "起草中"
 msgid "Drafts are waiting"
 msgstr ""
 
-#: src/features/project/work/WorkFilesView.tsx
+#: src/features/project/work/WorkDrafts.tsx
 msgid "Drafts to review"
 msgstr ""
 
@@ -2021,7 +2022,7 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/context/use-create-entry-form.ts
-#: src/features/project/work/WorkFilesView.tsx
+#: src/features/project/work/WorkFileRows.tsx
 msgid "File name"
 msgstr ""
 
@@ -2405,7 +2406,7 @@ msgstr ""
 #~ msgid "Load more chats"
 #~ msgstr ""
 
-#: src/features/project/work/WorkFilesView.tsx
+#: src/features/project/work/WorkFileGroup.tsx
 msgid "Loading"
 msgstr ""
 
@@ -2684,8 +2685,8 @@ msgstr ""
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/features/project/chat/ChatScreen.tsx
+#: src/features/project/work/WorkChatsTab.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
-#: src/features/project/work/WorkDetailScreen.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
 msgstr "新对话"
@@ -2750,7 +2751,7 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/chat-index/ChatIndex.tsx
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkChatsTab.tsx
 msgid "No chats match “{search}”."
 msgstr ""
 
@@ -3130,7 +3131,7 @@ msgstr ""
 #~ msgid "Pending drafts"
 #~ msgstr ""
 
-#: src/features/project/work/WorkFilesView.tsx
+#: src/features/project/work/WorkDrafts.tsx
 msgid "Pending drafts couldn’t load"
 msgstr ""
 
@@ -3179,7 +3180,7 @@ msgstr ""
 #~ msgid "Project created, but it couldn’t open. Try again."
 #~ msgstr ""
 
-#: src/routes/_authenticated/p/$projectId.tsx
+#: src/features/project/ProjectCreationNotice.tsx
 msgid "Project creation failed."
 msgstr ""
 
@@ -3456,7 +3457,7 @@ msgstr ""
 msgid "Rename Work"
 msgstr ""
 
-#. placeholder {0}: title.name
+#. placeholder {0}: work.name
 #: src/features/project/work/WorkTitles.tsx
 msgid "Rename Work: {0}"
 msgstr ""
@@ -3576,10 +3577,9 @@ msgstr ""
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
-#: src/features/project/work/useWorkChrome.tsx
-#: src/features/project/work/WorkCollection.tsx
+#: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
-#: src/features/project/work/WorkFilesView.tsx
+#: src/features/project/work/WorkFileRows.tsx
 #: src/routes/_authenticated/p/$projectId.tsx
 msgid "Retry"
 msgstr ""
@@ -3596,7 +3596,7 @@ msgstr ""
 msgid "Retry loading"
 msgstr ""
 
-#: src/features/project/work/WorkFilesView.tsx
+#: src/features/project/work/WorkDrafts.tsx
 msgid "Retry Pending drafts"
 msgstr ""
 
@@ -3715,8 +3715,8 @@ msgid "Saving chat title"
 msgstr ""
 
 #: src/features/project/shell/InlineProjectTitle.tsx
-msgid "Saving project title"
-msgstr ""
+#~ msgid "Saving project title"
+#~ msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
 #: src/features/project/work/WorkMetadata.tsx
@@ -3739,8 +3739,8 @@ msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
+#: src/features/project/work/WorkChatsTab.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
-#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Search chats"
 msgstr ""
 
@@ -3752,7 +3752,7 @@ msgstr ""
 msgid "Search documents or paste a web link"
 msgstr ""
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkFilesTab.tsx
 msgid "Search files"
 msgstr ""
 
@@ -3937,8 +3937,8 @@ msgstr ""
 msgid "Split cell"
 msgstr ""
 
+#: src/features/project/work/WorkChatsTab.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
-#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Start a chat in this Work"
 msgstr ""
 
@@ -4541,7 +4541,7 @@ msgstr ""
 msgid "This Work is unavailable."
 msgstr ""
 
-#: src/features/project/work/DeletedWorkList.tsx
+#: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
 msgstr ""
 
@@ -4690,7 +4690,7 @@ msgstr ""
 msgid "Untitled document"
 msgstr ""
 
-#: src/features/project/work/WorkFilesView.tsx
+#: src/features/project/work/WorkDrafts.tsx
 msgid "Untitled manuscript"
 msgstr ""
 
@@ -4879,18 +4879,15 @@ msgstr ""
 #~ msgid "Work actions"
 #~ msgstr ""
 
-#: src/features/project/work/useWorkChrome.tsx
-#: src/features/project/work/WorkCollection.tsx
+#: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Work couldn’t be archived"
 msgstr ""
 
-#: src/features/project/work/useWorkChrome.tsx
-#: src/features/project/work/WorkCollection.tsx
+#: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Work couldn’t be deleted"
 msgstr ""
 
-#: src/features/project/work/useWorkChrome.tsx
-#: src/features/project/work/WorkCollection.tsx
+#: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Work couldn’t be unarchived"
 msgstr ""
 
