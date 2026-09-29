@@ -1,5 +1,5 @@
 {
-  "id": "5aba32d9-1ee0-4dc5-83f3-5a55a8b26856",
+  "id": "0c15d7f2-8d4b-4a8c-a579-f6799d0dcbd4",
   "prevId": "bc5eca79-73e4-4090-a6b2-52f9d5fcb989",
   "version": "7",
   "dialect": "postgresql",
@@ -2011,6 +2011,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "runs_first": {
+          "name": "runs_first",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -2075,7 +2082,7 @@
         },
         "thread_inbox_messages_body_valid": {
           "name": "thread_inbox_messages_body_valid",
-          "value": "(CASE WHEN \"thread_inbox_messages\".\"intent\" = 'control' THEN \"thread_inbox_messages\".\"body\"->>'kind' IN ('compact','compaction_undo') ELSE \"thread_inbox_messages\".\"body\"->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE"
+          "value": "(CASE WHEN \"thread_inbox_messages\".\"intent\" = 'control' THEN \"thread_inbox_messages\".\"body\"->>'kind' IN ('compact') ELSE \"thread_inbox_messages\".\"body\"->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE"
         }
       },
       "isRLSEnabled": false
@@ -2470,7 +2477,7 @@
           "name": "root_thread_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "origin_turn_id": {
           "name": "origin_turn_id",
@@ -2668,6 +2675,22 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "threads_lineage_derivations": {
+          "name": "threads_lineage_derivations",
+          "columns": [
+            {
+              "expression": "root_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"threads\".\"origin_type\" IN ('fork', 'handoff')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -2752,10 +2775,6 @@
       },
       "policies": {},
       "checkConstraints": {
-        "threads_spawn_root_required": {
-          "name": "threads_spawn_root_required",
-          "value": "\"threads\".\"kind\" != 'subagent' OR \"threads\".\"root_thread_id\" IS NOT NULL"
-        },
         "threads_no_self_parent": {
           "name": "threads_no_self_parent",
           "value": "\"threads\".\"id\" != \"threads\".\"parent_thread_id\""
@@ -2787,6 +2806,10 @@
         "threads_spawn_origin_required_fields": {
           "name": "threads_spawn_origin_required_fields",
           "value": "\"threads\".\"origin_type\" != 'spawn' OR (\"threads\".\"kind\" = 'subagent' AND \"threads\".\"parent_thread_id\" IS NOT NULL AND \"threads\".\"origin_turn_id\" IS NOT NULL AND \"threads\".\"spawn_status\" IS NOT NULL)"
+        },
+        "threads_handoff_origin_turn_required": {
+          "name": "threads_handoff_origin_turn_required",
+          "value": "\"threads\".\"origin_type\" <> 'handoff' OR \"threads\".\"origin_turn_id\" IS NOT NULL"
         },
         "threads_handoff_fork_primary": {
           "name": "threads_handoff_fork_primary",
@@ -3257,7 +3280,7 @@
             }
           ],
           "isUnique": false,
-          "where": "\"turns\".\"status\" = 'pending' AND \"turns\".\"role\" IN ('compaction')",
+          "where": "\"turns\".\"status\" = 'pending' AND \"turns\".\"role\" IN ('compaction', 'system')",
           "concurrently": false,
           "method": "btree",
           "with": {}
