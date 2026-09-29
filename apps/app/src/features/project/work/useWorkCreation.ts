@@ -1,167 +1,51 @@
-/** Navigate-first Work creation commands over the shared creation registry. */
+/**
+ * Navigate-first Work creation: the `create` Work command's record puts the
+ * Work in place at once, and its UUID route opens before the POST settles.
+ */
 
 import { parseRequestId } from "@meridian/contracts/request-id";
-import type { CreateWorkRequest, Work } from "@meridian/contracts/works";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo } from "react";
+import type { CreateWorkRequest } from "@meridian/contracts/works";
+import { useCallback } from "react";
 
-import { createProjectWork, listProjectWorks } from "@/client/api/projects-api";
-import {
-  type CreationRecord,
-  createWithRecovery,
-  creationRecordKey,
-  readCreationRecord,
-  removeCreationRecord,
-  useCreationRecord,
-  useCreationRecords,
-  writeCreationRecord,
-} from "@/client/creation/creation-registry";
-import { convergeWorkProjection } from "@/client/query/work-projection-cache";
-import { repairWorksSnapshot } from "@/client/query/works-projection-acquisition";
-import { useAccountEpochSignal, useAccountId } from "../context/account-feature-context";
+import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
+import { useWorkMutations } from "@/client/query/work-commands";
 import type { ProjectRouteCommands } from "../routing/project-route";
 
 type CreateWorkInput = Omit<CreateWorkRequest, "id">;
-type WorkCreationPayload = {
-  workId: string;
-  projectId: string;
-  request: CreateWorkRequest & { id: string };
-};
-export type WorkCreationRecord = CreationRecord<WorkCreationPayload, Work> &
-  WorkCreationPayload & { work: Work | null };
-type CreateWorkVariables = WorkCreationPayload;
 
-function workCreationKey(workId: string): string {
-  return creationRecordKey("work", workId);
-}
-
-function workCreationView(record: CreationRecord<WorkCreationPayload, Work>): WorkCreationRecord {
-  return { ...record, ...record.payload, work: record.result };
-}
-
-function createWorkMutationOptions(
-  projectId: string,
-  client: ReturnType<typeof useQueryClient>,
-  accountId: string,
-  accountSignal: AbortSignal,
-) {
-  return {
-    mutationKey: ["projects", projectId, "work-create"],
-    mutationFn: ({ request }: CreateWorkVariables) =>
-      createWithRecovery(
-        () => createProjectWork(projectId, request, { signal: accountSignal }),
-        async () =>
-          (await listProjectWorks(projectId, { signal: accountSignal })).works.find(
-            (work) => work.id === request.id,
-          ) ?? null,
-      ),
-    onSuccess: (work: Work, variables: CreateWorkVariables) => {
-      const record = readCreationRecord<WorkCreationPayload, Work>(
-        workCreationKey(variables.workId),
-        accountId,
-      );
-      if (!record) return;
-      writeCreationRecord(accountId, {
-        ...record,
-        result: work,
-        status: "confirmed",
-        error: null,
-      });
-      convergeWorkProjection(client, { kind: "entity", projectId, operation: "create" });
-      void repairWorksSnapshot(client, projectId);
-    },
-    onError: (error: Error, variables: CreateWorkVariables) => {
-      const record = readCreationRecord<WorkCreationPayload, Work>(
-        workCreationKey(variables.workId),
-        accountId,
-      );
-      if (!record) return;
-      writeCreationRecord(accountId, { ...record, status: "failed", error: error.message });
-    },
-  };
-}
-
-function useWorkCreateMutation(projectId: string, accountId: string, accountSignal: AbortSignal) {
-  const client = useQueryClient();
-  return useMutation<Work, Error, CreateWorkVariables>(
-    createWorkMutationOptions(projectId, client, accountId, accountSignal),
-  );
-}
-
-/** Create inserts the pending entry and opens its UUID route before dispatching POST. */
+/** Create puts the Work in place and opens its route; the POST follows. */
 export function useCreateWork(projectId: string, routeCommands: ProjectRouteCommands) {
-  const accountId = useAccountId();
-  const accountSignal = useAccountEpochSignal();
-  const mutation = useWorkCreateMutation(projectId, accountId, accountSignal);
-
+  const { create: createCommand } = useWorkMutations(projectId);
   const create = useCallback(
     (input: CreateWorkInput): string => {
       const name = input.name.trim();
       if (!name) throw new Error("Work name is required");
       const workId = parseRequestId(crypto.randomUUID());
       if (!workId) throw new Error("Could not create Work identity");
-      const payload: WorkCreationPayload = {
-        workId,
-        projectId,
-        request: { ...input, name, id: workId },
-      };
-      writeCreationRecord(accountId, {
-        key: workCreationKey(workId),
-        payload,
-        result: null,
-        status: "pending",
-        error: null,
-      });
+      void createCommand({ workId, name, goal: input.goal });
       // Created from the works/new dialog: Back returns to the collection.
       void routeCommands.openWork({ kind: "work-detail", workId }, { replace: true });
-      mutation.mutate(payload);
       return workId;
     },
-    [accountId, mutation, projectId, routeCommands],
+    [createCommand, routeCommands],
   );
-
   return { create };
 }
 
-/** Retry or discard a failed creation; the route's `creating` state carries its name and phase. */
+const CREATE_OPERATIONS = ["create"] as const;
+
+/** Retry or discard a refused creation; the route's `creating` state carries its name and phase. */
 export function useWorkCreationRecovery(
   projectId: string,
   workId: string | null,
   routeCommands: ProjectRouteCommands,
 ) {
-  const accountId = useAccountId();
-  const accountSignal = useAccountEpochSignal();
-  const mutation = useWorkCreateMutation(projectId, accountId, accountSignal);
-  const record = useCreationRecord<WorkCreationPayload, Work>(
-    accountId,
-    workId ? workCreationKey(workId) : "",
-  );
-
-  const retry = useCallback(() => {
-    if (record?.status !== "failed") return;
-    writeCreationRecord(accountId, { ...record, status: "pending", error: null });
-    mutation.mutate(record.payload);
-  }, [accountId, mutation, record]);
+  const failure = useWorkCommandFailures(projectId, CREATE_OPERATIONS).get(workId ?? "");
+  const retry = useCallback(() => void failure?.retry(), [failure]);
   const discard = useCallback(() => {
-    if (record?.status !== "failed") return;
-    removeCreationRecord(record.key, accountId);
+    if (!failure) return;
+    failure.dismiss();
     void routeCommands.closeWork({ replace: true });
-  }, [accountId, record, routeCommands]);
-
+  }, [failure, routeCommands]);
   return { retry, discard };
-}
-
-/** Client-side creation projection consumed by the Work route and collection. */
-export function useWorkCreationRecords(projectId: string): WorkCreationRecord[] {
-  const accountId = useAccountId();
-  const records = useCreationRecords(accountId);
-  return useMemo(
-    () =>
-      Object.values(records)
-        .filter((record) => record.key.startsWith("work:"))
-        .map((record) => record as CreationRecord<WorkCreationPayload, Work>)
-        .filter((record) => record.payload.projectId === projectId)
-        .map(workCreationView),
-    [projectId, records],
-  );
 }

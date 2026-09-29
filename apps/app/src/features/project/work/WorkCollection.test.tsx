@@ -8,9 +8,16 @@ import type { Work, WorksSnapshot } from "@meridian/contracts/works";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { archiveWork, deleteWork, listProjectWorks, restoreWork } from "@/client/api/projects-api";
+import {
+  archiveWork,
+  createProjectWork,
+  deleteWork,
+  listProjectWorks,
+  restoreWork,
+} from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useWorks } from "@/client/query/useWorks";
+import { useWorkMutations } from "@/client/query/work-commands";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { WorksView } from "../routing/project-address";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
@@ -32,9 +39,9 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("@/client/query/useProjectCreation", () => ({
   useIsProjectPendingCreation: () => false,
 }));
-vi.mock("./useWorkCreation", () => ({ useWorkCreationRecords: () => [] }));
 vi.mock("@/client/api/projects-api", () => ({
   archiveWork: vi.fn(),
+  createProjectWork: vi.fn(),
   deleteWork: vi.fn(),
   listProjectWorks: vi.fn(),
   restoreWork: vi.fn(),
@@ -109,6 +116,12 @@ function CollectionHarness({
       <WorkCollection projectId={PROJECT_ID} routeCommands={routeCommands} deletion={deletion} />
     </>
   );
+}
+
+let createWork!: ReturnType<typeof useWorkMutations>["create"];
+function CommandHarness() {
+  createWork = useWorkMutations(PROJECT_ID).create;
+  return null;
 }
 
 function BandHarness({
@@ -494,6 +507,43 @@ describe("Work collection restore", () => {
           await showTab("archived");
           expect(rowNames()).toEqual(["Arc"]);
           expect(document.querySelector('[role="status"]')?.textContent).toBe("Restoring");
+        },
+        { drainMacrotask: true },
+      );
+    } finally {
+      client.clear();
+      vi.clearAllMocks();
+    }
+  });
+});
+
+describe("Work collection create", () => {
+  it("shows a Work being created, then the created Work in the same place", async () => {
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    client.setQueryData(projectQueryKeys.works(PROJECT_ID), snapshot([WORK]));
+    vi.mocked(listProjectWorks).mockImplementation(() => new Promise(() => undefined));
+    const post = deferred<Work>();
+    vi.mocked(createProjectWork).mockImplementation(() => post.promise);
+
+    try {
+      await withReactRoot(
+        <QueryClientProvider client={client}>
+          <CommandHarness />
+          <CollectionHarness />
+        </QueryClientProvider>,
+        async () => {
+          await act(async () => {
+            void createWork({ workId: CODA.id, name: "Coda" });
+          });
+          await act(() => vi.waitFor(() => expect(rowNames()).toEqual(["Coda", "Arc"])));
+          expect(document.querySelector('li [role="status"]')?.textContent).toBe("Creating");
+
+          await act(async () => post.resolve(CODA));
+          await act(() =>
+            vi.waitFor(() => expect(document.querySelector('li [role="status"]')).toBeNull()),
+          );
+          expect(rowNames()).toEqual(["Coda", "Arc"]);
+          expect(document.querySelector('[aria-label="Actions for Coda"]')).not.toBeNull();
         },
         { drainMacrotask: true },
       );

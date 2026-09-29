@@ -166,24 +166,29 @@ export function seedWorksSnapshot(
 }
 
 /**
- * Fallback when the read after a committed Work command fails: patch only the
- * fields that command owns into the snapshot, without claiming a newer
- * revision, so the next successful read still replaces it and no newer field
- * from another command is reverted.
+ * Fallback when the read after a committed Work command fails: install the
+ * Work as that command left it (only the fields it owns change; a created
+ * Work goes first), without claiming a newer revision, so the next successful
+ * read still replaces it and no newer field from another command is reverted.
  */
 export function installCommittedWork(
   client: QueryClient,
   projectId: string,
   workId: string,
-  fields: Partial<Work>,
+  apply: (work: Work | undefined) => Work | undefined,
 ): void {
   const current = currentSnapshot(client, projectId);
-  if (!current || !Object.keys(fields).length) return;
-  const patch = <T extends Work>(entry: T): T =>
-    entry.id === workId ? { ...entry, ...fields } : entry;
-  client.setQueryData(projectQueryKeys.works(projectId), {
-    ...current,
-    works: current.works.map(patch),
-    noWork: patch(current.noWork),
-  });
+  if (!current) return;
+  if (current.noWork.id === workId) {
+    const noWork = apply(current.noWork) as WorksSnapshot["noWork"] | undefined;
+    if (noWork) client.setQueryData(projectQueryKeys.works(projectId), { ...current, noWork });
+    return;
+  }
+  const existing = current.works.find((work) => work.id === workId);
+  const next = apply(existing) as WorksSnapshot["works"][number] | undefined;
+  if (!next || next === existing) return;
+  const works = existing
+    ? current.works.map((work) => (work.id === workId ? next : work))
+    : [next, ...current.works];
+  client.setQueryData(projectQueryKeys.works(projectId), { ...current, works });
 }

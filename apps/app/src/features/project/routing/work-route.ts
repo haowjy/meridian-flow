@@ -1,12 +1,10 @@
-/** Work catalog resolution, client creation state, and remembered Work routing. */
+/** Work catalog resolution, Works still being created, and remembered Work routing. */
 import type { Work } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { creationRecordKey, removeCreationRecord } from "@/client/creation/creation-registry";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { readCurrentWork, writeCurrentWork } from "@/client/current-work";
 import { useWorks } from "@/client/query/useWorks";
-import type { WorkCreationRecord } from "@/features/project/work/useWorkCreation";
-import { useWorkCreationRecords } from "@/features/project/work/useWorkCreation";
+import type { WorkCreation } from "@/client/query/work-commands";
 import { useAccountId } from "../context/account-feature-context";
 import type { ProjectAddress, ProjectDestination } from "./project-address";
 import {
@@ -19,7 +17,7 @@ import type { createProjectNavigation } from "./project-navigation";
 import type { RouteWorkResolution } from "./project-route";
 
 type WorkCatalog = AddressCatalog<Work> & {
-  creations: readonly WorkCreationRecord[];
+  creations: ReadonlyMap<string, WorkCreation>;
   isFetching: boolean;
 };
 type WorkNavigation = ReturnType<typeof createProjectNavigation>;
@@ -39,13 +37,6 @@ export function workRouteResolution(resolution: AddressResolution<Work>): RouteW
   return { status: "none" };
 }
 
-function workCreationForId(
-  workId: string,
-  creations: readonly WorkCreationRecord[],
-): WorkCreationRecord | undefined {
-  return creations.find((creation) => creation.workId === workId);
-}
-
 function resolveWorkId(workId: string, catalog: WorkCatalog): AddressResolution<Work> {
   const work = catalog.entries?.find((entry) => entry.id === workId);
   if (work) return { status: "resolved", value: work };
@@ -54,44 +45,23 @@ function resolveWorkId(workId: string, catalog: WorkCatalog): AddressResolution<
   return { status: "unavailable", id: workId };
 }
 
-/** One account-filtered projection of the server snapshot and confirmed creates. */
+const NO_WORKS: readonly Work[] = [];
+
+/** The projected Works a route can resolve, and those still being created. */
 export function useWorkCatalog(projectId: string): WorkCatalog {
-  const accountId = useAccountId();
   const works = useWorks(projectId);
-  const creations = useWorkCreationRecords(projectId);
-  const confirmed = useMemo(
-    () => creations.filter((creation) => creation.status === "confirmed" && creation.work),
-    [creations],
-  );
-  const entries = useMemo(() => {
-    const byId = new Map<string, Work>();
-    for (const work of works.works ?? []) byId.set(work.id, work);
-    for (const creation of confirmed) {
-      if (!byId.has(creation.workId) && creation.work) byId.set(creation.workId, creation.work);
-    }
-    return [...byId.values()];
-  }, [confirmed, works.works]);
-  const confirmedSnapshotIds = useMemo(
-    () => new Set(works.works?.map((work) => work.id) ?? []),
-    [works.works],
-  );
-
-  useEffect(() => {
-    if (works.status !== "ready" && works.status !== "empty") return;
-    for (const creation of confirmed) {
-      if (confirmedSnapshotIds.has(creation.workId)) {
-        removeCreationRecord(creationRecordKey("work", creation.workId), accountId);
-      }
-    }
-  }, [accountId, confirmed, confirmedSnapshotIds, works.status]);
-
   const status =
     works.status === "ready" || works.status === "empty"
       ? "ready"
       : works.status === "error"
         ? "error"
         : "loading";
-  return { status, entries, creations, isFetching: works.isFetching };
+  return {
+    status,
+    entries: works.works ?? NO_WORKS,
+    creations: works.creations,
+    isFetching: works.isFetching,
+  };
 }
 
 /** Owns Work route resolution plus both remembered-Work reads and writes. */
@@ -122,21 +92,17 @@ export function useWorkRoute({
   const workResolution = routeWorkId
     ? resolveWorkId(routeWorkId, catalog)
     : resolveAddressSelection(requestedWork, catalog);
-  const pendingCreation = routeWorkId
-    ? workCreationForId(routeWorkId, catalog.creations)
-    : undefined;
-  const pendingWorkId = pendingCreation ? parseRequestId(pendingCreation.workId) : null;
+  const creation = routeWorkId ? catalog.creations.get(routeWorkId) : undefined;
   const routeWork: RouteWorkResolution =
     destination.kind === "works-new"
       ? { status: "new" }
-      : pendingWorkId &&
-          (pendingCreation?.status === "pending" || pendingCreation?.status === "failed")
+      : routeWorkId && creation
         ? {
             status: "creating",
-            workId: pendingWorkId,
-            name: pendingCreation.request.name,
-            goal: pendingCreation.request.goal ?? null,
-            phase: pendingCreation.status,
+            workId: routeWorkId,
+            name: creation.work.name,
+            goal: creation.work.goal,
+            phase: creation.phase,
           }
         : workRouteResolution(workResolution);
 

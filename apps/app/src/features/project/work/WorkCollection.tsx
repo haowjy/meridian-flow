@@ -25,7 +25,6 @@ import {
 } from "./DeletedWorkList";
 import { useArchiveFocusFollow } from "./useArchiveFocusFollow";
 import { useWorkArchiveToggle } from "./useWorkArchiveToggle";
-import { useWorkCreationRecords } from "./useWorkCreation";
 import type { WorkDeletion } from "./useWorkDeletion";
 import { WorkActionsMenu } from "./WorkActionsMenu";
 import { WorkRow } from "./WorkRow";
@@ -39,8 +38,7 @@ export function WorkCollection({
   routeCommands: ProjectRouteCommands;
   deletion: WorkDeletion;
 }) {
-  const { works, deleted, isError, isFetching, refetch } = useWorks(projectId);
-  const creations = useWorkCreationRecords(projectId);
+  const { works, deleted, creations, isError, isFetching, refetch } = useWorks(projectId);
   const now = useMinuteClock();
   const view = routeCommands.worksView;
   const restore = useWorkRestore(projectId);
@@ -55,13 +53,8 @@ export function WorkCollection({
     collectionHeading.current?.focus();
     focusHandled.current = true;
   }, [works]);
-  const unfinishedCreations = creations.filter(
-    (creation) => creation.status === "pending" || creation.status === "failed",
-  );
-  const unfinishedIds = new Set(unfinishedCreations.map((creation) => creation.workId));
   // A deleting Work has already left `works`; its Undo row stands in its tab.
-  const listed = (status: Work["status"]) =>
-    works?.filter((work) => work.status === status && !unfinishedIds.has(work.id)) ?? [];
+  const listed = (status: Work["status"]) => works?.filter((work) => work.status === status) ?? [];
   const active = listed("active");
   const archived = listed("archived");
   const undoable = new Set(deletion.windows.map((window) => window.workId));
@@ -164,20 +157,16 @@ export function WorkCollection({
       ];
     });
   const activeRows: { key: string; node: ReactNode }[] = [
-    ...unfinishedCreations.map((creation) => ({
-      key: `creation-${creation.workId}`,
+    ...[...creations.values()].map(({ work, phase }) => ({
+      key: work.id,
       node: (
         <WorkRow
-          work={{
-            name: creation.request.name,
-            goal: creation.request.goal ?? null,
-            lastActivityAt: "",
-          }}
-          href={hrefForId(creation.workId)}
+          work={work}
+          href={hrefForId(work.id)}
           now={now}
-          onOpen={() => openWorkId(creation.workId)}
+          onOpen={() => openWorkId(work.id)}
           status={
-            creation.status === "failed" ? (
+            phase === "failed" ? (
               <span role="alert" className="text-destructive">
                 <Trans>Not created</Trans>
               </span>

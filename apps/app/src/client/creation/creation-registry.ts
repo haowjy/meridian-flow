@@ -1,4 +1,8 @@
-/** Account-scoped state for optimistic, client-addressable entity creation. */
+/**
+ * Account-scoped state for optimistic, client-addressable Project creation.
+ * Its loader short-circuit needs a store outside React; Works are created
+ * through the Work command model (`work-commands`) instead.
+ */
 import { createStore, useStore } from "zustand";
 
 export type CreationStatus = "pending" | "failed" | "confirmed";

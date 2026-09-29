@@ -69,6 +69,7 @@ export const projectCatalogFile = () => null;
 export const projectCatalogView = () => null;
 const settled = async () => null;
 export const useWorkMutations = (): WorkMutations => ({
+  create: settled,
   update: settled,
   archive: settled,
   unarchive: settled,

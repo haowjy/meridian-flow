@@ -10,6 +10,7 @@ import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import {
   archiveWork,
+  createProjectWork,
   deleteWork,
   listProjectWorks,
   unarchiveWork,
@@ -28,6 +29,7 @@ import {
   closeWorkDeleteWindow,
   useWorkMutations,
   type WorkCommandRecord,
+  type WorkCreation,
   type WorkMutations,
 } from "./work-commands";
 import { acquireWorksSnapshot } from "./works-projection-acquisition";
@@ -39,6 +41,7 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
 vi.mock("./useProjectCreation", () => ({ useIsProjectPendingCreation: () => false }));
 vi.mock("@/client/api/projects-api", () => ({
   archiveWork: vi.fn(),
+  createProjectWork: vi.fn(),
   deleteWork: vi.fn(),
   listProjectWorks: vi.fn(),
   restoreWork: vi.fn(),
@@ -88,19 +91,22 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-const OPERATIONS = ["update", "archive", "unarchive"] as const;
+const OPERATIONS = ["create", "update", "archive", "unarchive"] as const;
 type Seen = {
   works: Work[] | null;
+  creations: ReadonlyMap<string, WorkCreation>;
   failures: ReadonlyMap<string, WorkCommandFailure>;
   windows: readonly WorkDeleteWindow[];
 };
 let commands!: WorkMutations;
-let seen: Seen = { works: null, failures: new Map(), windows: [] };
+let seen: Seen = { works: null, creations: new Map(), failures: new Map(), windows: [] };
 const renders: Seen[] = [];
 function Probe() {
   commands = useWorkMutations(PROJECT_ID);
+  const works = useWorks(PROJECT_ID);
   seen = {
-    works: useWorks(PROJECT_ID).works,
+    works: works.works,
+    creations: works.creations,
     failures: useWorkCommandFailures(PROJECT_ID, OPERATIONS),
     windows: useWorkDeleteWindows(PROJECT_ID),
   };
@@ -380,5 +386,80 @@ describe("Work command projection", () => {
       expect(recordStatuses(client)).toEqual([]);
     });
     account.epoch = new AbortController();
+  });
+});
+
+describe("Work creation", () => {
+  const CREATED = { ...WORK, id: "work-3", name: "Draft three", slug: "draft-three" } as Work;
+
+  it("keeps a confirmed Work in every reader until the snapshot includes it", async () => {
+    const post = deferred<Work>();
+    vi.mocked(createProjectWork).mockImplementation(() => post.promise);
+    const refresh = deferred<WorksSnapshot>();
+    vi.mocked(listProjectWorks).mockImplementation(() => refresh.promise);
+    await withProbe(snapshot([WORK]), async (client) => {
+      // A read already on its way when the POST commits, without the new Work.
+      const staleRead = deferred<WorksSnapshot>();
+      const stale = acquireWorksSnapshot(client, PROJECT_ID, () => staleRead.promise);
+      await act(async () => {
+        void commands.create({ workId: CREATED.id, name: "Draft three" });
+      });
+      await settle(() => expect(seen.creations.get(CREATED.id)?.phase).toBe("pending"));
+      expect(seen.works?.map((work) => work.id)).toEqual([WORK.id]);
+
+      await act(async () => post.resolve(CREATED));
+      await settle(() => expect(seen.works?.map((work) => work.id)).toEqual([CREATED.id, WORK.id]));
+      const confirmed = renders.length - 1;
+      expect(seen.creations.size).toBe(0);
+
+      await act(async () => {
+        staleRead.resolve(snapshot([WORK], "2"));
+        await stale;
+      });
+      await act(async () => refresh.resolve(snapshot([CREATED, WORK], "3")));
+      await settle(() => expect(recordStatuses(client)).toEqual([]));
+      expect(seen.works?.map((work) => work.id)).toEqual([CREATED.id, WORK.id]);
+      for (const render of renders.slice(confirmed))
+        expect(render.works?.map((work) => work.id)).toContain(CREATED.id);
+    });
+  });
+
+  it("shows a refused Work as not created, and a retry creates it", async () => {
+    vi.mocked(createProjectWork)
+      .mockRejectedValueOnce(new Error("Rejected"))
+      .mockResolvedValueOnce(CREATED);
+    let server = snapshot([WORK]);
+    vi.mocked(listProjectWorks).mockImplementation(async () => server);
+    await withProbe(server, async () => {
+      await act(async () => {
+        void commands.create({ workId: CREATED.id, name: "Draft three" });
+      });
+      await settle(() => expect(seen.creations.get(CREATED.id)?.phase).toBe("failed"));
+      expect(seen.creations.get(CREATED.id)?.work.name).toBe("Draft three");
+      expect(seen.works?.map((work) => work.id)).toEqual([WORK.id]);
+
+      server = snapshot([CREATED, WORK], "2");
+      await act(async () => {
+        await seen.failures.get(CREATED.id)?.retry();
+      });
+      await settle(() => expect(seen.works?.map((work) => work.id)).toEqual([CREATED.id, WORK.id]));
+      expect(seen.creations.size).toBe(0);
+      expect(seen.failures.size).toBe(0);
+    });
+  });
+
+  it("recovers a Work whose POST response was lost, by its own id", async () => {
+    vi.mocked(createProjectWork).mockRejectedValue(new Error("Network lost"));
+    vi.mocked(listProjectWorks).mockImplementation(async () => snapshot([CREATED, WORK], "2"));
+    await withProbe(snapshot([WORK]), async (client) => {
+      let outcome: Error | null | undefined;
+      await act(async () => {
+        outcome = await commands.create({ workId: CREATED.id, name: "Draft three" });
+      });
+      expect(outcome).toBeNull();
+      await settle(() => expect(seen.works?.map((work) => work.id)).toEqual([CREATED.id, WORK.id]));
+      expect(recordStatuses(client)).toEqual([]);
+      expect(seen.creations.size).toBe(0);
+    });
   });
 });

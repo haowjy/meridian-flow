@@ -6,7 +6,7 @@ import type { WorkOperation } from "./work-commands";
 
 export type WorkProjectionChange =
   | { kind: "binding"; projectId: string }
-  | { kind: "entity"; projectId: string; operation: WorkOperation | "create" };
+  | { kind: "entity"; projectId: string; operation: WorkOperation };
 
 export function convergeWorkProjection(client: QueryClient, change: WorkProjectionChange): void {
   void client.invalidateQueries({ queryKey: projectQueryKeys.threads(change.projectId) });
