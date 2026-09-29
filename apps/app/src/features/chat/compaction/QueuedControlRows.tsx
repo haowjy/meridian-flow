@@ -1,15 +1,16 @@
 /**
- * Writer commands waiting at the transcript tail.
+ * Writer commands waiting in the queue.
  *
- * A command runs only once replies finish, and takes no transcript position
- * until then, so a queued `/compact` sits after the newest turn as a
- * dashed rule: the divider it will become, not yet drawn. Messages sent after
- * it render above it; it stays last until it runs. Withdraw is right after the
+ * The queue is the writer's order: a queued `/compact` sits among the queued
+ * messages exactly where it was sent (`placeQueuedControls`), as a dashed
+ * rule: the divider it will become, not yet drawn. It runs when it reaches the
+ * front, after the current reply and anything sent before it. The writer's
+ * instructions show under it verbatim, at once. Withdraw is right after the
  * words and removes the row at once. A command that already started says so
- * here until its divider shows. There is no Stop on a queued row: the
- * composer's Stop (Esc) runs the command at once. The rows carry no live
- * region: `useThreadControls` announces each change through the global polite
- * announcer, which also reaches a row scrolled out of the virtualized list.
+ * here until its divider shows. There is no Stop on a queued row. The rows
+ * carry no live region: `useThreadControls` announces each change through the
+ * global polite announcer, which also reaches a row scrolled out of the
+ * virtualized list.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -17,6 +18,7 @@ import { CircleAlert, FoldVertical } from "lucide-react";
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { CompactionInstructions } from "./CompactionInstructions";
 import { controlStatusCopy } from "./control-copy";
 import type { QueuedControl } from "./thread-controls";
 import { useFocusWithinRow } from "./useFocusWithinRow";
@@ -65,59 +67,63 @@ function QueuedControlRow({
   const failed = status === "failed";
   const canWithdraw = status === "queued" || status === "withdraw_failed";
   const settled = status === "already_started";
+  const instructions = control.control.instructions?.trim() ? control.control.instructions : null;
   return (
     <li
       data-queued-control={control.control.kind}
       data-queued-control-status={status}
-      className="flex min-w-0 flex-wrap items-center gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-inline)]"
+      className="flex min-w-0 flex-col gap-[var(--chat-space-inline)]"
     >
-      <span className="flex min-w-0 items-center gap-[var(--chat-space-block)]">
-        {failed ? (
-          <CircleAlert aria-hidden className="size-3.5 shrink-0 text-destructive" />
-        ) : (
-          <FoldVertical aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
-        )}
-        <span
-          className={cn(
-            "text-caption",
-            failed ? "text-destructive" : settled ? "text-ink-subtle" : "text-ink-muted",
+      <div className="flex min-w-0 flex-wrap items-center gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-inline)]">
+        <span className="flex min-w-0 items-center gap-[var(--chat-space-block)]">
+          {failed ? (
+            <CircleAlert aria-hidden className="size-3.5 shrink-0 text-destructive" />
+          ) : (
+            <FoldVertical aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
           )}
-        >
-          {controlStatusCopy(status)}
+          <span
+            className={cn(
+              "text-caption",
+              failed ? "text-destructive" : settled ? "text-ink-subtle" : "text-ink-muted",
+            )}
+          >
+            {controlStatusCopy(status)}
+          </span>
         </span>
-      </span>
-      {failed && onRetry ? (
-        <Button
-          type="button"
-          variant="quiet"
-          size="meta"
-          onClick={() => onRetry(control.id)}
-          aria-label={t`Retry queueing`}
-        >
-          <Trans>Retry</Trans>
-        </Button>
-      ) : null}
-      {canWithdraw && onWithdraw ? (
-        <Button
-          type="button"
-          variant="quiet"
-          size="meta"
-          aria-label={t`Withdraw compaction`}
-          onClick={() => onWithdraw(control)}
-        >
-          <Trans>Withdraw</Trans>
-        </Button>
-      ) : null}
-      {status === "withdraw_failed" ? (
-        <span className="text-caption text-destructive">{t`Couldn't withdraw. Try again.`}</span>
-      ) : null}
-      <span
-        aria-hidden
-        className={cn(
-          "min-w-6 flex-1 border-t border-dashed",
-          settled ? "border-border-subtle" : "border-border",
-        )}
-      />
+        {failed && onRetry ? (
+          <Button
+            type="button"
+            variant="quiet"
+            size="meta"
+            onClick={() => onRetry(control.id)}
+            aria-label={t`Retry queueing`}
+          >
+            <Trans>Retry</Trans>
+          </Button>
+        ) : null}
+        {canWithdraw && onWithdraw ? (
+          <Button
+            type="button"
+            variant="quiet"
+            size="meta"
+            aria-label={t`Withdraw compaction`}
+            onClick={() => onWithdraw(control)}
+          >
+            <Trans>Withdraw</Trans>
+          </Button>
+        ) : null}
+        {status === "withdraw_failed" ? (
+          <span className="text-caption text-destructive">{t`Couldn't withdraw. Try again.`}</span>
+        ) : null}
+        <span
+          aria-hidden
+          className={cn(
+            "min-w-6 flex-1 border-t border-dashed",
+            settled ? "border-border-subtle" : "border-border",
+          )}
+        />
+      </div>
+      {instructions ? <CompactionInstructions instructions={instructions} /> : null}
     </li>
   );
 }

@@ -22,7 +22,8 @@ export type ComposerChatCommand = {
   slug: ComposerChatCommandSlug;
   name: string;
   description: string;
-  run: () => void;
+  /** `instructions` is the text typed after the verb, trimmed; null when none. */
+  run: (instructions: string | null) => void;
 };
 
 export type ComposerCommandItem =
@@ -87,6 +88,23 @@ export function composerSkillCommandItems(
       name: skill.name,
       description: skill.description,
     }));
+}
+
+/**
+ * A sent draft that is a registered verb: `/compact` alone, or followed by
+ * whitespace and the writer's instructions for it. Anything else, including
+ * an unregistered verb, sends as an ordinary message.
+ */
+export function matchComposerChatCommand(
+  text: string,
+  commands: readonly ComposerChatCommand[],
+): { command: ComposerChatCommand; instructions: string | null } | null {
+  const match = /^\s*\/([a-z][a-z0-9-]*)(?:\s+([\s\S]*))?$/u.exec(text);
+  if (!match) return null;
+  const command = commands.find((candidate) => candidate.slug === match[1]);
+  if (!command) return null;
+  const instructions = match[2]?.trim() ?? "";
+  return { command, instructions: instructions || null };
 }
 
 function fuzzyScore(value: string, query: string): number | null {

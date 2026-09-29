@@ -4,6 +4,7 @@ import {
   composerChatCommandItems,
   composerSkillCommandItems,
   filterComposerCommandItems,
+  matchComposerChatCommand,
 } from "./command-catalog";
 
 describe("composer chat verbs", () => {
@@ -22,5 +23,34 @@ describe("composer chat verbs", () => {
       { kind: "command", group: "chat", slug: "compact" },
     ]);
     expect(filterComposerCommandItems(items, "comp")[0]?.slug).toBe("compact");
+  });
+});
+
+describe("typed chat verbs", () => {
+  const compact = {
+    slug: "compact",
+    name: "Compact conversation",
+    description: "d",
+    run: () => undefined,
+  } as const;
+  const match = (text: string) => {
+    const found = matchComposerChatCommand(text, [compact]);
+    return found ? found.instructions : "message";
+  };
+
+  it("takes the rest of the draft as trimmed instructions; empty is none", () => {
+    expect(match("/compact")).toBeNull();
+    expect(match("  /compact   ")).toBeNull();
+    expect(match("/compact Keep the sect names")).toBe("Keep the sect names");
+    expect(match("/compact\nKeep the oath\n\nand the debts ")).toBe(
+      "Keep the oath\n\nand the debts",
+    );
+  });
+
+  it("leaves everything else as a message", () => {
+    expect(match("/compactly")).toBe("message");
+    expect(match("please /compact")).toBe("message");
+    expect(match("/handoff now")).toBe("message");
+    expect(matchComposerChatCommand("/compact", [])).toBeNull();
   });
 });

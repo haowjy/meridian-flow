@@ -43,13 +43,17 @@ export function useThreadControls(input: {
   pending: ThreadPendingInbox;
   answeredControlIds: ReadonlySet<string>;
   leafTurnId: string | null;
+  /** The newest writer turn still waiting to be read: a new command queues after it. */
+  queueTailTurnId: string | null;
 }): ThreadControls {
-  const { threadId, pending, answeredControlIds, leafTurnId } = input;
+  const { threadId, pending, answeredControlIds, leafTurnId, queueTailTurnId } = input;
   const [local, dispatch] = useReducer(controlsReducer, NO_LOCAL);
   const localRef = useRef(local);
   localRef.current = local;
   const leafRef = useRef(leafTurnId);
   leafRef.current = leafTurnId;
+  const queueTailRef = useRef(queueTailTurnId);
+  queueTailRef.current = queueTailTurnId;
   /** In-flight enqueues, resolving to whether the server took the command. */
   const inflight = useRef(new Map<string, Promise<boolean>>());
   const queryClient = useQueryClient();
@@ -95,7 +99,7 @@ export function useThreadControls(input: {
   const enqueue = useCallback(
     (control: ControlBody) => {
       const id = crypto.randomUUID();
-      dispatch({ type: "enqueue", id, control });
+      dispatch({ type: "enqueue", id, control, afterTurnId: queueTailRef.current });
       announce(controlStatusCopy("queued"));
       send(id, control);
       return id;

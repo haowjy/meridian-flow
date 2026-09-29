@@ -16,6 +16,8 @@ vi.mock("@/rich-content/Markdown", () => ({
 import type { Turn } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { type TurnDerivation, TurnDerivationProvider } from "../derivation/DeriveTurnActions";
 import { CompactionDivider, type CompactionDividerProps } from "./CompactionDivider";
 import { QueuedControlRows } from "./QueuedControlRows";
 import type { QueuedControl } from "./thread-controls";
@@ -24,6 +26,11 @@ const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?:
 const previousActEnvironment = actGlobal.IS_REACT_ACT_ENVIRONMENT;
 beforeAll(() => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = true;
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    disconnect() {}
+    unobserve() {}
+  } as unknown as typeof ResizeObserver;
 });
 afterAll(() => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
@@ -63,10 +70,28 @@ function divider(overrides: Record<string, unknown> = {}): Turn {
   } as unknown as Turn;
 }
 
-async function render(props: Partial<CompactionDividerProps> & { turn: Turn }) {
+async function render(
+  props: Partial<CompactionDividerProps> & { turn: Turn },
+  derivation: TurnDerivation | null = null,
+) {
   await act(async () =>
-    root.render(<CompactionDivider phase={null} stopping={false} {...props} />),
+    root.render(
+      <TooltipProvider>
+        <TurnDerivationProvider value={derivation}>
+          <CompactionDivider phase={null} stopping={false} {...props} />
+        </TurnDerivationProvider>
+      </TooltipProvider>,
+    ),
   );
+}
+
+function derivation(): TurnDerivation {
+  return {
+    projectId: "project",
+    sourceAgent: { name: "General", definitionRevisionId: null },
+    fork: vi.fn(),
+    handoff: vi.fn(),
+  };
 }
 
 const button = (name: string) =>
@@ -122,6 +147,51 @@ describe("CompactionDivider", () => {
     expect(names).toEqual(["Summary"]);
   });
 
+  it("complete: a compaction is a turn whose only action is Fork", async () => {
+    const actions = derivation();
+    await render({ turn: divider() }, actions);
+    const names = [...host.querySelectorAll("button")].map(
+      (candidate) => candidate.getAttribute("aria-label") ?? candidate.textContent,
+    );
+    expect(names).toEqual(["Summary", "Fork from here"]);
+    await act(async () => button("Fork from here")?.click());
+    expect(actions.fork).toHaveBeenCalledWith("c");
+  });
+
+  it("offers Fork only once the compaction finished", async () => {
+    await render(
+      { turn: divider({ status: "pending", blocks: [] }), onStop: vi.fn() },
+      derivation(),
+    );
+    expect(button("Fork from here")).toBeUndefined();
+    await render({ turn: divider({ status: "cancelled", blocks: [] }) }, derivation());
+    expect(button("Fork from here")).toBeUndefined();
+  });
+
+  it("shows the writer's instructions verbatim under the line", async () => {
+    await render({
+      turn: divider({
+        metadata: {
+          trigger: "manual",
+          controlMessageId: "k",
+          instructions: "Keep  Mei's oath\nverbatim",
+        },
+      }),
+    });
+    expect(host.querySelector("[data-compaction-instructions]")?.textContent).toBe(
+      "Keep  Mei's oath\nverbatim",
+    );
+  });
+
+  it("a plain /compact shows no instructions", async () => {
+    await render({ turn: divider() });
+    expect(host.querySelector("[data-compaction-instructions]")).toBeNull();
+    await render({
+      turn: divider({ metadata: { trigger: "manual", controlMessageId: "k", instructions: 7 } }),
+    });
+    expect(host.querySelector("[data-compaction-instructions]")).toBeNull();
+  });
+
   it("names the section in full and keeps a short label for a narrow column", async () => {
     await render({ turn: divider({ metadata: { trigger: "auto" } }) });
     const section = host.querySelector("[data-compaction-divider]");
@@ -155,22 +225,6 @@ describe("CompactionDivider", () => {
     expect(host.textContent).toContain("This conversation couldn't be compacted. Try again.");
   });
 
-  it("nothing to compact: reads calmly, never as an error", async () => {
-    // Expected after an automatic compaction took care of what /compact queued for.
-    await render({
-      turn: divider({
-        status: "error",
-        blocks: [],
-        error: "There is nothing to compact yet.",
-        metadata: { trigger: "manual", reason: "nothing_to_compact", phase: "initial_prepare" },
-      }),
-    });
-    const section = host.querySelector("[data-compaction-divider]");
-    expect(section?.getAttribute("aria-label")).toBe("There is nothing to compact yet");
-    expect(host.textContent).not.toContain("Couldn't compact");
-    expect(host.querySelector(".text-destructive")).toBeNull();
-  });
-
   it("failed auto: quiet, no error copy (R3)", async () => {
     await render({
       turn: divider({
@@ -196,14 +250,16 @@ describe("QueuedControlRows", () => {
     id: "k",
     control: { kind: "compact" },
     status,
+    afterTurnId: null,
   });
 
-  it("renders a queued /compact that says when it runs, with Withdraw and no Stop", async () => {
+  it("renders a queued /compact quietly, with Withdraw and no Stop", async () => {
     const onWithdraw = vi.fn();
     await act(async () =>
       root.render(<QueuedControlRows controls={[compact("queued")]} onWithdraw={onWithdraw} />),
     );
-    expect(host.textContent).toContain("Compaction queued. Runs when replies finish.");
+    expect(host.textContent).toBe("Compaction queuedWithdraw");
+    expect(host.querySelector("[data-compaction-instructions]")).toBeNull();
     expect(button("Stop")).toBeUndefined();
     await act(async () => button("Withdraw compaction")?.click());
     expect(onWithdraw).toHaveBeenCalledWith(compact("queued"));
@@ -230,6 +286,17 @@ describe("QueuedControlRows", () => {
     );
     expect(host.textContent).toContain("Couldn't withdraw. Try again.");
     expect(button("Withdraw compaction")).toBeDefined();
+  });
+
+  it("shows the writer's instructions verbatim at once", async () => {
+    const withInstructions = {
+      ...compact("queued"),
+      control: { kind: "compact" as const, instructions: "Keep the sect names\nand the debts" },
+    };
+    await act(async () => root.render(<QueuedControlRows controls={[withInstructions]} />));
+    expect(host.querySelector("[data-compaction-instructions]")?.textContent).toBe(
+      "Keep the sect names\nand the debts",
+    );
   });
 
   it("keeps a failed enqueue on the item with Retry", async () => {

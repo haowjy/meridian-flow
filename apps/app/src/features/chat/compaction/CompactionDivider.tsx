@@ -3,12 +3,14 @@
  *
  * One quiet rule across the transcript, with the state in words at its start
  * and its controls right after the words (bare transcript rows never
- * right-align controls). The summary sits behind a disclosure; a running
- * compaction's Stop lives on the same line. A manual compaction's failure
- * speaks on the divider it belongs to; a `/compact` that found nothing new to
- * compact reads calmly. An autocompaction's failure stays quiet (R3): the failed
- * reply under the writer's newest message already says so. State changes are
- * spoken by the global polite announcer, never a live region on the row.
+ * right-align controls). A compaction is a turn: once it finishes, its action
+ * is Fork (no Copy, no Hand off), revealed like a reply's actions. The summary
+ * sits behind a disclosure; a running compaction's Stop lives on the same
+ * line. The writer's `/compact <instructions>` sit under the line, verbatim. A
+ * manual compaction's failure speaks on the divider it belongs to. An
+ * autocompaction's failure stays quiet (R3): the failed reply under the
+ * writer's newest message already says so. State changes are spoken by the
+ * global polite announcer, never a live region on the row.
  */
 import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
@@ -20,6 +22,8 @@ import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
+import { ForkTurnAction } from "../derivation/DeriveTurnActions";
+import { CompactionInstructions } from "./CompactionInstructions";
 import { type DividerView, dividerView } from "./compaction-model";
 import { useFocusWithinRow } from "./useFocusWithinRow";
 
@@ -66,8 +70,6 @@ function stateLabel(view: DividerView, phase: ThreadPhase | null, stopping: bool
         ? { full: t`Conversation compacted`, short: t`Compacted` }
         : { full: t`Conversation compacted automatically`, short: t`Compacted` };
     case "failed":
-      if (view.nothingToCompact)
-        return { full: t`There is nothing to compact yet`, short: t`Nothing to compact` };
       return view.trigger === "manual"
         ? same(t`Couldn't compact`)
         : { full: t`Conversation not compacted`, short: t`Not compacted` };
@@ -104,9 +106,7 @@ export function CompactionDivider({ turn, phase, stopping, onStop }: CompactionD
           <span
             className={cn(
               "min-w-0 truncate text-caption font-medium",
-              view.state === "failed" && !loud && !view.nothingToCompact
-                ? "text-ink-subtle"
-                : "text-ink-muted",
+              view.state === "failed" && !loud ? "text-ink-subtle" : "text-ink-muted",
             )}
           >
             <span className="hidden @lg/divider:inline">{label.full}</span>
@@ -148,8 +148,19 @@ export function CompactionDivider({ turn, phase, stopping, onStop }: CompactionD
           </Button>
         ) : null}
 
+        {view.state === "complete" ? (
+          <span
+            data-compaction-actions
+            className="compaction-divider-actions flex shrink-0 transition-opacity"
+          >
+            <ForkTurnAction turnId={turn.id} />
+          </span>
+        ) : null}
+
         <span aria-hidden className="h-px min-w-3 flex-1 bg-border" />
       </div>
+
+      {view.instructions ? <CompactionInstructions instructions={view.instructions} /> : null}
 
       {view.failureCopy ? (
         <p className="text-caption text-destructive">{view.failureCopy}</p>

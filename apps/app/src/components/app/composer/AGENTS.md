@@ -16,6 +16,9 @@ This directory owns authored text, reference atoms, skill atoms, and pending/fai
   the atoms; typed `/slug` prose is not an activation. Session verbs (`compact`,
   `handoff`, `clear`) are reserved slugs a skill can never take. A surface that
   owns a thread registers the verbs it can run through `commands`; choosing one
-  deletes the trigger text and runs it, never inserting message content. Only
-  `/compact` is registered today. Manuscript slash insertion is a different
-  catalog.
+  deletes the trigger text and runs it, never inserting message content.
+  Sending a draft that is a registered verb (`/compact`, optionally followed by
+  whitespace and text) runs it with the trimmed rest as `instructions` and
+  clears the draft; an unregistered verb sends as a message. Only `/compact` is
+  registered today, and only once the chat has a completed reply. Manuscript
+  slash insertion is a different catalog.
