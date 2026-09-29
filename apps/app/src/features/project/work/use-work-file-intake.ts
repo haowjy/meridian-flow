@@ -1,17 +1,31 @@
 /**
  * Files a writer is adding to a Work: uploads and new scratch notes, each an
- * attempt row until the catalog has it. Attempts live per Work outside the
+ * attempt row until the catalog has it. An upload the server has taken keeps
+ * its row until the Uploads catalog lists the same document, so the file never
+ * drops out of the list between the two. Attempts live per Work outside the
  * Files tab, so a failure stays where the writer left it across tab switches.
  */
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { create } from "zustand";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { uniqueScratchNoteName } from "./work-file-names";
 
-export type FileAttempt = { key: string; name: string; state: "pending" | "failed" };
+export type FileAttempt = {
+  key: string;
+  name: string;
+  state: "pending" | "failed";
+  /** Set once the server has the upload; the row stays until the catalog lists it. */
+  documentId?: string;
+};
+
+/** The catalog an upload lands in, looked up by the document the server made. */
+type UploadCatalog = { findDocument(documentId: string): unknown } | null | undefined;
+
+const listedIn = (catalog: UploadCatalog) => (attempt: FileAttempt) =>
+  attempt.documentId !== undefined && Boolean(catalog?.findDocument(attempt.documentId));
 
 type WorkIntake = { uploads: readonly FileAttempt[]; note: FileAttempt | null };
 
@@ -27,13 +41,34 @@ function update(workId: string, change: (intake: WorkIntake) => WorkIntake): voi
   }));
 }
 
-const settle = (attempts: readonly FileAttempt[], key: string, failed: boolean) =>
-  failed
-    ? attempts.map((item) => (item.key === key ? { ...item, state: "failed" as const } : item))
-    : attempts.filter((item) => item.key !== key);
+const settle = (
+  attempts: readonly FileAttempt[],
+  key: string,
+  outcome: { documentId: string } | "failed",
+) =>
+  attempts.map((item) =>
+    item.key !== key
+      ? item
+      : outcome === "failed"
+        ? { ...item, state: "failed" as const }
+        : { ...item, documentId: outcome.documentId },
+  );
 
-export function useWorkFileIntake(projectId: string, workId: string) {
+export function useWorkFileIntake(projectId: string, workId: string, uploadCatalog: UploadCatalog) {
   const intake = useIntakeStore((state) => state.byWork[workId] ?? EMPTY);
+  // The catalog row and the retired attempt swap in the same render; the
+  // store is pruned after, so a listed upload never shows twice.
+  const listed = listedIn(uploadCatalog);
+  const uploads = intake.uploads.filter((attempt) => !listed(attempt));
+  const landed = uploads.length !== intake.uploads.length;
+  useEffect(() => {
+    if (!landed) return;
+    const retire = listedIn(uploadCatalog);
+    update(workId, (current) => ({
+      ...current,
+      uploads: current.uploads.filter((attempt) => !retire(attempt)),
+    }));
+  }, [landed, uploadCatalog, workId]);
   const createEntry = useCreateContextEntry(projectId);
   const queryClient = useQueryClient();
 
@@ -50,22 +85,23 @@ export function useWorkFileIntake(projectId: string, workId: string) {
       }));
       return Promise.all(
         batch.map(async ({ file, key }) => {
-          let failed = false;
+          let outcome: { documentId: string } | "failed";
           try {
-            await uploadIntakePort.intake({
+            const { documentId } = await uploadIntakePort.intake({
               file,
               intakeId: key,
               scope: { kind: "work", projectId, workId },
             });
+            outcome = { documentId };
             void queryClient.invalidateQueries({
               queryKey: projectQueryKeys.contextCatalogView(projectId, "uploads", workId),
             });
           } catch {
-            failed = true;
+            outcome = "failed";
           }
           update(workId, (current) => ({
             ...current,
-            uploads: settle(current.uploads, key, failed),
+            uploads: settle(current.uploads, key, outcome),
           }));
         }),
       );
@@ -126,7 +162,7 @@ export function useWorkFileIntake(projectId: string, workId: string) {
   );
 
   return {
-    uploads: intake.uploads,
+    uploads,
     note: intake.note,
     submitFiles,
     createNote,

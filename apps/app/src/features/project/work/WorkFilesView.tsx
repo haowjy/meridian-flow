@@ -26,7 +26,7 @@ import { catalogSiblingNames, filterWorkFileGroups, workFileSearch } from "./wor
 export function useWorkFiles(projectId: string, work: AddressableWork) {
   const scratch = useContextCatalogView(projectId, "scratch", { workId: work.id });
   const uploads = useContextCatalogView(projectId, "uploads", { workId: work.id });
-  const intake = useWorkFileIntake(projectId, work.id);
+  const intake = useWorkFileIntake(projectId, work.id, uploads.catalog);
   const [renaming, setRenaming] = useState<string | null>(null);
   const picker = useRef<HTMLInputElement>(null);
   const scratchNames = () =>

@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
-/** Files dropped on a Work upload side by side, and their rows outlive the tab that started them. */
+/**
+ * Files dropped on a Work upload side by side, their rows outlive the tab that
+ * started them, and a finished upload keeps its row until the catalog lists it.
+ */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act } from "react";
+import { act, useState } from "react";
 import { expect, it, vi } from "vitest";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -13,20 +16,26 @@ vi.mock("@/client/query/useCreateContextEntry", () => ({
 }));
 
 function deferred() {
-  let resolve!: () => void;
+  let resolve!: (value?: { documentId: string }) => void;
   let reject!: (error: Error) => void;
-  const promise = new Promise<void>((done, fail) => {
+  const promise = new Promise<{ documentId: string } | undefined>((done, fail) => {
     resolve = done;
     reject = fail;
   });
   return { promise, resolve, reject };
 }
 
+type Catalog = { findDocument(documentId: string): unknown } | null;
+
 let intake!: ReturnType<typeof useWorkFileIntake>;
-function Probe({ workId }: { workId: string }) {
-  intake = useWorkFileIntake("project-1", workId);
+function Probe({ workId, catalog = null }: { workId: string; catalog?: Catalog }) {
+  intake = useWorkFileIntake("project-1", workId, catalog);
   return null;
 }
+
+const catalogOf = (...documentIds: string[]): Catalog => ({
+  findDocument: (documentId) => (documentIds.includes(documentId) ? { documentId } : null),
+});
 
 it("sends every file at once, and keeps a refused upload after the tab remounts", async () => {
   const first = deferred();
@@ -54,19 +63,54 @@ it("sends every file at once, and keeps a refused upload after the tab remounts"
       ]);
       await act(async () => {
         second.reject(new Error("Rejected"));
-        first.resolve();
+        first.resolve({ documentId: "doc-a" });
         await upload;
       });
-      expect(intake.uploads.map((item) => [item.name, item.state])).toEqual([["b.md", "failed"]]);
+      // a.md has landed but the catalog does not list it yet: its row stays.
+      expect(intake.uploads.map((item) => [item.name, item.state])).toEqual([
+        ["a.md", "pending"],
+        ["b.md", "failed"],
+      ]);
     },
     { drainMacrotask: true },
   );
-  // The Files tab mounts again: the refused upload is still there to dismiss.
+  // The Files tab mounts again with a.md listed: its attempt retires, and the
+  // refused upload is still there to dismiss.
   await withReactRoot(
-    tab,
+    <QueryClientProvider client={client}>
+      <Probe workId="work-1" catalog={catalogOf("doc-a")} />
+    </QueryClientProvider>,
     async () => {
       expect(intake.uploads.map((item) => item.name)).toEqual(["b.md"]);
       await act(async () => intake.dismissUpload(intake.uploads[0]?.key ?? ""));
+      expect(intake.uploads).toEqual([]);
+    },
+    { drainMacrotask: true },
+  );
+});
+
+it("retires a finished upload once its catalog lists it", async () => {
+  vi.mocked(uploadIntakePort.intake).mockResolvedValueOnce({ documentId: "doc-c" } as never);
+  const client = new QueryClient();
+  let setCatalog!: (catalog: Catalog) => void;
+  function Tab() {
+    const [catalog, update] = useState<Catalog>(catalogOf());
+    setCatalog = update;
+    return <Probe workId="work-2" catalog={catalog} />;
+  }
+  await withReactRoot(
+    <QueryClientProvider client={client}>
+      <Tab />
+    </QueryClientProvider>,
+    async () => {
+      await act(async () => {
+        await intake.submitFiles([new File(["c"], "c.md")]);
+      });
+      expect(intake.uploads.map((item) => [item.name, item.state])).toEqual([["c.md", "pending"]]);
+      await act(async () => setCatalog(catalogOf("doc-c")));
+      expect(intake.uploads).toEqual([]);
+      // Retired, not hidden: a later catalog without it does not bring the row back.
+      await act(async () => setCatalog(catalogOf()));
       expect(intake.uploads).toEqual([]);
     },
     { drainMacrotask: true },
