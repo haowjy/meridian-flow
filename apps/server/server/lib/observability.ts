@@ -67,7 +67,7 @@ export function registerProcessShutdownCallback(callback: () => Promise<void> | 
   state().shutdownCallbacks.push(callback);
 }
 
-export function shutdownProcessResources(): Promise<void> {
+function shutdownProcessResources(): Promise<void> {
   const current = state();
   if (!current.shutdownPromise) {
     let deadline: ReturnType<typeof setTimeout>;

@@ -10,7 +10,6 @@ import {
   getOrBindProcessObservability,
   installObservabilityShutdownHooks,
   registerProcessShutdownCallback,
-  shutdownProcessResources,
 } from "../lib/observability";
 import { installApiProcessCrashPolicy } from "../lib/process-crash-policy";
 import { assertApiStartupGuards } from "../lib/startup-guards";
@@ -22,10 +21,7 @@ let yjsGateway: ReturnType<typeof getYjsGateway> | undefined;
 installApiProcessCrashPolicy({ eventSink });
 installObservabilityShutdownHooks();
 
-export default async function startupPlugin(app: {
-  hooks: { hook(name: "close", handler: () => Promise<void>): void };
-}) {
-  app.hooks.hook("close", shutdownProcessResources);
+export default async function startupPlugin() {
   const { warnings, replicaCount, durableEventBackend } = await assertApiStartupGuards();
   for (const warning of warnings) {
     emitEvent(eventSink, {
