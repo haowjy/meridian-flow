@@ -1,9 +1,12 @@
 /** POST /api/threads/[threadId]/handoff/brief: append and launch a retry seed. */
+import { handoffBriefRetryRequestSchema, serializeTransport } from "@meridian/contracts/protocol";
 import {
-  handoffBriefRetryRequestSchema,
-  serializeTransport,
-} from "@meridian/contracts/protocol";
-import { createError, defineEventHandler, getRouterParam, readBody, setResponseStatus } from "nitro/h3";
+  createError,
+  defineEventHandler,
+  getRouterParam,
+  readBody,
+  setResponseStatus,
+} from "nitro/h3";
 import { HandoffRetryError } from "../../../../../domains/runtime/index.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../../lib/request-id.js";

@@ -4,8 +4,8 @@ import type { ThreadLeaseState, ThreadStatus } from "@meridian/contracts/threads
 import type { Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import type { ThreadStatusReader } from "../../threads/ports/repositories.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import type { ThreadStatusReader } from "../../threads/ports/repositories.js";
 
 export function createDrizzleHandoffStatusReader(
   db: Database,
