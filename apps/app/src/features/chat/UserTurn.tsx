@@ -199,7 +199,9 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
         </div>
       ) : null}
       {handoff ? (
-        // Revealed on hover or focus like a reply's actions; always shown on touch.
+        // Revealed on hover or focus like a reply's actions. With a mouse it sits
+        // beside the bubble and takes no height; on touch it is a row under it,
+        // always shown (globals.css).
         <div
           className="user-turn-actions mt-[var(--chat-space-inline)] flex min-h-6 items-center justify-end gap-[var(--chat-space-inline)] transition-opacity"
           data-user-turn-actions
