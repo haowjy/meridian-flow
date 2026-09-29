@@ -187,6 +187,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
       finish(prepared, handle).catch((error) => {
         observeCleanupFailure(prepared, "child.background_driver_failed", error);
       }),
+      "background child completion",
     );
     return handle.executionTurnId;
   }

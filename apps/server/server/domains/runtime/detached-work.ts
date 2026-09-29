@@ -1,27 +1,31 @@
 /** Tracks detached runtime promises so shutdown and test resets can drain them. */
 
 export interface DetachedWorkTracker {
-  track<T>(work: PromiseLike<T>): Promise<T>;
+  track<T>(work: PromiseLike<T>, name?: string): Promise<T>;
   drain(timeoutMs?: number): Promise<boolean>;
   readonly pendingCount: number;
+  readonly pendingTasks: readonly string[];
 }
 
 export function createDetachedWorkTracker(): DetachedWorkTracker {
-  const pending = new Set<Promise<void>>();
+  const pending = new Map<Promise<void>, string>();
 
-  function track<T>(work: PromiseLike<T>): Promise<T> {
+  function track<T>(work: PromiseLike<T>, name = "runtime background task"): Promise<T> {
     const task = Promise.resolve(work);
     const settled = task.then(
       () => undefined,
       () => undefined,
     );
-    pending.add(settled);
+    pending.set(settled, name);
     void settled.then(() => pending.delete(settled));
     return task;
   }
 
   async function waitForQuiescence(): Promise<void> {
-    while (pending.size > 0) await Promise.all([...pending]);
+    while (pending.size > 0) {
+      await Promise.all(pending.keys());
+      if (pending.size > 0) await new Promise<void>((resolve) => setImmediate(resolve));
+    }
   }
 
   async function drain(timeoutMs = Number.POSITIVE_INFINITY): Promise<boolean> {
@@ -45,6 +49,9 @@ export function createDetachedWorkTracker(): DetachedWorkTracker {
     drain,
     get pendingCount() {
       return pending.size;
+    },
+    get pendingTasks() {
+      return [...pending.values()];
     },
   };
 }

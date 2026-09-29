@@ -89,7 +89,9 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
   const treeBudget = createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) });
 
   function schedulePostCommit(task: () => Promise<void>) {
-    deps.schedulePostCommit(() => backgroundTasks.track(Promise.resolve().then(task)));
+    deps.schedulePostCommit(() =>
+      backgroundTasks.track(Promise.resolve().then(task), "handoff post-commit callback"),
+    );
   }
 
   function publishStatus(threadId: ThreadId) {
@@ -280,6 +282,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
                 payload: unknownToEventPayload(error),
               });
             }),
+          "handoff stop poll",
         );
       }, REMOTE_STOP_POLL_MS);
       poll.unref();
@@ -371,7 +374,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     claim: HandoffBriefHold;
   }) {
     deps.schedulePostCommit(async () => {
-      backgroundTasks.track(startLaunch(input));
+      backgroundTasks.track(startLaunch(input), "handoff brief launch");
     });
   }
 

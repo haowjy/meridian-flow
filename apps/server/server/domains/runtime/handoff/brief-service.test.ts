@@ -2,7 +2,6 @@
 import { describe, expect, it } from "vitest";
 import { createInMemoryRepositories } from "../../threads/adapters/in-memory/repositories.js";
 import { handoffSeedMetadata } from "../../threads/index.js";
-import { processDetachedWork } from "../detached-work.js";
 import { createRuntimeHarness, runtimeScenario } from "../loop/__tests__/runtime-harness.js";
 import { scriptedGateway } from "../loop/__tests__/test-gateway.js";
 import { createRunStarter } from "../loop/run-starter.js";
@@ -190,7 +189,6 @@ describe("handoff brief service", () => {
     await required(scheduled.shift())();
     await providerStarted;
     service.beginShutdown();
-    await processDetachedWork.drain();
     await releaseFinished;
 
     expect(providerSignal.reason).toBe("shutdown");

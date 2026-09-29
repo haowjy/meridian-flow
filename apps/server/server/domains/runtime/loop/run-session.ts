@@ -94,14 +94,22 @@ export function createRunSessions(deps: {
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     let preparedRun = false;
     let setupMayWake = false;
+    let skipCleanupWake = false;
     const unacknowledgedReceiptIds = new Set<string>();
-    async function retainReceiptIds(heldLease: Lease) {
+    async function retainReceiptIds(heldLease: Lease): Promise<boolean> {
       try {
-        for (const id of await deps.delivery.readRunReceiptIds(heldLease))
-          unacknowledgedReceiptIds.add(id);
+        const ids = await deps.delivery.readRunReceiptIds(heldLease);
+        for (const id of ids) unacknowledgedReceiptIds.add(id);
+        return true;
       } catch (error) {
         observe(threadId, "receipt_read.failed", error);
+        return false;
       }
+    }
+    async function retainFailedReceipt(heldLease: Lease, userTurnId: string): Promise<boolean> {
+      // The failed input can remain pending after its durable lease receipt clears.
+      unacknowledgedReceiptIds.add(userTurnId);
+      return retainReceiptIds(heldLease);
     }
     async function cleanup() {
       clearInterval(heartbeat);
@@ -115,7 +123,7 @@ export function createRunSessions(deps: {
         if (lease) {
           await authority.release(lease);
           claimReleased = true;
-          wakeAfterRelease = preparedRun || setupMayWake;
+          wakeAfterRelease = (preparedRun || setupMayWake) && !skipCleanupWake;
         }
       } catch (error) {
         observe(threadId, "lease_release.failed", error);
@@ -131,6 +139,7 @@ export function createRunSessions(deps: {
             session.completion
               .then(() => wakeIfRunnable(threadId, [...unacknowledgedReceiptIds]))
               .catch((error) => observe(threadId, "cleanup_wake.failed", error)),
+            "run cleanup wake",
           );
         }
       }
@@ -155,6 +164,7 @@ export function createRunSessions(deps: {
                 }
               })
               .catch((error) => observe(threadId, "lease_renew.failed", error)),
+            "run lease renewal",
           );
         },
         Math.floor(DEFAULT_LEASE_TTL_MS / 3),
@@ -186,10 +196,18 @@ export function createRunSessions(deps: {
           let turn: Turn;
           try {
             turn = await loop.execute();
+            if (turn.role === "assistant" && turn.status === "error") {
+              if (!(await retainFailedReceipt(heldLease, loop.userTurnId))) skipCleanupWake = true;
+            }
           } catch (error) {
             observe(threadId, "execution.failed", error);
-            if (error instanceof UnsettledPlaceholderError) throw error;
-            if (session.currentTurn?.kind === "assistant") await retainReceiptIds(heldLease);
+            if (error instanceof UnsettledPlaceholderError) {
+              if (!(await retainFailedReceipt(heldLease, loop.userTurnId))) skipCleanupWake = true;
+              throw error;
+            }
+            if (session.currentTurn?.kind === "assistant") {
+              if (!(await retainFailedReceipt(heldLease, loop.userTurnId))) skipCleanupWake = true;
+            }
             turn = await deps.finalizeFailure({
               threadId,
               turnId: session.currentTurn?.id ?? loop.currentTurn?.id ?? loop.terminalTurnId!,
@@ -238,7 +256,7 @@ export function createRunSessions(deps: {
   async function startDrain(threadId: ThreadId): Promise<void> {
     try {
       const run = await prepare({ threadId, drain: true });
-      backgroundTasks.track(run.execute());
+      backgroundTasks.track(run.execute(), "detached run execution");
     } catch (error) {
       if (!(error instanceof NoPendingWakeError)) throw error;
     }

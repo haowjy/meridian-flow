@@ -14,17 +14,18 @@ describe("detached work tracker", () => {
     const tracker = createDetachedWorkTracker();
     const first = deferred();
     const second = deferred();
-    tracker.track(first.promise);
+    tracker.track(first.promise, "first task");
 
     let drained = false;
     const draining = tracker.drain(500).then((result) => {
       drained = result;
     });
 
-    tracker.track(second.promise);
+    tracker.track(second.promise, "second task");
     first.resolve();
     await Promise.resolve();
     expect(drained).toBe(false);
+    expect(tracker.pendingTasks).toEqual(["first task", "second task"]);
 
     second.resolve();
     await draining;
@@ -40,5 +41,6 @@ describe("detached work tracker", () => {
     await expect(tracker.drain(1)).resolves.toBe(false);
     task.resolve();
     await tracker.drain();
+    expect(tracker.pendingTasks).toEqual([]);
   });
 });

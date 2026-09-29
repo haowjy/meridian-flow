@@ -85,7 +85,9 @@ export function createDeliveryAdapter(
   const { inbox, leaseStore, threadLock } = deps;
   const backgroundTasks = deps.backgroundTasks ?? processDetachedWork;
   const schedulePostCommit = (task: () => Promise<void>) =>
-    deps.schedulePostCommit(() => backgroundTasks.track(Promise.resolve().then(task)));
+    deps.schedulePostCommit(() =>
+      backgroundTasks.track(Promise.resolve().then(task), "runtime delivery callback"),
+    );
   const appendPending = async (threadId: ThreadId) => {
     await deps.eventWriter.appendEvent(threadId, {
       type: "inbox.changed",

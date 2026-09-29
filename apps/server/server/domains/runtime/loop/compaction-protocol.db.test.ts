@@ -9,6 +9,7 @@ import {
   encodeImageInclusionMetadata,
   loadThreadConversationContext,
 } from "../../threads/index.js";
+import { processDetachedWork } from "../detached-work.js";
 import { ImageAssetResolutionError } from "../ports/image-asset.js";
 import { createConversationSummarizer } from "../summary/conversation-summarizer.js";
 import { searchDocumentText, writeDocumentText } from "../tools/document-text.js";
@@ -2029,6 +2030,7 @@ else
         userText: "Continue.",
       });
       expect((await run.execute()).status).toBe("failed");
+      await expect(processDetachedWork.drain(1_000)).resolves.toBe(true);
       expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
         role: "compaction",
         status: "pending",

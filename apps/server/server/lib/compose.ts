@@ -1019,7 +1019,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
           level: "warn",
           source: "runtime.background-work",
           name: "shutdown.drain_timed_out",
-          payload: { pendingCount: backgroundTasks.pendingCount, timeoutMs },
+          payload: {
+            pendingCount: backgroundTasks.pendingCount,
+            pendingTasks: backgroundTasks.pendingTasks,
+            timeoutMs,
+          },
         });
     },
   };

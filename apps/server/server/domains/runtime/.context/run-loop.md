@@ -35,12 +35,12 @@ command selection between tools or at reply boundaries ([controls](controls.md))
 
 After a run releases its claim, cleanup refreshes and re-reads the queue through
 `wakeIfRunnable`; this includes a run that found nothing to do and a lease
-cancelled during setup. If a failed assistant run left its own adopted receipt
-unacknowledged, that receipt is excluded from this reread and waits for the
-periodic sweep; newly arrived rows remain eligible and wake promptly. An empty
-reread does not start a run. A real setup error skips the reread to avoid a hot
-loop. Short exclusive claim holders still use the sweep as their liveness
-backstop.
+cancelled during setup. If an assistant fails, its initiating input and any
+other unacknowledged adopted receipts are excluded from this reread and wait
+for the periodic sweep; newly arrived rows remain eligible and wake promptly.
+An empty reread does not start a run. A real setup error skips the reread to
+avoid a hot loop. Short exclusive claim holders still use the sweep as their
+liveness backstop.
 
 The runtime composition owns one `DetachedWorkTracker` shared by run sessions,
 delivery callbacks, background child completion, and handoff briefs. Cleanup

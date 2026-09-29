@@ -127,7 +127,10 @@ async function assertThrowawayDatabase(db: Database): Promise<void> {
  * dependent table and determines the child-first delete order.
  */
 export async function deleteDrizzleRows(db: Database, tables: unknown[]): Promise<void> {
-  await processDetachedWork.drain();
+  if (!(await processDetachedWork.drain(25_000)))
+    throw new Error(
+      `Cannot reset fixtures before detached runtime work settles: ${processDetachedWork.pendingTasks.join(", ")}`,
+    );
   await assertThrowawayDatabase(db);
   if (tables.length === 0) throw new Error("deleteDrizzleRows requires at least one table");
   const requestedTables = tables.map(drizzleTableIdentity);
