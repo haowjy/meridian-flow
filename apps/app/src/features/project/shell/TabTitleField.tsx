@@ -10,6 +10,7 @@ import { useInlineEdit } from "@/components/ui/use-inline-edit";
 
 export function TabTitleField({
   initial,
+  unchanged,
   label,
   maxLength,
   describedBy,
@@ -18,6 +19,8 @@ export function TabTitleField({
   className = "pane-title flex min-w-0 px-1",
 }: {
   initial: string;
+  /** The draft that means "no change"; defaults to `initial`. */
+  unchanged?: string;
   label: string;
   maxLength?: number;
   /** Id of text that describes the field, such as a refused rename. */
@@ -28,7 +31,7 @@ export function TabTitleField({
   /** Wrapper typography and inset; defaults to the pane band's title. */
   className?: string;
 }) {
-  const edit = useInlineEdit({ initial, onCommit, onCancel });
+  const edit = useInlineEdit({ initial, unchanged, onCommit, onCancel });
   return (
     <span className={className}>
       <InlineEditInput

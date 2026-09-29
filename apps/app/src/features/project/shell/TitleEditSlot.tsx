@@ -12,6 +12,7 @@ export function TitleEditSlot({
   label,
   failure,
   rename,
+  maxLength,
   fieldClassName,
   failureClassName = "left-0 w-max max-w-72",
   children,
@@ -22,6 +23,7 @@ export function TitleEditSlot({
   failure: string;
   /** Rejects when the rename was refused. */
   rename: (title: string) => Promise<unknown>;
+  maxLength?: number;
   /** The field's typography and inset, matching the resting title. */
   fieldClassName?: string;
   /** Where the failure sits under the field. */
@@ -32,7 +34,9 @@ export function TitleEditSlot({
     triggerRef: RefObject<HTMLButtonElement | null>;
   }) => ReactNode;
 }) {
-  const [editing, setEditing] = useState<string | null>(null);
+  // `unchanged` stays the title the edit started from, so committing the
+  // refused text again (Enter or blur on the reopened field) retries it.
+  const [editing, setEditing] = useState<{ initial: string; unchanged: string } | null>(null);
   const [failed, setFailed] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const failureId = useId();
@@ -45,19 +49,26 @@ export function TitleEditSlot({
       if (!active || active === document.body) triggerRef.current?.focus();
     });
   };
-  if (editing === null) return children({ start: setEditing, triggerRef });
+  if (editing === null)
+    return children({
+      start: (initial) => setEditing({ initial, unchanged: initial }),
+      triggerRef,
+    });
+  const { unchanged } = editing;
   return (
     <>
       <TabTitleField
-        initial={editing}
+        initial={editing.initial}
+        unchanged={unchanged}
         label={label}
+        maxLength={maxLength}
         className={fieldClassName}
         describedBy={failed ? failureId : undefined}
         onCommit={(next) => {
           close();
           rename(next).catch(() => {
             setFailed(true);
-            setEditing(next);
+            setEditing({ initial: next, unchanged });
           });
         }}
         onCancel={close}
