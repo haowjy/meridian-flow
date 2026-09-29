@@ -60,15 +60,20 @@ works query cache holds only server snapshots, ordered by `authorityRevision`.
 Work commands (create, update, Archive, Unarchive, Delete, Restore) never write
 guesses into it. One table in `client/query/work-commands` says, per operation,
 what it sends, how it projects before and after the server answers, which
-fields it owns, when the snapshot already shows it, and whether it runs
-serially. Each command leaves a record in a per-project store (QueryClient
-query data, cleared on account switch): pending until a snapshot read started
-after its commit lands (bounded; if the read fails, the Work as that command
-left it is installed, owned fields only), then gone, except a failure (until
-Retry, Dismiss or a newer command on that Work) and a delete (its Undo window).
-`useWorks` lays pending records over the snapshot, so every reader sees one
-projection and a rejection simply stops projecting. A create shows in
-`useWorks().creations` (pending or refused, a draft Work) until the POST
+fields it owns, when the snapshot already shows it, whether it runs serially,
+and whether a surface shows its refusal. `work-command-store` runs commands
+and keeps each one's record in a per-project store (QueryClient query data,
+cleared on account switch; a command the account left while queued is never
+sent): pending until a snapshot read started after its commit lands (bounded;
+if the read fails, the Work as that command left it is installed, owned fields
+only), then gone, except a failure a surface shows (until Retry, Dismiss, a
+newer command on that Work, or a repair read showing the server kept it) and a
+delete (its Undo window). A rename reports its refusal from its own promise and
+leaves no record. `work-command-projection` lays pending records over the
+snapshot for `useWorks`, so every reader sees one projection and a rejection
+simply stops projecting. `useWorks` checks Work ids once (`AddressableWork`), so
+readers put a Work's id into an address without re-parsing it. A create shows in
+`useWorks().creations` (pending or refused, a `WorkDraft`) until the POST
 commits, then in `works` until the snapshot has it; the creation registry
 serves Projects only. `work-command-selectors` derive failures (each with
 `retry()` and `dismiss()`), Undo windows and restoring ids from the records; a
@@ -89,9 +94,16 @@ resize neither re-announces it nor drops focus), and a full-width line under the
 phone top bar. Each deleted Work has its own Undo row, in the tab it left; a
 rejected Undo reopens the row with its restore failure. `workListEntries`
 (`work-list-model`) turns the projection, Undo windows and failures into each
-tab's entries, so `WorkCollection` only maps entries to rows.
+tab's entries, so `WorkCollection` only maps entries to rows. Work lists, the
+Deleted tab, the Files groups and the recency lists share one row grammar
+(`RuledList`, `RowIcon`, `GroupLabel`).
 Detail composes identity and lifecycle, Goal, pending drafts, Scratch,
-Uploads, and associated chats. Associated chats use bounded cursor pages and the
+Uploads, and associated chats. `WorkDetailScreen` keeps the titles, the
+description and the sticky tab switch; `WorkChatsTab` and `WorkFilesTab` each
+own their search, actions and queries, and render their tools into the toolbar
+through `WorkToolbarTools`, so switching tabs never remounts the switch. Files
+on their way into a Work (uploads, sent side by side, and new notes) are
+`useWorkFileIntake`'s, kept per Work so a refusal outlives a tab switch. Associated chats use bounded cursor pages and the
 same virtualized, borderless project chat row as the Chat index without adding a nested
 scroll owner. The external-scroll hook measures the list in that owner's
 coordinates and owns stable keys plus focused/menu row pinning. Their membership
@@ -373,9 +385,10 @@ resolved address state and typed navigation commands to controlled controllers.
 Controllers never parse or mutate browser URLs themselves. Project title edits
 do not change the UUID address. Desktop rail and phone drawer edit their own
 project title inline: click/tap to focus and select, Enter or blur saves,
-Escape cancels. The shared title editor keeps the draft and local error visible
-through rejection, while `ProjectView` owns one optimistic title mutation and
-cache rollback. It fences overlapping list reads before confirming a successful
+Escape cancels. Like the Work titles, it renames through `TitleEditSlot`: the
+field closes at once and a refusal reopens it with the writer's text and the
+error, while `ProjectView` owns one optimistic title mutation and cache
+rollback. It fences overlapping list reads before confirming a successful
 rename so a late stale response cannot overwrite the title. The phone top bar
 shows project identity without becoming a second edit surface.
 `routing/project-address.ts` owns the
@@ -388,11 +401,15 @@ Work details use `/p/<project>/works/<work-id>` from the moment of creation.
 The same id-addressed destination renders pending, failed, and confirmed Works;
 confirmation never replaces the browser path. Browser paths never contain
 Work slugs or `@`; those remain in the model's context-URI address space.
-The account-scoped `client/creation/creation-registry` owns Project and Work
-creation records (`pending`, `failed`, or `confirmed`); the server Works
-snapshot and confirmed Work records meet once in `routing/work-route.ts`'s
-deduplicated Work catalog. Project route loading short-circuits only while its
-creation record is pending or failed. Browser history state is not creation
+`routing/work-route.ts`'s `resolveRouteWork` is the one resolver from an
+address selection to a `RouteWorkResolution` (present, creating, unresolved or
+none) for both the route and the Editor; `routeWorkId()` is the one route-Work
+identity. The account-scoped `client/creation/creation-registry` owns Project
+creation records (`pending`, `failed`, or `confirmed`); the create mutation drops
+its confirmed record once the route has reloaded. Project route loading
+short-circuits only while its creation record is pending or failed; meanwhile
+`ReadableProjectRoute` gets no route data and seeds it when it arrives
+(`useProjectRouteData`) rather than remounting. Browser history state is not creation
 recovery, and an in-flight create may be lost on reload. Project-scoped Works,
 threads, context catalogs, Results, and Agent catalog reads pause through
 selectors over that same registry until the create is confirmed.
