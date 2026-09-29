@@ -13,14 +13,14 @@ import {
 } from "@meridian/contracts/works";
 import { cn } from "@/lib/utils";
 import { WorkCommandFailureRow } from "./WorkCommandFailureRow";
-import type { WorkListEntry } from "./work-list-model";
+import type { ListedWorkEntry } from "./work-list-model";
 
 export function DeletedWorkList({
   entries,
   now,
   onRestore,
 }: {
-  entries: readonly WorkListEntry[];
+  entries: readonly ListedWorkEntry[];
   now: number;
   onRestore: (work: Work) => void;
 }) {

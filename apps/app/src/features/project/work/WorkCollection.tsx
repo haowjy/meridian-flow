@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import { useRestoringWorkIds, useWorkCommandFailures } from "@/client/query/work-command-selectors";
-import { useWorkMutations } from "@/client/query/work-commands";
+import { useWorkMutations } from "@/client/query/work-command-store";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";

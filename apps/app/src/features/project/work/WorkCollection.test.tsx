@@ -17,7 +17,7 @@ import {
 } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useWorks } from "@/client/query/useWorks";
-import { useWorkMutations } from "@/client/query/work-commands";
+import { useWorkMutations } from "@/client/query/work-command-store";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { WorksView } from "../routing/project-address";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
@@ -243,7 +243,7 @@ describe("Work collection archive", () => {
             vi.waitFor(() => expect(document.body.textContent).toContain("No active Work yet.")),
           );
           expect(archiveWork).toHaveBeenCalledTimes(2);
-          expect(archiveWork).toHaveBeenLastCalledWith(WORK.id);
+          expect(archiveWork).toHaveBeenLastCalledWith(WORK.id, expect.anything());
           expect(document.querySelector('[role="alert"]')).toBeNull();
           await showTab("archived");
           expect(rowNames()).toEqual(["Arc"]);
@@ -371,7 +371,7 @@ describe("Work collection delete", () => {
           await act(() => vi.waitFor(() => expect(rowNames()).toEqual(["Arc"])));
           expect(listAlerts()).toEqual([expect.stringContaining("Work couldn’t be deleted")]);
           expect(undoRows()).toEqual(["Deleted CodaUndo"]);
-          expect(deleteWork).toHaveBeenLastCalledWith(CODA.id);
+          expect(deleteWork).toHaveBeenLastCalledWith(CODA.id, expect.anything());
         },
         { drainMacrotask: true },
       );
@@ -418,7 +418,7 @@ describe("Work collection delete", () => {
 
           const arcUndo = document.querySelectorAll('li [role="status"]')[1];
           await clickIn(arcUndo, "Undo");
-          expect(restoreWork).toHaveBeenCalledWith(WORK.id);
+          expect(restoreWork).toHaveBeenCalledWith(WORK.id, expect.anything());
           await act(() => vi.waitFor(() => expect(rowNames()).toEqual(["Arc"])));
           expect(undoRows()).toEqual(["Deleted CodaUndo"]);
 
@@ -535,7 +535,7 @@ describe("Work collection restore", () => {
           await act(async () =>
             document.querySelector<HTMLButtonElement>('[aria-label="Restore Arc"]')?.click(),
           );
-          expect(restoreWork).toHaveBeenCalledWith(WORK.id);
+          expect(restoreWork).toHaveBeenCalledWith(WORK.id, expect.anything());
 
           await showTab("active");
           expect(rowNames()).toEqual([]);

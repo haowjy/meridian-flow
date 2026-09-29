@@ -1,6 +1,6 @@
 /**
  * Works reads. The query cache holds only server snapshots; readers see that
- * snapshot with every pending Work command laid over it (`work-commands`),
+ * snapshot with every pending Work command laid over it (`work-command-projection`),
  * and the Works still being created beside it.
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -8,7 +8,8 @@ import { useCallback, useMemo } from "react";
 
 import { projectQueryKeys } from "./project-query-keys";
 import { useIsProjectPendingCreation } from "./useProjectCreation";
-import { projectWorkCommands, useWorkCommandRecords } from "./work-commands";
+import { projectWorkCommands } from "./work-command-projection";
+import { useWorkCommandRecords } from "./work-command-store";
 import { acquireWorksSnapshot, workFromSnapshot } from "./works-projection-acquisition";
 
 export { workFromSnapshot };
@@ -29,10 +30,7 @@ export function useWorksSnapshot(projectId: string, requested = true) {
 export function useWorks(projectId: string, options?: { enabled?: boolean }) {
   const { list, enabled } = useWorksSnapshot(projectId, options?.enabled);
   const records = useWorkCommandRecords(projectId);
-  const projected = useMemo(
-    () => projectWorkCommands(projectId, list.data, records),
-    [projectId, list.data, records],
-  );
+  const projected = useMemo(() => projectWorkCommands(list.data, records), [list.data, records]);
   const snapshot = projected.snapshot;
   const works = useMemo(
     () => snapshot?.works.filter((work) => work.deletedAt === null) ?? (list.isError ? [] : null),

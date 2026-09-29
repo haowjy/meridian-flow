@@ -1,6 +1,6 @@
 /** Submit a Work rename through its canonical query-cache mutation. */
 import type { Work } from "@meridian/contracts/works";
-import { useWorkMutations } from "@/client/query/work-commands";
+import { useWorkMutations } from "@/client/query/work-command-store";
 
 export function useWorkRename(projectId: string, work: Work) {
   const update = useWorkMutations(projectId).update;

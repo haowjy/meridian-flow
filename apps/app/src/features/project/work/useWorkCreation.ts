@@ -8,7 +8,7 @@ import type { CreateWorkRequest } from "@meridian/contracts/works";
 import { useCallback } from "react";
 
 import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
-import { useWorkMutations } from "@/client/query/work-commands";
+import { useWorkMutations } from "@/client/query/work-command-store";
 import type { ProjectRouteCommands } from "../routing/project-route";
 
 type CreateWorkInput = Omit<CreateWorkRequest, "id">;

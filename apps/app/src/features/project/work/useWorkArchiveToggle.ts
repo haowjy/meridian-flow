@@ -4,7 +4,7 @@
  */
 import type { Work } from "@meridian/contracts/works";
 import { useCallback } from "react";
-import { useWorkMutations } from "@/client/query/work-commands";
+import { useWorkMutations } from "@/client/query/work-command-store";
 
 /** Resolves to the command's failure, or `null`. */
 export function useWorkArchiveToggle(projectId: string) {

@@ -4,7 +4,7 @@ import { parseRequestId } from "@meridian/contracts/request-id";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readCurrentWork, writeCurrentWork } from "@/client/current-work";
 import { useWorks } from "@/client/query/useWorks";
-import type { WorkCreation } from "@/client/query/work-commands";
+import type { WorkCreation } from "@/client/query/work-command-projection";
 import { useAccountId } from "../context/account-feature-context";
 import type { ProjectAddress, ProjectDestination } from "./project-address";
 import {

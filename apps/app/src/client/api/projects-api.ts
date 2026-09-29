@@ -131,6 +131,7 @@ export function createProjectWork(
 ): Promise<Work> {
   return postJson<Work>(urlFor(apiProjectWorksPath(projectId), init), data, {
     headers: init?.headers,
+    signal: init?.signal,
   });
 }
 
@@ -139,16 +140,17 @@ export function updateWork(
   data: UpdateWorkRequest,
   init?: RequestInitOptions,
 ): Promise<Work> {
-  return patchJson<Work>(urlFor(`/api/works/${workId}`, init), data, { headers: init?.headers });
+  return patchJson<Work>(urlFor(`/api/works/${workId}`, init), data, {
+    headers: init?.headers,
+    signal: init?.signal,
+  });
 }
 
 export function archiveWork(workId: string, init?: RequestInitOptions): Promise<Work> {
   return postJson<Work>(
     urlFor(`/api/works/${workId}/archive`, init),
     {},
-    {
-      headers: init?.headers,
-    },
+    { headers: init?.headers, signal: init?.signal },
   );
 }
 
@@ -156,23 +158,19 @@ export function unarchiveWork(workId: string, init?: RequestInitOptions): Promis
   return postJson<Work>(
     urlFor(`/api/works/${workId}/unarchive`, init),
     {},
-    {
-      headers: init?.headers,
-    },
+    { headers: init?.headers, signal: init?.signal },
   );
 }
 
-export function deleteWork(workId: string): Promise<void> {
-  return deleteRequest(`/api/works/${workId}`);
+export function deleteWork(workId: string, init?: RequestInitOptions): Promise<void> {
+  return deleteRequest(urlFor(`/api/works/${workId}`, init), { signal: init?.signal });
 }
 
 export function restoreWork(workId: string, init?: RequestInitOptions): Promise<Work> {
   return postJson<Work>(
     urlFor(`/api/works/${workId}/restore`, init),
     {},
-    {
-      headers: init?.headers,
-    },
+    { headers: init?.headers, signal: init?.signal },
   );
 }
 

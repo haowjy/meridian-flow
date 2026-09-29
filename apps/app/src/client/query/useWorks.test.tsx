@@ -19,19 +19,15 @@ import {
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { projectQueryKeys } from "./project-query-keys";
 import { useWorks } from "./useWorks";
+import type { WorkCreation } from "./work-command-projection";
 import {
   useWorkCommandFailures,
   useWorkDeleteWindows,
   type WorkCommandFailure,
   type WorkDeleteWindow,
 } from "./work-command-selectors";
-import {
-  closeWorkDeleteWindow,
-  useWorkMutations,
-  type WorkCommandRecord,
-  type WorkCreation,
-  type WorkMutations,
-} from "./work-commands";
+import { closeWorkDeleteWindow, useWorkMutations } from "./work-command-store";
+import type { WorkCommandRecord, WorkMutations } from "./work-commands";
 import { acquireWorksSnapshot } from "./works-projection-acquisition";
 
 const account = vi.hoisted(() => ({ epoch: new AbortController() }));
@@ -161,12 +157,29 @@ describe("Work command projection", () => {
       });
       expect(field(WORK.id, "name")).toBe("Revised arc");
 
+      let outcome: Error | null = null;
       await act(async () => {
         request.reject(new Error("Rejected"));
-        await rename;
+        outcome = await rename;
       });
       await settle(() => expect(field(WORK.id, "name")).toBe("Arc"));
-      expect(seen.failures.get(WORK.id)?.operation).toBe("update");
+      // The rename reports its failure through its own promise; no record lingers.
+      expect(outcome).toBeInstanceOf(Error);
+      expect(recordStatuses(client)).toEqual([]);
+      expect(seen.failures.size).toBe(0);
+    });
+  });
+
+  it("drops a failure the server kept anyway once the repair read shows it", async () => {
+    vi.mocked(archiveWork).mockRejectedValue(new Error("Network lost"));
+    vi.mocked(listProjectWorks).mockResolvedValue(snapshot([archived(WORK)], "2"));
+    await withProbe(snapshot([WORK]), async (client) => {
+      await act(async () => {
+        await commands.archive({ workId: WORK.id });
+      });
+      await settle(() => expect(recordStatuses(client)).toEqual([]));
+      expect(field(WORK.id, "status")).toBe("archived");
+      expect(seen.failures.size).toBe(0);
     });
   });
 
@@ -384,6 +397,27 @@ describe("Work command projection", () => {
       await act(async () => request.resolve(archived(SECOND)));
       expect(listProjectWorks).toHaveBeenCalledTimes(reads);
       expect(recordStatuses(client)).toEqual([]);
+    });
+    account.epoch = new AbortController();
+  });
+
+  it("never sends a queued command once the account that queued it is gone", async () => {
+    const first = deferred<Work>();
+    vi.mocked(archiveWork).mockImplementationOnce(() => first.promise);
+    vi.mocked(listProjectWorks).mockImplementation(() => new Promise(() => undefined));
+    await withProbe(snapshot([WORK, SECOND]), async () => {
+      let second!: Promise<Error | null>;
+      await act(async () => {
+        void commands.archive({ workId: WORK.id });
+        second = commands.archive({ workId: SECOND.id });
+      });
+      await settle(() => expect(archiveWork).toHaveBeenCalledTimes(1));
+      expect(vi.mocked(archiveWork).mock.calls[0]?.[1]?.signal).toBe(account.epoch.signal);
+
+      await act(async () => account.epoch.abort());
+      await act(async () => first.resolve(archived(WORK)));
+      expect((await second)?.name).toBe("AbortError");
+      expect(archiveWork).toHaveBeenCalledTimes(1);
     });
     account.epoch = new AbortController();
   });

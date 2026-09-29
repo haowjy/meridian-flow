@@ -70,7 +70,7 @@ export const projectQueryKeys = {
   threadRename: (projectId: string, threadId: string) =>
     ["projects", projectId, "thread-rename", threadId] as const,
   threadRenamePrefix: (projectId: string) => ["projects", projectId, "thread-rename"] as const,
-  /** Client-only: this project's Work command records (`work-commands`). */
+  /** Client-only: this project's Work command records (`work-command-store`). */
   workCommands: (projectId: string) => ["projects", projectId, "work-commands"] as const,
   workDrafts: (projectId: string, workId: string) =>
     ["projects", projectId, "works", workId, "drafts"] as const,

@@ -8,14 +8,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 import { useWorksSnapshot } from "./useWorks";
-import {
-  dismissWorkCommand,
-  retryWorkCommand,
-  snapshotHasCommandTarget,
-  useWorkCommandRecords,
-  type WorkCommandRecord,
-  type WorkOperation,
-} from "./work-commands";
+import { snapshotHasCommandTarget } from "./work-command-projection";
+import { dismissWorkCommand, retryWorkCommand, useWorkCommandRecords } from "./work-command-store";
+import type { WorkCommandRecord, WorkOperation } from "./work-commands";
 
 export type WorkCommandFailure<Op extends WorkOperation = WorkOperation> = {
   workId: string;

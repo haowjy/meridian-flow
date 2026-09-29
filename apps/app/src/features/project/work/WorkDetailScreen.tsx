@@ -6,7 +6,7 @@ import type { Work } from "@meridian/contracts/works";
 import { MessageSquarePlus, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
-import { useWorkMutations } from "@/client/query/work-commands";
+import { useWorkMutations } from "@/client/query/work-command-store";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {

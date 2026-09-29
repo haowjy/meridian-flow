@@ -1,7 +1,7 @@
 /**
  * Account-scoped state for optimistic, client-addressable Project creation.
  * Its loader short-circuit needs a store outside React; Works are created
- * through the Work command model (`work-commands`) instead.
+ * through the Work command model (`work-command-store`) instead.
  */
 import { createStore, useStore } from "zustand";
 

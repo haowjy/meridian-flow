@@ -10,7 +10,7 @@ import type { Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef } from "react";
 import { useWorkDeleteWindows, type WorkDeleteWindow } from "@/client/query/work-command-selectors";
-import { closeWorkDeleteWindow, useWorkMutations } from "@/client/query/work-commands";
+import { closeWorkDeleteWindow, useWorkMutations } from "@/client/query/work-command-store";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
 import { routeWorkIdentity } from "./route-work-identity";
 

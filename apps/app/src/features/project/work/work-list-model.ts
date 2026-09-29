@@ -4,22 +4,24 @@
  * these entries to rows.
  */
 import { type Work, workPurgeAt } from "@meridian/contracts/works";
+import type { WorkCreation, WorkDraft } from "@/client/query/work-command-projection";
 import type { WorkDeleteWindow } from "@/client/query/work-command-selectors";
-import type { WorkCreation } from "@/client/query/work-commands";
 import type { WorksView } from "../routing/project-address";
 import type { WorkRowFailure } from "./WorkCommandFailureRow";
 
-export type WorkListEntry = {
-  key: string;
-  work: Work;
-  /**
-   * `creating` and `notCreated`: the server has no such Work yet. `restoring`:
-   * back in its tab before the server answers. `undo`: just deleted, with
-   * Undo. `idle`: everything else, including every row of the Deleted tab.
-   */
-  state: "creating" | "notCreated" | "restoring" | "undo" | "idle";
-  failure?: WorkRowFailure;
-};
+/**
+ * `creating` and `notCreated`: the server has no such Work yet, so the row
+ * has only its draft. `restoring`: back in its tab before the server answers.
+ * `undo`: just deleted, with Undo. `idle`: everything else, including every
+ * row of the Deleted tab.
+ */
+export type WorkListEntry = { key: string; failure?: WorkRowFailure } & (
+  | { state: "creating" | "notCreated"; work: WorkDraft }
+  | { state: "restoring" | "undo" | "idle"; work: Work }
+);
+
+/** A row of a Work the server has. */
+export type ListedWorkEntry = Extract<WorkListEntry, { work: Work }>;
 
 export type WorkListProjection = {
   works: readonly Work[];
@@ -40,8 +42,8 @@ export function workListEntries(
   windows: readonly WorkDeleteWindow[],
   failures: ReadonlyMap<string, WorkRowFailure>,
   now: number,
-): Record<WorksView, WorkListEntry[]> {
-  const listed = (work: Work): WorkListEntry =>
+): Record<Exclude<WorksView, "deleted">, WorkListEntry[]> & { deleted: ListedWorkEntry[] } {
+  const listed = (work: Work): ListedWorkEntry =>
     projected.restoring.has(work.id)
       ? { key: work.id, work, state: "restoring" }
       : { key: work.id, work, state: "idle", failure: failures.get(work.id) };
