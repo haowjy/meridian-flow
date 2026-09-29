@@ -1462,7 +1462,8 @@ msgid "Couldn't rename this document. Try another name."
 msgstr "Couldn't rename this document. Try another name."
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-#: src/features/chat/derivation/useHandoffBrief.ts
+#: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/useRetryStandIns.ts
 msgid "Couldn't retry. Something else started in this chat first."
 msgstr "Couldn't retry. Something else started in this chat first."
 
@@ -1502,6 +1503,15 @@ msgstr "Couldn't send. Your message was not lost."
 #: src/features/chat/derivation/useHandoffBrief.ts
 msgid "Couldn't start a new brief. Try again."
 msgstr "Couldn't start a new brief. Try again."
+
+#: src/features/chat/ErrorBlock.tsx
+msgid "Couldn't start the retry."
+msgstr "Couldn't start the retry."
+
+#: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/useReplyRetry.ts
+msgid "Couldn't start the retry. Try again."
+msgstr "Couldn't start the retry. Try again."
 
 #: src/features/chat/derivation/derive-conversation.ts
 msgid "Couldn't start this handoff."
@@ -3841,7 +3851,6 @@ msgstr "Some changes couldn't be completed."
 msgid "Some changes to {name} couldn't be completed."
 msgstr "Some changes to {name} couldn't be completed."
 
-#: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Something went wrong generating a response."
 msgstr "Something went wrong generating a response."
@@ -4585,6 +4594,10 @@ msgstr "Try again"
 msgid "Try again, or return to the live document."
 msgstr "Try again, or return to the live document."
 
+#: src/features/chat/useReplyRetry.ts
+msgid "Trying the response again"
+msgstr "Trying the response again"
+
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Turn"
 msgstr "Turn"
@@ -4997,6 +5010,7 @@ msgstr "you answered"
 #~ msgstr "You can retry when the reply finishes."
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
+#: src/features/chat/ErrorBlock.tsx
 msgid "You can retry when this chat is free."
 msgstr "You can retry when this chat is free."
 
