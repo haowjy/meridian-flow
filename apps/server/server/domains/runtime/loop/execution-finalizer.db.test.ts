@@ -321,7 +321,12 @@ else
             {
               threadId: ids.child,
               turnId: ids.execution,
-              cause: { kind: "failed", reason: "budget", error: "budget exhausted" },
+              cause: {
+                kind: "failed",
+                reason: "budget",
+                error: "budget exhausted",
+                copy: "This response failed.",
+              },
             },
           );
           throw new Error("outer rollback");
@@ -339,10 +344,19 @@ else
         {
           threadId: ids.child,
           turnId: ids.execution,
-          cause: { kind: "failed", reason: "budget", error: "budget exhausted" },
+          cause: {
+            kind: "failed",
+            reason: "budget",
+            error: "budget exhausted",
+            copy: "This response failed.",
+          },
         },
       );
       expect(first.events.map((event) => event.type)).toEqual(["turn.error"]);
+      expect(first.events[0]).toMatchObject({
+        type: "turn.error",
+        error: { details: { reason: "budget" } },
+      });
       expect(first.report).toMatchObject({
         outcome: "failed",
         source: "return_result",
@@ -354,7 +368,12 @@ else
         {
           threadId: ids.child,
           turnId: ids.execution,
-          cause: { kind: "failed", reason: "budget", error: "budget exhausted" },
+          cause: {
+            kind: "failed",
+            reason: "budget",
+            error: "budget exhausted",
+            copy: "This response failed.",
+          },
         },
       );
       expect(replay.events).toEqual([]);

@@ -5,6 +5,55 @@ import { describe, expect, it } from "vitest";
 import { compactTurn, renderThreadView } from "./transcript.js";
 
 describe("thread transcript compaction failures", () => {
+  it("shows an assistant failure reason in JSON and text output", () => {
+    const turn = {
+      id: "assistant-id",
+      threadId: "thread-id",
+      position: 1,
+      writeMode: null,
+      promptBakeId: null,
+      role: "assistant",
+      origin: "assistant",
+      status: "error",
+      finishReason: "error",
+      model: null,
+      error: "This response failed.",
+      metadata: { reason: "shutdown" },
+      createdAt: "2026-09-27T00:00:00.000Z",
+      inputTokens: 0,
+      outputTokens: 0,
+      totalCostUsd: "0",
+      responseCount: 0,
+      usage: null,
+      completedAt: null,
+      blocks: [],
+      siblingIds: [],
+      responses: [],
+    } as Turn;
+    const compact = compactTurn(turn, { full: false });
+
+    expect(compact.failureReason).toBe("shutdown");
+    expect(
+      renderThreadView({
+        thread: {
+          id: "thread-id",
+          ref: null,
+          title: null,
+          projectId: "project-id",
+          workId: null,
+          agentName: null,
+          status: "idle",
+          turnCount: 1,
+          totalCostUsd: "0",
+        },
+        live: { status: "asleep", runningTurnId: null, pending: 0, actionRequired: false },
+        turns: [compact],
+        showing: 1,
+        total: 1,
+      }),
+    ).toContain("failure reason: shutdown");
+  });
+
   it("shows a failed compaction's reason and phase in JSON and text output", () => {
     const turn = {
       id: "compaction-id",

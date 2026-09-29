@@ -120,7 +120,6 @@ else {
         { repos, eventWriter: writer },
         {
           threadId: ids.threadId as never,
-          cause: "compaction",
           bake: { compose: parts },
           boundaryTurnId: boundary.id,
           completion: {
@@ -142,7 +141,7 @@ else {
                 predictedCacheReason: "reusable_prefix",
               },
             ],
-            events: [
+            events: () => [
               {
                 type: "context.compacted",
                 compactionTurnId: boundary.id,

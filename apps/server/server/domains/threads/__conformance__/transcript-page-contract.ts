@@ -604,6 +604,68 @@ export function defineTranscriptPageContract(
       expect(next.entries.map((entry) => entry.turn.id)).toEqual([settled.id]);
     });
 
+    it("opens segments only for complete compactions and excludes pending rows", async () => {
+      const { repos, root, rootBake, turn, block, id, bake } = await fixture();
+      const before = await turn(root.id as ThreadId, "before");
+      await block(before.id as TurnId, "before.0", 0);
+      const firstBake = await bake("first-compact-bake");
+      const first = await turn(root.id as ThreadId, "first-compact", "compaction", {
+        promptBakeId: firstBake.id,
+        metadata: {
+          compactedThrough: { turnId: before.id, blockSequence: 0 },
+          pinnedRequestTurnIds: [before.id],
+        },
+      });
+      await block(first.id as TurnId, "first-compact.0", 0);
+      const failed = await turn(root.id as ThreadId, "failed-compact", "compaction", {
+        status: "error",
+        promptBakeId: null,
+      });
+      const secondBake = await bake("second-compact-bake");
+      const second = await turn(root.id as ThreadId, "second-compact", "compaction", {
+        promptBakeId: secondBake.id,
+        metadata: {
+          compactedThrough: { turnId: first.id },
+          pinnedRequestTurnIds: [before.id],
+        },
+      });
+      await block(second.id as TurnId, "second-compact.0", 0);
+      const pending = await repos.turns.create({
+        id: id("pending-compact") as TurnId,
+        threadId: root.id as ThreadId,
+        prevTurnId: second.id as TurnId,
+        role: "compaction",
+        origin: "system",
+        status: "pending",
+      });
+
+      const oldestPages = await readAll(repos, root, "oldest_first", "turn", 1);
+      expect(oldestPages.map((page) => page.segment.index)).toEqual([0, 1, 1, 2]);
+      expect(oldestPages.map((page) => page.segmentBoundary)).toEqual([true, false, true, false]);
+      expect(oldestPages[0]?.segment.bakeId).toBe(rootBake.id);
+      expect(oldestPages[1]?.segment).toMatchObject({
+        bakeId: firstBake.id,
+        openedBy: { turnId: first.id, kind: "compaction" },
+        compactedThrough: { turnId: before.id, blockSequence: 0 },
+      });
+      expect(oldestPages[3]?.segment).toMatchObject({
+        bakeId: secondBake.id,
+        openedBy: { turnId: second.id, kind: "compaction" },
+      });
+      expect(oldestPages.flatMap((page) => page.entries.map((entry) => entry.turn.id))).toEqual([
+        before.id,
+        first.id,
+        failed.id,
+        second.id,
+      ]);
+      expect(
+        oldestPages.flatMap((page) => page.entries).some((entry) => entry.turn.id === pending.id),
+      ).toBe(false);
+
+      const newestPages = await readAll(repos, root, "newest_first", "turn");
+      expect(newestPages.map((page) => page.segment.index)).toEqual([2, 1, 0]);
+    });
+
     it("forks before and after a compaction retain one and two segments respectively", async () => {
       const { repos, root, turn, id, bake } = await fixture();
       const before = await turn(root.id as ThreadId, "fork-before");

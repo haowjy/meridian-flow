@@ -87,8 +87,8 @@ import {
   agentRequestMetadata,
   loadThreadConversationContext,
   readThreadActivity,
-  replyFailedCopy,
   ThreadConversationContextError,
+  turnFailedCopy,
   writerSendMetadata,
 } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
@@ -295,6 +295,13 @@ export function createOrchestrator(deps: OrchestratorDeps) {
         (error instanceof CompactionPreparationError ? error : null);
       const requestPreparationFailed = input.error instanceof RequestPreparationError;
       const shutdownAbort = input.signal?.reason === "shutdown";
+      const publicPreparationError = preparationFailure
+        ? writerFacingPreparationError(preparationFailure)
+        : requestPreparationFailed
+          ? writerFacingPreparationError(asError(error))
+          : null;
+      const failedTurn = await deps.repos.turns.findById(input.turnId);
+      if (!failedTurn) throw new Error(`Failure turn not found: ${input.turnId}`);
       const outcome = await deps.delivery.close({
         lease: input.lease,
         turnId: input.turnId,
@@ -303,7 +310,8 @@ export function createOrchestrator(deps: OrchestratorDeps) {
             ? {
                 kind: "failed",
                 reason: "shutdown",
-                error: replyFailedCopy,
+                error: "Runtime shut down before the response completed",
+                copy: turnFailedCopy(failedTurn),
               }
             : { kind: "cancelled", reason: "cancelled" }
           : {
@@ -315,13 +323,8 @@ export function createOrchestrator(deps: OrchestratorDeps) {
                   : requestPreparationFailed
                     ? "request_preparation_failed"
                     : "execution_error"),
-              error: preparationFailure
-                ? writerFacingPreparationError(preparationFailure)
-                : requestPreparationFailed
-                  ? writerFacingPreparationError(asError(error))
-                  : error instanceof Error
-                    ? error.message
-                    : String(error),
+              error: error instanceof Error ? error.message : String(error),
+              copy: publicPreparationError?.message ?? turnFailedCopy(failedTurn),
             },
       });
       if (outcome.kind !== "completed") throw new Error("Failure finalization cannot split");
@@ -590,7 +593,6 @@ async function runDrainTurn(
             referenceTurnId: referenceUserTurnId,
             currentTurnId: input.replyTurnId ?? reservedTurnId,
             control,
-            failedControlIds: selection.failedControlIds,
             pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
             turns: [
               ...inheritedTurns,
@@ -1801,12 +1803,22 @@ async function executeLoop({
   const cancelTerminal: TerminalCause = { kind: "cancelled", reason: "cancelled" };
   const abortTerminal = (): TerminalCause =>
     input.signal?.reason === "shutdown"
-      ? { kind: "failed", reason: "shutdown", error: replyFailedCopy }
+      ? {
+          kind: "failed",
+          reason: "shutdown",
+          error: "Runtime shut down before the response completed",
+          copy: turnFailedCopy(currentTurn),
+        }
       : cancelTerminal;
-  const errorTerminal = (error: MeridianError | string, reason?: string): TerminalCause => ({
+  const errorTerminal = (
+    error: MeridianError | string,
+    reason?: string,
+    copy = turnFailedCopy(currentTurn),
+  ): TerminalCause => ({
     kind: "failed",
     reason: reason ?? (typeof error === "string" ? "runtime_error" : error.code),
     error,
+    copy,
   });
   const completeTerminal = (result: GenerateResult): TerminalCause => ({
     kind: "success",
@@ -1875,7 +1887,7 @@ async function executeLoop({
 
         const budgetError = await turnAccounting.assertPreIterationBudget(treeBudget, thread);
         if (budgetError) {
-          return exitRun(false, errorTerminal(budgetError));
+          return exitRun(false, errorTerminal(budgetError, undefined, budgetError.message));
         }
 
         turnAccounting.recordIterationSpend(treeBudget);
@@ -2071,9 +2083,10 @@ async function executeLoop({
                 return exitRun(false, {
                   kind: "failed",
                   reason: "context_window_exceeded",
-                  error: writerFacingPreparationError(
+                  error: "Model context overflowed after compaction retry",
+                  copy: writerFacingPreparationError(
                     new CompactionPreparationError("context_window_exceeded"),
-                  ),
+                  ).message,
                 });
               }
               retriedContextOverflow = true;

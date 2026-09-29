@@ -135,7 +135,7 @@ export async function prepareCompactionSuccessor(args: {
       ...placeholder,
       status: "complete" as const,
       promptBakeId: provisionalBakeId,
-      metadata: promptEpochMetadata(metadata, "compaction"),
+      metadata: promptEpochMetadata(metadata),
     };
     const blockInput = {
       turnId: placeholder.id,
@@ -268,7 +268,6 @@ export async function completeCompactionCurrent(input: {
   if (prepared?.kind === "usable" && failure === undefined) {
     await beginPromptEpoch(deps, {
       threadId,
-      cause: "compaction",
       boundaryTurnId: placeholder.id,
       bake: { compose: prepared.composition.bakeContent },
       completion: {

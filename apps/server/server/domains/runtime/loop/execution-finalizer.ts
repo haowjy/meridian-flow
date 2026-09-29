@@ -28,6 +28,8 @@ export type TerminalCause =
       kind: "failed";
       reason: string;
       error: MeridianError | string;
+      /** Server-owned writer copy. Raw causes belong in diagnostics, never in the turn. */
+      copy: string;
     }
   | { kind: "cancelled"; reason: string };
 
@@ -87,7 +89,24 @@ function turnEvent(turn: Turn, cause: TerminalCause): OrchestratorEvent {
     typeof cause.error === "string"
       ? meridianErrorFromSystem("runtime_error", cause.error)
       : cause.error;
-  return { type: "turn.error", turn, error };
+  const existingDetails = error.details;
+  return {
+    type: "turn.error",
+    turn,
+    error: {
+      ...error,
+      details: {
+        ...(existingDetails &&
+        typeof existingDetails === "object" &&
+        !Array.isArray(existingDetails)
+          ? existingDetails
+          : existingDetails === undefined
+            ? {}
+            : { errorDetails: existingDetails }),
+        reason: cause.reason,
+      },
+    },
+  };
 }
 
 function compactionFailureForFinalizer(cause: Extract<TerminalCause, { kind: "failed" }>) {
@@ -104,7 +123,10 @@ function compactionFailureForFinalizer(cause: Extract<TerminalCause, { kind: "fa
   };
 }
 
-/** Call under the thread lock; nested persistence joins its transaction. */
+/**
+ * Finalize one execution under the thread lock; nested persistence joins its transaction.
+ * Failed turns persist only `cause.copy`; `cause.error` remains diagnostic journal data.
+ */
 export async function finalizeExecution(
   deps: {
     repos: Pick<
@@ -161,12 +183,7 @@ export async function finalizeExecution(
         return { result: turn, events: [] };
       }
       const completedAt = toIsoString(new Date());
-      const error =
-        input.cause.kind === "failed"
-          ? typeof input.cause.error === "string"
-            ? input.cause.error
-            : input.cause.error.message
-          : null;
+      const error = input.cause.kind === "failed" ? input.cause.copy : null;
       const updated: Turn = {
         ...turn,
         ...(turn.role === "assistant" && input.cause.kind === "failed"

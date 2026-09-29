@@ -1,13 +1,13 @@
 import { isPendingPlaceholder, isPlaceholderRole } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
-import { placeholderFailedCopy } from "./failure-copy.js";
+import { turnFailedCopy } from "./failure-copy.js";
 import {
   CompactionFailurePhaseCodec,
   CompactionMetadataCodec,
   CompactionPlanMetadataCodec,
 } from "./turn-metadata.js";
 
-describe("pending placeholders", () => {
+describe("turn roles and failure copy", () => {
   it("classifies only pending turns with a placeholder role", () => {
     expect(isPlaceholderRole("compaction")).toBe(true);
     expect(isPlaceholderRole("system")).toBe(true);
@@ -28,10 +28,8 @@ describe("pending placeholders", () => {
       },
     };
 
-    expect(placeholderFailedCopy(turn)).toBe("This conversation couldn't be compacted. Try again.");
-    expect(placeholderFailedCopy({ ...turn, metadata: { trigger: "manual" } })).toBe(
-      "This conversation couldn't be compacted. Try again.",
-    );
+    expect(turnFailedCopy(turn)).toBe("This conversation couldn't be compacted. Try again.");
+    expect(turnFailedCopy({ role: "assistant" })).toBe("This response failed.");
   });
 
   it("uses the same ordinary failure copy for an automatic placeholder", () => {
@@ -43,9 +41,9 @@ describe("pending placeholders", () => {
         trigger: "auto",
       },
     };
-    expect(placeholderFailedCopy(base)).toBe("This conversation couldn't be compacted. Try again.");
-    expect(placeholderFailedCopy({ ...base, metadata: { trigger: "unknown" } })).toBe(
-      "This conversation couldn't be compacted. Try again.",
+    expect(turnFailedCopy(base)).toBe("This conversation couldn't be compacted. Try again.");
+    expect(turnFailedCopy({ role: "system" })).toBe(
+      "This handoff brief couldn't be generated. Try again.",
     );
   });
 });

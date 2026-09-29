@@ -29,8 +29,8 @@ export { ExecutionReportConflictError } from "./domain/execution-report-conflict
 export {
   compactionFailedCopy,
   handoffBriefFailedCopy,
-  placeholderFailedCopy,
   replyFailedCopy,
+  turnFailedCopy,
 } from "./domain/failure-copy.js";
 export { isInSubtree, type LineageThread, sameLineage } from "./domain/lineage.js";
 export {

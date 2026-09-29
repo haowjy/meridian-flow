@@ -356,9 +356,6 @@ export interface ThreadPendingInboxReader {
   readPending(threadId: ThreadId): Promise<ThreadPendingInbox>;
 }
 
-/** The derived live reads the snapshot builder and WS `subscribed` state share. */
-export interface ThreadLiveReaders extends ThreadStatusReader, ThreadPendingInboxReader {}
-
 export interface ProjectChatCursorKey {
   sortAt: string;
   threadId: ThreadId;

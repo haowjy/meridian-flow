@@ -5,15 +5,17 @@ export const replyFailedCopy = "This response failed.";
 export const handoffBriefFailedCopy = "This handoff brief couldn't be generated. Try again.";
 export const compactionFailedCopy = "This conversation couldn't be compacted. Try again.";
 
-/** Select the ordinary failure copy for a recovered pending placeholder. */
-export function placeholderFailedCopy(
-  turn: Pick<Turn, "metadata"> & { role: "system" | "compaction" },
-): string {
+/** Select writer-facing failure copy from the failed turn's semantic role. */
+export function turnFailedCopy(turn: Pick<Turn, "role">): string {
   switch (turn.role) {
+    case "assistant":
+      return replyFailedCopy;
     case "system":
       return handoffBriefFailedCopy;
     case "compaction":
       return compactionFailedCopy;
+    case "user":
+      throw new Error(`Turn role ${turn.role} cannot own runtime failure copy`);
     default: {
       const exhaustiveRole: never = turn.role;
       return exhaustiveRole;

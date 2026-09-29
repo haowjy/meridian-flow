@@ -637,7 +637,17 @@ else
       expect(await repair.sweep(10)).toBeGreaterThanOrEqual(1);
       expect(await repos.turns.findById(ids.execution)).toMatchObject({
         status: "error",
-        error: "Child execution stopped before terminal completion",
+        error: "This response failed.",
+      });
+      expect(
+        (await journalEventsByThread(db, ids.child)).find(
+          (event) => event.eventType === "turn.error",
+        )?.payload,
+      ).toMatchObject({
+        error: {
+          message: "Child execution stopped before terminal completion",
+          details: { reason: "orphaned" },
+        },
       });
       expect(await inbox.selectPending(ids.child)).toEqual([]);
       expect(await db.select().from(schema.threadRunLeases)).toMatchObject([
