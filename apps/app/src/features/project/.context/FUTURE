@@ -45,3 +45,7 @@
   document view per browser tab. A split-view design must first define focus,
   history, tab membership, and session-retention semantics; do not stretch the
   single-selection workspace reducer into two implicit selections.
+- Work page tab search: switching between Chats and Files resets each tab's
+  search (`work/WorkChatsTab.tsx`, `work/WorkFilesTab.tsx` own it as component
+  state). Keeping it means putting the Work chat search in the project address,
+  as the chat index does with `q`.

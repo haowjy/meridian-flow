@@ -164,8 +164,10 @@ currently available to the request owner in the requested project.
   never another Work's titles. Canonical qualifiers may explicitly name another
   available (active) Work in the project. Contextual scratch/uploads use the selected
   scope; `@/` always means No Work. Legacy `work://` is not accepted.
-  Archived Work identity still parses/resolves as authority, but the catalog
-  excludes its files from navigation. Zero or multiple matches both resolve to
+  Archived Work identity still parses/resolves as authority and its Work-scoped
+  catalog still lists its files (archive hides a Work from Active, not its
+  contents); it is not an `available` qualifier target. Only deleted Works
+  hide their files. Zero or multiple matches both resolve to
   `null`; resolution never guesses.
 - Router methods attach the resolved canonical URI to every `ContextError` and
   successful read/write result. Transport and collab callers publish that value;

@@ -36,12 +36,13 @@ Deferred implementation work is tracked in [TODO](TODO).
 
 Phone consumes the same UUID project address as desktop. The route parent owns
 navigation; mobile leaves call the typed handlers passed through `ProjectViewProps`
-and never construct paths or query strings. Primary destinations live beneath
-`/p/<project-id>` (`/chat/<chat-uuid>`, `/works`,
-`/work/@<work-slug>`, `/editor`, and context browse/document paths). Context
-paths carry scheme and location in path segments; Work-scoped paths carry their
-Work slug in the path. `work`, `settings`, and `results` are the only
-recognized query keys. The removed `screen`, `thread`, `scheme`, `folder`, and
+and never construct paths or query strings. The first segment beneath
+`/p/<project-id>` is always a screen (`/chats[/<chat-uuid>]`,
+`/works[/<work-uuid>]`, `/editor[/…]`); context browse and document paths live
+under `/editor` and carry scheme and location in path segments. Scratch and
+Uploads name their Work with the required `?work` query, never in the path.
+`work`, `settings`, `results`, and `view` are the only recognized query keys.
+An invalid address shows "This destination is unavailable." in place. The removed `screen`, `thread`, `scheme`, `folder`, and
 `path` query parameters are not compatibility inputs.
 
 User navigation normally pushes so browser/OS Back walks destinations, Results,

@@ -51,11 +51,13 @@ through `WorkspaceNavBody`; project identity and the recursive tree are
 desktop shell grammar.
 
 Work is the dedicated collection/detail management destination. The collection reads
-active and archived Work and owns creation and lifecycle entry points; it never selects
-  a project-wide Work or rebinds a chat. Its response contains only named catalog
+active, archived and restorable deleted Work and owns creation and lifecycle entry
+points; it never selects a project-wide Work or rebinds a chat. Its response contains only named catalog
   Works and never lists No Work as a row. Route-owned detail and inline metadata consume
 the typed catalog, PATCH mutation, and filtered chat-feed query seams.
-Work detail's route Work is the sole source for title and description values. The
+A Work has one free text, its `goal`, which the page labels "Description" and
+the model reads as the goal. Work detail's route Work is the sole source for
+its name and goal. The
 works query cache holds only server snapshots, ordered by `authorityRevision`.
 Work commands (create, update, Archive, Unarchive, Delete, Restore) never write
 guesses into it. One table in `client/query/work-commands` says, per operation,
@@ -79,8 +81,8 @@ serves Projects only. `work-command-selectors` derive failures (each with
 `retry()` and `dismiss()`), Undo windows and restoring ids from the records; a
 failure goes quiet once the snapshot already shows its target. The page-scoped
 metadata controller owns only
-the description draft, field-local failure, and the route leave decision. A dirty
-description offers Save, Discard, or Keep editing; hard unload uses the router's
+the goal draft, field-local failure, and the route leave decision. A dirty
+goal offers Save, Discard, or Keep editing; hard unload uses the router's
 native before-unload integration rather than a second draft owner. The collection
 focuses its heading after the catalog resolves. It shows one list at a time
 under Active, Archived, and Deleted tabs (lifecycle states never overlap, so
@@ -99,7 +101,7 @@ Deleted tab, the Files groups and the recency lists share one row grammar
 (`RuledList`, `RowIcon`, `GroupLabel`).
 Detail composes identity and lifecycle, Goal, pending drafts, Scratch,
 Uploads, and associated chats. `WorkDetailScreen` keeps the titles, the
-description and the sticky tab switch; `WorkChatsTab` and `WorkFilesTab` each
+goal and the sticky tab switch; `WorkChatsTab` and `WorkFilesTab` each
 own their search, actions and queries, and render their tools into the toolbar
 through `WorkToolbarTools`, so switching tabs never remounts the switch. Files
 on their way into a Work (uploads, sent side by side, and new notes) are
@@ -129,7 +131,7 @@ read the same route Work, so the update command's projection publishes a
 rename in both places at once. Every title slot (`TitleEditSlot`, keyed by
 `titleKey`) reopens only for the latest rename of its title, and never takes
 focus from where the writer has moved on. Then
-the description: clicking a clamped description shows all of it, Show less folds
+the goal (labeled Description): clicking a clamped goal shows all of it, Show less folds
 it, and a right-aligned Edit edits it in place without moving (see DESIGN.md),
 with Cancel and Save right-aligned below. The last opened Work is remembered
 per device (`client/current-work`): the sidebar's Work reopens it while it
@@ -415,7 +417,7 @@ overlays. The first segment after `/p/<project>` is always a screen.
 /p/<id>/editor[?work=<workId>]           Editor, nothing open
 /p/<id>/editor/<scheme>/<path>[?work=…]  document
 /p/<id>/editor/browse[/<scheme>/<path>]  folder
-overlays on any screen: ?settings=<section>  ?results
+?settings=<section> on any screen; ?results on a chat or the Editor
 ```
 
 `ProjectDestination` never carries a Work; the address's `work` is the one Work
@@ -464,7 +466,7 @@ uses the accepted URL and browser-local layout. Document
 admission still canonicalizes document paths and scope independently.
 
 A project address has explicit selections, not defaults: absent, no-Work,
-slug, malformed, and unavailable remain distinct. Only genuinely absent Editor selections may use local continuity.
+Work id, malformed, and unavailable remain distinct. Only genuinely absent Editor selections may use local continuity.
 The navigation coordinator matches rendered entries by history key, because
 router and native URLs can spell the same query differently. Async tickets
 still retain and validate the native URL, entry key, and navigation revision.

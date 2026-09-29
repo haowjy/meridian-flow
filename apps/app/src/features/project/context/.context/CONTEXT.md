@@ -34,9 +34,10 @@ project descendants and connects its two-phase close to the document-session
 runtime. Account close fences new commands immediately, aborts transport work,
 drains adoption/catalog/namespace operations, releases every retained session,
 and closes metadata last.
-The authenticated provider boundary also re-scopes the shared client creation
-registry, clearing transient Project and Work creation records when the account
-changes. That registry is not reload recovery.
+The authenticated provider boundary also re-scopes the client creation
+registry, clearing transient Project creation records when the account
+changes; Work command records (including creates) clear through the account's
+abort signal in `work-command-store`. Neither is reload recovery.
 
 The replica uses short account/resource Web Locks for namespace and terminal
 coordination. Typing and ordinary local content access do not hold those locks.
