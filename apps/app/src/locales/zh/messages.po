@@ -1464,12 +1464,18 @@ msgstr ""
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/useRetryStandIns.ts
-msgid "Couldn't retry. Something else started in this chat first."
+msgid "Couldn't retry."
 msgstr ""
 
+#: src/features/chat/derivation/HandoffBriefCard.tsx
+#: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/useRetryStandIns.ts
-msgid "Couldn't retry. The server is restarting."
-msgstr ""
+#~ msgid "Couldn't retry. Something else started in this chat first."
+#~ msgstr ""
+
+#: src/features/chat/useRetryStandIns.ts
+#~ msgid "Couldn't retry. The server is restarting."
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't run that skill"
@@ -2152,8 +2158,8 @@ msgid "Handoff brief"
 msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-msgid "Handoff brief interrupted"
-msgstr ""
+#~ msgid "Handoff brief interrupted"
+#~ msgstr ""
 
 #: src/features/chat/compaction/control-copy.ts
 #: src/features/chat/derivation/HandoffBriefCard.tsx
@@ -4513,8 +4519,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/ErrorBlock.tsx
-msgid "This reply was interrupted."
-msgstr ""
+#~ msgid "This reply was interrupted."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 #~ msgid "This report is unavailable."

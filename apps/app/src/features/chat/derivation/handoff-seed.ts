@@ -18,8 +18,6 @@ export type HandoffSeedFacts = {
    */
   sourceTitle: string | null;
   cutoffTurnId: string | null;
-  /** The ended brief was cut off by a crash or restart, not by its own failure. */
-  interrupted: boolean;
 };
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -44,7 +42,6 @@ export function readHandoffSeed(turn: Turn): HandoffSeedFacts | null {
     sourceRef: text(metadata.sourceRef),
     sourceTitle: text(metadata.sourceTitle),
     cutoffTurnId: text(metadata.cutoffTurnId),
-    interrupted: metadata.reason === "interrupted",
   };
 }
 
@@ -80,8 +77,6 @@ export type BriefCardView = {
   canStop: boolean;
   /** Retry is offered only on the latest seed, once it ended without a brief. */
   canRetry: boolean;
-  /** An ended brief a crash or restart cut off. */
-  interrupted: boolean;
 };
 
 /**
@@ -112,7 +107,6 @@ export function briefCardView(input: {
     superseded: ended && !latest,
     canStop: state === "generating" && !stopping,
     canRetry: ended && latest,
-    interrupted: state === "failed" && (readHandoffSeed(turn)?.interrupted ?? false),
   };
 }
 

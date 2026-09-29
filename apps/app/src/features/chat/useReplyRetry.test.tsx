@@ -150,24 +150,26 @@ describe("useReplyRetry", () => {
     expect(latest.standIns).toEqual([]);
     expect(latest.refused.has("f")).toBe(true);
     expect(invalidateQueries).toHaveBeenCalled();
-    expect(announcements.announce).toHaveBeenCalledWith(
-      "Couldn't retry. Something else started in this chat first.",
-    );
+    expect(announcements.announce).toHaveBeenCalledWith("Couldn't retry.");
     // Pressing Retry again clears the note while the new request runs.
     api.retryReply.mockReturnValueOnce(new Promise(() => undefined));
     await act(async () => latest.retry(failed));
     expect(latest.refused.has("f")).toBe(false);
   });
 
-  it("drops the new reply with accurate copy when shutdown refuses it", async () => {
+  it("treats a shutdown refusal like any refusal: generic copy, cause only in diagnostics", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     api.retryReply.mockRejectedValue(new HttpResponseError("runtime_shutting_down", 503, null));
     await act(async () => latest.retry(failed));
     expect(latest.standIns).toEqual([]);
-    expect(latest.refused).toEqual(new Set());
+    expect(latest.refused.has("f")).toBe(true);
     expect(invalidateQueries).toHaveBeenCalled();
-    expect(announcements.announce).toHaveBeenCalledWith(
-      "Couldn't retry. The server is restarting.",
+    expect(announcements.announce).toHaveBeenCalledWith("Couldn't retry.");
+    expect(warn).toHaveBeenCalledWith(
+      "[chat-retry-refused]",
+      expect.objectContaining({ from: "f", status: 503 }),
     );
+    warn.mockRestore();
   });
 
   it("keeps a lost request's reply, failed, and its Retry re-sends the same id for the same failed reply", async () => {

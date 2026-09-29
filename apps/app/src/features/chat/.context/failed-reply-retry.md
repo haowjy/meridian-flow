@@ -11,13 +11,18 @@ reply itself.
 | Latest turn, chat idle | Tinted block: "This response failed." with **Retry** beside it |
 | Latest turn, chat busy | Retry stays in place, `aria-disabled`, described by "You can retry when this chat is free." |
 | Not the latest turn | The quiet line "This response failed.", with no action |
-| Its Retry was refused | Adds the muted note "Couldn't retry. Something else started in this chat first.", current or in history |
+| Its Retry was refused | Adds the muted note "Couldn't retry.", current or in history |
 
 "Latest" is `endsTranscript` in `TurnList`: no visible row follows, and a
 divider counts as a row. Busy is the same signal the brief card's Retry uses:
 the live status is awake, or the composer has a run. The server's 409 covers
 the race. A failed first send (`failedSendRetry`) keeps its own "Couldn't
 send." Retry, and an inherited failed reply stays read-only.
+
+Every failed reply reads the same, whatever ended it: a reply cut off by a
+shutdown or crash is an ordinary failed reply. `ErrorBlock`'s kind comes from
+turn status and the local Retry state only, never from `turn.error` text; the
+cause stays in turn metadata for diagnostics.
 
 ## Retry, optimistically
 
@@ -28,9 +33,11 @@ to `POST /api/threads/:threadId/turns/:turnId/retry`. The response's turn
 replaces the stand-in by id, and the store's turn (from the live stream or the
 snapshot) replaces that.
 
-- **Refused (409 `reply_retry_unavailable`).** Nothing was written. The
-  stand-in goes, the snapshot refreshes, and the failed reply carries the
-  refused note. Pressing Retry again clears it.
+- **Refused (409 `reply_retry_unavailable`, or `runtime_shutting_down`).**
+  Nothing was written. The stand-in goes, the snapshot refreshes, and the
+  failed reply carries the generic refused note. The cause never reaches the
+  writer; `reportRetryRefused` (`error-telemetry.ts`) logs it for diagnostics.
+  Pressing Retry again clears the note.
 - **Lost request.** The stand-in stays, failed, and reads "Couldn't start the
   retry. Try again." with its own Retry, which re-sends the same id for the same
   failed reply: a request that did land replays (the server answers 200 with

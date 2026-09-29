@@ -4,8 +4,9 @@
  * Pressing Retry mints the new turn's id and shows its stand-in at once, then
  * asks the server to write it. The server's turn replaces the stand-in by id,
  * first from the response and then from the snapshot. A refusal (409: the chat
- * moved on first) wrote nothing: the stand-in goes, the turn the writer
- * pressed is noted, and the snapshot refreshes to show the true state. A lost
+ * moved on first; or the server is shutting down) wrote nothing: the stand-in
+ * goes, the turn the writer pressed is noted with a generic "Couldn't retry.",
+ * and the snapshot refreshes to show the true state. A lost
  * request keeps the stand-in, failed, and its Retry re-sends under the same
  * id: the lost request may have arrived.
  *
@@ -19,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HttpResponseError, httpErrorStatus } from "@/client/api/http-client";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announce, announceError } from "@/client/stores";
+import { reportRetryRefused } from "./error-telemetry";
 import { placeStandIns } from "./retry-stand-ins";
 
 export type StandInRequest = "sending" | "sent" | "failed";
@@ -36,7 +38,7 @@ export type RetryStandIns = {
   standIns: readonly Turn[];
   /** Where a stand-in's request is; null once the store has it, or for any other turn. */
   requestOf: (turnId: string) => StandInRequest | null;
-  /** Turns whose Retry the server refused: the chat had moved on. */
+  /** Turns whose Retry the server refused; nothing was written. */
   refused: ReadonlySet<string>;
   /**
    * Retry from `from`. A failed stand-in re-sends under its own id; any other
@@ -46,6 +48,14 @@ export type RetryStandIns = {
 };
 
 const NO_REFUSALS: ReadonlySet<string> = new Set();
+
+/** The server answered and wrote nothing: the chat moved on, or it is shutting down. */
+function isRetryRefusal(error: unknown): boolean {
+  return (
+    httpErrorStatus(error) === 409 ||
+    (error instanceof HttpResponseError && error.message === "runtime_shutting_down")
+  );
+}
 
 export function useRetryStandIns(input: {
   threadId: string;
@@ -116,18 +126,14 @@ export function useRetryStandIns(input: {
           refresh();
         },
         (error: unknown) => {
-          if (error instanceof HttpResponseError && error.message === "runtime_shutting_down") {
-            setLocal((current) => current.filter((entry) => entry.turn.id !== id));
-            announce(t`Couldn't retry. The server is restarting.`);
-            refresh();
-            return;
-          }
-          if (httpErrorStatus(error) === 409) {
-            // Nothing was written: the snapshot shows what holds the chat, and
-            // the pressed turn says Retry didn't run.
+          // A refusal (409: the chat moved on first; or the server is shutting
+          // down) wrote nothing. The writer sees one generic line; the cause
+          // goes to diagnostics.
+          if (isRetryRefusal(error)) {
+            reportRetryRefused({ threadId, from, status: httpErrorStatus(error), error });
             setLocal((current) => current.filter((entry) => entry.turn.id !== id));
             setRefused((current) => new Set(current).add(from));
-            announce(t`Couldn't retry. Something else started in this chat first.`);
+            announce(t`Couldn't retry.`);
             refresh();
             return;
           }
@@ -142,7 +148,7 @@ export function useRetryStandIns(input: {
         },
       );
     },
-    [patch, refresh],
+    [patch, refresh, threadId],
   );
 
   const retry = useCallback<RetryStandIns["retry"]>(
