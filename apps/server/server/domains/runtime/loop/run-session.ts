@@ -13,6 +13,7 @@ import {
   type RunLoopInput,
   type RunOutcome,
   type RunTurnInput,
+  RuntimeShuttingDownError,
   UnsettledPlaceholderError,
 } from "./run-turn-port.js";
 import type { RuntimeDelivery } from "./runtime-delivery.js";
@@ -27,6 +28,7 @@ type RunSession = {
 };
 
 export function createRunSessions(deps: {
+  shutdown: { started: boolean };
   backgroundTasks?: import("../detached-work.js").DetachedWorkTracker;
   setup(input: RunLoopInput): Promise<PreparedLoop>;
   finalizeFailure(input: {
@@ -49,10 +51,15 @@ export function createRunSessions(deps: {
   onRunSettled?: (threadId: ThreadId) => void;
 }) {
   const running = new Map<ThreadId, RunSession>();
+  const shutdown = deps.shutdown;
   const backgroundTasks = deps.backgroundTasks ?? processDetachedWork;
   const authority = deps.runClaim;
   const runStarter = createRunStarter({ startDrain }, deps.eventSink);
-  const wakeIfRunnable = createWakeIfRunnable({ delivery: deps.delivery, runStarter });
+  const wakeIfRunnable = createWakeIfRunnable({
+    delivery: deps.delivery,
+    runStarter,
+    shutdown,
+  });
   function observe(threadId: ThreadId, name: string, error: unknown) {
     emitEvent(deps.eventSink, {
       level: "error",
@@ -73,6 +80,7 @@ export function createRunSessions(deps: {
 
   async function prepare(input: RunTurnInput): Promise<PreparedRun> {
     const { threadId } = input;
+    if (shutdown.started) throw new RuntimeShuttingDownError(threadId);
     if (running.has(threadId)) throw new TurnStartConflictError(threadId, "already_running");
     const controller = new AbortController();
     let complete!: () => void;
@@ -147,6 +155,7 @@ export function createRunSessions(deps: {
     try {
       lease = await authority.startExecution(threadId, crypto.randomUUID());
       if (!lease) throw new TurnStartConflictError(threadId, "already_running");
+      if (shutdown.started) throw new RuntimeShuttingDownError(threadId);
       const heldLease = lease;
       heartbeat = setInterval(
         () => {
@@ -182,6 +191,7 @@ export function createRunSessions(deps: {
         },
       });
       session.currentTurn = loop.currentTurn;
+      if (shutdown.started) throw new RuntimeShuttingDownError(threadId);
       preparedRun = true;
       const snapshotFloorNextSeq = ((await deps.headSeq(threadId)) + 1n).toString();
       try {
@@ -258,7 +268,8 @@ export function createRunSessions(deps: {
       const run = await prepare({ threadId, drain: true });
       backgroundTasks.track(run.execute(), "detached run execution");
     } catch (error) {
-      if (!(error instanceof NoPendingWakeError)) throw error;
+      if (!(error instanceof NoPendingWakeError) && !(error instanceof RuntimeShuttingDownError))
+        throw error;
     }
   }
   return {
@@ -276,6 +287,10 @@ export function createRunSessions(deps: {
     },
     getRunningTurnId: (threadId: ThreadId) => running.get(threadId)?.currentTurn?.id ?? null,
     isThreadRunning: (threadId: ThreadId) => running.has(threadId),
+    beginShutdown() {
+      shutdown.started = true;
+      for (const session of running.values()) session.controller.abort("shutdown");
+    },
     async cancel(
       threadId: ThreadId,
       turnId: TurnId,

@@ -232,6 +232,58 @@ describe("RunSession", () => {
     expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
   });
 
+  it("aborts and settles live replies on shutdown, then refuses new starts", async () => {
+    let providerStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      providerStarted = resolve;
+    });
+    let providerSignal: AbortSignal | undefined;
+    let streams = 0;
+    const f = await fixture((deps) => {
+      deps.gateway.stream = async function* (request) {
+        streams++;
+        providerSignal = request.signal;
+        providerStarted();
+        await new Promise<void>((resolve) => {
+          if (request.signal?.aborted) resolve();
+          else request.signal?.addEventListener("abort", () => resolve(), { once: true });
+        });
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "text", text: "partial answer" }],
+            toolCalls: [],
+            finishReason: "end_turn",
+            usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+            model: "gpt-4.1-mini",
+            provider: "openai",
+          },
+        };
+      };
+      deps.gateway.settleCancelledResult = async ({ result }) =>
+        result ? { result, persist: true } : null;
+    });
+
+    const balanceBefore = await f.deps.creditLedger.getBalance({ userId: f.thread.userId });
+    const run = await f.prepare();
+    const execution = run.execute();
+    await started;
+    f.runtime.beginShutdown();
+
+    await expect(execution).resolves.toMatchObject({ status: "cancelled" });
+    expect(providerSignal?.reason).toBe("shutdown");
+    expect(await f.repos.modelResponses.listByTurn(run.executionTurnId)).toHaveLength(1);
+    expect(BigInt(await f.deps.creditLedger.getBalance({ userId: f.thread.userId }))).toBeLessThan(
+      BigInt(balanceBefore),
+    );
+
+    await f.runtime.startDrain(f.thread.id);
+    await expect(
+      f.runtime.prepare({ threadId: f.thread.id, userText: "after shutdown" }),
+    ).rejects.toMatchObject({ name: "RuntimeShuttingDownError" });
+    expect(streams).toBe(1);
+  });
+
   it("falls back after a pre-loop crash and releases", async () => {
     const f = await fixture();
     const run = await f.prepare();

@@ -55,6 +55,7 @@ type BriefGeneration = (input: {
 
 type HandoffBriefServiceDeps = {
   backgroundTasks?: DetachedWorkTracker;
+  shutdown?: { started: boolean };
   repos: ThreadRepositories;
   eventWriter: EventJournalWriter;
   eventSink: EventSink;
@@ -83,7 +84,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
   };
   const live = new Map<TurnId, LiveBrief>();
   const backgroundTasks = deps.backgroundTasks ?? processDetachedWork;
-  let shuttingDown = false;
+  const shutdown = deps.shutdown ?? { started: false };
   const accounting = createTurnAccounting({
     billingUsage: deps.billingUsage as BillingUsagePolicy,
   });
@@ -112,7 +113,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
   }
 
   async function wakeAfterRelease(threadId: ThreadId) {
-    if (shuttingDown) return;
+    if (shutdown.started) return;
     try {
       await deps.wakeIfRunnable(threadId);
     } catch (error) {
@@ -229,6 +230,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     claim: HandoffBriefHold;
   }): Promise<void> {
     const controller = new AbortController();
+    if (shutdown.started) controller.abort("shutdown");
     const holder: LiveBrief = { controller, threadId: input.threadId };
     live.set(input.seedTurnId, holder);
     const removeLost = input.claim.onLost(() => controller.abort("lost_claim"));
@@ -347,7 +349,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     seedTurnId: TurnId;
     claim: HandoffBriefHold;
   }): Promise<void> {
-    if (shuttingDown) {
+    if (shutdown.started) {
       return input.claim.release().catch((error) => {
         emitEvent(deps.eventSink, {
           level: "error",
@@ -417,7 +419,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
       live.get(seedTurnId)?.controller.abort("stop");
       publishStatus(threadId);
       schedulePostCommit(async () => {
-        if (shuttingDown) return;
+        if (shutdown.started) return;
         try {
           await deps.wakeIfRunnable(threadId);
         } catch (error) {
@@ -504,8 +506,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
   }
 
   function beginShutdown(): void {
-    if (shuttingDown) return;
-    shuttingDown = true;
+    shutdown.started = true;
     for (const brief of live.values()) brief.controller.abort("shutdown");
   }
 

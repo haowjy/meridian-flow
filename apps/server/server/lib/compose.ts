@@ -604,6 +604,7 @@ export async function createProductionAppPorts(input: {
 /** Pure wiring — no env reads and no concrete adapter construction. */
 export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const backgroundTasks = createDetachedWorkTracker();
+  const shutdown = { started: false };
   const threadEventHub = createThreadEventHub({
     journalReader: ports.journalReader,
     journalWriter: ports.journalWriter,
@@ -659,7 +660,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
         await publishReport(report.childThreadId, report.executionTurnId);
     },
   });
-  const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter });
+  const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter, shutdown });
   const workContextNotices = delivery;
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
@@ -866,6 +867,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   };
   const orchestratorDeps = {
     backgroundTasks,
+    shutdown,
     summarizer: createConversationSummarizer({
       gateway: ports.gateway,
       agentRevisions: ports.agentRevisions,
@@ -928,6 +930,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
     threadLock,
     runClaim: ports.runClaim,
+    shutdown,
     prioritizePendingControls: (threadId) => delivery.prioritizePendingControls(threadId),
     wakeIfRunnable,
     billingUsage: ports.billingUsage,
@@ -1012,6 +1015,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     changeTrails,
     changeTrailDelivery,
     async shutdown() {
+      runner.beginShutdown();
       handoffBriefs.beginShutdown();
       const timeoutMs = 10_000;
       const drained = await backgroundTasks.drain(timeoutMs);
@@ -1435,6 +1439,7 @@ export function createInMemoryAppServices(): AppServices {
       isThreadRunning() {
         return false;
       },
+      beginShutdown() {},
       async startDrain() {
         throw new Error("in-memory turn runner is not implemented");
       },

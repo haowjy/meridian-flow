@@ -67,6 +67,14 @@ export class NoPendingWakeError extends Error {
   }
 }
 
+/** The app is closing; refuse work that has not yet acquired a run session. */
+export class RuntimeShuttingDownError extends Error {
+  constructor(readonly threadId: ThreadId) {
+    super("runtime_shutting_down");
+    this.name = "RuntimeShuttingDownError";
+  }
+}
+
 /** A live placeholder's failure transaction did not commit. Orphan repair owns
  * its terminal state; paid response rows still in memory are lost like a crash,
  * not separately debited outside the transaction that ends the placeholder.

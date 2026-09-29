@@ -101,6 +101,7 @@ export function createRuntimeHarness(
         .prioritizePendingControls,
     });
   const threadLock = suppliedLock ?? createInMemoryThreadLock();
+  const shutdown = overrides.shutdown ?? { started: false };
   const workContext = overrides.workContext ?? {
     async renderForThread() {
       return {
@@ -203,6 +204,7 @@ export function createRuntimeHarness(
     },
     ...dependencies,
     backgroundTasks: processDetachedWork,
+    shutdown,
     workContext,
   };
   let runtime: ReturnType<typeof createOrchestrator>;
