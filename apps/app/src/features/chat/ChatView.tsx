@@ -69,7 +69,7 @@ import {
   useDerivationStatus,
   whenDerived,
 } from "./derivation/derive-conversation";
-import { isHandoffSeed, optimisticHandoffSeed } from "./derivation/handoff-seed";
+import { isHandoffSeed, optimisticHandoffSeed, placeLocalSeeds } from "./derivation/handoff-seed";
 import { optimisticForkPrefix, useInheritedView } from "./derivation/inherited-view";
 import { useHandoffBrief } from "./derivation/useHandoffBrief";
 import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
@@ -154,7 +154,8 @@ export function ChatView({
   const brief = useHandoffBrief({ threadId, storedTurns });
   // A handoff's brief is on its way the moment the writer lands; until the
   // server's seed arrives the card stands in for it (it has nothing to stop
-  // yet). A Retry's new card stands at the leaf until the server has it.
+  // yet). A Retry's new card stands after the turn it followed until the
+  // server has it.
   const intent = derivation?.intent;
   const { localSeeds } = brief;
   const turns = useMemo(() => {
@@ -172,9 +173,8 @@ export function ChatView({
             }),
           ]
         : [];
-    return opening.length || localSeeds.length
-      ? [...opening, ...storedTurns, ...localSeeds]
-      : storedTurns;
+    const placed = placeLocalSeeds(storedTurns, localSeeds);
+    return opening.length ? [...opening, ...placed] : placed;
   }, [derivation?.state, intent, localSeeds, storedTurns, threadId]);
   const latestAssistantTurn =
     [...turns].reverse().find((turn) => turn.role === "assistant") ?? null;
