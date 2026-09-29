@@ -246,7 +246,6 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
             kind: "failed",
             error: new Error("Credits exhausted"),
             modelResponses: [],
-            summarizer: { path: "rolling", segments: 0 },
           },
           failure: { reason: "credits_exhausted", phase: "launch" },
         });
@@ -260,7 +259,6 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
             outcome: {
               kind: "cancelled",
               modelResponses: [],
-              summarizer: { path: "rolling", segments: 0 },
             },
           },
           controller.signal.reason as BriefAbortReason | undefined,
@@ -303,7 +301,6 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
             outcome: {
               kind: "cancelled",
               modelResponses: [],
-              summarizer: { path: "rolling", segments: 0 },
             },
           };
         } else {
@@ -312,7 +309,6 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
               kind: "failed",
               error,
               modelResponses: [],
-              summarizer: { path: "rolling", segments: 0 },
             },
             failure: { reason: "handoff_brief_failed", phase: "source_prepare" },
           };

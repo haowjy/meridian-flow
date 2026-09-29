@@ -562,6 +562,28 @@ else
         status: "error",
         metadata: { reason: "credits_exhausted", phase: "launch" },
       });
+      expect(await fixture.repos.turns.findById(fixture.seed.id)).not.toHaveProperty(
+        "metadata.summarizer",
+      );
+    });
+
+    it("does not record a summary path when generation throws before a response", async () => {
+      const fixture = await handoffSeed();
+      const runClaim = createDrizzleRunClaim(db, { holderId: "brief-generator-throw" });
+      const service = serviceFor(fixture.repos, runClaim, {
+        async generate() {
+          throw new Error("pre-summary generator failure");
+        },
+      });
+
+      expect(await startBrief(service, fixture.destination.id, fixture.seed.id)).toBe(true);
+      await expect
+        .poll(async () => (await fixture.repos.turns.findById(fixture.seed.id))?.status)
+        .toBe("error");
+
+      expect(await fixture.repos.turns.findById(fixture.seed.id)).not.toHaveProperty(
+        "metadata.summarizer",
+      );
     });
 
     it("runs one provider call when two service instances claim the same seed", async () => {
