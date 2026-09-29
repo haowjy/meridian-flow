@@ -17,10 +17,7 @@ export function next(
   const rows = pending.filter((row) => row.intent !== "control");
   const hasMessages = rows.some((row) => row.intent === "message");
   if (at === "boundary") {
-    const selected = hasMessages
-      ? rows
-      : rows.filter((row) => row.body.kind === "work_context_refresh");
-    return selected.length > 0 ? { kind: "batch", rows: [...selected] } : { kind: "none" };
+    return rows.length > 0 ? { kind: "batch", rows: [...rows] } : { kind: "none" };
   }
 
   const controls = pending.filter((row) => row.intent === "control") as ControlMessage[];
