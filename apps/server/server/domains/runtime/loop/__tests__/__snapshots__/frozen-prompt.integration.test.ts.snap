@@ -196,6 +196,12 @@ Forked conversation through turn 00000000-0000-4000-8000-000000000012.
           },
           {
             "providerOptions": undefined,
+            "text": "Continue.",
+            "type": "text",
+          },
+          {
+            "cacheBreakpoint": true,
+            "providerOptions": undefined,
             "text": "<system_update>
 <work_context>
 current: none (direct writes)
@@ -203,12 +209,6 @@ active (most recent first; max 20):
   none
 </work_context>
 </system_update>",
-            "type": "text",
-          },
-          {
-            "cacheBreakpoint": true,
-            "providerOptions": undefined,
-            "text": "Continue.",
             "type": "text",
           },
         ],
@@ -333,6 +333,12 @@ Forked conversation through turn 00000000-0000-4000-8000-000000000012.
           },
           {
             "providerOptions": undefined,
+            "text": "Continue.",
+            "type": "text",
+          },
+          {
+            "cacheBreakpoint": true,
+            "providerOptions": undefined,
             "text": "<system_update>
 <work_context>
 current: none (direct writes)
@@ -340,12 +346,6 @@ active (most recent first; max 20):
   none
 </work_context>
 </system_update>",
-            "type": "text",
-          },
-          {
-            "cacheBreakpoint": true,
-            "providerOptions": undefined,
-            "text": "Continue.",
             "type": "text",
           },
         ],
