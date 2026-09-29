@@ -19,6 +19,7 @@ import type {
   MarkdownSkillOccurrence,
 } from "@/rich-content/reference-occurrences";
 import type { TranscriptReferenceResolution } from "@/rich-content/TranscriptReference";
+import { HandoffTurnAction, useTurnDerivation } from "./derivation/DeriveTurnActions";
 
 export type UserTurnRecovery =
   | {
@@ -80,6 +81,9 @@ export function projectUserTurn(turn: Turn): {
 }
 
 function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: UserTurnProps) {
+  // Hand off from a message the model has. A queued one sits beyond the
+  // cutoff the server would use, so it offers none.
+  const handoff = useTurnDerivation() !== null && !queued && turn.status === "complete";
   const projectId = useProjectDocumentNavigationProjectId();
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
   const projected = useMemo(() => projectUserTurn(turn), [turn]);
@@ -192,6 +196,15 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
               {t`Edit`}
             </Button>
           ) : null}
+        </div>
+      ) : null}
+      {handoff ? (
+        // Revealed on hover or focus like a reply's actions; always shown on touch.
+        <div
+          className="user-turn-actions mt-[var(--chat-space-inline)] flex min-h-6 items-center justify-end gap-[var(--chat-space-inline)] transition-opacity"
+          data-user-turn-actions
+        >
+          <HandoffTurnAction turnId={turn.id} />
         </div>
       ) : null}
     </article>
