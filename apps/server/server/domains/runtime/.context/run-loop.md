@@ -71,7 +71,9 @@ exit. Production signals reach that sequence directly. In Nitro dev, the
 supervisor closes the real `node-worker` runner; the patched runner invokes and
 awaits the worker runtime's close hook before terminating it, so the same
 sequence runs without changing HMR or Portless routing. The app waits for one
-bounded 10-second drain and warns if it times out. A
+bounded 10-second runtime drain and warns if it times out. The whole callback
+and observability flush sequence has a 12-second process deadline; a second
+signal exits immediately. A
 brief launched after
 shutdown begins leaves S pending for ordinary repair, and a released claim does
 not wake its destination. DB test fixture resets drain the explicitly wired

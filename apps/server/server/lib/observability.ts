@@ -11,6 +11,7 @@ import {
 } from "../domains/observability/index.js";
 
 const OBSERVABILITY_KEY = Symbol.for("meridian.api.observability.v1");
+const PROCESS_SHUTDOWN_DEADLINE_MS = 12_000;
 
 type ObservabilityGlobal = typeof globalThis & {
   [OBSERVABILITY_KEY]?: {
@@ -68,14 +69,22 @@ export function registerProcessShutdownCallback(callback: () => Promise<void> | 
 
 export function shutdownProcessResources(): Promise<void> {
   const current = state();
-  current.shutdownPromise ??= (async () => {
-    for (const callback of current.shutdownCallbacks) {
-      await Promise.resolve()
-        .then(callback)
-        .catch(() => undefined);
-    }
-    await current.sink.flush().catch(() => undefined);
-  })();
+  if (!current.shutdownPromise) {
+    let deadline: ReturnType<typeof setTimeout>;
+    const work = (async () => {
+      for (const callback of current.shutdownCallbacks) {
+        await Promise.resolve()
+          .then(callback)
+          .catch(() => undefined);
+      }
+      await current.sink.flush().catch(() => undefined);
+    })();
+    const expired = new Promise<void>((resolve) => {
+      deadline = setTimeout(resolve, PROCESS_SHUTDOWN_DEADLINE_MS);
+      deadline.unref();
+    });
+    current.shutdownPromise = Promise.race([work, expired]).finally(() => clearTimeout(deadline));
+  }
   return current.shutdownPromise;
 }
 
@@ -83,9 +92,13 @@ export function installObservabilityShutdownHooks(): void {
   const current = state();
   if (current.shutdownInstalled) return;
   current.shutdownInstalled = true;
+  let signalReceived = false;
   const shutdown = () => {
-    // SIGINT and SIGTERM may both arrive while the bounded runtime drain is in
-    // flight. They are one shutdown, not competing drain/flush/exit sequences.
+    if (signalReceived) {
+      process.exit(1);
+      return;
+    }
+    signalReceived = true;
     void shutdownProcessResources().finally(() => process.exit(0));
   };
   process.on("SIGTERM", shutdown);
