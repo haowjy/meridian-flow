@@ -5,14 +5,16 @@ and Retry act on handoff seeds, not inbox controls; see [handoff](handoff.md).
 
 ## Queue order
 
-Commands run only as the first step of a run, one per run. At a reply boundary,
+Commands run only at the start of a run, one per run. At a reply boundary,
 `next(pending, "boundary")` selects non-control work only. At run start,
 `next(pending, "run_start")` selects the oldest command only when no message is
 waiting; otherwise messages run first. Stop stamps pending commands, so the
-oldest stamped command runs first together with the waiting messages. Those
-messages are pinned verbatim in compaction and answered after it.
+oldest stamped command runs first together with the waiting messages. Esc means
+"run what is queued now": every pending command is stamped, and each stamped
+command runs ahead of later messages, one per run, until all stamped commands
+have run. Messages adopted with a command stay pinned verbatim in compaction.
 
-Tool boundaries and turn close never run commands. If a turn ends with only
+Reply boundaries and turn close never run commands. If a turn ends with only
 commands waiting, the claim is released and the queue is re-read; the next run
 starts the command. Messages arriving while it runs are answered after it.
 

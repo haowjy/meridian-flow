@@ -27,6 +27,7 @@ import { createTurnAccounting } from "../loop/turn-accounting.js";
 import type { SummaryOutcome } from "../ports/conversation-summarizer.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
+import type { HandoffBriefOutcome } from "./brief-request.js";
 import { completeHandoffSeed, handoffBriefFailedCopy, handoffSeedBlock } from "./seed.js";
 
 const REMOTE_STOP_POLL_MS = 5_000;
@@ -49,7 +50,7 @@ type BriefGeneration = (input: {
   destination: Thread;
   seed: Turn;
   signal: AbortSignal;
-}) => Promise<{ outcome: SummaryOutcome; failure?: HandoffFailureOutcome }>;
+}) => Promise<{ outcome: HandoffBriefOutcome; failure?: HandoffFailureOutcome }>;
 
 type HandoffBriefServiceDeps = {
   repos: ThreadRepositories;
@@ -116,7 +117,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
 
   async function terminalSeed(
     seed: Turn,
-    outcome: SummaryOutcome,
+    outcome: HandoffBriefOutcome,
     failure?: HandoffFailureOutcome,
     cause?: string,
   ) {
@@ -139,7 +140,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
       readable,
     );
     return completeHandoffSeed(persistence, completed, block, {
-      summarizer: outcome.summarizer,
+      ...("summarizer" in outcome && outcome.summarizer ? { summarizer: outcome.summarizer } : {}),
       ...(failure ? { failure } : {}),
       ...(cause ? { cause } : {}),
     });
@@ -148,7 +149,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
   async function finish(
     threadId: ThreadId,
     seedTurnId: TurnId,
-    generation: { outcome: SummaryOutcome; failure?: HandoffFailureOutcome },
+    generation: { outcome: HandoffBriefOutcome; failure?: HandoffFailureOutcome },
     abortReason?: BriefAbortReason,
   ): Promise<void> {
     const { outcome, failure } = generation;

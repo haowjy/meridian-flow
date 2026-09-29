@@ -34,7 +34,7 @@ thread_report({"ref":"pN"}).`), and marks the report published. Internal executi
 `spawn/orphan-report-repair.ts` hosts the orphan sweep; who repairs what is in
 [recovery](recovery.md). Child-report repair finalizes placeholders before
 walking the child chain, treating every admitted execution selector as a
-barrier, including compaction selectors.
+traversal boundary, including compaction selectors.
 
 ## Invocation and configuration
 

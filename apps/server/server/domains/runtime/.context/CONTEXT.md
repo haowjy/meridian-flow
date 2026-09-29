@@ -30,7 +30,7 @@ flowchart LR
 | [history-tools.md](history-tools.md) | `thread_ls`, `thread_history`, `thread_report`, lineage scope, `spawn.from`, and bake-gated history guidance. |
 | [document-text.md](document-text.md) | Document revision evidence and how compaction and `thread_history` replace stale document copies. |
 | [compaction.md](compaction.md) | The compaction protocol: transitions, decisions and refusals, the one projection authority, trigger and estimate, failure, cancellation, overflow, images. |
-| [controls.md](controls.md) | Queued writer controls and the barrier: position at execution, wakes, withdrawal, absorption. |
+| [controls.md](controls.md) | Queued writer controls, run-start queue order, Stop priority, withdrawal, and one-command-per-run consumption. |
 | [undo.md](undo.md) | Undoing a compaction and the Undo availability advisory. |
 | [handoff.md](handoff.md) | Handoff brief ownership of the destination run claim, Stop/Retry, and release wake. |
 | [summarizer.md](summarizer.md) | The shared summarizer port (owner and source), branch/rolling paths, and paid-row settlement. |

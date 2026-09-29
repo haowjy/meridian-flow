@@ -31,7 +31,11 @@ function required<T>(value: T | null | undefined): T {
   return value;
 }
 
-async function prepareBrief(input: { userCutoff: boolean; previousTooLarge?: boolean }) {
+async function prepareBrief(input: {
+  userCutoff: boolean;
+  previousTooLarge?: boolean;
+  sourcePreparationFails?: boolean;
+}) {
   let sourceId = "";
   const summarizer = scriptedSummarizer();
   const gateway = {
@@ -154,6 +158,11 @@ async function prepareBrief(input: { userCutoff: boolean; previousTooLarge?: boo
       cutoffTurnId: cutoff.id,
     },
   });
+  if (input.sourcePreparationFails) {
+    rig.deps.agentRevisions.readThreadBinding = async () => {
+      throw new Error("Source binding unavailable");
+    };
+  }
   const beforeTurns = await rig.repos.turns.listByThread(source.id);
   const beforeBlocks = await rig.repos.blocks.listByThread(source.id);
   const result = await generateHandoffBrief(
@@ -196,4 +205,13 @@ it("marks a retry after a too-large brief rejection as known too large", async (
   const { result, calls } = await prepareBrief({ userCutoff: false, previousTooLarge: true });
   expect(result.outcome.kind).toBe("complete");
   expect(calls[0]).toMatchObject({ knownTooLarge: true });
+});
+
+it("records no summary path when source preparation fails before a call", async () => {
+  const { result, calls } = await prepareBrief({ userCutoff: false, sourcePreparationFails: true });
+
+  expect(result.outcome).toMatchObject({ kind: "failed", modelResponses: [] });
+  expect(result.outcome).not.toHaveProperty("summarizer");
+  expect(result.failure).toEqual({ reason: "handoff_brief_failed", phase: "source_prepare" });
+  expect(calls).toHaveLength(0);
 });

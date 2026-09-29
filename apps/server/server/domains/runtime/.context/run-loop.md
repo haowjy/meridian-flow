@@ -31,13 +31,16 @@ run start and `wakeIfRunnable`. At a reply boundary it selects non-control
 messages only. At run start it chooses a stamped command plus waiting messages,
 otherwise messages before the oldest command, or one command when no message
 waits. This keeps `/compact` and Undo at the end of the queue and prevents
-tool-boundary command execution ([controls](controls.md)).
+command selection between tools or at reply boundaries ([controls](controls.md)).
 
 After a run releases its claim, cleanup refreshes and re-reads the queue through
 `wakeIfRunnable`; this includes a run that found nothing to do and a lease
-cancelled during setup. An empty reread does not start a run. A real setup error
-skips the reread to avoid a hot loop; the periodic wake sweep is the backstop.
-Short exclusive claim holders still use that sweep as their liveness backstop.
+cancelled during setup. If a failed assistant run left its own adopted receipt
+unacknowledged, that receipt is excluded from this reread and waits for the
+periodic sweep; newly arrived rows remain eligible and wake promptly. An empty
+reread does not start a run. A real setup error skips the reread to avoid a hot
+loop. Short exclusive claim holders still use the sweep as their liveness
+backstop.
 
 `OrchestratorDeps` is fully required: gateway, repos, retained Agent revision
 reader, tool registry/executor, project preferences, credit ledger, the

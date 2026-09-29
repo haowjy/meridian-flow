@@ -62,8 +62,8 @@ paid-summary settlement and passes `{ ...settled.metadata, ...prepared.metadata 
 to `beginPromptEpoch`: the owner hook `recordCompactionSummary` writes C's
 summarizer telemetry during settlement, so passing the prepared value alone
 would drop it. C's `controlMessageId` is written when the command is reserved;
-no later command is absorbed into a running summary. Telemetry never renders to
-the model, so B's first request still equals the rebuild. The same assembly
+another queued command remains for a later run. Telemetry never renders to the
+model, so B's first request still equals the rebuild. The same assembly
 measures `tokensAfter`; the epoch, frozen elisions and successor commit
 atomically.
 
@@ -169,10 +169,12 @@ headroom, using `apps/server/scripts/fixtures/compaction-estimator-probe.json`.
   preparation and during the primary/child startup sweep. These codecs are
   C's alone: a refused undo has its own reason set ([undo](undo.md)), and the
   handoff seed's typed outcome is separate ([handoff](handoff.md)).
-- If late arrivals make the successor request too large, C still commits its
-  summary and prompt epoch. B's ordinary fit check fails with
-  `context_too_large` below the latest arrival; the paid summary rows settle
-  successfully with C, and the adopted messages are acknowledged.
+- Late arrivals get B's own request preflight. It may compact again when the
+  normal plan can fit them; if the request is over the automatic trigger but
+  still fits the model's usable window and cannot be compacted below the
+  trigger, it proceeds without failing B. Only a request that cannot fit the
+  usable window fails B with `context_too_large`; C still commits its summary
+  and prompt epoch, and paid summary rows settle successfully with C.
 - A live unexpected error while C is current uses a fresh failure
   transaction: C `error`, settled summary rows, failed B below the latest
   arrivals, and receipt acknowledgment. Notices remain queued.
@@ -201,8 +203,8 @@ Only the run signal or the durable cancel request authorizes cancellation. A
 summarizer that returns `cancelled` on a live signal has failed, and an
 internal `AbortError` alone is not Stop. Stop aborts the summary, and terminal
 close settles its response rows on cancelled C with the receipt
-acknowledgment. Late arrivals are not part of C's receipt and stay queued for
-the cancel wake.
+acknowledgment. Late arrivals are not part of C's receipt and remain pending
+for the post-release queue reread or the periodic wake sweep.
 
 ## Context-window overflow
 
@@ -233,8 +235,8 @@ eviction victims, and each block is decided at most once per pass.
 
 Re-admission decisions belong to C, so reverting C removes their effect and a
 fork copies them only when its cutoff includes C. `tokensAfter` measures the
-prepared request; successor preparation checks fit after late arrivals. If
-they exceed the budget, C commits and B fails its normal request fit check.
+prepared request; B runs its own preflight after late arrivals and can compact
+again or proceed under the usable window.
 
 ## Cost
 

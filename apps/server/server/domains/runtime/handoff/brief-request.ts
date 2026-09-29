@@ -13,12 +13,16 @@ import { prepareRequestContext } from "../loop/request-preparation.js";
 import type { SummaryOutcome } from "../ports/conversation-summarizer.js";
 import { previousAttemptRejectedAsTooLarge } from "../summary/summary-path.js";
 
+export type HandoffBriefOutcome =
+  | SummaryOutcome
+  | { kind: "failed"; error: unknown; modelResponses: SummaryOutcome["modelResponses"] };
+
 export async function generateHandoffBrief(
   deps: OrchestratorDeps,
   destination: Thread,
   seed: Turn,
   signal: AbortSignal,
-): Promise<{ outcome: SummaryOutcome; failure?: HandoffFailureOutcome }> {
+): Promise<{ outcome: HandoffBriefOutcome; failure?: HandoffFailureOutcome }> {
   const metadata = HandoffSeedMetadataCodec.parse(seed.metadata);
   const source = await deps.repos.threads.findByIdIncludingDeleted(metadata.sourceThreadId);
   if (!source) throw new Error("Handoff source is missing");
@@ -51,7 +55,6 @@ export async function generateHandoffBrief(
         kind: "failed",
         error,
         modelResponses: [],
-        summarizer: { path: "rolling", segments: 0 },
       },
       failure: { reason: "handoff_brief_failed", phase: "source_prepare" },
     };
