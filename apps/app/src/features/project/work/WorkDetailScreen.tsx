@@ -1,13 +1,12 @@
-/** Focused Work detail composition with independently resilient resources. */
+/**
+ * The Work page: its titles and description over one sticky toolbar, then
+ * the Chats or Files tab, each owning its own search, actions and queries.
+ */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ProjectChatItem } from "@meridian/contracts/protocol";
-import { MessageSquarePlus, Search } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
+import { useRef, useState } from "react";
 import type { AddressableWork } from "@/client/query/useWorks";
 import { useWorkMutations } from "@/client/query/work-command-store";
-import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -16,23 +15,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
-import { useMinuteClock } from "@/hooks/use-minute-clock";
-import { NextPage } from "../chat-index/ChatIndex";
-import { ChatIndexList, type ChatIndexRowProps } from "../chat-index/ChatIndexList";
-import { ChatIndexLoading } from "../chat-index/ChatIndexLoading";
-import { useChatRowCommands } from "../chat-list/useChatRowCommands";
-import { useChatNavigation } from "../routing/chat-navigation";
 import { useProjectLeaveGuard } from "../routing/ProjectNavigationContext";
 import type { ProjectRouteCommands } from "../routing/project-route";
-import { useWorkFiles, WorkFilesActions, WorkFilesView } from "./WorkFilesView";
+import { WorkChatsTab } from "./WorkChatsTab";
+import { WorkFilesTab } from "./WorkFilesTab";
 import {
   useWorkMetadataController,
   WorkDescription,
   type WorkMetadataController,
 } from "./WorkMetadata";
 import { WorkHeading } from "./WorkTitles";
+import { WorkToolbarSlotProvider } from "./WorkToolbarSlot";
 
 export type WorkDetailScreenProps = {
   projectId: string;
@@ -78,44 +72,14 @@ export function WorkScreenHeader({
   );
 }
 
-function useWorkView(
-  routeCommands: ProjectRouteCommands,
-): ["chats" | "files", (view: "chats" | "files") => void] {
-  return [routeCommands.workView, routeCommands.setWorkView];
-}
-
 export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailScreenProps) {
   const mutations = useWorkMutations(projectId);
   const controller = useWorkMetadataController(work, async (data) => {
     const error = await mutations.update({ workId: work.id, data });
     if (error) throw error;
   });
-  const [view, setView] = useWorkView(routeCommands);
-  const [searchText, setSearchText] = useState("");
-  const [settledSearch, setSettledSearch] = useState<string | null>(null);
-  const [filesSearch, setFilesSearch] = useState("");
-  const files = useWorkFiles(projectId, work);
   const scrollOwner = useRef<HTMLDivElement>(null);
-  const feed = useProjectChatFeed(projectId, false, settledSearch, work.id);
-  const now = useMinuteClock();
-  const { openChat, openNewChat } = useChatNavigation();
-  const { onFavorite, onDelete, deleteFailure, retryDelete, deleteDialog } =
-    useChatRowCommands(projectId);
-  const onOpen = useCallback<ChatIndexRowProps["onOpen"]>(
-    (item) => void openChat(item.id),
-    [openChat],
-  );
-  const rowProps: ChatIndexRowProps = useMemo(
-    () => ({ onFavorite, onDelete, now, onOpen }),
-    [onFavorite, onDelete, now, onOpen],
-  );
-  useEffect(() => {
-    const timer = window.setTimeout(
-      () => setSettledSearch(searchText.trim() || null),
-      searchText.trim() ? 200 : 0,
-    );
-    return () => window.clearTimeout(timer);
-  }, [searchText]);
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
   useProjectLeaveGuard({
     request: controller.request,
     dirty: () => controller.dirty,
@@ -131,131 +95,23 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
               <WorkDescription work={work} controller={controller} />
             </>
           }
-          view={view}
-          onViewChange={setView}
-          tools={
-            <>
-              <div className="relative min-w-0 flex-1">
-                <Search
-                  className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-                  aria-hidden
-                />
-                <Input
-                  type="search"
-                  aria-label={view === "chats" ? t`Search chats` : t`Search files`}
-                  placeholder={view === "chats" ? t`Search chats` : t`Search files`}
-                  value={view === "chats" ? searchText : filesSearch}
-                  onChange={(event) =>
-                    view === "chats"
-                      ? setSearchText(event.target.value)
-                      : setFilesSearch(event.target.value)
-                  }
-                  className="h-8 pl-8 [@media(pointer:coarse)]:h-11"
-                />
-              </div>
-              {view === "chats" ? (
-                <Button
-                  size="sm"
-                  onClick={() => void openNewChat(work.id)}
-                  aria-label={t`New chat`}
-                  className="[@media(pointer:coarse)]:min-h-11"
-                >
-                  <MessageSquarePlus aria-hidden />
-                  <span className="max-sm:hidden" aria-hidden>
-                    <Trans>New chat</Trans>
-                  </span>
-                </Button>
-              ) : (
-                <WorkFilesActions files={files} />
-              )}
-            </>
-          }
+          view={routeCommands.workView}
+          onViewChange={(view) => void routeCommands.setWorkView(view)}
+          tools={<div ref={setToolbarSlot} className="contents" />}
         />
-        {view === "chats" ? (
-          <WorkChatList
-            projectId={projectId}
-            feed={feed}
-            search={settledSearch}
-            scrollOwner={scrollOwner}
-            rowProps={rowProps}
-            deleteFailure={deleteFailure}
-            retryDelete={retryDelete}
-          />
-        ) : (
-          <WorkFilesView
-            projectId={projectId}
-            work={work}
-            commands={routeCommands}
-            search={filesSearch}
-            files={files}
-          />
-        )}
-        {deleteDialog}
+        <WorkToolbarSlotProvider value={toolbarSlot}>
+          {routeCommands.workView === "chats" ? (
+            <WorkChatsTab projectId={projectId} workId={work.id} scrollOwner={scrollOwner} />
+          ) : (
+            <WorkFilesTab projectId={projectId} work={work} commands={routeCommands} />
+          )}
+        </WorkToolbarSlotProvider>
         <DirtyDecision controller={controller} />
       </article>
     </div>
   );
 }
-function WorkChatList({
-  projectId,
-  feed,
-  search,
-  scrollOwner,
-  rowProps,
-  deleteFailure,
-  retryDelete,
-}: {
-  projectId: string;
-  feed: ReturnType<typeof useProjectChatFeed>;
-  search: string | null;
-  scrollOwner: React.RefObject<HTMLDivElement | null>;
-  rowProps: ChatIndexRowProps;
-  deleteFailure: ReturnType<typeof useChatRowCommands>["deleteFailure"];
-  retryDelete: () => void;
-}) {
-  if (feed.isPending) return <ChatIndexLoading />;
-  if (feed.isError && !feed.data)
-    return (
-      <InlineErrorRow
-        message={<Trans>Chats couldn’t load</Trans>}
-        onRetry={() => void feed.refetch()}
-      />
-    );
-  if (!feed.items.length && !feed.hasNextPage && !feed.isPlaceholderData)
-    return (
-      <div className="py-4">
-        {search ? (
-          <p className="text-sm text-muted-foreground">
-            <Trans>No chats match “{search}”.</Trans>
-          </p>
-        ) : (
-          <>
-            <p className="text-sm font-medium">
-              <Trans>Start a chat in this Work</Trans>
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              <Trans>Chats you start here stay with this Work.</Trans>
-            </p>
-          </>
-        )}
-      </div>
-    );
-  return (
-    <>
-      <ChatIndexList
-        projectId={projectId}
-        items={feed.items as readonly ProjectChatItem[]}
-        complete={!feed.hasNextPage}
-        busy={feed.isFetching}
-        scrollOwner={scrollOwner}
-        rowProps={rowProps}
-        deleteFailure={deleteFailure}
-        retryDelete={retryDelete}
-      />
-      <NextPage feed={feed} />
-    </>
-  );
-}
+
 function DirtyDecision({ controller }: { controller: WorkMetadataController }) {
   return (
     <Dialog open={Boolean(controller.held)} onOpenChange={() => undefined}>
