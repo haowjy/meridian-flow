@@ -3,7 +3,7 @@ import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import { isPendingPlaceholder } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
-import { SystemUpdateMetadataCodec } from "../../threads/index.js";
+import { loadThreadConversationContext, SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
@@ -636,6 +636,11 @@ export function createDeliveryAdapter(
       acknowledge: async (id, controlId) => {
         await inbox.ack(id, [controlId]);
         await appendPending(id);
+      },
+      effectiveTurns: async (id) => {
+        const thread = await deps.repos.threads.findByIdIncludingDeleted(id);
+        if (!thread) return [];
+        return (await loadThreadConversationContext(deps.repos, thread)).turns;
       },
     }),
     threadChanged,

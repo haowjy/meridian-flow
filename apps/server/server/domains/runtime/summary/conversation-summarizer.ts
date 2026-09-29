@@ -14,12 +14,14 @@ import { estimateModelJsonTokens } from "../loop/compaction/estimate.js";
 import { estimateRequestTokens } from "../loop/compaction/index.js";
 import { modelResponseTimingFields } from "../loop/model-response-timing.js";
 import type { PrefixCacheState, PrefixCacheStateRequest } from "../loop/prefix-cache-state.js";
+import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type {
   ConversationSummarizer,
   SummaryOutcome,
   SummaryRejectionReason,
   SummaryResponse,
 } from "../ports/conversation-summarizer.js";
+import type { ToolRegistry } from "../tools/index.js";
 import { chooseSummaryPath } from "./summary-path.js";
 import { transcriptSegments } from "./transcript.js";
 
@@ -27,6 +29,8 @@ export interface ConversationSummarizerDeps {
   gateway: Gateway;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding">;
   prefixCacheStateFor(input: PrefixCacheStateRequest): Promise<PrefixCacheState>;
+  modelRequestDebug: ModelRequestDebugStore;
+  toolRegistry: ToolRegistry;
   config: { model: string; maxOutputTokens: number };
 }
 
@@ -172,11 +176,26 @@ export function createConversationSummarizer(
           // Reserve the row before entering the gateway. Even a throwing/aborted stream is an attempt.
           modelResponses.push(row);
           try {
-            for await (const event of gateway.stream({
+            const gatewayCallId = crypto.randomUUID();
+            const requestWithCorrelation: GenerateRequest = {
               ...request,
               signal: input.signal,
-              correlation: input.owner,
-            })) {
+              correlation: { ...input.owner, gatewayCallId, iteration: row.sequence },
+            };
+            try {
+              deps.modelRequestDebug.capture({
+                gatewayCallId,
+                threadId: input.owner.threadId,
+                turnId: input.owner.turnId,
+                iteration: row.sequence,
+                agentSlug: null,
+                request: requestWithCorrelation,
+                toolRegistry: deps.toolRegistry,
+              });
+            } catch {
+              // Debug-only capture must never change a paid summary call's outcome.
+            }
+            for await (const event of gateway.stream(requestWithCorrelation)) {
               if (event.type === "start") {
                 row.model = event.model;
                 row.provider = event.provider;

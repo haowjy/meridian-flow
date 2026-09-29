@@ -25,11 +25,24 @@ export function createCompactionFixture(db: Database) {
     } = {},
   ) {
     const { repos, ids } = await executionScenario(db);
-    const threadId = options.child ? ids.child : ids.caller;
+    const threadId = options.empty
+      ? (
+          await repos.threads.create({
+            id: crypto.randomUUID(),
+            userId: ids.user,
+            projectId: ids.project,
+          })
+        ).id
+      : options.child
+        ? ids.child
+        : ids.caller;
     const claim = createDrizzleRunClaim(db, { holderId: "fixture-owner" });
     const eventWriter = createDrizzleEventJournalWriter(db);
     let threshold: number | undefined = 2500;
-    const source = createTestAgentBinding("gpt-4.1-mini", "Write stories.", () => [threadId]);
+    const boundThreadIds = new Set([threadId]);
+    const source = createTestAgentBinding("gpt-4.1-mini", "Write stories.", () => [
+      ...boundThreadIds,
+    ]);
     const binding = {
       ...source,
       async readThreadBinding(id: string) {
@@ -127,6 +140,9 @@ export function createCompactionFixture(db: Database) {
       gateway,
       summarizer,
       ids,
+      bindThread(id: string) {
+        boundThreadIds.add(id);
+      },
       setThreshold(value: number | undefined) {
         threshold = value;
       },

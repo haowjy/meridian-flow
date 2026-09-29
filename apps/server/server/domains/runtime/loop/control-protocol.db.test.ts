@@ -7,7 +7,6 @@ import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
 import { createOrchestrator } from "./orchestrator.js";
-import { requireCompletedReplyForCompaction } from "./thread-controls.js";
 
 const url = process.env.DATABASE_URL;
 if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? ""))
@@ -67,8 +66,15 @@ else
     }
 
     it("rejects compact with its own 409 code until the thread has a completed reply", async () => {
-      const rig = await manualFixture();
-      expect(() => requireCompletedReplyForCompaction([])).toThrowError(
+      const rig = await manualFixture({ empty: true });
+      await expect(
+        rig.delivery.enqueueControl({
+          threadId: rig.threadId,
+          actorId: rig.ids.user,
+          id: crypto.randomUUID(),
+          control: { kind: "compact" },
+        }),
+      ).rejects.toMatchObject(
         expect.objectContaining({
           statusCode: 409,
           message: "compact_requires_completed_reply",
@@ -78,8 +84,47 @@ else
       await (
         await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "Complete a reply." })
       ).execute();
-      const turns = await rig.repos.turns.listByThread(rig.threadId);
-      expect(() => requireCompletedReplyForCompaction(turns)).not.toThrow();
+      await expect(
+        rig.delivery.enqueueControl({
+          threadId: rig.threadId,
+          actorId: rig.ids.user,
+          id: crypto.randomUUID(),
+          control: { kind: "compact" },
+        }),
+      ).resolves.toMatchObject({ created: true });
+    });
+
+    it("accepts and runs compact on a fresh fork with an inherited completed reply", async () => {
+      const rig = await manualFixture();
+      const source = await rig.repos.threads.findById(rig.threadId);
+      const answer = (await rig.repos.turns.listByThread(rig.threadId)).find(
+        (turn) => turn.role === "assistant" && turn.status === "complete",
+      );
+      if (!source || !answer) throw new Error("Expected source thread and completed reply");
+      const { thread: fork } = await rig.repos.threads.createDerivedPrimary({
+        id: crypto.randomUUID(),
+        source,
+        workId: source.workId,
+        userId: source.userId,
+        projectId: source.projectId,
+        originType: "fork",
+        originTurnId: answer.id,
+      });
+      rig.bindThread(fork.id);
+
+      await expect(
+        rig.delivery.enqueueControl({
+          threadId: fork.id,
+          actorId: rig.ids.user,
+          id: crypto.randomUUID(),
+          control: { kind: "compact" },
+        }),
+      ).resolves.toMatchObject({ created: true });
+      await (await rig.orchestrator.prepare({ threadId: fork.id, drain: true })).execute();
+
+      expect(await rig.repos.turns.listByThread(fork.id)).toContainEqual(
+        expect.objectContaining({ role: "compaction", status: "complete" }),
+      );
     });
 
     it.each([1, 2])("fails once and acknowledges %i adopted message(s)", async (messageCount) => {
@@ -1104,8 +1149,8 @@ else
       ).toHaveLength(1);
     });
 
-    it("compacts a short thread to its minimal tail", async () => {
-      const rig = await manualFixture({ history: "A short planning note." });
+    it("compacts one completed exchange to its minimal tail", async () => {
+      const rig = await manualFixture({ empty: true });
       await (
         await rig.orchestrator.prepare({
           threadId: rig.threadId,
@@ -1277,5 +1322,56 @@ else
         metadata: { reason: "interrupted", phase: "recovery", controlMessageId: control.id },
       });
       expect(await delivery.selectPending(rig.threadId)).toEqual([]);
+    });
+
+    it("a crash while a command waits preserves queue order for the next runs", async () => {
+      const rig = await manualFixture();
+      const lease = await rig.runClaim.hold(rig.threadId);
+      if (!lease) throw new Error("Expected the simulated pre-crash run claim");
+      const message = await rig.delivery.enqueue({
+        threadId: rig.threadId,
+        intent: "message",
+        provenance: { kind: "writer", actorId: rig.ids.user },
+        body: { kind: "text", text: "Answer this before compacting." },
+        idempotencyKey: "queued-before-crash-command",
+      });
+      const control = await rig.delivery.enqueueControl({
+        threadId: rig.threadId,
+        actorId: rig.ids.user,
+        id: crypto.randomUUID(),
+        control: { kind: "compact" },
+      });
+      expect((await rig.delivery.selectPending(rig.threadId)).map(({ id }) => id)).toEqual([
+        message.id,
+        control.response.id,
+      ]);
+
+      // The queued rows survive the process that held the thread claim.
+      await lease.release();
+      const replacement = createDrizzleRunClaim(db);
+      const delivery = createTestDrizzleDelivery(db, {
+        repos: rig.repos,
+        eventWriter: rig.eventWriter,
+        runClaim: replacement,
+      });
+      const recovery = createOrchestrator({ ...rig.deps, runClaim: replacement, delivery });
+
+      await (await recovery.prepare({ threadId: rig.threadId, drain: true })).execute();
+      expect(JSON.stringify(rig.gateway.requests.at(-1))).toContain(
+        "Answer this before compacting.",
+      );
+      expect((await delivery.selectPending(rig.threadId)).map(({ id }) => id)).toEqual([
+        control.response.id,
+      ]);
+
+      await (await recovery.prepare({ threadId: rig.threadId, drain: true })).execute();
+      expect(await delivery.selectPending(rig.threadId)).toEqual([]);
+      expect(await rig.repos.turns.listByThread(rig.threadId)).toContainEqual(
+        expect.objectContaining({
+          role: "compaction",
+          status: "complete",
+          metadata: expect.objectContaining({ controlMessageId: control.response.id }),
+        }),
+      );
     });
   });

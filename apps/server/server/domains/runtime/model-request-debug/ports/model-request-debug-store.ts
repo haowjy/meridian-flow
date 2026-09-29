@@ -1,6 +1,6 @@
 /**
- * ModelRequestDebugStore port: fire-and-forget capture of orchestrator model
- * requests for dev inspection. Not journal-backed — bounded in-memory only.
+ * ModelRequestDebugStore port: fire-and-forget capture of reply and summary
+ * model requests for dev inspection. Not journal-backed — bounded in-memory only.
  */
 import type {
   ModelRequestDebugRecord,

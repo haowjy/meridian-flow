@@ -10,6 +10,8 @@ import type {
 } from "../gateway/index.js";
 import { createTestAgentBinding } from "../loop/__tests__/runtime-fixtures.js";
 import { estimateRequestTokens } from "../loop/compaction/index.js";
+import { createInMemoryModelRequestDebugStore } from "../model-request-debug/index.js";
+import { createToolRegistry } from "../tools/index.js";
 import { createConversationSummarizer } from "./conversation-summarizer.js";
 
 const threadModel: ModelInfo = {
@@ -76,10 +78,13 @@ function setup(
       ? { state: "warm" as const, reason: "reusable_prefix" as const }
       : { state: "cold" as const, reason: "ttl_expired" as const },
   );
+  const modelRequestDebug = createInMemoryModelRequestDebugStore();
   const service = createConversationSummarizer({
     gateway,
     prefixCacheStateFor,
     agentRevisions: createTestAgentBinding(threadModel.id, "", () => ["thread"]),
+    modelRequestDebug,
+    toolRegistry: createToolRegistry(),
     config: { model: cheapModel.id, maxOutputTokens: 300 },
   });
   const input: Parameters<typeof service.summarize>[0] = {
@@ -93,7 +98,7 @@ function setup(
     projection: projection(["Facts"]),
     signal: new AbortController().signal,
   };
-  return { service, input, requests, prefixCacheStateFor };
+  return { service, input, requests, prefixCacheStateFor, modelRequestDebug };
 }
 
 describe("conversation summarizer", () => {
@@ -106,6 +111,9 @@ describe("conversation summarizer", () => {
 
     expect(await rig.service.summarize(rig.input)).toMatchObject({ kind: "complete" });
     expect(JSON.stringify(rig.requests)).toContain("Prioritize unresolved cultivation debts.");
+    const [capture] = rig.modelRequestDebug.listByThread("thread");
+    expect(JSON.stringify(capture?.request)).toContain("Prioritize unresolved cultivation debts.");
+    expect(rig.requests[0].correlation?.gatewayCallId).toBe(capture?.gatewayCallId);
   });
 
   it.each([
@@ -669,7 +677,12 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
     JSON.stringify(sourceRequest.messages),
   );
   expect(JSON.stringify(request.messages.at(-1))).not.toContain("thread_history");
-  expect(request.correlation).toEqual({ threadId: "destination", turnId: "seed" });
+  expect(request.correlation).toMatchObject({
+    threadId: "destination",
+    turnId: "seed",
+    gatewayCallId: expect.any(String),
+    iteration: 0,
+  });
   expect(outcome.modelResponses[0].turnId).toBe("seed");
   expect(rig.prefixCacheStateFor).toHaveBeenCalledWith(
     expect.objectContaining({ threadId: "thread", throughTurnId: "cutoff" }),

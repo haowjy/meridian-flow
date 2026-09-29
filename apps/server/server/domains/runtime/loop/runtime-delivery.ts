@@ -80,7 +80,7 @@ export type AdoptedBatch<TCurrent = undefined> = {
 export interface RuntimeDelivery
   extends WorkContextNotices,
     Pick<InboxReader, "selectPending" | "readPendingProjection" | "pendingMessageThreads"> {
-  /** Give pending commands the same run-first priority as Stop on a live run. */
+  /** Append a transcript command to the thread's ordinary ordered inbox. */
   enqueueControl(input: {
     threadId: ThreadId;
     actorId: string;

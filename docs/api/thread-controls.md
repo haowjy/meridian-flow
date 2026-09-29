@@ -28,9 +28,11 @@ command are adopted. At run start, an oldest command runs alone; otherwise the
 same prefix runs. Stop only ends the current turn, so release runs the ordinary
 queue head. A command is acknowledged by the commit that starts it.
 
-`/compact` requires at least one completed assistant reply; otherwise enqueue
-returns 409 (`compact_requires_completed_reply`). Every accepted manual compact
-produces a summary, including consecutive commands and short histories.
+`/compact` requires at least one completed assistant reply in the effective
+transcript, including inherited fork history; otherwise enqueue returns 409
+(`compact_requires_completed_reply`). The domain checks this while holding the
+thread lock. Every accepted manual compact produces a summary, including
+consecutive commands and short histories.
 
 Invalid bodies return 400 (`invalid_control`). An id belonging to an ordinary
 message, another control kind, or a row in another thread returns 409

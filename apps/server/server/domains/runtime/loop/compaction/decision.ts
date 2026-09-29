@@ -28,7 +28,7 @@ export type CompactionDecision =
       plan: CompactionPlan;
       controlMessageId?: string;
       instructions?: string;
-      refusal?: "context_too_large";
+      refusal?: "context_too_large" | "compaction_failed";
       requestInHand: GenerateRequest;
       trigger: "auto" | "manual";
       fitLimitTokens: number;
@@ -157,9 +157,11 @@ export function decideCompaction(input: {
         tokensBefore,
         ...(input.controlMessageId ? { controlMessageId: input.controlMessageId } : {}),
         ...(input.instructions ? { instructions: input.instructions } : {}),
-        ...(plan.outcome === "no_compaction" || !plan.minimalTailFits
-          ? { refusal: "context_too_large" as const }
-          : {}),
+        ...(plan.outcome === "no_compaction"
+          ? { refusal: "compaction_failed" as const }
+          : !plan.minimalTailFits
+            ? { refusal: "context_too_large" as const }
+            : {}),
       }
     : { kind: "too_large", plan };
 }

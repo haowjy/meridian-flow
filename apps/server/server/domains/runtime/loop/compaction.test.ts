@@ -558,6 +558,32 @@ describe("planCompaction", () => {
       return sum + (content?.tokens ?? 0);
     }, 0);
 
+  it("cuts a one-exchange chat at the latest safe candidate for a minimal tail", () => {
+    const request = turn("request", 1, "user");
+    const answer = turn("answer", 2, "assistant");
+    const plan = planCompaction({
+      turns: [request, answer],
+      blocks: [
+        block("request-text", request.id, 0, "text", { tokens: 8 }, "ask"),
+        block("answer-text", answer.id, 0, "text", { tokens: 5 }, "reply"),
+      ],
+      fitLimitTokens: 100,
+      tailBudgetBaseTokens: 100,
+      summaryReserveTokens: 5,
+      fixedOverheadTokens: 0,
+      tokenizer: "anthropic",
+      estimateTurnTokens: estimate,
+      minimalTail: true,
+    });
+
+    expect(plan).toMatchObject({
+      outcome: "planned",
+      compactedThrough: { turnId: request.id },
+      pinnedRequests: [],
+      minimalTailFits: true,
+    });
+  });
+
   it("cuts inside an assistant turn after a complete tool group and pins the request", () => {
     const request = turn("request", 1, "user", { blocks: [] });
     const assistantTurn = turn("assistant", 2, "assistant");
@@ -877,6 +903,22 @@ describe("planCompaction", () => {
       compactedThrough: null,
       minimalTailFits: false,
     });
+  });
+
+  it("maps a leftover manual no-compaction plan to the generic failure", () => {
+    expect(
+      decideCompaction({
+        request: { messages: [] },
+        turns: [],
+        blocks: [],
+        activeHistory: { turns: [], blocks: [] },
+        thresholdTokens: 100,
+        forcedDecision: { kind: "compact", trigger: "manual", fitLimitTokens: 100 },
+        summaryReserveTokens: 10,
+        baseline: null,
+        tokenizer: "anthropic",
+      }),
+    ).toMatchObject({ kind: "compact", refusal: "compaction_failed" });
   });
 
   it("plans a second compaction only after the active compaction cut", async () => {

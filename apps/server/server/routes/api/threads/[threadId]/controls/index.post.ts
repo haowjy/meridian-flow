@@ -7,7 +7,6 @@ import {
   setResponseStatus,
 } from "nitro/h3";
 import {
-  requireCompletedReplyForCompaction,
   ThreadControlError,
   threadControlRequestSchema,
 } from "../../../../../domains/runtime/index.js";
@@ -20,9 +19,7 @@ export default defineEventHandler(async (event) => {
   await app.threadRuntime.requireOwnedThread(threadId, user.userId);
   const parsed = threadControlRequestSchema.safeParse(await readBody(event));
   if (!parsed.success) throw createError({ statusCode: 400, message: "invalid_control" });
-  const turns = await app.repos.turns.listByThread(threadId);
   try {
-    requireCompletedReplyForCompaction(turns);
     const result = await app.delivery.enqueueControl({
       ...parsed.data,
       threadId,

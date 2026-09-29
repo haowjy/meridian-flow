@@ -11,8 +11,8 @@ export const threadControlRequestSchema = z
         kind: z.literal("compact"),
         instructions: z
           .string()
-          .max(MAX_USER_MESSAGE_TEXT)
           .transform((value) => value.trim())
+          .pipe(z.string().max(MAX_USER_MESSAGE_TEXT))
           .transform((value) => value || undefined)
           .optional(),
       })
