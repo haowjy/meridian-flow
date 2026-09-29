@@ -3,7 +3,12 @@
  * state, and which refused command it carries. `WorkCollection` only maps
  * these entries to rows.
  */
-import { type Work, workPurgeAt } from "@meridian/contracts/works";
+import {
+  DAY_MS,
+  WORK_DELETE_RETENTION_DAYS,
+  type Work,
+  workPurgeAt,
+} from "@meridian/contracts/works";
 import type { AddressableWork } from "@/client/query/useWorks";
 import type { WorkCreation, WorkDraft } from "@/client/query/work-command-projection";
 import type { WorkDeleteWindow } from "@/client/query/work-command-selectors";
@@ -90,4 +95,14 @@ export function restorableWorks<W extends Work>(
       !undoable.has(work.id) &&
       workPurgeAt(work.deletedAt).getTime() > now,
   );
+}
+
+/**
+ * Whole days until a deleted Work is purged, counting a started day as a day
+ * (1 means within a day). Clamped to the retention window, so a server clock
+ * ahead of this one never shows more days than a Work is kept.
+ */
+export function daysUntilPurge(deletedAt: string, now: number): number {
+  const days = Math.ceil((workPurgeAt(deletedAt).getTime() - now) / DAY_MS);
+  return Math.min(WORK_DELETE_RETENTION_DAYS, Math.max(0, days));
 }

@@ -5,15 +5,10 @@
  */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import {
-  DAY_MS,
-  WORK_DELETE_RETENTION_DAYS,
-  type Work,
-  workPurgeAt,
-} from "@meridian/contracts/works";
+import { WORK_DELETE_RETENTION_DAYS, type Work } from "@meridian/contracts/works";
 import { RuledList } from "../RuledList";
 import { WorkCommandFailureRow } from "./WorkCommandFailureRow";
-import type { ListedWorkEntry } from "./work-list-model";
+import { daysUntilPurge, type ListedWorkEntry } from "./work-list-model";
 
 export function DeletedWorkList({
   entries,
@@ -57,10 +52,7 @@ export function DeletedWorkList({
 }
 
 function DeletedRow({ work, now, onRestore }: { work: Work; now: number; onRestore: () => void }) {
-  const days = Math.max(
-    0,
-    Math.ceil((workPurgeAt(work.deletedAt ?? new Date(now)).getTime() - now) / DAY_MS),
-  );
+  const days = work.deletedAt ? daysUntilPurge(work.deletedAt, now) : WORK_DELETE_RETENTION_DAYS;
   return (
     <div className="flex min-h-12 min-w-0 items-center gap-3 px-2 py-1.5">
       <div className="min-w-0 flex-1">

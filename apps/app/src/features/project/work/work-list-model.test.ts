@@ -3,7 +3,7 @@ import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it } from "vitest";
 import type { AddressableWork } from "@/client/query/useWorks";
 import type { WorkRowFailure } from "./WorkCommandFailureRow";
-import { type WorkListProjection, workListEntries } from "./work-list-model";
+import { daysUntilPurge, type WorkListProjection, workListEntries } from "./work-list-model";
 
 const NOW = Date.parse("2026-09-10T00:00:00.000Z");
 const work = (id: string, fields: Partial<Work> = {}) =>
@@ -99,5 +99,28 @@ describe("workListEntries", () => {
       NOW,
     );
     expect(shape(entries.active)).toEqual([["arc", "restoring", null]]);
+  });
+});
+
+describe("daysUntilPurge", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const at = (ms: number) => new Date(ms).toISOString();
+
+  it("shows the full retention for a Work deleted just now", () => {
+    expect(daysUntilPurge(at(NOW), NOW)).toBe(30);
+    expect(daysUntilPurge(at(NOW - 1), NOW)).toBe(30);
+  });
+
+  it("never shows more than the retention when the server clock runs ahead", () => {
+    expect(daysUntilPurge(at(NOW + 1), NOW)).toBe(30);
+    expect(daysUntilPurge(at(NOW + 2 * DAY), NOW)).toBe(30);
+  });
+
+  it("counts a started day as a day, down to within a day, then zero", () => {
+    expect(daysUntilPurge(at(NOW - DAY), NOW)).toBe(29);
+    expect(daysUntilPurge(at(NOW - DAY - 1), NOW)).toBe(29);
+    expect(daysUntilPurge(at(NOW - 29 * DAY - 1), NOW)).toBe(1);
+    expect(daysUntilPurge(at(NOW - 30 * DAY), NOW)).toBe(0);
+    expect(daysUntilPurge(at(NOW - 31 * DAY), NOW)).toBe(0);
   });
 });
