@@ -6,9 +6,9 @@ mid-thread arrives here as a durable turn at a graph point, never as a
 live-request splice; the frozen prefix it lands after is in
 [request assembly](request-assembly.md). Compaction and undo share this inbox
 but commands run only at the start of a run under the [queue rules](controls.md).
-A pending handoff seed is not an inbox row; the runtime still gates destination
-starts on its durable status, and the independent brief service wakes delivery
-when it settles.
+A pending handoff seed is not an inbox row. The detached brief holds the
+destination run claim, so admission meets the claim rather than checking seed
+state. Its release rereads the queue and starts pending work.
 Rationale: [One Run Preparation Protocol][kb-run-prep].
 
 ## Command selection and release wake

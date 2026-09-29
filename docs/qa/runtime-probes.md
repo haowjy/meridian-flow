@@ -265,12 +265,13 @@ end-to-end as one suite.
 
 ## RP-8: Handoff brief, Stop, Retry, failure and source isolation
 
-- **Protects:** independent seed ownership, source-shaped branching, Stop,
-  Retry, fallback and destination gating (`handoff/brief-service`).
+- **Protects:** destination run-claim ownership, detached launch, Stop, Retry,
+  release wake, and orphan repair (`handoff/brief-service`).
 - **Stack:** mock; a real provider is required to compare predicted cache state
   with actual cache use.
-- **Steps:** choose a settled reply ID `CUT` from the source `T`, allocate `DEST`,
-  and use the exact selection returned by setup (do not guess a revision):
+- **Steps:** choose a settled reply ID `CUT` from source `T`, allocate `DEST`,
+  and use the exact selection returned by setup (do not guess a revision). Delay
+  the brief so the destination claim remains held:
 
   ```bash
   DEST=$(node -p 'crypto.randomUUID()')
@@ -278,28 +279,36 @@ end-to-end as one suite.
   ./mf mock script '[{"text":"Brief: keep the silver gate secret.","delayMs":5000}]' --json
   ./mf api POST "/api/threads/$T/handoff" --data @"$E/handoff-body.json" --json
   S=$(./mf thread view "$DEST" --json | jq -r '.turns[0].id')
+  ./mf thread send "$DEST" hi --mock '[{"text":"Hello from the destination."}]' --json > "$E/queued-hi.ndjson" & SEND=$!
+  ./mf api POST "/api/threads/$DEST/handoff/brief" --data "{\"id\":\"$(node -p 'crypto.randomUUID()')\"}" --json > "$E/retry-while-pending.json"
+  ./mf thread view "$DEST" --json
   ./mf thread cancel "$DEST" --turn "$S" --json
   ./mf mock script '[{"text":"Retried brief."}]' --json
-  ./mf api POST "/api/threads/$DEST/handoff/brief" --data "{\"id\":\"$(node -p 'crypto.randomUUID()')\"}" --json
-  ./mf thread send "$DEST" hi --mock '[{"text":"Hello from the destination."}]' --json
+  S2=$(node -p 'crypto.randomUUID()')
+  ./mf api POST "/api/threads/$DEST/handoff/brief" --data "{\"id\":\"$S2\"}" --json > "$E/retry.json"
+  ./mf api POST "/api/threads/$DEST/handoff/brief" --data "{\"id\":\"$S2\"}" --json > "$E/retry-replay.json"
+  wait "$SEND"
   ./mf thread context "$DEST" --all --view raw --json
   ```
 
-  In separate destinations, let the first brief complete, or fail it with a
-  sticky mock error; clear that script ID before sending `hi`. Retry with a new
-  id while S is pending and expect 409. For the running-source variant, start a
-  source reply with a long mock `delayMs`, capture its delivered user-turn id,
-  and hand off at that user row before the reply completes. For real-provider
-  runs also compare recent and older cutoffs and capture cache metrics.
-- **Expect:** destination contains the brief/source ref, never source transcript
-  text. Stop cancels S without a destination run lease and releases queued
-  messages. Retry appends a new leaf seed; replaying the same id returns that
-  seed. Failed brief uses `No brief is available.` and ordinary messages still
-  run. In the running-source variant the brief completes while the source reply
-  is still streaming and only includes the selected user cutoff.
-- **Evidence:** source sentinel and lease before/after, destination requests,
-  seed state and `launches`, 409, and summary path/cache metrics for the real
-  variant. Do not expect an inbox control or a `briefing` lease phase.
+- **Expect:** POST handoff returns before the brief ends. While it runs,
+  `thread.status` is `awake/generating` with no running turn id, queued work is
+  not answered, and Retry returns 409 `handoff_retry_unavailable`. Stop settles
+  S cancelled; claim release starts the queued reply. Retry after Stop appends
+  S2 and returns before its brief ends; replaying S2 returns the same seed with
+  200. Destination context contains the brief/source ref, never source transcript
+  text. The brief has no fallback: a failed attempt shows `No brief is
+  available.` and Retry is the next attempt.
+- **Crash variant:** start a second delayed handoff, kill the app process while
+  its brief is in flight, restart it, and wait one orphan-repair interval. S
+  settles as interrupted with an unavailable card and history read line; thread
+  status returns idle and a queued destination message is answered. No brief is
+  relaunched. A focused PostgreSQL test covers ending-transaction failure: S
+  remains pending, the claim releases, and the next run repairs it.
+- **Evidence:** request status and response timing, source sentinel and source
+  lease before/after, destination queue and transcript, Retry HTTP status/code,
+  S/S2 states and card blocks. For real-provider runs also capture summary
+  path/cache metrics for recent and older cutoffs.
 - **Last run:** merge-gate §21–24 mock PASS; original real warm/cold run blocked
   by billing settlement. 2026-09-28 (source commit not recorded).
 

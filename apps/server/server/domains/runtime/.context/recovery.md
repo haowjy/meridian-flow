@@ -1,40 +1,42 @@
 # Recovery: orphan repair and process lanes
 
-Recovery separates work owned by a run lease from durable work owned by an
-independent service. Rationale: [Process Death Turn Recovery][kb-process-death].
+Recovery repairs pending runs, placeholders and child reports. A handoff brief
+is protected by the destination's ordinary run claim, not a separate recovery
+owner. See the [process-death decision][kb-process-death].
 
 ## Placeholder repair
 
-`PENDING_PLACEHOLDER_ROLES` describes every pending transcript placeholder and
-keeps `system` handoff seeds in the partial discovery index.
-`RUN_OWNED_PLACEHOLDER_ROLES` is the repair-owned subset (`compaction` only).
-`finalizeOrphanedTurns`, the placeholder lane in
-`spawn/orphan-report-repair.ts`, `finalizeOrphanedPlaceholders`, and idle
-materialization use the run-owned subset. They also repair dead primary
-assistant turns. No repair path settles a pending handoff seed.
+`PENDING_PLACEHOLDER_ROLES` defines both transcript placeholders and discovery
+for repair (`compaction` and handoff seed `system`). A run or brief owns the
+same destination claim while active, so a pending placeholder discovered after
+acquiring that claim is orphaned. `finalizeOrphanedTurns` and the placeholder
+lane in `spawn/orphan-report-repair.ts` repair it; they also repair dead
+primary assistant turns. Compactions use `finalizeExecution`. Handoff seeds
+use `completeHandoffSeed` to write an unavailable card, interrupted recovery
+metadata and history read line, then publish a status refresh.
 
 Run repair holds the destination thread lock and run claim. Expired lease rows
-alone do not prove death. Recovered compactions settle through
-`finalizeExecution` and record `interrupted/recovery`; late writer messages
-stay unacknowledged and can be redelivered.
+alone do not prove death. Late writer messages stay unacknowledged and can be
+redelivered after repair.
 
-## Handoff brief recovery
+## Handoff claim and release
 
-The independent `handoff-briefs` lane pages pending handoff seeds from the
-existing pending-placeholder index and calls `HandoffBriefs.launch`. A
-process-shared session advisory claim admits one attempt per seed; dropping the
-reserved database session releases its claims and aborts local workers. The
-pending S row remains the durable record. `launches` bounds repeated crashes;
-the third launch settles a poison seed as `interrupted/recovery`. A clean
-shutdown abort leaves S pending and decrements the launch count for retry.
+Hand off and Retry take `RunClaim.hold` before creating S. The claim has no
+lease, so pending S reports `awake/generating` with no running turn id. Once
+the ending transaction finishes, the brief releases the claim and calls
+`wakeIfRunnable`; a lost wake during brief generation is picked up by this
+queue reread. A shutdown or lost claim abort leaves S pending; the next run
+start or bounded placeholder sweep repairs it as interrupted. An ending
+transaction failure follows the same path. There is no handoff sweep, relaunch,
+counter or brief-specific claim.
 
-`app.ts` registers `handoff-briefs` alongside wake scan, orphan repair, report
-publication, idle Work materialization and change-trail drain. Each lane starts
-at boot and rearms after completion without overlapping itself. The wake scan
-does not select destinations gated by pending handoff seeds. See
-[handoff lifecycle](handoff.md).
+The ordinary wake sweep remains the backstop for durable inbox messages whose
+wake could not start a run. `drizzle-session-lock.ts` invalidates claims when a
+database session dies, allowing the brief or next run to release stale
+ownership without wedging later claim attempts.
 
 Paid response rows held only in memory at process death are lost and cannot be
-debited; the next claimed attempt may make a duplicate provider call.
+debited; the next repaired or retried attempt may make a duplicate provider
+call.
 
 [kb-process-death]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/process-death-turn-recovery.md

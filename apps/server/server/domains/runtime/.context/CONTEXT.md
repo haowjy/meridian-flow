@@ -32,7 +32,7 @@ flowchart LR
 | [compaction.md](compaction.md) | The compaction protocol: transitions, decisions and refusals, the one projection authority, trigger and estimate, failure, cancellation, overflow, images. |
 | [controls.md](controls.md) | Queued writer controls and the barrier: position at execution, wakes, withdrawal, absorption. |
 | [undo.md](undo.md) | Undoing a compaction and the Undo availability advisory. |
-| [handoff.md](handoff.md) | The independent handoff brief service, seed gate, Stop/Retry, and recovery. |
+| [handoff.md](handoff.md) | Handoff brief ownership of the destination run claim, Stop/Retry, and release wake. |
 | [summarizer.md](summarizer.md) | The shared summarizer port (owner and source), branch/rolling paths, and paid-row settlement. |
 | [recovery.md](recovery.md) | Run-owned placeholder repair and independent process recovery lanes. |
 | [gateway context](../gateway/.context/CONTEXT.md) | The provider-neutral gateway: routing, retry, deadlines, usage, instrumentation, registry, cache descriptors. |

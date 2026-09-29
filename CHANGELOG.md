@@ -68,9 +68,9 @@
 - Keep inbox controls to compact and undo; handoff Retry appends outside the inbox. Compact and Undo run after queued messages unless Stop (Esc) stamps one to run first.
 - Record brief telemetry and failure metadata through one pending-owner writer; late paid attempts cannot replace the winning outcome.
 
-- Stage activated skills through one boundary owner. A pending handoff seed gates the destination until settlement, then queued skill activations materialize with the reply.
+- Stage activated skills through one boundary owner. The handoff brief holds the destination run claim until settlement; queued skill activations then materialize with the reply.
 
-- Gate destination run preparation on pending handoff seeds without creating a run boundary for the brief.
+- Acquire the destination run claim before creating a handoff seed; the detached brief releases it through the shared runnable-queue wake without creating a run boundary.
 
 - Keep internal ending-commit failures out of handoff brief writer copy. Retain diagnostic causes in error details.
 
@@ -89,14 +89,14 @@
 
 ### Changed
 - Regenerate the handoff migration in place; keep inbox control schemas limited to compact and undo.
-- Preserve pending handoff seeds from run-owned orphan repair; recover them through their claimed sweep.
-- Preserve Work-context delivery while pending handoff seeds gate destination starts.
+- Include pending handoff seeds in ordinary placeholder repair; settle interrupted seeds with their card and history read line instead of relaunching them.
+- Preserve Work-context delivery while the detached brief holds the destination run claim.
 - A withdrawn control stays retired after a crash; replaying withdrawal returns `withdrawn`.
 - Validate Agent selections consistently across handoff and thread creation.
-- Reject handoff Retry while a brief is pending, the latest brief succeeded, or the destination has a live run lease. Replayed seed ids stay idempotent.
+- Handoff Retry takes the destination run claim; a held claim returns 409 `handoff_retry_unavailable`, while an idempotent seed replay returns the existing seed.
 - Withdraw a control only before its start; after a C or U records it, return `already_started` without stopping the run. Replayed withdrawal of a withdrawn row remains `withdrawn`.
-- Recover handoffs through the independent brief sweep. Queued replies and Stop are no longer tied to an inbox control receipt.
-- Handoffs create immediately with a durable pending seed and post-commit launch. Stop preserves queued messages; Retry appends a new seed.
+- Remove the handoff recovery sweep and relaunch counter; orphan repair settles pending seeds interrupted after acquiring the destination claim.
+- Handoffs commit a durable pending seed and detach its brief while transferring the pre-acquired destination claim. Stop preserves queued messages; Retry appends a new seed.
 - Stop settles pending handoff seeds under the destination lock; a late brief cannot overwrite Stop.
 - Handoff requests require a destination id and cutoff; client-written summaries removed.
 
