@@ -378,15 +378,23 @@ Work projection.
 - Don't gate a mount between hook calls — gate at the parent.
 - Don't add raw hex/rgba or `emerald`/`rose` — use semantic tokens.
 
+## Project entry and route lifetime
+
 Persistent root/account/project loaders acquire shell identity on entry. Child
 navigation and same-href history-state writes do not reload them; explicit router
 invalidation and re-entry still do. This permits warm local editing offline,
-not cold offline app boot or bypassing server authorization.
+not cold offline app boot or bypassing server authorization. New project creation
+starts one same-tab persistence attempt before navigating to its UUID route; that
+attempt may sequence loading but never grant authority. Failure and same-identity
+Retry stay on the destination and remain fenced to the initiating account epoch.
 
 The basic `EditorView` is a static dependency of the project hosts, not a lazy
 chunk fetched on first New/open. This makes a loaded empty workspace capable of
 starting local writing offline; it deliberately costs earlier editor-code loading
 for Chat-only project visits. It does not provide cold offline application boot.
+Library intent and the project-creation form may warm workspace code, but must not
+preload the project route loader: entering a successful preloaded match would
+otherwise repeat owner and shell-data reads in the background.
 
 ## Document system map
 

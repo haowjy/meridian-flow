@@ -28,6 +28,7 @@
 - Keep the same Agent and prompt when forking by default.
 
 - Open new chats immediately; subscribe once after first-send acceptance, without missing-thread errors.
+- Open new project destinations immediately; persist and retry there within the originating account epoch, while overlapping entry reads, warming code without duplicate loads, and initializing route caches once outside React render.
 
 - Resolve images sent while a reply streams. Share history image limits and keep saved image identities.
 
