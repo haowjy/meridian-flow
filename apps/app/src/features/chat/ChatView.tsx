@@ -69,12 +69,13 @@ import {
   useDerivationStatus,
   whenDerived,
 } from "./derivation/derive-conversation";
-import { isHandoffSeed, optimisticHandoffSeed, placeLocalSeeds } from "./derivation/handoff-seed";
+import { isHandoffSeed, optimisticHandoffSeed } from "./derivation/handoff-seed";
 import { optimisticForkPrefix, useInheritedView } from "./derivation/inherited-view";
 import { useHandoffBrief } from "./derivation/useHandoffBrief";
 import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
+import { placeStandIns } from "./retry-stand-ins";
 import { SubagentActivityProvider } from "./subagent/ActivityContext";
 import { SubagentDisclosureProvider } from "./subagent/DisclosureStore";
 import { TurnList } from "./TurnList";
@@ -173,7 +174,7 @@ export function ChatView({
             }),
           ]
         : [];
-    const placed = placeLocalSeeds(storedTurns, localSeeds);
+    const placed = placeStandIns(storedTurns, localSeeds);
     return opening.length ? [...opening, ...placed] : placed;
   }, [derivation?.state, intent, localSeeds, storedTurns, threadId]);
   const latestAssistantTurn =

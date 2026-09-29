@@ -178,26 +178,3 @@ export function optimisticHandoffSeed(
 export function isOptimisticSeed(turn: Turn): boolean {
   return turn.id.startsWith(OPTIMISTIC_SEED_PREFIX);
 }
-
-/**
- * The stored turns with each Retry stand-in placed after the turn it followed
- * when the writer pressed Retry. Turns the server adds later land below it, so
- * a stand-in never drifts to the bottom of the chat or outranks a newer seed.
- * A stand-in whose previous turn is not in view goes at the end.
- */
-export function placeLocalSeeds(stored: Turn[], local: readonly Turn[]): Turn[] {
-  if (!local.length) return stored;
-  const placed = [...stored];
-  for (const seed of local) {
-    const after = placed.findIndex((turn) => turn.id === seed.prevTurnId);
-    if (after < 0) {
-      placed.push(seed);
-      continue;
-    }
-    // Earlier stand-ins that followed the same turn stay ahead of this one.
-    let at = after + 1;
-    while (local.includes(placed[at] as Turn) && placed[at]?.prevTurnId === seed.prevTurnId) at++;
-    placed.splice(at, 0, seed);
-  }
-  return placed;
-}

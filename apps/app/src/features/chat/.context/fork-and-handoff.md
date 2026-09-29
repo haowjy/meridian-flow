@@ -76,8 +76,9 @@ copy, and a stopped one drops "This chat continues without a brief."
   at once (`optimisticHandoffSeed` with that id and the old seed's frozen
   source), then posts `{ id }` to `POST /handoff/brief`. The response's seed
   replaces the stand-in by id, and the snapshot's replaces that. The stand-in
-  sits after the turn it followed (`placeLocalSeeds`), so later turns render
-  below it and a newer server seed stays the latest. The new card is the
+  sits after the turn it followed (`placeStandIns`), so later turns render
+  below it and a newer server seed stays the latest. `useRetryStandIns` owns
+  this optimistic half, shared with a failed reply's Retry. The new card is the
   newest seed, so the old card loses Retry the moment it appears.
 - **A refused Retry** (409 `handoff_retry_unavailable`: something holds the
   chat, or the pressed brief is no longer the latest failed one) wrote
