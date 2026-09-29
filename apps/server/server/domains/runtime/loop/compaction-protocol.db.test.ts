@@ -163,7 +163,7 @@ else
       options: { summarizer?: ReturnType<typeof scriptedSummarizer> } = {},
     ) {
       const rig = await fixture({ history: "old history ".repeat(8000), ...options });
-      rig.setThreshold(8000);
+      rig.setThreshold(6000);
       return rig;
     }
 
@@ -590,10 +590,10 @@ else
         userText: "Continue.",
       });
 
-      expect((await run.execute()).status).toBe("complete");
-      const compaction = (await rig.repos.turns.listByThread(rig.threadId)).find(
-        (turn) => turn.role === "compaction",
-      );
+      const result = await run.execute();
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
+      expect(result.status).toBe("complete");
+      const compaction = turns.find((turn) => turn.role === "compaction");
       if (!compaction) throw new Error("Missing compaction turn");
       const rows = await rig.repos.imageInclusions.listByThread(rig.threadId);
       expect(
@@ -618,7 +618,6 @@ else
         "data:image/png;base64,candidate",
         "data:image/png;base64,late",
       ]);
-      const turns = await rig.repos.turns.listByThread(rig.threadId);
       const evictionNotice = turns
         .map((turn) => ({ turn, metadata: decodeImageInclusionMetadata(turn.metadata) }))
         .find(({ metadata }) =>
@@ -1318,12 +1317,12 @@ else
       expect((await rig.repos.turns.findById(run.executionTurnId))?.status).toBe("error");
     });
 
-    it("lands an impossible pinned request as a failed reply without C and acknowledges it", async () => {
+    it("lands a pinned request above the model window as a failed reply without C", async () => {
       const rig = await fixture();
       const run = await rig.orchestrator.prepare({
         threadId: rig.threadId,
         tools: [],
-        userText: "too big ".repeat(5000),
+        userText: "too big ".repeat(50_000),
       });
       expect((await run.execute()).status).toBe("error");
       const turns = await rig.repos.turns.listByThread(rig.threadId);
@@ -1331,11 +1330,11 @@ else
       expect(turns.at(-1)?.error).toBe("This message is too long for this chat's model.");
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
     });
-    it("rejects an impossible mid-run arrival without reserving C", async () => {
+    it("rejects a mid-run arrival above the model window without reserving C", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
       const gateway = scriptedGateway({
         onStream: async (call) => {
-          if (call === 1) await rig.send(rig.threadId, "Too large. ".repeat(5000));
+          if (call === 1) await rig.send(rig.threadId, "Too large. ".repeat(50_000));
         },
       });
       rig = await fixture({ history: "brief history", gateway });
@@ -1536,10 +1535,60 @@ else
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
     });
 
-    it("keeps C complete when late messages exceed the successor reply budget", async () => {
+    it("allows late input above the automatic trigger when it fits the model window", async () => {
+      let rig: Awaited<ReturnType<typeof fixture>>;
+      const summarizer = scriptedSummarizer(async ({ owner: { turnId } }, call) => {
+        if (call === 1) {
+          await rig.send(rig.threadId, "Late long paste. ".repeat(1500));
+          await rig.send(rig.threadId, "A second late direction.");
+        }
+        return {
+          kind: "complete",
+          text: "Usable summary.",
+          model: "summary-model",
+          modelResponses: [
+            {
+              id: crypto.randomUUID(),
+              turnId,
+              sequence: 0,
+              provider: "openai",
+              model: "gpt-4.1-mini",
+              inputTokens: 100,
+              outputTokens: 10,
+              requestMessageCount: 2,
+              predictedCacheState: "cold",
+              predictedCacheReason: "summary_transcript",
+            },
+          ],
+        };
+      });
+      rig = await fixture({ summarizer, history: "old history ".repeat(8000) });
+      rig.setThreshold(9000);
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      const result = await run.execute();
+      const turns = await rig.repos.turns.listByThread(rig.threadId);
+      expect(result.status).toBe("complete");
+      const compactions = turns.filter((turn) => turn.role === "compaction");
+      expect(compactions).toHaveLength(1);
+      expect(compactions[0]?.status).toBe("complete");
+      const request = rig.gateway.requests.at(-1);
+      if (!request) throw new Error("Missing successor model request");
+      expect(
+        estimateRequestTokens({ request, baseline: null, tokenizer: "o200k" }),
+      ).toBeGreaterThan(9000);
+      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
+      expect(rig.summarizer.calls).toHaveLength(1);
+      expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
+    });
+
+    it("keeps C complete when late messages exceed the model window", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
       const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => {
-        await rig.send(rig.threadId, "Late long paste. ".repeat(5000));
+        await rig.send(rig.threadId, "Late long paste. ".repeat(50_000));
         await rig.send(rig.threadId, "A second late direction.");
         return {
           kind: "complete",

@@ -15,6 +15,7 @@ import {
   decideCompaction,
   type ForcedCompactionDecision,
 } from "./compaction/decision.js";
+import { estimateRequestTokens } from "./compaction/estimate.js";
 import { type PreparedUndo, prepareCompactionUndo } from "./compaction-undo.js";
 import type { CompactionImageProjectionMode, ImageInclusionDecision } from "./image-context.js";
 import { createLocalTurn } from "./local-turn.js";
@@ -282,7 +283,28 @@ async function prepareBaseRequest(
       tokenizer,
     });
   }
-  if (compaction.kind === "too_large") throw new CompactionPreparationError("context_too_large");
+  const automaticCompactionCannotFit =
+    compaction.kind === "too_large" ||
+    (compaction.kind === "compact" && compaction.trigger === "auto" && !!compaction.refusal);
+  if (automaticCompactionCannotFit) {
+    const usableWindowTokens = assembled.compactionUsableWindowTokens;
+    const tokenizer = assembled.resolvedModel?.tokenizer;
+    if (!tokenizer) throw new Error("Cannot measure request size without a resolved tokenizer");
+    const requestTokens = estimateRequestTokens({
+      request: assembled.generateRequest,
+      baseline,
+      tokenizer,
+    });
+    if (
+      input.controlMessageId !== undefined ||
+      input.forcedDecision !== undefined ||
+      usableWindowTokens === null ||
+      requestTokens >= usableWindowTokens
+    ) {
+      throw new CompactionPreparationError("context_too_large");
+    }
+    compaction = { kind: "generate" };
+  }
   return { assembled, events, compaction };
 }
 
