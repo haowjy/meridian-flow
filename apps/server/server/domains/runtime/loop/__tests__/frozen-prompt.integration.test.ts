@@ -12,11 +12,10 @@ import {
 } from "../../../projects/index.js";
 import { createInMemoryRepositories } from "../../../threads/adapters/in-memory/repositories.js";
 import {
-  CompactionMetadataCodec,
   decodeImageInclusionMetadata,
   forkThreadAgent,
+  type HandoffBriefLauncher,
   handoffThreadAgent,
-  loadThreadConversationContext,
   rebindThreadWork,
   SubagentDerivationError,
   type ThreadAgentSwapDeps,
@@ -24,11 +23,8 @@ import {
 import type { Gateway, Message, ModelInfo, Tool } from "../../gateway/index.js";
 import type { ImageAssetPort } from "../../ports/image-asset.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
-import { createConversationSummarizer } from "../../summary/conversation-summarizer.js";
-import { isSkillBodyTurn } from "../activated-skills.js";
 import { createWorkContextReader } from "../work-context.js";
 import { createRuntimeHarness } from "./runtime-harness.js";
-import { scriptedSummarizer } from "./scripted-summarizer.js";
 import { scriptedGateway } from "./test-gateway.js";
 
 function systemHash(messages: Message[]) {
@@ -94,7 +90,7 @@ async function fixture(
     reason: "fixture",
   });
   const derive: ThreadAgentSwapDeps & {
-    handoffBriefs: { launchAfterCommit(input: { threadId: string; seedTurnId: string }): void };
+    handoffBriefs: HandoffBriefLauncher;
   } = {
     ...repos,
     projects,
@@ -103,7 +99,17 @@ async function fixture(
     agentCatalog,
     eventWriter: rig.deps.eventWriter,
     workContextNotices: rig.delivery,
-    handoffBriefs: { launchAfterCommit() {} },
+    handoffBriefs: {
+      async hold() {
+        return {
+          async release() {},
+          onLost() {
+            return () => undefined;
+          },
+        };
+      },
+      launchAfterCommit() {},
+    },
   };
   async function run(threadId = thread.id, tools?: Tool[]) {
     const run = await rig.orchestrator.prepare({ threadId, userText: "Continue.", tools });
@@ -747,16 +753,13 @@ describe("frozen prompt provider requests", () => {
         ),
       ).toBe(true);
     }
-    const { thread: handoff } = await handoffThreadAgent(
-      rig.derive,
-      {
-        id: crypto.randomUUID(),
-        originTurnId: (await rig.repos.turns.getLatestByThread(rig.thread.id))!.id,
-        threadId: rig.thread.id,
-        userId: rig.thread.userId,
-        agentSelection: rig.original.selection,
-      },
-    );
+    const { thread: handoff } = await handoffThreadAgent(rig.derive, {
+      id: crypto.randomUUID(),
+      originTurnId: (await rig.repos.turns.getLatestByThread(rig.thread.id))!.id,
+      threadId: rig.thread.id,
+      userId: rig.thread.userId,
+      agentSelection: rig.original.selection,
+    });
     expect(handoff.initialPromptBakeId).toBe(parent?.initialPromptBakeId);
     expect((await rig.repos.turns.listByThread(handoff.id))[0]).toMatchObject({
       role: "system",
@@ -771,16 +774,13 @@ describe("frozen prompt provider requests", () => {
       slug: "new-writer",
       content: "---\nname: New Writer\nmode: primary\n---\n\nNew writer prompt.",
     });
-    const { thread: handoff } = await handoffThreadAgent(
-      rig.derive,
-      {
-        id: crypto.randomUUID(),
-        originTurnId: (await rig.repos.turns.getLatestByThread(rig.thread.id))!.id,
-        threadId: rig.thread.id,
-        userId: rig.thread.userId,
-        agentSelection: nextAgent.selection,
-      },
-    );
+    const { thread: handoff } = await handoffThreadAgent(rig.derive, {
+      id: crypto.randomUUID(),
+      originTurnId: (await rig.repos.turns.getLatestByThread(rig.thread.id))!.id,
+      threadId: rig.thread.id,
+      userId: rig.thread.userId,
+      agentSelection: nextAgent.selection,
+    });
     expect(handoff.agentDefinitionRevisionId).toBe(nextAgent.selection.definitionRevisionId);
     expect(handoff.initialPromptBakeId).toBeNull();
   });
@@ -823,16 +823,13 @@ describe("frozen prompt provider requests", () => {
       }),
     ).rejects.toBeInstanceOf(SubagentDerivationError);
     await expect(
-      handoffThreadAgent(
-        rig.derive,
-        {
-          id: crypto.randomUUID(),
-          originTurnId: parentTurn.id,
-          threadId: child.id,
-          userId: child.userId,
-          agentSelection: rig.original.selection,
-        },
-      ),
+      handoffThreadAgent(rig.derive, {
+        id: crypto.randomUUID(),
+        originTurnId: parentTurn.id,
+        threadId: child.id,
+        userId: child.userId,
+        agentSelection: rig.original.selection,
+      }),
     ).rejects.toBeInstanceOf(SubagentDerivationError);
   });
 

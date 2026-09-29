@@ -152,7 +152,6 @@ async function prepareBrief(input: { userCutoff: boolean; previousTooLarge?: boo
       sourceRef: required(source.ref),
       sourceTitle: source.title,
       cutoffTurnId: cutoff.id,
-      launches: 0,
     },
   });
   const beforeTurns = await rig.repos.turns.listByThread(source.id);

@@ -1,6 +1,16 @@
-/** Post-commit seam for starting the independent handoff brief service. */
+/** Claim handoff from derivation creation to the detached brief service. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 
+export interface HandoffBriefHold {
+  release(): Promise<void>;
+  onLost(listener: () => void): () => void;
+}
+
 export interface HandoffBriefLauncher {
-  launchAfterCommit(input: { threadId: ThreadId; seedTurnId: TurnId }): void;
+  hold(threadId: ThreadId): Promise<HandoffBriefHold | null>;
+  launchAfterCommit(input: {
+    threadId: ThreadId;
+    seedTurnId: TurnId;
+    claim: HandoffBriefHold;
+  }): void;
 }

@@ -117,7 +117,6 @@ import {
   createContextImageAssetPort,
   createConversationSummarizer,
   createDrizzleAdmissionRecords,
-  createDrizzleHandoffBriefClaim,
   createDrizzleHandoffStatusReader,
   createDrizzleRunClaim,
   createDrizzleRuntimeDelivery,
@@ -168,6 +167,7 @@ import {
   createInterruptRegistry,
   type InterruptRegistry,
 } from "../domains/runtime/loop/interrupts.js";
+import { createWakeIfRunnable } from "../domains/runtime/loop/wake-if-runnable.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import {
   createInMemoryModelRequestDebugStore,
@@ -260,7 +260,6 @@ export type AppServices = {
     scanWakes(): Promise<number>;
     repairOrphans(): Promise<number>;
     publishReports(): Promise<number>;
-    handoffBriefs(): Promise<number>;
   };
   userTurnAdmission: UserTurnAdmission;
   runClaim: Pick<RunClaim, "withExclusiveThread">;
@@ -628,6 +627,16 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     { startDrain: (id) => runner.startDrain(id) },
     ports.eventSink,
   );
+  const publishThreadStatus = async (threadId: ThreadId) => {
+    const status = await ports.statusReader.read(threadId);
+    const runningTurnId = await ports.statusReader.readRunningTurnId(threadId);
+    await threadEventHub.appendEvent(threadId, {
+      type: "thread.status",
+      threadId,
+      status,
+      runningTurnId,
+    });
+  };
   let publishReport:
     | ((childThreadId: ThreadId, executionTurnId: TurnId) => Promise<unknown>)
     | undefined;
@@ -639,12 +648,14 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     notices: ports.notices,
     runStarter,
     workContext,
+    publishStatus: publishThreadStatus,
     async publishFinalizedReports(reports) {
       if (!publishReport) throw new Error("Report publisher is not initialized");
       for (const report of reports)
         await publishReport(report.childThreadId, report.executionTurnId);
     },
   });
+  const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter });
   const workContextNotices = delivery;
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
@@ -740,6 +751,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     threadLock,
     publisher: reportPublisher,
     eventSink: ports.eventSink,
+    publishStatus: publishThreadStatus,
   });
   let wakeCursor: ThreadId | undefined;
   const recovery = {
@@ -757,7 +769,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     },
     repairOrphans: () => orphanRepair.sweep(WAKE_SWEEP_LIMIT),
     publishReports: () => reportPublisher.sweep(WAKE_SWEEP_LIMIT),
-    handoffBriefs: () => handoffBriefs.sweep(WAKE_SWEEP_LIMIT),
   };
   const admissionRecords = createDrizzleAdmissionRecords(ports.db);
   const imageAssets = createContextImageAssetPort({
@@ -909,23 +920,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventWriter: threadEventHub,
     eventSink: ports.eventSink,
     threadLock,
-    claim: createDrizzleHandoffBriefClaim(ports.db),
     runClaim: ports.runClaim,
-    runStarter,
+    wakeIfRunnable,
     billingUsage: ports.billingUsage,
     toolRegistry,
     generate: ({ destination, seed, signal }) =>
       generateHandoffBrief(orchestratorDeps, destination, seed, signal),
-    async publishStatus(threadId) {
-      const status = await ports.statusReader.read(threadId);
-      const runningTurnId = await ports.statusReader.readRunningTurnId(threadId);
-      await threadEventHub.appendEvent(threadId, {
-        type: "thread.status",
-        threadId,
-        status,
-        runningTurnId,
-      });
-    },
+    publishStatus: publishThreadStatus,
     schedulePostCommit: runAfterDrizzleCommit,
   });
 
@@ -1054,7 +1055,9 @@ export function createInMemoryAppServices(): AppServices {
     },
   });
   const handoffBriefs: HandoffBriefs = {
-    async launch() {},
+    async hold() {
+      return null;
+    },
     launchAfterCommit() {},
     async stop() {
       return false;
@@ -1062,9 +1065,7 @@ export function createInMemoryAppServices(): AppServices {
     async retry() {
       throw new Error("in-memory handoff retry is not implemented");
     },
-    async sweep() {
-      return 0;
-    },
+    shutdown() {},
   };
   const recovery = {
     async scanWakes() {
@@ -1074,9 +1075,6 @@ export function createInMemoryAppServices(): AppServices {
       return 0;
     },
     async publishReports() {
-      return 0;
-    },
-    async handoffBriefs() {
       return 0;
     },
   };

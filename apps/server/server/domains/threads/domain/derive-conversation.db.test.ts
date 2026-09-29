@@ -26,9 +26,12 @@ else
     } = await import("../index.js");
     const { hashPromptBakeContent } = await import("./prompt-bake-hash.js");
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
-    const { DerivedSourceNotFoundError, forkThreadAgent, handoffThreadAgent } = await import(
-      "./derive-conversation.js"
-    );
+    const {
+      DerivedSourceNotFoundError,
+      forkThreadAgent,
+      HandoffInProgressError,
+      handoffThreadAgent,
+    } = await import("./derive-conversation.js");
     const db = createDb(DATABASE_URL, { max: 6 });
     const repos = (
       await import("../adapters/drizzle/repositories.js")
@@ -581,11 +584,23 @@ else
         status: "streaming",
         prevTurnId: fixture.firstTurn.id,
       });
-      const launches: Array<{ threadId: string; seedTurnId: string }> = [];
+      const launchRequests: Array<{ threadId: string; seedTurnId: string }> = [];
       const { thread: handoff } = await handoffThreadAgent(
         {
           ...fixture.deps,
-          handoffBriefs: { launchAfterCommit(input) { launches.push(input); } },
+          handoffBriefs: {
+            async hold() {
+              return {
+                async release() {},
+                onLost() {
+                  return () => undefined;
+                },
+              };
+            },
+            launchAfterCommit(input) {
+              launchRequests.push({ threadId: input.threadId, seedTurnId: input.seedTurnId });
+            },
+          },
         },
         {
           id: crypto.randomUUID(),
@@ -601,7 +616,118 @@ else
       expect(handoff.originTurnId).toBe(fixture.firstTurn.id);
       expect(seed.metadata).toMatchObject({ cutoffTurnId: fixture.firstTurn.id });
       expect(seed.status).toBe("pending");
-      expect(launches).toEqual([{ threadId: handoff.id, seedTurnId: seed.id }]);
+      expect(launchRequests).toEqual([{ threadId: handoff.id, seedTurnId: seed.id }]);
+    });
+
+    it("returns an idempotent handoff before trying to take its destination claim", async () => {
+      const fixture = await setupSource();
+      const id = crypto.randomUUID();
+      let holds = 0;
+      const handoffBriefs = {
+        async hold() {
+          holds += 1;
+          return {
+            async release() {},
+            onLost() {
+              return () => undefined;
+            },
+          };
+        },
+        launchAfterCommit() {},
+      };
+      const input = {
+        id,
+        threadId: fixture.source.id,
+        userId: ids.userId,
+        originTurnId: fixture.firstTurn.id,
+        agentSelection: fixture.agent.selection,
+      };
+
+      const first = await handoffThreadAgent({ ...fixture.deps, handoffBriefs }, input);
+      const replay = await handoffThreadAgent(
+        {
+          ...fixture.deps,
+          handoffBriefs: {
+            async hold() {
+              throw new Error("Replay must not acquire a claim");
+            },
+            launchAfterCommit() {},
+          },
+        },
+        input,
+      );
+
+      expect(first.created).toBe(true);
+      expect(replay).toMatchObject({ thread: { id: first.thread.id }, created: false });
+      expect(holds).toBe(1);
+    });
+
+    it("refuses an unclaimed destination without creating it", async () => {
+      const fixture = await setupSource();
+      const id = crypto.randomUUID();
+
+      await expect(
+        handoffThreadAgent(
+          {
+            ...fixture.deps,
+            handoffBriefs: {
+              async hold() {
+                return null;
+              },
+              launchAfterCommit() {},
+            },
+          },
+          {
+            id,
+            threadId: fixture.source.id,
+            userId: ids.userId,
+            originTurnId: fixture.firstTurn.id,
+            agentSelection: fixture.agent.selection,
+          },
+        ),
+      ).rejects.toBeInstanceOf(HandoffInProgressError);
+      expect(await repos.threads.findByIdIncludingDeleted(id as never)).toBeNull();
+    });
+
+    it("releases the destination claim when creation rolls back", async () => {
+      const fixture = await setupSource();
+      const id = crypto.randomUUID();
+      let released = 0;
+      await expect(
+        handoffThreadAgent(
+          {
+            ...fixture.deps,
+            eventWriter: {
+              ...fixture.deps.eventWriter,
+              async appendEvent() {
+                throw new Error("forced seed event failure");
+              },
+            },
+            handoffBriefs: {
+              async hold() {
+                return {
+                  async release() {
+                    released += 1;
+                  },
+                  onLost() {
+                    return () => undefined;
+                  },
+                };
+              },
+              launchAfterCommit() {},
+            },
+          },
+          {
+            id,
+            threadId: fixture.source.id,
+            userId: ids.userId,
+            originTurnId: fixture.firstTurn.id,
+            agentSelection: fixture.agent.selection,
+          },
+        ),
+      ).rejects.toThrow("forced seed event failure");
+      expect(released).toBe(1);
+      expect(await repos.threads.findByIdIncludingDeleted(id as never)).toBeNull();
     });
 
     it.each([

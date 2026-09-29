@@ -65,6 +65,15 @@ export class DerivedSourceNotFoundError extends Error {
   }
 }
 
+export class HandoffInProgressError extends Error {
+  readonly code = "handoff_in_progress";
+
+  constructor() {
+    super("handoff_in_progress");
+    this.name = "HandoffInProgressError";
+  }
+}
+
 export type ForkCutoffErrorCode = "turn_not_in_transcript" | "no_settled_turn";
 
 export class ForkCutoffError extends Error {
@@ -95,71 +104,86 @@ export async function handoffThreadAgent(
   if (existing) return { thread: existing, created: false };
   const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
   if (source.kind === "subagent") throw new SubagentDerivationError(source.id, "handoff");
-  return deps.transaction(async () => {
-    const lockedSource = await deps.threads.lockByIdIncludingDeleted(source.id as ThreadId);
-    if (!lockedSource || lockedSource.deletedAt) throw new DerivedSourceNotFoundError();
-    const existing = await findIdempotentDerivation(deps, lockedSource.projectId, input, "handoff");
-    if (existing) return { thread: existing, created: false };
-    const cutoff = await normalizeForkCutoff(deps, lockedSource, input.originTurnId);
-    const owner = await deps.threads.findByIdIncludingDeleted(cutoff.turn.threadId);
-    if (!owner) throw new DerivedSourceNotFoundError();
-    const workId = await requirePrimaryWorkId(deps, lockedSource.id, lockedSource.projectId);
-    const binding = await resolveDerivedBinding(
-      deps,
-      lockedSource,
-      input.userId,
-      input.agentSelection,
-    );
-    const sameRevision = (binding.revision?.id ?? null) === lockedSource.agentDefinitionRevisionId;
-    const inheritedBake = sameRevision ? await bakeInEffect(deps, lockedSource) : null;
-    const result = await deps.threads.createDerivedPrimary({
-      id: input.id as ThreadId,
-      userId: lockedSource.userId,
-      projectId: lockedSource.projectId,
-      workId,
-      source: owner,
-      initialPromptBakeId: inheritedBake?.id ?? null,
-      originType: "handoff",
-      originTurnId: cutoff.turn.id as TurnId,
-      title: `Handoff from ${lockedSource.title ?? "thread"}`,
-    });
-    if (!result.created)
-      return {
-        thread: requireIdempotentDerivation(
-          result.thread,
-          lockedSource.projectId,
-          input,
-          "handoff",
-        ),
-        created: false,
-      };
-    const target = await bindDerivedPrimary(deps, result.thread, workId, binding);
-    await inheritEditingDocuments(deps, lockedSource, target);
-    const seedId = crypto.randomUUID();
-    const seed = await deps.turns.create({
-      id: seedId,
-      threadId: target.id,
-      role: "system",
-      origin: "system",
-      status: "pending",
-      metadata: handoffSeedMetadata({
+  const claim = await deps.handoffBriefs.hold(input.id as ThreadId);
+  if (!claim) throw new HandoffInProgressError();
+  try {
+    const result = await deps.transaction(async () => {
+      const lockedSource = await deps.threads.lockByIdIncludingDeleted(source.id as ThreadId);
+      if (!lockedSource || lockedSource.deletedAt) throw new DerivedSourceNotFoundError();
+      const existing = await findIdempotentDerivation(
+        deps,
+        lockedSource.projectId,
+        input,
+        "handoff",
+      );
+      if (existing) return { thread: existing, created: false };
+      const cutoff = await normalizeForkCutoff(deps, lockedSource, input.originTurnId);
+      const owner = await deps.threads.findByIdIncludingDeleted(cutoff.turn.threadId);
+      if (!owner) throw new DerivedSourceNotFoundError();
+      const workId = await requirePrimaryWorkId(deps, lockedSource.id, lockedSource.projectId);
+      const binding = await resolveDerivedBinding(
+        deps,
+        lockedSource,
+        input.userId,
+        input.agentSelection,
+      );
+      const sameRevision =
+        (binding.revision?.id ?? null) === lockedSource.agentDefinitionRevisionId;
+      const inheritedBake = sameRevision ? await bakeInEffect(deps, lockedSource) : null;
+      const result = await deps.threads.createDerivedPrimary({
+        id: input.id as ThreadId,
+        userId: lockedSource.userId,
+        projectId: lockedSource.projectId,
+        workId,
+        source: owner,
+        initialPromptBakeId: inheritedBake?.id ?? null,
+        originType: "handoff",
+        originTurnId: cutoff.turn.id as TurnId,
+        title: `Handoff from ${lockedSource.title ?? "thread"}`,
+      });
+      if (!result.created)
+        return {
+          thread: requireIdempotentDerivation(
+            result.thread,
+            lockedSource.projectId,
+            input,
+            "handoff",
+          ),
+          created: false,
+        };
+      const target = await bindDerivedPrimary(deps, result.thread, workId, binding);
+      await inheritEditingDocuments(deps, lockedSource, target);
+      const seedId = crypto.randomUUID();
+      const seed = await deps.turns.create({
+        id: seedId,
+        threadId: target.id,
+        role: "system",
+        origin: "system",
+        status: "pending",
+        metadata: handoffSeedMetadata({
+          sourceThreadId: owner.id,
+          sourceRef: owner.ref ?? owner.id,
+          sourceTitle: owner.title,
+          cutoffTurnId: cutoff.turn.id,
+        }),
+      });
+      await deps.eventWriter.appendEvent(target.id, { type: "turn.created", turn: seed });
+      deps.handoffBriefs.launchAfterCommit({ threadId: target.id, seedTurnId: seed.id, claim });
+      await deps.eventWriter.appendEvent(lockedSource.id, {
+        type: "agent.handoff",
         sourceThreadId: owner.id,
-        sourceRef: owner.ref ?? owner.id,
-        sourceTitle: owner.title,
-        cutoffTurnId: cutoff.turn.id,
-      }),
+        targetThreadId: target.id,
+        targetAgentSlug: binding.revision?.slug ?? null,
+        originTurnId: cutoff.turn.id,
+      });
+      return { thread: target, created: true };
     });
-    await deps.eventWriter.appendEvent(target.id, { type: "turn.created", turn: seed });
-    deps.handoffBriefs.launchAfterCommit({ threadId: target.id, seedTurnId: seed.id });
-    await deps.eventWriter.appendEvent(lockedSource.id, {
-      type: "agent.handoff",
-      sourceThreadId: owner.id,
-      targetThreadId: target.id,
-      targetAgentSlug: binding.revision?.slug ?? null,
-      originTurnId: cutoff.turn.id,
-    });
-    return { thread: target, created: true };
-  });
+    if (!result.created) await claim.release();
+    return result;
+  } catch (error) {
+    await claim.release();
+    throw error;
+  }
 }
 
 export async function forkThreadAgent(
