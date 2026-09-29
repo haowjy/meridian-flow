@@ -50,7 +50,7 @@ export type ThreadView = {
 const TEXT_LIMIT = 1_500;
 const PAYLOAD_LIMIT = 400;
 
-function record(value: unknown): Record<string, unknown> {
+export function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
@@ -64,7 +64,7 @@ function clip(value: unknown, limit: number, full: boolean): unknown {
 }
 
 export function compactBlock(block: Block, limits: TranscriptLimits): CompactBlock {
-  const content = record(block.content);
+  const content = asRecord(block.content);
   switch (block.blockType) {
     case "text":
     case "reasoning":
@@ -127,17 +127,25 @@ export function liveStatusLabel(snapshot: Pick<ThreadSnapshotResponse, "liveStat
   return status.kind === "asleep" ? "asleep" : `awake:${status.phase}`;
 }
 
+export type TurnSelection = { full: boolean; turnId?: string; last?: number };
+
+/** `--turn` (id or prefix) or the last N turns (all with --full); `total` counts the matches. */
+export function selectTurns(
+  snapshot: ThreadSnapshotResponse,
+  options: TurnSelection,
+): { turns: Turn[]; total: number } {
+  const matched = options.turnId
+    ? snapshot.turns.filter((turn) => turn.id.startsWith(options.turnId ?? ""))
+    : snapshot.turns;
+  const last = options.full || options.turnId ? matched.length : (options.last ?? 20);
+  return { turns: matched.slice(-last), total: matched.length };
+}
+
 export function projectThreadView(
   snapshot: ThreadSnapshotResponse,
-  options: TranscriptLimits & { turnId?: string; last?: number },
+  options: TranscriptLimits & TurnSelection,
 ): ThreadView {
-  const allTurns = options.turnId
-    ? snapshot.turns.filter(
-        (turn) => turn.id === options.turnId || turn.id.startsWith(options.turnId ?? ""),
-      )
-    : snapshot.turns;
-  const last = options.full || options.turnId ? allTurns.length : (options.last ?? 20);
-  const turns = allTurns.slice(-last);
+  const { turns, total } = selectTurns(snapshot, options);
   const { thread } = snapshot;
   return {
     thread: {
@@ -159,7 +167,7 @@ export function projectThreadView(
     },
     turns: turns.map((turn) => compactTurn(turn, options)),
     showing: turns.length,
-    total: allTurns.length,
+    total,
   };
 }
 

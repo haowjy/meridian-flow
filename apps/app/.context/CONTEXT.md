@@ -181,10 +181,11 @@ Both transports emit this shape; the reducer consumes this shape.
 
 ## Client-led creation patterns
 
-`/projects/new` mints a project UUID for an idempotent create request, but
-remains the pending destination until creation is confirmed or reconciled by
-that ID. An uncertain outcome stays on the form for retry, not on an unconfirmed
-project screen.
+`/projects/new` mints a UUID, writes its creation record, and navigates to
+`/p/<uuid>/works` before the POST settles. That destination renders the shell
+from the record at once and owns pending, failure, same-identity Retry, and
+Discard; once confirmed, ordinary owner-gated reads authorize its shell. See
+[`features/project/.context/CONTEXT.md`](../src/features/project/.context/CONTEXT.md#project-entry-and-route-lifetime).
 
 New-chat Send journals its intent, mints local turns, selects its current chat
 in place (center replaces the URL; dock leaves the destination unchanged), then
@@ -299,10 +300,9 @@ its selectable title and edit recency below are not links. The account-home API
 and last-active-project preference are removed; selection comes from the library,
 not a remembered destination.
 
-`/projects/new` is a separate creation destination. Its title form keeps
-network pending and failure there until the server returns the authoritative
-project ID, then enters that project's Chat index. No account-level composer or
-project-less quick-chat entry is exposed; every chat is created and opened from
+`/projects/new` is the library with the New project `CreationDialog` over it.
+Create enters the new project at once (see Client-led creation patterns).
+No account-level composer or project-less quick-chat entry is exposed; every chat is created and opened from
 its owning project workspace. The existing personal-project
 bootstrap may still place a starter project in the library for a new account;
 this UI change does not decide zero-project onboarding.

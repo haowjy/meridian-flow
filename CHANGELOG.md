@@ -52,6 +52,7 @@
 - Keep the same Agent and prompt when forking by default.
 
 - Open new chats immediately; subscribe once after first-send acceptance, without missing-thread errors.
+- Opening a project is faster: its identity and shell reads run together, library hover or focus and the open New project dialog warm workspace code without loading project data, and route caches seed outside React render.
 
 - Resolve images sent while a reply streams. Share history image limits and keep saved image identities.
 

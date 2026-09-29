@@ -5,6 +5,7 @@
  * SSR data priming so project data is ready on a cold refresh.
  */
 
+import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type {
   ListWorksResponse,
   ProjectWorkingSet,
@@ -12,6 +13,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 import {
+  getProject,
   getProjectWorkingSet,
   listProjectThreads,
   listProjectWorks,
@@ -47,6 +49,19 @@ function settledValue<T>(result: PromiseSettledResult<T>): T | null {
 
   logUnexpectedSsrLoadError(result.reason);
   return null;
+}
+
+export async function loadProjectEntry(
+  projectId: string,
+): Promise<{ project: Project; data: ProjectRouteData }> {
+  // Owner-gated identity and shell reads overlap; the identity read still
+  // decides route authority, since a rejection fails the whole entry.
+  const init = ssrApiRequestInit();
+  const [project, data] = await Promise.all([
+    getProject(projectId, init),
+    loadProjectRouteData(projectId),
+  ]);
+  return { project, data };
 }
 
 export async function loadProjectRouteData(projectId: string): Promise<ProjectRouteData> {

@@ -8,6 +8,7 @@ import { useProjectStore } from "@/client/stores";
 import { MeridianMark } from "@/components/app/MeridianMark";
 import { Button } from "@/components/ui/button";
 import { AccountMenu } from "@/features/account/AccountMenu";
+import { preloadProjectWorkspace } from "@/features/project/preload-project-workspace";
 import { formatRelativeTime } from "@/lib/date-groups";
 import { displayProjectTitle } from "@/lib/project-title";
 
@@ -85,6 +86,8 @@ export function ProjectLibrary() {
                       <Link
                         to="/p/$projectId/$"
                         params={{ projectId: project.id, _splat: "chats" }}
+                        onFocus={preloadProjectWorkspace}
+                        onMouseEnter={preloadProjectWorkspace}
                         className="group focus-ring block rounded-xl"
                         aria-label={t`Open ${title}`}
                       >

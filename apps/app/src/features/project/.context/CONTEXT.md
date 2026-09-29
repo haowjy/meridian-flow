@@ -440,8 +440,8 @@ identity. The account-scoped `client/creation/creation-registry` owns Project
 creation records (`pending`, `failed`, or `confirmed`); the create mutation drops
 its confirmed record once the route has reloaded. Project route loading
 short-circuits only while its creation record is pending or failed; meanwhile
-`ReadableProjectRoute` gets no route data and seeds it when it arrives
-(`useProjectRouteData`) rather than remounting. Browser history state is not creation
+`ProjectRouteBootstrap` mounts the shell with no route data and seeds it when it
+arrives rather than remounting. Browser history state is not creation
 recovery, and an in-flight create may be lost on reload. Project-scoped Works,
 threads, context catalogs, Results, and Agent catalog reads pause through
 selectors over that same registry until the create is confirmed.
@@ -533,15 +533,27 @@ Work projection.
 - Don't gate a mount between hook calls — gate at the parent.
 - Don't add raw hex/rgba or `emerald`/`rose` — use semantic tokens.
 
+## Project entry and route lifetime
+
 Persistent root/account/project loaders acquire shell identity on entry. Child
 navigation and same-href history-state writes do not reload them; explicit router
 invalidation and re-entry still do. This permits warm local editing offline,
-not cold offline app boot or bypassing server authorization.
+not cold offline app boot or bypassing server authorization. Entry reads project
+identity and shell data together (`loadProjectEntry`); a rejected identity read
+fails the whole entry. New project creation writes an account-scoped creation
+record before navigating to its UUID route; the record stands in for loader data
+while pending or failed but never grants authority, and once confirmed the
+ordinary owner-gated reads load the route. `ProjectRouteBootstrap` seeds the
+query cache and working set in a layout commit before the shell mounts, never
+during render.
 
 The basic `EditorView` is a static dependency of the project hosts, not a lazy
 chunk fetched on first New/open. This makes a loaded empty workspace capable of
 starting local writing offline; it deliberately costs earlier editor-code loading
 for Chat-only project visits. It does not provide cold offline application boot.
+Library intent and the project-creation form may warm workspace code, but must not
+preload the project route loader: entering a successful preloaded match would
+otherwise repeat owner and shell-data reads in the background.
 
 ## Document system map
 
