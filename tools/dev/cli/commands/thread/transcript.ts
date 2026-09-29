@@ -29,7 +29,6 @@ export type CompactTurn = {
   compactionMetadata?: {
     trigger?: string;
     controlMessageId?: string;
-    satisfiesControlId?: string;
     reason?: string;
     phase?: string;
     estimatedTokens?: number;
@@ -133,9 +132,6 @@ export function compactTurn(turn: Turn, limits: TranscriptLimits): CompactTurn {
           ...(typeof metadata.trigger === "string" ? { trigger: metadata.trigger } : {}),
           ...(typeof metadata.controlMessageId === "string"
             ? { controlMessageId: metadata.controlMessageId }
-            : {}),
-          ...(typeof metadata.satisfiesControlId === "string"
-            ? { satisfiesControlId: metadata.satisfiesControlId }
             : {}),
           ...(typeof metadata.reason === "string" ? { reason: metadata.reason } : {}),
           ...(typeof metadata.phase === "string" ? { phase: metadata.phase } : {}),

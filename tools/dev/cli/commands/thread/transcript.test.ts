@@ -20,10 +20,9 @@ describe("thread transcript compaction failures", () => {
       error: "This message is too long for this chat's model.",
       metadata: {
         reason: "context_too_large",
-        phase: "late_arrival",
+        phase: "initial_prepare",
         trigger: "auto",
         controlMessageId: "control-id",
-        satisfiesControlId: "satisfied-id",
         estimatedTokens: 12_001,
         fitLimitTokens: 12_000,
       },
@@ -42,9 +41,8 @@ describe("thread transcript compaction failures", () => {
     expect(compact.compactionMetadata).toEqual({
       trigger: "auto",
       controlMessageId: "control-id",
-      satisfiesControlId: "satisfied-id",
       reason: "context_too_large",
-      phase: "late_arrival",
+      phase: "initial_prepare",
       estimatedTokens: 12_001,
       fitLimitTokens: 12_000,
     });
@@ -67,7 +65,7 @@ describe("thread transcript compaction failures", () => {
         showing: 1,
         total: 1,
       }),
-    ).toContain("compaction failure: context_too_large during late_arrival");
+    ).toContain("compaction failure: context_too_large during initial_prepare");
   });
 
   it("includes summary token counts from the compaction block", () => {
