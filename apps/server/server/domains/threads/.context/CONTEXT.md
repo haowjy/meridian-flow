@@ -448,9 +448,12 @@ child's seed prompt (`orchestrator.ts` sets `origin: input.child ? "system" :
 (`agent` provenance), a child completion notice, a Work-context refresh, a
 request-only notice, or an invoked skill's baked body. `domain/read-model-
 projector.ts`'s `turnToCreateInput` and every direct `turns.create` caller
-must set it; there is no column default. **Logging/bookkeeping only today**
-— the chat-activity trigger above and `visible-conversation-policy.ts` still
-key off `role`/`metadata`, not this column.
+must set it; there is no column default. `domain/turn-activity-policy.ts` uses
+authorship as the single rule for turn-driven thread, Work, and project
+activity: writer and assistant turns count, while every system turn only
+advances the active leaf. The separate chat-activity trigger above and
+`visible-conversation-policy.ts` still key visibility off `role`/`metadata`,
+not this column.
 
 - Project chat pages use the strict shared keyset codec over
   `(lastActivityAt DESC, threadId DESC)` (`domain/project-chat-cursor.ts`).

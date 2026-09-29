@@ -2,7 +2,11 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
-import { createDrizzleProjectWorkRepository, updateWork } from "../../projects/index.js";
+import {
+  createDrizzleProjectWorkRepository,
+  deleteWorkTransition,
+  updateWork,
+} from "../../projects/index.js";
 import { createDrizzleRepositoriesForTest } from "../../threads/adapters/drizzle/repositories.js";
 import { rebindThreadWork } from "../../threads/domain/rebind-thread-work.js";
 import { createDrizzleEventJournalWriter } from "../../threads/index.js";
@@ -121,6 +125,64 @@ else
       );
       await notices.sweepWorkNotices();
       expect(await updates()).toHaveLength(1);
+    });
+
+    it("does not count a deleted Work's system-update sweep as activity in another Work", async () => {
+      const baseline = new Date("2025-01-01T00:00:00.000Z");
+      await db
+        .update(schema.works)
+        .set({ updatedAt: baseline })
+        .where(eq(schema.works.id, ids.workId));
+      await db
+        .update(schema.threads)
+        .set({ createdAt: baseline, updatedAt: baseline, lastActivityAt: baseline })
+        .where(eq(schema.threads.id, ids.threadId));
+      await db
+        .update(schema.projects)
+        .set({ updatedAt: baseline, lastActivityAt: baseline })
+        .where(eq(schema.projects.id, ids.projectId));
+
+      await deleteWorkTransition(
+        { works, workContextNotices: delivery(), stopThreadRun: async () => {} },
+        ids.targetWorkId,
+      );
+      await delivery().sweepWorkNotices();
+
+      const [work] = await db
+        .select({ updatedAt: schema.works.updatedAt })
+        .from(schema.works)
+        .where(eq(schema.works.id, ids.workId));
+      const [thread] = await db
+        .select({
+          activeLeafTurnId: schema.threads.activeLeafTurnId,
+          updatedAt: schema.threads.updatedAt,
+        })
+        .from(schema.threads)
+        .where(eq(schema.threads.id, ids.threadId));
+      const [project] = await db
+        .select({
+          updatedAt: schema.projects.updatedAt,
+          lastActivityAt: schema.projects.lastActivityAt,
+        })
+        .from(schema.projects)
+        .where(eq(schema.projects.id, ids.projectId));
+      const [feedItem] = await repos.chatFeed.queryPage({
+        projectId: ids.projectId,
+        userId: ids.userId,
+        after: null,
+        limit: 10,
+        favorite: false,
+        search: null,
+        workId: null,
+      });
+      const systemUpdates = await updates();
+
+      expect(systemUpdates).toHaveLength(1);
+      expect(thread?.activeLeafTurnId).toBe(systemUpdates[0]?.id);
+      expect(work?.updatedAt).toEqual(baseline);
+      expect(thread?.updatedAt).toEqual(baseline);
+      expect(feedItem?.lastActivityAt).toBe("2025-01-01T00:00:00.000000Z");
+      expect(project).toEqual({ updatedAt: baseline, lastActivityAt: baseline });
     });
 
     it("replays after a turn/event failure with exactly one committed update and ack", async () => {
