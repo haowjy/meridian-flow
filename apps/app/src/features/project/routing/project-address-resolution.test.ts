@@ -50,23 +50,30 @@ describe("authorized address resolution", () => {
       ),
     ).toEqual({ status: "resolved", value: entry });
   });
-  it("keeps path authority independent from Chat and secondary Work", () => {
+  it("reads the Work from the Work page or the query, independent of Chat", () => {
     expect(
       addressWorkSelection(
         address(
-          "/p/550e8400-e29b-41d4-a716-446655440000/works/123e4567-e89b-42d3-a456-426614174000/scratch/notes.md",
+          "/p/550e8400-e29b-41d4-a716-446655440000/works/123e4567-e89b-42d3-a456-426614174000",
         ),
       ),
     ).toEqual({ kind: "id", id: "123e4567-e89b-42d3-a456-426614174000" });
     expect(
-      addressWorkSelection(address("/p/550e8400-e29b-41d4-a716-446655440000/scratch/notes.md")),
-    ).toEqual({
-      kind: "none",
-    });
+      addressWorkSelection(
+        address(
+          "/p/550e8400-e29b-41d4-a716-446655440000/editor/scratch/notes.md?work=123e4567-e89b-42d3-a456-426614174000",
+        ),
+      ),
+    ).toEqual({ kind: "id", id: "123e4567-e89b-42d3-a456-426614174000" });
+    expect(
+      addressWorkSelection(
+        address("/p/550e8400-e29b-41d4-a716-446655440000/editor/scratch/notes.md?work="),
+      ),
+    ).toEqual({ kind: "none" });
     expect(
       addressWorkSelection(
         address(
-          "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?work=123e4567-e89b-42d3-a456-426614174000",
+          "/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/chapter.md?work=123e4567-e89b-42d3-a456-426614174000",
         ),
       ),
     ).toEqual({ kind: "id", id: "123e4567-e89b-42d3-a456-426614174000" });
@@ -83,7 +90,7 @@ describe("optional query guard", () => {
   } as const;
   it("clears missing selectors together without changing the document or auxiliary state", () => {
     const input = address(
-      "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?work=123e4567-e89b-42d3-a456-426614174001&settings=general",
+      "/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/chapter.md?work=123e4567-e89b-42d3-a456-426614174001&settings=general",
     );
     expect(guardProjectQuerySelections(input, { work: ready })).toEqual({
       ...input,
@@ -94,12 +101,12 @@ describe("optional query guard", () => {
   it("removes invalid query values while pinning no selection on reload", () => {
     const repaired = guardProjectQuerySelections(
       address(
-        "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?work=123e4567-e89b-42d3-a456-426614174001",
+        "/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/chapter.md?work=123e4567-e89b-42d3-a456-426614174001",
       ),
       { work: ready },
     );
     const href = projectAddressHref(repaired);
-    expect(href).toBe("/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md");
+    expect(href).toBe("/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/chapter.md");
     const reloaded = parseProjectAddress(href, "", projectAddressState(repaired));
     expect(reloaded.kind === "valid" && reloaded.address).toEqual(repaired);
   });
@@ -115,8 +122,10 @@ describe("optional query guard", () => {
     "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=123e4567-e89b-42d3-a456-426614174000",
     "/p/550e8400-e29b-41d4-a716-446655440000/works/123e4567-e89b-42d3-a456-426614174001",
     "/p/550e8400-e29b-41d4-a716-446655440000/chats/00000000-0000-4000-8000-000000000000",
-    "/p/550e8400-e29b-41d4-a716-446655440000/works/123e4567-e89b-42d3-a456-426614174001/scratch/notes.md",
-  ])("leaves valid, absent, empty and required path identities untouched: %s", (href) => {
+    // A Work-owned resource's Work is its identity, even when that Work is missing.
+    "/p/550e8400-e29b-41d4-a716-446655440000/editor/scratch/notes.md?work=123e4567-e89b-42d3-a456-426614174001",
+    "/p/550e8400-e29b-41d4-a716-446655440000/editor/browse/uploads?work=123e4567-e89b-42d3-a456-426614174001",
+  ])("leaves valid, absent, empty and identity selections untouched: %s", (href) => {
     const input = address(href);
     expect(guardProjectQuerySelections(input, { work: ready })).toBe(input);
   });

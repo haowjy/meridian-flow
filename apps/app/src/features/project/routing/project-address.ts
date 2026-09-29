@@ -1,4 +1,7 @@
-/** Browser project addresses use stable project UUIDs; child destinations remain readable. */
+/**
+ * Browser project addresses. After `/p/<projectId>` the path names the screen and what
+ * is open on it; the query holds context and overlays.
+ */
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
 import {
   isProjectContextTreeScheme,
@@ -19,22 +22,16 @@ export type ProjectDestination =
   | { kind: "chat-index" | "works" | "works-new" | "editor" }
   | { kind: "chat"; chatId: string }
   | { kind: "work"; workId: ParsedRequestId }
-  | {
-      kind: "browse";
-      scheme: ProjectContextTreeScheme | null;
-      path: string;
-      workId: ParsedRequestId | null;
-    }
-  | {
-      kind: "document";
-      scheme: ProjectContextTreeScheme;
-      path: string;
-      workId: ParsedRequestId | null;
-    };
+  | { kind: "browse"; scheme: ProjectContextTreeScheme | null; path: string }
+  | { kind: "document"; scheme: ProjectContextTreeScheme; path: string };
 
 export type ProjectAddress = {
   projectId: string;
   destination: ProjectDestination;
+  /**
+   * The Editor's Work. For Scratch and Uploads it is the resource's identity:
+   * `none` is No Work and `absent` is not an address.
+   */
   work: AddressSelection;
   /** Work detail's chats view is the default and is omitted from the address. */
   workView?: "files";
@@ -76,55 +73,49 @@ export function isWorkScopedScheme(
   return scheme !== null && isWorkScopedProjectContextScheme(scheme);
 }
 
-/** A folder to browse; Scratch and Uploads browse under their Work. */
+/** Whether `?work=` names the resource itself rather than an editing context. */
+export function workIsIdentity(destination: ProjectDestination): boolean {
+  return (
+    (destination.kind === "document" || destination.kind === "browse") &&
+    isWorkScopedScheme(destination.scheme)
+  );
+}
+
+/** A folder to browse; its Work, if any, is the address's `work`. */
 export function browseDestination(
   scheme: ProjectContextTreeScheme | null,
   path: string,
-  workId: string | null,
 ): ProjectDestination {
-  return {
-    kind: "browse",
-    scheme,
-    path: path.replace(/^\/+/, ""),
-    workId: isWorkScopedScheme(scheme) ? parseRequestId(workId) : null,
-  };
+  return { kind: "browse", scheme, path: path.replace(/^\/+/, "") };
 }
 
+/** The path names the screen, then what is open on it. */
 function parseDestination(parts: string[]): ProjectDestination | null {
-  if (parts.length === 0) return { kind: "chat-index" };
-  if (parts.length === 1) {
-    if (parts[0] === "works" || parts[0] === "editor") return { kind: parts[0] };
-    if (parts[0] === "browse") return { kind: "browse", scheme: null, path: "", workId: null };
-  }
-  if (parts.length === 2 && parts[0] === "chats") {
-    const chatId = uuid(parts[1]);
+  const [screen, ...rest] = parts;
+  if (screen === undefined) return { kind: "chat-index" };
+  if (screen === "chats") {
+    if (rest.length === 0) return { kind: "chat-index" };
+    const chatId = rest.length === 1 ? uuid(rest[0]) : null;
     return chatId ? { kind: "chat", chatId } : null;
   }
-  if (parts[0] === "works") {
-    if (parts.length === 2 && parts[1] === "new") return { kind: "works-new" };
-    const workId = parseRequestId(parts[1]);
-    if (!workId) return null;
-    if (parts.length === 2) return { kind: "work", workId };
-    parts = parts.slice(2);
-    const browse = parts[0] === "browse";
-    if (browse) parts = parts.slice(1);
-    const scheme = parts[0];
-    if (!isProjectContextTreeScheme(scheme) || !isWorkScopedProjectContextScheme(scheme))
-      return null;
-    const path = parts.slice(1).join("/");
-    const validated = validateContextEntryPath(path, { allowRoot: browse });
-    if (!validated.ok || validated.value !== path) return null;
-    return { kind: browse ? "browse" : "document", scheme, workId, path };
+  if (screen === "works") {
+    if (rest.length === 0) return { kind: "works" };
+    if (rest.length !== 1) return null;
+    if (rest[0] === "new") return { kind: "works-new" };
+    const workId = parseRequestId(rest[0]);
+    return workId ? { kind: "work", workId } : null;
   }
-  const browse = parts[0] === "browse";
-  if (browse) parts = parts.slice(1);
-  const scheme = parts[0];
+  if (screen !== "editor") return null;
+  if (rest.length === 0) return { kind: "editor" };
+  const browse = rest[0] === "browse";
+  const [scheme, ...segments] = browse ? rest.slice(1) : rest;
+  if (browse && scheme === undefined) return { kind: "browse", scheme: null, path: "" };
   if (!isProjectContextTreeScheme(scheme)) return null;
-  const path = parts.slice(1).join("/");
+  const path = segments.join("/");
   const validated = validateContextEntryPath(path, { allowRoot: browse });
   // Browser addresses must not silently trim a different filename into existence.
   if (!validated.ok || validated.value !== path) return null;
-  return { kind: browse ? "browse" : "document", scheme, workId: null, path };
+  return { kind: browse ? "browse" : "document", scheme, path };
 }
 
 /** Called with the router's original search string, before its default parser collapses duplicates. */
@@ -158,22 +149,9 @@ export function parseProjectAddress(
     destination.kind === "document" ||
     destination.kind === "browse" ||
     destination.kind === "editor";
-  let work = editor ? selection(query.get("work")) : ABSENT;
-  if (
-    (destination.kind === "document" || destination.kind === "browse") &&
-    destination.scheme &&
-    isWorkScopedProjectContextScheme(destination.scheme)
-  ) {
-    if (
-      work.kind !== "absent" &&
-      !(
-        (work.kind === "none" && destination.workId === null) ||
-        (work.kind === "id" && work.id === destination.workId)
-      )
-    )
-      return { kind: "invalid", reason: "conflicting-work" };
-    work = ABSENT;
-  }
+  const work = editor ? selection(query.get("work")) : ABSENT;
+  if (workIsIdentity(destination) && work.kind !== "id" && work.kind !== "none")
+    return { kind: "invalid", reason: "work" };
   const settings = query.get("settings");
   const workView =
     destination.kind === "work" && query.get("view") === "files" ? "files" : undefined;
@@ -205,9 +183,12 @@ export function parseProjectAddress(
   return { kind: "valid", address, href };
 }
 
-function writeSelection(query: URLSearchParams, key: string, value: AddressSelection): void {
-  if (value.kind === "id") query.set(key, value.id);
-  else if (value.kind === "malformed") query.set(key, value.value);
+function writeWork(query: URLSearchParams, address: ProjectAddress): void {
+  const work = address.work;
+  if (work.kind === "id") query.set("work", work.id);
+  else if (work.kind === "malformed") query.set("work", work.value);
+  // An Editor context of no Work is pinned by history state; a resource of No Work is `?work=`.
+  else if (work.kind === "none" && workIsIdentity(address.destination)) query.set("work", "");
 }
 
 export function projectAddressHref(address: ProjectAddress): string {
@@ -216,6 +197,7 @@ export function projectAddressHref(address: ProjectAddress): string {
   const d = address.destination;
   switch (d.kind) {
     case "chat-index":
+      push("chats");
       break;
     case "chat":
       push("chats", d.chatId);
@@ -232,7 +214,7 @@ export function projectAddressHref(address: ProjectAddress): string {
       break;
     case "browse":
     case "document":
-      if (d.workId) push("works", d.workId);
+      push("editor");
       if (d.kind === "browse") push("browse");
       if (d.scheme) push(d.scheme);
       if (d.path) push(...d.path.split("/"));
@@ -240,11 +222,7 @@ export function projectAddressHref(address: ProjectAddress): string {
   }
   const query = new URLSearchParams();
   const context = d.kind === "editor" || d.kind === "document" || d.kind === "browse";
-  const pathOwnsWork =
-    (d.kind === "document" || d.kind === "browse") &&
-    d.scheme !== null &&
-    isWorkScopedProjectContextScheme(d.scheme);
-  if (context && !pathOwnsWork) writeSelection(query, "work", address.work);
+  if (context) writeWork(query, address);
   if ((context || d.kind === "chat") && address.results) query.set("results", "");
   if (d.kind === "work" && address.workView === "files") query.set("view", "files");
   if (d.kind === "works" && address.worksView) query.set("view", address.worksView);

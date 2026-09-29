@@ -268,7 +268,6 @@ function recentDocumentHref(item: AccountRecentItem, projectId: string | undefin
       kind: "document",
       scheme: item.address.scheme,
       path,
-      workId: null,
     },
 
     work: { kind: "absent" },

@@ -147,7 +147,8 @@ it("admits an exact cached readable path before a failed remote lookup matters",
   expect(
     resolveLocalDocumentAddress(
       "project-id",
-      { kind: "document", scheme: "kb", path: "Cached.md", workId: null },
+      { kind: "document", scheme: "kb", path: "Cached.md" },
+      null,
       catalog(true),
     ),
   ).toMatchObject({
@@ -163,7 +164,8 @@ it("does not turn metadata-only catalog discovery into blank local content", () 
   expect(
     resolveLocalDocumentAddress(
       "project-id",
-      { kind: "document", scheme: "kb", path: "Cached.md", workId: null },
+      { kind: "document", scheme: "kb", path: "Cached.md" },
+      null,
       catalog(false),
     ),
   ).toBeUndefined();
@@ -174,7 +176,8 @@ it("resolves a Work-scoped path through its id and takes the context URI slug fr
   if (!workId) throw new Error("Invalid test Work ID");
   const result = resolveLocalDocumentAddress(
     "project-id",
-    { kind: "document", scheme: "scratch", path: "notes.md", workId },
+    { kind: "document", scheme: "scratch", path: "notes.md" },
+    workId,
     workCatalog(workId, true),
   );
   expect(result?.result).toMatchObject({
@@ -190,12 +193,8 @@ it("resolves a Work-scoped path through its id and takes the context URI slug fr
   expect(
     resolveLocalDocumentAddress(
       "project-id",
-      {
-        kind: "document",
-        scheme: "scratch",
-        path: "notes.md",
-        workId: parseRequestId("123e4567-e89b-42d3-a456-426614174001"),
-      },
+      { kind: "document", scheme: "scratch", path: "notes.md" },
+      parseRequestId("123e4567-e89b-42d3-a456-426614174001"),
       workCatalog(workId, true),
     ),
   ).toBeUndefined();
@@ -204,7 +203,8 @@ it("resolves a Work-scoped path through its id and takes the context URI slug fr
 it("uses local content through lookup failure, then yields to a successful canonical result", () => {
   const local = resolveLocalDocumentAddress(
     "project-id",
-    { kind: "document", scheme: "kb", path: "Cached.md", workId: null },
+    { kind: "document", scheme: "kb", path: "Cached.md" },
+    null,
     catalog(true),
   );
   if (!local || local.result.kind === "unavailable") throw new Error("Expected a local address");

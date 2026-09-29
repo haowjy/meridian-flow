@@ -5,7 +5,6 @@ import {
   isProjectContextTreeScheme,
   isWorkScopedProjectContextScheme,
 } from "@meridian/contracts/protocol";
-import { parseRequestId } from "@meridian/contracts/request-id";
 import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { projectCatalogFile } from "@/client/query/useContextCatalog";
@@ -13,7 +12,7 @@ import { useContextTabsActions } from "@/client/stores";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { mergeLocalResourceState } from "./local-document-address";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
-import { type AddressSelection, type ProjectAddress, projectAddressHref } from "./project-address";
+import { type ProjectAddress, projectAddressHref, workIdSelection } from "./project-address";
 import type { createProjectNavigation } from "./project-navigation";
 
 export type AddressAdmission = {
@@ -22,12 +21,6 @@ export type AddressAdmission = {
   href: string;
   issue: ProjectRouteIssue | undefined;
 };
-
-function selection(workId: string | null): AddressSelection {
-  if (workId === null) return { kind: "none" };
-  const id = parseRequestId(workId);
-  return id ? { kind: "id", id } : { kind: "malformed", value: workId };
-}
 
 export function ProjectAddressDocument({
   projectId,
@@ -95,15 +88,12 @@ export function ProjectAddressDocument({
           kind: "document",
           scheme: uri.value.scheme,
           path: document.path.join("/"),
-          workId:
-            scope.kind === "work" && isWorkScopedProjectContextScheme(uri.value.scheme)
-              ? parseRequestId(scope.workId)
-              : null,
         },
-        work:
+        work: workIdSelection(
           scope.kind === "work" && isWorkScopedProjectContextScheme(uri.value.scheme)
-            ? { kind: "absent" }
-            : selection(workId),
+            ? scope.workId
+            : workId,
+        ),
       };
       if (projectAddressHref(next) !== href) {
         const replacement = await navigation.replaceIfCurrent(ticket, next);

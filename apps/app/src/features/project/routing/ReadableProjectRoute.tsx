@@ -2,7 +2,7 @@
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { type ParsedRequestId, parseRequestId } from "@meridian/contracts/request-id";
+import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { useQuery } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -215,7 +215,7 @@ export function ReadableProjectRoute({
     const ticket = navigation.captureForEntry(location.state.__TSR_key ?? "");
     if (!ticket) return;
     // A cached miss while a catalog refresh is pending is not confirmed unavailability.
-    navigation.repairQuerySelections(ticket, {
+    navigation.repairAddress(ticket, {
       work: workCatalog.isFetching ? { status: "loading" } : workCatalog,
     });
   }, [navigation, location, workCatalog.entries, workCatalog.status, workCatalog.isFetching]);
@@ -269,12 +269,13 @@ export function ReadableProjectRoute({
     staleTime: 0,
     retry: false,
   });
+  const addressWorkId = address.work.kind === "id" ? address.work.id : null;
   const localDocumentAddress = useMemo(
     () =>
       documentDestination
-        ? resolveLocalDocumentAddress(projectId, documentDestination, addressCatalog)
+        ? resolveLocalDocumentAddress(projectId, documentDestination, addressWorkId, addressCatalog)
         : undefined,
-    [addressCatalog, documentDestination, projectId],
+    [addressCatalog, documentDestination, addressWorkId, projectId],
   );
   const reconciledDocumentAddress = reconcileDocumentAddress(
     localDocumentAddress,
@@ -364,12 +365,7 @@ export function ReadableProjectRoute({
         address: {
           ...current.address,
           destination: target.path
-            ? {
-                kind: "document",
-                scheme: target.scheme,
-                path: target.path.replace(/^\/+/, ""),
-                workId: isWorkScopedScheme(target.scheme) ? parseRequestId(target.workId) : null,
-              }
+            ? { kind: "document", scheme: target.scheme, path: target.path.replace(/^\/+/, "") }
             : { kind: "editor" },
           work: workIdSelection(target.workId),
           results: false,
@@ -476,7 +472,10 @@ export function ReadableProjectRoute({
             if (result.kind === "failed") throw result.error;
           })
         : go(
-            toDestination(browseDestination(target.scheme, target.folder ?? "", target.workId)),
+            {
+              ...toDestination(browseDestination(target.scheme, target.folder ?? "")),
+              work: workIdSelection(target.workId),
+            },
             options,
           ),
   };
@@ -521,10 +520,15 @@ export function ReadableProjectRoute({
       { replace: false },
     );
   };
+  // A project folder keeps the current editing context; a Work's folder names its Work.
   const browse = (scheme: ProjectContextTreeScheme | null, path = "") =>
-    go(toDestination(browseDestination(scheme, path, shown.current.workId)), {
-      replace: false,
-    });
+    go(
+      {
+        ...toDestination(browseDestination(scheme, path)),
+        ...(isWorkScopedScheme(scheme) ? { work: workIdSelection(shown.current.workId) } : {}),
+      },
+      { replace: false },
+    );
 
   return (
     <ProjectNavigationProvider

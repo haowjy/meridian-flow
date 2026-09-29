@@ -1,5 +1,5 @@
 /** Resolves address selections against an authorized project catalog without inventing IDs. */
-import { type AddressSelection, isWorkScopedScheme, type ProjectAddress } from "./project-address";
+import { type AddressSelection, type ProjectAddress, workIsIdentity } from "./project-address";
 
 export type AddressCatalog<T> =
   | { status: "loading" | "error"; entries?: readonly T[] }
@@ -22,22 +22,20 @@ export function resolveAddressSelection<T extends { id: string }>(
   return { status: "unavailable", id: selection.id };
 }
 
-/** Work-owned paths pin authority, including explicitly unassigned Scratch and Uploads. */
+/** The Work an address names: a Work page's own, else its `?work=`. */
 export function addressWorkSelection(address: ProjectAddress): AddressSelection {
   const d = address.destination;
-  if (d.kind === "work") return { kind: "id", id: d.workId };
-  if ((d.kind === "document" || d.kind === "browse") && isWorkScopedScheme(d.scheme))
-    return d.workId ? { kind: "id", id: d.workId } : { kind: "none" };
-  return address.work;
+  return d.kind === "work" ? { kind: "id", id: d.workId } : address.work;
 }
 
-/** Repair optional query selectors only; path identities must never fall back. */
+/** Repair an editing-context `?work=` only; a resource's Work is its identity and never falls back. */
 export function guardProjectQuerySelections(
   address: ProjectAddress,
   catalogs: {
     work: AddressCatalog<{ id: string }>;
   },
 ): ProjectAddress {
+  if (workIsIdentity(address.destination)) return address;
   const resolution = resolveAddressSelection(address.work, catalogs.work);
   if (resolution.status === "malformed" || resolution.status === "unavailable") {
     return { ...address, work: { kind: "none" } };

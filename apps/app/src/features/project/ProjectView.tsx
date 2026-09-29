@@ -686,7 +686,11 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     {
       id: "chat",
       children: (
-        <ProjectRouteBoundary destinationKey={props.routeLocationKey}>
+        // Centered, the chat surface owns the main column, so it carries the main issue.
+        <ProjectRouteBoundary
+          destinationKey={props.routeLocationKey}
+          issue={chatPlacement === "center" ? props.routeIssues?.main : undefined}
+        >
           <div
             className="flex min-h-0 flex-1 flex-col"
             role={chatIndexShowing ? undefined : chatPlacement === "center" ? "main" : undefined}

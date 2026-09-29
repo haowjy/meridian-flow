@@ -218,11 +218,11 @@ describe("project navigation", () => {
   });
   it("replaces dock and Work choices without another Back entry", async () => {
     const { history, navigation, changes } = setup(
-      "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?work=",
+      "/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/chapter.md?work=",
     );
     await navigation.navigate(
       address(
-        "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?work=123e4567-e89b-42d3-a456-426614174000",
+        "/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/chapter.md?work=123e4567-e89b-42d3-a456-426614174000",
       ),
       {
         replace: true,
@@ -230,7 +230,7 @@ describe("project navigation", () => {
     );
     expect(history.length).toBe(1);
     expect(changes).toEqual([
-      "replace:/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?work=123e4567-e89b-42d3-a456-426614174000",
+      "replace:/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/chapter.md?work=123e4567-e89b-42d3-a456-426614174000",
     ]);
     navigation.dispose();
   });
@@ -258,14 +258,14 @@ describe("project navigation", () => {
     expect(
       await navigation.replaceIfCurrent(
         ticket,
-        address("/p/550e8400-e29b-41d4-a716-446655440000/manuscript/renamed.md"),
+        address("/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/renamed.md"),
       ),
     ).toEqual({ kind: "superseded" });
     const current = navigation.capture();
     expect(
       await navigation.replaceIfCurrent(
         current,
-        address("/p/550e8400-e29b-41d4-a716-446655440000/manuscript/current.md"),
+        address("/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/current.md"),
       ),
     ).toEqual({ kind: "replaced" });
     navigation.dispose();
@@ -298,7 +298,7 @@ describe("optional query entry repair", () => {
     const { history, navigation, changes } = setup(
       "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=123e4567-e89b-42d3-a456-426614174001",
     );
-    navigation.repairQuerySelections(navigation.capture(), {
+    navigation.repairAddress(navigation.capture(), {
       work: { status: "ready", entries: [] },
     });
     expect(changes).toEqual(["freeze:/p/550e8400-e29b-41d4-a716-446655440000/editor"]);
@@ -306,6 +306,22 @@ describe("optional query entry repair", () => {
     expect(history.location.state).toMatchObject({
       meridianProjectEmptySelection: { href: "/p/550e8400-e29b-41d4-a716-446655440000/editor" },
     });
+    navigation.dispose();
+  });
+  it("replaces the bare project entry with its /chats href, adding no history", () => {
+    const { history, navigation, changes } = setup("/");
+    history.push("/p/550e8400-e29b-41d4-a716-446655440000");
+    navigation.repairAddress(navigation.capture(), { work: { status: "loading" } });
+    expect(changes).toEqual(["freeze:/p/550e8400-e29b-41d4-a716-446655440000/chats"]);
+    expect(history.length).toBe(2);
+    history.back();
+    expect(history.location.href).toBe("/");
+    navigation.dispose();
+  });
+  it("leaves an invalid address as typed", () => {
+    const { navigation, changes } = setup("/p/550e8400-e29b-41d4-a716-446655440000/scratch/a.md");
+    navigation.repairAddress(navigation.capture(), { work: { status: "loading" } });
+    expect(changes).toEqual([]);
     navigation.dispose();
   });
   it("rejects stale validation and never rewrites valid or absent selectors", () => {
@@ -319,8 +335,8 @@ describe("optional query entry repair", () => {
     const catalogs = {
       work: { status: "ready", entries: [{ id: "123e4567-e89b-42d3-a456-426614174000" }] },
     } as const;
-    navigation.repairQuerySelections(stale, catalogs);
-    navigation.repairQuerySelections(navigation.capture(), catalogs);
+    navigation.repairAddress(stale, catalogs);
+    navigation.repairAddress(navigation.capture(), catalogs);
     expect(changes).toEqual([]);
     expect(history.location.href).toBe(
       "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=123e4567-e89b-42d3-a456-426614174000",
@@ -330,7 +346,9 @@ describe("optional query entry repair", () => {
 });
 
 it("commits prepared workspace changes only inside accepted history, never on cancel or supersession", async () => {
-  const { history, navigation } = setup("/p/550e8400-e29b-41d4-a716-446655440000/manuscript/a");
+  const { history, navigation } = setup(
+    "/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/a",
+  );
   let decision!: { run(): void; cancel(): void };
   navigation.registerGuard({
     request: (intent) => {
@@ -352,7 +370,7 @@ it("commits prepared workspace changes only inside accepted history, never on ca
     { replace: true },
     prepared,
   );
-  expect(history.location.href).toBe("/p/550e8400-e29b-41d4-a716-446655440000/manuscript/a");
+  expect(history.location.href).toBe("/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/a");
   expect(closes).toBe(0);
   decision.cancel();
   expect(await cancelled).toEqual({ kind: "cancelled" });
@@ -378,7 +396,9 @@ it("commits prepared workspace changes only inside accepted history, never on ca
 });
 
 it("revalidates the member before dispatching a held navigation", async () => {
-  const { history, navigation } = setup("/p/550e8400-e29b-41d4-a716-446655440000/manuscript/a");
+  const { history, navigation } = setup(
+    "/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/a",
+  );
   let accept!: () => void;
   navigation.registerGuard({
     request: (intent) => {
@@ -403,6 +423,6 @@ it("revalidates the member before dispatching a held navigation", async () => {
   accept();
   expect(await pending).toEqual({ kind: "superseded" });
   expect(committed).toBe(false);
-  expect(history.location.href).toBe("/p/550e8400-e29b-41d4-a716-446655440000/manuscript/a");
+  expect(history.location.href).toBe("/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/a");
   navigation.dispose();
 });

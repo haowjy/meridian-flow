@@ -55,8 +55,8 @@ it.each([
   let finishReplace!: () => void;
   const href =
     kind === "alias"
-      ? "/p/550e8400-e29b-41d4-a716-446655440000/kb/before"
-      : "/p/550e8400-e29b-41d4-a716-446655440000/kb/doc";
+      ? "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/before"
+      : "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/doc";
   const navigate = vi.fn(
     () =>
       new Promise<void>((resolve) => {
@@ -80,7 +80,6 @@ it.each([
       kind: "document",
       scheme: "kb",
       path: kind === "alias" ? "before" : "doc",
-      workId: null,
     },
 
     work: { kind: "none" },
@@ -116,7 +115,7 @@ it.each([
       );
       if (kind === "alias") {
         expect(navigate).toHaveBeenCalledWith(
-          "/p/550e8400-e29b-41d4-a716-446655440000/kb/doc",
+          "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/doc",
           expect.objectContaining({ replace: true }),
         );
         await act(async () => finishReplace());
@@ -128,7 +127,7 @@ it.each([
 
 it("preserves a proven local resource handle during readable-route admission", async () => {
   openTab.mockReturnValue({ kind: "opened" });
-  const href = "/p/550e8400-e29b-41d4-a716-446655440000/kb/doc";
+  const href = "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/doc";
   const navigation = createProjectNavigation(
     {
       read: () => ({ key: "entry", href, state: {} }),
@@ -166,7 +165,7 @@ it("preserves a proven local resource handle during readable-route admission", a
       entryKey="entry"
       address={{
         projectId: "550e8400-e29b-41d4-a716-446655440000",
-        destination: { kind: "document", scheme: "kb", path: "doc", workId: null },
+        destination: { kind: "document", scheme: "kb", path: "doc" },
 
         work: { kind: "none" },
         results: false,
@@ -196,7 +195,7 @@ it("preserves a proven local resource handle during readable-route admission", a
 
 it("admits one semantic address when parent state rebuilds equivalent lookup objects", async () => {
   openTab.mockReturnValue({ kind: "opened" });
-  const href = "/p/550e8400-e29b-41d4-a716-446655440000/kb/doc";
+  const href = "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/doc";
   const navigation = createProjectNavigation(
     {
       read: () => ({ key: "entry", href, state: {} }),
@@ -219,7 +218,7 @@ it("admits one semantic address when parent state rebuilds equivalent lookup obj
           entryKey="entry"
           address={{
             projectId: "550e8400-e29b-41d4-a716-446655440000",
-            destination: { kind: "document", scheme: "kb", path: "doc", workId: null },
+            destination: { kind: "document", scheme: "kb", path: "doc" },
 
             work: { kind: "none" },
             results: false,
@@ -252,7 +251,7 @@ it.each([
   const pending = new Promise<void>((_resolve, fail) => {
     reject = fail;
   });
-  const href = "/p/550e8400-e29b-41d4-a716-446655440000/kb/before";
+  const href = "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/before";
   const navigation = createProjectNavigation(
     {
       read: () => ({ key: "entry", href, state: {} }),
@@ -266,7 +265,7 @@ it.each([
   );
   const address: ProjectAddress = {
     projectId: "550e8400-e29b-41d4-a716-446655440000",
-    destination: { kind: "document", scheme: "kb", path: "before", workId: null },
+    destination: { kind: "document", scheme: "kb", path: "before" },
 
     work: { kind: "none" },
     results: false,

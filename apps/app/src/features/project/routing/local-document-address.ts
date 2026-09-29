@@ -5,6 +5,7 @@ import type {
   DocumentAddressResult,
   ProjectContextIdentityResolution,
 } from "@meridian/contracts/protocol";
+import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
 import type { ProjectDestination } from "./project-address";
 
@@ -17,6 +18,7 @@ type AvailableDocumentAuthority = Extract<
 export function resolveLocalDocumentAddress(
   projectId: string,
   destination: DocumentDestination,
+  workId: ParsedRequestId | null,
   catalog: CatalogContextView | null,
 ): { result: DocumentAddressResult; file: CatalogFile } | undefined {
   if (!catalog) return undefined;
@@ -28,7 +30,7 @@ export function resolveLocalDocumentAddress(
   if (entry.scope.kind === "project") authority = entry.scope;
   else if (entry.scope.kind === "user") authority = entry.scope;
   else {
-    if (!destination.workId || destination.workId !== entry.scope.workId) return undefined;
+    if (!workId || workId !== entry.scope.workId) return undefined;
     const uri = parseUnifiedContextUri(file.uri);
     if (!uri.ok || uri.value.authority.kind !== "work") return undefined;
     authority = {
