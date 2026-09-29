@@ -31,9 +31,10 @@ export function useWorkFiles(projectId: string, work: AddressableWork) {
   const picker = useRef<HTMLInputElement>(null);
   const scratchNames = () =>
     scratch.catalog?.children(scratch.catalog.root.entryId).map((entry) => entry.name) ?? [];
-  // A new note opens for naming as soon as the server has it.
+  // A new note opens for naming as soon as the server has it. It sits at the
+  // Scratch root, and catalog paths are rooted.
   const named = (name: string | null) => {
-    if (name) setRenaming(name);
+    if (name) setRenaming(`/${name}`);
   };
   return {
     scratch,
