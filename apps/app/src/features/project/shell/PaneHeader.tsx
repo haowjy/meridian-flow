@@ -21,10 +21,11 @@ import { PanelToggleButton } from "./PanelToggleButton";
  * need the slot held open.)
  *
  * A `notice` (a failed command on the pane's subject, like a rejected rename or
- * Archive) sits beside the title when the pane is wide, and takes its own
+ * Archive) sits beside the title when the pane is wide, and wraps onto its own
  * full-width line under the band when the pane is narrow, so the title keeps
- * its width. It renders in both slots; a container query shows one, and the
- * hidden one is `display: none`, so assistive tech meets it once.
+ * its width. It is one element that only moves in the flex flow, so crossing
+ * the width neither remounts it (its alert is not announced again) nor drops
+ * focus from its Retry.
  */
 export type PaneHeaderRailToggle = {
   open: boolean;
@@ -53,7 +54,7 @@ export function PaneHeader({ title, left, right, actions, leading, notice }: Pan
   const leftToggle = left && !left.open;
   return (
     <div className="@container/pane-header shrink-0">
-      <header className="flex h-10 items-center gap-1 px-2">
+      <header className="flex flex-wrap items-center gap-x-1 px-2">
         {leftToggle ? (
           <PanelToggleButton icon={PanelLeftOpen} label={left.label} onClick={left.onExpand} />
         ) : null}
@@ -67,21 +68,27 @@ export function PaneHeader({ title, left, right, actions, leading, notice }: Pan
         ) : null}
 
         {/* Band-tall, so a title chip can stretch into an inactive tab's full-height hover. */}
-        <div className="flex min-w-0 flex-1 items-center self-stretch">
+        <div
+          className={cn(
+            "flex h-10 min-w-0 flex-1 items-center",
+            notice && "@2xl/pane-header:flex-initial",
+          )}
+        >
           {title}
-          {notice ? (
-            <div className="hidden min-w-0 empty:hidden @2xl/pane-header:block">{notice}</div>
-          ) : null}
         </div>
+        {notice ? (
+          <div className="order-last min-w-0 basis-full empty:hidden @2xl/pane-header:order-none @2xl/pane-header:flex-initial @2xl/pane-header:basis-auto">
+            {notice}
+          </div>
+        ) : null}
 
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           {actions}
           {right && !right.open ? (
             <PanelToggleButton icon={PanelRightOpen} label={right.label} onClick={right.onExpand} />
           ) : null}
         </div>
       </header>
-      {notice ? <div className="px-2 empty:hidden @2xl/pane-header:hidden">{notice}</div> : null}
     </div>
   );
 }
