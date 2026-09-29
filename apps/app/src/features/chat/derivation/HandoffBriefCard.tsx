@@ -161,11 +161,6 @@ export function HandoffBriefCard({
               <Trans>Couldn't stop the brief. Try again.</Trans>
             </p>
           ) : null}
-          {ended && view.canRetry && onRetry && destinationBusy ? (
-            <p id={retryWaitId} className="text-caption text-muted-foreground">
-              <Trans>You can retry when the reply finishes.</Trans>
-            </p>
-          ) : null}
           {view.state === "failed" && view.superseded ? (
             <p className="text-caption text-muted-foreground">
               <Trans>This brief failed.</Trans>
@@ -174,6 +169,11 @@ export function HandoffBriefCard({
           {view.state === "stopped" && !view.superseded ? (
             <p className="text-caption text-muted-foreground">
               <Trans>This chat continues without a brief.</Trans>
+            </p>
+          ) : null}
+          {ended && view.canRetry && onRetry && destinationBusy ? (
+            <p id={retryWaitId} className="text-caption text-muted-foreground">
+              <Trans>You can retry when the reply finishes.</Trans>
             </p>
           ) : null}
           {view.brief ? <BriefText brief={view.brief} /> : null}
