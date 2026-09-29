@@ -384,16 +384,9 @@ Persistent root/account/project loaders acquire shell identity on entry. Child
 navigation and same-href history-state writes do not reload them; explicit router
 invalidation and re-entry still do. This permits warm local editing offline,
 not cold offline app boot or bypassing server authorization. New project creation
-registers one same-tab persistence attempt before navigating to its UUID route.
-Only that explicit attempt may sequence the route behind creation; afterwards the
-ordinary owner-gated project and shell-data reads still establish authority.
-Creation failure and same-identity retry stay on the destination and remain
-fenced to the initiating account epoch; the project-list cache receives only
-confirmed projects from that same epoch. Independent identity,
-thread, Work, and working-set reads start together. The project route bootstrap
-installs their cache snapshots and adopts working-set state in a layout commit
-before mounting `ReadableProjectRoute`; query or driver mutation during render is
-forbidden.
+starts one same-tab persistence attempt before navigating to its UUID route; that
+attempt may sequence loading but never grant authority. Failure and same-identity
+Retry stay on the destination and remain fenced to the initiating account epoch.
 
 The basic `EditorView` is a static dependency of the project hosts, not a lazy
 chunk fetched on first New/open. This makes a loaded empty workspace capable of

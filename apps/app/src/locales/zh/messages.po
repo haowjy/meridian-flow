@@ -2865,8 +2865,8 @@ msgid "Opening document…"
 msgstr ""
 
 #: src/features/home/NewProjectView.tsx
-msgid "Opening project…"
-msgstr ""
+#~ msgid "Opening project…"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Opening the link"

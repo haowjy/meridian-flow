@@ -22,20 +22,7 @@ function deferred<T>() {
 }
 
 const projectId = "00000000-0000-4000-8000-000000000010";
-const accountId = "00000000-0000-4000-8000-000000000011";
-const project: Project = {
-  id: projectId,
-  userId: accountId,
-  slug: "entry",
-  isPersonal: false,
-  settings: {},
-  lastActivityAt: "2026-09-28T00:00:00.000Z",
-  createdAt: "2026-09-28T00:00:00.000Z",
-  updatedAt: "2026-09-28T00:00:00.000Z",
-  deletedAt: null,
-  title: "Entry",
-  description: null,
-};
+const project = { id: projectId } as Project;
 
 afterEach(() => {
   for (const mock of Object.values(mocks)) mock.mockReset();

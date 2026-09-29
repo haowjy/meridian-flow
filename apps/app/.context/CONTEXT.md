@@ -181,11 +181,9 @@ Both transports emit this shape; the reducer consumes this shape.
 
 ## Client-led creation patterns
 
-`/projects/new` mints a project UUID, starts one idempotent create attempt
-(`client/project-creation.ts`), and navigates to `/p/<uuid>` before the request
-settles. That route shows creation pending, failure, and Retry with the same
-UUID and title; it never returns to the form. Same-tab creation only sequences
-the route loader; the ordinary owner-gated reads still authorize the shell. See
+`/projects/new` mints a UUID, starts creation, and navigates to `/p/<uuid>`
+before persistence settles. That destination owns pending, failure, and
+same-identity Retry; ordinary owner-gated reads still authorize its shell. See
 [`features/project/.context/CONTEXT.md`](../src/features/project/.context/CONTEXT.md#project-entry-and-route-lifetime).
 
 New-chat Send journals its intent, mints local turns, selects its current chat
@@ -302,9 +300,8 @@ and last-active-project preference are removed; selection comes from the library
 not a remembered destination.
 
 `/projects/new` is a separate creation destination. Its title form submits
-straight into the new project's Chat index; creation pending and failure live
-there (see Client-led creation patterns). No account-level composer or
-project-less quick-chat entry is exposed; every chat is created and opened from
+straight into the new project's Chat index (see Client-led creation patterns).
+No account-level composer or project-less quick-chat entry is exposed; every chat is created and opened from
 its owning project workspace. The existing personal-project
 bootstrap may still place a starter project in the library for a new account;
 this UI change does not decide zero-project onboarding.

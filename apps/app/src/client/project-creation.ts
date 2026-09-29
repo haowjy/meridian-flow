@@ -16,22 +16,13 @@ type ProjectCreationAttempt = ProjectCreationInput & {
 
 const attempts = new Map<string, ProjectCreationAttempt>();
 
-function persistedProjectMatches(project: Project, input: ProjectCreationInput): boolean {
-  return project.id === input.projectId && project.userId === input.accountId;
-}
-
 async function persistProject(input: ProjectCreationInput): Promise<Project> {
   try {
-    const project = await createProject({ id: input.projectId, title: input.title });
-    if (!persistedProjectMatches(project, input))
-      throw new Error("Created project identity mismatch");
-    return project;
+    return await createProject({ id: input.projectId, title: input.title });
   } catch (error) {
-    const existing = await getProject(input.projectId).catch(() => {
+    return getProject(input.projectId).catch(() => {
       throw error;
     });
-    if (!persistedProjectMatches(existing, input)) throw error;
-    return existing;
   }
 }
 
@@ -57,7 +48,7 @@ function startAttempt(
     attempt.stopAccountWatch = () => accountSignal.removeEventListener("abort", forget);
   }
   attempt.promise = persistProject(input).catch((error) => {
-    if (attempts.get(input.projectId) === attempt) attempt.status = "failed";
+    attempt.status = "failed";
     throw error;
   });
   attempts.set(input.projectId, attempt);
@@ -70,8 +61,9 @@ export function beginProjectCreation(
   accountSignal?: AbortSignal,
 ): Promise<Project> {
   const current = attempts.get(input.projectId);
-  if (current?.status === "pending") return current.promise;
-  return startAttempt(input, accountSignal).promise;
+  return current?.status === "pending"
+    ? current.promise
+    : startAttempt(input, accountSignal).promise;
 }
 
 /** Waits only for a creation this tab explicitly started; ordinary routes remain server-authorized. */
@@ -101,11 +93,7 @@ export function retryProjectCreation(
   if (failed?.status !== "failed" || failed.accountId !== accountId)
     throw new Error("Project creation is not retryable");
   return startAttempt(
-    {
-      projectId: failed.projectId,
-      accountId: failed.accountId,
-      title: failed.title,
-    },
+    { projectId: failed.projectId, accountId: failed.accountId, title: failed.title },
     accountSignal,
   ).promise;
 }

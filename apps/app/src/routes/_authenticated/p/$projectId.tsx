@@ -47,7 +47,6 @@ function ProjectLoadError() {
   const { user } = AuthenticatedRoute.useLoaderData();
   const accountEpoch = useAccountEpochSignal();
   const creationFailed = projectCreationFailed(projectId, user.userId);
-  const creationFlow = creationFailed || isProjectCreationPending(projectId, user.userId);
   const [retrying, setRetrying] = useState(false);
   const retry = async () => {
     if (!creationFailed) {
@@ -68,7 +67,7 @@ function ProjectLoadError() {
     <main className="grid h-full place-items-center bg-background text-foreground">
       <div className="flex flex-col items-center gap-3" role="alert">
         <p>
-          {creationFlow ? (
+          {creationFailed ? (
             <Trans>This project couldn’t be created.</Trans>
           ) : (
             <Trans>This project couldn’t load. It may be unavailable.</Trans>

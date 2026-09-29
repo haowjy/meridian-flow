@@ -21,7 +21,6 @@ export function NewProjectView() {
   const accountEpoch = useAccountEpochSignal();
   const [projectId] = useState(() => crypto.randomUUID());
   const [title, setTitle] = useState("");
-  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     // The destination UUID does not exist yet, so route preloading would run
@@ -32,8 +31,7 @@ export function NewProjectView() {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = title.trim();
-    if (busy || !name) return;
-    setBusy(true);
+    if (!name) return;
     const persistence = beginProjectCreation({ projectId, accountId, title: name }, accountEpoch);
     void persistence.then(
       (project) => {
@@ -79,7 +77,6 @@ export function NewProjectView() {
               autoComplete="off"
               maxLength={120}
               value={title}
-              disabled={busy}
               onChange={(event) => setTitle(event.target.value)}
               className="mt-2 h-11 bg-card"
               required
@@ -88,9 +85,9 @@ export function NewProjectView() {
               type="submit"
               size="sm"
               className="mt-6 [@media(pointer:coarse)]:min-h-11"
-              disabled={busy || !title.trim()}
+              disabled={!title.trim()}
             >
-              {busy ? <Trans>Opening project…</Trans> : <Trans>Create project</Trans>}
+              <Trans>Create project</Trans>
             </Button>
           </form>
         </div>

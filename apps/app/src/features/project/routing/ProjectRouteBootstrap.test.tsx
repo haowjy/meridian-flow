@@ -30,19 +30,10 @@ vi.mock("./ReadableProjectRoute", () => ({
   ReadableProjectRoute: mocks.readable,
 }));
 
-const project: Project = {
+const project = {
   id: "00000000-0000-4000-8000-000000000020",
   userId: "00000000-0000-4000-8000-000000000021",
-  slug: "bootstrap",
-  isPersonal: false,
-  settings: {},
-  lastActivityAt: "2026-09-28T00:00:00.000Z",
-  createdAt: "2026-09-28T00:00:00.000Z",
-  updatedAt: "2026-09-28T00:00:00.000Z",
-  deletedAt: null,
-  title: "Bootstrap",
-  description: null,
-};
+} as Project;
 
 function routeData(worksStarted: number): ProjectRouteData {
   return {
