@@ -7,9 +7,18 @@ owns the pixels. Code lives in `derivation/`.
 
 ## The actions
 
-Fork and Hand off sit in a finished turn's action row; the turn is the cutoff.
-The server normalizes it to the last settled turn at or before it, and an
-inherited turn's owner becomes the recorded source. `ChatView` provides a
+Fork and Hand off sit in a finished reply's action row; the turn is the
+cutoff. Hand off alone also sits under a writer message the model has
+(`HandoffTurnAction` in `UserTurn`): the handoff then includes that message,
+which is how a writer hands off a source whose reply is still streaming (the
+brief reports the message as the open request). A queued, sending, or failed
+message offers none: a queued one is chained after the streaming turn, so the
+server's cutoff rule would move it back silently. Fork stays on replies. The
+message's row reveals on hover or focus like a reply's actions, stays visible
+on touch, and opens the picker toward the chat (`align="end"`).
+
+The server normalizes the cutoff to the last settled turn at or before it, and
+an inherited turn's owner becomes the recorded source. `ChatView` provides a
 `TurnDerivation` only for a primary chat the server already has
 (`canDeriveFrom`), so a subagent's view and a chat still being created show
 neither action.
@@ -33,8 +42,7 @@ create-or-get route. Nothing waits on the server to change the screen:
   it with the same turns. The prefix drops model responses, which the read
   lacks, so a reply's Info never appears and then vanishes.
 - A handoff shows a generating brief card at once (`optimisticHandoffSeed`),
-  which has nothing to stop until the server's seed arrives. While it stands
-  in, every `handoff_brief` control is that seed's, never a queued row.
+  which has nothing to stop until the server's seed arrives.
 - A message sent before the thread exists shows at once and is sent when
   creation settles (`whenDerived`); if creation failed, the message fails with
   it and keeps Retry. Submission recovery waits the same way, so a reload
@@ -47,30 +55,50 @@ create-or-get route. Nothing waits on the server to change the screen:
 
 ## The brief card
 
-The seed S is a `handoff-seed` row rendered by `HandoffBriefCard`:
+The brief is not an inbox command: it runs beside everything and holds the
+destination the way a reply does, with no lease or phase. Each seed S is a
+`handoff-seed` row rendered by `HandoffBriefCard`, and its state is S's status:
 
 | S | Card |
 |---|---|
-| `pending` | "Writing the handoff brief" (`briefing`) with Stop; the composer's Stop targets S too |
+| `pending` | "Writing the handoff brief" with Stop; the composer's Stop targets S too (`composerRun`) |
 | `complete` | The brief from the `handoff-brief` block, clipped with "Show the whole brief" |
-| `error` | "Handoff brief unavailable", `turn.error` as copy, Retry on the newest seed |
+| `error` | "Handoff brief unavailable" ("Handoff brief interrupted" when a crash or restart cut it off, `reason: interrupted`), `turn.error` as copy, Retry on the newest seed |
 | `cancelled` | "Handoff brief stopped", "This chat continues without a brief.", Retry on the newest seed |
 
 An older seed (a newer one replaced it, or it is inherited) is superseded: a
 failed one says "This brief failed." instead of the server's "Try again."
 copy, and a stopped one drops "This chat continues without a brief."
 
-A brief whose seed exists is stopped, never withdrawn: its control counts as
-answered, so it is never a queued row. Retry enqueues `handoff_brief` with no
-seed; until it runs it waits at the tail as a queued control, withdrawable,
-and the card hides Retry (the server refuses a second). The new seed appears
-at the leaf when the Retry runs; a sent turn is never mutated. After Stop,
-keyboard focus lands on Retry (`data-focus-landing`). The source's name links
-back to it and says when it is in the trash. S freezes the source's title
-(`turn.metadata.sourceTitle`, projected to the block's `props.sourceTitle`)
-for display only, so a trashed source reads "<title> (in the trash)"; the
-optimistic seed carries the intent's title. A writer message sent during the
-brief chains after S and shows Queued.
+`derivation/useHandoffBrief.ts` owns Retry and Stop:
+
+- **Retry** mints the new seed's id and appends a generating card at the leaf
+  at once (`optimisticHandoffSeed` with that id and the old seed's frozen
+  source), then posts `{ id }` to `POST /handoff/brief`. The response's seed
+  replaces the stand-in by id, and the snapshot's replaces that. A 409
+  (`handoff_retry_unavailable`: a reply or brief holds the chat) or a lost
+  request marks that card failed with its reason as the card's copy; its Retry
+  re-sends under the same id, so a request that did land replays. The new card
+  is the newest seed, so the old card loses Retry the moment it appears.
+- **Retry waits while the chat is busy** (a live status or a streaming
+  reply). It stays focusable (`aria-disabled`) and says "You can retry when
+  the reply finishes."; the server's 409 covers the race.
+- **Stop** marks the seed Stopping at once and calls the turn cancel route
+  with S's id (`useTurnStop`, shared with the compaction divider). A failed
+  cancel clears Stopping and says "Couldn't stop the brief." on the card. A
+  seed the server does not have yet (the opening stand-in, a Retry still
+  sending) offers no Stop.
+
+After Stop, keyboard focus lands on Retry (`data-focus-landing`). The source's
+name links back to it and says when it is in the trash. S freezes the source's
+title (`turn.metadata.sourceTitle`, projected to the block's
+`props.sourceTitle`) for display only, so a trashed source reads "<title> (in
+the trash)"; the optimistic seed carries the intent's title. A writer message
+sent during the brief chains after S, shows Queued, and is answered once the
+brief releases the chat. The brief's start and end reach the chat as a
+`meridian.thread.status` frame, which revalidates the snapshot. The brief
+card's state changes are announced from the turns
+(`useControlTurnAnnouncements`), including a Retry's stand-in.
 
 ## The inherited view
 
