@@ -1553,6 +1553,62 @@ else
       expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
     });
 
+    it("replays a compaction-first Retry id and drops its promise when Stop ends the run", async () => {
+      let secondStarted!: () => void;
+      const compactionStarted = new Promise<void>((resolve) => {
+        secondStarted = resolve;
+      });
+      const summarizer = scriptedSummarizer(async ({ signal }, call) => {
+        if (call === 1)
+          return { kind: "failed", error: new Error("summary unavailable"), modelResponses: [] };
+        secondStarted();
+        await new Promise<void>((resolve) => {
+          if (signal.aborted) resolve();
+          else signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+        return { kind: "cancelled", modelResponses: [] };
+      });
+      const rig = await fixture({ summarizer });
+      const original = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Stop the retry summary.",
+      });
+      expect((await original.execute()).status).toBe("error");
+      await processDetachedWork.drain();
+      const failedReply = await rig.repos.turns.getLatestByThread(rig.threadId);
+      if (!failedReply) throw new Error("Failed automatic compaction reply was not persisted");
+
+      const replyTurnId = crypto.randomUUID();
+      const retry = await rig.orchestrator.retryReply({
+        threadId: rig.threadId,
+        failedTurnId: failedReply.id as never,
+        replyTurnId: replyTurnId as never,
+      });
+      await compactionStarted;
+      const replay = await rig.orchestrator.retryReply({
+        threadId: rig.threadId,
+        failedTurnId: failedReply.id as never,
+        replyTurnId: replyTurnId as never,
+      });
+      const compactionId = rig.orchestrator.getRunningTurnId(rig.threadId);
+      if (!compactionId) throw new Error("Retry compaction was not running");
+      expect(await rig.orchestrator.cancel(rig.threadId, compactionId)).toBe("cancelled");
+      await processDetachedWork.drain();
+
+      expect(retry).toMatchObject({
+        created: true,
+        turn: { id: replyTurnId, prevTurnId: compactionId },
+      });
+      expect(replay).toMatchObject({
+        created: false,
+        turn: { id: replyTurnId, prevTurnId: compactionId },
+      });
+      expect(await rig.repos.turns.findById(replyTurnId as never)).toBeNull();
+      expect(await rig.repos.turns.findById(compactionId)).toMatchObject({ status: "cancelled" });
+      expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
+    });
+
     it("keeps a usable epoch when a late image fails preparation", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
       let writerId: string | undefined;

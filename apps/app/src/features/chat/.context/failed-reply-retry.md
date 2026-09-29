@@ -34,7 +34,11 @@ snapshot) replaces that.
 - **Lost request.** The stand-in stays, failed, and reads "Couldn't start the
   retry. Try again." with its own Retry, which re-sends the same id for the same
   failed reply: a request that did land replays (the server answers 200 with
-  the turn it already made).
+  the turn it already made). If preparation first creates a compaction, the
+  live run records the promised reply id, so the same-id re-send also replays
+  while that compaction is running. A failed or stopped compaction in the
+  snapshot proves that no promised successor will arrive and drops the
+  stand-in.
 
 Pressing Retry moves focus to the transcript (the button leaves with the error
 block) and follows the tail so the new reply is in view. A stand-in has no

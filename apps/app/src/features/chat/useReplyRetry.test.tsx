@@ -101,6 +101,27 @@ describe("useReplyRetry", () => {
     expect(latest.requestOf(id)).toBeNull();
   });
 
+  it("drops a promised reply when its compaction is stopped without creating it", async () => {
+    api.retryReply.mockImplementation(
+      async (_thread: string, _failed: string, { id }: { id: string }) => ({
+        ...turn(id, "assistant", "pending", 4),
+        prevTurnId: "c",
+      }),
+    );
+    await act(async () => latest.retry(failed));
+    const id = latest.standIns[0]?.id ?? "";
+    await act(async () =>
+      root.render(<Probe turns={[message, failed, turn("c", "compaction", "streaming", 3)]} />),
+    );
+    expect(latest.standIns).toHaveLength(1);
+
+    await act(async () =>
+      root.render(<Probe turns={[message, failed, turn("c", "compaction", "cancelled", 3)]} />),
+    );
+    expect(latest.standIns).toEqual([]);
+    expect(latest.requestOf(id)).toBeNull();
+  });
+
   it("drops the new reply on a refusal (409), notes the failed reply, and refreshes", async () => {
     api.retryReply.mockRejectedValue(new HttpResponseError("reply_retry_unavailable", 409, null));
     await act(async () => latest.retry(failed));

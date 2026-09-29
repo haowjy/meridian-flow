@@ -13,7 +13,7 @@
  * (`useReplyRetry`) supply what to post and how the stand-in looks.
  */
 import { t } from "@lingui/core/macro";
-import type { Turn } from "@meridian/contracts/protocol";
+import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
@@ -68,13 +68,25 @@ export function useRetryStandIns(input: {
   const queryClient = useQueryClient();
 
   const storedIds = useMemo(() => new Set(storedTurns.map((turn) => turn.id)), [storedTurns]);
-  // Once the snapshot has the turn, it is the authority: the local copy goes.
+  // Once the snapshot has the turn, it is the authority. A failed or stopped
+  // compaction also proves that its promised successor will never be created.
   useEffect(() => {
     setLocal((current) => {
-      const next = current.filter((entry) => !storedIds.has(entry.turn.id));
+      const storedById = new Map(storedTurns.map((turn) => [turn.id, turn]));
+      const next = current.filter((entry) => {
+        if (storedIds.has(entry.turn.id)) return false;
+        const predecessor = entry.turn.prevTurnId
+          ? storedById.get(entry.turn.prevTurnId)
+          : undefined;
+        return !(
+          predecessor?.role === "compaction" &&
+          predecessor.status !== "complete" &&
+          isTerminalTurnStatus(predecessor.status)
+        );
+      });
       return next.length === current.length ? current : next;
     });
-  }, [storedIds]);
+  }, [storedIds, storedTurns]);
 
   const patch = useCallback((id: string, change: (entry: StandIn) => StandIn) => {
     setLocal((current) => current.map((entry) => (entry.turn.id === id ? change(entry) : entry)));
