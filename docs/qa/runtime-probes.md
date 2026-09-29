@@ -114,11 +114,12 @@ end-to-end as one suite.
   on a fresh thread. After each process exits, inspect the durable thread and
   billing rows from a newly started server.
 - **Expect (production):** exit occurs after the in-flight paid response is
-  persisted and debited once; the reply is `error` with `This reply was
-  interrupted.` and shutdown reason, its adopted inbox message is acknowledged,
+  persisted and debited once; the reply is `error` with `This response failed.`
+  and internal shutdown reason, its adopted inbox message is acknowledged,
   no successor starts during shutdown, and Retry works after restart.
 - **Expect (dev):** Ctrl+C and SIGTERM exit promptly. After restart, orphan
-  repair marks the reply interrupted with the internal `orphaned` reason and
+  repair marks the reply failed with generic copy and the internal `orphaned`
+  reason and
   acknowledges every message named by its receipt. Those messages are not
   answered automatically; only never-adopted queued-behind messages remain in
   the inbox. Retry re-answers explicitly.
@@ -251,7 +252,7 @@ end-to-end as one suite.
   command is not redelivered. The queued message remains pending and is
   delivered after C. This is queued-behind work, not an adopted reply input: if
   a reply itself crashes, repair acknowledges its adopted receipt and shows one
-  interrupted reply rather than answering those inputs automatically. No stuck
+  generically failed reply rather than answering those inputs automatically. No stuck
   placeholders.
 - **Evidence:** PID/cwd ownership, kill result, pre/post snapshots, recovery
   events, command id and final turn statuses.
@@ -337,7 +338,8 @@ end-to-end as one suite.
   available.` and Retry is the next attempt.
 - **Crash variant:** start a second delayed handoff, kill the app process while
   its brief is in flight, restart it, and wait one orphan-repair interval. S
-  settles as interrupted with an unavailable card and history read line; thread
+  settles with generic failure copy, internal `interrupted` reason, an
+  unavailable card, and a history read line; thread
   status returns idle and a queued destination message is answered. No brief is
   relaunched. That destination message was never adopted while S held the claim;
   adopted inputs of a crashed reply instead fail once with that reply. A focused

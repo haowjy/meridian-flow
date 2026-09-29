@@ -3,10 +3,11 @@
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { SummaryRejectionReason } from "@meridian/contracts/runtime";
 import type { Block, Turn } from "@meridian/contracts/threads";
-import type {
-  CompactionFailureOutcome,
-  CompactionFailurePhase,
-  CompactionFailureReason,
+import {
+  type CompactionFailureOutcome,
+  type CompactionFailurePhase,
+  type CompactionFailureReason,
+  compactionFailedCopy,
 } from "../../../threads/index.js";
 import { orderTurnsByPosition } from "../../../threads/order-turns.js";
 import type { GenerateRequest, TokenizerFamily } from "../../gateway/index.js";
@@ -59,7 +60,7 @@ export function compactionFailureMessage(reason: CompactionFailureReason): strin
     case "context_window_exceeded":
       return "This conversation still exceeds the model's context window after compaction. Try a smaller request.";
     default:
-      return "This conversation couldn't be compacted. Try again.";
+      return compactionFailedCopy;
   }
 }
 

@@ -73,11 +73,10 @@ a prompt or tool-list change — see the
 for the tool-freeze mechanics.
 
 `domain/turn-metadata.ts` is the single home for turn-metadata codecs,
-constructors, interrupted pending-placeholder copy, and `classifyHistoryItem`,
-including image-inclusion and compaction metadata. Interrupted compaction copy
-reads only the raw `trigger` (a manual C whose run failed preparation carries no
-plan, so the full codec would not parse) and exhaustively handles the
-pending-placeholder role set from `@meridian/contracts/threads`. A completed
+constructors, and `classifyHistoryItem`, including image-inclusion and compaction
+metadata. `domain/failure-copy.ts` owns the generic writer copy for failed replies,
+handoff briefs, and compactions, and exhaustively maps the pending-placeholder
+role set to those copies. A completed
 compaction's metadata also carries its frozen `elisions` and ordered
 `pinnedRequestTurnIds`; the codec declares `trigger` and
 `controlMessageId`. `CompactionMetadataCodec` accepts either a planned cut or

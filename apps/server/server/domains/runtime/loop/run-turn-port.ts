@@ -73,6 +73,8 @@ export class NoPendingWakeError extends Error {
 
 /** The app is closing; refuse work that has not yet acquired a run session. */
 export class RuntimeShuttingDownError extends Error {
+  readonly code = "runtime_shutting_down";
+
   constructor(readonly threadId: ThreadId) {
     super("runtime_shutting_down");
     this.name = "RuntimeShuttingDownError";

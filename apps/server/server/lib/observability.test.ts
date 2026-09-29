@@ -89,7 +89,7 @@ describe("process shutdown hooks", () => {
         "drain-start",
         "drain-settled:true",
         "settle-paid-response:1",
-        "reply-error-shutdown:shutdown:This reply was interrupted.",
+        "reply-error-shutdown:shutdown:This response failed.",
         "acknowledge-adopted-message:true",
         "flush",
       ]);

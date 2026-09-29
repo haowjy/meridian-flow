@@ -87,6 +87,7 @@ import {
   agentRequestMetadata,
   loadThreadConversationContext,
   readThreadActivity,
+  replyFailedCopy,
   ThreadConversationContextError,
   writerSendMetadata,
 } from "../../threads/index.js";
@@ -308,7 +309,7 @@ export function createOrchestrator(deps: OrchestratorDeps) {
             ? {
                 kind: "failed",
                 reason: "shutdown",
-                error: "This reply was interrupted.",
+                error: replyFailedCopy,
               }
             : { kind: "cancelled", reason: "cancelled" }
           : {
@@ -1847,7 +1848,7 @@ async function executeLoop({
   const cancelTerminal: TerminalCause = { kind: "cancelled", reason: "cancelled" };
   const abortTerminal = (): TerminalCause =>
     input.signal?.reason === "shutdown"
-      ? { kind: "failed", reason: "shutdown", error: "This reply was interrupted." }
+      ? { kind: "failed", reason: "shutdown", error: replyFailedCopy }
       : cancelTerminal;
   const errorTerminal = (error: MeridianError | string, reason?: string): TerminalCause => ({
     kind: "failed",

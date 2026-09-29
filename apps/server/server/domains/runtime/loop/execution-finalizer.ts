@@ -169,9 +169,7 @@ export async function finalizeExecution(
           : null;
       const updated: Turn = {
         ...turn,
-        ...(turn.role === "assistant" &&
-        input.cause.kind === "failed" &&
-        input.cause.reason === "shutdown"
+        ...(turn.role === "assistant" && input.cause.kind === "failed"
           ? {
               metadata: {
                 ...(turn.metadata &&
@@ -179,7 +177,7 @@ export async function finalizeExecution(
                 !Array.isArray(turn.metadata)
                   ? turn.metadata
                   : {}),
-                reason: "shutdown",
+                reason: input.cause.reason,
               },
             }
           : {}),

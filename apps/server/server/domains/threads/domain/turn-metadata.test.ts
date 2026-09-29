@@ -1,11 +1,11 @@
 import { isPendingPlaceholder, isPlaceholderRole } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { placeholderFailedCopy } from "./failure-copy.js";
 import {
   CompactionFailurePhaseCodec,
   CompactionMetadataCodec,
   CompactionPlanMetadataCodec,
   CompactionUndoMetadataCodec,
-  interruptedPlaceholderError,
 } from "./turn-metadata.js";
 
 describe("pending placeholders", () => {
@@ -19,7 +19,7 @@ describe("pending placeholders", () => {
     expect(isPendingPlaceholder({ role: "system", status: "pending" })).toBe(true);
   });
 
-  it("uses manual interruption copy, including a refusal without a cut", () => {
+  it("uses ordinary compaction failure copy for a recovered manual placeholder", () => {
     const turn = {
       role: "compaction" as const,
       metadata: {
@@ -29,13 +29,13 @@ describe("pending placeholders", () => {
       },
     };
 
-    expect(interruptedPlaceholderError(turn)).toBe("This manual compaction was interrupted.");
-    expect(interruptedPlaceholderError({ ...turn, metadata: { trigger: "manual" } })).toBe(
-      "This manual compaction was interrupted.",
+    expect(placeholderFailedCopy(turn)).toBe("This conversation couldn't be compacted. Try again.");
+    expect(placeholderFailedCopy({ ...turn, metadata: { trigger: "manual" } })).toBe(
+      "This conversation couldn't be compacted. Try again.",
     );
   });
 
-  it("uses automatic interruption copy only for non-manual metadata", () => {
+  it("uses the same ordinary failure copy for an automatic placeholder", () => {
     const base = {
       role: "compaction" as const,
       metadata: {
@@ -44,9 +44,9 @@ describe("pending placeholders", () => {
         trigger: "auto",
       },
     };
-    expect(interruptedPlaceholderError(base)).toBe("This compaction was interrupted.");
-    expect(interruptedPlaceholderError({ ...base, metadata: { trigger: "unknown" } })).toBe(
-      "This compaction was interrupted.",
+    expect(placeholderFailedCopy(base)).toBe("This conversation couldn't be compacted. Try again.");
+    expect(placeholderFailedCopy({ ...base, metadata: { trigger: "unknown" } })).toBe(
+      "This conversation couldn't be compacted. Try again.",
     );
   });
 });

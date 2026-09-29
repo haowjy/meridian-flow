@@ -2,9 +2,9 @@
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
-import { handoffSeedMetadata } from "../../threads/index.js";
+import { handoffBriefFailedCopy, handoffSeedMetadata } from "../../threads/index.js";
 import type { InternalThreadRepositories } from "../../threads/ports/repositories.js";
-import { handoffBriefFailedCopy, handoffSeedBlock } from "../handoff/seed.js";
+import { handoffSeedBlock } from "../handoff/seed.js";
 import { collectRecordedDocuments, planModelElisions } from "../loop/compaction/elide.js";
 import {
   historyDocumentText,

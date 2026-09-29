@@ -63,7 +63,7 @@ destination the way a reply does, with no lease or phase. Each seed S is a
 |---|---|
 | `pending` | "Writing the handoff brief" with Stop; the composer's Stop targets S too (`composerRun`) |
 | `complete` | The brief from the `handoff-brief` block, clipped with "Show the whole brief" |
-| `error` | "Handoff brief unavailable" ("Handoff brief interrupted" when a crash or restart cut it off, `reason: interrupted`), `turn.error` as copy, Retry on the newest seed |
+| `error` | "Handoff brief unavailable", `turn.error` as copy, Retry on the newest seed (a brief cut off by a crash or restart reads the same; its `reason` stays in metadata for diagnostics) |
 | `cancelled` | "Handoff brief stopped", "This chat continues without a brief.", Retry on the newest seed |
 
 An older seed (a newer one replaced it, or it is inherited) is superseded: a
@@ -83,8 +83,8 @@ copy, and a stopped one drops "This chat continues without a brief."
 - **A refused Retry** (409 `handoff_retry_unavailable`: something holds the
   chat, or the pressed brief is no longer the latest failed one) wrote
   nothing. The stand-in goes, the snapshot refreshes to show the true state,
-  and the pressed card says "Couldn't retry. Something else started in this
-  chat first." A lost request instead keeps the stand-in, failed; its Retry
+  and the pressed card says "Couldn't retry." (the cause goes to
+  diagnostics, never the writer). A lost request instead keeps the stand-in, failed; its Retry
   re-sends under the same id, so a request that did land replays.
 - **Retry waits while the chat is busy** (a live status, which covers a
   reply or a compaction, or a streaming reply). It stays focusable

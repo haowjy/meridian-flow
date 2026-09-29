@@ -26,6 +26,12 @@ export {
   type ThreadAgentSwapDeps,
 } from "./domain/derive-conversation.js";
 export { ExecutionReportConflictError } from "./domain/execution-report-conflict.js";
+export {
+  compactionFailedCopy,
+  handoffBriefFailedCopy,
+  placeholderFailedCopy,
+  replyFailedCopy,
+} from "./domain/failure-copy.js";
 export { isInSubtree, type LineageThread, sameLineage } from "./domain/lineage.js";
 export {
   createOrchestratorEventProjector,
@@ -129,7 +135,6 @@ export {
   ImageInclusionMetadataCodec,
   InboxMessageMetadataCodec,
   inboxMessageMetadata,
-  interruptedPlaceholderError,
   isPromptEpochMetadata,
   isSystemUpdateMetadata,
   noticesMetadata,

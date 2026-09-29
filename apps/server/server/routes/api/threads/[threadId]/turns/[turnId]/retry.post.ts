@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
     if (error instanceof ReplyRetryUnavailableError)
       throw createError({ statusCode: 409, message: error.code });
     if (error instanceof RuntimeShuttingDownError)
-      throw createError({ statusCode: 503, message: error.message });
+      throw createError({ statusCode: 503, message: error.code });
     throw error;
   }
 });

@@ -8,6 +8,7 @@ import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import {
   type HandoffFailureOutcome,
   HandoffSeedMetadataCodec,
+  handoffBriefFailedCopy,
   handoffSeedMetadata,
   type ThreadRepositories,
 } from "../../threads/index.js";
@@ -29,7 +30,7 @@ import type { SummaryOutcome } from "../ports/conversation-summarizer.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
 import type { HandoffBriefOutcome } from "./brief-request.js";
-import { completeHandoffSeed, handoffBriefFailedCopy, handoffSeedBlock } from "./seed.js";
+import { completeHandoffSeed, handoffSeedBlock } from "./seed.js";
 
 const REMOTE_STOP_POLL_MS = 5_000;
 

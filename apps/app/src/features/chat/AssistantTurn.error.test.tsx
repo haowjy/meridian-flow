@@ -28,7 +28,7 @@ const failedTurn = {
   error: "provider unavailable",
   blocks: [],
 } as unknown as Turn;
-const interruptedTurn = { ...failedTurn, error: "This reply was interrupted." } as Turn;
+const interruptedTurn = { ...failedTurn, metadata: { reason: "interrupted" } } as unknown as Turn;
 
 const SEND = "Couldn&#x27;t send.";
 
@@ -92,7 +92,7 @@ describe("AssistantTurn failure", () => {
     expect(older).not.toContain("<button");
   });
 
-  it("shows a shutdown-interrupted reply with its server copy and Retry", () => {
+  it("shows a reply a shutdown cut off as an ordinary failed reply, with Retry", () => {
     const html = renderToStaticMarkup(
       <AssistantTurn
         turn={interruptedTurn}
@@ -105,7 +105,8 @@ describe("AssistantTurn failure", () => {
         }}
       />,
     );
-    expect(html).toContain("This reply was interrupted.");
+    expect(html).toContain("This response failed.");
+    expect(html).not.toContain("interrupted");
     expect(html).toContain("data-reply-retry");
   });
 

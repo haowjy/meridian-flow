@@ -199,15 +199,7 @@ function AssistantTurnComponent({
         {isErrored ? (
           <ErrorBlock
             isLatest={endsTranscript}
-            kind={
-              replyRetry?.requestLost
-                ? "retry"
-                : turn.error === "This reply was interrupted."
-                  ? "interrupted"
-                  : failedSendRetry
-                    ? "send"
-                    : "generation"
-            }
+            kind={replyRetry?.requestLost ? "retry" : failedSendRetry ? "send" : "generation"}
             onRetry={endsTranscript ? (failedSendRetry ?? replyRetry?.onRetry) : undefined}
             retryWaiting={!failedSendRetry && (replyRetry?.waiting ?? false)}
             retryRefused={replyRetry?.refused ?? false}

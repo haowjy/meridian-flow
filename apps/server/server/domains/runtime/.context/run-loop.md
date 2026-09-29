@@ -41,7 +41,7 @@ cancelled during setup, plus a Retry refusal after taking a claim. A failed
 assistant acknowledges every message it
 adopted, including on provider error, output-limit failure, preparation
 failure, a thrown execution error, or crash repair. A crashed reply therefore
-fails once: repair shows “This reply was interrupted.” and retires its preserved
+fails once: repair shows “This response failed.” and retires its preserved
 receipt, while messages queued after its last adoption remain pending for the
 next run. Failed replies are
 never restarted by release wakes or the periodic sweep. Explicit Retry of the
@@ -68,7 +68,7 @@ work registered before the tracker becomes quiescent. App shutdown sets the
 shared shutdown flag before aborting live runs and briefs with the `shutdown`
 reason. Run starts and wakes are suppressed after that point; live replies
 settle paid response rows, end as error with `reason: shutdown` and
-“This reply was interrupted.”, acknowledge their receipts, and release their
+“This response failed.”, acknowledge their receipts, and release their
 claims. SIGTERM and SIGINT enter one shared process-hook sequence: registered
 app shutdown callbacks run before the observability sink flushes and process
 exit. Production signals reach that sequence directly. Nitro dev uses the

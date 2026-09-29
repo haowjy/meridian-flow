@@ -31,7 +31,7 @@ export type HandoffBriefCardProps = {
   stopping: boolean;
   /** The writer's last Stop on this seed failed. */
   stopFailed?: boolean;
-  /** The server refused this card's Retry: something else started in the chat first. */
+  /** The server refused this card's Retry; the cause stays in diagnostics. */
   retryRefused?: boolean;
   /** A reply (or anything else) holds the chat: Retry waits until it ends. */
   destinationBusy?: boolean;
@@ -48,7 +48,7 @@ function stateTitle(view: BriefCardView) {
     case "ready":
       return t`Handoff brief`;
     case "failed":
-      return view.interrupted ? t`Handoff brief interrupted` : t`Handoff brief unavailable`;
+      return t`Handoff brief unavailable`;
     case "stopped":
       return t`Handoff brief stopped`;
   }
@@ -172,7 +172,7 @@ export function HandoffBriefCard({
           ) : null}
           {retryRefused ? (
             <p className="text-caption text-muted-foreground">
-              <Trans>Couldn't retry. Something else started in this chat first.</Trans>
+              <Trans>Couldn't retry.</Trans>
             </p>
           ) : null}
           {view.state === "stopped" && !view.superseded ? (

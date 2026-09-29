@@ -115,9 +115,7 @@ describe("useHandoffBrief Retry", () => {
     expect(latest.localSeeds).toEqual([]);
     expect(latest.retryRefused.has("s")).toBe(true);
     expect(invalidateQueries).toHaveBeenCalled();
-    expect(announcements.announce).toHaveBeenCalledWith(
-      "Couldn't retry. Something else started in this chat first.",
-    );
+    expect(announcements.announce).toHaveBeenCalledWith("Couldn't retry.");
     // Pressing Retry again clears the note while the new request runs.
     api.retryHandoffBrief.mockReturnValueOnce(new Promise(() => undefined));
     await act(async () => latest.retry(failed));

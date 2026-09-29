@@ -85,7 +85,7 @@ describe("RunSession", () => {
       .find((event) => event.type === "turn.error" && event.turn.id === orphan.id);
     expect(repaired).toMatchObject({
       type: "turn.error",
-      turn: { status: "error", error: "This reply was interrupted." },
+      turn: { status: "error", error: "This response failed.", metadata: { reason: "orphaned" } },
     });
     await expect(run.execute()).resolves.toMatchObject({ status: "complete" });
   });
@@ -273,7 +273,7 @@ describe("RunSession", () => {
 
     await expect(execution).resolves.toMatchObject({
       status: "error",
-      turn: { status: "error", error: "This reply was interrupted." },
+      turn: { status: "error", error: "This response failed.", metadata: { reason: "shutdown" } },
     });
     expect(providerSignal?.reason).toBe("shutdown");
     expect(await f.repos.modelResponses.listByTurn(run.executionTurnId)).toHaveLength(1);

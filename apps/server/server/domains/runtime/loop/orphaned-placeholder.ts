@@ -2,7 +2,11 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import { isPendingPlaceholder, isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
-import { HandoffSeedMetadataCodec, interruptedPlaceholderError } from "../../threads/index.js";
+import {
+  HandoffSeedMetadataCodec,
+  placeholderFailedCopy,
+  replyFailedCopy,
+} from "../../threads/index.js";
 import { completeHandoffSeed, handoffSeedBlock } from "../handoff/seed.js";
 import { finalizeExecution } from "./execution-finalizer.js";
 import { historyReadableAt } from "./history-tool-availability.js";
@@ -16,7 +20,7 @@ type OrphanRepairDeps = Parameters<typeof finalizeExecution>[0] & {
 
 async function finalizeHandoffSeed(deps: OrphanRepairDeps, seed: Turn): Promise<void> {
   if (seed.role !== "system" || !HandoffSeedMetadataCodec.safeParse(seed.metadata).success) return;
-  const error = interruptedPlaceholderError({ role: "system", metadata: seed.metadata });
+  const error = placeholderFailedCopy({ role: "system", metadata: seed.metadata });
   const completed: Turn = {
     ...seed,
     status: "error",
@@ -62,7 +66,7 @@ export async function finalizeOrphanedTurns(
       cause: {
         kind: "failed",
         reason: "orphaned",
-        error: compaction ? interruptedPlaceholderError(turn) : "This reply was interrupted.",
+        error: compaction ? placeholderFailedCopy(turn) : replyFailedCopy,
       },
     });
     if (compaction) await deps.clearOrphanedTurn?.(input.threadId, turn.id);
@@ -89,7 +93,7 @@ export async function finalizeOrphanedPlaceholders(
       cause: {
         kind: "failed",
         reason: "orphaned",
-        error: interruptedPlaceholderError(placeholder),
+        error: placeholderFailedCopy(placeholder),
       },
     });
     await deps.clearOrphanedTurn?.(input.threadId, placeholder.id);
