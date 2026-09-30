@@ -413,20 +413,6 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     if (stopped) {
       live.get(seedTurnId)?.controller.abort("stop");
       publishStatus(threadId);
-      schedulePostCommit(async () => {
-        if (shutdown.started) return;
-        try {
-          await deps.wakeIfRunnable(threadId);
-        } catch (error) {
-          emitEvent(deps.eventSink, {
-            level: "warn",
-            source: "runtime.handoff",
-            name: "wake.failed",
-            correlation: { threadId },
-            payload: unknownToEventPayload(error),
-          });
-        }
-      });
     }
     return stopped;
   }
