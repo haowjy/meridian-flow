@@ -7,7 +7,7 @@ import type { TokenizerFamily } from "../gateway/index.js";
 import { readThreadHistory, ThreadHistoryInputSchema } from "../spawn/thread-history.js";
 import { listReadableThreads, ThreadLsInputSchema } from "../spawn/thread-ls.js";
 import { historyDocumentText } from "./document-text.js";
-import { threadHistoryPreview } from "./history-previews.js";
+import { threadHistoryPreview, threadLsHistoryPreview } from "./history-previews.js";
 import { modelToolSchema } from "./model-tool-schema.js";
 import { toolFailureResult } from "./tool-executor.js";
 import type { ToolHandlerContext, ToolRegistration, ToolRegistry } from "./types.js";
@@ -28,7 +28,7 @@ export function createInspectionToolRegistrations(deps: {
         inputSchema: modelToolSchema(ThreadLsInputSchema),
       },
       sequential: true,
-      historyPreview: threadHistoryPreview,
+      historyPreview: threadLsHistoryPreview,
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: ToolHandlerContext) => {

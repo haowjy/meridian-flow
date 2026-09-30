@@ -14,10 +14,23 @@ export function spawnHistoryPreview(input: JsonObject, output?: JsonValue): stri
 export function threadHistoryPreview(input: JsonObject, output?: JsonValue): string {
   const run = input.run ?? (output as JsonObject | undefined)?.run;
   const outputRef =
-    typeof output === "string"
+    (input.ref === undefined || input.ref === "current") && typeof output === "string"
       ? /^([cp]\d+)\b/u.exec(output)?.[1]
       : typeof (output as JsonObject | undefined)?.ref === "string"
         ? String((output as JsonObject).ref)
         : undefined;
-  return `${outputRef ?? input.ref ?? "current"}${run ? ` run ${run}` : ""}`;
+  const ref = input.ref !== undefined && input.ref !== "current" ? input.ref : outputRef;
+  return `${ref ?? input.ref ?? "current"}${run ? ` run ${run}` : ""}`;
+}
+
+export function threadLsHistoryPreview(input: JsonObject, output?: JsonValue): string {
+  if (input.ref !== undefined && input.ref !== "current") return String(input.ref);
+  const targetRef =
+    typeof output === "string"
+      ? output
+          .split("\n")
+          .find((line) => !line.includes(" › "))
+          ?.match(/^([cp]\d+)\b/u)?.[1]
+      : undefined;
+  return targetRef ?? String(input.ref ?? "current");
 }
