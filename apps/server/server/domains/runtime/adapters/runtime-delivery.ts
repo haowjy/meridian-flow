@@ -3,7 +3,7 @@ import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import { isPendingPlaceholder, type Turn } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
-import { loadThreadConversationContext, SystemUpdateMetadataCodec } from "../../threads/index.js";
+import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
@@ -609,6 +609,31 @@ export function createDeliveryAdapter(
     });
   }
 
+  async function hasCompletedReplyInLineage(threadId: ThreadId): Promise<boolean> {
+    let thread = await deps.repos.threads.findByIdIncludingDeleted(threadId);
+    let throughPosition = Number.POSITIVE_INFINITY;
+    const visited = new Set<string>();
+    while (thread && !visited.has(thread.id)) {
+      visited.add(thread.id);
+      const localTurns = await deps.repos.turns.listByThread(thread.id as ThreadId);
+      if (
+        localTurns.some(
+          (turn) =>
+            turn.position <= throughPosition &&
+            turn.role === "assistant" &&
+            turn.status === "complete",
+        )
+      )
+        return true;
+      if (thread.originType !== "fork" || !thread.originTurnId) return false;
+      const cutoff = await deps.repos.turns.findById(thread.originTurnId as TurnId);
+      if (!cutoff) return false;
+      thread = await deps.repos.threads.findByIdIncludingDeleted(cutoff.threadId as ThreadId);
+      throughPosition = cutoff.position;
+    }
+    return false;
+  }
+
   async function acknowledgeFailedReply(
     threadId: ThreadId,
     turn: Turn,
@@ -629,11 +654,7 @@ export function createDeliveryAdapter(
         await inbox.ack(id, [controlId]);
         await appendPending(id);
       },
-      effectiveTurns: async (id) => {
-        const thread = await deps.repos.threads.findByIdIncludingDeleted(id);
-        if (!thread) return [];
-        return (await loadThreadConversationContext(deps.repos, thread)).turns;
-      },
+      hasCompletedReply: hasCompletedReplyInLineage,
     }),
     threadChanged,
     async projectChanged(projectId) {

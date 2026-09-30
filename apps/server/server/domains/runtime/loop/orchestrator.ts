@@ -1570,8 +1570,8 @@ async function executeLoop({
     ...inheritedBlocks,
     ...(await repos.blocks.listByThread(input.threadId)),
   ];
-  // The reservation already prepared this request. Its first generation is not
-  // another boundary: rows behind a waiting control cannot leapfrog the reply.
+  // The reservation already prepared this request, so its first generation is
+  // not another boundary.
   let queuedDrain: Awaited<ReturnType<typeof drainInbox>> | undefined = {
     turns: [],
     blocks: [],

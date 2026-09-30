@@ -654,6 +654,7 @@ else
       });
       const summarizer = createConversationSummarizer({
         gateway,
+        eventSink: runtime.deps.eventSink,
         agentRevisions: createTestAgentBinding(model.id, "", () => [fixture.source.id]),
         async prefixCacheStateFor() {
           return { state: "warm", reason: "reusable_prefix" };

@@ -704,6 +704,7 @@ else
       const rig = await fixture({ gateway });
       rig.deps.summarizer = createConversationSummarizer({
         gateway: rig.deps.gateway,
+        eventSink: rig.deps.eventSink,
         agentRevisions: rig.deps.agentRevisions,
         prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
         modelRequestDebug: rig.deps.modelRequestDebug,
@@ -846,6 +847,7 @@ else
       rig.setThreshold(undefined);
       const real = createConversationSummarizer({
         gateway: rig.deps.gateway,
+        eventSink: rig.deps.eventSink,
         agentRevisions: rig.deps.agentRevisions,
         prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
         modelRequestDebug: rig.deps.modelRequestDebug,
@@ -938,6 +940,7 @@ else
       rig = await fixture({ gateway });
       rig.deps.summarizer = createConversationSummarizer({
         gateway: rig.deps.gateway,
+        eventSink: rig.deps.eventSink,
         agentRevisions: rig.deps.agentRevisions,
         prefixCacheStateFor: createPrefixCacheStateService({ repos: rig.repos })
           .prefixCacheStateFor,
@@ -1036,6 +1039,7 @@ else
       };
       rig.deps.summarizer = createConversationSummarizer({
         gateway: rig.deps.gateway,
+        eventSink: rig.deps.eventSink,
         agentRevisions: rig.deps.agentRevisions,
         prefixCacheStateFor: async () => ({ state: "cold", reason: "ttl_expired" }),
         modelRequestDebug: rig.deps.modelRequestDebug,

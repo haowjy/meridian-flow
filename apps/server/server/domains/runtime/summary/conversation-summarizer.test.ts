@@ -1,6 +1,7 @@
 /** The summarizer's provider-neutral request and paid-attempt contracts. */
 import type { Block, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
+import { createInMemoryEventSink } from "../../observability/index.js";
 import type {
   Gateway,
   GenerateRequest,
@@ -79,8 +80,10 @@ function setup(
       : { state: "cold" as const, reason: "ttl_expired" as const },
   );
   const modelRequestDebug = createInMemoryModelRequestDebugStore();
+  const eventSink = createInMemoryEventSink();
   const service = createConversationSummarizer({
     gateway,
+    eventSink,
     prefixCacheStateFor,
     agentRevisions: createTestAgentBinding(threadModel.id, "", () => ["thread"]),
     modelRequestDebug,
@@ -98,7 +101,7 @@ function setup(
     projection: projection(["Facts"]),
     signal: new AbortController().signal,
   };
-  return { service, input, requests, prefixCacheStateFor, modelRequestDebug };
+  return { service, input, requests, prefixCacheStateFor, modelRequestDebug, eventSink };
 }
 
 describe("conversation summarizer", () => {
@@ -114,6 +117,18 @@ describe("conversation summarizer", () => {
     const [capture] = rig.modelRequestDebug.listByThread("thread");
     expect(JSON.stringify(capture?.request)).toContain("Prioritize unresolved cultivation debts.");
     expect(rig.requests[0].correlation?.gatewayCallId).toBe(capture?.gatewayCallId);
+  });
+
+  it("reports debug capture failures without failing the summary", async () => {
+    const rig = setup();
+    rig.modelRequestDebug.capture = () => {
+      throw new Error("debug store unavailable");
+    };
+
+    await expect(rig.service.summarize(rig.input)).resolves.toMatchObject({ kind: "complete" });
+    expect(rig.eventSink.events).toContainEqual(
+      expect.objectContaining({ name: "model_request_debug.capture_failed" }),
+    );
   });
 
   it.each([

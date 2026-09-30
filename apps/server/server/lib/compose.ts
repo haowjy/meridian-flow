@@ -872,6 +872,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     shutdown,
     summarizer: createConversationSummarizer({
       gateway: ports.gateway,
+      eventSink: ports.eventSink,
       agentRevisions: ports.agentRevisions,
       prefixCacheStateFor: createPrefixCacheStateService({ repos: ports.threadRepos })
         .prefixCacheStateFor,

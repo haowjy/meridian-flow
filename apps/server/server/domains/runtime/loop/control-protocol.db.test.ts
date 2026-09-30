@@ -81,6 +81,34 @@ else
         }),
       );
 
+      const otherThread = await rig.repos.threads.create({
+        id: crypto.randomUUID(),
+        userId: rig.ids.user,
+        projectId: rig.ids.project,
+      });
+      await rig.repos.turns.create({
+        threadId: otherThread.id,
+        prevTurnId: null,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      const conflictingId = crypto.randomUUID();
+      await rig.delivery.enqueueControl({
+        threadId: otherThread.id,
+        actorId: rig.ids.user,
+        id: conflictingId,
+        control: { kind: "compact" },
+      });
+      await expect(
+        rig.delivery.enqueueControl({
+          threadId: rig.threadId,
+          actorId: rig.ids.user,
+          id: conflictingId,
+          control: { kind: "compact" },
+        }),
+      ).rejects.toMatchObject({ statusCode: 409, message: "control_id_conflict" });
+
       await (
         await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "Complete a reply." })
       ).execute();
@@ -112,6 +140,10 @@ else
       });
       rig.bindThread(fork.id);
 
+      const listBlocks = rig.repos.blocks.listByThread.bind(rig.repos.blocks);
+      rig.repos.blocks.listByThread = async () => {
+        throw new Error("compact eligibility must not load blocks");
+      };
       await expect(
         rig.delivery.enqueueControl({
           threadId: fork.id,
@@ -120,11 +152,44 @@ else
           control: { kind: "compact" },
         }),
       ).resolves.toMatchObject({ created: true });
+      rig.repos.blocks.listByThread = listBlocks;
       await (await rig.orchestrator.prepare({ threadId: fork.id, drain: true })).execute();
 
       expect(await rig.repos.turns.listByThread(fork.id)).toContainEqual(
         expect.objectContaining({ role: "compaction", status: "complete" }),
       );
+    });
+
+    it("returns the compact refusal when a fork cutoff is missing", async () => {
+      const rig = await manualFixture();
+      const source = await rig.repos.threads.findById(rig.threadId);
+      const answer = (await rig.repos.turns.listByThread(rig.threadId)).find(
+        (turn) => turn.role === "assistant" && turn.status === "complete",
+      );
+      if (!source || !answer) throw new Error("Expected source thread and completed reply");
+      const { thread: fork } = await rig.repos.threads.createDerivedPrimary({
+        id: crypto.randomUUID(),
+        source,
+        workId: source.workId,
+        userId: source.userId,
+        projectId: source.projectId,
+        originType: "fork",
+        originTurnId: answer.id,
+      });
+      const findTurn = rig.repos.turns.findById.bind(rig.repos.turns);
+      rig.repos.turns.findById = async (id) => (id === answer.id ? null : findTurn(id));
+
+      await expect(
+        rig.delivery.enqueueControl({
+          threadId: fork.id,
+          actorId: rig.ids.user,
+          id: crypto.randomUUID(),
+          control: { kind: "compact" },
+        }),
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        message: "compact_requires_completed_reply",
+      });
     });
 
     it.each([1, 2])("fails once and acknowledges %i adopted message(s)", async (messageCount) => {
@@ -809,10 +874,8 @@ else
         "assistant",
         "compaction",
       ]);
-      expect(tail.map((turn) => turn.position)).toEqual(
-        [...tail]
-          .sort((left, right) => left.position - right.position)
-          .map((turn) => turn.position),
+      expect(tail.slice(1).map((turn) => turn.prevTurnId)).toEqual(
+        tail.slice(0, -1).map((turn) => turn.id),
       );
       expect(JSON.stringify(gateway.requests[1])).toContain("A before queued compact");
       expect(JSON.stringify(gateway.requests[1].messages.at(-1))).toContain(
@@ -846,11 +909,22 @@ else
       expect(JSON.stringify(gateway.requests[1].messages.at(-1))).toContain(
         "B after the last boundary",
       );
-      expect(tail.map((turn) => turn.position)).toEqual(
-        [...tail]
-          .sort((left, right) => left.position - right.position)
-          .map((turn) => turn.position),
+      expect(tail.map((turn) => turn.role)).toEqual([
+        "user",
+        "assistant",
+        "user",
+        "user",
+        "assistant",
+        "compaction",
+      ]);
+      expect(tail.slice(1).map((turn) => turn.prevTurnId)).toEqual(
+        tail.slice(0, -1).map((turn) => turn.id),
       );
+      const reply0 = tail[1];
+      const messageA = tail[2];
+      const messageB = tail[3];
+      expect(messageA?.position).toBeGreaterThan(reply0?.position ?? -1);
+      expect(messageB?.position).toBeGreaterThan(reply0?.position ?? -1);
       const compaction = tail.find((turn) => turn.role === "compaction");
       const answeringReply = [...tail].reverse().find((turn) => turn.role === "assistant");
       expect(compaction?.position).toBeGreaterThan(answeringReply?.position ?? -1);
