@@ -28,6 +28,40 @@ import { mapTurn } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
 import { createDrizzleTranscriptReader } from "./transcript-reader.js";
 
+/** One lateral latest-turn lookup per bounded thread_ls row, followed by its text blocks. */
+export function latestLocalRequesterTextSql(threadIds: readonly ThreadId[]) {
+  return sql`
+    SELECT listed.id AS thread_id,
+           request.id AS turn_id,
+           block.sequence,
+           block.model_text
+      FROM ${schema.threads} AS listed
+      JOIN LATERAL (
+        SELECT candidate.id
+          FROM ${schema.turns} AS candidate
+         WHERE candidate.thread_id = listed.id
+           AND candidate.role = 'user'
+           AND CASE
+                 WHEN listed.kind = 'subagent'
+                   THEN candidate.origin = 'system'
+                    AND candidate.metadata->>'kind' = 'inbox_message'
+                 ELSE candidate.origin = 'writer'
+               END
+         ORDER BY candidate.position DESC
+         LIMIT 1
+      ) AS request ON TRUE
+      JOIN ${schema.turnBlocks} AS block
+        ON block.turn_id = request.id
+       AND block.block_type = 'text'
+       AND NULLIF(BTRIM(block.model_text), '') IS NOT NULL
+     WHERE listed.id IN (${sql.join(
+       threadIds.map((threadId) => sql`${threadId}::uuid`),
+       sql`, `,
+     )})
+     ORDER BY listed.id, block.sequence
+  `;
+}
+
 export async function lockThreadForTurnTransition(db: DrizzleDb, threadId: ThreadId) {
   const thread = await lockThreadForMutation(db, threadId);
   if (!thread) throw new Error(`Thread not found: ${threadId}`);
@@ -252,6 +286,19 @@ export function createDrizzleTurnRepository(
         .where(eq(schema.turns.threadId, threadId))
         .orderBy(asc(schema.turns.position));
       return rows.map(mapTurn);
+    },
+    async listLatestLocalRequesterText(threadIds) {
+      if (threadIds.length === 0) return new Map();
+      const result = await currentDrizzleDb(db).execute(latestLocalRequesterTextSql(threadIds));
+      const textByThread = new Map<ThreadId, string[]>();
+      for (const row of result as unknown as Iterable<Record<string, unknown>>) {
+        const threadId = row.thread_id as ThreadId;
+        const text = String(row.model_text);
+        const parts = textByThread.get(threadId) ?? [];
+        parts.push(text);
+        textByThread.set(threadId, parts);
+      }
+      return new Map([...textByThread].map(([threadId, parts]) => [threadId, parts.join("\n")]));
     },
     async listPendingPlaceholders(limit, afterTurnId) {
       if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limit must be positive");

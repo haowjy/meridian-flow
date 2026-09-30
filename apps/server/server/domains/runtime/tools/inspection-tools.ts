@@ -24,7 +24,7 @@ export function createInspectionToolRegistrations(deps: {
         type: "function",
         name: "thread_ls",
         description:
-          "List connected conversations in your lineage. Defaults to this thread, with its path to the root and one level of children. depth can be 1 to 3. Use the returned cursor for older children.",
+          "List connected conversations in your lineage. Each row shows what the conversation was last asked. Defaults to this thread, with its path to the root and one level of children. depth can be 1 to 3. Use the returned cursor for older children.",
         inputSchema: modelToolSchema(ThreadLsInputSchema),
       },
       sequential: true,

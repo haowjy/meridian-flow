@@ -20,6 +20,13 @@ turn's owner, including inherited cutoffs. Nodes are selected newest first per
 level and displayed beneath their parent. Status is `awake` or `asleep` from
 the run lease; subagents also show their saved spawn outcome.
 
+Each row may be followed by an indented `last asked: "…"` line. It is the
+latest local request from the user in a primary conversation, or from the
+parent agent in a subagent. Whitespace is collapsed, JSON string quoting is
+used, and long text is cut near 100 characters on a word boundary. The line is
+absent when the conversation has no local request; inherited fork or handoff
+history is never used as a fallback.
+
 An own-child overflow supplies a cursor for the same ref. Deeper overflows
 name the parent and remaining count. Cursors preserve PostgreSQL microsecond
 precision and are bound to their target ref.

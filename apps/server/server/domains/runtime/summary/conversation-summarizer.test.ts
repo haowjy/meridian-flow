@@ -2,6 +2,7 @@
 import type { Block, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
+import { createInMemoryRepositories } from "../../threads/index.js";
 import type {
   Gateway,
   GenerateRequest,
@@ -13,7 +14,9 @@ import { createTestAgentBinding } from "../loop/__tests__/runtime-fixtures.js";
 import { estimateRequestTokens } from "../loop/compaction/index.js";
 import { createInMemoryModelRequestDebugStore } from "../model-request-debug/index.js";
 import { renderHistoryItem } from "../spawn/history-item.js";
+import { listReadableThreads } from "../spawn/thread-ls.js";
 import { createToolRegistry } from "../tools/index.js";
+import { createInspectionToolRegistrations } from "../tools/inspection-tools.js";
 import { createConversationSummarizer } from "./conversation-summarizer.js";
 
 const threadModel: ModelInfo = {
@@ -113,7 +116,7 @@ function setup(
 }
 
 describe("conversation summarizer", () => {
-  it("calls the human user in compaction, handoff and thread history model text", async () => {
+  it("calls the human user in compaction, handoff, history, and listing model text", async () => {
     const compaction = setup();
     await compaction.service.summarize(compaction.input);
 
@@ -142,10 +145,39 @@ describe("conversation summarizer", () => {
       toolPairs: new Map(),
     });
 
+    const repos = createInMemoryRepositories();
+    const listed = await repos.threads.create({ userId: "user", projectId: "project" });
+    const listedTurn = await repos.turns.create({
+      threadId: listed.id,
+      role: "user",
+      origin: "writer",
+      status: "complete",
+    });
+    await repos.blocks.create({
+      turnId: listedTurn.id,
+      blockType: "text",
+      sequence: 0,
+      textContent: "Continue the chapter.",
+    });
+    const listing = await listReadableThreads({
+      repos,
+      statusReader: { readMany: async () => new Map() },
+      caller: listed,
+      input: {},
+    });
+    const listingDescription = createInspectionToolRegistrations({
+      repos,
+      statusReader: {} as never,
+      registry: createToolRegistry(),
+      tokenizer: async () => "anthropic",
+    }).find(({ definition }) => definition.name === "thread_ls")?.definition.description;
+
     const modelText = [
       onlyText(compaction.requests[0], compaction.requests[0].messages.length - 1),
       onlyText(handoff.requests[0], handoff.requests[0].messages.length - 1),
       history?.text ?? "",
+      typeof listing === "string" ? listing : "",
+      listingDescription ?? "",
     ].join("\n");
     expect(modelText).not.toMatch(/writer/i);
     expect(history?.text).toContain("[18.0] user");

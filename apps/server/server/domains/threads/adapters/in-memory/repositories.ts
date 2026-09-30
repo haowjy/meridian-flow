@@ -645,6 +645,37 @@ export function createInMemoryRepositories(
     async listByThread(threadId) {
       return orderTurnsByPosition([...turns.values()].filter((t) => t.threadId === threadId));
     },
+    async listLatestLocalRequesterText(threadIds) {
+      const requested = new Set(threadIds);
+      const latest = new Map<ThreadId, Turn>();
+      for (const turn of turns.values()) {
+        if (!requested.has(turn.threadId as ThreadId) || turn.role !== "user") continue;
+        const thread = threads.get(turn.threadId);
+        const metadata = turn.metadata as import("@meridian/contracts/threads").JsonObject | null;
+        const requester =
+          thread?.kind === "subagent"
+            ? turn.origin === "system" && metadata?.kind === "inbox_message"
+            : turn.origin === "writer";
+        if (!requester) continue;
+        const previous = latest.get(turn.threadId as ThreadId);
+        if (!previous || turn.position > previous.position) {
+          latest.set(turn.threadId as ThreadId, turn);
+        }
+      }
+      return new Map(
+        [...latest].flatMap(([threadId, turn]) => {
+          const text = [...blocks.values()]
+            .filter(
+              (block) =>
+                block.turnId === turn.id && block.blockType === "text" && block.textContent?.trim(),
+            )
+            .sort((left, right) => left.sequence - right.sequence)
+            .map((block) => block.textContent)
+            .join("\n");
+          return text ? [[threadId, text] as const] : [];
+        }),
+      );
+    },
     async listPendingPlaceholders(limit, afterTurnId) {
       if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limit must be positive");
       return [...turns.values()]

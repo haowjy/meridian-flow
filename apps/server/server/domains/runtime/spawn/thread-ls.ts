@@ -21,6 +21,20 @@ const Cursor = z
     id: z.string().uuid(),
   })
   .strict();
+
+const LAST_ASKED_LIMIT = 100;
+
+/** Compact local requester text for one model-facing list row. */
+export function formatLastAsked(text: string): string {
+  const collapsed = text.replace(/\s+/gu, " ").trim();
+  const characters = Array.from(collapsed);
+  if (characters.length <= LAST_ASKED_LIMIT) return JSON.stringify(collapsed);
+  const candidate = characters.slice(0, LAST_ASKED_LIMIT - 1).join("");
+  const boundary = candidate.lastIndexOf(" ");
+  const shortened = (boundary > 0 ? candidate.slice(0, boundary) : candidate).trimEnd();
+  return JSON.stringify(`${shortened}…`);
+}
+
 export async function listReadableThreads({
   repos,
   statusReader,
@@ -126,13 +140,20 @@ export async function listReadableThreads({
         }
       }
     }
+    const lastAsked = await repos.turns.listLatestLocalRequesterText(
+      nodes.map((node) => node.thread.id as ThreadId),
+    );
     const status = await statusReader.readMany(nodes.map((n) => n.thread.id));
-    const render = (thread: Thread, level: number): string[] => [
-      `${"  ".repeat(level)}${thread.ref}  ${status.has(thread.id) ? "awake" : "asleep"}  ${thread.spawnStatus ?? ""}  ${thread.title ?? ""}${level ? `  ${edge(thread)}` : ""}`,
-      ...nodes
-        .filter((node) => node.upThreadId === thread.id)
-        .flatMap((node) => render(node.thread, level + 1)),
-    ];
+    const render = (thread: Thread, level: number): string[] => {
+      const snippet = lastAsked.get(thread.id as ThreadId);
+      return [
+        `${"  ".repeat(level)}${thread.ref}  ${status.has(thread.id) ? "awake" : "asleep"}  ${thread.spawnStatus ?? ""}  ${thread.title ?? ""}${level ? `  ${edge(thread)}` : ""}`,
+        ...(snippet ? [`${"  ".repeat(level)}     last asked: ${formatLastAsked(snippet)}`] : []),
+        ...nodes
+          .filter((node) => node.upThreadId === thread.id)
+          .flatMap((node) => render(node.thread, level + 1)),
+      ];
+    };
     const rendered = render(target, 0);
     return [lines[0], ...rendered, ...lines.slice(1)].join("\n");
   });
