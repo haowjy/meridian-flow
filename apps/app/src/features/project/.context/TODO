@@ -7,11 +7,6 @@
   re-checks). Derive the shown file from the route's Work instead of syncing it.
   Deferred to a dedicated side-panel work item (mention-first peeking, #625),
   which also decides whether returning to a Work reopens its file.
-- Focus rings after programmatic focus: a screen heading focused on navigation
-  (e.g. the Work list's "Work" h1) shows its ring, and the Archived tab keeps its
-  ring after a refused Archive returns the Work to Active
-  (`work/useArchiveFocusFollow.ts`). Programmatic focus should not paint a
-  keyboard ring, and focus-follow should return with the Work on refusal.
 - Composer attachments still ride on Work-scoped `uploads://`
   (`components/app/composer/Composer.tsx` `ComposerUploadPort` →
   `client/api/upload-intake-api.ts` → the Work upload route), though the Work

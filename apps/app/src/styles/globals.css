@@ -226,6 +226,14 @@
     outline: 2px solid var(--color-border-focus);
     outline-offset: 2px;
   }
+  /* Focus the app moves for continuity paints no ring. A screen heading
+     (tabIndex -1) takes focus on navigation so screen readers announce the
+     screen; it is read, not operated. `data-focus-quiet` marks a control
+     focused after a pointer action (lib/focus-follow.ts). */
+  :is(h1, h2, h3, h4, h5, h6)[tabindex="-1"]:focus,
+  [data-focus-quiet]:focus-visible {
+    outline: none;
+  }
   /* Headings inherit the single app font (Inter, set on `body`) and are
      distinguished by size + weight only — matching stock ProseMirror/TipTap,
      which ship no heading font. */
@@ -673,7 +681,7 @@
    focus styles. Consumes --border-focus + --ring tokens. */
 @utility focus-ring {
   @apply outline-none;
-  &:focus-visible {
+  &:focus-visible:not([data-focus-quiet]) {
     /* Outer glow derives from the ring token so surfaces that re-point the
        ring (shelf → ink) don't leak a jade halo from a hardcoded literal. */
     box-shadow:
