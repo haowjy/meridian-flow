@@ -63,6 +63,14 @@ function LeaveGuardHarness({ saveWork }: { saveWork: (data: UpdateWorkRequest) =
       <button type="button" onClick={controller.discardAndResume}>
         Discard and leave
       </button>
+      <button
+        type="button"
+        onClick={() =>
+          setWork((current) => ({ ...current, archivedAt: "2026-09-02T00:00:00.000Z" }))
+        }
+      >
+        Archive
+      </button>
       <output>{controller.held ? "decision" : result}</output>
     </>
   );
@@ -156,6 +164,27 @@ describe("WorkMetadata", () => {
     });
   });
 
+  it("drops a dirty goal edit and its held leave when the Work is archived", async () => {
+    const saveWork = vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }));
+    await withReactRoot(<LeaveGuardHarness saveWork={saveWork} />, async () => {
+      const button = (label: string) =>
+        [...document.querySelectorAll("button")].find((b) => b.textContent === label) ?? null;
+      await click(button("Edit goal"));
+      const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
+      if (!textarea) throw new Error("Goal editor did not open");
+      await act(async () => setValue(textarea, "Changed goal"));
+      await click(button("Leave"));
+      expect(document.querySelector("output")?.textContent).toBe("decision");
+      await click(button("Archive"));
+      // Nothing is left to save, so the held leave is dropped and a new one runs at once.
+      expect(document.querySelector("output")?.textContent).toBe("kept");
+      expect(document.querySelector("textarea")).toBeNull();
+      await click(button("Leave"));
+      expect(document.querySelector("output")?.textContent).toBe("left");
+      expect(saveWork).not.toHaveBeenCalled();
+    });
+  });
+
   it.each([
     [new TypeError("Failed to fetch"), "Couldn’t save the goal. Try again."],
     [
@@ -239,16 +268,17 @@ describe("WorkMetadata", () => {
         "Edit goal",
       ]);
     });
-    await withReactRoot(<WorkGoalHarness work={{ ...WORK, goal: "wef" }} readOnly />, async () => {
+    const archived = { ...WORK, goal: "wef", archivedAt: "2026-09-02T00:00:00.000Z" };
+    await withReactRoot(<WorkGoalHarness work={archived} />, async () => {
       expect(document.querySelectorAll("button")).toHaveLength(0);
       expect(document.body.textContent).toContain("wef");
     });
   });
 });
 
-function WorkGoalHarness({ work, readOnly }: { work: Work; readOnly?: boolean }) {
+function WorkGoalHarness({ work }: { work: Work }) {
   const controller = useWorkMetadataController(work, async () => undefined);
-  return <WorkGoal work={work} controller={controller} readOnly={readOnly} />;
+  return <WorkGoal work={work} controller={controller} />;
 }
 
 async function withClampedGoal(run: () => Promise<void>) {

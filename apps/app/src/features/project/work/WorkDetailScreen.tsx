@@ -100,8 +100,7 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
   useProjectLeaveGuard({
     request: controller.request,
-    // Archiving mid-edit leaves nothing to save: the goal is no longer editable.
-    dirty: () => !readOnly && controller.dirty,
+    dirty: () => controller.dirty,
     cancel: controller.keepEditing,
   });
   return (
@@ -121,7 +120,7 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
               <ArchivedWorkNotice projectId={projectId} work={work} showFailure={false} />
             ) : null
           }
-          details={<WorkGoal work={work} controller={controller} readOnly={readOnly} />}
+          details={<WorkGoal work={work} controller={controller} />}
           view={routeCommands.workView}
           onViewChange={(view) => void routeCommands.setWorkView(view)}
           tools={<div ref={setToolbarSlot} className="contents" />}

@@ -1,11 +1,13 @@
 /**
  * Page-scoped Work goal editing lifecycle. The name is renamed in the band's
  * title tab; this owns the goal, which never saves on blur and so guards
- * navigation while a draft is dirty.
+ * navigation while a draft is dirty. An archived Work's goal is read-only:
+ * archiving mid-edit drops the edit and any held navigation, so nothing asks
+ * to save a goal that can no longer be saved.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
+import { isWorkArchived, type UpdateWorkRequest, type Work } from "@meridian/contracts/works";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { HttpResponseError, isMeridianApiError } from "@/client/api/http-client";
 import { Button } from "@/components/ui/button";
@@ -42,6 +44,18 @@ export function useWorkMetadataController(
     setHasPendingIntent(false);
     return intent;
   }, []);
+  const readOnly = isWorkArchived(work);
+  const [shownReadOnly, setShownReadOnly] = useState(readOnly);
+  if (shownReadOnly !== readOnly) {
+    setShownReadOnly(readOnly);
+    if (readOnly) {
+      setEditing(false);
+      setError(null);
+    }
+  }
+  useEffect(() => {
+    if (readOnly) takeHeld()?.cancel();
+  }, [readOnly, takeHeld]);
   useEffect(
     () => () => {
       heldRef.current?.cancel();
@@ -52,7 +66,7 @@ export function useWorkMetadataController(
   const [announcement, setAnnouncement] = useState("");
   const displayRef = useRef<HTMLElement | null>(null);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
-  const dirty = editing && draft.trim() !== (work.goal ?? "").trim();
+  const dirty = editing && !readOnly && draft.trim() !== (work.goal ?? "").trim();
   const focusDisplay = useCallback(
     () => requestAnimationFrame(() => displayRef.current?.focus()),
     [],
@@ -104,10 +118,11 @@ export function useWorkMetadataController(
     [dirty],
   );
   const activate = useCallback(() => {
+    if (readOnly) return;
     setEditing(true);
     setDraft(work.goal ?? "");
     setError(null);
-  }, [work.goal]);
+  }, [readOnly, work.goal]);
   const saveAndResume = useCallback(async () => {
     const intent = heldRef.current;
     if (intent && (await save()) && heldRef.current === intent) takeHeld()?.run();
@@ -123,6 +138,7 @@ export function useWorkMetadataController(
     requestAnimationFrame(() => editorRef.current?.focus());
   }, [takeHeld]);
   return {
+    readOnly,
     editing,
     draft,
     setDraft,
@@ -168,13 +184,11 @@ function goalParagraphs(goal: string): string[] {
 export function WorkGoal({
   work,
   controller: c,
-  readOnly = false,
 }: {
   work: Work;
   controller: WorkMetadataController;
-  readOnly?: boolean;
 }) {
-  const editing = c.editing && !readOnly;
+  const { editing, readOnly } = c;
   const display = useRef<HTMLDivElement | null>(null);
   const goalId = useId();
   const [expanded, setExpanded] = useState(false);
