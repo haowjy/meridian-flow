@@ -72,7 +72,7 @@ export async function generateHandoffBrief(
     projection,
     policies: (name) => deps.toolRegistry.getRegistration(name)?.documentText,
     revisions: deps.documentRevisions,
-    // Handoff source preparation runs outside the model response scope.
+    // Reads a settled cutoff of another thread; no staged response text can be in this projection.
     assertNoResponseScope() {},
   });
   const outcome = await deps.summarizer.summarize({
