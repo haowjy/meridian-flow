@@ -18,6 +18,7 @@ import {
   compactionFailureMetadata,
   type EventJournalWriter,
   type ThreadRepositories,
+  turnFailedCopy,
 } from "../../threads/index.js";
 import { compactionFailureMeridianError } from "./compaction/decision.js";
 import { persistAndAppendEvents } from "./persistence.js";
@@ -28,8 +29,6 @@ export type TerminalCause =
       kind: "failed";
       reason: string;
       error: MeridianError | string;
-      /** Server-owned writer copy. Raw causes belong in diagnostics, never in the turn. */
-      copy: string;
     }
   | { kind: "cancelled"; reason: string };
 
@@ -125,7 +124,7 @@ function compactionFailureForFinalizer(cause: Extract<TerminalCause, { kind: "fa
 
 /**
  * Finalize one execution under the thread lock; nested persistence joins its transaction.
- * Failed turns persist only `cause.copy`; `cause.error` remains diagnostic journal data.
+ * Failed turns derive generic writer copy from their role; `cause.error` remains diagnostic data.
  */
 export async function finalizeExecution(
   deps: {
@@ -183,7 +182,7 @@ export async function finalizeExecution(
         return { result: turn, events: [] };
       }
       const completedAt = toIsoString(new Date());
-      const error = input.cause.kind === "failed" ? input.cause.copy : null;
+      const error = input.cause.kind === "failed" ? turnFailedCopy(turn) : null;
       const updated: Turn = {
         ...turn,
         ...(turn.role === "assistant" && input.cause.kind === "failed"

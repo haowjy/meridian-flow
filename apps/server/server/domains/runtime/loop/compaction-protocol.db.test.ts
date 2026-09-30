@@ -885,7 +885,7 @@ else
       });
       expect(result.status).toBe(secondOverflow ? "error" : "complete");
       if (secondOverflow) {
-        expect(b.error).toContain("context window after compaction");
+        expect(b.error).toBe("This response failed.");
         const events = await db
           .select({ payload: schema.eventJournal.payload })
           .from(schema.eventJournal);
@@ -1154,7 +1154,7 @@ else
 
       const terminal = (await rig.repos.turns.listByThread(rig.threadId)).at(-1);
       expect(terminal).toMatchObject({ role: "assistant", status: "error" });
-      expect(terminal?.error).toContain("Cost budget exhausted (1 millicredits)");
+      expect(terminal?.error).toBe("This response failed.");
     });
 
     it.each([
@@ -1352,7 +1352,19 @@ else
       expect((await run.execute()).status).toBe("error");
       const turns = await rig.repos.turns.listByThread(rig.threadId);
       expect(turns.some((turn) => turn.role === "compaction")).toBe(false);
-      expect(turns.at(-1)?.error).toBe("This message is too long for this chat's model.");
+      expect(turns.at(-1)?.error).toBe("This response failed.");
+      const journal = await db
+        .select({ eventType: schema.eventJournal.eventType, payload: schema.eventJournal.payload })
+        .from(schema.eventJournal);
+      expect(journal).toContainEqual({
+        eventType: "turn.error",
+        payload: expect.objectContaining({
+          error: expect.objectContaining({
+            message: "This message is too long for this chat's model.",
+            details: expect.objectContaining({ reason: "context_too_large" }),
+          }),
+        }),
+      });
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
     });
     it("rejects a mid-run arrival above the model window without reserving C", async () => {
@@ -1371,7 +1383,7 @@ else
       expect((await run.execute()).status).toBe("error");
       const turns = await rig.repos.turns.listByThread(rig.threadId);
       expect(turns.some((turn) => turn.role === "compaction")).toBe(false);
-      expect(turns.at(-1)?.error).toBe("This message is too long for this chat's model.");
+      expect(turns.at(-1)?.error).toBe("This response failed.");
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
     });
 
@@ -1488,7 +1500,7 @@ else
       }
     });
 
-    it("lands a failed rebake as a failed C and reply with compaction copy", async () => {
+    it("lands a failed rebake as a failed C and generic reply", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
       const summarizer = scriptedSummarizer(async () => {
         rig.deps.workContext.renderForThread = async () => {
@@ -1513,7 +1525,7 @@ else
         ["compaction", "error"],
         ["assistant", "error"],
       ]);
-      expect(tail[1].error).toBe("This conversation couldn't be compacted. Try again.");
+      expect(tail[1].error).toBe("This response failed.");
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
     });
 
@@ -1697,7 +1709,7 @@ else
       ]);
       expect(tail[0].promptBakeId).toBeTruthy();
       expect(tail[2].prevTurnId).toBe(writerId);
-      expect(tail[2].error).toBe("An image in this message couldn't be loaded. Try again.");
+      expect(tail[2].error).toBe("This response failed.");
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
     });
 
@@ -1799,7 +1811,7 @@ else
       expect(tail[0].metadata).not.toHaveProperty("phase");
       expect(tail[0].metadata).not.toHaveProperty("reason");
       expect(CompactionMetadataCodec.safeParse(tail[0].metadata).success).toBe(true);
-      expect(tail[3].error).toBe("This message is too long for this chat's model.");
+      expect(tail[3].error).toBe("This response failed.");
       expect(tail[3].prevTurnId).toBe(tail[2].id);
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
       const rows = await rig.repos.modelResponses.listByTurn(tail[0].id);
@@ -2286,7 +2298,7 @@ else
         ["user", "complete"],
         ["assistant", "error"],
       ]);
-      expect(tail[2].error).toBe("This conversation couldn't be compacted. Try again.");
+      expect(tail[2].error).toBe("This response failed.");
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
       expect(rig.summarizer.calls).toHaveLength(1);
       const rows = await rig.repos.modelResponses.listByTurn(run.executionTurnId);

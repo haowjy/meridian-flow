@@ -25,7 +25,7 @@ import type {
   RunClaim,
   RunStarter,
 } from "../loop/ports.js";
-import { writerFacingPreparationError } from "../loop/preparation-failure.js";
+import { preparationFailureError } from "../loop/preparation-failure.js";
 import { NoPendingWakeError } from "../loop/run-turn-port.js";
 import type {
   AdoptedBatch,
@@ -557,7 +557,7 @@ export function createDeliveryAdapter(
       throw new Error("Cannot adopt inbox batch after losing live run lease");
     }
     if (input.current.kind === "placeholder" && !terminal && preparationFailure !== undefined) {
-      const error = writerFacingPreparationError(
+      const error = preparationFailureError(
         preparationFailure instanceof Error
           ? preparationFailure
           : new Error(String(preparationFailure)),
@@ -569,7 +569,6 @@ export function createDeliveryAdapter(
           kind: "failed",
           reason: error.code,
           error,
-          copy: error.message,
         },
       });
       next = completion.turn;

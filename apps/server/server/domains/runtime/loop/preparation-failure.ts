@@ -1,4 +1,4 @@
-/** Writer-facing failures shared by preparation and its atomic failed-reply landing. */
+/** Diagnostic errors shared by preparation and its atomic failed-reply landing. */
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import { ThreadConversationContextError } from "../../threads/index.js";
 import { ImageAssetResolutionError } from "../ports/image-asset.js";
@@ -7,9 +7,7 @@ import {
   CompactionPreparationError,
   compactionFailureMeridianError,
 } from "./compaction/decision.js";
-export function writerFacingPreparationError(
-  error: Error,
-): ReturnType<typeof meridianErrorFromSystem> {
+export function preparationFailureError(error: Error): ReturnType<typeof meridianErrorFromSystem> {
   if (error instanceof CompactionFailureError)
     return compactionFailureMeridianError(error.outcome, error.message);
   if (error instanceof CompactionPreparationError)

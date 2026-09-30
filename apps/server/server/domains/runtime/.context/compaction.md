@@ -102,7 +102,7 @@ synchronous projector stays private because, without that bake, it drops the
 sentence. Callers: request assembly (`turn-context-assembly.ts`), the summary phase
 (`compaction-phase.ts`), and the handoff request (`runtime/handoff/brief-request.ts`). `projectCompactedHistory` narrows a
 projection to the cut alone (retained pins and tail removed) for the cold
-summary and the manual floor.
+summary.
 
 ## Trigger and size estimate
 

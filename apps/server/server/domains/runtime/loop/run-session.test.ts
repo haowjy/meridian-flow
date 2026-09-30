@@ -424,7 +424,11 @@ describe("RunSession", () => {
     expect(await f.deps.runClaim.holder(f.thread.id)).toBe(run.runId);
 
     expect(await run.execute()).toMatchObject({ status: "error", turn: { status: "error" } });
-    expect(await f.repos.turns.findById(run.executionTurnId)).toMatchObject({ status: "error" });
+    expect(await f.repos.turns.findById(run.executionTurnId)).toMatchObject({
+      status: "error",
+      error: "This response failed.",
+      metadata: { reason: "missing_cutoff_turn" },
+    });
     const terminal = f.journal
       .getEvents(f.thread.id)
       .map(({ event }) => event)
@@ -483,7 +487,11 @@ describe("RunSession", () => {
       origin: "writer",
     });
     expect(await run.execute()).toMatchObject({ status: "error", turn: { status: "error" } });
-    expect(await f.repos.turns.findById(run.executionTurnId)).toMatchObject({ status: "error" });
+    expect(await f.repos.turns.findById(run.executionTurnId)).toMatchObject({
+      status: "error",
+      error: "This response failed.",
+      metadata: { reason: "missing_cutoff_turn" },
+    });
     expect(f.journal.getEvents(f.thread.id).some(({ event }) => event.type === "turn.error")).toBe(
       true,
     );

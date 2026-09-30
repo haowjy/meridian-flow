@@ -64,7 +64,6 @@ export async function finalizeOrphanedTurns(
         kind: "failed",
         reason: "orphaned",
         error: "Run stopped before terminal completion",
-        copy: turnFailedCopy(turn),
       },
     });
     if (compaction) await deps.clearOrphanedTurn?.(input.threadId, turn.id);

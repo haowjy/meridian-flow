@@ -135,7 +135,6 @@ describe("captured candidate terminal policy", () => {
           kind: "failed",
           reason: "runtime_error",
           error: "later failure",
-          copy: "This response failed.",
         },
       },
     );
@@ -266,7 +265,6 @@ describe("persisted execution fallback", () => {
           kind: "failed",
           reason: "budget",
           error: "budget exhausted",
-          copy: "This response failed.",
         },
       },
     );
@@ -278,7 +276,6 @@ describe("persisted execution fallback", () => {
       kind: "failed" as const,
       reason: "budget",
       error: "budget exhausted",
-      copy: "This response failed.",
     },
     { kind: "cancelled" as const, reason: "cancelled" },
   ]) {
@@ -315,7 +312,6 @@ describe("persisted execution fallback", () => {
           kind: "failed",
           reason: "generator_error",
           error: "provider failed",
-          copy: "This response failed.",
         },
       },
     );

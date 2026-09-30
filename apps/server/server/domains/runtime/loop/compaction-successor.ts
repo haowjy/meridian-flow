@@ -1,7 +1,11 @@
 /** Retry-local compaction values and the reusable placeholder completion transaction. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, Thread, Turn } from "@meridian/contracts/threads";
-import { compactionFailureMetadata, promptEpochMetadata } from "../../threads/index.js";
+import {
+  compactionFailureMetadata,
+  promptEpochMetadata,
+  turnFailedCopy,
+} from "../../threads/index.js";
 import type { SummaryOutcome } from "../ports/conversation-summarizer.js";
 import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
 import { beginPromptEpoch } from "./begin-prompt-epoch.js";
@@ -10,9 +14,9 @@ import {
   type CompactionDecision,
   CompactionFailureError,
   type CompactionFailureOutcome,
+  compactionFailureDiagnosticMessage,
   compactionFailureFrom,
   compactionFailureMeridianError,
-  compactionFailureMessage,
   summaryCompactionFailure,
 } from "./compaction/decision.js";
 import { collectRecordedDocuments, planModelElisions } from "./compaction/elide.js";
@@ -294,7 +298,7 @@ export async function completeCompactionCurrent(input: {
     const failed = {
       ...settled,
       status: "error" as const,
-      error: compactionFailureMessage(outcome.reason),
+      error: turnFailedCopy(settled),
       metadata: compactionFailureMetadata(settled.metadata, outcome),
       completedAt: new Date().toISOString(),
     };
@@ -304,7 +308,10 @@ export async function completeCompactionCurrent(input: {
         {
           type: "turn.error",
           turn: failed,
-          error: compactionFailureMeridianError(outcome, failed.error),
+          error: compactionFailureMeridianError(
+            outcome,
+            compactionFailureDiagnosticMessage(outcome.reason),
+          ),
         },
       ],
     }));

@@ -41,7 +41,7 @@ export type { CompactionFailureOutcome, CompactionFailurePhase, CompactionFailur
 
 export class CompactionPreparationError extends Error {
   constructor(readonly reason: CompactionFailureReason) {
-    super(compactionFailureMessage(reason));
+    super(compactionFailureDiagnosticMessage(reason));
   }
 }
 
@@ -51,7 +51,7 @@ export class CompactionFailureError extends CompactionPreparationError {
   }
 }
 
-export function compactionFailureMessage(reason: CompactionFailureReason): string {
+export function compactionFailureDiagnosticMessage(reason: CompactionFailureReason): string {
   switch (reason) {
     case "context_too_large":
       return "This message is too long for this chat's model.";

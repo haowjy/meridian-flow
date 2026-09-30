@@ -90,8 +90,10 @@ messages or a queued command. The concrete Drizzle adapter appends the
 classified pending replacement before commit; journal failure rolls back the
 transition and only physical wake is best-effort after commit.
 
-`loop/preparation-failure.ts` maps a preparation error to that reply's
-writer-facing error. A failed reply stays `error`; its ending transaction
+`loop/preparation-failure.ts` maps a preparation error to its diagnostic
+`MeridianError`; the terminal finalizer derives the stored generic copy from
+the turn's role and keeps the specific cause in error details and metadata. A
+failed reply stays `error`; its ending transaction
 acknowledges every adopted inbox message. The read model never rewrites it when
 the writer sends again. Explicit Retry starts a normal no-input run after the
 failed turn; the ordinary request projection includes that turn. Pending
