@@ -166,7 +166,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "work",
         description:
-          "Inspect or change project Works and this conversation's Work binding. status: where this Work stands, in one to three words (ideally one), e.g. Drafting, Revising, Blocked, Done. Update it when that changes. Empty string or null clears status. Archived Works are read-only: use archive and unarchive commands for lifecycle changes. list shows active Works by default; set archived true to list archived Works.",
+          "Inspect or change project Works and this conversation's Work binding. status: where this Work stands, in one to three words (ideally one), e.g. Drafting, Revising, Blocked, Done. Set it when you start work in a Work that has none, and update it whenever that changes. Empty string or null clears status. Archived Works are read-only: use archive and unarchive commands for lifecycle changes. list shows active Works by default; set archived true to list archived Works.",
         inputSchema: workToolInputSchema(),
       },
       execution: { type: "server", handler: handlers.work },
