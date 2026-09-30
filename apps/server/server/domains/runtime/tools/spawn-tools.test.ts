@@ -121,6 +121,38 @@ describe("thread_report tool contract", () => {
     });
     expect(registration?.definition.description).toContain("Does not wait");
   });
+
+  it("returns only the model-facing report fields and non-default extras", async () => {
+    const registration = createSpawnToolRegistrations().find(
+      (entry) => entry.definition.name === "thread_report",
+    );
+    if (registration?.execution.type !== "server") throw new Error("missing thread_report");
+    const threadReport = vi.fn(async () => ({
+      childThreadId: "internal-id",
+      ref: "p3",
+      run: 2,
+      outcome: "failed" as const,
+      deliveryMode: "background_notification" as const,
+      source: "final_assistant" as const,
+      summary: "Stopped at the locked gate.",
+      payload: { gate: "locked" },
+      artifacts: [],
+      partial: true,
+      reason: "blocked",
+    }));
+
+    await expect(
+      registration.execution.handler({ ref: "p3", run: 2 }, { threadReport } as never),
+    ).resolves.toEqual({
+      ref: "p3",
+      run: 2,
+      outcome: "failed",
+      summary: "Stopped at the locked gate.",
+      payload: { gate: "locked" },
+      reason: "blocked",
+      source: "final_assistant",
+    });
+  });
 });
 
 describe("spawn tool guidance", () => {

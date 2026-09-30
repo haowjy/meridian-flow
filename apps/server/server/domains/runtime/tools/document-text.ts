@@ -72,14 +72,17 @@ export const searchDocumentText: DocumentTextPolicy = {
     return {
       output: (output as JsonObject[]).map((hit) => {
         if (treatment === "stale" && changed.length > 0 && !uris.has(hit.uri as string)) return hit;
+        if (treatment === "history")
+          return {
+            uri: hit.uri,
+            matchCount: hit.matchCount,
+            omitted: "read it for current text",
+          };
         return {
           ...hit,
           matches: (hit.matches as JsonObject[]).map((match) => ({
             ...match,
-            excerpt:
-              treatment === "history"
-                ? historyReadStub(String(hit.uri))
-                : "[Cleared at compaction: changed since this search; read it for current text]",
+            excerpt: "[Cleared at compaction: changed since this search; read it for current text]",
           })),
         };
       }),
@@ -88,7 +91,7 @@ export const searchDocumentText: DocumentTextPolicy = {
 };
 
 export function historyReadStub(documents: string): string {
-  return `[document copy omitted: ${documents}. Read it for its current text.]`;
+  return `[omitted: ${documents}; read it for current text]`;
 }
 
 export const historyDocumentText: DocumentTextPolicy = {

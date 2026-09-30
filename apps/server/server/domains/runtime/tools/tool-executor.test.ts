@@ -48,7 +48,7 @@ describe("thread_report capability plumbing", () => {
       { ...executionBase, agentSlug: null, threadReport: threadReportFn },
     );
     expect(threadReportFn).toHaveBeenCalledWith({ ref: "p1" });
-    expect(result.output).toEqual(expected);
+    expect(result.output).toEqual({ ref: "p1", status: "unavailable" });
   });
 });
 

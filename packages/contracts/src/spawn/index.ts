@@ -141,6 +141,20 @@ export type ThreadReportResult =
     }
   | { childThreadId: ThreadId; ref: string; status: "not_ready" | "unavailable" };
 
+export type ModelThreadReportResult =
+  | Extract<ThreadReportResult, { ok: false }>
+  | {
+      ref: string;
+      run: number;
+      outcome: SavedOutcome;
+      summary: string;
+      payload?: JsonValue;
+      artifacts?: ArtifactRef[];
+      reason?: string;
+      source?: ExecutionReportSource;
+    }
+  | { ref: string; status: "not_ready" | "unavailable" };
+
 const threadReportResultSchema = z.union([
   z.object({ ok: z.literal(false), error: meridianErrorSchema }),
   z.object({
@@ -161,6 +175,20 @@ const threadReportResultSchema = z.union([
     ref: z.string(),
     status: z.enum(["not_ready", "unavailable"]),
   }),
+  z.object({
+    ref: z.string(),
+    run: z.number().int().positive(),
+    outcome: z.enum(["succeeded", "failed", "cancelled"]),
+    summary: z.string(),
+    payload: jsonValueSchema.optional(),
+    artifacts: z.array(artifactRefSchema).optional(),
+    reason: z.string().optional(),
+    source: z.enum(["return_result", "final_assistant", "empty"]).optional(),
+  }),
+  z.object({
+    ref: z.string(),
+    status: z.enum(["not_ready", "unavailable"]),
+  }),
 ]);
 
 /** Client-facing saved report details shared by the tool output and API reader. */
@@ -173,23 +201,25 @@ export type SavedReportContentValue = {
   reason?: string | null;
 };
 
-export function parseThreadReportResult(value: unknown): ThreadReportResult | null {
+export function parseThreadReportResult(
+  value: unknown,
+): ThreadReportResult | ModelThreadReportResult | null {
   const parsed = threadReportResultSchema.safeParse(value);
-  return parsed.success ? (parsed.data as ThreadReportResult) : null;
+  return parsed.success ? (parsed.data as ThreadReportResult | ModelThreadReportResult) : null;
 }
 
 /** Project a ready saved report into the common report-content presentation shape. */
 export function toReportContentValue(
-  report: ThreadReportResult | null,
+  report: ThreadReportResult | ModelThreadReportResult | null,
 ): SavedReportContentValue | null {
   if (!report || "status" in report || "error" in report) return null;
   return {
     summary: report.summary,
     ...(report.payload === undefined ? {} : { payload: report.payload }),
     artifacts: report.artifacts ?? [],
-    partial: report.partial,
+    partial: "partial" in report ? report.partial : report.outcome !== "succeeded",
     outcome: report.outcome,
-    reason: report.reason,
+    reason: "reason" in report ? (report.reason ?? null) : null,
   };
 }
 

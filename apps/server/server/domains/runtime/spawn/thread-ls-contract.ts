@@ -133,8 +133,8 @@ export function defineThreadLsContract(
       const emptyFork = await f.fork();
 
       expect(await f.read(f.root, { ref: child.ref })).toMatchInlineSnapshot(`
-        "c1 › spawn p2   (you are c1)
-        p2  asleep  running  Chapter 2 continuity check
+        "c1 (you) › p2
+        p2  running  Chapter 2 continuity check
              last asked: "Read the referenced planning conversation and identify the three continuity risks.""
       `);
       expect(emptyFork.ref).toBe("c3");
@@ -142,8 +142,8 @@ export function defineThreadLsContract(
       expect(rootOutput).toContain(
         'last asked: "Make the gate guardian suspicious of his jade token."',
       );
-      expect(rootOutput).toContain("c3  asleep    fork  fork");
-      expect(rootOutput).not.toContain("c3  asleep    fork  fork\n       last asked:");
+      expect(rootOutput).toContain("c3  fork  fork");
+      expect(rootOutput).not.toContain("c3  fork  fork\n       last asked:");
     });
 
     it("uses one batched requester read and lets a parent message replace the spawn prompt", async () => {
@@ -210,7 +210,7 @@ export function defineThreadLsContract(
       expect(one).not.toContain("deep");
       expect(await f.read(f.root, { depth: 2 })).toContain(c1.ref);
       expect(await f.read(f.root, { depth: 3 })).toContain(deep.ref);
-      expect(await f.read(c1)).toContain(`${f.root.ref} › spawn ${b1.ref} › spawn ${c1.ref}`);
+      expect(await f.read(c1)).toContain(`${f.root.ref} › ${b1.ref} › ${c1.ref} (you)`);
     });
     it("60 children page newest 50 then the rest", async () => {
       const f = await fixture();

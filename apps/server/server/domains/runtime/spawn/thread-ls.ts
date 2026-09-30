@@ -82,11 +82,18 @@ export async function listReadableThreads({
       path.unshift(parent);
       node = parent;
     }
-    const label = (thread: Thread) => `${thread.ref}${thread.deletedAt ? " (in trash)" : ""}`;
-    const edge = (thread: Thread) => (thread.kind === "subagent" ? "spawn" : thread.originType);
-    const lines = [
-      `${path.length === 17 && (node.parentThreadId || node.originTurnId) ? "… › " : ""}${path.map((row, i) => `${i ? `${edge(row)} ` : ""}${label(row)}`).join(" › ")}   (you are ${caller.ref})`,
-    ];
+    const label = (thread: Thread) =>
+      `${thread.ref}${thread.id === caller.id ? " (you)" : ""}${thread.deletedAt ? " (in trash)" : ""}`;
+    const edge = (thread: Thread) =>
+      thread.kind === "primary" && (thread.originType === "fork" || thread.originType === "handoff")
+        ? thread.originType
+        : null;
+    const hasPath = path.length > 1;
+    const lines = hasPath
+      ? [
+          `${path.length === 17 && (node.parentThreadId || node.originTurnId) ? "… › " : ""}${path.map((row, i) => `${i && edge(row) ? `${edge(row)} ` : ""}${label(row)}`).join(" › ")}`,
+        ]
+      : [];
     const nodes: Array<{ thread: Thread; level: number; upThreadId?: ThreadId }> = [
       { thread: target, level: 0 },
     ];
@@ -150,7 +157,13 @@ export async function listReadableThreads({
     const render = (thread: Thread, level: number): string[] => {
       const snippet = lastAsked.get(thread.id as ThreadId);
       return [
-        `${"  ".repeat(level)}${thread.ref}  ${status.has(thread.id) ? "awake" : "asleep"}  ${thread.spawnStatus ?? ""}  ${thread.title ?? ""}${level ? `  ${edge(thread)}` : ""}`,
+        `${"  ".repeat(level)}${[
+          label(thread),
+          ...(status.has(thread.id) ? ["awake"] : []),
+          ...(thread.spawnStatus ? [thread.spawnStatus] : []),
+          ...(thread.title ? [thread.title] : []),
+          ...(edge(thread) ? [edge(thread)] : []),
+        ].join("  ")}`,
         ...(snippet ? [`${"  ".repeat(level)}     last asked: ${formatLastAsked(snippet)}`] : []),
         ...nodes
           .filter((node) => node.upThreadId === thread.id)
@@ -158,6 +171,10 @@ export async function listReadableThreads({
       ];
     };
     const rendered = render(target, 0);
-    return [lines[0], ...rendered, ...lines.slice(1)].join("\n");
+    return [
+      ...(hasPath ? lines.slice(0, 1) : []),
+      ...rendered,
+      ...(hasPath ? lines.slice(1) : lines),
+    ].join("\n");
   });
 }
