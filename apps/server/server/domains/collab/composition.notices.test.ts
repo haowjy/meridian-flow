@@ -64,7 +64,7 @@ describe("collab model-context notices", () => {
       kind: "awareness_degraded",
       scope: { kind: "thread", threadId: "thread-1" },
       message:
-        "Your changes are committed, but concurrent writer content could not be verified. Re-read to confirm current state.",
+        "Your changes are committed, but concurrent user content could not be verified. Re-read to confirm current state.",
       data: {
         documentIds: ["document-1", "document-2"],
         documentNames: ["chapter-one", "chapter-two"],

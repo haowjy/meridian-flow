@@ -380,7 +380,7 @@ function formatNotice(notice: Notice): string {
       : [];
     const affectedDocuments = documentNames.length > 0 ? documentNames.join(", ") : documentName;
     const noun = documentNames.length > 1 ? "documents" : "document";
-    return `The system could not verify whether concurrent writer content was preserved in ${affectedDocuments}. Re-read the ${noun} before making another write.`;
+    return `The system could not verify whether concurrent user content was preserved in ${affectedDocuments}. Re-read the ${noun} before making another write.`;
   }
   return notice.message;
 }
@@ -420,7 +420,7 @@ function formatUndoNotices(notices: readonly Notice[]): string {
   );
   return lines.length > 0
     ? [
-        "The writer reversed the following edits before this message:",
+        "The user reversed the following edits before this message:",
         ...lines,
         "They are signaling these changes were unwanted.",
       ].join("\n")
