@@ -11,11 +11,12 @@ import type { AddressableWork } from "@/client/query/useWorks";
 import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
 import { IndexTabChip, ReturnTabChip } from "../shell/IndexTabChip";
+import { isWorkReadOnly } from "./archived-work";
 import { useWorkArchiveToggle } from "./useWorkArchiveToggle";
 import type { WorkDeletion } from "./useWorkDeletion";
 import { WorkActionsMenu } from "./WorkActionsMenu";
 import { WORK_ROW_OPERATIONS, WorkCommandFailureRow } from "./WorkCommandFailureRow";
-import { PendingWorkTitleTab, WorkTitleTab } from "./WorkTitles";
+import { PlainWorkTitleTab, WorkTitleTab } from "./WorkTitles";
 
 /** The Work destination's chrome pieces, shared by the desktop band and the phone top bar. */
 export function useWorkChrome(
@@ -60,9 +61,13 @@ export function useWorkChrome(
         />
       ) : null,
     title: work ? (
-      <WorkTitleTab key={work.id} projectId={projectId} work={work} variant={variant} />
+      isWorkReadOnly(work) ? (
+        <PlainWorkTitleTab key={work.id} name={work.name} variant={variant} />
+      ) : (
+        <WorkTitleTab key={work.id} projectId={projectId} work={work} variant={variant} />
+      )
     ) : pendingName ? (
-      <PendingWorkTitleTab name={pendingName} variant={variant} />
+      <PlainWorkTitleTab name={pendingName} variant={variant} />
     ) : remembered && variant === "tab" ? (
       <ReturnTabChip
         title={remembered.name}

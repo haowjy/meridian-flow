@@ -4,7 +4,7 @@ import { Trans } from "@lingui/react/macro";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { WorkScreenHeader } from "./WorkDetailScreen";
-import { PendingWorkHeading } from "./WorkTitles";
+import { PlainWorkHeading } from "./WorkTitles";
 
 /** A Work still being created: its titles, its state, and Retry or Discard on failure. */
 export function WorkCreationDestination({
@@ -26,7 +26,7 @@ export function WorkCreationDestination({
         <WorkScreenHeader
           intro={
             <>
-              <PendingWorkHeading name={name} />
+              <PlainWorkHeading name={name} />
               <p
                 className={`flex items-center gap-2 text-xs ${failed ? "text-destructive" : "text-muted-foreground"}`}
                 role="status"
@@ -74,14 +74,9 @@ export function WorkCreationDestination({
             </div>
           </>
         ) : null}
-        <div className="py-2">
-          <p className="text-sm font-medium">
-            <Trans>Start a chat in this Work</Trans>
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            <Trans>Chats you start here stay with this Work.</Trans>
-          </p>
-        </div>
+        <p className="py-2 text-sm text-muted-foreground">
+          <Trans>Chats in this Work share its goal and scratch files.</Trans>
+        </p>
       </article>
     </div>
   );

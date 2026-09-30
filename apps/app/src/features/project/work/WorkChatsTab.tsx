@@ -1,4 +1,7 @@
-/** The Work page's Chats tab: this Work's chats, searched as the chat index is, and New chat. */
+/**
+ * The Work page's Chats tab: this Work's chats, searched as the chat index is,
+ * and New chat (disabled in place while the Work is read-only).
+ */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
@@ -19,10 +22,12 @@ import { WorkToolbarTools } from "./WorkToolbarSlot";
 export function WorkChatsTab({
   projectId,
   workId,
+  readOnly,
   scrollOwner,
 }: {
   projectId: string;
   workId: ParsedRequestId;
+  readOnly: boolean;
   scrollOwner: RefObject<HTMLDivElement | null>;
 }) {
   const [search, setSearch] = useState<string | null>(null);
@@ -45,6 +50,7 @@ export function WorkChatsTab({
         <SettledSearchField label={t`Search chats`} value={search} onSettle={setSearch} />
         <Button
           size="sm"
+          disabled={readOnly}
           onClick={() => void openNewChat(workId)}
           aria-label={t`New chat`}
           className="[@media(pointer:coarse)]:min-h-11"
@@ -69,14 +75,9 @@ export function WorkChatsTab({
               <Trans>No chats match “{search}”.</Trans>
             </p>
           ) : (
-            <>
-              <p className="text-sm font-medium">
-                <Trans>Start a chat in this Work</Trans>
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                <Trans>Chats you start here stay with this Work.</Trans>
-              </p>
-            </>
+            <p className="text-sm text-muted-foreground">
+              <Trans>Chats in this Work share its goal and scratch files.</Trans>
+            </p>
           )}
         </div>
       ) : (

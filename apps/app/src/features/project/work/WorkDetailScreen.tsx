@@ -1,6 +1,8 @@
 /**
  * The Work page: its titles and goal over one sticky toolbar, then
  * the Chats or Files tab, each owning its own search, actions and queries.
+ * An archived Work is view-only: one notice with Unarchive, primary actions
+ * disabled in place, and no inline edits offered.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -18,10 +20,12 @@ import {
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { useProjectLeaveGuard } from "../routing/ProjectNavigationContext";
 import type { ProjectRouteCommands } from "../routing/project-route";
+import { ArchivedWorkNotice } from "./ArchivedWorkNotice";
+import { isWorkReadOnly } from "./archived-work";
 import { WorkChatsTab } from "./WorkChatsTab";
 import { WorkFilesTab } from "./WorkFilesTab";
 import { useWorkMetadataController, WorkGoal, type WorkMetadataController } from "./WorkMetadata";
-import { WorkHeading } from "./WorkTitles";
+import { PlainWorkHeading, WorkHeading } from "./WorkTitles";
 import { WorkToolbarSlotProvider } from "./WorkToolbarSlot";
 
 export type WorkDetailScreenProps = {
@@ -32,16 +36,18 @@ export type WorkDetailScreenProps = {
 
 /**
  * The Work page's own header block under the band: its titles and goal (or a
- * pending Work's state), then one sticky toolbar row.
+ * pending Work's state), any notice about the Work, then one sticky toolbar row.
  */
 export function WorkScreenHeader({
   intro,
+  notice,
   view,
   onViewChange,
   tools,
   pending = false,
 }: {
   intro?: React.ReactNode;
+  notice?: React.ReactNode;
   view: "chats" | "files";
   onViewChange: (view: "chats" | "files") => void;
   tools: React.ReactNode;
@@ -50,6 +56,7 @@ export function WorkScreenHeader({
   return (
     <>
       {intro ? <header className="flex min-w-0 flex-col gap-1.5">{intro}</header> : null}
+      {notice}
       <div className="sticky top-0 z-10 -my-2 flex min-w-0 items-center gap-2 bg-background py-2 sm:gap-3">
         <SegmentedTabs
           label={t`Work view`}
@@ -72,11 +79,13 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
     const error = await mutations.update({ workId: work.id, data });
     if (error) throw error;
   });
+  const readOnly = isWorkReadOnly(work);
   const scrollOwner = useRef<HTMLDivElement>(null);
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
   useProjectLeaveGuard({
     request: controller.request,
-    dirty: () => controller.dirty,
+    // Archiving mid-edit leaves nothing to save: the goal is no longer editable.
+    dirty: () => !readOnly && controller.dirty,
     cancel: controller.keepEditing,
   });
   return (
@@ -85,9 +94,18 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
         <WorkScreenHeader
           intro={
             <>
-              <WorkHeading projectId={projectId} work={work} />
-              <WorkGoal work={work} controller={controller} />
+              {readOnly ? (
+                <PlainWorkHeading name={work.name} />
+              ) : (
+                <WorkHeading projectId={projectId} work={work} />
+              )}
+              <WorkGoal work={work} controller={controller} readOnly={readOnly} />
             </>
+          }
+          notice={
+            readOnly ? (
+              <ArchivedWorkNotice projectId={projectId} work={work} showFailure={false} />
+            ) : null
           }
           view={routeCommands.workView}
           onViewChange={(view) => void routeCommands.setWorkView(view)}
@@ -95,9 +113,19 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
         />
         <WorkToolbarSlotProvider value={toolbarSlot}>
           {routeCommands.workView === "chats" ? (
-            <WorkChatsTab projectId={projectId} workId={work.id} scrollOwner={scrollOwner} />
+            <WorkChatsTab
+              projectId={projectId}
+              workId={work.id}
+              readOnly={readOnly}
+              scrollOwner={scrollOwner}
+            />
           ) : (
-            <WorkFilesTab projectId={projectId} work={work} commands={routeCommands} />
+            <WorkFilesTab
+              projectId={projectId}
+              work={work}
+              readOnly={readOnly}
+              commands={routeCommands}
+            />
           )}
         </WorkToolbarSlotProvider>
         <DirtyDecision controller={controller} />

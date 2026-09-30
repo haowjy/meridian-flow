@@ -2,7 +2,8 @@
  * Work Files tab: drafts to review, scratch notes and uploads as one grouped
  * list in the same row grammar as the Chats tab and the Editor's recents.
  * `useWorkFiles` owns the tab's state so the page toolbar can host its actions;
- * files on their way in are `useWorkFileIntake`'s.
+ * files on their way in are `useWorkFileIntake`'s. A read-only Work keeps its
+ * actions in place but disabled, takes no drops, and offers rows only to open.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -57,7 +58,7 @@ export function useWorkFiles(projectId: string, work: AddressableWork) {
 export type WorkFiles = ReturnType<typeof useWorkFiles>;
 
 /** The Files tab's toolbar actions: a quiet Upload and the jade New note. */
-export function WorkFilesActions({ files }: { files: WorkFiles }) {
+export function WorkFilesActions({ files, readOnly }: { files: WorkFiles; readOnly: boolean }) {
   return (
     <>
       <input
@@ -75,6 +76,7 @@ export function WorkFilesActions({ files }: { files: WorkFiles }) {
       <Button
         size="sm"
         variant="outline"
+        disabled={readOnly}
         onClick={files.chooseFiles}
         aria-label={t`Upload files`}
         className="[@media(pointer:coarse)]:min-h-11"
@@ -86,7 +88,7 @@ export function WorkFilesActions({ files }: { files: WorkFiles }) {
       </Button>
       <Button
         size="sm"
-        disabled={files.intake.note?.state === "pending" || !files.scratch.catalog}
+        disabled={readOnly || files.intake.note?.state === "pending" || !files.scratch.catalog}
         onClick={files.createNote}
         aria-label={t`New note`}
         className="[@media(pointer:coarse)]:min-h-11"
@@ -103,12 +105,14 @@ export function WorkFilesActions({ files }: { files: WorkFiles }) {
 export function WorkFilesView({
   projectId,
   work,
+  readOnly,
   commands,
   search,
   files,
 }: {
   projectId: string;
   work: AddressableWork;
+  readOnly: boolean;
   commands: ProjectRouteCommands;
   search: string;
   files: WorkFiles;
@@ -166,6 +170,7 @@ export function WorkFilesView({
             scheme="scratch"
             file={node}
             siblingNames={catalogSiblingNames(scratch.catalog, node)}
+            readOnly={readOnly}
             renaming={files.renaming === node.path}
             onRename={files.setRenaming}
             onDelete={() =>
@@ -208,6 +213,7 @@ export function WorkFilesView({
           scheme="uploads"
           file={file}
           siblingNames={catalogSiblingNames(uploads.catalog, file)}
+          readOnly={readOnly}
           renaming={files.renaming === file.path}
           onRename={files.setRenaming}
         />
@@ -235,7 +241,7 @@ export function WorkFilesView({
         dragging && "bg-dropdown-hover outline-2 outline-dashed outline-border",
       )}
       onDragOver={(event) => {
-        if (!event.dataTransfer.types.includes("Files")) return;
+        if (readOnly || !event.dataTransfer.types.includes("Files")) return;
         event.preventDefault();
         setDragging(true);
       }}
@@ -245,7 +251,7 @@ export function WorkFilesView({
       onDrop={(event) => {
         event.preventDefault();
         setDragging(false);
-        void intake.submitFiles(event.dataTransfer.files);
+        if (!readOnly) void intake.submitFiles(event.dataTransfer.files);
       }}
     >
       <WorkDrafts
@@ -286,8 +292,9 @@ export function WorkFilesView({
         {!search ? (
           <button
             type="button"
+            disabled={readOnly}
             onClick={files.chooseFiles}
-            className="focus-ring mt-2 flex w-full items-center gap-3 rounded-md border border-dashed border-border px-2 py-2.5 text-left text-sm text-muted-foreground transition-colors hover:border-ink-subtle hover:text-foreground motion-reduce:transition-none"
+            className="focus-ring mt-2 disabled:pointer-events-none disabled:opacity-50 flex w-full items-center gap-3 rounded-md border border-dashed border-border px-2 py-2.5 text-left text-sm text-muted-foreground transition-colors hover:border-ink-subtle hover:text-foreground motion-reduce:transition-none"
           >
             <Upload className="size-4 shrink-0" aria-hidden />
             <Trans>Drop files here or choose from your device</Trans>

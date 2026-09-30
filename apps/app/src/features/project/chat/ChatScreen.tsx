@@ -3,7 +3,8 @@
  * (center, dock, phone), or the empty New chat when there is none. It never
  * owns thread routing itself; it reads `useChatNavigation()` for the commands
  * a chat surface needs (opening the parent of a subagent, focusing a freshly
- * requested New chat composer).
+ * requested New chat composer). A chat whose Work is archived shows its
+ * transcript with the archived notice where the composer would be.
  */
 import { t } from "@lingui/core/macro";
 import type { Thread, Work } from "@meridian/contracts/protocol";
@@ -16,6 +17,8 @@ import { CreationComposer } from "@/features/chat/CreationComposer";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { useChatNavigation } from "../routing/chat-navigation";
 import type { ContextRouteTarget } from "../routing/project-route";
+import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
+import { isWorkReadOnly } from "../work/archived-work";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
 import { SubagentPathRow } from "./SubagentPathRow";
 
@@ -153,6 +156,11 @@ function ChatScreenLoaded({
             snapshotThreadUsage={snapshot?.threadUsage}
             historySettled={historySettled}
             activateProjection={activateProjection}
+            composerNotice={
+              activeWork && isWorkReadOnly(activeWork) ? (
+                <ArchivedWorkNotice projectId={projectId} work={activeWork} />
+              ) : undefined
+            }
             key={`${projectId}:${threadId}`}
           />
         </ProjectChatContextNavigationProvider>

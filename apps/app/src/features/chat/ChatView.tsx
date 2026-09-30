@@ -17,7 +17,7 @@
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { resolveDocumentLink } from "@/client/api/document-links-api";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import {
@@ -92,6 +92,8 @@ export type ChatViewProps = {
    */
   historySettled: boolean;
   activateProjection: (after?: string) => boolean;
+  /** Replaces the composer and its draft strip when the chat takes no new turns. */
+  composerNotice?: ReactNode;
 };
 
 export function ChatView({
@@ -104,6 +106,7 @@ export function ChatView({
   snapshotThreadUsage = null,
   historySettled,
   activateProjection,
+  composerNotice,
 }: ChatViewProps) {
   const openReferenceDocument = useOpenProjectDocument(projectId);
   const actions = useThreadActions();
@@ -351,43 +354,45 @@ export function ChatView({
         title={pageTitle}
         surfaceRef={chatSurfaceRef}
         footer={
-          <div data-debug-composer={threadId}>
-            {/* The dock strip sits BEHIND (below) the composer — narrower via
+          composerNotice ?? (
+            <div data-debug-composer={threadId}>
+              {/* The dock strip sits BEHIND (below) the composer — narrower via
               mx-2, top corners rounded, jade-tinted background. The composer
               always keeps its own border and overlaps the strip's edge. */}
-            <DraftDock dock={dock} />
-            <Composer
-              onOpenReference={(reference) => {
-                void openReferenceDocument({
-                  documentId: reference.documentId,
-                  disposition: "current",
-                });
-              }}
-              ref={composerRef}
-              variant="pinned"
-              streaming={isStreaming}
-              referenceCatalog={referenceCatalog}
-              availableSkills={availableSkills.skills}
-              uploadPort={uploadIntakePort}
-              uploadScope={
-                activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
-              }
-              onSubmit={handleSubmit}
-              onCheckSubmission={(envelope) => settleQuarantined(envelope, false)}
-              onRetireSubmission={(envelope) => settleQuarantined(envelope, true)}
-              onStop={handleStop}
-              toolbarLeft={
-                activeWork ? (
-                  <ChatComposerToolbar
-                    projectId={projectId}
-                    threadId={threadId}
-                    work={activeWork}
-                    agentName={composerAgentName}
-                  />
-                ) : undefined
-              }
-            />
-          </div>
+              <DraftDock dock={dock} />
+              <Composer
+                onOpenReference={(reference) => {
+                  void openReferenceDocument({
+                    documentId: reference.documentId,
+                    disposition: "current",
+                  });
+                }}
+                ref={composerRef}
+                variant="pinned"
+                streaming={isStreaming}
+                referenceCatalog={referenceCatalog}
+                availableSkills={availableSkills.skills}
+                uploadPort={uploadIntakePort}
+                uploadScope={
+                  activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
+                }
+                onSubmit={handleSubmit}
+                onCheckSubmission={(envelope) => settleQuarantined(envelope, false)}
+                onRetireSubmission={(envelope) => settleQuarantined(envelope, true)}
+                onStop={handleStop}
+                toolbarLeft={
+                  activeWork ? (
+                    <ChatComposerToolbar
+                      projectId={projectId}
+                      threadId={threadId}
+                      work={activeWork}
+                      agentName={composerAgentName}
+                    />
+                  ) : undefined
+                }
+              />
+            </div>
+          )
         }
       >
         <SubagentDisclosureProvider>

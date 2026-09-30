@@ -140,27 +140,31 @@ const clampHeight = "max-h-[calc(var(--text-body--line-height)*3)]";
  * The Work goal: body text clamped to three lines. Clicking a clamped goal
  * shows all of it; Show less folds it again. Edit (or clicking an empty goal)
  * edits in place: the field takes the text's exact position and size. Save and
- * Cancel sit below; blur never saves.
+ * Cancel sit below; blur never saves. A read-only goal is the text alone, and
+ * an empty one shows nothing.
  */
 export function WorkGoal({
   work,
   controller: c,
+  readOnly = false,
 }: {
   work: Work;
   controller: WorkMetadataController;
+  readOnly?: boolean;
 }) {
+  const editing = c.editing && !readOnly;
   const display = useRef<HTMLDivElement | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
   useLayoutEffect(() => {
-    if (!c.editing) return;
+    if (!editing) return;
     const editor = c.editorRef.current;
     editor?.focus();
     editor?.setSelectionRange(editor.value.length, editor.value.length);
-  }, [c.editing, c.editorRef]);
+  }, [editing, c.editorRef]);
   useEffect(() => {
     const node = display.current;
-    if (c.editing || !node || typeof ResizeObserver === "undefined") return;
+    if (editing || !node || typeof ResizeObserver === "undefined") return;
     const measure = () => {
       if (!expanded) setOverflows(node.scrollHeight > node.clientHeight + 1);
     };
@@ -169,7 +173,7 @@ export function WorkGoal({
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [c.editing, work.goal, expanded]);
+  }, [editing, work.goal, expanded]);
   const clamped = overflows && !expanded;
   const bindEditFocus = (node: HTMLButtonElement | null) => {
     c.displayRef.current = node;
@@ -179,20 +183,22 @@ export function WorkGoal({
       <p className="sr-only" aria-live="polite">
         {c.announcement}
       </p>
-      {c.editing ? (
+      {editing ? (
         <GoalEditor controller={c} />
       ) : !work.goal ? (
-        <button
-          type="button"
-          ref={bindEditFocus}
-          onClick={c.activate}
-          className={cn(
-            bodyText,
-            "inline-edit-trigger focus-ring block text-left text-muted-foreground [@media(pointer:coarse)]:min-h-11",
-          )}
-        >
-          {t`Add a goal for this Work`}
-        </button>
+        readOnly ? null : (
+          <button
+            type="button"
+            ref={bindEditFocus}
+            onClick={c.activate}
+            className={cn(
+              bodyText,
+              "inline-edit-trigger focus-ring block text-left text-muted-foreground [@media(pointer:coarse)]:min-h-11",
+            )}
+          >
+            {t`Add a goal for this Work`}
+          </button>
+        )
       ) : (
         <>
           {/* biome-ignore lint/a11y/noStaticElementInteractions: a pointer shortcut; the Show more button below is the keyboard path. */}
@@ -231,14 +237,16 @@ export function WorkGoal({
                 <Trans>Show less</Trans>
               </button>
             ) : null}
-            <button
-              type="button"
-              ref={bindEditFocus}
-              onClick={c.activate}
-              className="focus-ring ml-auto min-h-6 rounded-sm text-sm text-muted-foreground hover:text-foreground [@media(pointer:coarse)]:min-h-11"
-            >
-              <Trans>Edit</Trans>
-            </button>
+            {readOnly ? null : (
+              <button
+                type="button"
+                ref={bindEditFocus}
+                onClick={c.activate}
+                className="focus-ring ml-auto min-h-6 rounded-sm text-sm text-muted-foreground hover:text-foreground [@media(pointer:coarse)]:min-h-11"
+              >
+                <Trans>Edit</Trans>
+              </button>
+            )}
           </div>
         </>
       )}

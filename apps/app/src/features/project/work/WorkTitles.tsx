@@ -2,7 +2,8 @@
  * A Work's two titles: the active tab in the pane band (navigation chrome) and
  * the page heading (the page's own identity). Both rename the same Work in
  * place through `TitleEditSlot`, without moving the text: a rename shows at
- * once, and a refused one reopens the title that was edited.
+ * once, and a refused one reopens the title that was edited. A Work with no
+ * server identity yet, or an archived one, shows the same titles as plain text.
  */
 import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/works";
@@ -89,16 +90,18 @@ export function WorkHeading({ projectId, work }: { projectId: string; work: Work
   );
 }
 
-/** A Work that has no server identity yet: its name in the tab, not editable. */
-export function PendingWorkTitleTab({ name, variant }: { name: string; variant: "tab" | "quiet" }) {
+/** A Work's name in the tab, not editable: still being created, or archived. */
+export function PlainWorkTitleTab({ name, variant }: { name: string; variant: "tab" | "quiet" }) {
   return (
     <div className={titleChipClass(variant)}>
-      <span className="pane-title min-w-0 truncate px-1">{name}</span>
+      <span title={name} className="pane-title min-w-0 truncate px-1">
+        {name}
+      </span>
     </div>
   );
 }
 
-/** A Work that has no server identity yet: its heading, not editable. */
-export function PendingWorkHeading({ name }: { name: string }) {
+/** A Work's heading, not editable: still being created, or archived. */
+export function PlainWorkHeading({ name }: { name: string }) {
   return <h1 className={headingClass}>{name}</h1>;
 }

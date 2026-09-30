@@ -1,4 +1,7 @@
-/** The Work Files tab's rows: a folder, a catalog file (renamed in place), and a file still on its way. */
+/**
+ * The Work Files tab's rows: a folder, a catalog file (renamed in place, or
+ * only opened while its Work is read-only), and a file still on its way.
+ */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Folder, FolderOpen } from "lucide-react";
@@ -47,6 +50,7 @@ export function CatalogFileRow({
   scheme,
   file,
   siblingNames,
+  readOnly,
   renaming,
   onRename,
   onDelete,
@@ -56,6 +60,7 @@ export function CatalogFileRow({
   scheme: WorkFileScheme;
   file: CatalogFile;
   siblingNames: readonly string[];
+  readOnly: boolean;
   renaming: boolean;
   onRename: (path: string | null) => void;
   onDelete?: () => void;
@@ -65,7 +70,7 @@ export function CatalogFileRow({
     (state) => state.workFile?.workId === workId && state.workFile.tab.path === file.path,
   );
   const folder = file.path.includes("/") ? file.path.replace(/\/[^/]+$/, "") : "";
-  if (renaming)
+  if (renaming && !readOnly)
     return (
       <div className="flex min-h-10 items-center gap-3 px-2 py-1.5 text-sm font-medium text-foreground">
         <RowIcon icon={fileKindIcon(file)} />
@@ -84,25 +89,25 @@ export function CatalogFileRow({
     if (action === "delete") onDelete?.();
   };
   const open = () => openFile(viewerTabForCatalogFile(file, scheme, workId));
-  return (
-    <ContextEntryMenu allowCreate={false} allowDelete={Boolean(onDelete)} onAction={onAction}>
-      <div
-        className={cn("group relative flex min-w-0 items-center", docked && "rounded-md bg-muted")}
+  const row = (
+    <div
+      className={cn("group relative flex min-w-0 items-center", docked && "rounded-md bg-muted")}
+    >
+      <button
+        type="button"
+        className={cn(workFileRowClass, !readOnly && "pr-10")}
+        aria-current={docked || undefined}
+        onClick={open}
       >
-        <button
-          type="button"
-          className={cn(workFileRowClass, "pr-10")}
-          aria-current={docked || undefined}
-          onClick={open}
-        >
-          <RowIcon icon={fileKindIcon(file)} />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate font-medium">{file.name}</span>
-            {folder ? (
-              <span className="block truncate text-xs text-muted-foreground">{folder}</span>
-            ) : null}
-          </span>
-        </button>
+        <RowIcon icon={fileKindIcon(file)} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-medium">{file.name}</span>
+          {folder ? (
+            <span className="block truncate text-xs text-muted-foreground">{folder}</span>
+          ) : null}
+        </span>
+      </button>
+      {readOnly ? null : (
         <div className="absolute right-1">
           <EntryKebabButton
             allowCreate={false}
@@ -111,7 +116,14 @@ export function CatalogFileRow({
             align="end"
           />
         </div>
-      </div>
+      )}
+    </div>
+  );
+  // Rename and Delete are the whole menu, so a read-only row has none.
+  if (readOnly) return row;
+  return (
+    <ContextEntryMenu allowCreate={false} allowDelete={Boolean(onDelete)} onAction={onAction}>
+      {row}
     </ContextEntryMenu>
   );
 }

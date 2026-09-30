@@ -746,8 +746,13 @@ msgstr ""
 
 #: src/features/project/work/WorkChatsTab.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
-msgid "Chats you start here stay with this Work."
+msgid "Chats in this Work share its goal and scratch files."
 msgstr ""
+
+#: src/features/project/work/WorkChatsTab.tsx
+#: src/features/project/work/WorkCreationDestination.tsx
+#~ msgid "Chats you start here stay with this Work."
+#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
@@ -3263,8 +3268,8 @@ msgstr ""
 
 #: src/features/project/work/WorkChatsTab.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
-msgid "Start a chat in this Work"
-msgstr ""
+#~ msgid "Start a chat in this Work"
+#~ msgstr ""
 
 #: src/features/project/work/WorkCollection.tsx
 msgid "Start a Work"
@@ -3751,6 +3756,10 @@ msgstr ""
 msgid "This Work has {count, plural, one {# AI change} other {# AI changes}} in draft."
 msgstr ""
 
+#: src/features/project/work/ArchivedWorkNotice.tsx
+msgid "This Work is archived."
+msgstr ""
+
 #: src/features/project/EditorWorkRecovery.tsx
 msgid "This Work is unavailable."
 msgstr ""
@@ -3827,6 +3836,7 @@ msgstr ""
 msgid "Unable to render diagram"
 msgstr ""
 
+#: src/features/project/work/ArchivedWorkNotice.tsx
 #: src/features/project/work/WorkActionsMenu.tsx
 msgid "Unarchive"
 msgstr ""
