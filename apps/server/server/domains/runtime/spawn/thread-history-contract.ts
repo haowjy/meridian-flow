@@ -233,9 +233,7 @@ export function defineThreadHistoryContract(
       expect(text).toContain("<system_update>");
       expect(text).not.toContain('"kind":"handoff-brief"');
       expect(text).not.toContain(f.thread.id);
-      expect(text).toContain(
-        status === "complete" ? "The gate is open." : "No brief is available.",
-      );
+      expect(text).toContain(status === "complete" ? "The gate is open." : "with no brief.");
       if (status === "error") expect(text).toContain(`error: ${handoffBriefFailedCopy}`);
     });
 

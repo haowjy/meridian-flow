@@ -912,7 +912,7 @@ else
       });
       expect(card?.content).toHaveProperty(
         "props.modelText",
-        expect.stringContaining(`<thread_reference ref="${fixture.source.ref}">`),
+        expect.stringContaining(`thread_history({"ref":"${fixture.source.ref}"})`),
       );
       expect(statusPublishes).toBe(1);
     });

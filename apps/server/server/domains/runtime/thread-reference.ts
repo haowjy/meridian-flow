@@ -8,13 +8,14 @@ export function threadReferenceText(source: {
   agentName?: string | null;
   lastActivityAt?: string;
 }): string {
-  const title = source.title ? `, ${JSON.stringify(source.title)}` : "";
+  const title = source.title ? JSON.stringify(source.title) : "";
   const agent = source.agentName ? ` (Agent: ${source.agentName})` : "";
   const activity = source.lastActivityAt
     ? `, last active ${source.lastActivityAt.slice(0, 16).replace("T", " ")} UTC`
     : "";
   const args = JSON.stringify({ ref: source.ref });
-  return `<thread_reference ref="${source.ref}">\nPrior conversation ${source.ref}${title}${agent}${activity}.\nIts history is not included. Read it with thread_history(${args}); see related conversations with thread_ls(${args}).\n</thread_reference>`;
+  const details = `${title}${agent}${activity}`;
+  return `<thread_reference ref="${source.ref}">${details ? `\n${details}. ` : ""}Not included here; read it with thread_history(${args}).${details ? "\n" : ""}</thread_reference>`;
 }
 
 export function threadReferenceBlock(source: Thread): BlockUpsertedRow {

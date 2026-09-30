@@ -11,7 +11,6 @@ import {
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import type { PersistenceDeps } from "../loop/persistence.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
-import { threadReferenceText } from "../thread-reference.js";
 
 export const handoffBriefUnavailableCopy =
   "This conversation was handed off. No brief is available.";
@@ -23,10 +22,12 @@ export function handoffSeedBlock(
 ) {
   const metadata = HandoffSeedMetadataCodec.parse(seed.metadata);
   const sourceRef = metadata.sourceRef;
-  const reference = historyReadable ? `\n${threadReferenceText({ ref: sourceRef })}` : "";
+  const history = historyReadable
+    ? `${brief ? "\n" : " "}Read ${brief ? "the full conversation" : "it"} with thread_history(${JSON.stringify({ ref: sourceRef })}).`
+    : "";
   const modelText = brief
-    ? `<system_update>\n<prior-session-context source="${sourceRef}">\n${brief.text}\n</prior-session-context>${reference}\n</system_update>`
-    : `<system_update>\nThis conversation was handed off from ${sourceRef}. No brief is available.${reference}\n</system_update>`;
+    ? `<system_update>\n<prior-session-context source="${sourceRef}">\n${brief.text}\n</prior-session-context>${history}\n</system_update>`
+    : `<system_update>\nThis conversation was handed off from ${sourceRef} with no brief.${history}\n</system_update>`;
   const props: HandoffBriefProps = {
     state: brief ? "available" : "unavailable",
     brief: brief?.text ?? null,
