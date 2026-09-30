@@ -10,9 +10,8 @@ import {
   CompactionFailureError,
   CompactionPreparationError,
 } from "./compaction/decision.js";
-import { changedDocuments, collectRecordedDocuments } from "./compaction/elide.js";
 import { projectActiveHistoryWithBakes, projectCompactedHistory } from "./compaction/index.js";
-import { queryCompactionRevisions } from "./compaction-revisions.js";
+import { changedDocumentUris } from "./compaction-revisions.js";
 import {
   completeCompactionCurrent,
   type PreparedCompaction,
@@ -57,23 +56,13 @@ export async function executeCompaction({
     thread.ref,
     deps.repos.promptBakes,
   );
-  const policies = (name: string) => deps.toolRegistry.getRegistration(name)?.documentText;
-  const recorded = collectRecordedDocuments(
-    projection.turns.map((turn) => ({
-      turn,
-      blocks: projection.blocks.filter((block) => block.turnId === turn.id),
-    })),
-    policies,
-  );
-  const current = await queryCompactionRevisions({
+  const changed = await changedDocumentUris({
     threadId: input.threadId,
-    recorded,
+    projection,
+    policies: (name) => deps.toolRegistry.getRegistration(name)?.documentText,
     revisions: deps.documentRevisions,
     assertNoResponseScope,
   });
-  const changed = [
-    ...new Set(changedDocuments(recorded, current).flatMap((ref) => (ref.uri ? [ref.uri] : []))),
-  ];
   let summary: SummaryOutcome;
   try {
     input.signal?.throwIfAborted();

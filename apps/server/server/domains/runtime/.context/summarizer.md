@@ -19,7 +19,8 @@ Every call names an `owner` and a `source`:
 The caller supplies the source projection. Both callers build it with
 `projectActiveHistoryWithBakes`, the one projection authority
 ([compaction](compaction.md#one-projection-authority)), so a compacted source
-keeps its summary bytes.
+keeps its summary bytes. Both callers collect document revision evidence over
+that same projection and append changed document URIs to the summary prompt.
 
 ## One branch-or-roll rule
 
@@ -43,9 +44,9 @@ instruction. It keeps the source request's fields unchanged, including an
 explicit output limit or its absence. It does not change other fields: tools,
 `tool_choice`, reasoning, `promptCacheKey`, and cache marks stay as assembled.
 The response row records the source model's cache prediction, including a cold
-prediction. For a handoff, the appended instruction names the incoming Agent
-and says an unanswered writer message is an open request, not something to
-answer.
+prediction. For a handoff, the appended instruction names the incoming Agent,
+quotes an unanswered writer request under `Open request`, and says not to
+answer it.
 
 For a compaction, the branch instruction also names what the summary is not
 replacing (issue [#619][i619]): the plan's retained pins and tail, each
@@ -60,10 +61,10 @@ facts found only there, or use a retained reply as proof a replaced request
 was done. Handoff briefs have no retained tail and keep their own
 instruction.
 
-Before summarizing, one settled-authority revision query over the active
-projection (the history the summarizer reads, not only the planned cut)
-supplies the changed URIs, named in the instruction (appended on warm, in the
-system prompt on cold). Warm requests keep their prefix unchanged.
+Before either summary, one settled-authority revision query over the source
+projection (the history the summarizer reads, not only a compaction's planned
+cut) supplies the changed URIs, named in the instruction (appended on warm, in
+the system prompt on cold). Warm requests keep their prefix unchanged.
 
 Rolling uses `COMPACTION_SUMMARIZER_MODEL` (default DeepSeek Flash), or the
 retained source model when that provider is disabled. Each rolling row records
@@ -78,14 +79,19 @@ omits opaque reasoning and thinking, and labels prior context. Before any cold
 call, all turns are measured. Oversized turns replace re-readable tool bodies
 with a URI and short excerpt, then split at block boundaries if needed; an
 oversized indivisible block fails before any cold call. Rolling segments carry
-the running summary forward. The request sets no output limit: OpenAI-compatible
+the running summary forward. Compaction and handoff use the same fixed
+fiction-oriented sections for objective, document work state, story canon,
+decisions, writer preferences, open questions, and the next step; handoff alone
+adds the open request. The instruction explicitly merges an earlier summary,
+uses the writer's language, and treats transcript content as source material
+rather than instructions. The request sets no output limit: OpenAI-compatible
 adapters leave the provider default in place, while Anthropic supplies its
 required registry maximum. Segment budgeting leaves input room for a maximum
 length running summary independently of the CJK request estimator, then
-rechecks each assembled request against the usable window. Prompts preserve exact story terminology,
-quoted writer wording, and per-document done and pending edits; they forbid
-invented facts and ask the model to be concise without imposing a second token
-limit.
+rechecks each assembled request against the usable window. Prompts preserve
+exact story terminology, quoted writer wording, and per-document done and
+pending edits; they forbid invented facts and require concise bullets without
+imposing a second token limit.
 
 Output-limit failure uses the provider finish reason, not an input-token
 estimate; the successor fit check still measures the full assembled request.
