@@ -978,7 +978,7 @@ msgstr "我来说两句"
 msgid "Choose a document or enter a web address or document path."
 msgstr ""
 
-#: src/features/project/context/DocumentIdentityBar.tsx
+#: src/features/project/context/IdentityChips.tsx
 msgid "Choose a home"
 msgstr ""
 
@@ -2939,7 +2939,7 @@ msgstr ""
 #~ msgid "Older"
 #~ msgstr "更早"
 
-#: src/features/project/context/DocumentIdentityBar.tsx
+#: src/features/project/context/IdentityChips.tsx
 msgid "Only on this device"
 msgstr ""
 
@@ -3413,7 +3413,7 @@ msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreeRows.tsx
-#: src/features/project/context/DocumentIdentityBar.tsx
+#: src/features/project/context/IdentityChips.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Rename"
@@ -3437,7 +3437,7 @@ msgstr ""
 msgid "Rename project: {title}"
 msgstr ""
 
-#: src/features/project/context/DocumentIdentityBar.tsx
+#: src/features/project/context/IdentityChips.tsx
 msgid "Rename this document or move it somewhere else in your project."
 msgstr ""
 
@@ -4437,7 +4437,7 @@ msgstr ""
 #~ msgid "This draft changed in another tab. The saved version has been loaded."
 #~ msgstr ""
 
-#: src/features/project/context/DocumentIdentityBar.tsx
+#: src/features/project/context/IdentityChips.tsx
 msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
 msgstr ""
 

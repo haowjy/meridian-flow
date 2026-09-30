@@ -343,3 +343,36 @@ test("keyboard focus opens a tooltip, and a button's own popover hides it", asyn
   await expect(page.getByRole("dialog").filter({ hasText: "Output tokens" })).toBeVisible();
   await expect(openTooltips(page)).toHaveCount(0);
 });
+
+test("an explanatory tooltip stays open while the pointer moves onto it", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "fine-pointer", "hover contract");
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await mount(page);
+  const chip = page.locator("#identity-chips").getByRole("button", { name: "Choose a home" });
+  await chip.scrollIntoViewIfNeeded();
+  const box = await chip.boundingBox();
+  if (!box) throw new Error("No home chip");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 4 });
+  await expect(openTooltips(page)).toContainText(["lives in your Scratch"]);
+  const tooltip = await openTooltipBox(page);
+
+  // Off the chip, across the gap, and onto the words: still open.
+  await page.mouse.move(tooltip.x + tooltip.width / 2, tooltip.y + tooltip.height / 2, {
+    steps: 12,
+  });
+  await expect(openTooltips(page)).toContainText(["lives in your Scratch"]);
+  const hit = await page.evaluate(
+    ({ x, y }) =>
+      document.elementFromPoint(x, y)?.closest('[data-slot="tooltip-content"]') !== null,
+    { x: tooltip.x + tooltip.width / 2, y: tooltip.y + tooltip.height / 2 },
+  );
+  expect(hit).toBe(true);
+
+  // Away from both, it closes.
+  await page.mouse.move(tooltip.x + tooltip.width + 200, tooltip.y + tooltip.height / 2, {
+    steps: 4,
+  });
+  await expect(openTooltips(page)).toHaveCount(0);
+});

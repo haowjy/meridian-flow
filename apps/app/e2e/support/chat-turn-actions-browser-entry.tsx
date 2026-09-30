@@ -1,6 +1,7 @@
 /**
  * Browser entry that mounts shipped writer and reply action rows, and every
- * compaction divider state, in a chat column.
+ * compaction divider state, in a chat column. Below it, the identity bar's
+ * home chip: the one hoverable (explanatory) tooltip beside the label ones.
  */
 import type { Turn } from "@meridian/contracts/protocol";
 import { createRoot } from "react-dom/client";
@@ -15,6 +16,7 @@ import {
   TurnDerivationProvider,
 } from "../../src/features/chat/derivation/DeriveTurnActions";
 import { UserTurn } from "../../src/features/chat/UserTurn";
+import { HomeChip } from "../../src/features/project/context/IdentityChips";
 import { changeStatsForNerds } from "../../src/lib/stats-for-nerds";
 import "../../src/styles/globals.css";
 
@@ -163,6 +165,9 @@ createRoot(root).render(
           </li>
         </ol>
       </ChatColumn>
+      <div id="identity-chips" className="flex p-4">
+        <HomeChip provisional onClick={() => undefined} />
+      </div>
     </TurnDerivationProvider>
   </TooltipProvider>,
 );
