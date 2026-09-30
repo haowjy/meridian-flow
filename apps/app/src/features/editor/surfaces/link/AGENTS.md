@@ -30,8 +30,9 @@ Beside them, three things that are not summoned surfaces:
   `SuggestionMenu` the slash menu also renders through. Its documents come from
   the context trees the app already caches (`useLinkableDocuments` in
   [`features/links`](../../../links/AGENTS.md)), so opening it costs no request.
-- **`FollowOutcomeDialog`** — what a follow says when the document is not there:
-  the `EditorDialog` host over the shared `FollowOutcomeContent`. A chrome
+- **`FollowOutcomeDialog`** — what a follow says when it has something to say
+  (still checking, missing, or failed): the `EditorDialog` host over the shared
+  `FollowOutcomeContent`. A chrome
   surface rather than the runtime's own dialog, and that is the whole point: it
   can open a quarter second after the click, so the kernel has to know it is the
   open transient.

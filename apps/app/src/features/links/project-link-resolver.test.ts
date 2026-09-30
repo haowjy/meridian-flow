@@ -4,10 +4,14 @@
  */
 
 import type { DocumentLinkTarget } from "@meridian/contracts/protocol";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { projectLinkAnswer } from "./project-link-resolver";
+import { resolveDocumentLink } from "@/client/api/document-links-api";
+
+import { createProjectLinkResolver, projectLinkAnswer } from "./project-link-resolver";
 import type { LinkableDocument, LinkableDocumentIndex } from "./useLinkableDocuments";
+
+vi.mock("@/client/api/document-links-api", () => ({ resolveDocumentLink: vi.fn() }));
 
 function document(
   documentId: string,
@@ -109,5 +113,48 @@ describe("projectLinkAnswer", () => {
     expect(
       answer.kind === "ambiguous" && answer.candidates.map((entry) => entry.documentId),
     ).toEqual(["doc-kael", "doc-kb-kael"]);
+  });
+
+  it("leaves a single match whose URI does not parse to the server", () => {
+    const ghost = { ...document("doc-ghost", "manuscript://Ghost.md"), uri: "nope://Ghost.md" };
+    expect(projectLinkAnswer(index([ghost]), { kind: "wikilink", name: "Ghost" })).toEqual({
+      kind: "unknown",
+    });
+  });
+});
+
+describe("createProjectLinkResolver", () => {
+  const server = vi.mocked(resolveDocumentLink);
+  const scope = { projectId: "project-1", workId: "work-1", baseUri: null };
+
+  beforeEach(() => {
+    server.mockReset();
+    server.mockResolvedValue({ document: null });
+  });
+
+  it("draws a name two local documents carry as unresolved, without asking the server", async () => {
+    const kbKael = document("doc-kb-kael", "kb://Kael.md");
+    const resolve = createProjectLinkResolver(scope, index([kael, kbKael]));
+
+    await expect(resolve({ kind: "wikilink", name: "Kael" })).resolves.toBeNull();
+    expect(server).not.toHaveBeenCalled();
+  });
+
+  it("throws for a relative link with no base, so it reads as unasked rather than missing", async () => {
+    const resolve = createProjectLinkResolver(scope, everything);
+
+    await expect(resolve({ kind: "relative", path: "./Kael.md" })).rejects.toThrow();
+    expect(server).not.toHaveBeenCalled();
+  });
+
+  it("asks the server with the scope's Work and the projected target", async () => {
+    server.mockResolvedValue({ document: null });
+    const resolve = createProjectLinkResolver(scope, everything);
+
+    await expect(resolve({ kind: "wikilink", name: "Ilsever" })).resolves.toBeNull();
+    expect(server).toHaveBeenCalledWith("project-1", {
+      workId: "work-1",
+      target: { kind: "wikilink", name: "Ilsever" },
+    });
   });
 });

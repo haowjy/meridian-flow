@@ -7,7 +7,16 @@
  * resolution, so the resolver is registered once per scope and registered
  * again whenever any of them changes. Registering is the cache's only
  * invalidation: it forgets every answer and every failure the previous scope
- * produced. Nothing else in the app pokes this cache.
+ * produced. Nothing else in the app pokes this cache. A click in flight across
+ * a registration is asked again in the new one, so a rename or a catalog
+ * refetch never turns into "could not be checked".
+ *
+ * **What aborts a follow.** A newer `current` follow aborts the previous one:
+ * the pane can only go one place, and the latest click is where the writer
+ * meant. A `new-tab` follow is never aborted by a newer one and never aborts
+ * another, because each is its own tab. A project or Work change, unmount, and
+ * `cancel()` abort everything in flight. An abort only stops a follow before
+ * it opens; once it opens, the navigation completes.
  */
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -20,7 +29,7 @@ import type { LinkableDocumentIndex } from "./useLinkableDocuments";
 
 export type LinkFollower = {
   follow(target: LinkTarget, gesture?: LinkFollowDisposition): void;
-  /** Abort every in-flight follow, then clear its outcome. */
+  /** Abort every in-flight follow, then clear its outcome. Order matters: see below. */
   cancel(): void;
 };
 
@@ -45,20 +54,45 @@ export function useLinkFollower({
 
   useEffect(() => {
     if (!resolution || !projectId) return;
-    return resolution.registerResolver(
+    const unregister = resolution.registerResolver(
       createProjectLinkResolver({ projectId, workId, baseUri }, index),
     );
+    // React runs this cleanup and the next registration in one commit.
+    // Unregistering right away would leave no live generation for a pending
+    // click to be carried into, so it would settle null and report "could not
+    // be checked". Deferred, the unregister finds a newer registration and is a
+    // no-op (it only takes its own generation); on unmount it still runs.
+    return () => queueMicrotask(unregister);
     // `index` stays the same object while its revision does, so a different one
     // is a different catalog: registering against it is how an answer about the
     // old one becomes unreachable.
   }, [baseUri, index, projectId, resolution, workId]);
 
   const inFlight = useRef(new Set<AbortController>());
+  const currentFollow = useRef<AbortController | null>(null);
+
+  const abortAll = useCallback(() => {
+    for (const controller of inFlight.current) controller.abort();
+    inFlight.current.clear();
+    currentFollow.current = null;
+  }, []);
+
+  // The answer a follow is waiting on is about the project and Work it was
+  // clicked in. A catalog or base URI change re-asks it; moving to another
+  // project or Work is a different question, and unmounting leaves nobody to
+  // answer. Both abort.
+  useEffect(() => abortAll, [abortAll, projectId, workId]);
 
   const follow = useCallback(
     (target: LinkTarget, gesture: LinkFollowDisposition = "current") => {
-      if (!resolution) return;
+      // Without a scope no resolver is registered, and asking anyway would
+      // report "could not be checked" about a question nobody could ask.
+      if (!resolution || !projectId) return;
       const controller = new AbortController();
+      if (gesture === "current") {
+        currentFollow.current?.abort();
+        currentFollow.current = controller;
+      }
       inFlight.current.add(controller);
       void followProjectLink({
         target,
@@ -67,19 +101,21 @@ export function useLinkFollower({
         open,
         reporter,
         signal: controller.signal,
-      }).finally(() => inFlight.current.delete(controller));
+      }).finally(() => {
+        inFlight.current.delete(controller);
+        if (currentFollow.current === controller) currentFollow.current = null;
+      });
     },
-    [open, reporter, resolution],
+    [open, projectId, reporter, resolution],
   );
 
   const cancel = useCallback(() => {
     // Abort first: the procedure clears the outcome itself right before it
     // opens, so clearing first would leave a window where an answer lands,
     // opens, and the writer's Cancel meant nothing.
-    for (const controller of inFlight.current) controller.abort();
-    inFlight.current.clear();
+    abortAll();
     reporter.clear();
-  }, [reporter]);
+  }, [abortAll, reporter]);
 
   return useMemo(() => ({ follow, cancel }), [cancel, follow]);
 }

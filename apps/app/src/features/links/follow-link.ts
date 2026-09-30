@@ -27,13 +27,14 @@ export type LinkDocumentRef = { documentId: string; workId?: string | null };
 
 /**
  * Where a found document goes. The calling surface's policy, never this
- * module's. A follow passes its signal; opening a document the writer just
- * created has no follow left to abandon.
+ * module's. It takes no signal on purpose: once a follow decides to open, the
+ * navigation completes. An Editor follow in the current pane replaces the
+ * editor that asked, and an abort tied to that editor would cancel its own
+ * open.
  */
 export type LinkDestination = (
   document: LinkDocumentRef,
   gesture: LinkFollowDisposition,
-  signal?: AbortSignal,
 ) => Promise<unknown>;
 
 /** Where an outcome worth interrupting the writer about is said. */
@@ -44,7 +45,8 @@ export type FollowReporter = {
 
 /**
  * Cached answer: open, report nothing. Otherwise report checking after 250ms,
- * then open or report an outcome. Aborted: never reports, never opens.
+ * then open or report an outcome. Aborted before the open: never reports,
+ * never opens. The signal is not forwarded into `open`.
  *
  * Several matches arrive here as unresolved, so they report `missing`.
  */
@@ -71,7 +73,7 @@ export async function followProjectLink({
   // instant and nothing is ever shown.
   if (known?.state === "resolved") {
     reporter.clear();
-    await open(documentRef(known.document), gesture, signal);
+    await open(documentRef(known.document), gesture);
     return;
   }
 
@@ -87,7 +89,7 @@ export async function followProjectLink({
 
   if (entry?.state === "resolved") {
     reporter.clear();
-    await open(documentRef(entry.document), gesture, signal);
+    await open(documentRef(entry.document), gesture);
     return;
   }
   reporter.report({ state: entry?.state === "unresolved" ? "missing" : "failed", target });

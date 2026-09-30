@@ -24,7 +24,8 @@ A surface supplies three things, and everything between is here:
 the surface's resolution cache once per scope and runs `followProjectLink` for
 each click. `useLinkableDocuments` is the scope's local document index: the
 `[[` menu's rows, a relative link's base, and the local answer that saves a
-request.
+request. Its catalogs mirror the server's candidate set
+(`linkable-catalog-scopes.ts`); change the two together.
 
 ## Key rules
 
@@ -38,6 +39,9 @@ request.
 - **One follow procedure.** A surface never calls `resolveDocumentLink` or
   reads the resolution cache to decide what a click does. Destination policy
   stays out of this module: no `surface` switch, only the injected `open`.
+- **An abort stops a follow before it opens, never during.** The destination
+  takes no signal. A newer `current` follow aborts the previous one; `new-tab`
+  follows are never aborted by a newer one.
 - **A pending answer claims nothing.** A follow interrupts only after
   `CHECKING_DELAY_MS`, so a link already resolved for rendering just opens.
 - **A failed request is not an unresolved link.** It says so on follow, with
