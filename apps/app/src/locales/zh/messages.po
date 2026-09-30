@@ -1938,8 +1938,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "Even compacted, this conversation is too large for its model."
-msgstr ""
+#~ msgid "Even compacted, this conversation is too large for its model."
+#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 msgid "Expand changes"
@@ -4358,7 +4358,7 @@ msgstr ""
 msgid "This compaction already started."
 msgstr ""
 
-#: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/compaction/compaction-model.ts
 msgid "This conversation couldn't be compacted."
 msgstr ""
 
@@ -4785,8 +4785,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "Waiting to compact"
-msgstr ""
+#~ msgid "Waiting to compact"
+#~ msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."
@@ -4962,7 +4962,6 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-#: src/features/chat/ErrorBlock.tsx
 msgid "You can retry when this chat is free."
 msgstr ""
 
