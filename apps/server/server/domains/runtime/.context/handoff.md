@@ -42,8 +42,11 @@ includes the internal cause. Returned provider response rows and debits settle
 in the same ending transaction as S. If that transaction throws, the claim is
 released and S remains pending for ordinary orphan repair.
 
-Stop settles S as cancelled under the destination lock and aborts a local worker. After release, waiting messages run before any queued command. A
-remote worker notices within the five-second status poll. A dead
+Stop settles S as cancelled under the destination lock and aborts a local worker.
+It sends no separate wake: the brief's claim release rereads the queue, and the
+periodic sweep covers a crashed launcher. After release, waiting messages run
+before any queued command. A remote worker notices within the five-second
+status poll. A dead
 database session is detected by the session lock only on its next query; while
 the brief is in a provider call, its five-second S status poll is the mechanism
 that notices claim loss after repair settles S. Claim loss and shutdown are
@@ -53,7 +56,9 @@ source preparation or summary attempt is final and can be retried by the writer
 with a new S. Shutdown sets the shared flag before aborting live runs and briefs
 with reason `shutdown`, suppressing new run starts and wakes. Live work is
 aborted so paid response rows settle before claim release. The app's shared
-runtime tracker drains for at most 10 seconds and reports a timeout. A brief
+runtime tracker drains for at most 10 seconds and reports a timeout. The
+five-second recovery-lane stop and ten-second drain are derived from the shared
+12-second process deadline in `lib/shutdown-deadlines.ts`. A brief
 launch that begins after shutdown has started leaves S pending for ordinary
 orphan repair. A released claim does not wake the destination after shutdown.
 
