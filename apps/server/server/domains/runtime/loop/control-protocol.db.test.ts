@@ -160,6 +160,88 @@ else
       );
     });
 
+    it("honors completed replies across bounded fork-of-fork lineage", async () => {
+      const rig = await manualFixture({ empty: true });
+      const source = await rig.repos.threads.findById(rig.threadId);
+      if (!source) throw new Error("Expected source thread");
+      const request = await rig.repos.turns.create({
+        threadId: source.id,
+        prevTurnId: null,
+        role: "user",
+        origin: "writer",
+        status: "complete",
+      });
+      const answer = await rig.repos.turns.create({
+        threadId: source.id,
+        prevTurnId: request.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      const forkAtRequest = (
+        await rig.repos.threads.createDerivedPrimary({
+          id: crypto.randomUUID(),
+          source,
+          workId: source.workId,
+          userId: source.userId,
+          projectId: source.projectId,
+          originType: "fork",
+          originTurnId: request.id,
+        })
+      ).thread;
+
+      await expect(
+        rig.delivery.enqueueControl({
+          threadId: forkAtRequest.id,
+          actorId: rig.ids.user,
+          id: crypto.randomUUID(),
+          control: { kind: "compact" },
+        }),
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        message: "compact_requires_completed_reply",
+      });
+
+      const firstFork = (
+        await rig.repos.threads.createDerivedPrimary({
+          id: crypto.randomUUID(),
+          source,
+          workId: source.workId,
+          userId: source.userId,
+          projectId: source.projectId,
+          originType: "fork",
+          originTurnId: answer.id,
+        })
+      ).thread;
+      const firstForkRequest = await rig.repos.turns.create({
+        threadId: firstFork.id,
+        prevTurnId: answer.id,
+        role: "user",
+        origin: "writer",
+        status: "complete",
+      });
+      const secondFork = (
+        await rig.repos.threads.createDerivedPrimary({
+          id: crypto.randomUUID(),
+          source: firstFork,
+          workId: firstFork.workId,
+          userId: firstFork.userId,
+          projectId: firstFork.projectId,
+          originType: "fork",
+          originTurnId: firstForkRequest.id,
+        })
+      ).thread;
+
+      await expect(
+        rig.delivery.enqueueControl({
+          threadId: secondFork.id,
+          actorId: rig.ids.user,
+          id: crypto.randomUUID(),
+          control: { kind: "compact" },
+        }),
+      ).resolves.toMatchObject({ created: true });
+    });
+
     it("returns the compact refusal when a fork cutoff is missing", async () => {
       const rig = await manualFixture();
       const source = await rig.repos.threads.findById(rig.threadId);
