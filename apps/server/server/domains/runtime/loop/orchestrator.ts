@@ -85,7 +85,6 @@ import type {
 } from "../../threads/index.js";
 import {
   agentRequestMetadata,
-  CompactionMetadataCodec,
   loadThreadConversationContext,
   readThreadActivity,
   ThreadConversationContextError,
@@ -129,7 +128,12 @@ import {
   type InterruptAutoResumePolicy,
   type InterruptRegistry,
 } from "./interrupts.js";
-import { createLocalTurn, currentTurnKind, reservationTurn } from "./local-turn.js";
+import {
+  createLocalTurn,
+  currentTurnKind,
+  readCompactionTrigger,
+  reservationTurn,
+} from "./local-turn.js";
 import { modelResponseTimingFields } from "./model-response-timing.js";
 import {
   hasPartialToolActivityTarget,
@@ -2330,7 +2334,7 @@ async function executeLoop({
           correlation: { threadId: input.threadId, turnId: currentTurn.id },
           payload: unknownToEventPayload(err),
         });
-        const optional = CompactionMetadataCodec.parse(currentTurn.metadata).trigger === "manual";
+        const optional = readCompactionTrigger(currentTurn.metadata) === "manual";
         let failed: Awaited<ReturnType<typeof failCompactionSuccessor>>;
         try {
           failed = await failCompactionSuccessor({
