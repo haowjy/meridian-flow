@@ -10,11 +10,13 @@ import {
 import { apiThreadHandoffBriefPath, apiThreadTurnRetryPath } from "./paths.js";
 
 describe("fork request schema", () => {
-  it("requires a client id and rejects removed Agent selection input", () => {
-    expect(forkThreadRequestSchema.safeParse({ id: crypto.randomUUID() }).success).toBe(true);
+  it("requires a client id and explicit cutoff and rejects removed Agent selection input", () => {
+    const request = { id: crypto.randomUUID(), originTurnId: crypto.randomUUID() };
+    expect(forkThreadRequestSchema.safeParse(request).success).toBe(true);
+    expect(forkThreadRequestSchema.safeParse({ id: request.id }).success).toBe(false);
     expect(
       forkThreadRequestSchema.safeParse({
-        id: crypto.randomUUID(),
+        ...request,
         agentSelection: {
           catalogEntryId: crypto.randomUUID(),
           definitionRevisionId: crypto.randomUUID(),

@@ -74,7 +74,10 @@ export class HandoffInProgressError extends Error {
   }
 }
 
-export type ForkCutoffErrorCode = "turn_not_in_transcript" | "no_settled_turn";
+export type ForkCutoffErrorCode =
+  | "turn_not_in_transcript"
+  | "unsettled_history"
+  | "turn_not_actionable";
 
 export class ForkCutoffError extends Error {
   constructor(
@@ -82,9 +85,11 @@ export class ForkCutoffError extends Error {
     readonly turnId: string | null,
   ) {
     super(
-      code === "turn_not_in_transcript"
-        ? `Fork cutoff turn ${turnId} is not in the source's effective transcript`
-        : "The source has no settled turn at or before the requested cutoff",
+      {
+        turn_not_in_transcript: `Derivation cutoff turn ${turnId} is not in the source's effective transcript`,
+        unsettled_history: `Derivation cutoff turn ${turnId} has unsettled history`,
+        turn_not_actionable: `Derivation is not available at turn ${turnId}`,
+      }[code],
     );
     this.name = "ForkCutoffError";
   }
@@ -117,7 +122,12 @@ export async function handoffThreadAgent(
         "handoff",
       );
       if (existing) return { thread: existing, created: false };
-      const cutoff = await normalizeHandoffCutoff(deps, lockedSource, input.originTurnId);
+      const cutoff = await requireDerivationCutoff(
+        deps,
+        lockedSource,
+        input.originTurnId,
+        "handoff",
+      );
       const owner = await deps.threads.findByIdIncludingDeleted(cutoff.turn.threadId);
       if (!owner) throw new DerivedSourceNotFoundError();
       const workId = await requirePrimaryWorkId(deps, lockedSource.id, lockedSource.projectId);
@@ -192,7 +202,7 @@ export async function forkThreadAgent(
     id: string;
     threadId: string;
     userId: string;
-    originTurnId?: string | null;
+    originTurnId: string;
   },
 ): Promise<{ thread: Thread; created: boolean }> {
   const existing = await findExistingDerivationBeforeSourceLoad(deps, input);
@@ -208,7 +218,7 @@ export async function forkThreadAgent(
     const existing = await findIdempotentDerivation(deps, lockedSource.projectId, input);
     if (existing) return { thread: existing, created: false };
 
-    const cutoff = await normalizeForkCutoff(deps, lockedSource, input.originTurnId);
+    const cutoff = await requireDerivationCutoff(deps, lockedSource, input.originTurnId, "fork");
     const inheritedBake = await bakeAt(deps, cutoff.turn);
     const sourceWorkId = await requirePrimaryWorkId(deps, lockedSource.id, lockedSource.projectId);
     const binding = await resolveDerivedBinding(deps, lockedSource, input.userId);
@@ -290,10 +300,11 @@ async function resolveDerivedBinding(
   };
 }
 
-async function normalizeForkCutoff(
+async function requireDerivationCutoff(
   deps: ThreadAgentSwapDeps,
   source: Thread,
-  requestedTurnId: string | null | undefined,
+  selectedTurnId: string,
+  derivation: "fork" | "handoff",
 ): Promise<{
   turn: Awaited<ReturnType<typeof loadThreadConversationContext>>["turns"][number];
   turns: Awaited<ReturnType<typeof loadThreadConversationContext>>["turns"];
@@ -303,74 +314,33 @@ async function normalizeForkCutoff(
     { threads: deps.threads, turns: deps.turns, blocks: deps.blocks },
     source,
   );
-  return normalizeSettledCutoff(context, requestedTurnId);
-}
-
-type ConversationContext = Awaited<ReturnType<typeof loadThreadConversationContext>>;
-
-function normalizeSettledCutoff(
-  context: ConversationContext,
-  requestedTurnId: string | null | undefined,
-): {
-  turn: ConversationContext["turns"][number];
-  turns: ConversationContext["turns"];
-  blocks: ConversationContext["blocks"];
-} {
-  const selectedTurnId = requestedTurnId ?? context.turns.at(-1)?.id;
-  if (!selectedTurnId && requestedTurnId == null) {
-    throw new ForkCutoffError("no_settled_turn", null);
-  }
   const selectedIndex = context.turns.findIndex((turn) => turn.id === selectedTurnId);
-  if (!selectedTurnId || selectedIndex < 0) {
-    throw new ForkCutoffError("turn_not_in_transcript", selectedTurnId ?? null);
+  if (selectedIndex < 0) throw new ForkCutoffError("turn_not_in_transcript", selectedTurnId);
+  const turns = context.turns.slice(0, selectedIndex + 1);
+  if (
+    turns.some(
+      (turn) =>
+        turn.status !== "complete" && turn.status !== "cancelled" && turn.status !== "error",
+    )
+  ) {
+    throw new ForkCutoffError("unsettled_history", selectedTurnId);
   }
-
-  let settledTurn: (typeof context.turns)[number] | undefined;
-  for (const turn of context.turns.slice(0, selectedIndex + 1)) {
-    if (
-      turn.status === "pending" ||
-      turn.status === "streaming" ||
-      turn.status === "waiting_interrupt"
-    ) {
-      break;
-    }
-    if (turn.status === "complete" || turn.status === "cancelled" || turn.status === "error") {
-      settledTurn = turn;
-    }
-  }
-  if (!settledTurn) throw new ForkCutoffError("no_settled_turn", selectedTurnId);
-  const cutoffIndex = context.turns.findIndex((turn) => turn.id === settledTurn?.id);
-  const inheritedTurnIds = new Set(context.turns.slice(0, cutoffIndex + 1).map((turn) => turn.id));
+  const selected = turns[selectedIndex];
+  const actionable =
+    derivation === "fork"
+      ? selected.role === "assistant" ||
+        (selected.role === "compaction" && selected.status === "complete")
+      : selected.role === "assistant" ||
+        (selected.role === "user" &&
+          selected.origin === "writer" &&
+          selected.status === "complete");
+  if (!actionable) throw new ForkCutoffError("turn_not_actionable", selectedTurnId);
+  const inheritedTurnIds = new Set(turns.map((turn) => turn.id));
   return {
-    turn: settledTurn,
-    turns: context.turns.slice(0, cutoffIndex + 1),
+    turn: selected,
+    turns,
     blocks: context.blocks.filter((block) => inheritedTurnIds.has(block.turnId)),
   };
-}
-
-/** Handoff may cut at a delivered writer request even when the reply after it is streaming. */
-async function normalizeHandoffCutoff(
-  deps: ThreadAgentSwapDeps,
-  source: Thread,
-  requestedTurnId: string | null | undefined,
-): Promise<ReturnType<typeof normalizeSettledCutoff>> {
-  const context = await loadThreadConversationContext(
-    { threads: deps.threads, turns: deps.turns, blocks: deps.blocks },
-    source,
-  );
-  const selectedTurnId = requestedTurnId ?? context.turns.at(-1)?.id;
-  const selectedIndex = context.turns.findIndex((turn) => turn.id === selectedTurnId);
-  const selected = context.turns[selectedIndex];
-  if (selected?.role === "user" && selected.origin === "writer" && selected.status === "complete") {
-    const turns = context.turns.slice(0, selectedIndex + 1);
-    const ids = new Set(turns.map((turn) => turn.id));
-    return {
-      turn: selected,
-      turns,
-      blocks: context.blocks.filter((block) => ids.has(block.turnId)),
-    };
-  }
-  return normalizeSettledCutoff(context, requestedTurnId);
 }
 
 async function findIdempotentDerivation(

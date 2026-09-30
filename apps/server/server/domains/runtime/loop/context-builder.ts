@@ -12,6 +12,7 @@ import {
 import { orderTurnsByPosition } from "../../threads/order-turns.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
+import { componentModelText } from "./component-model-text.js";
 import { assembleComposedSystemPrompt, isThreadPromptFrozen } from "./composed-system-prompt.js";
 
 export interface BuildContextInput {
@@ -275,8 +276,10 @@ function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
   for (const block of blocks) {
     if (block.blockType === "custom") {
       const content = block.content as ComponentBlockContent;
-      if (content.kind === "thread-reference")
-        parts.push(text(`\n\n${content.props.text as string}`));
+      if (content.kind === "thread-reference") {
+        const modelText = componentModelText(content);
+        if (modelText) parts.push(text(`\n\n${modelText}`));
+      }
     }
     const reference = referenceOccurrenceContent(block);
     if (!reference?.read) continue;
@@ -290,18 +293,6 @@ function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
     );
   }
   return parts;
-}
-
-// Pre-admission failures are model context; saved run reports remain transcript UI.
-export function componentModelText(content: ComponentBlockContent): string | null {
-  if (content.kind === "handoff-brief") return content.props.modelText as string;
-  if (content.kind !== "helper-result") return null;
-  const props = parseInvocationCard(content);
-  if (!props || props.terminalAt === null) return null;
-  if ("reason" in props) {
-    return `Subagent "${props.agentName}" could not start: ${props.reason}`;
-  }
-  return null;
 }
 
 // Unsupported or empty blocks have no gateway content part.

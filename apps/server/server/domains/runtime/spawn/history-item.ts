@@ -1,4 +1,5 @@
 /** Model-only history item projection. Copies are elided before any size trimming. */
+import type { ComponentBlockContent } from "@meridian/contracts/components";
 import {
   type DocumentRevisionEvidence,
   referenceOccurrenceContent,
@@ -6,6 +7,7 @@ import {
 import type { Block, JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
 import { classifyHistoryItem } from "../../threads/index.js";
 import type { BlockRepository } from "../../threads/ports/repositories.js";
+import { componentHistoryText } from "../loop/component-model-text.js";
 import { elideReferenceRead } from "../loop/reference-context.js";
 import type { ToolRegistry } from "../tools/types.js";
 
@@ -155,9 +157,17 @@ export function renderHistoryItem(input: {
           : kind.kind === "assistant_response"
             ? "assistant"
             : systemLabel;
+    const modelText =
+      block.blockType === "custom"
+        ? componentHistoryText(block.content as ComponentBlockContent)
+        : null;
     const reference = referenceOccurrenceContent(block);
-    if (reference) {
-      body = `${reference.text}${reference.read ? `\n${stringify((elideReferenceRead(reference, "history") as JsonObject).read)}` : ""}`;
+    if (modelText) body = modelText;
+    else if (reference) {
+      const elidedRead = reference.read
+        ? ((elideReferenceRead(reference, "history") as JsonObject).read as JsonObject)
+        : null;
+      body = `${reference.text}${elidedRead ? `\n${stringify({ result: elidedRead.result })}` : ""}`;
     } else if (block.blockType === "image")
       body = `[image: ${(block.content as JsonObject)?.name ?? (block.content as JsonObject)?.uri ?? "attachment"}]`;
     else body = block.textContent ?? stringify(block.content);
@@ -169,6 +179,6 @@ export function renderHistoryItem(input: {
     position: turn.position,
     sequence,
     documents,
-    text: `[${handle}] ${label}${ownerRef ? ` (from ${ownerRef})` : ""}  ${turn.createdAt.slice(0, 16).replace("T", " ")}\n${body}${turn.error && block ? `\n${turn.status}: ${turn.error}` : ""}${failureReason && block ? `\nfailure reason: ${failureReason}` : ""}`,
+    text: `[${handle}] ${label}${ownerRef ? ` (from ${ownerRef})` : ""}  ${turn.createdAt.slice(0, 16).replace("T", " ")}${body ? `\n${body}` : ""}${turn.error && block ? `\n${turn.status}: ${turn.error}` : ""}${failureReason && block ? `\nfailure reason: ${failureReason}` : ""}`,
   };
 }

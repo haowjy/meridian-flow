@@ -14,11 +14,11 @@
 ```
 
 The body is strict: `summary`, missing/null cutoff and extra fields return 400.
-The selected turn normalizes to the last settled turn at or before it in the
-effective transcript. A delivered user turn is a valid cutoff while its reply
-streams; queued user turns are beyond that boundary. A selection with no settled
-prefix is refused. Subagent sources are refused, and an inherited cutoff keeps
-its owning source thread.
+The selected turn is the cutoff. Every effective transcript turn through it must
+be settled. Hand off accepts a finished assistant reply or a delivered writer
+turn; a reply that starts after the selected writer turn may still be streaming.
+Queued writer turns follow an unsettled reply and are refused. Subagent sources
+are refused, and an inherited cutoff keeps its owning source thread.
 
 Returns the destination Thread (201 new, 200 existing). Reusing an id is a
 no-op when the row belongs to the same owner/project and is a primary handoff.

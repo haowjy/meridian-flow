@@ -26,7 +26,7 @@ export type DerivationIntent = {
   projectId: string;
   sourceThreadId: string;
   sourceTitle: string | null;
-  /** The chosen turn; the server normalizes it to the last settled turn at or before it. */
+  /** The chosen turn is the exact inherited cutoff. */
   originTurnId: string;
   workId: string | null;
   /** The destination's Agent: the source's for a fork, the writer's pick for a handoff. */
