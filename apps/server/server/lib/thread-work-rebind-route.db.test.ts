@@ -417,7 +417,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toBe(true);
 
       const recreatedPort = createDrizzleNoticePort(db);
-      await expect(recreatedPort.drainForModelContext(THREAD_ID)).resolves.toMatchObject([
+      const noticesForThread = await recreatedPort.peek(THREAD_ID);
+      expect(noticesForThread).toMatchObject([
         {
           kind: "work_switched",
           scope: { kind: "thread", threadId: THREAD_ID },
@@ -430,7 +431,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         },
       ]);
-      await expect(recreatedPort.drainForModelContext(THREAD_ID)).resolves.toEqual([]);
+      await recreatedPort.consume(noticesForThread.map(({ id }) => id));
+      await expect(recreatedPort.peek(THREAD_ID)).resolves.toEqual([]);
     });
 
     it("rolls back binding, context obligation, and Notice on Notice failure", async () => {
@@ -474,7 +476,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .selectPending(THREAD_ID)
           .then((rows) => rows.length > 0),
       ).resolves.toBe(false);
-      await expect(notices.drainForModelContext(THREAD_ID)).resolves.toEqual([]);
+      await expect(notices.peek(THREAD_ID)).resolves.toEqual([]);
     });
   });
 }

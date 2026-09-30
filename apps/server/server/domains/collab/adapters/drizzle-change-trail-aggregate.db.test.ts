@@ -61,9 +61,10 @@ describe("change trail aggregate projections (postgres)", () => {
   it("bounds reconciliation and revisits earlier pages to settle every trail", async () => {
     const turnIds = Array.from({ length: 101 }, () => crypto.randomUUID() as TurnId);
     await db.insert(schema.turns).values(
-      turnIds.map((id) => ({
+      turnIds.map((id, index) => ({
         id,
         threadId: THREAD_ID,
+        position: index + 2,
         parentTurnId: TURN_ID,
         role: "assistant" as const,
         origin: "assistant" as const,
@@ -96,9 +97,10 @@ describe("change trail aggregate projections (postgres)", () => {
   it("settles new trails without scanning already-settled history", async () => {
     const turnIds = Array.from({ length: 102 }, () => crypto.randomUUID() as TurnId);
     await db.insert(schema.turns).values(
-      turnIds.map((id) => ({
+      turnIds.map((id, index) => ({
         id,
         threadId: THREAD_ID,
+        position: index + 2,
         parentTurnId: TURN_ID,
         role: "assistant" as const,
         origin: "assistant" as const,

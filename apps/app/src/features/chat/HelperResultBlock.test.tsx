@@ -22,6 +22,13 @@ vi.mock("@/client/api/execution-reports-api", () => ({
     reason: null,
   })),
 }));
+// The source is listed live in the project, so its door reads no transcript.
+vi.mock("@/client/query/useProjectThreads", () => ({
+  useProjectThreads: () => ({ threads: [{ id: "source-1", title: null }] }),
+}));
+vi.mock("@/features/project/context/open-project-document", () => ({
+  useProjectDocumentNavigationProjectId: () => "project",
+}));
 
 import { getThreadExecutionReport } from "@/client/api/execution-reports-api";
 import { HelperResultBlock } from "./HelperResultBlock";
@@ -88,5 +95,42 @@ describe("HelperResultBlock saved report", () => {
       execution: "run-1",
     });
     await vi.waitFor(() => expect(host.textContent).toContain("A lantern swims through night."));
+  });
+
+  it("names the spawn's from source from the card's own props, as a reload's snapshot has them", async () => {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <HelperResultBlock
+            content={{
+              kind: "helper-result",
+              props: {
+                agentSlug: "critic",
+                agentName: "Critic",
+                parentTurnId: "parent-turn",
+                toolCallId: "spawn-2",
+                deliveryMode: "direct",
+                childThreadId: "child-2",
+                execution: null,
+                startedAt: "2026-01-01T00:00:00.000Z",
+                terminalAt: null,
+                fromThreadId: "source-1",
+                fromThreadRef: "c7",
+                fromThreadTitle: "Chapter 12 plan",
+              },
+            }}
+            threadId="parent-1"
+            respond={() => undefined}
+            retry={() => undefined}
+            isAwaitingResponse={false}
+            responseState={null}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    const line = host.querySelector("[data-spawn-source]");
+    expect(line?.getAttribute("data-spawn-source")).toBe("source-1");
+    expect(line?.textContent).toBe("From Chapter 12 plan");
+    expect(host.textContent).not.toContain("c7");
   });
 });

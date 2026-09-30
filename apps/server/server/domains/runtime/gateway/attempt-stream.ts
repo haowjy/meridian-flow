@@ -130,8 +130,9 @@ function estimatedEventBytes(event: StreamEvent): number {
     case "start":
       return 64 + (event.provider.length + event.model.length) * 2;
     case "usage":
-    case "error":
       return 128;
+    case "error":
+      return 128 + estimatedUnknownBytes(event.result);
     case "end":
       return (
         256 +
@@ -221,6 +222,7 @@ export async function* streamWithRetry(
     let emittedCommittedOutput = false;
     const attemptSignal = createModelAttemptSignal(request.signal, timeouts);
     const startedAt = now();
+    const requestStartedAt = new Date().toISOString();
     const iterator = adapter
       .stream({ ...request, signal: attemptSignal.signal }, model)
       [Symbol.asyncIterator]();
@@ -292,12 +294,15 @@ export async function* streamWithRetry(
       return { done: true, value: undefined };
     };
     const timeTerminalEvent = (arrival: ArrivingEvent): StreamEvent => {
-      if (arrival.event.type !== "end") return arrival.event;
+      if (arrival.event.type !== "end" && arrival.event.type !== "error") return arrival.event;
+      const result = arrival.event.result;
+      if (!result) return arrival.event;
       return {
         ...arrival.event,
         result: {
-          ...arrival.event.result,
+          ...result,
           timing: {
+            requestStartedAt,
             latencyMs: arrival.arrivedBeforeBackpressure
               ? elapsedMs(startedAt, arrival.arrivedAt)
               : null,
@@ -324,7 +329,7 @@ export async function* streamWithRetry(
           // (retryable) instead of whatever the SDK emitted.
           sawError = modelAttemptTimeoutEvent(attemptSignal.signal) ?? event;
           if (emittedCommittedOutput || !sawError.retryable || attempt >= maxAttempts) {
-            yield sawError;
+            yield timeTerminalEvent({ ...next.value, event: sawError });
             return;
           }
           break;

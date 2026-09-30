@@ -21,7 +21,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleUserRepository } = await import("./adapters/user-repository/drizzle.js");
     const { AccountLinkConflictError } = await import("./ports/user-repository.js");
     const { provisionAuthenticatedUser } = await import("../../lib/auth.js");
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
     const { eq } = await import("drizzle-orm");
 
     const db = createDb(DATABASE_URL, { max: 8 });
@@ -30,7 +30,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     beforeEach(async () => {
       await control`SELECT pg_advisory_unlock_all()`;
-      await truncateDrizzleTables(db, [schema.users]);
+      await deleteDrizzleRows(db, [schema.users]);
     });
     afterAll(async () => {
       await control.end();

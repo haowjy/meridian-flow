@@ -17,10 +17,9 @@ else
     const { eq } = await import("drizzle-orm");
     const { createCollabDomain } = await import("../collab/composition.js");
     const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
-    const { useRollbackTestDatabase } = await import(
-      "../../test-support/rollback-test-database.js"
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../test-support/drizzle-reset.js"
     );
-    const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
     const { createDrizzleProjectWorkAuthorityResolver } = await import("./index.js");
     const { createProjectContextDocumentStore } = await import(
       "../context/context-source-provisioning.js"
@@ -28,7 +27,7 @@ else
     const { runInDrizzleTransaction } = await import("../../shared/drizzle-transaction.js");
     const USER_ID = "00000000-0000-4000-8000-000000000751";
     const database = useRollbackTestDatabase(DATABASE_URL, {
-      prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
     });
     let db = database.current;
     beforeEach(async () => {

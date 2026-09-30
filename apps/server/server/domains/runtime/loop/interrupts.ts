@@ -22,6 +22,7 @@ import {
   type EventJournalReader,
   type EventJournalWriter,
   projectReadModelEvent,
+  replyFailedCopy,
   type ThreadRepositories,
 } from "../../threads/index.js";
 
@@ -340,7 +341,7 @@ function restartInterruptedTurnEvent(turn: Turn): OrchestratorEvent {
       ...turn,
       status: "error",
       finishReason: "error",
-      error: error.message,
+      error: replyFailedCopy,
       completedAt: toIsoString(new Date()),
     },
     error,

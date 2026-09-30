@@ -9,8 +9,6 @@ import type { CreateThreadInput } from "../ports/repositories.js";
 export interface NormalizedThreadCreate {
   kind: ThreadKind;
   title: string;
-  /** Raw system prompt at creation; bake output lives in `composedSystemPrompt` only. */
-  systemPrompt: string | null;
   parentThreadId: string | null;
   spawnStatus: SpawnStatus | null;
   spawnDepth: number;
@@ -46,7 +44,6 @@ export function normalizeThreadCreate(input: CreateThreadInput): NormalizedThrea
   return {
     kind: "primary",
     title: input.title ?? "",
-    systemPrompt: input.systemPrompt ?? null,
     parentThreadId: null,
     spawnStatus: null,
     spawnDepth: 0,

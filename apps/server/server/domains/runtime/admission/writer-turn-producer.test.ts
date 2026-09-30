@@ -49,10 +49,20 @@ function fakeRecords() {
 }
 
 function runnerStub() {
-  let view: { assistantTurnId: TurnId | null; startedAt: Date } | null = null;
+  let view: {
+    turnId: TurnId | null;
+    kind: "assistant" | "compaction" | null;
+    startedAt: Date;
+  } | null = null;
   return {
     getRunningTurn: () => view,
-    set(next: { assistantTurnId: TurnId | null; startedAt: Date } | null) {
+    set(
+      next: {
+        turnId: TurnId | null;
+        kind: "assistant" | "compaction" | null;
+        startedAt: Date;
+      } | null,
+    ) {
       view = next;
     },
   };
@@ -153,7 +163,7 @@ describe("createWriterTurnProducer", () => {
       origin: "assistant",
       status: "streaming",
     });
-    runner.set({ assistantTurnId: running.id, startedAt: new Date(0) });
+    runner.set({ kind: "assistant", turnId: running.id, startedAt: new Date(0) });
 
     const result = await producer.enqueue(input(thread.id, "steer"));
 
@@ -194,7 +204,7 @@ describe("createWriterTurnProducer", () => {
     });
 
     // Setup window: the runner owns the thread but has not published the id.
-    runner.set({ assistantTurnId: null, startedAt: new Date(0) });
+    runner.set({ kind: "assistant", turnId: null, startedAt: new Date(0) });
     const result = await producer.enqueue(input(thread.id, "answer"));
 
     expect(result).toMatchObject({ kind: "accepted", assistantTurnId: parked.id });
@@ -213,7 +223,7 @@ describe("createWriterTurnProducer", () => {
 
     // A fresh run owns the thread but has not persisted its container yet; the
     // only durable non-terminal row is an orphan from before this run started.
-    runner.set({ assistantTurnId: null, startedAt: new Date(Date.now() + 1_000) });
+    runner.set({ kind: "assistant", turnId: null, startedAt: new Date(Date.now() + 1_000) });
     const result = await producer.enqueue(input(thread.id, "fresh-run"));
 
     expect(result).toMatchObject({ kind: "accepted", assistantTurnId: null });

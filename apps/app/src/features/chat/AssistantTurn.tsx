@@ -57,15 +57,38 @@ export type AssistantTurnProps = {
   }>;
   isLatestAssistant?: boolean;
   /**
+   * No visible turn follows this one. An error is current only here: once the
+   * writer (or a woken model) moves on, it stays as a quiet historical marker.
+   */
+  endsTranscript?: boolean;
+  /**
    * The next visible turn continues this response (a subagent notification
    * woke the model, with no writer message between), so this part has no
    * settled action row of its own.
    */
   continuesResponse?: boolean;
-  onRetry?: () => void;
+  /**
+   * Present only on the working turn of a send the server never admitted (the
+   * failed first send during route handoff). Its presence is what makes the
+   * error send copy rather than generation copy; calling it resubmits.
+   */
+  failedSendRetry?: () => void;
+  /** Retry on a failed reply; absent where the reply can't be retried from here. */
+  replyRetry?: ReplyRetryView;
+  /** A Retry's new reply before the server has it: nothing to read or act on yet. */
+  standIn?: boolean;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   changeTrail?: ChangeTrailShell;
   navigateToChange?: NavigateToTrailChange;
+};
+
+export type ReplyRetryView = {
+  /** Present only while this failed reply is the latest turn. */
+  onRetry?: () => void;
+  /** The server refused this reply's last Retry, and it is still the latest turn. */
+  refused: boolean;
+  /** This is a Retry's stand-in whose request never answered. */
+  requestLost: boolean;
 };
 
 function AssistantTurnComponent({
@@ -75,8 +98,11 @@ function AssistantTurnComponent({
   threadUsage,
   deliveryEvents = [],
   isLatestAssistant = false,
+  endsTranscript = false,
   continuesResponse = false,
-  onRetry,
+  failedSendRetry,
+  replyRetry,
+  standIn = false,
   onRespondToInterrupt,
   changeTrail,
   navigateToChange,
@@ -110,7 +136,9 @@ function AssistantTurnComponent({
   const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
   const isLive = !isSettled;
   const resolvedThreadId = threadId ?? turn.threadId;
-  const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, { enabled: !isLive });
+  const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, {
+    enabled: !isLive && !standIn,
+  });
   const liveLineageDocuments = useMemo(
     () => dedupeTurnEditDocuments(liveLineage.documents ?? []),
     [liveLineage.documents],
@@ -168,13 +196,14 @@ function AssistantTurnComponent({
 
         {isErrored ? (
           <ErrorBlock
-            isLatest={isLatestAssistant}
-            kind={turn.blocks.length === 0 ? "send" : "generation"}
-            onRetry={isLatestAssistant ? onRetry : undefined}
+            isLatest={endsTranscript}
+            kind={replyRetry?.requestLost ? "retry" : failedSendRetry ? "send" : "generation"}
+            onRetry={endsTranscript ? (failedSendRetry ?? replyRetry?.onRetry) : undefined}
+            retryRefused={replyRetry?.refused ?? false}
           />
         ) : null}
       </div>
-      {isSettled && !continuesResponse ? (
+      {isSettled && !continuesResponse && !standIn ? (
         <AssistantTurnActions
           threadId={resolvedThreadId}
           turn={turn}

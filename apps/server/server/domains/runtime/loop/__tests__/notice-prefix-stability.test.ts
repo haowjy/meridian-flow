@@ -5,7 +5,7 @@
  * drives two consecutive writer runs through the real orchestrator/delivery
  * path (in-memory ports) and asserts the second request's history reproduces
  * the first request's messages exactly, including a request-only notice
- * (`NoticePort.drainForModelContext`) delivered during the first run.
+ * (a peeked `NoticePort` notice) delivered during the first run.
  *
  * Before the fix, `orchestrator.ts` spliced the drained notice onto the
  * request only (`attachNoticesToLatestUserMessage`) and never persisted it, so
@@ -27,6 +27,12 @@ function textResult(text: string): GenerateResult {
     usage: { inputTokens: 100, outputTokens: 100 },
     model: "gpt-4.1-mini",
     provider: "openai",
+    timing: {
+      requestStartedAt: new Date().toISOString(),
+      latencyMs: 1,
+      timeToFirstTokenMs: 1,
+      generationMs: 0,
+    },
   };
 }
 
@@ -57,10 +63,18 @@ async function setup() {
         {
           id: "gpt-4.1-mini",
           provider: "openai",
+          tokenizer: "o200k" as const,
+          timing: {
+            requestStartedAt: new Date().toISOString(),
+            latencyMs: 1,
+            timeToFirstTokenMs: 1,
+            generationMs: 0,
+          },
           displayName: "Test model",
           contextWindow: 128_000,
           maxOutputTokens: 16_384,
-          capabilities: new Set(["caching"]),
+          promptCache: { kind: "explicit", ttlMs: 60 * 60 * 1_000 },
+          capabilities: new Set(),
         },
       ],
     },
@@ -73,7 +87,7 @@ async function setup() {
 
 describe("request-only notice byte-stability across requests", () => {
   it("reproduces a drained undo notice identically on the next run's request", async () => {
-    const { thread, notices, orchestrator, requests } = await setup();
+    const { thread, notices, orchestrator, requests, deps } = await setup();
 
     await notices.record({
       kind: "awareness_degraded",
@@ -89,6 +103,15 @@ describe("request-only notice byte-stability across requests", () => {
     const second = await orchestrator.prepare({ threadId: thread.id, userText: "world" });
     await second.execute();
     expect(requests).toHaveLength(2);
+    expect(
+      (await deps.repos.modelResponses.listByThread(thread.id)).map((response) => ({
+        predictedCacheState: response.predictedCacheState,
+        predictedCacheReason: response.predictedCacheReason,
+      })),
+    ).toEqual([
+      { predictedCacheState: "cold", predictedCacheReason: "no_response" },
+      { predictedCacheState: "warm", predictedCacheReason: "reusable_prefix" },
+    ]);
 
     const firstMessages = requests[0]?.messages ?? [];
     const secondMessages = requests[1]?.messages ?? [];

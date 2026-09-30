@@ -16,9 +16,12 @@ function docWithText(value: string): Y.Doc {
 }
 
 describe("BranchPullService", () => {
-  it("does not hold the live coordinator lock while acquiring branch locks", async () => {
+  it("releases document and branch locks before the thread-peer thread lock", async () => {
     let liveLocked = false;
+    let branchLocked = false;
     const service = createBranchPullService({
+      outsideTransaction: (operation) => operation(),
+      rootTransaction: (operation) => operation(),
       liveCoordinator: {
         withDocument: async (_documentId, fn) => {
           liveLocked = true;
@@ -39,13 +42,24 @@ describe("BranchPullService", () => {
           expect(liveLocked).toBe(false);
           return emptyYjsUpdate();
         },
-        readBranch: async (_branchId: string, fn: Parameters<BranchCoordinator["readBranch"]>[1]) =>
-          fn(docWithText("thread"), undefined as never),
+        readBranch: async (
+          _branchId: string,
+          fn: Parameters<BranchCoordinator["readBranch"]>[1],
+        ) => {
+          branchLocked = true;
+          try {
+            return await fn(docWithText("thread"), undefined as never);
+          } finally {
+            branchLocked = false;
+          }
+        },
       } as unknown as BranchCoordinator,
       branches: {
         listActiveWorkDraftBranchIds: async () => ["work"],
         ensureWorkDraftBranch: async () => ({ branchId: "work" }),
         ensureThreadPeerBranch: async () => {
+          // The Drizzle implementation acquires the thread mutation lock here.
+          expect(branchLocked).toBe(false);
           expect(liveLocked).toBe(false);
           return { branchId: "thread" };
         },
@@ -59,6 +73,8 @@ describe("BranchPullService", () => {
     const liveDoc = docWithText("live update");
     const pulled: string[] = [];
     const service = createBranchPullService({
+      outsideTransaction: (operation) => operation(),
+      rootTransaction: (operation) => operation(),
       liveCoordinator: coordinatorFor(liveDoc),
       branchCoordinator: {
         pullFromDoc: async (branchId: string, upstream: Y.Doc) => {
@@ -83,6 +99,8 @@ describe("BranchPullService", () => {
     try {
       const loadedRoom = new Y.Doc({ gc: false });
       const service = createBranchPullService({
+        outsideTransaction: (operation) => operation(),
+        rootTransaction: (operation) => operation(),
         liveCoordinator: coordinatorFor(docWithText("debounced live update")),
         branchCoordinator: {
           pullFromDoc: async (_branchId: string, upstream: Y.Doc) => {
@@ -108,9 +126,147 @@ describe("BranchPullService", () => {
     }
   });
 
+  it("keeps the debounce armed after a failed flush and retries the live snapshot", async () => {
+    vi.useFakeTimers();
+    try {
+      const live = docWithText("pending writer edit");
+      const draft = new Y.Doc({ gc: false });
+      let fail = true;
+      const service = createBranchPullService({
+        outsideTransaction: (operation) => operation(),
+        rootTransaction: (operation) => operation(),
+        liveCoordinator: coordinatorFor(live),
+        branchCoordinator: {
+          pullFromDoc: async (_branchId: string, upstream: Y.Doc) => {
+            if (fail) {
+              fail = false;
+              throw new Error("pull failed");
+            }
+            Y.applyUpdate(draft, Y.encodeStateAsUpdate(upstream));
+            return emptyYjsUpdate();
+          },
+        } as unknown as BranchCoordinator,
+        branches: {
+          listActiveWorkDraftBranchIds: async () => ["work"],
+          ensureWorkDraftBranch: async () => ({ branchId: "work" }),
+          ensureThreadPeerBranch: async () => ({ branchId: "peer" }),
+        },
+        debounceMs: 10,
+        maxDebounceMs: 50,
+      });
+      service.scheduleLivePull(DOCUMENT_ID);
+      await expect(service.flushLivePull(DOCUMENT_ID)).rejects.toThrow("pull failed");
+      expect(vi.getTimerCount()).toBe(2);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(draft.getText("content").toString()).toBe("pending writer edit");
+      expect(vi.getTimerCount()).toBe(0);
+      draft.destroy();
+      live.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps newer-update timers armed when a queued pull fails after an older pull commits", async () => {
+    vi.useFakeTimers();
+    const live = docWithText("old");
+    const draft = new Y.Doc({ gc: false });
+    try {
+      const captured = deferred();
+      const commit = deferred();
+      let pulls = 0;
+      let firstTransaction = true;
+      const service = createBranchPullService({
+        outsideTransaction: (operation) => operation(),
+        rootTransaction: async (operation) => {
+          const result = await operation();
+          if (firstTransaction) {
+            firstTransaction = false;
+            captured.resolve();
+            await commit.promise;
+          }
+          return result;
+        },
+        liveCoordinator: coordinatorFor(live),
+        branchCoordinator: {
+          pullFromDoc: async (_branchId: string, upstream: Y.Doc) => {
+            if (++pulls === 2) throw new Error("queued pull failed");
+            Y.applyUpdate(draft, Y.encodeStateAsUpdate(upstream));
+            return emptyYjsUpdate();
+          },
+        } as unknown as BranchCoordinator,
+        branches: {
+          listActiveWorkDraftBranchIds: async () => ["work"],
+          ensureWorkDraftBranch: async () => ({ branchId: "work" }),
+          ensureThreadPeerBranch: async () => ({ branchId: "peer" }),
+        },
+        diagnostics: { backgroundFailed: () => {} },
+        debounceMs: 10,
+        maxDebounceMs: 50,
+      });
+      const older = service.flushLivePull(DOCUMENT_ID);
+      await captured.promise;
+      live.getText("content").insert(3, " and newer");
+      service.scheduleLivePull(DOCUMENT_ID);
+      const queued = expect(service.flushLivePull(DOCUMENT_ID)).rejects.toThrow(
+        "queued pull failed",
+      );
+      commit.resolve();
+      await older;
+      await queued;
+      expect(draft.getText("content").toString()).toBe("old");
+      expect(vi.getTimerCount()).toBe(2);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(draft.getText("content").toString()).toBe("old and newer");
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      live.destroy();
+      draft.destroy();
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports timer failures and rearms the maximum debounce for later updates", async () => {
+    vi.useFakeTimers();
+    try {
+      const failed = vi.fn();
+      let failures = 2;
+      const service = createBranchPullService({
+        outsideTransaction: (operation) => operation(),
+        rootTransaction: (operation) => operation(),
+        liveCoordinator: coordinatorFor(docWithText("writer edit")),
+        branchCoordinator: {
+          pullFromDoc: async () => {
+            if (failures-- > 0) throw new Error("timer pull failed");
+            return emptyYjsUpdate();
+          },
+        } as unknown as BranchCoordinator,
+        branches: {
+          listActiveWorkDraftBranchIds: async () => ["work"],
+          ensureWorkDraftBranch: async () => ({ branchId: "work" }),
+          ensureThreadPeerBranch: async () => ({ branchId: "peer" }),
+        },
+        diagnostics: { backgroundFailed: failed },
+        debounceMs: 10,
+        maxDebounceMs: 50,
+      });
+      service.scheduleLivePull(DOCUMENT_ID);
+      await vi.advanceTimersByTimeAsync(50);
+      expect(failed).toHaveBeenCalledTimes(2);
+      service.scheduleLivePull(DOCUMENT_ID);
+      expect(vi.getTimerCount()).toBe(2);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("pulls a thread peer from its work draft through the branch coordinator", async () => {
     const pulled: string[] = [];
     const service = createBranchPullService({
+      outsideTransaction: (operation) => operation(),
+      rootTransaction: (operation) => operation(),
       liveCoordinator: coordinatorFor(docWithText("seed")),
       branchCoordinator: {
         readBranch: async (_branchId: string, fn: Parameters<BranchCoordinator["readBranch"]>[1]) =>
@@ -135,6 +291,8 @@ describe("BranchPullService", () => {
   it("returns the captured work-draft generation as the thread-peer write fence", async () => {
     const pulled: string[] = [];
     const service = createBranchPullService({
+      outsideTransaction: (operation) => operation(),
+      rootTransaction: (operation) => operation(),
       liveCoordinator: coordinatorFor(docWithText("seed")),
       branchCoordinator: {
         readBranch: async (
@@ -189,4 +347,12 @@ function emptyYjsUpdate(): Uint8Array {
   } finally {
     doc.destroy();
   }
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 }

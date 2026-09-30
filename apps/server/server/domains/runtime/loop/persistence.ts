@@ -28,7 +28,7 @@
  * in the threads domain because it must know about all repository types.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { OrchestratorEvent } from "@meridian/contracts/threads";
+import type { OrchestratorEvent, Turn } from "@meridian/contracts/threads";
 import {
   type EventJournalWriter,
   projectReadModelEvent,
@@ -38,7 +38,13 @@ import {
 export type PersistenceDeps = {
   repos: Pick<
     ThreadRepositories,
-    "blocks" | "modelResponses" | "runTurnStartTransition" | "threads" | "transaction" | "turns"
+    | "blocks"
+    | "imageInclusions"
+    | "modelResponses"
+    | "runTurnStartTransition"
+    | "threads"
+    | "transaction"
+    | "turns"
   >;
   eventWriter: EventJournalWriter;
   /** Real nested transaction boundary when caller already owns a transaction. */
@@ -54,7 +60,7 @@ export async function persistAndAppendEvents<T>(
   threadId: ThreadId,
   operation: () => Promise<{ result: T; events: OrchestratorEvent[] }>,
   options?: { afterEvents?: (result: T) => Promise<void> },
-): Promise<{ result: T; events: OrchestratorEvent[] }> {
+): Promise<{ result: T; events: OrchestratorEvent[]; createdTurns: Turn[] }> {
   return deps.repos.transaction(() => projectAndAppendEvents(deps, threadId, operation, options));
 }
 
@@ -64,7 +70,7 @@ export async function persistAndAppendTurnStartEvents<T>(
   expectedActiveLeafTurnId: import("@meridian/contracts/runtime").TurnId | null,
   operation: () => Promise<{ result: T; events: OrchestratorEvent[] }>,
   options?: { afterEvents?: (result: T) => Promise<void> },
-): Promise<{ result: T; events: OrchestratorEvent[] }> {
+): Promise<{ result: T; events: OrchestratorEvent[]; createdTurns: Turn[] }> {
   return deps.repos.runTurnStartTransition(threadId, expectedActiveLeafTurnId, () =>
     projectAndAppendEvents(deps, threadId, operation, options),
   );
@@ -75,14 +81,19 @@ async function projectAndAppendEvents<T>(
   threadId: ThreadId,
   operation: () => Promise<{ result: T; events: OrchestratorEvent[] }>,
   options?: { afterEvents?: (result: T) => Promise<void> },
-): Promise<{ result: T; events: OrchestratorEvent[] }> {
+): Promise<{ result: T; events: OrchestratorEvent[]; createdTurns: Turn[] }> {
   const persisted = await operation();
+  const createdTurns: Turn[] = [];
   for (const event of persisted.events) {
-    await projectReadModelEvent(deps.repos, event);
+    const created = await projectReadModelEvent(deps.repos, event);
+    if (event.type === "turn.created" && created) {
+      event.turn.position = created.position;
+      createdTurns.push(created);
+    }
     await deps.eventWriter.appendEvent(threadId, event);
   }
   await options?.afterEvents?.(persisted.result);
-  return persisted;
+  return { ...persisted, createdTurns };
 }
 
 // Non-transactional path: journal-only append for ephemeral transport

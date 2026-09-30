@@ -26,8 +26,6 @@ const ASLEEP: ThreadStatus = { kind: "asleep" };
 function node(overrides: Partial<ThreadActivityNode> & { threadId: string }): ThreadActivityNode {
   return {
     parentThreadId: "parent",
-    rootThreadId: "parent",
-    depth: 1,
     ref: null,
     title: null,
     agentName: null,

@@ -106,11 +106,9 @@ export function createStreamAccumulator(model: string, provider: string): Stream
  * The installed SDK 0.100.1 StopReason union is:
  *   'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use' | 'pause_turn' | 'refusal'
  * Current Anthropic docs additionally list `model_context_window_exceeded`,
- * but that value is NOT in the SDK union — treat it as docs-only.
+ * but that value is not in the SDK union; accept the wire string at this boundary.
  */
-export function mapStopReason(
-  reason: Anthropic.Messages.StopReason | null | undefined,
-): FinishReason {
+export function mapStopReason(reason: string | null | undefined): FinishReason {
   // Anthropic stop reasons mostly line up with Meridian FinishReason. `refusal`
   // and `pause_turn` have no canonical equivalent today, so they are
   // represented as an error finish and end_turn respectively.
@@ -124,6 +122,7 @@ export function mapStopReason(
     case "stop_sequence":
       return "stop_sequence";
     case "refusal":
+    case "model_context_window_exceeded":
       return "error";
     default:
       return "end_turn";
@@ -182,6 +181,7 @@ export function* eventsFromAnthropicStreamEvent(
       // the terminal message_delta arrives with final token totals.
       if (event.message.usage) {
         acc.usage = mapUsage(event.message.usage);
+        yield { type: "usage", usage: acc.usage };
       }
       break;
     }
@@ -299,6 +299,15 @@ export function* eventsFromAnthropicStreamEvent(
         acc.usage = mapUsage(event.usage, acc.usage);
 
         yield { type: "usage", usage: acc.usage };
+      }
+      if ((event.delta.stop_reason as string) === "model_context_window_exceeded") {
+        yield {
+          type: "error",
+          code: "context_overflow",
+          message: "Model context window exceeded",
+          retryable: false,
+          result: buildGenerateResult(acc),
+        };
       }
       break;
     }

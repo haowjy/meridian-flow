@@ -20,10 +20,12 @@ import type {
 } from "../../threads/index.js";
 import { createBoundConversation, TurnStartConflictError } from "../../threads/index.js";
 import type { DeliveryProducer } from "../loop/runtime-delivery.js";
+import { threadReferenceBlock } from "../thread-reference.js";
 import { appendSubagentActivity } from "./activity-event.js";
 import { authorizeThreadMessage } from "./authorize-thread-message.js";
 import type { ChildDriveInput, ChildRunDriver, PreparedChild } from "./child-run-driver.js";
 import { resolveChildInvocation } from "./resolve-child-invocation.js";
+import { resolveReadableThread } from "./resolve-readable-thread.js";
 import {
   invocationAgentName,
   invocationCardProps,
@@ -41,6 +43,7 @@ export interface SpawnChildInput extends ChildDriveInput {
   /** Named roster target; omitted or empty selects the agent-less generic subagent. */
   agentSlug?: string;
   description?: string;
+  from?: string;
   /** Per-invocation additive prompt layer; omitted appends nothing. */
   appendSystemPrompt?: string;
   /** Per-invocation execution patch, applied over the resolved baseline. */
@@ -86,7 +89,7 @@ export interface ChildRunCoordinatorDeps {
     parentThreadId?: string | null;
   }): Promise<string>;
   eventWriter: EventJournalWriter;
-  /** Recomputes a run tree's activity; feeds the root-journal `subagent.activity` fact. */
+  /** Recomputes a parent's direct-child activity for its `subagent.activity` fact. */
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
   /** Producer-facing inbox: background thread_message enqueues here. */
   delivery: DeliveryProducer;
@@ -116,6 +119,18 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     if (depthError) return { status: "error", error: depthError };
     const turnError = assertTurnBudget(input.budget);
     if (turnError) return { status: "error", error: turnError };
+
+    let source: Thread | undefined;
+    if (input.from !== undefined) {
+      const resolved = await resolveReadableThread({
+        caller: input.parentThread,
+        ref: input.from,
+        threads: deps.repos.threads,
+      });
+      if (!resolved.ok) return { status: "error", error: resolved.error };
+      source = resolved.target;
+    }
+    const seedBlocks = source ? [threadReferenceBlock(source)] : undefined;
 
     const parentAgent = await deps.agentRevisions.readThreadBinding(input.parentThread.id);
     if (!parentAgent) {
@@ -175,6 +190,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         childThreadId: created.id,
         agentSlug: resolvedSlug,
         prompt: input.prompt,
+        ...(source ? { fromThreadId: source.id } : {}),
       });
       if (background) {
         await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
@@ -198,10 +214,23 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       await appendSubagentActivity({
         eventWriter: deps.eventWriter,
         readActivity: deps.readActivity,
-        rootThreadId: input.parentThread.rootThreadId as ThreadId,
+        parentThreadId: input.parentThread.id as ThreadId,
         childThreadId: child.id,
       });
-      return { ...prepared, description: input.description };
+      return {
+        ...prepared,
+        description: input.description,
+        seedBlocks,
+        ...(source
+          ? {
+              from: {
+                threadId: source.id as ThreadId,
+                ref: source.ref as string,
+                title: source.title,
+              },
+            }
+          : {}),
+      };
     } catch (error) {
       await deps.repos.threads.updateSpawnLifecycle(child.id as ThreadId, {
         spawnStatus: "failed",
@@ -292,6 +321,13 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         execution: null,
         startedAt: new Date().toISOString(),
         terminalAt: null,
+        ...(prepared.from
+          ? {
+              fromThreadId: prepared.from.threadId,
+              fromThreadRef: prepared.from.ref,
+              fromThreadTitle: prepared.from.title,
+            }
+          : {}),
       });
     }
     return invocationCardProps({

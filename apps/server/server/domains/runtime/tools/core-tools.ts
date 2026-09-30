@@ -21,6 +21,9 @@ import {
   WORK_STATUS_MAX_LENGTH,
 } from "@meridian/contracts/works";
 import { z } from "zod";
+import { searchDocumentText, writeDocumentText } from "./document-text.js";
+import { writeHistoryPreview } from "./history-previews.js";
+import { modelToolSchema } from "./model-tool-schema.js";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
 
 const WorkSelectorSchema = z.object({ work: z.string().min(1).describe("Work slug.") });
@@ -103,11 +106,11 @@ type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server"
 export type CoreToolHandlers = { [Name in CoreToolName]: ServerToolHandler };
 
 function writeToolInputSchema(): Record<string, unknown> {
-  return packageSchemaToModelSchema(z.toJSONSchema(WriteCommandSchema));
+  return packageSchemaToModelSchema(modelToolSchema(WriteCommandSchema));
 }
 
 function workToolInputSchema(): Record<string, unknown> {
-  return packageSchemaToModelSchema(z.toJSONSchema(WorkCommandSchema));
+  return packageSchemaToModelSchema(modelToolSchema(WorkCommandSchema));
 }
 
 function formatWriteExecutionError(error: ToolExecutionError) {
@@ -177,10 +180,12 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "write",
         description:
-          "Read and edit documents. Block hashes in results are targeting tokens for in, after and before; never show them to the writer.",
+          "Read and edit documents. Block hashes in results are targeting tokens for in, after and before; never show them to the user.",
         inputSchema: writeToolInputSchema(),
       },
       execution: { type: "server", handler: handlers.write },
+      documentText: writeDocumentText,
+      historyPreview: writeHistoryPreview,
       sequential: true,
       timeoutMs: 30_000,
       formatExecutionError: formatWriteExecutionError,
@@ -241,6 +246,8 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         },
       },
       execution: { type: "server", handler: handlers.search },
+      documentText: searchDocumentText,
+      historyPreview: (input) => String(input.pattern ?? ""),
       timeoutMs: 30_000,
     },
     {
@@ -248,7 +255,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       definition: {
         type: "function",
         name: "ask_user",
-        description: "Ask the writer a question and wait for the answer.",
+        description: "Ask the user a question and wait for the answer.",
         inputSchema: ASK_USER_TOOL_INPUT_SCHEMA,
       },
       execution: { type: "server", handler: handlers.ask_user },

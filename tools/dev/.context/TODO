@@ -1,0 +1,19 @@
+# Dev tooling follow-up
+
+- Make `cli/commands/thread/send.ts` follow a reply across assistant/compaction
+  splits instead of stopping on the first `turn.finished`. C4d runtime probe
+  reproduced exit 0 with `status: complete, finalText: null` for empty A even
+  though successor B later failed with `context_window_exceeded`. Follow the
+  execution's successor selector through completion; apply the same semantics
+  to `thread/tail.ts --until-idle`. Reproduce by scripting mock overflow,
+  summary, overflow and comparing `thread send` with the final snapshot/journal.
+  Evidence: agents-milestone-4/c4d-verification.md and evidence/c4d-runtime.json
+  in the docs work directory. Until fixed, assert split outcomes from snapshots
+  and journal events, not the send command's early terminal envelope.
+
+- Align `cli/commands/thread/transcript.ts` generic custom-block output with
+  `docs/debugging.md`'s untruncated JSON contract. `thread view --json` still
+  clips an unknown custom block's `summary` unless `--full` is also passed.
+  C9's dedicated `thread-reference` projection exposes all props, but handoff
+  cards still need `--full` for complete frozen text. Reproduce with a handoff
+  seed and compare `thread view --json` against `thread view --full --json`.

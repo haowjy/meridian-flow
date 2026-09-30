@@ -80,15 +80,23 @@ describe("projectPendingInbox", () => {
         },
         body: { kind: "text", text: "Read thread_report(...)" },
       }),
+      inboxMessage({
+        id: "compact",
+        seq: 4,
+        intent: "control",
+        body: { kind: "compact", instructions: "Keep the villain's promises." },
+      }),
     ]);
 
-    expect(pending.items.map((item) => item.id)).toEqual(["a", "b", "c"]);
+    expect(pending.items.map((item) => item.id)).toEqual(["a", "b", "c", "compact"]);
     expect(pending.items.map((item) => item.summary)).toEqual([
       "hello",
       "note one\n\nnote two",
       "Read thread_report(...)",
+      "/compact Keep the villain's promises.",
     ]);
     expect(pending.items.map((item) => item.deliveryState)).toEqual([
+      "awaiting_run",
       "awaiting_run",
       "awaiting_run",
       "awaiting_run",

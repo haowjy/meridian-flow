@@ -109,7 +109,9 @@ if (!enabled || !databaseUrl) {
         expect(functions.map((row) => row.name)).toEqual([
           "complete_turn_trail_work",
           "consume_credit_lots_fifo",
-          "enforce_thread_prompt_freeze",
+          "enforce_prompt_bake_insert_only",
+          "enforce_prompt_bake_write_once",
+          "enforce_turn_position_write_once",
           "enlist_turn_trail_work",
           "recompute_thread_chat_activity",
           "recompute_thread_chat_activity_from_block_insert",
@@ -176,8 +178,10 @@ if (!enabled || !databaseUrl) {
             VALUES (${project.id}, ${user.id}, 'Another No Work', true)`,
             ),
           ).rejects.toMatchObject({ constraint_name: "works_project_no_work_active" });
-          const [thread] = await tx`INSERT INTO threads (project_id, created_by_user_id)
-            VALUES (${project.id}, ${user.id}) RETURNING id`;
+          const threadId = crypto.randomUUID();
+          const [thread] =
+            await tx`INSERT INTO threads (id, root_thread_id, project_id, created_by_user_id)
+            VALUES (${threadId}, ${threadId}, ${project.id}, ${user.id}) RETURNING id`;
           await tx`INSERT INTO thread_works (thread_id, work_id, project_id, is_primary)
             VALUES (${thread.id}, ${work.id}, ${project.id}, true)`;
           expect(

@@ -157,7 +157,8 @@ function ProposalVerb({
     return (
       <span className="inline-flex items-center gap-1">
         <Trans>Merged</Trans>
-        <Tooltip>
+        {/* Hoverable: the explanation is said nowhere else. */}
+        <Tooltip hoverable>
           <TooltipTrigger asChild>
             <button
               type="button"

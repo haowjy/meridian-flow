@@ -1,5 +1,6 @@
 /** The admitted assistant turn and invocation correlation must describe one real child execution. */
 import type { AdmitExecutionReportInput } from "../ports/repositories.js";
+import { sameLineage } from "./lineage.js";
 
 type ThreadIdentity = {
   id: string;
@@ -7,7 +8,7 @@ type ThreadIdentity = {
   kind: string;
   userId: string;
   projectId: string;
-  rootThreadId: string | null;
+  rootThreadId: string;
   parentThreadId: string | null;
 };
 type TurnIdentity = { id: string; threadId: string; role: string };
@@ -28,9 +29,9 @@ export function assertExecutionReportAdmission(
     child?.kind !== "subagent" ||
     child.ref !== input.handle ||
     assistant?.threadId !== child.id ||
-    assistant.role !== "assistant"
+    (assistant.role !== "assistant" && assistant.role !== "compaction")
   )
-    throw new Error("Execution report requires the admitted child assistant turn and handle");
+    throw new Error("Execution report requires the admitted child execution turn and handle");
 
   if (input.origin === "thread_run") {
     if (
@@ -55,8 +56,7 @@ export function assertExecutionReportAdmission(
     !callerTurn ||
     callerTurn.threadId !== caller.id ||
     caller.userId !== child.userId ||
-    caller.projectId !== child.projectId ||
-    (caller.rootThreadId ?? caller.id) !== child.rootThreadId ||
+    !sameLineage(caller, child) ||
     (input.cardBlockId !== null && (card?.turnId !== callerTurn.id || card.blockType !== "custom"))
   )
     throw new Error("Execution report invocation correlation is invalid");

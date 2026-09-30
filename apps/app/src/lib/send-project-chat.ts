@@ -78,6 +78,7 @@ export function makeOptimisticThread(input: {
     status: "idle",
     title: input.title,
     ref: null,
+    initialPromptBakeId: null,
     agentDefinitionRevisionId: input.agent?.selection.definitionRevisionId ?? null,
     agentName: input.agent?.name ?? null,
     activeLeafTurnId: null,
@@ -89,6 +90,7 @@ export function makeOptimisticThread(input: {
     turnCount: 0,
     createdAt: input.timestamp,
     updatedAt: input.timestamp,
+    lastActivityAt: input.timestamp,
     deletedAt: null,
   };
 }

@@ -31,7 +31,7 @@ async function main(): Promise<void> {
     // derived — continuing would run the app against a stale/shared DB (the exact
     // cross-worktree blast radius tools/dev is built to prevent).
     throw new Error(
-      "bootstrap: DATABASE_URL is not set, so DB migrate/apply-functions cannot run. " +
+      "bootstrap: DATABASE_URL is not set, so database preparation cannot run. " +
         "In a worktree this usually means direnv has not loaded .envrc — run `direnv allow`. " +
         "For a fresh checkout, copy .env.example to .env and run `pnpm dev:infra`.",
     );
@@ -43,11 +43,6 @@ async function main(): Promise<void> {
 
   console.log("bootstrap: running db:migrate…");
   execSync("pnpm db:migrate", { cwd: repoRoot, stdio: "inherit" });
-  console.log("bootstrap: running db:apply-functions…");
-  execSync("pnpm --filter @meridian/database db:apply-functions", {
-    cwd: repoRoot,
-    stdio: "inherit",
-  });
 
   console.log(`\nDone.\n${NEXT_STEP}`);
 }

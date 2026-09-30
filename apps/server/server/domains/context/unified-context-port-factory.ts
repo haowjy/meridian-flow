@@ -14,11 +14,11 @@ import {
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
-import type { DocumentCreationAggregate, MarkdownDocumentStore } from "../collab/index.js";
+import type { DocumentCreationAggregate } from "../collab/index.js";
 import { createInMemoryCollabDomain } from "../collab/index.js";
 import type { EventSink } from "../observability/index.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
-import { ContextFS } from "./adapters/context-fs/context-fs.js";
+import { ContextFS, type ContextFSDeps } from "./adapters/context-fs/context-fs.js";
 import { lockContextNamespaces } from "./adapters/context-fs/document-locations.js";
 import type { ContextDocumentMembershipObserver } from "./adapters/context-fs/drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
@@ -117,7 +117,7 @@ export interface ManifestMembershipPort {
 function contextFsAdapter(deps: {
   store: ContextDocumentStore;
   mutationStore: import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
-  documentSync: MarkdownDocumentStore;
+  documentSync: ContextFSDeps["documentSync"];
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
   scheme: ContextScheme;
@@ -130,7 +130,7 @@ function buildProjectContextFsAdapters(
   projectId: string,
   userId: string,
   storeResolvers: ContextStoreResolvers,
-  documentSync: MarkdownDocumentStore,
+  documentSync: ContextFSDeps["documentSync"],
   manifestView?: ManifestView,
   documentCreation?: DocumentCreationAggregate,
   commandTransaction?: ContextCommandTransaction,
@@ -159,7 +159,7 @@ function buildWorkScopedContextFsAdapters(
   workId: string,
   projectId: string,
   storeResolvers: ContextStoreResolvers,
-  documentSync: MarkdownDocumentStore,
+  documentSync: ContextFSDeps["documentSync"],
   documentCreation?: DocumentCreationAggregate,
   commandTransaction?: ContextCommandTransaction,
 ): Map<ContextScheme, ContextSchemeAdapter> {
@@ -190,7 +190,7 @@ function buildWorkScopedContextFsAdapters(
 function buildNoWorkContextFsAdapters(
   projectId: string,
   storeResolvers: ContextStoreResolvers,
-  documentSync: MarkdownDocumentStore,
+  documentSync: ContextFSDeps["documentSync"],
   documentCreation?: DocumentCreationAggregate,
   commandTransaction?: ContextCommandTransaction,
 ): Map<ContextScheme, ContextSchemeAdapter> {
@@ -238,7 +238,7 @@ type ContextPortBuildScope =
 function buildUnifiedContextPort(input: {
   scope: ContextPortBuildScope;
   storeResolvers: ContextStoreResolvers;
-  documentSync: MarkdownDocumentStore;
+  documentSync: ContextFSDeps["documentSync"];
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
   operationReceipts?: ContextOperationReceipts;
@@ -419,7 +419,7 @@ function createProductionStoreResolvers(
 
 export function createInMemoryUnifiedContextPortFactory(
   options: {
-    documentSync?: MarkdownDocumentStore;
+    documentSync?: ContextFSDeps["documentSync"];
     storeRegistry?: InMemoryUnifiedContextStoreRegistry;
   } = {},
 ): UnifiedContextPortFactory {
@@ -455,7 +455,7 @@ export function createInMemoryUnifiedContextPortFactory(
 
 export function createProductionUnifiedContextPortFactory(options: {
   db: Database;
-  documentSync: MarkdownDocumentStore & DocumentCreationAggregate;
+  documentSync: ContextFSDeps["documentSync"] & DocumentCreationAggregate;
   manifestMembership: ManifestMembershipPort;
   catalogMutations?: ContextCatalogMutationPort;
   eventSink?: EventSink;

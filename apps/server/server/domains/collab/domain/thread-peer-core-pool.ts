@@ -31,6 +31,7 @@ import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { BranchPullService } from "./branch-pulls.js";
 import type { AutoBranchPushPort, BranchJournalReadStore } from "./branch-push-contracts.js";
 import { resolveBranchReversalScope } from "./branch-reversal-history.js";
+import { documentRevision } from "./document-revision.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import type {
   ResponseCommitParticipant,
@@ -92,6 +93,7 @@ export function createBranchThreadPeerAgentEditCore(input: {
         input.diagnostics,
       );
       return createAgentEditCore({
+        documentRevision,
         journal: createBranchAgentEditJournal({
           threadId,
           liveJournal: input.journal,

@@ -1,18 +1,18 @@
-/**
- * Purpose: Safe destructive reset helpers for Drizzle/Postgres conformance suites.
- * Key decision: Broad suites use TRUNCATE CASCADE; focused suites may delete an
- * FK-closed table set derived from the live Postgres catalog. Schema-derived
- * names keep both strategies aligned with table renames.
- */
-import type { Database } from "@meridian/database";
-import { sql } from "drizzle-orm";
+/** Rollback isolation by default; catalog-derived DELETE for committed, multi-connection suites. */
+import { createDb, type Database } from "@meridian/database";
+import { promptBakes, threads } from "@meridian/database/schema";
+import { sql, TransactionRollbackError } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
+import { afterAll, aroundEach, beforeAll } from "vitest";
+import { processDetachedWork } from "../domains/runtime/detached-work.js";
 
 type CatalogTableRow = {
   table_oid: string;
   schema_name: string;
   table_name: string;
   parent_oid: string | null;
+  condeferrable: boolean | null;
+  confdeltype: string | null;
 };
 
 type TableNode = {
@@ -51,7 +51,10 @@ function childFirstTableOrder(rows: CatalogTableRow[]): TableNode[] {
       qualifiedName: quoteTable(row.schema_name, row.table_name),
       parentOids: new Set<string>(),
     };
-    if (row.parent_oid) node.parentOids.add(row.parent_oid);
+    // Only deferrable NO ACTION edges can be postponed by SET CONSTRAINTS.
+    if (row.parent_oid && !(row.condeferrable && row.confdeltype === "a")) {
+      node.parentOids.add(row.parent_oid);
+    }
     nodes.set(row.table_oid, node);
   }
 
@@ -118,19 +121,16 @@ async function assertThrowawayDatabase(db: Database): Promise<void> {
   }
 }
 
-export async function truncateDrizzleTables(db: Database, tables: unknown[]): Promise<void> {
-  await assertThrowawayDatabase(db);
-  const tableList = tables.map(quoteDrizzleTable).join(", ");
-  // Drizzle has no TRUNCATE builder, so the raw fragment is limited to schema-derived identifiers.
-  await db.execute(sql.raw(`TRUNCATE ${tableList} CASCADE`));
-}
-
 /**
  * Fast reset for focused suites. Supplied tables are scope anchors, not an
  * exhaustive ordering: the live Postgres FK graph recursively adds every
  * dependent table and determines the child-first delete order.
  */
 export async function deleteDrizzleRows(db: Database, tables: unknown[]): Promise<void> {
+  if (!(await processDetachedWork.drain(25_000)))
+    throw new Error(
+      `Cannot reset fixtures before detached runtime work settles: ${processDetachedWork.pendingTasks.join(", ")}`,
+    );
   await assertThrowawayDatabase(db);
   if (tables.length === 0) throw new Error("deleteDrizzleRows requires at least one table");
   const requestedTables = tables.map(drizzleTableIdentity);
@@ -166,7 +166,9 @@ export async function deleteDrizzleRows(db: Database, tables: unknown[]): Promis
         relation.oid::text AS table_oid,
         namespace.nspname AS schema_name,
         relation.relname AS table_name,
-        foreign_key.confrelid::text AS parent_oid
+        foreign_key.confrelid::text AS parent_oid,
+        foreign_key.condeferrable,
+        foreign_key.confdeltype
       FROM tables_to_clear
       INNER JOIN pg_catalog.pg_class AS relation
         ON relation.oid = tables_to_clear.oid
@@ -194,8 +196,67 @@ export async function deleteDrizzleRows(db: Database, tables: unknown[]): Promis
     await transaction.execute(
       sql.raw(`LOCK TABLE ${lockOrder.join(", ")} IN ACCESS EXCLUSIVE MODE`),
     );
+    await transaction.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
     for (const table of tableOrder) {
+      // Insert-only bakes permit deletion only through their owning thread's cascade.
+      // This exemption requires the owner in the reset set; standalone bake deletes still fail.
+      // A preceding suite may leave bakes even when this suite never creates one.
+      if (
+        table.qualifiedName === quoteDrizzleTable(promptBakes) &&
+        derivedNames.has(quoteDrizzleTable(threads))
+      )
+        continue;
       await transaction.execute(sql.raw(`DELETE FROM ${table.qualifiedName}`));
     }
   });
+}
+
+export interface RollbackTestDatabase {
+  readonly current: Database;
+}
+
+/**
+ * Register transaction isolation for the current suite.
+ *
+ * Read `current` inside `beforeEach` or the test body. It points at the active
+ * transaction while the case runs and at the root connection outside a case.
+ */
+export function useRollbackTestDatabase(
+  databaseUrl: string,
+  options?: {
+    max?: number;
+    /** Durable worker baseline; must be safe for later suites sharing the worker DB. */
+    prepareSuite?: (db: Database) => Promise<void>;
+  },
+): RollbackTestDatabase {
+  const root = createDb(databaseUrl, options);
+  let current = root;
+
+  if (options?.prepareSuite) {
+    beforeAll(() => options.prepareSuite?.(root));
+  }
+
+  aroundEach(async (runTest) => {
+    try {
+      await root.transaction(async (transaction) => {
+        current = transaction as unknown as Database;
+        await runTest();
+        transaction.rollback();
+      });
+    } catch (error) {
+      if (!(error instanceof TransactionRollbackError)) throw error;
+    } finally {
+      current = root;
+    }
+  });
+
+  afterAll(async () => {
+    await root.close();
+  });
+
+  return {
+    get current() {
+      return current;
+    },
+  };
 }

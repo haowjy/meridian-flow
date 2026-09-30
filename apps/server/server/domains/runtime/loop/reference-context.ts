@@ -1,6 +1,9 @@
 /** Loads explicit references for a turn the run will send; history replays saved results. */
+
+import type { ReadReferenceOccurrence } from "@meridian/contracts/protocol";
 import { type ReferenceOccurrence, referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue } from "@meridian/contracts/threads";
+import { historyReadStub, staleReadStub } from "../tools/document-text.js";
 
 export interface ReferenceReader {
   read(
@@ -9,7 +12,7 @@ export interface ReferenceReader {
       threadId: string;
       turnId: string;
     },
-  ): Promise<JsonValue>;
+  ): Promise<{ result: JsonValue; revision: string | null }>;
 }
 
 export async function loadReferenceReads(input: {
@@ -33,7 +36,7 @@ export async function loadReferenceReads(input: {
           : [];
       }),
   );
-  const reads = new Map<string, JsonValue>();
+  const reads = new Map<string, { result: JsonValue; revision: string | null }>();
   const updated: Block[] = [];
   for (const block of input.blocks) {
     if (block.turnId !== input.userTurnId) continue;
@@ -50,7 +53,22 @@ export async function loadReferenceReads(input: {
       reads.set(key, result);
     }
     input.signal?.throwIfAborted();
-    updated.push({ ...block, content: { ...reference, read: { result } } });
+    updated.push({ ...block, content: { ...reference, read: result } });
   }
   return updated;
+}
+
+/** Only the materialized document read changes; writer wording and the mention remain intact. */
+export function elideReferenceRead(
+  reference: ReadReferenceOccurrence,
+  treatment: "stale" | "history",
+): JsonValue {
+  return {
+    ...reference,
+    read: {
+      ...reference.read,
+      result:
+        treatment === "history" ? historyReadStub(reference.uri) : staleReadStub(reference.uri),
+    },
+  };
 }

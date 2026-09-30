@@ -2,7 +2,7 @@
 
 Drizzle schema, migrations, functions, and Postgres connection helpers for the Meridian Postgres database (plain `postgres:16` Docker container in dev).
 
-- PL/pgSQL functions live in `src/functions/` and are applied with `pnpm db:apply-functions`.
+- PL/pgSQL functions live in `src/functions/`. `pnpm db:migrate` applies them after migrations; `pnpm db:apply-functions` is the guarded standalone sync command.
 - Keep provider-specific auth assumptions at the adapter/composition boundary; schema should remain ordinary Postgres where possible.
 - Thread-domain usage/cost rollups are persisted columns maintained by
   application repositories/projectors, not database triggers or functions.
@@ -22,10 +22,12 @@ Drizzle schema, migrations, functions, and Postgres connection helpers for the M
   migration.
 - Migrations merged to `main` or `staging` are frozen: never edit, remove,
   renumber, or retimestamp them. After merging the base branch, regenerate this
-  branch's unmerged migrations so they append after the base tip. CI enforces
-  this with `pnpm db:migration-history`; journal indexes must be contiguous,
-  timestamps strictly increasing, and tags and timestamps unique. `db:migrate`
-  refuses divergent applied history rather than skipping it.
+  branch's unmerged generated migrations from the merged schema so they append
+  after the base tip; never renumber or rename them by hand (see
+  `.context/CONTEXT.md`). CI enforces this with `pnpm db:migration-history`;
+  journal indexes must be contiguous, timestamps strictly increasing, and tags
+  and timestamps unique. `db:migrate` refuses divergent applied history rather
+  than skipping it.
 - Existing dev databases from the old chain must be reset with `pnpm db:reset`
   (destroys local data); the new baseline is not an incremental upgrade. Reset
   only the current checkout's own dev database, never another developer's,

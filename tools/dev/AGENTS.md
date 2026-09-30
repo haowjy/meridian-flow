@@ -10,7 +10,8 @@ Local-dev-only utilities. Never imported by the application runtime.
 - Per-worktree Postgres DB administration (ensure / drop / extensions / reserved guards)
 - Per-run local DB test provisioning, ownership, cleanup, and stale-run GC
 - Schema application via the programmatic Drizzle migrator with file-aware
-  PostgreSQL failures (`migrate-db.ts`, called by `prepare-db.ts`)
+  PostgreSQL failures and function synchronization (`migrate-db.ts`, called by
+  `prepare-db.ts`)
 - `pnpm dev` orchestration (tmux + portless + dev modes + readiness + tailscale)
 - Dev session planning (canonical env, redacted commands, internal API origin)
 - Tailscale serve/funnel lifecycle (stale route pruning, verified external routes)
@@ -24,13 +25,13 @@ Local-dev-only utilities. Never imported by the application runtime.
 ## Rules
 
 - **`DEV_DATABASES` (in `lib/dev-env.ts`) is the single source of truth.** To add or change a per-worktree database, edit the registry — never hard-code a second database, env var, or `"web"` special-case in `ensure-db`, `drop-db`, `prepare-db`, `.envrc`, or anywhere else. Every consumer iterates the registry.
-- **Non-interactive shells bypass direnv.** `.envrc` rewrites `DATABASE_URL` to the worktree-scoped database, but agent shells and non-interactive sessions do not execute `.envrc`. `pnpm db:migrate` resolves the checkout through `applyDevEnvToProcess` and refuses a registered main database unless a human explicitly passes `--allow-main-database`. Its internal `--managed-test-database` bypass accepts only a local managed disposable database whose embedded owner PID is greater than 1 and a distinct ancestor of the migrator. Other direct test and admin commands must resolve the checkout the same way or source `print-worktree-env.ts` output before touching a database.
+- **Non-interactive shells bypass direnv.** `.envrc` rewrites `DATABASE_URL` to the worktree-scoped database, but agent shells and non-interactive sessions do not execute `.envrc`. Both `pnpm db:migrate` and `pnpm db:apply-functions` use the shared `resolveDatabaseAdminTarget` path, which resolves the checkout through `applyDevEnvToProcess` and refuses a registered main database unless a human explicitly passes `--allow-main-database`. Their internal `--managed-test-database` bypass accepts only a local managed disposable database whose embedded owner PID is greater than 1 and a distinct ancestor of the command. `db:migrate` applies migrations and SQL functions as one operation. Other direct test and admin commands must resolve the checkout the same way or source `print-worktree-env.ts` output before touching a database.
 - **Use `lib/dev-env.ts` for env loading.** Do not call `process.loadEnvFile` or write a bespoke `loadEnvFromFile`. The canonical entry point is `applyDevEnvToProcess()`.
 - **Use `lib/dev-db.ts` for DB admin.** Do not open a fresh `pg.Client` and run `CREATE`/`DROP`/`CREATE EXTENSION` from a new script — extend the helpers in `lib/dev-db.ts` and add a thin CLI wrapper.
 - **No regex URL surgery.** Transformations on a database URL use `new URL()` and rewrite `pathname` specifically. The worktree name is always `<baseDbName>_<slug>` (derived from the URL's own base name), and the rewrite must stay idempotent.
 - **Silent fallback is forbidden in worktree mode.** If a tool cannot derive the worktree-scoped DB, it must throw/exit loudly. Silent fallback to a shared DB would re-introduce the cross-worktree blast radius.
 - **`drop-db` must always go through `isReservedDatabase`** against the full set of main-checkout DB names. New "main-like" databases get protected by extending `RESERVED_DATABASES` in `lib/dev-db.ts` (or the registry), not by patching the CLI.
-- **Schema changes use `generate` + `migrate`, not `push`.** `dev`/`bootstrap` apply committed migrations via `prepare-db.ts`; `db:push` is for disposable local experiments only and never carries `--force`.
+- **Schema changes use `generate` + `migrate`, not `push`.** `dev`/`bootstrap` ensure the worktree database and extensions through `prepare-db.ts`, then `db:migrate` applies committed migrations and SQL functions; `db:push` is for disposable local experiments only and never carries `--force`.
 - **Migration-lint policy is explicit.** Errors always block; warnings block only
   under `--strict` (CI PRs to `main`/`staging`). `--changed <ref>` scopes PR lint,
   `--staged` powers pre-commit, and `0000_` is the warning-exempt baseline.
@@ -55,6 +56,11 @@ Local-dev-only utilities. Never imported by the application runtime.
 - **Surgical Tailscale cleanup in pruning.** Stale route removal goes through `findStaleTailscaleRoutes` + `tailscaleRouteOffArgs` (per-port `off`). Never call `tailscale serve reset` or `tailscale funnel reset`. Never prune a route with any live listener.
 - **`./mf` wraps the API; it never reimplements it.** Before changing `cli/`, read the `./mf` section of [`.context/CONTEXT.md`](.context/CONTEXT.md).
 - **WS 426 is not a warning.** Plain HTTP hits to `/api/threads/ws` and `/ws/yjs` produce expected 426 responses. `routeStatusEvent` in `apps/server/server/lib/request-observability.ts` suppresses these. When adding a new WebSocket route, add it to `isExpectedWsPlainHttpStatus`.
+
+- **DB test concurrency:** eight owned workers by default; `DB_TEST_WORKERS=1..8` lowers concurrency under shared-server load. Do not use CPU-count scaling against the shared 100-connection server.
+- **Test cleanup:** hand off only this invocation’s managed DBs to `cleanup-test-databases.ts`; it checks parent ownership before the runner exits. Drops are detached because PostgreSQL forces a checkpoint. Inspect `.meridian/db-test-cleanup/` for failures; stale-run `dev:gc-dbs` remains the fallback.
+- **Test durability:** only managed worker URLs receive `synchronous_commit=off` as a session startup setting. Never change shared server settings or dev database durability.
+- **DB fixture isolation:** use the shared [test-support reset policy](../../apps/server/server/test-support/AGENTS.md). Never add per-case TRUNCATE; rollback is the default, FK-ordered DELETE the committed-data escape hatch.
 
 ## Do not
 

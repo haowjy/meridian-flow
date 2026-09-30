@@ -9,6 +9,180 @@
 
 - Refuse malformed, edited, divergent, or out-of-order migration history in CI and before database migration, and serialize concurrent migration runners.
 
+- Development: restore main's 0009 migration unchanged; 0014 turns forks and handoffs whose origin turn 0009 deleted into ordinary chats.
+- Keep chats rebound to another Work when their source Work expires; retain referenced history without blocking unrelated purges.
+- Refuse new forks and handoffs into archived Works; keep revision reads and compaction working in existing chats.
+- Compaction turns and conversation seeds no longer count as chat, Work, or project activity.
+- Purge M4's thread-owned event journals and turns with an expired Work's chats.
+- Development: M4 migrations follow the Work screen migrations as 0014–0024; reset previously migrated M4 worktree databases with `pnpm db:reset`.
+
+- Shorten model-facing tool definitions and context cards, strip redundant `$schema` metadata, and keep advertised tools on `user` vocabulary.
+- Accept `current` for every conversation reference.
+- Compact `thread_history` dates and cursors; print the complete `next:` call with the inputs needed to continue the page.
+- Format `thread_ls` as compact lineage and conversation rows, marking only live runs awake.
+- Return compact model-facing `thread_report` results without internal IDs and redundant fields.
+
+- Esc in the composer stops a run only when the Stop button shows (empty composer); with a draft it leaves the run and the draft alone.
+- Run settlement transitions in memory; preserve scoped PostgreSQL durability proofs.
+- Catalog runtime control, compaction, handoff, and history probes.
+- Make Retry an ordinary no-input run using normal history and optimistic preparation; a run-start compaction gets a fresh ID while the retried reply keeps the client's ID. Shutdown-interrupted replies settle paid rows, acknowledge adopted messages, and remain retryable before SIGTERM/SIGINT flush and exit.
+- Keep a delivered writer message as a running-source handoff cutoff, and make `mf thread send` wait through an earlier failed run for its own reply.
+
+- Remove duplicate runtime checks; test editor undo and stream recovery through behavior.
+
+- Require an explicit ownership acknowledgment before detaching test database cleanup.
+
+- Run unit tests in worker threads while preserving module isolation.
+
+- Run DB tests on eight isolated workers, with a bounded override for busy shared servers.
+
+- Build the large transcript plan fixture once; restore only the tail each case mutates.
+
+- Prove failed control runs stay sweep-paced at the lease boundary instead of sleeping fifteen seconds.
+
+- Return DB test results without waiting for database-drop checkpoints; keep owned cleanup logs and stale-run GC.
+
+- Disable synchronous commit only on runner-owned DB test connections.
+
+- Reset DB tests with rollback or FK-ordered deletes, without per-case table rewrites.
+- Resolve guarded worktree DB targets for `db:apply-functions`; make `db:migrate` finish by applying functions so migrated databases are complete.
+
+- Fork or hand off a chat from an assistant reply or delivered writer turn, including a reply a fork inherited. The new chat opens at once and finishes creating in the background; a reload lands on the same chat, and a failure stays on it with Retry. Hand off picks the Agent, starting from the source's. Subagent chats offer neither.
+- Show the handoff brief as a card that writes itself in place: Stop while it writes, the brief behind Show the whole brief once ready, and Retry on a brief that failed, was stopped, or was interrupted by a restart. Retry shows the new brief's card at once and waits while the chat is replying; a refused or lost Retry and a failed Stop say so on the card. Messages sent meanwhile are answered once the brief ends.
+- Retry a failed reply from the reply itself: the latest failed reply offers Retry, which shows the new reply working below it at once. A refused or lost Retry says so on the reply.
+- Show a fork's inherited history read-only, marked with the chat it came from and where the fork begins; it never changes when the source moves on.
+- Name the chat a subagent was pointed at with `from`, on its spawn card and at the top of its chat, and say when that chat is in the trash. Spawns no longer flash an "Unknown component" note in the reply.
+- A fork whose history fails to load says so with Retry; a fork cut at a failed reply shows it as history; a message sent while a fork or handoff is still being created survives a reload; an older failed brief says it failed instead of asking to try again; the Agent picker's row tooltip stays on screen on phones and no longer covers the list as it opens.
+- Keep M4 compaction and reference metadata in `./mf`; inspect direct-child activity and block timing with the main CLI updates.
+
+- Always honor manual compaction once the chat has a completed reply, even when little context can be removed. Tell warm summaries not to repeat retained conversation.
+
+- Point spawned agents at connected prior work without copying history; freeze reference text and read instructions, including stopped handoffs.
+- Freeze handoff source titles on seeds and brief cards, and keep spawn source provenance on durable invocation cards.
+- A handed-off chat names a trashed source by its title, and a spawn card names its `from` chat straight from the card after a reload.
+- Treat a null spawn source as omitted.
+
+- Preserve bake-gated history guidance in rolling handoff summaries; classify completed and failed briefs as system history.
+
+- Preserve structured inspection errors, including unavailable bound models.
+
+- Verify spawn, fork and handoff preserve the original lineage root through real entry points.
+
+- Batch history tool pairs by page, including pairs outside the page.
+
+- Keep model projection cursors out of writer transcript pages.
+
+- Authorize execution reports through the canonical lineage predicate.
+
+- Seed browser-test conversations with their lineage root.
+
+- Find connected conversations and read their history with document pointers and dated edit records.
+
+- Require a lineage root on every conversation; index fork and handoff discovery.
+- Accept delivered user turns as handoff cutoffs while the source reply streams; source-shaped briefs follow the shared summary rule at every cutoff without rewriting failed reply history.
+
+- Record brief telemetry and failure metadata through one pending-owner writer; late paid attempts cannot replace the winning outcome.
+
+- Stage activated skills through one boundary owner. The handoff brief holds the destination run claim until settlement; queued skill activations then materialize with the reply.
+
+- Acquire the destination run claim before creating a handoff seed; the detached brief releases it through the shared runnable-queue wake without creating a run boundary.
+
+- Keep internal ending-commit failures out of handoff brief writer copy. Retain diagnostic causes in error details.
+
+- Fail handoff when source request preparation fails instead of making a rolling fallback call. Preserve queued skill activations behind pending seeds and winning seed metadata through late paid responses.
+
+- Keep source image decisions unchanged when handoff preparation discovers a lost asset; fail the brief without a rolling fallback.
+
+- Use one summary rule for compaction and handoff: known-too-large requests roll, warm source requests branch, and cold requests roll. Fail each attempt once and meter returned attempts on the owning turn.
+- Keep brief failures typed, preserve queued replies, and exclude brief calls from future cache baselines.
+
+
+
+
+### Changed
+- Regenerate the handoff migration in place; keep the inbox control schema limited to compact.
+- Include pending handoff seeds in ordinary placeholder repair; settle interrupted seeds with their card and history read line instead of relaunching them.
+- Preserve Work-context delivery while the detached brief holds the destination run claim.
+- A withdrawn control stays retired after a crash; replaying withdrawal returns `withdrawn`.
+- Validate Agent selections consistently across handoff and thread creation.
+- Handoff Retry takes the destination run claim; a held claim returns 409 `handoff_retry_unavailable`, while an idempotent seed replay returns the existing seed.
+- Withdraw a control only before its start; after C records it, return `already_started` without stopping the run. Replayed withdrawal of a withdrawn row remains `withdrawn`.
+- Remove the handoff recovery sweep and relaunch counter; orphan repair settles pending seeds interrupted after acquiring the destination claim.
+- Handoffs commit a durable pending seed and detach its brief while transferring the pre-acquired destination claim. Stop preserves queued messages; Retry appends a new seed.
+- Stop settles pending handoff seeds under the destination lock; a late brief cannot overwrite Stop.
+- Handoff requests require a destination id and cutoff; client-written summaries removed.
+
+- Type compaction failure reasons, phases, fit measurements and control IDs in the durable metadata codec, including failures without a planned cut.
+- Expose compaction failure and control metadata, with token counts, in the existing `thread view --json` projection.
+- Persist typed compaction failure reasons and phases on failed C turns and their `turn.error` events. If late arrivals make the successor too large, commit C and fail the successor reply with its normal fit error.
+
+
+- Compaction clears stale document reads, write text, search excerpts and references from model context. Fresh text and writer transcripts stay intact.
+
+### Added
+- Page the effective or inherited transcript by stable turn/block keys, split pages at prompt-epoch boundaries, and expose the authenticated writer transcript route.
+- Record atomic document revisions on agent reads, searches, references, and settled writes without adding model-visible text.
+- Queue manual compaction at the end of the queue. Withdraw queued requests or stop running dividers.
+- Pass `/compact <instructions>` to the summarizer and show the instructions on the queued row and divider. Offer Fork from a compaction divider.
+- Show "Compacting conversation" on every pending divider and the server's generic failure copy when compaction fails.
+- Keep unanswered writer text and mentions verbatim across compaction. Failed command summaries leave replies running; a failed automatic summary fails its reply.
+- Summarize long chats with cached requests or rolling cheap-model summaries. Give summaries and handoff briefs fixed sections, merge earlier summaries explicitly, and keep story facts and user preferences.
+- Show what each conversation was last asked beneath its `thread_ls` row.
+- Default compaction to the model's usable window or a 400,000-token ceiling.
+- Stop a running compaction and deliver messages queued during its summary afterward.
+- Compact long conversations through durable summary turns and atomic successor replies.
+- Recover orphaned primary assistant turns and pending compaction placeholders under the session claim; child reports terminate on the orphaned placeholder and late inbox messages remain redeliverable.
+- Persist request sizes and turn-neutral child execution selectors for compaction.
+- Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
+
+### Fixed
+- Keep a failed reply marked failed after the writer sends again. Its error turns into a quiet marker as soon as anything follows it, and each failure keeps its own marker. Its pending trail work no longer auto-pushes its branch when the writer sends first; before, that depended on timing.
+- Say "Couldn't send." only when the writer's message never reached the server. A reply that fails before writing anything now reads as a failed response, both while current and in history.
+- Keep interrupted compaction metadata parseable across run-start and startup recovery.
+- Read transcript segment cuts with the planned-compaction codec; failed dividers stay ordinary items.
+- Settle orphaned primary assistant turns at startup and after a new run acquires its claim, keeping transcript anchors and fork cutoffs movable.
+- Reset change-trail Postgres fixtures with truncation so insert-only prompt bakes do not block cleanup.
+- Give database fixture hooks the same timeout budget as test bodies to avoid overlapping resets.
+- Publish committed pulls even if the caller response aborts. Preserve live manifest read-your-writes.
+- Keep cold project bootstrap atomic while committing peer manifest dependencies independently.
+- Refresh search-only Work drafts before revision checks. Ignore documents removed from a Work.
+- Commit shared document pulls independently of chat transactions; preserve retries after failed pulls, including newer edits queued during a pull.
+- Settle direct-write tool results after their document commit instead of leaving successful edits marked staged.
+- A queued compact stays at the end of the queue and is not absorbed by automatic compaction. A streaming reply adopts every message sent meanwhile at its tool steps.
+- Stop ends only the current turn; normal queue selection runs waiting messages before a command. Leave a command whose start throws queued like a message.
+- Always send queued-compaction withdrawal to the server so a command cannot run unseen after its local row disappears. When sending a row fails, offer Withdraw beside Retry.
+- Keep pending-placeholder roles and predicates in contracts, SQL in the database package, and interruption copy in the threads domain.
+- Follow each compaction summary with an explicit continuation line, and give handoff briefs the same changed-document warnings as compaction.
+- Refer to the human as `the user` throughout model-facing prompts and `thread_history` labels.
+- Advertise defaulted model-tool fields as optional rather than required.
+- Render component model text in `thread_history` instead of raw props or IDs; omit bake hashes from segment headers and revision tokens from reference reads.
+- Fail a warm-summary error once instead of retrying it cold. Give summaries no output limit of their own, leaving provider defaults in place without changing cached thinking; advertise DeepSeek V4 Flash at 65,536 output tokens and Claude Sonnet 4 at 64,000.
+- Preflight cold transcripts before paid calls. Excerpt large document reads and split large turns at blocks.
+- Summarize only compacted history. Preserve exact story terms and completed versus pending edits.
+- Label cold summarizer calls independently of the chat cache. Correct DeepSeek Flash's context window to 1M.
+- Leave 10% headroom in default compaction triggers. Recover older Claude context-limit errors.
+- Keep complete summaries without confusing estimated input size with provider output tokens. Skip opaque reasoning in summaries.
+- Propagate context-window errors when provider fallback is enabled.
+- Roll summaries for cold or known-too-large requests; branch only from warm source requests. A `context_overflow` summary rejection is recorded as `request_too_large` so the next attempt rolls.
+- Allow clients to join chats while compaction is running.
+- Failed automatic compaction lands a failed reply; command failure stays on C. A command is consumed when its start commits, so neither path replays it for another summary.
+- Include summary requests in the model-request debug capture.
+- Stop follows the same run across a committed reply split, including remote cancellation. Internal aborts stay errors.
+- Leave a compaction pending for recovery when its live failure transaction cannot commit.
+- Development: reset worktree databases that already applied the earlier unreleased 0018 (`cold_lifeguard`, formerly 0014) with `pnpm db:reset`.
+- Bill summary responses on success, failure and cancellation, once per paid call.
+- Include compaction-call costs in child reports and the shared tree budget; estimate CJK text with required tokenizer-family rates (Anthropic 3.0, measured `o200k` 1.1, Gemini 1.2, DeepSeek 0.8), and probe CJK, image, and file estimates against live provider usage.
+- Cache TTL starts at the provider attempt, not response persistence.
+- Saved-report repair preserves fork cutoffs and cross-thread history.
+- Dev CLI unwraps API transport responses. Thread creation and inspection work against the live stack.
+
+- Add the pure compaction classifier, trigger resolution, retained-tail planner, and active-history projection; project completed summaries before image inclusion and context building.
+- Make forks retain their source Agent and idempotent by client ID. Require fork and handoff to use the selected `originTurnId` exactly; refuse unsettled history with 409 `unsettled_history` and non-actionable turns with 400 `turn_not_actionable` instead of falling back to an earlier settled turn. Refuse fork and handoff from subagent threads.
+- Show subagent progress live in the chat that spawned it, including forks and subagent views. List direct subagents only.
+- Keep forks of trashed chats working. Show a failed reply instead of a stuck message when a fork's history can't load.
+
+- Store immutable prompt/tool bakes behind write-once pointers; resolve fork prefixes at their cutoff and journal named epoch boundaries atomically.
+- Derive prefix-cache warmth from durable bakes, completed compaction and typed image boundaries; record each request prediction on its response row, and share one runtime cache-state service across consumers.
 - Work screen: the Work's name sits in the pane band as a tab beside an All Work door; rename it in the tab or the page heading, which stay in sync.
 - Work description clamps to three lines; click it to show more, Edit to change it in place.
 - Create Work and Create project open as dialogs over their list; Back after creating returns to the list.
@@ -52,6 +226,8 @@
 
 - Freeze thread prompts at the database boundary.
 - Keep the same Agent and prompt when forking by default.
+- Order turns by write-once per-thread positions, continuing fork-local order after the cutoff; inbox turns take their position when drained.
+- Persist image inclusion per block and keep request history stable; record asset loss and budget evictions as durable system updates.
 
 - Open new chats immediately; subscribe once after first-send acceptance, without missing-thread errors.
 - Opening a project is faster: its identity and shell reads run together, library hover or focus and the open New project dialog warm workspace code without loading project data, and route caches seed outside React render.
@@ -90,7 +266,7 @@
 
 - Drop fake rollback and repeated-abort tests that did not exercise transaction rollback or billing replay.
 
-- While an agent is working, Enter sends a typed follow-up and the composer swaps Stop for a ringed Send action. Escape still stops the run.
+- While an agent is working, Enter sends a typed follow-up and the composer swaps Stop for a ringed Send action.
 - Trim redundant app, server, and shared tests and fake-only scaffolding. Retire frozen migration fixtures.
 - Chat navigation reopens the chat this browser last had open, or the chat index when there is none. The remembered chat is per device and no longer synced.
 - Opening or starting a chat from Work or Editor keeps the screen and shows it in the right sidebar. A first Send stays in its pane, including across reload.
@@ -1660,7 +1836,6 @@
   (`buffered → journalCommitted → liveProjected → closed`) and structured `response_committer.*` EventSink events on every
   lifecycle branch.
 - `apps/app`: turn reversal waits for refreshed lineage before settling, so
-  refused Undo attempts immediately replace the stale Undo affordance.
 - `apps/server`: project/work thread lists and snapshots now derive soft
   `waitingForUser` state from the same `active_leaf_turn_id` logical head, so
   tied turn timestamps cannot make sidebar lifecycle state flip on refetch.

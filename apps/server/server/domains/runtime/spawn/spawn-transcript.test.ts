@@ -14,11 +14,18 @@ async function setup() {
   const repos = createInMemoryRepositories({ projects });
   const project = await projects.create({ userId: "writer", title: "Return" });
   const parent = await repos.threads.create({ userId: "writer", projectId: project.id });
+  const originTurn = await repos.turns.create({
+    threadId: parent.id,
+    role: "assistant",
+    origin: "assistant",
+    status: "complete",
+  });
   const child = await repos.threads.createSubagent({
     userId: "writer",
     projectId: project.id,
     parentThreadId: parent.id,
     rootThreadId: parent.id,
+    originTurnId: originTurn.id,
     spawnDepth: 1,
   });
   const turn = await repos.turns.create({
@@ -30,7 +37,7 @@ async function setup() {
   });
   await repos.executionReports.admit({
     childThreadId: child.id,
-    assistantTurnId: turn.id,
+    executionTurnId: turn.id,
     handle: child.ref ?? "",
     origin: "thread_run",
     deliveryMode: "none",
@@ -123,8 +130,12 @@ describe("captured candidate terminal policy", () => {
       { repos, eventWriter: transcript.persistence.eventWriter },
       {
         threadId: child.id,
-        assistantTurnId: turn.id,
-        cause: { kind: "failed", reason: "runtime_error", error: "later failure" },
+        turnId: turn.id,
+        cause: {
+          kind: "failed",
+          reason: "runtime_error",
+          error: "later failure",
+        },
       },
     );
     expect(await repos.executionReports.findByExecution(child.id, turn.id)).toMatchObject({
@@ -151,7 +162,7 @@ describe("captured candidate terminal policy", () => {
         },
         {
           threadId: child.id,
-          assistantTurnId: turn.id,
+          turnId: turn.id,
           cause: { kind: "success", finishReason: "end_turn" },
         },
       ),
@@ -164,7 +175,7 @@ describe("captured candidate terminal policy", () => {
       { repos, eventWriter: transcript.persistence.eventWriter },
       {
         threadId: child.id,
-        assistantTurnId: turn.id,
+        turnId: turn.id,
         cause: { kind: "success", finishReason: "end_turn" },
       },
     );
@@ -186,6 +197,9 @@ async function appendPublicResponse(
     provider: "test",
     model: "test-model",
     priceSource: "unknown",
+    requestMessageCount: 1,
+    predictedCacheState: "cold",
+    predictedCacheReason: "facts_unavailable",
   });
   for (const block of blocks) {
     await setupResult.repos.blocks.create({
@@ -210,7 +224,7 @@ describe("persisted execution fallback", () => {
       { repos: scope.repos, eventWriter: scope.transcript.persistence.eventWriter },
       {
         threadId: scope.child.id,
-        assistantTurnId: scope.turn.id,
+        turnId: scope.turn.id,
         cause: { kind: "success", finishReason: "end_turn" },
       },
     );
@@ -231,7 +245,7 @@ describe("persisted execution fallback", () => {
       { repos: scope.repos, eventWriter: scope.transcript.persistence.eventWriter },
       {
         threadId: scope.child.id,
-        assistantTurnId: scope.turn.id,
+        turnId: scope.turn.id,
         cause: { kind: "success", finishReason: "end_turn" },
       },
     );
@@ -246,15 +260,23 @@ describe("persisted execution fallback", () => {
       { repos: scope.repos, eventWriter: scope.transcript.persistence.eventWriter },
       {
         threadId: scope.child.id,
-        assistantTurnId: scope.turn.id,
-        cause: { kind: "failed", reason: "budget", error: "budget exhausted" },
+        turnId: scope.turn.id,
+        cause: {
+          kind: "failed",
+          reason: "budget",
+          error: "budget exhausted",
+        },
       },
     );
     expect(terminal.report).toMatchObject({ outcome: "failed", source: "empty", summary: "" });
   });
 
   for (const cause of [
-    { kind: "failed" as const, reason: "budget", error: "budget exhausted" },
+    {
+      kind: "failed" as const,
+      reason: "budget",
+      error: "budget exhausted",
+    },
     { kind: "cancelled" as const, reason: "cancelled" },
   ]) {
     it(`keeps only the last durable public response on ${cause.kind}`, async () => {
@@ -263,7 +285,7 @@ describe("persisted execution fallback", () => {
       await appendPublicResponse(scope, 1, [{ sequence: 2, text: "partial last" }]);
       const terminal = await finalizeExecution(
         { repos: scope.repos, eventWriter: scope.transcript.persistence.eventWriter },
-        { threadId: scope.child.id, assistantTurnId: scope.turn.id, cause },
+        { threadId: scope.child.id, turnId: scope.turn.id, cause },
       );
       expect(terminal.report).toMatchObject({
         outcome: cause.kind === "failed" ? "failed" : "cancelled",
@@ -285,8 +307,12 @@ describe("persisted execution fallback", () => {
       { repos: scope.repos, eventWriter: scope.transcript.persistence.eventWriter },
       {
         threadId: scope.child.id,
-        assistantTurnId: scope.turn.id,
-        cause: { kind: "failed", reason: "generator_error", error: "provider failed" },
+        turnId: scope.turn.id,
+        cause: {
+          kind: "failed",
+          reason: "generator_error",
+          error: "provider failed",
+        },
       },
     );
     expect(terminal.report).toMatchObject({

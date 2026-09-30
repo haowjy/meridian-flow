@@ -7,6 +7,7 @@
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
+  ControlBody,
   CurrentToolCall,
   MessageIntent,
   MessageProvenance,
@@ -16,6 +17,7 @@ import type {
 } from "@meridian/contracts/threads";
 
 export type RunId = string;
+export type CurrentTurn = { id: TurnId; kind: "assistant" | "compaction" };
 
 /** Lease lifetime; a held lease is renewed at a third of this interval. */
 export const DEFAULT_LEASE_TTL_MS = 30_000;
@@ -31,6 +33,7 @@ export type { ThreadPhase, ThreadStatus };
 export type ContextPart = { source: string; text: string };
 
 export type MessageBody =
+  | ControlBody
   | { kind: "text"; text: string }
   | { kind: "context"; parts: ContextPart[] }
   | { kind: "work_context_refresh" };
@@ -44,7 +47,7 @@ export interface MessageDraft {
   /**
    * Producer-supplied durable id. The writer producer sets it to the user turn it
    * persisted at enqueue so the drain reuses the same turn id and skips the
-   * re-persist; every other producer lets storage mint one.
+   * re-persist. Controls use their client-minted id; other producers let storage mint one.
    */
   id?: string;
 }
@@ -75,7 +78,15 @@ export interface Lease {
   holderId: string;
 }
 
+/** A held thread claim without an observable run lease. */
+export interface HeldRunClaim {
+  release(): Promise<void>;
+  onLost(listener: () => void): () => void;
+}
+
 export interface RunClaim {
+  /** Takes the shared run mutex without publishing a run lease. */
+  hold(threadId: ThreadId): Promise<HeldRunClaim | null>;
   /** Short exclusive work uses the same claim without minting an observable lease. */
   withExclusiveThread<T>(threadId: ThreadId, operation: () => Promise<T>): Promise<T | null>;
   startExecution(threadId: ThreadId, runId: RunId): Promise<Lease | null>;
@@ -93,12 +104,12 @@ export interface RunClaim {
    */
   readMany(threadIds: readonly ThreadId[]): Promise<Map<ThreadId, ThreadLeaseState>>;
   /**
-   * The assistant turn bound to the live lease, or null when the thread is
+   * The current turn bound to the live lease (assistant or compaction), or null when the thread is
    * asleep or a run has not yet bound its turn. Derived from the same row as
    * {@link read}, never from the turns table.
    */
   readRunningTurnId(threadId: ThreadId): Promise<TurnId | null>;
-  /** Cancels only the live lease bound to this turn; false means no matching execution. */
+  /** Stop the live run that has bound this turn, matching membership under the lease row lock. */
   cancelExecution(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
   /**
    * Releases the held lease. Guarded: an already-released or superseded lease is

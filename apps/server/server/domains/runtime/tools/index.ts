@@ -23,6 +23,8 @@ export {
   WorkCommandSchema,
   workCommandCategory,
 } from "./core-tools.js";
+export type { DocumentRef, DocumentTextPolicy } from "./document-text.js";
+export { createInspectionToolRegistrations } from "./inspection-tools.js";
 export { createSkillToolRegistrations } from "./skill-tool.js";
 export {
   createSpawnToolRegistrations,

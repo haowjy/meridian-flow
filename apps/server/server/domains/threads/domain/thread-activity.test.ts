@@ -1,18 +1,16 @@
 /**
- * Pure projection contract for the thread activity read: descendant rows plus a
+ * Pure projection contract for the thread activity read: direct child rows plus a
  * live-lease map become the ordered activity tree, absent lease means asleep.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ThreadLeaseState } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
-import type { LatestChildExecution, ThreadDescendant } from "../ports/index.js";
-import { projectThreadActivity } from "./thread-activity.js";
+import type { LatestChildExecution, ThreadChild } from "../ports/index.js";
+import { projectThreadActivity, readThreadActivity } from "./thread-activity.js";
 
-function descendant(overrides: Partial<ThreadDescendant> & { id: string }): ThreadDescendant {
+function child(overrides: Partial<ThreadChild> & { id: string }): ThreadChild {
   return {
     parentThreadId: null,
-    rootThreadId: "root-1",
-    spawnDepth: 1,
     ref: null,
     title: null,
     agentName: null,
@@ -27,19 +25,18 @@ function lease(status: ThreadLeaseState["status"]): ThreadLeaseState {
 }
 
 describe("projectThreadActivity", () => {
-  it("preserves descendant order and defaults an absent lease to asleep", () => {
+  it("preserves child order and defaults an absent lease to asleep", () => {
     const activity = projectThreadActivity(
       [
-        descendant({ id: "child-1", spawnDepth: 1 }),
-        descendant({ id: "child-2", spawnDepth: 2, parentThreadId: "child-1" }),
+        child({ id: "child-1", parentThreadId: "root-1" }),
+        child({ id: "child-2", parentThreadId: "root-1" }),
       ],
       new Map(),
       new Map(),
     );
 
-    expect(activity.descendants.map((node) => node.threadId)).toEqual(["child-1", "child-2"]);
-    expect(activity.descendants.every((node) => node.status.kind === "asleep")).toBe(true);
-    expect(activity.descendants.every((node) => node.deliveryMode === null)).toBe(true);
+    expect(activity.children.map((node) => node.threadId)).toEqual(["child-1", "child-2"]);
+    expect(activity.children.every((node) => node.status.kind === "asleep")).toBe(true);
   });
 
   it("derives status from the live lease and carries the row fields", () => {
@@ -70,9 +67,8 @@ describe("projectThreadActivity", () => {
 
     const activity = projectThreadActivity(
       [
-        descendant({
+        child({
           id: "child-1",
-          spawnDepth: 2,
           parentThreadId: "root-1",
           title: "Review the chapter",
           agentName: "Critic",
@@ -84,11 +80,9 @@ describe("projectThreadActivity", () => {
       latestRuns,
     );
 
-    expect(activity.descendants[0]).toEqual({
+    expect(activity.children[0]).toEqual({
       threadId: "child-1",
       parentThreadId: "root-1",
-      rootThreadId: "root-1",
-      depth: 2,
       ref: "p3",
       title: "Review the chapter",
       agentName: "Critic",
@@ -108,7 +102,7 @@ describe("projectThreadActivity", () => {
 
   it("treats an admitted run without a delivery invocation as background activity", () => {
     const activity = projectThreadActivity(
-      [descendant({ id: "child-1" })],
+      [child({ id: "child-1" })],
       new Map(),
       new Map([
         [
@@ -123,6 +117,56 @@ describe("projectThreadActivity", () => {
       ]),
     );
 
-    expect(activity.descendants[0]?.deliveryMode).toBe("background_notification");
+    expect(activity.children[0]?.deliveryMode).toBe("background_notification");
+  });
+});
+
+describe("readThreadActivity", () => {
+  it("reads and projects the direct children only", async () => {
+    const childRows = [child({ id: "child-1", parentThreadId: "parent" })];
+    let readThreadId: ThreadId | undefined;
+    const activity = await readThreadActivity(
+      {
+        threads: {
+          async listChildren(threadId) {
+            readThreadId = threadId;
+            return childRows;
+          },
+        },
+        executionReports: {
+          async listLatestByChildren(ids) {
+            expect(ids).toEqual(["child-1"]);
+            return [];
+          },
+        },
+        statusReader: {
+          async readMany(ids) {
+            expect(ids).toEqual(["child-1"]);
+            return new Map();
+          },
+        },
+      },
+      "parent" as ThreadId,
+    );
+
+    expect(readThreadId).toBe("parent");
+    expect(activity.children).toEqual([
+      {
+        threadId: "child-1",
+        parentThreadId: "parent",
+        ref: null,
+        title: null,
+        agentName: null,
+        spawnStatus: "running",
+        status: { kind: "asleep" },
+        originTurnId: null,
+        deliveryMode: null,
+        runStartedAt: null,
+        runEndedAt: null,
+        currentTool: null,
+      },
+    ]);
+    expect(activity.children[0]).not.toHaveProperty("depth");
+    expect(activity.children[0]).not.toHaveProperty("rootThreadId");
   });
 });
