@@ -315,13 +315,6 @@ else
       };
       expect(started.created).toBe(true);
       expect(duplicate).toMatchObject({ created: false, turn: { id: replyTurnId } });
-      await expect(
-        rig.orchestrator.retryReply({
-          threadId: rig.threadId,
-          failedTurnId: crypto.randomUUID() as never,
-          replyTurnId: replyTurnId as never,
-        }),
-      ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
       expect(replayed).toMatchObject({
         id: replyTurnId,
         role: "assistant",

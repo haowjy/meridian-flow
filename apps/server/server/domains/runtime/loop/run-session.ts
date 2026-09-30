@@ -251,17 +251,7 @@ export function createRunSessions(deps: {
     async retryReply(input: { threadId: ThreadId; failedTurnId: TurnId; replyTurnId: TurnId }) {
       const existing = await deps.repos.turns.findById(input.replyTurnId);
       if (existing) {
-        const predecessor = existing.prevTurnId
-          ? await deps.repos.turns.findById(existing.prevTurnId)
-          : null;
-        const followsFailedTurn =
-          existing.prevTurnId === input.failedTurnId ||
-          (predecessor?.role === "compaction" && predecessor.prevTurnId === input.failedTurnId);
-        if (
-          existing.threadId !== input.threadId ||
-          existing.role !== "assistant" ||
-          !followsFailedTurn
-        )
+        if (existing.threadId !== input.threadId || existing.role !== "assistant")
           throw new ReplyRetryUnavailableError(input.threadId);
         return { created: false as const, turn: existing };
       }
