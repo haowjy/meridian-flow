@@ -1039,6 +1039,27 @@ else
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([
         expect.objectContaining({ id: control.id, intent: "control" }),
       ]);
+
+      const { sweepWakes } = await import("./sweep-wakes.js");
+      await sweepWakes({
+        delivery: rig.delivery,
+        authority: rig.runClaim,
+        runStarter: {
+          async start(threadId) {
+            await rig.orchestrator.startDrain(threadId);
+          },
+        },
+        eventSink: rig.deps.eventSink,
+        limit: 100,
+      });
+      const recovered = await settled(rig);
+      expect(recovered).toContainEqual(
+        expect.objectContaining({
+          role: "compaction",
+          status: "complete",
+          metadata: expect.objectContaining({ controlMessageId: control.id }),
+        }),
+      );
     });
 
     it("runs queued controls one per run and in their queue order", async () => {
