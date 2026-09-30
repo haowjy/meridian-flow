@@ -61,6 +61,7 @@ function summaryTurn(
   const textContent = [
     "<system_update>",
     `Conversation summary. Earlier turns of this conversation (${threadRef}) were compacted into the summary below.${historyReadable ? " They remain readable with thread_history." : ""}`,
+    "Continue from this summary and the messages after it; do not redo finished work.",
     "",
     summary,
     "</system_update>",

@@ -55,6 +55,12 @@ function projection(texts: string[]) {
     ),
   };
 }
+
+function onlyText(request: GenerateRequest, messageIndex: number, partIndex = 0): string {
+  const part = request.messages[messageIndex]?.content[partIndex];
+  if (part?.type !== "text") throw new Error("Expected prompt text");
+  return part.text;
+}
 function setup(
   options: {
     warm?: boolean;
@@ -232,12 +238,13 @@ describe("conversation summarizer", () => {
     );
 
     expect(sent).toMatchSnapshot("warm compaction request bytes");
+    expect(onlyText(sent, sent.messages.length - 1)).toMatchSnapshot("compaction branch prompt");
     expect(JSON.stringify({ ...sent, maxTokens: 500, messages: sent.messages.slice(0, -1) })).toBe(
       before,
     );
     expect(JSON.stringify(rig.input.requestInHand)).toBe(before);
     expect(sent.messages.at(-1)?.content).toMatchObject([
-      { type: "text", text: expect.stringContaining("style directions") },
+      { type: "text", text: expect.stringContaining("Style directions") },
     ]);
     expect(result).toMatchObject({
       kind: "complete",
@@ -251,6 +258,14 @@ describe("conversation summarizer", () => {
         },
       ],
     });
+  });
+
+  it("pins the rolling compaction prompt", async () => {
+    const rig = setup();
+
+    await rig.service.summarize(rig.input);
+
+    expect(onlyText(rig.requests[0], 0)).toMatchSnapshot("compaction rolling prompt");
   });
 
   it.each([
@@ -686,6 +701,7 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
     source: { threadId: "thread", throughTurnId: "cutoff" },
     instruction: "handoff",
     incomingAgentName: "Editor",
+    changedDocuments: ["manuscript://chapter-12.md"],
     requestInHand: sourceRequest,
   });
   const request = rig.requests[0];
@@ -703,6 +719,9 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
     JSON.stringify(sourceRequest.messages),
   );
   expect(JSON.stringify(request.messages.at(-1))).not.toContain("thread_history");
+  expect(onlyText(request, request.messages.length - 1)).toMatchSnapshot(
+    "handoff writer-row cutoff prompt with changed documents",
+  );
   expect(request.correlation).toMatchObject({
     threadId: "destination",
     turnId: "seed",
@@ -735,6 +754,9 @@ it("keeps the existing conditional open-request guidance for an assistant-row ha
   );
   expect(text).not.toContain("immediately before this system update");
   expect(rig.requests[0].messages.slice(0, -1)).toEqual(requestInHand.messages);
+  expect(onlyText(rig.requests[0], rig.requests[0].messages.length - 1)).toMatchSnapshot(
+    "handoff otherwise prompt",
+  );
 });
 
 it("does not call a system-origin user row the writer's open request", async () => {

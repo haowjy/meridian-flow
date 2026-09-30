@@ -912,7 +912,14 @@ describe("projectActiveHistoryWithBakes", () => {
           bakedTools: [{ type: "function", name: "thread_history" }],
         }) as never,
     });
-    expect(updated.blocks[0]?.textContent).toContain("They remain readable with thread_history.");
+    expect(updated.blocks[0]?.textContent).toBe(
+      `<system_update>
+Conversation summary. Earlier turns of this conversation (c1) were compacted into the summary below. They remain readable with thread_history.
+Continue from this summary and the messages after it; do not redo finished work.
+
+The heroine exposed the forged record.
+</system_update>`,
+    );
     expect(
       updated.blocks[0]?.textContent?.replace(" They remain readable with thread_history.", ""),
     ).toBe(old.blocks[0]?.textContent);
