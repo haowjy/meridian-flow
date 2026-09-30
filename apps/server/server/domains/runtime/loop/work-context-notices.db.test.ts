@@ -62,7 +62,7 @@ else
       await resetThreadWorkRaceFixture(db);
       await db
         .update(schema.works)
-        .set({ status: "active", archivedAt: null })
+        .set({ archivedAt: null })
         .where(eq(schema.works.id, ids.targetWorkId));
       await repos.threadWorks.addMembership(ids.threadId, ids.workId, true);
       await db

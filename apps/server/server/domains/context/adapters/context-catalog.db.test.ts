@@ -429,7 +429,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       });
       await expect(failingRepository.archive(workId)).rejects.toThrow("catalog failure");
-      await expect(repository.findById(workId)).resolves.toMatchObject({ status: "active" });
+      await expect(repository.findById(workId)).resolves.toMatchObject({ status: null });
       await expect(authority()).resolves.toMatchObject({ available: true });
     });
 
@@ -612,10 +612,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         "scratch://@draft/arc.md",
       ]);
 
-      await db
-        .update(works)
-        .set({ status: "archived", archivedAt: new Date() })
-        .where(eq(works.id, NAMED));
+      await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, NAMED));
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
         "scratch://@draft/arc.md",
       ]);

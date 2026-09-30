@@ -31,7 +31,7 @@ else
       await resetThreadWorkRaceFixture(db);
       await db
         .update(schema.works)
-        .set({ status: "active", archivedAt: null })
+        .set({ archivedAt: null })
         .where(eq(schema.works.id, ids.targetWorkId));
     });
     afterAll(() => db.close());
@@ -52,7 +52,7 @@ else
       await rebind(ids.workId);
       await db
         .update(schema.works)
-        .set({ status: "archived", archivedAt: new Date() })
+        .set({ archivedAt: new Date() })
         .where(eq(schema.works.id, ids.workId));
       await expect(rebind(ids.noWorkId)).resolves.toMatchObject({
         after: { workId: ids.noWorkId, name: "No Work", slug: null },

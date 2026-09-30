@@ -60,13 +60,13 @@ export function CreationComposer({
   const agent = choices?.agent ?? defaultAgent ?? null;
   const availableSkills = useSelectionAvailableSkills(agent?.selection ?? null, projectId);
   const [modePending, setModePending] = useState(false);
-  const initialWork = works.works?.find((work) => work.status === "active") ?? null;
+  const initialWork = works.works?.find((work) => work.archivedAt === null) ?? null;
   const workId = choices?.workId === undefined ? (initialWork?.id ?? null) : choices.workId;
   const selected = workFromSnapshot(
     works.noWork ? { works: works.works ?? [], noWork: works.noWork } : null,
     workId,
   );
-  const work = selected?.status === "active" || selected?.isNoWork ? selected : null;
+  const work = selected?.archivedAt === null || selected?.isNoWork ? selected : null;
   const references = useReferenceBrowserCatalog(projectId, work?.id, t`Reference a file`);
   const openDocument = useOpenProjectDocument(projectId);
   const context = agent ? { workId, agent } : undefined;

@@ -1,12 +1,13 @@
 /** JSON-natural Work mutation receipts shared by runtime, reversal, and UI. */
 import type { WorkId } from "../ids.js";
-import type { AiWriteMode, WorkStatus } from "./index.js";
+import { type AiWriteMode, WORK_STATUS_MAX_LENGTH } from "./index.js";
 import { decodeWorkSlug, type WorkSlug } from "./work-slug.js";
 
 export type WorkReceiptState = {
   name: string;
   goal: string | null;
-  status: WorkStatus;
+  status: string | null;
+  archivedAt: string | null;
 };
 
 export type WorkBindingReceiptState = WorkReceiptState & {
@@ -130,7 +131,12 @@ function parseState(value: unknown): WorkReceiptState | null {
   if (
     typeof state.name !== "string" ||
     (state.goal !== null && typeof state.goal !== "string") ||
-    (state.status !== "active" && state.status !== "archived")
+    (state.status !== null &&
+      (typeof state.status !== "string" ||
+        state.status.length > WORK_STATUS_MAX_LENGTH ||
+        state.status.trim().length === 0 ||
+        state.status.trim().split(/\s+/).length > 3)) ||
+    (state.archivedAt !== null && typeof state.archivedAt !== "string")
   ) {
     return null;
   }
@@ -138,6 +144,7 @@ function parseState(value: unknown): WorkReceiptState | null {
     name: state.name,
     goal: state.goal,
     status: state.status,
+    archivedAt: state.archivedAt,
   };
 }
 

@@ -33,12 +33,7 @@ export async function resolveWorkMembership(
     primaryWorkId = (await deps.threadWorks.findPrimary(args.parentThreadId))?.workId ?? null;
   } else if (args.workId) {
     const work = await deps.workRepo.findById(args.workId);
-    if (
-      !work ||
-      work.deletedAt ||
-      work.status === "archived" ||
-      work.projectId !== args.projectId
-    ) {
+    if (!work || work.deletedAt || work.archivedAt !== null || work.projectId !== args.projectId) {
       throw new InvalidWorkAttachmentError("Work is not available in this project");
     }
     primaryWorkId = args.workId;

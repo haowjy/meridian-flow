@@ -38,7 +38,7 @@ const WORK = {
   slug: "arc",
   isNoWork: false,
   goal: null,
-  status: "active",
+  status: null,
   archivedAt: null,
   aiWriteMode: "direct",
   entityRevision: "1",

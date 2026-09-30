@@ -17,7 +17,7 @@ export function WorkActionsMenu({
   onDelete: () => void;
   triggerClassName?: string;
 }) {
-  const archived = work.status === "archived";
+  const archived = work.archivedAt !== null;
   return (
     <OverflowMenu
       label={t`Actions for ${work.name}`}

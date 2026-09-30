@@ -1,7 +1,7 @@
 /** Restores an archived Work to active lists. */
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler, getRouterParam } from "nitro/h3";
-import { requireWorkOwner, updateWork } from "../../../../domains/projects/index.js";
+import { requireWorkOwner, setWorkArchived } from "../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../lib/request-id.js";
 
@@ -9,9 +9,10 @@ export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const workId = requireRequestId(getRouterParam(event, "workId"), "workId");
   await requireWorkOwner({ works: app.workRepo, projects: app.projectRepo }, workId, user.userId);
-  return serializeTransport(
-    await updateWork({ works: app.workRepo, workContextNotices: app.workContextNotices }, workId, {
-      status: "active",
-    }),
+  const transition = await setWorkArchived(
+    { works: app.workRepo, workContextNotices: app.workContextNotices },
+    workId,
+    false,
   );
+  return serializeTransport(transition.after);
 });

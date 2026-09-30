@@ -56,11 +56,13 @@ import {
 import {
   createWork,
   deleteWorkTransition,
+  setWorkArchived,
   updateWorkTransition,
   type WorkContextNotices,
   WorkLifecycleUnavailableError,
   WorkNameRequiredError,
   type WorkRepository,
+  WorkStatusInvalidError,
 } from "../domains/projects/index.js";
 import {
   createCoreToolRegistrations,
@@ -123,6 +125,7 @@ type ModelWork = Pick<
   | "name"
   | "goal"
   | "status"
+  | "archivedAt"
   | "aiWriteMode"
   | "createdAt"
   | "updatedAt"
@@ -245,6 +248,7 @@ function modelWork(work: Work): ModelWork {
     name,
     goal,
     status,
+    archivedAt,
     aiWriteMode,
     createdAt,
     updatedAt,
@@ -256,6 +260,7 @@ function modelWork(work: Work): ModelWork {
     name,
     goal,
     status,
+    archivedAt,
     aiWriteMode,
     createdAt,
     updatedAt,
@@ -373,6 +378,7 @@ function receiptState(work: Work): WorkReceiptState {
     name: work.name,
     goal: work.goal,
     status: work.status,
+    archivedAt: work.archivedAt,
   };
 }
 
@@ -381,7 +387,11 @@ async function workBySlug(
   projectId: string,
   slug: string,
 ): Promise<Awaited<ReturnType<WorkRepository["findById"]>> | ToolErrorOutput> {
-  const works = await deps.works.listByProject(projectId);
+  const [active, archived] = await Promise.all([
+    deps.works.listByProject(projectId),
+    deps.works.listByProject(projectId, { archived: true }),
+  ]);
+  const works = [...active, ...archived];
   const work = works.find((candidate) => candidate.slug === slug) ?? null;
   if (work) return work;
   const validWorkSlugs = works.map((candidate) => candidate.slug);
@@ -458,7 +468,7 @@ function contextErrorMessage(error: ContextError): string {
   if (error.code === "context_unavailable" && error.message?.includes("archived")) {
     const work = /^scratch:\/\/@([^/]+)/.exec(error.uri)?.[1];
     if (work) {
-      return `Work @${work} is archived; it is read-only until unarchived. You can unarchive it with work update status active if the writer wants that.`;
+      return `Work @${work} is archived; it is read-only until unarchived. You can unarchive it with the work unarchive command if the writer wants that.`;
     }
   }
   if ("message" in error && typeof error.message === "string") return error.message;
@@ -776,7 +786,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       try {
         if (command.command === "list") {
           const works = await deps.works.listByProject(thread.projectId, {
-            status: command.status ?? "active",
+            archived: command.archived ?? false,
           });
           return works.map(modelWork);
         }
@@ -846,6 +856,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
               name: rebound.after.name,
               goal: rebound.after.goal,
               status: rebound.after.status,
+              archivedAt: rebound.after.archivedAt,
               aiWriteMode: rebound.after.aiWriteMode,
             },
             metadata: {
@@ -879,7 +890,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             { works: deps.works, workContextNotices: deps.workContextNotices },
             selected.id,
             { name: command.name, goal: command.goal, status: command.status },
-            { requireActive: command.name !== undefined || command.goal !== undefined },
+            { requireActive: true },
           );
           const { before, after: updated, changed } = transition;
           return {
@@ -893,6 +904,32 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
                 workName: updated.name,
                 before: receiptState(before),
                 after: receiptState(updated),
+                inverse: changed
+                  ? { command: "update", workId: before.id, state: receiptState(before) }
+                  : null,
+              } satisfies WorkReceipt,
+            },
+          };
+        }
+
+        if (command.command === "archive" || command.command === "unarchive") {
+          const transition = await setWorkArchived(
+            { works: deps.works, workContextNotices: deps.workContextNotices },
+            selected.id,
+            command.command === "archive",
+          );
+          const { before, after, changed } = transition;
+          return {
+            output: modelWork(after),
+            metadata: {
+              workReceipt: {
+                operation: "update",
+                category: "mutate",
+                changed,
+                workId: after.id,
+                workName: after.name,
+                before: receiptState(before),
+                after: receiptState(after),
                 inverse: changed
                   ? { command: "update", workId: before.id, state: receiptState(before) }
                   : null,
@@ -936,13 +973,16 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             ...(error.workId ? { workId: error.workId } : {}),
           });
         }
+        if (error instanceof WorkStatusInvalidError) {
+          return toolError({ code: "invalid_work_status", message: error.message });
+        }
         if (error instanceof WorkNameRequiredError) {
           return toolError({ code: "invalid_work_name", message: error.message });
         }
         if (error instanceof WorkLifecycleUnavailableError) {
           return toolError({
             code: "work_archived",
-            message: `Work @${"work" in command ? command.work : error.workId} is archived; it is read-only until unarchived. You can unarchive it with work update status active if the writer wants that.`,
+            message: `Work @${"work" in command ? command.work : error.workId} is archived; it is read-only until unarchived. You can unarchive it with the work unarchive command if the writer wants that.`,
           });
         }
         return toolError({ message: error instanceof Error ? error.message : String(error) });

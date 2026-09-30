@@ -1,11 +1,6 @@
 import { catalogScopeKey } from "@meridian/contracts/protocol";
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
-import {
-  type AiWriteMode,
-  decodeWorkSlug,
-  type Work,
-  type WorkStatus,
-} from "@meridian/contracts/works";
+import { type AiWriteMode, decodeWorkSlug, type Work } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
   contextAvailabilityHeads,
@@ -64,7 +59,7 @@ function mapWork(row: WorkRow): Work {
     slug,
     isNoWork: row.isNoWork,
     goal: row.goal,
-    status: row.status as WorkStatus,
+    status: row.status,
     archivedAt: row.archivedAt?.toISOString() ?? null,
     aiWriteMode: row.aiWriteMode as AiWriteMode,
     entityRevision: String(row.entityRevision),
@@ -219,7 +214,6 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             name: NO_WORK_NAME,
             slug: null,
             isNoWork: true,
-            status: "active",
             aiWriteMode: "direct",
           })
           .returning();
@@ -231,7 +225,11 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       const where = and(
         eq(works.projectId, projectId),
         opts?.includeDeleted ? undefined : isNull(works.deletedAt),
-        opts?.status ? eq(works.status, opts.status) : undefined,
+        opts?.archived === undefined
+          ? undefined
+          : opts.archived
+            ? sql`${works.archivedAt} IS NOT NULL`
+            : isNull(works.archivedAt),
         opts?.includeNoWork ? undefined : eq(works.isNoWork, false),
       );
       const rows = await currentDrizzleDb(db)
@@ -269,10 +267,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       const patch: Partial<typeof works.$inferInsert> = {};
       if (input.name !== undefined) patch.name = input.name.trim();
       if (input.goal !== undefined) patch.goal = input.goal;
-      if (input.status !== undefined) {
-        patch.status = input.status;
-        patch.archivedAt = input.status === "archived" ? new Date() : null;
-      }
+      if (input.status !== undefined) patch.status = input.status;
       try {
         return await updateWork(id, patch);
       } catch (cause) {
@@ -282,15 +277,15 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         throw cause;
       }
     },
-    async archive(id: WorkId): Promise<Work> {
+    async archive(id: WorkId, archivedAt?: string): Promise<Work> {
       const existing = await requireUnlocked(id);
-      if (existing.status === "archived") return existing;
-      return updateWork(id, { status: "archived", archivedAt: new Date() });
+      if (existing.archivedAt !== null) return existing;
+      return updateWork(id, { archivedAt: archivedAt ? new Date(archivedAt) : new Date() });
     },
     async unarchive(id: WorkId): Promise<Work> {
       const existing = await requireUnlocked(id);
-      if (existing.status === "active") return existing;
-      return updateWork(id, { status: "active", archivedAt: null });
+      if (existing.archivedAt === null) return existing;
+      return updateWork(id, { archivedAt: null });
     },
     async softDelete(id: WorkId) {
       return runInDrizzleTransaction(db, async () => {

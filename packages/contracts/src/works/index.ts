@@ -1,5 +1,6 @@
 export type AiWriteMode = "direct" | "draft";
-export type WorkStatus = "active" | "archived";
+
+export const WORK_STATUS_MAX_LENGTH = 32;
 
 export const AI_WRITE_MODE_VALUES: readonly AiWriteMode[] = ["direct", "draft"];
 
@@ -16,7 +17,8 @@ export interface Work {
   slug: WorkSlug | null;
   isNoWork: boolean;
   goal: string | null;
-  status: WorkStatus;
+  /** AI-owned one-to-three-word progress summary. */
+  status: string | null;
   archivedAt: string | null;
   aiWriteMode: AiWriteMode;
   /** Durable per-entity ordering fence. JSON form of a monotonic bigint. */

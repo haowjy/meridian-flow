@@ -174,7 +174,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         name: NO_WORK_NAME,
         slug: null,
         isNoWork: true,
-        status: "active",
         aiWriteMode: "direct",
       })
       .returning({ id: works.id });
@@ -355,11 +354,13 @@ export { type RequireProjectOwnerOptions, requireProjectOwner } from "./project-
 export { runWorkLifecycleCommand } from "./run-work-lifecycle-command.js";
 export {
   normalizeWorkUpdateInput,
+  setWorkArchived,
   type UpdateWorkCommandInput,
   updateActiveWorkMetadata,
   updateWork,
   updateWorkTransition,
   WorkNameRequiredError,
+  WorkStatusInvalidError,
   type WorkTransition,
 } from "./update-work.js";
 export { requireWorkOwner } from "./work-access.js";

@@ -62,7 +62,7 @@ const ARCHIVED = {
   slug: "tournament-arc",
   isNoWork: false,
   goal: "Draft chapters 12 to 15.",
-  status: "archived",
+  status: null,
   archivedAt: "2026-09-02T00:00:00.000Z",
   aiWriteMode: "direct",
   entityRevision: "1",

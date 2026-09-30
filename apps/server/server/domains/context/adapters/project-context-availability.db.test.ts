@@ -508,7 +508,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const availability = createDrizzleProjectContextAvailability(db);
       const generation = await availability.advance({ projectIds: [PROJECT], userIds: [] });
       await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, DOCS[0]));
-      await db.update(works).set({ status: "archived" }).where(eq(works.id, WORK));
+      await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, WORK));
       let result = await availability.lookup(
         { projectId: PROJECT as never, documentIds: [DOCS[0], DOCS[2]] as never },
         { userId: USER },

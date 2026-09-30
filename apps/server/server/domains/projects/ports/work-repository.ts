@@ -4,7 +4,7 @@
  * in-memory work adapters implement.
  */
 import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import type { Work, WorkStatus } from "@meridian/contracts/works";
+import type { Work } from "@meridian/contracts/works";
 
 export interface CreateWorkInput {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */
@@ -18,14 +18,15 @@ export interface CreateWorkInput {
 export interface UpdateWorkInput {
   name?: string;
   goal?: string | null;
-  /** Applies lifecycle state in the same write as metadata. */
-  status?: WorkStatus;
+  /** AI-owned one-to-three-word progress summary. */
+  status?: string | null;
 }
 
 export interface ListWorksOptions {
   /** Include soft-deleted works. Defaults to false. */
   includeDeleted?: boolean;
-  status?: WorkStatus;
+  /** Filter by archive lifecycle. Omit to include both. */
+  archived?: boolean;
   /** Include the locked No Work row. Defaults to false. */
   includeNoWork?: boolean;
 }
@@ -109,7 +110,7 @@ export interface WorkRepository {
     authorityRevision: string;
   }>;
   update(id: WorkId, input: UpdateWorkInput): Promise<Work>;
-  archive(id: WorkId): Promise<Work>;
+  archive(id: WorkId, archivedAt?: string): Promise<Work>;
   unarchive(id: WorkId): Promise<Work>;
   /** Soft-deletes the Work and marks its live children in the same transaction. */
   softDelete(id: WorkId): Promise<WorkDeletion>;

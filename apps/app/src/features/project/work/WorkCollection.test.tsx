@@ -60,7 +60,7 @@ const WORK = {
   slug: "arc",
   isNoWork: false,
   goal: null,
-  status: "active",
+  status: null,
   archivedAt: null,
   aiWriteMode: "direct",
   entityRevision: "1",
@@ -231,7 +231,7 @@ describe("Work collection archive", () => {
           const alert = document.querySelector('[role="alert"]');
           expect(alert?.textContent).toContain("Work couldn’t be archived");
 
-          const archived = { ...WORK, status: "archived", archivedAt: "2026-09-02T00:00:00.000Z" };
+          const archived = { ...WORK, status: null, archivedAt: "2026-09-02T00:00:00.000Z" };
           vi.mocked(archiveWork).mockImplementationOnce(async () => {
             server = snapshot([archived as Work], "2");
             return archived as Work;
@@ -316,7 +316,7 @@ describe("Work collection archive failures", () => {
 
           const archivedWork = {
             ...WORK,
-            status: "archived",
+            status: null,
             archivedAt: "2026-09-02T00:00:00.000Z",
           };
           vi.mocked(archiveWork).mockImplementationOnce(async () => {
@@ -447,7 +447,7 @@ describe("Work collection delete", () => {
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const archivedWork = {
       ...WORK,
-      status: "archived",
+      status: null,
       archivedAt: "2026-09-02T00:00:00.000Z",
     } as Work;
     client.setQueryData(projectQueryKeys.works(PROJECT_ID), snapshot([archivedWork]));
@@ -523,7 +523,7 @@ describe("Work collection restore", () => {
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const deletedArchived = {
       ...WORK,
-      status: "archived",
+      status: null,
       archivedAt: "2026-09-02T00:00:00.000Z",
       deletedAt: new Date().toISOString(),
     } as Work;

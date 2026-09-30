@@ -35,7 +35,7 @@ const work = {
   id: "work",
   projectId: "project",
   name: "Book",
-  status: "active",
+  status: null,
   aiWriteMode: "draft",
 } as Work;
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -96,7 +96,7 @@ describe("useSelectedWorkWriteModeToolbarControl", () => {
           {
             draftId: "draft",
             documentId: "doc",
-            status: "active",
+            status: null,
             updatedAt: "2026-08-09T00:00:00.000Z",
           },
         ],

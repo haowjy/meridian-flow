@@ -193,7 +193,11 @@ async function planReceipts(
   thread: Thread,
   direction: Direction,
 ): Promise<PlannedStep[]> {
-  const projectWorks = await deps.works.listByProject(thread.projectId, { includeDeleted: true });
+  const [activeWorks, archivedWorks] = await Promise.all([
+    deps.works.listByProject(thread.projectId, { includeDeleted: true }),
+    deps.works.listByProject(thread.projectId, { includeDeleted: true, archived: true }),
+  ]);
+  const projectWorks = [...activeWorks, ...archivedWorks];
   const works = new Map<WorkId, ShadowWork>(
     projectWorks.map((work) => [work.id, { ...work, deleted: !!work.deletedAt }]),
   );
@@ -287,6 +291,11 @@ async function applyState(works: WorkRepository, workId: WorkId, state: WorkRece
     goal: state.goal,
     status: state.status,
   });
+  const current = await works.findById(workId);
+  if (!current) throw new Error(`Work not found: ${workId}`);
+  if (state.archivedAt !== null && current.archivedAt === null)
+    await works.archive(workId, state.archivedAt);
+  if (state.archivedAt === null && current.archivedAt !== null) await works.unarchive(workId);
 }
 
 function commandFor(
@@ -321,9 +330,16 @@ function result(
   };
 }
 
-function sameState(work: Pick<Work, "name" | "goal" | "status">, state: WorkReceiptState | null) {
+function sameState(
+  work: Pick<Work, "name" | "goal" | "status" | "archivedAt">,
+  state: WorkReceiptState | null,
+) {
   return (
-    !!state && work.name === state.name && work.goal === state.goal && work.status === state.status
+    !!state &&
+    work.name === state.name &&
+    work.goal === state.goal &&
+    work.status === state.status &&
+    work.archivedAt === state.archivedAt
   );
 }
 

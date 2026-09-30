@@ -44,7 +44,12 @@ function harness(receipts: WorkReceipt[]) {
 }
 
 function state(name: string, status: "active" | "archived" = "active") {
-  return { name, goal: null, status } as const;
+  return {
+    name,
+    goal: null,
+    status: null,
+    archivedAt: status === "archived" ? "2026-01-01T00:00:00.000Z" : null,
+  } as const;
 }
 
 describe("Work receipt reversal", () => {
@@ -85,7 +90,7 @@ describe("Work receipt reversal", () => {
     const h = harness([]);
     const work = await h.works.create({ projectId: "project-1", name: "Arc" });
     await h.works.update(work.id, { name: "Arc revised" });
-    await h.works.archive(work.id);
+    const archived = await h.works.archive(work.id);
     const receipt: WorkReceipt = {
       operation: "update",
       category: "mutate",
@@ -93,7 +98,7 @@ describe("Work receipt reversal", () => {
       workId: work.id,
       workName: "Arc revised",
       before: state("Arc"),
-      after: state("Arc revised", "archived"),
+      after: { ...state("Arc revised", "archived"), archivedAt: archived.archivedAt },
       inverse: { command: "update", workId: work.id, state: state("Arc") },
     };
     Object.assign(h.deps.blocks, {
@@ -102,9 +107,10 @@ describe("Work receipt reversal", () => {
     await reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID, direction: "undo" });
     await expect(h.works.findById(work.id)).resolves.toMatchObject(state("Arc"));
     await reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID, direction: "redo" });
-    await expect(h.works.findById(work.id)).resolves.toMatchObject(
-      state("Arc revised", "archived"),
-    );
+    await expect(h.works.findById(work.id)).resolves.toMatchObject({
+      ...state("Arc revised", "archived"),
+      archivedAt: archived.archivedAt,
+    });
   });
 
   it("enqueues context inside the reversal transaction and returns the committed outcome", async () => {

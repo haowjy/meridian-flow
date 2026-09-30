@@ -56,7 +56,7 @@ const WORK = {
   slug: "arc",
   isNoWork: false,
   goal: null,
-  status: "active",
+  status: null,
   archivedAt: null,
   aiWriteMode: "direct",
   entityRevision: "1",
@@ -80,8 +80,7 @@ const snapshot = (works: Work[], authorityRevision = "1") =>
     works,
     noWork: { ...WORK, id: "no-work", name: "No Work", isNoWork: true, slug: null },
   }) as unknown as WorksSnapshot;
-const archived = (work: Work) =>
-  ({ ...work, status: "archived", archivedAt: "2026-09-02T00:00:00.000Z" }) as Work;
+const archived = (work: Work) => ({ ...work, archivedAt: "2026-09-02T00:00:00.000Z" }) as Work;
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -185,7 +184,7 @@ describe("Work command projection", () => {
       });
       await settle(() => {
         expect(recordStatuses(client)).toEqual([]);
-        expect(field(WORK.id, "status")).toBe("archived");
+        expect(field(WORK.id, "archivedAt")).not.toBeNull();
       });
       expect(seen.failures.size).toBe(0);
     });
@@ -205,16 +204,16 @@ describe("Work command projection", () => {
         void commands.archive({ workId: SECOND.id });
       });
       await settle(() => {
-        expect(field(WORK.id, "status")).toBe("archived");
-        expect(field(SECOND.id, "status")).toBe("archived");
+        expect(field(WORK.id, "archivedAt")).not.toBeNull();
+        expect(field(SECOND.id, "archivedAt")).not.toBeNull();
       });
       // One lifecycle scope: the second command waits for the first on the network.
       expect(archiveWork).toHaveBeenCalledTimes(1);
 
       await act(async () => first.reject(new Error("Rejected")));
       await settle(() => expect(seen.failures.get(WORK.id)?.operation).toBe("archive"));
-      expect(field(WORK.id, "status")).toBe("active");
-      expect(field(SECOND.id, "status")).toBe("archived");
+      expect(field(WORK.id, "archivedAt")).toBeNull();
+      expect(field(SECOND.id, "archivedAt")).not.toBeNull();
       expect(seen.failures.has(SECOND.id)).toBe(false);
 
       await act(async () => seen.failures.get(WORK.id)?.dismiss());
@@ -246,7 +245,7 @@ describe("Work command projection", () => {
       await act(async () => archiveRead.resolve(snapshot([WORK, archived(SECOND)], "2")));
       // Query and mutation notifications flush on a timer; wait for the render.
       await settle(() => {
-        expect(field(SECOND.id, "status")).toBe("archived");
+        expect(field(SECOND.id, "archivedAt")).not.toBeNull();
         expect(field(WORK.id, "name")).toBe("Revised arc");
       });
 
@@ -254,7 +253,7 @@ describe("Work command projection", () => {
       await settle(() => expect(recordStatuses(client)).toEqual([]));
       await settle(() => {
         expect(field(WORK.id, "name")).toBe("Revised arc");
-        expect(field(SECOND.id, "status")).toBe("archived");
+        expect(field(SECOND.id, "archivedAt")).not.toBeNull();
       });
       const shown = renders.findIndex((render) => render.works?.[0]?.name === "Revised arc");
       expect(renders.slice(shown).map((render) => render.works?.[0]?.name)).not.toContain("Arc");
@@ -274,11 +273,11 @@ describe("Work command projection", () => {
       await act(async () => {
         void commands.archive({ workId: WORK.id });
       });
-      await settle(() => expect(field(WORK.id, "status")).toBe("archived"));
+      await settle(() => expect(field(WORK.id, "archivedAt")).not.toBeNull());
       await act(async () => {
         void commands.unarchive({ workId: WORK.id });
       });
-      await settle(() => expect(field(WORK.id, "status")).toBe("active"));
+      await settle(() => expect(field(WORK.id, "archivedAt")).toBeNull());
       const back = renders.length - 1;
 
       await act(async () => {
@@ -290,7 +289,7 @@ describe("Work command projection", () => {
       expect(renders.slice(back).map((render) => render.works?.[0]?.status)).not.toContain(
         "archived",
       );
-      expect(field(WORK.id, "status")).toBe("active");
+      expect(field(WORK.id, "archivedAt")).toBeNull();
     });
   });
   it("hides a failure once the server already shows its target", async () => {
@@ -307,7 +306,7 @@ describe("Work command projection", () => {
         client.setQueryData(projectQueryKeys.works(PROJECT_ID), snapshot([archived(WORK)], "2"));
       });
       await settle(() => expect(seen.failures.size).toBe(0));
-      expect(field(WORK.id, "status")).toBe("archived");
+      expect(field(WORK.id, "archivedAt")).not.toBeNull();
     });
   });
 
@@ -322,7 +321,7 @@ describe("Work command projection", () => {
       });
       await settle(() => {
         expect(recordStatuses(client)).toEqual([]);
-        expect(field(WORK.id, "status")).toBe("archived");
+        expect(field(WORK.id, "archivedAt")).not.toBeNull();
       });
       expect(field(WORK.id, "name")).toBe("Revised arc");
     });
@@ -392,14 +391,14 @@ describe("Work command projection", () => {
       });
       await settle(() => {
         expect(seen.failures.get(WORK.id)?.operation).toBe("archive");
-        expect(field(SECOND.id, "status")).toBe("archived");
+        expect(field(SECOND.id, "archivedAt")).not.toBeNull();
       });
       const reads = vi.mocked(listProjectWorks).mock.calls.length;
 
       await act(async () => account.epoch.abort());
       await settle(() => {
         expect(seen.failures.size).toBe(0);
-        expect(field(SECOND.id, "status")).toBe("active");
+        expect(field(SECOND.id, "archivedAt")).toBeNull();
       });
       // The old account's commit neither reads nor patches the Works snapshot.
       await act(async () => request.resolve(archived(SECOND)));

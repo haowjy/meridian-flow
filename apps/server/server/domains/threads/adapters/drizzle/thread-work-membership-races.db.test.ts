@@ -57,7 +57,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await resetThreadWorkRaceFixture(db);
       await db
         .update(schema.works)
-        .set({ status: "active", archivedAt: null })
+        .set({ archivedAt: null })
         .where(eq(schema.works.id, TARGET_WORK_ID));
     });
 

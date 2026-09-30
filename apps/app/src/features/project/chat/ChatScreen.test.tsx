@@ -52,7 +52,13 @@ vi.mock("@/client/query/work-command-selectors", () => ({
   useWorkCommandFailures: () => new Map(),
 }));
 
-const WORK = { id: "work-1", slug: "arc", name: "Arc", status: "active" } as unknown as Work;
+const WORK = {
+  id: "work-1",
+  slug: "arc",
+  name: "Arc",
+  status: null,
+  archivedAt: null,
+} as unknown as Work;
 
 function renderChat(work: Work) {
   return (
@@ -62,7 +68,7 @@ function renderChat(work: Work) {
 
 describe("ChatScreen", () => {
   it("replaces the composer with the archived notice when the chat's Work is archived", async () => {
-    await withReactRoot(renderChat({ ...WORK, status: "archived" }), () => {
+    await withReactRoot(renderChat({ ...WORK, archivedAt: "2026-09-02T00:00:00.000Z" }), () => {
       expect(document.querySelector("textarea")).toBeNull();
       expect(document.querySelector("footer")?.textContent).toContain("This Work is archived.");
       expect(

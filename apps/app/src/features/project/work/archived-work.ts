@@ -4,6 +4,6 @@
  */
 import type { Work } from "@meridian/contracts/works";
 
-export function isWorkReadOnly(work: Pick<Work, "status"> | null | undefined): boolean {
-  return work?.status === "archived";
+export function isWorkReadOnly(work: Pick<Work, "archivedAt"> | null | undefined): boolean {
+  return work?.archivedAt != null;
 }

@@ -197,28 +197,22 @@ describe("branch-push durable projection", () => {
       codec,
     });
 
-    await db
-      .update(works)
-      .set({ status: "archived", archivedAt: new Date() })
-      .where(eq(works.id, workId));
+    await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, workId));
     await expect(branchPush.pushToLive({ branchId: branch.branchId })).rejects.toThrow(
       "is archived; it is read-only until unarchived",
     );
-    await db.update(works).set({ status: "active", archivedAt: null }).where(eq(works.id, workId));
+    await db.update(works).set({ archivedAt: null }).where(eq(works.id, workId));
     await expect(branchPush.pushToLive({ branchId: branch.branchId })).resolves.toMatchObject({
       status: "pushed",
     });
     const prepared = commitSpy.mock.calls.at(-1)?.[0];
     if (!prepared) throw new Error("Expected a prepared push");
-    await db
-      .update(works)
-      .set({ status: "archived", archivedAt: new Date() })
-      .where(eq(works.id, workId));
+    await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, workId));
     await expect(commitStore.commitPush(prepared)).resolves.toMatchObject({ status: "conflict" });
     await expect(commitStore.commitPushBatch({ pushes: [prepared] })).rejects.toThrow(
       "changed before its push could commit",
     );
-    await db.update(works).set({ status: "active", archivedAt: null }).where(eq(works.id, workId));
+    await db.update(works).set({ archivedAt: null }).where(eq(works.id, workId));
     const [persisted] = await db
       .select({ markdownProjection: documents.markdownProjection })
       .from(documents)

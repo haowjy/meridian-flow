@@ -332,7 +332,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await db
         .update(schema.works)
-        .set({ status: "archived", archivedAt: new Date() })
+        .set({ archivedAt: new Date() })
         .where(eq(schema.works.id, WORK_ID));
       await expect(port.read(`scratch://@${authority.workSlug}/notes.md`)).resolves.toMatchObject({
         ok: true,
@@ -341,10 +341,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         port.write(`scratch://@${authority.workSlug}/notes.md`, "blocked"),
       ).resolves.toMatchObject({ ok: false, error: { code: "context_unavailable" } });
-      await db
-        .update(schema.works)
-        .set({ status: "active", archivedAt: null })
-        .where(eq(schema.works.id, WORK_ID));
+      await db.update(schema.works).set({ archivedAt: null }).where(eq(schema.works.id, WORK_ID));
 
       await expect(
         port.delete(`scratch://@${authority.workSlug}/notes.md`, {

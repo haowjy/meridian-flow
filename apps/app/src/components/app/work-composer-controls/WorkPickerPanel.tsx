@@ -62,8 +62,8 @@ export function deriveWorkPickerViewModel(
           `${work.name} ${work.goal ?? ""}`.toLocaleLowerCase().includes(needle),
         )
       : [];
-  const active = filtered.filter(({ status }) => status === "active");
-  const archived = filtered.filter(({ status }) => status === "archived");
+  const active = filtered.filter(({ archivedAt }) => archivedAt === null);
+  const archived = filtered.filter(({ archivedAt }) => archivedAt !== null);
   const ordered = [...active, ...archived];
   const rows = {
     query,

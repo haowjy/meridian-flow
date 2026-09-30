@@ -2,7 +2,8 @@
 import type { Work } from "@meridian/contracts/works";
 import { useCallback, useEffect, useRef } from "react";
 
-type Intent = { workId: string; status: Work["status"] };
+type ArchiveView = "active" | "archived";
+type Intent = { workId: string; view: ArchiveView };
 
 export function useArchiveFocusFollow(works: readonly Work[] | null) {
   const tabs = useRef<HTMLDivElement>(null);
@@ -12,15 +13,16 @@ export function useArchiveFocusFollow(works: readonly Work[] | null) {
   useEffect(() => {
     const target = intent.current;
     if (!target || works === null) return;
-    if (works.find((work) => work.id === target.workId)?.status !== target.status) return;
-    tabs.current?.querySelector<HTMLElement>(`[data-tab-value="${target.status}"]`)?.focus();
+    const work = works.find((candidate) => candidate.id === target.workId);
+    if (!work || (work.archivedAt !== null) !== (target.view === "archived")) return;
+    tabs.current?.querySelector<HTMLElement>(`[data-tab-value="${target.view}"]`)?.focus();
     intent.current = null;
   }, [works]);
 
-  /** Focus the tab `status` once this Work shows there, unless its command fails first. */
+  /** Focus the destination tab once this Work shows there, unless its command fails first. */
   const follow = useCallback(
-    (workId: string, status: Work["status"], command: Promise<Error | null>) => {
-      const next = { workId, status };
+    (workId: string, view: ArchiveView, command: Promise<Error | null>) => {
+      const next = { workId, view };
       intent.current = next;
       void command.then((error) => {
         if (error && intent.current === next) intent.current = null;

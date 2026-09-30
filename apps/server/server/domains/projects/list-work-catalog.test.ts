@@ -66,7 +66,7 @@ function work(id: WorkId, slug: string): Work {
   return {
     id,
     projectId: PROJECT_ID,
-    status: "active",
+    status: null,
     deletedAt: null,
     slug: decoded,
     isNoWork: false,
@@ -80,7 +80,7 @@ function lockedWork(): Work {
     name: "No Work",
     slug: null,
     isNoWork: true,
-    status: "active",
+    status: null,
     deletedAt: null,
   } as Work;
 }

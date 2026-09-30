@@ -5,10 +5,12 @@ import { createInMemoryWorkRepository } from "./adapters/work-repository/in-memo
 import { WorkLifecycleUnavailableError } from "./domain/work-lifecycle.js";
 import {
   normalizeWorkUpdateInput,
+  setWorkArchived,
   updateActiveWorkMetadata,
   updateWork,
   updateWorkTransition,
   WorkNameRequiredError,
+  WorkStatusInvalidError,
 } from "./update-work.js";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000801";
@@ -23,8 +25,19 @@ describe("updateWork", () => {
       raw: { goal: " \n\t " },
       normalized: { goal: null },
     },
+    {
+      raw: { status: "  Needs\n outline  " },
+      normalized: { status: "Needs outline" },
+    },
   ])("normalizes shared metadata intent: $raw", ({ raw, normalized }) => {
     expect(normalizeWorkUpdateInput(raw)).toEqual(normalized);
+  });
+
+  it.each([
+    "one two three four",
+    "x".repeat(33),
+  ])("rejects invalid AI-owned status: %s", (status) => {
+    expect(() => normalizeWorkUpdateInput({ status })).toThrow(WorkStatusInvalidError);
   });
 
   it.each([
@@ -37,7 +50,7 @@ describe("updateWork", () => {
     expect(normalizeWorkUpdateInput({ name })).toEqual({ name: normalized });
   });
 
-  it("emits one project refresh for a compound metadata and lifecycle command", async () => {
+  it("emits one project refresh for a compound metadata and status command", async () => {
     const works = createInMemoryWorkRepository();
     const existing = await works.create({ projectId: PROJECT_ID, name: "Draft" });
     const changed: string[] = [];
@@ -52,7 +65,7 @@ describe("updateWork", () => {
         },
       },
       existing.id,
-      { name: "Revised", goal: "Finish it", status: "archived" },
+      { name: "Revised", goal: "Finish it", status: "Drafting" },
     );
 
     expect(changed).toEqual([PROJECT_ID]);
@@ -95,7 +108,7 @@ describe("updateWork", () => {
       {
         name: " Draft ",
         goal: "Finish it",
-        status: "active",
+        status: null,
       },
     );
 
@@ -134,45 +147,42 @@ describe("updateWork", () => {
     expect(update).toHaveBeenCalledTimes(1);
   });
 
-  it("archives, unarchives, and changes metadata with one repository write per transition", async () => {
+  it("updates and clears AI-owned status without changing archive lifecycle", async () => {
     const works = createInMemoryWorkRepository();
     const existing = await works.create({ projectId: PROJECT_ID, name: "Draft" });
     const update = vi.spyOn(works, "update");
     const deps = { works, workContextNotices: { async projectChanged() {} } };
 
     await expect(
-      updateWorkTransition(deps, existing.id, { name: "Revised", status: "archived" }),
+      updateWorkTransition(deps, existing.id, {
+        name: "Revised",
+        status: "Drafting",
+      }),
     ).resolves.toMatchObject({
-      before: { name: "Draft", status: "active" },
-      after: { name: "Revised", status: "archived" },
+      before: { name: "Draft", status: null, archivedAt: null },
+      after: { name: "Revised", status: "Drafting", archivedAt: null },
       changed: true,
     });
-    await expect(
-      updateWorkTransition(deps, existing.id, { status: "archived" }),
-    ).resolves.toMatchObject({ changed: false });
-    await expect(
-      updateWorkTransition(deps, existing.id, { status: "active" }),
-    ).resolves.toMatchObject({ after: { status: "active", archivedAt: null }, changed: true });
+    await expect(updateWorkTransition(deps, existing.id, { status: "" })).resolves.toMatchObject({
+      after: { status: null, archivedAt: null },
+      changed: true,
+    });
     expect(update).toHaveBeenCalledTimes(2);
   });
 
-  it("refuses archived metadata edits but allows an atomic unarchive and edit", async () => {
+  it("refuses archived metadata edits until an explicit unarchive", async () => {
     const works = createInMemoryWorkRepository();
     const existing = await works.create({ projectId: PROJECT_ID, name: "Draft" });
-    await works.archive(existing.id);
     const deps = { works, workContextNotices: { async projectChanged() {} } };
+    await setWorkArchived(deps, existing.id, true);
 
     await expect(
       updateActiveWorkMetadata(deps, existing.id, { name: "Still blocked" }),
     ).rejects.toBeInstanceOf(WorkLifecycleUnavailableError);
+    await setWorkArchived(deps, existing.id, false);
     await expect(
-      updateWorkTransition(
-        deps,
-        existing.id,
-        { name: "Revised", status: "active" },
-        { requireActive: true },
-      ),
-    ).resolves.toMatchObject({ after: { name: "Revised", status: "active" } });
+      updateActiveWorkMetadata(deps, existing.id, { name: "Revised" }),
+    ).resolves.toMatchObject({ after: { name: "Revised", archivedAt: null } });
   });
 
   it("rolls metadata back when the lifecycle change fails", async () => {
@@ -188,12 +198,12 @@ describe("updateWork", () => {
     await expect(
       updateWork({ works, workContextNotices: { async projectChanged() {} } }, existing.id, {
         name: "Revised",
-        status: "archived",
+        status: "Drafting",
       }),
     ).rejects.toThrow("update interrupted");
     await expect(works.findById(existing.id)).resolves.toMatchObject({
       name: "Draft",
-      status: "active",
+      status: null,
     });
   });
 });

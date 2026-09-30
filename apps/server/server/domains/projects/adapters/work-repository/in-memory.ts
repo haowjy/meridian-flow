@@ -56,7 +56,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
       ),
       isNoWork: false,
       goal: input.goal ?? null,
-      status: "active",
+      status: null,
       archivedAt: null,
       aiWriteMode: "direct",
       entityRevision: "1",
@@ -147,7 +147,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
         slug: null,
         isNoWork: true,
         goal: null,
-        status: "active",
+        status: null,
         archivedAt: null,
         aiWriteMode: "direct",
         entityRevision: "1",
@@ -164,7 +164,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
     async listByProject(projectId: ProjectId, opts?: ListWorksOptions): Promise<Work[]> {
       return [...rows.values()]
         .filter((w) => w.projectId === projectId && (opts?.includeDeleted || w.deletedAt === null))
-        .filter((w) => !opts?.status || w.status === opts.status)
+        .filter((w) => opts?.archived === undefined || (w.archivedAt !== null) === opts.archived)
         .filter((w) => opts?.includeNoWork || !w.isNoWork)
         .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
         .map((w) => ({ ...w }));
@@ -188,23 +188,19 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
       }
       if (input.goal !== undefined) row.goal = input.goal;
       const timestamp = now();
-      if (input.status !== undefined) {
-        row.status = input.status;
-        row.archivedAt = input.status === "archived" ? timestamp : null;
-      }
+      if (input.status !== undefined) row.status = input.status;
       row.updatedAt = timestamp;
       row.lastActivityAt = timestamp;
       advance(row);
       return { ...row };
     },
 
-    async archive(id: WorkId): Promise<Work> {
+    async archive(id: WorkId, archivedAt?: string): Promise<Work> {
       const row = rows.get(id);
       if (!row || row.deletedAt) throw new Error(`Work not found: ${id}`);
       if (row.isNoWork) throw new WorkLockedError();
-      if (row.status === "active") {
-        row.status = "archived";
-        row.archivedAt = now();
+      if (row.archivedAt === null) {
+        row.archivedAt = archivedAt ?? now();
         row.updatedAt = row.archivedAt;
         row.lastActivityAt = row.updatedAt;
         advance(row);
@@ -216,8 +212,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
       const row = rows.get(id);
       if (!row || row.deletedAt) throw new Error(`Work not found: ${id}`);
       if (row.isNoWork) throw new WorkLockedError();
-      if (row.status === "archived") {
-        row.status = "active";
+      if (row.archivedAt !== null) {
         row.archivedAt = null;
         row.updatedAt = now();
         row.lastActivityAt = row.updatedAt;

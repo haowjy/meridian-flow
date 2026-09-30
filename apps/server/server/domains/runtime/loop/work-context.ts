@@ -11,6 +11,7 @@ import {
 export const WORK_CONTEXT_ACTIVE_LIMIT = 20;
 export const WORK_CONTEXT_GOAL_LIMIT = 2_000;
 export const WORK_CONTEXT_OTHER_GOAL_LIMIT = 140;
+export const WORK_CONTEXT_STATUS_LIMIT = 32;
 const GOAL_TRUNCATION_MARKER = "… [truncated]";
 const OTHER_GOAL_TRUNCATION_MARKER = "…";
 
@@ -56,24 +57,37 @@ function boundedGoalSummary(value: string | null): string | null {
   return boundedPromptText(flattened, WORK_CONTEXT_OTHER_GOAL_LIMIT, OTHER_GOAL_TRUNCATION_MARKER);
 }
 
+function boundedStatus(value: string | null): string | null {
+  const normalized = (value ?? "").replace(/\s+/g, " ").trim();
+  return normalized
+    ? boundedPromptText(normalized, WORK_CONTEXT_STATUS_LIMIT, OTHER_GOAL_TRUNCATION_MARKER)
+    : null;
+}
+
 function workIdentity(work: Pick<Work, "slug" | "name">, indent = ""): string {
   return `${indent}${promptText(work.slug ?? "none")}: ${JSON.stringify(promptText(work.name))}`;
 }
 
-function currentWorkLines(work: Pick<Work, "slug" | "name" | "goal">): string[] {
+function currentWorkLines(work: Pick<Work, "slug" | "name" | "goal" | "status">): string[] {
   const identity = workIdentity(work);
+  const status = boundedStatus(work.status);
   const goal = boundedGoal(work.goal);
-  if (goal === null) return [`${identity} (goal: none)`];
-  return [identity, "  goal: |", ...goal.split("\n").map((line) => `    ${line}`)];
+  if (status === null && goal === null) return [`${identity} (goal: none)`];
+  const lines = [identity];
+  if (status !== null) lines.push(`  status: ${status}`);
+  if (goal === null) lines.push("  goal: none");
+  else lines.push("  goal: |", ...goal.split("\n").map((line) => `    ${line}`));
+  return lines;
 }
 
-function otherWorkLine(work: Pick<Work, "slug" | "name" | "goal">): string {
+function otherWorkLine(work: Pick<Work, "slug" | "name" | "goal" | "status">): string {
   const goal = boundedGoalSummary(work.goal);
-  return `${workIdentity(work, "  ")} (goal: ${goal ?? "none"})`;
+  const status = boundedStatus(work.status);
+  return `${workIdentity(work, "  ")} (${status ? `status: ${status}; ` : ""}goal: ${goal ?? "none"})`;
 }
 
 function currentLines(
-  work: Pick<Work, "slug" | "name" | "goal" | "aiWriteMode" | "isNoWork">,
+  work: Pick<Work, "slug" | "name" | "goal" | "status" | "aiWriteMode" | "isNoWork">,
 ): string[] {
   if (work.isNoWork) return [`current: none (${work.aiWriteMode} writes)`];
   const [identity, ...goalLines] = currentWorkLines(work);
@@ -81,8 +95,10 @@ function currentLines(
 }
 
 export function renderWorkContext(input: {
-  current: Pick<Work, "id" | "slug" | "name" | "goal" | "aiWriteMode" | "isNoWork">;
-  activeWorks: Array<Pick<Work, "id" | "slug" | "name" | "goal" | "lastActivityAt" | "isNoWork">>;
+  current: Pick<Work, "id" | "slug" | "name" | "goal" | "status" | "aiWriteMode" | "isNoWork">;
+  activeWorks: Array<
+    Pick<Work, "id" | "slug" | "name" | "goal" | "status" | "lastActivityAt" | "isNoWork">
+  >;
 }): string {
   const otherActive = input.activeWorks
     .filter((work) => !work.isNoWork && work.id !== input.current.id)
@@ -120,7 +136,7 @@ export function createWorkContextReader(deps: {
       if (!current || current.deletedAt) {
         throw new Error(`Thread primary Work is unavailable: ${threadId}`);
       }
-      const activeWorks = await deps.works.listByProject(thread.projectId, { status: "active" });
+      const activeWorks = await deps.works.listByProject(thread.projectId, { archived: false });
       const execution: ThreadExecutionContext = threadExecutionContext(current);
       return {
         text: renderWorkContext({ current, activeWorks }),

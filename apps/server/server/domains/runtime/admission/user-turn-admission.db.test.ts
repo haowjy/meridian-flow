@@ -250,7 +250,7 @@ if (!RUN) {
       const service = await composeAdmission({ threadId: THREAD, documentId: DOCUMENT, uri: "" });
       await firstDb
         .update(schema.works)
-        .set({ status: "archived", archivedAt: new Date() })
+        .set({ archivedAt: new Date() })
         .where(eq(schema.works.id, WORK));
 
       const request = {
@@ -268,10 +268,7 @@ if (!RUN) {
       });
       await expect(firstDb.select().from(schema.turns)).resolves.toHaveLength(0);
 
-      await firstDb
-        .update(schema.works)
-        .set({ status: "active", archivedAt: null })
-        .where(eq(schema.works.id, WORK));
+      await firstDb.update(schema.works).set({ archivedAt: null }).where(eq(schema.works.id, WORK));
       await expect(
         service.admit({ ...request, submissionId: "after-unarchive" }),
       ).resolves.toMatchObject({ kind: "accepted" });

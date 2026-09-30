@@ -11,7 +11,7 @@ const work = (id: string, fields: Partial<Work> = {}) =>
     id,
     name: id,
     goal: null,
-    status: "active",
+    status: null,
     archivedAt: null,
     deletedAt: null,
     lastActivityAt: "2026-09-01T00:00:00.000Z",
@@ -43,11 +43,15 @@ describe("workListEntries", () => {
   it("puts Works being created first, then Undo rows newest first, then the tab's Works", () => {
     const entries = workListEntries(
       projection({
-        works: [work("arc"), work("coda", { status: "archived" }), work("draft")],
+        works: [
+          work("arc"),
+          work("coda", { archivedAt: "2026-09-02T00:00:00.000Z" }),
+          work("draft"),
+        ],
         deleted: [
           deleted("gone-2"),
           deleted("gone-1"),
-          deleted("gone-archived", { status: "archived" }),
+          deleted("gone-archived", { archivedAt: "2026-09-02T00:00:00.000Z" }),
         ],
         creations: new Map([
           ["new", { work: work("new"), phase: "pending" }],

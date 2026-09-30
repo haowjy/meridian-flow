@@ -22,7 +22,7 @@ function work(overrides: Partial<Work> & Pick<Work, "id" | "name">): Work {
     slug: testWorkSlug(overrides.name.toLowerCase().replaceAll(" ", "-")),
     isNoWork: false,
     goal: null,
-    status: "active",
+    status: null,
     archivedAt: null,
     aiWriteMode: "direct",
     entityRevision: "1",
@@ -95,6 +95,34 @@ describe("renderWorkContext", () => {
         'current: arc: "Arc" (goal: none)',
         "active (most recent first; max 20):",
         '  pass: "Pass" (goal: Secure &lt;the&gt; pass &amp; hold before dawn.)',
+        "</work_context>",
+      ].join("\n"),
+    );
+  });
+
+  it("renders bounded status for the current and other active Work", () => {
+    const current = work({
+      id: WORK_ID,
+      name: "Arc",
+      goal: "Finish chapter 14.",
+      status: "Drafting",
+    });
+    const other = work({
+      id: NO_WORK_ID,
+      name: "Coda",
+      goal: "Land the ending.",
+      status: "Revising",
+    });
+
+    expect(renderWorkContext({ current, activeWorks: [current, other] })).toBe(
+      [
+        "<work_context>",
+        'current: arc: "Arc"',
+        "  status: Drafting",
+        "  goal: |",
+        "    Finish chapter 14.",
+        "active (most recent first; max 20):",
+        '  coda: "Coda" (status: Revising; goal: Land the ending.)',
         "</work_context>",
       ].join("\n"),
     );

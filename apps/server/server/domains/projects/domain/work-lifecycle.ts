@@ -9,7 +9,7 @@ export class WorkLifecycleUnavailableError extends Error {
   ) {
     super(
       state === "archived"
-        ? `Work ${workSlug ? `@${workSlug}` : workId} is archived; it is read-only until unarchived. You can unarchive it with work update status active if the writer wants that.`
+        ? `Work ${workSlug ? `@${workSlug}` : workId} is archived; it is read-only until unarchived. You can unarchive it with the work unarchive command if the writer wants that.`
         : `Work not found: ${workId}`,
     );
     this.name = "WorkLifecycleUnavailableError";

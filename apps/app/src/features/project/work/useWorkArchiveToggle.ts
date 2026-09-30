@@ -10,7 +10,7 @@ import { useWorkMutations } from "@/client/query/work-command-store";
 export function useWorkArchiveToggle(projectId: string) {
   const { archive, unarchive } = useWorkMutations(projectId);
   return useCallback(
-    (work: Work) => (work.status === "archived" ? unarchive : archive)({ workId: work.id }),
+    (work: Work) => (work.archivedAt !== null ? unarchive : archive)({ workId: work.id }),
     [archive, unarchive],
   );
 }

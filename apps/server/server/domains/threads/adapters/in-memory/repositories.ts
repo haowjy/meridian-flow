@@ -155,7 +155,8 @@ interface WorkProjectionRepository {
     id: string;
     name: string;
     projectId: string;
-    status: "active" | "archived";
+    status: string | null;
+    archivedAt: string | null;
     deletedAt: string | null;
   } | null>;
 }
@@ -446,7 +447,7 @@ export function createInMemoryRepositories(
         if (!work || work.deletedAt || work.id !== workId) {
           throw new WorkLifecycleUnavailableError(workId, !work ? "missing" : "deleted");
         }
-        if (work.status === "archived") throw new WorkLifecycleUnavailableError(workId, "archived");
+        if (work.archivedAt !== null) throw new WorkLifecycleUnavailableError(workId, "archived");
         if (work.projectId !== thread.projectId) {
           throw new ThreadWorkProjectMismatchError(workId);
         }
@@ -479,7 +480,7 @@ export function createInMemoryRepositories(
         if (!work || work.deletedAt) {
           throw new WorkLifecycleUnavailableError(workId, !work ? "missing" : "deleted");
         }
-        if (work.status === "archived") throw new WorkLifecycleUnavailableError(workId, "archived");
+        if (work.archivedAt !== null) throw new WorkLifecycleUnavailableError(workId, "archived");
         if (work.projectId !== thread.projectId) throw new ThreadWorkProjectMismatchError(workId);
       }
       const previousWorkId = primaryWorkIdForThread(threadId);

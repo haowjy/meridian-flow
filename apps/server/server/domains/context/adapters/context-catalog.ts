@@ -274,7 +274,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
         id: works.id,
         slug: works.slug,
         name: works.name,
-        status: works.status,
+        archivedAt: works.archivedAt,
         deletedAt: works.deletedAt,
         entityRevision: works.entityRevision,
       })
@@ -289,7 +289,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
         scope,
         authority: { workId: work.id, workSlug },
         name: work.name,
-        available: work.deletedAt === null && work.status === "active",
+        available: work.deletedAt === null && work.archivedAt === null,
         entityRevision: String(work.entityRevision),
       });
     }
@@ -620,7 +620,7 @@ export function createDrizzleContextCatalog(
             projectId: works.projectId,
             slug: works.slug,
             name: works.name,
-            status: works.status,
+            archivedAt: works.archivedAt,
             deletedAt: works.deletedAt,
             entityRevision: works.entityRevision,
           })
@@ -670,7 +670,7 @@ export function createDrizzleContextCatalog(
               scope,
               authority: { workId: work.id, workSlug },
               name: work.name,
-              available: work.deletedAt === null && work.status === "active",
+              available: work.deletedAt === null && work.archivedAt === null,
               entityRevision: String(work.entityRevision),
             };
             const existing = existingById.get(work.id);

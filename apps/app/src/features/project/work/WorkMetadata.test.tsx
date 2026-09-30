@@ -22,7 +22,7 @@ const WORK: Work = {
   slug: "arc" as Work["slug"],
   isNoWork: false,
   goal: "First paragraph.\n\nSecond paragraph.\n\nThird paragraph.",
-  status: "active",
+  status: null,
   archivedAt: null,
   aiWriteMode: "direct",
   entityRevision: "1",

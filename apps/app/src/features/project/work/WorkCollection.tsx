@@ -1,7 +1,6 @@
 /** Collection surface for Work creation and lifecycle: Active, Archived, and Deleted tabs. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { Work } from "@meridian/contracts/works";
 import { Link } from "@tanstack/react-router";
 import { Plus, X } from "lucide-react";
 import type { ReactNode } from "react";
@@ -31,7 +30,7 @@ import { WorkRow } from "./WorkRow";
 import { type WorkListEntry, workListEntries } from "./work-list-model";
 
 /** The tab an Archive or Unarchive, or its retry, moves the Work to. */
-const archiveTarget = (operation: "archive" | "unarchive"): Work["status"] =>
+const archiveTarget = (operation: "archive" | "unarchive"): "active" | "archived" =>
   operation === "archive" ? "archived" : "active";
 
 export function WorkCollection({
@@ -136,7 +135,7 @@ export function WorkCollection({
                   onToggleArchive={() =>
                     archiveFocus.follow(
                       work.id,
-                      work.status === "archived" ? "active" : "archived",
+                      work.archivedAt !== null ? "active" : "archived",
                       toggleArchive(work),
                     )
                   }

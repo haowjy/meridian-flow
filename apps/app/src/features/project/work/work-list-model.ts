@@ -53,15 +53,15 @@ export function workListEntries(
     projected.restoring.has(work.id)
       ? { key: work.id, work, state: "restoring" }
       : { key: work.id, work, state: "idle", failure: failures.get(work.id) };
-  const undoRows = (status: Work["status"]) =>
+  const undoRows = (archived: boolean) =>
     [...windows].reverse().flatMap((open): WorkListEntry[] => {
       const work = projected.deleted.find((entry) => entry.id === open.workId);
-      if (!work || work.status !== status) return [];
+      if (!work || (work.archivedAt !== null) !== archived) return [];
       return [{ key: `deleted-${work.id}`, work, state: "undo", failure: failures.get(work.id) }];
     });
-  const tab = (status: Work["status"]) => [
-    ...undoRows(status),
-    ...projected.works.filter((work) => work.status === status).map(listed),
+  const tab = (archived: boolean) => [
+    ...undoRows(archived),
+    ...projected.works.filter((work) => (work.archivedAt !== null) === archived).map(listed),
   ];
   const creating = [...projected.creations.values()].map(
     ({ work, phase }): WorkListEntry => ({
@@ -72,8 +72,8 @@ export function workListEntries(
   );
   const undoable = new Set(windows.map((open) => open.workId));
   return {
-    active: [...creating, ...tab("active")],
-    archived: tab("archived"),
+    active: [...creating, ...tab(false)],
+    archived: tab(true),
     deleted: restorableWorks(projected.deleted, now, undoable).map((work) => ({
       key: work.id,
       work,

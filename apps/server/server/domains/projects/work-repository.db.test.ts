@@ -100,16 +100,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await works.archive(work.id);
       await works.softDelete(work.id);
       expect(await works.findById(work.id)).toMatchObject({
-        status: "archived",
+        archivedAt: expect.any(String),
         deletedAt: expect.any(String),
       });
       await works.restore(work.id);
-      expect(await works.findById(work.id)).toMatchObject({ status: "archived", deletedAt: null });
+      expect(await works.findById(work.id)).toMatchObject({
+        archivedAt: expect.any(String),
+        deletedAt: null,
+      });
       await expect(authorities.byId(PROJECT_ID, work.id)).resolves.toMatchObject({
         workId: work.id,
       });
       await works.unarchive(work.id);
-      expect(await works.findById(work.id)).toMatchObject({ status: "active", deletedAt: null });
+      expect(await works.findById(work.id)).toMatchObject({ archivedAt: null, deletedAt: null });
     });
 
     it("refuses archived metadata updates until the Work is unarchived", async () => {
@@ -123,7 +126,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await works.unarchive(work.id);
       await expect(
         updateActiveWorkMetadata(deps, work.id, { goal: "Writable again" }),
-      ).resolves.toMatchObject({ after: { goal: "Writable again", status: "active" } });
+      ).resolves.toMatchObject({ after: { goal: "Writable again", archivedAt: null } });
     });
 
     it("generates deduplicated handles and keeps them through rename", async () => {
@@ -309,7 +312,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const identical = await updateWorkTransition(deps, work.id, {
           name: " Semantic state ",
           goal: "Finish it",
-          status: "active",
+          status: null,
         });
         expect(identical).toEqual({ before: work, after: work, changed: false });
         await expect(updateCount()).resolves.toBe(0);
@@ -335,7 +338,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         await locked;
         const concurrent = [
-          updateWorkTransition(deps, work.id, { name: "Semantic state", status: "active" }),
+          updateWorkTransition(deps, work.id, { name: "Semantic state", status: null }),
           updateWorkTransition(deps, work.id, {
             goal: "Finish it",
           }),
@@ -357,23 +360,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         await expect(updateCount()).resolves.toBe(1);
 
-        const archived = await updateWorkTransition(deps, work.id, { status: "archived" });
-        expect(archived).toMatchObject({ after: { status: "archived" }, changed: true });
+        const statusSet = await updateWorkTransition(deps, work.id, { status: "Drafting" });
+        expect(statusSet).toMatchObject({
+          after: { status: "Drafting", archivedAt: null },
+          changed: true,
+        });
         await expect(updateCount()).resolves.toBe(2);
         await expect(
-          updateWorkTransition(deps, work.id, { status: "archived" }),
+          updateWorkTransition(deps, work.id, { status: "Drafting" }),
         ).resolves.toMatchObject({ changed: false });
         await expect(updateCount()).resolves.toBe(2);
 
-        const unarchived = await updateWorkTransition(deps, work.id, { status: "active" });
-        expect(unarchived).toMatchObject({
-          before: { status: "archived" },
-          after: { status: "active", archivedAt: null },
+        const statusCleared = await updateWorkTransition(deps, work.id, { status: null });
+        expect(statusCleared).toMatchObject({
+          before: { status: "Drafting" },
+          after: { status: null, archivedAt: null },
           changed: true,
         });
         await expect(updateCount()).resolves.toBe(3);
 
-        const beforeRealChange = unarchived.after;
+        const beforeRealChange = statusCleared.after;
         const realChange = await updateWorkTransition(deps, work.id, {
           name: "Revised semantic state",
           goal: "New goal",

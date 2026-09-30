@@ -28,8 +28,10 @@ const WRITE_MUTATE_COMMANDS = ALL_WRITE_COMMANDS.filter(
 );
 const WORK_NAV_COMMANDS = ["list", "show", "switch"] as const satisfies readonly WorkCommandName[];
 const WORK_MUTATE_COMMANDS = [
+  "archive",
   "create",
   "update",
+  "unarchive",
   "delete",
 ] as const satisfies readonly WorkCommandName[];
 const ALL_WORK_COMMANDS = [...WORK_NAV_COMMANDS, ...WORK_MUTATE_COMMANDS] as const;

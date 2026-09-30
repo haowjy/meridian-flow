@@ -17,7 +17,13 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 const operation = { currentWorkId: "a", targetId: null, pending: false, failure: null } as const;
-const archived = { id: "b", name: "Second arc", goal: "Climb", status: "archived" } as Work;
+const archived = {
+  id: "b",
+  name: "Second arc",
+  goal: "Climb",
+  status: null,
+  archivedAt: "2026-09-02T00:00:00.000Z",
+} as Work;
 const view = (catalog: WorkCatalogView, query = "", pending = false) =>
   deriveWorkPickerViewModel(catalog, query, pending);
 
@@ -107,7 +113,13 @@ describe("WorkPickerPanel", () => {
   });
 
   it("keeps the current name and goal accessible without a routine third line", async () => {
-    const current = { id: "a", name: "Opening arc", goal: "Ascend", status: "active" } as Work;
+    const current = {
+      id: "a",
+      name: "Opening arc",
+      goal: "Ascend",
+      status: null,
+      archivedAt: null,
+    } as Work;
     await withReactRoot(
       <WorkPickerPanel
         view={view({ status: "ready", works: [current], refreshing: false })}

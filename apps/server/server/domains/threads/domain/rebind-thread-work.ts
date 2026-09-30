@@ -49,6 +49,7 @@ function receiptState(work: Work): WorkBindingReceiptState {
     aiWriteMode: work.aiWriteMode,
     goal: work.goal,
     status: work.status,
+    archivedAt: work.archivedAt,
   };
 }
 
@@ -63,7 +64,7 @@ export async function rebindThreadWork(
   }
 
   const requestedTarget = await deps.works.findById(input.workId);
-  if (!requestedTarget || requestedTarget.deletedAt || requestedTarget.status === "archived") {
+  if (!requestedTarget || requestedTarget.deletedAt || requestedTarget.archivedAt !== null) {
     throw new RebindThreadWorkError("target_work_unavailable", input.threadId, input.workId);
   }
   if (requestedTarget.projectId !== thread.projectId) {
@@ -92,7 +93,7 @@ export async function rebindThreadWork(
     throw new RebindThreadWorkError("thread_unavailable", input.threadId);
   }
   const targetWork = await deps.works.findById(input.workId);
-  if (!targetWork || targetWork.deletedAt || targetWork.status === "archived") {
+  if (!targetWork || targetWork.deletedAt || targetWork.archivedAt !== null) {
     throw new RebindThreadWorkError("target_work_unavailable", input.threadId, input.workId);
   }
 

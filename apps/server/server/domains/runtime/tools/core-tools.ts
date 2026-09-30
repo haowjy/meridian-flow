@@ -15,15 +15,15 @@ import {
   WriteCommandSchema,
 } from "@meridian/agent-edit/integration";
 import { ASK_USER_TOOL_INPUT_SCHEMA } from "@meridian/contracts/components";
+import { WORK_STATUS_MAX_LENGTH } from "@meridian/contracts/works";
 import { z } from "zod";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
 import { writeToolDescription } from "./write-tool-description.js";
 
-const WorkStatusSchema = z.enum(["active", "archived"]);
 const WorkSelectorSchema = z.object({ work: z.string().min(1) });
 
 export const WorkCommandSchema = z.discriminatedUnion("command", [
-  z.object({ command: z.literal("list"), status: WorkStatusSchema.optional() }).strict(),
+  z.object({ command: z.literal("list"), archived: z.boolean().optional() }).strict(),
   WorkSelectorSchema.extend({ command: z.literal("show") }).strict(),
   z
     .object({
@@ -36,8 +36,18 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
     command: z.literal("update"),
     name: z.string().optional(),
     goal: z.string().optional(),
-    status: WorkStatusSchema.optional(),
+    status: z
+      .string()
+      .max(
+        WORK_STATUS_MAX_LENGTH,
+        `Work status must be one to three words and ${WORK_STATUS_MAX_LENGTH} characters or fewer`,
+      )
+      .regex(/^\s*(?:\S+(?:\s+\S+){0,2})?\s*$/, "Work status must be one to three words")
+      .nullable()
+      .optional(),
   }).strict(),
+  WorkSelectorSchema.extend({ command: z.literal("archive") }).strict(),
+  WorkSelectorSchema.extend({ command: z.literal("unarchive") }).strict(),
   WorkSelectorSchema.extend({ command: z.literal("delete") }).strict(),
   z
     .object({
@@ -155,7 +165,8 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       definition: {
         type: "function",
         name: "work",
-        description: "Inspect or change the project Work and this conversation's Work binding.",
+        description:
+          "Inspect or change project Works and this conversation's Work binding. status: where this Work stands, in one to three words (ideally one), e.g. Drafting, Revising, Blocked, Done. Update it when that changes. Empty string or null clears status. Archived Works are read-only: use archive and unarchive commands for lifecycle changes. list shows active Works by default; set archived true to list archived Works.",
         inputSchema: workToolInputSchema(),
       },
       execution: { type: "server", handler: handlers.work },

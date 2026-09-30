@@ -19,4 +19,22 @@ describe("WorkCommandSchema", () => {
       }).success,
     ).toBe(true);
   });
+
+  it("accepts explicit archive lifecycle commands and bounds free-text status", () => {
+    expect(WorkCommandSchema.safeParse({ command: "archive", work: "arc" }).success).toBe(true);
+    expect(WorkCommandSchema.safeParse({ command: "unarchive", work: "arc" }).success).toBe(true);
+    expect(
+      WorkCommandSchema.safeParse({ command: "update", work: "arc", status: "x".repeat(32) })
+        .success,
+    ).toBe(true);
+    expect(
+      WorkCommandSchema.safeParse({ command: "update", work: "arc", status: "x".repeat(33) })
+        .success,
+    ).toBe(false);
+    expect(
+      WorkCommandSchema.safeParse({ command: "update", work: "arc", status: "one two three four" })
+        .success,
+    ).toBe(false);
+    expect(WorkCommandSchema.safeParse({ command: "list", archived: true }).success).toBe(true);
+  });
 });

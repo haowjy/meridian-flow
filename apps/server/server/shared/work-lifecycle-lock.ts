@@ -10,14 +10,14 @@ type LockedWork = { state: LockedWorkLifecycle; slug: string | null };
 
 async function lockWork(db: DrizzleDb, workId: string): Promise<LockedWork> {
   const [work] = await currentDrizzleDb(db)
-    .select({ deletedAt: works.deletedAt, slug: works.slug, status: works.status })
+    .select({ deletedAt: works.deletedAt, slug: works.slug, archivedAt: works.archivedAt })
     .from(works)
     .where(eq(works.id, workId))
     .limit(1)
     .for("update");
   if (!work) return { state: "missing", slug: null };
   return {
-    state: work.deletedAt ? "deleted" : work.status === "archived" ? "archived" : "active",
+    state: work.deletedAt ? "deleted" : work.archivedAt !== null ? "archived" : "active",
     slug: work.slug,
   };
 }
