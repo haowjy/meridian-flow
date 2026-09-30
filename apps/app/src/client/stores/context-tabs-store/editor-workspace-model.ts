@@ -86,9 +86,33 @@ export type ProjectTabsSlice = {
   selectedTabIdByWork: Record<string, string>;
 };
 
-/** All workspace mutation paths share the same Editor document admission rule. */
+/**
+ * The one scheme the Editor never opens: a Work's uploads live on its Files
+ * tab and open in their resource view.
+ */
+export function isEditorScheme(scheme: ProjectContextTreeScheme): boolean {
+  return scheme !== "uploads";
+}
+
+/** What `isEditorTab` reads: an open tab, or a recent route to one. */
+export type EditorTabCandidate =
+  | Pick<Extract<ContextTab, { kind: "new" }>, "kind">
+  | { kind?: "tracked" | "viewer"; scheme: ProjectContextTreeScheme; workId?: string | null };
+
+/**
+ * Whether the Editor of `workId` (null: No Work) shows this tab: any Editor
+ * scheme, and a Work's scratch only in that Work's Editor.
+ */
+export function isEditorTab(tab: EditorTabCandidate, workId: string | null): boolean {
+  if (tab.kind === "new") return true;
+  if (!isEditorScheme(tab.scheme)) return false;
+  return !isWorkScopedProjectContextScheme(tab.scheme) || (tab.workId ?? null) === workId;
+}
+
+/**
+ * Workspace admission: the persisted workspace keeps every Work's scratch
+ * tabs, and each Editor shows its own through `isEditorTab`.
+ */
 export function isEditorContextTab(tab: ContextTab): boolean {
-  return (
-    tab.kind === "new" || tab.scheme === "scratch" || !isWorkScopedProjectContextScheme(tab.scheme)
-  );
+  return tab.kind === "new" || isEditorScheme(tab.scheme);
 }

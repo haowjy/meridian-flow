@@ -13,6 +13,7 @@ import { useProjectThreads } from "@/client/query/useProjectThreads";
 import {
   type ContextTab,
   getContextTabs,
+  isEditorScheme,
   useContextTabs,
   useContextTabsStore,
 } from "@/client/stores";
@@ -232,9 +233,11 @@ export function ReadableProjectRoute({
     [activeScreen, editorWork.status],
   );
 
+  // A scheme the Editor never opens (Uploads) shows in its resource view.
   const resourceDestination =
     (destination.kind === "document" || destination.kind === "browse") &&
-    destination.scheme === "uploads";
+    destination.scheme !== null &&
+    !isEditorScheme(destination.scheme);
   const documentDestination =
     destination.kind === "document" && !resourceDestination ? destination : null;
   const addressWorkId = address.work.kind === "id" ? address.work.id : null;
@@ -501,6 +504,7 @@ export function ReadableProjectRoute({
         tabs: workspace.tabs,
         selectedDocumentId: workspace.selectedTabIdByWork[workId ?? ""],
         recentRoutes: readRecentRoutes(projectId),
+        workId,
       });
       if (tab)
         return openContext({ ...routeTargetForTab(tab, workId), documentId: tab.documentId }).then(

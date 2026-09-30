@@ -13,6 +13,8 @@ export {
   type DraftWorkspaceSettlementReceipt,
   getContextTabs,
   isEditorContextTab,
+  isEditorScheme,
+  isEditorTab,
   type OpenEditorTabResult,
   type ProjectTabsSlice,
   previewReviewOverlayClose,

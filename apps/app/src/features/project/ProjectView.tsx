@@ -33,7 +33,7 @@ import {
   readAccountRecents,
   subscribeAccountRecents,
 } from "@/client/recents";
-import { useContextTabs, useContextTabsStore } from "@/client/stores";
+import { isEditorTab, useContextTabs, useContextTabsStore } from "@/client/stores";
 import type { ContextTab } from "@/client/stores/context-tabs-store/context-tabs-store";
 import {
   readRecentRoutes,
@@ -465,15 +465,9 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
   const desktopHostDocumentIds =
     usePhone || props.editorScope.status !== "ready" || !props.contextLive
       ? []
-      : tabs.flatMap((tab) => {
-          if (tab.kind !== "tracked") return [];
-          if (
-            isWorkScopedProjectContextScheme(tab.scheme) &&
-            (tab.workId ?? null) !== props.editorWorkId
-          )
-            return [];
-          return [tab.documentId];
-        });
+      : tabs.flatMap((tab) =>
+          tab.kind === "tracked" && isEditorTab(tab, props.editorWorkId) ? [tab.documentId] : [],
+        );
   const inlineDocumentIds = [
     inlineReviewFromState(chatReviewState.state)?.documentId,
     inlineReviewFromState(editorReviewState.state)?.documentId,

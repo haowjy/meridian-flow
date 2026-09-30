@@ -17,6 +17,8 @@ import {
 export {
   type ContextTab,
   isEditorContextTab,
+  isEditorScheme,
+  isEditorTab,
   type ProjectTabsSlice,
   type ServerContextTab,
   viewerTabForCatalogFile,

@@ -1,13 +1,10 @@
 /** ContextPaneController — desktop SURFACE controller for the route-owned Context destination. */
-import {
-  isWorkScopedProjectContextScheme,
-  type ProjectContextTreeScheme,
-  type Work,
-} from "@meridian/contracts/protocol";
+import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import {
   getContextTabs,
+  isEditorTab,
   useContextTabs,
   useContextTabsActions,
   useContextTabsStore,
@@ -90,10 +87,7 @@ export function ContextViewerSurfaceController({
   const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const layoutSaveFailed = useContextTabsStore((state) => state._layoutPersistenceError != null);
   const { openTab, reconcileResourceTab, updateTrackedTab, selectTab } = useContextTabsActions();
-  const visibleTabs = tabs.filter((tab) => {
-    if (tab.kind === "new" || !isWorkScopedProjectContextScheme(tab.scheme)) return true;
-    return tab.scheme === "scratch" && (tab.workId ?? null) === routeWorkId;
-  });
+  const visibleTabs = tabs.filter((tab) => isEditorTab(tab, routeWorkId));
   const locator =
     activeContextScheme !== null && activeContextPath !== null
       ? { scheme: activeContextScheme, path: activeContextPath, workId: routeWorkId }
