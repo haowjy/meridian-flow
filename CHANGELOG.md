@@ -34,13 +34,13 @@
 
 - Fork or hand off a chat from an assistant reply or delivered writer turn, including a reply a fork inherited. The new chat opens at once and finishes creating in the background; a reload lands on the same chat, and a failure stays on it with Retry. Hand off picks the Agent, starting from the source's. Subagent chats offer neither.
 - Show the handoff brief as a card that writes itself in place: Stop while it writes, the brief behind Show the whole brief once ready, and Retry on a brief that failed, was stopped, or was interrupted by a restart. Retry shows the new brief's card at once and waits while the chat is replying; a refused or lost Retry and a failed Stop say so on the card. Messages sent meanwhile are answered once the brief ends.
-- Retry a failed reply from the reply itself: the latest failed reply offers Retry, which shows the new reply working below it at once and waits while the chat is busy. A refused or lost Retry says so on the reply.
+- Retry a failed reply from the reply itself: the latest failed reply offers Retry, which shows the new reply working below it at once. A refused or lost Retry says so on the reply.
 - Show a fork's inherited history read-only, marked with the chat it came from and where the fork begins; it never changes when the source moves on.
 - Name the chat a subagent was pointed at with `from`, on its spawn card and at the top of its chat, and say when that chat is in the trash. Spawns no longer flash an "Unknown component" note in the reply.
 - A fork whose history fails to load says so with Retry; a fork cut at a failed reply shows it as history; a message sent while a fork or handoff is still being created survives a reload; an older failed brief says it failed instead of asking to try again; the Agent picker's row tooltip stays on screen on phones and no longer covers the list as it opens.
 - Keep M4 compaction and reference metadata in `./mf`; inspect direct-child activity and block timing with the main CLI updates.
 
-- Skip paid manual compaction when too little context can be removed. Tell warm summaries not to repeat retained conversation.
+- Always honor manual compaction once the chat has a completed reply, even when little context can be removed. Tell warm summaries not to repeat retained conversation.
 
 - Point spawned agents at connected prior work without copying history; freeze reference text and read instructions, including stopped handoffs.
 - Freeze handoff source titles on seeds and brief cards, and keep spawn source provenance on durable invocation cards.
@@ -107,10 +107,12 @@
 ### Added
 - Page the effective or inherited transcript by stable turn/block keys, split pages at prompt-epoch boundaries, and expose the authenticated writer transcript route.
 - Record atomic document revisions on agent reads, searches, references, and settled writes without adding model-visible text.
-- Queue manual compaction in message order. Withdraw queued requests or stop running dividers.
+- Queue manual compaction at the end of the queue. Withdraw queued requests or stop running dividers.
+- Pass `/compact <instructions>` to the summarizer and show the instructions on the queued row and divider. Offer Fork from a compaction divider.
+- Show "Compacting conversation" on every pending divider and the server's generic failure copy when compaction fails.
 - Keep unanswered writer text and mentions verbatim across compaction. Failed command summaries leave replies running; a failed automatic summary fails its reply.
 - Summarize long chats with cached requests or rolling cheap-model summaries. Keep story facts and writer preferences.
-- Default compaction to the model's usable window, pricing tier, or 400,000-token ceiling.
+- Default compaction to the model's usable window or a 400,000-token ceiling.
 - Stop a running compaction and deliver messages queued during its summary afterward.
 - Compact long conversations through reserved summary turns and atomic successor replies.
 - Recover orphaned primary assistant turns and pending compaction placeholders under the session claim; child reports terminate on the orphaned placeholder and late inbox messages remain redeliverable.
@@ -130,9 +132,9 @@
 - Refresh search-only Work drafts before revision checks. Ignore documents removed from a Work.
 - Commit shared document pulls independently of chat transactions; preserve retries after failed pulls, including newer edits queued during a pull.
 - Settle direct-write tool results after their document commit instead of leaving successful edits marked staged.
-- A queued compact waits behind messages; it is not absorbed by an automatic compaction.
-- Refuse back-to-back manual compaction until new history arrives.
-- Stop (Esc) runs a pending command before waiting messages; those messages are pinned by the compaction and answered afterward. Retire a command whose start commit fails instead of retrying it on every wake.
+- A queued compact stays at the end of the queue and is not absorbed by automatic compaction. A streaming reply adopts every message sent meanwhile at its tool steps.
+- Stop ends only the current turn; normal queue selection runs waiting messages before a command. Leave a command whose start throws queued like a message.
+- Always send queued-compaction withdrawal to the server so a command cannot run unseen after its local row disappears. When sending a row fails, offer Withdraw beside Retry.
 - Keep pending-placeholder roles and predicates in contracts, SQL in the database package, and interruption copy in the threads domain.
 - Fail a warm-summary error once instead of retrying it cold. Bound summary output without changing cached thinking.
 - Preflight cold transcripts before paid calls. Excerpt large document reads and split large turns at blocks.
@@ -143,7 +145,8 @@
 - Propagate context-window errors when provider fallback is enabled.
 - Roll summaries for cold or known-too-large requests; branch only from warm source requests. A `context_overflow` summary rejection is recorded as `request_too_large` so the next attempt rolls.
 - Allow clients to join chats while compaction is running.
-- Failed automatic compaction lands a failed reply; command failure stays on C. A command is consumed at start, so neither path replays it for another summary.
+- Failed automatic compaction lands a failed reply; command failure stays on C. A command is consumed when its start commits, so neither path replays it for another summary.
+- Include summary requests in the model-request debug capture.
 - Stop follows the same run across a committed reply split, including remote cancellation. Internal aborts stay errors.
 - Leave a compaction pending for recovery when its live failure transaction cannot commit.
 - Development: reset worktree databases that already applied the earlier unreleased 0014 with `pnpm db:reset`.
@@ -219,7 +222,7 @@
 
 - Drop fake rollback and repeated-abort tests that did not exercise transaction rollback or billing replay.
 
-- While an agent is working, Enter sends a typed follow-up and the composer swaps Stop for a ringed Send action. Escape still stops the run.
+- While an agent is working, Enter sends a typed follow-up and the composer swaps Stop for a ringed Send action.
 - Trim redundant app, server, and shared tests and fake-only scaffolding. Retire frozen migration fixtures.
 - Chat navigation reopens the chat this browser last had open, or the chat index when there is none. The remembered chat is per device and no longer synced.
 - Opening or starting a chat from Work or Editor keeps the screen and shows it in the right sidebar. A first Send stays in its pane, including across reload.
