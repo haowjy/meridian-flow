@@ -16,9 +16,12 @@ export function controlStatusCopy(status: QueuedControlStatus): string {
       return t`Compaction queued`;
     case "failed":
       return t`Couldn't queue the compaction.`;
-    case "already_started":
-      return t`This compaction already started.`;
   }
+}
+
+/** What the announcer says when Withdraw came after the compaction began. */
+export function controlAlreadyStartedCopy(): string {
+  return t`This compaction already started.`;
 }
 
 /** What the announcer says as a withdrawn row disappears. */

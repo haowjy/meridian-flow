@@ -264,19 +264,6 @@ describe("QueuedControlRows", () => {
     expect(onWithdraw).toHaveBeenCalledWith(compact("queued"));
   });
 
-  it("says a command already started, without Withdraw, in no live region", async () => {
-    await act(async () =>
-      root.render(
-        <QueuedControlRows controls={[compact("already_started")]} onWithdraw={vi.fn()} />,
-      ),
-    );
-    expect(host.querySelector("[data-queued-control]")?.textContent).toBe(
-      "This compaction already started.",
-    );
-    expect(host.querySelector('[role="status"]')).toBeNull();
-    expect(button("Withdraw compaction")).toBeUndefined();
-  });
-
   it("keeps a failed withdrawal on the row, withdrawable again", async () => {
     await act(async () =>
       root.render(

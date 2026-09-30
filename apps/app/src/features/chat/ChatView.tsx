@@ -216,7 +216,6 @@ export function ChatView({
     threadId,
     pending: pendingInbox,
     answeredControlIds: answeredControls,
-    leafTurnId: storedTurns.at(-1)?.id ?? null,
   });
   useControlTurnAnnouncements(turns);
   // The snapshot revalidates as a compaction reserves and settles, so its live

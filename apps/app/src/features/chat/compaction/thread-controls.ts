@@ -8,9 +8,9 @@
  *   the item with Retry (same id, so the server treats a retry as a no-op).
  *   Once the inbox lists the id the server owns it, and the send is dropped.
  * - `withdrawals`: Withdraw hides a row at once, whichever side owns it, and
- *   always asks the server. A failed withdrawal brings the row back. A command
- *   that already started says so on its row until the transcript shows the
- *   turn it runs as.
+ *   always asks the server. A failed withdrawal brings the row back. A
+ *   command that already started leaves the queue too; its compaction divider
+ *   carries the state.
  *
  * A command runs only when no message waits, so every queued command renders
  * after every queued message, at the end of the queue, oldest first.
@@ -19,10 +19,7 @@ import type {
   ControlBody,
   PendingInboxItem,
   ThreadPendingInbox,
-  WithdrawThreadControlResponse,
 } from "@meridian/contracts/threads";
-
-export type WithdrawOutcome = WithdrawThreadControlResponse["outcome"];
 
 export type LocalSend = {
   id: string;
@@ -30,10 +27,8 @@ export type LocalSend = {
   request: "sending" | "sent" | "failed" | "finished";
 };
 
-export type Withdrawal =
-  | { state: "withdrawing" | "failed" | "withdrawn" }
-  /** `leafTurnId` is the transcript leaf when it settled; the row shows until it moves. */
-  | { state: "already_started"; control: ControlBody; leafTurnId: string | null };
+/** `settled`: the server answered, either withdrawn or already started. */
+export type Withdrawal = "withdrawing" | "failed" | "settled";
 
 export type LocalControls = {
   sends: readonly LocalSend[];
@@ -42,7 +37,7 @@ export type LocalControls = {
 
 export const NO_LOCAL_CONTROLS: LocalControls = { sends: [], withdrawals: new Map() };
 
-export type QueuedControlStatus = "queued" | "failed" | "withdraw_failed" | "already_started";
+export type QueuedControlStatus = "queued" | "failed" | "withdraw_failed";
 
 export type QueuedControl = {
   id: string;
@@ -56,13 +51,7 @@ export type ControlAction =
   | { type: "enqueued"; id: string; pending: PendingInboxItem | null; turnId: string | null }
   | { type: "enqueue_failed"; id: string }
   | { type: "withdraw"; id: string }
-  | {
-      type: "withdrawn";
-      id: string;
-      control: ControlBody;
-      outcome: WithdrawOutcome;
-      leafTurnId: string | null;
-    }
+  | { type: "withdrawn"; id: string }
   | { type: "withdraw_failed"; id: string }
   /** The server inbox lists these ids: it owns them from now on. */
   | { type: "listed"; pendingIds: ReadonlySet<string> };
@@ -91,16 +80,11 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
     case "enqueue_failed":
       return patchSend(action.id, "failed");
     case "withdraw":
-      return withdrawal(action.id, { state: "withdrawing" });
+      return withdrawal(action.id, "withdrawing");
     case "withdrawn":
-      return withdrawal(
-        action.id,
-        action.outcome === "already_started"
-          ? { state: "already_started", control: action.control, leafTurnId: action.leafTurnId }
-          : { state: "withdrawn" },
-      );
+      return withdrawal(action.id, "settled");
     case "withdraw_failed":
-      return withdrawal(action.id, { state: "failed" });
+      return withdrawal(action.id, "failed");
     case "listed": {
       const sends = state.sends.filter((entry) => !action.pendingIds.has(entry.id));
       return sends.length === state.sends.length ? state : { ...state, sends };
@@ -110,47 +94,37 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
 
 /**
  * The commands the writer should see: server rows first (in inbox order),
- * then local ones the server has not listed yet or has just settled.
+ * then local ones the server has not listed yet.
  */
 export function mergeQueuedControls(input: {
   local: LocalControls;
   pending: ThreadPendingInbox;
   /** Commands a compaction divider already names. */
   executedControlIds: ReadonlySet<string>;
-  leafTurnId: string | null;
 }): QueuedControl[] {
-  const { local, pending, executedControlIds, leafTurnId } = input;
+  const { local, pending, executedControlIds } = input;
   const result: QueuedControl[] = [];
-  const shown = new Set<string>();
-  const push = (id: string, control: ControlBody, status: QueuedControlStatus) => {
-    shown.add(id);
-    result.push({ id, control, status });
-  };
+  const listed = new Set<string>();
   for (const item of pending.items) {
     if (item.intent !== "control" || !item.control) continue;
-    shown.add(item.id);
+    listed.add(item.id);
     // A withdrawal response is fresher than the inbox frame that follows it.
-    const withdrawal = local.withdrawals.get(item.id)?.state;
-    if (!withdrawal) push(item.id, item.control, "queued");
-    else if (withdrawal === "failed") push(item.id, item.control, "withdraw_failed");
+    const withdrawal = local.withdrawals.get(item.id);
+    if (!withdrawal) result.push({ id: item.id, control: item.control, status: "queued" });
+    else if (withdrawal === "failed") {
+      result.push({ id: item.id, control: item.control, status: "withdraw_failed" });
+    }
   }
   for (const entry of local.sends) {
-    const withdrawal = local.withdrawals.get(entry.id)?.state;
-    if (shown.has(entry.id) || (withdrawal && withdrawal !== "failed")) continue;
+    const withdrawal = local.withdrawals.get(entry.id);
+    if (listed.has(entry.id) || (withdrawal && withdrawal !== "failed")) continue;
     const status = requestStatus(entry, executedControlIds);
     if (!status) continue;
-    push(entry.id, entry.control, withdrawal && status === "queued" ? "withdraw_failed" : status);
-  }
-  for (const [id, withdrawal] of local.withdrawals) {
-    // The divider it ran as tells the rest of the story.
-    if (
-      !shown.has(id) &&
-      withdrawal.state === "already_started" &&
-      !executedControlIds.has(id) &&
-      withdrawal.leafTurnId === leafTurnId
-    ) {
-      push(id, withdrawal.control, "already_started");
-    }
+    result.push({
+      id: entry.id,
+      control: entry.control,
+      status: withdrawal && status === "queued" ? "withdraw_failed" : status,
+    });
   }
   return result;
 }

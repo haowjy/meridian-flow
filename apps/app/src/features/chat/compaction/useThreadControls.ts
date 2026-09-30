@@ -19,13 +19,12 @@ import { enqueueThreadControl, withdrawThreadControl } from "@/client/api/thread
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announce, announceError } from "@/client/stores";
 import { useTurnStop } from "../useTurnStop";
-import { controlStatusCopy, controlWithdrawnCopy } from "./control-copy";
+import { controlAlreadyStartedCopy, controlStatusCopy, controlWithdrawnCopy } from "./control-copy";
 import {
   controlsReducer,
   mergeQueuedControls,
   NO_LOCAL_CONTROLS,
   type QueuedControl,
-  type WithdrawOutcome,
 } from "./thread-controls";
 
 export type ThreadControls = {
@@ -42,14 +41,11 @@ export function useThreadControls(input: {
   threadId: string;
   pending: ThreadPendingInbox;
   answeredControlIds: ReadonlySet<string>;
-  leafTurnId: string | null;
 }): ThreadControls {
-  const { threadId, pending, answeredControlIds, leafTurnId } = input;
+  const { threadId, pending, answeredControlIds } = input;
   const [local, dispatch] = useReducer(controlsReducer, NO_LOCAL_CONTROLS);
   const localRef = useRef(local);
   localRef.current = local;
-  const leafRef = useRef(leafTurnId);
-  leafRef.current = leafTurnId;
   /** In-flight enqueues; a withdrawal waits for its enqueue to settle first. */
   const inflight = useRef(new Map<string, Promise<void>>());
   const queryClient = useQueryClient();
@@ -116,24 +112,18 @@ export function useThreadControls(input: {
     (queued: QueuedControl) => {
       dispatch({ type: "withdraw", id: queued.id });
       announce(controlWithdrawnCopy());
-      const settle = (outcome: WithdrawOutcome) =>
-        dispatch({
-          type: "withdrawn",
-          id: queued.id,
-          control: queued.control,
-          outcome,
-          leafTurnId: leafRef.current,
-        });
+      const settle = () => dispatch({ type: "withdrawn", id: queued.id });
       const enqueueing = inflight.current.get(queued.id) ?? Promise.resolve();
       void enqueueing.then(async () => {
         try {
           const { outcome } = await withdrawThreadControl(threadId, queued.id);
-          settle(outcome);
-          if (outcome === "already_started") announce(controlStatusCopy("already_started"));
+          settle();
+          // The row goes either way; the compaction divider shows a started one.
+          if (outcome === "already_started") announce(controlAlreadyStartedCopy());
           revalidate();
         } catch (error) {
           // The server never had it: its enqueue never landed.
-          if (httpErrorStatus(error) === 404) return settle("withdrawn");
+          if (httpErrorStatus(error) === 404) return settle();
           dispatch({ type: "withdraw_failed", id: queued.id });
           announceError(t`Couldn't withdraw. Try again.`);
         }
@@ -158,9 +148,8 @@ export function useThreadControls(input: {
         local,
         pending,
         executedControlIds: answeredControlIds,
-        leafTurnId,
       }),
-    [answeredControlIds, leafTurnId, local, pending],
+    [answeredControlIds, local, pending],
   );
 
   return { queued, stoppingTurnIds: turnStop.stopping, enqueue, retry, withdraw, stop };

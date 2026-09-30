@@ -37,12 +37,11 @@ const NONE: ReadonlySet<string> = new Set();
 
 let root: Root;
 let latest: ThreadControls;
-function Probe(props: { pending?: ThreadPendingInbox; leaf?: string }) {
+function Probe(props: { pending?: ThreadPendingInbox }) {
   latest = useThreadControls({
     threadId: "thread-1",
     pending: props.pending ?? EMPTY,
     answeredControlIds: NONE,
-    leafTurnId: props.leaf ?? "leaf-1",
   });
   return null;
 }
@@ -287,7 +286,7 @@ describe("useThreadControls", () => {
     expect(announcements.announceError).toHaveBeenLastCalledWith("Couldn't queue the compaction.");
   });
 
-  it("says a command already started when Withdraw comes too late", async () => {
+  it("drops the row and says so when Withdraw comes after the compaction started", async () => {
     api.withdrawThreadControl.mockResolvedValue({ outcome: "already_started" });
     await act(async () =>
       latest.withdraw({
@@ -297,8 +296,6 @@ describe("useThreadControls", () => {
       }),
     );
     expect(announcements.announce).toHaveBeenLastCalledWith("This compaction already started.");
-    expect(latest.queued).toEqual([
-      { id: "k", control: { kind: "compact" }, status: "already_started" },
-    ]);
+    expect(latest.queued).toEqual([]);
   });
 });

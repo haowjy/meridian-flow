@@ -37,13 +37,12 @@ const EMPTY: ThreadPendingInbox = { items: [] };
 function merge(
   local: LocalControls,
   pending: ThreadPendingInbox = EMPTY,
-  options: { executed?: string[]; leaf?: string | null } = {},
+  options: { executed?: string[] } = {},
 ) {
   return mergeQueuedControls({
     local,
     pending,
     executedControlIds: new Set(options.executed ?? []),
-    leafTurnId: options.leaf ?? "leaf-1",
   }).map(({ id, status }) => ({ id, status }));
 }
 
@@ -118,37 +117,12 @@ describe("withdrawal", () => {
     const withdrawn = run(
       [
         { type: "withdraw", id: "k" },
-        {
-          type: "withdrawn",
-          id: "k",
-          control: COMPACT,
-          outcome: "withdrawn",
-          leafTurnId: "leaf-1",
-        },
+        { type: "withdrawn", id: "k" },
       ],
       listed,
     );
     expect(merge(withdrawn, { items: [inboxItem("k")] })).toEqual([]);
     expect(merge(withdrawn)).toEqual([]);
-  });
-
-  it("says a started command already started, until its divider takes over", () => {
-    const started = run(
-      [
-        { type: "withdraw", id: "k" },
-        {
-          type: "withdrawn",
-          id: "k",
-          control: COMPACT,
-          outcome: "already_started",
-          leafTurnId: "leaf-1",
-        },
-      ],
-      listed,
-    );
-    expect(merge(started)).toEqual([{ id: "k", status: "already_started" }]);
-    expect(merge(started, EMPTY, { executed: ["k"] })).toEqual([]);
-    expect(merge(started, EMPTY, { leaf: "leaf-2" })).toEqual([]);
   });
 
   it("hides a server-only row while its withdrawal is out", () => {
@@ -179,7 +153,7 @@ describe("withdrawal", () => {
       { type: "enqueue", id: "k", control: COMPACT },
       { type: "enqueue_failed", id: "k" },
       { type: "withdraw", id: "k" },
-      { type: "withdrawn", id: "k", control: COMPACT, outcome: "withdrawn", leafTurnId: "leaf-1" },
+      { type: "withdrawn", id: "k" },
     ]);
     expect(merge(withdrawn)).toEqual([]);
     const listed = run([{ type: "listed", pendingIds: new Set(["k"]) }], withdrawn);
@@ -224,7 +198,6 @@ describe("queue order", () => {
         ],
       },
       executedControlIds: new Set(),
-      leafTurnId: null,
     });
     expect(queued.map(({ id, control }) => ({ id, control }))).toEqual([
       { id: "c1", control: { kind: "compact", instructions: "Keep the names" } },
