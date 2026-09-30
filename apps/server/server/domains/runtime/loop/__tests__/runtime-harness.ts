@@ -40,7 +40,9 @@ import { createInterruptRegistry } from "../interrupts.js";
 import type { OrchestratorDeps } from "../orchestrator.js";
 import { createOrchestrator } from "../orchestrator.js";
 import { readPendingInbox } from "../pending-inbox.js";
+import { createRunStarter } from "../run-starter.js";
 import type { PreparedRun } from "../run-turn-port.js";
+import { createWakeIfRunnable } from "../wake-if-runnable.js";
 import { createTestAgentBinding, createTestNoticePort } from "./runtime-fixtures.js";
 import { scriptedSummarizer } from "./scripted-summarizer.js";
 import { createInertGateway } from "./test-gateway.js";
@@ -124,6 +126,7 @@ export function createRuntimeHarness(
   const flushWakes = async () => {
     for (const wake of wakes.splice(0)) await wake();
   };
+  let wakeIfRunnable!: (threadId: string) => Promise<void>;
   const deps: OrchestratorDeps & { creditLedger: CreditLedger } = {
     creditLedger,
     summarizer: scriptedSummarizer(),
@@ -162,6 +165,7 @@ export function createRuntimeHarness(
     childRunCoordinator: noopChildRunCoordinator(),
     interruptRegistry: createInterruptRegistry(),
     eventSink: createInMemoryEventSink(),
+    wakeIfRunnable: (threadId) => wakeIfRunnable(threadId),
     modelRequestDebug: createInMemoryModelRequestDebugStore(),
     runClaim,
     handoffBriefs: {
@@ -208,6 +212,14 @@ export function createRuntimeHarness(
   };
   let runtime: ReturnType<typeof createOrchestrator>;
   const orchestrator = () => (runtime ??= createOrchestrator(deps));
+  wakeIfRunnable = createWakeIfRunnable({
+    delivery: deps.delivery,
+    runStarter: createRunStarter(
+      { startDrain: (id) => orchestrator().startDrain(id) },
+      deps.eventSink,
+    ),
+    shutdown,
+  });
   const producer = createWriterTurnProducer({
     persistence: { repos, eventWriter },
     hub: { headSeq: deps.headSeq },

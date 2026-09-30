@@ -916,6 +916,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       objectStore: ports.objectStore,
     }),
     eventSink: ports.eventSink,
+    wakeIfRunnable,
     modelRequestDebug: ports.modelRequestDebug,
     responseWrites,
     delivery,

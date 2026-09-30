@@ -235,6 +235,7 @@ export interface OrchestratorDeps {
   childRunCoordinator: ChildRunCoordinator;
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
+  wakeIfRunnable(threadId: ThreadId): Promise<void>;
   modelRequestDebug: ModelRequestDebugStore;
   /** Durable per-thread message queue drained into each model request. */
   delivery: RuntimeDelivery;

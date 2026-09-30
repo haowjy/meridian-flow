@@ -6,7 +6,6 @@ import { type TurnRepository, TurnStartConflictError } from "../../threads/index
 import type { DetachedWorkTracker } from "../detached-work.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type CurrentTurn, DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
-import { createRunStarter } from "./run-starter.js";
 import {
   NoPendingWakeError,
   type PreparedLoop,
@@ -19,7 +18,6 @@ import {
   UnsettledPlaceholderError,
 } from "./run-turn-port.js";
 import type { RuntimeDelivery } from "./runtime-delivery.js";
-import { createWakeIfRunnable } from "./wake-if-runnable.js";
 
 type RunSession = {
   controller: AbortController;
@@ -46,6 +44,7 @@ export function createRunSessions(deps: {
   repos: { turns: TurnRepository };
   headSeq(threadId: ThreadId): Promise<bigint>;
   eventSink: EventSink;
+  wakeIfRunnable(threadId: ThreadId): Promise<void>;
   onRunStarted?: (threadId: ThreadId) => void;
   onRunSettled?: (threadId: ThreadId) => void;
 }) {
@@ -53,12 +52,6 @@ export function createRunSessions(deps: {
   const shutdown = deps.shutdown;
   const backgroundTasks = deps.backgroundTasks;
   const authority = deps.runClaim;
-  const runStarter = createRunStarter({ startDrain }, deps.eventSink);
-  const wakeIfRunnable = createWakeIfRunnable({
-    delivery: deps.delivery,
-    runStarter,
-    shutdown,
-  });
   function observe(threadId: ThreadId, name: string, error: unknown) {
     emitEvent(deps.eventSink, {
       level: "error",
@@ -128,7 +121,7 @@ export function createRunSessions(deps: {
         if (claimReleased && wakeAfterRelease) {
           backgroundTasks.track(
             session.completion
-              .then(() => wakeIfRunnable(threadId))
+              .then(() => deps.wakeIfRunnable(threadId))
               .catch((error) => observe(threadId, "cleanup_wake.failed", error)),
             "run cleanup wake",
           );
