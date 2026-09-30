@@ -1,9 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
-
-vi.mock("@lingui/core/macro", () => ({
-  t: (parts: TemplateStringsArray, ...values: unknown[]) =>
-    parts.reduce((text, part, index) => text + part + String(values[index] ?? ""), ""),
-}));
+import { describe, expect, it } from "vitest";
 
 import {
   formatSubagentElapsed,

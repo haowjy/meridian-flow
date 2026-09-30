@@ -40,6 +40,9 @@ Authenticated writing workspace. Keep it a thin React/TanStack Start shell over 
   rejection versus ambiguity behavior, overlap policy, stale/account fence,
   reload promise, and proving test. Use TanStack Query directly for transient
   server-command lifecycle. Do not add a Meridian mutation wrapper, global
-  optimistic store, or universal rollback rule.
+  optimistic store, or universal rollback rule. When a domain's command records
+  must outlive their caller, stack per entity, or share one failure across
+  surfaces, keep them in an explicit per-domain record store (as Work commands
+  do in `client/query/work-command-store.ts`), never in the mutation cache.
 - `/_authenticated` mounts one unconditional provider tree (Query → project → thread → transport → copilot); do not gate providers by pathname.
 - Settings is a routed overlay via `?settings=` on any authenticated route (`SettingsDialog` in the layout shell).

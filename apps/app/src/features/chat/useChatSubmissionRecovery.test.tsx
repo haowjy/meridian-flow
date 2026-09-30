@@ -24,14 +24,6 @@ import {
   useChatSubmissionRecovery,
 } from "./useChatSubmissionRecovery";
 
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
-vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray) => strings[0],
-  msg: (strings: TemplateStringsArray) => ({ id: strings[0] }),
-}));
-
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;

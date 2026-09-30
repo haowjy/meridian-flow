@@ -12,8 +12,8 @@ describe("parseWorkReceipt", () => {
         slug: null,
         aiWriteMode: "direct",
         goal: null,
-        description: null,
-        status: "active",
+        status: null,
+        archived: false,
       },
       after: {
         workId: "w1",
@@ -21,8 +21,8 @@ describe("parseWorkReceipt", () => {
         slug: "arc",
         aiWriteMode: "direct",
         goal: null,
-        description: null,
-        status: "active",
+        status: null,
+        archived: false,
       },
       inverse: null,
     };
@@ -39,7 +39,7 @@ describe("parseWorkReceipt", () => {
       changed: true,
       workId: "w1",
       workName: "Arc",
-      before: { name: "Arc", goal: null, description: null, status: "active" },
+      before: { name: "Arc", goal: null, status: null, archived: false },
       after: null,
       inverse: { command: "restore", workId: "w1" },
     };

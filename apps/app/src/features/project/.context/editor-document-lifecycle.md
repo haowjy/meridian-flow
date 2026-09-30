@@ -43,8 +43,9 @@ flowchart TD
   the resource owner; unacquired content uses the live opener. It passes prepared
   tab metadata to the route owner. Accepted history commits the tab and
   selection; a cancelled decision publishes neither. A background open publishes
-  the tab without navigating or cancelling a foreground attempt. Scratch/Uploads resources are not Editor
-  tabs: their resolved URLs show the deferred chat-resource viewing notice.
+  the tab without navigating or cancelling a foreground attempt. Uploads resources are not Editor
+  tabs (`isEditorScheme`): their resolved URLs show the deferred chat-resource viewing notice.
+  A Work's Scratch is an Editor tab only in that Work's Editor (`isEditorTab`).
   The URL layer still does not repeat
   live admission; session binding belongs to the host.
 - **New or pending local Unfiled writing:** an exact local identity in `/editor`

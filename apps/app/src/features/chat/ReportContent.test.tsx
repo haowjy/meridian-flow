@@ -3,10 +3,6 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
 vi.mock("@/rich-content/Markdown", () => ({
   Markdown: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));

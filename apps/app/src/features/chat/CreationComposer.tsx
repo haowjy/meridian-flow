@@ -1,5 +1,6 @@
 /** Shared pinned new-chat composer for the center, dock, and phone. */
 import { t } from "@lingui/core/macro";
+import { isWorkArchived } from "@meridian/contracts/works";
 import { useEffect, useRef, useState } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
@@ -18,6 +19,7 @@ export function CreationComposer({
   variant = "pinned",
   autoFocus = false,
   newChatFocusRequestId = null,
+  newChatWorkId,
   onNewChatFocusHandled,
 }: {
   projectId: string;
@@ -30,6 +32,8 @@ export function CreationComposer({
    * project routing beyond this prop).
    */
   newChatFocusRequestId?: number | null;
+  /** Explicit Work scope carried by a context-specific New chat action. */
+  newChatWorkId?: string | null;
   onNewChatFocusHandled?: (id: number) => void;
 }) {
   const creation = useCreationComposer(projectId);
@@ -44,6 +48,10 @@ export function CreationComposer({
     requestAnimationFrame(() => composerRef.current?.focus());
     onNewChatFocusHandled?.(newChatFocusRequestId);
   }, [newChatFocusRequestId, variant, onNewChatFocusHandled]);
+  useEffect(() => {
+    if (newChatFocusRequestId == null || newChatWorkId === undefined) return;
+    creation.updateChoices({ workId: newChatWorkId });
+  }, [creation.updateChoices, newChatFocusRequestId, newChatWorkId]);
   const works = useWorks(projectId);
   const agents = useAgentCatalog(true, projectId);
   const choices = creation.choices;
@@ -53,13 +61,14 @@ export function CreationComposer({
   const agent = choices?.agent ?? defaultAgent ?? null;
   const availableSkills = useSelectionAvailableSkills(agent?.selection ?? null, projectId);
   const [modePending, setModePending] = useState(false);
-  const initialWork = works.works?.find((work) => work.status === "active") ?? null;
+  const initialWork = works.works?.find((work) => !isWorkArchived(work)) ?? null;
   const workId = choices?.workId === undefined ? (initialWork?.id ?? null) : choices.workId;
   const selected = workFromSnapshot(
     works.noWork ? { works: works.works ?? [], noWork: works.noWork } : null,
     workId,
   );
-  const work = selected?.status === "active" || selected?.isNoWork ? selected : null;
+  // An archived Work refuses new chats, so it is never the new chat's Work.
+  const work = selected && (selected.isNoWork || !isWorkArchived(selected)) ? selected : null;
   const references = useReferenceBrowserCatalog(projectId, work?.id, t`Reference a file`);
   const openDocument = useOpenProjectDocument(projectId);
   const context = agent ? { workId, agent } : undefined;

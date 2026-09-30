@@ -1,20 +1,26 @@
 /**
- * InlineErrorRow — compact failed-load row for rail, popover, and list surfaces.
+ * InlineErrorRow — compact failed-load or failed-command row for rail, popover,
+ * header, and list surfaces.
  */
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, X } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
+import { IconButton } from "@/components/ui/icon-button";
 
 export function InlineErrorRow({
   message,
   onRetry,
   actionLabel,
   retryRef,
+  onDismiss,
 }: {
   message: ReactNode;
   onRetry?: () => void;
   actionLabel?: ReactNode;
   retryRef?: RefObject<HTMLButtonElement | null>;
+  /** A failed command the writer may leave as it is. */
+  onDismiss?: () => void;
 }) {
   return (
     <div role="alert" className="flex items-center gap-2 px-2 py-1.5">
@@ -29,6 +35,15 @@ export function InlineErrorRow({
         >
           {actionLabel ?? <Trans>Retry</Trans>}
         </button>
+      ) : null}
+      {onDismiss ? (
+        <IconButton
+          className="shrink-0 [@media(pointer:coarse)]:size-11"
+          aria-label={t`Dismiss`}
+          onClick={onDismiss}
+        >
+          <X aria-hidden className="size-3.5" />
+        </IconButton>
       ) : null}
     </div>
   );

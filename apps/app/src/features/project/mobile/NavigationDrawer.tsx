@@ -114,7 +114,7 @@ export function NavigationDrawer({
                 {...titleEdit}
                 showRenameHint
                 className="focus-ring flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm font-semibold hover:bg-sidebar-accent"
-                inputClassName="h-11 text-sm"
+                inputClassName="min-h-11 px-2 text-sm font-semibold"
               />
             </div>
 

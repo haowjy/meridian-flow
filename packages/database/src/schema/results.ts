@@ -1,9 +1,9 @@
-import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts";
+import type { ProjectId, ThreadId, TurnId, WorkId } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import { bigint, check, index, pgTable, text, uuid } from "drizzle-orm/pg-core";
 import { createdAt, idColumn } from "./_shared";
 import { threads, turns } from "./agent-threads";
-import { projects } from "./content";
+import { projects, works } from "./content";
 
 export const projectResults = pgTable(
   "project_results",
@@ -30,6 +30,9 @@ export const projectResults = pgTable(
       .$type<TurnId>()
       .notNull()
       .references(() => turns.id, { onDelete: "restrict" }),
+    deletedByWorkId: uuid("deleted_by_work_id")
+      .$type<WorkId>()
+      .references(() => works.id, { onDelete: "set null" }),
     toolCallId: text("tool_call_id"),
     createdAt: createdAt(),
   },
@@ -37,5 +40,8 @@ export const projectResults = pgTable(
     check("project_results_size_bytes_nonneg", sql`${table.sizeBytes} >= 0`),
     index("project_results_project_created_idx").on(table.projectId, table.createdAt.desc()),
     index("project_results_root_thread_idx").on(table.rootThreadId, table.createdAt.desc()),
+    index("project_results_deleted_by_work_idx")
+      .on(table.deletedByWorkId)
+      .where(sql`${table.deletedByWorkId} IS NOT NULL`),
   ],
 );

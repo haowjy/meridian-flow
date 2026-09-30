@@ -1,16 +1,21 @@
 /**
- * useWorkDrafts — reviewable AI draft list for one Work.
+ * useWorkDrafts — reviewable AI draft list for one Work, and the Work's AI
+ * write mode, whose change re-reads those drafts.
  *
  * Groups the active list by document because review launchers and navigation
  * operate at document scope.
  */
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
-import { useQuery } from "@tanstack/react-query";
+import type { Work } from "@meridian/contracts/works";
+import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { listWorkDrafts } from "@/client/api/drafts-api";
+import { updateWorkWriteMode } from "@/client/api/projects-api";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
+import { threadQueryKeys } from "./thread-query-keys";
+import { repairWorksSnapshot } from "./works-projection-acquisition";
 
 export type ThreadDraftGroup = {
   documentId: string;
@@ -138,4 +143,37 @@ export function useWorkDrafts(
     drafts: result.data,
     groups,
   };
+}
+
+export type UpdateWorkWriteModeMutationInput =
+  | Work["aiWriteMode"]
+  | { aiWriteMode: Work["aiWriteMode"]; confirmedPush?: boolean };
+
+export function useUpdateWorkWriteMode(projectId: string, workId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateWorkWriteModeMutationInput) => {
+      if (!workId) throw new Error("Cannot update write mode before a work is loaded");
+      return updateWorkWriteMode(projectId, workId, input);
+    },
+    onSuccess: async (result) => {
+      if (!workId) return;
+      invalidateWorkPushQueries(queryClient, projectId, workId);
+      if (result.status !== "updated") return;
+      await repairWorksSnapshot(queryClient, projectId);
+    },
+  });
+}
+
+function invalidateWorkPushQueries(
+  queryClient: QueryClient,
+  projectId: string,
+  workId: string,
+): void {
+  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.workDrafts(projectId, workId) });
+  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.threads(projectId) });
+  void queryClient.invalidateQueries({ queryKey: threadQueryKeys.all });
+  void queryClient.invalidateQueries({
+    queryKey: ["projects", projectId, "works", workId, "documents"],
+  });
 }

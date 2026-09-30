@@ -92,13 +92,15 @@ it("starts a new chat on the index, or in the dock with its composer focused", a
   expect(navigation.display).toEqual({ kind: "index", currentThreadId: "a" });
 
   render("work");
-  await act(() => navigation.openNewChat());
+  await act(() => navigation.openNewChat("work-id"));
   expect(navigation.display).toEqual({ kind: "dock", threadId: null });
+  expect(navigation.newChatWorkId).toBe("work-id");
   // New chat requested focus once; the composer that consumes it never sees it again.
   const requestId = navigation.newChatFocusRequestId;
   expect(requestId).not.toBeNull();
   act(() => navigation.consumeNewChatFocusRequest(requestId as number));
   expect(navigation.newChatFocusRequestId).toBeNull();
+  expect(navigation.newChatWorkId).toBeUndefined();
 });
 
 it("shows a sent chat on the Chat screen and only remembers it elsewhere", () => {

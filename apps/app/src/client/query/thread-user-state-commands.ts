@@ -61,7 +61,6 @@ const stateKey = (projectId: string, threadId: string) =>
 function feedItem(client: QueryClient, projectId: string, threadId: string) {
   return [
     ...client.getQueriesData<ChatFeedData>({ queryKey: projectQueryKeys.chatFeed(projectId) }),
-    ...client.getQueriesData<ChatFeedData>({ queryKey: projectQueryKeys.workThreads(projectId) }),
   ]
     .flatMap(([, data]) => flattenChatFeed(data))
     .find((item) => item.id === threadId);

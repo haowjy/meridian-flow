@@ -45,7 +45,7 @@ test("compact root preserves text lanes and follows the document safe area", asy
       `;
     });
 
-    await page.goto(`/project/${fixture.projectId}?thread=${threadId}`, {
+    await page.goto(`/p/${fixture.projectId}/chats/${threadId}`, {
       waitUntil: "domcontentloaded",
     });
     await page.setViewportSize({ width: 240, height: 800 });

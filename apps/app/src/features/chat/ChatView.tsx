@@ -9,7 +9,8 @@
  *
  * Pending AI changes live in the composer-attached `DraftDock` (a single,
  * work-scoped strip that shares the composer's border box), never in the
- * transcript.
+ * transcript. A host's `composerStrip` (the archived-Work notice) sits on the
+ * composer's top edge above it; the composer itself always stays live.
  *
  * Reads AI-draft review state from `DraftReviewProvider`; the dock and the
  * editor bar share one controller so preview selection cannot drift.
@@ -17,7 +18,7 @@
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { resolveDocumentLink } from "@/client/api/document-links-api";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import {
@@ -92,6 +93,8 @@ export type ChatViewProps = {
    */
   historySettled: boolean;
   activateProjection: (after?: string) => boolean;
+  /** A notice framed onto the composer's top edge; the composer stays usable under it. */
+  composerStrip?: ReactNode;
 };
 
 export function ChatView({
@@ -104,6 +107,7 @@ export function ChatView({
   snapshotThreadUsage = null,
   historySettled,
   activateProjection,
+  composerStrip,
 }: ChatViewProps) {
   const openReferenceDocument = useOpenProjectDocument(projectId);
   const actions = useThreadActions();
@@ -352,6 +356,14 @@ export function ChatView({
         surfaceRef={chatSurfaceRef}
         footer={
           <div data-debug-composer={threadId}>
+            {composerStrip ? (
+              // The composer's own border and radius, open at the bottom: the
+              // composer's top border is the strip's lower edge, so the two
+              // read as one unit. Inset like the draft dock below it.
+              <div className="mx-[var(--chat-space-block)] rounded-t-composer-pinned border border-b-0 border-composer-border bg-composer-surface">
+                {composerStrip}
+              </div>
+            ) : null}
             {/* The dock strip sits BEHIND (below) the composer — narrower via
               mx-2, top corners rounded, jade-tinted background. The composer
               always keeps its own border and overlaps the strip's edge. */}

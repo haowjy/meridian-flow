@@ -93,7 +93,7 @@ async function resolveOwner(db: Database, owner: UploadOwner, actorUserId: strin
         eq(works.id, workId as never),
         eq(works.projectId, owner.projectId as never),
         isNull(works.deletedAt),
-        eq(works.status, "active"),
+        isNull(works.archivedAt),
       ),
     )
     .for("update")

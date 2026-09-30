@@ -10,8 +10,8 @@ Chats grow without bound, so the list pages from the server, searches there
 (`q` on the chat feed), and is virtualized (`ChatIndexList`, on
 `hooks/use-external-scroll-virtual-list`): only rows near the viewport mount.
 
-- It renders only as a page: the center project root and the phone Chat
-  screen. The dock has no index; its chat switcher lists the chats.
+- It renders only as a page: the center at `/p/<project>/chats` and the phone
+  Chat screen. The dock has no index; its chat switcher lists the chats.
   `namedByChrome` hides the heading visually where the phone trail already
   reads `Chats`.
 - The center header door (`ChatIndexButton.tsx`) wears the tab-chip grammar.

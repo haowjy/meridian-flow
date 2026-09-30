@@ -24,10 +24,6 @@ import { createStandaloneEditor, requireNode } from "@/test-support/standalone-e
 
 // A refused door says why (law 5), and the reason is a macro the test transform
 // does not compile. The lane's copy is not what these cases are about.
-vi.mock("@lingui/core/macro", () => ({
-  t: (parts: TemplateStringsArray, ...values: unknown[]) =>
-    parts.reduce((text, part, index) => text + String(values[index - 1] ?? "") + part),
-}));
 
 // jsdom ships no `ClipboardEvent`, and ProseMirror's own `pasteHTML` builds one
 // when it is not handed an event. The browser has it; the harness does not.

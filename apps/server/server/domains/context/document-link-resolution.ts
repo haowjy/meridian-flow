@@ -1,5 +1,10 @@
 /** Scoped internal-link lookup over the authoritative Context catalog and Work authority. */
-import { type ContextUriScheme, documentTitleFromUri, parseContextUri } from "@meridian/contracts";
+import {
+  type ContextUriScheme,
+  documentTitleFromUri,
+  isProjectScopedScheme,
+  parseContextUri,
+} from "@meridian/contracts";
 import type { CatalogFileEntry, CatalogScope } from "@meridian/contracts/protocol";
 import type { ProjectWorkAuthorityResolver } from "../projects/domain/work-authority.js";
 import type { ContextCatalog } from "./ports/context-catalog.js";
@@ -34,8 +39,7 @@ export function createDocumentLinkResolver({
     const { scheme, path, authority } = parsed.value;
     let scope: CatalogScope | null;
     if (scheme === "user") scope = { kind: "user", userId: input.userId };
-    else if (scheme === "manuscript" || scheme === "kb")
-      scope = { kind: "project", projectId: input.projectId };
+    else if (isProjectScopedScheme(scheme)) scope = { kind: "project", projectId: input.projectId };
     else if (authority.kind === "none") scope = await noWorkScope(input.projectId);
     else if (authority.kind === "work") {
       const work = await workAuthorityResolver.bySlug(input.projectId, authority.workSlug);

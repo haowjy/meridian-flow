@@ -28,7 +28,7 @@ import { parentContextEntryPath } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
 import { contextTreeRowClassName } from "./context-row-geometry";
 import { schemeAllowsCreation } from "./context-schemes";
-import { InlineValidationOverlay } from "./InlineValidationOverlay";
+import { EntryNameField } from "./EntryNameField";
 import { useCreateEntryForm } from "./use-create-entry-form";
 import { useRenameEntryForm } from "./use-rename-entry-form";
 
@@ -336,26 +336,13 @@ function RenameRow({
     onDone,
   });
   return (
-    <div className="mx-2 flex h-7 items-center pr-1" style={{ paddingLeft: rowPaddingLeft(depth) }}>
+    <div
+      className={cn("mx-2 flex items-center pr-1 text-sm text-foreground", contextTreeRowClassName)}
+      style={{ paddingLeft: rowPaddingLeft(depth) }}
+    >
       <span className="h-7 w-4 shrink-0" aria-hidden />
       <RowIcon icon={icon} />
-      <div className="relative ml-0.5 flex min-w-0 flex-1 items-center">
-        <input
-          ref={form.inputRef}
-          type="text"
-          value={form.name}
-          onChange={form.onChange}
-          onKeyDown={form.onKeyDown}
-          onBlur={form.onBlur}
-          aria-label={t`Rename`}
-          disabled={form.isPending}
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          className="focus-ring h-[22px] w-full min-w-0 rounded-sm border border-border bg-sidebar-accent px-1 text-base text-foreground outline-none disabled:opacity-60 md:text-sm"
-        />
-        <InlineValidationOverlay anchorRef={form.inputRef} severity={form.severity} />
-      </div>
+      <EntryNameField form={form} label={t`Rename`} className="ml-0.5" />
     </div>
   );
 }
@@ -383,27 +370,18 @@ function CreateRow({
     onCreated: kind === "file" ? env.onCreatedFilePath : undefined,
   });
   return (
-    <div className="mx-2 flex h-7 items-center pr-1" style={{ paddingLeft: rowPaddingLeft(depth) }}>
+    <div
+      className={cn("mx-2 flex items-center pr-1 text-sm text-foreground", contextTreeRowClassName)}
+      style={{ paddingLeft: rowPaddingLeft(depth) }}
+    >
       <span className="h-7 w-4 shrink-0" aria-hidden />
       <RowIcon icon={form.icon} />
-      <div className="relative ml-0.5 flex min-w-0 flex-1 items-center">
-        <input
-          ref={form.inputRef}
-          type="text"
-          value={form.name}
-          onChange={form.onChange}
-          onKeyDown={form.onKeyDown}
-          onBlur={form.onBlur}
-          placeholder={form.placeholder}
-          aria-label={form.placeholder}
-          disabled={form.isPending}
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          className="focus-ring h-[22px] w-full min-w-0 rounded-sm border border-border bg-sidebar-accent px-1 text-base text-foreground outline-none disabled:opacity-60 md:text-sm"
-        />
-        <InlineValidationOverlay anchorRef={form.inputRef} severity={form.severity} />
-      </div>
+      <EntryNameField
+        form={form}
+        label={form.placeholder}
+        placeholder={form.placeholder}
+        className="ml-0.5"
+      />
     </div>
   );
 }

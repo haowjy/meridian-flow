@@ -8,6 +8,7 @@ import { expect, it, vi } from "vitest";
 import { type ChatFeedData, flattenChatFeed } from "./chat-projections";
 import { projectQueryKeys } from "./project-query-keys";
 import { runFavoriteCommand } from "./thread-user-state-commands";
+import { projectChatFeedQueryOptions } from "./useProjectChatFeed";
 
 const api = vi.hoisted(() => ({ getProjectChatFeed: vi.fn(), updateThreadUserState: vi.fn() }));
 vi.mock("@/client/api/projects-api", () => ({ getProjectChatFeed: api.getProjectChatFeed }));
@@ -32,6 +33,23 @@ const searchKey = projectQueryKeys.chatFeedFilter("project", { favorite: false, 
 const favoriteKey = projectQueryKeys.chatFeedFilter("project", { favorite: true, search: null });
 const rows = (client: QueryClient, key: readonly unknown[]) =>
   flattenChatFeed(client.getQueryData<ChatFeedData>(key));
+
+it("includes Work identity in the project chat-feed query key", () => {
+  const client = new QueryClient();
+  const workId = "work";
+  const options = projectChatFeedQueryOptions(client, "project", false, "sect", workId);
+
+  expect(options.queryKey).toEqual(
+    projectQueryKeys.chatFeedFilter("project", {
+      favorite: false,
+      search: "sect",
+      workId,
+    }),
+  );
+  expect(options.queryKey).not.toEqual(
+    projectChatFeedQueryOptions(client, "project", false, "sect").queryKey,
+  );
+});
 
 it("projects a Favorite in place and refetches only Favorites membership", async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

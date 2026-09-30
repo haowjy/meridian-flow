@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** A followed binary reference retains its authority through route, tab, and viewer read. */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, type ReactNode, useState } from "react";
+import { act, useState } from "react";
 import { expect, it, vi } from "vitest";
 import { getProjectContextRead } from "@/client/api/projects-api";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
@@ -11,10 +11,6 @@ import { openContextRouteSearch } from "../routing/project-route";
 import { ContextViewerBareHost, ContextViewerHost } from "./ContextViewerHost";
 import { contextTabFromFile } from "./context-tab-from-file";
 import { contextTabMatchesRoute } from "./context-tab-identity";
-
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: ReactNode }) => children,
-}));
 
 vi.mock("@/client/api/projects-api", async (original) => ({
   ...(await original<typeof import("@/client/api/projects-api")>()),

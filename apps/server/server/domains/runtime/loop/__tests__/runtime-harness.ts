@@ -187,6 +187,7 @@ export function createRuntimeHarness(
   let runtime: ReturnType<typeof createOrchestrator>;
   const orchestrator = () => (runtime ??= createOrchestrator(deps));
   const producer = createWriterTurnProducer({
+    async requireWritableThread() {},
     persistence: { repos, eventWriter },
     hub: { headSeq: deps.headSeq },
     runner: { getRunningTurn: (id) => orchestrator().getRunningTurn(id) },

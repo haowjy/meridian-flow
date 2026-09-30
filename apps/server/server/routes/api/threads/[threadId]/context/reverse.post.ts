@@ -68,6 +68,7 @@ export default defineEventHandler(async (event) => {
               threads: app.threadRepos.threads,
               works: app.works,
               workContextNotices: app.workContextNotices,
+              stopThreadRun: app.stopThreadRun,
               transaction: app.threadRepos.transaction,
             },
             { threadId, turnId, direction: body.direction },

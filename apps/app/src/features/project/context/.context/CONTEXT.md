@@ -34,6 +34,10 @@ project descendants and connects its two-phase close to the document-session
 runtime. Account close fences new commands immediately, aborts transport work,
 drains adoption/catalog/namespace operations, releases every retained session,
 and closes metadata last.
+The authenticated provider boundary also re-scopes the client creation
+registry, clearing transient Project creation records when the account
+changes; Work command records (including creates) clear through the account's
+abort signal in `work-command-store`. Neither is reload recovery.
 
 The replica uses short account/resource Web Locks for namespace and terminal
 coordination. Typing and ordinary local content access do not hold those locks.
@@ -52,7 +56,7 @@ ContextTreePanel (desktop)          MobileContextBrowser (mobile)
        ├─ useDeleteConfirmation ─────────────┤
        └─ ContextEntryActions (menus) ───────┘
                      │
-              useInlineNameForm (shared core)
+      useInlineEdit (components/ui, shared core)
                      │
           validateContextEntryName (pure)
 
@@ -64,9 +68,14 @@ ContextPaneController
               ├─ DraftReviewHeader (review strip, above the identity bar)
               ├─ DocumentIdentityBar (breadcrumb + chips, incl. DraftReviewChip)
               ├─ ContextEditorMountHost (warm tracked + local-resource Yjs editors)
-              ├─ ContextViewerHost (active binary viewer)
+              ├─ ContextViewerHost (active read-only viewer)
               └─ RecentDocumentsLanding (empty workspace only)
 ```
+
+`ContextViewerHost` selects one read-only surface through `previewKind`. A
+tracked-classified viewer read renders as text in every host; collaborative
+editing remains in `ContextEditorMountHost`. URL-backed text previews use a
+TanStack query so reopening a signed preview can reuse its read.
 
 `RecentDocumentsLanding` is the empty pane. It lists this project's recently-opened
 documents and navigates on click. It does not open a tab on mount. The tab

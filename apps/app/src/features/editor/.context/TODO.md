@@ -3,7 +3,7 @@
 - `EditorView.tsx` (`data-document-schema-stale`, "This chapter is
   temporarily unavailable"): this is the only surface in the app where a
   writer faces a document they cannot read or edit — a state the
-  [repair-first ruling](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/repair-first-never-disable.md)
+  [repair-first ruling](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/schema/repair-first-never-disable.md)
   (2026-07-28) forbids as a product state. It is tolerable only as an
   assertion screen for major schema mismatches, which the evolution policy
   rules out of ordinary operation. Follow-up: if the 4407 path ever becomes

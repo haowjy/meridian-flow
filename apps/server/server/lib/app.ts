@@ -20,6 +20,7 @@ type AppGlobal = typeof globalThis & {
 
 const CHANGE_TRAIL_POLL_MS = 1_000;
 const SYSTEM_UPDATE_SWEEP_MS = 1_000;
+const WORK_PURGE_INTERVAL_MS = 60 * 60 * 1_000;
 const WAKE_SWEEP_INTERVAL_MS = resolveWakeSweepIntervalMs(process.env.WAKE_SWEEP_INTERVAL_MS);
 
 let initPromise: Promise<AppServices> | undefined;
@@ -44,6 +45,7 @@ async function createAppServices(): Promise<AppServices> {
     [
       { name: "wake-scan", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.scanWakes },
       { name: "orphan-repair", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.repairOrphans },
+      { name: "work-purge", delayMs: WORK_PURGE_INTERVAL_MS, run: app.recovery.purgeWorks },
       {
         name: "report-publication",
         delayMs: WAKE_SWEEP_INTERVAL_MS,

@@ -8,7 +8,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import { ChevronDown, Pencil, Plus, Search } from "lucide-react";
-import { type KeyboardEvent, useRef, useState } from "react";
+import { type KeyboardEvent, type RefObject, useRef, useState } from "react";
 
 import { useThreadStore } from "@/client/stores";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
@@ -28,6 +28,7 @@ import { useProjectThreadGroups } from "@/features/project/data/project-thread-g
 import { PaneTitle } from "@/features/project/PaneTitle";
 import { relativeTime } from "@/features/project/relative-time";
 import { useChatNavigation } from "@/features/project/routing/chat-navigation";
+import { titleChipClass } from "@/features/project/shell/title-chip";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 
@@ -40,12 +41,15 @@ export function ThreadSwitcherPopover({
   activeThreadId,
   title,
   onRename,
+  triggerRef,
   variant = "quiet",
 }: {
   projectId: string;
   activeThreadId: string | null;
   title: string;
   onRename?: () => void;
+  /** Where a closed rename field hands focus back. */
+  triggerRef?: RefObject<HTMLButtonElement | null>;
   /**
    * `quiet` — chrome that stays chrome (the dock): hovers like an inactive
    *   document tab.
@@ -119,21 +123,12 @@ export function ThreadSwitcherPopover({
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           aria-label={t`Switch chat, currently ${title}`}
           aria-expanded={open}
           aria-haspopup="dialog"
-          className={cn(
-            "focus-ring flex w-fit min-w-0 max-w-full items-center gap-[var(--chat-space-inline)] text-left",
-            variant === "tab"
-              ? // h-9 plus the grammar's mt-[var(--chat-space-inline)] exactly fill the h-10 band, so the
-                // chip's base (and its flares) sit on the band's bottom edge
-                // where the page begins.
-                "tab-chip-active relative h-9 px-[var(--chat-card-pad-x)] [--tab-chip-surface:var(--color-background)]"
-              : // An inactive document tab's hover: the inset pill over the
-                // band's full height, not a pill hugging the text.
-                "tab-chip-inactive relative -ml-2 self-stretch px-[var(--chat-card-pad-x)] [--tab-chip-surface:var(--color-background)] [@media(pointer:coarse)]:min-h-11",
-          )}
+          className={cn("focus-ring text-left", titleChipClass(variant))}
         >
           <PaneTitle className="min-w-0 flex-1">{title}</PaneTitle>
           <ChevronDown

@@ -12,6 +12,7 @@ import type {
 } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useWorks } from "@/client/query/useWorks";
+import type { InlineEdit } from "@/components/ui/use-inline-edit";
 import { cn } from "@/lib/utils";
 import {
   DeleteConfirmationDialog,
@@ -24,6 +25,7 @@ import type { ContextCreateKind } from "../context/context-create-kind";
 import { fileKindIcon } from "../context/context-file-icon";
 import { mobileContextTreeOverflowTriggerClassName } from "../context/context-row-geometry";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
+import { EntryNameField } from "../context/EntryNameField";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { useCreateEntryForm } from "../context/use-create-entry-form";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
@@ -349,41 +351,14 @@ function MobileCreateRow({
     siblingNames,
     onDone,
   });
-  const Icon = form.icon;
-
   return (
-    <div className="shrink-0 border-b border-border-subtle bg-sidebar-accent/30">
-      <div className="flex min-h-10 items-center gap-2.5 px-4">
-        <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-        <input
-          ref={form.inputRef}
-          type="text"
-          value={form.name}
-          onChange={form.onChange}
-          onKeyDown={form.onKeyDown}
-          onBlur={form.onBlur}
-          placeholder={form.placeholder}
-          aria-label={form.placeholder}
-          disabled={form.isPending}
-          enterKeyHint="done"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          // text-base = 16px: iOS Safari zooms the page when focusing inputs
-          // below 16px, which would fight the locked phone shell.
-          className="focus-ring my-1.5 w-full min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-base text-foreground outline-none disabled:opacity-60"
-        />
-      </div>
-      {form.severity ? (
-        <div
-          className={cn(
-            "px-4 pb-2 text-meta",
-            form.severity.level === "error" ? "text-destructive" : "text-muted-foreground",
-          )}
-        >
-          {form.severity.message}
-        </div>
-      ) : null}
+    <div className="shrink-0 border-b border-border-subtle">
+      <MobileNameRow
+        form={form}
+        icon={form.icon}
+        label={form.placeholder}
+        placeholder={form.placeholder}
+      />
     </div>
   );
 }
@@ -549,36 +524,25 @@ function MobileRenameRow({
     onDone,
   });
 
+  return <MobileNameRow form={form} icon={Icon} label={t`Rename`} />;
+}
+
+/** A listing row whose name is being typed: same geometry as `DrillRow`. */
+function MobileNameRow({
+  form,
+  icon: Icon,
+  label,
+  placeholder,
+}: {
+  form: InlineEdit;
+  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  label: string;
+  placeholder?: string;
+}) {
   return (
-    <div className="shrink-0 border-b border-border-subtle bg-sidebar-accent/30">
-      <div className="flex min-h-10 items-center gap-2.5 px-4">
-        <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-        <input
-          ref={form.inputRef}
-          type="text"
-          value={form.name}
-          onChange={form.onChange}
-          onKeyDown={form.onKeyDown}
-          onBlur={form.onBlur}
-          aria-label={t`Rename`}
-          disabled={form.isPending}
-          enterKeyHint="done"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          className="focus-ring my-1.5 w-full min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-base text-foreground outline-none disabled:opacity-60"
-        />
-      </div>
-      {form.severity ? (
-        <div
-          className={cn(
-            "px-4 pb-2 text-meta",
-            form.severity.level === "error" ? "text-destructive" : "text-muted-foreground",
-          )}
-        >
-          {form.severity.message}
-        </div>
-      ) : null}
+    <div className="flex min-h-10 items-center gap-2.5 px-4 text-sm text-foreground">
+      <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+      <EntryNameField form={form} label={label} placeholder={placeholder} />
     </div>
   );
 }

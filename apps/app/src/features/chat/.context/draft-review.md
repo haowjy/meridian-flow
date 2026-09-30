@@ -41,9 +41,9 @@ promises. A batch stops at its first failure; transport failures surface through
 the dock's typed error state.
 
 Cross-cutting server policy:
-[whole-branch Apply](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-apply-whole-current-branch.md)
+[whole-branch Apply](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/apply/draft-apply-whole-current-branch.md)
 and
-[live-only sweep projection](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/ai-change-event-projections.md).
+[live-only sweep projection](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/trail/ai-change-event-projections.md).
 
 On Apply or whole-draft Discard, the controller clears the review surface so
 the editor rebinds from the review branch room to the live manuscript room. The server
@@ -105,7 +105,7 @@ are not part of this boundary.
 See the
 [requirements doc](https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/requirements.md)
 for product decisions and the
-[editable draft review authority decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-editable-branch.md)
+[editable draft review authority decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-review-editable-branch.md)
 for cross-cutting architecture.
 
 The preview describes the branch-vs-live delta and supplies navigation evidence;

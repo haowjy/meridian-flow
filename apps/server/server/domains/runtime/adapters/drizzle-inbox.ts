@@ -47,13 +47,13 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
   }
 
   return {
-    async workNoticeTargets(projectId) {
+    async workNoticeTargets(workId) {
       const rows = await db_()
-        .select({ id: schema.threads.id })
-        .from(schema.threads)
-        .where(eq(schema.threads.projectId, projectId))
-        .orderBy(asc(schema.threads.id));
-      return rows.map(({ id }) => id as ThreadId);
+        .select({ threadId: schema.threadWorks.threadId })
+        .from(schema.threadWorks)
+        .where(and(eq(schema.threadWorks.workId, workId), eq(schema.threadWorks.isPrimary, true)))
+        .orderBy(asc(schema.threadWorks.threadId));
+      return rows.map(({ threadId }) => threadId as ThreadId);
     },
     async canMaterializeWork(threadId) {
       // Stronger thread/project locks invert Work mutation + marker FK insertion against turn writes.

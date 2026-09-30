@@ -42,6 +42,8 @@ the last loaded row. Recency labels and rows are one flat run of virtual
 entries; a row is ruled only when the next entry is a row of its group, and a
 row with an open menu or focus stays mounted when scrolled away. Lifecycle hints are snapshots, not live
 signals for unsubscribed chats.
+`NextPage` owns the feed's pagination sentinel and next-page failure row; Work
+detail reuses it rather than carrying a second observer implementation.
 
 ## Row layout and feed behavior
 

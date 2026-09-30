@@ -10,11 +10,9 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { Input } from "@/components/ui/input";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { CreationComposer } from "@/features/chat/CreationComposer";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
@@ -22,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { useChatRowCommands } from "../chat-list/useChatRowCommands";
 import { useChatNavigation } from "../routing/chat-navigation";
 import type { ProjectSearch } from "../routing/project-route";
+import { SettledSearchField } from "../SearchField";
 import { ChatIndexList, type ChatIndexRowProps } from "./ChatIndexList";
 import { ChatIndexLoading } from "./ChatIndexLoading";
 
@@ -116,7 +115,7 @@ export function ChatIndex({ projectId, namedByChrome = false }: ChatIndexProps) 
           <h2 className="sr-only">
             <Trans>Chats</Trans>
           </h2>
-          <ChatSearchField value={settledSearch ?? ""} onSettle={setSearch} />
+          <SettledSearchField label={t`Search chats`} value={settledSearch} onSettle={setSearch} />
           <ChatFilter value={filter} onChange={setFilter} />
         </div>
         <div className="mt-[clamp(0.5rem,2vh,1.25rem)]">
@@ -133,57 +132,6 @@ export function ChatIndex({ projectId, namedByChrome = false }: ChatIndexProps) 
         </div>
       </div>
       {deleteDialog}
-    </div>
-  );
-}
-
-/**
- * Keystroke-local search text, decoupled from the list's parent: only the
- * settled (debounced) value is reported up, so typing never re-renders every
- * row. Resyncs from an external `value` change (Back/Forward) without
- * clobbering a value the writer is still typing.
- */
-function ChatSearchField({
-  value,
-  onSettle,
-}: {
-  value: string;
-  onSettle: (value: string | null) => void;
-}) {
-  const [text, setText] = useState(value);
-  const lastSettled = useRef(value);
-  useEffect(() => {
-    if (value !== lastSettled.current) {
-      lastSettled.current = value;
-      setText(value);
-    }
-  }, [value]);
-  useEffect(() => {
-    const next = text.trim();
-    const timer = window.setTimeout(
-      () => {
-        lastSettled.current = next;
-        onSettle(next || null);
-      },
-      next ? 200 : 0,
-    );
-    return () => window.clearTimeout(timer);
-  }, [text, onSettle]);
-
-  return (
-    <div className="relative min-w-0 flex-1">
-      <Search
-        className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-        aria-hidden
-      />
-      <Input
-        type="search"
-        value={text}
-        aria-label={t`Search chats`}
-        placeholder={t`Search chats`}
-        onChange={(event) => setText(event.target.value)}
-        className="h-8 pl-8 [@media(pointer:coarse)]:h-11"
-      />
     </div>
   );
 }
@@ -287,7 +235,7 @@ function ChatIndexBody({
  * observer exists only while a page can be requested, and each page it loads
  * re-observes, so a tall viewport keeps filling until the sentinel leaves it.
  */
-function NextPage({ feed }: { feed: Feed }) {
+export function NextPage({ feed }: { feed: Feed }) {
   const sentinel = useRef<HTMLDivElement>(null);
   const { fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError } = feed;
   const pages = feed.data?.pages.length;

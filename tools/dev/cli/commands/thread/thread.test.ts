@@ -40,7 +40,9 @@ describe("thread", () => {
 
   it("also accepts full ids, app URLs, and unique id prefixes", async () => {
     expect((await mf(["thread", "view", "1111"])).code).toBe(EXIT.ok);
-    expect((await mf(["thread", "view", `https://app.x/chat/${THREAD_ID}`])).code).toBe(EXIT.ok);
+    expect((await mf(["thread", "view", `https://app.x/p/x/chats/${THREAD_ID}`])).code).toBe(
+      EXIT.ok,
+    );
     expect((await mf(["thread", "view", "9999"])).code).toBe(EXIT.notFound);
   });
 

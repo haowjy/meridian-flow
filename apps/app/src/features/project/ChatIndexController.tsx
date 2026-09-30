@@ -7,9 +7,10 @@
  */
 import { displayThreadTitle } from "@/lib/thread-title";
 import { ChatIndex } from "./chat-index/ChatIndex";
-import { ChatIndexChip, CurrentChatChip } from "./chat-index/ChatIndexButton";
+import { ChatIndexChip } from "./chat-index/ChatIndexButton";
 import { useProjectThreadGroups } from "./data/project-thread-groups";
 import { useChatNavigation } from "./routing/chat-navigation";
+import { ReturnTabChip } from "./shell/IndexTabChip";
 import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ChatIndexControllerProps = {
@@ -36,7 +37,7 @@ export function ChatIndexController({
         leading={<ChatIndexChip active />}
         title={
           currentThreadId ? (
-            <CurrentChatChip
+            <ReturnTabChip
               title={displayThreadTitle(threadById.get(currentThreadId)?.title)}
               onClick={() => void openChat(currentThreadId)}
             />

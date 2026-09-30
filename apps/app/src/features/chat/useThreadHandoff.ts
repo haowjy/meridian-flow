@@ -224,9 +224,6 @@ export function useThreadHandoff(
         .then(async (thread) => {
           if (!isCurrent(lifetime)) return;
           actions.ensureThread(thread);
-          if (creation.createProject) {
-            actions.clearPendingCreation({ projectId: creation.projectId });
-          }
           await Promise.all([
             invalidateProjectThreadData(queryClient, creation.projectId),
             ...(thread.workId

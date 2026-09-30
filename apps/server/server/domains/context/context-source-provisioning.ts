@@ -242,6 +242,10 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
       }
       return pending;
     });
+    return this.storeForSource(sourceId);
+  }
+
+  private storeForSource(sourceId: string): DrizzleContextDocumentStore {
     return new DrizzleContextDocumentStore({
       db: this.db,
       contextSourceId: sourceId,
@@ -250,8 +254,13 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     });
   }
 
+  private async readableSourceStore(): Promise<DrizzleContextDocumentStore | null> {
+    const existing = await this.existingContextSourceId();
+    return existing ? this.storeForSource(existing) : null;
+  }
+
   async findFolder(parentId: string | null, name: string) {
-    return (await this.sourceStore()).findFolder(parentId, name);
+    return (await this.readableSourceStore())?.findFolder(parentId, name) ?? null;
   }
 
   async createFolder(parentId: string | null, name: string) {
@@ -259,11 +268,11 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
   }
 
   async findDocument(folderId: string | null, name: string, extension: string) {
-    return (await this.sourceStore()).findDocument(folderId, name, extension);
+    return (await this.readableSourceStore())?.findDocument(folderId, name, extension) ?? null;
   }
 
   async findDocumentById(documentId: string) {
-    return (await this.sourceStore()).findDocumentById(documentId);
+    return (await this.readableSourceStore())?.findDocumentById(documentId) ?? null;
   }
 
   async recordDocumentMembership(documentId: string) {
@@ -326,11 +335,11 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
   }
 
   async listFolders(parentId: string | null) {
-    return (await this.sourceStore()).listFolders(parentId);
+    return (await this.readableSourceStore())?.listFolders(parentId) ?? [];
   }
 
   async listDocuments(folderId: string | null) {
-    return (await this.sourceStore()).listDocuments(folderId);
+    return (await this.readableSourceStore())?.listDocuments(folderId) ?? [];
   }
 }
 

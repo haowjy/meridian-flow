@@ -115,7 +115,7 @@ unstaged document rows to enter live membership. Creation and deletion flow
 through `recordManifestDocument{Created,Deleted}`, with SQL
 soft-delete committed before the deletion notification. Preserve every no-op guard:
 setting an equal Y.Map value still creates Yjs history. See
-[KB: Manifest Membership Port](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/manifest-membership-port.md)
+[KB: Manifest Membership Port](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/manifest/manifest-membership-port.md)
 for the cross-domain port decision and self-healing rationale.
 
 Manifest membership rows are branch bookkeeping, not writer-reviewable prose.

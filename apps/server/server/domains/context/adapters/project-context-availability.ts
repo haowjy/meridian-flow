@@ -347,15 +347,6 @@ export function createDrizzleProjectContextAvailability(
                 reason: "work_deleted",
               } as never;
             }
-            if (work?.status === "archived") {
-              return {
-                kind: "authority-unavailable",
-                documentId,
-                generation,
-                authority,
-                reason: "work_archived",
-              } as never;
-            }
             if (document.deletedAt || source?.deletedAt) {
               return { kind: "deleted", documentId, generation, lastAuthority: authority } as never;
             }

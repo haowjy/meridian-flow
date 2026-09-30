@@ -30,7 +30,9 @@ export function invalidateWorkThreads(
   workId?: string,
 ): Promise<void> {
   return client.invalidateQueries({
-    queryKey: projectQueryKeys.workThreads(projectId, workId),
+    queryKey: workId
+      ? projectQueryKeys.chatFeedFilter(projectId, { workId })
+      : projectQueryKeys.chatFeed(projectId),
     exact: workId !== undefined,
   });
 }

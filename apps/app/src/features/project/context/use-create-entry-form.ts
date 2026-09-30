@@ -1,9 +1,9 @@
 /**
- * useCreateEntryForm — inline context entry creation, built on useInlineNameForm.
+ * useCreateEntryForm — inline context entry creation, built on useInlineEdit.
  *
  * Adds create-specific metadata (dynamic file icon, kind-aware placeholder) and
- * the create mutation. Submit semantics are inherited from the shared core:
- * Enter commits, Escape cancels, blur-with-content commits.
+ * the create mutation. Submit semantics are the shared inline-edit protocol:
+ * Enter or blur commits, Escape or an empty name cancels.
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -19,11 +19,11 @@ import { useCallback } from "react";
 
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
+import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
 import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
-import { joinContextEntryPath } from "./context-entry-name";
+import { joinContextEntryPath, validateContextEntryName } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
-import { type InlineNameForm, useInlineNameForm } from "./use-inline-name-form";
 
 export type UseCreateEntryFormOptions = {
   projectId: string;
@@ -40,7 +40,7 @@ export type UseCreateEntryFormOptions = {
   onCreated?: (path: string) => void;
 };
 
-export type CreateEntryForm = InlineNameForm & {
+export type CreateEntryForm = InlineEdit & {
   /** Icon for the current kind + name (updates dynamically by extension). */
   icon: LucideIcon;
   placeholder: string;
@@ -104,18 +104,19 @@ export function useCreateEntryForm({
     [mutation, queryClient, projectId, scheme, kind, parent, onCreated, resources, workId],
   );
 
-  const form = useInlineNameForm({
-    initialName: "",
-    siblingNames,
-    kind,
-    isPending: mutation.isPending,
-    onSubmit: handleSubmit,
-    onDone,
+  const form = useInlineEdit({
+    initial: "",
+    validate: (draft) => validateContextEntryName(draft, siblingNames, kind),
+    onCommit: async (name) => {
+      await handleSubmit(name);
+      onDone();
+    },
+    onCancel: onDone,
   });
 
   return {
     ...form,
-    icon: kind === "folder" ? Folder : fileKindIcon(form.name || "untitled.md"),
+    icon: kind === "folder" ? Folder : fileKindIcon(form.draft || "untitled.md"),
     placeholder: kind === "folder" ? t`Folder name` : t`File name`,
   };
 }

@@ -1,20 +1,12 @@
 /** Canonical cache convergence for committed Work entity and thread-binding facts. */
-import type { WorkReceipt } from "@meridian/contracts/works";
 import type { QueryClient } from "@tanstack/react-query";
 import { invalidateProjectChatFeed, invalidateWorkThreads } from "./project-invalidation";
 import { projectQueryKeys } from "./project-query-keys";
+import type { WorkOperation } from "./work-commands";
 
 export type WorkProjectionChange =
   | { kind: "binding"; projectId: string }
-  | {
-      kind: "entity";
-      projectId: string;
-      operation:
-        | Extract<WorkReceipt, { category: "mutate" }>["operation"]
-        | "archive"
-        | "unarchive"
-        | "restore";
-    };
+  | { kind: "entity"; projectId: string; operation: WorkOperation };
 
 export function convergeWorkProjection(client: QueryClient, change: WorkProjectionChange): void {
   void client.invalidateQueries({ queryKey: projectQueryKeys.threads(change.projectId) });

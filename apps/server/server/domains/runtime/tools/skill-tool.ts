@@ -10,12 +10,11 @@ export function createSkillToolRegistrations(deps: {
       definition: {
         type: "function",
         name: "skill",
-        description:
-          "Load an available skill's instructions into this turn. Pass the skill slug listed in the system prompt.",
+        description: "Load a skill listed under Available skills.",
         inputSchema: {
           type: "object",
           properties: {
-            slug: { type: "string", description: "Available skill slug" },
+            slug: { type: "string" },
           },
           required: ["slug"],
           additionalProperties: false,

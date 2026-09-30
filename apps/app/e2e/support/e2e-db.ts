@@ -80,7 +80,7 @@ export async function seedProjectFixture(
     `;
     await tx`
       INSERT INTO threads (id, project_id, created_by_user_id, title, kind, status)
-      VALUES (${threadId}, ${projectId}, ${input.userId}, ${title}, 'primary', 'active')
+      VALUES (${threadId}, ${projectId}, ${input.userId}, ${title}, 'primary', 'idle')
     `;
     await tx`
       INSERT INTO thread_works (thread_id, work_id, project_id, is_primary)

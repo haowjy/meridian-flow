@@ -87,4 +87,4 @@ tracking or analytics. Product events need a separate future seam.
 - `domains/storage/` — same port + adapter layout
 - Provider swap / OTel posture: [KB decision (OTel deferred)][otel-deferred]
 
-[otel-deferred]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/observability-event-records.md
+[otel-deferred]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/observability/observability-event-records.md

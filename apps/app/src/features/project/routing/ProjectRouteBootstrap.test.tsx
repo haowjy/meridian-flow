@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Project route snapshots commit once per mounted project identity. */
+/** Project route snapshots commit once per project, and once more when a created project gets its data. */
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
@@ -14,8 +14,10 @@ import { ProjectRouteBootstrap } from "./ProjectRouteBootstrap";
 
 const mocks = vi.hoisted(() => ({
   seedProjectRouteData: vi.fn(),
-  hydrateWorkingSet: vi.fn(() => ({ status: "local" as const, revision: null })),
-  readable: vi.fn(() => <div data-readable />),
+  hydrateWorkingSet: vi.fn((_: string, result: { status: string }) => ({ status: result.status })),
+  readable: vi.fn(({ entryHydration }: { entryHydration: { status: string } }) => (
+    <div data-readable={entryHydration.status} />
+  )),
 }));
 
 vi.mock("@/client/query/project-route-data", () => ({
@@ -85,5 +87,45 @@ describe("ProjectRouteBootstrap", () => {
     await act(async () => render(routeData(2)));
     expect(mocks.seedProjectRouteData).toHaveBeenCalledTimes(1);
     expect(mocks.hydrateWorkingSet).toHaveBeenCalledTimes(1);
+  });
+
+  const renderRoute = (id: string, data: ProjectRouteData | null) =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <ProjectRouteBootstrap
+          project={{ ...project, id }}
+          data={data}
+          user={{ userId: project.userId, workingSetSyncEnabled: true }}
+          pending={<div data-pending />}
+        />
+      </QueryClientProvider>,
+    );
+  const readable = () => host.querySelector("[data-readable]")?.getAttribute("data-readable");
+
+  it("mounts a project being created, then seeds once when its data arrives", async () => {
+    await act(async () => renderRoute(project.id, null));
+    expect(mocks.seedProjectRouteData).not.toHaveBeenCalled();
+    expect(readable()).toBe("unavailable");
+
+    const ready = routeData(1);
+    await act(async () => renderRoute(project.id, ready));
+    expect(mocks.seedProjectRouteData).toHaveBeenCalledTimes(1);
+    expect(mocks.seedProjectRouteData).toHaveBeenLastCalledWith(client, project.id, ready);
+    expect(readable()).toBe("absent");
+
+    await act(async () => renderRoute(project.id, routeData(2)));
+    expect(mocks.seedProjectRouteData).toHaveBeenCalledTimes(1);
+    expect(mocks.hydrateWorkingSet).toHaveBeenCalledTimes(2);
+  });
+
+  it("commits the next project when the same instance moves from A to B", async () => {
+    const b = "00000000-0000-4000-8000-000000000022";
+    const next: ProjectRouteData = { ...routeData(1), workingSet: { status: "unavailable" } };
+    await act(async () => renderRoute(project.id, routeData(1)));
+    await act(async () => renderRoute(b, next));
+    expect(mocks.seedProjectRouteData).toHaveBeenCalledTimes(2);
+    expect(mocks.seedProjectRouteData).toHaveBeenLastCalledWith(client, b, next);
+    expect(mocks.hydrateWorkingSet).toHaveBeenLastCalledWith(b, next.workingSet, true);
+    expect(readable()).toBe("unavailable");
   });
 });

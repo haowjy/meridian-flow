@@ -7,6 +7,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
+import { WORK_STATUS_MAX_LENGTH } from "@meridian/contracts/works";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -82,8 +83,7 @@ export const works = pgTable(
     slug: text("slug"),
     isNoWork: boolean("is_no_work").notNull().default(false),
     goal: text("goal"),
-    description: text("description"),
-    status: text("status").notNull().default("active"),
+    status: text("status"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     aiWriteMode: text("ai_write_mode").notNull().default("direct"),
     entityRevision: bigint("entity_revision", { mode: "bigint" }).notNull().default(sql`1`),
@@ -112,12 +112,15 @@ export const works = pgTable(
       "works_no_work_slug",
       sql`(${table.isNoWork} AND ${table.slug} IS NULL) OR (NOT ${table.isNoWork} AND ${table.slug} IS NOT NULL)`,
     ),
-    check("works_no_work_active", sql`NOT ${table.isNoWork} OR ${table.status} = 'active'`),
+    check("works_no_work_not_archived", sql`NOT ${table.isNoWork} OR ${table.archivedAt} IS NULL`),
     check(
       "works_slug_valid",
       sql`${table.slug} IS NULL OR ${table.slug} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'`,
     ),
-    check("works_status_valid", sql`${table.status} IN ('active', 'archived')`),
+    check(
+      "works_status_length",
+      sql`${table.status} IS NULL OR char_length(${table.status}) <= ${WORK_STATUS_MAX_LENGTH}`,
+    ),
     check("works_ai_write_mode_valid", sql`${table.aiWriteMode} IN ('direct', 'draft')`),
     unique("works_project_id_unique").on(table.projectId, table.id),
   ],
@@ -146,8 +149,14 @@ export const contextSources = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
+    deletedByWorkId: uuid("deleted_by_work_id")
+      .$type<WorkId>()
+      .references(() => works.id, { onDelete: "set null" }),
   },
   (table) => [
+    index("context_sources_deleted_by_work_idx")
+      .on(table.deletedByWorkId)
+      .where(sql`${table.deletedByWorkId} IS NOT NULL`),
     uniqueIndex("context_sources_project_slug")
       .on(table.projectId, table.slug)
       .where(sql`${table.workId} IS NULL AND ${table.deletedAt} IS NULL`),
@@ -192,8 +201,14 @@ export const folders = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
+    deletedByWorkId: uuid("deleted_by_work_id")
+      .$type<WorkId>()
+      .references(() => works.id, { onDelete: "set null" }),
   },
   (table) => [
+    index("folders_deleted_by_work_idx")
+      .on(table.deletedByWorkId)
+      .where(sql`${table.deletedByWorkId} IS NOT NULL`),
     index("folders_context_parent_active")
       .on(table.contextSourceId, table.parentId)
       .where(sql`${table.deletedAt} IS NULL`),
@@ -233,8 +248,14 @@ export const documents = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
+    deletedByWorkId: uuid("deleted_by_work_id")
+      .$type<WorkId>()
+      .references(() => works.id, { onDelete: "set null" }),
   },
   (table) => [
+    index("documents_deleted_by_work_idx")
+      .on(table.deletedByWorkId)
+      .where(sql`${table.deletedByWorkId} IS NOT NULL`),
     index("documents_context_folder_active")
       .on(table.contextSourceId, table.folderId)
       .where(sql`${table.deletedAt} IS NULL`),

@@ -66,9 +66,22 @@ describe("Editor screen entry", () => {
     tabs: [tab, document],
     selectedDocumentId: undefined,
     recentRoutes: [],
+    workId: "work-a",
   };
   it("chooses the selected open tab without requiring recent history", () => {
     expect(selectEditorEntryTab({ ...entry, selectedDocumentId: tab.documentId })).toBe(tab);
+  });
+  it("resumes the selected scratch tab of the Editor's own Work only", () => {
+    const scratch: ContextTab = {
+      ...document,
+      documentId: "note",
+      scheme: "scratch",
+      path: "/note.md",
+      workId: "work-a",
+    };
+    const selected = { ...entry, tabs: [scratch], selectedDocumentId: scratch.documentId };
+    expect(selectEditorEntryTab(selected)).toBe(scratch);
+    expect(selectEditorEntryTab({ ...selected, workId: "work-b" })).toBeNull();
   });
   it("uses the current tab location, not a remembered path", () => {
     expect(

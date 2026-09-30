@@ -99,6 +99,52 @@ beforeEach(() => {
   });
 });
 
+it("keeps the current Work's scratch tab on the Editor surface", async () => {
+  const current: ContextTab = {
+    kind: "tracked",
+    documentId: "scratch-current",
+    scheme: "scratch",
+    path: "/current.md",
+    name: "current.md",
+    workId: "work-a",
+    editable: true,
+    filetype: "markdown",
+    schemaType: "document",
+  };
+  const other: ContextTab = { ...current, documentId: "scratch-other", workId: "work-b" };
+  useContextTabsStore.setState({
+    byProject: {
+      project: {
+        tabs: [current, other],
+        selectedTabIdByWork: { "work-a": current.documentId },
+      },
+    },
+    _workspaceHydrated: true,
+  });
+
+  await withReactRoot(
+    <AccountFeatureTestProvider accountId="work-scratch-account">
+      <ContextViewerSurfaceController
+        projectId="project"
+        editorWorkId="work-a"
+        editorWork={null}
+        localDocumentId={current.documentId}
+        activeContextScheme="scratch"
+        activeContextPath={current.path}
+        active={false}
+        sidebarToggle={{ open: true, onExpand: vi.fn(), label: "Sidebar" }}
+        dockToggle={{ open: true, onExpand: vi.fn(), label: "Dock" }}
+        onSelectContextPath={vi.fn()}
+        onOpenContextTarget={vi.fn()}
+        onShowEditorRecents={vi.fn()}
+      />
+    </AccountFeatureTestProvider>,
+    () => {
+      expect(viewerProps?.tabs.map((tab) => tab.documentId)).toEqual([current.documentId]);
+    },
+  );
+});
+
 it("persists and admits the real New action without an empty working-set route", async () => {
   vi.stubGlobal("isSecureContext", true);
   const reportedErrors: unknown[] = [];
@@ -170,6 +216,7 @@ it("persists and admits the real New action without an empty working-set route",
         <ContextViewerSurfaceController
           projectId="project"
           editorWorkId="work-a"
+          editorWork={null}
           activeContextScheme={route.scheme}
           activeContextPath={route.path}
           active
@@ -302,6 +349,7 @@ it("guarded-redirects a selected materialized local owner before admitting its s
         <ContextViewerSurfaceController
           projectId="project"
           editorWorkId="work-a"
+          editorWork={null}
           activeContextScheme="unfiled"
           activeContextPath={path}
           active
@@ -383,6 +431,7 @@ it("restores the exact older local owner across A to B to A through mounted cont
         <ContextViewerSurfaceController
           projectId="project"
           editorWorkId={workId}
+          editorWork={null}
           activeContextScheme={search.scheme ?? null}
           activeContextPath={search.path ?? null}
           active
@@ -456,6 +505,7 @@ it.each([
       <ContextViewerSurfaceController
         projectId="project"
         editorWorkId="work-1"
+        editorWork={null}
         activeContextScheme="manuscript"
         activeContextPath="/missing.md"
         active
@@ -485,6 +535,7 @@ it("does not admit an old bound document while its retained controller is inacti
         <ContextViewerSurfaceController
           projectId="project"
           editorWorkId="work-1"
+          editorWork={null}
           activeContextScheme="manuscript"
           activeContextPath="/a.md"
           active={false}

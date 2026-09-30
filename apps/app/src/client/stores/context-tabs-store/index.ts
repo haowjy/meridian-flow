@@ -8,6 +8,8 @@ export {
   type DraftWorkspaceSettlementReceipt,
   getContextTabs,
   isEditorContextTab,
+  isEditorScheme,
+  isEditorTab,
   type OpenEditorTabResult,
   type ProjectTabsSlice,
   previewReviewOverlayClose,
@@ -19,4 +21,5 @@ export {
   useContextTabs,
   useContextTabsActions,
   useContextTabsStore,
+  viewerTabForCatalogFile,
 } from "./context-tabs-store";

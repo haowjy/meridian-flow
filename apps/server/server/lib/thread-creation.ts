@@ -75,8 +75,12 @@ export async function createThreadForProject(
   const eventSink = deps.eventSink;
   await requireProjectOwner({ projects: deps.projects }, args.projectId, args.userId);
 
-  const existingById = async (): Promise<Thread | null> =>
-    args.id ? deps.threads.lockByIdIncludingDeleted(args.id) : null;
+  const existingById = async (): Promise<Thread | null> => {
+    const existing = args.id ? await deps.threads.lockByIdIncludingDeleted(args.id) : null;
+    if (!existing) return null;
+    const { deletedByWorkId: _deletedByWorkId, ...thread } = existing;
+    return thread;
+  };
 
   const ownedExisting = (existing: Thread): Thread => {
     if (existing.userId !== args.userId) throw new ThreadCreationNotFoundError();

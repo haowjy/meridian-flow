@@ -52,6 +52,7 @@ const expectedSuites = [
   "apps/server/server/domains/projects/provisioning-race.db.test.ts",
   "apps/server/server/domains/projects/slug-routing.db.test.ts",
   "apps/server/server/domains/projects/work-repository.db.test.ts",
+  "apps/server/server/domains/projects/adapters/work-repository/drizzle.adapter-contract.db.test.ts",
   "apps/server/server/domains/projects/work-projection-mutation.db.test.ts",
   "apps/server/server/domains/projects/work-projection-pending-owners.db.test.ts",
   "apps/server/server/domains/recent-documents/adapters/drizzle/recent-documents-repository.db.test.ts",

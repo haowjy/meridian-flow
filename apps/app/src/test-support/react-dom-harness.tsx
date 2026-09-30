@@ -29,6 +29,13 @@ export type WithReactRootOptions = {
   drainMacrotask?: boolean;
 };
 
+/** Updates a controlled text field through React's native input path. */
+export function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value")?.set;
+  setter?.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 export async function withReactRoot(
   node: ReactNode,
   run?: () => Promise<void> | void,

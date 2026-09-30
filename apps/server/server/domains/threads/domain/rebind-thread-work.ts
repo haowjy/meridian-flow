@@ -1,9 +1,10 @@
 /** Canonical thread Work-rebind command shared by model and writer adapters. */
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
-import type {
-  RebindThreadWorkResult,
-  Work,
-  WorkBindingReceiptState,
+import {
+  type RebindThreadWorkResult,
+  type Work,
+  type WorkBindingReceiptState,
+  workLifecycleState,
 } from "@meridian/contracts/works";
 import type { WorkContextNotices } from "../../projects/index.js";
 import { WorkLifecycleUnavailableError, type WorkRepository } from "../../projects/index.js";
@@ -48,8 +49,8 @@ function receiptState(work: Work): WorkBindingReceiptState {
     slug: work.slug,
     aiWriteMode: work.aiWriteMode,
     goal: work.goal,
-    description: work.description,
     status: work.status,
+    archived: work.archivedAt !== null,
   };
 }
 
@@ -64,7 +65,7 @@ export async function rebindThreadWork(
   }
 
   const requestedTarget = await deps.works.findById(input.workId);
-  if (!requestedTarget || requestedTarget.deletedAt || requestedTarget.status === "archived") {
+  if (!requestedTarget || workLifecycleState(requestedTarget) !== "active") {
     throw new RebindThreadWorkError("target_work_unavailable", input.threadId, input.workId);
   }
   if (requestedTarget.projectId !== thread.projectId) {
@@ -93,7 +94,7 @@ export async function rebindThreadWork(
     throw new RebindThreadWorkError("thread_unavailable", input.threadId);
   }
   const targetWork = await deps.works.findById(input.workId);
-  if (!targetWork || targetWork.deletedAt || targetWork.status === "archived") {
+  if (!targetWork || workLifecycleState(targetWork) !== "active") {
     throw new RebindThreadWorkError("target_work_unavailable", input.threadId, input.workId);
   }
 

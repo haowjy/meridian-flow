@@ -22,13 +22,9 @@ test.describe("vertical slice", () => {
         userId: await findTestUserId(db),
         titlePrefix: "Auth invalidation",
       });
-      const search = new URLSearchParams({
-        screen: "context",
-        thread: fixture.threadId,
-        scheme: "kb",
-        path: "/alpha.md",
-      });
-      await page.goto(`/project/${fixture.projectId}?${search.toString()}`);
+      // Opening the chat makes it the project's current chat, which the Editor docks.
+      await page.goto(`/p/${fixture.projectId}/chats/${fixture.threadId}`);
+      await page.goto(`/p/${fixture.projectId}/editor/kb/alpha.md`);
 
       const editor = page.locator(".ProseMirror").first();
       const dockComposer = page.locator(`[data-debug-composer="${fixture.threadId}"] textarea`);
@@ -79,14 +75,10 @@ test.describe("vertical slice", () => {
         userId: await findTestUserId(db),
         titlePrefix: "Vertical slice",
       });
-      const search = new URLSearchParams({
-        screen: "context",
-        thread: fixture.threadId,
-        scheme: "kb",
-        path: "/alpha.md",
-      });
-      await page.goto(`/project/${fixture.projectId}?${search.toString()}`);
-      await expect(page).toHaveURL(new RegExp(`/project/${fixture.projectId}.*screen=context`));
+      // Opening the chat makes it the project's current chat, which the Editor docks.
+      await page.goto(`/p/${fixture.projectId}/chats/${fixture.threadId}`);
+      await page.goto(`/p/${fixture.projectId}/editor/kb/alpha.md`);
+      await expect(page).toHaveURL(new RegExp(`/p/${fixture.projectId}/editor/kb/alpha\\.md`));
 
       const editor = page.locator(".ProseMirror").first();
       await expect(editor).toBeVisible();

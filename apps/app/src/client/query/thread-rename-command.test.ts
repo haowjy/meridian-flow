@@ -234,7 +234,7 @@ describe("thread-rename command", () => {
   it("patches the chat feed and Work feed rows in place instead of invalidating them", () => {
     const client = clientWithThread();
     const feedKey = projectQueryKeys.chatFeedFilter(PROJECT_ID, { favorite: false, search: null });
-    const workFeedKey = projectQueryKeys.workThreads(PROJECT_ID, "work-1");
+    const workFeedKey = projectQueryKeys.chatFeedFilter(PROJECT_ID, { workId: "work-1" });
     const chatItem = {
       id: THREAD_ID,
       title: "Original",
@@ -267,7 +267,7 @@ describe("thread-rename command", () => {
       expect.objectContaining({ queryKey: projectQueryKeys.chatFeed(PROJECT_ID) }),
     );
     expect(invalidate).not.toHaveBeenCalledWith(
-      expect.objectContaining({ queryKey: projectQueryKeys.workThreads(PROJECT_ID) }),
+      expect.objectContaining({ queryKey: projectQueryKeys.chatFeed(PROJECT_ID) }),
     );
   });
 });

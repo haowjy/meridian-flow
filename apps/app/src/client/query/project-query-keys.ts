@@ -58,20 +58,20 @@ export const projectQueryKeys = {
   detail: (projectId: string) => ["projects", "detail", projectId] as const,
   documentAddresses: (projectId: string) => ["projects", projectId, "document-addresses"] as const,
   threads: (projectId: string) => ["projects", projectId, "threads"] as const,
-  workThreads: (projectId: string, workId?: string) =>
-    workId
-      ? (["projects", projectId, "work-threads", workId] as const)
-      : (["projects", projectId, "work-threads"] as const),
   works: (projectId: string) => ["projects", projectId, "works"] as const,
   chatFeed: (projectId: string) => ["projects", projectId, "chat-feed"] as const,
   /** One filtered chat feed; a partial filter (`{ favorite: true }`) matches every variant. */
-  chatFeedFilter: (projectId: string, filter: { favorite?: boolean; search?: string | null }) =>
-    [...projectQueryKeys.chatFeed(projectId), filter] as const,
+  chatFeedFilter: (
+    projectId: string,
+    filter: { favorite?: boolean; search?: string | null; workId?: string | null },
+  ) => [...projectQueryKeys.chatFeed(projectId), filter] as const,
   threadUserState: (projectId: string, threadId: string) =>
     ["projects", projectId, "thread-user-state", threadId] as const,
   threadRename: (projectId: string, threadId: string) =>
     ["projects", projectId, "thread-rename", threadId] as const,
   threadRenamePrefix: (projectId: string) => ["projects", projectId, "thread-rename"] as const,
+  /** Client-only: this project's Work command records (`work-command-store`). */
+  workCommands: (projectId: string) => ["projects", projectId, "work-commands"] as const,
   workDrafts: (projectId: string, workId: string) =>
     ["projects", projectId, "works", workId, "drafts"] as const,
   workDraftPreview: (projectId: string, workId: string, documentId: string, draftId?: string) =>

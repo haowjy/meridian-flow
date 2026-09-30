@@ -42,6 +42,7 @@ import {
   useOptionalAccountResourceReplica,
 } from "@/features/project/context/account-feature-context";
 import { projectQueryKeys } from "./project-query-keys";
+import { useIsProjectPendingCreation } from "./useProjectCreation";
 
 export function contextCatalogScope(
   projectId: string,
@@ -403,6 +404,8 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   schemes: readonly S[],
   options: { enabled?: boolean; workId: string | null },
 ): Record<S, CatalogViewResult> {
+  const projectPending = useIsProjectPendingCreation(projectId);
+  const enabled = (options.enabled ?? true) && !projectPending;
   const scopes = useMemo(() => {
     const result: CatalogScope[] = [];
     for (const scheme of schemes) {
@@ -458,13 +461,14 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   return useQueries({
     queries: scopes.map((scope) => ({
       ...contextCatalogQueryOptions(resources, projectId, scope),
-      enabled: options.enabled ?? true,
+      enabled,
     })),
     combine,
   });
 }
 
 export function useContextCatalogScope(projectId: string, scope: CatalogScope, enabled = true) {
+  const projectPending = useIsProjectPendingCreation(projectId);
   const scopeKind = scope.kind;
   const scopeProjectId = scope.kind === "user" ? undefined : scope.projectId;
   const scopeUserId = scope.kind === "user" ? scope.userId : undefined;
@@ -486,7 +490,7 @@ export function useContextCatalogScope(projectId: string, scope: CatalogScope, e
   const projection = useAccountResourceProjection(projectId);
   const query = useQuery({
     ...contextCatalogQueryOptions(resources, projectId, stableScope),
-    enabled,
+    enabled: enabled && !projectPending,
   });
   const data = useMemo(() => {
     const checkpoint = projection.snapshot?.catalogs.find(

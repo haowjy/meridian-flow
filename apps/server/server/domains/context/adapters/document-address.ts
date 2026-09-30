@@ -51,7 +51,6 @@ export function createDrizzleDocumentAddressStore(db: Database): DocumentAddress
                 ? and(
                     eq(works.projectId, input.projectId),
                     isNull(works.deletedAt),
-                    eq(works.status, "active"),
                     input.workId !== null ? eq(works.id, input.workId) : eq(works.isNoWork, true),
                   )
                 : and(

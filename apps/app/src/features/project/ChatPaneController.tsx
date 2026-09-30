@@ -5,7 +5,7 @@
  * screen switch. This controller renders only the destination chrome that keeps
  * sidebar/context rail reopen controls reachable above that surface.
  */
-import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
+import { ChatThreadTitle } from "@/features/chat/ChatThreadTitle";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { ChatIndexChip } from "./chat-index/ChatIndexButton";

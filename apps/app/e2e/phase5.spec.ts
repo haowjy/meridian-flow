@@ -16,13 +16,13 @@ test.describe("project workspace", () => {
 
   test("opens the real project route and streams an assistant turn", async ({ page }) => {
     await page.goto("/projects");
-    await expect(page).toHaveURL(/\/project\/[^/?]+/);
+    await expect(page).toHaveURL(/\/p\/[^/?]+/);
 
-    const projectId = new URL(page.url()).pathname.split("/").at(-1);
+    const projectId = new URL(page.url()).pathname.split("/")[2];
     expect(projectId).toBeTruthy();
 
-    await page.goto(`/project/${projectId}?screen=chat`);
-    await expect(page).toHaveURL(/\/project\/[^/?]+\?screen=chat(&thread=[^&]+)?$/);
+    await page.goto(`/p/${projectId}/chats`);
+    await expect(page).toHaveURL(/\/p\/[^/?]+\/chats(\/[^/?]+)?$/);
 
     const composer = page.getByPlaceholder("Reply to the agent, or steer the analysis…");
     await expect(composer).toBeVisible();

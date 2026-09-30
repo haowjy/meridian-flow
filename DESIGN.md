@@ -53,7 +53,7 @@ Use semantic tokens from `@meridian/design-tokens/ink-jade.css`, never literals:
 
 Contrast is part of the palette contract: standard ink measures about 12.6:1 on
 the flat shelf and 10.7:1 on its pressed step; muted and hint tiers measure 6.5:1.
-See the [Earthen Value Ladder decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/earthen-value-ladder-shell.md)
+See the [Earthen Value Ladder decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/earthen-value-ladder-shell.md)
 for rationale, measurements, and rejected directions rather than duplicating
 them here.
 
@@ -104,6 +104,19 @@ Core shell expectations:
 - Prefer optimistic local state where the server can reconcile safely.
 - Use skeletons or stable live-status rows instead of spinner-first waiting states.
 - Keep keyboard focus visible, quiet, and consistent.
+- Editing text in place never moves or resizes it. Use `components/ui/inline-edit`
+  (`InlineEditInput`, `InlineEditTextarea`): the field inherits the text's
+  typography, has no padding or border, sizes to its text, and paints its edge
+  with the `inline-edit-field` box-shadow bleed. Resting text wears
+  `inline-edit-trigger`. Tab titles (chat, Work) rename inside their tab. Single-line
+  edits share one protocol, `useInlineEdit`: Enter or blur commits, Escape or an
+  empty or unchanged name cancels, and a failure stays open with its message.
+  iOS focus zoom is suppressed globally (`lib/ios-focus-zoom`), so fields keep the
+  text's size on phones too.
+- Confirm/dismiss pairs sit at the right edge, dismiss first: Cancel, then the
+  primary action (Save, Create, Delete). Inline edits anchored to text (the Work
+  goal) instead left-align Cancel then Save directly under the field, so the
+  dismiss lands where the edit trigger was.
 - Respect reduced motion; motion should clarify location or state, not perform for its own sake.
 - Show model/thread/process depth only when it helps the writer understand or recover from a situation.
 

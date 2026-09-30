@@ -6,8 +6,8 @@
  */
 import { t } from "@lingui/core/macro";
 import type { ReactNode } from "react";
-import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
+import { GroupLabel, RuledList } from "./RuledList";
 
 /** Age buckets the list groups under, oldest last. */
 const GROUPS = ["today", "yesterday", "earlier"] as const;
@@ -55,11 +55,7 @@ export function recencyGroups<T>(
 
 /** A bucket's label with the space above (except the first) and below it. */
 export function RecencyGroupLabel({ group, first }: { group: RecencyGroup; first: boolean }) {
-  return (
-    <div className={cn("pb-2", !first && "pt-7")}>
-      <SectionLabel variant="group">{groupLabel(group)}</SectionLabel>
-    </div>
-  );
+  return <GroupLabel className={cn(!first && "pt-7")}>{groupLabel(group)}</GroupLabel>;
 }
 
 export function RecencyGroupedList<T>({
@@ -81,16 +77,9 @@ export function RecencyGroupedList<T>({
       {recencyGroups(items, now, timestamp).map((bucket, index) => (
         <section key={bucket.group}>
           <RecencyGroupLabel group={bucket.group} first={index === 0} />
-          <ul>
-            {bucket.items.map((item, row) => (
-              <li
-                key={itemKey(item)}
-                className={cn("relative", row < bucket.items.length - 1 && "row-rule")}
-              >
-                {renderItem(item)}
-              </li>
-            ))}
-          </ul>
+          <RuledList
+            rows={bucket.items.map((item) => ({ key: itemKey(item), node: renderItem(item) }))}
+          />
         </section>
       ))}
     </div>

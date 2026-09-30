@@ -43,3 +43,8 @@ when present.
   outcomes retain the stable key for recovery.
 - Intake never writes `thread_documents`. Explicit deletion cannot target a
   replacement at the same path.
+- A Work deletion hides its Uploads source and all of its documents immediately
+  but retains finalized intake metadata and blobs for the 30-day Work restore
+  window. The projects `work-purge` job hard-deletes expired Work rows and
+  removes each retained intake object's storage key; a missing object is an
+  idempotent success.

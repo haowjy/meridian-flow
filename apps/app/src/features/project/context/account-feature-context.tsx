@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { scopeCreationRegistry } from "@/client/creation/creation-registry";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import type { PostApplyDispositionOwner } from "../draft-apply-recovery/draft-apply-recovery-owner";
 import { AccountFeatureLifetime } from "./account-feature-lifetime";
@@ -94,6 +95,10 @@ function AccountFeatureProviders({
   lifetime: AccountFeatureLifetime;
   children: React.ReactNode;
 }) {
+  useInsertionEffect(() => {
+    scopeCreationRegistry(lifetime.accountId);
+  }, [lifetime.accountId]);
+
   useInsertionEffect(() => {
     lifetime.resumeFeatureLease();
     const retainedLeases = new Map<

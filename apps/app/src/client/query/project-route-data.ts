@@ -19,7 +19,6 @@ import {
   listProjectWorks,
 } from "@/client/api/projects-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
-import { waitForProjectCreation } from "@/client/project-creation";
 
 import { projectQueryKeys } from "./project-query-keys";
 import { beginWorksSnapshotRequest, seedWorksSnapshot } from "./works-projection-acquisition";
@@ -55,9 +54,8 @@ function settledValue<T>(result: PromiseSettledResult<T>): T | null {
 export async function loadProjectEntry(
   projectId: string,
 ): Promise<{ project: Project; data: ProjectRouteData }> {
-  // Same-tab creation is sequencing only, never authorization. Once persistence
-  // settles, the ordinary owner-gated reads still establish route authority.
-  await waitForProjectCreation(projectId);
+  // Owner-gated identity and shell reads overlap; the identity read still
+  // decides route authority, since a rejection fails the whole entry.
   const init = ssrApiRequestInit();
   const [project, data] = await Promise.all([
     getProject(projectId, init),

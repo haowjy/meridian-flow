@@ -224,7 +224,10 @@ function parseAuthorityPrefix(
   };
 }
 
-function isProjectScopedScheme(scheme: ContextUriScheme): scheme is ProjectScopedContextUriScheme {
+/** Schemes whose documents belong to the project (or, for `user://`, the user), never to a Work. */
+export function isProjectScopedScheme(
+  scheme: ContextUriScheme,
+): scheme is ProjectScopedContextUriScheme {
   return (PROJECT_SCOPED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme);
 }
 

@@ -1,5 +1,5 @@
 /**
- * ContextViewerHost — read-only viewer surface for non-tracked context tabs.
+ * ContextViewerHost — read-only viewer surface for context viewer tabs.
  *
  * Fetches the active file through `useProjectContextRead` (the signed-URL
  * read route), chooses the matching viewer body for its kind, and composes the
@@ -14,21 +14,26 @@ import { AlertCircle } from "lucide-react";
 import { useProjectContextRead } from "@/client/query/useProjectContextRead";
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
-
+import { previewKind } from "./preview-kind";
 import { BinaryFallbackViewer } from "./viewers/BinaryFallbackViewer";
 import { ImageViewer, imageViewerFooter } from "./viewers/ImageViewer";
 import { PdfViewer } from "./viewers/PdfViewer";
 import { ReadOnlyViewerFrame, type ReadOnlyViewerHeader } from "./viewers/ReadOnlyViewerFrame";
+import { TextViewer } from "./viewers/TextViewer";
 
 export type ContextViewerHostProps = {
   projectId: string;
   editorWorkId: string | null;
   tab: Extract<ContextTab, { kind: "viewer" }>;
+  header?: ReadOnlyViewerHeader;
 };
 
 export function ContextViewerHost(props: ContextViewerHostProps) {
   return (
-    <ContextViewerContent {...props} header={{ name: props.tab.name, path: props.tab.path }} />
+    <ContextViewerContent
+      {...props}
+      header={props.header ?? { name: props.tab.name, path: props.tab.path }}
+    />
   );
 }
 
@@ -68,39 +73,53 @@ function ContextViewerContent({
     return null;
   }
 
-  // The tab's stored classification owns routing. A tracked read response here
-  // means the tab metadata and server stat result diverged.
-  if (read.data.kind === "tracked") {
-    return (
-      <ViewerError>
-        <AlertCircle className="size-4" aria-hidden />
-        <Trans>This file should be opened in the collaborative editor.</Trans>
-      </ViewerError>
-    );
-  }
+  // Tracked-classified viewer tabs use the same read-only text preview in the
+  // dock and Editor hosts. Collaborative editing remains in the tracked editor
+  // mount and does not render through this component.
+  const kind = previewKind(tab, read.data);
+  const emptyMessage =
+    tab.scheme === "scratch" ? (
+      <Trans>This note is empty. Open it in the Editor to write.</Trans>
+    ) : undefined;
+  const binary = read.data.kind === "binary" ? read.data : null;
 
-  if (tab.fileType === "image") {
-    return (
-      <ReadOnlyViewerFrame
-        header={header}
-        footer={imageViewerFooter({ url: read.data.url, name: tab.name })}
-      >
-        <ImageViewer url={read.data.url} name={tab.name} />
-      </ReadOnlyViewerFrame>
-    );
+  switch (kind) {
+    case "text":
+    case "markdown":
+      return (
+        <ReadOnlyViewerFrame header={header}>
+          <TextViewer
+            source={
+              read.data.kind === "tracked" ? { content: read.data.content } : { url: read.data.url }
+            }
+            name={tab.name}
+            markdown={kind === "markdown"}
+            emptyMessage={emptyMessage}
+          />
+        </ReadOnlyViewerFrame>
+      );
+    case "image":
+      return binary ? (
+        <ReadOnlyViewerFrame
+          header={header}
+          footer={imageViewerFooter({ url: binary.url, name: tab.name })}
+        >
+          <ImageViewer url={binary.url} name={tab.name} />
+        </ReadOnlyViewerFrame>
+      ) : null;
+    case "pdf":
+      return binary ? (
+        <ReadOnlyViewerFrame header={header}>
+          <PdfViewer url={binary.url} name={tab.name} />
+        </ReadOnlyViewerFrame>
+      ) : null;
+    case "binary":
+      return binary ? (
+        <ReadOnlyViewerFrame header={header}>
+          <BinaryFallbackViewer url={binary.url} mimeType={binary.mimeType} name={tab.name} />
+        </ReadOnlyViewerFrame>
+      ) : null;
   }
-  if (tab.fileType === "pdf") {
-    return (
-      <ReadOnlyViewerFrame header={header}>
-        <PdfViewer url={read.data.url} name={tab.name} />
-      </ReadOnlyViewerFrame>
-    );
-  }
-  return (
-    <ReadOnlyViewerFrame header={header}>
-      <BinaryFallbackViewer url={read.data.url} mimeType={read.data.mimeType} name={tab.name} />
-    </ReadOnlyViewerFrame>
-  );
 }
 
 function ViewerError({ children }: { children: React.ReactNode }) {

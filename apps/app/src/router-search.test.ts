@@ -45,7 +45,7 @@ it("validates the original duplicate query through the installed router", async 
   ).toMatchObject({
     kind: "valid",
     address: {
-      work: { kind: "slug", slug: "550e8400-e29b-41d4-a716-446655440000" },
+      work: { kind: "id", id: "550e8400-e29b-41d4-a716-446655440000" },
       settings: "usage",
     },
   });

@@ -8,10 +8,6 @@ import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ProjectChatRow, type ProjectChatRowProps } from "./ProjectChatRow";
 
-vi.mock("@lingui/core/macro", () => ({
-  t: (parts: TemplateStringsArray, ...values: unknown[]) =>
-    parts.reduce((text, part, index) => `${text}${part}${values[index] ?? ""}`, ""),
-}));
 const chat = (favorite = false): ProjectChatItem => ({
   id: "thread-1",
   title: "River",

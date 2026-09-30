@@ -76,7 +76,7 @@ export function exactUtcTimestampSql(value: SQL): SQL<string> {
  * only the candidate scope and order (a `SELECT ... AS thread_id` body, most
  * recent first); this owns the primary-Work join, the agent_name CASE, the
  * favorite join, the head-turn lookup, the preview lateral, and timestamp
- * formatting shared by the Project and Work chat feeds.
+ * formatting for the Project chat feed, including Work-filtered pages.
  */
 export function chatFeedRowsSql(input: { candidates: SQL; userId: string }): SQL {
   return sql`

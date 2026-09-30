@@ -166,19 +166,18 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
       .limit(1);
     if (!activeProject) return [];
     if (scope.kind === "work") {
-      const [activeWork] = await db
+      const [visibleWork] = await db
         .select({ id: works.id })
         .from(works)
         .where(
           and(
             eq(works.id, scope.workId),
             eq(works.projectId, scope.projectId),
-            eq(works.status, "active"),
             isNull(works.deletedAt),
           ),
         )
         .limit(1);
-      if (!activeWork) return [];
+      if (!visibleWork) return [];
     }
   }
   const sourceRows = await sourcesForScope(db, scope);
@@ -275,7 +274,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
         id: works.id,
         slug: works.slug,
         name: works.name,
-        status: works.status,
+        archivedAt: works.archivedAt,
         deletedAt: works.deletedAt,
         entityRevision: works.entityRevision,
       })
@@ -290,7 +289,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
         scope,
         authority: { workId: work.id, workSlug },
         name: work.name,
-        available: work.deletedAt === null && work.status === "active",
+        available: work.deletedAt === null && work.archivedAt === null,
         entityRevision: String(work.entityRevision),
       });
     }
@@ -621,7 +620,7 @@ export function createDrizzleContextCatalog(
             projectId: works.projectId,
             slug: works.slug,
             name: works.name,
-            status: works.status,
+            archivedAt: works.archivedAt,
             deletedAt: works.deletedAt,
             entityRevision: works.entityRevision,
           })
@@ -671,7 +670,7 @@ export function createDrizzleContextCatalog(
               scope,
               authority: { workId: work.id, workSlug },
               name: work.name,
-              available: work.deletedAt === null && work.status === "active",
+              available: work.deletedAt === null && work.archivedAt === null,
               entityRevision: String(work.entityRevision),
             };
             const existing = existingById.get(work.id);

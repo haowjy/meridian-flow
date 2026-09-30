@@ -51,13 +51,6 @@ let accountEpoch = new AbortController();
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useOptionalAccountEpochSignal: () => accountEpoch.signal,
 }));
-vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
-vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray) => strings[0],
-  msg: (strings: TemplateStringsArray) => ({ id: strings[0] }),
-}));
 vi.mock("@/client/api/projects-api", () => ({
   createProject: vi.fn(),
   createProjectThread: mocks.createProjectThread,

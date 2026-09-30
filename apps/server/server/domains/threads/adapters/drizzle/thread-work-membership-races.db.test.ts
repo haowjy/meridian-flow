@@ -30,8 +30,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { assertThrowawayDatabaseForRunDbTests } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { WorkDeleteBlockedError } = await import("../../../projects/index.js");
-    const { createDrizzleProjectWorkRepository } = await import("../../../projects/index.js");
+    const { createDrizzleProjectWorkRepository, deleteWorkTransition } = await import(
+      "../../../projects/index.js"
+    );
     const { createDrizzleBranchStore } = await import(
       "../../../collab/adapters/drizzle-branches.js"
     );
@@ -48,8 +49,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const draftPending = createWorkDraftPending(createDrizzleWorkDraftPendingStore(db));
     const works = createDrizzleProjectWorkRepository({
       db,
-      hasUnreviewedDraft: async (workId) =>
-        ((await draftPending.countPendingByWorkIds([workId])).get(workId) ?? 0) > 0,
       projectionMutation: createTestWorkProjectionMutation(db),
     });
     const branches = createDrizzleBranchStore(db, undefined);
@@ -58,7 +57,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await resetThreadWorkRaceFixture(db);
       await db
         .update(schema.works)
-        .set({ status: "active", archivedAt: null })
+        .set({ archivedAt: null })
         .where(eq(schema.works.id, TARGET_WORK_ID));
     });
 
@@ -81,7 +80,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       throw new Error(`Timed out waiting for PostgreSQL ${waitEvent} lock`);
     }
 
-    it("serializes attachment before deletion and then blocks the delete", async () => {
+    it("serializes attachment before deletion and hides the newly bound thread", async () => {
       await control.unsafe(`
         CREATE FUNCTION test_block_thread_work_insert() RETURNS trigger
         LANGUAGE plpgsql AS $$
@@ -101,7 +100,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const attach = threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
         await waitForLock("advisory");
 
-        const deletion = works.softDelete(WORK_ID).then(
+        const deletion = deleteWorkTransition(
+          {
+            works,
+            stopThreadRun: async () => {},
+          },
+          WORK_ID,
+        ).then(
           () => ({ status: "fulfilled" as const }),
           (reason: unknown) => ({ status: "rejected" as const, reason }),
         );
@@ -112,11 +117,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await attach;
 
         const result = await deletion;
-        expect(result.status).toBe("rejected");
-        if (result.status === "rejected") {
-          expect(result.reason).toBeInstanceOf(WorkDeleteBlockedError);
-        }
-        await expect(works.findById(WORK_ID)).resolves.toMatchObject({ deletedAt: null });
+        expect(result.status).toBe("fulfilled");
+        await expect(works.findById(WORK_ID)).resolves.toMatchObject({
+          deletedAt: expect.any(String),
+        });
+        await expect(threads.threads.findById(THREAD_ID)).resolves.toBeNull();
         await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
           workId: WORK_ID,
         });
@@ -172,7 +177,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("blocks deletion when a draft transition takes the lifecycle lock first", async () => {
+    it("deletes after a draft transition takes the lifecycle lock first", async () => {
       await control.unsafe(`
         CREATE FUNCTION test_block_draft_insert() RETURNS trigger
         LANGUAGE plpgsql AS $$
@@ -205,10 +210,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         advisoryLockHeld = false;
         await draft;
         const result = await deletion;
-        expect(result.status).toBe("rejected");
-        if (result.status === "rejected") {
-          expect(result.reason).toMatchObject({ reason: "drafts" });
-        }
+        expect(result.status).toBe("fulfilled");
+        await expect(works.findById(WORK_ID)).resolves.toMatchObject({
+          deletedAt: expect.any(String),
+        });
       } finally {
         if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
         await control.unsafe(`
@@ -248,7 +253,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
         advisoryLockHeld = false;
         await deletion;
-        await expect(draft).rejects.toThrow(`Work not found: ${WORK_ID}`);
+        await expect(draft).rejects.toMatchObject({
+          name: "WorkLifecycleUnavailableError",
+          state: "deleted",
+        });
         await expect(
           draftPending.countPendingByWorkIds([WORK_ID]).then((counts) => counts.get(WORK_ID) ?? 0),
         ).resolves.toBe(0);
@@ -261,7 +269,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("serializes rebind before target deletion and then blocks the delete", async () => {
+    it("serializes rebind before target deletion and hides the rebound thread", async () => {
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
       await control.unsafe(`
         CREATE FUNCTION test_block_thread_work_rebind_demote() RETURNS trigger
@@ -282,7 +290,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       try {
         const rebind = threads.threadWorks.rebindPrimary(THREAD_ID, TARGET_WORK_ID);
         await waitForLock("advisory");
-        const deletion = works.softDelete(TARGET_WORK_ID).then(
+        const deletion = deleteWorkTransition(
+          {
+            works,
+            stopThreadRun: async () => {},
+          },
+          TARGET_WORK_ID,
+        ).then(
           () => ({ status: "fulfilled" as const }),
           (reason: unknown) => ({ status: "rejected" as const, reason }),
         );
@@ -292,14 +306,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         advisoryLockHeld = false;
         await expect(rebind).resolves.toMatchObject({ changed: true });
         const result = await deletion;
-        expect(result.status).toBe("rejected");
-        if (result.status === "rejected") {
-          expect(result.reason).toBeInstanceOf(WorkDeleteBlockedError);
-        }
+        expect(result.status).toBe("fulfilled");
         await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
           workId: TARGET_WORK_ID,
         });
-        await expect(works.findById(TARGET_WORK_ID)).resolves.toMatchObject({ deletedAt: null });
+        await expect(works.findById(TARGET_WORK_ID)).resolves.toMatchObject({
+          deletedAt: expect.any(String),
+        });
+        await expect(threads.threads.findById(THREAD_ID)).resolves.toBeNull();
       } finally {
         if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
         await control.unsafe(`

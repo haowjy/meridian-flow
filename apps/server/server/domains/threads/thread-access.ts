@@ -50,7 +50,7 @@ export interface SetOwnedThreadTrashStateDeps {
   projects: Pick<ProjectRepository, "findById">;
   workContextNotices: Pick<WorkContextNotices, "threadChanged" | "materializeIdle">;
   workAuthorityResolver: import("../projects/index.js").ProjectWorkAuthorityResolver;
-  works: Pick<import("../projects/index.js").WorkRepository, "findNoWork">;
+  works: Pick<import("../projects/index.js").WorkRepository, "findById" | "findNoWork">;
 }
 
 /** Authenticated adapter for the serialized trash command and restore wake. */

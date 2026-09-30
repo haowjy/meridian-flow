@@ -1,47 +1,59 @@
-import type { CreateWorkRequest, UpdateWorkRequest, Work } from "@meridian/contracts/works";
-import {
-  type QueryClient,
-  type UseMutateAsyncFunction,
-  type UseMutateFunction,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-import { useCallback } from "react";
+/**
+ * Works reads. The query cache holds only server snapshots; readers see that
+ * snapshot with every pending Work command laid over it (`work-command-projection`),
+ * and the Works still being created beside it.
+ */
+import { isUuid, type ParsedRequestId } from "@meridian/contracts/request-id";
+import type { Work } from "@meridian/contracts/works";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo } from "react";
 
-import {
-  archiveWork,
-  createProjectWork,
-  deleteWork,
-  restoreWork,
-  unarchiveWork,
-  updateWork,
-  updateWorkWriteMode,
-} from "@/client/api/projects-api";
-import { useIsProjectPendingCreation } from "@/client/stores";
 import { projectQueryKeys } from "./project-query-keys";
-import { threadQueryKeys } from "./thread-query-keys";
-import { convergeWorkProjection } from "./work-projection-cache";
-import {
-  acquireWorksSnapshot,
-  repairWorksSnapshot,
-  workFromSnapshot,
-} from "./works-projection-acquisition";
+import { useIsProjectPendingCreation } from "./useProjectCreation";
+import { projectWorkCommands } from "./work-command-projection";
+import { useWorkCommandRecords } from "./work-command-store";
+import { acquireWorksSnapshot, workFromSnapshot } from "./works-projection-acquisition";
 
 export { workFromSnapshot };
 
-export function useWorks(projectId: string, options?: { enabled?: boolean }) {
-  const enabled = (options?.enabled ?? true) && !useIsProjectPendingCreation(projectId);
-  const listClient = useQueryClient();
+/** A Work whose id is a checked request id, so it can go into an address as is. */
+export type AddressableWork = Work & { id: ParsedRequestId };
+
+const isAddressable = <W extends Work>(work: W): work is W & AddressableWork => isUuid(work.id);
+
+/** The server snapshot alone, with no command laid over it. */
+export function useWorksSnapshot(projectId: string, requested = true) {
+  const enabled = requested && !useIsProjectPendingCreation(projectId);
+  const client = useQueryClient();
   const list = useQuery({
     queryKey: projectQueryKeys.works(projectId),
-    queryFn: () => acquireWorksSnapshot(listClient, projectId),
+    queryFn: () => acquireWorksSnapshot(client, projectId),
     staleTime: 30_000,
     enabled,
   });
-  const works =
-    list.data?.works.filter((work) => work.deletedAt === null) ?? (list.isError ? [] : null);
-  const noWork = list.data?.noWork ?? null;
+  return { list, enabled };
+}
+
+export function useWorks(projectId: string, options?: { enabled?: boolean }) {
+  const { list, enabled } = useWorksSnapshot(projectId, options?.enabled);
+  const records = useWorkCommandRecords(projectId);
+  const projected = useMemo(() => projectWorkCommands(list.data, records), [list.data, records]);
+  const snapshot = projected.snapshot;
+  // Work ids are checked once here; every reader can address a Work by its id.
+  const addressable = useMemo(() => snapshot?.works.filter(isAddressable), [snapshot?.works]);
+  const works = useMemo(
+    () => addressable?.filter((work) => work.deletedAt === null) ?? (list.isError ? [] : null),
+    [addressable, list.isError],
+  );
+  // Soft-deleted Works stay restorable until their purge date; newest first.
+  const deleted = useMemo(
+    () =>
+      (addressable?.filter((work) => work.deletedAt !== null) ?? []).sort((a, b) =>
+        (b.deletedAt ?? "").localeCompare(a.deletedAt ?? ""),
+      ),
+    [addressable],
+  );
+  const noWork = snapshot?.noWork ?? null;
   const refetch = useCallback(() => void list.refetch(), [list.refetch]);
   const status = !enabled
     ? "disabled"
@@ -54,127 +66,13 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
           : "ready";
   return {
     works,
+    deleted,
     noWork,
+    /** Works still being created; `works` leaves them out until the server has them. */
+    creations: projected.creations,
     isError: list.isError,
     isFetching: list.isFetching,
     status: status as "disabled" | "error" | "loading" | "empty" | "ready",
     refetch,
   };
-}
-
-export interface WorkCommand<TResult, TVariables> {
-  mutate: UseMutateFunction<TResult, Error, TVariables>;
-  mutateAsync: UseMutateAsyncFunction<TResult, Error, TVariables>;
-  isPending: boolean;
-  error: Error | null;
-}
-
-export interface WorkMutations {
-  create: WorkCommand<Work, CreateWorkRequest>;
-  update: WorkCommand<Work, { workId: string; data: UpdateWorkRequest }>;
-  archive: WorkCommand<Work, string>;
-  unarchive: WorkCommand<Work, string>;
-  delete: WorkCommand<void, string>;
-  restore: WorkCommand<Work, string>;
-  isPending: boolean;
-}
-
-export function useWorkMutations(projectId: string): WorkMutations {
-  const client = useQueryClient();
-  const lifecycleScope = { id: `work-lifecycle:${projectId}` };
-  const create = useWorkCommand(client, projectId, "create", (data: CreateWorkRequest) =>
-    createProjectWork(projectId, data),
-  );
-  const update = useWorkCommand(
-    client,
-    projectId,
-    "update",
-    ({ workId, data }: { workId: string; data: UpdateWorkRequest }) => updateWork(workId, data),
-  );
-  const archive = useWorkCommand(client, projectId, "archive", archiveWork, {
-    scope: lifecycleScope,
-  });
-  const unarchive = useWorkCommand(client, projectId, "unarchive", unarchiveWork, {
-    scope: lifecycleScope,
-  });
-  const remove = useWorkCommand(client, projectId, "delete", deleteWork, {
-    scope: lifecycleScope,
-  });
-  const restore = useWorkCommand(client, projectId, "restore", restoreWork, {
-    scope: lifecycleScope,
-  });
-  const commands = [create, update, archive, unarchive, remove, restore] as const;
-  return {
-    create,
-    update,
-    archive,
-    unarchive,
-    delete: remove,
-    restore,
-    isPending: commands.some((command) => command.isPending),
-  };
-}
-
-type WorkOperation = "create" | "update" | "archive" | "unarchive" | "delete" | "restore";
-
-function useWorkCommand<TResult, TVariables>(
-  client: QueryClient,
-  projectId: string,
-  operation: WorkOperation,
-  command: (variables: TVariables) => Promise<TResult>,
-  options: { scope?: { id: string } } = {},
-): WorkCommand<TResult, TVariables> {
-  const mutation = useMutation<TResult, Error, TVariables>({
-    mutationFn: command,
-    scope: options.scope,
-    onSuccess: () => convergeWorkCommand(client, projectId, operation),
-  });
-  return {
-    mutate: mutation.mutate,
-    mutateAsync: mutation.mutateAsync,
-    isPending: mutation.isPending,
-    error: mutation.error,
-  };
-}
-
-function convergeWorkCommand(
-  client: QueryClient,
-  projectId: string,
-  operation: WorkOperation,
-): Promise<void> {
-  convergeWorkProjection(client, { kind: "entity", projectId, operation });
-  return repairWorksSnapshot(client, projectId);
-}
-
-export type UpdateWorkWriteModeMutationInput =
-  | Work["aiWriteMode"]
-  | { aiWriteMode: Work["aiWriteMode"]; confirmedPush?: boolean };
-
-export function useUpdateWorkWriteMode(projectId: string, workId: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: UpdateWorkWriteModeMutationInput) => {
-      if (!workId) throw new Error("Cannot update write mode before a work is loaded");
-      return updateWorkWriteMode(projectId, workId, input);
-    },
-    onSuccess: async (result) => {
-      if (!workId) return;
-      invalidateWorkPushQueries(queryClient, projectId, workId);
-      if (result.status !== "updated") return;
-      await repairWorksSnapshot(queryClient, projectId);
-    },
-  });
-}
-
-function invalidateWorkPushQueries(
-  queryClient: QueryClient,
-  projectId: string,
-  workId: string,
-): void {
-  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.workDrafts(projectId, workId) });
-  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.threads(projectId) });
-  void queryClient.invalidateQueries({ queryKey: threadQueryKeys.all });
-  void queryClient.invalidateQueries({
-    queryKey: ["projects", projectId, "works", workId, "documents"],
-  });
 }

@@ -1,31 +1,24 @@
-/** In-memory WorkRepository for tests: Map-backed work CRUD implementing the port. Shares the default-title constant with the drizzle adapter via shared.ts. */
+/** In-memory WorkRepository for tests; Work child cascades are DB-only and are not modeled here. */
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
 import type { Work } from "@meridian/contracts/works";
+import { WorkLifecycleUnavailableError } from "../../domain/work-lifecycle.js";
+import { decideWorkRestore } from "../../domain/work-restore.js";
 import type {
   CreateWorkInput,
   ListWorksOptions,
   UpdateWorkInput,
   WorkRepository,
+  WorkRestoration,
 } from "../../ports/work-repository.js";
 import {
-  WorkDeleteBlockedError,
   WorkLockedError,
   WorkNameConflictError,
   WorkRestoreConflictError,
 } from "../../ports/work-repository.js";
 import { NO_WORK_NAME, nextWorkSlug } from "./shared.js";
 
-export interface InMemoryWorkRepositoryOptions {
-  hasLiveThreads?: (workId: WorkId) => boolean | Promise<boolean>;
-  hasUnreviewedDrafts?: (workId: WorkId) => boolean | Promise<boolean>;
-  hasDocuments?: (workId: WorkId) => boolean | Promise<boolean>;
-  hasFolders?: (workId: WorkId) => boolean | Promise<boolean>;
-}
-
 /** In-memory {@link WorkRepository} for tests. */
-export function createInMemoryWorkRepository(
-  options: InMemoryWorkRepositoryOptions = {},
-): WorkRepository {
+export function createInMemoryWorkRepository(options: { now?: () => Date } = {}): WorkRepository {
   const rows = new Map<string, Work>();
   const projects = new Map<string, { catalogGeneration: string; revision: bigint }>();
 
@@ -43,8 +36,10 @@ export function createInMemoryWorkRepository(
     projectState(work.projectId).revision += 1n;
   }
 
+  const currentTime = options.now ?? (() => new Date());
+
   function now(): string {
-    return new Date().toISOString();
+    return currentTime().toISOString();
   }
 
   function build(input: CreateWorkInput): Work {
@@ -62,8 +57,7 @@ export function createInMemoryWorkRepository(
       ),
       isNoWork: false,
       goal: input.goal ?? null,
-      description: input.description ?? null,
-      status: "active",
+      status: null,
       archivedAt: null,
       aiWriteMode: "direct",
       entityRevision: "1",
@@ -154,8 +148,7 @@ export function createInMemoryWorkRepository(
         slug: null,
         isNoWork: true,
         goal: null,
-        description: null,
-        status: "active",
+        status: null,
         archivedAt: null,
         aiWriteMode: "direct",
         entityRevision: "1",
@@ -172,7 +165,10 @@ export function createInMemoryWorkRepository(
     async listByProject(projectId: ProjectId, opts?: ListWorksOptions): Promise<Work[]> {
       return [...rows.values()]
         .filter((w) => w.projectId === projectId && (opts?.includeDeleted || w.deletedAt === null))
-        .filter((w) => !opts?.status || w.status === opts.status)
+        .filter((w) => {
+          const lifecycle = opts?.lifecycle ?? "active";
+          return lifecycle === "all" || (w.archivedAt !== null) === (lifecycle === "archived");
+        })
         .filter((w) => opts?.includeNoWork || !w.isNoWork)
         .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
         .map((w) => ({ ...w }));
@@ -188,19 +184,16 @@ export function createInMemoryWorkRepository(
 
     async update(id: WorkId, input: UpdateWorkInput): Promise<Work> {
       const row = rows.get(id);
-      if (!row || row.deletedAt) throw new Error(`Work not found: ${id}`);
+      if (!row) throw new WorkLifecycleUnavailableError(id, "missing");
+      if (row.deletedAt) throw new WorkLifecycleUnavailableError(id, "deleted", row.slug);
       if (row.isNoWork) throw new WorkLockedError();
       if (input.name !== undefined) {
         if (nameIsTaken(row.projectId, input.name, row.id)) throw new WorkNameConflictError();
         row.name = input.name.trim();
       }
       if (input.goal !== undefined) row.goal = input.goal;
-      if (input.description !== undefined) row.description = input.description;
       const timestamp = now();
-      if (input.status !== undefined) {
-        row.status = input.status;
-        row.archivedAt = input.status === "archived" ? timestamp : null;
-      }
+      if (input.status !== undefined) row.status = input.status;
       row.updatedAt = timestamp;
       row.lastActivityAt = timestamp;
       advance(row);
@@ -209,10 +202,10 @@ export function createInMemoryWorkRepository(
 
     async archive(id: WorkId): Promise<Work> {
       const row = rows.get(id);
-      if (!row || row.deletedAt) throw new Error(`Work not found: ${id}`);
+      if (!row) throw new WorkLifecycleUnavailableError(id, "missing");
+      if (row.deletedAt) throw new WorkLifecycleUnavailableError(id, "deleted", row.slug);
       if (row.isNoWork) throw new WorkLockedError();
-      if (row.status === "active") {
-        row.status = "archived";
+      if (row.archivedAt === null) {
         row.archivedAt = now();
         row.updatedAt = row.archivedAt;
         row.lastActivityAt = row.updatedAt;
@@ -223,10 +216,10 @@ export function createInMemoryWorkRepository(
 
     async unarchive(id: WorkId): Promise<Work> {
       const row = rows.get(id);
-      if (!row || row.deletedAt) throw new Error(`Work not found: ${id}`);
+      if (!row) throw new WorkLifecycleUnavailableError(id, "missing");
+      if (row.deletedAt) throw new WorkLifecycleUnavailableError(id, "deleted", row.slug);
       if (row.isNoWork) throw new WorkLockedError();
-      if (row.status === "archived") {
-        row.status = "active";
+      if (row.archivedAt !== null) {
         row.archivedAt = null;
         row.updatedAt = now();
         row.lastActivityAt = row.updatedAt;
@@ -235,44 +228,54 @@ export function createInMemoryWorkRepository(
       return { ...row };
     },
 
-    async hasUnreviewedDraft(id: WorkId): Promise<boolean> {
-      return (await options.hasUnreviewedDrafts?.(id)) ?? false;
+    async softDelete(id: WorkId) {
+      return repo.transaction(async () => {
+        const row = rows.get(id);
+        if (!row || row.deletedAt) {
+          return {
+            before: row ? { ...row } : null,
+            after: row ? { ...row } : null,
+            threadIds: [],
+          };
+        }
+        if (row.isNoWork) throw new WorkLockedError();
+        const before = { ...row };
+        const deletedAt = currentTime();
+        row.deletedAt = deletedAt.toISOString();
+        row.updatedAt = row.deletedAt;
+        row.lastActivityAt = row.updatedAt;
+        advance(row);
+        return { before, after: { ...row }, threadIds: [] };
+      });
     },
 
-    async softDelete(id: WorkId): Promise<void> {
-      const row = rows.get(id);
-      if (!row || row.deletedAt) return;
-      if (row.isNoWork) throw new WorkLockedError();
-      if (await options.hasLiveThreads?.(id)) throw new WorkDeleteBlockedError("threads");
-      if (await repo.hasUnreviewedDraft(id)) throw new WorkDeleteBlockedError("drafts");
-      if (await options.hasDocuments?.(id)) throw new WorkDeleteBlockedError("documents");
-      if (await options.hasFolders?.(id)) throw new WorkDeleteBlockedError("folders");
-      row.deletedAt = now();
-      row.updatedAt = row.deletedAt;
-      row.lastActivityAt = row.updatedAt;
-      advance(row);
-    },
-
-    async restore(id: WorkId): Promise<Work> {
-      const row = rows.get(id);
-      if (!row) throw new Error(`Work not found: ${id}`);
-      if (!row.deletedAt) return { ...row };
-      if (nameIsTaken(row.projectId, row.name, row.id)) {
-        throw new WorkRestoreConflictError("name");
-      }
-      const slugIsTaken = [...rows.values()].some(
-        (other) =>
-          other.id !== row.id &&
-          other.projectId === row.projectId &&
-          other.deletedAt === null &&
-          other.slug === row.slug,
-      );
-      if (slugIsTaken) throw new WorkRestoreConflictError("slug");
-      row.deletedAt = null;
-      row.updatedAt = now();
-      row.lastActivityAt = row.updatedAt;
-      advance(row);
-      return { ...row };
+    async restore(id: WorkId): Promise<WorkRestoration> {
+      return repo.transaction(async () => {
+        const row = rows.get(id);
+        if (!row) throw new Error(`Work not found: ${id}`);
+        if (decideWorkRestore(row, currentTime()) === "unchanged") {
+          const existing = { ...row };
+          return { before: existing, after: existing, changed: false };
+        }
+        if (nameIsTaken(row.projectId, row.name, row.id)) {
+          throw new WorkRestoreConflictError("name");
+        }
+        const slugIsTaken = [...rows.values()].some(
+          (other) =>
+            other.id !== row.id &&
+            other.projectId === row.projectId &&
+            other.deletedAt === null &&
+            other.slug === row.slug,
+        );
+        if (slugIsTaken) throw new WorkRestoreConflictError("slug");
+        const before = { ...row };
+        const restoredAt = currentTime();
+        row.deletedAt = null;
+        row.updatedAt = restoredAt.toISOString();
+        row.lastActivityAt = row.updatedAt;
+        advance(row);
+        return { before, after: { ...row }, changed: true };
+      });
     },
 
     async touch(id: WorkId): Promise<void> {

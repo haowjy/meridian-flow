@@ -1,6 +1,14 @@
-/** Renders the Editor destination and its active document. */
+/**
+ * Renders the Editor destination and its active document. A file of an
+ * archived Work opens read-only under the archived notice. The Editor shows
+ * only its own Work's files, so the Editor's Work is that file's Work.
+ */
 import { Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import {
+  isWorkScopedProjectContextScheme,
+  type ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
+import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
@@ -10,6 +18,7 @@ import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
+import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextViewerHost } from "./ContextViewerHost";
@@ -29,6 +38,8 @@ export type ContextViewerProps = {
   projectId: string;
   /** Shell-resolved Editor Work for all reads, suggestions, and mutations. */
   editorWorkId: string | null;
+  /** The Editor's Work, when it has one. */
+  editorWork: Work | null;
   tabs: ContextTab[];
   paneState: ContextPaneState;
   onSelectTab: (documentId: string) => void;
@@ -57,6 +68,7 @@ export type ContextViewerProps = {
 export function ContextViewer({
   projectId,
   editorWorkId,
+  editorWork,
   tabs,
   paneState,
   onSelectTab,
@@ -93,6 +105,10 @@ export function ContextViewer({
   const optimisticTab = paneState.kind === "optimistic-loading" ? paneState.tab : null;
   const activeTabId = activeTab?.documentId ?? null;
   const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";
+  const activeFileInWork =
+    activeTab && activeTab.kind !== "new" && isWorkScopedProjectContextScheme(activeTab.scheme);
+  const archivedWork =
+    activeFileInWork && editorWork && isWorkArchived(editorWork) ? editorWork : null;
 
   // Draft review state — the banner sits above the identity bar so review
   // chrome is the first thing the writer sees when entering review mode.
@@ -136,6 +152,9 @@ export function ContextViewer({
         {activeTab && activeReviewDraftId ? (
           <DraftReviewHeader documentId={activeTab.documentId} draftId={activeReviewDraftId} />
         ) : null}
+        {archivedWork ? (
+          <ArchivedWorkNotice projectId={projectId} work={archivedWork} className="px-4 pt-3" />
+        ) : null}
         {/* Identity bar — the top edge of the page every open document
             shares. Keyed by document so edit state never crosses tabs. */}
         {activeTab ? (
@@ -144,6 +163,7 @@ export function ContextViewer({
             projectId={projectId}
             editorWorkId={editorWorkId}
             tab={activeTab}
+            readOnly={Boolean(archivedWork)}
             onCommitted={onCommitted}
             onOpenExisting={onOpenExisting}
           />
@@ -164,6 +184,8 @@ export function ContextViewer({
               trackedTabs={trackedTabs}
               activeTabId={activeIsEditable ? activeTabId : null}
               active={active}
+              // Warm editors are hidden, so following the front tab is enough.
+              readOnly={Boolean(archivedWork)}
               onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
             />
           </div>

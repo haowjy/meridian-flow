@@ -121,12 +121,10 @@ function spawnDescription(tools: Tool[]): string {
 }
 
 describe("resolveAgentThreadTurnContext tool policy", () => {
-  it("advertises an explicit write(read) invocation and requires the command discriminator", () => {
+  it("advertises read as a write command and requires the command discriminator", () => {
     const registrations = createCoreToolRegistrations(stubHandlers());
     expect(registrations.map((registration) => registration.definition.name)).not.toContain("read");
     const write = registrations.find((registration) => registration.definition.name === "write");
-    expect(write?.definition.description).toContain('{ "command": "read", "path": "..." }');
-    expect(write?.definition.description).toContain("explicit `command`");
     const branches = write?.definition.inputSchema.oneOf;
     expect(Array.isArray(branches)).toBe(true);
     expect(branches).toEqual(

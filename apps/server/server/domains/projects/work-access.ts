@@ -1,6 +1,6 @@
 /** Owner gate for flat Work item routes. */
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
-import type { Work } from "@meridian/contracts/works";
+import { type Work, workLifecycleState } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
 import type { ProjectRepository } from "./ports/project-repository.js";
 import type { WorkRepository } from "./ports/work-repository.js";
@@ -13,7 +13,7 @@ export async function requireWorkOwner(
   options?: { includeSoftDeleted?: boolean },
 ): Promise<Work> {
   const work = await repos.works.findById(workId);
-  if (!work || (!options?.includeSoftDeleted && work.deletedAt)) {
+  if (!work || (!options?.includeSoftDeleted && workLifecycleState(work) === "deleted")) {
     throw createError({ statusCode: 404, message: "Work not found" });
   }
   await requireProjectOwner(repos, work.projectId, userId);

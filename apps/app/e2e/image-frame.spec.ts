@@ -117,13 +117,7 @@ async function holdUploads(page: Page): Promise<void> {
 }
 
 async function openManuscript(page: Page, fixture: ProjectFixture): Promise<void> {
-  const search = new URLSearchParams({
-    screen: "context",
-    thread: fixture.threadId,
-    scheme: "kb",
-    path: "/alpha.md",
-  });
-  await page.goto(`/project/${fixture.projectId}?${search.toString()}`);
+  await page.goto(`/p/${fixture.projectId}/editor/kb/alpha.md`);
   const editor = page.locator(".ProseMirror").first();
   await expect(editor).toBeVisible({ timeout: 20_000 });
   await expect(editor).toHaveAttribute("contenteditable", "true");

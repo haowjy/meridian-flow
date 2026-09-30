@@ -35,6 +35,7 @@ export function ContextSidebar({ threadId, projectId, onClose }: ContextSidebarP
   return (
     <aside aria-label={t`Chat context`} className="flex h-full min-h-0 w-full flex-col">
       <DockShell
+        projectId={projectId ?? ""}
         placement="dock"
         screen="chat"
         renderHeader={(args) => <DockHeader {...args} onClose={onClose} />}

@@ -1,155 +1,142 @@
-/** Page-scoped metadata edit lifecycle and its display-first view. */
+/**
+ * Page-scoped Work goal editing lifecycle. The name is renamed in the band's
+ * title tab; this owns the goal, which never saves on blur and so guards
+ * navigation while a draft is dirty. An archived Work's goal is read-only:
+ * archiving mid-edit drops the edit and any held navigation, so nothing asks
+ * to save a goal that can no longer be saved.
+ */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { UpdateWorkRequest, Work } from "@meridian/contracts/works";
-import { Pencil } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { isWorkArchived, type UpdateWorkRequest, type Work } from "@meridian/contracts/works";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { workUpdateFailure } from "@/client/query/work-update-failure";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { InlineEditTextarea } from "@/components/ui/inline-edit";
+import { cn } from "@/lib/utils";
 
-export type MetadataField = "name" | "goal" | "description";
-type HeldIntent = { run: () => void; cancel?: () => void; label: string } | null;
-const normalize = (field: MetadataField, value: string) =>
-  field === "name" ? value.trim() : value.trim() || "";
+type HeldIntent = { run: () => void; cancel: () => void };
 
 export function useWorkMetadataController(
-  initial: Work,
-  saveWork: (data: UpdateWorkRequest) => Promise<Work>,
+  work: Work,
+  saveWork: (data: UpdateWorkRequest) => Promise<unknown>,
 ) {
-  const [work, setWork] = useState(initial);
-  const [field, setField] = useState<MetadataField | null>(null);
+  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [held, setHeld] = useState<HeldIntent>(null);
+  const [hasPendingIntent, setHasPendingIntent] = useState(false);
   const heldRef = useRef<HeldIntent>(null);
   const takeHeld = useCallback(() => {
     const intent = heldRef.current;
     heldRef.current = null;
-    setHeld(null);
+    setHasPendingIntent(false);
     return intent;
   }, []);
+  const readOnly = isWorkArchived(work);
+  const [shownReadOnly, setShownReadOnly] = useState(readOnly);
+  if (shownReadOnly !== readOnly) {
+    setShownReadOnly(readOnly);
+    if (readOnly) {
+      setEditing(false);
+      setError(null);
+    }
+  }
+  useEffect(() => {
+    if (readOnly) takeHeld()?.cancel();
+  }, [readOnly, takeHeld]);
   useEffect(
     () => () => {
-      heldRef.current?.cancel?.();
+      heldRef.current?.cancel();
       heldRef.current = null;
     },
     [],
   );
   const [announcement, setAnnouncement] = useState("");
-  const displayRefs = useRef(new Map<MetadataField, HTMLElement>());
-  const editorRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
-  const initialRef = useRef(initial);
-  const baseline = field ? normalize(field, work[field] ?? "") : "";
-  const normalizedDraft = field ? normalize(field, draft) : "";
-  const dirty = field !== null && normalizedDraft !== baseline;
-  useEffect(() => {
-    if (sameMetadata(initialRef.current, initial)) return;
-    initialRef.current = initial;
-    setWork(initial);
-  }, [initial]);
-  useEffect(() => {
-    if (saving || field || !held) return;
-    takeHeld()?.run();
-  }, [field, held, saving, takeHeld]);
-
+  const displayRef = useRef<HTMLElement | null>(null);
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const dirty = editing && !readOnly && draft.trim() !== (work.goal ?? "").trim();
   const focusDisplay = useCallback(
-    (target: MetadataField) =>
-      requestAnimationFrame(() => displayRefs.current.get(target)?.focus()),
+    () => requestAnimationFrame(() => displayRef.current?.focus()),
     [],
   );
   const cancel = useCallback(() => {
-    if (!field || saving) return;
-    const target = field;
-    setField(null);
+    if (!editing || saving) return;
+    setEditing(false);
     setError(null);
-    takeHeld()?.cancel?.();
-    setAnnouncement(t`${fieldLabel(target)} edit canceled`);
-    focusDisplay(target);
-  }, [field, focusDisplay, saving, takeHeld]);
+    takeHeld()?.cancel();
+    setAnnouncement(t`Goal edit canceled`);
+    focusDisplay();
+  }, [editing, focusDisplay, saving, takeHeld]);
   const save = useCallback(async (): Promise<boolean> => {
-    if (!field) return true;
+    if (!editing) return true;
     if (saving) return false;
-    if (field === "name" && !normalizedDraft) {
-      setError(t`Work name is required`);
-      return false;
-    }
     if (!dirty) {
-      const target = field;
-      setField(null);
+      setEditing(false);
       setError(null);
-      focusDisplay(target);
+      focusDisplay();
       return true;
     }
-    const target = field;
+    const goal = draft.trim();
     setSaving(true);
     setError(null);
     try {
-      const returned = await saveWork({
-        [target]: normalizedDraft,
-      });
-      setWork(returned);
-      setField(null);
-      setAnnouncement(t`${fieldLabel(target)} saved`);
-      focusDisplay(target);
+      await saveWork({ goal });
+      setEditing(false);
+      setAnnouncement(t`Goal saved`);
+      focusDisplay();
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t`Save failed`);
+      setError(workUpdateFailure(cause, t`Couldn’t save the goal. Try again.`));
       return false;
     } finally {
       setSaving(false);
     }
-  }, [dirty, field, focusDisplay, normalizedDraft, saveWork, saving]);
+  }, [dirty, draft, editing, focusDisplay, saveWork, saving]);
   const request = useCallback(
-    (intent: NonNullable<HeldIntent>) => {
+    (intent: HeldIntent) => {
+      if (!dirty) {
+        intent.run();
+        return;
+      }
       const previous = heldRef.current;
       heldRef.current = intent;
-      setHeld(intent);
-      previous?.cancel?.();
-      if (!saving && !dirty && heldRef.current === intent) takeHeld()?.run();
+      setHasPendingIntent(true);
+      previous?.cancel();
     },
-    [dirty, saving, takeHeld],
+    [dirty],
   );
-  const activate = useCallback(
-    (next: MetadataField) =>
-      request({
-        label: t`Edit ${fieldLabel(next)}`,
-        run: () => {
-          setField(next);
-          setDraft(work[next] ?? "");
-          setError(null);
-        },
-      }),
-    [request, work],
-  );
+  const activate = useCallback(() => {
+    if (readOnly) return;
+    setEditing(true);
+    setDraft(work.goal ?? "");
+    setError(null);
+  }, [readOnly, work.goal]);
   const saveAndResume = useCallback(async () => {
     const intent = heldRef.current;
-    if (!intent) return;
-    if ((await save()) && heldRef.current === intent) takeHeld()?.run();
+    if (intent && (await save()) && heldRef.current === intent) takeHeld()?.run();
   }, [save, takeHeld]);
   const discardAndResume = useCallback(() => {
     if (!heldRef.current || saving) return;
-    setField(null);
+    setEditing(false);
     setError(null);
     takeHeld()?.run();
   }, [saving, takeHeld]);
   const keepEditing = useCallback(() => {
-    takeHeld()?.cancel?.();
+    takeHeld()?.cancel();
     requestAnimationFrame(() => editorRef.current?.focus());
   }, [takeHeld]);
   return {
-    work,
-    field,
+    readOnly,
+    editing,
     draft,
     setDraft,
     dirty,
     saving,
     error,
-    held,
+    held: hasPendingIntent,
     announcement,
     editorRef,
-    displayRefs,
+    displayRef,
     activate,
     cancel,
     save,
@@ -161,218 +148,187 @@ export function useWorkMetadataController(
 }
 export type WorkMetadataController = ReturnType<typeof useWorkMetadataController>;
 
-export function WorkMetadata({
-  controller,
-  identityChrome,
+// Typography lives on the wrapper so the resting button and the editing field
+// both inherit it; the field then sets no font of its own.
+const bodyText = "max-w-3xl whitespace-pre-wrap break-words";
+// Quiet text actions that sit under the goal and read as part of it.
+const goalAction =
+  "focus-ring min-h-6 rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground [@media(pointer:coarse)]:min-h-11";
+
+/** Blank-line runs become paragraph breaks, so a clamp never ends on a blank line. */
+function goalParagraphs(goal: string): string[] {
+  return goal.trim().split(/\n\s*\n/);
+}
+
+/**
+ * The Work goal: body text clamped to three lines. Show more (or clicking a
+ * clamped goal) shows all of it; Show less folds it again. Edit goal (or
+ * clicking an empty goal) edits in place: the field takes the text's exact
+ * position and size. Cancel then Save sit left-aligned under the field, so
+ * Cancel lands where Edit goal was; blur never saves. The goal's actions sit
+ * directly under the text; a read-only goal has no Edit goal, and an empty one
+ * shows nothing.
+ */
+export function WorkGoal({
+  work,
+  controller: c,
 }: {
+  work: Work;
   controller: WorkMetadataController;
-  identityChrome?: React.ReactNode;
 }) {
-  const c = controller;
-  const headingRef = useRef<HTMLHeadingElement>(null);
+  const { editing, readOnly } = c;
+  const display = useRef<HTMLDivElement | null>(null);
+  const goalId = useId();
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  // An expanded goal can't be measured for clamping, so new text starts
+  // folded and is measured afresh: a short one then drops Show less.
+  const [shownGoal, setShownGoal] = useState(work.goal);
+  if (shownGoal !== work.goal) {
+    setShownGoal(work.goal);
+    setExpanded(false);
+  }
   useLayoutEffect(() => {
-    headingRef.current?.focus();
-  }, [c.work.id]);
-  useLayoutEffect(() => {
-    if (!c.field) return;
-    c.editorRef.current?.focus();
-    if (c.field === "name" && c.editorRef.current instanceof HTMLInputElement)
-      c.editorRef.current.select();
-  }, [c.editorRef, c.field]);
-  const keyDown = (event: React.KeyboardEvent) => {
-    if (event.nativeEvent.isComposing) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      c.cancel();
-    }
-    if (
-      (c.field === "name" && event.key === "Enter") ||
-      (c.field !== "name" && event.key === "Enter" && (event.metaKey || event.ctrlKey))
-    ) {
-      event.preventDefault();
-      void c.save();
-    }
+    if (!editing) return;
+    const editor = c.editorRef.current;
+    editor?.focus();
+    editor?.setSelectionRange(editor.value.length, editor.value.length);
+  }, [editing, c.editorRef]);
+  useEffect(() => {
+    const node = display.current;
+    if (editing || !node || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      if (!expanded) setOverflows(node.scrollHeight > node.clientHeight + 1);
+    };
+    if (expanded) setOverflows(true);
+    else measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [editing, work.goal, expanded]);
+  const clamped = overflows && !expanded;
+  const bindEditFocus = (node: HTMLButtonElement | null) => {
+    c.displayRef.current = node;
   };
-  const refFor = (field: MetadataField) => (node: HTMLElement | null) => {
-    if (node) c.displayRefs.current.set(field, node);
-    else c.displayRefs.current.delete(field);
-  };
+  // Nothing to show or edit: no empty box to space the header around.
+  if (readOnly && !work.goal) return null;
+  const hasActions = overflows || !readOnly;
   return (
-    <section className="min-w-0 space-y-7" aria-label={t`Work identity`}>
+    <div className="min-w-0 text-body text-foreground">
       <p className="sr-only" aria-live="polite">
         {c.announcement}
       </p>
-      <div className="min-w-0">
-        {c.field === "name" ? (
-          <Editor field="name" controller={c} keyDown={keyDown} />
-        ) : (
-          <div className="flex min-w-0 items-start gap-2">
-            <h1
-              ref={(node) => {
-                headingRef.current = node;
-                refFor("name")(node);
-              }}
-              tabIndex={-1}
-              className="focus-ring min-h-11 min-w-0 cursor-text rounded-sm break-words text-2xl font-semibold [overflow-wrap:anywhere] [@media(pointer:coarse)]:min-h-11"
-              onClick={() => c.activate("name")}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") c.activate("name");
-              }}
-            >
-              {c.work.name}
-            </h1>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label={t`Edit Work name`}
-              onClick={() => c.activate("name")}
-              className="shrink-0 [@media(pointer:coarse)]:size-11"
-            >
-              <Pencil className="size-4" />
-            </Button>
-          </div>
-        )}
-      </div>
-      {identityChrome}
-      <Field
-        field="goal"
-        label={t`Goal`}
-        controller={c}
-        displayRef={refFor("goal")}
-        keyDown={keyDown}
-      />
-      <Field
-        field="description"
-        label={t`Description`}
-        controller={c}
-        displayRef={refFor("description")}
-        keyDown={keyDown}
-      />
-    </section>
-  );
-}
-function Field({
-  field,
-  label,
-  controller: c,
-  displayRef,
-  keyDown,
-}: {
-  field: "goal" | "description";
-  label: string;
-  controller: WorkMetadataController;
-  displayRef: (node: HTMLElement | null) => void;
-  keyDown: (event: React.KeyboardEvent) => void;
-}) {
-  return (
-    <div className="min-w-0 space-y-2">
-      <h2 className="text-sm font-medium">{label}</h2>
-      {c.field === field ? (
-        <Editor field={field} controller={c} keyDown={keyDown} />
-      ) : (
+      {editing ? (
+        <GoalEditor controller={c} />
+      ) : !work.goal ? (
         <button
           type="button"
-          ref={displayRef}
-          className={`focus-ring min-h-11 min-w-0 w-full max-w-3xl rounded-sm break-words text-left whitespace-pre-line [overflow-wrap:anywhere] [@media(pointer:coarse)]:min-h-11 ${field === "goal" ? "text-base" : "text-sm text-muted-foreground"}`}
-          onClick={() => c.activate(field)}
+          ref={bindEditFocus}
+          onClick={c.activate}
+          className={cn(
+            bodyText,
+            "inline-edit-trigger focus-ring block text-left text-muted-foreground [@media(pointer:coarse)]:min-h-11",
+          )}
         >
-          {c.work[field] || (field === "goal" ? t`Add a goal` : t`Add a description`)}
+          {t`Add a goal for this Work`}
         </button>
+      ) : (
+        <>
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: a pointer shortcut; the Show more button below is the keyboard path. */}
+          {/* biome-ignore lint/a11y/useKeyWithClickEvents: as above. */}
+          <div
+            ref={display}
+            id={goalId}
+            onClick={() => {
+              if (clamped && !window.getSelection()?.toString()) setExpanded(true);
+            }}
+            className={cn(
+              "max-w-3xl break-words [&>p+p]:mt-3",
+              !expanded && "line-clamp-3",
+              clamped && "cursor-pointer",
+            )}
+          >
+            {goalParagraphs(work.goal).map((paragraph, index) => (
+              <p key={index} className="whitespace-pre-wrap">
+                {paragraph}
+              </p>
+            ))}
+          </div>
+          {hasActions ? (
+            <div className="mt-1 flex items-center gap-4">
+              {overflows ? (
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  aria-controls={goalId}
+                  className={goalAction}
+                  onClick={() => setExpanded((open) => !open)}
+                >
+                  {expanded ? <Trans>Show less</Trans> : <Trans>Show more</Trans>}
+                </button>
+              ) : null}
+              {readOnly ? null : (
+                <button
+                  type="button"
+                  ref={bindEditFocus}
+                  onClick={c.activate}
+                  className={goalAction}
+                >
+                  <Trans>Edit goal</Trans>
+                </button>
+              )}
+            </div>
+          ) : null}
+        </>
       )}
     </div>
   );
 }
-function Editor({
-  field,
-  controller: c,
-  keyDown,
-}: {
-  field: MetadataField;
-  controller: WorkMetadataController;
-  keyDown: (event: React.KeyboardEvent) => void;
-}) {
-  const errorId = `work-${field}-error`;
-  const common = {
-    value: c.draft,
-    disabled: c.saving,
-    "aria-invalid": Boolean(c.error),
-    "aria-describedby": c.error ? errorId : undefined,
-    onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-      c.setDraft(event.target.value),
-    onKeyDown: keyDown,
-  };
+
+function GoalEditor({ controller: c }: { controller: WorkMetadataController }) {
+  const errorId = "work-goal-error";
   return (
-    <div className="min-w-0 w-full max-w-3xl space-y-2">
-      {field === "name" ? (
-        <Input
-          ref={c.editorRef as React.Ref<HTMLInputElement>}
-          {...common}
-          className="min-w-0 w-full"
-          onBlur={(event) => {
-            if (
-              !(
-                event.relatedTarget instanceof HTMLElement &&
-                event.relatedTarget.closest("button,a")
-              )
-            )
-              void c.save();
-          }}
-        />
-      ) : (
-        <Textarea
-          ref={c.editorRef as React.Ref<HTMLTextAreaElement>}
-          {...common}
-          className="min-h-24 min-w-0 w-full resize-none [overflow-wrap:anywhere]"
-          onInput={(event) => {
-            event.currentTarget.style.height = "auto";
-            event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`;
-          }}
-        />
-      )}
+    <>
+      <InlineEditTextarea
+        ref={c.editorRef}
+        value={c.draft}
+        disabled={c.saving}
+        aria-label={t`Goal`}
+        aria-invalid={Boolean(c.error)}
+        aria-describedby={c.error ? errorId : undefined}
+        placeholder={t`Add a goal for this Work`}
+        onChange={(event) => c.setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing) return;
+          if (event.key === "Escape") {
+            event.preventDefault();
+            c.cancel();
+          } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault();
+            void c.save();
+          }
+        }}
+        className={bodyText}
+      />
       {c.error ? (
-        <p id={errorId} role="alert" className="text-sm text-destructive">
+        <p id={errorId} role="alert" className="mt-2 text-sm text-destructive">
           {c.error}
         </p>
       ) : null}
-      <div className="flex flex-wrap gap-2">
-        {c.saving ? (
-          <span role="status" className="text-sm text-muted-foreground">
-            <Trans>Saving…</Trans>
-          </span>
-        ) : (
-          <Button
-            size="sm"
-            onClick={() => void c.save()}
-            className="[@media(pointer:coarse)]:min-h-11"
-          >
-            {c.error ? <Trans>Retry save</Trans> : t`Save ${fieldLabel(field).toLowerCase()}`}
-          </Button>
-        )}
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={c.saving}
-          onClick={c.cancel}
-          className="[@media(pointer:coarse)]:min-h-11"
-        >
+      <div className="mt-3 flex items-center gap-2">
+        <Button size="sm" variant="ghost" disabled={c.saving} onClick={c.cancel}>
           <Trans>Cancel</Trans>
         </Button>
+        <Button size="sm" disabled={c.saving} onClick={() => void c.save()}>
+          {c.saving ? (
+            <Trans>Saving…</Trans>
+          ) : c.error ? (
+            <Trans>Retry save</Trans>
+          ) : (
+            <Trans>Save</Trans>
+          )}
+        </Button>
       </div>
-    </div>
-  );
-}
-function fieldLabel(field: MetadataField): string {
-  if (field === "name") return t`Work name`;
-  if (field === "goal") return t`Goal`;
-  return t`Description`;
-}
-function sameMetadata(left: Work, right: Work): boolean {
-  return (
-    left.id === right.id &&
-    left.name === right.name &&
-    left.goal === right.goal &&
-    left.description === right.description &&
-    left.status === right.status &&
-    left.updatedAt === right.updatedAt
+    </>
   );
 }

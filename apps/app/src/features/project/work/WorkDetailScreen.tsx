@@ -1,25 +1,16 @@
-/** Focused Work detail composition with independently resilient resources. */
+/**
+ * The Work page: its title with the AI's status beside it, and its goal, over
+ * one sticky toolbar, then the Chats or Files tab, each owning its own search,
+ * actions and queries.
+ * An archived Work is view-only: one notice with Unarchive under the title,
+ * primary actions disabled in place, and no inline edits offered.
+ */
 import { t } from "@lingui/core/macro";
-import { Plural, Trans } from "@lingui/react/macro";
-import type {} from "@meridian/contracts/protocol";
-import { parseRequestId } from "@meridian/contracts/request-id";
-import type { Work } from "@meridian/contracts/works";
-import {
-  Archive,
-  ArchiveRestore,
-  ChevronLeft,
-  FileText,
-  Folder,
-  NotebookPen,
-  Upload,
-} from "lucide-react";
+import { Trans } from "@lingui/react/macro";
+import { isWorkArchived } from "@meridian/contracts/works";
 import { useRef, useState } from "react";
-import type { CatalogContextView } from "@/client/query/context-catalog-projection";
-import { useContextCatalogView } from "@/client/query/useContextCatalog";
-import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
-import { useWorkMutations } from "@/client/query/useWorks";
-import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { Badge } from "@/components/ui/badge";
+import type { AddressableWork } from "@/client/query/useWorks";
+import { useWorkMutations } from "@/client/query/work-command-store";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -28,317 +19,111 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { usePostApplyDraftGroupProjections } from "../draft-apply-recovery/DraftApplyRecoveryProvider";
-import { useChatNavigation } from "../routing/chat-navigation";
+import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { useProjectLeaveGuard } from "../routing/ProjectNavigationContext";
 import type { ProjectRouteCommands } from "../routing/project-route";
-import { WorkAssociatedChats } from "./WorkAssociatedChats";
-import { WorkDialog, type WorkDialogAction } from "./WorkDialog";
-import {
-  useWorkMetadataController,
-  WorkMetadata,
-  type WorkMetadataController,
-} from "./WorkMetadata";
-import { focusAfterDelete, holdWorkCollectionFocus } from "./work-focus-intent";
+import { ArchivedWorkNotice } from "./ArchivedWorkNotice";
+import { WorkChatsTab } from "./WorkChatsTab";
+import { WorkFilesTab } from "./WorkFilesTab";
+import { useWorkMetadataController, WorkGoal, type WorkMetadataController } from "./WorkMetadata";
+import { WorkTitleLine } from "./WorkTitleLine";
+import { WorkHeading } from "./WorkTitles";
+import { WorkToolbarSlotProvider } from "./WorkToolbarSlot";
 
 export type WorkDetailScreenProps = {
   projectId: string;
-  work: Work;
+  work: AddressableWork;
   routeCommands: ProjectRouteCommands;
-  catalogWorks?: Work[];
 };
 
-export function WorkDetailScreen({
-  projectId,
-  work,
-  routeCommands,
-  catalogWorks = [work],
-}: WorkDetailScreenProps) {
-  const { openChat } = useChatNavigation();
-  const mutations = useWorkMutations(projectId);
-  const controller = useWorkMetadataController(work, (data) =>
-    mutations.update.mutateAsync({ workId: work.id, data }),
+/**
+ * The Work page's own header block under the band: its title on one line with
+ * the AI's status after it, any notice about the Work right under it, its goal
+ * (or a pending Work's state), then one sticky toolbar row.
+ */
+export function WorkScreenHeader({
+  title,
+  status,
+  notice,
+  details,
+  view,
+  onViewChange,
+  tools,
+  pending = false,
+}: {
+  title: React.ReactNode;
+  /** The AI's status; absent while the Work is being created. */
+  status?: string | null;
+  notice?: React.ReactNode;
+  details?: React.ReactNode;
+  view: "chats" | "files";
+  onViewChange: (view: "chats" | "files") => void;
+  tools: React.ReactNode;
+  pending?: boolean;
+}) {
+  return (
+    <>
+      <header className="flex min-w-0 flex-col gap-1.5">
+        <WorkTitleLine title={title} status={status} size="heading" />
+        {/* A bordered box needs more air than the title-to-goal line gap. */}
+        {notice ? <div className="mt-1.5 min-w-0 not-last:mb-1.5">{notice}</div> : null}
+        {details}
+      </header>
+      <div className="sticky top-0 z-10 -my-2 flex min-w-0 items-center gap-2 bg-background py-2 sm:gap-3">
+        <SegmentedTabs
+          label={t`Work view`}
+          value={view}
+          onChange={onViewChange}
+          options={[
+            { value: "chats", label: <Trans>Chats</Trans>, disabled: pending },
+            { value: "files", label: <Trans>Files</Trans>, disabled: pending },
+          ]}
+        />
+        {tools}
+      </div>
+    </>
   );
-  const [manage, setManage] = useState(false);
-  const [activeCommand, setActiveCommand] = useState<WorkDialogAction["type"] | null>(null);
-  const manageButton = useRef<HTMLButtonElement>(null);
+}
+
+export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailScreenProps) {
+  const mutations = useWorkMutations(projectId);
+  const controller = useWorkMetadataController(work, async (data) => {
+    const error = await mutations.update({ workId: work.id, data });
+    if (error) throw error;
+  });
   const scrollOwner = useRef<HTMLDivElement>(null);
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
   useProjectLeaveGuard({
-    request: (intent) => controller.request({ ...intent, label: t`Continue navigation` }),
+    request: controller.request,
     dirty: () => controller.dirty,
     cancel: controller.keepEditing,
   });
   return (
     <div ref={scrollOwner} className="app-scroll">
-      <article className="project-screen-column min-w-0 gap-10 pb-12">
-        <WorkMetadata
-          controller={controller}
-          identityChrome={
-            <div className="min-w-0 space-y-3">
-              <div className="flex items-center gap-2">
-                <Badge>
-                  {controller.work.status === "archived" ? (
-                    <Trans>Archived</Trans>
-                  ) : (
-                    <Trans>Active</Trans>
-                  )}
-                </Badge>
-              </div>
-              <div className="flex min-w-0 flex-wrap items-center gap-3 sm:justify-between">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    holdWorkCollectionFocus(projectId, { kind: "heading" });
-                    void routeCommands.closeWork({ replace: true });
-                  }}
-                  className="[@media(pointer:coarse)]:min-h-11"
-                >
-                  <ChevronLeft className="size-4" />
-                  <Trans>All Work</Trans>
-                </Button>
-                <Button
-                  ref={manageButton}
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    controller.request({
-                      label: t`Manage Work`,
-                      run: () => {
-                        setActiveCommand(null);
-                        setManage(true);
-                      },
-                    })
-                  }
-                  className="[@media(pointer:coarse)]:min-h-11"
-                >
-                  {controller.work.status === "archived" ? (
-                    <ArchiveRestore className="size-4" />
-                  ) : (
-                    <Archive className="size-4" />
-                  )}
-                  <Trans>Manage Work</Trans>
-                </Button>
-              </div>
-            </div>
+      <article className="project-screen-column min-w-0 gap-5 pb-12">
+        <WorkScreenHeader
+          title={<WorkHeading projectId={projectId} work={work} />}
+          status={work.status}
+          notice={
+            isWorkArchived(work) ? (
+              <ArchivedWorkNotice projectId={projectId} work={work} showFailure={false} />
+            ) : null
           }
+          details={<WorkGoal work={work} controller={controller} />}
+          view={routeCommands.workView}
+          onViewChange={(view) => void routeCommands.setWorkView(view)}
+          tools={<div ref={setToolbarSlot} className="contents" />}
         />
-        <Drafts projectId={projectId} work={controller.work} commands={routeCommands} />
-        <div className="grid min-w-0 gap-6 @2xl/project-screen:grid-cols-2">
-          <TreeSummary
-            projectId={projectId}
-            work={controller.work}
-            scheme="scratch"
-            icon={NotebookPen}
-          />
-          <TreeSummary
-            projectId={projectId}
-            work={controller.work}
-            scheme="uploads"
-            icon={Upload}
-          />
-        </div>
-        <ResourceSection title={t`Associated chats`}>
-          <WorkAssociatedChats
-            projectId={projectId}
-            work={controller.work}
-            scrollOwner={scrollOwner}
-            requestOpen={(item) => void openChat(item.id)}
-          />
-        </ResourceSection>
-        {manage ? (
-          <WorkDialog
-            work={controller.work}
-            pending={mutations.isPending}
-            error={activeCommand ? mutations[activeCommand].error : null}
-            onClose={() => {
-              if (!mutations.isPending) {
-                setActiveCommand(null);
-                setManage(false);
-              }
-            }}
-            onAction={(action) => {
-              if (action.type === "create") return;
-              setActiveCommand(action.type);
-              const mutation = mutations[action.type];
-              mutation.mutate(action.workId, {
-                onSuccess: () => {
-                  setManage(false);
-                  if (action.type === "delete") {
-                    holdWorkCollectionFocus(
-                      projectId,
-                      focusAfterDelete(catalogWorks, action.workId),
-                    );
-                    void routeCommands.closeWork({ replace: true });
-                  } else requestAnimationFrame(() => manageButton.current?.focus());
-                },
-              });
-            }}
-          />
-        ) : null}
+        <WorkToolbarSlotProvider value={toolbarSlot}>
+          {routeCommands.workView === "chats" ? (
+            <WorkChatsTab projectId={projectId} work={work} scrollOwner={scrollOwner} />
+          ) : (
+            <WorkFilesTab projectId={projectId} work={work} commands={routeCommands} />
+          )}
+        </WorkToolbarSlotProvider>
         <DirtyDecision controller={controller} />
       </article>
     </div>
-  );
-}
-function Drafts({
-  projectId,
-  work,
-  commands,
-}: {
-  projectId: string;
-  work: Work;
-  commands: ProjectRouteCommands;
-}) {
-  const query = useWorkDrafts(projectId, work.id);
-  const groups = activeWorkDraftGroups(
-    usePostApplyDraftGroupProjections(query.groups, projectId, work.id).commandEligibleGroups,
-  );
-  const workId = parseRequestId(work.id);
-  return (
-    <ResourceSection title={t`Pending drafts`}>
-      {query.status === "loading" ? (
-        <Loading />
-      ) : query.status === "error" ? (
-        <InlineErrorRow
-          message={t`Pending drafts couldn’t load`}
-          onRetry={query.refetch}
-          actionLabel={t`Retry Pending drafts`}
-        />
-      ) : groups.length ? (
-        <ul className="min-w-0 divide-y divide-border-subtle rounded-lg border">
-          {groups.map((group) => (
-            <li key={group.documentId}>
-              <button
-                type="button"
-                className="focus-ring flex min-h-11 min-w-0 w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm"
-                disabled={!group.contextPath || !workId}
-                onClick={() => {
-                  if (group.contextPath && workId)
-                    void commands.openWorkContext(
-                      {
-                        kind: "work-context",
-                        workId,
-                        scheme: "manuscript",
-                        path: group.contextPath,
-                      },
-                      { replace: false },
-                    );
-                }}
-              >
-                <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">
-                  {group.documentName || group.contextPath || t`Untitled manuscript`}
-                </span>
-                <span className="shrink-0 text-muted-foreground">
-                  <Plural
-                    value={group.drafts.length}
-                    one="# pending draft"
-                    other="# pending drafts"
-                  />
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <Empty>
-          <Trans>No pending drafts.</Trans>
-        </Empty>
-      )}
-    </ResourceSection>
-  );
-}
-function TreeSummary({
-  projectId,
-  work,
-  scheme,
-  icon: Icon,
-}: {
-  projectId: string;
-  work: Work;
-  scheme: "scratch" | "uploads";
-  icon: typeof NotebookPen;
-}) {
-  const query = useContextCatalogView(projectId, scheme, { workId: work.id });
-  const count = query.catalog?.files().length ?? 0;
-  const label = scheme === "scratch" ? t`Scratch` : t`Uploads`;
-  return (
-    <ResourceSection title={label}>
-      {query.isError ? (
-        <InlineErrorRow
-          message={t`${label} couldn’t load`}
-          onRetry={query.refetch}
-          actionLabel={t`Retry ${label}`}
-        />
-      ) : !query.catalog ? (
-        <Loading />
-      ) : (
-        <div className="min-w-0 space-y-2">
-          <div className="flex min-h-16 min-w-0 w-full items-center gap-3 rounded-lg border px-4">
-            <Icon className="size-4 shrink-0" />
-            <span className="min-w-0">
-              <span className="block text-sm font-medium">{label}</span>
-              <span className="text-meta text-muted-foreground">
-                {count ? (
-                  <Plural value={count} one="# item" other="# items" />
-                ) : (
-                  <Trans>Nothing here yet</Trans>
-                )}
-              </span>
-            </span>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            <Trans>Viewing chat resources is not available yet.</Trans>
-          </p>
-          <CatalogPreview catalog={query.catalog} />
-        </div>
-      )}
-    </ResourceSection>
-  );
-}
-function ResourceSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="min-w-0 space-y-3">
-      <h2 className="text-base font-semibold">{title}</h2>
-      {children}
-    </section>
-  );
-}
-function Loading() {
-  return (
-    <p role="status" className="text-sm text-muted-foreground">
-      <Trans>Loading…</Trans>
-    </p>
-  );
-}
-function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="text-sm text-muted-foreground">{children}</p>;
-}
-function CatalogPreview({ catalog }: { catalog: CatalogContextView }) {
-  const children = catalog.children(catalog.root.entryId);
-  const visible = children.slice(0, 3);
-  if (!visible.length) return null;
-  return (
-    <ul className="space-y-1 px-1" aria-label={t`Contents preview`}>
-      {visible.map((node) => (
-        <li
-          key={node.path}
-          className="flex min-w-0 items-center gap-2 text-meta text-muted-foreground"
-        >
-          {node.kind === "dir" ? (
-            <Folder className="size-3.5 shrink-0" aria-hidden />
-          ) : (
-            <FileText className="size-3.5 shrink-0" aria-hidden />
-          )}
-          <span className="min-w-0 truncate">{node.name}</span>
-        </li>
-      ))}
-      {children.length > visible.length ? (
-        <li className="text-meta text-muted-foreground">
-          <Plural value={children.length - visible.length} one="# more item" other="# more items" />
-        </li>
-      ) : null}
-    </ul>
   );
 }
 
@@ -351,7 +136,7 @@ function DirtyDecision({ controller }: { controller: WorkMetadataController }) {
       >
         <DialogHeader>
           <DialogTitle>
-            <Trans>Save metadata changes?</Trans>
+            <Trans>Save goal changes?</Trans>
           </DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">

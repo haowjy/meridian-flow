@@ -37,6 +37,11 @@ export type ChatDisplay =
   | { kind: "thread"; threadId: string }
   | { kind: "dock"; threadId: string | null };
 
+type NewChatRequest = {
+  id: number;
+  workId: string | null | "unchanged";
+};
+
 /** The thread the persistent chat surface renders, warm behind the index too. */
 export function chatSurfaceThreadId(display: ChatDisplay): string | null {
   return display.kind === "index" ? display.currentThreadId : display.threadId;
@@ -59,14 +64,16 @@ export type ChatNavigation = {
   /** The Chat screen: the current chat, or the index when there is none. */
   showChatScreen: () => Promise<void>;
   /** The Chat screen's index; in the dock, an empty composer. */
-  openNewChat: () => Promise<void>;
+  openNewChat: (workId?: string | null) => Promise<void>;
   openChatIndex: () => Promise<void>;
+  /** Reveal the dock with the requested Work occupant view. */
+  revealDock: (view: "chat" | "file") => void;
   /** A just-sent new chat becomes the chat on screen. */
   acceptCreatedChat: (threadId: string) => void;
   /** A deleted chat stops being current. */
   forgetChat: (threadId: string) => void;
   /** The shell's way to show the dock's chat. The latest registration wins. */
-  registerDockReveal: (reveal: () => void) => () => void;
+  registerDockReveal: (reveal: (view: "chat" | "file") => void) => () => void;
   /**
    * One-shot New chat focus intent for the pinned empty composer. Non-null
    * exactly once per `openNewChat` call, until the composer that focused
@@ -74,6 +81,8 @@ export type ChatNavigation = {
    * render, so mount timing never races a hold window.
    */
   newChatFocusRequestId: number | null;
+  /** Work explicitly selected by an in-context New chat action, if any. */
+  newChatWorkId: string | null | undefined;
   consumeNewChatFocusRequest: (id: number) => void;
 };
 
@@ -112,7 +121,7 @@ export function useProjectChatNavigation({
     () => surfaceThreadId !== null && readFirstSendSubmission(accountId, surfaceThreadId) !== null,
   );
   const [channels] = useState(createChannels);
-  const [newChatFocusRequestId, setNewChatFocusRequestId] = useState<number | null>(null);
+  const [newChatRequest, setNewChatRequest] = useState<NewChatRequest | null>(null);
   const nextFocusRequestId = useRef(1);
   const latest = useRef({ accountId, projectId, activeScreen, urlChatId, currentThreadId, go });
   latest.current = { accountId, projectId, activeScreen, urlChatId, currentThreadId, go };
@@ -130,7 +139,7 @@ export function useProjectChatNavigation({
         return;
       }
       remember(threadId);
-      channels.dockReveal.request();
+      channels.dockReveal.request("chat");
     };
     const openChatIndex = async () => {
       await latest.current.go({ kind: "chat-index" }, { replace: false });
@@ -145,12 +154,16 @@ export function useProjectChatNavigation({
     const commands = {
       openChat,
       openChatIndex,
+      revealDock: (view: "chat" | "file") => channels.dockReveal.request(view),
       showChatScreen,
-      openNewChat: async () => {
+      openNewChat: async (workId?: string | null) => {
         if (onChatScreen()) return openChatIndex();
         remember(null);
-        channels.dockReveal.request();
-        setNewChatFocusRequestId(nextFocusRequestId.current++);
+        channels.dockReveal.request("chat");
+        setNewChatRequest({
+          id: nextFocusRequestId.current++,
+          workId: workId === undefined ? "unchanged" : workId,
+        });
       },
       acceptCreatedChat: (threadId: string) => {
         remember(threadId);
@@ -162,7 +175,7 @@ export function useProjectChatNavigation({
       },
       registerDockReveal: channels.dockReveal.register,
       consumeNewChatFocusRequest: (id: number) => {
-        setNewChatFocusRequestId((current) => (current === id ? null : current));
+        setNewChatRequest((current) => (current?.id === id ? null : current));
       },
     };
     return { remember, commands };
@@ -181,9 +194,12 @@ export function useProjectChatNavigation({
   // screen. One place, shared by every shell.
   useConversationRevealRouting(commands.openChat);
 
+  const newChatFocusRequestId = newChatRequest?.id ?? null;
+  const newChatWorkId = newChatRequest?.workId === "unchanged" ? undefined : newChatRequest?.workId;
+
   return useMemo(
-    () => ({ ...commands, display, recoveringFirstSend, newChatFocusRequestId }),
-    [commands, display, recoveringFirstSend, newChatFocusRequestId],
+    () => ({ ...commands, display, recoveringFirstSend, newChatFocusRequestId, newChatWorkId }),
+    [commands, display, recoveringFirstSend, newChatFocusRequestId, newChatWorkId],
   );
 }
 
@@ -220,12 +236,12 @@ function useMissingChatFallback(accountId: string, threadId: string | null, onMi
  * time, so a registration is already live before any command can fire it.
  */
 function createChannel() {
-  const handlers: Array<() => void> = [];
+  const handlers: Array<(view: "chat" | "file") => void> = [];
   return {
-    request() {
-      handlers.at(-1)?.();
+    request(view: "chat" | "file") {
+      handlers.at(-1)?.(view);
     },
-    register(handler: () => void) {
+    register(handler: (view: "chat" | "file") => void) {
       handlers.push(handler);
       return () => {
         const index = handlers.lastIndexOf(handler);
@@ -259,9 +275,9 @@ export function useChatNavigation(): ChatNavigation {
 }
 
 /** Registers the shell's dock reveal for as long as the shell is mounted. */
-export function useDockReveal(reveal: () => void) {
+export function useDockReveal(reveal: (view: "chat" | "file") => void) {
   const { registerDockReveal } = useChatNavigation();
   const latest = useRef(reveal);
   latest.current = reveal;
-  useLayoutEffect(() => registerDockReveal(() => latest.current()), [registerDockReveal]);
+  useLayoutEffect(() => registerDockReveal((view) => latest.current(view)), [registerDockReveal]);
 }

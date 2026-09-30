@@ -8,6 +8,7 @@ import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Block, ModelResponse, Thread, Turn, TurnUsage } from "@meridian/contracts/threads";
 import { formatThreadRef } from "@meridian/contracts/threads";
+import { workLifecycleState } from "@meridian/contracts/works";
 import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { toIsoString } from "../../domain/contract-serialization.js";
@@ -155,7 +156,8 @@ interface WorkProjectionRepository {
     id: string;
     name: string;
     projectId: string;
-    status: "active" | "archived";
+    status: string | null;
+    archivedAt: string | null;
     deletedAt: string | null;
   } | null>;
 }
@@ -281,7 +283,7 @@ export function createInMemoryRepositories(
     },
     async lockByIdIncludingDeleted(id) {
       const thread = threads.get(id);
-      return thread ? projectThread(thread) : null;
+      return thread ? { ...projectThread(thread), deletedByWorkId: null } : null;
     },
     async listByUser(userId) {
       const visible: Thread[] = [];
@@ -443,10 +445,13 @@ export function createInMemoryRepositories(
       if (!thread || thread.deletedAt) throw new ThreadMembershipUnavailableError(threadId);
       if (options.works && workId) {
         const work = await options.works.findById(workId);
-        if (!work || work.deletedAt || work.id !== workId) {
-          throw new WorkLifecycleUnavailableError(workId, !work ? "missing" : "deleted");
+        if (!work || work.id !== workId) {
+          throw new WorkLifecycleUnavailableError(workId, "missing");
         }
-        if (work.status === "archived") throw new WorkLifecycleUnavailableError(workId, "archived");
+        const lifecycle = workLifecycleState(work);
+        if (lifecycle !== "active") {
+          throw new WorkLifecycleUnavailableError(workId, lifecycle);
+        }
         if (work.projectId !== thread.projectId) {
           throw new ThreadWorkProjectMismatchError(workId);
         }
@@ -476,10 +481,11 @@ export function createInMemoryRepositories(
       if (!thread || thread.deletedAt) throw new ThreadMembershipUnavailableError(threadId);
       if (options.works) {
         const work = await options.works.findById(workId);
-        if (!work || work.deletedAt) {
-          throw new WorkLifecycleUnavailableError(workId, !work ? "missing" : "deleted");
+        if (!work) throw new WorkLifecycleUnavailableError(workId, "missing");
+        const lifecycle = workLifecycleState(work);
+        if (lifecycle !== "active") {
+          throw new WorkLifecycleUnavailableError(workId, lifecycle);
         }
-        if (work.status === "archived") throw new WorkLifecycleUnavailableError(workId, "archived");
         if (work.projectId !== thread.projectId) throw new ThreadWorkProjectMismatchError(workId);
       }
       const previousWorkId = primaryWorkIdForThread(threadId);
@@ -874,7 +880,6 @@ export function createInMemoryRepositories(
 
   const {
     chatFeed,
-    workChatFeed,
     threadUserState,
     actionRequired: projectChatActionRequired,
   } = createInMemoryProjectChatAdapter(
@@ -894,7 +899,6 @@ export function createInMemoryRepositories(
   return {
     threads: threadRepo,
     chatFeed,
-    workChatFeed,
     threadUserState,
     threadWorks: threadWorksRepo,
     turns: turnRepo,

@@ -26,7 +26,7 @@ export async function listWorkCatalog(
     await requireProjectOwner({ projects: deps.projects }, input.projectId, input.userId);
     const identity = await deps.works.snapshotIdentity(input.projectId);
     const [works, noWork] = await Promise.all([
-      deps.works.listByProject(input.projectId, { includeDeleted: true }),
+      deps.works.listByProject(input.projectId, { includeDeleted: true, lifecycle: "all" }),
       deps.works.findNoWork(input.projectId),
     ]);
     if (!noWork) throw new Error(`Project ${input.projectId} is missing No Work`);

@@ -48,7 +48,6 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
       createdByUserId: ids.userId,
       name: "Rebound target",
       slug: "rebound-target",
-      status: "archived",
       archivedAt: new Date(),
     },
   ]);
