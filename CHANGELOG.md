@@ -7,6 +7,7 @@
 
 ## [Unreleased]
 
+- Fix: a screen heading focused on navigation no longer shows a focus ring, and focus the app moves after a click stays ring-free. When Archive is refused, focus comes back to the Active tab with the Work (ring only if you used the keyboard).
 - Work screen: the Work's name sits in the pane band as a tab beside an All Work door; rename it in the tab or the page heading, which stay in sync.
 - Work description clamps to three lines; click it to show more, Edit to change it in place.
 - Create Work and Create project open as dialogs over their list; Back after creating returns to the list.

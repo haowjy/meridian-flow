@@ -88,7 +88,9 @@ focuses its heading after the catalog resolves. It shows one list at a time
 under Active, Archived, and Deleted tabs (lifecycle states never overlap, so
 tabs replace stacked disclosures). `useArchiveFocusFollow` moves focus to the
 destination tab when Archive or Unarchive moves a row out of the visible list,
-right after the click, or after its Retry. A rejected Archive, Unarchive, Delete
+right after the click, or after its Retry, and back to the tab the Work
+returns to if the command is refused while focus is still on the destination.
+The ring shows only when the action came from the keyboard. A rejected Archive, Unarchive, Delete
 or Restore leaves `WorkCommandFailureRow` (Retry, Dismiss) under the Work's row;
 the Work band shows the same row as its `notice`: one element that `PaneHeader`
 flows beside the title when wide and wraps onto its own line when narrow (so a

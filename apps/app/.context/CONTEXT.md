@@ -382,7 +382,10 @@ a locale: drop a `.po` file in `src/locales/<code>/`, add the code to
 A11y primitives should be centralized the same way visual tokens are:
 
 - **Focus rings:** one `focus-ring` utility (consuming `--border-focus`) that
-  every interactive component uses.
+  every interactive component uses. Focus the app moves for continuity paints
+  no ring unless the writer is on the keyboard: screen headings (`tabIndex`
+  -1) never ring, and a control focused after a pointer action goes through
+  `moveFocus` in `src/lib/focus-follow.ts`.
 - **Visually hidden text:** a `visually-hidden` utility (or shadcn's
   `<VisuallyHidden>`) for screen-reader-only content.
 - **Live regions:** one shared `aria-live="polite"` region near `<body>`, fed
