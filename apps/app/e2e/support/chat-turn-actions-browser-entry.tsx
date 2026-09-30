@@ -1,9 +1,15 @@
-/** Browser entry that mounts shipped writer and reply action rows in a chat column. */
+/**
+ * Browser entry that mounts shipped writer and reply action rows, and every
+ * compaction divider state, in a chat column.
+ */
 import type { Turn } from "@meridian/contracts/protocol";
 import { createRoot } from "react-dom/client";
 import { TooltipProvider } from "../../src/components/ui/tooltip";
 import { AssistantTurnActions } from "../../src/features/chat/AssistantTurnActions";
 import { ChatColumn } from "../../src/features/chat/ChatColumn";
+import { CompactionDivider } from "../../src/features/chat/compaction/CompactionDivider";
+import { QueuedControlRows } from "../../src/features/chat/compaction/QueuedControlRows";
+import type { QueuedControl } from "../../src/features/chat/compaction/thread-controls";
 import {
   type TurnDerivation,
   TurnDerivationProvider,
@@ -25,6 +31,74 @@ const reply = {
   blocks: [],
   responses: [{ sequence: 0, model: "mock", inputTokens: 10, outputTokens: 10 }],
 } as unknown as Turn;
+const compaction = (
+  id: string,
+  status: Turn["status"],
+  metadata: Record<string, unknown>,
+  summary = true,
+) =>
+  ({
+    id,
+    role: "compaction",
+    status,
+    error: null,
+    metadata,
+    blocks: summary
+      ? [
+          {
+            id: `${id}-summary`,
+            blockType: "custom",
+            sequence: 0,
+            content: {
+              kind: "compaction",
+              props: {
+                summary: "Lin Feng reached the sect gate with the broken jade token.",
+                model: "mock-summary",
+                tokensBefore: 14617,
+                tokensAfter: 8080,
+              },
+            },
+          },
+        ]
+      : [],
+  }) as unknown as Turn;
+const instructions = "Keep Mei's oath verbatim";
+const dividers: Array<{ id: string; turn: Turn }> = [
+  { id: "divider-auto", turn: compaction("auto", "complete", { trigger: "auto" }) },
+  {
+    id: "divider-manual",
+    turn: compaction("manual", "complete", {
+      trigger: "manual",
+      controlMessageId: "k1",
+      instructions,
+    }),
+  },
+  {
+    id: "divider-pending",
+    turn: compaction(
+      "pending",
+      "pending",
+      { trigger: "manual", controlMessageId: "k2", instructions },
+      false,
+    ),
+  },
+  {
+    id: "divider-stopped",
+    turn: compaction("stopped", "cancelled", { trigger: "auto" }, false),
+  },
+  {
+    id: "divider-failed",
+    turn: {
+      ...compaction("failed", "error", { trigger: "manual", controlMessageId: "k3" }, false),
+      error: "This conversation couldn't be compacted.",
+    } as Turn,
+  },
+];
+const queued: QueuedControl[] = [
+  { id: "q1", control: { kind: "compact", instructions }, status: "queued" },
+  { id: "q2", control: { kind: "compact" }, status: "withdraw_failed" },
+  { id: "q3", control: { kind: "compact" }, status: "failed" },
+];
 const derivation: TurnDerivation = {
   projectId: "project",
   sourceAgent: { name: "General", definitionRevisionId: "rev-general" },
@@ -70,6 +144,18 @@ createRoot(root).render(
                 markdown="The gate opens."
               />
             </div>
+          </li>
+          {dividers.map(({ id, turn }) => (
+            <li key={id} id={id} data-chat-turn-row="settled" data-chat-turn-role="compaction">
+              <CompactionDivider turn={turn} stopping={false} onStop={() => undefined} />
+            </li>
+          ))}
+          <li id="queued-controls">
+            <QueuedControlRows
+              controls={queued}
+              onWithdraw={() => undefined}
+              onRetry={() => undefined}
+            />
           </li>
         </ol>
       </ChatColumn>

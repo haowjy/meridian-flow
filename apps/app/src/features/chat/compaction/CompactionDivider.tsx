@@ -94,7 +94,7 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
             aria-label={label.full}
             // Negative margin: the hover wash grows outward, so the icon keeps
             // the edge every other divider state and the instructions align to.
-            className="focus-ring -mx-1 flex min-w-0 items-center gap-[var(--chat-space-block)] rounded-md px-1 py-0.5 text-ink-muted transition-colors hover:bg-sidebar-accent hover:text-foreground aria-expanded:text-foreground"
+            className="focus-ring -mx-1 flex min-w-0 items-center gap-[var(--chat-space-block)] rounded-md px-1 py-1 text-ink-muted transition-colors hover:bg-sidebar-accent hover:text-foreground aria-expanded:text-foreground"
           >
             <DividerMark state={view.state} loud={loud} />
             <DividerLabel label={label} className="text-inherit" />
@@ -166,10 +166,7 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
 /** Full words on a wide column, the short form narrow; truncates before the row wraps. */
 function DividerLabel({ label, className }: { label: StateLabel; className: string }) {
   return (
-    <span
-      data-compaction-label
-      className={cn("min-w-0 truncate text-caption font-medium", className)}
-    >
+    <span data-compaction-label className={cn("min-w-0 truncate text-meta font-medium", className)}>
       <span className="hidden @lg/divider:inline">{label.full}</span>
       <span className="@lg/divider:hidden">{label.short}</span>
     </span>

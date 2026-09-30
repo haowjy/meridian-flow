@@ -60,7 +60,10 @@ or focus like a reply's actions and stays visible on touch. The writer's
 `/compact <instructions>` show verbatim under the line (`metadata.instructions`,
 read defensively), in every state.
 
-The divider is one line at every width. Its section is a container: below
+The divider is one line at every width, at one text size: the state label,
+Stop, Withdraw, Retry and any status words in the row (queued rows too) use
+the small action size (`text-meta`). The instructions and failure copy under
+the line are body text, not row text, and stay `text-caption`. Its section is a container: below
 `@lg` the state label switches to a short form ("Compacted") and truncates
 last; the section's accessible name keeps the full label.
 

@@ -91,6 +91,70 @@ test("a writer message's actions sit directly below its bubble, on its right edg
   }
 });
 
+/** Every divider state, and the queued rows that become one. */
+const DIVIDER_ROWS = [
+  "#divider-auto",
+  "#divider-manual",
+  "#divider-pending",
+  "#divider-stopped",
+  "#divider-failed",
+  "#queued-controls li",
+];
+
+test("a divider row speaks at one text size, on one line, at every width", async ({
+  page,
+}, testInfo) => {
+  const widths = testInfo.project.name === "fine-pointer" ? [1100, 390] : [390];
+  await mount(page);
+  for (const width of widths) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const selector of DIVIDER_ROWS) {
+      const rows = page.locator(selector);
+      for (let index = 0; index < (await rows.count()); index += 1) {
+        const where = `${selector}[${index}] at ${width}px`;
+        const row = await rows.nth(index).evaluate((item) => {
+          // The row is the first line: state words, controls, and the rule.
+          const line = item.querySelector(":scope > div, :scope > section > div");
+          if (!line) throw new Error("No divider line");
+          const texts = [...line.querySelectorAll("span, button")]
+            .filter((node) =>
+              [...node.childNodes].some(
+                (child) => child.nodeType === Node.TEXT_NODE && child.textContent?.trim(),
+              ),
+            )
+            .filter((node) => (node as HTMLElement).offsetParent !== null)
+            .map((node) => ({
+              text: node.textContent,
+              size: getComputedStyle(node).fontSize,
+              top: node.getBoundingClientRect().top,
+              bottom: node.getBoundingClientRect().bottom,
+            }));
+          return { texts, height: line.getBoundingClientRect().height };
+        });
+        expect(row.texts.length, where).toBeGreaterThan(0);
+        const sizes = new Set(row.texts.map((text) => text.size));
+        expect([...sizes], where).toHaveLength(1);
+        // One line: every piece of text shares the row's single band.
+        const top = Math.min(...row.texts.map((text) => text.top));
+        const bottom = Math.max(...row.texts.map((text) => text.bottom));
+        expect(bottom - top, where).toBeLessThanOrEqual(24);
+        expect(row.height, where).toBeLessThanOrEqual(28);
+      }
+    }
+  }
+  // The row's words match its small actions: Stop sets the size.
+  const [label, stop] = await Promise.all([
+    page
+      .locator("#divider-pending [data-compaction-label]")
+      .evaluate((n) => getComputedStyle(n).fontSize),
+    page
+      .locator("#divider-pending")
+      .getByRole("button", { name: "Stop compaction" })
+      .evaluate((n) => getComputedStyle(n).fontSize),
+  ]);
+  expect(label).toBe(stop);
+});
+
 /** The open tooltips, not ones fading out, by their accessible text. */
 const openTooltips = (page: Page) =>
   page.locator('[data-slot="tooltip-content"]:not([data-state="closed"]) [role="tooltip"]');
