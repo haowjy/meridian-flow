@@ -57,7 +57,7 @@ export type TurnListProps = {
   brief?: HandoffBrief | null;
   /** Retry on the latest failed reply, and the new replies it stands in for. */
   replyRetry?: ReplyRetry | null;
-  /** Something holds this chat (a reply, a compaction, a brief): Retry waits. */
+  /** Something holds this chat (a reply, a compaction, a brief): a brief card's Retry waits. */
   busy?: boolean;
   /** The live lease phase while the thread is awake. */
   phase?: ThreadPhase | null;
@@ -284,7 +284,6 @@ export function TurnList({
                     replyRetry.retry(turn);
                   }
                 : undefined,
-              waiting: busy,
               refused: replyRetry.refused.has(turn.id),
               requestLost: standIn === "failed",
             }

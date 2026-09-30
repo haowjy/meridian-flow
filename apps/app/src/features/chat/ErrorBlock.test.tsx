@@ -40,19 +40,10 @@ describe("ErrorBlock", () => {
     expect(send).not.toContain("This response failed.");
   });
 
-  it("offers Retry beside a failed reply, and waits with a true note while the chat is busy", () => {
-    const idle = renderToStaticMarkup(<ErrorBlock isLatest onRetry={() => undefined} />);
-    expect(idle).toMatch(/This response failed\.<\/p><button[^>]*data-reply-retry/);
-    expect(idle).not.toContain("aria-disabled=");
-    expect(idle).not.toContain("You can retry when this chat is free.");
-
-    const busy = renderToStaticMarkup(
-      <ErrorBlock isLatest onRetry={() => undefined} retryWaiting />,
-    );
-    const describedBy = busy.match(/aria-describedby="([^"]+)"/)?.[1];
-    expect(busy).toContain('aria-disabled="true"');
-    expect(busy).toContain(`id="${describedBy}"`);
-    expect(busy).toContain("You can retry when this chat is free.");
+  it("offers Retry beside a failed reply", () => {
+    const html = renderToStaticMarkup(<ErrorBlock isLatest onRetry={() => undefined} />);
+    expect(html).toMatch(/This response failed\.<\/p><button[^>]*data-reply-retry/);
+    expect(html).not.toContain("aria-disabled=");
   });
 
   it("notes a refused Retry, current or in history", () => {

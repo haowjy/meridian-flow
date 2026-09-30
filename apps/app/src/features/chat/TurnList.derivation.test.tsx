@@ -361,7 +361,7 @@ describe("TurnList brief card", () => {
 });
 
 describe("TurnList failed reply Retry", () => {
-  type Offer = { onRetry?: () => void; waiting: boolean; refused: boolean; requestLost: boolean };
+  type Offer = { onRetry?: () => void; refused: boolean; requestLost: boolean };
   const offer = (id: string) => seen.assistants.get(id)?.replyRetry as Offer | undefined;
   const failedReply = (id: string) => turn(id, "assistant", { status: "error" });
 
@@ -376,14 +376,6 @@ describe("TurnList failed reply Retry", () => {
     expect(offer("a1")).toMatchObject({ onRetry: undefined });
     offer("a2")?.onRetry?.();
     expect(retry.retry).toHaveBeenCalledWith(latest);
-  });
-
-  it("makes Retry wait while the chat is busy", async () => {
-    const turns = [turn("u1", "user"), failedReply("a1")];
-    await render({ turns, replyRetry: replyRetry(), busy: true });
-    expect(offer("a1")?.waiting).toBe(true);
-    await render({ turns, replyRetry: replyRetry(), busy: false });
-    expect(offer("a1")?.waiting).toBe(false);
   });
 
   it("puts a refused Retry on the failed reply the writer pressed", async () => {

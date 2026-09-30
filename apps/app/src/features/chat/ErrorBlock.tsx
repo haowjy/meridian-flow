@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { CircleAlert } from "lucide-react";
-import { type ReactNode, useId } from "react";
+import type { ReactNode } from "react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -24,8 +24,6 @@ export type ErrorBlockProps = {
   kind?: "send" | "generation" | "retry";
   /** Retry this turn. Omit to hide the control. */
   onRetry?: () => void;
-  /** Something holds the chat: Retry stays in place but waits until it ends. */
-  retryWaiting?: boolean;
   /** The server refused this turn's last Retry; the cause stays in diagnostics. */
   retryRefused?: boolean;
 };
@@ -54,7 +52,6 @@ export function ErrorBlock({
   isLatest,
   kind = "generation",
   onRetry,
-  retryWaiting = false,
   retryRefused = false,
 }: ErrorBlockProps) {
   const note = retryRefused ? <RefusedNote /> : null;
@@ -67,7 +64,7 @@ export function ErrorBlock({
     );
   }
   return (
-    <ActiveError kind={kind} onRetry={onRetry} retryWaiting={retryWaiting}>
+    <ActiveError kind={kind} onRetry={onRetry}>
       {note}
     </ActiveError>
   );
@@ -84,15 +81,12 @@ function RefusedNote() {
 function ActiveError({
   kind,
   onRetry,
-  retryWaiting,
   children,
 }: {
   kind: ErrorBlockProps["kind"];
   onRetry?: () => void;
-  retryWaiting: boolean;
   children: ReactNode;
 }) {
-  const waitId = useId();
   return (
     <Alert
       variant="destructive"
@@ -106,29 +100,11 @@ function ActiveError({
         <div className="flex flex-wrap items-center gap-x-[var(--chat-space-block)] gap-y-1">
           <p>{copy(kind, true)}</p>
           {onRetry ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="xs"
-              // aria-disabled, not disabled: the button keeps its place and
-              // focus while the chat is busy, and reads its wait note with it.
-              aria-disabled={retryWaiting || undefined}
-              aria-describedby={retryWaiting ? waitId : undefined}
-              className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:border-border aria-disabled:hover:bg-background aria-disabled:hover:text-foreground"
-              data-reply-retry
-              onClick={() => {
-                if (!retryWaiting) onRetry();
-              }}
-            >
+            <Button type="button" variant="outline" size="xs" data-reply-retry onClick={onRetry}>
               <Trans>Retry</Trans>
             </Button>
           ) : null}
         </div>
-        {onRetry && retryWaiting ? (
-          <p id={waitId} className="text-caption text-muted-foreground">
-            <Trans>You can retry when this chat is free.</Trans>
-          </p>
-        ) : null}
         {children}
       </AlertDescription>
     </Alert>
