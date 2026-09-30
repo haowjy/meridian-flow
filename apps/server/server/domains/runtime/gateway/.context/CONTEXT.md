@@ -71,17 +71,26 @@ Every adapter normalizes a provider's context-window rejection to the one provid
 
 DeepSeek evidence for the automatic classification: its [context-caching guide](https://api-docs.deepseek.com/guides/kv_cache/) says caching is enabled by default and reports cache-hit counters; its [Anthropic compatibility guide](https://api-docs.deepseek.com/guides/anthropic_api/) documents the configured `/anthropic` endpoint and says `cache_control` is ignored. In the dev database, `model_responses` had 31 `deepseek-v4-flash` rows, 29 with positive `cache_read_tokens` (188,416 total). The Anthropic adapter's `mapUsage` reads `cache_read_input_tokens`; those persisted counters confirm the deployed compatibility path exposes cache reads through our existing mapping.
 
-## Summary output caps
+## Output limits
 
-The adapters do not use `max_tokens` / `max_output_tokens` as cache keys.
-Anthropic's thinking budget does affect the cache, so implicit effort budgets
-are resolved against the model's output budget, independently of the per-call
-output cap. The one exception is Anthropic's `budget_tokens < max_tokens` rule:
-an implicit budget is clamped to one below the call's `maxTokens`. The warm
-summary cap is reserve plus budget, so the clamp never changes its thinking
-configuration. The summarizer uses that same resolution, including explicit
-`providerOptions.anthropic.thinking.budget_tokens`, to reserve thinking plus
-summary output without changing the thinking configuration.
+Meridian sets no output limits of its own. Provider defaults apply. Branch
+summaries preserve the source request's `maxTokens` or its absence. Rolling
+summaries and handoff briefs send no `maxTokens`. Anthropic requires
+`max_tokens`, so its adapter sends
+`request.maxTokens ?? maxOutputTokens` from the registry. OpenAI sends
+`max_output_tokens` only when set. OpenAI-compatible requests leave
+`max_tokens` undefined so the provider default applies.
+
+The registry's `maxOutputTokens` also reserves reply room when auto-compaction
+computes the usable input window: `contextWindow` minus `maxOutputTokens` and
+the other reserves. This value mirrors the provider default rather than
+defining a lower Meridian limit. It is 65,536 for DeepSeek V4 Flash and 64,000
+for both Claude Sonnet 4 entries.
+
+Output limits are not cache keys. Anthropic's thinking budget does affect the
+cache, so implicit effort budgets resolve against the model's output budget,
+not a per-call limit. To satisfy `budget_tokens < max_tokens`, an implicit
+budget is clamped to one below the call's `maxTokens`.
 
 DeepSeek V4 Flash declares a 1,048,576-token window. A live Anthropic-compatible
 call accepted 150,013 input tokens (253 uncached plus 149,760 cached) on
