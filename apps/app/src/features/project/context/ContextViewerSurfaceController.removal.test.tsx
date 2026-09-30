@@ -99,6 +99,51 @@ beforeEach(() => {
   });
 });
 
+it("keeps the current Work's scratch tab on the Editor surface", async () => {
+  const current: ContextTab = {
+    kind: "tracked",
+    documentId: "scratch-current",
+    scheme: "scratch",
+    path: "/current.md",
+    name: "current.md",
+    workId: "work-a",
+    editable: true,
+    filetype: "markdown",
+    schemaType: "document",
+  };
+  const other: ContextTab = { ...current, documentId: "scratch-other", workId: "work-b" };
+  useContextTabsStore.setState({
+    byProject: {
+      project: {
+        tabs: [current, other],
+        selectedTabIdByWork: { "work-a": current.documentId },
+      },
+    },
+    _workspaceHydrated: true,
+  });
+
+  await withReactRoot(
+    <AccountFeatureTestProvider accountId="work-scratch-account">
+      <ContextViewerSurfaceController
+        projectId="project"
+        editorWorkId="work-a"
+        localDocumentId={current.documentId}
+        activeContextScheme="scratch"
+        activeContextPath={current.path}
+        active={false}
+        sidebarToggle={{ open: true, onExpand: vi.fn(), label: "Sidebar" }}
+        dockToggle={{ open: true, onExpand: vi.fn(), label: "Dock" }}
+        onSelectContextPath={vi.fn()}
+        onOpenContextTarget={vi.fn()}
+        onShowEditorRecents={vi.fn()}
+      />
+    </AccountFeatureTestProvider>,
+    () => {
+      expect(viewerProps?.tabs.map((tab) => tab.documentId)).toEqual([current.documentId]);
+    },
+  );
+});
+
 it("persists and admits the real New action without an empty working-set route", async () => {
   vi.stubGlobal("isSecureContext", true);
   const reportedErrors: unknown[] = [];

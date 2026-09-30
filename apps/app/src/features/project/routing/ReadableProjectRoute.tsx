@@ -234,15 +234,17 @@ export function ReadableProjectRoute({
 
   const resourceDestination =
     (destination.kind === "document" || destination.kind === "browse") &&
-    isWorkScopedScheme(destination.scheme);
+    destination.scheme === "uploads";
   const documentDestination =
     destination.kind === "document" && !resourceDestination ? destination : null;
-  // A document path outside Scratch and Uploads never carries a Work; its
-  // `?work=` selection must still resolve before the lookup runs.
+  const addressWorkId = address.work.kind === "id" ? address.work.id : null;
   const { catalog: addressCatalog } = useContextCatalogView(
     projectId,
     documentDestination?.scheme ?? "manuscript",
-    { workId: null, enabled: !!documentDestination && !routeWorkIssue(routeWork) },
+    {
+      workId: documentDestination?.scheme === "scratch" ? addressWorkId : null,
+      enabled: !!documentDestination && !routeWorkIssue(routeWork),
+    },
   );
   const [admission, setAdmission] = useState<AddressAdmission | null>(null);
   const documentLookup = useQuery({
@@ -250,6 +252,7 @@ export function ReadableProjectRoute({
       ...projectQueryKeys.documentAddresses(projectId),
       documentDestination?.scheme,
       documentDestination?.path,
+      documentDestination?.scheme === "scratch" ? addressWorkId : null,
       addressCatalog?.normalized.generation,
       addressCatalog?.normalized.appliedRevision,
     ],
@@ -259,13 +262,13 @@ export function ReadableProjectRoute({
         projectId,
         documentDestination.scheme,
         documentDestination.path,
+        { workId: documentDestination.scheme === "scratch" ? addressWorkId : null },
       );
     },
     enabled: !!documentDestination && !routeWorkIssue(routeWork),
     staleTime: 0,
     retry: false,
   });
-  const addressWorkId = address.work.kind === "id" ? address.work.id : null;
   const localDocumentAddress = useMemo(
     () =>
       documentDestination
@@ -299,9 +302,7 @@ export function ReadableProjectRoute({
     : ((localDocument.kind === "loading" || localDocument.kind === "unavailable"
         ? localDocument.kind
         : undefined) ??
-      (editorWork.status === "present" && editorWork.work.status === "archived"
-        ? "unavailable"
-        : routeWorkIssue(editorWork)) ??
+      routeWorkIssue(editorWork) ??
       documentIssue ??
       (documentDestination
         ? admission?.href === location.href &&

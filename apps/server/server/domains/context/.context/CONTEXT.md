@@ -162,12 +162,12 @@ currently available to the request owner in the requested project.
   relative traversal cannot escape its scheme root. Wiki names search durable
   project and authenticated personal files plus the selected Work/no-Work scope,
   never another Work's titles. Canonical qualifiers may explicitly name another
-  available (active) Work in the project. Contextual scratch/uploads use the selected
+  non-deleted Work in the project. Contextual scratch/uploads use the selected
   scope; `@/` always means No Work. Legacy `work://` is not accepted.
   Archived Work identity still parses/resolves as authority and its Work-scoped
   catalog still lists its files (archive hides a Work from Active, not its
-  contents); it is not an `available` qualifier target. Only deleted Works
-  hide their files. Zero or multiple matches both resolve to
+  contents) and remains an available read target. Only deleted Works hide their
+  files. Zero or multiple matches both resolve to
   `null`; resolution never guesses.
 - Router methods attach the resolved canonical URI to every `ContextError` and
   successful read/write result. Transport and collab callers publish that value;

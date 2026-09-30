@@ -19,6 +19,7 @@ import { createWorkProjectionMutation } from "../../projects/adapters/work-proje
 import { createDrizzleWorkRepository } from "../../projects/adapters/work-repository/drizzle.js";
 import { createProjectRepositoryForTest as createDrizzleProjectRepository } from "../../projects/test-support/project-repository.js";
 import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
+import { createDocumentAddressResolver } from "../document-address.js";
 import { createDrizzleContextCatalog } from "./context-catalog.js";
 import { ContextFS } from "./context-fs/context-fs.js";
 import { DrizzleContextDocumentStore } from "./context-fs/drizzle-store.js";
@@ -619,7 +620,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         "scratch://@draft/arc.md",
       ]);
       const namedAddress = () =>
-        createDrizzleDocumentAddressStore(db).candidate({
+        createDocumentAddressResolver({
+          locations: createDrizzleDocumentAddressStore(db),
+          availability: createDrizzleProjectContextAvailability(db),
+        }).resolve({
           projectId: PROJECT_ID as never,
           userId: USER_ID,
           scheme: "scratch",
@@ -628,12 +632,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
       await expect(namedAddress()).resolves.toMatchObject({
         kind: "current",
-        documentId: NAMED_FILE,
+        document: {
+          documentId: NAMED_FILE,
+          authority: { kind: "work", projectId: PROJECT_ID, workId: NAMED },
+          entry: { uri: "scratch://@draft/arc.md" },
+        },
       });
 
       await db.update(works).set({ deletedAt: new Date() }).where(eq(works.id, NAMED));
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([]);
-      await expect(namedAddress()).resolves.toBeNull();
+      await expect(namedAddress()).resolves.toEqual({ kind: "unavailable" });
 
       await expect(
         createDrizzleDocumentAddressStore(db).candidate({

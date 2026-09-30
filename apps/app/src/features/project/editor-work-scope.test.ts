@@ -20,7 +20,7 @@ it.each(["loading"] as const)("keeps unresolved %s inert", (reason) => {
     workId: id,
   });
 });
-it.each(["active", "archived"] as const)("only admits active Work (%s)", (status) => {
+it.each(["active", "archived"] as const)("admits readable Work (%s)", (status) => {
   const work: AddressableWork = {
     id,
     status,
@@ -38,9 +38,9 @@ it.each(["active", "archived"] as const)("only admits active Work (%s)", (status
     lastActivityAt: "",
     deletedAt: null,
   };
-  expect(resolveEditorWorkScope({ status: "present", workId: id, work })).toEqual(
-    status === "active"
-      ? { status: "ready", workId: id, source: "route" }
-      : { status: "unavailable", workId: id },
-  );
+  expect(resolveEditorWorkScope({ status: "present", workId: id, work })).toEqual({
+    status: "ready",
+    workId: id,
+    source: "route",
+  });
 });

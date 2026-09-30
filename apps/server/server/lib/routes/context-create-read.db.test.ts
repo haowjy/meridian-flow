@@ -330,6 +330,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createDrizzleDocumentAccess(db).projectIdForDocument(created.documentId),
       ).resolves.toBe(PROJECT_ID);
 
+      await db
+        .update(schema.works)
+        .set({ status: "archived", archivedAt: new Date() })
+        .where(eq(schema.works.id, WORK_ID));
+      await expect(port.read(`scratch://@${authority.workSlug}/notes.md`)).resolves.toMatchObject({
+        ok: true,
+        value: { content: "scratch content\n", documentId: created.documentId },
+      });
+      await expect(
+        port.write(`scratch://@${authority.workSlug}/notes.md`, "blocked"),
+      ).resolves.toMatchObject({ ok: false, error: { code: "context_unavailable" } });
+      await db
+        .update(schema.works)
+        .set({ status: "active", archivedAt: null })
+        .where(eq(schema.works.id, WORK_ID));
+
       await expect(
         port.delete(`scratch://@${authority.workSlug}/notes.md`, {
           expected: { kind: "file", documentId: created.documentId },

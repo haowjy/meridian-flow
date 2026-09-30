@@ -87,8 +87,8 @@ export function ContextViewerSurfaceController({
   const layoutSaveFailed = useContextTabsStore((state) => state._layoutPersistenceError != null);
   const { openTab, reconcileResourceTab, updateTrackedTab, selectTab } = useContextTabsActions();
   const visibleTabs = tabs.filter((tab) => {
-    if (tab.kind === "new") return true;
-    return !isWorkScopedProjectContextScheme(tab.scheme);
+    if (tab.kind === "new" || !isWorkScopedProjectContextScheme(tab.scheme)) return true;
+    return tab.scheme === "scratch" && (tab.workId ?? null) === routeWorkId;
   });
   const locator =
     activeContextScheme !== null && activeContextPath !== null

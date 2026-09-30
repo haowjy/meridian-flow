@@ -10,7 +10,5 @@ export function resolveEditorWorkScope(routeWork: RouteWorkResolution): EditorWo
   if (routeWork.status === "creating") return { status: "loading", workId: routeWork.workId };
   if (routeWork.status === "new") return { status: "ready", workId: null, source: "route" };
   if (routeWork.status === "none") return { status: "ready", workId: null, source: "route" };
-  if (routeWork.work.status === "archived")
-    return { status: "unavailable", workId: routeWork.workId };
   return { status: "ready", workId: routeWork.workId, source: "route" };
 }

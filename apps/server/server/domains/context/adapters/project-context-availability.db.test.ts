@@ -503,7 +503,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("returns deleted and unavailable Work/project authority from tombstones", async () => {
+    it("keeps archived Work documents available and returns deleted authority tombstones", async () => {
       const db = await seed();
       const availability = createDrizzleProjectContextAvailability(db);
       const generation = await availability.advance({ projectIds: [PROJECT], userIds: [] });
@@ -515,7 +515,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       expect(result.resolutions).toMatchObject([
         { kind: "deleted", generation },
-        { kind: "authority-unavailable", reason: "work_archived", generation },
+        {
+          kind: "available",
+          generation,
+          authority: { kind: "work", projectId: PROJECT, workId: WORK },
+        },
       ]);
       await db.update(projects).set({ deletedAt: new Date() }).where(eq(projects.id, PROJECT));
       result = await availability.lookup(

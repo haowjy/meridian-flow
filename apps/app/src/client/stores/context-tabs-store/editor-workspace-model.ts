@@ -88,5 +88,7 @@ export type ProjectTabsSlice = {
 
 /** All workspace mutation paths share the same Editor document admission rule. */
 export function isEditorContextTab(tab: ContextTab): boolean {
-  return tab.kind === "new" || !isWorkScopedProjectContextScheme(tab.scheme);
+  return (
+    tab.kind === "new" || tab.scheme === "scratch" || !isWorkScopedProjectContextScheme(tab.scheme)
+  );
 }
