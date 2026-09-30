@@ -86,7 +86,7 @@ export function WorkCollection({
         return (
           <WorkRow
             {...shared}
-            status={
+            liveState={
               <span role="status">
                 <Trans>Creating</Trans>
               </span>
@@ -97,7 +97,7 @@ export function WorkCollection({
         return (
           <WorkRow
             {...shared}
-            status={
+            liveState={
               <span role="alert" className="text-destructive">
                 <Trans>Not created</Trans>
               </span>
@@ -108,7 +108,7 @@ export function WorkCollection({
         return (
           <WorkRow
             {...shared}
-            status={
+            liveState={
               <span role="status">
                 <Trans>Restoring</Trans>
               </span>

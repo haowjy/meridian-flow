@@ -1,6 +1,7 @@
 /**
- * The Work page: its title and goal over one sticky toolbar, then
- * the Chats or Files tab, each owning its own search, actions and queries.
+ * The Work page: its title with the AI's status beside it, and its goal, over
+ * one sticky toolbar, then the Chats or Files tab, each owning its own search,
+ * actions and queries.
  * An archived Work is view-only: one notice with Unarchive under the title,
  * primary actions disabled in place, and no inline edits offered.
  */
@@ -25,6 +26,7 @@ import { isWorkReadOnly } from "./archived-work";
 import { WorkChatsTab } from "./WorkChatsTab";
 import { WorkFilesTab } from "./WorkFilesTab";
 import { useWorkMetadataController, WorkGoal, type WorkMetadataController } from "./WorkMetadata";
+import { WorkStatusLabel } from "./WorkStatusLabel";
 import { PlainWorkHeading, WorkHeading } from "./WorkTitles";
 import { WorkToolbarSlotProvider } from "./WorkToolbarSlot";
 
@@ -100,11 +102,15 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
       <article className="project-screen-column min-w-0 gap-5 pb-12">
         <WorkScreenHeader
           title={
-            readOnly ? (
-              <PlainWorkHeading name={work.name} />
-            ) : (
-              <WorkHeading projectId={projectId} work={work} />
-            )
+            // A long name keeps its full width; the status wraps under it.
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+              {readOnly ? (
+                <PlainWorkHeading name={work.name} />
+              ) : (
+                <WorkHeading projectId={projectId} work={work} />
+              )}
+              <WorkStatusLabel status={work.status} size="heading" />
+            </div>
           }
           notice={
             readOnly ? (

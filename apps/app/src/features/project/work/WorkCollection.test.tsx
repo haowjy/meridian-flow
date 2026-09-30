@@ -194,6 +194,42 @@ const clickIn = async (root: Element | null | undefined, label: string) => {
 };
 
 describe("Work collection archive", () => {
+  it("lists archived Works under Archived, each with its status beside its name", async () => {
+    const client = new QueryClient();
+    const works = [
+      { ...WORK, status: "Drafting" },
+      { ...CODA, status: null },
+      {
+        ...WORK,
+        id: "00000000-0000-4000-8000-000000000003",
+        name: "Epilogue",
+        status: "Done",
+        archivedAt: "2026-09-02T00:00:00.000Z",
+      },
+    ] as Work[];
+    client.setQueryData(projectQueryKeys.works(PROJECT_ID), snapshot(works));
+    vi.mocked(listProjectWorks).mockImplementation(async () => snapshot(works));
+    const rowLinks = () =>
+      [...document.querySelectorAll("li a .sr-only")].map((node) => node.textContent);
+    try {
+      await withReactRoot(
+        <QueryClientProvider client={client}>
+          <CollectionHarness />
+        </QueryClientProvider>,
+        async () => {
+          expect(rowLinks()).toEqual(["Open Arc (Drafting)", "Open Coda"]);
+          expect(document.querySelectorAll('[data-slot="badge"]')).toHaveLength(1);
+          await showTab("archived");
+          expect(rowLinks()).toEqual(["Open Epilogue (Done)"]);
+        },
+        { drainMacrotask: true },
+      );
+    } finally {
+      client.clear();
+      vi.clearAllMocks();
+    }
+  });
+
   it("moves the row before the server answers, returns it with an error on failure, and retries", async () => {
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     let server = snapshot([WORK]);

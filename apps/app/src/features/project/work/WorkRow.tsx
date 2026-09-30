@@ -1,12 +1,14 @@
 /**
- * A Work list row in the app's list grammar (Chats, Editor recents): name over
- * the first line of its goal, a relative age, and the shared Work actions menu.
+ * A Work list row in the app's list grammar (Chats, Editor recents): name and
+ * the AI's status over the first line of its goal, a relative age, and the
+ * shared Work actions menu.
  */
 import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/works";
 import type { MouseEvent, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { relativeTime } from "../relative-time";
+import { WorkStatusLabel } from "./WorkStatusLabel";
 
 export function WorkRow({
   work,
@@ -14,16 +16,17 @@ export function WorkRow({
   now,
   onOpen,
   actions,
-  status,
+  liveState,
 }: {
-  work: Pick<Work, "name" | "goal" | "lastActivityAt">;
+  /** A Work still being created has no status yet. */
+  work: Pick<Work, "name" | "goal" | "lastActivityAt"> & Partial<Pick<Work, "status">>;
   href: string;
   now: number;
   onOpen: () => void;
   /** Trailing menu; absent while the Work has no server identity yet. */
   actions?: ReactNode;
   /** Replaces the age with a live state such as Creating. */
-  status?: ReactNode;
+  liveState?: ReactNode;
 }) {
   return (
     <div className="group relative flex min-h-12 min-w-0 items-center gap-3 rounded-md px-2 py-1.5 transition-colors motion-reduce:transition-none hover:bg-dropdown-hover">
@@ -37,9 +40,12 @@ export function WorkRow({
         }}
         className="focus-ring min-w-0 flex-1 rounded-sm after:absolute after:inset-0"
       >
-        <span className="sr-only">{t`Open ${work.name}`}</span>
-        <span aria-hidden className="block truncate text-sm font-medium text-foreground">
-          {work.name}
+        <span className="sr-only">
+          {work.status ? t`Open ${work.name} (${work.status})` : t`Open ${work.name}`}
+        </span>
+        <span aria-hidden className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-medium text-foreground">{work.name}</span>
+          <WorkStatusLabel status={work.status} className="max-w-[60%]" />
         </span>
         {work.goal ? (
           <span aria-hidden className="block truncate text-xs text-muted-foreground">
@@ -50,10 +56,10 @@ export function WorkRow({
       <span
         className={cn(
           "shrink-0 text-xs tabular-nums",
-          status ? "text-muted-foreground" : "text-ink-subtle",
+          liveState ? "text-muted-foreground" : "text-ink-subtle",
         )}
       >
-        {status ?? relativeTime(work.lastActivityAt, now)}
+        {liveState ?? relativeTime(work.lastActivityAt, now)}
       </span>
       {actions ? <div className="relative z-10 -my-1 shrink-0">{actions}</div> : null}
     </div>

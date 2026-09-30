@@ -166,6 +166,27 @@ describe("WorkMetadata", () => {
     });
   });
 
+  it("drops Show less when an expanded goal is saved short", async () => {
+    await withClampedGoal(async () => {
+      await withReactRoot(
+        <Harness saveWork={vi.fn(async (data: UpdateWorkRequest) => ({ ...WORK, ...data }))} />,
+        async () => {
+          const button = (label: string) =>
+            [...document.querySelectorAll("button")].find((b) => b.textContent === label) ?? null;
+          await click(button("Show more"));
+          await click(button("Edit"));
+          const field = document.querySelector("textarea");
+          if (!field) throw new Error("goal field missing");
+          await act(async () => setValue(field, "Short."));
+          await click(button("Save"));
+          expect([...document.querySelectorAll("button")].map((b) => b.textContent)).toEqual([
+            "Edit",
+          ]);
+        },
+      );
+    });
+  });
+
   it("renders blank-line runs as paragraphs, not blank lines", async () => {
     await withReactRoot(
       <WorkGoalHarness work={{ ...WORK, goal: "One.\n\n\n\nTwo\nlines." }} />,
@@ -198,7 +219,11 @@ async function withClampedGoal(run: () => Promise<void>) {
   window.ResizeObserver = class {
     constructor(private callback: ResizeObserverCallback) {}
     observe(target: Element) {
-      Object.defineProperty(target, "scrollHeight", { configurable: true, value: 120 });
+      // Only a goal longer than a few words overflows three lines.
+      Object.defineProperty(target, "scrollHeight", {
+        configurable: true,
+        get: () => ((target.textContent?.length ?? 0) > 20 ? 120 : 72),
+      });
       Object.defineProperty(target, "clientHeight", { configurable: true, value: 72 });
       this.callback([], this as unknown as ResizeObserver);
     }
