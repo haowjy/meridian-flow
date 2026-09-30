@@ -13,5 +13,11 @@ export function spawnHistoryPreview(input: JsonObject, output?: JsonValue): stri
 }
 export function threadHistoryPreview(input: JsonObject, output?: JsonValue): string {
   const run = input.run ?? (output as JsonObject | undefined)?.run;
-  return `${input.ref ?? "current"}${run ? ` run ${run}` : ""}`;
+  const outputRef =
+    typeof output === "string"
+      ? /^([cp]\d+)\b/u.exec(output)?.[1]
+      : typeof (output as JsonObject | undefined)?.ref === "string"
+        ? String((output as JsonObject).ref)
+        : undefined;
+  return `${outputRef ?? input.ref ?? "current"}${run ? ` run ${run}` : ""}`;
 }

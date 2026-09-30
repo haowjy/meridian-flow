@@ -69,4 +69,9 @@ describe("resolveReadableThread", () => {
       target: { ref: "c1" },
     });
   });
+  it('resolves "current" to the caller', async () => {
+    expect(
+      await resolveReadableThread({ caller: rows[1] as Thread, ref: "current", threads }),
+    ).toMatchObject({ ok: true, target: { ref: "c2" } });
+  });
 });
