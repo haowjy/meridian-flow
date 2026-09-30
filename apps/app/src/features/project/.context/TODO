@@ -12,3 +12,10 @@
   ring after a refused Archive returns the Work to Active
   (`work/useArchiveFocusFollow.ts`). Programmatic focus should not paint a
   keyboard ring, and focus-follow should return with the Work on refusal.
+- Composer attachments still ride on Work-scoped `uploads://`
+  (`components/app/composer/Composer.tsx` `ComposerUploadPort` →
+  `client/api/upload-intake-api.ts` → the Work upload route), though the Work
+  page no longer shows Uploads. Rescope them to the thread lineage and delete
+  the Work `uploads://` scheme:
+  [#631](https://github.com/haowjy/meridian-flow/issues/631). Uploading into
+  the file tree is [#630](https://github.com/haowjy/meridian-flow/issues/630).
