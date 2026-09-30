@@ -1,5 +1,6 @@
 /** PostgreSQL proof that admission and explicit retirement choose one serialized winner. */
 
+import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 const RUN = process.env.RUN_DB_TESTS === "1" && process.env.DATABASE_URL;
@@ -39,6 +40,8 @@ if (!RUN) {
     const { runInDrizzleTransaction, runInDrizzleSavepoint } = await import(
       "../../../shared/drizzle-transaction.js"
     );
+    const { lockThreadAndWorks } = await import("../../../shared/thread-work-lock.js");
+    const { ThreadWorkUnavailableAdmissionError } = await import("./user-turn-admission.js");
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL disappeared after the DB test gate");
     const firstDb = createDb(url, { max: 2 });
@@ -49,6 +52,7 @@ if (!RUN) {
     const USER = "00000000-0000-4000-8000-000000000f51";
     const PROJECT = "00000000-0000-4000-8000-000000000f52";
     const THREAD = "00000000-0000-4000-8000-000000000f53" as never;
+    const WORK = "00000000-0000-4000-8000-000000000f55" as never;
     const ROLLBACK_THREAD = "00000000-0000-4000-8000-000000000f54" as never;
     const SOURCE = "00000000-0000-4000-8000-000000000f58" as never;
     const DOCUMENT = "00000000-0000-4000-8000-000000000f59" as never;
@@ -67,6 +71,19 @@ if (!RUN) {
         title: "",
         kind: "primary",
         status: "idle",
+      });
+      await firstDb.insert(schema.works).values({
+        id: WORK,
+        projectId: PROJECT,
+        createdByUserId: USER,
+        name: "Admission Work",
+        slug: "admission-work",
+      });
+      await firstDb.insert(schema.threadWorks).values({
+        threadId: THREAD,
+        workId: WORK,
+        projectId: PROJECT,
+        isPrimary: true,
       });
     });
     afterAll(async () => {
@@ -171,6 +188,15 @@ if (!RUN) {
           return true;
         },
         producer: createWriterTurnProducer({
+          async requireWritableThread(threadId) {
+            const locked = await lockThreadAndWorks(firstDb, threadId);
+            const state = locked?.primaryWorkId
+              ? locked.workStates.get(locked.primaryWorkId)
+              : "missing";
+            if (state !== "active") {
+              throw new ThreadWorkUnavailableAdmissionError(state ?? "missing");
+            }
+          },
           inbox: createDrizzleInbox(firstDb),
           persistence: { repos, eventWriter: hub },
           hub,
@@ -220,6 +246,37 @@ if (!RUN) {
       });
     });
 
+    it("rejects archived Work sends atomically and admits a fresh send after unarchive", async () => {
+      const service = await composeAdmission({ threadId: THREAD, documentId: DOCUMENT, uri: "" });
+      await firstDb
+        .update(schema.works)
+        .set({ status: "archived", archivedAt: new Date() })
+        .where(eq(schema.works.id, WORK));
+
+      const request = {
+        actorUserId: USER as never,
+        threadId: THREAD,
+        submissionId: "archived-send",
+        text: "Continue",
+        blocks: [{ type: "text" as const, text: "Continue" }],
+        references: [],
+      };
+      await expect(service.admit(request)).resolves.toEqual({
+        kind: "rejected",
+        submissionId: request.submissionId,
+        code: "work_archived",
+      });
+      await expect(firstDb.select().from(schema.turns)).resolves.toHaveLength(0);
+
+      await firstDb
+        .update(schema.works)
+        .set({ status: "active", archivedAt: null })
+        .where(eq(schema.works.id, WORK));
+      await expect(
+        service.admit({ ...request, submissionId: "after-unarchive" }),
+      ).resolves.toMatchObject({ kind: "accepted" });
+    });
+
     it("rolls the writer turn, inbox row, and journal back on an admission winner", async () => {
       const hub = createThreadEventHub({
         journalWriter: createDrizzleEventJournalWriter(firstDb),
@@ -253,6 +310,7 @@ if (!RUN) {
       });
 
       const producer = createWriterTurnProducer({
+        async requireWritableThread() {},
         inbox: createDrizzleInbox(firstDb),
         persistence: {
           repos,
@@ -314,6 +372,12 @@ if (!RUN) {
         title: "",
         kind: "primary",
         status: "idle",
+      });
+      await firstDb.insert(schema.threadWorks).values({
+        threadId: ROLLBACK_THREAD,
+        workId: WORK,
+        projectId: PROJECT,
+        isPrimary: true,
       });
       await firstDb.insert(schema.contextSources).values({
         id: SOURCE,

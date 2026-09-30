@@ -2,8 +2,10 @@
 import type { WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
+import { WorkLifecycleUnavailableError } from "./domain/work-lifecycle.js";
 import {
   normalizeWorkUpdateInput,
+  updateActiveWorkMetadata,
   updateWork,
   updateWorkTransition,
   WorkNameRequiredError,
@@ -152,6 +154,25 @@ describe("updateWork", () => {
       updateWorkTransition(deps, existing.id, { status: "active" }),
     ).resolves.toMatchObject({ after: { status: "active", archivedAt: null }, changed: true });
     expect(update).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses archived metadata edits but allows an atomic unarchive and edit", async () => {
+    const works = createInMemoryWorkRepository();
+    const existing = await works.create({ projectId: PROJECT_ID, name: "Draft" });
+    await works.archive(existing.id);
+    const deps = { works, workContextNotices: { async projectChanged() {} } };
+
+    await expect(
+      updateActiveWorkMetadata(deps, existing.id, { name: "Still blocked" }),
+    ).rejects.toBeInstanceOf(WorkLifecycleUnavailableError);
+    await expect(
+      updateWorkTransition(
+        deps,
+        existing.id,
+        { name: "Revised", status: "active" },
+        { requireActive: true },
+      ),
+    ).resolves.toMatchObject({ after: { name: "Revised", status: "active" } });
   });
 
   it("rolls metadata back when the lifecycle change fails", async () => {

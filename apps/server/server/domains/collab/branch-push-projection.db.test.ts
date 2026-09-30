@@ -202,7 +202,7 @@ describe("branch-push durable projection", () => {
       .set({ status: "archived", archivedAt: new Date() })
       .where(eq(works.id, workId));
     await expect(branchPush.pushToLive({ branchId: branch.branchId })).rejects.toThrow(
-      `Work not found: ${workId}`,
+      "is archived; it is read-only until unarchived",
     );
     await db.update(works).set({ status: "active", archivedAt: null }).where(eq(works.id, workId));
     await expect(branchPush.pushToLive({ branchId: branch.branchId })).resolves.toMatchObject({

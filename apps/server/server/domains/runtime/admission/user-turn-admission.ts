@@ -34,6 +34,20 @@ export class AdmissionConflictError extends Error {
   readonly code = "idempotency_conflict" as const;
 }
 
+export class ThreadWorkUnavailableAdmissionError extends Error {
+  readonly code: "work_archived" | "work_unavailable";
+
+  constructor(state: "archived" | "deleted" | "missing") {
+    super(
+      state === "archived"
+        ? "This Work is archived. Unarchive it to continue the conversation."
+        : "This Work is unavailable.",
+    );
+    this.name = "ThreadWorkUnavailableAdmissionError";
+    this.code = state === "archived" ? "work_archived" : "work_unavailable";
+  }
+}
+
 export type AuthorizedReference = SubmittedReference & {
   relationship: "reading" | "created";
 };
@@ -464,12 +478,23 @@ export function createUserTurnAdmission(deps: {
         if (admittedIdentities.has(referenceIdentity(block))) return [block];
         return block.type === "reference" ? [{ type: "text", text: block.text }] : [];
       });
-      return deps.producer.enqueue({
-        admission: { ...input, activatedSkillSlugs },
-        fingerprint,
-        blocks: admittedBlocks,
-        references: admittedReferences,
-      }) as Promise<UserTurnAdmissionResult>;
+      try {
+        return (await deps.producer.enqueue({
+          admission: { ...input, activatedSkillSlugs },
+          fingerprint,
+          blocks: admittedBlocks,
+          references: admittedReferences,
+        })) as UserTurnAdmissionResult;
+      } catch (error) {
+        if (!(error instanceof ThreadWorkUnavailableAdmissionError)) throw error;
+        const rejected = await deps.records.reject({
+          threadId: input.threadId,
+          submissionId: input.submissionId,
+          fingerprint,
+          code: error.code,
+        });
+        return lookupProjection(rejected, input.submissionId) as UserTurnAdmissionResult;
+      }
     },
   };
 }

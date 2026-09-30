@@ -48,6 +48,8 @@ export async function persistWriterEnqueue<T>(input: {
   userTurnMetadata?: JsonValue | null;
   delivery: DeliveryProducer;
   inbox: Pick<InboxReader, "selectPending">;
+  /** Atomic admission fence; runs after the thread lock and before writer persistence. */
+  beforePersist?: () => Promise<void>;
   draft: MessageDraft;
   /** Settles admission plus attachments; runs in the turn-start transaction. */
   settle: (settlement: WriterEnqueueSettlement) => Promise<T>;
@@ -62,6 +64,7 @@ export async function persistWriterEnqueue<T>(input: {
           await producer.materializePrefix();
           const current = await input.persistence.repos.threads.findById(input.threadId);
           if (!current) throw new Error(`Thread not found: ${input.threadId}`);
+          await input.beforePersist?.();
           return persistAndAppendTurnStartEvents(
             input.persistence,
             input.threadId,

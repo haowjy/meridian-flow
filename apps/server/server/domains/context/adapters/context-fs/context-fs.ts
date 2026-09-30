@@ -194,7 +194,7 @@ export class ContextFS implements ContextSchemeAdapter {
       serializeThroughCallbacks: true,
       mapThrownError: (error) =>
         error instanceof WorkLifecycleUnavailableError
-          ? { code: "context_unavailable" }
+          ? { code: "context_unavailable", message: error.message }
           : undefined,
     });
     this.manifestView = deps.manifestView;

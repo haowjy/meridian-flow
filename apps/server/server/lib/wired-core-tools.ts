@@ -58,6 +58,7 @@ import {
   deleteWorkTransition,
   updateWorkTransition,
   type WorkContextNotices,
+  WorkLifecycleUnavailableError,
   WorkNameRequiredError,
   type WorkRepository,
 } from "../domains/projects/index.js";
@@ -219,7 +220,7 @@ async function resolveExecutionContext(
   const primary = await deps.threadWorks.findPrimary(threadId);
   if (!primary) throw new Error(`Thread primary Work is missing: ${threadId}`);
   const work = await deps.works.findById(primary.workId);
-  if (!work || work.deletedAt || work.status === "archived") {
+  if (!work || work.deletedAt) {
     return toolError({ code: "work_unavailable", message: "The current Work is unavailable" });
   }
   return threadExecutionContext(work);
@@ -232,7 +233,7 @@ async function resolveExecutionContextOrThrow(
   const primary = await deps.threadWorks.findPrimary(threadId);
   if (!primary) throw new Error(`Thread primary Work is missing: ${threadId}`);
   const work = await deps.works.findById(primary.workId);
-  if (!work || work.deletedAt || work.status === "archived") {
+  if (!work || work.deletedAt) {
     throw new Error("The current Work is unavailable during response finalization");
   }
   return threadExecutionContext(work);
@@ -454,6 +455,12 @@ function modelContextErrorMessage(error: ContextError, context: ResolvedModelCon
 }
 
 function contextErrorMessage(error: ContextError): string {
+  if (error.code === "context_unavailable" && error.message?.includes("archived")) {
+    const work = /^scratch:\/\/@([^/]+)/.exec(error.uri)?.[1];
+    if (work) {
+      return `Work @${work} is archived; it is read-only until unarchived. You can unarchive it with work update status active if the writer wants that.`;
+    }
+  }
   if ("message" in error && typeof error.message === "string") return error.message;
   return `${error.code}: ${error.uri}`;
 }
@@ -871,11 +878,8 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           const transition = await updateWorkTransition(
             { works: deps.works, workContextNotices: deps.workContextNotices },
             selected.id,
-            {
-              name: command.name,
-              goal: command.goal,
-              status: command.status,
-            },
+            { name: command.name, goal: command.goal, status: command.status },
+            { requireActive: command.name !== undefined || command.goal !== undefined },
           );
           const { before, after: updated, changed } = transition;
           return {
@@ -934,6 +938,12 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         }
         if (error instanceof WorkNameRequiredError) {
           return toolError({ code: "invalid_work_name", message: error.message });
+        }
+        if (error instanceof WorkLifecycleUnavailableError) {
+          return toolError({
+            code: "work_archived",
+            message: `Work @${"work" in command ? command.work : error.workId} is archived; it is read-only until unarchived. You can unarchive it with work update status active if the writer wants that.`,
+          });
         }
         return toolError({ message: error instanceof Error ? error.message : String(error) });
       }

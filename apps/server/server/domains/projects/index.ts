@@ -356,6 +356,7 @@ export { runWorkLifecycleCommand } from "./run-work-lifecycle-command.js";
 export {
   normalizeWorkUpdateInput,
   type UpdateWorkCommandInput,
+  updateActiveWorkMetadata,
   updateWork,
   updateWorkTransition,
   WorkNameRequiredError,

@@ -118,7 +118,10 @@ export async function handleApplyWorkDraftRequest(
   },
 ): Promise<DraftApplyResponse> {
   await requireDraftWorkAccess(deps, input);
-  const result = await callDraftReview(deps.documentSync.draftReview.applyWorkDraft(input));
+  const work = await deps.works.findById(input.workId);
+  const result = await callDraftReview(deps.documentSync.draftReview.applyWorkDraft(input), {
+    archivedWorkSlug: work?.slug ?? input.workId,
+  });
   if (result.status === "applied") return result;
   throw createError({ statusCode: 404, message: "Draft not found" });
 }
@@ -149,12 +152,21 @@ function toWireReviewOperation<T extends { discardUpdateIds?: unknown; sourceUpd
   return wire;
 }
 
-async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
+async function callDraftReview<T>(
+  promise: Promise<T>,
+  options: { archivedWorkSlug?: string } = {},
+): Promise<T> {
   try {
     return await promise;
   } catch (cause) {
     if (cause instanceof Error && cause.message.startsWith("read_failed:")) {
       throwReadFailure(cause.message.slice("read_failed:".length));
+    }
+    if (cause instanceof WorkLifecycleUnavailableError && options.archivedWorkSlug) {
+      throw createError({
+        statusCode: 409,
+        message: `Work @${options.archivedWorkSlug} is archived; it is read-only until unarchived.`,
+      });
     }
     if (
       cause instanceof WorkLifecycleUnavailableError ||

@@ -35,9 +35,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       createDrizzleProjectWorkAuthorityResolver,
       deleteWorkTransition,
       restoreWork,
+      updateActiveWorkMetadata,
       updateWorkTransition,
       WorkRestoreConflictError,
       WorkRestoreExpiredError,
+      WorkLifecycleUnavailableError,
       createWorkProjectionMutation,
       createDrizzleWorkPurger,
     } = await import("./index.js");
@@ -108,6 +110,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await works.unarchive(work.id);
       expect(await works.findById(work.id)).toMatchObject({ status: "active", deletedAt: null });
+    });
+
+    it("refuses archived metadata updates until the Work is unarchived", async () => {
+      const work = await works.create({ projectId: PROJECT_ID, name: "Read only" });
+      const deps = { works, workContextNotices: { async projectChanged() {} } };
+      await works.archive(work.id);
+
+      await expect(
+        updateActiveWorkMetadata(deps, work.id, { goal: "Should not change" }),
+      ).rejects.toBeInstanceOf(WorkLifecycleUnavailableError);
+      await works.unarchive(work.id);
+      await expect(
+        updateActiveWorkMetadata(deps, work.id, { goal: "Writable again" }),
+      ).resolves.toMatchObject({ after: { goal: "Writable again", status: "active" } });
     });
 
     it("generates deduplicated handles and keeps them through rename", async () => {

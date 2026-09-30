@@ -139,6 +139,7 @@ import {
   type RunTurnPort,
   readPendingInbox,
   sweepWakes,
+  ThreadWorkUnavailableAdmissionError,
   type ToolExecutor,
   type ToolRegistry,
   type TurnRunner,
@@ -191,6 +192,7 @@ import {
 } from "../domains/working-set/index.js";
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
+import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
@@ -730,6 +732,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     turns: ports.threadRepos.turns,
     delivery,
     records: admissionRecords,
+    async requireWritableThread(threadId) {
+      const locked = await lockThreadAndWorks(ports.db, threadId);
+      const state = locked?.primaryWorkId ? locked.workStates.get(locked.primaryWorkId) : "missing";
+      if (state !== "active") {
+        throw new ThreadWorkUnavailableAdmissionError(state ?? "missing");
+      }
+    },
     consumeUploads: (documentIds) => ports.uploadIntake.consume(documentIds),
     attachDocument: (threadId, documentId, relationship) =>
       ports.threadRepos.threadDocuments.attach(threadId as never, documentId, relationship),

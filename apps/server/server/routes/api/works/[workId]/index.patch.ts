@@ -4,7 +4,8 @@ import type { UpdateWorkRequest } from "@meridian/contracts/works";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import {
   requireWorkOwner,
-  updateWork,
+  updateActiveWorkMetadata,
+  WorkLifecycleUnavailableError,
   WorkNameConflictError,
   WorkNameRequiredError,
 } from "../../../../domains/projects/index.js";
@@ -29,7 +30,7 @@ export default defineEventHandler(async (event) => {
   }
 
   await requireWorkOwner({ works: app.workRepo, projects: app.projectRepo }, workId, user.userId);
-  const work = await updateWork(
+  const transition = await updateActiveWorkMetadata(
     { works: app.workRepo, workContextNotices: app.workContextNotices },
     workId,
     {
@@ -43,7 +44,10 @@ export default defineEventHandler(async (event) => {
     if (error instanceof WorkNameConflictError) {
       throw createError({ statusCode: 409, message: error.message });
     }
+    if (error instanceof WorkLifecycleUnavailableError) {
+      throw createError({ statusCode: 409, message: error.message });
+    }
     throw error;
   });
-  return serializeTransport(work);
+  return serializeTransport(transition.after);
 });

@@ -30,6 +30,7 @@ export {
   AdmissionConflictError,
   createUserTurnAdmission,
   InvalidAdmissionError,
+  ThreadWorkUnavailableAdmissionError,
   type UserTurnAdmission,
 } from "./admission/user-turn-admission.js";
 export { createWriterTurnProducer } from "./admission/writer-turn-producer.js";
